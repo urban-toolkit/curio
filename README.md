@@ -11,7 +11,7 @@ Gustavo Moreira, Maryam Hosseini, Carolina Veiga, Lucas Alexandre, Nico Colaninn
 Daniel de Oliveira, Nivan Ferreira, Marcos Lage, Fabio Miranda
 
 <p align="center">
-  <img src="https://github.com/urban-toolkit/curio/blob/main/images/banner.jpg?raw=true" alt="Curio Use Cases" width="600"/>
+  <img src="https://github.com/urban-toolkit/curio/blob/main/images/banner.jpg?raw=true" alt="Curio Use Cases" width="900"/>
 </p>
 
 ## Table of contents
