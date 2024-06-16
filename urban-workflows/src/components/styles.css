@@ -1,0 +1,20 @@
+.resizable {
+    width: 200px;
+    height: 200px;
+    border: 1px solid #ccc;
+    resize: both;
+    overflow: auto;
+    position: relative;
+}
+
+.resizer {
+    width: 20px;
+    height: 20px;
+    z-index: 200;
+    background-color: transparent;
+    position: absolute;
+    right: -5px;
+    bottom: -5px;
+    /* margin-right: -5px; */
+    cursor: se-resize;
+}

@@ -1,0 +1,9 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    ports:
+      - 2000:2000
+    volumes:
+      - .:/app
