@@ -145,7 +145,7 @@ To use Ray Tracing from UTK's python module please consult UTK's [requirements](
 
 ## First dataflow 
 
-For a simple introductory example check [this](https://github.com/urban-toolkit/curio/blob/main/example1.md) tutorial.
+For a simple introductory example check [this](https://github.com/urban-toolkit/curio/blob/main/example1.md) tutorial.  
 
 ![Tutorial](https://github.com/urban-toolkit/curio/blob/master/images/final_result.png?raw=true)
 
