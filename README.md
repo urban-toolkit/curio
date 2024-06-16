@@ -1,15 +1,14 @@
 # Curio
 
-![Curio Logo](https://github.com/urban-toolkit/curio/blob/master/images/logo.png?raw=true)
+![Curio Logo](https://github.com/urban-toolkit/curio/blob/main/images/logo.png?raw=true)
 
-Curio, is a framework for collaborative urban visual analytics that uses a dataflow model with multiple abstraction levels (code, grammar, GUI elements) to facilitate collaboration across the design and implementation of visual analytics components. The framework allows experts to intertwine preprocessing, managing, and visualization stages while
-tracking provenance of code and visualizations.
+Curio, is a framework for collaborative urban visual analytics that uses a dataflow model with multiple abstraction levels (code, grammar, GUI elements) to facilitate collaboration across the design and implementation of visual analytics components. The framework allows experts to intertwine preprocessing, managing, and visualization stages while tracking provenance of code and visualizations.
 
 **Curio: A Dataflow-Based Framework for Collaborative Urban Visual Analytics**  
 Gustavo Moreira, Maryam Hosseini, Carolina Veiga, Lucas Alexandre, Nico Colaninno,
 Daniel de Oliveira, Nivan Ferreira, Marcos Lage, Fabio Miranda
 
-![Curio Use Cases](https://github.com/urban-toolkit/curio/blob/master/images/banner.jpg?raw=true)
+![Curio Use Cases](https://github.com/urban-toolkit/curio/blob/main/images/banner.jpg?raw=true)
 
 ## Table of contents
 
@@ -132,7 +131,7 @@ To use Ray Tracing from UTK's python module please consult UTK's [requirements](
 
 ## First dataflow 
 
-For a simple introductory example check [this](https://github.com/urban-toolkit/curio/blob/master/example1.md?raw=true) tutorial.
+For a simple introductory example check [this](https://github.com/urban-toolkit/curio/blob/main/example1.md?raw=true) tutorial.
 
 ## Team
 
