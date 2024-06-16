@@ -3,8 +3,8 @@ from google.oauth2 import id_token
 from google.auth.transport import requests
 
 # TODO: pass to env variables
-CLIENT_ID='937015553781-blq0q9u6ig6ultm7aghsbr9rdqrhduin.apps.googleusercontent.com'
-CLIENT_SECRET='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'
+# CLIENT_ID='937015553781-blq0q9u6ig6ultm7aghsbr9rdqrhduin.apps.googleusercontent.com'
+# CLIENT_SECRET='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'
 REDIRECT_URI='http://localhost:8080'
 
 class GoogleOAuth:
