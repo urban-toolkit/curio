@@ -4,11 +4,19 @@
   <img src="https://github.com/urban-toolkit/curio/blob/main/images/logo.png?raw=true" alt="Curio Logo" width="250"/>
 </p>
 
-Curio, is a framework for collaborative urban visual analytics that uses a dataflow model with multiple abstraction levels (code, grammar, GUI elements) to facilitate collaboration across the design and implementation of visual analytics components. The framework allows experts to intertwine preprocessing, managing, and visualization stages while tracking provenance of code and visualizations.
+Curio is a framework for collaborative urban visual analytics that uses a dataflow model with multiple abstraction levels (code, grammar, GUI elements) to facilitate collaboration across the design and implementation of visual analytics components. The framework allows experts to intertwine preprocessing, managing, and visualization stages while tracking provenance of code and visualizations.
 
 **Curio: A Dataflow-Based Framework for Collaborative Urban Visual Analytics**  
-Gustavo Moreira, Maryam Hosseini, Carolina Veiga, Lucas Alexandre, Nico Colaninno,
-Daniel de Oliveira, Nivan Ferreira, Marcos Lage, Fabio Miranda
+Gustavo Moreira, Maryam Hosseini, Carolina Veiga, Lucas Alexandre, Nico Colaninno, Daniel de Oliveira, Nivan Ferreira, Marcos Lage, Fabio Miranda
+
+Video:
+
+<div align="center">
+  <video src="https://github.com/urban-toolkit/curio/assets/2387594/9886fe8c-2038-43c4-a31c-9abcf0f018b4" />
+</div>
+
+
+
 
 <p align="center">
   <img src="https://github.com/urban-toolkit/curio/blob/main/images/banner.jpg?raw=true" alt="Curio Use Cases" width="1000"/>
