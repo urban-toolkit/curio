@@ -10,7 +10,9 @@ Curio, is a framework for collaborative urban visual analytics that uses a dataf
 Gustavo Moreira, Maryam Hosseini, Carolina Veiga, Lucas Alexandre, Nico Colaninno,
 Daniel de Oliveira, Nivan Ferreira, Marcos Lage, Fabio Miranda
 
-<img src="https://github.com/urban-toolkit/curio/blob/main/images/banner.jpg?raw=true" alt="Curio Use Cases" width="400"/>
+<p align="center">
+  <img src="https://github.com/urban-toolkit/curio/blob/main/images/banner.jpg?raw=true" alt="Curio Use Cases" width="400"/>
+</p>
 
 ## Table of contents
 
