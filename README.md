@@ -16,6 +16,16 @@ Daniel de Oliveira, Nivan Ferreira, Marcos Lage, Fabio Miranda
 
 ## Table of contents
 
+1. [Features](#features)
+2. [Installation and quick start](#installation-and-quick-start)
+    1. [Curio Backend](#curio-backend)
+    2. [Python sandbox](#python-sandbox)
+    3. [UTK workflow](#utk-workflow)
+    4. [Curio frontend](#curio-frontend)
+    5. [Ray tracing](#ray-tracing)
+3. [First dataflow](#tutorials)
+4. [Team](#team)
+
 ## Features
 
 - Provenance-aware dataflow
