@@ -1,5 +1,3 @@
-Used to manage requests to piston
-
 ## Database management
 
 - Create migration
