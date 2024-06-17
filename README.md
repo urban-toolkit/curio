@@ -12,9 +12,8 @@ Gustavo Moreira, Maryam Hosseini, Carolina Veiga, Lucas Alexandre, Nico Colaninn
 Video:
 
 <div align="center">
-  <video src="https://github.com/urban-toolkit/curio/assets/2387594/9886fe8c-2038-43c4-a31c-9abcf0f018b4" />
+  <video src="https://github.com/urban-toolkit/curio/assets/2387594/6d29bda8-5e94-4496-a4ae-fd55adff024f" />
 </div>
-
 
 
 
