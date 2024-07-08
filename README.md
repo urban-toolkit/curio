@@ -79,7 +79,7 @@ python server.py
 
 The backend is also responsible for user authentication. In order to use Curio's functionalities, you will need authentication. To do so, upgrade the database:
 
-- Apply migrations
+#### Apply migrations
 
 You need to run this command before start using Curio:
 
@@ -90,7 +90,7 @@ FLASK_APP=server.py flask db upgrade
 
 If the environment variable FLASK_APP does not work on the command above, set the environnment variable in your terminal. 
 
-- Create migration
+#### Create migration
 
 ```shell
 # after updating any model, run this to generate a new migration
