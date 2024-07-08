@@ -77,21 +77,26 @@ Now the backend server can be started.
 python server.py
 ```
 
-The backend is also responsible for user authentication. To manage migrations:
+The backend is also responsible for user authentication. In order to use Curio's functionalities, you will need authentication. To do so, upgrade the database:
+
+- Apply migrations
+
+You need to run this command before start using Curio:
+
+```shell
+# run this to apply any migration that hasn't run yet
+FLASK_APP=server.py flask db upgrade
+```
+
+If the environment variable FLASK_APP does not work on the command above, set the environnment variable in your terminal. 
 
 - Create migration
 
 ```shell
-# after update any model, run it to generate a new migration
+# after updating any model, run this to generate a new migration
 FLASK_APP=server.py flask db migrate -m "Migration Name"
 ```
 
-- Apply migrations
-
-```shell
-# run it to apply any migration that hasn't run yet
-FLASK_APP=server.py flask db upgrade
-```
 
 ### Python sandbox
 
