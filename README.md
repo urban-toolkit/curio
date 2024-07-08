@@ -55,7 +55,7 @@ Curio is divided into three components: backend (provenance and database managem
 
 Curio was tested on Windows 11 and MacOS Sonoma 14.5.   
 
-**Python >= 3.9 && < 3.12 is needed.**
+**Python >= 3.9 & < 3.12 is needed.**
 
 ### Curio Backend
 
