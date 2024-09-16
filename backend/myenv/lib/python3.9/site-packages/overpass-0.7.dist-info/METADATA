@@ -1,0 +1,25 @@
+Metadata-Version: 2.1
+Name: overpass
+Version: 0.7
+Summary: Python wrapper for the OpenStreetMap Overpass API
+Home-page: https://github.com/mvexel/overpass-api-python-wrapper
+Author: Martijn van Exel
+Author-email: m@rtijn.org
+License: Apache
+Keywords: openstreetmap,overpass,wrapper
+Platform: UNKNOWN
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Programming Language :: Python :: 3.5
+Classifier: Programming Language :: Python :: 3.6
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Topic :: Scientific/Engineering :: GIS
+Classifier: Topic :: Utilities
+Requires-Dist: requests (>=2.3.0)
+Requires-Dist: geojson (>=1.0.9)
+Requires-Dist: shapely (>=1.6.4)
+Provides-Extra: test
+Requires-Dist: pytest ; extra == 'test'
+
+See README.md
+
+

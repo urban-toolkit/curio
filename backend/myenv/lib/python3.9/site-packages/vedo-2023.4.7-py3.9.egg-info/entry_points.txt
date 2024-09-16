@@ -1,0 +1,2 @@
+[console_scripts]
+vedo = vedo.cli:execute_cli

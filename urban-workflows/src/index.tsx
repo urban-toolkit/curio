@@ -8,6 +8,7 @@ import DialogProvider from "./providers/DialogProvider";
 import { MainCanvas } from "./components/MainCanvas";
 import { ReactFlowProvider } from "reactflow";
 import ProvenanceProvider from "./providers/ProvenanceProvider";
+import { GlobalProvider } from "./components/GlobalContext";
 
 const App: React.FC = () => {
   return (
@@ -16,9 +17,11 @@ const App: React.FC = () => {
         <UserProvider>
           <DialogProvider>
             <FlowProvider>
-              <TemplateProvider>
+              <GlobalProvider>
+                <TemplateProvider>
                   <MainCanvas />
-              </TemplateProvider>
+                </TemplateProvider>
+              </GlobalProvider>
             </FlowProvider>
           </DialogProvider>
         </UserProvider>

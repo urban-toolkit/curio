@@ -1,0 +1,83 @@
+Metadata-Version: 2.1
+Name: osmium
+Version: 3.7.0
+Summary: Python bindings for libosmium, the data processing library for OSM data
+Home-page: https://osmcode.org/pyosmium
+Download-URL: https://github.com/osmcode/pyosmium
+Author: Sarah Hoffmann
+Author-email: lonvia@denofr.de
+Maintainer: Sarah Hoffmann
+Maintainer-email: lonvia@denofr.de
+License: BSD
+Keywords: OSM,OpenStreetMap,Osmium
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: BSD License
+Classifier: Programming Language :: Python :: 3.6
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: Implementation :: CPython
+Classifier: Programming Language :: C++
+Requires-Python: >=3.6
+License-File: LICENSE.TXT
+Requires-Dist: requests
+
+========
+pyosmium
+========
+
+This library provides Python bindings for the `Libosmium`_ C++
+library, a library for working with OpenStreetMap data in a fast and flexible
+manner.
+
+.. _Libosmium: https://github.com/osmcode/libosmium
+
+Installation
+============
+
+pyosmium can be installed with pip:
+
+    pip install osmium
+
+The Pypi source package already comes bundled with a matching version of
+libosmium, protozero and pybind11. Pyosmium additionally depends on
+expat, libz, libbz2 and Boost variant and iterator. You need to install
+development packages for these libraries. On Debian/Ubuntu do::
+
+    sudo apt-get install build-essential cmake libboost-dev \
+                       libexpat1-dev zlib1g-dev libbz2-dev
+
+
+Python >= 3.6 is supported. Pypy is known not to work.
+
+Documentation
+=============
+
+The documentation for the latest release is available at
+`osmcode.org`_.
+
+If you find bugs or have feature requests, please report those in the
+`Github issue tracker`_. For general questions about using pyosmium you
+can contanct the `OSM development mailing list`_ or ask on `OSM help`_.
+
+.. _osmcode.org: http://docs.osmcode.org/pyosmium/latest
+.. _Github issue tracker: https://github.com/osmcode/pyosmium/issues/
+.. _OSM development mailing list: https://lists.openstreetmap.org/listinfo/dev
+.. _OSM help: https://help.openstreetmap.org/
+
+Examples
+========
+
+The package contains an `example` directory with small examples on how to use
+the library. They are mostly ports of the examples in Libosmium and
+osmium-contrib.
+
+Fineprint
+=========
+
+Pyosmium is available under the BSD 2-Clause License. See LICENSE.TXT.
+
+The source code can be found on `GitHub`_.
+
+.. _GitHub: https://github.com/osmcode/pyosmium

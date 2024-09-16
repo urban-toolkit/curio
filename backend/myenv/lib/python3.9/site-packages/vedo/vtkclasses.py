@@ -1,0 +1,572 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Subset of vtk classes to be imported directly
+"""
+
+import vtkmodules.vtkCommonComputationalGeometry
+
+from vtkmodules.vtkCommonColor import vtkNamedColors
+
+from vtkmodules.vtkCommonCore import (
+    mutable,
+    VTK_UNSIGNED_CHAR,
+    VTK_UNSIGNED_SHORT,
+    VTK_UNSIGNED_INT,
+    VTK_UNSIGNED_LONG,
+    VTK_UNSIGNED_LONG_LONG,
+    VTK_UNSIGNED_CHAR,
+    VTK_CHAR,
+    VTK_SHORT,
+    VTK_INT,
+    VTK_LONG,
+    VTK_LONG_LONG,
+    VTK_FLOAT,
+    VTK_DOUBLE,
+    VTK_SIGNED_CHAR,
+    VTK_ID_TYPE,
+    VTK_VERSION_NUMBER,
+    VTK_FONT_FILE,
+    vtkArray,
+    vtkIdTypeArray,
+    vtkBitArray,
+    vtkCharArray,
+    vtkDoubleArray,
+    vtkFloatArray,
+    vtkIdList,
+    vtkIntArray,
+    vtkLookupTable,
+    vtkMath,
+    vtkPoints,
+    vtkStringArray,
+    vtkUnsignedCharArray,
+    vtkVariant,
+    vtkVariantArray,
+    vtkVersion,
+)
+
+from vtkmodules.vtkCommonDataModel import (
+    VTK_HEXAHEDRON,
+    VTK_TETRA,
+    VTK_VOXEL,
+    VTK_WEDGE,
+    VTK_PYRAMID,
+    VTK_HEXAGONAL_PRISM,
+    VTK_PENTAGONAL_PRISM,
+    vtkCellArray,
+    vtkBox,
+    vtkCellLocator,
+    vtkCylinder,
+    vtkDataSetAttributes,
+    vtkDataObject,
+    vtkDataSet,
+    vtkFieldData,
+    vtkHexagonalPrism,
+    vtkHexahedron,
+    vtkImageData,
+    vtkImplicitDataSet,
+    vtkImplicitSelectionLoop,
+    vtkImplicitWindowFunction,
+    vtkIterativeClosestPointTransform,
+    vtkLine,
+    vtkMultiBlockDataSet,
+    vtkMutableDirectedGraph,
+    vtkPentagonalPrism,
+    vtkPlane,
+    vtkPlanes,
+    vtkPointLocator,
+    vtkPolyData,
+    vtkPolyLine,
+    vtkPolyPlane,
+    vtkPolygon,
+    vtkPyramid,
+    vtkQuadric,
+    vtkRectilinearGrid,
+    vtkSelection,
+    vtkSelectionNode,
+    vtkSphere,
+    vtkStaticCellLocator,
+    vtkStaticPointLocator,
+    vtkStructuredGrid,
+    vtkTetra,
+    vtkTriangle,
+    vtkUnstructuredGrid,
+    vtkVoxel,
+    vtkWedge,
+)
+
+from vtkmodules.vtkCommonExecutionModel import vtkAlgorithm
+
+from vtkmodules.vtkCommonMath import vtkMatrix4x4, vtkQuaternion
+
+from vtkmodules.vtkCommonTransforms import (
+    vtkHomogeneousTransform,
+    vtkLandmarkTransform,
+    vtkThinPlateSplineTransform,
+    vtkTransform
+)
+
+from vtkmodules.vtkFiltersCore import (
+    VTK_BEST_FITTING_PLANE,
+    vtk3DLinearGridCrinkleExtractor,
+    vtkAppendPolyData,
+    vtkCellCenters,
+    vtkCellDataToPointData,
+    vtkCenterOfMass,
+    vtkCleanPolyData,
+    vtkClipPolyData,
+    vtkPolyDataConnectivityFilter,
+    vtkPolyDataEdgeConnectivityFilter,
+    vtkContourFilter,
+    vtkContourGrid,
+    vtkCutter,
+    vtkDecimatePro,
+    vtkDelaunay2D,
+    vtkDelaunay3D,
+    vtkElevationFilter,
+    vtkFeatureEdges,
+    vtkFlyingEdges3D,
+    vtkGlyph3D,
+    vtkIdFilter,
+    vtkImageAppend,
+    vtkImplicitPolyDataDistance,
+    vtkMarchingSquares,
+    vtkMaskPoints,
+    vtkMassProperties,
+    vtkPointDataToCellData,
+    vtkPolyDataNormals,
+    vtkProbeFilter,
+    vtkQuadricDecimation,
+    vtkResampleWithDataSet,
+    vtkReverseSense,
+    vtkStripper,
+    vtkTensorGlyph,
+    vtkThreshold,
+    vtkTriangleFilter,
+    vtkTubeFilter,
+    vtkUnstructuredGridQuadricDecimation,
+    vtkVoronoi2D,
+    vtkWindowedSincPolyDataFilter,
+)
+
+try:
+    from vtkmodules.vtkFiltersCore import vtkStaticCleanUnstructuredGrid, vtkPolyDataPlaneCutter
+except ImportError:
+    pass
+
+
+from vtkmodules.vtkFiltersExtraction import (
+    vtkExtractCellsByType,
+    vtkExtractGeometry,
+    vtkExtractPolyDataGeometry,
+    vtkExtractSelection,
+)
+try:
+    from vtkmodules.vtkFiltersExtraction import vtkExtractEdges # vtk9.0
+except ImportError:
+    from vtkmodules.vtkFiltersCore import vtkExtractEdges # vtk9.2
+
+from vtkmodules.vtkFiltersFlowPaths import vtkStreamTracer
+
+
+from vtkmodules.vtkFiltersGeneral import (
+    vtkBooleanOperationPolyDataFilter,
+    vtkBoxClipDataSet,
+    vtkCellValidator,
+    vtkClipDataSet,
+    vtkCountVertices,
+    vtkContourTriangulator,
+    vtkCurvatures,
+    vtkDataSetTriangleFilter,
+    vtkDensifyPolyData,
+    vtkDistancePolyDataFilter,
+    vtkGradientFilter,
+    vtkIntersectionPolyDataFilter,
+    vtkLoopBooleanPolyDataFilter,
+    vtkMultiBlockDataGroupFilter,
+    vtkTransformPolyDataFilter,
+    vtkOBBTree,
+    vtkQuantizePolyDataPoints,
+    vtkRandomAttributeGenerator,
+    vtkShrinkFilter,
+    vtkShrinkPolyData,
+    vtkRectilinearGridToTetrahedra,
+    vtkVertexGlyphFilter,
+)
+
+try:
+    from vtkmodules.vtkCommonDataModel import vtkCellTreeLocator
+except ImportError:
+    from vtkmodules.vtkFiltersGeneral import vtkCellTreeLocator
+
+from vtkmodules.vtkFiltersGeometry import (
+    vtkGeometryFilter,
+    vtkDataSetSurfaceFilter,
+    vtkImageDataGeometryFilter,
+)
+try:
+    from vtkmodules.vtkFiltersGeometry import vtkMarkBoundaryFilter
+except ImportError:
+    pass
+
+
+from vtkmodules.vtkFiltersHybrid import (
+    vtkFacetReader,
+    vtkImplicitModeller,
+    vtkPolyDataSilhouette,
+    vtkProcrustesAlignmentFilter,
+    vtkRenderLargeImage,
+)
+
+from vtkmodules.vtkFiltersModeling import (
+    vtkAdaptiveSubdivisionFilter,
+    vtkBandedPolyDataContourFilter,
+    vtkButterflySubdivisionFilter,
+    vtkContourLoopExtraction,
+    vtkCookieCutter,
+    vtkDijkstraGraphGeodesicPath,
+    vtkFillHolesFilter,
+    vtkHausdorffDistancePointSetFilter,
+    vtkLinearExtrusionFilter,
+    vtkLinearSubdivisionFilter,
+    vtkLoopSubdivisionFilter,
+    vtkRibbonFilter,
+    vtkRotationalExtrusionFilter,
+    vtkRuledSurfaceFilter,
+    vtkSectorSource,
+    vtkSelectEnclosedPoints,
+    vtkSelectPolyData,
+    vtkSubdivideTetra,
+)
+
+try:
+    from vtkmodules.vtkFiltersModeling import vtkCollisionDetectionFilter
+except ImportError:
+    pass
+
+try:
+    from vtkmodules.vtkFiltersModeling import vtkImprintFilter
+except ImportError:
+    pass
+
+from vtkmodules.vtkFiltersPoints import (
+    vtkConnectedPointsFilter,
+    vtkDensifyPointCloudFilter,
+    vtkEuclideanClusterExtraction,
+    vtkExtractEnclosedPoints,
+    vtkExtractSurface,
+    vtkGaussianKernel,
+    vtkLinearKernel,
+    vtkPCANormalEstimation,
+    vtkPointDensityFilter,
+    vtkPointInterpolator,
+    vtkRadiusOutlierRemoval,
+    vtkShepardKernel,
+    vtkSignedDistance,
+    vtkVoronoiKernel,
+)
+
+from vtkmodules.vtkFiltersSources import (
+    vtkArcSource,
+    vtkArrowSource,
+    vtkConeSource,
+    vtkCubeSource,
+    vtkCylinderSource,
+    vtkDiskSource,
+    vtkFrustumSource,
+    vtkGlyphSource2D,
+    vtkGraphToPolyData,
+    vtkLineSource,
+    vtkOutlineCornerFilter,
+    vtkParametricFunctionSource,
+    vtkPlaneSource,
+    vtkPointSource,
+    vtkProgrammableSource,
+    vtkSphereSource,
+    vtkTexturedSphereSource,
+    vtkTessellatedBoxSource,
+)
+
+
+from vtkmodules.vtkFiltersTexture import vtkTextureMapToPlane
+
+from vtkmodules.vtkFiltersVerdict import vtkMeshQuality, vtkCellSizeFilter
+
+from vtkmodules.vtkImagingStencil import vtkPolyDataToImageStencil
+
+from vtkmodules.vtkIOExport import vtkX3DExporter
+
+from vtkmodules.vtkIOExportGL2PS import vtkGL2PSExporter
+
+from vtkmodules.vtkIOGeometry import (
+    vtkBYUReader,
+    vtkFacetWriter,
+    vtkOBJReader,
+    vtkOpenFOAMReader,
+    vtkParticleReader,
+    vtkSTLReader,
+    vtkSTLWriter,
+)
+
+from vtkmodules.vtkIOImage import (
+    vtkBMPReader,
+    vtkBMPWriter,
+    vtkDEMReader,
+    vtkDICOMImageReader,
+    vtkHDRReader,
+    vtkJPEGReader,
+    vtkJPEGWriter,
+    vtkMetaImageReader,
+    vtkMetaImageWriter,
+    vtkNIFTIImageReader,
+    vtkNIFTIImageWriter,
+    vtkNrrdReader,
+    vtkPNGReader,
+    vtkPNGWriter,
+    vtkSLCReader,
+    vtkTIFFReader,
+    vtkTIFFWriter,
+)
+
+from vtkmodules.vtkIOImport import (
+    vtk3DSImporter,
+    vtkOBJImporter,
+    vtkVRMLImporter,
+)
+
+from vtkmodules.vtkIOLegacy import (
+    vtkSimplePointsWriter,
+    vtkStructuredGridReader,
+    vtkStructuredPointsReader,
+    vtkDataSetReader,
+    vtkDataSetWriter,
+    vtkPolyDataWriter,
+    vtkRectilinearGridReader,
+    vtkUnstructuredGridReader,
+)
+
+from vtkmodules.vtkIOPLY import vtkPLYReader, vtkPLYWriter
+
+from vtkmodules.vtkIOXML import (
+    vtkXMLGenericDataObjectReader,
+    vtkXMLImageDataReader,
+    vtkXMLImageDataWriter,
+    vtkXMLMultiBlockDataReader,
+    vtkXMLMultiBlockDataWriter,
+    vtkXMLPRectilinearGridReader,
+    vtkXMLPUnstructuredGridReader,
+    vtkXMLPolyDataReader,
+    vtkXMLPolyDataWriter,
+    vtkXMLRectilinearGridReader,
+    vtkXMLStructuredGridReader,
+    vtkXMLUnstructuredGridReader,
+    vtkXMLUnstructuredGridWriter,
+)
+
+from vtkmodules.vtkImagingColor import (
+    vtkImageLuminance,
+    vtkImageMapToWindowLevelColors,
+)
+
+from vtkmodules.vtkImagingCore import (
+    vtkExtractVOI,
+    vtkImageAppendComponents,
+    vtkImageBlend,
+    vtkImageCast,
+    vtkImageConstantPad,
+    vtkImageExtractComponents,
+    vtkImageFlip,
+    vtkImageMapToColors,
+    vtkImageMirrorPad,
+    vtkImagePermute,
+    vtkImageResample,
+    vtkImageResize,
+    vtkImageReslice,
+    vtkImageThreshold,
+    vtkImageTranslateExtent,
+)
+
+from vtkmodules.vtkImagingFourier import (
+    vtkImageButterworthHighPass,
+    vtkImageButterworthLowPass,
+    vtkImageFFT,
+    vtkImageFourierCenter,
+    vtkImageRFFT,
+)
+
+from vtkmodules.vtkImagingGeneral import (
+    vtkImageCorrelation,
+    vtkImageEuclideanDistance,
+    vtkImageGaussianSmooth,
+    vtkImageGradient,
+    vtkImageHybridMedian2D,
+    vtkImageLaplacian,
+    vtkImageMedian3D,
+    vtkImageNormalize,
+)
+
+from vtkmodules.vtkImagingHybrid import vtkImageToPoints, vtkSampleFunction
+from vtkmodules.vtkImagingMath import (
+    vtkImageDivergence,
+    vtkImageDotProduct,
+    vtkImageLogarithmicScale,
+    vtkImageMagnitude,
+    vtkImageMathematics,
+)
+
+from vtkmodules.vtkImagingMorphological import (
+    vtkImageContinuousDilate3D,
+    vtkImageContinuousErode3D,
+)
+
+from vtkmodules.vtkImagingSources import vtkImageCanvasSource2D
+from vtkmodules.vtkImagingStencil import vtkImageStencil
+from vtkmodules.vtkInfovisLayout import (
+    vtkCircularLayoutStrategy,
+    vtkClustering2DLayoutStrategy,
+    vtkConeLayoutStrategy,
+    vtkFast2DLayoutStrategy,
+    vtkForceDirectedLayoutStrategy,
+    vtkGraphLayout,
+    vtkSimple2DLayoutStrategy,
+    vtkSimple3DCirclesStrategy,
+    vtkSpanTreeLayoutStrategy,
+)
+
+from vtkmodules.vtkInteractionStyle import (
+    vtkInteractorStyleFlight,
+    vtkInteractorStyleImage,
+    vtkInteractorStyleJoystickActor,
+    vtkInteractorStyleJoystickCamera,
+    vtkInteractorStyleRubberBand2D,
+    vtkInteractorStyleRubberBand3D,
+    vtkInteractorStyleRubberBandZoom,
+    vtkInteractorStyleTerrain,
+    vtkInteractorStyleTrackballActor,
+    vtkInteractorStyleTrackballCamera,
+    vtkInteractorStyleUnicam,
+    vtkInteractorStyleUser,
+)
+
+from vtkmodules.vtkInteractionWidgets import (
+    vtkBalloonRepresentation,
+    vtkBalloonWidget,
+    vtkBoxWidget,
+    vtkContourWidget,
+    vtkPlaneWidget,
+    vtkFocalPlanePointPlacer,
+    vtkImplicitPlaneWidget,
+    vtkOrientationMarkerWidget,
+    vtkOrientedGlyphContourRepresentation,
+    vtkPolygonalSurfacePointPlacer,
+    vtkSliderRepresentation2D,
+    vtkSliderRepresentation3D,
+    vtkSliderWidget,
+    vtkSphereWidget,
+)
+
+try:
+    from vtkmodules.vtkInteractionWidgets import vtkCameraOrientationWidget
+except ImportError:
+    pass
+
+from vtkmodules.vtkRenderingAnnotation import (
+    vtkAnnotatedCubeActor,
+    vtkAxesActor,
+    vtkAxisActor2D,
+    vtkCaptionActor2D,
+    vtkCornerAnnotation,
+    vtkCubeAxesActor,
+    vtkLegendBoxActor,
+    vtkLegendScaleActor,
+    vtkPolarAxesActor,
+    vtkScalarBarActor,
+    vtkXYPlotActor,
+)
+
+from vtkmodules.vtkRenderingCore import (
+    vtkActor,
+    vtkActor2D,
+    vtkAreaPicker,
+    vtkAssembly,
+    vtkBillboardTextActor3D,
+    vtkCamera,
+    vtkCameraInterpolator,
+    vtkColorTransferFunction,
+    vtkCoordinate,
+    vtkDataSetMapper,
+    vtkDistanceToCamera,
+    vtkFlagpoleLabel,
+    vtkFollower,
+    vtkHierarchicalPolyDataMapper,
+    vtkImageActor,
+    vtkImageMapper,
+    vtkImageProperty,
+    vtkImageSlice,
+    vtkInteractorEventRecorder,
+    vtkInteractorObserver,
+    vtkLight,
+    vtkLogLookupTable,
+    vtkMapper,
+    vtkPointGaussianMapper,
+    vtkPolyDataMapper,
+    vtkPolyDataMapper2D,
+    vtkProp,
+    vtkProp3D,
+    vtkPropAssembly,
+    vtkPropCollection,
+    vtkPropPicker,
+    vtkProperty,
+    vtkRenderWindow,
+    vtkRenderer,
+    vtkRenderWindowInteractor,
+    vtkSelectVisiblePoints,
+    vtkSkybox,
+    vtkTextActor,
+    vtkTextMapper,
+    vtkTextProperty,
+    vtkTextRenderer,
+    vtkTexture,
+    vtkViewport,
+    vtkVolume,
+    vtkVolumeProperty,
+    vtkWindowToImageFilter,
+)
+
+from vtkmodules.vtkRenderingFreeType import vtkVectorText
+
+from vtkmodules.vtkRenderingImage import vtkImageResliceMapper
+
+from vtkmodules.vtkRenderingLabel import vtkLabeledDataMapper
+
+from vtkmodules.vtkRenderingOpenGL2 import (
+    vtkDepthOfFieldPass,
+    vtkCameraPass,
+    vtkDualDepthPeelingPass,
+    vtkEquirectangularToCubeMapTexture,
+    vtkLightsPass,
+    vtkOpaquePass,
+    vtkOverlayPass,
+    vtkRenderPassCollection,
+    vtkSSAOPass,
+    vtkSequencePass,
+    vtkShader,
+    vtkShadowMapPass,
+    vtkTranslucentPass,
+    vtkVolumetricPass,
+)
+
+from vtkmodules.vtkRenderingVolume import (
+    vtkFixedPointVolumeRayCastMapper,
+    vtkGPUVolumeRayCastMapper,
+    vtkProjectedTetrahedraMapper,
+    vtkUnstructuredGridVolumeRayCastMapper,
+    vtkUnstructuredGridVolumeZSweepMapper,
+)
+
+from vtkmodules.vtkRenderingVolumeOpenGL2 import (
+    vtkOpenGLGPUVolumeRayCastMapper,
+    vtkSmartVolumeMapper,
+)
+
+# print("successfully finished importing vtkmodules")

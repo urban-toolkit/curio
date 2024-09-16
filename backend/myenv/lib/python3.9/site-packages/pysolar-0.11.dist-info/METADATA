@@ -1,0 +1,11 @@
+Metadata-Version: 2.1
+Name: pysolar
+Version: 0.11
+Summary: Collection of Python libraries for simulating the irradiation of any point on earth by the sun
+Home-page: http://pysolar.org
+Author: Brandon Stafford
+Author-email: brandon@pingswept.org
+License: GNU General Public License (GPL)
+License-File: COPYING
+Requires-Dist: numpy
+

@@ -1,3 +1,4 @@
+from uuid import uuid4
 from flask import Flask, request, send_from_directory, abort, jsonify, g
 import requests
 import json
@@ -1010,6 +1011,146 @@ def truncate_db_prov():
     conn.close()
 
     return "",200
+
+@app.route('/getTemplates', methods=['GET'])
+def get_templates():
+    conn = sqlite3.connect('template.db')
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM template")
+    templates = cursor.fetchall()
+
+    conn.close()
+
+    templates_list = []
+    for template in templates:
+        templates_list.append({
+            "id": template[0],
+            "name": template[1],
+            "type": template[2],
+            "description": template[3],
+            "accessLevel": template[4],
+            "code": template[5],
+            "custom": bool(template[6])
+        })
+
+    return jsonify(templates_list), 200
+
+@app.route('/registerTemplate', methods=['POST'])
+def register_template():
+    data = request.json
+
+    required_fields = ['name', 'type', 'description', 'accessLevel', 'code', 'custom']
+    for field in required_fields:
+        if field not in data:
+            return jsonify({"error": f"'{field}' é obrigatório."}), 400
+
+    conn = sqlite3.connect('template.db')
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            INSERT INTO template (id, name, type, description, accessLevel, code, custom)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            data['id'],  
+            data['name'],
+            data['type'],
+            data['description'],
+            data['accessLevel'],
+            data['code'],
+            int(data['custom'])  
+        ))
+
+        conn.commit()
+
+        return jsonify({"message": "Template registrado com sucesso."}), 201
+
+    except sqlite3.Error as e:
+        print(e)
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        conn.close()
+
+
+@app.route('/registerProjectItem', methods=['POST'])
+def register_project_item():
+    data = request.json
+
+    required_fields = ['id', 'name', 'dependency', 'boxType']
+    for field in required_fields:
+        if field not in data:
+            return jsonify({"error": f"'{field}' é obrigatório."}), 400
+
+    conn = sqlite3.connect('template.db')
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            INSERT INTO projeto (id, name, dependency, boxType)
+            VALUES (?, ?, ?, ?)
+        """, (
+            data['id'],
+            data['name'],
+            data['dependency'],
+            data['boxType']
+        ))
+
+        conn.commit()
+
+        return jsonify({"message": "Item do projeto registrado com sucesso."}), 201
+
+    except sqlite3.Error as e:
+        print(e)
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        conn.close()
+
+@app.route('/getProjectItems', methods=['GET'])
+def get_project_items():
+    # Obtém o nome do projeto dos parâmetros de consulta
+    project_name = request.args.get('name')
+
+    if not project_name:
+        return jsonify({"error": "'name' é obrigatório."}), 400
+
+    conn = sqlite3.connect('template.db')
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT * FROM projeto
+            WHERE name = ?
+        """, (project_name,))
+
+        rows = cursor.fetchall()
+
+        if not rows:
+            return jsonify([]), 200
+
+        # Converte as linhas retornadas em uma lista de dicionários
+        project_items = []
+        for row in rows:
+            project_items.append({
+                'id': row[0],
+                'name': row[1],
+                'dependency': row[2],
+                'boxType': row[3]
+            })
+
+        return jsonify(project_items), 200
+
+    except sqlite3.Error as e:
+        print(e)
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        conn.close()
+
 
 
 if __name__ == '__main__':

@@ -31,6 +31,29 @@ import FileUpload from "./FileUpload";
 
 export function ToolsMenu() {
     const { createCodeNode } = useCode();
+
+    useEffect(() => {
+
+        // createCodeNode(BoxType.DATA_LOADING, null);
+        fetch('http://localhost:5002/getProjectItems?name=Sem nome')
+        .then(async response => {
+            console.log(response)
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(projects => {
+            projects.forEach((project:any) => {
+                console.log(project.boxType);
+                createCodeNode(project.boxType, null, true);
+            });
+        })        
+    
+
+    }, []);
+
+
     const { getTemplates, deleteTemplate } = useTemplateContext();
 
     const { user } = useUserContext();
@@ -96,6 +119,8 @@ export function ToolsMenu() {
     return (
         <div>
             <div style={containerStyle}>
+                <div onClick={() => console.log("oi")}>
+                </div>
                 <OverlayTrigger
                     placement="right"
                     delay={overlayTriggerProps}

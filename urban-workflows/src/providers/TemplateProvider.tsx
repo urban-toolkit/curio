@@ -21,17 +21,17 @@ import {
 } from "reactflow";
 import { ConnectionValidator } from "../ConnectionValidator";
 import { AccessLevelType, BoxType, EdgeType, VisInteractionType } from "../constants";
-import { templates } from "./templates";
+import { GetTemplates } from "./templates";
 import { v4 as uuid } from "uuid";
 
 export interface Template {
     id: string;
     type: BoxType;
     name: string;
-    description: string; 
+    description: string;
     accessLevel: AccessLevelType;
     code: string; // grammar or python
-    custom: boolean;
+    custom: any;
 }
 
 interface TemplateContextProps {
@@ -44,47 +44,88 @@ interface TemplateContextProps {
 export const TemplateContext = createContext<TemplateContextProps>({
     getTemplates: () => [],
     createUserTemplate: () => null,
-    editUserTemplate: () => {},
-    deleteTemplate: () => {}
+    editUserTemplate: () => { },
+    deleteTemplate: () => { }
 });
 
 const TemplateProvider = ({ children }: { children: ReactNode }) => {
-    
-    const [defaultTemplates, setDefaultTemplates] = useState<Template[]>(templates);
+    const [defaultTemplates, setDefaultTemplates] = useState<Template[]>();
     const [userTemplates, setUserTemplates] = useState<Template[]>([]);
 
+    useEffect(() => {
+        GetTemplates().then(data => {
+            setDefaultTemplates(data);
+        }).catch(error => {
+            console.error("Erro ao carregar templates:", error);
+        });
+    }, []);
+
+    // const createUserTemplate = (type: BoxType, name: string, description: string, accessLevel: AccessLevelType, code: string) => {
+    //     let template = {
+    //         id: uuid(),
+    //         type,
+    //         name,
+    //         description,
+    //         accessLevel,
+    //         code,
+    //         custom: true
+    //     }
+
+    //     let newTemplates: Template[] = [];
+
+    //     for(const template of userTemplates){
+    //         newTemplates.push({...template});
+    //     }
+
+    //     newTemplates.push({...template});
+
+    //     setUserTemplates(newTemplates);
+
+    //     return {...template};
+    // }
+
     const createUserTemplate = (type: BoxType, name: string, description: string, accessLevel: AccessLevelType, code: string) => {
-        let template = {
+        const template = {
             id: uuid(),
             type,
             name,
             description,
             accessLevel,
             code,
-            custom: true
-        }
+            custom: 1
+        };
 
-        let newTemplates: Template[] = [];
+        const newTemplates = [...(defaultTemplates||[]), template];
+        setDefaultTemplates(newTemplates);
 
-        for(const template of userTemplates){
-            newTemplates.push({...template});
-        }
+        fetch('http://localhost:5002/registerTemplate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(template), 
+        })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .catch((error) => {
+                console.error('Erro ao registrar template:', error);
+            });
 
-        newTemplates.push({...template});
-
-        setUserTemplates(newTemplates);
-
-        return {...template};
-    }
+        return template;
+    };
 
     const editUserTemplate = (templateNew: Template) => {
         let newTemplates: Template[] = [];
 
-        for(const template of userTemplates){
-            if(template.id == templateNew.id)
-                newTemplates.push({...templateNew});
+        for (const template of userTemplates) {
+            if (template.id == templateNew.id)
+                newTemplates.push({ ...templateNew });
             else
-                newTemplates.push({...template});
+                newTemplates.push({ ...template });
         }
 
         setUserTemplates(newTemplates);
@@ -92,17 +133,17 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
 
     const getTemplates = (type: BoxType, custom: boolean) => {
         let returnedTemplates = [];
-        let templates = [];
+        let templates: any = [];
 
-        if(custom){
+        if (custom) {
             templates = userTemplates;
-        }else{
+        } else {
             templates = defaultTemplates;
         }
 
-        for(const template of templates){
-            if(template.type == type){
-                returnedTemplates.push({...template});
+        for (const template of templates) {
+            if (template.type == type) {
+                returnedTemplates.push({ ...template });
             }
         }
 
@@ -112,9 +153,9 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
     const deleteTemplate = (templateId: string) => {
         let newTemplates: Template[] = [];
 
-        for(const template of userTemplates){
-            if(template.id != templateId)
-                newTemplates.push({...template});
+        for (const template of userTemplates) {
+            if (template.id != templateId)
+                newTemplates.push({ ...template });
         }
 
         setUserTemplates(newTemplates);
