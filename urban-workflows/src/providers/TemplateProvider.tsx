@@ -54,7 +54,9 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
 
     useEffect(() => {
         GetTemplates().then(data => {
+            console.log("oi")
             setDefaultTemplates(data);
+            console.log("foi")
         }).catch(error => {
             console.error("Erro ao carregar templates:", error);
         });
