@@ -1011,6 +1011,68 @@ def truncate_db_prov():
 
     return "",200
 
+@app.route('/getTemplates', methods=['GET'])
+def get_templates():
+    conn = sqlite3.connect('template.db')
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM template")
+    templates = cursor.fetchall()
+
+    conn.close()
+
+    templates_list = []
+    for template in templates:
+        templates_list.append({
+            "id": template[0],
+            "name": template[1],
+            "type": template[2],
+            "description": template[3],
+            "accessLevel": template[4],
+            "code": template[5],
+            "custom": bool(template[6])
+        })
+
+    return jsonify(templates_list), 200
+
+@app.route('/registerTemplate', methods=['POST'])
+def register_template():
+    data = request.json
+
+    required_fields = ['name', 'type', 'description', 'accessLevel', 'code', 'custom']
+    for field in required_fields:
+        if field not in data:
+            return jsonify({"error": f"'{field}' é obrigatório."}), 400
+
+    conn = sqlite3.connect('template.db')
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            INSERT INTO template (id, name, type, description, accessLevel, code, custom)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            data['id'],  
+            data['name'],
+            data['type'],
+            data['description'],
+            data['accessLevel'],
+            data['code'],
+            int(data['custom'])  
+        ))
+
+        conn.commit()
+
+        return jsonify({"message": "Template registrado com sucesso."}), 201
+
+    except sqlite3.Error as e:
+        print(e)
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        conn.close()
+
 
 if __name__ == '__main__':
     app.run(host=address, port=port, threaded=False)
