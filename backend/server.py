@@ -1073,6 +1073,48 @@ def register_template():
     finally:
         conn.close()
 
+@app.route('/updateTemplate/<string:id>', methods=['PUT'])
+def update_template(id):
+    data = request.json
+
+    required_fields = ['name', 'type', 'description', 'accessLevel', 'code', 'custom']
+    for field in required_fields:
+        if field not in data:
+            return jsonify({"error": f"'{field}' é obrigatório."}), 400
+
+    conn = sqlite3.connect('template.db')
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            UPDATE template
+            SET name = ?, type = ?, description = ?, accessLevel = ?, code = ?, custom = ?
+            WHERE id = ?
+        """, (
+            data['name'],
+            data['type'],
+            data['description'],
+            data['accessLevel'],
+            data['code'],
+            int(data['custom']),  # Transformar o booleano em inteiro
+            id
+        ))
+
+        if cursor.rowcount == 0:
+            return jsonify({"error": "Template não encontrado."}), 404
+
+        conn.commit()
+
+        return jsonify({"message": "Template atualizado com sucesso."}), 200
+
+    except sqlite3.Error as e:
+        print(e)
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        conn.close()
+
 
 if __name__ == '__main__':
     app.run(host=address, port=port, threaded=False)

@@ -49,42 +49,16 @@ export const TemplateContext = createContext<TemplateContextProps>({
 });
 
 const TemplateProvider = ({ children }: { children: ReactNode }) => {
-    const [defaultTemplates, setDefaultTemplates] = useState<Template[]>();
+    const [defaultTemplates, setDefaultTemplates] = useState<Template[] | undefined>();
     const [userTemplates, setUserTemplates] = useState<Template[]>([]);
 
     useEffect(() => {
         GetTemplates().then(data => {
-            console.log("oi")
             setDefaultTemplates(data);
-            console.log("foi")
         }).catch(error => {
             console.error("Erro ao carregar templates:", error);
         });
     }, []);
-
-    // const createUserTemplate = (type: BoxType, name: string, description: string, accessLevel: AccessLevelType, code: string) => {
-    //     let template = {
-    //         id: uuid(),
-    //         type,
-    //         name,
-    //         description,
-    //         accessLevel,
-    //         code,
-    //         custom: true
-    //     }
-
-    //     let newTemplates: Template[] = [];
-
-    //     for(const template of userTemplates){
-    //         newTemplates.push({...template});
-    //     }
-
-    //     newTemplates.push({...template});
-
-    //     setUserTemplates(newTemplates);
-
-    //     return {...template};
-    // }
 
     const createUserTemplate = (type: BoxType, name: string, description: string, accessLevel: AccessLevelType, code: string) => {
         const template = {
@@ -100,7 +74,7 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
         const newTemplates = [...(defaultTemplates||[]), template];
         setDefaultTemplates(newTemplates);
 
-        fetch('http://localhost:5002/registerTemplate', {
+        fetch(process.env.BACKEND_URL+'/registerTemplate', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -121,17 +95,30 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const editUserTemplate = (templateNew: Template) => {
-        let newTemplates: Template[] = [];
-
-        for (const template of userTemplates) {
-            if (template.id == templateNew.id)
-                newTemplates.push({ ...templateNew });
-            else
-                newTemplates.push({ ...template });
-        }
-
-        setUserTemplates(newTemplates);
-    }
+        const updatedTemplates = (defaultTemplates || []).map(template => 
+            template.id === templateNew.id ? templateNew : template
+        );
+    
+        fetch(`${process.env.BACKEND_URL}/updateTemplate/${templateNew.id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(templateNew),
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(() => {
+            setDefaultTemplates(updatedTemplates); 
+        })
+        .catch((error) => {
+            console.error('Erro ao atualizar template:', error);
+        });
+    };
 
     const getTemplates = (type: BoxType, custom: boolean) => {
         let returnedTemplates = [];
