@@ -53,11 +53,16 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
     const [userTemplates, setUserTemplates] = useState<Template[]>([]);
 
     useEffect(() => {
-        GetTemplates().then(data => {
-            setDefaultTemplates(data);
-        }).catch(error => {
-            console.error("Erro ao carregar templates:", error);
-        });
+        GetTemplates()
+            .then(data => {
+                const defaultTemplate = data.filter((item: Template) => item.custom === false);
+                setDefaultTemplates(defaultTemplate);
+                const customTemplate = data.filter((item: Template) => item.custom === true);
+                setUserTemplates(customTemplate)
+            })
+            .catch(error => {
+                console.error("Erro ao carregar templates:", error);
+            });
     }, []);
 
     const createUserTemplate = (type: BoxType, name: string, description: string, accessLevel: AccessLevelType, code: string) => {
@@ -140,15 +145,23 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
     }
 
     const deleteTemplate = (templateId: string) => {
-        let newTemplates: Template[] = [];
-
-        for (const template of userTemplates) {
-            if (template.id != templateId)
-                newTemplates.push({ ...template });
-        }
-
-        setUserTemplates(newTemplates);
-    }
+        fetch(`${process.env.BACKEND_URL}/deleteTemplate/${templateId}`, {
+            method: 'DELETE',
+        })
+        .then(response => {
+            if (response.ok) {
+                const newTemplates: Template[] = userTemplates.filter(template => template.id !== templateId);
+                setUserTemplates(newTemplates);
+            } else {
+                return response.text().then(text => {
+                    throw new Error(text || 'Erro ao excluir template');
+                });
+            }
+        })
+        .catch(error => {
+            console.error("Erro ao deletar template:", error);
+        });
+    };
 
     return (
         <TemplateContext.Provider

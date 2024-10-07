@@ -1116,5 +1116,29 @@ def update_template(id):
         conn.close()
 
 
+@app.route('/deleteTemplate/<string:id>', methods=['DELETE'])
+def delete_template(id):
+    conn = sqlite3.connect('template.db')
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("DELETE FROM template WHERE id = ?", (id,))
+
+        if cursor.rowcount == 0:
+            return jsonify({"error": "Template não encontrado."}), 404
+
+        conn.commit()
+
+        return jsonify({"message": "Template excluído com sucesso."}), 200
+
+    except sqlite3.Error as e:
+        print(e)
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        conn.close()
+
+
 if __name__ == '__main__':
     app.run(host=address, port=port, threaded=False)

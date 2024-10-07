@@ -2,7 +2,7 @@ import { v4 as uuid } from "uuid";
 import { AccessLevelType, BoxType} from "../constants";
 
 export async function GetTemplates(){
-    const response = await fetch('http://localhost:5002/getTemplates');
+    const response = await fetch(process.env.BACKEND_URL+'/getTemplates');
     const data = await response.json();
     
     return data
