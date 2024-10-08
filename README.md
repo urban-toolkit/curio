@@ -65,10 +65,11 @@ The backend source code is available on the `backend` folder. It is recommended 
 pip install -r requirements.txt
 ```
 
-Once requirements are installed we have to create a SQLite database for provenance.
+Once requirements are installed we have to create a SQLite database for provenance and templates.
 
 ```console
 python create_provenance_db.py
+python create_template_db.py
 ```
 
 Now the backend server can be started.
