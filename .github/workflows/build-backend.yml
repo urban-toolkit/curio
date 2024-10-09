@@ -61,12 +61,12 @@ jobs:
       # Verify backend server (Port 5002)
       - name: Verify backend server
         run: |
-          curl -I http://localhost:5002/liveness || echo "Backend not reachable"
+          curl http://localhost:5002/liveness || echo "Backend not reachable"
 
       # Verify sandbox server (Port 2000)
       - name: Verify sandbox server
         run: |
-          curl -I http://localhost:2000/liveness || echo "Sandbox not reachable"
+          curl http://localhost:2000/liveness || echo "Sandbox not reachable"
 
       # Stop all servers
       - name: Stop all servers
