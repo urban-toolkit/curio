@@ -8,3 +8,5 @@ images
 Census*
 model.pth
 dataset
+*__pycache__*
+*.cpython-39.pyc
