@@ -53,34 +53,22 @@ jobs:
           sleep 20
           cat sandbox.log
 
-      # Set up Node.js
-      - name: Set up Node.js
-        uses: actions/setup-node@v2
-        with:
-          node-version: '18'
-
-      # Check out UTK frontend repository
-      - name: Checkout UTK frontend repository
-        uses: actions/checkout@v2
-        with:
-          repository: GMMULLER/utk-workflow
-          ref: 26d8513130c8c7fec82599ddb254719109db8691 # Specific commit
-          path: utk-workflow
-
       # Post-build tasks
       - name: Check for running processes
         run: |
           ps aux | grep server.py
 
+      # Verify backend server (Port 5002)
       - name: Verify backend server
         run: |
-          curl -I http://localhost:5000 || echo "Backend not reachable"
+          curl -I http://localhost:5002 || echo "Backend not reachable"
+
+      # Verify sandbox server (Port 2000)
+      - name: Verify sandbox server
+        run: |
+          curl -I http://localhost:2000 || echo "Sandbox not reachable"
 
       # Stop all servers
-      - name: Stop backend server
-        run: |
-          pkill -f "python server.py" || true
-      
-      - name: Stop sandbox server
+      - name: Stop all servers
         run: |
           pkill -f "python server.py" || true
