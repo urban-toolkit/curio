@@ -12,21 +12,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    services:
-      db:
-        image: postgres:latest
-        env:
-          POSTGRES_DB: curio
-          POSTGRES_USER: user
-          POSTGRES_PASSWORD: password
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U user" 
-          --health-interval 10s 
-          --health-timeout 5s 
-          --health-retries 5
-
     steps:
       # Check out the main repository
       - name: Checkout main repository
@@ -47,17 +32,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Set up database
-        working-directory: ./curio/backend
-        run: |
-          python create_provenance_db.py
-          FLASK_APP=server.py flask db upgrade
-
       - name: Run backend server
         working-directory: ./curio/backend
         run: |
           nohup python server.py > backend.log 2>&1 &
-          sleep 15
+          sleep 20
+          cat backend.log
 
       # Python Sandbox setup
       - name: Install sandbox dependencies
@@ -70,7 +50,8 @@ jobs:
         working-directory: ./curio/sandbox
         run: |
           nohup python server.py > sandbox.log 2>&1 &
-          sleep 15
+          sleep 20
+          cat sandbox.log
 
       # Set up Node.js
       - name: Set up Node.js
@@ -98,7 +79,8 @@ jobs:
           npm install
           npm run build
           nohup npm run start > frontend.log 2>&1 &
-          sleep 15
+          sleep 20
+          cat frontend.log
 
       # Post-build tasks
       - name: Check for running processes
