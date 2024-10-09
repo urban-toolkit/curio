@@ -68,6 +68,12 @@ jobs:
         run: |
           curl http://localhost:2000/liveness || echo "Sandbox not reachable"
 
+      # Run Unit Tests
+      - name: Run Unit Tests
+        working-directory: ./curio
+        run: |
+          python -m unittest discover -p "test_*.py" -v
+
       # Stop all servers
       - name: Stop all servers
         run: |
