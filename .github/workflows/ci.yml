@@ -57,7 +57,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v2
         with:
-          node-version: '16'
+          node-version: '18'
 
       # Check out UTK frontend repository
       - name: Checkout UTK frontend repository
@@ -78,9 +78,7 @@ jobs:
         run: |
           npm install
           npm run build
-          nohup npm run start > frontend.log 2>&1 &
-          sleep 20
-          cat frontend.log
+          nohup npm run start
 
       # Post-build tasks
       - name: Check for running processes
