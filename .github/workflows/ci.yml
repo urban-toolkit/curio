@@ -73,19 +73,20 @@ jobs:
           npm install
           npm run build
       
- # Create a symbolic link for the UTK path
-      - name: Link UTK to expected path in package.json
+      - name: Prepare UTK module
         working-directory: ./curio/urban-workflows
         run: |
-          mkdir -p ../utk-workflow/src/utk-ts/dist
-          ln -s $GITHUB_WORKSPACE/utk-workflow/src/utk-ts/dist ../utk-workflow/src/utk-ts/dist
-
+          mkdir -p node_modules/utk
+          cp -r $GITHUB_WORKSPACE/utk-workflow/src/utk-ts/dist/* node_modules/utk/
+        
       - name: Install and build Curio frontend
         working-directory: ./curio/urban-workflows
         run: |
           npm install
           npm run build
-          nohup npm run start
+          nohup npm run start > frontend.log 2>&1 &
+          sleep 20
+          cat frontend.log
 
       # Post-build tasks
       - name: Check for running processes
