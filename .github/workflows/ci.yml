@@ -72,12 +72,18 @@ jobs:
         run: |
           npm install
           npm run build
+      
+      - name: List directory structure
+        run: |
+          echo "Root directory:"
+          ls -R /
+          echo "Current workspace directory:"
+          ls -R $GITHUB_WORKSPACE
 
       - name: Install and build Curio frontend
         working-directory: ./curio/urban-workflows
         run: |
           npm install
-          npm install utk
           npm run build
           nohup npm run start
 
