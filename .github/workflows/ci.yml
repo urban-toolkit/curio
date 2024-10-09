@@ -75,8 +75,15 @@ jobs:
         with:
           node-version: '16'
 
+      - name: Checkout UTK frontend repository
+        uses: actions/checkout@v2
+        with:
+          repository: GMMULLER/utk-workflow
+          ref: 26d8513130c8c7fec82599ddb254719109db8691 # Specific commit
+          path: utk-workflow
+      
       - name: Build UTK frontend
-        working-directory: ./utk-workflow @ 26d8513/src/utk-ts
+        working-directory: ./utk-workflow/src/utk-ts
         run: |
           npm install
           npm run build
