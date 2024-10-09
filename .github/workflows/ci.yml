@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    services:
+      db:
+        image: postgres:latest
+        env:
+          POSTGRES_DB: curio
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U user" 
+          --health-interval 10s 
+          --health-timeout 5s 
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      # Set up Python environment
+      - name: Set up Python Environment
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+
+      # Backend setup
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Set up database
+        working-directory: ./backend
+        run: |
+          python create_provenance_db.py
+          FLASK_APP=server.py flask db upgrade
+
+      - name: Run backend server
+        working-directory: ./backend
+        run: |
+          nohup python server.py &
+          sleep 10  # wait for the server to start
+
+      # Python Sandbox setup
+      - name: Install sandbox dependencies
+        working-directory: ./sandbox
+        run: |
+          pip install -r requirements.txt
+          pip install utk-0.8.9.tar.gz
+
+      - name: Run sandbox server
+        working-directory: ./sandbox
+        run: |
+          nohup python server.py &
+          sleep 10
+
+      # Frontend setup
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+
+      - name: Build UTK frontend
+        working-directory: ./utk-workflow/src/utk-ts
+        run: |
+          npm install
+          npm run build
+
+      - name: Install and build Curio frontend
+        working-directory: ./urban-workflows
+        run: |
+          npm install
+          npm run build
+          nohup npm run start &
+
+      # Post-build tasks
+      - name: Check for running processes
+        run: |
+          ps aux | grep server.py
+
+      - name: Verify frontend build
+        run: |
+          curl -I http://localhost:3000
+
+      - name: Verify backend server
+        run: |
+          curl -I http://localhost:5000
+
+      # Stop all servers
+      - name: Stop backend server
+        run: |
+          pkill -f "python server.py" || true
+      
+      - name: Stop sandbox server
+        run: |
+          pkill -f "python server.py" || true
+      
+      - name: Stop frontend server
+        run: |
+          pkill -f "npm run start" || true
+      
+      - name: Stop database service
+        run: |
+          docker stop $(docker ps -q --filter ancestor=postgres:latest) || true
