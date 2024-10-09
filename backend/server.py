@@ -73,6 +73,10 @@ def add_cors_headers(response):
 def root():
     abort(403)
 
+@app.route('/liveness')
+def liveness():
+    return 'Backend is live.'
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
 
