@@ -76,7 +76,7 @@ jobs:
           node-version: '16'
 
       - name: Build UTK frontend
-        working-directory: ./utk-workflow/src/utk-ts
+        working-directory: ./utk-workflow @ 26d8513/src/utk-ts
         run: |
           npm install
           npm run build
