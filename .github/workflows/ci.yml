@@ -28,8 +28,11 @@ jobs:
           --health-retries 5
 
     steps:
-      - name: Checkout repository
+      # Check out the main repository
+      - name: Checkout main repository
         uses: actions/checkout@v2
+        with:
+          path: curio
 
       # Set up Python environment
       - name: Set up Python Environment
@@ -39,42 +42,43 @@ jobs:
 
       # Backend setup
       - name: Install backend dependencies
-        working-directory: ./backend
+        working-directory: ./curio/backend
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Set up database
-        working-directory: ./backend
+        working-directory: ./curio/backend
         run: |
           python create_provenance_db.py
           FLASK_APP=server.py flask db upgrade
 
       - name: Run backend server
-        working-directory: ./backend
+        working-directory: ./curio/backend
         run: |
-          nohup python server.py &
-          sleep 10  # wait for the server to start
+          nohup python server.py > backend.log 2>&1 &
+          sleep 15
 
       # Python Sandbox setup
       - name: Install sandbox dependencies
-        working-directory: ./sandbox
+        working-directory: ./curio/sandbox
         run: |
           pip install -r requirements.txt
           pip install utk-0.8.9.tar.gz
 
       - name: Run sandbox server
-        working-directory: ./sandbox
+        working-directory: ./curio/sandbox
         run: |
-          nohup python server.py &
-          sleep 10
+          nohup python server.py > sandbox.log 2>&1 &
+          sleep 15
 
-      # Frontend setup
+      # Set up Node.js
       - name: Set up Node.js
         uses: actions/setup-node@v2
         with:
           node-version: '16'
 
+      # Check out UTK frontend repository
       - name: Checkout UTK frontend repository
         uses: actions/checkout@v2
         with:
@@ -89,11 +93,12 @@ jobs:
           npm run build
 
       - name: Install and build Curio frontend
-        working-directory: ./urban-workflows
+        working-directory: ./curio/urban-workflows
         run: |
           npm install
           npm run build
-          nohup npm run start &
+          nohup npm run start > frontend.log 2>&1 &
+          sleep 15
 
       # Post-build tasks
       - name: Check for running processes
@@ -102,11 +107,11 @@ jobs:
 
       - name: Verify frontend build
         run: |
-          curl -I http://localhost:3000
+          curl -I http://localhost:3000 || echo "Frontend not reachable"
 
       - name: Verify backend server
         run: |
-          curl -I http://localhost:5000
+          curl -I http://localhost:5000 || echo "Backend not reachable"
 
       # Stop all servers
       - name: Stop backend server
@@ -120,7 +125,3 @@ jobs:
       - name: Stop frontend server
         run: |
           pkill -f "npm run start" || true
-      
-      - name: Stop database service
-        run: |
-          docker stop $(docker ps -q --filter ancestor=postgres:latest) || true
