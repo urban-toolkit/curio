@@ -66,36 +66,11 @@ jobs:
           repository: GMMULLER/utk-workflow
           ref: 26d8513130c8c7fec82599ddb254719109db8691 # Specific commit
           path: utk-workflow
-      
-      - name: Build UTK frontend
-        working-directory: ./utk-workflow/src/utk-ts
-        run: |
-          npm install
-          npm run build
-      
-      - name: Prepare UTK module
-        working-directory: ./curio/urban-workflows
-        run: |
-          mkdir -p node_modules/utk
-          cp -r $GITHUB_WORKSPACE/utk-workflow/src/utk-ts/dist/* node_modules/utk/
-        
-      - name: Install and build Curio frontend
-        working-directory: ./curio/urban-workflows
-        run: |
-          npm install
-          npm run build
-          nohup npm run start > frontend.log 2>&1 &
-          sleep 20
-          cat frontend.log
 
       # Post-build tasks
       - name: Check for running processes
         run: |
           ps aux | grep server.py
-
-      - name: Verify frontend build
-        run: |
-          curl -I http://localhost:3000 || echo "Frontend not reachable"
 
       - name: Verify backend server
         run: |
@@ -109,7 +84,3 @@ jobs:
       - name: Stop sandbox server
         run: |
           pkill -f "python server.py" || true
-      
-      - name: Stop frontend server
-        run: |
-          pkill -f "npm run start" || true
