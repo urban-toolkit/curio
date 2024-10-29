@@ -11,7 +11,7 @@ import { AccessLevelType } from "../constants";
 const pythonInterpreter = new PythonInterpreter();
 
 interface IUseCode {
-    createCodeNode: (boxType: string, template: Template | null) => void;
+    createCodeNode: (boxType: string, template: Template | null, searching: boolean) => void;
 }
 
 export function useCode(): IUseCode {
@@ -20,7 +20,7 @@ export function useCode(): IUseCode {
 
     const outputCallback = useCallback(
         (nodeId: string, output: string) => {
-            applyNewOutput({nodeId: nodeId, output: output});
+            applyNewOutput({ nodeId: nodeId, output: output });
         },
         [setOutputs]
     );
@@ -30,26 +30,27 @@ export function useCode(): IUseCode {
             let newInteractions: IInteraction[] = [];
             let newNode = true;
 
-            for(const interaction of prevInteractions){
-                if(interaction.nodeId == nodeId){
-                    newInteractions.push({nodeId: nodeId, details: interactions, priority: 1});
+            for (const interaction of prevInteractions) {
+                if (interaction.nodeId == nodeId) {
+                    newInteractions.push({ nodeId: nodeId, details: interactions, priority: 1 });
                     newNode = false;
-                }else{
-                    newInteractions.push({...interaction, priority: 0});
+                } else {
+                    newInteractions.push({ ...interaction, priority: 0 });
                 }
             }
 
-            if(newNode)
-                newInteractions.push({nodeId: nodeId, details: interactions, priority: 1});
+            if (newNode)
+                newInteractions.push({ nodeId: nodeId, details: interactions, priority: 1 });
 
             return newInteractions;
         })
     }, [setInteractions]);
 
-    const createCodeNode = useCallback((boxType: string, template: Template | null = null) => {
+    const createCodeNode = useCallback((boxType: string, template: Template | null = null, searching = false) => {
+        console.log(boxType);
         const nodeId = uuid();
 
-        if(template != null){
+        if (template != null) {
             const node: Node = {
                 id: nodeId,
                 type: boxType,
@@ -71,9 +72,9 @@ export function useCode(): IUseCode {
                     propagationCallback: applyNewPropagation,
                 },
             };
-    
+
             addNode(node);
-        }else{
+        } else {
             const node: Node = {
                 id: nodeId,
                 type: boxType,
@@ -89,8 +90,33 @@ export function useCode(): IUseCode {
                     propagationCallback: applyNewPropagation,
                 },
             };
-    
+
             addNode(node);
+        }
+
+        if (!searching) {
+
+            fetch('http://localhost:5002/registerProjectItem', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    id: nodeId,
+                    name: template?.name || 'Test',
+                    dependency: '',
+                    boxType: boxType,
+                }),
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .catch((error) => {
+                    console.error('Erro ao registrar item do projeto:', error);
+                });
         }
 
     }, [addNode, outputCallback, getPosition]);

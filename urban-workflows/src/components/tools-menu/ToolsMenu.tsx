@@ -1,5 +1,6 @@
 import React, {
-    useEffect, useReducer
+    useEffect, useReducer,
+    useState
 } from "react";
 import CSS from "csstype";
 import Icon from "@mui/material/Icon";
@@ -28,9 +29,34 @@ import { Tooltip, OverlayTrigger } from "react-bootstrap";
 import { Template, useTemplateContext } from "../../providers/TemplateProvider";
 import { useUserContext } from "../../providers/UserProvider";
 import FileUpload from "./FileUpload";
+import { useDialogContext } from "../../providers/DialogProvider";
+import { useGoogleLogin } from "@react-oauth/google";
+import { UserTypeForm } from "../login/UserTypeForm";
 
 export function ToolsMenu() {
     const { createCodeNode } = useCode();
+
+
+    useEffect(() => {
+
+        // createCodeNode(BoxType.DATA_LOADING, null);
+        fetch('http://localhost:5002/getProjectItems?name=Test')
+        .then(async response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(projects => {
+            projects.forEach((project:any) => {
+                createCodeNode(project.boxType, null, true);
+            });
+        })        
+    
+
+    }, []);
+
+
     const { getTemplates, deleteTemplate } = useTemplateContext();
 
     const { user } = useUserContext();
@@ -38,7 +64,7 @@ export function ToolsMenu() {
     // const handleClick = (boxType: BoxType) => {
     //     for(const type in BoxType){
     //         let templates_modal = document.getElementById("templates_modal_"+type) as HTMLElement;
-    
+
     //         if(type == boxType){
     //             if (templates_modal.style.display === "none") {
     //                 templates_modal.style.display = "block"; // or "inline" or any other valid display value
@@ -62,33 +88,33 @@ export function ToolsMenu() {
     // }
 
     const boxNameTranslation = (boxType: BoxType) => {
-        if(boxType == BoxType.COMPUTATION_ANALYSIS){
+        if (boxType == BoxType.COMPUTATION_ANALYSIS) {
             return "Computation Analysis"
-        }else if(boxType == BoxType.CONSTANTS){
+        } else if (boxType == BoxType.CONSTANTS) {
             return "Constants"
-        }else if(boxType == BoxType.DATA_CLEANING){
+        } else if (boxType == BoxType.DATA_CLEANING) {
             return "Data Cleaning"
-        }else if(boxType == BoxType.DATA_EXPORT){
+        } else if (boxType == BoxType.DATA_EXPORT) {
             return "Data Export"
-        }else if(boxType == BoxType.DATA_LOADING){
+        } else if (boxType == BoxType.DATA_LOADING) {
             return "Data Loading"
-        }else if(boxType == BoxType.DATA_POOL){
+        } else if (boxType == BoxType.DATA_POOL) {
             return "Data Pool"
-        }else if(boxType == BoxType.DATA_TRANSFORMATION){
+        } else if (boxType == BoxType.DATA_TRANSFORMATION) {
             return "Data Transformation"
-        }else if(boxType == BoxType.FLOW_SWITCH){
+        } else if (boxType == BoxType.FLOW_SWITCH) {
             return "Flow Switch"
-        }else if(boxType == BoxType.MERGE_FLOW){
+        } else if (boxType == BoxType.MERGE_FLOW) {
             return "Merge Flow"
-        }else if(boxType == BoxType.VIS_IMAGE){
+        } else if (boxType == BoxType.VIS_IMAGE) {
             return "Image"
-        }else if(boxType == BoxType.VIS_TABLE){
+        } else if (boxType == BoxType.VIS_TABLE) {
             return "Table"
-        }else if(boxType == BoxType.VIS_TEXT){
+        } else if (boxType == BoxType.VIS_TEXT) {
             return "Text"
-        }else if(boxType == BoxType.VIS_UTK){
+        } else if (boxType == BoxType.VIS_UTK) {
             return "UTK"
-        }else if(boxType = BoxType.VIS_VEGA){
+        } else if (boxType = BoxType.VIS_VEGA) {
             return "Vega-Lite"
         }
     }
@@ -329,7 +355,7 @@ const fileUploadStyle: CSS.Properties = {
     fontWeight: "bold",
     color: "#888787",
     borderRadius: "4px",
-    cursor: "pointer", 
+    cursor: "pointer",
     outline: "none",
     padding: "5px",
 };
@@ -376,7 +402,7 @@ const buttonStyleProgrammer: CSS.Properties = {
     marginRight: "5px",
     padding: "8px 16px",
     borderRadius: "4px",
-    cursor: "pointer", 
+    cursor: "pointer",
     outline: "none"
 }
 
@@ -387,7 +413,7 @@ const buttonStyleExpert: CSS.Properties = {
     marginRight: "5px",
     padding: "8px 16px",
     borderRadius: "4px",
-    cursor: "pointer", 
+    cursor: "pointer",
     outline: "none"
 }
 
@@ -398,17 +424,17 @@ const buttonStyleAny: CSS.Properties = {
     marginRight: "5px",
     padding: "8px 16px",
     borderRadius: "4px",
-    cursor: "pointer", 
+    cursor: "pointer",
     outline: "none"
 }
 
 const templatesModalStyle: CSS.Properties = {
-    position: "fixed", 
-    zIndex: 100, 
-    top: "50px", 
+    position: "fixed",
+    zIndex: 100,
+    top: "50px",
     left: "180px",
-    display: "none", 
-    width: "600px", 
+    display: "none",
+    width: "600px",
     backgroundColor: "white",
     boxShadow: "0px 0px 3px 0px black",
     padding: "10px",

@@ -1140,5 +1140,79 @@ def delete_template(id):
         conn.close()
 
 
+@app.route('/registerProjectItem', methods=['POST'])
+def register_project_item():
+    data = request.json
+
+    required_fields = ['id', 'name', 'dependency', 'boxType']
+    for field in required_fields:
+        if field not in data:
+            return jsonify({"error": f"'{field}' é obrigatório."}), 400
+
+    conn = sqlite3.connect('project.db')
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            INSERT INTO project (id, name, dependency, boxType)
+            VALUES (?, ?, ?, ?)
+        """, (
+            data['id'],
+            data['name'],
+            data['dependency'],
+            data['boxType']
+        ))
+
+        conn.commit()
+
+        return jsonify({"message": "Project item registered"}), 201
+
+    except sqlite3.Error as e:
+        print(e)
+        conn.rollback()
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        conn.close()
+
+@app.route('/getProjectItems', methods=['GET'])
+def get_project_items():
+    project_name = request.args.get('name')
+
+    if not project_name:
+        return jsonify({"error": "'name' is needed."}), 400
+
+    conn = sqlite3.connect('project.db')
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT * FROM project
+            WHERE name = ?
+        """, (project_name,))
+
+        rows = cursor.fetchall()
+
+        if not rows:
+            return jsonify([]), 200
+
+        project_items = []
+        for row in rows:
+            project_items.append({
+                'id': row[0],
+                'name': row[1],
+                'dependency': row[2],
+                'boxType': row[3]
+            })
+
+        return jsonify(project_items), 200
+
+    except sqlite3.Error as e:
+        print(e)
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        conn.close()
+
 if __name__ == '__main__':
     app.run(host=address, port=port, threaded=False)
