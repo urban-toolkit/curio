@@ -8,6 +8,7 @@
 - Deployment document.
 - Continuous integration (setting up) / testing (how to run tests locally).
 - Defining roles.
+- Defining roadmap.
 
 ## Functionalities
 - Template.
