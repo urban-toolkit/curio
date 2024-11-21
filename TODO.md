@@ -7,6 +7,7 @@
 - Code of conduct.
 - Deployment document.
 - Continuous integration (setting up) / testing (how to run tests locally).
+- Defining roles.
 
 ## Functionalities
 - Template.
