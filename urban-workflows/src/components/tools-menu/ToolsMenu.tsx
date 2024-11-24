@@ -37,24 +37,24 @@ export function ToolsMenu() {
     const { createCodeNode } = useCode();
 
 
-    useEffect(() => {
+    // useEffect(() => {
 
-        // createCodeNode(BoxType.DATA_LOADING, null);
-        fetch('http://localhost:5002/getProjectItems?name=Test')
-        .then(async response => {
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
-            }
-            return response.json();
-        })
-        .then(projects => {
-            projects.forEach((project:any) => {
-                createCodeNode(project.boxType, null, true);
-            });
-        })        
+    //     // createCodeNode(BoxType.DATA_LOADING, null);
+    //     fetch('http://localhost:5002/getProjectItems?name=Test')
+    //     .then(async response => {
+    //         if (!response.ok) {
+    //             throw new Error('Network response was not ok');
+    //         }
+    //         return response.json();
+    //     })
+    //     .then(projects => {
+    //         projects.forEach((project:any) => {
+    //             createCodeNode(project.boxType, null, true);
+    //         });
+    //     })        
     
 
-    }, []);
+    // }, []);
 
 
     const { getTemplates, deleteTemplate } = useTemplateContext();

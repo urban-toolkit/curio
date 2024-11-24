@@ -11,7 +11,7 @@ import { AccessLevelType } from "../constants";
 const pythonInterpreter = new PythonInterpreter();
 
 interface IUseCode {
-    createCodeNode: (boxType: string, template: Template | null, searching: boolean) => void;
+    createCodeNode: (boxType: string, template: Template | null, searching: boolean, id: string, code: string) => void;
 }
 
 export function useCode(): IUseCode {
@@ -46,19 +46,28 @@ export function useCode(): IUseCode {
         })
     }, [setInteractions]);
 
-    const createCodeNode = useCallback((boxType: string, template: Template | null = null, searching = false) => {
-        console.log(boxType);
-        const nodeId = uuid();
-
+    const createCodeNode = useCallback((boxType: string, template: Template | null = null, searching = false, id = "", code ="") => {
+        console.log(boxType, id);
+    
+        let nodeId;
+        if (id === "") {
+            nodeId = uuid();
+        } else {
+            nodeId = id;
+        }
+    
+        let node: Node;
+    
         if (template != null) {
-            const node: Node = {
+            // Caso template não seja nulo, usamos o código do template
+            node = {
                 id: nodeId,
                 type: boxType,
                 position: getPosition(),
                 data: {
                     nodeId: nodeId,
                     pythonInterpreter: pythonInterpreter,
-                    defaultCode: template.code,
+                    defaultCode: template.code, // O código do template será utilizado
                     description: template.description,
                     templateId: template.id,
                     templateName: template.name,
@@ -72,30 +81,45 @@ export function useCode(): IUseCode {
                     propagationCallback: applyNewPropagation,
                 },
             };
-
-            addNode(node);
         } else {
-            const node: Node = {
+
+
+
+            console.log(code.split(' ').join(' '));
+            // Caso template seja nulo, usamos o código padrão
+            node = {
                 id: nodeId,
                 type: boxType,
                 position: getPosition(),
                 data: {
                     nodeId: nodeId,
                     pythonInterpreter: pythonInterpreter,
-                    input: "",
-                    nodeType: boxType,
+//                     defaultCode: `import pandas as pd
+
+// d = {'a': ["A", "B", "C", "D", "E", "F", "G", "H", "I"], 'b': [28, 55, 43, 91, 81, 53, 19, 87, 52]}
+// df = pd.DataFrame(data=d)
+
+// return df`, // Código padrão
+                    defaultCode: code.split(' ').join(' '), // Código padrão
+                    description: '',
+                    templateId: '',
+                    templateName: '',
+                    accessLevel: '',
                     hidden: false,
+                    nodeType: boxType,
+                    customTemplate: true,
+                    input: "",
                     outputCallback,
                     interactionsCallback,
                     propagationCallback: applyNewPropagation,
                 },
             };
-
-            addNode(node);
         }
-
+    
+        // Adiciona o nó
+        addNode(node);
+    
         if (!searching) {
-
             fetch('http://localhost:5002/registerProjectItem', {
                 method: 'POST',
                 headers: {
@@ -105,20 +129,20 @@ export function useCode(): IUseCode {
                     id: nodeId,
                     name: template?.name || 'Test',
                     dependency: '',
+                    code: template?.code || 'print(\'Hello World\')', // Envia o código editável
                     boxType: boxType,
                 }),
             })
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-                    return response.json();
-                })
-                .catch((error) => {
-                    console.error('Erro ao registrar item do projeto:', error);
-                });
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .catch((error) => {
+                console.error('Erro ao registrar item do projeto:', error);
+            });
         }
-
     }, [addNode, outputCallback, getPosition]);
 
     return { createCodeNode };

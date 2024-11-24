@@ -1144,7 +1144,7 @@ def delete_template(id):
 def register_project_item():
     data = request.json
 
-    required_fields = ['id', 'name', 'dependency', 'boxType']
+    required_fields = ['id', 'name', 'dependency','code', 'boxType']
     for field in required_fields:
         if field not in data:
             return jsonify({"error": f"'{field}' é obrigatório."}), 400
@@ -1154,12 +1154,13 @@ def register_project_item():
 
     try:
         cursor.execute("""
-            INSERT INTO project (id, name, dependency, boxType)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO project (id, name, dependency, code, boxType)
+            VALUES (?, ?, ?, ?, ?)
         """, (
             data['id'],
             data['name'],
             data['dependency'],
+            data['code'],
             data['boxType']
         ))
 
@@ -1202,13 +1203,78 @@ def get_project_items():
                 'id': row[0],
                 'name': row[1],
                 'dependency': row[2],
-                'boxType': row[3]
+                'code': row[3],
+                'boxType': row[4],
             })
 
         return jsonify(project_items), 200
 
     except sqlite3.Error as e:
         print(e)
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        conn.close()
+
+@app.route('/getAllProjectNames', methods=['GET'])
+def get_all_project_names():
+    conn = sqlite3.connect('project.db')
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("SELECT DISTINCT name FROM project")
+        rows = cursor.fetchall()
+
+        project_names = [row[0] for row in rows]  
+
+        return jsonify(project_names), 200
+
+    except sqlite3.Error as e:
+        print(e)
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        conn.close()
+
+
+@app.route('/updateProjectItem', methods=['POST'])
+def update_project_item():
+    data = request.json
+
+    if 'id' not in data:
+        return jsonify({"error": "'id' é obrigatório."}), 400
+
+    project_id = data['id']
+    fields_to_update = {}
+
+    if 'name' in data:
+        fields_to_update['name'] = data['name']
+    if 'dependency' in data:
+        fields_to_update['dependency'] = data['dependency']
+    if 'code' in data:
+        fields_to_update['code'] = data['code']
+    if 'boxType' in data:
+        fields_to_update['boxType'] = data['boxType']
+
+    conn = sqlite3.connect('project.db')
+    cursor = conn.cursor()
+
+    try:
+        set_clause = ", ".join([f"{field} = ?" for field in fields_to_update.keys()])
+        sql = f"UPDATE project SET {set_clause} WHERE id = ?"
+
+        cursor.execute(sql, (*fields_to_update.values(), project_id))
+
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            return jsonify({"error": "Project not found"}), 404
+
+        return jsonify({"message": "Project item updated"}), 200
+
+    except sqlite3.Error as e:
+        print(e)
+        conn.rollback()
         return jsonify({"error": str(e)}), 500
 
     finally:

@@ -10,6 +10,7 @@ CREATE TABLE project (
     id TEXT PRIMARY KEY,
     name VARCHAR(200) NOT NULL,
     dependency TEXT,
+    code TEXT,
     boxType VARCHAR(50) NOT NULL
 );
 """
