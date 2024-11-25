@@ -1,18 +1,21 @@
 ## Process
-- Contributions document (how to fork, how to make a contribution, pull request, contribution workflow, issue tracking guideline, templates for issues and pull requests, branch naming conventions).
-- Code guideline document (folder structure, file structure).
-- Bug reporting guideline.
-- Dependency guidelines.
-- Beginner friendly label issues.
-- Examples.
-- License.
-- Code of conduct.
-- Deployment document.
-- Continuous integration (setting up) / testing (how to run tests locally).
-- Defining roles.
-- Defining roadmap.
+- Contributions document
+  - How to fork
+  - How to make a contribution through a pull request (including template for pull requests)
+  - How to contribute an example dataflow
+  - How to create an issue (including template for issues)
+- Code guideline document
+  - Folder structure and file structure
+- License
+- Code of conduct
+- Deployment document
+- Development roles
+- Roadmap
 
 ## Functionalities
-- Template.
-- Users.
-- Bug listing.
+- Template
+- Multiple users
+- Testing
+  - Unit testing
+  - Integration testing
+  - Continuous integration
