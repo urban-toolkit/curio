@@ -1,23 +1,35 @@
-## Process
-- Contributions document
-  - How to fork
-  - How to make a contribution through a pull request (including template for pull requests)
-  - How to contribute an example dataflow
-  - How to create an issue (including template for issues)
-- Code guideline document
-  - Folder structure and file structure
-  - API documentation
-- License
-- Code of conduct
-- Deployment document
-- Development roles
-- Testing
-  - Unit testing
-  - Integration testing
-  - Continuous integration
-  - Code coverage
-- Roadmap
+## Process and documents
+
+- [ ] Contributions document (Leonardo)
+  - [ ] How to fork
+  - [ ] How to make a contribution through a pull request (including template for pull requests)
+    - [ ] Defining the scope of a pull request
+  - [ ] How to contribute an example dataflow
+  - [ ] How to create an issue (including template for issues)
+- [ ] Code guideline document (Gustavo)
+  - [ ] How to modularize a new feature
+  - [ ] Code naming standards and conventions
+  - [ ] Folder structure and file structure
+  - [ ] Change the code base to follow the new established format
+    - [ ] React and JSX coding style
+    - [ ] Javascript coding style
+    - [ ] Python coding style 
+    - [ ] Configure project to enforce ESLint
+- [ ] License (Fabio)
+- [ ] Code of conduct (Fabio)
+- [ ] Deployment document (Nivan)
+- [ ] Development roles (Fabio)
+- [ ] Roadmap (Fabio)
+- [ ] Testing
+  - [ ] Unit testing (Gustavo)
+  - [ ] Integration testing (Gustavo, Nivan)
+  - [ ] Continuous integration (Nivan)
+  - [ ] Code coverage
 
 ## Functionalities
-- Template
-- Multiple users
+
+- [ ] Templates, documentation on how to use it and extend it (Marcos, Lyncoln, Fabio)
+- [ ] Project definition, documentation on how to use it (Marcos, Lyncoln)
+- [ ] Multiple users (Marcos, Lyncoln)
+- [ ] Exporting and importing a dataflow to a file (Gustavo, Lyncoln)
+- [ ] Exporting and importing templates (Gustavo, Lyncoln)
