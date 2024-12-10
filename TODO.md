@@ -10,6 +10,11 @@
   - [ ] How to modularize a new feature
   - [ ] Code naming standards and conventions
   - [ ] Folder structure and file structure
+  - [ ] Managing issues for new features and bug fixes
+    - [ ] Person attribution
+    - [ ] Issue scope
+    - [ ] Tags
+    - [ ] Forking
   - [ ] Change the code base to follow the new established format
     - [ ] React and JSX coding style
     - [ ] Javascript coding style

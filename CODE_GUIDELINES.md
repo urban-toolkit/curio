@@ -1,6 +1,6 @@
 # Code Guidelines
 
-This document outlines the coding conventions, best practices, and structural rules for contributing to this project. Adhering to these guidelines ensures consistency, readability, and maintainability.
+This document outlines the coding conventions, best practices, and structural rules for contributing to this project. Read the whole document before contributing.
 
 ## Table of Contents
 
@@ -12,34 +12,20 @@ This document outlines the coding conventions, best practices, and structural ru
 - [Commit Message Guidelines](#commit-message-guidelines)
 - [Automated Tools](#automated-tools)
 
-## General Principles
+## Project structure
 
-- Write clean, readable, and maintainable code.
-- Follow the "Principle of Least Surprise" — your code should do what other developers expect it to do.
-- Use comments sparingly but effectively; avoid redundant comments.
+Keep files where they belong.
 
-## Project Structure
+- **`backend/`**: Manages database access and user authentication.
+- **`images/`**: Images for documentation.
+- **`sandbox/`**: Sandbox foe executing python code inside Curio.
+- **`urban-workflows/`**: Manages database access and user authentication.
+    - **`src/`**: Curio's source code.
+        - **`components/`**: React components and respective CSS. Create a different file for each component. Keep similar components groupped inside folders.
+- **`utk-workflow/`**: Stores a version of [UTK](https://github.com/urban-toolkit/utk) that can be embedded.
+- **`TODO.md`**: Temporary (eventually all TODOs will be added as issues to the project). 
 
-- **`backend/`**: Manages databases access and user authentication.
-  - **`requirements.txt`**: All Python dependencies for PyPi should be listed here (avoid adding new dependecies).
-  - **`services/`**: Application logic, API calls, and data handling.
-  - **`utils/`**: Reusable utility functions and helpers.
-
-- **`tests/`**: Contains all test files, typically following the same structure as `src/`.
-
-- **`docs/`**: Documentation files, such as guides, architecture explanations, or additional Markdown files.
-
-- **`public/`**: Static assets accessible in the application, such as images, favicon, or index.html for web apps.
-
-- **`.eslintrc`**: ESLint configuration file to enforce code standards.
-
-- **`.prettierrc`**: Prettier configuration for consistent code formatting.
-
-- **`package.json`**: Lists dependencies, scripts, and project metadata.
-
-- **`README.md`**: Main entry point for understanding the project, including setup instructions, usage, and contribution guidelines.
-
-## Naming Conventions
+## Naming conventions
 
 ## Contribution guidelines and standards
 
@@ -50,6 +36,7 @@ Before sending your pull request for [review](https://github.com/urban-toolkit/c
 - Include unit tests when you contribute new features, as they help to a) prove that your code works correctly, and b) guard against future breaking changes to lower the maintenance cost.
 - Bug fixes also generally require unit tests, because the presence of bugs usually indicates insufficient test coverage.
 - Unit testing: Aim for >90% incremental test coverage for all your code (check [writing tests](#writing-tests)).
+- Only add new dependencies if strictly necessary.
 
 ### React and JSX coding style
 
@@ -72,10 +59,32 @@ pip install pylint
 pylint myfile.py
 ```
 
-### Writing tests
+## Writing code
+
+Contribute to code in a self-contained manner to keep the code modularized. As a rule of thumb Curio should be able to keep working if your code is removed.  
+
+Every contribution implements **one** new feature or fix **one** bug. Very similar features and bugs can be groupped into one contribution.  
+
+One contribution = One pull request.  
+
+### New feature
+
+Create new components for new features. 
+
+Modify a component if expanding a feature.
+
+Components must be as independent of each other as possible. If one component depend on another create a reusable API or simple communication interface.
+
+### Fixing bug
+
+### Issues management
+
+## Writing tests
 
 
-### Running unit tests
+## Running unit tests
+
+
 
 ## Commit Message Guidelines
 
