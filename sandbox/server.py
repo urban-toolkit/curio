@@ -20,6 +20,10 @@ def add_cors_headers(response):
 def root():
     abort(403)
 
+@app.route('/liveness', methods=['GET'])
+def liveness():
+    return 'Sandbox is live.'
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
