@@ -69,15 +69,26 @@ One contribution = One pull request.
 
 ### New feature
 
-Create new components for new features. 
+- Create new components for new features. 
+- Modify a component if expanding a feature.
+- Components must be as independent of each other as possible. If one component depend on another, create a reusable API or simple communication interface.
+- New features should have a clear scope.
+- Write unit tests for the new features aiming for >90% incremental test coverage for all your code (check [writing tests](#writing-tests)).
 
-Modify a component if expanding a feature.
+### Fixing bugs
 
-Components must be as independent of each other as possible. If one component depend on another create a reusable API or simple communication interface.
-
-### Fixing bug
+- Careful to not introduce new bugs while fixing a bug.
+- Bugs usually exist due to the lack of tests. Write unit tests after fixing a bug aiming for >90% incremental test coverage for all your code (check [writing tests](#writing-tests)).
 
 ### Issues management
+
+If you open a GitHub Issue:
+
+1. It must be a bug/performance issue or a feature request or a build issue or a documentation issue (for small doc fixes please send a PR instead).
+2. Make sure the Issue Template is filled out.
+3. The issue should be related to the repo it is created in.
+
+Here's why we have this policy: We want to focus on the work that benefits the whole community, e.g., fixing bugs and adding features. Individual support should be sought on Stack Overflow or other non-GitHub channels. It helps us to address bugs and feature requests in a timely manner.
 
 ## Writing tests
 
