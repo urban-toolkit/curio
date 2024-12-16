@@ -168,7 +168,7 @@ Gustavo Moreira (UIC)
 [Maryam Hosseini](https://www.maryamhosseini.me/) (MIT)  
 Carolina Veiga (UIUC)  
 Lucas Alexandre (UFF)  
-Nico Colaninno (Polimi)
+Nico Colaninno (Polimi)  
 Leonardo Ferreira (UIC)  
 [Daniel de Oliveira](http://www2.ic.uff.br/~danielcmo/) (UFF)  
 [Nivan Ferreira](https://www.cin.ufpe.br/~nivan/) (UFPE)  
@@ -180,5 +180,5 @@ Leonardo Ferreira (UIC)
 
 If you're planning to contribute with Curio, please take a look at:
 
-[Code guidelines](https://github.com/urban-toolkit/curio/blob/main/CODE_GUIDELINES.md)\
-[How to fork](https://github.com/urban-toolkit/curio/blob/main/HOW_TO_FORK.md)
+[Code guidelines](https://github.com/urban-toolkit/curio/blob/main/CODE_GUIDELINES.md)  
+[How to fork](https://github.com/urban-toolkit/curio/blob/main/HOW_TO_FORK.md)  
