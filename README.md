@@ -182,3 +182,4 @@ If you're planning to contribute with Curio, please take a look at:
 
 [Code guidelines](https://github.com/urban-toolkit/curio/blob/main/CODE_GUIDELINES.md)  
 [How to fork](https://github.com/urban-toolkit/curio/blob/main/HOW_TO_FORK.md)  
+[How to create issues](https://github.com/urban-toolkit/curio/blob/main/HOW_TO_CREATE_ISSUES.md)  
