@@ -32,6 +32,7 @@ Video:
     5. [Ray tracing](#ray-tracing)
 3. [First dataflow](#first-dataflow)
 4. [Team](#team)
+5. [More](#more)
 
 ## Features
 
@@ -172,3 +173,11 @@ Nico Colaninno (Polimi)
 [Nivan Ferreira](https://www.cin.ufpe.br/~nivan/) (UFPE)  
 [Marcos Lage](http://www.ic.uff.br/~mlage/) (UFF)  
 [Fabio Miranda](https://fmiranda.me) (UIC)  
+
+
+## More
+
+If you're planning to contribute with Curio, please take a look at:
+
+[Code guidelines](https://github.com/urban-toolkit/curio/blob/main/CODE_GUIDELINES.md)
+[How to fork](https://github.com/urban-toolkit/curio/blob/main/HOW_TO_FORK.md)
