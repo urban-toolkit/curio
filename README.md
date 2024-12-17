@@ -32,7 +32,7 @@ Video:
     5. [Ray tracing](#ray-tracing)
 3. [First dataflow](#first-dataflow)
 4. [Team](#team)
-5. [More](#more)
+5. [How to make contributions](#how-to-make-contributions)
 
 ## Features
 
@@ -176,7 +176,7 @@ Leonardo Ferreira (UIC)
 [Fabio Miranda](https://fmiranda.me) (UIC)  
 
 
-## More
+## How to make contributions
 
 If you're planning to contribute with Curio, please take a look at:
 
