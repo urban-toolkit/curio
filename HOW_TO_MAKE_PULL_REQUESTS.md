@@ -37,8 +37,8 @@ A Pull Request (PR) is the method used to propose changes to the codebase. It al
 
    ![Comparing Pull Request](./images/comparing_pull_request.png)
 
-    > [!IMPORTANT]
-    > Follow the instructions and use the correct template, as defined below.
+> [!IMPORTANT]
+> Follow the instructions and use the correct template, as defined below.
     
    - Fill in the PR details using the template (see below).
    - Click **"Create pull request"** to submit.
