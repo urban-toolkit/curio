@@ -4,3 +4,4 @@ Flask-SQLAlchemy==3.1.1
 requests==2.31.0
 uuid==1.30
 google-auth==2.27.0
+python-dotenv==1.0.1
