@@ -34,5 +34,4 @@ if not app.debug and not app.testing:
     app.logger.info('Backend startup')
 
 
-from app import api
-from app.users import *
+from app import api, models
