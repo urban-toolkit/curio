@@ -8,3 +8,6 @@ images
 Census*
 model.pth
 dataset
+
+logs/
+flask_cache/

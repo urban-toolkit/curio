@@ -1,0 +1,4 @@
+FLASK_RUN_HOST=localhost
+FLASK_RUN_PORT=2000
+FLASK_APP=server.py
+
