@@ -61,7 +61,7 @@ function DescriptionModal({
             return "Text"
         }else if(boxType == BoxType.VIS_UTK){
             return "UTK"
-        }else if(boxType = BoxType.VIS_VEGA){
+        }else if(boxType == BoxType.VIS_VEGA){
             return "Vega-Lite"
         }
     }

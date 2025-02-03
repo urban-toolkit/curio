@@ -117,6 +117,7 @@ function WidgetsEditor({ userCode, sendReplacedCode, nodeId, markersDirty, custo
         }
 
         // Regular expression to match the content inside [!! !!] markers globally
+        // @ts-ignore
         const regex = /\[\!\!\s*(.*?)\s*\!\!\]/g;
 
         let widgetsValues: any = {}

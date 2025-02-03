@@ -24,7 +24,7 @@ import { InputIcon } from "./edges/InputIcon";
 const vega = require("vega");
 const lite = require("vega-lite");
 
-function VegaBox({ data, isConnectable }) {
+function VegaBox({ data, isConnectable }: {data: any; isConnectable: boolean}) {
   const [output, setOutput] = useState<{ code: string; content: string }>({
     code: "",
     content: "",
@@ -168,7 +168,7 @@ function VegaBox({ data, isConnectable }) {
   }, [data.input]);
 
   useEffect(() => {
-    var ro = new ResizeObserver((entries) => {
+    let ro = new ResizeObserver((entries) => {
       for (let entry of entries) {
         if (currentViewRef.current != undefined) {
           window.dispatchEvent(new Event("resize"));
@@ -222,7 +222,7 @@ function VegaBox({ data, isConnectable }) {
 
         let vegaspec = lite.compile(specObj).spec;
 
-        var view = new vega.View(vega.parse(vegaspec))
+        let view = new vega.View(vega.parse(vegaspec))
           .logLevel(vega.Warn) // set view logging level
           .renderer("svg")
           .initialize("#vega" + data.nodeId)

@@ -21,7 +21,7 @@ import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { OutputIcon } from "./edges/OutputIcon";
 import { InputIcon } from "./edges/InputIcon";
 
-function UtkBox({ data, isConnectable }) {
+function UtkBox({ data, isConnectable } : { data: any, isConnectable: boolean }) {
   const [output, setOutput] = useState<{ code: string; content: string }>({
     code: "",
     content: "",

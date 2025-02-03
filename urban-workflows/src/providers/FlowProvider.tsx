@@ -254,7 +254,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const addNode = useCallback(
         (node: Node) => {
             setNodes((prev: any) => {
-                node.position
+                console.log(node.position)
                 updatePositionWorkflow(node.id, {
                     id: node.id,
                     dragging: true,
@@ -352,7 +352,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                     nds.map((node: any) => {
         
                         if(node.id == resetInput){
-                            if(targetNode.type = BoxType.MERGE_FLOW){
+                            if(targetNode.type === BoxType.MERGE_FLOW){
                                 let inputList: string[] = [];
                                 let sourceList: string[] = [];
 

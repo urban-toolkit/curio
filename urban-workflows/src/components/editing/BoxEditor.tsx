@@ -355,11 +355,11 @@ function BoxEditor({
                     top: "12px",
                     left: "30px",
                 }}
-                onClick={() => {
-                    fullscreen != "" && fullscreen != undefined
+                onClick={() =>
+                    (fullscreen != "" && fullscreen != undefined)
                         ? setFullscreen("")
-                        : setFullscreen("fs");
-                }}
+                        : setFullscreen("fs")
+                }
                 icon={faExpand}
             />
         </>

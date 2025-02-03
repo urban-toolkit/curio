@@ -32,6 +32,7 @@ function CodeEditor({ setOutputCallback, data, output, boxType, replacedCode, se
     const replacedCodeDirtyBypass = useRef(false);
     const defaultValueBypass = useRef(false);
 
+    // @ts-ignore
     const handleCodeChange = (value, event) => {
         setCode(value);
     };
@@ -106,7 +107,7 @@ function CodeEditor({ setOutputCallback, data, output, boxType, replacedCode, se
 
         // Copy over static methods, if any
         for (let staticMethod in OriginalResizeObserver) {
-        if (OriginalResizeObserver.hasOwnProperty(staticMethod)) {
+        if (Object.prototype.hasOwnProperty.call(OriginalResizeObserver, staticMethod)) {
             // @ts-ignore
             window.ResizeObserver[staticMethod] = OriginalResizeObserver[staticMethod];
         }
@@ -121,9 +122,11 @@ function CodeEditor({ setOutputCallback, data, output, boxType, replacedCode, se
                 value={code}
                 onChange={handleCodeChange}
                 options={{
+                    // @ts-ignore
                     inlineSuggest: true,
                     fontSize: 8,
                     formatOnType: true,
+                    // @ts-ignore
                     autoClosingBrackets: true,
                     minimap: { enabled: false },
                     readOnly: readOnly

@@ -62,33 +62,33 @@ export function ToolsMenu() {
     // }
 
     const boxNameTranslation = (boxType: BoxType) => {
-        if(boxType == BoxType.COMPUTATION_ANALYSIS){
+        if(boxType === BoxType.COMPUTATION_ANALYSIS){
             return "Computation Analysis"
-        }else if(boxType == BoxType.CONSTANTS){
+        }else if(boxType === BoxType.CONSTANTS){
             return "Constants"
-        }else if(boxType == BoxType.DATA_CLEANING){
+        }else if(boxType === BoxType.DATA_CLEANING){
             return "Data Cleaning"
-        }else if(boxType == BoxType.DATA_EXPORT){
+        }else if(boxType === BoxType.DATA_EXPORT){
             return "Data Export"
-        }else if(boxType == BoxType.DATA_LOADING){
+        }else if(boxType === BoxType.DATA_LOADING){
             return "Data Loading"
-        }else if(boxType == BoxType.DATA_POOL){
+        }else if(boxType === BoxType.DATA_POOL){
             return "Data Pool"
-        }else if(boxType == BoxType.DATA_TRANSFORMATION){
+        }else if(boxType === BoxType.DATA_TRANSFORMATION){
             return "Data Transformation"
-        }else if(boxType == BoxType.FLOW_SWITCH){
+        }else if(boxType === BoxType.FLOW_SWITCH){
             return "Flow Switch"
-        }else if(boxType == BoxType.MERGE_FLOW){
+        }else if(boxType === BoxType.MERGE_FLOW){
             return "Merge Flow"
-        }else if(boxType == BoxType.VIS_IMAGE){
+        }else if(boxType === BoxType.VIS_IMAGE){
             return "Image"
-        }else if(boxType == BoxType.VIS_TABLE){
+        }else if(boxType === BoxType.VIS_TABLE){
             return "Table"
-        }else if(boxType == BoxType.VIS_TEXT){
+        }else if(boxType === BoxType.VIS_TEXT){
             return "Text"
-        }else if(boxType == BoxType.VIS_UTK){
+        }else if(boxType === BoxType.VIS_UTK){
             return "UTK"
-        }else if(boxType = BoxType.VIS_VEGA){
+        }else if(boxType === BoxType.VIS_VEGA){
             return "Vega-Lite"
         }
     }
