@@ -6,23 +6,9 @@ import React, {
     useCallback,
     useEffect,
 } from "react";
-import {
-    Connection,
-    Edge,
-    EdgeChange,
-    Node,
-    NodeChange,
-    addEdge,
-    useNodesState,
-    useEdgesState,
-    useReactFlow,
-    getOutgoers,
-    MarkerType,
-} from "reactflow";
-import { ConnectionValidator } from "../ConnectionValidator";
-import { AccessLevelType, BoxType, EdgeType, VisInteractionType } from "../constants";
-import { GetTemplates } from "./templates";
 import { v4 as uuid } from "uuid";
+import { BoxType, AccessLevelType } from "../constants";
+import { GetTemplates } from "./templates";
 
 export interface Template {
     id: string;
@@ -31,7 +17,7 @@ export interface Template {
     description: string;
     accessLevel: AccessLevelType;
     code: string; // grammar or python
-    custom: any;
+    custom: boolean;
 }
 
 interface TemplateContextProps {
@@ -58,10 +44,10 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
                 const defaultTemplate = data.filter((item: Template) => item.custom === false);
                 setDefaultTemplates(defaultTemplate);
                 const customTemplate = data.filter((item: Template) => item.custom === true);
-                setUserTemplates(customTemplate)
+                setUserTemplates(customTemplate);
             })
             .catch(error => {
-                console.error("Erro ao carregar templates:", error);
+                console.error("Error loading templates:", error);
             });
     }, []);
 
@@ -73,18 +59,18 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
             description,
             accessLevel,
             code,
-            custom: 1
+            custom: true 
         };
 
-        const newTemplates = [...(defaultTemplates||[]), template];
-        setDefaultTemplates(newTemplates);
+        const newUserTemplates = [...userTemplates, template];
+        setUserTemplates(newUserTemplates); 
 
-        fetch(process.env.BACKEND_URL+'/registerTemplate', {
+        fetch(process.env.BACKEND_URL + '/registerTemplate', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify(template), 
+            body: JSON.stringify(template),
         })
             .then(response => {
                 if (!response.ok) {
@@ -93,17 +79,17 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
                 return response.json();
             })
             .catch((error) => {
-                console.error('Erro ao registrar template:', error);
+                console.error('Error registering template:', error);
             });
 
         return template;
     };
 
     const editUserTemplate = (templateNew: Template) => {
-        const updatedTemplates = (defaultTemplates || []).map(template => 
+        const updatedTemplates = (defaultTemplates || []).map(template =>
             template.id === templateNew.id ? templateNew : template
         );
-    
+
         fetch(`${process.env.BACKEND_URL}/updateTemplate/${templateNew.id}`, {
             method: 'PUT',
             headers: {
@@ -111,18 +97,18 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
             },
             body: JSON.stringify(templateNew),
         })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.json();
-        })
-        .then(() => {
-            setDefaultTemplates(updatedTemplates); 
-        })
-        .catch((error) => {
-            console.error('Erro ao atualizar template:', error);
-        });
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(() => {
+                setDefaultTemplates(updatedTemplates);
+            })
+            .catch((error) => {
+                console.error('Error updating template:', error);
+            });
     };
 
     const getTemplates = (type: BoxType, custom: boolean) => {
@@ -130,7 +116,7 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
         let templates: any = [];
 
         if (custom) {
-            templates = userTemplates;
+            templates = userTemplates;  
         } else {
             templates = defaultTemplates;
         }
@@ -142,25 +128,22 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
         }
 
         return returnedTemplates;
-    }
+    };
 
     const deleteTemplate = (templateId: string) => {
         fetch(`${process.env.BACKEND_URL}/deleteTemplate/${templateId}`, {
             method: 'DELETE',
         })
-        .then(response => {
-            if (response.ok) {
-                const newTemplates: Template[] = userTemplates.filter(template => template.id !== templateId);
-                setUserTemplates(newTemplates);
-            } else {
-                return response.text().then(text => {
-                    throw new Error(text || 'Erro ao excluir template');
-                });
-            }
-        })
-        .catch(error => {
-            console.error("Erro ao deletar template:", error);
-        });
+            .then(response => {
+                if (response.ok) {
+                    const newTemplates: Template[] = userTemplates.filter(template => template.id !== templateId);
+                    setUserTemplates(newTemplates);
+                } else {
+                    return response.text().then(text => {
+                        throw new Error(text || 'Error excluding template');
+                    });
+                }
+            })
     };
 
     return (

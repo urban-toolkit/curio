@@ -1080,7 +1080,7 @@ def update_template(id):
     required_fields = ['name', 'type', 'description', 'accessLevel', 'code', 'custom']
     for field in required_fields:
         if field not in data:
-            return jsonify({"error": f"'{field}' é obrigatório."}), 400
+            return jsonify({"error": f"'{field}' is mandatory."}), 400
 
     conn = sqlite3.connect('template.db')
     cursor = conn.cursor()
@@ -1096,16 +1096,16 @@ def update_template(id):
             data['description'],
             data['accessLevel'],
             data['code'],
-            int(data['custom']),  # Transformar o booleano em inteiro
+            int(data['custom']),  
             id
         ))
 
         if cursor.rowcount == 0:
-            return jsonify({"error": "Template não encontrado."}), 404
+            return jsonify({"error": "Template not found."}), 404
 
         conn.commit()
 
-        return jsonify({"message": "Template atualizado com sucesso."}), 200
+        return jsonify({"message": "Template updated successfully."}), 200
 
     except sqlite3.Error as e:
         print(e)
@@ -1125,11 +1125,11 @@ def delete_template(id):
         cursor.execute("DELETE FROM template WHERE id = ?", (id,))
 
         if cursor.rowcount == 0:
-            return jsonify({"error": "Template não encontrado."}), 404
+            return jsonify({"error": "Template not found."}), 404
 
         conn.commit()
 
-        return jsonify({"message": "Template excluído com sucesso."}), 200
+        return jsonify({"message": "Template deleted successfully."}), 200
 
     except sqlite3.Error as e:
         print(e)
