@@ -98,6 +98,19 @@ If the environment variable FLASK_APP does not work on the command above, set th
 FLASK_APP=server.py flask db migrate -m "Migration Name"
 ```
 
+#### Tests End-to-End with Pytest and Playwright
+
+```shell
+# after everything setup, you can run the tests e2e
+python -m pytest tests/
+```
+
+### Code Formatter
+
+```shell
+black <path_to_file>
+```
+
 
 ### Python sandbox
 
