@@ -1,6 +1,6 @@
 from flask import request, jsonify, g
 from functools import wraps
-from app.models import UserSession, User
+from app.users.models import UserSession, User
 
 
 def require_auth(f):

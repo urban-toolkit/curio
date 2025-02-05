@@ -18,3 +18,11 @@ class Config:
     WTF_CSRF_ENABLED = True
 
     ADMINS = ['your-email@example.com']
+
+    SANDBOX_RELATIVE_PATH = (os.environ.get('SANDBOX_RELATIVE_PATH') or
+                             '../sandbox')
+    FRONTEND_RELATIVE_PATH = (os.environ.get('FRONTEND_RELATIVE_PATH') or
+                                '../urban-workflows')
+    FRONTEND_PORT = os.environ.get('FRONTEND_PORT') or 3000
+    SANDBOX_PORT = os.environ.get('FRONTEND_PORT') or 2000
+

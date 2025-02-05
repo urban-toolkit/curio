@@ -3,12 +3,12 @@ import requests
 import json
 import sqlite3
 from extensions import db
-from app.models import User, UserSession
+from app.users.models import User, UserSession
 from app.services.google_oauth import GoogleOAuth
 from app.middlewares import require_auth
 
 # The Flask app
-from app import app
+from app.api import bp
 
 
 # Sandbox address
@@ -57,22 +57,22 @@ attributeIds = {
     "JSON": "5"
 }
 
-@app.after_request
+@bp.after_request
 def add_cors_headers(response):
     response.headers.add('Access-Control-Allow-Origin', '*')
     response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
     response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE')
     return response
 
-@app.route('/')
+@bp.route('/')
 def root():
     abort(403)
 
-@app.route('/liveness')
+@bp.route('/liveness')
 def liveness():
     return 'Backend is live.'
 
-@app.route('/upload', methods=['POST'])
+@bp.route('/upload', methods=['POST'])
 def upload_file():
 
     if 'file' not in request.files:
@@ -91,7 +91,7 @@ def upload_file():
         return 'Error uploading file'
 
 
-@app.route('/processPythonCode', methods=['POST'])
+@bp.route('/processPythonCode', methods=['POST'])
 def process_python_code():
 
     # response = requests.post(api_address+":"+str(api_port)+"/api/v2/execute",
@@ -117,7 +117,7 @@ def process_python_code():
 
     return response.json()
 
-@app.route('/toLayers', methods=['POST'])
+@bp.route('/toLayers', methods=['POST'])
 def toLayers():
 
     if(request.json['geoJsons'] == None):
@@ -132,7 +132,7 @@ def toLayers():
 
     return response.json()
 
-@app.route('/signin', methods=['POST'])
+@bp.route('/signin', methods=['POST'])
 def signin():
     # google_oauth = GoogleOAuth()
     # user_data = google_oauth.verify_token(request.json.get('token'))
@@ -172,7 +172,7 @@ def signin():
         'token': new_session.token
     }), 200
 
-@app.route('/getUser', methods=['GET'])
+@bp.route('/getUser', methods=['GET'])
 @require_auth
 def get_user():
     user = g.user
@@ -184,7 +184,7 @@ def get_user():
         }
     }), 200
 
-@app.route('/saveUserType', methods=['POST'])
+@bp.route('/saveUserType', methods=['POST'])
 @require_auth
 def save_user_type():
     new_type = request.json.get('type')
@@ -200,7 +200,7 @@ def save_user_type():
         }
     }), 200
 
-@app.route('/saveUserProv', methods=['POST'])
+@bp.route('/saveUserProv', methods=['POST'])
 def save_user_prov(): # only save if user with that name does not exist on the database
 
     conn = sqlite3.connect('provenance.db')
@@ -222,7 +222,7 @@ def save_user_prov(): # only save if user with that name does not exist on the d
 
     return "",200
 
-@app.route('/saveWorkflowProv', methods=['POST'])
+@bp.route('/saveWorkflowProv', methods=['POST'])
 def save_workflow_prov():
 
     conn = sqlite3.connect('provenance.db')
@@ -257,7 +257,7 @@ def save_workflow_prov():
 
     return "",200
 
-@app.route('/newBoxProv', methods=['POST'])
+@bp.route('/newBoxProv', methods=['POST'])
 def new_box_prov():
 
     conn = sqlite3.connect('provenance.db')
@@ -399,7 +399,7 @@ def new_box_prov():
     # // TODO: new and duplicated activities can also be versioned by creating a new versioned element
     return "",200
 
-@app.route('/deleteBoxProv', methods=['POST'])
+@bp.route('/deleteBoxProv', methods=['POST'])
 def delete_box_prov():
 
     # // new version (increment version number based on previous old workflow that points to a ve that points to the version)
@@ -519,7 +519,7 @@ def delete_box_prov():
 
     return "",200
 
-@app.route('/newConnectionProv', methods=['POST'])
+@bp.route('/newConnectionProv', methods=['POST'])
 def new_connection_prov():
 
     conn = sqlite3.connect('provenance.db')
@@ -644,7 +644,7 @@ def new_connection_prov():
 
     return "",200
 
-@app.route('/deleteConnectionProv', methods=['POST'])
+@bp.route('/deleteConnectionProv', methods=['POST'])
 def delete_connection_prov():
 
     conn = sqlite3.connect('provenance.db')
@@ -765,7 +765,7 @@ def delete_connection_prov():
 
     return "",200
 
-@app.route('/boxExecProv', methods=['POST'])
+@bp.route('/boxExecProv', methods=['POST'])
 def box_exec_prov():
 
     conn = sqlite3.connect('provenance.db')
@@ -905,7 +905,7 @@ def box_exec_prov():
 
     return "",200
 
-@app.route('/getBoxGraph', methods=['POST'])
+@bp.route('/getBoxGraph', methods=['POST'])
 def get_box_graph():
 
     conn = sqlite3.connect('provenance.db')
@@ -984,7 +984,7 @@ def get_box_graph():
         "graph": graph
     }),200
 
-@app.route('/truncateDBProv', methods=['GET'])
+@bp.route('/truncateDBProv', methods=['GET'])
 def truncate_db_prov():
 
     conn = sqlite3.connect('provenance.db')

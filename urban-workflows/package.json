@@ -6,6 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "webpack serve --open --mode development",
+    "start:e2e": "export PORT=3000 && webpack serve --mode development --port $PORT",
     "build": "webpack --mode development",
     "lint": "eslint src/",
     "format": "npx prettier . --write",

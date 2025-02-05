@@ -2,3 +2,5 @@
 instance/
 *.db
 logs/
+
+flask_cache/
