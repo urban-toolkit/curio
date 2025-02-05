@@ -1,8 +1,8 @@
-label{
+label {
     margin-right: 5px;
 }
 
-select{
+select {
     border: 1px solid #ccc;
     border-radius: 4px;
     padding: 2px;
@@ -11,8 +11,8 @@ select{
     /* background: white url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23333333"><path d="M7 10l5 5 5-5z"/></svg>') no-repeat right 10px center; */
     background-size: 16px 16px;
 }
-  
-select:focus{
+
+select:focus {
     border-color: dodgerblue;
     box-shadow: 0 0 5px rgba(30, 144, 255, 0.5);
 }

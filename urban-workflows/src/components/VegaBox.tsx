@@ -24,7 +24,13 @@ import { InputIcon } from "./edges/InputIcon";
 const vega = require("vega");
 const lite = require("vega-lite");
 
-function VegaBox({ data, isConnectable }: {data: any; isConnectable: boolean}) {
+function VegaBox({
+  data,
+  isConnectable,
+}: {
+  data: any;
+  isConnectable: boolean;
+}) {
   const [output, setOutput] = useState<{ code: string; content: string }>({
     code: "",
     content: "",

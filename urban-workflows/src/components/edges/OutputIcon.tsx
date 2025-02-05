@@ -17,7 +17,7 @@ export function OutputIcon({ type }: { type: "1" | "2" | "N" }) {
         right: 0,
         display: "flex",
         alignItems: "center",
-        zIndex: 50
+        zIndex: 50,
       }}
     >
       <div
@@ -31,7 +31,7 @@ export function OutputIcon({ type }: { type: "1" | "2" | "N" }) {
           alignItems: "center",
           borderTopLeftRadius: "5px",
           borderBottomLeftRadius: "5px",
-          backgroundColor: "white"
+          backgroundColor: "white",
         }}
       >
         {type === "N" && (

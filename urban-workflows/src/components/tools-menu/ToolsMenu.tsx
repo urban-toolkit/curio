@@ -1,6 +1,4 @@
-import React, {
-    useEffect, useReducer
-} from "react";
+import React, { useEffect, useReducer } from "react";
 import CSS from "csstype";
 import Icon from "@mui/material/Icon";
 
@@ -22,7 +20,7 @@ import {
     faSquareRootVariable,
     faTable,
     faUpload,
-    faSquareMinus
+    faSquareMinus,
 } from "@fortawesome/free-solid-svg-icons";
 import { Tooltip, OverlayTrigger } from "react-bootstrap";
 import { Template, useTemplateContext } from "../../providers/TemplateProvider";
@@ -38,7 +36,7 @@ export function ToolsMenu() {
     // const handleClick = (boxType: BoxType) => {
     //     for(const type in BoxType){
     //         let templates_modal = document.getElementById("templates_modal_"+type) as HTMLElement;
-    
+
     //         if(type == boxType){
     //             if (templates_modal.style.display === "none") {
     //                 templates_modal.style.display = "block"; // or "inline" or any other valid display value
@@ -62,36 +60,36 @@ export function ToolsMenu() {
     // }
 
     const boxNameTranslation = (boxType: BoxType) => {
-        if(boxType === BoxType.COMPUTATION_ANALYSIS){
-            return "Computation Analysis"
-        }else if(boxType === BoxType.CONSTANTS){
-            return "Constants"
-        }else if(boxType === BoxType.DATA_CLEANING){
-            return "Data Cleaning"
-        }else if(boxType === BoxType.DATA_EXPORT){
-            return "Data Export"
-        }else if(boxType === BoxType.DATA_LOADING){
-            return "Data Loading"
-        }else if(boxType === BoxType.DATA_POOL){
-            return "Data Pool"
-        }else if(boxType === BoxType.DATA_TRANSFORMATION){
-            return "Data Transformation"
-        }else if(boxType === BoxType.FLOW_SWITCH){
-            return "Flow Switch"
-        }else if(boxType === BoxType.MERGE_FLOW){
-            return "Merge Flow"
-        }else if(boxType === BoxType.VIS_IMAGE){
-            return "Image"
-        }else if(boxType === BoxType.VIS_TABLE){
-            return "Table"
-        }else if(boxType === BoxType.VIS_TEXT){
-            return "Text"
-        }else if(boxType === BoxType.VIS_UTK){
-            return "UTK"
-        }else if(boxType === BoxType.VIS_VEGA){
-            return "Vega-Lite"
+        if (boxType === BoxType.COMPUTATION_ANALYSIS) {
+            return "Computation Analysis";
+        } else if (boxType === BoxType.CONSTANTS) {
+            return "Constants";
+        } else if (boxType === BoxType.DATA_CLEANING) {
+            return "Data Cleaning";
+        } else if (boxType === BoxType.DATA_EXPORT) {
+            return "Data Export";
+        } else if (boxType === BoxType.DATA_LOADING) {
+            return "Data Loading";
+        } else if (boxType === BoxType.DATA_POOL) {
+            return "Data Pool";
+        } else if (boxType === BoxType.DATA_TRANSFORMATION) {
+            return "Data Transformation";
+        } else if (boxType === BoxType.FLOW_SWITCH) {
+            return "Flow Switch";
+        } else if (boxType === BoxType.MERGE_FLOW) {
+            return "Merge Flow";
+        } else if (boxType === BoxType.VIS_IMAGE) {
+            return "Image";
+        } else if (boxType === BoxType.VIS_TABLE) {
+            return "Table";
+        } else if (boxType === BoxType.VIS_TEXT) {
+            return "Text";
+        } else if (boxType === BoxType.VIS_UTK) {
+            return "UTK";
+        } else if (boxType === BoxType.VIS_VEGA) {
+            return "Vega-Lite";
         }
-    }
+    };
 
     return (
         <div>
@@ -103,9 +101,14 @@ export function ToolsMenu() {
                 >
                     <div
                         style={optionStyle}
-                        onClick={() => createCodeNode(BoxType.COMPUTATION_ANALYSIS, null)}
+                        onClick={() =>
+                            createCodeNode(BoxType.COMPUTATION_ANALYSIS, null)
+                        }
                     >
-                        <FontAwesomeIcon icon={faMagnifyingGlassChart} style={iconStyle} />
+                        <FontAwesomeIcon
+                            icon={faMagnifyingGlassChart}
+                            style={iconStyle}
+                        />
                     </div>
                 </OverlayTrigger>
 
@@ -116,7 +119,9 @@ export function ToolsMenu() {
                 >
                     <div
                         style={optionStyle}
-                        onClick={() => createCodeNode(BoxType.DATA_TRANSFORMATION, null)}
+                        onClick={() =>
+                            createCodeNode(BoxType.DATA_TRANSFORMATION, null)
+                        }
                     >
                         <FontAwesomeIcon icon={faDatabase} style={iconStyle} />
                     </div>
@@ -129,7 +134,9 @@ export function ToolsMenu() {
                 >
                     <div
                         style={optionStyle}
-                        onClick={() => createCodeNode(BoxType.DATA_LOADING, null)}
+                        onClick={() =>
+                            createCodeNode(BoxType.DATA_LOADING, null)
+                        }
                     >
                         <FontAwesomeIcon icon={faUpload} style={iconStyle} />
                     </div>
@@ -168,7 +175,9 @@ export function ToolsMenu() {
                 >
                     <div
                         style={optionStyle}
-                        onClick={() => createCodeNode(BoxType.DATA_EXPORT, null)}
+                        onClick={() =>
+                            createCodeNode(BoxType.DATA_EXPORT, null)
+                        }
                     >
                         <FontAwesomeIcon icon={faDownload} style={iconStyle} />
                     </div>
@@ -181,7 +190,9 @@ export function ToolsMenu() {
                 >
                     <div
                         style={optionStyle}
-                        onClick={() => createCodeNode(BoxType.DATA_CLEANING, null)}
+                        onClick={() =>
+                            createCodeNode(BoxType.DATA_CLEANING, null)
+                        }
                     >
                         <FontAwesomeIcon icon={faBroom} style={iconStyle} />
                     </div>
@@ -194,7 +205,9 @@ export function ToolsMenu() {
                 >
                     <div
                         style={optionStyle}
-                        onClick={() => createCodeNode(BoxType.FLOW_SWITCH, null)}
+                        onClick={() =>
+                            createCodeNode(BoxType.FLOW_SWITCH, null)
+                        }
                     >
                         <FontAwesomeIcon icon={faRepeat} style={iconStyle} />
                     </div>
@@ -248,7 +261,10 @@ export function ToolsMenu() {
                         style={optionStyle}
                         onClick={() => createCodeNode(BoxType.CONSTANTS, null)}
                     >
-                        <FontAwesomeIcon icon={faSquareRootVariable} style={iconStyle} />
+                        <FontAwesomeIcon
+                            icon={faSquareRootVariable}
+                            style={iconStyle}
+                        />
                     </div>
                 </OverlayTrigger>
 
@@ -279,9 +295,7 @@ export function ToolsMenu() {
                 </OverlayTrigger>
             </div>
 
-            <FileUpload
-                style={fileUploadStyle}
-            />
+            <FileUpload style={fileUploadStyle} />
 
             {/* Templates */}
             {/* {getBoxesType().map((type: string, indexType: number) => {
@@ -306,8 +320,6 @@ export function ToolsMenu() {
                     })}
                 </div>
             })} */}
-
-
         </div>
     );
 }
@@ -329,7 +341,7 @@ const fileUploadStyle: CSS.Properties = {
     fontWeight: "bold",
     color: "#888787",
     borderRadius: "4px",
-    cursor: "pointer", 
+    cursor: "pointer",
     outline: "none",
     padding: "5px",
 };
@@ -376,9 +388,9 @@ const buttonStyleProgrammer: CSS.Properties = {
     marginRight: "5px",
     padding: "8px 16px",
     borderRadius: "4px",
-    cursor: "pointer", 
-    outline: "none"
-}
+    cursor: "pointer",
+    outline: "none",
+};
 
 const buttonStyleExpert: CSS.Properties = {
     backgroundColor: "transparent",
@@ -387,9 +399,9 @@ const buttonStyleExpert: CSS.Properties = {
     marginRight: "5px",
     padding: "8px 16px",
     borderRadius: "4px",
-    cursor: "pointer", 
-    outline: "none"
-}
+    cursor: "pointer",
+    outline: "none",
+};
 
 const buttonStyleAny: CSS.Properties = {
     backgroundColor: "transparent",
@@ -398,19 +410,19 @@ const buttonStyleAny: CSS.Properties = {
     marginRight: "5px",
     padding: "8px 16px",
     borderRadius: "4px",
-    cursor: "pointer", 
-    outline: "none"
-}
+    cursor: "pointer",
+    outline: "none",
+};
 
 const templatesModalStyle: CSS.Properties = {
-    position: "fixed", 
-    zIndex: 100, 
-    top: "50px", 
+    position: "fixed",
+    zIndex: 100,
+    top: "50px",
     left: "180px",
-    display: "none", 
-    width: "600px", 
+    display: "none",
+    width: "600px",
     backgroundColor: "white",
     boxShadow: "0px 0px 3px 0px black",
     padding: "10px",
-    borderRadius: "5px"
-}
+    borderRadius: "5px",
+};

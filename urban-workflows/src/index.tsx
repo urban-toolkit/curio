@@ -17,7 +17,7 @@ const App: React.FC = () => {
           <DialogProvider>
             <FlowProvider>
               <TemplateProvider>
-                  <MainCanvas />
+                <MainCanvas />
               </TemplateProvider>
             </FlowProvider>
           </DialogProvider>

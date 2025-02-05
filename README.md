@@ -69,7 +69,7 @@ pip install -r requirements.txt
 Once requirements are installed we have to create a SQLite database for provenance.
 
 ```console
-python create_provenance_db.py
+python create_provenance_db.py 
 ```
 
 Now the backend server can be started.
@@ -150,6 +150,22 @@ To start Curio's frontend. Simply go `urban-workflows` and run:
 npm install
 npm run build
 npm run start
+```
+
+The frontend will be available at `http://localhost:3000`.
+
+To verify the code syntax and style, you can run the following command:
+
+```console
+npm run lint
+npm run format-check
+```
+
+To fix the code syntax and style, you can run the following command:
+
+```console
+npm run lint -- --fix
+npm run format
 ```
 
 ### Ray tracing

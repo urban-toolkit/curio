@@ -19,7 +19,7 @@ import {
     useReactFlow,
     getOutgoers,
     MarkerType,
-    applyNodeChanges
+    applyNodeChanges,
 } from "reactflow";
 import { ConnectionValidator } from "../ConnectionValidator";
 import { BoxType, EdgeType, VisInteractionType } from "../constants";
@@ -30,14 +30,14 @@ export interface IOutput {
     output: string;
 }
 
-export interface IInteraction{
+export interface IInteraction {
     nodeId: string;
     details: any;
     priority: number; // used to solve conflicts of interactions 1 has more priority than 0
 }
 
 // propagating interactions between pools at different resolutions
-export interface IPropagation{
+export interface IPropagation {
     nodeId: string;
     propagation: any; // {[index]: [interaction value]}
 }
@@ -49,7 +49,9 @@ interface FlowContextProps {
     edges: Edge[];
     workflowName: string;
     setOutputs: (updateFn: (outputs: IOutput[]) => IOutput[]) => void;
-    setInteractions: (updateFn: (interactions: IInteraction[]) => IInteraction[]) => void;
+    setInteractions: (
+        updateFn: (interactions: IInteraction[]) => IInteraction[]
+    ) => void;
     applyNewPropagation: (propagation: IPropagation) => void;
     addNode: (node: Node) => void;
     onNodesChange: (changes: NodeChange[]) => void;
@@ -60,8 +62,8 @@ interface FlowContextProps {
     onNodesDelete: (changes: NodeChange[]) => void;
     setPinForDashboard: (nodeId: string, value: boolean) => void;
     setDashBoardMode: (value: boolean) => void;
-    updatePositionWorkflow: (nodeId:string, position: any) => void;
-    updatePositionDashboard: (nodeId:string, position: any) => void;
+    updatePositionWorkflow: (nodeId: string, position: any) => void;
+    updatePositionDashboard: (nodeId: string, position: any) => void;
     applyNewOutput: (output: IOutput) => void;
 }
 
@@ -69,13 +71,13 @@ export const FlowContext = createContext<FlowContextProps>({
     nodes: [],
     edges: [],
     workflowName: "DefaultWorkflow",
-    setOutputs: () => { },
+    setOutputs: () => {},
     setInteractions: () => {},
     applyNewPropagation: () => {},
-    addNode: () => { },
-    onNodesChange: () => { },
-    onEdgesChange: () => { },
-    onConnect: () => { },
+    addNode: () => {},
+    onNodesChange: () => {},
+    onEdgesChange: () => {},
+    onConnect: () => {},
     isValidConnection: () => true,
     onEdgesDelete: () => {},
     onNodesDelete: () => {},
@@ -89,7 +91,7 @@ export const FlowContext = createContext<FlowContextProps>({
 const FlowProvider = ({ children }: { children: ReactNode }) => {
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-    
+
     const [outputs, setOutputs] = useState<IOutput[]>([]);
 
     const [interactions, setInteractions] = useState<IInteraction[]>([]);
@@ -111,28 +113,28 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const reactFlow = useReactFlow();
-    const { newBox, addWorkflow, deleteBox, newConnection, deleteConnection } = useProvenanceContext();
+    const { newBox, addWorkflow, deleteBox, newConnection, deleteConnection } =
+        useProvenanceContext();
 
     const [workflowName, setWorkflowName] = useState<string>("DefaultWorkflow");
-  
+
     useEffect(() => {
         addWorkflow(workflowName);
-    }, [])
+    }, []);
 
     const setDashBoardMode = (value: boolean) => {
-
-        // setNodes((nds: any) => 
+        // setNodes((nds: any) =>
         //     nds.map((node: any) => {
         //         if(dashboardPins[node.id] == true){
         //             node.data = {
         //                 ...node.data,
         //                 hidden: false
-        //             };         
+        //             };
         //         }else{
         //             node.data = {
         //                 ...node.data,
         //                 hidden: value
-        //             };    
+        //             };
         //         }
 
         //         // Detect nodes by having the class react-flow__node
@@ -151,118 +153,151 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         //         }
 
         //         return {
-        //             ...node, 
+        //             ...node,
         //             position
         //         };
         //     })
         // );
 
-        const nodesDiv = document.querySelectorAll('.react-flow__node');
+        const nodesDiv = document.querySelectorAll(".react-flow__node");
 
         // Hide each element
-        nodesDiv.forEach(element => {
-            if(value){
-
+        nodesDiv.forEach((element) => {
+            if (value) {
                 // @ts-ignore
-                if(!dashboardPins[element.getAttribute('data-id')]){
+                if (!dashboardPins[element.getAttribute("data-id")]) {
                     // @ts-ignore
-                    element.style.display = 'none';
-                }else{
+                    element.style.display = "none";
+                } else {
                     // @ts-ignore
-                    element.style.display = 'block';
+                    element.style.display = "block";
 
                     // @ts-ignore
-                    if(positionsInDashboardRef.current[element.getAttribute('data-id')] != undefined){
+                    if (
+                        positionsInDashboardRef.current[
+                            element.getAttribute("data-id")
+                        ] != undefined
+                    ) {
                         setNodes((oldNodes) => {
                             // @ts-ignore
-                            console.log(positionsInDashboardRef.current[element.getAttribute('data-id')]);
+                            console.log(
+                                positionsInDashboardRef.current[
+                                    element.getAttribute("data-id")
+                                ]
+                            );
                             // @ts-ignore
-                            return applyNodeChanges([positionsInDashboardRef.current[element.getAttribute('data-id')]], oldNodes)
+                            return applyNodeChanges(
+                                [
+                                    positionsInDashboardRef.current[
+                                        element.getAttribute("data-id")
+                                    ],
+                                ],
+                                oldNodes
+                            );
                         });
                     }
                 }
-            }else{
+            } else {
                 // @ts-ignore
-                element.style.display = 'block';
+                element.style.display = "block";
 
                 // @ts-ignore
-                if(positionsInWorkflowRef.current[element.getAttribute('data-id')] != undefined){
+                if (
+                    positionsInWorkflowRef.current[
+                        element.getAttribute("data-id")
+                    ] != undefined
+                ) {
                     // @ts-ignore
-                    console.log(positionsInWorkflowRef.current[element.getAttribute('data-id')]);
+                    console.log(
+                        positionsInWorkflowRef.current[
+                            element.getAttribute("data-id")
+                        ]
+                    );
                     // @ts-ignore
-                    setNodes((oldNodes) => applyNodeChanges([positionsInWorkflowRef.current[element.getAttribute('data-id')]], oldNodes));
+                    setNodes((oldNodes) =>
+                        applyNodeChanges(
+                            [
+                                positionsInWorkflowRef.current[
+                                    element.getAttribute("data-id")
+                                ],
+                            ],
+                            oldNodes
+                        )
+                    );
                 }
             }
         });
 
-        const edgesPath = document.querySelectorAll('.react-flow__edge-path');
+        const edgesPath = document.querySelectorAll(".react-flow__edge-path");
 
         // Hide each element
-        edgesPath.forEach(element => {
-            if(value){
+        edgesPath.forEach((element) => {
+            if (value) {
                 // @ts-ignore
-                element.style.display = 'none';
-            }else{
+                element.style.display = "none";
+            } else {
                 // @ts-ignore
-                element.style.display = 'block';
+                element.style.display = "block";
             }
         });
 
-        const edgesInteraction = document.querySelectorAll('.react-flow__edge-interaction');
+        const edgesInteraction = document.querySelectorAll(
+            ".react-flow__edge-interaction"
+        );
 
         // Hide each element
-        edgesInteraction.forEach(element => {
-            if(value){
+        edgesInteraction.forEach((element) => {
+            if (value) {
                 // @ts-ignore
-                element.style.display = 'none';
-            }else{
+                element.style.display = "none";
+            } else {
                 // @ts-ignore
-                element.style.display = 'block';
+                element.style.display = "block";
             }
         });
-    }
+    };
 
-    const updatePositionWorkflow = (nodeId:string, change: any) => {
+    const updatePositionWorkflow = (nodeId: string, change: any) => {
         setPositionsInWorkflow({
             ...positionsInWorkflowRef.current,
-            [nodeId]: {...change}
-        })
-    }
+            [nodeId]: { ...change },
+        });
+    };
 
-    const updatePositionDashboard = (nodeId:string, change: any) => {
+    const updatePositionDashboard = (nodeId: string, change: any) => {
         setPositionsInDashboard({
             ...positionsInDashboardRef.current,
-            [nodeId]: {...change}
+            [nodeId]: { ...change },
         });
-    }
+    };
 
-    // TODO: implement listener for position changes in nodes. 
+    // TODO: implement listener for position changes in nodes.
 
     const setPinForDashboard = (nodeId: string, value: boolean) => {
         let newDashboardPins: any = {};
         let nodesIds = Object.keys(dashboardPins);
-        
-        for(const id of nodesIds){
+
+        for (const id of nodesIds) {
             newDashboardPins[id] = dashboardPins[id];
         }
 
         newDashboardPins[nodeId] = value;
 
         setDashboardPins(newDashboardPins);
-    }
+    };
 
     const addNode = useCallback(
         (node: Node) => {
             setNodes((prev: any) => {
-                console.log(node.position)
+                console.log(node.position);
                 updatePositionWorkflow(node.id, {
                     id: node.id,
                     dragging: true,
-                    position: {...node.position},
-                    positionAbsolute: {...node.position},
-                    type: "position"
+                    position: { ...node.position },
+                    positionAbsolute: { ...node.position },
+                    type: "position",
                 });
-                return prev.concat(node)
+                return prev.concat(node);
             });
             newBox(workflowName, (node.type as string) + "_" + node.id);
         },
@@ -270,20 +305,23 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     );
 
     // updates a single box with the new input (new connections)
-    const applyOutput = (inBox: BoxType, inId: string, outId: string, sourceHandle: string, targetHandle: string) => {
-        
-        if(sourceHandle == "in/out" && targetHandle == "in/out")
-            return
+    const applyOutput = (
+        inBox: BoxType,
+        inId: string,
+        outId: string,
+        sourceHandle: string,
+        targetHandle: string
+    ) => {
+        if (sourceHandle == "in/out" && targetHandle == "in/out") return;
 
         let getOutput = outId;
         let setInput = inId;
 
         let output = "";
 
-        setOutputs((opts: any) => 
+        setOutputs((opts: any) =>
             opts.map((opt: any) => {
-
-                if(opt.nodeId == getOutput){
+                if (opt.nodeId == getOutput) {
                     output = opt.output;
                 }
 
@@ -291,39 +329,36 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             })
         );
 
-        setNodes((nds: any) => 
+        setNodes((nds: any) =>
             nds.map((node: any) => {
-
-                if(node.id == setInput){
-
+                if (node.id == setInput) {
                     // Merge Flow box is the only box that allows multiple 'in' connections
-                    if(inBox == BoxType.MERGE_FLOW){
+                    if (inBox == BoxType.MERGE_FLOW) {
                         let inputList = node.data.input;
                         let sourceList = node.data.source;
 
-                        if(inputList == undefined || inputList == ""){
+                        if (inputList == undefined || inputList == "") {
                             inputList = [output];
-                        }else{
+                        } else {
                             inputList = [...inputList, output];
                         }
 
-                        if(sourceList == undefined || sourceList == ""){
+                        if (sourceList == undefined || sourceList == "") {
                             sourceList = [getOutput];
-                        }else{
+                        } else {
                             sourceList = [...sourceList, getOutput];
                         }
 
                         node.data = {
                             ...node.data,
                             input: inputList,
-                            source: sourceList
+                            source: sourceList,
                         };
-
-                    }else{
+                    } else {
                         node.data = {
                             ...node.data,
                             input: output,
-                            source: getOutput
+                            source: getOutput,
                         };
                     }
                 }
@@ -331,85 +366,109 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 return node;
             })
         );
+    };
 
-    }
+    const onEdgesDelete = useCallback(
+        (connections: Edge[]) => {
+            for (const connection of connections) {
+                let resetInput = connection.target;
+                let targetNode = reactFlow.getNode(connection.target) as Node;
 
-    const onEdgesDelete = useCallback((connections: Edge[]) => {
-
-        for(const connection of connections){
-
-            let resetInput = connection.target;
-            let targetNode = reactFlow.getNode(connection.target) as Node;
-
-            // skiping syncronized connections
-            if(connection.sourceHandle != "in/out" && connection.targetHandle != "in/out"){
-                deleteConnection(workflowName, targetNode.id, targetNode.type as BoxType);
-            }
-
-            // skiping syncronized connections
-            if(connection.sourceHandle != "in/out" || connection.targetHandle != "in/out"){
-                setNodes((nds: any) => 
-                    nds.map((node: any) => {
-        
-                        if(node.id == resetInput){
-                            if(targetNode.type === BoxType.MERGE_FLOW){
-                                let inputList: string[] = [];
-                                let sourceList: string[] = [];
-
-                                if(Array.isArray(node.data.source)){
-                                    for(let i = 0; i < node.data.source.length; i++){
-                                        if(connection.source != node.data.source[i]){
-                                            inputList.push(node.data.input[i]);
-                                            sourceList.push(node.data.source[i]);
-                                        }
-                                    }
-                                }
-
-                                node.data = {
-                                    ...node.data,
-                                    input: inputList,
-                                    source: sourceList
-                                };
-                            }else{
-                                node.data = {
-                                    ...node.data,
-                                    input: "",
-                                    source: ""
-                                };
-                            }
-
-                        }
-        
-                        return node;
-                    })
-                );
-            }
-        }
-
-    }, [setNodes]);
-
-    const onNodesDelete = useCallback((changes: NodeChange[]) => {
-        setOutputs((opts: any) => 
-            opts.filter((opt: any) => {
-                for(const change of changes){
-                    // @ts-ignore
-                    if(opt.nodeId == change.id && change.type == "remove"){ // node was removed
-                        return false;
-                    }
+                // skiping syncronized connections
+                if (
+                    connection.sourceHandle != "in/out" &&
+                    connection.targetHandle != "in/out"
+                ) {
+                    deleteConnection(
+                        workflowName,
+                        targetNode.id,
+                        targetNode.type as BoxType
+                    );
                 }
 
-                return true;
-            })
-        );
+                // skiping syncronized connections
+                if (
+                    connection.sourceHandle != "in/out" ||
+                    connection.targetHandle != "in/out"
+                ) {
+                    setNodes((nds: any) =>
+                        nds.map((node: any) => {
+                            if (node.id == resetInput) {
+                                if (targetNode.type === BoxType.MERGE_FLOW) {
+                                    let inputList: string[] = [];
+                                    let sourceList: string[] = [];
 
-        for(const change of changes){
-            if(change.type == "remove"){
-                let node = reactFlow.getNode(change.id) as Node;
-                deleteBox(workflowName, node.type+"_"+node.id);
+                                    if (Array.isArray(node.data.source)) {
+                                        for (
+                                            let i = 0;
+                                            i < node.data.source.length;
+                                            i++
+                                        ) {
+                                            if (
+                                                connection.source !=
+                                                node.data.source[i]
+                                            ) {
+                                                inputList.push(
+                                                    node.data.input[i]
+                                                );
+                                                sourceList.push(
+                                                    node.data.source[i]
+                                                );
+                                            }
+                                        }
+                                    }
+
+                                    node.data = {
+                                        ...node.data,
+                                        input: inputList,
+                                        source: sourceList,
+                                    };
+                                } else {
+                                    node.data = {
+                                        ...node.data,
+                                        input: "",
+                                        source: "",
+                                    };
+                                }
+                            }
+
+                            return node;
+                        })
+                    );
+                }
             }
-        }
+        },
+        [setNodes]
+    );
 
-    }, [setOutputs]);
+    const onNodesDelete = useCallback(
+        (changes: NodeChange[]) => {
+            setOutputs((opts: any) =>
+                opts.filter((opt: any) => {
+                    for (const change of changes) {
+                        // @ts-ignore
+                        if (
+                            opt.nodeId == change.id &&
+                            change.type == "remove"
+                        ) {
+                            // node was removed
+                            return false;
+                        }
+                    }
+
+                    return true;
+                })
+            );
+
+            for (const change of changes) {
+                if (change.type == "remove") {
+                    let node = reactFlow.getNode(change.id) as Node;
+                    deleteBox(workflowName, node.type + "_" + node.id);
+                }
+            }
+        },
+        [setOutputs]
+    );
 
     const onConnect = useCallback(
         (connection: Connection) => {
@@ -431,15 +490,36 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
             let validHandleCombination = true;
 
-            if ((connection.sourceHandle == "in/out" && connection.targetHandle != "in/out") || (connection.targetHandle == "in/out" && connection.sourceHandle != "in/out")) {
+            if (
+                (connection.sourceHandle == "in/out" &&
+                    connection.targetHandle != "in/out") ||
+                (connection.targetHandle == "in/out" &&
+                    connection.sourceHandle != "in/out")
+            ) {
                 validHandleCombination = false;
-                alert("An in/out connection can only be connected to another in/out connection");
-            }else if((connection.sourceHandle == "in" && connection.targetHandle != "out") || (connection.targetHandle == "in" && connection.sourceHandle != "out")){
+                alert(
+                    "An in/out connection can only be connected to another in/out connection"
+                );
+            } else if (
+                (connection.sourceHandle == "in" &&
+                    connection.targetHandle != "out") ||
+                (connection.targetHandle == "in" &&
+                    connection.sourceHandle != "out")
+            ) {
                 validHandleCombination = false;
-                alert("An in connection can only be connected to an out connection");
-            }else if((connection.sourceHandle == "out" && connection.targetHandle != "in") || (connection.targetHandle == "out" && connection.sourceHandle != "in")){
+                alert(
+                    "An in connection can only be connected to an out connection"
+                );
+            } else if (
+                (connection.sourceHandle == "out" &&
+                    connection.targetHandle != "in") ||
+                (connection.targetHandle == "out" &&
+                    connection.sourceHandle != "in")
+            ) {
                 validHandleCombination = false;
-                alert("An out connection can only be connected to an in connection");
+                alert(
+                    "An out connection can only be connected to an in connection"
+                );
             }
 
             if (validHandleCombination) {
@@ -463,7 +543,9 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 );
 
                 if (!allowConnection)
-                    alert("Input and output types of these boxes are not compatible");
+                    alert(
+                        "Input and output types of these boxes are not compatible"
+                    );
 
                 // Checking cycles
                 if (target.id === connection.source) {
@@ -476,28 +558,44 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                     allowConnection = false;
                 }
 
-                if (allowConnection){
-                    applyOutput(inBox as BoxType, connection.target as string, connection.source as string, connection.sourceHandle as string, connection.targetHandle as string);
+                if (allowConnection) {
+                    applyOutput(
+                        inBox as BoxType,
+                        connection.target as string,
+                        connection.source as string,
+                        connection.sourceHandle as string,
+                        connection.targetHandle as string
+                    );
 
                     setEdges((eds) => {
-
                         let customConnection: any = {
                             ...connection,
-                            markerEnd: {type: MarkerType.Arrow}
+                            markerEnd: { type: MarkerType.Arrow },
                         };
 
-                        if(connection.sourceHandle == "in/out" && connection.targetHandle == "in/out"){
-                            customConnection.markerStart = {type: MarkerType.Arrow};
+                        if (
+                            connection.sourceHandle == "in/out" &&
+                            connection.targetHandle == "in/out"
+                        ) {
+                            customConnection.markerStart = {
+                                type: MarkerType.Arrow,
+                            };
                             customConnection.type = EdgeType.BIDIRECTIONAL_EDGE;
-                        }else{ // only do provenance for in and out connections
-                            newConnection(workflowName, customConnection.source, outBox as BoxType, customConnection.target, inBox as BoxType);
+                        } else {
+                            // only do provenance for in and out connections
+                            newConnection(
+                                workflowName,
+                                customConnection.source,
+                                outBox as BoxType,
+                                customConnection.target,
+                                inBox as BoxType
+                            );
                         }
 
-                        return addEdge(customConnection, eds)
+                        return addEdge(customConnection, eds);
                     });
-                } 
+                }
             }
-
         },
         [setEdges]
     );
@@ -514,49 +612,51 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
     // a box generated a new output. Propagate it to directly connected boxes
     const applyNewOutput = (newOutput: IOutput) => {
-
         let nodesAffected: string[] = [];
 
         let edges = reactFlow.getEdges();
 
         for (let i = 0; i < edges.length; i++) {
-
             let targetId = edges[i].target;
             let sourceId = edges[i].source;
 
-            if(edges[i].sourceHandle == "in/out" && edges[i].targetHandle == "in/out"){ // in 'in/out' connection a DATA_POOL is always some of the ends
+            if (
+                edges[i].sourceHandle == "in/out" &&
+                edges[i].targetHandle == "in/out"
+            ) {
+                // in 'in/out' connection a DATA_POOL is always some of the ends
                 continue;
             }
 
-            if(newOutput.nodeId == sourceId){ // directly affected by new output
+            if (newOutput.nodeId == sourceId) {
+                // directly affected by new output
                 nodesAffected.push(targetId);
             }
         }
 
-        setNodes((nds: any) => 
+        setNodes((nds: any) =>
             nds.map((node: any) => {
-
-                if(nodesAffected.includes(node.id)){
-                    if(node.type == BoxType.MERGE_FLOW){
-                        
-                        if(Array.isArray(node.data.input)){
-
+                if (nodesAffected.includes(node.id)) {
+                    if (node.type == BoxType.MERGE_FLOW) {
+                        if (Array.isArray(node.data.input)) {
                             let foundSource = false;
                             let inputList: string[] = [];
                             let sourceList: string[] = [];
 
-                            for(let i = 0; i < node.data.input.length; i++){
-                                if(node.data.source[i] == newOutput.nodeId){ // updating new value
+                            for (let i = 0; i < node.data.input.length; i++) {
+                                if (node.data.source[i] == newOutput.nodeId) {
+                                    // updating new value
                                     inputList.push(newOutput.output);
                                     sourceList.push(newOutput.nodeId);
                                     foundSource = true;
-                                }else{
+                                } else {
                                     inputList.push(node.data.input[i]);
                                     sourceList.push(node.data.source[i]);
                                 }
                             }
 
-                            if(!foundSource){ // adding new value
+                            if (!foundSource) {
+                                // adding new value
                                 inputList.push(newOutput.output);
                                 sourceList.push(newOutput.nodeId);
                             }
@@ -564,28 +664,27 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                             node.data = {
                                 ...node.data,
                                 input: inputList,
-                                source: sourceList
+                                source: sourceList,
                             };
-                        }else{
+                        } else {
                             node.data = {
                                 ...node.data,
                                 input: [newOutput.output],
-                                source: [newOutput.nodeId]
+                                source: [newOutput.nodeId],
                             };
                         }
-
-                    }else{
-                        if(newOutput.output == undefined){
+                    } else {
+                        if (newOutput.output == undefined) {
                             node.data = {
                                 ...node.data,
                                 input: "",
-                                source: ""
+                                source: "",
                             };
-                        }else{
+                        } else {
                             node.data = {
                                 ...node.data,
                                 input: newOutput.output,
-                                source: newOutput.nodeId
+                                source: newOutput.nodeId,
                             };
                         }
                     }
@@ -596,141 +695,169 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         );
 
         setOutputs((opts: any) => {
-
             let added = false;
 
             let newOpts = opts.map((opt: any) => {
-
-                if(opt.nodeId == newOutput.nodeId){
+                if (opt.nodeId == newOutput.nodeId) {
                     added = true;
                     return {
                         ...opt,
-                        output: newOutput.output
-                    }
+                        output: newOutput.output,
+                    };
                 }
 
                 return opt;
             });
 
-            if(!added)
-                newOpts.push({...newOutput});
+            if (!added) newOpts.push({ ...newOutput });
 
             return newOpts;
         });
-
     };
 
     // responsible for flow of already connected
     const applyNewInteractions = useCallback(() => {
-
-        let newInteractions = interactions.filter((interaction) => {return interaction.priority == 1}); //priority == 1 means that this is a new or updated interaction 
+        let newInteractions = interactions.filter((interaction) => {
+            return interaction.priority == 1;
+        }); //priority == 1 means that this is a new or updated interaction
 
         let toSend: any = {}; // {nodeId -> {type: VisInteractionType, data: any}}
-        let interactedIds: string[] = newInteractions.map((interaction: IInteraction) => {return interaction.nodeId});
+        let interactedIds: string[] = newInteractions.map(
+            (interaction: IInteraction) => {
+                return interaction.nodeId;
+            }
+        );
         let poolsIds: string[] = [];
 
         let interactionDict: any = {};
 
-        for(const interaction of newInteractions){
-            interactionDict[interaction.nodeId] = {details: interaction.details, priority: interaction.priority};
+        for (const interaction of newInteractions) {
+            interactionDict[interaction.nodeId] = {
+                details: interaction.details,
+                priority: interaction.priority,
+            };
         }
 
-        for(let i = 0; i < nodes.length; i++){
-            if(nodes[i].type == BoxType.DATA_POOL){
+        for (let i = 0; i < nodes.length; i++) {
+            if (nodes[i].type == BoxType.DATA_POOL) {
                 poolsIds.push(nodes[i].id);
             }
         }
 
-        for(let i = 0; i < edges.length; i++){
-
+        for (let i = 0; i < edges.length; i++) {
             let targetNode = reactFlow.getNode(edges[i].target) as Node;
             let sourceNode = reactFlow.getNode(edges[i].source) as Node;
 
-            if(edges[i].sourceHandle == "in/out" && edges[i].targetHandle == "in/out" && !(targetNode.type == BoxType.DATA_POOL && sourceNode.type == BoxType.DATA_POOL)){
-                if(interactedIds.includes(edges[i].source) && poolsIds.includes(edges[i].target)){ // then the target is the pool
-                    
-                    if(toSend[edges[i].target] == undefined){
-                        toSend[edges[i].target] = [interactionDict[edges[i].source]];
-                    }else{
-                        toSend[edges[i].target].push(interactionDict[edges[i].source])
+            if (
+                edges[i].sourceHandle == "in/out" &&
+                edges[i].targetHandle == "in/out" &&
+                !(
+                    targetNode.type == BoxType.DATA_POOL &&
+                    sourceNode.type == BoxType.DATA_POOL
+                )
+            ) {
+                if (
+                    interactedIds.includes(edges[i].source) &&
+                    poolsIds.includes(edges[i].target)
+                ) {
+                    // then the target is the pool
+
+                    if (toSend[edges[i].target] == undefined) {
+                        toSend[edges[i].target] = [
+                            interactionDict[edges[i].source],
+                        ];
+                    } else {
+                        toSend[edges[i].target].push(
+                            interactionDict[edges[i].source]
+                        );
                     }
-                }else if(interactedIds.includes(edges[i].target) && poolsIds.includes(edges[i].source)){ // then the source is the pool
-                    if(toSend[edges[i].source] == undefined){
-                        toSend[edges[i].source] = [interactionDict[edges[i].target]];
-                    }else{
-                        toSend[edges[i].source].push(interactionDict[edges[i].target])
+                } else if (
+                    interactedIds.includes(edges[i].target) &&
+                    poolsIds.includes(edges[i].source)
+                ) {
+                    // then the source is the pool
+                    if (toSend[edges[i].source] == undefined) {
+                        toSend[edges[i].source] = [
+                            interactionDict[edges[i].target],
+                        ];
+                    } else {
+                        toSend[edges[i].source].push(
+                            interactionDict[edges[i].target]
+                        );
                     }
                 }
             }
         }
 
-        setNodes((nds: any) => 
+        setNodes((nds: any) =>
             nds.map((node: any) => {
-
-                if(toSend[node.id] != undefined){
-
+                if (toSend[node.id] != undefined) {
                     node.data = {
                         ...node.data,
-                        interactions: toSend[node.id]
-                    }
+                        interactions: toSend[node.id],
+                    };
                 }
-               
+
                 return node;
             })
         );
-
     }, [interactions]);
 
     // propagations only happen with in/out
     const applyNewPropagation = useCallback((propagationObj: IPropagation) => {
-
         let sendTo: string[] = [];
 
         let edges = reactFlow.getEdges();
 
-        for(const edge of edges){
-            if(edge.target == propagationObj.nodeId || edge.source == propagationObj.nodeId){ // if one of the extremities of the edge is responsible for the propagation
+        for (const edge of edges) {
+            if (
+                edge.target == propagationObj.nodeId ||
+                edge.source == propagationObj.nodeId
+            ) {
+                // if one of the extremities of the edge is responsible for the propagation
                 let targetNode = reactFlow.getNode(edge.target) as Node;
                 let sourceNode = reactFlow.getNode(edge.source) as Node;
-    
-                if(edge.sourceHandle == "in/out" && edge.targetHandle == "in/out" && targetNode.type == BoxType.DATA_POOL && sourceNode.type == BoxType.DATA_POOL){
-                    if(edge.target != propagationObj.nodeId){
-                        sendTo.push(edge.target);    
+
+                if (
+                    edge.sourceHandle == "in/out" &&
+                    edge.targetHandle == "in/out" &&
+                    targetNode.type == BoxType.DATA_POOL &&
+                    sourceNode.type == BoxType.DATA_POOL
+                ) {
+                    if (edge.target != propagationObj.nodeId) {
+                        sendTo.push(edge.target);
                     }
 
-                    if(edge.source != propagationObj.nodeId){
-                        sendTo.push(edge.source);    
+                    if (edge.source != propagationObj.nodeId) {
+                        sendTo.push(edge.source);
                     }
                 }
             }
         }
 
-        setNodes((nds: any) => 
+        setNodes((nds: any) =>
             nds.map((node: any) => {
-
-                if(sendTo.includes(node.id)){
-
+                if (sendTo.includes(node.id)) {
                     let newPropagation = true;
-                    if(node.data.newPropagation != undefined){
+                    if (node.data.newPropagation != undefined) {
                         newPropagation = !node.data.newPropagation;
                     }
 
                     node.data = {
                         ...node.data,
-                        propagation: {...propagationObj.propagation},
-                        newPropagation: newPropagation
-                    }
-                }else{
+                        propagation: { ...propagationObj.propagation },
+                        newPropagation: newPropagation,
+                    };
+                } else {
                     node.data = {
                         ...node.data,
-                        propagation: undefined
-                    }
+                        propagation: undefined,
+                    };
                 }
 
                 return node;
             })
         );
-
     }, []);
 
     useEffect(() => {
