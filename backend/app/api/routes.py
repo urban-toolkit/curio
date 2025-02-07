@@ -139,35 +139,49 @@ def signin():
     # if not user_data:
     #     return jsonify({'error': 'Invalid token'}), 400
 
-    # user = User.query.filter_by(provider=user_data.get('provider'), provider_uid= user_data.get('uid')).first()
-    # if user:
-    #     user.name = user_data.get('name')
-    #     user.profile_image = user_data.get('picture')
-    # else:
-    #     user = User(email=user_data.get('email'), name=user_data.get('name'), profile_image=user_data.get('picture'), provider=user_data.get('provider'), provider_uid=user_data.get('uid'))
-    #     db.session.add(user)
-    # db.session.commit()
-
     # create new session token
     # new_session = UserSession(user_id=user.id)
-    new_session = UserSession(user_id=1)
+    user_data = {
+        'id': 1,
+        'name': 'Test',
+        'email': 'Test@mail.com',
+        'provider': "",
+        'uid': "",
+        'picture': "",
+        'type': 'programmer'
+    }
+    new_session = UserSession(user_id=user_data.get('id'))
     db.session.add(new_session)
     db.session.commit()
 
-    # return jsonify({
-    #     'user': {
-    #         'name': user.name,
-    #         'profile_image': user.profile_image,
-    #         'type': user.type
-    #     },
-    #     'token': new_session.token
-    # }), 200
+
+    # get user from database
+
+    user = User.query.filter_by(
+        id=user_data.get('id'),
+        # provider=user_data.get('provider'),
+        # provider_uid= user_data.get('uid')
+    ).first()
+
+    if user:
+        user.name = user_data.get('name')
+        user.profile_image = user_data.get('picture')
+    else:
+        user = User(
+            email=user_data.get('email'),
+            name=user_data.get('name'),
+            profile_image=user_data.get('picture'),
+            provider=user_data.get('provider'),
+            provider_uid=user_data.get('uid'))
+        db.session.add(user)
+    db.session.commit()
+
 
     return jsonify({
         'user': {
-            'name': 'Test',
-            'profile_image': "",
-            'type': 'programmer'
+            'name': user.name,
+            'profile_image': user.profile_image,
+            'type': user.type
         },
         'token': new_session.token
     }), 200
