@@ -14,8 +14,6 @@ Curio is a framework for collaborative urban visual analytics that uses a datafl
 IEEE Transactions on Visualization and Computer Graphics ( Volume: 31, Issue: 1, January 2025)  
 Paper: [[DOI](https://doi.org/10.1109/TVCG.2024.3456353)], [[Arxiv](https://arxiv.org/abs/2408.06139)]
 
-Video:
-
 <div align="center">
   <video src="https://github.com/urban-toolkit/curio/assets/2387594/6d29bda8-5e94-4496-a4ae-fd55adff024f" />
 </div>
