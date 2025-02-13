@@ -4,11 +4,11 @@ In this tutorial, we are going to learn how Curio can easily help with visualizi
 
 After initializing Curio, we can see a blank canvas like this:
 
-![Blank canvas](https://github.com/urban-toolkit/curio/blob/main/images/blank.png?raw=true)
+![Blank canvas](images/blank.png?raw=true)
 
 The icons on the left-hand side can be used to instantiate different nodes, including visualization ones. Let's start by instantiating a `Data Loading` node (1) and changing its view to `Code` (2). External files can be referenced through regular Python file handling functions, given that the file was uploaded to the server. However, for simplicity's sake, we will use the following synthetic dataset (3):
 
-![Data loading](https://github.com/urban-toolkit/curio/blob/main/images/data_loading.png?raw=true)
+![Data loading](images/data_loading.png?raw=true)
 
 ```console
 import pandas as pd
@@ -23,7 +23,7 @@ After hitting run (4). The Python `return` will output `df` for the next node.
 
 We can now proceed and create a `Vega-Lite` node (1) that will be connected to the first box (2) and render the barchart. This time, we are going to use the `Grammar` view (3) to create the Vega-Lite specification:
 
-![Vega lite](https://github.com/urban-toolkit/curio/blob/main/images/vega_lite.png?raw=true)
+![Vega lite](images/vega_lite.png?raw=true)
 
 ```console
 {
