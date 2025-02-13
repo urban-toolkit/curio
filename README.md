@@ -1,19 +1,17 @@
-# Curio [![Discord](https://img.shields.io/discord/1339339863488594065)](https://discord.gg/vjpSMSJR8r)
+# Curio [![Discord](https://img.shields.io/badge/Discord-738ADB)](https://discord.gg/vjpSMSJR8r)
 
-<p align="center">
-  <img src="https://github.com/urban-toolkit/curio/blob/main/images/logo.png?raw=true" alt="Curio Logo" width="250"/> 
-  
-  [Paper](https://arxiv.org/abs/2408.06139) |
-  [Website](https://urbantk.org/curio)
-</p>
+<div align="center">
+  <img src="https://github.com/urban-toolkit/curio/blob/main/images/logo.png?raw=true" alt="Curio Logo" height="200"/></br>
+  <a href="https://arxiv.org/abs/2408.06139">[Paper]</a> | <a href="https://urbantk.org/curio">[Website]</a>
+</div>
 
 ## Introduction
 
 Curio is a framework for collaborative urban visual analytics that uses a dataflow model with multiple abstraction levels (code, grammar, GUI elements) to facilitate collaboration across the design and implementation of visual analytics components. The framework allows experts to intertwine preprocessing, managing, and visualization stages while tracking provenance of code and visualizations.
 
 **Curio: A Dataflow-Based Framework for Collaborative Urban Visual Analytics**  
-*Gustavo Moreira, Maryam Hosseini, Carolina Veiga, Lucas Alexandre, Nico Colaninno, Daniel de Oliveira, Nivan Ferreira, Marcos Lage, Fabio Miranda*
-IEEE Transactions on Visualization and Computer Graphics ( Volume: 31, Issue: 1, January 2025)
+*Gustavo Moreira, Maryam Hosseini, Carolina Veiga, Lucas Alexandre, Nico Colaninno, Daniel de Oliveira, Nivan Ferreira, Marcos Lage, Fabio Miranda*  
+IEEE Transactions on Visualization and Computer Graphics ( Volume: 31, Issue: 1, January 2025)  
 Paper: [[DOI]](https://doi.org/10.1109/TVCG.2024.3456353), [[Arxiv]](https://arxiv.org/abs/2408.06139)
 
 Video:
