@@ -2,7 +2,7 @@
 
 A Pull Request (PR) is the method used to propose changes to the codebase. It allows maintainers and other contributors to review your work, provide feedback, and, if it meets the project's guidelines, merge it into the main codebase.
 
-## Steps to Create a Pull Request
+## Steps to create a pull request
 
 1. **Create a new branch for your work:**
    - From your local copy of the forked repository, create a branch describing the feature or fix you're working on:
@@ -43,7 +43,7 @@ A Pull Request (PR) is the method used to propose changes to the codebase. It al
    - Fill in the PR details using the template (see below).
    - Click **"Create pull request"** to submit.
 
-## Defining the Scope of a Pull Request
+## Defining the scope of a pull request
 
 When creating a PR, it's important to have a clear, focused scope. Each PR should ideally address a single feature or issue. Avoid mixing unrelated changes as it makes the review process harder and less transparent. If you need to address multiple unrelated changes, create separate branches and PRs for each.
 
@@ -54,7 +54,7 @@ When creating a PR, it's important to have a clear, focused scope. Each PR shoul
 
 If your PR grows beyond a single scope, consider splitting it into multiple PRs.
 
-## Pull Request Template
+## Pull request template
 
 To help maintain consistency and clarity, use the following template when creating a Pull Request:
 

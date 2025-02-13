@@ -1,11 +1,11 @@
 ## Process and documents
 
 - [ ] Contributions document (Leonardo)
-  - [ ] How to fork
-  - [ ] How to make a contribution through a pull request (including template for pull requests)
-    - [ ] Defining the scope of a pull request
+  - [x] How to fork
+  - [x] How to make a contribution through a pull request (including template for pull requests)
+    - [x] Defining the scope of a pull request
   - [ ] How to contribute an example dataflow
-  - [ ] How to create an issue (including template for issues)
+  - [x] How to create an issue (including template for issues)
 - [ ] Code guideline document (Gustavo)
   - [ ] How to modularize a new feature
   - [ ] Code naming standards and conventions
@@ -20,8 +20,7 @@
     - [ ] Javascript coding style
     - [ ] Python coding style 
     - [ ] Configure project to enforce ESLint
-- [ ] License (Fabio)
-- [ ] Code of conduct (Fabio)
+- [x] License (Fabio)
 - [ ] Deployment document (Nivan)
 - [ ] Development roles (Fabio)
 - [ ] Roadmap (Fabio)

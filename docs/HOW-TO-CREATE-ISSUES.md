@@ -4,7 +4,7 @@ Issues are the best way to report bugs, request new features, or start a discuss
 - Check if the issue already exists.
 - Provide as much relevant detail as possible.
 
-## Steps to Create an Issue
+## Steps to create an issue
 
 1. **Go to the "Issues" tab:**
    - Navigate to the original repository's GitHub page.
