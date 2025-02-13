@@ -1,12 +1,19 @@
 # Docs
 
 ## Usage
-  1. [Usage](https://github.com/urban-toolkit/curio/blob/main/docs/USAGE.md)
-  2. [Quick use](https://github.com/urban-toolkit/curio/blob/main/docs/QUICK-USE.md)
 
+- [Usage](USAGE.md)
+- [Quick use](QUICK-USE.md)
+
+## Examples
+
+- [Visual analytics of heterogeneous data](examples/1-visual-analytics.md): Using Curio to create a dataflow that integrates climate models and sociodemographic data.
+- [What-if scenario planning](examples/2-what-if.md): Using Curio to perform what-if analyses with different sunlight access scenarios.
+- [Expert-in-the-loop urban accessibility analyses](examples/3-expert-in-the-loop.md): Using Curio to train and refine a computer vision model to assess urban infrastructure.
 
 ## Making contributions
-  1. [Code guidelines](https://github.com/urban-toolkit/curio/blob/main/docs/CODE-GUIDELINES.md)  
-  2. [How to fork](https://github.com/urban-toolkit/curio/blob/main/docs/HOW-TO-FORK.md)  
-  3. [How to make pull requests](https://github.com/urban-toolkit/curio/blob/main/docs/HOW-TO-MAKE-PULL-REQUESTS.md)  
-  4. [How to create issues](https://github.com/urban-toolkit/curio/blob/main/docs/HOW-TO-CREATE-ISSUES.md)  
+
+- [Code guidelines](CODE-GUIDELINES.md)  
+- [How to fork](HOW-TO-FORK.md)  
+- [How to make pull requests](HOW-TO-MAKE-PULL-REQUESTS.md)  
+- [How to create issues](HOW-TO-CREATE-ISSUES.md)  
