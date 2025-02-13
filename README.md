@@ -1,7 +1,7 @@
 # Curio [![Discord](https://img.shields.io/badge/Discord-738ADB)](https://discord.gg/vjpSMSJR8r)
 
 <div align="center">
-  <img src="https://github.com/urban-toolkit/curio/blob/main/images/logo.png?raw=true" alt="Curio Logo" height="200"/></br>
+  <img src="https://github.com/urban-toolkit/curio/blob/main/logo.png?raw=true" alt="Curio Logo" height="200"/></br>
   [<a href="https://arxiv.org/abs/2408.06139">Paper</a>] | [<a href="https://urbantk.org/curio">Website</a>]
 </div>
 
@@ -19,7 +19,7 @@ Paper: [[DOI](https://doi.org/10.1109/TVCG.2024.3456353)], [[Arxiv](https://arxi
 </div>
 
 <p align="center">
-  <img src="https://github.com/urban-toolkit/curio/blob/main/images/banner.jpg?raw=true" alt="Curio Use Cases" width="1000"/>
+  <img src="https://github.com/urban-toolkit/curio/blob/main/banner.jpg?raw=true" alt="Curio Use Cases" width="1000"/>
 </p>
 
 
