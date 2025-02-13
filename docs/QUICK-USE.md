@@ -39,7 +39,7 @@ We can now proceed and create a `Vega-Lite` node (1) that will be connected to t
 
 Curio handles the data-flow and `Vega-Lite` has access to the DataFrame outputed by the previous box. After hitting run, we can see that a barchart was created:
 
-![Final result](https://github.com/urban-toolkit/curio/blob/main/images/final_result.png?raw=true)
+![Final result](images/final_result.png?raw=true)
 
 Congratulations! You created your first data-flow using Curio :)
 
