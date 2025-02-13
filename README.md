@@ -1,7 +1,8 @@
 # Curio [![Discord](https://img.shields.io/discord/1339339863488594065)](https://discord.gg/vjpSMSJR8r)
 
 <p align="center">
-  <img src="https://github.com/urban-toolkit/curio/blob/main/images/logo.png?raw=true" alt="Curio Logo" width="250"/>
+  <img src="https://github.com/urban-toolkit/curio/blob/main/images/logo.png?raw=true" alt="Curio Logo" width="250"/> 
+  
   [Paper](https://arxiv.org/abs/2408.06139) |
   [Website](https://urbantk.org/curio)
 </p>
