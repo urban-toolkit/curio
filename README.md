@@ -39,7 +39,7 @@ For detailed instructions on how to use the project, please check [docs/USAGE.md
 
 ## Core team
 
-Gustavo Moreira (UIC) 
+Gustavo Moreira (UIC)  
 Leonardo Ferreira (UIC)  
 [Daniel de Oliveira](http://www2.ic.uff.br/~danielcmo/) (UFF)  
 [Nivan Ferreira](https://www.cin.ufpe.br/~nivan/) (UFPE)  
