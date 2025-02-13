@@ -33,7 +33,7 @@ Video:
 - Integration with [UTK](https://urbantk.org) and [Vega-Lite](https://vega.github.io/vega-lite/)
 
 ## Usage and contributions
-For detailed instructions on how to use the project, please see the (usage)[docs/USAGE.md] document. If you'd like to contribute, see the (contributions)[docs/CONTRIBUTIONS.md] document for guidelines. For questions, join [UTK's Discord](https://discord.gg/vjpSMSJR8r) server.
+For detailed instructions on how to use the project, please see the [usage](docs/USAGE.md) document. If you'd like to contribute, see the [contributions](docs/CONTRIBUTIONS.md) document for guidelines. For questions, join [UTK's Discord](https://discord.gg/vjpSMSJR8r) server.
 
 
 
