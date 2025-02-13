@@ -2,7 +2,7 @@
 
 <div align="center">
   <img src="https://github.com/urban-toolkit/curio/blob/main/images/logo.png?raw=true" alt="Curio Logo" height="200"/></br>
-  <a href="https://arxiv.org/abs/2408.06139">[Paper]</a> | <a href="https://urbantk.org/curio">[Website]</a>
+  [<a href="https://arxiv.org/abs/2408.06139">Paper</a>] | [<a href="https://urbantk.org/curio">Website</a>]
 </div>
 
 ## Introduction
@@ -12,7 +12,7 @@ Curio is a framework for collaborative urban visual analytics that uses a datafl
 **Curio: A Dataflow-Based Framework for Collaborative Urban Visual Analytics**  
 *Gustavo Moreira, Maryam Hosseini, Carolina Veiga, Lucas Alexandre, Nico Colaninno, Daniel de Oliveira, Nivan Ferreira, Marcos Lage, Fabio Miranda*  
 IEEE Transactions on Visualization and Computer Graphics ( Volume: 31, Issue: 1, January 2025)  
-Paper: [[DOI]](https://doi.org/10.1109/TVCG.2024.3456353), [[Arxiv]](https://arxiv.org/abs/2408.06139)
+Paper: [[DOI](https://doi.org/10.1109/TVCG.2024.3456353)], [[Arxiv](https://arxiv.org/abs/2408.06139)]
 
 Video:
 
