@@ -44,7 +44,7 @@ The backend is also responsible for user authentication. In order to use Curio's
 
 You need to run this command before you start using Curio:
 
-```shell
+```console
 # run this to apply any migration that hasn't run yet
 FLASK_APP=server.py flask db upgrade
 ```
@@ -53,7 +53,7 @@ If the environment variable FLASK_APP does not work with the command above, set 
 
 #### Create migration
 
-```shell
+```console
 # after updating any model, run this to generate a new migration
 FLASK_APP=server.py flask db migrate -m "Migration Name"
 ```
