@@ -2,7 +2,7 @@
 
 Forking a repository is the first step towards contributing to our project. By creating a fork, you make an independent copy of the original repository in your own GitHub account. This allows you to freely experiment with changes without affecting the original codebase until you're ready to propose your contributions.
 
-## Steps to Fork
+## Steps to fork
 
 1. **Navigate to the repository:**
    - Go to the GitHub page of the original repository you want to contribute to.
