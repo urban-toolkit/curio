@@ -18,7 +18,7 @@ Keep files where they belong.
 
 - **`backend/`**: Manages database access and user authentication.
 - **`images/`**: Images for documentation.
-- **`sandbox/`**: Sandbox foe executing python code inside Curio.
+- **`sandbox/`**: Sandbox for executing python code inside Curio.
 - **`urban-workflows/`**: Manages database access and user authentication.
     - **`src/`**: Curio's source code.
         - **`components/`**: React components and respective CSS. Create a different file for each component. Keep similar components groupped inside folders.
