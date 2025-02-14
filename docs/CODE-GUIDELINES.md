@@ -6,7 +6,7 @@ This document outlines the coding conventions, best practices, and structural ru
 
 - [General principles](#general-principles)
 - [Project structure](#project-structure)
-- [Naming Ccnventions](#naming-conventions)
+- [Naming Conventions](#naming-conventions)
 - [Contribution guidelines and standards](#contribution-guidelines-and-standards)
 - [Documentation](#documentation)
 - [Commit message guidelines](#commit-message-guidelines)
@@ -99,8 +99,19 @@ TODO
 
 ## Automated Tools
 
-TODO
+### Eslint and Prettier on`urban-workflows`
 
+```console
+npm run lint -- --fix
+npm run format
+```
+
+### End-to-End tests on `backend/`
+
+```shell
+# after everything is setup, you can run the E2E tests
+python -m pytest tests/test_frontend
+```
 
 
 

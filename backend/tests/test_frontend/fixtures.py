@@ -4,6 +4,7 @@ import pytest
 import subprocess
 from signal import SIGINT
 
+
 @pytest.fixture(scope="session")
 def current_server():
     """Start the Sandbox server with environment variables"""
@@ -42,12 +43,12 @@ def sandbox_server(request, app):
     process.terminate()
 
 
-
 def is_port_in_use(port: int) -> bool:
     import socket
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(("localhost", port)) == 0
+
 
 @pytest.fixture(scope="session")
 def frontend_server(app, request, current_server, sandbox_server):

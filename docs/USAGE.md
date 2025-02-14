@@ -111,35 +111,6 @@ npm run build
 npm run start
 ```
 
-To verify the code syntax and style, you can run the following:
-
-```console
-npm run lint
-npm run format-check
-```
-
-To fix the code syntax and style, you can run the following:
-
-```console
-npm run lint -- --fix
-npm run format
-```
-
-To run End-to-End tests with Pytest and Playwright
-
-```shell
-# after everything is setup, you can run the E2E tests
-python -m pytest tests/test_frontend
-```
-
-To Format the E2E tests go to `backend/` and run:
-
-```shell
-#
-python -m black tests/test_frontend
-```
-
-
 ### Ray tracing
 
 To use Ray Tracing, please see UTK's [requirements](https://github.com/urban-toolkit/utk).
