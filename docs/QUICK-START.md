@@ -1,5 +1,7 @@
 # Quick start
 
+Before you begin, please read our [usage guide](USAGE.md).
+
 ## Creating a barchart
 
 In this tutorial, we are going to learn how Curio can easily help with visualizing a simple dataset using a Vega-Lite barchart. 
