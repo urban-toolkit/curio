@@ -3,7 +3,7 @@
 ## Usage
 
 - [Usage](USAGE.md)
-- [Quick use](QUICK-USE.md)
+- [Quick start](QUICK-START.md)
 
 ## Examples
 
