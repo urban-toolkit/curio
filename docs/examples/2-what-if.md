@@ -4,7 +4,7 @@ In this example, we will explore how Curio can be used to create a dataflow that
 
 <img src="./images/2-1.png" title="" alt="Example 2-1" data-align="center">
 
-Before you begin, please familiarize yourself with Curio’s main concepts and functionalities by reading our [quick start guide](https://github.com/urban-toolkit/curio/blob/main/docs/QUICK-START.md).
+Before you begin, please familiarize yourself with Curio’s main concepts and functionalities by reading our [usage guide](https://github.com/urban-toolkit/curio/blob/main/docs/USAGE.md).
 
 For completeness, we also include the template code in each dataflow step.
 
