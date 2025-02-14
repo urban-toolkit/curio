@@ -8,7 +8,7 @@ entire dataflow pipeline:
 
 <img src="./images/1-1.png" title="" alt="Example 1-1" data-align="center">
 
-Before you begin, please familiarize yourself with Curio’s main concepts and functionalities by reading our [quick start guide](https://github.com/urban-toolkit/curio/blob/main/docs/QUICK-START.md).
+Before you begin, please familiarize yourself with Curio’s main concepts and functionalities by reading our [usage guide](https://github.com/urban-toolkit/curio/blob/main/docs/USAGE.md).
 
 The data for this tutorial can be found [here](https://drive.google.com/drive/folders/1-cncKF-omB0av98WzKApKtyJTrgvfa0P?usp=sharing).
 
