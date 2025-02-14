@@ -2,7 +2,7 @@
 
 ## Table of content
 1. [Installation](#installation)
-2. [Quick use](#quick-use)
+2. [Quick start](#quick-start)
 
 ## Installation
 
@@ -115,10 +115,10 @@ npm run start
 
 To use Ray Tracing, please see UTK's [requirements](https://github.com/urban-toolkit/utk).
 
-## Quick use
+## Quick start
 
-For a simple introductory example check [this](https://github.com/urban-toolkit/curio/blob/main/docs/QUICK-USE.md) tutorial.  
+For a simple introductory example check [this](https://github.com/urban-toolkit/curio/blob/main/docs/QUICK-START.md) tutorial.  
 
-![Tutorial](https://github.com/urban-toolkit/curio/blob/main/images/final_result.png?raw=true)
+![Tutorial](images/final_result.png?raw=true)
 
 
