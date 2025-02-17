@@ -117,7 +117,7 @@ To use Ray Tracing, please see UTK's [requirements](https://github.com/urban-too
 
 ## Quick start
 
-For a simple introductory example check [this](https://github.com/urban-toolkit/curio/blob/main/docs/QUICK-START.md) tutorial.  
+For a simple introductory example check [this](QUICK-START.md) tutorial. See [here](README.md) for more examples.
 
 ![Tutorial](images/final_result.png?raw=true)
 
