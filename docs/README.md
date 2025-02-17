@@ -2,7 +2,7 @@
 
 ## Usage
 
-- [Usage](USAGE.md)
+- [Installation and usage](USAGE.md)
 - [Quick start](QUICK-START.md)
 
 ## Making contributions
