@@ -1,6 +1,6 @@
 # Usage
 
-## Table of content
+## Table of contents
 1. [Installation](#installation)
 2. [Quick start](#quick-start)
 
