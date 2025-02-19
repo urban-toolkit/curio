@@ -9,20 +9,21 @@ import { Template, useTemplateContext } from "../providers/TemplateProvider";
 import { BoxContainer } from "./styles";
 import CSS from "csstype";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import {
-    faCircleInfo
-} from "@fortawesome/free-solid-svg-icons";
+import { faCircleInfo } from "@fortawesome/free-solid-svg-icons";
 import { useUserContext } from "../providers/UserProvider";
 
 function MergeFlowBox({ data, isConnectable }) {
-    const [output, setOutput] = useState<{code: string, content: string}>({code: "", content: JSON.stringify({ data: [], dataType: "outputs" })});
+    const [output, setOutput] = useState<{ code: string; content: string }>({
+        code: "",
+        content: JSON.stringify({ data: [], dataType: "outputs" }),
+    });
     const [templateData, setTemplateData] = useState<Template | any>({});
     const [showDescriptionModal, setDescriptionModal] = useState(false);
 
     const { editUserTemplate } = useTemplateContext();
 
     useEffect(() => {
-        if(data.templateId != undefined){
+        if (data.templateId != undefined) {
             setTemplateData({
                 id: data.templateId,
                 type: BoxType.MERGE_FLOW,
@@ -30,27 +31,27 @@ function MergeFlowBox({ data, isConnectable }) {
                 description: data.description,
                 accessLevel: data.accessLevel,
                 code: data.defaultCode,
-                custom: data.customTemplate
+                custom: data.customTemplate,
             });
         }
     }, [data.templateId]);
 
     const setTemplateConfig = (template: Template) => {
-        setTemplateData({...template});
-    }
+        setTemplateData({ ...template });
+    };
 
     const promptDescription = () => {
         setDescriptionModal(true);
-    }
+    };
 
     const closeDescription = () => {
         setDescriptionModal(false);
-    }
+    };
 
     const updateTemplate = (template: Template) => {
         setTemplateConfig(template);
         editUserTemplate(template);
-    }
+    };
 
     const iconStyle: CSS.Properties = {
         fontSize: "1.5em",
@@ -67,7 +68,7 @@ function MergeFlowBox({ data, isConnectable }) {
                 }
             }
 
-            setOutput({code: "success", content: JSON.stringify(newOutput)});
+            setOutput({ code: "success", content: JSON.stringify(newOutput) });
             data.outputCallback(data.nodeId, JSON.stringify(newOutput));
         }
     }, [data.input]);
@@ -86,7 +87,17 @@ function MergeFlowBox({ data, isConnectable }) {
                 id="out"
                 isConnectable={isConnectable}
             />
-            <BoxContainer nodeId={data.nodeId} data={data} boxHeight={50} boxWidth={100} noContent={true} templateData={templateData} setOutputCallback={setOutput} updateTemplate={updateTemplate} promptDescription={promptDescription}>
+            <BoxContainer
+                nodeId={data.nodeId}
+                data={data}
+                boxHeight={50}
+                boxWidth={100}
+                noContent={true}
+                templateData={templateData}
+                setOutputCallback={setOutput}
+                updateTemplate={updateTemplate}
+                promptDescription={promptDescription}
+            >
                 <DescriptionModal
                     nodeId={data.nodeId}
                     boxType={BoxType.MERGE_FLOW}
@@ -99,7 +110,6 @@ function MergeFlowBox({ data, isConnectable }) {
                 />
             </BoxContainer>
         </>
-
     );
 }
 

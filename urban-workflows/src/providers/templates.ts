@@ -1,22 +1,21 @@
 import { v4 as uuid } from "uuid";
-import { AccessLevelType, BoxType} from "../constants";
+import { AccessLevelType, BoxType } from "../constants";
 
 export const templates = [
     {
         id: uuid(),
-        type: BoxType.DATA_LOADING, 
-        name: "Parks (OSM)", 
-        description: "Load parks for Chicago using OSM", 
-        accessLevel: AccessLevelType.ANY, 
-code: "import utk \n\
+        type: BoxType.DATA_LOADING,
+        name: "Parks (OSM)",
+        description: "Load parks for Chicago using OSM",
+        accessLevel: AccessLevelType.ANY,
+        code: "import utk \n\
 uc = utk.OSM.load([!! bbox$INPUT_LIST_VALUE$[41.88043474773062,-87.62760230820301,41.89666220782541,-87.59872148227429] !!], layers=[[!! layer$SELECTION$parks$parks;water !!]]) \n\
 gdf = uc.layers['gdf']['objects'][0] \n\
 gdf.metadata = {'name': [!! layer$SELECTION$parks$parks;water !!]} \n\
 return gdf",
-        custom: false
-    }
-
-]
+        custom: false,
+    },
+];
 
 // [41.88043474773062, -87.62760230820301, 41.89666220782541, -87.59872148227429], layers=['parks']
 // layers=[!! layers$INPUT_LIST_TEXT$[\"parks\"] !!]

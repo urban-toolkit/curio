@@ -18,7 +18,10 @@ import { OutputIcon } from "./edges/OutputIcon";
 import { InputIcon } from "./edges/InputIcon";
 
 function ImageBox({ data, isConnectable }) {
-    const [output, setOutput] = useState<{code: string, content: string}>({code: "", content: ""}); // stores the output produced by the last execution of this box
+    const [output, setOutput] = useState<{ code: string; content: string }>({
+        code: "",
+        content: "",
+    }); // stores the output produced by the last execution of this box
     const [code, setCode] = useState<string>("");
     const [templateData, setTemplateData] = useState<Template | any>({});
 
@@ -48,90 +51,105 @@ function ImageBox({ data, isConnectable }) {
                 description: data.description,
                 accessLevel: data.accessLevel,
                 code: data.defaultCode,
-                custom: data.customTemplate
+                custom: data.customTemplate,
             });
         }
     }, [data.templateId]);
 
     useEffect(() => {
         if (data.input != "" && dataInputBypass.current) {
-
             const formatDate = (date: Date) => {
                 // Get individual date components
-                const month = date.toLocaleString('default', { month: 'short' });
+                const month = date.toLocaleString("default", {
+                    month: "short",
+                });
                 const day = date.getDate();
                 const year = date.getFullYear();
                 const hours = date.getHours();
                 const minutes = date.getMinutes();
                 const seconds = date.getSeconds();
-              
+
                 // Format the string
                 const formattedDate = `${month} ${day} ${year} ${hours}:${minutes}:${seconds}`;
-              
+
                 return formattedDate;
-            }
+            };
 
             let startTime = formatDate(new Date());
 
             const getType = (inputs: any[]) => {
                 let typesInput: string[] = [];
-                
-                for(const input of inputs){
+
+                for (const input of inputs) {
                     let parsedInput = input;
 
-                    if(typeof input == 'string')
+                    if (typeof input == "string")
                         parsedInput = JSON.parse(parsedInput);
 
-                    if(parsedInput.dataType == "outputs"){
-                        typesInput = typesInput.concat(getType(parsedInput.data));
-                    }else{
+                    if (parsedInput.dataType == "outputs") {
+                        typesInput = typesInput.concat(
+                            getType(parsedInput.data)
+                        );
+                    } else {
                         typesInput.push(parsedInput.dataType);
                     }
                 }
-    
+
                 return typesInput;
-            }
+            };
 
             const mapTypes = (typesList: string[]) => {
-        
                 let mapTypes: any = {
                     "DATAFRAME": 0,
                     "GEODATAFRAME": 0,
                     "VALUE": 0,
                     "LIST": 0,
-                    "JSON": 0
+                    "JSON": 0,
                 };
-    
-                for(const typeValue of typesList){
-                    if(typeValue == "int" || typeValue == "str" || typeValue == "float" || typeValue == "bool"){
+
+                for (const typeValue of typesList) {
+                    if (
+                        typeValue == "int" ||
+                        typeValue == "str" ||
+                        typeValue == "float" ||
+                        typeValue == "bool"
+                    ) {
                         mapTypes["VALUE"] = 1;
-                    }else if(typeValue == "list"){
+                    } else if (typeValue == "list") {
                         mapTypes["LIST"] = 1;
-                    }else if(typeValue == "dict"){
+                    } else if (typeValue == "dict") {
                         mapTypes["JSON"] = 1;
-                    }else if(typeValue == "dataframe"){
+                    } else if (typeValue == "dataframe") {
                         mapTypes["DATAFRAME"] = 1;
-                    }else if(typeValue == "geodataframe"){
+                    } else if (typeValue == "geodataframe") {
                         mapTypes["GEODATAFRAME"] = 1;
                     }
                 }
-    
+
                 return mapTypes;
-            }
+            };
 
             let typesInput: string[] = [];
 
-            if(data.input != ""){
+            if (data.input != "") {
                 typesInput = getType([data.input]);
             }
-        
+
             let typesOuput: string[] = [...typesInput];
 
-            boxExecProv(startTime, startTime, workflowName, BoxType.VIS_IMAGE+"_"+data.nodeId, mapTypes(typesInput), mapTypes(typesOuput), "");
-            
+            boxExecProv(
+                startTime,
+                startTime,
+                workflowName,
+                BoxType.VIS_IMAGE + "_" + data.nodeId,
+                mapTypes(typesInput),
+                mapTypes(typesOuput),
+                ""
+            );
+
             let parsedInput = JSON.parse(data.input);
 
-            if(parsedInput.dataType != "dataframe"){
+            if (parsedInput.dataType != "dataframe") {
                 alert("Image box can only receive dataframe");
                 dataInputBypass.current = true;
                 return;
@@ -139,8 +157,13 @@ function ImageBox({ data, isConnectable }) {
 
             parsedInput.data = JSON.parse(parsedInput.data);
 
-            if(parsedInput.data.image_id == undefined || parsedInput.data.image_content == undefined){
-                alert("Image needs to receive a dataframe with image_id and image_content columns.");
+            if (
+                parsedInput.data.image_id == undefined ||
+                parsedInput.data.image_content == undefined
+            ) {
+                alert(
+                    "Image needs to receive a dataframe with image_id and image_content columns."
+                );
                 dataInputBypass.current = true;
                 return;
             }
@@ -148,23 +171,25 @@ function ImageBox({ data, isConnectable }) {
             let newImages: string[] = [];
             let interacted: string[] = [];
 
-            for(const key of Object.keys(parsedInput.data.image_content)){
+            for (const key of Object.keys(parsedInput.data.image_content)) {
                 let iterator: string[] = [];
 
-                if(Array.isArray(parsedInput.data.image_content[key])){
-                    iterator = [...parsedInput.data.image_content[key]]
-                }else{
-                    iterator = [parsedInput.data.image_content[key]]
+                if (Array.isArray(parsedInput.data.image_content[key])) {
+                    iterator = [...parsedInput.data.image_content[key]];
+                } else {
+                    iterator = [parsedInput.data.image_content[key]];
                 }
 
-                for(const base64ImageContent of iterator){
-                    if(parsedInput.data.interacted != undefined){
+                for (const base64ImageContent of iterator) {
+                    if (parsedInput.data.interacted != undefined) {
                         interacted.push(parsedInput.data.interacted[key]);
-                    }else{
+                    } else {
                         interacted.push("0");
                     }
-    
-                    newImages.push('data:image/png;base64,' + base64ImageContent);
+
+                    newImages.push(
+                        "data:image/png;base64," + base64ImageContent
+                    );
                 }
             }
 
@@ -172,38 +197,41 @@ function ImageBox({ data, isConnectable }) {
             setInteracted(interacted);
 
             // replicating input to the output
-            setOutput({code: "success", content: data.input});
+            setOutput({ code: "success", content: data.input });
             data.outputCallback(data.nodeId, data.input);
         }
 
         dataInputBypass.current = true;
-
     }, [data.input]);
 
     const setTemplateConfig = (template: Template) => {
-        setTemplateData({...template});
-    }
+        setTemplateData({ ...template });
+    };
 
     const closeModal = () => {
         setShowTemplateModal(false);
-    }
+    };
 
     const promptDescription = () => {
         setDescriptionModal(true);
-    }
+    };
 
     const closeDescription = () => {
         setDescriptionModal(false);
-    }
+    };
 
     const clickImage = (index: number) => {
-
         let newObj: any = {};
 
-        newObj["images_click"] = { type: VisInteractionType.POINT, data: [index], priority: 1, source: BoxType.VIS_IMAGE }
+        newObj["images_click"] = {
+            type: VisInteractionType.POINT,
+            data: [index],
+            priority: 1,
+            source: BoxType.VIS_IMAGE,
+        };
 
         setInteractions(newObj);
-    }
+    };
 
     useEffect(() => {
         data.interactionsCallback(interactions, data.nodeId);
@@ -214,29 +242,69 @@ function ImageBox({ data, isConnectable }) {
         flexWrap: "wrap",
         maxHeight: "100%",
         maxWidth: "100%",
-        overflowY: "auto"
-    }
-    
+        overflowY: "auto",
+    };
+
     const imageStyle: CSS.Properties = {
-        height: "auto", 
-        margin: "5px" 
-    }
+        height: "auto",
+        margin: "5px",
+    };
 
     const selectedImageStyle: CSS.Properties = {
-        height: "auto", 
+        height: "auto",
         margin: "5px",
-        border: "3px solid red"
-    }
+        border: "3px solid red",
+    };
 
-    const ContentComponent = ({ imageContainer, images, interacted, selectedImageStyle, imageStyle, clickImage }:{imageContainer: any, images: any, interacted: any, selectedImageStyle:any, imageStyle:any, clickImage:any}) => {
+    const ContentComponent = ({
+        imageContainer,
+        images,
+        interacted,
+        selectedImageStyle,
+        imageStyle,
+        clickImage,
+    }: {
+        imageContainer: any;
+        images: any;
+        interacted: any;
+        selectedImageStyle: any;
+        imageStyle: any;
+        clickImage: any;
+    }) => {
         return (
-            <div className={"nowheel nodrag"} id={"imageBox_content_"+data.nodeId} style={imageContainer}>
+            <div
+                className={"nowheel nodrag"}
+                id={"imageBox_content_" + data.nodeId}
+                style={imageContainer}
+            >
                 {images.map((src: string, index: number) => (
-                    <div key={index} id={"imageBox_content_" + data.nodeId + "_" + index}>
-                        {interacted != undefined && interacted.length == images.length && interacted[index] == "1" ?
-                            <img src={src} width={50} height={50} style={selectedImageStyle} onClick={() => {clickImage(index)}}/> :
-                            <img src={src} width={50} height={50} style={imageStyle} onClick={() => {clickImage(index)}}/>
-                        }
+                    <div
+                        key={index}
+                        id={"imageBox_content_" + data.nodeId + "_" + index}
+                    >
+                        {interacted != undefined &&
+                        interacted.length == images.length &&
+                        interacted[index] == "1" ? (
+                            <img
+                                src={src}
+                                width={50}
+                                height={50}
+                                style={selectedImageStyle}
+                                onClick={() => {
+                                    clickImage(index);
+                                }}
+                            />
+                        ) : (
+                            <img
+                                src={src}
+                                width={50}
+                                height={50}
+                                style={imageStyle}
+                                onClick={() => {
+                                    clickImage(index);
+                                }}
+                            />
+                        )}
                     </div>
                 ))}
             </div>
@@ -264,7 +332,14 @@ function ImageBox({ data, isConnectable }) {
                 id="in/out"
                 isConnectable={isConnectable}
             />
-            <BoxContainer nodeId={data.nodeId} data={data} templateData={templateData} setOutputCallback={setOutput} promptDescription={promptDescription} styles={{ paddingLeft: "16px" }}>
+            <BoxContainer
+                nodeId={data.nodeId}
+                data={data}
+                templateData={templateData}
+                setOutputCallback={setOutput}
+                promptDescription={promptDescription}
+                styles={{ paddingLeft: "16px" }}
+            >
                 <InputIcon type="1" />
                 <DescriptionModal
                     nodeId={data.nodeId}
@@ -278,7 +353,16 @@ function ImageBox({ data, isConnectable }) {
                 />
                 <BoxEditor
                     setSendCodeCallback={(_: any) => {}}
-                    contentComponent={<ContentComponent imageContainer={imageContainer} images={images} interacted={interacted} selectedImageStyle={selectedImageStyle} imageStyle={imageStyle} clickImage={clickImage} />}
+                    contentComponent={
+                        <ContentComponent
+                            imageContainer={imageContainer}
+                            images={images}
+                            interacted={interacted}
+                            selectedImageStyle={selectedImageStyle}
+                            imageStyle={imageStyle}
+                            clickImage={clickImage}
+                        />
+                    }
                     code={false}
                     grammar={false}
                     widgets={false}

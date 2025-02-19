@@ -37,7 +37,7 @@ import { useCode } from "../hook/useCode";
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { buttonStyle } from "./styles";
 
-import './MainCanvas.css';
+import "./MainCanvas.css";
 
 export function MainCanvas() {
     const {
@@ -53,7 +53,7 @@ export function MainCanvas() {
 
     const { onContextMenu, showMenu, menuPosition } = useRightClickMenu();
     const { createCodeNode } = useCode();
-   
+
     let objectTypes: any = {};
     objectTypes[BoxType.COMPUTATION_ANALYSIS] = ComputationAnalysisBox;
     objectTypes[BoxType.DATA_TRANSFORMATION] = DataTransformationBox;
@@ -78,19 +78,25 @@ export function MainCanvas() {
     const edgeTypes = useMemo(() => objectEdgeTypes, []);
 
     const reactFlow = useReactFlow();
-    const { setDashBoardMode, updatePositionWorkflow, updatePositionDashboard } = useFlowContext();
+    const {
+        setDashBoardMode,
+        updatePositionWorkflow,
+        updatePositionDashboard,
+    } = useFlowContext();
 
     const [selectedEdgeId, setSelectedEdgeId] = useState<string>(""); // can only remove selected edges
-    
-    const [dashboardOn, setDashboardOn] = useState<boolean>(false); 
+
+    const [dashboardOn, setDashboardOn] = useState<boolean>(false);
 
     return (
-        <div style={{ width: "100vw", height: "100vh" }} onContextMenu={onContextMenu}>
+        <div
+            style={{ width: "100vw", height: "100vh" }}
+            onContextMenu={onContextMenu}
+        >
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
                 onNodesChange={(changes: NodeChange[]) => {
-
                     let allowedChanges: NodeChange[] = [];
 
                     let edges = reactFlow.getEdges();
@@ -98,25 +104,32 @@ export function MainCanvas() {
                     for (const change of changes) {
                         let allowed = true;
 
-                        if(change.type == "remove"){
+                        if (change.type == "remove") {
                             for (const edge of edges) {
-                                if (edge.source == change.id || edge.target == change.id){
-                                    alert("Connect boxes cannot be removed. Remove the edges first");
+                                if (
+                                    edge.source == change.id ||
+                                    edge.target == change.id
+                                ) {
+                                    alert(
+                                        "Connect boxes cannot be removed. Remove the edges first"
+                                    );
                                     allowed = false;
-                                    break
+                                    break;
                                 }
                             }
                         }
 
-                        if(change.type == "position" && change.position != undefined && change.position.x != undefined){
-                            if(dashboardOn)
+                        if (
+                            change.type == "position" &&
+                            change.position != undefined &&
+                            change.position.x != undefined
+                        ) {
+                            if (dashboardOn)
                                 updatePositionDashboard(change.id, change);
-                            else
-                                updatePositionWorkflow(change.id, change);
+                            else updatePositionWorkflow(change.id, change);
                         }
 
-                        if(allowed)
-                            allowedChanges.push(change);
+                        if (allowed) allowedChanges.push(change);
                     }
 
                     onNodesDelete(allowedChanges);
@@ -126,20 +139,27 @@ export function MainCanvas() {
                     let selected = "";
                     let allowedChanges = [];
 
-                    for(const change of changes){
-                        if(change.type == "select" && change.selected == true){
+                    for (const change of changes) {
+                        if (
+                            change.type == "select" &&
+                            change.selected == true
+                        ) {
                             setSelectedEdgeId(change.id);
                             selected = change.id;
-                        }else if(change.type == "select"){
+                        } else if (change.type == "select") {
                             setSelectedEdgeId("");
                             selected = "";
                         }
                     }
 
-                    for(const change of changes){
-                        if(change.type == "remove" && (selected == change.id || selectedEdgeId == change.id)){
+                    for (const change of changes) {
+                        if (
+                            change.type == "remove" &&
+                            (selected == change.id ||
+                                selectedEdgeId == change.id)
+                        ) {
                             allowedChanges.push(change);
-                        }else if(change.type != "remove"){
+                        } else if (change.type != "remove") {
                             allowedChanges.push(change);
                         }
                     }
@@ -147,13 +167,12 @@ export function MainCanvas() {
                     return onEdgesChange(allowedChanges);
                 }}
                 onEdgesDelete={(edges: Edge[]) => {
-                
                     console.log("edges", edges);
 
                     let allowedEdges: Edge[] = [];
 
-                    for(const edge of edges){
-                        if(selectedEdgeId == edge.id){
+                    for (const edge of edges) {
+                        if (selectedEdgeId == edge.id) {
                             allowedEdges.push(edge);
                         }
                     }
@@ -170,16 +189,36 @@ export function MainCanvas() {
                 <UserMenu />
                 <ToolsMenu />
                 <RightClickMenu
-                  showMenu={showMenu}
-                  menuPosition={menuPosition}
-                  options={[
-                    {
-                      name: "Add comment box",
-                      action: () => createCodeNode("COMMENTS"),
-                    },
-                  ]}
+                    showMenu={showMenu}
+                    menuPosition={menuPosition}
+                    options={[
+                        {
+                            name: "Add comment box",
+                            action: () => createCodeNode("COMMENTS"),
+                        },
+                    ]}
                 />
-                <button className="nowheel nodrag" style={{...buttonStyle, position: "fixed", right: "10px", color: "#888787", fontWeight: "bold", bottom: "20px", zIndex: 100, ...(dashboardOn ? {boxShadow: "0px 0px 5px 0px red"} : {boxShadow: "0px 0px 5px 0px black"})}} onClick={() => {setDashBoardMode(!dashboardOn); setDashboardOn(!dashboardOn);}}>Dashboard mode</button>
+                <button
+                    className="nowheel nodrag"
+                    style={{
+                        ...buttonStyle,
+                        position: "fixed",
+                        right: "10px",
+                        color: "#888787",
+                        fontWeight: "bold",
+                        bottom: "20px",
+                        zIndex: 100,
+                        ...(dashboardOn
+                            ? { boxShadow: "0px 0px 5px 0px red" }
+                            : { boxShadow: "0px 0px 5px 0px black" }),
+                    }}
+                    onClick={() => {
+                        setDashBoardMode(!dashboardOn);
+                        setDashboardOn(!dashboardOn);
+                    }}
+                >
+                    Dashboard mode
+                </button>
                 <Background />
                 <Controls />
             </ReactFlow>

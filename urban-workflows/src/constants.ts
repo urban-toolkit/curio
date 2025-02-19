@@ -26,7 +26,7 @@ export enum SupportedType {
   VALUE = "VALUE", // int, float, boolean, ...
   LIST = "LIST",
   JSON = "JSON", // dictionary in python
-  RASTER = "RASTER"
+  RASTER = "RASTER",
 }
 
 export enum WidgetType {
@@ -53,14 +53,14 @@ export enum ResolutionType {
   MERGE_OR = "MERGE_OR", // at least one plot needs to interact
 }
 
-export enum ResolutionTypeUTK{
-    PICKING = "PICKING", // all coordinates of the object need to be selected for the object to be considered selected
-    BRUSHING = "BRUSHING", // at least one coordinate of the object need to be selected for the object to be considered selected
-    NONE = "NONE"
+export enum ResolutionTypeUTK {
+  PICKING = "PICKING", // all coordinates of the object need to be selected for the object to be considered selected
+  BRUSHING = "BRUSHING", // at least one coordinate of the object need to be selected for the object to be considered selected
+  NONE = "NONE",
 }
 
-export enum AccessLevelType{
-    PROGRAMMER = "PROGRAMMER", // only programmers can access
-    EXPERT = "EXPERT", // only experts can access
-    ANY = "ANY" // both can access
+export enum AccessLevelType {
+  PROGRAMMER = "PROGRAMMER", // only programmers can access
+  EXPERT = "EXPERT", // only experts can access
+  ANY = "ANY", // both can access
 }
