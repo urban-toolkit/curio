@@ -40,7 +40,7 @@ For detailed instructions on how to use the project, please see the [usage](docs
 
 Gustavo Moreira (UIC)  
 Leonardo Ferreira (UIC)  
-[Maryam Hosseini](https://www.maryamhosseini.me/) (UC Berkeley)
+[Maryam Hosseini](https://www.maryamhosseini.me/) (UC Berkeley)  
 [Daniel de Oliveira](http://www2.ic.uff.br/~danielcmo/) (UFF)  
 [Nivan Ferreira](https://www.cin.ufpe.br/~nivan/) (UFPE)  
 [Marcos Lage](http://www.ic.uff.br/~mlage/) (UFF)  
