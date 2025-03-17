@@ -9,7 +9,7 @@ import { BoxType } from "../constants";
 interface ProvenanceContextProps {
     addUser: (user_name: string, user_type: string, user_IP: string) => void;
     addWorkflow: (workflow_name: string) => void;
-    newBox: (workflow_name: string, activity_name: string) => void;
+    newBox: (workflow_name: string, activity_name: string, code: string) => void;
     deleteBox: (workflow_name: string, activity_name: string) => void;
     newConnection: (workflow_name: string, sourceNodeId: string, sourceNodeType: BoxType, targetNodeId: string, targetNodeType: BoxType) => void;
     deleteConnection: (workflow_name: string, targetNodeId: string, targetNodeType: BoxType) => void;
@@ -56,13 +56,14 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
         })
     }
 
-    const newBox = (workflow_name: string, activity_name: string) => {
+    const newBox = (workflow_name: string, activity_name: string, code: string) => {
         fetch(process.env.BACKEND_URL+"/newBoxProv", {
             method: "POST",
             body: JSON.stringify({
                 data: {
                     workflow_name,
-                    activity_name
+                    activity_name,
+                    code
                 }
             }),
             headers: {
@@ -87,7 +88,7 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
     }
 
     const addWorkflow = (workflow_name: string) => {
-        fetch(process.env.BACKEND_URL+"/truncateDBProv", {
+        fetch(process.env.BACKEND_URL+"/truncateDBProvv", {
             method: "GET"
         }).then(() => {
             fetch(process.env.BACKEND_URL+"/saveWorkflowProv", {

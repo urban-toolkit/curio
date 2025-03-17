@@ -77,6 +77,26 @@ function DataLoadingBox({ data, isConnectable }) {
     setSendCode(() => _sendCode);
   };
 
+  // useEffect(() => {
+  //   let activity_name: any = data.nodeType + "_" + data.nodeId
+
+  //   fetch(process.env.BACKEND_URL + "/updateActivityCode", {
+  //     method: "POST",
+  //     body: JSON.stringify({
+  //       activity_name,
+  //       code
+  //     }),
+  //     headers: {
+  //       "Content-type": "application/json; charset=UTF-8",
+  //     }
+  //   })
+
+  // }, [code]);
+
+  useEffect(() => {
+    data.code = code;
+  }, [code]);
+
   return (
     <>
       <Handle

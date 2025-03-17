@@ -11,7 +11,7 @@ import { AccessLevelType } from "../constants";
 const pythonInterpreter = new PythonInterpreter();
 
 interface IUseCode {
-    createCodeNode: (boxType: string, template: Template | null) => void;
+    createCodeNode: (boxType: string, template: Template | null, id: string, code: string) => void;
 }
 
 export function useCode(): IUseCode {
@@ -46,11 +46,22 @@ export function useCode(): IUseCode {
         })
     }, [setInteractions]);
 
-    const createCodeNode = useCallback((boxType: string, template: Template | null = null) => {
-        const nodeId = uuid();
+    const createCodeNode = useCallback((boxType: string, template: Template | null = null, id = "", code = "") => {
+        let nodeId;
+        if (id === "") {
+            nodeId = uuid();
+        } else {
+            nodeId = id;
+        }
+
+        let node: Node;
+
+        if(code == null){
+            code = "";
+        }
 
         if(template != null){
-            const node: Node = {
+           node = {
                 id: nodeId,
                 type: boxType,
                 position: getPosition(),
@@ -71,27 +82,32 @@ export function useCode(): IUseCode {
                     propagationCallback: applyNewPropagation,
                 },
             };
-    
-            addNode(node);
         }else{
-            const node: Node = {
+            node = {
                 id: nodeId,
                 type: boxType,
                 position: getPosition(),
                 data: {
                     nodeId: nodeId,
                     pythonInterpreter: pythonInterpreter,
-                    input: "",
-                    nodeType: boxType,
+                    defaultCode: code.split(' ').join(' '), 
+                    description: '',
+                    templateId: '',
+                    templateName: '',
+                    accessLevel: '',
                     hidden: false,
+                    nodeType: boxType,
+                    customTemplate: true,
+                    input: "",
                     outputCallback,
                     interactionsCallback,
                     propagationCallback: applyNewPropagation,
                 },
             };
-    
-            addNode(node);
+            
         }
+
+    addNode(node);
 
     }, [addNode, outputCallback, getPosition]);
 

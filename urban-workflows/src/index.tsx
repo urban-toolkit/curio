@@ -8,21 +8,24 @@ import DialogProvider from "./providers/DialogProvider";
 import { MainCanvas } from "./components/MainCanvas";
 import { ReactFlowProvider } from "reactflow";
 import ProvenanceProvider from "./providers/ProvenanceProvider";
+import WorkflowProvider from "./providers/WorkflowProvider";
 
 const App: React.FC = () => {
   return (
     <ReactFlowProvider>
-      <ProvenanceProvider>
-        <UserProvider>
-          <DialogProvider>
-            <FlowProvider>
-              <TemplateProvider>
+      <WorkflowProvider>
+        <ProvenanceProvider>
+          <UserProvider>
+            <DialogProvider>
+              <FlowProvider>
+                <TemplateProvider>
                   <MainCanvas />
-              </TemplateProvider>
-            </FlowProvider>
-          </DialogProvider>
-        </UserProvider>
-      </ProvenanceProvider>
+                </TemplateProvider>
+              </FlowProvider>
+            </DialogProvider>
+          </UserProvider>
+        </ProvenanceProvider>
+      </WorkflowProvider>
     </ReactFlowProvider>
   );
 };

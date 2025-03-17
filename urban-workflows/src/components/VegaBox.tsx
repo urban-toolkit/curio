@@ -422,6 +422,10 @@ function VegaBox({ data, isConnectable }) {
     data.interactionsCallback(interactions, data.nodeId);
   }, [interactions]);
 
+  useEffect(() => {
+    data.code = code;
+  }, [code]);
+
   return (
     <>
       <Handle

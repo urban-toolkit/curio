@@ -332,13 +332,13 @@ def new_box_prov():
             VALUES (?, ?)''', (attributeIds[outputType], output_relation_id,))
 
     # creating new activity 
-    cursor.execute('''INSERT INTO activity (workflow_id, activity_name, output_relation_id)
-                    VALUES (?, ?, ?)''', (workflow_id, data['activity_name'], output_relation_id,))
+    cursor.execute('''INSERT INTO activity (workflow_id, activity_name, output_relation_id, code)
+                    VALUES (?, ?, ?, ?)''', (workflow_id, data['activity_name'], output_relation_id, data['code']))
 
     conn.commit()
 
     # getting all activities that point to the old workflow
-    cursor.execute("SELECT activity_name, input_relation_id, output_relation_id, ve_id FROM activity WHERE workflow_id = ?", (old_workflow[0],))
+    cursor.execute("SELECT activity_name, input_relation_id, output_relation_id, ve_id, code FROM activity WHERE workflow_id = ?", (old_workflow[0],))
 
     activities = cursor.fetchall()
 
@@ -348,6 +348,8 @@ def new_box_prov():
 
     # duplicating all activities and making them point to the new workflow
     for activity in activities:
+
+        print(activity)
 
         # getting the old output relation of duplicated activity 
         cursor.execute("SELECT relation_id, relation_name FROM relation WHERE relation_id = ?", (activity[2],))
@@ -374,8 +376,8 @@ def new_box_prov():
         # cursor.execute('''INSERT INTO activity (workflow_id, activity_name, input_relation_id, output_relation_id, ve_id)
         #         VALUES (?, ?, ?, ?, ?)''', (workflow_id, activity[0], activity[1], output_relation_id, activity[3],))
 
-        cursor.execute('''INSERT INTO activity (workflow_id, activity_name, input_relation_id, output_relation_id, ve_id)
-                VALUES (?, ?, ?, ?, ?)''', (workflow_id, activity[0], activity[1], old_output_relation[0], activity[3],))
+        cursor.execute('''INSERT INTO activity (workflow_id, activity_name, input_relation_id, output_relation_id, ve_id, code)
+                VALUES (?, ?, ?, ?, ?, ?)''', (workflow_id, activity[0], activity[1], old_output_relation[0], activity[3], activity[4]))
 
         conn.commit()
 
@@ -399,6 +401,60 @@ def new_box_prov():
 
     # // TODO: new and duplicated activities can also be versioned by creating a new versioned element
     return "",200
+
+@app.route('/updateBoxCode', methods=['POST'])
+def updateBoxCode():
+    conn = sqlite3.connect('provenance.db')
+    cursor = conn.cursor()
+
+    batch_data = request.json.get('data')
+    if not batch_data or not isinstance(batch_data, list):
+        return "Dados inválidos", 400
+    
+    workflow_name = batch_data[0]['workflow_name']
+    
+    cursor.execute("SELECT * FROM workflow WHERE workflow_id = (SELECT MAX(workflow_id) FROM workflow WHERE workflow_name = ?)", (workflow_name,))
+    existing_workflow = cursor.fetchone()
+    
+    if not existing_workflow:
+        return "Workflow não encontrado", 404
+    
+    old_workflow_id = existing_workflow[0]
+    ve_id = existing_workflow[2]
+
+    cursor.execute("SELECT * FROM versionedElement WHERE ve_id = ?", (ve_id,))
+    old_versioned_element = cursor.fetchone()
+    
+    cursor.execute("SELECT * FROM version WHERE version_id = ?", (old_versioned_element[1],))
+    old_version = cursor.fetchone()
+    
+    new_version_number = str(float(old_version[1]) + 1.0)
+    
+    cursor.execute('''INSERT INTO version (version_number) VALUES (?)''', (new_version_number,))
+    conn.commit()
+    version_id = cursor.lastrowid
+    
+    cursor.execute("INSERT INTO versionedElement (previous_ve_id, version_id) VALUES (?, ?)", (ve_id, version_id))
+    conn.commit()
+    new_ve_id = cursor.lastrowid
+    
+    cursor.execute("INSERT INTO workflow (workflow_name, ve_id) VALUES (?, ?)", (workflow_name, new_ve_id))
+    conn.commit()
+    new_workflow_id = cursor.lastrowid
+
+    cursor.execute("SELECT activity_id, activity_name, input_relation_id, output_relation_id, ve_id, code FROM activity WHERE workflow_id = ?", (old_workflow_id,))
+    activities = {a[1]: a for a in cursor.fetchall()}  # Dicionário para facilitar a busca por activity_name
+
+    for activity_name, (activity_id, _, input_relation_id, output_relation_id, ve_id, old_code) in activities.items():
+        new_code = next((item['code'] for item in batch_data if item['activity_name'] == activity_name), old_code)
+        cursor.execute('''INSERT INTO activity (workflow_id, activity_name, input_relation_id, output_relation_id, ve_id, code)
+                          VALUES (?, ?, ?, ?, ?, ?)''', (new_workflow_id, activity_name, input_relation_id, output_relation_id, ve_id, new_code))
+    
+    conn.commit()
+    conn.close()
+    return "", 200
+
+
 
 @app.route('/deleteBoxProv', methods=['POST'])
 def delete_box_prov():
@@ -577,7 +633,7 @@ def new_connection_prov():
     workflow_id = cursor.lastrowid
 
     # getting all activities that point to the old workflow
-    cursor.execute("SELECT activity_name, input_relation_id, output_relation_id, ve_id FROM activity WHERE workflow_id = ?", (old_workflow[0],))
+    cursor.execute("SELECT activity_name, input_relation_id, output_relation_id, ve_id, code FROM activity WHERE workflow_id = ?", (old_workflow[0],))
 
     activities = cursor.fetchall()
 
@@ -613,8 +669,8 @@ def new_connection_prov():
         # cursor.execute('''INSERT INTO activity (workflow_id, activity_name, input_relation_id, output_relation_id, ve_id)
         #         VALUES (?, ?, ?, ?, ?)''', (workflow_id, activity[0], activity[1], output_relation_id, activity[3],))
 
-        cursor.execute('''INSERT INTO activity (workflow_id, activity_name, input_relation_id, output_relation_id, ve_id)
-                VALUES (?, ?, ?, ?, ?)''', (workflow_id, activity[0], activity[1], old_output_relation[0], activity[3],))
+        cursor.execute('''INSERT INTO activity (workflow_id, activity_name, input_relation_id, output_relation_id, ve_id, code)
+                VALUES (?, ?, ?, ?, ?, ?)''', (workflow_id, activity[0], activity[1], old_output_relation[0], activity[3], activity[4]))
 
         conn.commit()
 
@@ -1138,6 +1194,113 @@ def delete_template(id):
 
     finally:
         conn.close()
+
+@app.route('/getWorkflowNames', methods=['GET'])
+def get_workflow_names():
+    conn = sqlite3.connect('provenance.db')
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT workflow_id, workflow_name
+            FROM workflow
+            WHERE workflow_id IN (
+                SELECT MAX(workflow_id)
+                FROM workflow
+                GROUP BY workflow_name
+            )
+            ORDER BY workflow_id DESC
+        """)
+        workflows = cursor.fetchall()
+
+        if not workflows:
+            return jsonify({"message": "No workflows found."}), 404
+
+        return jsonify({"workflows": [{"id": workflow[0], "name": workflow[1]} for workflow in workflows]}), 200
+
+    except sqlite3.Error as e:
+        print(e)
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        conn.close()
+        
+@app.route('/updateActivityCode', methods=['POST'])
+def update_activity_code():
+    data = request.get_json()
+    activity_name = data.get("activity_name")
+    new_code = data.get("code")
+
+    print(new_code)
+    print(activity_name)
+
+    if not activity_name or new_code is None:
+        return jsonify({"error": "Missing activity_name or code"}), 400
+
+    conn = sqlite3.connect('provenance.db')
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT activity_id FROM activity
+            WHERE activity_name = ?
+            ORDER BY activity_id DESC
+            LIMIT 1
+        """, (activity_name,))
+        row = cursor.fetchone()
+
+        if not row:
+            return jsonify({"error": "Activity not found"}), 404
+
+        activity_id = row[0]
+
+        cursor.execute("""
+            UPDATE activity
+            SET code = ?
+            WHERE activity_id = ?
+        """, (new_code, activity_id))
+        conn.commit()
+
+        return jsonify({"message": "Code updated successfully"}), 200
+
+    except sqlite3.Error as e:
+        print(e)
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        conn.close()
+
+@app.route('/getActivitiesByWorkflowIds', methods=['GET'])
+def get_activities_by_workflow_ids():
+    workflow_ids = request.args.getlist("workflow_id")
+
+    if not workflow_ids:
+        return jsonify({"error": "Missing workflow_ids"}), 400
+
+    conn = sqlite3.connect('provenance.db')
+    cursor = conn.cursor()
+
+    try:
+        placeholders = ','.join(['?'] * len(workflow_ids))
+        cursor.execute(f"""
+            SELECT * FROM activity
+            WHERE workflow_id IN ({placeholders})
+        """, workflow_ids)
+        rows = cursor.fetchall()
+
+        if not rows:
+            return jsonify({"error": "Activities not found"}), 404
+
+        result = [dict(zip([column[0] for column in cursor.description], row)) for row in rows]
+        return jsonify(result), 200
+
+    except sqlite3.Error as e:
+        print(e)
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        conn.close()
+
 
 
 if __name__ == '__main__':

@@ -38,6 +38,8 @@ import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { buttonStyle } from "./styles";
 
 import './MainCanvas.css';
+import WorkflowList from "./WorkFlowList";
+import { useWorkFlowContext } from "../providers/WorkflowProvider";
 
 export function MainCanvas() {
     const {
@@ -84,11 +86,82 @@ export function MainCanvas() {
     
     const [dashboardOn, setDashboardOn] = useState<boolean>(false); 
 
+    const [newEdges, setNewEdges] = useState(edges); 
+
+    const { workflowName, workflowID, setWorkflowID, setWorkflowName, getWorkflowNames } = useWorkFlowContext();
+
+    // useEffect(()=>{
+    //     fetch(`http://localhost:5002/getActivitiesByWorkflowIds?workflow_id=${6}`)
+    //         .then(async (response) => {
+    //             if (!response.ok) {
+    //                 throw new Error('response was not ok');
+    //             }
+    //             return response.json();
+    //         })
+    //         .then((workflow)=>{
+    //             workflow.forEach((node:any)=>{
+    //                 let boxType:string = node.activity_name.replace(/[^A-Z_]+/, '').slice(0, -1);
+    //                 let node_id:string = node.activity_name.replace(/[A-Z_]/g, '');
+
+                    
+    //                 createCodeNode(boxType,null,node_id,node.code)
+
+    //                 if(node.input_relation_id){
+    //                     let input_relation_id = node.input_relation_id
+    //                     let activity_input = node_id
+    //                     let activity_output = workflow.find((item: any) => item.output_relation_id === input_relation_id)['activity_name'].replace(/[A-Z_]/g, '')
+                        
+    //                     setNewEdges(
+    //                         prevEdges => [
+    //                             ...prevEdges,
+    //                             {
+    //                                 "source": activity_output,
+    //                                 "sourceHandle": "out",
+    //                                 "target": activity_input,
+    //                                 "targetHandle": "in",
+    //                                 "markerEnd": {
+    //                                     "type": "arrow"
+    //                                 },
+    //                                 "id": `reactflow__edge-${activity_input}out${activity_output}in`,
+    //                                 "selected": true
+    //                             } as unknown as Edge
+    //                         ]
+    //                     );
+                    
+
+    //                 }
+
+                    
+    //             })
+
+    //         })
+    // },[])
+
+    useEffect(() => {
+        setNewEdges(prevEdges => {
+            const existingIds = new Set(prevEdges.map(edge => edge.id));
+            const uniqueEdges = edges.filter(edge => !existingIds.has(edge.id));
+    
+            return [
+                ...prevEdges,
+                ...uniqueEdges 
+            ];
+        });
+    }, [edges]);
+
+
+    useEffect(()=>{
+        
+            console.log("New Workflow Name",workflowName,workflowID)
+        
+    },[workflowName,workflowID])
+
+
     return (
         <div style={{ width: "100vw", height: "100vh" }} onContextMenu={onContextMenu}>
             <ReactFlow
                 nodes={nodes}
-                edges={edges}
+                edges={newEdges}
                 onNodesChange={(changes: NodeChange[]) => {
 
                     let allowedChanges: NodeChange[] = [];
@@ -168,7 +241,17 @@ export function MainCanvas() {
                 fitView
             >
                 <UserMenu />
-                <ToolsMenu />
+                <div style={{ position: "absolute", top: "10px", left: "10px", zIndex: 100 }}>
+                    <ToolsMenu />
+                    <div style={{ marginTop: "500px" }}>
+                        <WorkflowList
+                            onSelectWorkflow={(workflowID: string, workflowName: string): void => {
+                                setWorkflowName(workflowName);
+                                setWorkflowID(workflowID);
+                            }}
+                        />
+                    </div>
+                </div>
                 <RightClickMenu
                   showMenu={showMenu}
                   menuPosition={menuPosition}

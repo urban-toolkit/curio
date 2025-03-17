@@ -24,6 +24,7 @@ import {
 import { ConnectionValidator } from "../ConnectionValidator";
 import { BoxType, EdgeType, VisInteractionType } from "../constants";
 import { useProvenanceContext } from "./ProvenanceProvider";
+import { useWorkFlowContext } from "./WorkflowProvider";
 
 export interface IOutput {
     nodeId: string;
@@ -113,11 +114,13 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const reactFlow = useReactFlow();
     const { newBox, addWorkflow, deleteBox, newConnection, deleteConnection } = useProvenanceContext();
 
-    const [workflowName, setWorkflowName] = useState<string>("DefaultWorkflow");
+    // const [workflowName, setWorkflowName] = useState<string>("DefaultWorkflow");
+    const { workflowName, workflowID, setWorkflowID, setWorkflowName, getWorkflowNames } = useWorkFlowContext();
+
   
     useEffect(() => {
         addWorkflow(workflowName);
-    }, [])
+    }, [workflowName])
 
     const setDashBoardMode = (value: boolean) => {
 
@@ -264,9 +267,9 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 });
                 return prev.concat(node)
             });
-            newBox(workflowName, (node.type as string) + "_" + node.id);
+            newBox(workflowName, (node.type as string) + "_" + node.id, "");
         },
-        [setNodes]
+        [setNodes,workflowName]
     );
 
     // updates a single box with the new input (new connections)
@@ -736,6 +739,60 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     useEffect(() => {
         applyNewInteractions();
     }, [interactions]);
+
+
+    const [lastCode, setLastCode] = useState<{ [key: string]: string }>({});
+
+    useEffect(() => {
+        const updateBoxCode = (batchData) => {
+            console.log(batchData)
+            if (batchData.length > 0) {
+                fetch(process.env.BACKEND_URL + "/updateBoxCode", {
+                    method: "POST",
+                    body: JSON.stringify({ data: batchData }),
+                    headers: {
+                        "Content-type": "application/json; charset=UTF-8",
+                    }
+                });
+            }
+        };
+    
+        const intervalId = setInterval(() => {
+            let batchData = [];
+            let hasChanges = false;
+    
+            nodes.forEach(node => {
+                const activityKey = `${node.type}_${node.id}`;
+                const currentCode = node?.data?.code;
+    
+                if (lastCode[activityKey] !== currentCode) {
+                    if(lastCode[activityKey]!== undefined) {
+                        hasChanges = true;
+                    }
+                    setLastCode(prevState => {
+                        const updatedState = { ...prevState };
+                        nodes.forEach(node => {
+                            updatedState[`${node.type}_${node.id}`] = node?.data?.code;
+                        });
+                        return updatedState;
+                    });
+                }
+            });
+    
+            if (hasChanges) {
+                batchData = nodes.map(node => ({
+                    workflow_name: workflowName,
+                    activity_name: `${node.type}_${node.id}`,
+                    code: node?.data?.code
+                }));
+
+                updateBoxCode(batchData);
+            }
+        }, 100 * 60);
+    
+        return () => clearInterval(intervalId);
+    }, [nodes, lastCode]);
+
 
     return (
         <FlowContext.Provider
