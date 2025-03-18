@@ -25,6 +25,7 @@ import { ConnectionValidator } from "../ConnectionValidator";
 import { BoxType, EdgeType, VisInteractionType } from "../constants";
 import { useProvenanceContext } from "./ProvenanceProvider";
 import { useWorkFlowContext } from "./WorkflowProvider";
+import { useUserContext } from "./UserProvider";
 
 export interface IOutput {
     nodeId: string;
@@ -52,7 +53,7 @@ interface FlowContextProps {
     setOutputs: (updateFn: (outputs: IOutput[]) => IOutput[]) => void;
     setInteractions: (updateFn: (interactions: IInteraction[]) => IInteraction[]) => void;
     applyNewPropagation: (propagation: IPropagation) => void;
-    addNode: (node: Node) => void;
+    addNode: (node: Node, saveProvDB: boolean) => void;
     onNodesChange: (changes: NodeChange[]) => void;
     onEdgesChange: (changes: EdgeChange[]) => void;
     onConnect: (connection: Connection) => void;
@@ -116,11 +117,12 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
     // const [workflowName, setWorkflowName] = useState<string>("DefaultWorkflow");
     const { workflowName, workflowID, setWorkflowID, setWorkflowName, getWorkflowNames } = useWorkFlowContext();
-
   
     useEffect(() => {
-        addWorkflow(workflowName);
-    }, [workflowName])
+        if (workflowID === "-1") {
+            addWorkflow(workflowName);
+        }
+    }, [workflowID, workflowName]);
 
     const setDashBoardMode = (value: boolean) => {
 
@@ -255,7 +257,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     }
 
     const addNode = useCallback(
-        (node: Node) => {
+        (node: Node, saveProvDB: boolean) => {
             setNodes((prev: any) => {
                 node.position
                 updatePositionWorkflow(node.id, {
@@ -267,7 +269,9 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 });
                 return prev.concat(node)
             });
-            newBox(workflowName, (node.type as string) + "_" + node.id, "");
+            if(saveProvDB){
+                newBox(workflowName, (node.type as string) + "_" + node.id, "");
+            }
         },
         [setNodes,workflowName]
     );
@@ -389,7 +393,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             }
         }
 
-    }, [setNodes]);
+    }, [setNodes, workflowName]);
 
     const onNodesDelete = useCallback((changes: NodeChange[]) => {
         setOutputs((opts: any) => 
@@ -412,7 +416,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             }
         }
 
-    }, [setOutputs]);
+    }, [setOutputs, workflowName]);
 
     const onConnect = useCallback(
         (connection: Connection) => {
@@ -502,7 +506,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             }
 
         },
-        [setEdges]
+        [setEdges,workflowName]
     );
 
     const { getNodes, getEdges } = useReactFlow();
@@ -745,7 +749,6 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
     useEffect(() => {
         const updateBoxCode = (batchData) => {
-            console.log(batchData)
             if (batchData.length > 0) {
                 fetch(process.env.BACKEND_URL + "/updateBoxCode", {
                     method: "POST",
@@ -791,7 +794,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         }, 100 * 60);
     
         return () => clearInterval(intervalId);
-    }, [nodes, lastCode]);
+    }, [nodes, lastCode,workflowName]);
 
 
     return (

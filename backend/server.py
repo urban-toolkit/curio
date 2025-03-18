@@ -133,41 +133,62 @@ def toLayers():
 
     return response.json()
 
+# @app.route('/signin', methods=['POST'])
+# def signin():
+#     # google_oauth = GoogleOAuth()
+#     # user_data = google_oauth.verify_token(request.json.get('token'))
+#     # if not user_data:
+#     #     return jsonify({'error': 'Invalid token'}), 400
+
+#     # user = User.query.filter_by(provider=user_data.get('provider'), provider_uid= user_data.get('uid')).first()
+#     # if user:
+#     #     user.name = user_data.get('name')
+#     #     user.profile_image = user_data.get('picture')
+#     # else:
+#     #     user = User(email=user_data.get('email'), name=user_data.get('name'), profile_image=user_data.get('picture'), provider=user_data.get('provider'), provider_uid=user_data.get('uid'))
+#     #     db.session.add(user)
+#     # db.session.commit()
+
+#     # create new session token
+#     # new_session = UserSession(user_id=user.id)
+#     new_session = UserSession(user_id=1)
+#     db.session.add(new_session)
+#     db.session.commit()
+
+#     # return jsonify({
+#     #     'user': {
+#     #         'name': user.name,
+#     #         'profile_image': user.profile_image,
+#     #         'type': user.type
+#     #     },
+#     #     'token': new_session.token
+#     # }), 200
+
+#     return jsonify({
+#         'user': {
+#             'name': 'Test',
+#             'profile_image': "",
+#             'type': 'programmer'
+#         },
+#         'token': new_session.token
+#     }), 200
+
 @app.route('/signin', methods=['POST'])
 def signin():
-    # google_oauth = GoogleOAuth()
-    # user_data = google_oauth.verify_token(request.json.get('token'))
-    # if not user_data:
-    #     return jsonify({'error': 'Invalid token'}), 400
+    google_oauth = GoogleOAuth()
+    user_data = google_oauth.verify_token(request.json.get('token'))
+    if not user_data:
+        return jsonify({'error': 'Invalid token'}), 400
 
-    # user = User.query.filter_by(provider=user_data.get('provider'), provider_uid= user_data.get('uid')).first()
-    # if user:
-    #     user.name = user_data.get('name')
-    #     user.profile_image = user_data.get('picture')
-    # else:
-    #     user = User(email=user_data.get('email'), name=user_data.get('name'), profile_image=user_data.get('picture'), provider=user_data.get('provider'), provider_uid=user_data.get('uid'))
-    #     db.session.add(user)
-    # db.session.commit()
-
-    # create new session token
-    # new_session = UserSession(user_id=user.id)
     new_session = UserSession(user_id=1)
     db.session.add(new_session)
     db.session.commit()
-
-    # return jsonify({
-    #     'user': {
-    #         'name': user.name,
-    #         'profile_image': user.profile_image,
-    #         'type': user.type
-    #     },
-    #     'token': new_session.token
-    # }), 200
-
+    
+    print(user_data)
     return jsonify({
         'user': {
-            'name': 'Test',
-            'profile_image': "",
+            'name': user_data["name"],
+            'profile_image': user_data["picture"],
             'type': 'programmer'
         },
         'token': new_session.token

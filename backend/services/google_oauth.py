@@ -4,6 +4,8 @@ from google.auth.transport import requests
 
 # TODO: pass to env variables
 REDIRECT_URI='http://localhost:8080'
+CLIENT_ID = 
+CLIENT_SECRET = 
 
 class GoogleOAuth:
     def verify_token(self, auth_code):
@@ -11,7 +13,7 @@ class GoogleOAuth:
             'code': auth_code,
             'client_id': CLIENT_ID,
             'client_secret': CLIENT_SECRET,
-            'redirect_uri': REDIRECT_URI,
+            'redirect_uri': [REDIRECT_URI],
             'grant_type': 'authorization_code',
         }
         token_url = 'https://oauth2.googleapis.com/token'

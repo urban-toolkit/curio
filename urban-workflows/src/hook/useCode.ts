@@ -11,7 +11,7 @@ import { AccessLevelType } from "../constants";
 const pythonInterpreter = new PythonInterpreter();
 
 interface IUseCode {
-    createCodeNode: (boxType: string, template: Template | null, id: string, code: string) => void;
+    createCodeNode: (boxType: string, template: Template | null, id: string, code: string, saveProvDB: boolean, position:any) => void;
 }
 
 export function useCode(): IUseCode {
@@ -46,7 +46,7 @@ export function useCode(): IUseCode {
         })
     }, [setInteractions]);
 
-    const createCodeNode = useCallback((boxType: string, template: Template | null = null, id = "", code = "") => {
+    const createCodeNode = useCallback((boxType: string, template: Template | null = null, id = "", code = "", saveProvDB = true, position = getPosition()) => {
         let nodeId;
         if (id === "") {
             nodeId = uuid();
@@ -60,11 +60,13 @@ export function useCode(): IUseCode {
             code = "";
         }
 
+        console.log(position)
+
         if(template != null){
            node = {
                 id: nodeId,
                 type: boxType,
-                position: getPosition(),
+                position: position,
                 data: {
                     nodeId: nodeId,
                     pythonInterpreter: pythonInterpreter,
@@ -86,7 +88,7 @@ export function useCode(): IUseCode {
             node = {
                 id: nodeId,
                 type: boxType,
-                position: getPosition(),
+                position: position,
                 data: {
                     nodeId: nodeId,
                     pythonInterpreter: pythonInterpreter,
@@ -107,7 +109,7 @@ export function useCode(): IUseCode {
             
         }
 
-    addNode(node);
+    addNode(node,saveProvDB);
 
     }, [addNode, outputCallback, getPosition]);
 

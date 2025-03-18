@@ -40,6 +40,8 @@ import { buttonStyle } from "./styles";
 import './MainCanvas.css';
 import WorkflowList from "./WorkFlowList";
 import { useWorkFlowContext } from "../providers/WorkflowProvider";
+import { faL } from "@fortawesome/free-solid-svg-icons";
+import { useUserContext } from "../providers/UserProvider";
 
 export function MainCanvas() {
     const {
@@ -90,52 +92,7 @@ export function MainCanvas() {
 
     const { workflowName, workflowID, setWorkflowID, setWorkflowName, getWorkflowNames } = useWorkFlowContext();
 
-    // useEffect(()=>{
-    //     fetch(`http://localhost:5002/getActivitiesByWorkflowIds?workflow_id=${6}`)
-    //         .then(async (response) => {
-    //             if (!response.ok) {
-    //                 throw new Error('response was not ok');
-    //             }
-    //             return response.json();
-    //         })
-    //         .then((workflow)=>{
-    //             workflow.forEach((node:any)=>{
-    //                 let boxType:string = node.activity_name.replace(/[^A-Z_]+/, '').slice(0, -1);
-    //                 let node_id:string = node.activity_name.replace(/[A-Z_]/g, '');
 
-                    
-    //                 createCodeNode(boxType,null,node_id,node.code)
-
-    //                 if(node.input_relation_id){
-    //                     let input_relation_id = node.input_relation_id
-    //                     let activity_input = node_id
-    //                     let activity_output = workflow.find((item: any) => item.output_relation_id === input_relation_id)['activity_name'].replace(/[A-Z_]/g, '')
-                        
-    //                     setNewEdges(
-    //                         prevEdges => [
-    //                             ...prevEdges,
-    //                             {
-    //                                 "source": activity_output,
-    //                                 "sourceHandle": "out",
-    //                                 "target": activity_input,
-    //                                 "targetHandle": "in",
-    //                                 "markerEnd": {
-    //                                     "type": "arrow"
-    //                                 },
-    //                                 "id": `reactflow__edge-${activity_input}out${activity_output}in`,
-    //                                 "selected": true
-    //                             } as unknown as Edge
-    //                         ]
-    //                     );
-                    
-
-    //                 }
-
-                    
-    //             })
-
-    //         })
-    // },[])
 
     useEffect(() => {
         setNewEdges(prevEdges => {
@@ -150,11 +107,55 @@ export function MainCanvas() {
     }, [edges]);
 
 
-    useEffect(()=>{
-        
-            console.log("New Workflow Name",workflowName,workflowID)
-        
-    },[workflowName,workflowID])
+    //Recreate workflow using DB
+    useEffect(() => {
+        console.log("New Workflow Name:", workflowName, "Workflow ID:", workflowID);
+        if (workflowName !== "" && workflowID !== "-1") {
+            fetch(`http://localhost:5002/getActivitiesByWorkflowIds?workflow_id=${workflowID}`)
+                .then(async (response) => {
+                    if (!response.ok) {
+                        throw new Error('Response was not ok');
+                    }
+                    return response.json();
+                })
+                .then((workflow) => {
+                    let x = 100
+                    let y = 100
+                    workflow.reverse().forEach((node: any) => { //Reversing to plot in the right position
+                        let boxType: string = node.activity_name.replace(/[^A-Z_]+/, '').slice(0, -1);
+                        let node_id: string = node.activity_name.replace(/[A-Z_]/g, '');
+
+
+                        createCodeNode(boxType, null, node_id, node.code, false, {x:x,y:y})
+
+                        x = x + 800
+
+                        if (node.input_relation_id) {
+                            let input_relation_id = node.input_relation_id
+                            let activity_input = node_id
+                            let activity_output = workflow.find((item: any) => item.output_relation_id === input_relation_id)['activity_name'].replace(/[A-Z_]/g, '')
+
+                            setNewEdges(
+                                prevEdges => [
+                                    ...prevEdges,
+                                    {
+                                        "source": activity_output,
+                                        "sourceHandle": "out",
+                                        "target": activity_input,
+                                        "targetHandle": "in",
+                                        "markerEnd": {
+                                            "type": "arrow"
+                                        },
+                                        "id": `reactflow__edge-${activity_input}out${activity_output}in`,
+                                        "selected": true
+                                    } as unknown as Edge
+                                ]
+                            );
+                        }
+                    })
+                })
+        }
+    }, [workflowName, workflowID]);
 
 
     return (
