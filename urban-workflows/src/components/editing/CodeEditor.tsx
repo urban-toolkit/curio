@@ -11,19 +11,30 @@ import { useFlowContext } from "../../providers/FlowProvider";
 import { useProvenanceContext } from "../../providers/ProvenanceProvider";
 
 type CodeEditorProps = {
-    setOutputCallback: any,
-    data: any,
-    output: {code: string, content: string},
-    boxType: BoxType,
-    replacedCode: string, // code with all marks resolved
-    sendCodeToWidgets: any,
-    replacedCodeDirty: boolean,
-    readOnly: boolean,
-    defaultValue?: any,
-    floatCode?: any,
-}
+    setOutputCallback: any;
+    data: any;
+    output: { code: string; content: string };
+    boxType: BoxType;
+    replacedCode: string; // code with all marks resolved
+    sendCodeToWidgets: any;
+    replacedCodeDirty: boolean;
+    readOnly: boolean;
+    defaultValue?: any;
+    floatCode?: any;
+};
 
-function CodeEditor({ setOutputCallback, data, output, boxType, replacedCode, sendCodeToWidgets, replacedCodeDirty, readOnly, defaultValue, floatCode}: CodeEditorProps) {
+function CodeEditor({
+    setOutputCallback,
+    data,
+    output,
+    boxType,
+    replacedCode,
+    sendCodeToWidgets,
+    replacedCodeDirty,
+    readOnly,
+    defaultValue,
+    floatCode,
+}: CodeEditorProps) {
     const [code, setCode] = useState<string>(""); // code with all original markers
 
     const { workflowName } = useFlowContext();
@@ -32,45 +43,49 @@ function CodeEditor({ setOutputCallback, data, output, boxType, replacedCode, se
     const replacedCodeDirtyBypass = useRef(false);
     const defaultValueBypass = useRef(false);
 
+    // @ts-ignore
     const handleCodeChange = (value, event) => {
         setCode(value);
     };
 
-	useEffect(() => {
-        if(defaultValue != undefined && defaultValueBypass.current){
+    useEffect(() => {
+        if (defaultValue != undefined && defaultValueBypass.current) {
             setCode(defaultValue);
             sendCodeToWidgets(defaultValue); // will resolve markers for templated boxes
         }
 
         defaultValueBypass.current = true;
-	}, [defaultValue]);
+    }, [defaultValue]);
 
     useEffect(() => {
-        if(floatCode != undefined)
-    		floatCode(code);
-	}, [code]);
+        if (floatCode != undefined) floatCode(code);
+    }, [code]);
 
     const processExecutionResult = (result: any) => {
-        
         let outputContent = result.output;
 
-        if(outputContent.length > 100){
-            outputContent = outputContent.slice(0,100)+"...";
+        if (outputContent.length > 100) {
+            outputContent = outputContent.slice(0, 100) + "...";
         }
 
-        setOutputCallback({code: "success", content: outputContent});
+        setOutputCallback({ code: "success", content: outputContent });
 
-        if (result.stderr == "") { // No error in the execution
+        if (result.stderr == "") {
+            // No error in the execution
             data.outputCallback(data.nodeId, result.output);
         } else {
-            setOutputCallback({code: "error", content: result.stderr});
+            setOutputCallback({ code: "error", content: result.stderr });
         }
     };
 
     // marks were resolved and new code is available
     useEffect(() => {
-
-        if(replacedCode != "" && replacedCodeDirtyBypass.current && output.code == "exec"){ // the code was executing and not only resolving widgets
+        if (
+            replacedCode != "" &&
+            replacedCodeDirtyBypass.current &&
+            output.code == "exec"
+        ) {
+            // the code was executing and not only resolving widgets
             data.pythonInterpreter.interpretCode(
                 code,
                 replacedCode,
@@ -84,7 +99,6 @@ function CodeEditor({ setOutputCallback, data, output, boxType, replacedCode, se
         }
 
         replacedCodeDirtyBypass.current = true;
-
     }, [replacedCodeDirty]);
 
     useEffect(() => {
@@ -93,40 +107,48 @@ function CodeEditor({ setOutputCallback, data, output, boxType, replacedCode, se
 
         // @ts-ignore
         window.ResizeObserver = function (callback) {
-        const wrappedCallback = (entries: any, observer: any) => {
-            window.requestAnimationFrame(() => {
-            callback(entries, observer);
-            });
-        };
+            const wrappedCallback = (entries: any, observer: any) => {
+                window.requestAnimationFrame(() => {
+                    callback(entries, observer);
+                });
+            };
 
-        // Create an instance of the original ResizeObserver
-        // with the wrapped callback
-        return new OriginalResizeObserver(wrappedCallback);
+            // Create an instance of the original ResizeObserver
+            // with the wrapped callback
+            return new OriginalResizeObserver(wrappedCallback);
         };
 
         // Copy over static methods, if any
         for (let staticMethod in OriginalResizeObserver) {
-        if (OriginalResizeObserver.hasOwnProperty(staticMethod)) {
-            // @ts-ignore
-            window.ResizeObserver[staticMethod] = OriginalResizeObserver[staticMethod];
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    OriginalResizeObserver,
+                    staticMethod
+                )
+            ) {
+                // @ts-ignore
+                window.ResizeObserver[staticMethod] =
+                    OriginalResizeObserver[staticMethod];
+            }
         }
-        }
-    }, [])
+    }, []);
 
     return (
-        <div className={"nowheel nodrag"} style={{height: "100%"}}>
+        <div className={"nowheel nodrag"} style={{ height: "100%" }}>
             <Editor
                 language="python"
                 theme="vs-dark"
                 value={code}
                 onChange={handleCodeChange}
                 options={{
+                    // @ts-ignore
                     inlineSuggest: true,
                     fontSize: 8,
                     formatOnType: true,
+                    // @ts-ignore
                     autoClosingBrackets: true,
                     minimap: { enabled: false },
-                    readOnly: readOnly
+                    readOnly: readOnly,
                 }}
             />
             {/* <div

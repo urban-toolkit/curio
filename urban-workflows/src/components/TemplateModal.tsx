@@ -3,20 +3,20 @@ import React, { useState } from "react";
 // Bootstrap
 import "bootstrap/dist/css/bootstrap.min.css";
 
-import Button from 'react-bootstrap/Button';
-import Modal from 'react-bootstrap/Modal';
+import Button from "react-bootstrap/Button";
+import Modal from "react-bootstrap/Modal";
 import { Template, useTemplateContext } from "../providers/TemplateProvider";
 import { AccessLevelType, BoxType } from "../constants";
 
 type TemplateModalProps = {
-    templateId?: string,
-    callBack: any,
-    show: boolean,
-    handleClose: any,
-    boxType: BoxType,
-    code: string,
-    newTemplateFlag: boolean
-}
+    templateId?: string;
+    callBack: any;
+    show: boolean;
+    handleClose: any;
+    boxType: BoxType;
+    code: string;
+    newTemplateFlag: boolean;
+};
 
 function TemplateModal({
     templateId,
@@ -25,9 +25,8 @@ function TemplateModal({
     handleClose,
     boxType,
     code,
-    newTemplateFlag
+    newTemplateFlag,
 }: TemplateModalProps) {
-
     const { createUserTemplate, editUserTemplate } = useTemplateContext();
 
     const [name, setName] = useState<string>("");
@@ -35,13 +34,21 @@ function TemplateModal({
     const [description, setDescription] = useState<string>("");
 
     const closeModal = (save: boolean = true) => {
-        if(save){
-            if(newTemplateFlag){ // creating new template
-                let template = createUserTemplate(boxType, name, description, accessLevel as AccessLevelType, code);
-        
+        if (save) {
+            if (newTemplateFlag) {
+                // creating new template
+                let template = createUserTemplate(
+                    boxType,
+                    name,
+                    description,
+                    accessLevel as AccessLevelType,
+                    code
+                );
+
                 callBack(template);
-            }else{ // updating existing template
-    
+            } else {
+                // updating existing template
+
                 let template = {
                     id: templateId,
                     type: boxType,
@@ -49,44 +56,83 @@ function TemplateModal({
                     description,
                     accessLevel,
                     code,
-                    custom: true
+                    custom: true,
                 };
-    
-                editUserTemplate({...template} as Template);
+
+                editUserTemplate({ ...template } as Template);
                 callBack(template);
             }
         }
 
         handleClose();
-    }
+    };
 
     return (
         <>
             <Modal show={show} onHide={closeModal}>
                 <Modal.Header closeButton>
-                {newTemplateFlag ? <Modal.Title>New Template</Modal.Title> : <Modal.Title>Editing Template</Modal.Title>}
+                    {newTemplateFlag ? (
+                        <Modal.Title>New Template</Modal.Title>
+                    ) : (
+                        <Modal.Title>Editing Template</Modal.Title>
+                    )}
                 </Modal.Header>
                 <Modal.Body>
                     <label htmlFor="name">Name: </label>
-                    <input value={name} onChange={(event) => {setName(event.target.value)}} type="text" name="name" style={{marginLeft: "5px"}}/>
+                    <input
+                        value={name}
+                        onChange={(event) => {
+                            setName(event.target.value);
+                        }}
+                        type="text"
+                        name="name"
+                        style={{ marginLeft: "5px" }}
+                    />
                     <br />
                     <label htmlFor="accessLevel">Access Level: </label>
-                    <select value={accessLevel} onChange={(event) => {setAccessLevel(event.target.value)}} name="accessLevel">
+                    <select
+                        value={accessLevel}
+                        onChange={(event) => {
+                            setAccessLevel(event.target.value);
+                        }}
+                        name="accessLevel"
+                    >
                         <option value="PROGRAMMER">Programmer</option>
                         <option value="EXPERT">Expert</option>
                         <option value="ANY">Any</option>
                     </select>
                     <br />
                     <label htmlFor="description">Description: </label>
-                    <textarea value={description} onChange={(event) => {setDescription(event.target.value)}} name="description" style={{marginLeft: "5px", marginTop: "5px", resize: "none"}}></textarea>
+                    <textarea
+                        value={description}
+                        onChange={(event) => {
+                            setDescription(event.target.value);
+                        }}
+                        name="description"
+                        style={{
+                            marginLeft: "5px",
+                            marginTop: "5px",
+                            resize: "none",
+                        }}
+                    ></textarea>
                 </Modal.Body>
                 <Modal.Footer>
-                <Button variant="secondary" onClick={() => {closeModal(false)}}>
-                    Close
-                </Button>
-                <Button variant="primary" onClick={() => {closeModal()}}>
-                    Save
-                </Button>
+                    <Button
+                        variant="secondary"
+                        onClick={() => {
+                            closeModal(false);
+                        }}
+                    >
+                        Close
+                    </Button>
+                    <Button
+                        variant="primary"
+                        onClick={() => {
+                            closeModal();
+                        }}
+                    >
+                        Save
+                    </Button>
                 </Modal.Footer>
             </Modal>
         </>

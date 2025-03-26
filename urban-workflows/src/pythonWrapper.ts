@@ -136,4 +136,4 @@ parsedOutput = parseOutput(output)
 
 checkIOType(parsedOutput, boxType, False)
 
-print(json.dumps(parsedOutput))`
+print(json.dumps(parsedOutput))`;

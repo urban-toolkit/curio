@@ -1,12 +1,12 @@
-import React from 'react';
+import React from "react";
 import {
   BaseEdge,
   EdgeProps,
   getBezierPath,
   getStraightPath,
   getSimpleBezierPath,
-  getSmoothStepPath 
-} from 'reactflow';
+  getSmoothStepPath,
+} from "reactflow";
 
 export default function BiDirectionalEdge({
   sourceX,
@@ -16,7 +16,7 @@ export default function BiDirectionalEdge({
   sourcePosition,
   targetPosition,
   markerEnd,
-  markerStart
+  markerStart,
 }: EdgeProps) {
   // const [edgePath, labelX, labelY] = getBezierPath({
   //   sourceX,
@@ -53,6 +53,11 @@ export default function BiDirectionalEdge({
   });
 
   return (
-    <BaseEdge path={edgePath} markerEnd={markerEnd} markerStart={markerStart} style={{stroke: "red"}} />
+    <BaseEdge
+      path={edgePath}
+      markerEnd={markerEnd}
+      markerStart={markerStart}
+      style={{ stroke: "red" }}
+    />
   );
 }

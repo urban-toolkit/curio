@@ -4,13 +4,13 @@ This document outlines the coding conventions, best practices, and structural ru
 
 ## Table of Contents
 
-- [General Principles](#general-principles)
-- [Project Structure](#project-structure)
+- [General principles](#general-principles)
+- [Project structure](#project-structure)
 - [Naming Conventions](#naming-conventions)
 - [Contribution guidelines and standards](#contribution-guidelines-and-standards)
 - [Documentation](#documentation)
-- [Commit Message Guidelines](#commit-message-guidelines)
-- [Automated Tools](#automated-tools)
+- [Commit message guidelines](#commit-message-guidelines)
+- [Automated tools](#automated-tools)
 
 ## Project structure
 
@@ -18,12 +18,11 @@ Keep files where they belong.
 
 - **`backend/`**: Manages database access and user authentication.
 - **`images/`**: Images for documentation.
-- **`sandbox/`**: Sandbox foe executing python code inside Curio.
+- **`sandbox/`**: Sandbox for executing python code inside Curio.
 - **`urban-workflows/`**: Manages database access and user authentication.
     - **`src/`**: Curio's source code.
         - **`components/`**: React components and respective CSS. Create a different file for each component. Keep similar components groupped inside folders.
 - **`utk-workflow/`**: Stores a version of [UTK](https://github.com/urban-toolkit/utk) that can be embedded.
-- **`TODO.md`**: Temporary (eventually all TODOs will be added as issues to the project). 
 
 ## Naming conventions
 
@@ -61,21 +60,21 @@ pylint myfile.py
 
 ## Writing code
 
-Contribute to code in a self-contained manner to keep the code modularized. As a rule of thumb Curio should be able to keep working if your code is removed.  
+Contributions should be self-contained as to keep the code modularized. As a rule of thumb, Curio should be able to keep working if your code is removed.  
 
-Every contribution implements **one** new feature or fix **one** bug. Very similar features and bugs can be groupped into one contribution.  
+Every contribution implements **one** new feature or fixes **one** bug. Very similar features and bugs can be groupped into one contribution.  
 
 One contribution = One pull request.  
 
-### New feature
+### Considerations for new features
 
 - Create new components for new features. 
 - Modify a component if expanding a feature.
-- Components must be as independent of each other as possible. If one component depend on another, create a reusable API or simple communication interface.
+- Components must be as independent of each other as possible. If one component depends on another, create a reusable API or simple communication interface.
 - New features should have a clear scope.
 - Write unit tests for the new features aiming for >90% incremental test coverage for all your code (check [writing tests](#writing-tests)).
 
-### Fixing bugs
+### Considerations for fixing bugs
 
 - Careful to not introduce new bugs while fixing a bug.
 - Bugs usually exist due to the lack of tests. Write unit tests after fixing a bug aiming for >90% incremental test coverage for all your code (check [writing tests](#writing-tests)).
@@ -88,20 +87,31 @@ If you open a GitHub Issue:
 2. Make sure the Issue Template is filled out.
 3. The issue should be related to the repo it is created in.
 
-Here's why we have this policy: We want to focus on the work that benefits the whole community, e.g., fixing bugs and adding features. Individual support should be sought on Stack Overflow or other non-GitHub channels. It helps us to address bugs and feature requests in a timely manner.
+Individual support should be sought on the Discord channel. It helps us to address bugs and feature requests in a timely manner.
 
 ## Writing tests
 
+TODO
 
 ## Running unit tests
 
-
-
-## Commit Message Guidelines
+TODO
 
 ## Automated Tools
 
+### Eslint and Prettier on `urban-workflows`
 
+```console
+npm run lint -- --fix
+npm run format
+```
+
+### End-to-End tests on `backend/`
+
+```shell
+# after everything is setup, you can run the E2E tests
+python -m pytest tests/test_frontend
+```
 
 
 

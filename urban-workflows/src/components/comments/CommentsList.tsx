@@ -83,7 +83,14 @@ export const CommentsList = ({
             </strong>
           </div>
 
-          <p style={{ width: "100%", padding: "5px", fontSize: "10px", wordBreak: "break-word" }}>
+          <p
+            style={{
+              width: "100%",
+              padding: "5px",
+              fontSize: "10px",
+              wordBreak: "break-word",
+            }}
+          >
             {comment.text}
           </p>
 
@@ -107,7 +114,14 @@ export const CommentsList = ({
               }}
               onClick={() => toggleResolveComment(comment.id)}
             >
-              <FontAwesomeIcon icon={faSquareCheck} style={{...iconStyle, fontSize: "10px", ...(comment.resolved ? { color: "green" } : {})}} />
+              <FontAwesomeIcon
+                icon={faSquareCheck}
+                style={{
+                  ...iconStyle,
+                  fontSize: "10px",
+                  ...(comment.resolved ? { color: "green" } : {}),
+                }}
+              />
               <div style={{ marginLeft: "2px", fontSize: "8px" }}>
                 {comment.resolved ? "Resolved" : "Resolve"}
               </div>
@@ -115,7 +129,7 @@ export const CommentsList = ({
 
             <FontAwesomeIcon
               icon={faTrash}
-              style={{...iconStyle, fontSize: "10px"}}
+              style={{ ...iconStyle, fontSize: "10px" }}
               onClick={() => deleteComment(comment.id)}
             />
           </div>

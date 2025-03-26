@@ -173,13 +173,20 @@ function BoxEditor({
                 }}
             >
                 <Tab.Container activeKey={activeTab} onSelect={handleTabSelect}>
-                    <Row style={{ height: "100%"}}>
+                    <Row style={{ height: "100%" }}>
                         <Col md={12} style={{ height: "100%", padding: 0 }}>
-                            <Tab.Content style={{...activeTabContentStyle, zIndex: 10}}>
+                            <Tab.Content
+                                style={{ ...activeTabContentStyle, zIndex: 10 }}
+                            >
                                 {widgets ? (
-                                    <Tab.Pane eventKey="widgets" style={{ height: "100%" }}>
+                                    <Tab.Pane
+                                        eventKey="widgets"
+                                        style={{ height: "100%" }}
+                                    >
                                         <WidgetsEditor
-                                            customWidgetsCallback={customWidgetsCallback}
+                                            customWidgetsCallback={
+                                                customWidgetsCallback
+                                            }
                                             markersDirty={markersDirty}
                                             sendReplacedCode={sendReplacedCode}
                                             userCode={userCode}
@@ -189,15 +196,24 @@ function BoxEditor({
                                 ) : null}
 
                                 {code ? (
-                                    <Tab.Pane eventKey="code" style={{ height: "100%" }}>
+                                    <Tab.Pane
+                                        eventKey="code"
+                                        style={{ height: "100%" }}
+                                    >
                                         <CodeEditor
                                             floatCode={floatCode}
                                             readOnly={readOnly}
                                             defaultValue={defaultCode}
-                                            replacedCodeDirty={replacedCodeDirty}
+                                            replacedCodeDirty={
+                                                replacedCodeDirty
+                                            }
                                             replacedCode={replacedCode}
-                                            sendCodeToWidgets={sendCodeToWidgets}
-                                            setOutputCallback={setOutputCallback}
+                                            sendCodeToWidgets={
+                                                sendCodeToWidgets
+                                            }
+                                            setOutputCallback={
+                                                setOutputCallback
+                                            }
                                             data={data}
                                             output={output}
                                             boxType={boxType}
@@ -206,14 +222,21 @@ function BoxEditor({
                                 ) : null}
 
                                 {grammar ? (
-                                    <Tab.Pane eventKey="grammar" style={{ height: "100%" }}>
+                                    <Tab.Pane
+                                        eventKey="grammar"
+                                        style={{ height: "100%" }}
+                                    >
                                         <GrammarEditor
                                             floatCode={floatCode}
                                             readOnly={readOnly}
                                             defaultValue={defaultCode}
-                                            replacedCodeDirty={replacedCodeDirty}
+                                            replacedCodeDirty={
+                                                replacedCodeDirty
+                                            }
                                             replacedCode={replacedCode}
-                                            sendCodeToWidgets={sendCodeToWidgets}
+                                            sendCodeToWidgets={
+                                                sendCodeToWidgets
+                                            }
                                             nodeId={data.nodeId}
                                             applyGrammar={applyGrammar}
                                             schema={schema}
@@ -222,7 +245,10 @@ function BoxEditor({
                                 ) : null}
 
                                 {provenance == undefined || provenance ? (
-                                    <Tab.Pane eventKey="provenance" style={{ height: "100%" }}>
+                                    <Tab.Pane
+                                        eventKey="provenance"
+                                        style={{ height: "100%" }}
+                                    >
                                         <BoxProvenance
                                             data={data}
                                             boxType={boxType}
@@ -231,7 +257,10 @@ function BoxEditor({
                                     </Tab.Pane>
                                 ) : null}
 
-                                <Tab.Pane eventKey="output" style={{ height: "100%" }}>
+                                <Tab.Pane
+                                    eventKey="output"
+                                    style={{ height: "100%" }}
+                                >
                                     {outputId != undefined ? (
                                         <div
                                             id={outputId}
@@ -244,9 +273,18 @@ function BoxEditor({
                                     ) : contentComponent != undefined ? (
                                         contentComponent
                                     ) : (
-                                        <div style={{ width: "100%", height: "100%" }}>
+                                        <div
+                                            style={{
+                                                width: "100%",
+                                                height: "100%",
+                                            }}
+                                        >
                                             <p
-                                                style={{ margin: 0, padding: "10px", fontSize: "10px" }}
+                                                style={{
+                                                    margin: 0,
+                                                    padding: "10px",
+                                                    fontSize: "10px",
+                                                }}
                                             >
                                                 {output.content}
                                             </p>
@@ -259,10 +297,20 @@ function BoxEditor({
                     <Nav
                         variant="pills"
                         className="flex-column"
-                        style={{ backgroundColor: "#f2f2f2", borderRadius: "10px", width: "55%", marginLeft: "auto", marginTop: "6px" }}
+                        style={{
+                            backgroundColor: "#f2f2f2",
+                            borderRadius: "10px",
+                            width: "55%",
+                            marginLeft: "auto",
+                            marginTop: "6px",
+                        }}
                     >
                         <Row
-                            style={{ fontSize: "10px", paddingRight: 0, paddingLeft: 0 }}
+                            style={{
+                                fontSize: "10px",
+                                paddingRight: 0,
+                                paddingLeft: 0,
+                            }}
                         >
                             {widgets ? (
                                 <Col>
@@ -272,8 +320,13 @@ function BoxEditor({
                                         overlay={<Tooltip>Widgets</Tooltip>}
                                     >
                                         <Nav.Item style={navItemStyle}>
-                                            <Nav.Link eventKey="widgets" style={navLinkStyle}>
-                                                <FontAwesomeIcon icon={faToolbox} />
+                                            <Nav.Link
+                                                eventKey="widgets"
+                                                style={navLinkStyle}
+                                            >
+                                                <FontAwesomeIcon
+                                                    icon={faToolbox}
+                                                />
                                             </Nav.Link>
                                         </Nav.Item>
                                     </OverlayTrigger>
@@ -288,14 +341,18 @@ function BoxEditor({
                                         overlay={<Tooltip>Code</Tooltip>}
                                     >
                                         <Nav.Item style={navItemStyle}>
-                                            <Nav.Link eventKey="code" style={navLinkStyle}>
-                                                <FontAwesomeIcon icon={faCode} />
+                                            <Nav.Link
+                                                eventKey="code"
+                                                style={navLinkStyle}
+                                            >
+                                                <FontAwesomeIcon
+                                                    icon={faCode}
+                                                />
                                             </Nav.Link>
                                         </Nav.Item>
                                     </OverlayTrigger>
                                 </Col>
                             ) : null}
-
 
                             {grammar ? (
                                 <Col>
@@ -305,8 +362,13 @@ function BoxEditor({
                                         overlay={<Tooltip>Grammar</Tooltip>}
                                     >
                                         <Nav.Item style={navItemStyle}>
-                                            <Nav.Link eventKey="grammar" style={navLinkStyle}>
-                                                <FontAwesomeIcon icon={faSpellCheck} />
+                                            <Nav.Link
+                                                eventKey="grammar"
+                                                style={navLinkStyle}
+                                            >
+                                                <FontAwesomeIcon
+                                                    icon={faSpellCheck}
+                                                />
                                             </Nav.Link>
                                         </Nav.Item>
                                     </OverlayTrigger>
@@ -321,8 +383,13 @@ function BoxEditor({
                                         overlay={<Tooltip>Provenance</Tooltip>}
                                     >
                                         <Nav.Item style={navItemStyle}>
-                                            <Nav.Link eventKey="provenance" style={navLinkStyle}>
-                                                <FontAwesomeIcon icon={faRotateLeft} />
+                                            <Nav.Link
+                                                eventKey="provenance"
+                                                style={navLinkStyle}
+                                            >
+                                                <FontAwesomeIcon
+                                                    icon={faRotateLeft}
+                                                />
                                             </Nav.Link>
                                         </Nav.Item>
                                     </OverlayTrigger>
@@ -336,8 +403,13 @@ function BoxEditor({
                                     overlay={<Tooltip>Output</Tooltip>}
                                 >
                                     <Nav.Item style={navItemStyle}>
-                                        <Nav.Link eventKey="output" style={navLinkStyle}>
-                                            <FontAwesomeIcon icon={faRightFromBracket} />
+                                        <Nav.Link
+                                            eventKey="output"
+                                            style={navLinkStyle}
+                                        >
+                                            <FontAwesomeIcon
+                                                icon={faRightFromBracket}
+                                            />
                                         </Nav.Link>
                                     </Nav.Item>
                                 </OverlayTrigger>
@@ -355,11 +427,11 @@ function BoxEditor({
                     top: "12px",
                     left: "30px",
                 }}
-                onClick={() => {
+                onClick={() =>
                     fullscreen != "" && fullscreen != undefined
                         ? setFullscreen("")
-                        : setFullscreen("fs");
-                }}
+                        : setFullscreen("fs")
+                }
                 icon={faExpand}
             />
         </>
