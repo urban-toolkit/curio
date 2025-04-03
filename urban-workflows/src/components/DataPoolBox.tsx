@@ -46,7 +46,7 @@ function DataPoolBox({ data, isConnectable }) {
     ); // how interaction conflicts are solved in the context of one plot
 
     const [showDescriptionModal, setDescriptionModal] = useState(false);
-    const { workflowName } = useFlowContext();
+    const { workflowNameRef } = useFlowContext();
     const { boxExecProv } = useProvenanceContext();
 
     const dataInputBypass = useRef(false);
@@ -219,7 +219,7 @@ function DataPoolBox({ data, isConnectable }) {
             boxExecProv(
                 startTime,
                 startTime,
-                workflowName,
+                workflowNameRef.current,
                 BoxType.DATA_POOL + "_" + data.nodeId,
                 mapTypes(typesInput),
                 mapTypes(typesOuput),

@@ -24,16 +24,11 @@ import { InputIcon } from "./edges/InputIcon";
 const vega = require("vega");
 const lite = require("vega-lite");
 
-function VegaBox({
-  data,
-  isConnectable,
-}: {
-  data: any;
-  isConnectable: boolean;
-}) {
-  const [output, setOutput] = useState<{ code: string; content: string }>({
-    code: "",
-    content: "",
+function VegaBox({ data, isConnectable }) {
+  const [output, setOutput] = useState<{ code: string; content: string, outputType: string }>({
+      code: "",
+      content: "",
+      outputType: ""
   }); // stores the output produced by the last execution of this box
   const [interactions, _setInteractions] = useState<any>({}); // {signal: {type: point/interval, data: }} // if type point data contains list of object ids. If type is interval data is an object where each key is an attribute with intervals or lists
 
@@ -57,7 +52,11 @@ function VegaBox({
 
   const { editUserTemplate } = useTemplateContext();
   const { user } = useUserContext();
-  const { workflowName } = useFlowContext();
+  const { workflowNameRef } = useFlowContext();
+
+  useEffect(() => {
+    data.code = code;
+  }, [code]);
 
   useEffect(() => {
     if (data.templateId != undefined) {
@@ -174,7 +173,7 @@ function VegaBox({
   }, [data.input]);
 
   useEffect(() => {
-    let ro = new ResizeObserver((entries) => {
+    var ro = new ResizeObserver((entries) => {
       for (let entry of entries) {
         if (currentViewRef.current != undefined) {
           window.dispatchEvent(new Event("resize"));
@@ -228,7 +227,7 @@ function VegaBox({
 
         let vegaspec = lite.compile(specObj).spec;
 
-        let view = new vega.View(vega.parse(vegaspec))
+        var view = new vega.View(vega.parse(vegaspec))
           .logLevel(vega.Warn) // set view logging level
           .renderer("svg")
           .initialize("#vega" + data.nodeId)
@@ -415,8 +414,8 @@ function VegaBox({
       boxExecProv(
         startTime,
         endTime,
-        workflowName,
-        BoxType.VIS_VEGA + "_" + data.nodeId,
+        workflowNameRef.current,
+        BoxType.VIS_VEGA + "-" + data.nodeId,
         mapTypes(typesInput),
         mapTypes(typesOuput),
         code
@@ -456,6 +455,7 @@ function VegaBox({
         templateData={templateData}
         code={code}
         user={user}
+        handleType={"in/out"}
         sendCodeToWidgets={sendCode}
         setOutputCallback={setOutput}
         promptModal={promptModal}
@@ -494,7 +494,7 @@ function VegaBox({
           output={output}
           boxType={BoxType.VIS_VEGA}
           applyGrammar={compileGrammar}
-          defaultValue={templateData.code}
+          defaultValue={templateData.code ? templateData.code : data.defaultCode}
           readOnly={
             (templateData.custom != undefined &&
               templateData.custom == false) ||

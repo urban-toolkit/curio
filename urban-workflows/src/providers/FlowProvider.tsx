@@ -24,6 +24,7 @@ import {
 import { ConnectionValidator } from "../ConnectionValidator";
 import { BoxType, EdgeType, VisInteractionType } from "../constants";
 import { useProvenanceContext } from "./ProvenanceProvider";
+import { TrillGenerator } from "../TrillGenerator";
 
 export interface IOutput {
     nodeId: string;
@@ -47,37 +48,37 @@ export interface IPropagation {
 interface FlowContextProps {
     nodes: Node[];
     edges: Edge[];
-    workflowName: string;
+    workflowNameRef: React.MutableRefObject<string>;
     setOutputs: (updateFn: (outputs: IOutput[]) => IOutput[]) => void;
-    setInteractions: (
-        updateFn: (interactions: IInteraction[]) => IInteraction[]
-    ) => void;
+    setInteractions: (updateFn: (interactions: IInteraction[]) => IInteraction[]) => void;
     applyNewPropagation: (propagation: IPropagation) => void;
-    addNode: (node: Node) => void;
+    addNode: (node: Node, customWorkflowName?: string, provenance?: boolean) => void;
     onNodesChange: (changes: NodeChange[]) => void;
     onEdgesChange: (changes: EdgeChange[]) => void;
-    onConnect: (connection: Connection) => void;
+    onConnect: (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean) => void;
     isValidConnection: (connection: Connection) => boolean;
     onEdgesDelete: (connections: Edge[]) => void;
     onNodesDelete: (changes: NodeChange[]) => void;
     setPinForDashboard: (nodeId: string, value: boolean) => void;
     setDashBoardMode: (value: boolean) => void;
-    updatePositionWorkflow: (nodeId: string, position: any) => void;
-    updatePositionDashboard: (nodeId: string, position: any) => void;
+    updatePositionWorkflow: (nodeId:string, position: any) => void;
+    updatePositionDashboard: (nodeId:string, position: any) => void;
     applyNewOutput: (output: IOutput) => void;
+    setWorkflowName: (name: string) => void;
+    loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean) => void;
 }
 
 export const FlowContext = createContext<FlowContextProps>({
     nodes: [],
     edges: [],
-    workflowName: "DefaultWorkflow",
-    setOutputs: () => {},
+    workflowNameRef: { current: "" },
+    setOutputs: () => { },
     setInteractions: () => {},
     applyNewPropagation: () => {},
-    addNode: () => {},
-    onNodesChange: () => {},
-    onEdgesChange: () => {},
-    onConnect: () => {},
+    addNode: () => { },
+    onNodesChange: () => { },
+    onEdgesChange: () => { },
+    onConnect: () => { },
     isValidConnection: () => true,
     onEdgesDelete: () => {},
     onNodesDelete: () => {},
@@ -86,28 +87,27 @@ export const FlowContext = createContext<FlowContextProps>({
     updatePositionWorkflow: () => {},
     updatePositionDashboard: () => {},
     applyNewOutput: () => {},
+    setWorkflowName: () => {},
+    loadParsedTrill: async () => {}
 });
 
 const FlowProvider = ({ children }: { children: ReactNode }) => {
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-
     const [outputs, setOutputs] = useState<IOutput[]>([]);
-
     const [interactions, setInteractions] = useState<IInteraction[]>([]);
-
     const [dashboardPins, setDashboardPins] = useState<any>({}); // {[nodeId] -> boolean}
 
     const [positionsInDashboard, _setPositionsInDashboard] = useState<any>({}); // [nodeId] -> change
     const positionsInDashboardRef = useRef(positionsInDashboard);
-    const setPositionsInDashboard = (data: string) => {
+    const setPositionsInDashboard = (data: any) => {
         positionsInDashboardRef.current = data;
         _setPositionsInDashboard(data);
     };
 
     const [positionsInWorkflow, _setPositionsInWorkflow] = useState<any>({}); // [nodeId] -> change
     const positionsInWorkflowRef = useRef(positionsInWorkflow);
-    const setPositionsInWorkflow = (data: string) => {
+    const setPositionsInWorkflow = (data: any) => {
         positionsInWorkflowRef.current = data;
         _setPositionsInWorkflow(data);
     };
@@ -116,11 +116,88 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const { newBox, addWorkflow, deleteBox, newConnection, deleteConnection } =
         useProvenanceContext();
 
-    const [workflowName, setWorkflowName] = useState<string>("DefaultWorkflow");
+    const [workflowName, _setWorkflowName] = useState<string>("DefaultWorkflow"); 
+    const workflowNameRef = React.useRef(workflowName);
+    const setWorkflowName = (data: any) => {
+        workflowNameRef.current = data;
+        _setWorkflowName(data);
+    };
 
     useEffect(() => {
-        addWorkflow(workflowName);
+        addWorkflow(workflowNameRef.current);
+        let empty_trill = TrillGenerator.generateTrill([], [], workflowNameRef.current);
+        TrillGenerator.intializeProvenance(empty_trill);
     }, []);
+
+    const loadParsedTrill = async (workflowName: string, task: string, loaded_nodes: any, loaded_edges: any, provenance?: boolean, merge?: boolean) => {
+
+        // setWorkflowGoal(task);
+
+        if(!merge){
+            setWorkflowName(workflowName);
+            await addWorkflow(workflowName); // reseting provenance with new workflow
+            console.log("loadParsedTrill reseting nodes")
+            setNodes(prevNodes => []); // Reseting nodes
+        }
+
+        let current_nodes_ids = [];
+
+        if(merge){
+            for(const node of nodes){
+                current_nodes_ids.push(node.id);
+            }
+    
+            for(const node of loaded_nodes){ // adding new nodes one by one
+                if(!current_nodes_ids.includes(node.id)){ // if the node already exist do not include it again
+                    addNode(node, workflowName, provenance);
+                }
+            }
+        }else{
+            for(const node of loaded_nodes){ // adding new nodes one by one
+                addNode(node, workflowName, provenance);
+            }
+        }
+
+        if(!merge){
+            // onEdgesDelete(edges);
+            setEdges(prevEdges => []) // Reseting edges
+        }
+
+        let current_edges_ids = [];
+
+        for(const edge of edges){
+            current_edges_ids.push(edge.id);
+        }
+
+        console.log("loadParsedTrill second");
+        setNodes((prevNodes: any) => { // Guarantee that previous nodes were added
+            
+            if(merge){
+                for(const edge of loaded_edges){
+                    if(!current_edges_ids.includes(edge.id)){ // if the edge already exist do not include it again
+                        onConnect(edge, prevNodes, undefined, workflowName, provenance);
+                    }
+                }
+            }else{
+                for(const edge of loaded_edges){
+                    onConnect(edge, prevNodes, undefined, workflowName, provenance);
+                }
+            }
+
+    
+            if(!merge){
+                setOutputs([]);
+                setInteractions([]);
+                setDashboardPins({});
+                setPositionsInDashboard({});
+                setPositionsInWorkflow({});
+            }
+
+            return prevNodes;
+        })
+
+        // TODO: Unset dashboardMode (setDashBoardMode)
+    }
 
     const setDashBoardMode = (value: boolean) => {
         // setNodes((nds: any) =>
@@ -287,19 +364,22 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const addNode = useCallback(
-        (node: Node) => {
+        (node: Node, customWorkflowName?: string, provenance?: boolean) => {
+            console.log("add node");
             setNodes((prev: any) => {
-                console.log(node.position);
+                node.position
                 updatePositionWorkflow(node.id, {
                     id: node.id,
                     dragging: true,
-                    position: { ...node.position },
-                    positionAbsolute: { ...node.position },
-                    type: "position",
+                    position: {...node.position},
+                    positionAbsolute: {...node.position},
+                    type: "position"
                 });
-                return prev.concat(node);
+                return prev.concat(node)
             });
-            newBox(workflowName, (node.type as string) + "_" + node.id);
+            
+            if(provenance) // If there should be provenance tracking
+                newBox((customWorkflowName ? customWorkflowName : workflowNameRef.current), (node.type as string) + "-" + node.id);
         },
         [setNodes]
     );
@@ -380,7 +460,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                     connection.targetHandle != "in/out"
                 ) {
                     deleteConnection(
-                        workflowName,
+                        workflowNameRef.current,
                         targetNode.id,
                         targetNode.type as BoxType
                     );
@@ -463,7 +543,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             for (const change of changes) {
                 if (change.type == "remove") {
                     let node = reactFlow.getNode(change.id) as Node;
-                    deleteBox(workflowName, node.type + "_" + node.id);
+                    deleteBox(workflowNameRef.current, node.type + "_" + node.id);
                 }
             }
         },
@@ -471,18 +551,22 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     );
 
     const onConnect = useCallback(
-        (connection: Connection) => {
-            const nodes = getNodes();
-            const edges = getEdges();
+        (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean) => {
+            const nodes = custom_nodes ? custom_nodes : getNodes();
+            const edges = custom_edges ? custom_edges : getEdges();
             const target = nodes.find(
-                (node) => node.id === connection.target
+                (node: any) => node.id === connection.target
             ) as Node;
             const hasCycle = (node: Node, visited = new Set()) => {
                 if (visited.has(node.id)) return false;
 
                 visited.add(node.id);
 
-                for (const outgoer of getOutgoers(node, nodes, edges)) {
+                let checkEdges = edges.filter((edge: any) => {
+                    return edge.sourceHandle;
+                });
+
+                for (const outgoer of getOutgoers(node, nodes, checkEdges)) {
                     if (outgoer.id === connection.source) return true;
                     if (hasCycle(outgoer, visited)) return true;
                 }
@@ -553,7 +637,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                     allowConnection = false;
                 }
 
-                if (hasCycle(target)) {
+                if (connection.sourceHandle != "in/out" && hasCycle(target)) {
                     alert("Cycles are not allowed");
                     allowConnection = false;
                 }
@@ -573,6 +657,9 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                             markerEnd: { type: MarkerType.Arrow },
                         };
 
+                        if(customConnection.data == undefined)
+                            customConnection.data = {};
+
                         if (
                             connection.sourceHandle == "in/out" &&
                             connection.targetHandle == "in/out"
@@ -582,14 +669,17 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                             };
                             customConnection.type = EdgeType.BIDIRECTIONAL_EDGE;
                         } else {
+                            customConnection.type = EdgeType.UNIDIRECTIONAL_EDGE;
+
                             // only do provenance for in and out connections
-                            newConnection(
-                                workflowName,
-                                customConnection.source,
-                                outBox as BoxType,
-                                customConnection.target,
-                                inBox as BoxType
-                            );
+                            if(provenance)  
+                                newConnection(
+                                    (custom_workflow ? custom_workflow : workflowNameRef.current), 
+                                    customConnection.source, 
+                                    outBox as BoxType, 
+                                    customConnection.target, 
+                                    inBox as BoxType
+                                );
                         }
 
                         return addEdge(customConnection, eds);
@@ -869,7 +959,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             value={{
                 nodes,
                 edges,
-                workflowName,
+                workflowNameRef,
                 setOutputs,
                 setInteractions,
                 applyNewPropagation,
@@ -885,6 +975,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 updatePositionWorkflow,
                 updatePositionDashboard,
                 applyNewOutput,
+                setWorkflowName,
+                loadParsedTrill
             }}
         >
             {children}

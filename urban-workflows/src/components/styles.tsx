@@ -389,7 +389,7 @@ export const BoxContainer = ({
                                     style={{
                                         cursor: "pointer",
                                         fontSize: "27px",
-                                        color: "#0d6efd",
+                                        color: "rgb(35, 198, 134)",
                                     }}
                                     onClick={() => {
                                         setOutputCallback({
@@ -437,7 +437,11 @@ export const BoxContainer = ({
                                     <Dropdown>
                                         <Dropdown.Toggle
                                             variant="primary"
-                                            style={{ fontSize: "9px" }}
+                                            style={{ 
+                                                fontSize: "9px",
+                                                backgroundColor: "rgb(35, 198, 134)",
+                                                border: "none"
+                                             }}
                                         >
                                             Templates
                                         </Dropdown.Toggle>

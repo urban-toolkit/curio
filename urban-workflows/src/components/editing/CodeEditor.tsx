@@ -37,7 +37,7 @@ function CodeEditor({
 }: CodeEditorProps) {
     const [code, setCode] = useState<string>(""); // code with all original markers
 
-    const { workflowName } = useFlowContext();
+    const { workflowNameRef } = useFlowContext();
     const { boxExecProv } = useProvenanceContext();
 
     const replacedCodeDirtyBypass = useRef(false);
@@ -93,7 +93,7 @@ function CodeEditor({
                 processExecutionResult,
                 boxType,
                 data.nodeId,
-                workflowName,
+                workflowNameRef.current,
                 boxExecProv
             );
         }

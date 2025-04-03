@@ -12,7 +12,6 @@ import ReactFlow, {
 } from "reactflow";
 
 import { useFlowContext } from "../providers/FlowProvider";
-import { ToolsMenu } from "./tools-menu";
 import ComputationAnalysisBox from "./ComputationAnalysisBox";
 import DataTransformationBox from "./DataTransformationBox";
 import { BoxType, EdgeType } from "../constants";
@@ -36,6 +35,8 @@ import { useRightClickMenu } from "../hook/useRightClickMenu";
 import { useCode } from "../hook/useCode";
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { buttonStyle } from "./styles";
+import { ToolsMenu, UpMenu } from "./tools-menu";
+import UniDirectionalEdge from "./edges/UniDirectionalEdge";
 
 import "./MainCanvas.css";
 
@@ -74,6 +75,7 @@ export function MainCanvas() {
 
     let objectEdgeTypes: any = {};
     objectEdgeTypes[EdgeType.BIDIRECTIONAL_EDGE] = BiDirectionalEdge;
+    objectEdgeTypes[EdgeType.UNIDIRECTIONAL_EDGE] = UniDirectionalEdge;
 
     const edgeTypes = useMemo(() => objectEdgeTypes, []);
 
@@ -188,6 +190,11 @@ export function MainCanvas() {
             >
                 <UserMenu />
                 <ToolsMenu />
+                <UpMenu 
+                    setDashBoardMode={setDashBoardMode}
+                    setDashboardOn={setDashboardOn}
+                    dashboardOn={dashboardOn}
+                />
                 <RightClickMenu
                     showMenu={showMenu}
                     menuPosition={menuPosition}
@@ -198,27 +205,6 @@ export function MainCanvas() {
                         },
                     ]}
                 />
-                <button
-                    className="nowheel nodrag"
-                    style={{
-                        ...buttonStyle,
-                        position: "fixed",
-                        right: "10px",
-                        color: "#888787",
-                        fontWeight: "bold",
-                        bottom: "20px",
-                        zIndex: 100,
-                        ...(dashboardOn
-                            ? { boxShadow: "0px 0px 5px 0px red" }
-                            : { boxShadow: "0px 0px 5px 0px black" }),
-                    }}
-                    onClick={() => {
-                        setDashBoardMode(!dashboardOn);
-                        setDashboardOn(!dashboardOn);
-                    }}
-                >
-                    Dashboard mode
-                </button>
                 <Background />
                 <Controls />
             </ReactFlow>

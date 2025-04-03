@@ -40,7 +40,7 @@ function ImageBox({ data, isConnectable }) {
     const [interacted, setInteracted] = useState<string[]>([]); // 0 -> not interacted. 1 -> interacted with
 
     const { boxExecProv } = useProvenanceContext();
-    const { workflowName } = useFlowContext();
+    const { workflowNameRef } = useFlowContext();
 
     useEffect(() => {
         if (data.templateId != undefined) {
@@ -140,7 +140,7 @@ function ImageBox({ data, isConnectable }) {
             boxExecProv(
                 startTime,
                 startTime,
-                workflowName,
+                workflowNameRef.current,
                 BoxType.VIS_IMAGE + "_" + data.nodeId,
                 mapTypes(typesInput),
                 mapTypes(typesOuput),

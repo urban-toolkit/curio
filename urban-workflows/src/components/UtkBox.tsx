@@ -21,16 +21,11 @@ import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { OutputIcon } from "./edges/OutputIcon";
 import { InputIcon } from "./edges/InputIcon";
 
-function UtkBox({
-  data,
-  isConnectable,
-}: {
-  data: any;
-  isConnectable: boolean;
-}) {
-  const [output, setOutput] = useState<{ code: string; content: string }>({
-    code: "",
-    content: "",
+function UtkBox({ data, isConnectable }) {
+  const [output, setOutput] = useState<{ code: string; content: string, outputType: string }>({
+      code: "",
+      content: "",
+      outputType: ""
   }); // stores the output produced by the last execution of this box
   const [defaultGrammar, setDefaultGrammar] = useState<string>("{}");
 
@@ -80,7 +75,15 @@ function UtkBox({
 
   const { editUserTemplate } = useTemplateContext();
   const { user } = useUserContext();
-  const { workflowName } = useFlowContext();
+  const { workflowNameRef } = useFlowContext();
+
+  useEffect(() => {
+    data.code = code;
+  }, [code]);
+
+  useEffect(() => {
+    data.output = output;
+  }, [output]);
 
   useEffect(() => {
     if (data.templateId != undefined) {
@@ -232,8 +235,8 @@ function UtkBox({
       boxExecProv(
         startTime,
         endTime,
-        workflowName,
-        BoxType.VIS_UTK + "_" + data.nodeId,
+        workflowNameRef.current,
+        BoxType.VIS_UTK + "-" + data.nodeId,
         mapTypes(typesInput),
         mapTypes(typesOuput),
         code
@@ -781,6 +784,7 @@ function UtkBox({
         templateData={templateData}
         code={code}
         user={user}
+        handleType={"in/out"}
         sendCodeToWidgets={sendCode}
         setOutputCallback={setOutput}
         promptModal={promptModal}
@@ -834,7 +838,7 @@ function UtkBox({
           boxType={BoxType.VIS_UTK}
           applyGrammar={compileGrammar}
           defaultValue={
-            templateData.code == undefined ? defaultGrammar : templateData.code
+            templateData.code == undefined ? data.defaultCode ? data.defaultCode : defaultGrammar : templateData.code
           }
           readOnly={
             (templateData.custom != undefined &&

@@ -16,13 +16,13 @@ import { OutputIcon } from "./edges/OutputIcon";
 import { InputIcon } from "./edges/InputIcon";
 
 function ComputationAnalysisBox({ data, isConnectable }) {
-  const [output, setOutput] = useState<{ code: string; content: string }>({
+  const [output, setOutput] = useState<{ code: string; content: string, outputType: string }>({
     code: "",
     content: "",
+    outputType: ""
   }); // stores the output produced by the last execution of this box
   const [code, setCode] = useState<string>("");
   const [sendCode, setSendCode] = useState();
-
   const [templateData, setTemplateData] = useState<Template | any>({});
 
   const [newTemplateFlag, setNewTemplateFlag] = useState(false);
@@ -32,6 +32,14 @@ function ComputationAnalysisBox({ data, isConnectable }) {
   const { user } = useUserContext();
 
   const { editUserTemplate } = useTemplateContext();
+
+  useEffect(() => {
+    data.code = code;
+  }, [code]);
+
+  useEffect(() => {
+    data.output = output;
+  }, [output]);
 
   useEffect(() => {
     if (data.templateId != undefined) {
@@ -98,6 +106,7 @@ function ComputationAnalysisBox({ data, isConnectable }) {
         templateData={templateData}
         code={code}
         user={user}
+        handleType={"in/out"}
         sendCodeToWidgets={sendCode}
         setOutputCallback={setOutput}
         promptModal={promptModal}
@@ -125,7 +134,7 @@ function ComputationAnalysisBox({ data, isConnectable }) {
           data={data}
           output={output}
           boxType={BoxType.COMPUTATION_ANALYSIS}
-          defaultValue={templateData.code}
+          defaultValue={templateData.code ? templateData.code : data.defaultCode}
           readOnly={
             (templateData.custom != undefined &&
               templateData.custom == false) ||

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Handle, Position } from "reactflow";
 import BoxEditor from "./editing/BoxEditor";
 
@@ -6,19 +6,17 @@ import BoxEditor from "./editing/BoxEditor";
 import "bootstrap/dist/css/bootstrap.min.css";
 import { BoxType } from "../constants";
 import { BoxContainer } from "./styles";
-import { Template, useTemplateContext } from "../providers/TemplateProvider";
+import { Template } from "../providers/TemplateProvider";
 import DescriptionModal from "./DescriptionModal";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faCircleInfo } from "@fortawesome/free-solid-svg-icons";
-import CSS from "csstype";
 import { useUserContext } from "../providers/UserProvider";
 import { OutputIcon } from "./edges/OutputIcon";
 import { InputIcon } from "./edges/InputIcon";
 
 function FlowSwitchBox({ data, isConnectable }) {
-  const [output, setOutput] = useState<{ code: string; content: string }>({
+  const [output, setOutput] = useState<{ code: string; content: string, outputType: string }>({
     code: "",
     content: "",
+    outputType: ""
   }); // stores the output produced by the last execution of this box
   const [templateData, setTemplateData] = useState<Template | any>({});
   const [sendCode, setSendCode] = useState();
@@ -26,6 +24,10 @@ function FlowSwitchBox({ data, isConnectable }) {
   const [showDescriptionModal, setDescriptionModal] = useState(false);
 
   const { user } = useUserContext();
+
+  useEffect(() => {
+    data.output = output;
+  }, [output]);
 
   const promptDescription = () => {
     setDescriptionModal(true);
@@ -60,6 +62,7 @@ function FlowSwitchBox({ data, isConnectable }) {
         templateData={templateData}
         code={code}
         user={user}
+        handleType={"in"}
         sendCodeToWidgets={sendCode}
         setOutputCallback={setOutput}
         promptDescription={promptDescription}

@@ -17,9 +17,10 @@ import { useUserContext } from "../providers/UserProvider";
 import { OutputIcon } from "./edges/OutputIcon";
 
 function ConstantBox({ data, isConnectable }) {
-  const [output, setOutput] = useState<{ code: string; content: string }>({
+  const [output, setOutput] = useState<{ code: string; content: string, outputType: string }>({
     code: "",
     content: "",
+    outputType: ""
   }); // stores the output produced by the last execution of this box
   const [code, setCode] = useState<string>("");
   const [sendCode, setSendCode] = useState();
@@ -32,6 +33,14 @@ function ConstantBox({ data, isConnectable }) {
   const { editUserTemplate } = useTemplateContext();
   const { user } = useUserContext();
 
+  useEffect(() => {
+    data.code = code;
+  }, [code]);
+
+  useEffect(() => {
+    data.output = output;
+  }, [output]);
+  
   useEffect(() => {
     if (data.templateId != undefined) {
       setTemplateData({
@@ -102,6 +111,7 @@ function ConstantBox({ data, isConnectable }) {
         templateData={templateData}
         code={code}
         user={user}
+        handleType={"in/out"}
         sendCodeToWidgets={sendCode}
         setOutputCallback={setOutput}
         promptModal={promptModal}
@@ -137,7 +147,7 @@ function ConstantBox({ data, isConnectable }) {
           data={data}
           output={output}
           boxType={BoxType.CONSTANTS}
-          defaultValue={templateData.code}
+          defaultValue={templateData.code ? templateData.code : data.defaultCode}
           readOnly={
             (templateData.custom != undefined &&
               templateData.custom == false) ||

@@ -18,6 +18,7 @@ export enum BoxType {
 
 export enum EdgeType {
   BIDIRECTIONAL_EDGE = "BIDIRECTIONAL_EDGE",
+  UNIDIRECTIONAL_EDGE = "UNIDIRECTIONAL_EDGE"
 }
 
 export enum SupportedType {
