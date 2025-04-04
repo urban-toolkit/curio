@@ -9,7 +9,8 @@
 Because Curio is integrated with UTK it is necessary to add it as a submodule.
 
 ```console
-git clone git@github.com:urban-toolkit/curio.git  
+git clone git@github.com:urban-toolkit/curio.git
+cd curio
 git submodule init
 git submodule update --remote --merge
 ```
@@ -18,9 +19,16 @@ Curio is divided into three components: backend (provenance and database managem
 
 Curio was tested on Windows 11 and MacOS Sonoma 14.5. **Python >= 3.9 & < 3.12 is needed.**
 
+ It is recommended to install its requirements on a virtual environment such as [Anaconda](https://anaconda.org):
+
+ ```console
+conda create -n curio python=3.10
+conda activate curio
+```
+
 ### 1. Curio Backend
 
-The backend source code is available on the `backend` folder. It is recommended to install its requirements on a virtual environment such as [Anaconda](https://anaconda.org). Inside the `backend` folder:
+The backend source code is available on the `backend` folder. Inside the `backend` folder:
 
 ```console
 pip install -r requirements.txt
