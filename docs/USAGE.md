@@ -19,7 +19,7 @@ Curio is divided into three components: backend (provenance and database managem
 
 Curio was tested on Windows 11 and MacOS Sonoma 14.5. **Python >= 3.9 & < 3.12 is needed.**
 
- It is recommended to install its requirements on a virtual environment such as [Anaconda](https://anaconda.org):
+It is recommended to install its requirements on a virtual environment such as [Anaconda](https://anaconda.org):
 
  ```console
 conda create -n curio python=3.10
@@ -53,7 +53,7 @@ The backend is also responsible for user authentication. In order to use Curio's
 You need to run this command before you start using Curio:
 
 ```console
-# run this to apply any migration that hasn't run yet
+# Run this to apply any pending migrations.
 FLASK_APP=server.py flask db upgrade
 ```
 
@@ -69,7 +69,7 @@ FLASK_APP=server.py flask db migrate -m "Migration Name"
 
 ### 2. Python sandbox
 
-Since modules on Curio can run Python code, it is necessary to run a Python sandbox on the `sandbox` folder.
+Since modules on Curio can run Python code, it is necessary to run a Python sandbox inside the `sandbox` folder.
 
 **To run without Docker (Anaconda environment recommended):**
 
@@ -80,7 +80,7 @@ pip install -r requirements.txt
 Install UTK's backend module to have access to the sandbox:
 
 ```console
-pip install utk
+pip install utk-0.8.9.tar.gz
 ```
 
 Run the server:
