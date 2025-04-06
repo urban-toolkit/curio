@@ -29,6 +29,13 @@ conda create -n curio python=3.10
 conda activate curio
 ```
 
+It is recommended to install its requirements on a virtual environment such as [Anaconda](https://anaconda.org):
+
+ ```console
+conda create -n curio python=3.10
+conda activate curio
+```
+
 You can install Curio using Docker, which will handle the orchestration of all required servers automatically, or install each component manually for more control and customization.
 
 ### Installing via Docker
