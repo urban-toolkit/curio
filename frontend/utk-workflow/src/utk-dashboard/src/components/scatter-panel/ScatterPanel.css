@@ -1,0 +1,50 @@
+/* Dropdown Button */
+.scatter-dropbtn {
+    background-color: #4CAF50;
+    color: white;
+    padding: 16px;
+    font-size: 16px;
+    border-radius: 2px;
+    border: none;
+    cursor: pointer;
+  }
+  
+  /* The container <div> - needed to position the dropdown content */
+  .scatter-dropdown {
+    position: relative;
+    display: inline-block;
+    margin: 5px;
+  }
+  
+  /* Dropdown Content (Hidden by Default) */
+  .scatter-dropdown-content {
+    display: none;
+    position: absolute;
+    background-color: #f9f9f9;
+    min-width: 160px;
+    box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+    z-index: 1;
+  }
+  
+  /* Links/Items inside the dropdown */
+  .scatter-dropdown-content .dropdown-item {
+    color: black;
+    /* padding: 12px 16px; */
+    padding: 4px 8px;
+    text-decoration: none;
+    display: block;
+  }
+  
+  /* Change color of dropdown links on hover */
+  .scatter-dropdown-content .dropdown-item:hover {background-color: #f1f1f1}
+  
+  .scatter-dropdown:hover .scatter-dropdown-content {
+    display: block;
+  }
+  
+  .scatter-dropdown:hover .scatter-dropbtn {
+    background-color: #3e8e41;
+  }
+
+ /* Show the dropdown menu (use JS to add this class to the .dropdown-content container when the user clicks on the dropdown button) */
+/* .show {display:block;} */

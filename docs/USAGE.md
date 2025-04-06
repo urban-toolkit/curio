@@ -2,14 +2,18 @@
 
 ## Table of contents
 1. [Installation](#installation)
-2. [Quick start](#quick-start)
+  1. [Installing via Docker](#installing-via-docker)
+  2. [Installing manually](#installing-manually)
+3. [Quick start](#quick-start)
 
 ## Installation
+
 
 Because Curio is integrated with UTK it is necessary to add it as a submodule.
 
 ```console
-git clone git@github.com:urban-toolkit/curio.git  
+git clone git@github.com:urban-toolkit/curio.git
+cd curio
 git submodule init
 git submodule update --remote --merge
 ```
@@ -18,9 +22,38 @@ Curio is divided into three components: backend (provenance and database managem
 
 Curio was tested on Windows 11 and MacOS Sonoma 14.5. **Python >= 3.9 & < 3.12 is needed.**
 
-### 1. Curio Backend
+It is recommended to install its requirements on a virtual environment such as [Anaconda](https://anaconda.org):
 
-The backend source code is available on the `backend` folder. It is recommended to install its requirements on a virtual environment such as [Anaconda](https://anaconda.org). Inside the `backend` folder:
+ ```console
+conda create -n curio python=3.10
+conda activate curio
+```
+
+You can install Curio using Docker, which will handle the orchestration of all required servers automatically, or install each component manually for more control and customization.
+
+### Installing via Docker
+
+Docker is the easiest way to get Curio up and running. It handles the orchestration of all necessary components: the backend, sandbox, and frontend.
+
+Prerequisites:
+- [Docker](https://docs.docker.com/get-started/get-docker/)
+
+After cloning the repository and initializing submodules (see above), run the full Curio stack with:
+
+```console
+docker-compose up --build
+```
+
+This will build and start all required services: the backend, Python sandbox, and frontend. Curio's frontend will be available at http://localhost:8080.
+
+⚠️ **Note:** The initial build may take a few minutes depending on your machine and network speed, as it installs dependencies and compiles assets.
+
+### Installing manually
+
+
+#### 1. Curio Backend
+
+The backend source code is available on the `backend` folder. Inside the `backend` folder:
 
 ```console
 pip install -r requirements.txt
@@ -40,18 +73,18 @@ python server.py
 
 The backend is also responsible for user authentication. In order to use Curio's functionalities, you will need authentication. To do so, upgrade the database by applying migrations (see below for steps).
 
-#### Apply migrations
+##### Apply migrations
 
 You need to run this command before you start using Curio:
 
 ```console
-# run this to apply any migration that hasn't run yet
+# Run this to apply any pending migrations.
 FLASK_APP=server.py flask db upgrade
 ```
 
 If the environment variable FLASK_APP does not work with the command above, set the environnment variable in your terminal.
 
-#### Create migration
+##### Create migration
 
 ```console
 # after updating any model, run this to generate a new migration
@@ -59,9 +92,9 @@ FLASK_APP=server.py flask db migrate -m "Migration Name"
 ```
 
 
-### 2. Python sandbox
+#### 2. Python sandbox
 
-Since modules on Curio can run Python code, it is necessary to run a Python sandbox on the `sandbox` folder.
+Since modules on Curio can run Python code, it is necessary to run a Python sandbox inside the `sandbox` folder.
 
 **To run without Docker (Anaconda environment recommended):**
 
@@ -72,7 +105,7 @@ pip install -r requirements.txt
 Install UTK's backend module to have access to the sandbox:
 
 ```console
-pip install utk
+pip install utk-0.8.9.tar.gz
 ```
 
 Run the server:
@@ -81,29 +114,23 @@ Run the server:
 python server.py
 ```
 
-**If you prefer to use Docker (but you won't be able to use GPU for Ray Tracing):**
+**If you prefer to use Docker (but you won't be able to use GPU for Ray Tracing), inside the `sandbox` folder:**
 
 ```console
 docker-compose up
 ```
 
-### 3. Curio frontend
+#### 3. Curio Frontend
 
-Because Curio also uses UTK's frontend it is necessary to compile the UTK submodule. On the `utk-workflow` folder:
-
-```console
-cd src/utk-ts
-```
-
-NodeJS is needed to build the frontend:
+Because Curio also uses UTK's frontend, it is necessary to compile the UTK submodule. In the `frontend/utk-workflow/src/utk-ts` folder:
 
 ```console
-conda install nodejs
+conda install nodejs=22.13.0
 npm install
 npm run build 
 ```
 
-To start Curio's frontend, simply go to `urban-workflows` and run:
+To start Curio's frontend, simply go to the `frontend/urban-workflows` folder and run:
 
 ```console
 npm install
@@ -111,11 +138,13 @@ npm run build
 npm run start
 ```
 
-### Ray tracing
+Note: You must run Curio's backend & sandbox while running the frontend.
+
+#### Ray tracing
 
 To use Ray Tracing, please see UTK's [requirements](https://github.com/urban-toolkit/utk).
 
-## Quick start
+### Quick start
 
 For a simple introductory example check [this](QUICK-START.md) tutorial. See [here](README.md) for more examples.
 

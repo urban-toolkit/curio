@@ -1,0 +1,26 @@
+plotoptix==0.14.4; sys_platform != 'darwin'
+pysolar==0.11
+geopy==2.4.1
+osmium==3.7.0
+overpass==0.7
+numpy==1.26.4
+pandas==2.2.1
+scipy==1.12.0
+geopandas==0.13.2
+tqdm==4.66.2
+mapbox_earcut==1.0.1
+shapely==1.8.5
+pyproj==3.6.1
+pytz==2023.4
+timezonefinder==6.5.0
+pythonnet==3.0.3
+pygeos==0.14
+ipywidgets==8.1.2
+geojson==3.1.0
+flask==2.3.3
+vedo==2023.4.7
+netCDF4==1.6.5
+requests==2.31.0
+psutil==5.9.8
+watchdog==3.0.0
+termcolor==2.4.0

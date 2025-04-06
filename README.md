@@ -32,7 +32,11 @@ This project is part of the [Urban Toolkit ecosystem](https://urbantk.org), whic
 - Integration with [UTK](https://urbantk.org) and [Vega-Lite](https://vega.github.io/vega-lite/)
 
 ## Usage and contributions
-For detailed instructions on how to use the project, please see the [usage](docs/USAGE.md) document. A set of examples can be found [here](https://github.com/urban-toolkit/curio/tree/main/docs). If you'd like to contribute, see the [contributions](docs/CONTRIBUTIONS.md) document for guidelines. For questions, join [UTK's Discord](https://discord.gg/vjpSMSJR8r) server.
+For detailed instructions on how to use the project, please see the [usage](docs/USAGE.md) document. A set of examples can be found [here](https://github.com/urban-toolkit/curio/tree/main/docs). 
+
+🚀 Curio now supports a Docker-based setup for easier installation and orchestration of all components. See the [usage guide](docs/USAGE.md) for instructions on running Curio with Docker.
+
+If you'd like to contribute, see the [contributions](docs/CONTRIBUTIONS.md) document for guidelines. For questions, join [UTK's Discord](https://discord.gg/vjpSMSJR8r) server.
 
 
 

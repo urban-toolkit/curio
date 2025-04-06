@@ -1,0 +1,32 @@
+.time-btn {
+    height: 30px;
+    text-align: center;
+    font-size: x-small;
+    color: hsl(160, 29%, 77%);
+    background-color: hsl(180, 60%, 20%);
+    border: 1px solid hsl(180, 60%, 20%);
+    width: 40px;
+    cursor: pointer;
+
+}
+
+.time-btn:hover{
+    /* background-color: var(--theme-color-2) */
+    background-color: white;
+}
+
+.time-btn-group {
+    align-items: center;
+}
+
+.time-label {
+    height: 30px;
+    text-align: center;
+    cursor: default;
+    font-size: small;
+    color: hsl(160, 29%, 77%);
+    padding: 4px 0px 4px 0px;
+    width: 35px;
+    border: 1px solid hsl(180, 60%, 20%);
+    background-color: hsla(180, 61%, 20%, 0.635);
+}

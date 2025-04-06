@@ -20,5 +20,5 @@ def test_frontend_server(frontend_server, page):
     page.wait_for_load_state("domcontentloaded")
     page.get_by_text("Logar").wait_for()
 
-    assert page.title() == ":: Curio ::"
+    assert page.title() == "Curio"
     assert "Logar" in page.content()

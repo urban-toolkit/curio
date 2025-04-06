@@ -17,12 +17,13 @@ This document outlines the coding conventions, best practices, and structural ru
 Keep files where they belong.
 
 - **`backend/`**: Manages database access and user authentication.
+- **`frontend/**: Frontend functionalities.
+    - **`urban-workflows/`**: Manages database access and user authentication.
+        - **`src/`**: Curio's frontend source code.
+            - **`components/`**: React components and respective CSS. Create a different file for each component. Keep similar components groupped inside folders.
+    - **`utk-workflow/`**: Stores a version of [UTK](https://github.com/urban-toolkit/utk) that can be embedded.
 - **`images/`**: Images for documentation.
 - **`sandbox/`**: Sandbox for executing python code inside Curio.
-- **`urban-workflows/`**: Manages database access and user authentication.
-    - **`src/`**: Curio's source code.
-        - **`components/`**: React components and respective CSS. Create a different file for each component. Keep similar components groupped inside folders.
-- **`utk-workflow/`**: Stores a version of [UTK](https://github.com/urban-toolkit/utk) that can be embedded.
 
 ## Naming conventions
 

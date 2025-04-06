@@ -1,0 +1,46 @@
+/* =========================================================== */
+
+/* carolvfs */
+
+:root {
+  --nav-height: 50px;
+
+  --shadow:
+    0 2px 23px 0 rgba(0, 0, 0, 0.1),
+    0 2px 49px 0 rgba(0, 0, 0, 0.06);
+
+  --temporal-width: 900px;
+  --bias-width: 350px;
+  /* --temporal-width: 2000px;
+  --bias-width: 170px; */
+  --corr-width: calc(var(--temporal-width) - var(--bias-width))
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Grid Layout */
+
+.App {
+  margin: 0px;
+  /* display: grid; */
+  /* grid-template-columns: 1fr; */
+  /* grid-template-rows:
+    var(--nav-height)
+    1fr; */
+  /* grid-template-areas: 
+    "menu"
+    "content"; */
+  /* height: 100vh; */
+  background-color: #F5F5F5;
+  /* text-align: center; */
+}
+
+header.menu {
+  grid-area: menu;
+}
+
+main.content {
+  grid-area: content;
+}

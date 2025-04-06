@@ -1,0 +1,7 @@
+aside.menu-area {
+    border: 1.8px solid rgb(14, 0, 51);
+    background-color: rgb(14, 0, 51);
+    display: inline-block;
+    vertical-align: middle;
+    padding-top: 5px;
+}
