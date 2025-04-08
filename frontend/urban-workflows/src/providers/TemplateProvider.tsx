@@ -109,9 +109,21 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
         let newTemplates: Template[] = [];
 
         for (const template of userTemplates) {
-            if (template.id == templateNew.id)
+            if (template.id == templateNew.id){
                 newTemplates.push({ ...templateNew });
-            else newTemplates.push({ ...template });
+
+                if(Object.keys(template).length > 0){ // If there is a template
+                    fetch(process.env.BACKEND_URL + "/addTemplate", {
+                        method: "POST",
+                        body: JSON.stringify(templateNew),
+                        headers: {
+                            "Content-type": "application/json; charset=UTF-8",
+                        },
+                    });
+                }
+            }else{
+                newTemplates.push({ ...template });
+            }
         }
 
         setUserTemplates(newTemplates);

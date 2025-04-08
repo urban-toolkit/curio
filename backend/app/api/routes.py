@@ -69,6 +69,16 @@ TYPE_MAP = {
     "vega_lite": "VIS_VEGA"
 }
 
+FOLDER_MAP = {
+    "COMPUTATION_ANALYSIS": "computation_analysis",
+    "DATA_CLEANING": "data_cleaning",
+    "DATA_EXPORT": "data_export",
+    "DATA_LOADING": "data_loading",
+    "DATA_TRANSFORMATION": "data_transformation",
+    "VIS_UTK": "utk",
+    "VIS_VEGA": "vega_lite"
+}
+
 TEMPLATE_DIR = "../templates"
 
 @bp.after_request
@@ -1048,7 +1058,7 @@ def create_template_object(folder, filename, code):
         "description": "",
         "accessLevel": "ANY",
         "code": code,
-        "custom": False
+        "custom": True
     }
 
 def generate_templates():
@@ -1057,14 +1067,11 @@ def generate_templates():
     for folder in TYPE_MAP.keys():
         folder_path = os.path.join(TEMPLATE_DIR, folder)
 
-        print(folder_path)
-
         if not os.path.isdir(folder_path):
             continue
 
         for file in os.listdir(folder_path):
             if file.endswith(".py"):
-                print("file", file)
 
                 with open(os.path.join(folder_path, file), "r", encoding="utf-8") as f:
                     code = f.read()
@@ -1077,3 +1084,32 @@ def generate_templates():
 @bp.route("/templates", methods=["GET"])
 def get_templates():
     return jsonify(generate_templates())
+
+@bp.route('/addTemplate', methods=['POST'])
+def add_template():
+    data = request.get_json()
+
+    required_fields = ['id', 'type', 'name', 'description', 'accessLevel', 'code', 'custom']
+    if not all(field in data for field in required_fields):
+        return jsonify({'error': 'Missing one or more required fields'}), 400
+
+    template_type = data['type']
+    if template_type not in FOLDER_MAP:
+        return jsonify({'error': f"Unknown template type: {template_type}"}), 400
+
+    subfolder = FOLDER_MAP[template_type]
+    folder_path = os.path.join(TEMPLATE_DIR, subfolder)
+    os.makedirs(folder_path, exist_ok=True)
+
+    replace_name = data['name'].replace(" ", "_")
+
+    filename = f"{replace_name}.py"
+    filepath = os.path.join(folder_path, filename)
+
+    try:
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(data['code'])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    return jsonify({'message': f"Template saved to {filepath}"}), 200

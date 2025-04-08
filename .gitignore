@@ -20,3 +20,4 @@ wheels/
 .ipynb_checkpoints
 
 simple_example
+templates/

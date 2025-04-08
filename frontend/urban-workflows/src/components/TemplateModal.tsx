@@ -34,10 +34,12 @@ function TemplateModal({
     const [description, setDescription] = useState<string>("");
 
     const closeModal = (save: boolean = true) => {
+        let template: any = {}
+
         if (save) {
             if (newTemplateFlag) {
                 // creating new template
-                let template = createUserTemplate(
+                template = createUserTemplate(
                     boxType,
                     name,
                     description,
@@ -49,7 +51,7 @@ function TemplateModal({
             } else {
                 // updating existing template
 
-                let template = {
+                template = {
                     id: templateId,
                     type: boxType,
                     name,
@@ -62,6 +64,16 @@ function TemplateModal({
                 editUserTemplate({ ...template } as Template);
                 callBack(template);
             }
+        }
+
+        if(Object.keys(template).length > 0){ // If there is a template
+            fetch(process.env.BACKEND_URL + "/addTemplate", {
+                method: "POST",
+                body: JSON.stringify(template),
+                headers: {
+                    "Content-type": "application/json; charset=UTF-8",
+                },
+            });
         }
 
         handleClose();
@@ -97,8 +109,8 @@ function TemplateModal({
                         }}
                         name="accessLevel"
                     >
-                        <option value="PROGRAMMER">Programmer</option>
-                        <option value="EXPERT">Expert</option>
+                        {/* <option value="PROGRAMMER">Programmer</option> */}
+                        {/* <option value="EXPERT">Expert</option> */}
                         <option value="ANY">Any</option>
                     </select>
                     <br />
