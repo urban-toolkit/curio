@@ -11,6 +11,7 @@ import DescriptionModal from "./DescriptionModal";
 import { useUserContext } from "../providers/UserProvider";
 import { OutputIcon } from "./edges/OutputIcon";
 import { InputIcon } from "./edges/InputIcon";
+import "./Box.css"
 
 function FlowSwitchBox({ data, isConnectable }) {
   const [output, setOutput] = useState<{ code: string; content: string, outputType: string }>({

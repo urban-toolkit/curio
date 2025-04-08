@@ -6,6 +6,8 @@ from extensions import db
 from app.users.models import User, UserSession
 from app.services.google_oauth import GoogleOAuth
 from app.middlewares import require_auth
+import uuid
+import os
 
 # The Flask app
 from app.api import bp
@@ -56,6 +58,18 @@ attributeIds = {
     "LIST": "4",
     "JSON": "5"
 }
+
+TYPE_MAP = {
+    "computation_analysis": "COMPUTATION_ANALYSIS",
+    "data_cleaning": "DATA_CLEANING",
+    "data_export": "DATA_EXPORT",
+    "data_loading": "DATA_LOADING",
+    "data_transformation": "DATA_TRANSFORMATION",
+    "utk": "VIS_UTK",
+    "vega_lite": "VIS_VEGA"
+}
+
+TEMPLATE_DIR = "../templates"
 
 @bp.after_request
 def add_cors_headers(response):
@@ -1024,3 +1038,42 @@ def truncate_db_prov():
 
     return "",200
 
+
+
+def create_template_object(folder, filename, code):
+    return {
+        "id": str(uuid.uuid4()),
+        "type": TYPE_MAP.get(folder, "UNKNOWN"),
+        "name": filename.replace(".py", "").replace("_", " "),
+        "description": "",
+        "accessLevel": "ANY",
+        "code": code,
+        "custom": False
+    }
+
+def generate_templates():
+    templates = []
+
+    for folder in TYPE_MAP.keys():
+        folder_path = os.path.join(TEMPLATE_DIR, folder)
+
+        print(folder_path)
+
+        if not os.path.isdir(folder_path):
+            continue
+
+        for file in os.listdir(folder_path):
+            if file.endswith(".py"):
+                print("file", file)
+
+                with open(os.path.join(folder_path, file), "r", encoding="utf-8") as f:
+                    code = f.read()
+
+                template_obj = create_template_object(folder, file, code)
+                templates.append(template_obj)
+
+    return templates
+
+@bp.route("/templates", methods=["GET"])
+def get_templates():
+    return jsonify(generate_templates())

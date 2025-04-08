@@ -7,6 +7,7 @@ import { BoxContainer, buttonStyle } from "./styles";
 import CSS from "csstype";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faGear, faCircleInfo } from "@fortawesome/free-solid-svg-icons";
+import "./Box.css"
 
 // Bootstrap
 import "bootstrap/dist/css/bootstrap.min.css";

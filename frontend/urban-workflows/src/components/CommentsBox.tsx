@@ -3,6 +3,7 @@ import { BoxContainer } from "./styles";
 import { CommentsList, IComment } from "./comments/CommentsList";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faUpDownLeftRight } from "@fortawesome/free-solid-svg-icons";
+import "./Box.css"
 
 export default function CommentsBox({ data }) {
   const [showComments, setShowComments] = useState(false);

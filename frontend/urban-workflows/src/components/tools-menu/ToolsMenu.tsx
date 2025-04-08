@@ -83,7 +83,7 @@ export function ToolsMenu() {
                     </div>
                 </OverlayTrigger>
 
-                <OverlayTrigger
+                {/* <OverlayTrigger
                     placement="right"
                     delay={overlayTriggerProps}
                     overlay={<Tooltip>Text</Tooltip>}
@@ -94,7 +94,7 @@ export function ToolsMenu() {
                     >
                         <FontAwesomeIcon icon={faFont} style={iconStyle} />
                     </div>
-                </OverlayTrigger>
+                </OverlayTrigger> */}
 
                 <OverlayTrigger
                     placement="right"
@@ -122,7 +122,7 @@ export function ToolsMenu() {
                     </div>
                 </OverlayTrigger>
 
-                <OverlayTrigger
+                {/* <OverlayTrigger
                     placement="right"
                     delay={overlayTriggerProps}
                     overlay={<Tooltip>Flow Switch</Tooltip>}
@@ -133,7 +133,7 @@ export function ToolsMenu() {
                     >
                         <FontAwesomeIcon icon={faRepeat} style={iconStyle} />
                     </div>
-                </OverlayTrigger>
+                </OverlayTrigger> */}
 
                 <OverlayTrigger
                     placement="right"
@@ -148,7 +148,7 @@ export function ToolsMenu() {
                     </div>
                 </OverlayTrigger>
 
-                <OverlayTrigger
+                {/* <OverlayTrigger
                     placement="right"
                     delay={overlayTriggerProps}
                     overlay={<Tooltip>Table</Tooltip>}
@@ -159,7 +159,7 @@ export function ToolsMenu() {
                     >
                         <FontAwesomeIcon icon={faTable} style={iconStyle} />
                     </div>
-                </OverlayTrigger>
+                </OverlayTrigger> */}
 
                 <OverlayTrigger
                     placement="right"
@@ -174,7 +174,7 @@ export function ToolsMenu() {
                     </div>
                 </OverlayTrigger>
 
-                <OverlayTrigger
+                {/* <OverlayTrigger
                     placement="right"
                     delay={overlayTriggerProps}
                     overlay={<Tooltip>Constant</Tooltip>}
@@ -185,7 +185,7 @@ export function ToolsMenu() {
                     >
                         <FontAwesomeIcon icon={faSquareRootVariable} style={iconStyle} />
                     </div>
-                </OverlayTrigger>
+                </OverlayTrigger> */}
 
                 <OverlayTrigger
                     placement="right"

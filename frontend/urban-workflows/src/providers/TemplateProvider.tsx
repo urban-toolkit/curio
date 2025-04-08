@@ -26,7 +26,7 @@ import {
     EdgeType,
     VisInteractionType,
 } from "../constants";
-import { templates } from "./templates";
+import useTemplates from "./templates";
 import { v4 as uuid } from "uuid";
 
 export interface Template {
@@ -61,8 +61,19 @@ export const TemplateContext = createContext<TemplateContextProps>({
 
 const TemplateProvider = ({ children }: { children: ReactNode }) => {
     const [defaultTemplates, setDefaultTemplates] =
-        useState<Template[]>(templates);
+        useState<Template[]>([]);
     const [userTemplates, setUserTemplates] = useState<Template[]>([]);
+
+    const fetchTemplates = async () => {
+        const templates = await useTemplates();
+        console.log("templates", templates);
+        setDefaultTemplates(templates);
+
+    }
+
+    useEffect(() => {
+        fetchTemplates()
+    }, []);
 
     const createUserTemplate = (
         type: BoxType,

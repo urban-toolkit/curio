@@ -8,6 +8,7 @@ import Button from "react-bootstrap/Button";
 import "bootstrap/dist/css/bootstrap.min.css";
 import { BoxType, ResolutionType, VisInteractionType } from "../constants";
 import Tab from "react-bootstrap/Tab";
+import "./Box.css"
 
 import { BoxContainer } from "./styles";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";

@@ -10,7 +10,8 @@ export const UserMenu = () => {
   const [show, setShow] = useState<boolean>(false);
   const { user, logout, saveUserType } = useUserContext();
   const { setDialog } = useDialogContext();
-  const [type, setType] = useState<"expert" | "programmer" | null>(null);
+  // const [type, setType] = useState<"expert" | "programmer" | null>(null);
+  const [type, setType] = useState<"expert" | "programmer" | null>("programmer");
 
   const handleSave = useCallback(
     async (newType: "expert" | "programmer") => {
@@ -23,6 +24,10 @@ export const UserMenu = () => {
   useEffect(() => {
     if (user?.type) setType(user.type);
   }, [user?.type]);
+
+  useEffect(() => {
+    saveUserType("programmer");
+  }, [])
 
   if (!user)
     return (
@@ -51,7 +56,7 @@ export const UserMenu = () => {
             Logout
           </Dropdown.Item>
 
-          <p
+          {/* <p
             style={{
               width: "90%",
               margin: "20px auto 5px auto",
@@ -59,9 +64,9 @@ export const UserMenu = () => {
             }}
           >
             Choose a professional type
-          </p>
+          </p> */}
 
-          <Dropdown.Item eventKey="2">
+          {/* <Dropdown.Item eventKey="2">
             <ToggleButton
               id={`radio-1`}
               type="radio"
@@ -77,9 +82,9 @@ export const UserMenu = () => {
             >
               Programmer
             </ToggleButton>
-          </Dropdown.Item>
+          </Dropdown.Item> */}
 
-          <Dropdown.Item eventKey="3">
+          {/* <Dropdown.Item eventKey="3">
             <ToggleButton
               id={`radio-2`}
               type="radio"
@@ -95,7 +100,7 @@ export const UserMenu = () => {
             >
               Expert
             </ToggleButton>
-          </Dropdown.Item>
+          </Dropdown.Item> */}
         </Dropdown.Menu>
       </Dropdown>
     </div>

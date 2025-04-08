@@ -4,6 +4,7 @@ import BoxEditor from "./editing/BoxEditor";
 
 import { BoxContainer, buttonStyle } from "./styles";
 import CSS from "csstype";
+import "./Box.css"
 
 // Bootstrap
 import "bootstrap/dist/css/bootstrap.min.css";

@@ -94,7 +94,7 @@ export function UpMenu({ setDashBoardMode, setDashboardOn, dashboardOn }: { setD
         <>
             {/* Top Menu Bar */}
             <div className="nowheel nodrag" style={{...menuBar}}>
-                <button style={button}>Back to Projects</button>
+                {/* <button style={button}>Back to Projects</button> */}
                 <div style={dropdownWrapper}>
                     <button
                         style={button}
@@ -104,7 +104,7 @@ export function UpMenu({ setDashBoardMode, setDashboardOn, dashboardOn }: { setD
                     </button>
                     {fileMenuOpen && (
                         <div style={dropdownMenu}>
-                            <button style={dropdownItem}>New Workflow</button>
+                            {/* <button style={dropdownItem}>New Workflow</button> */}
                             <button style={dropdownItem} onClick={exportTrill}>Export Specification</button>
                             <div>
                                 <button style={dropdownItem} onClick={loadTrillFile}>Load Specification</button>

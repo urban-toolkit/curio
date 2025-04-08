@@ -63,7 +63,7 @@ function MergeFlowBox({ data, isConnectable }) {
 
         if (Array.isArray(data.input) && data.input.length > 0) {
             for (const input of data.input) {
-                if (input != "") {
+                if (input != "" && input != undefined) {
                     newOutput.data.push(JSON.parse(input));
                 }
             }

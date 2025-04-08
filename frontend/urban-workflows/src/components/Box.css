@@ -11,3 +11,27 @@
   color: #777;
   font-size: 12px;
 }
+
+.react-flow__handle-top {
+  top: -20px !important;
+  width: 20px;
+  height: 20px;
+  background: #555;
+  border-radius: 50%;
+}
+
+.react-flow__handle-left {
+  left: -20px !important;
+  width: 20px;
+  height: 20px;
+  background: #555;
+  border-radius: 50%;
+}
+
+.react-flow__handle-right {
+  right: -20px !important;
+  width: 20px;
+  height: 20px;
+  background: #555;
+  border-radius: 50%;
+}

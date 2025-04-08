@@ -1,0 +1,43 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "50645a3a-c0c9-477a-8844-c9351771af14",
+        "type": "DATA_LOADING",
+        "x": 100,
+        "y": 100,
+        "content": "import pandas as pd\r\n\r\nd = {'a': [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\", \"G\", \"H\", \"I\"], 'b': [28, 55, 43, 91, 81, 53, 19, 87, 52]}\r\ndf = pd.DataFrame(data=d)\r\n\r\nreturn df",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "5e509bff-09bb-4947-8faf-7fe35b1c3bae",
+        "type": "VIS_VEGA",
+        "x": 900,
+        "y": 100,
+        "content": "{\r\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\r\n  \"description\": \"A simple bar chart with embedded data.\",\r\n  \"mark\": \"bar\",\r\n  \"encoding\": {\r\n    \"x\": {\"field\": \"a\", \"type\": \"nominal\", \"axis\": {\"labelAngle\": 0}},\r\n    \"y\": {\"field\": \"b\", \"type\": \"quantitative\"}\r\n  }\r\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-50645a3a-c0c9-477a-8844-c9351771af14out-5e509bff-09bb-4947-8faf-7fe35b1c3baein",
+        "source": "50645a3a-c0c9-477a-8844-c9351771af14",
+        "target": "5e509bff-09bb-4947-8faf-7fe35b1c3bae"
+      }
+    ],
+    "name": "Barchart",
+    "task": "",
+    "timestamp": 1744075033065,
+    "provenance_id": "Barchart"
+  }
+}
