@@ -1,5 +1,7 @@
 # Example: Visual Analytics of Sidewalk Accessibility Data
 
+Author: [makaveli2P](https://github.com/makaveli2P)
+
 In this example, we will explore how Curio can be used to analyze and visualize sidewalk accessibility data from Project Sidewalk. This pipeline enables urban planners and accessibility advocates to identify accessibility issues, prioritize areas for improvement, and make data-driven decisions. Here is the overview of the entire dataflow pipeline:
 
 <img src="./images/4-1.png" title="" alt="Example 4-1" data-align="center">
@@ -11,8 +13,7 @@ The data for this tutorial can be found [here](https://sidewalk-chicago.cs.washi
 For completeness, we also include the template code in each dataflow step.
 
 
-
-## Step 1: Load Sidewalk Accessibility Data
+## Step 1: Load sidewalk accessibility data
 
 The icons on the left-hand side can be used to instantiate different nodes. Let's start by creating a "Data Loading" node to import the shapefile data containing accessibility features:
 
@@ -32,7 +33,7 @@ return gdf
 
 This node loads geospatial data containing information about different types of sidewalk accessibility features, such as curb ramps, missing curb ramps, obstacles, and surface problems. The data includes attributes like feature type, severity, neighborhood, and geometry.
 
-## Step 2: Data Cleaning and Processing
+## Step 2: Data cleaning and processing
 
 Now, let's create a "Data Cleaning" node and connect it to the output of Step 1. This node will prepare our data for visualization by:
 1. Selecting relevant columns
@@ -82,7 +83,7 @@ This cleaning step is essential because:
 - The correct coordinate reference system ensures proper geospatial visualization
 - The thematic value enables color coding in UTK visualizations
 
-## Step 3: Feature Type Analysis
+## Step 3: Feature type analysis
 
 To understand the distribution of accessibility issues by type, we'll create an "Data Transformation" node connected to the output of Step 2:
 
@@ -115,7 +116,7 @@ This analysis aggregates the data by feature type to help us:
 - Compare the average severity across different feature types
 - Understand the level of agreement about different features
 
-## Step 4: Neighborhood Analysis
+## Step 4: Neighborhood analysis
 
 To compare accessibility issues across different neighborhoods, we'll create another "Data Transformation" node connected to the output of Step 2:
 
@@ -149,7 +150,7 @@ This analysis is crucial because it helps urban planners:
 - Prioritize neighborhoods for accessibility improvements
 
 
-## Step 6: Feature Type Distribution Visualization
+## Step 5: Feature type distribution visualization
 
 To complement the spatial visualization, let's create a "2D Plot (Vega Lite)" node connected to the output of Step 3 (feature_stats):
 
@@ -196,7 +197,7 @@ This bar chart visualization provides a clear view of:
 - The average severity of each type (through color coding)
 - Additional metrics through tooltips for interactive exploration
 
-## Step 7: Neighborhood Comparison Visualization
+## Step 6: Neighborhood comparison visualization
 
 Let's create another "2D Plot (Vega Lite)" node connected to the output of Step 4 (neighborhood_stats):
 
@@ -250,7 +251,7 @@ This bubble chart visualization is valuable because it:
 - Enables comparison of neighborhoods for prioritization
 
 
-## Final Result
+## Final result
 
 This workflow creates a visual analytics system for sidewalk accessibility data. By combining spatial visualization with statistical analysis, urban planners and accessibility advocates can:
 
@@ -259,4 +260,4 @@ This workflow creates a visual analytics system for sidewalk accessibility data.
 3. Prioritize neighborhoods for accessibility improvements
 4. Make data-driven decisions for urban planning
 
-The interactive nature of the visualizations allows for exploration and discovery, enabling deeper insights into urban accessibility challenges. This can ultimately help make cities more accessible for everyone, particularly people with mobility impairments. 
+The interactive nature of the visualizations allows for exploration and discovery, giving insights into urban accessibility challenges. This can ultimately help make cities more accessible for everyone, particularly people with mobility impairments. 

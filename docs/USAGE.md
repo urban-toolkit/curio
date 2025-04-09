@@ -2,8 +2,8 @@
 
 ## Table of contents
 1. [Installation](#installation)
-  1. [Installing via Docker](#installing-via-docker)
-  2. [Installing manually](#installing-manually)
+    1. [Installing via Docker](#installing-via-docker)
+    2. [Installing manually](#installing-manually)
 3. [Quick start](#quick-start)
 
 ## Installation
