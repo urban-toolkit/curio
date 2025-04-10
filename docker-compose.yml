@@ -8,6 +8,8 @@ services:
     ports:
       - "2000:2000"
     environment:
+      - FLAS_RUN_HOST=0.0.0.0
+      - FLASK_RUN_PORT=2000
       - FLASK_APP=server.py
 
   backend:
@@ -18,7 +20,7 @@ services:
       - "5002:5002"
     environment:
       - FLAS_RUN_HOST=0.0.0.0
-      - FLASK_RUN_PORT=2000
+      - FLASK_RUN_PORT=5002
       - FLASK_APP=server.py
 
   frontend:
@@ -27,7 +29,3 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8080:8080"
-    environment:
-      - FLAS_RUN_HOST=0.0.0.0
-      - FLASK_RUN_PORT=5002
-      - FLASK_APP=server.py
