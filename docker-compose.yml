@@ -22,6 +22,8 @@ services:
       - FLAS_RUN_HOST=0.0.0.0
       - FLASK_RUN_PORT=5002
       - FLASK_APP=server.py
+    volumes:
+      - ./templates:/app/templates
 
   frontend:
     build:
