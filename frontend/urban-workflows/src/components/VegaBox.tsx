@@ -496,10 +496,14 @@ function VegaBox({ data, isConnectable }) {
           boxType={BoxType.VIS_VEGA}
           applyGrammar={compileGrammar}
           defaultValue={templateData.code ? templateData.code : data.defaultCode}
+          // readOnly={
+          //   (templateData.custom != undefined &&
+          //     templateData.custom == false) ||
+          //   !(user != null && user.type == "programmer")
+          // }
           readOnly={
             (templateData.custom != undefined &&
-              templateData.custom == false) ||
-            !(user != null && user.type == "programmer")
+              templateData.custom == false)
           }
           floatCode={setCode}
         />

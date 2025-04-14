@@ -147,10 +147,14 @@ function DataTransformationBox({ data, isConnectable }) {
           output={output}
           boxType={BoxType.DATA_TRANSFORMATION}
           defaultValue={templateData.code ? templateData.code : data.defaultCode}
+          // readOnly={
+          //   (templateData.custom != undefined &&
+          //     templateData.custom == false) ||
+          //   !(user != null && user.type == "programmer")
+          // }
           readOnly={
             (templateData.custom != undefined &&
-              templateData.custom == false) ||
-            !(user != null && user.type == "programmer")
+              templateData.custom == false)
           }
           floatCode={setCode}
         />

@@ -842,10 +842,14 @@ function UtkBox({ data, isConnectable }) {
           defaultValue={
             templateData.code == undefined ? data.defaultCode ? data.defaultCode : defaultGrammar : templateData.code
           }
+          // readOnly={
+          //   (templateData.custom != undefined &&
+          //     templateData.custom == false) ||
+          //   !(user != null && user.type == "programmer")
+          // }
           readOnly={
             (templateData.custom != undefined &&
-              templateData.custom == false) ||
-            !(user != null && user.type == "programmer")
+              templateData.custom == false)
           }
           floatCode={setCode}
         />

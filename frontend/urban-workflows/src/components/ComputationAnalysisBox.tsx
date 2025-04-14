@@ -136,10 +136,14 @@ function ComputationAnalysisBox({ data, isConnectable }) {
           output={output}
           boxType={BoxType.COMPUTATION_ANALYSIS}
           defaultValue={templateData.code ? templateData.code : data.defaultCode}
+          // readOnly={
+          //   (templateData.custom != undefined &&
+          //     templateData.custom == false) ||
+          //   !(user != null && user.type == "programmer")
+          // }
           readOnly={
             (templateData.custom != undefined &&
-              templateData.custom == false) ||
-            !(user != null && user.type == "programmer")
+              templateData.custom == false)
           }
           floatCode={setCode}
         />

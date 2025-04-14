@@ -90,10 +90,14 @@ function FlowSwitchBox({ data, isConnectable }) {
           output={output}
           boxType={BoxType.FLOW_SWITCH}
           defaultValue={templateData.code}
+          // readOnly={
+          //   (templateData.custom != undefined &&
+          //     templateData.custom == false) ||
+          //   !(user != null && user.type == "programmer")
+          // }
           readOnly={
             (templateData.custom != undefined &&
-              templateData.custom == false) ||
-            !(user != null && user.type == "programmer")
+              templateData.custom == false)
           }
           floatCode={setCode}
         />

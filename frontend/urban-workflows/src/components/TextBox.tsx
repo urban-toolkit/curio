@@ -136,10 +136,14 @@ function TextBox({ data, isConnectable }) {
           output={output}
           boxType={BoxType.VIS_TEXT}
           defaultValue={templateData.code}
+          // readOnly={
+          //   (templateData.custom != undefined &&
+          //     templateData.custom == false) ||
+          //   !(user != null && user.type == "programmer")
+          // }
           readOnly={
             (templateData.custom != undefined &&
-              templateData.custom == false) ||
-            !(user != null && user.type == "programmer")
+              templateData.custom == false)
           }
           floatCode={setCode}
         />
