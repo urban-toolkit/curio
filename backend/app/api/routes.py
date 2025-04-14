@@ -14,7 +14,7 @@ from app.api import bp
 
 
 # Sandbox address
-api_address = 'http://localhost'
+api_address = 'http://sandbox'
 api_port = 2000
 
 inputTypesSupported = {
