@@ -9,7 +9,7 @@ import { useDialogContext } from "../../providers/DialogProvider";
 import { UserTypeForm } from "./UserTypeForm";
 
 export const GoogleButton = () => {
-  const { googleSignIn } = useUserContext();
+  const { googleSignIn, saveUserType } = useUserContext();
   const { setDialog, unsetDialog } = useDialogContext();
 
   const login = useGoogleLogin({
@@ -17,8 +17,12 @@ export const GoogleButton = () => {
       const user = await googleSignIn(codeResponse.code);
       if (!user) return;
 
-      if (user.type) unsetDialog();
-      else setDialog(<UserTypeForm />);
+      unsetDialog();
+      saveUserType("programmer");
+
+      // Make the dialog for programmer or expert appear
+      // if (user.type) unsetDialog();
+      // else setDialog(<UserTypeForm />);
     },
     flow: "auth-code",
   });
