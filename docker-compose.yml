@@ -22,6 +22,10 @@ services:
       - FLASK_RUN_HOST=0.0.0.0
       - FLASK_RUN_PORT=5002
       - FLASK_APP=server.py
+      - SANDBOX_ADDRESS=sandbox
+      - SANDBOX_PORT=2000
+    depends_on:
+      - sandbox
     volumes:
       - ./templates:/app/templates
 
@@ -29,5 +33,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    depends_on:
+      - backend
     ports:
       - "8080:8080"

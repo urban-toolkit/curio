@@ -14,8 +14,9 @@ from app.api import bp
 
 
 # Sandbox address
-api_address = 'http://localhost'
-api_port = 2000
+api_address='http://'+os.getenv('SANDBOX_ADDRESS', 'localhost')
+api_port=int(os.getenv('SANDBOX_PORT', 2000))
+
 
 inputTypesSupported = {
     "DATA_LOADING": [],
@@ -106,7 +107,7 @@ def upload_file():
 
     if file.filename == '':
         return 'No selected file'
-
+    
     response = requests.post(api_address+":"+str(api_port)+"/upload", files={'file': file}, data={'fileName': file.filename})
 
     if response.status_code == 200:
@@ -131,7 +132,8 @@ def process_python_code():
     #     }),
     #     headers={"Content-Type": "application/json"},
     # )
-
+    print(api_address, str(api_port))
+    print(api_address+":"+str(api_port))
     response = requests.post(api_address+":"+str(api_port)+"/exec",
                              data=json.dumps({
                                  "code": request.json['code']
