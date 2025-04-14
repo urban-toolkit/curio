@@ -158,7 +158,7 @@ function TableBox({ data, isConnectable }) {
         startTime,
         startTime,
         workflowNameRef.current,
-        BoxType.VIS_TABLE + "_" + data.nodeId,
+        BoxType.VIS_TABLE + "-" + data.nodeId,
         mapTypes(typesInput),
         mapTypes(typesOuput),
         ""

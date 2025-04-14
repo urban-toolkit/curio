@@ -9,7 +9,8 @@ import { useDialogContext } from "../../providers/DialogProvider";
 export const UserTypeForm = () => {
   const { unsetDialog } = useDialogContext();
   const { saveUserType } = useUserContext();
-  const [type, setType] = useState<"expert" | "programmer" | null>(null);
+  // const [type, setType] = useState<"expert" | "programmer" | null>(null);
+  const [type, setType] = useState<"expert" | "programmer" | null>("programmer");
 
   const types = [
     { id: 1, name: "expert" },

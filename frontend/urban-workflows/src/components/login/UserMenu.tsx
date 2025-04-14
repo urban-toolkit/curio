@@ -25,9 +25,9 @@ export const UserMenu = () => {
     if (user?.type) setType(user.type);
   }, [user?.type]);
 
-  useEffect(() => {
-    saveUserType("programmer");
-  }, [])
+  // useEffect(() => {
+  //   saveUserType("programmer");
+  // }, [])
 
   if (!user)
     return (

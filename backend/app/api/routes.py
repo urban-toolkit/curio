@@ -363,7 +363,7 @@ def new_box_prov():
     # id of the new just added relation
     output_relation_id = cursor.lastrowid
 
-    boxType = "_".join(data['activity_name'].split("_")[:-1])
+    boxType = data['activity_name'].split("-")[0]
 
     # adding a attributeRelation to each output type that this activity supports
     for outputType in outputTypesSupported[boxType]:
@@ -401,7 +401,7 @@ def new_box_prov():
         # # id of the new just added relation
         # output_relation_id = cursor.lastrowid
 
-        boxType = "_".join(activity[0].split("_")[:-1])
+        boxType = activity[0].split("-")[0]
 
         # # adding a attributeRelation to each output type that this activity supports
         # for outputType in outputTypesSupported[boxType]:
@@ -520,7 +520,7 @@ def delete_box_prov():
             # # id of the new just added relation
             # output_relation_id = cursor.lastrowid
 
-            boxType = "_".join(activity[0].split("_")[:-1])
+            boxType = activity[0].split("-")[0]
 
             # # adding a attributeRelation to each output type that this activity supports
             # for outputType in outputTypesSupported[boxType]:
@@ -640,7 +640,7 @@ def new_connection_prov():
         # # id of the new just added relation
         # output_relation_id = cursor.lastrowid
 
-        boxType = "_".join(activity[0].split("_")[:-1])
+        boxType = activity[0].split("-")[0]
 
         # # adding a attributeRelation to each output type that this activity supports
         # for outputType in outputTypesSupported[boxType]:
@@ -765,7 +765,7 @@ def delete_connection_prov():
         # # id of the new just added relation
         # output_relation_id = cursor.lastrowid
 
-        boxType = "_".join(activity[0].split("_")[:-1])
+        boxType = activity[0].split("-")[0]
 
         # # adding a attributeRelation to each output type that this activity supports
         # for outputType in outputTypesSupported[boxType]:

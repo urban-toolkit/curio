@@ -221,7 +221,7 @@ function DataPoolBox({ data, isConnectable }) {
                 startTime,
                 startTime,
                 workflowNameRef.current,
-                BoxType.DATA_POOL + "_" + data.nodeId,
+                BoxType.DATA_POOL + "-" + data.nodeId,
                 mapTypes(typesInput),
                 mapTypes(typesOuput),
                 ""

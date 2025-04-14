@@ -377,7 +377,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 });
                 return prev.concat(node)
             });
-            
+
             if(provenance) // If there should be provenance tracking
                 newBox((customWorkflowName ? customWorkflowName : workflowNameRef.current), (node.type as string) + "-" + node.id);
         },

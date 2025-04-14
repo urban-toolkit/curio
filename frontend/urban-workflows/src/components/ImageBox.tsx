@@ -142,7 +142,7 @@ function ImageBox({ data, isConnectable }) {
                 startTime,
                 startTime,
                 workflowNameRef.current,
-                BoxType.VIS_IMAGE + "_" + data.nodeId,
+                BoxType.VIS_IMAGE + "-" + data.nodeId,
                 mapTypes(typesInput),
                 mapTypes(typesOuput),
                 ""
