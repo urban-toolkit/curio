@@ -18,14 +18,14 @@ export default function BiDirectionalEdge({
   markerEnd,
   markerStart,
 }: EdgeProps) {
-  // const [edgePath, labelX, labelY] = getBezierPath({
-  //   sourceX,
-  //   sourceY,
-  //   sourcePosition,
-  //   targetX,
-  //   targetY,
-  //   targetPosition,
-  // });
+  const [edgePath, labelX, labelY] = getBezierPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+  });
 
   // const [edgePath, labelX, labelY] = getStraightPath({
   //   sourceX,
@@ -43,14 +43,14 @@ export default function BiDirectionalEdge({
   //   targetPosition,
   // });
 
-  const [edgePath, labelX, labelY] = getSmoothStepPath({
-    sourceX,
-    sourceY,
-    sourcePosition,
-    targetX,
-    targetY,
-    targetPosition,
-  });
+  // const [edgePath, labelX, labelY] = getSmoothStepPath({
+  //   sourceX,
+  //   sourceY,
+  //   sourcePosition,
+  //   targetX,
+  //   targetY,
+  //   targetPosition,
+  // });
 
   return (
     <BaseEdge

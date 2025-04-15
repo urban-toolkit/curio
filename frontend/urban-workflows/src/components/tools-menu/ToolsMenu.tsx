@@ -66,7 +66,7 @@ export function ToolsMenu() {
                         style={optionStyle}
                         onClick={() => createCodeNode(BoxType.DATA_LOADING)}
                     >
-                        <FontAwesomeIcon icon={faUpload} style={iconStyle} />
+                        <FontAwesomeIcon icon={faDownload} style={iconStyle} />
                     </div>
                 </OverlayTrigger>
 
@@ -105,7 +105,7 @@ export function ToolsMenu() {
                         style={optionStyle}
                         onClick={() => createCodeNode(BoxType.DATA_EXPORT)}
                     >
-                        <FontAwesomeIcon icon={faDownload} style={iconStyle} />
+                        <FontAwesomeIcon icon={faUpload} style={iconStyle} /> 
                     </div>
                 </OverlayTrigger>
 
@@ -259,6 +259,7 @@ const containerStyle: CSS.Properties = {
     gridTemplateColumns: "1fr 1fr",
     gridAutoRows: "45px",
     borderRadius: "5px",
+    boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px"
 };
 
 const optionStyle: CSS.Properties = {

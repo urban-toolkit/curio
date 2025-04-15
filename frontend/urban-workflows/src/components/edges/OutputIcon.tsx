@@ -18,6 +18,7 @@ export function OutputIcon({ type }: { type: "1" | "2" | "N" }) {
         display: "flex",
         alignItems: "center",
         zIndex: 50,
+        pointerEvents: "none"
       }}
     >
       <div

@@ -18,14 +18,14 @@ export default function UniDirectionalEdge({
   markerEnd,
   data
 }: EdgeProps) {
-  // const [edgePath, labelX, labelY] = getBezierPath({
-  //   sourceX,
-  //   sourceY,
-  //   sourcePosition,
-  //   targetX,
-  //   targetY,
-  //   targetPosition,
-  // });
+  const [edgePath, labelX, labelY] = getBezierPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+  });
 
   // const [edgePath, labelX, labelY] = getStraightPath({
   //   sourceX,
@@ -43,14 +43,14 @@ export default function UniDirectionalEdge({
   //   targetPosition,
   // });
 
-  const [edgePath, labelX, labelY] = getSmoothStepPath({
-    sourceX,
-    sourceY,
-    sourcePosition,
-    targetX,
-    targetY,
-    targetPosition,
-  });
+  // const [edgePath, labelX, labelY] = getSmoothStepPath({
+  //   sourceX,
+  //   sourceY,
+  //   sourcePosition,
+  //   targetX,
+  //   targetY,
+  //   targetPosition,
+  // });
 
   return (
     <BaseEdge path={edgePath} markerEnd={markerEnd} style={{stroke: data.keywordHighlighted ? 'rgb(29, 56, 83)' : 'grey'}} />
