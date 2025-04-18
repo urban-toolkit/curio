@@ -41,6 +41,11 @@ Prerequisites:
 After cloning the repository and initializing submodules (see above), run the full Curio stack with:
 
 ```console
+docker compose up --build
+```
+
+For older Docker versions, the following command may be required instead:
+```console
 docker-compose up --build
 ```
 
