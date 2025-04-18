@@ -50,6 +50,7 @@ interface TemplateContextProps {
     ) => Template | null;
     editUserTemplate: (template: Template) => void;
     deleteTemplate: (templateId: string) => void;
+    fetchTemplates: () => void;
 }
 
 export const TemplateContext = createContext<TemplateContextProps>({
@@ -57,6 +58,7 @@ export const TemplateContext = createContext<TemplateContextProps>({
     createUserTemplate: () => null,
     editUserTemplate: () => {},
     deleteTemplate: () => {},
+    fetchTemplates: () => {}
 });
 
 const TemplateProvider = ({ children }: { children: ReactNode }) => {
@@ -165,6 +167,7 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
                 createUserTemplate,
                 editUserTemplate,
                 deleteTemplate,
+                fetchTemplates
             }}
         >
             {children}

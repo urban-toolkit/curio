@@ -654,7 +654,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                     setEdges((eds) => {
                         let customConnection: any = {
                             ...connection,
-                            markerEnd: { type: MarkerType.Arrow },
+                            markerEnd: { type: MarkerType.ArrowClosed },
                         };
 
                         if(customConnection.data == undefined)
@@ -665,7 +665,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                             connection.targetHandle == "in/out"
                         ) {
                             customConnection.markerStart = {
-                                type: MarkerType.Arrow,
+                                type: MarkerType.ArrowClosed,
                             };
                             customConnection.type = EdgeType.BIDIRECTIONAL_EDGE;
                         } else {

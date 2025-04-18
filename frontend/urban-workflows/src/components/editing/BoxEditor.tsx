@@ -167,8 +167,8 @@ function BoxEditor({
         <>
             <div
                 style={{
-                    height: "76%",
-                    width: "95%",
+                    height: "calc(100% - 30px)",
+                    width: "100%",
                     marginLeft: "auto",
                     marginRight: "auto",
                 }}
@@ -302,6 +302,7 @@ function BoxEditor({
                             backgroundColor: "#f2f2f2",
                             borderRadius: "10px",
                             width: "55%",
+                            height: "25px",
                             marginLeft: "auto",
                             marginTop: "6px",
                         }}

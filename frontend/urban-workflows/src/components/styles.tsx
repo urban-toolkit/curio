@@ -42,6 +42,7 @@ import {
     faFont,
     faCube,
     faChartLine,
+    faXmark
 } from "@fortawesome/free-solid-svg-icons";
 import { AccessLevelType, BoxType } from "../constants";
 import "./styles.css";
@@ -89,7 +90,7 @@ export const BoxContainer = ({
     styles?: CSS.Properties;
 }) => {
     const { onNodesChange, setPinForDashboard } = useFlowContext();
-    const { getTemplates, deleteTemplate } = useTemplateContext();
+    const { getTemplates, deleteTemplate, fetchTemplates } = useTemplateContext();
     const { createCodeNode } = useCode();
     const [showComments, setShowComments] = useState(false);
     const [comments, setComments] = useState<IComment[]>([]);
@@ -123,16 +124,30 @@ export const BoxContainer = ({
 
         resizer.addEventListener("mousedown", initResize, false);
 
+        let startX = 0;
+        let startY = 0;
+        let startWidth = 0;
+        let startHeight = 0;
+
         function initResize(e: any) {
+            startX = e.clientX;
+            startY = e.clientY;
+            startWidth = resizable.offsetWidth;
+            startHeight = resizable.offsetHeight;
+
             window.addEventListener("mousemove", resize, false);
             window.addEventListener("mouseup", stopResize, false);
         }
 
         function resize(e: any) {
-            resizable.style.width = e.clientX - resizable.offsetLeft + "px";
-            resizable.style.height = e.clientY - resizable.offsetTop + "px";
-            setCurrentBoxWidth(e.clientX - resizable.offsetLeft);
-            setCurrentBoxHeight(e.clientY - resizable.offsetTop);
+            const newWidth = startWidth + (e.clientX - startX);
+            const newHeight = startHeight + (e.clientY - startY);
+    
+            resizable.style.width = newWidth + "px";
+            resizable.style.height = newHeight + "px";
+    
+            setCurrentBoxWidth(newWidth);
+            setCurrentBoxHeight(newHeight);
         }
 
         function stopResize(e: any) {
@@ -276,6 +291,7 @@ export const BoxContainer = ({
                     <Row
                         style={{
                             width: "95%",
+                            height: "30px",
                             marginBottom: "2px",
                             paddingBottom: "2px",
                             marginLeft: "auto",
@@ -345,6 +361,13 @@ export const BoxContainer = ({
                                     }
                                 />
                             </li>
+                            <li style={{ marginLeft: "10px" }}>
+                                <FontAwesomeIcon
+                                    icon={faXmark}
+                                    style={iconStyle}
+                                    onClick={onDelete}
+                                />
+                            </li>
                             {updateTemplate != undefined &&
                             user != undefined &&
                             code != undefined &&
@@ -370,14 +393,17 @@ export const BoxContainer = ({
                     </Row>
                 ) : null}
 
-                {children}
+                <div style={{height: "calc(100% - 35px)", width: "calc(100% - 30px)", marginLeft: "auto", marginRight: "auto"}}>
+                    {children}
+                </div>
 
                 <Row
                     style={{
                         width: "50%",
                         marginRight: "auto",
+                        height: "25px",
                         marginLeft: "10px",
-                        marginTop: "4px",
+                        marginTop: "-25px",
                     }}
                 >
                     {sendCodeToWidgets != undefined ? (
@@ -442,6 +468,7 @@ export const BoxContainer = ({
                                                 backgroundColor: "rgb(35, 198, 134)",
                                                 border: "none"
                                              }}
+                                             onMouseEnter={() => {fetchTemplates()}}
                                         >
                                             Templates
                                         </Dropdown.Toggle>
@@ -701,6 +728,23 @@ export const BoxContainer = ({
                         justifyContent: "center",
                         display: "flex",
                         alignItems: "center",
+                    }}
+                    onClick={() => {
+                        if (data.nodeType != BoxType.MERGE_FLOW) {
+                            if (boxWidth == undefined) {
+                                setCurrentBoxWidth(525);
+                            } else {
+                                setCurrentBoxWidth(boxWidth);
+                            }
+
+                            if (boxHeight == undefined) {
+                                setCurrentBoxHeight(267);
+                            } else {
+                                setCurrentBoxHeight(boxHeight);
+                            }
+
+                            setMinimized(false);
+                        }
                     }}
                 >
                     <FontAwesomeIcon

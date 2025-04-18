@@ -186,6 +186,7 @@ export function MainCanvas() {
                 edgeTypes={edgeTypes}
                 isValidConnection={isValidConnection}
                 connectionMode={ConnectionMode.Loose}
+                minZoom={0.05}
                 fitView
             >
                 <UserMenu />
