@@ -11,6 +11,8 @@ services:
       - FLASK_RUN_HOST=0.0.0.0
       - FLASK_RUN_PORT=2000
       - FLASK_APP=server.py
+    volumes:
+      - ./sandbox:/app/sandbox
 
   backend:
     build:
