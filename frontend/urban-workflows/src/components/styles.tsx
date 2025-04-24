@@ -212,9 +212,9 @@ export const BoxContainer = ({
         } else if (boxType === BoxType.DATA_CLEANING) {
             return faBroom;
         } else if (boxType === BoxType.DATA_EXPORT) {
-            return faDownload;
-        } else if (boxType === BoxType.DATA_LOADING) {
             return faUpload;
+        } else if (boxType === BoxType.DATA_LOADING) {
+            return faDownload;
         } else if (boxType === BoxType.DATA_POOL) {
             return faServer;
         } else if (boxType === BoxType.DATA_TRANSFORMATION) {
