@@ -99,6 +99,7 @@ export function MainCanvas() {
                 nodes={nodes}
                 edges={edges}
                 onNodesChange={(changes: NodeChange[]) => {
+
                     let allowedChanges: NodeChange[] = [];
 
                     let edges = reactFlow.getEdges();
@@ -113,7 +114,7 @@ export function MainCanvas() {
                                     edge.target == change.id
                                 ) {
                                     alert(
-                                        "Connect boxes cannot be removed. Remove the edges first"
+                                        "Connected boxes cannot be removed. Remove the edges first by selecting it and pressing Backspace."
                                     );
                                     allowed = false;
                                     break;

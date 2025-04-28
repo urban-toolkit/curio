@@ -20,6 +20,7 @@ import {
     getOutgoers,
     MarkerType,
     applyNodeChanges,
+    NodeRemoveChange,
 } from "reactflow";
 import { ConnectionValidator } from "../ConnectionValidator";
 import { BoxType, EdgeType, VisInteractionType } from "../constants";
@@ -59,6 +60,7 @@ interface FlowContextProps {
     isValidConnection: (connection: Connection) => boolean;
     onEdgesDelete: (connections: Edge[]) => void;
     onNodesDelete: (changes: NodeChange[]) => void;
+    applyRemoveChanges: (changes: NodeRemoveChange[]) => void;
     setPinForDashboard: (nodeId: string, value: boolean) => void;
     setDashBoardMode: (value: boolean) => void;
     updatePositionWorkflow: (nodeId:string, position: any) => void;
@@ -81,6 +83,7 @@ export const FlowContext = createContext<FlowContextProps>({
     onConnect: () => { },
     isValidConnection: () => true,
     onEdgesDelete: () => {},
+    applyRemoveChanges: () => {},
     onNodesDelete: () => {},
     setPinForDashboard: () => {},
     setDashBoardMode: () => {},
@@ -954,6 +957,34 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         applyNewInteractions();
     }, [interactions]);
 
+    const applyRemoveChanges = (changes: NodeRemoveChange[]) => {
+        let allowedChanges: NodeRemoveChange[] = [];
+
+        let edges = reactFlow.getEdges();
+
+        for (const change of changes) {
+            let allowed = true;
+
+            for (const edge of edges) {
+                if (
+                    edge.source == change.id ||
+                    edge.target == change.id
+                ) {
+                    alert(
+                        "Connected boxes cannot be removed. Remove the edges first by selecting it and pressing Backspace."
+                    );
+                    allowed = false;
+                    break;
+                }
+            }
+
+            if (allowed) allowedChanges.push(change);
+        }
+
+        onNodesDelete(allowedChanges);
+        return onNodesChange(allowedChanges);
+    }
+
     return (
         <FlowContext.Provider
             value={{
@@ -965,6 +996,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 applyNewPropagation,
                 addNode,
                 onNodesChange,
+                applyRemoveChanges,
                 onEdgesChange,
                 onConnect,
                 isValidConnection,

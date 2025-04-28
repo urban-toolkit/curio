@@ -89,7 +89,7 @@ export const BoxContainer = ({
     disableComments?: boolean;
     styles?: CSS.Properties;
 }) => {
-    const { onNodesChange, setPinForDashboard } = useFlowContext();
+    const { applyRemoveChanges, setPinForDashboard } = useFlowContext();
     const { getTemplates, deleteTemplate, fetchTemplates } = useTemplateContext();
     const { createCodeNode } = useCode();
     const [showComments, setShowComments] = useState(false);
@@ -182,7 +182,8 @@ export const BoxContainer = ({
             type: "remove",
         };
 
-        onNodesChange([change]);
+        // onNodesChange([change]);
+        applyRemoveChanges([change]);
     };
 
     const addComment = (comment: IComment) => {
