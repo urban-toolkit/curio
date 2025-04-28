@@ -66,7 +66,7 @@ export function ToolsMenu() {
                         style={optionStyle}
                         onClick={() => createCodeNode(BoxType.DATA_LOADING)}
                     >
-                        <FontAwesomeIcon icon={faDownload} style={iconStyle} />
+                        <FontAwesomeIcon icon={faUpload} style={iconStyle} />
                     </div>
                 </OverlayTrigger>
 
@@ -105,7 +105,7 @@ export function ToolsMenu() {
                         style={optionStyle}
                         onClick={() => createCodeNode(BoxType.DATA_EXPORT)}
                     >
-                        <FontAwesomeIcon icon={faUpload} style={iconStyle} /> 
+                        <FontAwesomeIcon icon={faDownload} style={iconStyle} /> 
                     </div>
                 </OverlayTrigger>
 
