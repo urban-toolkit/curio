@@ -5,6 +5,8 @@ import { useFlowContext } from "../../providers/FlowProvider";
 import { useCode } from "../../hook/useCode";
 import { TrillGenerator } from "../../TrillGenerator";
 import TrillProvenanceWindow from "./TrillProvenanceWindow";
+import DatasetsWindow from "./DatasetsWindow";
+import "./DatasetsWindow.css";
 // import { useLLMContext } from "../../providers/LLMProvider";
 // import { LLMEvents } from "../../constants";
 
@@ -12,6 +14,7 @@ export function UpMenu({ setDashBoardMode, setDashboardOn, dashboardOn }: { setD
     const [isEditing, setIsEditing] = useState(false);
     const [fileMenuOpen, setFileMenuOpen] = useState(false);
     const [trillProvenanceOpen, setTrillProvenanceOpen] = useState(false);
+    const [datasetsOpen, setDatasetsOpen] = useState(false);
     // const { llmEvents } = useLLMContext();
 
     // const { workflowGoal } = useFlowContext();
@@ -24,6 +27,14 @@ export function UpMenu({ setDashBoardMode, setDashboardOn, dashboardOn }: { setD
 
     const openTrillProvenanceModal = () => {
         setTrillProvenanceOpen(true);
+    }
+
+    const closeDatasetsModal = () => {
+        setDatasetsOpen(false);
+    }
+
+    const openDatasetsModal = () => {
+        setDatasetsOpen(true);
     }
     
     const handleNameChange = (e: any) => {
@@ -117,6 +128,10 @@ export function UpMenu({ setDashBoardMode, setDashboardOn, dashboardOn }: { setD
                 <button style={{...button, ...(dashboardOn ? {background: "repeating-linear-gradient(-45deg, transparent 0px, transparent 8px,rgb(226, 45, 124) 8px, rgb(226, 45, 124) 12px)"} : {background: "transparent"})}} onClick={() => {setDashBoardMode(!dashboardOn); setDashboardOn(!dashboardOn);}}>Dashboard Mode</button>
                 <button style={{...button}} onClick={openTrillProvenanceModal}>Provenance</button>
             </div>
+            {/* Right-side top menu */}
+            <div style={{display: "flex", position: "absolute", right: "90px", top: "12px", zIndex: "200"}}>
+                <button style={{...button}} onClick={openDatasetsModal}>Datasets</button>
+            </div>
             {/* Editable Workflow Name */}
             <div style={{...workflowNameContainer}}>
                 {isEditing ? (
@@ -143,6 +158,11 @@ export function UpMenu({ setDashBoardMode, setDashboardOn, dashboardOn }: { setD
                 open={trillProvenanceOpen}
                 closeModal={closeTrillProvenanceModal}
                 workflowName={workflowNameRef.current}
+            />
+            {/* Datasets Modal */}
+            <DatasetsWindow 
+                open={datasetsOpen}
+                closeModal={closeDatasetsModal}
             />
         </>
 

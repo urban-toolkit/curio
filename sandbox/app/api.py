@@ -5,7 +5,7 @@ import geopandas as gpd
 import utk
 from app import app, cache
 from .utils.cache import make_key
-
+import os
 
 @app.after_request
 def add_cors_headers(response):
@@ -34,6 +34,18 @@ def upload_file():
     file.save(request.form['fileName'])
 
     return file.filename
+
+@app.route('/listDatasets', methods=['GET'])
+def list_datasets():
+
+    allowed_extensions = {'.json', '.geojson', '.csv'}
+    
+    files = [
+        f for f in os.listdir('.') 
+        if os.path.isfile(f) and os.path.splitext(f)[1].lower() in allowed_extensions
+    ]
+    
+    return jsonify(files)
 
 @app.route('/exec', methods=['POST'])
 @cache.cached(make_cache_key=make_key)

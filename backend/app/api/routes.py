@@ -1083,6 +1083,14 @@ def generate_templates():
 
     return templates
 
+@bp.route('/listDatasets', methods=['GET'])
+def list_datasets():
+    response = requests.get(api_address+":"+str(api_port)+"/listDatasets")
+    response.raise_for_status() 
+    files = response.json()
+    return jsonify(files)
+    
+
 @bp.route("/templates", methods=["GET"])
 def get_templates():
     return jsonify(generate_templates())
