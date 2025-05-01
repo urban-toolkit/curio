@@ -1,4 +1,4 @@
-name: Docker Compose CI
+name: Full stack build
 
 on:
   push:
@@ -13,12 +13,6 @@ jobs:
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v3
-
-      - name: 🐳 Set up Docker Compose
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y docker-compose-plugin
-          docker compose version  # confirm installation
 
       - name: 🔧 Build and start containers
         run: docker compose up --build -d
