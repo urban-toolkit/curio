@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   sandbox:
     build:
@@ -13,6 +11,12 @@ services:
       - FLASK_APP=server.py
     volumes:
       - ./sandbox:/app/sandbox
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:2000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   backend:
     build:
@@ -30,6 +34,12 @@ services:
       - sandbox
     volumes:
       - ./templates:/app/templates
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:5002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   frontend:
     build:
@@ -39,3 +49,9 @@ services:
       - backend
     ports:
       - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s

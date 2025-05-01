@@ -1,0 +1,42 @@
+name: Docker Compose CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-compose:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v3
+
+      - name: 🐳 Set up Docker Compose
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y docker-compose-plugin
+          docker compose version  # confirm installation
+
+      - name: 🔧 Build and start containers
+        run: docker compose up --build -d
+
+      - name: 🧪 Wait for services to become healthy
+        run: |
+          echo "Waiting for sandbox and backend containers to be healthy..."
+          timeout 60 bash -c '
+          until [ "$(docker inspect -f "{{.State.Health.Status}}" $(docker compose ps -q sandbox))" = "healthy" ] && \
+                [ "$(docker inspect -f "{{.State.Health.Status}}" $(docker compose ps -q backend))" = "healthy" ]; do
+            echo "Still waiting..."
+            sleep 2
+          done
+          '
+
+      - name: 🌐 Check frontend availability
+        run: |
+          curl --fail http://localhost:8080 || (echo "Frontend not reachable" && exit 1)
+
+      - name: 🧹 Tear down containers
+        run: docker compose down

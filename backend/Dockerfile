@@ -1,8 +1,13 @@
-FROM python:3.10
-COPY . /app/backend
+FROM python:3.10-slim
+
 WORKDIR /app/backend
-RUN apt update && apt install -y gdal-bin libgdal-dev
-RUN pip install --no-cache-dir -r requirements.txt
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN apt update && apt install -y curl gdal-bin libgdal-dev
+RUN pip install --prefer-binary --no-cache-dir -r requirements.txt
+
+COPY . .
 RUN python create_provenance_db.py
 ENV FLASK_RUN_HOST=0.0.0.0
 ENV FLASK_RUN_PORT=5002
