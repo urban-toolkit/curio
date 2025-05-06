@@ -7,7 +7,6 @@ import ReactFlow, {
     Edge,
     EdgeChange,
     NodeChange,
-    XYPosition,
     useReactFlow,
 } from "reactflow";
 
@@ -80,6 +79,8 @@ export function MainCanvas() {
     const edgeTypes = useMemo(() => objectEdgeTypes, []);
 
     const reactFlow = useReactFlow();
+    const {screenToFlowPosition} = useReactFlow();
+
     const {
         setDashBoardMode,
         updatePositionWorkflow,
@@ -98,6 +99,26 @@ export function MainCanvas() {
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
+                onDragOver={(event) => {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                }}
+                onDrop={(event) => {
+                    event.preventDefault();
+            
+                    const type = event.dataTransfer.getData("application/reactflow") as BoxType;
+                    if (!type) return;
+            
+                    // const bounds = event.currentTarget.getBoundingClientRect();
+                    // const position = {
+                    //     x: event.clientX,
+                    //     y: event.clientY,
+                    // };
+
+                    const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+            
+                    createCodeNode(type, {position})
+                }}
                 onNodesChange={(changes: NodeChange[]) => {
 
                     let allowedChanges: NodeChange[] = [];
