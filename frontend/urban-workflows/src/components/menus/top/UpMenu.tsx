@@ -1,23 +1,18 @@
 import React, { useState } from "react";
 import CSS from "csstype";
-import FileUpload from "./FileUpload";
-import { useFlowContext } from "../../providers/FlowProvider";
-import { useCode } from "../../hook/useCode";
-import { TrillGenerator } from "../../TrillGenerator";
-import TrillProvenanceWindow from "./TrillProvenanceWindow";
-import DatasetsWindow from "./DatasetsWindow";
-import "./DatasetsWindow.css";
-// import { useLLMContext } from "../../providers/LLMProvider";
-// import { LLMEvents } from "../../constants";
+import { FileUpload, TrillProvenanceWindow, DatasetsWindow } from "components/menus";
+import { useFlowContext } from "../../../providers/FlowProvider";
+import { useCode } from "../../../hook/useCode";
+import { TrillGenerator } from "../../../TrillGenerator";
+import styles from "./UpMenu.module.css";
+import clsx from 'clsx';
 
-export function UpMenu({ setDashBoardMode, setDashboardOn, dashboardOn }: { setDashBoardMode: (mode: boolean) => void; setDashboardOn: (mode: boolean) => void; dashboardOn: boolean }) {
+export default function UpMenu({ setDashBoardMode, setDashboardOn, dashboardOn }: { setDashBoardMode: (mode: boolean) => void; setDashboardOn: (mode: boolean) => void; dashboardOn: boolean }) {
     const [isEditing, setIsEditing] = useState(false);
     const [fileMenuOpen, setFileMenuOpen] = useState(false);
     const [trillProvenanceOpen, setTrillProvenanceOpen] = useState(false);
     const [datasetsOpen, setDatasetsOpen] = useState(false);
-    // const { llmEvents } = useLLMContext();
 
-    // const { workflowGoal } = useFlowContext();
     const { nodes, edges, workflowNameRef, setWorkflowName } = useFlowContext();
     const { loadTrill } = useCode();
 
@@ -103,37 +98,41 @@ export function UpMenu({ setDashBoardMode, setDashboardOn, dashboardOn }: { setD
 
     return (
         <>
-            {/* Top Menu Bar */}
-            <div className="nowheel nodrag" style={{...menuBar}}>
-                {/* <button style={button}>Back to Projects</button> */}
-                <div style={dropdownWrapper}>
+            <div className={clsx(styles.menuBar, "nowheel", "nodrag")}>
+                <div className={styles.dropdownWrapper}>
                     <button
-                        style={button}
+                        className={styles.button}
                         onClick={() => setFileMenuOpen((prev) => !prev)}
                     >
                         File
                     </button>
                     {fileMenuOpen && (
-                        <div style={dropdownMenu}>
-                            {/* <button style={dropdownItem}>New Workflow</button> */}
-                            <button style={dropdownItem} onClick={exportTrill}>Export Specification</button>
+                        <div className={styles.dropDownMenu}>
+                            <button className={styles.dropDownMenu} onClick={exportTrill}>Export Specification</button>
                             <div>
-                                <button style={dropdownItem} onClick={loadTrillFile}>Load Specification</button>
+                                <button className={styles.dropDownMenu} onClick={loadTrillFile}>Load Specification</button>
                                 <input type="file" accept=".json" id="loadTrill" style={{ display: 'none' }} onChange={handleFileUpload}/>
                             </div>
                         </div>
                     )}
                 </div>
-                <FileUpload style={button} />
-                <button style={{...button, ...(dashboardOn ? {background: "repeating-linear-gradient(-45deg, transparent 0px, transparent 8px,rgb(226, 45, 124) 8px, rgb(226, 45, 124) 12px)"} : {background: "transparent"})}} onClick={() => {setDashBoardMode(!dashboardOn); setDashboardOn(!dashboardOn);}}>Dashboard Mode</button>
-                <button style={{...button}} onClick={openTrillProvenanceModal}>Provenance</button>
+                <FileUpload />
+                <button   
+                    className={clsx(
+                        styles.button,
+                        dashboardOn ? styles.dashboardOn : styles.dashboardOff
+                    )}
+                    onClick={() => {setDashBoardMode(!dashboardOn); setDashboardOn(!dashboardOn);}}>
+                        Dashboard Mode
+                </button>
+                <button className={styles.button} onClick={openTrillProvenanceModal}>Provenance</button>
             </div>
             {/* Right-side top menu */}
-            <div style={{display: "flex", position: "absolute", right: "90px", top: "12px", zIndex: "200"}}>
-                <button style={{...button}} onClick={openDatasetsModal}>Datasets</button>
+            <div className={styles.rightSide}>
+                <button className={styles.button} onClick={openDatasetsModal}>Datasets</button>
             </div>
             {/* Editable Workflow Name */}
-            <div style={{...workflowNameContainer}}>
+            <div className={styles.workflowNameContainer}>
                 {isEditing ? (
                     <input
                         type="text"
@@ -142,11 +141,11 @@ export function UpMenu({ setDashBoardMode, setDashboardOn, dashboardOn }: { setD
                         onBlur={handleNameBlur}
                         onKeyPress={handleKeyPress}
                         autoFocus
-                        style={input}
+                        className={styles.input}
                     />
                 ) : (
                     <h1
-                        style={workflowNameStyle}
+                        className={styles.workflowNameStyle}
                         onClick={() => setIsEditing(true)}
                     >
                         {workflowNameRef.current}
@@ -168,74 +167,3 @@ export function UpMenu({ setDashBoardMode, setDashboardOn, dashboardOn }: { setD
 
     );
 }
-
-const menuBar: CSS.Properties = {
-    position: "fixed",
-    width: "100%",
-    top: 0,
-    display: "flex",
-    alignItems: "center",
-    background: "linear-gradient(to bottom, #23c686, #1ea872)",
-    height: "65px",
-    padding: "10px",
-    fontFamily: "Rubik",
-    zIndex: 100,
-};
-
-const button: CSS.Properties = {
-    margin: "0 10px",
-    padding: "6px 10px",
-    cursor: "pointer",
-    fontWeight: "bold",
-    backgroundColor: "transparent",
-    color: "#fbfcf6",
-    border: "2px solid #fbfcf6",
-    borderRadius: "4px",
-};
-
-const dropdownMenu: CSS.Properties = {
-    position: "absolute",
-    top: "100%",
-    left: "0",
-    backgroundColor: "#fff",
-    border: "1px solid #ccc",
-    boxShadow: "0 2px 5px rgba(0, 0, 0, 0.2)",
-    zIndex: 100,
-};
-
-const dropdownItem: CSS.Properties = {
-    display: "block",
-    padding: "8px 12px",
-    width: "200px",
-    textAlign: "left",
-    cursor: "pointer",
-    backgroundColor: "#fff",
-    border: "none",
-    borderBottom: "1px solid #eee",
-};
-
-const workflowNameContainer: CSS.Properties = {
-    marginTop: "20px",
-    textAlign: "center",
-    zIndex: 80,
-    top: "60px",
-    left: "50px",
-    position: "fixed",
-};
-
-const workflowNameStyle: CSS.Properties = {
-    fontSize: "24px",
-    cursor: "pointer",
-};
-
-const input: CSS.Properties = {
-    fontSize: "24px",
-    textAlign: "center",
-    border: "1px solid #ccc",
-    borderRadius: "4px",
-    padding: "5px",
-};
-
-const dropdownWrapper: CSS.Properties = {
-  position: "relative"
-};

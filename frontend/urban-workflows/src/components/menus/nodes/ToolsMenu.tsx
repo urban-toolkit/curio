@@ -1,6 +1,6 @@
 import React from "react";
 import CSS from "csstype";
-import { BoxType } from "../../constants";
+import { BoxType } from "../../../constants";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
     faBroom,
@@ -15,6 +15,7 @@ import {
     faUpload
 } from "@fortawesome/free-solid-svg-icons";
 import { Tooltip, OverlayTrigger } from "react-bootstrap";
+import styles from "./ToolsMenu.module.css";
 
 function DraggableTool({ boxType, icon, tooltip }: { boxType: BoxType; icon: any; tooltip: string }) {
     return (
@@ -24,24 +25,23 @@ function DraggableTool({ boxType, icon, tooltip }: { boxType: BoxType; icon: any
             overlay={<Tooltip>{tooltip}</Tooltip>}
         >
             <div
-                style={optionStyle}
+                className={styles.optionStyle}
                 draggable
                 onDragStart={(event) => {
                     event.dataTransfer.setData("application/reactflow", boxType);
                     event.dataTransfer.effectAllowed = "move";
                 }}
             >
-                <FontAwesomeIcon icon={icon} style={iconStyle} />
+                <FontAwesomeIcon icon={icon} className={styles.iconStyle} />
             </div>
         </OverlayTrigger>
     );
 }
 
-
-export function ToolsMenu() {
+export default function ToolsMenu() {
     return (
         <div>
-            <div style={{...containerStyle}}>
+            <div className={styles.containerStyle}>
                 <DraggableTool boxType={BoxType.COMPUTATION_ANALYSIS} icon={faMagnifyingGlassChart} tooltip="Computation Analysis" />
                 <DraggableTool boxType={BoxType.DATA_TRANSFORMATION} icon={faDatabase} tooltip="Data Transformation" />
                 <DraggableTool boxType={BoxType.DATA_LOADING} icon={faUpload} tooltip="Data Loading" />
@@ -62,83 +62,3 @@ const overlayTriggerProps = {
     hide: 10,
 };
 
-const containerStyle: CSS.Properties = {
-    position: "fixed",
-    zIndex: 100,
-    top: "150px",
-    left: "50px",
-    backgroundColor: "#23c686",
-    padding: "5px",
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gridAutoRows: "45px",
-    borderRadius: "5px",
-    boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px"
-};
-
-const optionStyle: CSS.Properties = {
-    width: "45px",
-    cursor: "pointer",
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: "10px",
-};
-
-const optionText: CSS.Properties = {
-    width: "100%",
-    textAlign: "center",
-    fontSize: "0.9em",
-};
-
-const iconStyle: CSS.Properties = {
-    fontSize: "1.5em",
-    color: "#fbfcf6",
-};
-
-const buttonStyleProgrammer: CSS.Properties = {
-    backgroundColor: "transparent",
-    color: "#545353",
-    border: "1.5px solid #d66800",
-    marginRight: "5px",
-    padding: "8px 16px",
-    borderRadius: "4px",
-    cursor: "pointer", 
-    outline: "none"
-}
-
-const buttonStyleExpert: CSS.Properties = {
-    backgroundColor: "transparent",
-    color: "#545353",
-    border: "1.5px dashed #0044d6",
-    marginRight: "5px",
-    padding: "8px 16px",
-    borderRadius: "4px",
-    cursor: "pointer", 
-    outline: "none"
-}
-
-const buttonStyleAny: CSS.Properties = {
-    backgroundColor: "transparent",
-    color: "#545353",
-    border: "1.5px solid #545353",
-    marginRight: "5px",
-    padding: "8px 16px",
-    borderRadius: "4px",
-    cursor: "pointer", 
-    outline: "none"
-}
-
-const templatesModalStyle: CSS.Properties = {
-    position: "fixed", 
-    zIndex: 100, 
-    top: "150px", 
-    left: "180px",
-    display: "none", 
-    width: "600px", 
-    backgroundColor: "white",
-    boxShadow: "0px 0px 3px 0px black",
-    padding: "10px",
-    borderRadius: "5px"
-}

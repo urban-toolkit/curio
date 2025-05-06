@@ -1,11 +1,8 @@
 import React, { useRef, useState, useEffect } from 'react';
-import CSS from 'csstype';
+import styles from './FileUpload.module.css';
+import clsx from 'clsx';
 
-type FileUploadProps = {
-  style: CSS.Properties;
-};
-
-const FileUpload = ({ style }: FileUploadProps) => {
+const FileUpload = ({  }) => {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -57,11 +54,10 @@ const FileUpload = ({ style }: FileUploadProps) => {
       />
 
       <button
-        className="btn btn-success"
+        className={clsx(styles.button, "btn", "btn-sucess")}
         type="button"
         onClick={handleFileClick}
         disabled={uploadStatus === 'uploading'}
-        style={{ ...style, minWidth: '160px' }}
       >
         {uploadStatus === 'uploading' ? (
           <>

@@ -10,6 +10,7 @@ module.exports = {
   },
   resolve: {
     extensions: [".tsx", ".ts", ".js"],
+    modules: [path.resolve(__dirname, 'src'), 'node_modules'],
   },
   devtool: "source-map",
   module: {
@@ -19,8 +20,24 @@ module.exports = {
         exclude: /node_modules/,
         use: "babel-loader",
       },
+      // CSS Modules (e.g., Button.module.css)
+      {
+        test: /\.module\.css$/,
+        use: [
+          "style-loader",
+          {
+            loader: "css-loader",
+            options: {
+              modules: true,
+            },
+          },
+        ],
+        include: path.resolve(__dirname, "src"),
+      },
+      // Regular global CSS (e.g., global.css)
       {
         test: /\.css$/,
+        exclude: /\.module\.css$/,
         use: ["style-loader", "css-loader"],
       },
       {
