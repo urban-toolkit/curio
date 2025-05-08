@@ -9,13 +9,10 @@
 ## Installation
 
 
-Because Curio is integrated with UTK it is necessary to add it as a submodule.
+Begin by cloning Curio's repository:
 
 ```console
 git clone git@github.com:urban-toolkit/curio.git
-cd curio
-git submodule init
-git submodule update --remote --merge
 ```
 
 Curio is divided into three components: backend (provenance and database management), Python sandbox (to run Python code), and the frontend. All components need to be running.
