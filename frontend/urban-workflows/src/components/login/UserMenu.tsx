@@ -112,12 +112,14 @@ const buttonStyle: CSS.Properties = {
   top: "14px",
   right: "20px",
   border: "none",
-  backgroundColor: "#fbfcf6",
+  backgroundColor: "transparent",
   padding: "6px 10px",
   cursor: "pointer",
   borderRadius: "4px",
   fontWeight: "bold",
-  color: "rgb(29, 56, 83)",
+  // color: "#FBAA69",
+  color: "white",
+  borderBottom: "3px solid #FBAA69",
   zIndex: 200,
 };
 

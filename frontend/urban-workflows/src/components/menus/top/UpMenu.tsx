@@ -6,6 +6,8 @@ import { useCode } from "../../../hook/useCode";
 import { TrillGenerator } from "../../../TrillGenerator";
 import styles from "./UpMenu.module.css";
 import clsx from 'clsx';
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faDatabase } from "@fortawesome/free-solid-svg-icons";
 
 export default function UpMenu({ setDashBoardMode, setDashboardOn, dashboardOn }: { setDashBoardMode: (mode: boolean) => void; setDashboardOn: (mode: boolean) => void; dashboardOn: boolean }) {
     const [isEditing, setIsEditing] = useState(false);
@@ -116,7 +118,6 @@ export default function UpMenu({ setDashBoardMode, setDashboardOn, dashboardOn }
                         </div>
                     )}
                 </div>
-                <FileUpload />
                 <button   
                     className={clsx(
                         styles.button,
@@ -129,7 +130,8 @@ export default function UpMenu({ setDashBoardMode, setDashboardOn, dashboardOn }
             </div>
             {/* Right-side top menu */}
             <div className={styles.rightSide}>
-                <button className={styles.button} onClick={openDatasetsModal}>Datasets</button>
+                <FileUpload />
+                <button className={styles.button} onClick={openDatasetsModal}><FontAwesomeIcon icon={faDatabase} /></button>
             </div>
             {/* Editable Workflow Name */}
             <div className={styles.workflowNameContainer}>

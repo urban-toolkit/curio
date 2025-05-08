@@ -416,7 +416,7 @@ export const BoxContainer = ({
                                     style={{
                                         cursor: "pointer",
                                         fontSize: "27px",
-                                        color: "rgb(35, 198, 134)",
+                                        color: "rgb(251, 170, 105)",
                                     }}
                                     onClick={() => {
                                         setOutputCallback({

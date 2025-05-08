@@ -4,7 +4,8 @@
   top: 0;
   display: flex;
   align-items: center;
-  background: linear-gradient(to bottom, #23c686, #1ea872);
+  background-color: #1E1F23;
+  border-bottom: 2px solid #5a5c61;
   height: 65px;
   padding: 10px;
   font-family: Rubik;
@@ -18,18 +19,13 @@
   font-weight: bold;
   background-color: transparent;
   color: #fbfcf6;
-  border: 2px solid #fbfcf6;
+  border: none;
+  border-bottom: 3px solid #fbfcf6;
   border-radius: 4px;
 }
 
 .dashboardOn {
-  background: repeating-linear-gradient(
-    -45deg,
-    transparent 0px,
-    transparent 8px,
-    rgb(226, 45, 124) 8px,
-    rgb(226, 45, 124) 12px
-  );
+  border-bottom: 3px solid rgb(251, 170, 105);
 }
 
 .dashboardOff {

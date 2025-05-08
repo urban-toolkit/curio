@@ -1,6 +1,8 @@
 import React, { useRef, useState, useEffect } from 'react';
 import styles from './FileUpload.module.css';
 import clsx from 'clsx';
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faFileArrowUp, faXmark, faCheck } from "@fortawesome/free-solid-svg-icons";
 
 const FileUpload = ({  }) => {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
@@ -54,7 +56,7 @@ const FileUpload = ({  }) => {
       />
 
       <button
-        className={clsx(styles.button, "btn", "btn-sucess")}
+        className={styles.icon}
         type="button"
         onClick={handleFileClick}
         disabled={uploadStatus === 'uploading'}
@@ -62,14 +64,14 @@ const FileUpload = ({  }) => {
         {uploadStatus === 'uploading' ? (
           <>
             <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
-            {' '}Uploading...
+            {' '}
           </>
         ) : uploadStatus === 'success' ? (
-          'Uploaded'
+          <FontAwesomeIcon icon={faCheck} />
         ) : uploadStatus === 'error' ? (
-          'Failed'
+          <FontAwesomeIcon icon={faXmark} />
         ) : (
-          'Upload Dataset'
+          <FontAwesomeIcon icon={faFileArrowUp} />
         )}
       </button>
     </>
