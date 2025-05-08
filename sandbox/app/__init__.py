@@ -3,9 +3,9 @@ import os
 import logging
 from logging.handlers import RotatingFileHandler
 
-from config import Config as config_class
+from sandbox.config import Config as config_class
 
-from extensions import cache
+from sandbox.extensions import cache
 
 
 # Flask app
@@ -35,4 +35,4 @@ if not app.debug and not app.testing:
     app.logger.info('Sandbox startup')
 
 
-from app import api
+from sandbox.app import api

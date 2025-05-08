@@ -3,7 +3,7 @@ import json
 import subprocess
 import geopandas as gpd
 import utk
-from app import app, cache
+from sandbox.app import app, cache
 from .utils.cache import make_key
 import os
 
