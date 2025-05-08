@@ -20,4 +20,5 @@ RUN pip install utk-0.8.9.tar.gz
 EXPOSE 2000
 
 # Run sandbox server
-CMD ["python", "server.py"]
+WORKDIR /app
+CMD ["python", "-m", "sandbox.server"]

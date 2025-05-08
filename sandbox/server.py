@@ -1,4 +1,4 @@
-from app import app
+from sandbox.app import app
 import os
 
 @app.route('/health', methods=['GET'])

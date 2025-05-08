@@ -3,8 +3,8 @@ import os
 import logging
 from logging.handlers import RotatingFileHandler
 
-from config import Config as config_class
-from extensions import db, migrate
+from backend.config import Config as config_class
+from backend.extensions import db, migrate
 
 
 def get_locale():
@@ -20,10 +20,10 @@ def create_app(config_class=config_class):
     db.init_app(app)
     migrate.init_app(app, db)
 
-    from app.api import bp as api_bp
+    from backend.app.api import bp as api_bp
     app.register_blueprint(api_bp, url_prefix='')
 
-    from app.users import bp as users_bp
+    from backend.app.users import bp as users_bp
     app.register_blueprint(users_bp)
 
     if not app.debug and not app.testing:

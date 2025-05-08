@@ -1,4 +1,4 @@
-from extensions import db
+from backend.extensions import db
 from uuid import uuid4
 
 class User(db.Model):

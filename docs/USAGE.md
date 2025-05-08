@@ -67,17 +67,11 @@ Once the requirements are installed, we have to create a SQLite database for pro
 python create_provenance_db.py
 ```
 
-Now the backend server can be started.
-
-```console
-python server.py
-```
-
 The backend is also responsible for user authentication. In order to use Curio's functionalities, you will need authentication. To do so, upgrade the database by applying migrations (see below for steps).
 
 ##### Apply migrations
 
-You need to run this command before you start using Curio:
+You need to run this command before you start using Curio. Inside the `backend` folder:
 
 ```console
 # Run this to apply any pending migrations.
@@ -93,6 +87,11 @@ If the environment variable FLASK_APP does not work with the command above, set 
 FLASK_APP=server.py flask db migrate -m "Migration Name"
 ```
 
+Now the backend server can be started. From the root folder:
+
+```console
+python -m backend.server
+```
 
 #### 2. Python sandbox
 
@@ -110,10 +109,10 @@ Install UTK's backend module to have access to the sandbox:
 pip install utk-0.8.9.tar.gz
 ```
 
-Run the server:
+From the root folder, run the server:
 
 ```console
-python server.py
+python -m sandbox.server
 ```
 
 **If you prefer to use Docker (but you won't be able to use GPU for Ray Tracing), inside the `sandbox` folder:**

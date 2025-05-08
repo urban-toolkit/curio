@@ -2,15 +2,15 @@ from flask import request, abort, jsonify, g
 import requests
 import json
 import sqlite3
-from extensions import db
-from app.users.models import User, UserSession
-from app.services.google_oauth import GoogleOAuth
-from app.middlewares import require_auth
+from backend.extensions import db
+from backend.app.users.models import User, UserSession
+from backend.app.services.google_oauth import GoogleOAuth
+from backend.app.middlewares import require_auth
 import uuid
 import os
 
 # The Flask app
-from app.api import bp
+from backend.app.api import bp
 
 
 # Sandbox address
