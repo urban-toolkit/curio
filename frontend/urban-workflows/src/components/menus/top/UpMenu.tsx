@@ -102,7 +102,7 @@ export default function UpMenu({ setDashBoardMode, setDashboardOn, dashboardOn }
     return (
         <>
             <div className={clsx(styles.menuBar, "nowheel", "nodrag")}>
-                <img className={styles.logo} src={logo} alt="Urbanite logo" width="200px"/>
+                <img className={styles.logo} src={logo} alt="Urbanite logo"/>
                 <div className={styles.dropdownWrapper}>
                     <button
                         className={styles.button}
