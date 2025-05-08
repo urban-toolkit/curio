@@ -28,10 +28,15 @@ jobs:
           done
           '
 
-      - name: 🧪 Run unit tests
-        working-directory: ./
+      - name: 🧪 Run backend unit tests
         run: |
-          python -m unittest discover -p "test_*.py" -v
+          docker compose exec backend \
+            python -m unittest discover -s backend/tests -t backend -p "test_*.py" -v
+
+      - name: 🧪 Run sandbox unit tests
+        run: |
+          docker compose exec sandbox \
+            python -m unittest discover -s sandbox/tests -t sandbox -p "test_*.py" -v
 
       - name: 🌐 Check frontend availability
         run: |
