@@ -45,6 +45,10 @@ module.exports = {
         test: /\.js$/,
         loader: "source-map-loader",
       },
+      {
+        test: /\.(png|jpe?g|gif|svg)$/i,
+        type: 'asset/resource',
+      },
     ],
   },
   plugins: [
