@@ -10,6 +10,6 @@
     background-color: transparent;
     color: #fbfcf6;
     border: none;
-    border-bottom: 3px solid #fbfcf6;
+    /* border-bottom: 3px solid #fbfcf6; */
     border-radius: 4px;
 }

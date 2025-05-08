@@ -8,6 +8,7 @@ import styles from "./UpMenu.module.css";
 import clsx from 'clsx';
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faDatabase } from "@fortawesome/free-solid-svg-icons";
+import logo from 'assets/urbanite.png';
 
 export default function UpMenu({ setDashBoardMode, setDashboardOn, dashboardOn }: { setDashBoardMode: (mode: boolean) => void; setDashboardOn: (mode: boolean) => void; dashboardOn: boolean }) {
     const [isEditing, setIsEditing] = useState(false);
@@ -101,6 +102,7 @@ export default function UpMenu({ setDashBoardMode, setDashboardOn, dashboardOn }
     return (
         <>
             <div className={clsx(styles.menuBar, "nowheel", "nodrag")}>
+                <img className={styles.logo} src={logo} alt="Urbanite logo" width="200px"/>
                 <div className={styles.dropdownWrapper}>
                     <button
                         className={styles.button}

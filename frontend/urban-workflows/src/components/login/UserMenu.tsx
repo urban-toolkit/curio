@@ -119,7 +119,7 @@ const buttonStyle: CSS.Properties = {
   fontWeight: "bold",
   // color: "#FBAA69",
   color: "white",
-  borderBottom: "3px solid #FBAA69",
+  // borderBottom: "3px solid #FBAA69",
   zIndex: 200,
 };
 
