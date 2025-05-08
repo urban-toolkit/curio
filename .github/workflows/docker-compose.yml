@@ -28,6 +28,11 @@ jobs:
           done
           '
 
+      - name: 🧪 Run Unit Tests
+        working-directory: ./curio
+        run: |
+          python -m unittest discover -p "test_*.py" -v
+
       - name: 🌐 Check frontend availability
         run: |
           curl --fail http://localhost:8080 || (echo "Frontend not reachable" && exit 1)

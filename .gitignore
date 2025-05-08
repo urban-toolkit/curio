@@ -19,5 +19,7 @@ wheels/
 
 .ipynb_checkpoints
 
+flask_cache/
+
 simple_example
 templates/
