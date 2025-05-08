@@ -28,7 +28,7 @@ jobs:
           done
           '
 
-      - name: 🧪 Run Unit Tests
+      - name: 🧪 Run unit tests
         working-directory: ./curio
         run: |
           python -m unittest discover -p "test_*.py" -v
