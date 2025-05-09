@@ -80,7 +80,7 @@ FOLDER_MAP = {
     "VIS_VEGA": "vega_lite"
 }
 
-TEMPLATE_DIR = "../templates"
+TEMPLATE_DIR = "./templates"
 
 @bp.after_request
 def add_cors_headers(response):
@@ -93,8 +93,8 @@ def add_cors_headers(response):
 def root():
     abort(403)
 
-@bp.route('/liveness')
-def liveness():
+@bp.route('/live')
+def live():
     return 'Backend is live.'
 
 @bp.route('/upload', methods=['POST'])
@@ -132,8 +132,8 @@ def process_python_code():
     #     }),
     #     headers={"Content-Type": "application/json"},
     # )
-    print(api_address, str(api_port))
-    print(api_address+":"+str(api_port))
+    # print(api_address, str(api_port))
+    # print(api_address+":"+str(api_port))
     response = requests.post(api_address+":"+str(api_port)+"/exec",
                              data=json.dumps({
                                  "code": request.json['code']
@@ -243,7 +243,7 @@ def save_user_type():
 @bp.route('/saveUserProv', methods=['POST'])
 def save_user_prov(): # only save if user with that name does not exist on the database
 
-    conn = sqlite3.connect('provenance.db')
+    conn = sqlite3.connect('backend/provenance.db')
     cursor = conn.cursor()
 
     user = request.json.get('user')
@@ -265,7 +265,7 @@ def save_user_prov(): # only save if user with that name does not exist on the d
 @bp.route('/saveWorkflowProv', methods=['POST'])
 def save_workflow_prov():
 
-    conn = sqlite3.connect('provenance.db')
+    conn = sqlite3.connect('backend/provenance.db')
     cursor = conn.cursor()
 
     workflow_name = request.json.get('workflow')
@@ -300,7 +300,7 @@ def save_workflow_prov():
 @bp.route('/newBoxProv', methods=['POST'])
 def new_box_prov():
 
-    conn = sqlite3.connect('provenance.db')
+    conn = sqlite3.connect('backend/provenance.db')
     cursor = conn.cursor()
 
     # // new version (increment version number based on previous old workflow that points to a ve that points to the version)
@@ -448,7 +448,7 @@ def delete_box_prov():
     # // point new workflow to the new versioned element
     # // duplicate all activities (but the excluded box) that point to the old workflow and point to the new one
 
-    conn = sqlite3.connect('provenance.db')
+    conn = sqlite3.connect('backend/provenance.db')
     cursor = conn.cursor()
 
     data = request.json.get('data')
@@ -562,7 +562,7 @@ def delete_box_prov():
 @bp.route('/newConnectionProv', methods=['POST'])
 def new_connection_prov():
 
-    conn = sqlite3.connect('provenance.db')
+    conn = sqlite3.connect('backend/provenance.db')
     cursor = conn.cursor()
 
     data = request.json.get('data')
@@ -687,7 +687,7 @@ def new_connection_prov():
 @bp.route('/deleteConnectionProv', methods=['POST'])
 def delete_connection_prov():
 
-    conn = sqlite3.connect('provenance.db')
+    conn = sqlite3.connect('backend/provenance.db')
     cursor = conn.cursor()
 
     data = request.json.get('data')
@@ -808,7 +808,7 @@ def delete_connection_prov():
 @bp.route('/boxExecProv', methods=['POST'])
 def box_exec_prov():
 
-    conn = sqlite3.connect('provenance.db')
+    conn = sqlite3.connect('backend/provenance.db')
     cursor = conn.cursor()
 
     data = request.json.get('data')
@@ -948,7 +948,7 @@ def box_exec_prov():
 @bp.route('/getBoxGraph', methods=['POST'])
 def get_box_graph():
 
-    conn = sqlite3.connect('provenance.db')
+    conn = sqlite3.connect('backend/provenance.db')
     cursor = conn.cursor()
 
     data = request.json.get('data')
@@ -1027,7 +1027,7 @@ def get_box_graph():
 @bp.route('/truncateDBProv', methods=['GET'])
 def truncate_db_prov():
 
-    conn = sqlite3.connect('provenance.db')
+    conn = sqlite3.connect('backend/provenance.db')
     cursor = conn.cursor()
 
     # Fetch the list of tables in the database
