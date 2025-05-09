@@ -14,10 +14,11 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v3
 
-      - name: 🔧 Build and start containers
-        run: |
-          docker compose build --parallel \
-          docker compose up -d
+      - name: 🔨 Build all service images in parallel
+        run: docker compose build --parallel
+
+      - name: ▶️ Start containers
+        run: docker compose up -d
 
       - name: 🧪 Wait for services to become healthy
         run: |
