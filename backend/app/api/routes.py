@@ -673,11 +673,11 @@ def new_connection_prov():
                 conn.commit()
 
     # get the source activity of the connection
-    cursor.execute("SELECT output_relation_id FROM activity WHERE workflow_id = ? AND activity_name = ?", (workflow_id, data['sourceNodeType']+"_"+data['sourceNodeId'],))
+    cursor.execute("SELECT output_relation_id FROM activity WHERE workflow_id = ? AND activity_name = ?", (workflow_id, data['sourceNodeType']+"-"+data['sourceNodeId'],))
     source_activity = cursor.fetchone()
 
     # update input relation of the activity
-    cursor.execute("UPDATE activity SET input_relation_id = ? WHERE workflow_id = ? AND activity_name = ?", (source_activity[0], workflow_id, data['targetNodeType']+"_"+data['targetNodeId'],))
+    cursor.execute("UPDATE activity SET input_relation_id = ? WHERE workflow_id = ? AND activity_name = ?", (source_activity[0], workflow_id, data['targetNodeType']+"-"+data['targetNodeId'],))
 
     conn.commit()
     conn.close()
@@ -798,7 +798,7 @@ def delete_connection_prov():
                 conn.commit()
 
     # update input relation of the activity
-    cursor.execute("UPDATE activity SET input_relation_id = NULL WHERE workflow_id = ? AND activity_name = ?", (workflow_id, data['targetNodeType']+"_"+data['targetNodeId'],))
+    cursor.execute("UPDATE activity SET input_relation_id = NULL WHERE workflow_id = ? AND activity_name = ?", (workflow_id, data['targetNodeType']+"-"+data['targetNodeId'],))
 
     conn.commit()
     conn.close()

@@ -120,6 +120,7 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
         targetNodeId: string,
         targetNodeType: BoxType
     ) => {
+
         fetch(process.env.BACKEND_URL + "/newConnectionProv", {
             method: "POST",
             body: JSON.stringify({
