@@ -97,19 +97,19 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
         });
     };
 
-    const addWorkflow = (workflow_name: string) => {
-        fetch(process.env.BACKEND_URL + "/truncateDBProv", {
+    const addWorkflow = async (workflow_name: string) => {
+        await fetch(process.env.BACKEND_URL + "/truncateDBProv", {
             method: "GET",
-        }).then(() => {
-            fetch(process.env.BACKEND_URL + "/saveWorkflowProv", {
-                method: "POST",
-                body: JSON.stringify({
-                    workflow: workflow_name,
-                }),
-                headers: {
-                    "Content-type": "application/json; charset=UTF-8",
-                },
-            });
+        });
+
+        await fetch(process.env.BACKEND_URL + "/saveWorkflowProv", {
+            method: "POST",
+            body: JSON.stringify({
+                workflow: workflow_name,
+            }),
+            headers: {
+                "Content-type": "application/json; charset=UTF-8",
+            },
         });
     };
 

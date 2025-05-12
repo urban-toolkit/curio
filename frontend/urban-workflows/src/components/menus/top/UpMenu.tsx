@@ -131,14 +131,14 @@ export default function UpMenu({ setDashBoardMode, setDashboardOn, dashboardOn }
                     </button>
                     {fileMenuOpen && (
                         <div className={styles.dropDownMenu} ref={dropdownRef}>
-                            <div className={styles.dropDownRow} onClick={exportTrill}>
-                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faFileExport} />
-                                <button className={styles.noStyleButton}>Export Specification</button>
-                            </div>
                             <div className={styles.dropDownRow} onClick={loadTrillFile} >
                                 <FontAwesomeIcon className={styles.dropDownIcon} icon={faFileImport} />
                                 <button className={styles.noStyleButton}>Import Specification</button>
                                 <input type="file" accept=".json" id="loadTrill" style={{ display: 'none' }} onChange={handleFileUpload}/>
+                            </div>
+                            <div className={styles.dropDownRow} onClick={exportTrill}>
+                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faFileExport} />
+                                <button className={styles.noStyleButton}>Export Specification</button>
                             </div>
                         </div>
                     )}
