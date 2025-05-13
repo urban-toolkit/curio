@@ -921,6 +921,7 @@ def box_exec_prov():
                         WHERE attribute.attribute_type = ? AND relation.relation_id = ?''', ('Data', output_relation_id))
 
     output_attributes = cursor.fetchall()
+    print(output_attributes)
 
     for input_attribute in input_attributes:
         # creating attributeValues
