@@ -8,6 +8,9 @@ from backend.app.services.google_oauth import GoogleOAuth
 from backend.app.middlewares import require_auth
 import uuid
 import os
+import zlib
+import time
+import hashlib
 
 # The Flask app
 from backend.app.api import bp
@@ -137,18 +140,37 @@ def process_python_code():
     # print(request.json, flush=True)
 
     code = request.json['code']
-    input = request.json['input']
+    input_data = request.json['input']
     boxType = request.json['boxType']
 
-    response = requests.post(api_address+":"+str(api_port)+"/exec",
-                             data=json.dumps({
-                                 "code": code,
-                                 "input": input,
-                                 "boxType": boxType
-                             }),
-                             headers={"Content-Type": "application/json"},
-                             )
-    return response.json()
+    shared_disk_path = './data/'
+    os.makedirs(shared_disk_path, exist_ok=True)
+    input_hash = hashlib.sha256(json.dumps(input_data).encode('utf-8')).hexdigest()
+    timestamp = str(int(time.time()))
+    unique_filename = f"input_{timestamp}_{input_hash[:10]}.bin"
+    file_path = os.path.join(shared_disk_path, unique_filename)
+
+    # Compressing and saving the input data as a memory-mapped file
+    # compressed_data = json.dumps(input_data).encode('utf-8')
+    compressed_data = zlib.compress(json.dumps(input_data).encode('utf-8'))
+    with open(file_path, "wb") as file:
+        file.write(compressed_data)
+
+    try:
+        response = requests.post(api_address+":"+str(api_port)+"/exec",
+                                data=json.dumps({
+                                    "code": code,
+                                    #  "input": input_data,
+                                    "file_path": file_path,
+                                    "boxType": boxType
+                                }),
+                                headers={"Content-Type": "application/json"},
+                                )
+        return response.json()
+    finally:
+        # pass
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
 @bp.route('/toLayers', methods=['POST'])
 def toLayers():

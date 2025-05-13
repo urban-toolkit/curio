@@ -64,17 +64,12 @@ def exec():
 
     
     code = request.json['code']
-    input = request.json['input']
+    file_path = request.json['file_path']
     boxType = request.json['boxType']
-    if(input == None or input == ""):
-        input = '""'
-    else:
-        input = json.dumps(input)
-        input = json.loads(input)
 
     
     full_code = full_code.replace('{userCode}', code)
-    full_code = full_code.replace('{input}', input)
+    full_code = full_code.replace('{filePath}', file_path)
     full_code = full_code.replace('{boxType}', boxType)
 
     print("read code 2", flush=True)

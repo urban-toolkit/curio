@@ -10,6 +10,8 @@ import rasterio
 import geopandas as gpd
 import pandas as pd
 import json
+import mmap
+import zlib
 
 def userCode(arg):
 {userCode}
@@ -24,9 +26,18 @@ def dumpsInput(input):
     else:
         return json.dumps(input)
 
-input = {input}#.replace("\n", "")
-if(input != ""):
-    input = dumpsInput(input)
+# input = {input}#.replace("\n", "")
+# if(input != ""):
+#     input = dumpsInput(input)
+
+# Using memory-mapped file for fast access
+file_path = "{filePath}"
+with open(file_path, "rb") as file:
+    with mmap.mmap(file.fileno(), 0, access=mmap.ACCESS_READ) as mmapped_file:
+        # Decompress and load the data directly from memory
+        input = json.loads(zlib.decompress(mmapped_file).decode('utf-8'))
+        # input = json.loads(mmapped_file).decode('utf-8')
+
 
 def parseInput(input):
     parsedInput = None
