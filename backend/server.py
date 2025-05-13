@@ -12,5 +12,6 @@ if __name__ == '__main__':
         host=os.getenv('FLASK_RUN_HOST', 'localhost'),
         port=int(os.getenv('FLASK_RUN_PORT', 5002)),
         threaded=False,
+        debug=True
     )
 

@@ -134,13 +134,20 @@ def process_python_code():
     # )
     # print(api_address, str(api_port))
     # print(api_address+":"+str(api_port))
+    # print(request.json, flush=True)
+
+    code = request.json['code']
+    input = request.json['input']
+    boxType = request.json['boxType']
+
     response = requests.post(api_address+":"+str(api_port)+"/exec",
                              data=json.dumps({
-                                 "code": request.json['code']
+                                 "code": code,
+                                 "input": input,
+                                 "boxType": boxType
                              }),
                              headers={"Content-Type": "application/json"},
                              )
-
     return response.json()
 
 @bp.route('/toLayers', methods=['POST'])

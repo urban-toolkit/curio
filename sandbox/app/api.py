@@ -18,8 +18,8 @@ def add_cors_headers(response):
 def root():
     abort(403)
 
-@app.route('/liveness', methods=['GET'])
-def liveness():
+@app.route('/live', methods=['GET'])
+def live():
     return 'Sandbox is live.'
 
 @app.route('/upload', methods=['POST'])
@@ -48,22 +48,43 @@ def list_datasets():
     return jsonify(files)
 
 @app.route('/exec', methods=['POST'])
-@cache.cached(make_cache_key=make_key)
+# @cache.cached(make_cache_key=make_key)
 def exec():
     import time
     start_time = time.time()
     app.logger.info(f'/exec: Request begin')
 
+    # print(request.json['code'], flush=True)
+
     if(request.json['code'] == None):
         abort(400, "Code was not included in the post request")
 
-    full_code = request.json['code']
+    # Load default python wrapper code
+    full_code = open('sandbox/python_wrapper.txt', 'r').read()
+
+    
+    code = request.json['code']
+    input = request.json['input']
+    boxType = request.json['boxType']
+    if(input == None or input == ""):
+        input = '""'
+    else:
+        input = json.dumps(input)
+        input = json.loads(input)
+
+    
+    full_code = full_code.replace('{userCode}', code)
+    full_code = full_code.replace('{input}', input)
+    full_code = full_code.replace('{boxType}', boxType)
+
+    print("read code 2", flush=True)
+
     command = ['python', '-']
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     stdout, stderr = process.communicate(full_code)
 
     stdout = [item for item in stdout.split("\n") if item != '']
-
+    print(stdout)
     if(len(stdout) == 0):
         stdout = ""
     else:
