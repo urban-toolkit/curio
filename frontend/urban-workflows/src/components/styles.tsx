@@ -466,7 +466,7 @@ export const BoxContainer = ({
                                             variant="primary"
                                             style={{ 
                                                 fontSize: "9px",
-                                                backgroundColor: "rgb(35, 198, 134)",
+                                                backgroundColor: "rgb(251, 170, 105)",
                                                 border: "none"
                                              }}
                                              onMouseEnter={() => {fetchTemplates()}}

@@ -1,6 +1,4 @@
-2025-05-09 14:03:02,795 INFO: Backend startup [in C:\Users\Gustavo\code\curio\backend\app\__init__.py:46]
-2025-05-12 15:44:38,541 INFO: Backend startup [in C:\Users\Gustavo\code\curio\backend\app\__init__.py:46]
-2025-05-12 15:47:24,456 ERROR: Exception on /newConnectionProv [POST] [in C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py:875]
+2025-05-12 17:13:40,097 ERROR: Exception on /newConnectionProv [POST] [in C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py:875]
 Traceback (most recent call last):
   File "C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py", line 1511, in wsgi_app
     response = self.full_dispatch_request()
@@ -11,37 +9,9 @@ Traceback (most recent call last):
   File "C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py", line 902, in dispatch_request
     return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
   File "C:\Users\Gustavo\code\curio\backend\app\api\routes.py", line 680, in new_connection_prov
-    cursor.execute("UPDATE activity SET input_relation_id = ? WHERE workflow_id = ? AND activity_name = ?", (source_activity[0], workflow_id, data['targetNodeType']+"_"+data['targetNodeId'],))
+    cursor.execute("UPDATE activity SET input_relation_id = ? WHERE workflow_id = ? AND activity_name = ?", (source_activity[0], workflow_id, data['targetNodeType']+"-"+data['targetNodeId'],))
 TypeError: 'NoneType' object is not subscriptable
-2025-05-12 15:53:26,540 INFO: Backend startup [in C:\Users\Gustavo\code\curio\backend\app\__init__.py:46]
-2025-05-12 15:55:05,802 ERROR: Exception on /newConnectionProv [POST] [in C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py:875]
-Traceback (most recent call last):
-  File "C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py", line 1511, in wsgi_app
-    response = self.full_dispatch_request()
-  File "C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py", line 919, in full_dispatch_request
-    rv = self.handle_user_exception(e)
-  File "C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py", line 917, in full_dispatch_request
-    rv = self.dispatch_request()
-  File "C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py", line 902, in dispatch_request
-    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
-  File "C:\Users\Gustavo\code\curio\backend\app\api\routes.py", line 680, in new_connection_prov
-    cursor.execute("UPDATE activity SET input_relation_id = ? WHERE workflow_id = ? AND activity_name = ?", (source_activity[0], workflow_id, data['targetNodeType']+"_"+data['targetNodeId'],))
-TypeError: 'NoneType' object is not subscriptable
-2025-05-12 15:56:51,528 ERROR: Exception on /newConnectionProv [POST] [in C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py:875]
-Traceback (most recent call last):
-  File "C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py", line 1511, in wsgi_app
-    response = self.full_dispatch_request()
-  File "C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py", line 919, in full_dispatch_request
-    rv = self.handle_user_exception(e)
-  File "C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py", line 917, in full_dispatch_request
-    rv = self.dispatch_request()
-  File "C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py", line 902, in dispatch_request
-    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
-  File "C:\Users\Gustavo\code\curio\backend\app\api\routes.py", line 680, in new_connection_prov
-    cursor.execute("UPDATE activity SET input_relation_id = ? WHERE workflow_id = ? AND activity_name = ?", (source_activity[0], workflow_id, data['targetNodeType']+"_"+data['targetNodeId'],))
-TypeError: 'NoneType' object is not subscriptable
-2025-05-12 16:04:08,186 INFO: Backend startup [in C:\Users\Gustavo\code\curio\backend\app\__init__.py:46]
-2025-05-12 17:10:27,779 ERROR: Exception on /newBoxProv [POST] [in C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py:875]
+2025-05-12 17:14:04,885 ERROR: Exception on /newBoxProv [POST] [in C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py:875]
 Traceback (most recent call last):
   File "C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py", line 1511, in wsgi_app
     response = self.full_dispatch_request()
@@ -54,7 +24,7 @@ Traceback (most recent call last):
   File "C:\Users\Gustavo\code\curio\backend\app\api\routes.py", line 321, in new_box_prov
     cursor.execute("SELECT * FROM versionedElement WHERE ve_id = ?", (old_workflow[2],))
 TypeError: 'NoneType' object is not subscriptable
-2025-05-12 17:10:28,082 ERROR: Exception on /newBoxProv [POST] [in C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py:875]
+2025-05-12 17:14:04,888 ERROR: Exception on /newBoxProv [POST] [in C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py:875]
 Traceback (most recent call last):
   File "C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py", line 1511, in wsgi_app
     response = self.full_dispatch_request()
@@ -67,7 +37,7 @@ Traceback (most recent call last):
   File "C:\Users\Gustavo\code\curio\backend\app\api\routes.py", line 321, in new_box_prov
     cursor.execute("SELECT * FROM versionedElement WHERE ve_id = ?", (old_workflow[2],))
 TypeError: 'NoneType' object is not subscriptable
-2025-05-12 17:10:28,085 ERROR: Exception on /newConnectionProv [POST] [in C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py:875]
+2025-05-12 17:14:04,892 ERROR: Exception on /newConnectionProv [POST] [in C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py:875]
 Traceback (most recent call last):
   File "C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py", line 1511, in wsgi_app
     response = self.full_dispatch_request()
@@ -80,7 +50,8 @@ Traceback (most recent call last):
   File "C:\Users\Gustavo\code\curio\backend\app\api\routes.py", line 582, in new_connection_prov
     cursor.execute("SELECT * FROM versionedElement WHERE ve_id = ?", (old_workflow[2],))
 TypeError: 'NoneType' object is not subscriptable
-2025-05-12 17:13:39,754 ERROR: Exception on /newBoxProv [POST] [in C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py:875]
+2025-05-14 16:02:35,948 INFO: Backend startup [in C:\Users\Gustavo\code\curio\backend\app\__init__.py:46]
+2025-05-14 17:30:31,566 ERROR: Exception on /newBoxProv [POST] [in C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py:875]
 Traceback (most recent call last):
   File "C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py", line 1511, in wsgi_app
     response = self.full_dispatch_request()
@@ -93,7 +64,33 @@ Traceback (most recent call last):
   File "C:\Users\Gustavo\code\curio\backend\app\api\routes.py", line 321, in new_box_prov
     cursor.execute("SELECT * FROM versionedElement WHERE ve_id = ?", (old_workflow[2],))
 TypeError: 'NoneType' object is not subscriptable
-2025-05-12 17:13:40,067 ERROR: Exception on /newBoxProv [POST] [in C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py:875]
+2025-05-14 17:31:20,573 ERROR: Exception on /newBoxProv [POST] [in C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py:875]
+Traceback (most recent call last):
+  File "C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+  File "C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+  File "C:\Users\Gustavo\code\curio\backend\app\api\routes.py", line 321, in new_box_prov
+    cursor.execute("SELECT * FROM versionedElement WHERE ve_id = ?", (old_workflow[2],))
+TypeError: 'NoneType' object is not subscriptable
+2025-05-14 17:33:11,454 ERROR: Exception on /newBoxProv [POST] [in C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py:875]
+Traceback (most recent call last):
+  File "C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+  File "C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+  File "C:\Users\Gustavo\code\curio\backend\app\api\routes.py", line 321, in new_box_prov
+    cursor.execute("SELECT * FROM versionedElement WHERE ve_id = ?", (old_workflow[2],))
+TypeError: 'NoneType' object is not subscriptable
+2025-05-14 17:35:13,360 ERROR: Exception on /newBoxProv [POST] [in C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py:875]
 Traceback (most recent call last):
   File "C:\Users\Gustavo\miniforge3\envs\backend-curio\lib\site-packages\flask\app.py", line 1511, in wsgi_app
     response = self.full_dispatch_request()
