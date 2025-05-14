@@ -38,17 +38,17 @@ Prerequisites:
 After cloning the repository and initializing submodules (see above), run the full Curio stack with:
 
 ```console
-docker compose --parallel 4 up --build
+docker compose up
 ```
 
 For older Docker versions, the following command may be required instead:
 ```console
-docker-compose up --build
+docker-compose up
 ```
 
 This will build and start all required services: the backend, Python sandbox, and frontend. Curio's frontend will be available at http://localhost:8080.
 
-⚠️ **Note:** The initial build may take a few minutes depending on your machine and network speed, as it installs dependencies and compiles assets.
+⚠️ **Note:** The initial build may take a few minutes depending on your machine and network speed, as it installs dependencies and compiles assets. You might want to add ``--parallel 4`` to speed up the building process. Use ``--build`` to force the rebuild of the images if needed.
 
 ### Installing manually
 
@@ -126,7 +126,7 @@ docker-compose up
 Because Curio also uses UTK's frontend, it is necessary to compile the UTK submodule. In the `frontend/utk-workflow/src/utk-ts` folder:
 
 ```console
-conda install nodejs=22.13.0
+conda install -c conda-forge nodejs=22.13.0
 npm install
 npm run build 
 ```

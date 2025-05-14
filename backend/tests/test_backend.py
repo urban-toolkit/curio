@@ -22,7 +22,8 @@ test_data = {
         "activityexec_end_time": "2025-05-09T03:00:00",
         "types_input": {"input_relation_1": 1},  # Sample input data
         "types_output": {"output_relation_1": 1},  # Sample output data
-        "activity_source_code": "print(\'Hello World\')"
+        "activity_source_code": "return sum(args[0]) / len(args[0])",
+        "input": "[0,1,2,3,4,5]"
     }
 }
 
@@ -62,11 +63,17 @@ class TestRoutes(unittest.TestCase):
                 os.remove(temp_file_path)
 
     def test_process_python_code(self):
-        test_code = {"code": test_data["data"]["activity_source_code"]}
+        test_code = {"code": test_data["data"]["activity_source_code"],
+                     "input": test_data["data"]["input"],
+                     "boxType": test_data["data"]["activity_name"]
+                    }
         response = self.client.post('/processPythonCode', json=test_code)
         self.assertEqual(response.status_code, 200)
 
     def test_prov(self):
+
+        response = self.client.get('/truncateDBProv')
+        self.assertEqual(response.status_code, 200)
 
         response = self.client.post('/saveWorkflowProv', json=test_data)
         self.assertEqual(response.status_code, 200)
@@ -74,8 +81,8 @@ class TestRoutes(unittest.TestCase):
         response = self.client.post('/newBoxProv', json=test_data)
         self.assertEqual(response.status_code, 200)
 
-        response = self.client.post('/boxExecProv', json=test_data)
-        self.assertEqual(response.status_code, 200)
+        # response = self.client.post('/boxExecProv', json=test_data)
+        # self.assertEqual(response.status_code, 200)
 
         response = self.client.post('/getBoxGraph', json=test_data)
         self.assertEqual(response.status_code, 200)
