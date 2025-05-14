@@ -59,6 +59,9 @@ function MergeFlowBox({ data, isConnectable }) {
     };
 
     useEffect(() => {
+
+        console.log("input", {...data.input});
+
         let newOutput: any = { data: [], dataType: "outputs" };
 
         if (Array.isArray(data.input) && data.input.length > 0) {
@@ -78,7 +81,15 @@ function MergeFlowBox({ data, isConnectable }) {
             <Handle
                 type="target"
                 position={Position.Left}
+                className={"handle_top_left"}
                 id="in"
+                isConnectable={isConnectable}
+            />
+            <Handle
+                type="target"
+                position={Position.Left}
+                id="in_2"
+                className={"handle_bottom_left"}
                 isConnectable={isConnectable}
             />
             <Handle

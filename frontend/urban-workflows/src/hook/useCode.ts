@@ -110,6 +110,12 @@ export function useCode(): IUseCode {
 
         for(const edge of trill.dataflow.edges){
 
+            let targetHandle = "in";
+
+            if(edge.id.includes("in_2")) { // For the second input of the merge node
+                targetHandle = "in_2";
+            }
+
             let add_edge: any = {
                 id: edge.id,
                 type: EdgeType.UNIDIRECTIONAL_EDGE,
@@ -117,7 +123,7 @@ export function useCode(): IUseCode {
                 source: edge.source,
                 sourceHandle: "out",
                 target: edge.target,
-                targetHandle: "in"
+                targetHandle
             }
 
             add_edge.data = {}

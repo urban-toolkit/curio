@@ -588,9 +588,9 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                     "An in/out connection can only be connected to another in/out connection"
                 );
             } else if (
-                (connection.sourceHandle == "in" &&
+                ((connection.sourceHandle == "in" || connection.sourceHandle == "in_2") &&
                     connection.targetHandle != "out") ||
-                (connection.targetHandle == "in" &&
+                ((connection.targetHandle == "in" || connection.targetHandle == "in_2") &&
                     connection.sourceHandle != "out")
             ) {
                 validHandleCombination = false;
@@ -599,9 +599,9 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 );
             } else if (
                 (connection.sourceHandle == "out" &&
-                    connection.targetHandle != "in") ||
+                    (connection.targetHandle != "in" && connection.targetHandle != "in_2")) ||
                 (connection.targetHandle == "out" &&
-                    connection.sourceHandle != "in")
+                    (connection.sourceHandle != "in" && connection.sourceHandle != "in_2"))
             ) {
                 validHandleCombination = false;
                 alert(
