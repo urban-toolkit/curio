@@ -89,7 +89,12 @@ export const BoxContainer = ({
     disableComments?: boolean;
     styles?: CSS.Properties;
 }) => {
-    const { applyRemoveChanges, setPinForDashboard } = useFlowContext();
+    const { 
+        applyRemoveChanges, 
+        setPinForDashboard,
+        allMinimized,
+        setExpandStatus
+    } = useFlowContext();
     const { getTemplates, deleteTemplate, fetchTemplates } = useTemplateContext();
     const { createCodeNode } = useCode();
     const [showComments, setShowComments] = useState(false);
@@ -105,6 +110,41 @@ export const BoxContainer = ({
     const [minimized, setMinimized] = useState(
         data.nodeType == BoxType.MERGE_FLOW
     );
+
+    useEffect(() => {
+        if(data.nodeType != BoxType.MERGE_FLOW){
+            if(allMinimized > 0){
+                setMinimized(true);
+            }else{
+                setMinimized(false);
+            }
+        }
+    }, [allMinimized])
+
+    useEffect(() => {
+        if (data.nodeType != BoxType.MERGE_FLOW) {
+            if (minimized) {
+                setCurrentBoxWidth(70);
+                setCurrentBoxHeight(40);
+            } else {
+                if (boxWidth == undefined) {
+                    setCurrentBoxWidth(525);
+                } else {
+                    setCurrentBoxWidth(boxWidth);
+                }
+
+                if (boxHeight == undefined) {
+                    setCurrentBoxHeight(267);
+                } else {
+                    setCurrentBoxHeight(boxHeight);
+                }
+            }
+
+            if(!minimized)
+                setExpandStatus("expanded");
+        }
+
+    }, [minimized]);
 
     useEffect(() => {
         if (boxWidth == undefined) {
@@ -767,25 +807,6 @@ export const BoxContainer = ({
                     zIndex: 8,
                 }}
                 onClick={() => {
-                    if (data.nodeType != BoxType.MERGE_FLOW) {
-                        if (!minimized) {
-                            setCurrentBoxWidth(70);
-                            setCurrentBoxHeight(40);
-                        } else {
-                            if (boxWidth == undefined) {
-                                setCurrentBoxWidth(525);
-                            } else {
-                                setCurrentBoxWidth(boxWidth);
-                            }
-
-                            if (boxHeight == undefined) {
-                                setCurrentBoxHeight(267);
-                            } else {
-                                setCurrentBoxHeight(boxHeight);
-                            }
-                        }
-                    }
-
                     if (data.nodeType == BoxType.MERGE_FLOW) {
                         setMinimized(true);
                     } else {

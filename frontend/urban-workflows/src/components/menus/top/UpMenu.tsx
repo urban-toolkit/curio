@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import CSS from "csstype";
-import { FileUpload, TrillProvenanceWindow, DatasetsWindow } from "components/menus";
+import { FileUpload, TrillProvenanceWindow, DatasetsWindow, Expand } from "components/menus";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { useCode } from "../../../hook/useCode";
 import { TrillGenerator } from "../../../TrillGenerator";
@@ -155,6 +155,7 @@ export default function UpMenu({ setDashBoardMode, setDashboardOn, dashboardOn }
             </div>
             {/* Right-side top menu */}
             <div className={styles.rightSide}>
+                <Expand />
                 <FileUpload />
                 <button className={styles.button} onClick={openDatasetsModal}><FontAwesomeIcon icon={faDatabase} /></button>
             </div>

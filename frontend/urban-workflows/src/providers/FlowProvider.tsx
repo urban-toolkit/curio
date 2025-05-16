@@ -50,6 +50,8 @@ interface FlowContextProps {
     nodes: Node[];
     edges: Edge[];
     workflowNameRef: React.MutableRefObject<string>;
+    allMinimized: number;
+    expandStatus: 'expanded' | 'minimized';
     setOutputs: (updateFn: (outputs: IOutput[]) => IOutput[]) => void;
     setInteractions: (updateFn: (interactions: IInteraction[]) => IInteraction[]) => void;
     applyNewPropagation: (propagation: IPropagation) => void;
@@ -67,6 +69,8 @@ interface FlowContextProps {
     updatePositionDashboard: (nodeId:string, position: any) => void;
     applyNewOutput: (output: IOutput) => void;
     setWorkflowName: (name: string) => void;
+    setAllMinimized: (value: number) => void;
+    setExpandStatus: (value: 'expanded' | 'minimized') => void;
     loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean) => void;
 }
 
@@ -74,6 +78,8 @@ export const FlowContext = createContext<FlowContextProps>({
     nodes: [],
     edges: [],
     workflowNameRef: { current: "" },
+    allMinimized: 0,
+    expandStatus: 'expanded',
     setOutputs: () => { },
     setInteractions: () => {},
     applyNewPropagation: () => {},
@@ -91,6 +97,8 @@ export const FlowContext = createContext<FlowContextProps>({
     updatePositionDashboard: () => {},
     applyNewOutput: () => {},
     setWorkflowName: () => {},
+    setAllMinimized: () => {},
+    setExpandStatus: () => {},
     loadParsedTrill: async () => {}
 });
 
@@ -100,6 +108,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const [outputs, setOutputs] = useState<IOutput[]>([]);
     const [interactions, setInteractions] = useState<IInteraction[]>([]);
     const [dashboardPins, setDashboardPins] = useState<any>({}); // {[nodeId] -> boolean}
+    const [allMinimized, setAllMinimized] = useState<number>(0);
+    const [expandStatus, setExpandStatus] = useState<'expanded' | 'minimized'>('expanded');
 
     const [positionsInDashboard, _setPositionsInDashboard] = useState<any>({}); // [nodeId] -> change
     const positionsInDashboardRef = useRef(positionsInDashboard);
@@ -991,6 +1001,9 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 nodes,
                 edges,
                 workflowNameRef,
+                allMinimized,
+                expandStatus,
+                setExpandStatus,
                 setOutputs,
                 setInteractions,
                 applyNewPropagation,
@@ -1008,7 +1021,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 updatePositionDashboard,
                 applyNewOutput,
                 setWorkflowName,
-                loadParsedTrill
+                loadParsedTrill,
+                setAllMinimized
             }}
         >
             {children}
