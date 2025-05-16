@@ -79,6 +79,8 @@ function UtkBox({ data, isConnectable }) {
   const { user } = useUserContext();
   const { workflowNameRef } = useFlowContext();
 
+  const [disablePlay, setDisablePlay] = useState<boolean>(true);
+
   useEffect(() => {
     data.code = code;
   }, [code]);
@@ -686,6 +688,8 @@ function UtkBox({ data, isConnectable }) {
 
         // setOutput("success");
         data.outputCallback(data.nodeId, data.input);
+
+        setDisablePlay(false);
       }
     }
   }, [data.input]);
@@ -787,6 +791,7 @@ function UtkBox({ data, isConnectable }) {
         code={code}
         user={user}
         handleType={"in/out"}
+        disablePlay={disablePlay}
         sendCodeToWidgets={sendCode}
         setOutputCallback={setOutput}
         promptModal={promptModal}

@@ -278,7 +278,9 @@ function BoxEditor({
                                             style={{
                                                 width: "100%",
                                                 height: "100%",
+                                                overflowY: "auto"
                                             }}
+                                            className={"nowheel nodrag"}
                                         >
                                             <p
                                                 style={{

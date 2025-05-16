@@ -69,6 +69,7 @@ export const BoxContainer = ({
     setTemplateConfig,
     disableComments = false,
     styles = {},
+    disablePlay = false
 }: {
     data: any;
     children: ReactNode;
@@ -88,6 +89,7 @@ export const BoxContainer = ({
     setTemplateConfig?: any;
     disableComments?: boolean;
     styles?: CSS.Properties;
+    disablePlay?: boolean;
 }) => {
     const { 
         applyRemoveChanges, 
@@ -449,24 +451,26 @@ export const BoxContainer = ({
                 >
                     {sendCodeToWidgets != undefined ? (
                         <Row>
-                            <Col md={2}>
-                                <FontAwesomeIcon
-                                    className={"nowheel nodrag"}
-                                    icon={faCirclePlay}
-                                    style={{
-                                        cursor: "pointer",
-                                        fontSize: "27px",
-                                        color: "rgb(251, 170, 105)",
-                                    }}
-                                    onClick={() => {
-                                        setOutputCallback({
-                                            code: "exec",
-                                            content: "",
-                                        });
-                                        sendCodeToWidgets(code); // will resolve markers
-                                    }}
-                                />
-                            </Col>
+                            {!disablePlay ?
+                                <Col md={2}>
+                                    <FontAwesomeIcon
+                                        className={"nowheel nodrag"}
+                                        icon={faCirclePlay}
+                                        style={{
+                                            cursor: "pointer",
+                                            fontSize: "27px",
+                                            color: "rgb(251, 170, 105)",
+                                        }}
+                                        onClick={() => {
+                                            setOutputCallback({
+                                                code: "exec",
+                                                content: "",
+                                            });
+                                            sendCodeToWidgets(code); // will resolve markers
+                                        }}
+                                    />
+                                </Col> : null
+                            }
                             {output != undefined ? (
                                 <Col
                                     md={3}
