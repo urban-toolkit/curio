@@ -689,10 +689,20 @@ function UtkBox({ data, isConnectable }) {
         // setOutput("success");
         data.outputCallback(data.nodeId, data.input);
 
-        setDisablePlay(false);
+        
+
+        stallDisablePlay();
       }
     }
   }, [data.input]);
+
+  async function stallDisablePlay() {
+    function delay(ms: number): Promise<void> {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+    await delay(5000);
+    setDisablePlay(false);
+  }
 
   useEffect(() => {
     data.interactionsCallback(interactions, data.nodeId);

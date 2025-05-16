@@ -488,7 +488,10 @@ export const BoxContainer = ({
                                                 Done
                                             </span>
                                         ) : output.code == "exec" ? (
-                                            "Executing..."
+                                            <>
+                                                <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
+                                                {' '}
+                                            </>
                                         ) : output.code == "error" ? (
                                             <span style={{ color: "red" }}>
                                                 Error
