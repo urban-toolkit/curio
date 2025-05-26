@@ -22,10 +22,9 @@ jobs:
 
       - name: 🧪 Wait for services to become healthy
         run: |
-          echo "Waiting for sandbox and backend containers to be healthy..."
+          echo "Waiting for servers to be healthy..."
           timeout 60 bash -c '
-          until [ "$(docker inspect -f "{{.State.Health.Status}}" $(docker compose ps -q sandbox))" = "healthy" ] && \
-                [ "$(docker inspect -f "{{.State.Health.Status}}" $(docker compose ps -q backend))" = "healthy" ]; do
+          until [ "$(docker inspect -f "{{.State.Health.Status}}" $(docker compose ps -q curio))" = "healthy" ]; do
             echo "Still waiting..."
             sleep 2
           done
@@ -33,12 +32,12 @@ jobs:
 
       - name: 🧪 Run backend unit tests
         run: |
-          docker compose exec backend \
+          docker compose exec curio \
             python -m unittest discover -s backend/tests -t . -p "test_*.py" -v
 
       - name: 🧪 Run sandbox unit tests
         run: |
-          docker compose exec sandbox \
+          docker compose exec curio \
             python -m unittest discover -s sandbox/tests -t . -p "test_*.py" -v
 
       - name: 🌐 Check frontend availability

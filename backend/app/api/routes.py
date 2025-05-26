@@ -11,14 +11,16 @@ import os
 import zlib
 import time
 import hashlib
+import mmap
+import ast
 
 # The Flask app
 from backend.app.api import bp
 
 
 # Sandbox address
-api_address='http://'+os.getenv('SANDBOX_ADDRESS', 'localhost')
-api_port=int(os.getenv('SANDBOX_PORT', 2000))
+api_address='http://'+os.getenv('FLASK_SANDBOX_HOST', 'localhost')
+api_port=int(os.getenv('FLASK_SANDBOX_PORT', 2000))
 
 
 inputTypesSupported = {
@@ -119,6 +121,90 @@ def upload_file():
         return 'Error uploading file'
 
 
+def transform_to_vega(data):
+    """
+    Transforms a pandas-style JSON (column-based) to Vega-Lite-ready JSON (row-based).
+    
+    Args:
+        data (dict): The original pandas-style JSON data.
+
+    Returns:
+        dict: The transformed Vega-Lite-ready JSON data.
+    """
+    if "data" in data and isinstance(data["data"], dict):
+        columns = list(data["data"].keys())
+        values = []
+
+        # Assuming all columns have the same number of rows
+        num_rows = len(data["data"][columns[0]])
+
+        for i in range(num_rows):
+            row = {col: data["data"][col][i] for col in columns}
+            values.append(row)
+
+        return values
+
+    return data
+
+@bp.route('/get', methods=['GET'])
+def get_file():
+    file_path = request.args.get('fileName')
+    vega = request.args.get('vega', 'false').lower() == 'true'
+
+    if not file_path:
+        return 'No file name specified', 400
+
+    if not os.path.exists(file_path):
+        return 'File does not exist', 404
+
+    try:
+        # Using mmap for efficient memory-mapped loading
+        with open(file_path, "rb") as file:
+            with mmap.mmap(file.fileno(), 0, access=mmap.ACCESS_READ) as mmapped_file:
+                # Decompress and decode directly from the memory-mapped file
+                decompressed_data = zlib.decompress(mmapped_file[:])
+                data = json.loads(decompressed_data.decode('utf-8'))
+
+                if isinstance(data, str):
+                    data = json.loads(data)
+                
+                if vega:
+                    data = transform_to_vega(data)
+
+        return jsonify(data)
+
+    except Exception as e:
+        return f'Error loading file: {str(e)}', 500
+
+    return jsonify(data), 200
+
+# def save_memory_mapped_file(data, shared_disk_path='./data/'):
+#     """
+#     Saves the input data as a memory-mapped JSON file with a unique name.
+
+#     Args:
+#         input_data (dict): The data to be saved.
+#         shared_disk_path (str): Path to the directory for saving the file.
+
+#     Returns:
+#         str: The path of the saved memory-mapped file.
+#     """
+#     # Ensure the shared directory exists
+#     os.makedirs(shared_disk_path, exist_ok=True)
+    
+#     # Create a unique filename using hash of the input and current time
+#     input_hash = hashlib.sha256(json.dumps(data).encode('utf-8')).hexdigest()
+#     timestamp = str(int(time.time()))
+#     unique_filename = f"{timestamp}_{input_hash[:10]}.json"  # Using .json for clarity
+#     file_path = os.path.join(shared_disk_path, unique_filename)
+
+#     # Save the input data directly without compression as a memory-mapped file
+#     compressed_data = zlib.compress(json.dumps(data).encode('utf-8'))
+#     with open(file_path, "wb") as file:
+#         file.write(compressed_data)
+
+#     return file_path
+
 @bp.route('/processPythonCode', methods=['POST'])
 def process_python_code():
 
@@ -140,47 +226,66 @@ def process_python_code():
     # print(request.json, flush=True)
 
     code = request.json['code']
-    input_data = request.json['input']
     boxType = request.json['boxType']
+    input = {'path': "", 'dataType': ""}
+    if(request.json['input']):
 
-    shared_disk_path = './data/'
-    os.makedirs(shared_disk_path, exist_ok=True)
-    input_hash = hashlib.sha256(json.dumps(input_data).encode('utf-8')).hexdigest()
-    timestamp = str(int(time.time()))
-    unique_filename = f"input_{timestamp}_{input_hash[:10]}.bin"
-    file_path = os.path.join(shared_disk_path, unique_filename)
+        if(request.json['input']['dataType'] == 'outputs'):
+            input['path'] = request.json['input']['data']
+            input['dataType'] = 'outputs'
+        else:
+            input['path'] = request.json['input']['path']
+            input['dataType'] = request.json['input']['dataType']
 
-    # Compressing and saving the input data as a memory-mapped file
-    # compressed_data = json.dumps(input_data).encode('utf-8')
-    compressed_data = zlib.compress(json.dumps(input_data).encode('utf-8'))
-    with open(file_path, "wb") as file:
-        file.write(compressed_data)
+    # print("-------------- input_data", input_data, flush=True)
 
+    # file_path = input_data # save_memory_mapped_file(input_data)
+    # if(file_path != ""):
+    #     with open(file_path, "rb") as file:
+    #         with mmap.mmap(file.fileno(), 0, access=mmap.ACCESS_READ) as mmapped_file:
+    #             # Decompress and load the data directly from memory
+    #             input = json.loads(zlib.decompress(mmapped_file).decode('utf-8'))
+    #             print("-------------- input", input, flush=True)
     try:
+        # print('-----------', input['path'], boxType, flush=True)
         response = requests.post(api_address+":"+str(api_port)+"/exec",
                                 data=json.dumps({
                                     "code": code,
-                                    #  "input": input_data,
-                                    "file_path": file_path,
-                                    "boxType": boxType
+                                    "file_path": input['path'],
+                                    "boxType": boxType,
+                                    "dataType": input['dataType']
                                 }),
                                 headers={"Content-Type": "application/json"},
                                 )
-        return response.json()
+        
+        try:
+            # print("-------------- response", response.json(), flush=True)
+            response = response.json()
+            stdout = response['stdout']
+            stderr = response['stderr']
+            output = response['output'] # contains path and dataType
+            print(output, flush=True)
+            # print("-------------- response", {'stdout': stdout, 'stderr': stderr, 'inputTypes': input_types, 'output': output_path, 'outputType': output_type}, flush=True)
+            
+            return {'stdout': stdout, 'stderr': stderr, 'input': input, 'output': output}
+        finally:
+            pass
+    #         if os.path.exists(output_path):
+    #             os.remove(output_path)
     finally:
-        # pass
-        if os.path.exists(file_path):
-            os.remove(file_path)
+        pass
+    #     if os.path.exists(file_path):
+    #         os.remove(file_path)
 
 @bp.route('/toLayers', methods=['POST'])
 def toLayers():
 
-    if(request.json['geoJsons'] == None):
-        abort(400, "geoJsons were not included in the post request")
+    if(request.json['geojsons'] == None):
+        abort(400, "geojsons were not included in the post request")
 
     response = requests.post(api_address+":"+str(api_port)+"/toLayers",
                              data=json.dumps({
-                                 "geoJsons": request.json['geoJsons']
+                                 "geojsons": request.json['geojsons']
                              }),
                              headers={"Content-Type": "application/json"},
                              )
@@ -943,7 +1048,7 @@ def box_exec_prov():
                         WHERE attribute.attribute_type = ? AND relation.relation_id = ?''', ('Data', output_relation_id))
 
     output_attributes = cursor.fetchall()
-    print(output_attributes)
+    # print(output_attributes)
 
     for input_attribute in input_attributes:
         # creating attributeValues
@@ -1113,9 +1218,9 @@ def generate_templates():
 
     return templates
 
-@bp.route('/listDatasets', methods=['GET'])
+@bp.route('/datasets', methods=['GET'])
 def list_datasets():
-    response = requests.get(api_address+":"+str(api_port)+"/listDatasets")
+    response = requests.get(api_address+":"+str(api_port)+"/datasets")
     response.raise_for_status() 
     files = response.json()
     return jsonify(files)

@@ -2,10 +2,17 @@ from flask import request, abort, jsonify
 import json
 import subprocess
 import geopandas as gpd
+import pandas as pd
 import utk
 from sandbox.app import app, cache
 from .utils.cache import make_key
 import os
+import mmap
+from pathlib import Path
+
+from shapely import wkt
+
+DATA_DIR = "./data"
 
 @app.after_request
 def add_cors_headers(response):
@@ -35,14 +42,16 @@ def upload_file():
 
     return file.filename
 
-@app.route('/listDatasets', methods=['GET'])
+@app.route('/datasets', methods=['GET'])
 def list_datasets():
 
     allowed_extensions = {'.json', '.geojson', '.csv'}
     
+    folder_path = DATA_DIR
+    folder = Path(folder_path)
     files = [
-        f for f in os.listdir('.') 
-        if os.path.isfile(f) and os.path.splitext(f)[1].lower() in allowed_extensions
+        f.as_posix() for f in folder.iterdir()
+        if f.is_file() and f.suffix.lower() in allowed_extensions
     ]
     
     return jsonify(files)
@@ -62,34 +71,40 @@ def exec():
     # Load default python wrapper code
     full_code = open('sandbox/python_wrapper.txt', 'r').read()
 
-    
     code = request.json['code']
     file_path = request.json['file_path']
     boxType = request.json['boxType']
-
+    dataType = request.json['dataType']
     
-    full_code = full_code.replace('{userCode}', code)
-    full_code = full_code.replace('{filePath}', file_path)
-    full_code = full_code.replace('{boxType}', boxType)
+    full_code = full_code.replace('{userCode}', str(code))
+    full_code = full_code.replace('{filePath}', str(file_path))
+    full_code = full_code.replace('{boxType}', str(boxType))
+    full_code = full_code.replace('{dataType}', str(dataType))
 
-    print("read code 2", flush=True)
+    print("File input:", file_path)
 
     command = ['python', '-']
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     stdout, stderr = process.communicate(full_code)
 
     stdout = [item for item in stdout.split("\n") if item != '']
-    print(stdout)
-    if(len(stdout) == 0):
-        stdout = ""
+
+    print("File output", stdout)
+
+    if(len(stdout) > 0):
+        output = json.loads(stdout[-1])
     else:
-        stdout = stdout[-1]
+        output = {}
+        output['path'] = ""
+        output['dataType'] = "str"
 
     jsonOutput = {
-        "stdout": stdout,
+        "stdout": stdout[0:-1], # just get prints, remove output itself
         "stderr": stderr,
-        "output": stdout
+        "output": output
     }
+
+    # print("----------", jsonOutput, flush=True)
 
     app.logger.info(f'/exec: Request end in time: {(time.time() - start_time) / 60} mins')
 
@@ -98,17 +113,17 @@ def exec():
 @app.route('/toLayers', methods=['POST'])
 def toLayers():
 
-    if(request.json['geoJsons'] == None):
-        abort(400, "geoJsons were not included in the post request")
+    if(request.json['geojsons'] == None):
+        abort(400, "geojsons were not included in the post request")
 
-    geoJsons = request.json['geoJsons']
+    geojsons = request.json['geojsons']
 
     layers = []
     joinedJsons = []
 
-    for index, geoJson in enumerate(geoJsons):
+    for index, geojson in enumerate(geojsons):
 
-        parsedGeoJson = json.loads(geoJson)
+        parsedGeoJson = geojson # json.loads(geojson)
 
         layerName = "layer"+str(index)
 
@@ -117,6 +132,11 @@ def toLayers():
 
         # gdfs.append(gpd.GeoDataFrame.from_features(geoJson))
         gdf = gpd.GeoDataFrame.from_features(parsedGeoJson)
+        # df = pd.DataFrame.from_dict(geojson)
+        # df = pd.DataFrame({'geometry': geojson['geometry'], 'values': geojson['value']})
+        # df = df[df['geometry'].apply(lambda x: isinstance(x, str))]
+        # df['geometry'] = df['geometry'].apply(wkt.loads)
+        # gdf = gpd.GeoDataFrame(df, geometry='geometry')
 
         if 'building_id' in gdf.columns:
 
@@ -294,9 +314,11 @@ def toLayers():
                 inValues = []
 
                 for index, row in gdf.iterrows():
+                    # print(layer['data'])
+                    # print(layer['data'], flush=True)
 
                     objectUnit = layer['data'][index]['geometry'] # object (each row of the gdf was transformed in a set of coordinates)
-
+                    
                     for i in range(int(len(objectUnit['coordinates'])/3)):
                         if(isinstance(row[column],list)): # different values for each coordinate # TODO: consider multiple timesteps
                             inValues.append(row[column][i])

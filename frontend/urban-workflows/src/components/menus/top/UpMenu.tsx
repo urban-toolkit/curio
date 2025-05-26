@@ -8,17 +8,30 @@ import styles from "./UpMenu.module.css";
 import clsx from 'clsx';
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faDatabase, faFileImport, faFileExport } from "@fortawesome/free-solid-svg-icons";
-import logo from 'assets/urbanite.png';
+import logo from 'assets/curio.png';
 
-export default function UpMenu({ setDashBoardMode, setDashboardOn, dashboardOn }: { setDashBoardMode: (mode: boolean) => void; setDashboardOn: (mode: boolean) => void; dashboardOn: boolean }) {
+export default function UpMenu({
+    setDashBoardMode,
+    setDashboardOn,
+    dashboardOn,
+    fileMenuOpen,
+    setFileMenuOpen,
+}: {
+    setDashBoardMode: (mode: boolean) => void;
+    setDashboardOn: (mode: boolean) => void;
+    dashboardOn: boolean;
+    fileMenuOpen: boolean;
+    setFileMenuOpen: (open: boolean) => void;
+}) {
     const [isEditing, setIsEditing] = useState(false);
-    const [fileMenuOpen, setFileMenuOpen] = useState(false);
     const [trillProvenanceOpen, setTrillProvenanceOpen] = useState(false);
     const [datasetsOpen, setDatasetsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
     const { nodes, edges, workflowNameRef, setWorkflowName } = useFlowContext();
     const { loadTrill } = useCode();
+
+    const fileButtonRef = useRef<HTMLButtonElement>(null);
 
     const closeTrillProvenanceModal = () => {
         setTrillProvenanceOpen(false);
@@ -102,43 +115,57 @@ export default function UpMenu({ setDashBoardMode, setDashboardOn, dashboardOn }
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+            // if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+            //     console.log("set file menu open to false");
+            //     setFileMenuOpen(false);
+            // }
+            if (
+                dropdownRef.current &&
+                !dropdownRef.current.contains(event.target as Node) &&
+                fileButtonRef.current &&
+                !fileButtonRef.current.contains(event.target as Node)
+            ) {
                 setFileMenuOpen(false);
             }
         };
     
         if (fileMenuOpen) {
-            document.addEventListener("mousedown", handleClickOutside);
+            document.addEventListener("click", handleClickOutside);
         } else {
-            document.removeEventListener("mousedown", handleClickOutside);
+            document.removeEventListener("click", handleClickOutside);
         }
     
         return () => {
-            document.removeEventListener("mousedown", handleClickOutside);
+            document.removeEventListener("click", handleClickOutside);
         };
     }, [fileMenuOpen]);
 
     return (
         <>
             <div className={clsx(styles.menuBar, "nowheel", "nodrag")}>
-                <img className={styles.logo} src={logo} alt="Urbanite logo"/>
+                <img className={styles.logo} src={logo} alt="Curio logo"/>
                 <div className={styles.dropdownWrapper}>
                     <button
+                        ref={fileButtonRef}
                         className={styles.button}
-                        onClick={() => setFileMenuOpen((prev) => !prev)}
+                        onClick={(e) => {
+                                e.stopPropagation();
+                                setFileMenuOpen((prev) => !prev);
+                            }
+                        }
                     >
                         File⏷
                     </button>
                     {fileMenuOpen && (
-                        <div className={styles.dropDownMenu} ref={dropdownRef}>
+                        <div className={styles.dropDownMenu} ref={dropdownRef} onClick={(e) => e.stopPropagation()}>
                             <div className={styles.dropDownRow} onClick={loadTrillFile} >
                                 <FontAwesomeIcon className={styles.dropDownIcon} icon={faFileImport} />
-                                <button className={styles.noStyleButton}>Import Specification</button>
+                                <button className={styles.noStyleButton}>Load specification</button>
                                 <input type="file" accept=".json" id="loadTrill" style={{ display: 'none' }} onChange={handleFileUpload}/>
                             </div>
                             <div className={styles.dropDownRow} onClick={exportTrill}>
                                 <FontAwesomeIcon className={styles.dropDownIcon} icon={faFileExport} />
-                                <button className={styles.noStyleButton}>Export Specification</button>
+                                <button className={styles.noStyleButton}>Save specification</button>
                             </div>
                         </div>
                     )}

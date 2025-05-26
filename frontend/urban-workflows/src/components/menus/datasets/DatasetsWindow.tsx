@@ -12,7 +12,7 @@ export default function DatasetsWindow({
     const [datasetNames, setDatasetNames] = useState<string[]>([]);
 
     useEffect(() => {
-        fetch(process.env.BACKEND_URL + "/listDatasets", {
+        fetch(process.env.BACKEND_URL + "/datasets", {
             method: "GET",
         })
             .then(response => {

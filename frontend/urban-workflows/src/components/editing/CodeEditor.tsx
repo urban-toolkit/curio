@@ -62,11 +62,19 @@ function CodeEditor({
     }, [code]);
 
     const processExecutionResult = (result: any) => {
-        let outputContent = result.output;
+        let outputContent = "";
+        outputContent += "stdout:\n"+result.stdout.slice(0, 100);
+        outputContent += "\nstderr:\n"+result.stderr;
 
-        if (outputContent.length > 100) {
-            outputContent = outputContent.slice(0, 100) + "...";
-        }
+        // outputContent += "\nnode output:\n";
+        // if (outputContent.length > 100) {
+        //     outputContent += result.codeOut.slice(0, 100) + "...";
+        // }
+        // else {
+        //     outputContent += result.codeOut;
+        // }
+
+        outputContent += "\nSaved to file: "+result.output.path;
 
         setOutputCallback({ code: "success", content: outputContent });
 
@@ -86,10 +94,12 @@ function CodeEditor({
             output.code == "exec"
         ) {
             // the code was executing and not only resolving widgets
+            // console.log(data);
             data.pythonInterpreter.interpretCode(
                 code,
                 replacedCode,
                 data.input,
+                data.inputTypes,
                 processExecutionResult,
                 boxType,
                 data.nodeId,

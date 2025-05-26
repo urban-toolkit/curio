@@ -17,7 +17,6 @@ export function usePosition(): IUsePosition {
     }
     const maxX = Math.max(...nodes.map((node) => node.position.x));
     const maxY = Math.max(...nodes.map((node) => node.position.y));
-
     return {
       x: maxX + 800,
       y: maxY,

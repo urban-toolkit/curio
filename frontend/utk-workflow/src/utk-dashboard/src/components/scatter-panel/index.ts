@@ -1,1 +1,0 @@
-export { ScatterPanel } from "./ScatterPanel"

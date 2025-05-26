@@ -23,7 +23,10 @@ test_data = {
         "types_input": {"input_relation_1": 1},  # Sample input data
         "types_output": {"output_relation_1": 1},  # Sample output data
         "activity_source_code": "return sum(args[0]) / len(args[0])",
-        "input": "[0,1,2,3,4,5]"
+        "input": {
+            "dataType": "dataframe",
+            "path": "./tests/test.data"  
+        }
     }
 }
 
@@ -63,10 +66,15 @@ class TestRoutes(unittest.TestCase):
                 os.remove(temp_file_path)
 
     def test_process_python_code(self):
-        test_code = {"code": test_data["data"]["activity_source_code"],
-                     "input": test_data["data"]["input"],
-                     "boxType": test_data["data"]["activity_name"]
-                    }
+        test_code = {
+            "code": test_data["data"]["activity_source_code"],
+            "boxType": test_data["data"]["activity_name"],
+            "input": {
+                "dataType": test_data["data"]["input"]["dataType"],
+                "path": test_data["data"]["input"].get("path", ""),
+                "data": test_data["data"]["input"].get("data", "")
+            }
+        }
         response = self.client.post('/processPythonCode', json=test_code)
         self.assertEqual(response.status_code, 200)
 

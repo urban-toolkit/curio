@@ -1,41 +1,70 @@
 # Usage
 
 ## Table of contents
-1. [Installation](#installation)
-    1. [Installing via Docker](#installing-via-docker)
-    2. [Installing manually](#installing-manually)
-3. [Quick start](#quick-start)
+- [Usage](#usage)
+  - [Table of contents](#table-of-contents)
+  - [Installation](#installation)
+    - [About Curio's multi-server management tool](#about-curios-multi-server-management-tool)
+    - [Installing via Docker](#installing-via-docker)
+    - [Installing manually (with `curio.py`)](#installing-manually-with-curiopy)
+    - [Ray tracing](#ray-tracing)
+    - [Quick start](#quick-start)
 
 ## Installation
 
 
 Begin by cloning Curio's repository:
 
-```console
+```bash
 git clone git@github.com:urban-toolkit/curio.git
+cd curio
 ```
 
-Curio is divided into three components: backend (provenance and database management), Python sandbox (to run Python code), and the frontend. All components need to be running.
+Curio consists of three core components:
 
-Curio was tested on Windows 11 and MacOS Sonoma 14.5. **Python >= 3.9 & < 3.12 is needed.**
+* **Backend**: provenance tracking and user management.
+* **Sandbox**: Python execution environment for code modules.
+* **Frontend**: user interface for composing workflows and interacting with modules.
 
-It is recommended to install its requirements on a virtual environment such as [Anaconda](https://anaconda.org):
+Curio requires **Python >= 3.9 & < 3.12**. It has been tested on Windows 11, macOS Sonoma 14.5, and Ubuntu. It is recommended to install the environment using [Anaconda](https://anaconda.org):
 
- ```console
+```bash
 conda create -n curio python=3.10
 conda activate curio
 ```
 
-You can install Curio using Docker, which will handle the orchestration of all required servers automatically, or install each component manually for more control and customization.
+You can install and run Curio using Docker for convenience or manually for customization. If running manually, **we recommend using `curio.py`**, a CLI tool that simplifies launching and managing Curio servers.
+
+### About Curio's multi-server management tool
+
+The `curio.py` launcher is a unified command-line tool for starting, stopping, and rebuilding the various Curio servers (backend, sandbox, and frontend).
+
+You can inspect its help message by running:
+
+```bash
+python curio.py --help
+```
+
+Sample output:
+
+```bash
+Usage:
+  python curio.py start                       # Start all servers (Backend, Sandbox, Frontend)
+  python curio.py start backend               # Start only the backend (localhost:5002)
+  python curio.py start sandbox               # Start only the sandbox (localhost:2000)
+  python curio.py start --force-rebuild       # Force rebuild the frontend and start all
+```
+
+---
 
 ### Installing via Docker
 
-Docker is the easiest way to get Curio up and running. It handles the orchestration of all necessary components: the backend, sandbox, and frontend.
+Docker simplifies installation by orchestrating all components.
 
 Prerequisites:
 - [Docker](https://docs.docker.com/get-started/get-docker/)
 
-After cloning the repository and initializing submodules (see above), run the full Curio stack with:
+After cloning the repository (see above), run the full Curio stack with:
 
 ```console
 docker compose up
@@ -46,102 +75,52 @@ For older Docker versions, the following command may be required instead:
 docker-compose up
 ```
 
-This will build and start all required services: the backend, Python sandbox, and frontend. Curio's frontend will be available at http://localhost:8080.
+This will build and start all required servers. Curio's frontend will be available at http://localhost:8080.
 
-⚠️ **Note:** The initial build may take a few minutes depending on your machine and network speed, as it installs dependencies and compiles assets. You might want to add ``--parallel 4`` to speed up the building process. Use ``--build`` to force the rebuild of the images if needed.
+⚠️ **Note:** Initial builds can take time. Use `--build` to rebuild if needed.
 
-### Installing manually
+### Installing manually (with `curio.py`)
 
-
-#### 1. Curio Backend
-
-The backend source code is available on the `backend` folder. Inside the `backend` folder:
+To install all requirements, inside the root folder:
 
 ```console
 pip install -r requirements.txt
-```
-
-Once the requirements are installed, we have to create a SQLite database for provenance.
-
-```console
-python create_provenance_db.py
-```
-
-The backend is also responsible for user authentication. In order to use Curio's functionalities, you will need authentication. To do so, upgrade the database by applying migrations (see below for steps).
-
-##### Apply migrations
-
-You need to run this command before you start using Curio. Inside the `backend` folder:
-
-```console
-# Run this to apply any pending migrations.
-FLASK_APP=server.py flask db upgrade
-```
-
-If the environment variable FLASK_APP does not work with the command above, set the environnment variable in your terminal.
-
-##### Create migration
-
-```console
-# after updating any model, run this to generate a new migration
-FLASK_APP=server.py flask db migrate -m "Migration Name"
-```
-
-Now the backend server can be started. From the root folder:
-
-```console
-python -m backend.server
-```
-
-#### 2. Python sandbox
-
-Since modules on Curio can run Python code, it is necessary to run a Python sandbox inside the `sandbox` folder.
-
-**To run without Docker (Anaconda environment recommended):**
-
-```console
-pip install -r requirements.txt
-```
-
-Install UTK's backend module to have access to the sandbox:
-
-```console
-pip install utk-0.8.9.tar.gz
-```
-
-From the root folder, run the server:
-
-```console
-python -m sandbox.server
-```
-
-**If you prefer to use Docker (but you won't be able to use GPU for Ray Tracing), inside the `sandbox` folder:**
-
-```console
-docker-compose up
-```
-
-#### 3. Curio Frontend
-
-Because Curio also uses UTK's frontend, it is necessary to compile the UTK submodule. In the `frontend/utk-workflow/src/utk-ts` folder:
-
-```console
 conda install -c conda-forge nodejs=22.13.0
-npm install
-npm run build 
 ```
 
-To start Curio's frontend, simply go to the `frontend/urban-workflows` folder and run:
 
-```console
-npm install
-npm run build
-npm run start
+Prepare the backend database:
+
+```bash
+cd backend
+python create_provenance_db.py
+FLASK_APP=server.py flask db upgrade
+cd ..
 ```
 
-Note: You must run Curio's backend & sandbox while running the frontend.
+You can now use `curio.py` to start everything:
 
-#### Ray tracing
+```bash
+python curio.py start             # Starts backend, sandbox, and frontend
+```
+
+This will build and start all required servers. Curio's frontend will be available at http://localhost:8080.
+
+You can also start individual servers:
+
+```bash
+python curio.py start backend
+python curio.py start sandbox
+python curio.py start frontend
+```
+
+To force rebuild the frontend:
+
+```bash
+python curio.py start --force-rebuild
+```
+
+### Ray tracing
 
 To use Ray Tracing, please see UTK's [requirements](https://github.com/urban-toolkit/utk).
 

@@ -32,6 +32,9 @@ import BoxEditor from "./editing/BoxEditor";
 import { OutputIcon } from "./edges/OutputIcon";
 import { InputIcon } from "./edges/InputIcon";
 
+import { fetchData } from '../services/api';
+
+
 function DataPoolBox({ data, isConnectable }) {
     const [templateData, setTemplateData] = useState<Template | any>({});
     const [output, setOutput] = useState<{ code: string; content: string }>({
@@ -66,76 +69,86 @@ function DataPoolBox({ data, isConnectable }) {
     };
 
     useEffect(() => {
-        let newInput = data.input;
+        const processDataAsync = async () => {
+            try {
+                let newInput = data.input;
 
-        if (newInput != "") {
-            // including interacted tag
-            let parsedInput = JSON.parse(newInput);
+                if (newInput !== "") {
+                    // Fetching data asynchronously
+                    const parsedInput = await fetchData(`${newInput.path}`);
+                    // parsedInput.data = data.input;//JSON.parse(parsedInput.data);
 
-            parsedInput.data = JSON.parse(parsedInput.data);
+                    if(parsedInput.dataType == "dataframe") {
+                        let columns = Object.keys(parsedInput.data);
+                        let dfIndices = Object.keys(parsedInput.data[columns[0]]);
 
-            if (parsedInput.dataType == "dataframe") {
-                let columns = Object.keys(parsedInput.data);
-                let dfIndices = Object.keys(parsedInput.data[columns[0]]);
+                        if (parsedInput.data.interacted == undefined) {
+                            parsedInput.data.interacted = {};
 
-                if (parsedInput.data.interacted == undefined) {
-                    parsedInput.data.interacted = {};
-
-                    for (const dfIndex of dfIndices) {
-                        // initializing the interacted attribute
-                        parsedInput.data.interacted[dfIndex] = "0";
-                    }
-                }
-
-                if (data.propagation != undefined) {
-                    // handling possible propagation of interaction from another pool
-                    let propagatedIndices = Object.keys(data.propagation).map(
-                        (index: string) => {
-                            return parseInt(index);
+                            for (const dfIndex of dfIndices) {
+                                // initializing the interacted attribute
+                                parsedInput.data.interacted[dfIndex] = "0";
+                            }
                         }
-                    );
 
-                    let interactedKeys = Object.keys(
-                        parsedInput.data.interacted
-                    );
+                        if (data.propagation != undefined) {
+                            // handling possible propagation of interaction from another pool
+                            let propagatedIndices = Object.keys(data.propagation).map(
+                                (index: string) => {
+                                    return parseInt(index);
+                                }
+                            );
 
-                    for (let i = 0; i < interactedKeys.length; i++) {
-                        let key = interactedKeys[i];
+                            let interactedKeys = Object.keys(
+                                parsedInput.data.interacted
+                            );
 
-                        if (propagatedIndices.includes(i)) {
-                            parsedInput.data.interacted[key] =
-                                data.propagation[i];
+                            for (let i = 0; i < interactedKeys.length; i++) {
+                                let key = interactedKeys[i];
+
+                                if (propagatedIndices.includes(i)) {
+                                    parsedInput.data.interacted[key] = data.propagation[i];
+                                }
+                            }
                         }
                     }
-                }
-            } else if (parsedInput.dataType == "geodataframe") {
-                for (const feature of parsedInput.data.features) {
-                    // initializing the interacted attribute
-                    feature.properties.interacted = "0";
-                }
-
-                if (data.propagation != undefined) {
-                    // handling possible propagation of interaction from another pool
-                    let propagatedIndices = Object.keys(data.propagation).map(
-                        (index: string) => {
-                            return parseInt(index);
+                    else if(parsedInput.dataType == "geodataframe") {
+                        for (const feature of parsedInput.data.features) {
+                            // initializing the interacted attribute
+                            feature.properties.interacted = "0";
                         }
-                    );
 
-                    for (let i = 0; i < parsedInput.data.features.length; i++) {
-                        if (propagatedIndices.includes(i))
-                            parsedInput.data.features[i].properties.interacted =
-                                data.propagation[i];
+                        if (data.propagation != undefined) {
+                            // handling possible propagation of interaction from another pool
+                            let propagatedIndices = Object.keys(data.propagation).map(
+                                (index: string) => {
+                                    return parseInt(index);
+                                }
+                            );
+
+                            for (let i = 0; i < parsedInput.data.features.length; i++) {
+                                if (propagatedIndices.includes(i))
+                                    parsedInput.data.features[i].properties.interacted = data.propagation[i];
+                            }
+                        }
                     }
+
+                    // Stringify the modified data for output
+                    // parsedInput.data = JSON.stringify(parsedInput.data);
+                    newInput = parsedInput; // JSON.stringify(parsedInput);
                 }
+
+                // Update the output and trigger callback
+                setOutput({ code: "success", content: newInput });
+                data.outputCallback(data.nodeId, newInput);
+            } catch (error) {
+                console.error("Error processing data asynchronously:", error);
+                setOutput({ code: "error", content: "Failed to process data." });
             }
+        };
 
-            parsedInput.data = JSON.stringify(parsedInput.data);
-            newInput = JSON.stringify(parsedInput);
-        }
-
-        setOutput({ code: "success", content: newInput });
-        data.outputCallback(data.nodeId, newInput);
+        // Invoke the async function
+        processDataAsync();
     }, [data.input, data.newPropagation]);
 
     useEffect(() => {
@@ -213,7 +226,7 @@ function DataPoolBox({ data, isConnectable }) {
 
             let typesInput: string[] = [];
 
-            if (data.input != "") typesInput = getType([data.input]);
+            if (data.input != "") typesInput = data.input.dataType;//getType([data.input]);
 
             let typesOuput: string[] = [...typesInput];
 
@@ -235,8 +248,9 @@ function DataPoolBox({ data, isConnectable }) {
         let tableData = [];
 
         if (output != "") {
-            let parsedOutput = JSON.parse(output);
-            parsedOutput.data = JSON.parse(parsedOutput.data);
+            let parsedOutput = output;
+            // parsedOutput.data = parsedOutput.data;
+            // console.log("Creating table", parsedOutput);
 
             if (parsedOutput.dataType == "dataframe") {
                 let columns = Object.keys(parsedOutput.data);
@@ -252,13 +266,9 @@ function DataPoolBox({ data, isConnectable }) {
 
                     tableData.push(element);
                 }
-            } else if (
-                parsedOutput.dataType == "geodataframe" &&
-                parsedOutput.data.features.length > 0
-            ) {
-                let columns = Object.keys(
-                    parsedOutput.data.features[0].properties
-                );
+            }
+            else if(parsedOutput.dataType == "geodataframe" && parsedOutput.data.features.length > 0) {
+                let columns = Object.keys(parsedOutput.data.features[0].properties);
 
                 for (let i = 0; i < parsedOutput.data.features.length; i++) {
                     let element: any = {};
@@ -281,9 +291,10 @@ function DataPoolBox({ data, isConnectable }) {
     }, [output]);
 
     useEffect(() => {
-        if (output.content != "") {
-            let parsedInput = JSON.parse(data.input);
-            parsedInput.data = JSON.parse(parsedInput.data);
+        if (output.content != "" && data.interactions != undefined) {
+            
+            let parsedInput = output.content;//data.input;
+            // parsedInput.data = parsedInput.data;
 
             let interactedIndices: any = []; // between visualizations
 
@@ -294,7 +305,7 @@ function DataPoolBox({ data, isConnectable }) {
                 columns = Object.keys(parsedInput.data);
                 dfIndices = Object.keys(parsedInput.data[columns[0]]);
             }
-
+            // console.log(data.interactions);
             for (const interaction of data.interactions) {
                 let localInteractedIndices: any = [];
 
@@ -328,9 +339,7 @@ function DataPoolBox({ data, isConnectable }) {
                                 }
                             ),
                         });
-                    } else if (
-                        details[select].type == VisInteractionType.INTERVAL
-                    ) {
+                    } else if (details[select].type == VisInteractionType.INTERVAL) {
                         // solve interval (brushing) interaction
                         let brushedColumns = Object.keys(details[select].data);
 
@@ -353,35 +362,18 @@ function DataPoolBox({ data, isConnectable }) {
                             let interacted = true;
 
                             for (const brushedColumn of brushedColumns) {
-                                let brushBoundaries =
-                                    details[select].data[brushedColumn];
+                                let brushBoundaries = details[select].data[brushedColumn];
 
-                                if (
-                                    brushBoundaries.length > 0 &&
-                                    typeof brushBoundaries[0] == "string"
-                                ) {
+                                if (brushBoundaries.length > 0 && typeof brushBoundaries[0] == "string") {
                                     // categorial or ordinal variable
 
                                     if (parsedInput.dataType == "dataframe") {
-                                        if (
-                                            !brushBoundaries.includes(
-                                                parsedInput.data[brushedColumn][
-                                                    dfIndices[i]
-                                                ]
-                                            )
-                                        ) {
+                                        if (!brushBoundaries.includes(parsedInput.data[brushedColumn][dfIndices[i]])) {
                                             interacted = false;
                                             break;
                                         }
-                                    } else if (
-                                        parsedInput.dataType == "geodataframe"
-                                    ) {
-                                        if (
-                                            !brushBoundaries.includes(
-                                                parsedInput.data.features[i]
-                                                    .properties[brushedColumn]
-                                            )
-                                        ) {
+                                    } else if (parsedInput.dataType == "geodataframe") {
+                                        if (!brushBoundaries.includes(parsedInput.data.features[i].properties[brushedColumn])) {
                                             interacted = false;
                                             break;
                                         }
@@ -392,16 +384,11 @@ function DataPoolBox({ data, isConnectable }) {
                                     let value = -1;
 
                                     if (parsedInput.dataType == "dataframe") {
-                                        value =
-                                            parsedInput.data[brushedColumn][
-                                                dfIndices[i]
-                                            ];
+                                        value = parsedInput.data[brushedColumn][dfIndices[i]];
                                     } else if (
                                         parsedInput.dataType == "geodataframe"
                                     ) {
-                                        value =
-                                            parsedInput.data.features[i]
-                                                .properties[brushedColumn];
+                                        value = parsedInput.data.features[i].properties[brushedColumn];
                                     }
 
                                     if (
@@ -503,7 +490,6 @@ function DataPoolBox({ data, isConnectable }) {
 
                 interactedList = Array.from(auxSet) as number[];
             }
-
             parsedInput.data.interacted = {};
 
             let propagationObj: IPropagation = {
@@ -529,6 +515,7 @@ function DataPoolBox({ data, isConnectable }) {
 
             if (!buildingsLayer) {
                 for (let i = 0; i < objectsCounter; i++) {
+                    // console.log(interactedList);
                     if (interactedList.includes(i)) {
                         if (parsedInput.dataType == "dataframe") {
                             parsedInput.data.interacted[dfIndices[i]] = "1"; // 1 -> interacted with
@@ -541,15 +528,9 @@ function DataPoolBox({ data, isConnectable }) {
                                 }
                             }
                         } else if (parsedInput.dataType == "geodataframe") {
-                            parsedInput.data.features[i].properties.interacted =
-                                "1"; // 1 -> interacted with
-
-                            if (
-                                parsedInput.data.features[i].properties
-                                    .linked != undefined
-                            ) {
-                                for (const index of parsedInput.data.features[i]
-                                    .properties.linked) {
+                            parsedInput.data.features[i].properties.interacted = "1"; // 1 -> interacted with
+                            if (parsedInput.data.features[i].properties.linked != undefined) {
+                                for (const index of parsedInput.data.features[i].properties[dfIndices[i]].linked) {
                                     propagationObj.propagation[index] = "1";
                                 }
                             }
@@ -558,21 +539,14 @@ function DataPoolBox({ data, isConnectable }) {
                         if (parsedInput.dataType == "dataframe") {
                             parsedInput.data.interacted[dfIndices[i]] = "0"; // 0 -> not interacted with
                             if (parsedInput.data.linked != undefined) {
-                                for (const index of parsedInput.data.linked[
-                                    dfIndices[i]
-                                ]) {
+                                for (const index of parsedInput.data.linked[dfIndices[i]]) {
                                     propagationObj.propagation[index] = "0";
                                 }
                             }
                         } else if (parsedInput.dataType == "geodataframe") {
-                            parsedInput.data.features[i].properties.interacted =
-                                "0"; // 0 -> not interacted with
-                            if (
-                                parsedInput.data.features[i].properties
-                                    .linked != undefined
-                            ) {
-                                for (const index of parsedInput.data.features[i]
-                                    .properties.linked) {
+                            parsedInput.data.features[i].properties.interacted = "0";
+                            if (parsedInput.data.features[i].properties.linked != undefined) {
+                                for (const index of parsedInput.data.features[i].properties.linked) {
                                     propagationObj.propagation[index] = "0";
                                 }
                             }
@@ -597,12 +571,16 @@ function DataPoolBox({ data, isConnectable }) {
                 }
             }
 
-            parsedInput.data = JSON.stringify(parsedInput.data);
-            let newOutput = JSON.stringify(parsedInput); // new output after applying interactions
+            // parsedInput.data = JSON.stringify(parsedInput.data);
+            // let newOutput = JSON.stringify(parsedInput); // new output after applying interactions
+            // parsedInput.data = parsedInput.data;
+            let newOutput = parsedInput; // new output after applying interactions
 
-            setOutput({ code: "success", content: newOutput });
-
-            data.outputCallback(data.nodeId, newOutput);
+            const clonedOutput = JSON.parse(JSON.stringify(newOutput));
+            setOutput({ code: "success", content: clonedOutput });
+            data.outputCallback(data.nodeId, clonedOutput);
+            // setOutput({ code: "success", content: newOutput });
+            // data.outputCallback(data.nodeId, newOutput);
 
             // call callback propagation
             data.propagationCallback(propagationObj);

@@ -91,10 +91,14 @@ export function MainCanvas() {
 
     const [dashboardOn, setDashboardOn] = useState<boolean>(false);
 
+    const [fileMenuOpen, setFileMenuOpen] = useState(false);
+    const closeFileMenu = () => setFileMenuOpen(false);
+
     return (
         <div
             style={{ width: "100vw", height: "100vh" }}
             onContextMenu={onContextMenu}
+            onClick={closeFileMenu}
         >
             <ReactFlow
                 nodes={nodes}
@@ -135,7 +139,7 @@ export function MainCanvas() {
                                     edge.target == change.id
                                 ) {
                                     alert(
-                                        "Connected boxes cannot be removed. Remove the edges first by selecting it and pressing Backspace."
+                                        "Connected boxes cannot be removed. Remove the edges first by selecting it and pressing backspace."
                                     );
                                     allowed = false;
                                     break;
@@ -217,6 +221,8 @@ export function MainCanvas() {
                     setDashBoardMode={setDashBoardMode}
                     setDashboardOn={setDashboardOn}
                     dashboardOn={dashboardOn}
+                    fileMenuOpen={fileMenuOpen}
+                    setFileMenuOpen={setFileMenuOpen}
                 />
                 <RightClickMenu
                     showMenu={showMenu}

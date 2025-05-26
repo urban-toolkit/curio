@@ -1,57 +1,17 @@
 services:
-  sandbox:
+  curio:
     build:
-      context: ./sandbox
+      context: .
       dockerfile: Dockerfile
+    container_name: curio
+    tty: true
+    stdin_open: true
+    environment:
+      - PYTHONUNBUFFERED=1
     ports:
       - "2000:2000"
-    environment:
-      - FLASK_RUN_HOST=0.0.0.0
-      - FLASK_RUN_PORT=2000
-      - FLASK_APP=server.py
-    volumes:
-      - ./sandbox:/app/sandbox
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:2000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 5s
-
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    ports:
       - "5002:5002"
-    environment:
-      - FLASK_RUN_HOST=0.0.0.0
-      - FLASK_RUN_PORT=5002
-      - FLASK_APP=server.py
-      - SANDBOX_ADDRESS=sandbox
-      - SANDBOX_PORT=2000
-    depends_on:
-      - sandbox
+      - "8080:8080"
     volumes:
       - ./templates:/app/templates
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:5002/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 5s
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    depends_on:
-      - backend
-    ports:
-      - "8080:8080"
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8080"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 5s
+      - ./data:/app/data

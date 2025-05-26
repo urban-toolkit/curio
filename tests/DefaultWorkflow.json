@@ -1,0 +1,43 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "7877e099-7c1b-4496-8be7-43264794aea4",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": 1212.423198579976,
+        "y": 321.1121265723663,
+        "content": "import random\r\n\r\nrandom.seed(42)  \r\nrandom_array = [int(random.random() * 100) for _ in range(11)]  \r\n\r\nreturn random_array",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "8734ef13-55e8-45bf-8dbc-0efc15c34d17",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": 1941.9145253062723,
+        "y": 320.3326344850798,
+        "content": "import statistics\r\n\r\nreturn statistics.median(arg)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-7877e099-7c1b-4496-8be7-43264794aea4out-8734ef13-55e8-45bf-8dbc-0efc15c34d17in",
+        "source": "7877e099-7c1b-4496-8be7-43264794aea4",
+        "target": "8734ef13-55e8-45bf-8dbc-0efc15c34d17"
+      }
+    ],
+    "name": "DefaultWorkflow",
+    "task": "",
+    "timestamp": 1746817961325,
+    "provenance_id": "DefaultWorkflow"
+  }
+}

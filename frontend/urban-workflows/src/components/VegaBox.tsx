@@ -20,6 +20,9 @@ import { OutputIcon } from "./edges/OutputIcon";
 import { InputIcon } from "./edges/InputIcon";
 import "./Box.css"
 
+import { fetchData, transformToVega } from '../services/api';
+import { Dict } from "vega-lite";
+
 // const schema = require('./vega-schema.json');
 
 const vega = require("vega");
@@ -109,18 +112,14 @@ function VegaBox({ data, isConnectable }) {
     _setInteractions(data);
   };
 
-  const parseIncomingDataframe = (stringDf: string) => {
-    let parsedIncome = JSON.parse(stringDf);
-
-    let df = JSON.parse(parsedIncome["data"]);
-
-    let columns = Object.keys(df);
-
-    const values = Object.keys(df[columns[0]]).map((key) => {
+  const parseDataframe = (data: any) => {
+    console.log("Parsing", data);
+    let columns = Object.keys(data);
+    const values = Object.keys(data[columns[0]]).map((key) => {
       let obj: any = {};
 
       for (const column of columns) {
-        obj[column] = df[column][key];
+        obj[column] = data[column][key];
       }
 
       return obj;
@@ -129,11 +128,9 @@ function VegaBox({ data, isConnectable }) {
     return values;
   };
 
-  const parseIncomingGeoDataframe = (stringGeoJson: string) => {
-    let parsedIncome = JSON.parse(stringGeoJson);
-    let geojson = JSON.parse(parsedIncome["data"]);
-
-    let values = geojson.features.map((feature: any) => {
+  const parseGeoDataframe = (data: any) => {
+    console.log("Parsing", data);
+    let values = data.features.map((feature: any) => {
       return { ...feature.properties };
     });
 
@@ -141,36 +138,78 @@ function VegaBox({ data, isConnectable }) {
   };
 
   useEffect(() => {
-    // hot reload visualizations with new incoming data
-    if (currentView != null) {
-      let values: any = [];
+    const updateView = async () => {
+      // hot reload visualizations with new incoming data
+      if (currentView != null) {
+        let values: any = [];
 
-      if (data.input != "") {
-        // let currentViewState = currentView.getState();
+        if (data.input != "") {
+          // let currentViewState = currentView.getState();
 
-        let parsedInput = JSON.parse(data.input);
+          let parsedInput = data.input;//JSON.parse(data.input);
 
-        if (parsedInput.dataType == "dataframe")
-          values = parseIncomingDataframe(data.input);
-        else if (parsedInput.dataType == "geodataframe")
-          values = parseIncomingGeoDataframe(data.input);
+          // if (parsedInput.dataType == "dataframe")
+          //   values = await fetchData(`${parsedInput.path}`, true);
+          // else if (parsedInput.dataType == "geodataframe")
+          //   values = await fetchData(`${parsedInput.path}`, true);
 
-        let changeset = vega
-          .changeset()
-          .remove(() => true)
-          .insert(values);
+          const parserMap = {
+            "dataframe": parseDataframe,
+            "geodataframe": parseGeoDataframe
+          };
 
-        setCurrentView((prevView: any) => {
-          // prevView.change('data', changeset).runAsync().then(() => {
-          //     prevView.setState(currentViewState);
-          // });
+          const parser = parserMap[parsedInput.dataType];
 
-          prevView.change("data", changeset).runAsync();
+          if (parser) {
+            if (parsedInput.path) {
+              values = await fetchData(parsedInput.path);
+              values = parser(values.data);
+            }
+            else {
+              values = parser(parsedInput.data);
+            }
+            
+          }
 
-          return prevView;
-        });
+          // if (parsedInput.dataType == "dataframe") {
+          //   if(parsedInput.path) {
+          //     values = await fetchData(`${parsedInput.path}`);
+          //     values['data'] = parseDataframe(values['data']);
+          //   }
+          //   else {
+          //     values['data'] = parseDataframe(values['data']);
+          //   }
+          // }
+          // else if (parsedInput.dataType == "geodataframe") {
+          //   if(parsedInput.path) {
+          //     values = await fetchData(`${parsedInput.path}`);
+          //     values['data'] = parseGeoDataframe(values['data']);
+          //   }
+          //   else {
+          //     values['data'] = parseGeoDataframe(values['data']);
+          //   }
+          // }
+
+
+          let changeset = vega
+            .changeset()
+            .remove(() => true)
+            .insert(values);
+
+          setCurrentView((prevView: any) => {
+            // prevView.change('data', changeset).runAsync().then(() => {
+            //     prevView.setState(currentViewState);
+            // });
+
+            prevView.change("data", changeset).runAsync();
+
+            return prevView;
+          });
+        }
       }
     }
+    updateView();
+
   }, [data.input]);
 
   useEffect(() => {
@@ -185,7 +224,7 @@ function VegaBox({ data, isConnectable }) {
     ro.observe(document.getElementById("vega" + data.nodeId) as HTMLElement);
   }, []);
 
-  const compileGrammar = (spec: string) => {
+  const compileGrammar = async (spec: string) => {
     if (data.input != "") {
       const formatDate = (date: Date) => {
         // Get individual date components
@@ -203,8 +242,7 @@ function VegaBox({ data, isConnectable }) {
       };
 
       let startTime = formatDate(new Date());
-
-      let inputType = JSON.parse(data.input)["dataType"];
+      let inputType = data.input.dataType;// JSON.parse(data.input)["dataType"];
 
       if (inputType == "dataframe" || inputType == "geodataframe") {
         let specObj = JSON.parse(spec);
@@ -212,12 +250,32 @@ function VegaBox({ data, isConnectable }) {
         let values: any = [];
 
         if (data.input != "") {
-          let parsedInput = JSON.parse(data.input);
+          let parsedInput = data.input;//JSON.parse(data.input);
 
-          if (parsedInput.dataType == "dataframe")
-            values = parseIncomingDataframe(data.input);
-          else if (parsedInput.dataType == "geodataframe")
-            values = parseIncomingGeoDataframe(data.input);
+          // if (parsedInput.dataType == "dataframe" || parsedInput.dataType == "geodataframe") {
+          //   if(parsedInput.path) {
+          //     values = await fetchData(`${parsedInput.path}`, true);
+          //   }
+          //   else {
+          //     values = transformToVega(parsedInput);
+          //   }
+          // }
+          const parserMap = {
+            "dataframe": parseDataframe,
+            "geodataframe": parseGeoDataframe
+          };
+
+          const parser = parserMap[parsedInput.dataType];
+
+          if (parser) {
+            if (parsedInput.path) {
+              values = await fetchData(parsedInput.path);
+              values = parser(values.data);
+            }
+            else {
+              values = parser(parsedInput.data);
+            }
+          }
 
           specObj["data"] = { values: values, name: "data" };
         }
@@ -227,6 +285,7 @@ function VegaBox({ data, isConnectable }) {
         // specObj["autosize"] = {type: "fit", contains: "padding", resize: true};
 
         let vegaspec = lite.compile(specObj).spec;
+        console.log(specObj);
 
         var view = new vega.View(vega.parse(vegaspec))
           .logLevel(vega.Warn) // set view logging level
@@ -297,7 +356,7 @@ function VegaBox({ data, isConnectable }) {
               } else if (signalAttributes.includes("_vgsid_")) {
                 // point/hover
                 for (const elem of value._vgsid_) {
-                  interactedElementsPoint.push((elem - 1) % values.length); // index of elements increase everytime dataset is changed
+                  interactedElementsPoint.push((elem - 1) % values.length); // index of elements increase every time dataset is changed
                 }
 
                 let interactionsKeys = Object.keys(interactionsRef.current);
@@ -408,7 +467,7 @@ function VegaBox({ data, isConnectable }) {
 
       let typesInput: string[] = [];
 
-      if (data.input != "") typesInput = getType([data.input]);
+      if (data.input != "") typesInput = data.input.dataType;// getType([data.input]);
 
       let typesOuput: string[] = [...typesInput];
 

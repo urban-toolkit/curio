@@ -68,7 +68,7 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
 
     const fetchTemplates = async () => {
         const templates = await useTemplates();
-        console.log("templates", templates);
+        console.log("Templates:", templates);
         setDefaultTemplates(templates);
 
     }

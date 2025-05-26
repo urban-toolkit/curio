@@ -1,1 +1,0 @@
-export { backendUrl } from "./consts"

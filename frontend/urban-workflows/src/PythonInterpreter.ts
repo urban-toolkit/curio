@@ -1,18 +1,19 @@
 import { BoxType } from "./constants";
-import { pythonCode } from "./pythonWrapper";
+// import { pythonCode } from "./pythonWrapper";
 
 export class PythonInterpreter {
-    protected _pythonWrapperCode: string[];
+    // protected _pythonWrapperCode: string[];
 
     constructor() {
         // parse and store the python wrapper code
-        this._pythonWrapperCode = pythonCode.split("\n");
+        // this._pythonWrapperCode = pythonCode.split("\n");
     }
 
     public interpretCode(
         unresolvedUserCode: string,
         userCode: string,
         input: string,
+        inputTypes: string[],
         callback: any,
         boxType: BoxType,
         nodeId: string,
@@ -48,6 +49,7 @@ export class PythonInterpreter {
             body: JSON.stringify({
                 code: unifiedLines,
                 input: input, // new
+                inputTypes: inputTypes, // new
                 boxType: boxType // new
             }),
             headers: {
@@ -58,26 +60,27 @@ export class PythonInterpreter {
             .then((json) => {
                 let endTime = formatDate(new Date());
 
-                const getType = (inputs: any[]) => {
-                    let typesInput: string[] = [];
+                // const getType = (inputs: any[]) => {
+                //     let typesInput: string[] = [];
 
-                    for (const input of inputs) {
-                        let parsedInput = input;
+                //     for (const input of inputs) {
+                //         let parsedInput = input;
 
-                        if (typeof input == "string")
-                            parsedInput = JSON.parse(parsedInput);
+                //         if (typeof input == "string")
+                            
+                //             parsedInput = JSON.parse(parsedInput);
 
-                        if (parsedInput.dataType == "outputs") {
-                            typesInput = typesInput.concat(
-                                getType(parsedInput.data)
-                            );
-                        } else {
-                            typesInput.push(parsedInput.dataType);
-                        }
-                    }
+                //         if (parsedInput.dataType == "outputs") {
+                //             typesInput = typesInput.concat(
+                //                 getType(parsedInput.data)
+                //             );
+                //         } else {
+                //             typesInput.push(parsedInput.dataType);
+                //         }
+                //     }
 
-                    return typesInput;
-                };
+                //     return typesInput;
+                // };
 
                 const mapTypes = (typesList: string[]) => {
                     let mapTypes: any = {
@@ -111,8 +114,9 @@ export class PythonInterpreter {
                 };
 
                 let typesInput: string[] = [];
-
-                if (input != "") typesInput = getType([input]);
+                // console.log("------------ inputTypes", json.inputTypes)
+                // console.log("------------", json)
+                if (input != "") typesInput = json.input.dataType;//getType([input]);
 
                 let typesOuput: string[] = [];
 
@@ -120,7 +124,7 @@ export class PythonInterpreter {
                     if (json.stderr != "") {
                         typesOuput = ["error"];
                     } else {
-                        typesOuput = getType([json.output]);
+                        typesOuput = json.output.dataType;// getType([json.output]);
                     }
                 }
 

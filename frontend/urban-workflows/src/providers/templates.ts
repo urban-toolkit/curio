@@ -7,7 +7,6 @@ export default async function useTemplates() {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         const templates = await response.json();
-        console.log("templates.ts", templates);
         return templates;
     }catch (error) {
         console.error('Failed to fetch templates:', error);

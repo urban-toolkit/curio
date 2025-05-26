@@ -110,6 +110,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const [dashboardPins, setDashboardPins] = useState<any>({}); // {[nodeId] -> boolean}
     const [allMinimized, setAllMinimized] = useState<number>(0);
     const [expandStatus, setExpandStatus] = useState<'expanded' | 'minimized'>('expanded');
+    const [fitViewOnLoad, setFitViewOnLoad] = useState(false);
 
     const [positionsInDashboard, _setPositionsInDashboard] = useState<any>({}); // [nodeId] -> change
     const positionsInDashboardRef = useRef(positionsInDashboard);
@@ -141,6 +142,20 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         let empty_trill = TrillGenerator.generateTrill([], [], workflowNameRef.current);
         TrillGenerator.intializeProvenance(empty_trill);
     }, []);
+
+    useEffect(() => {
+        if (fitViewOnLoad) {
+            const timeout = setTimeout(() => {
+                const currentNodes = reactFlow.getNodes();
+                if (currentNodes.length > 0) {
+                    reactFlow.fitView({ padding: 0.2 });
+                    setFitViewOnLoad(false);
+                }
+            }, 100); // small delay to ensure render cycle
+
+            return () => clearTimeout(timeout);
+        }
+    }, [fitViewOnLoad]);
 
     const loadParsedTrill = async (workflowName: string, task: string, loaded_nodes: any, loaded_edges: any, provenance?: boolean, merge?: boolean) => {
 
@@ -205,6 +220,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 setPositionsInDashboard({});
                 setPositionsInWorkflow({});
             }
+
+            setFitViewOnLoad(true);
 
             return prevNodes;
         })
@@ -763,7 +780,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                                 inputList.push(newOutput.output);
                                 sourceList.push(newOutput.nodeId);
                             }
-
+                            console.log("===================", inputList);
                             node.data = {
                                 ...node.data,
                                 input: inputList,
@@ -818,7 +835,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         });
     };
 
-    // responsible for flow of already connected
+    // responsible for flow of already connected nodes
     const applyNewInteractions = useCallback(() => {
         let newInteractions = interactions.filter((interaction) => {
             return interaction.priority == 1;
@@ -917,7 +934,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 edge.target == propagationObj.nodeId ||
                 edge.source == propagationObj.nodeId
             ) {
-                // if one of the extremities of the edge is responsible for the propagation
+                // if one of the endpoints of the edge is responsible for the propagation
                 let targetNode = reactFlow.getNode(edge.target) as Node;
                 let sourceNode = reactFlow.getNode(edge.source) as Node;
 
@@ -981,7 +998,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                     edge.target == change.id
                 ) {
                     alert(
-                        "Connected boxes cannot be removed. Remove the edges first by selecting it and pressing Backspace."
+                        "Connected boxes cannot be removed. Remove the edges first by selecting it and pressing backspace."
                     );
                     allowed = false;
                     break;

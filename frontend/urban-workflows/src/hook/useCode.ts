@@ -192,6 +192,7 @@ export function useCode(): IUseCode {
                 in: inType,
                 out,
                 input: "",
+                inputTypes: [],
                 keywords,
                 outputCallback,
                 interactionsCallback,
