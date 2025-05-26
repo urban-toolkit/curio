@@ -121,9 +121,9 @@ def force_rebuild_frontend():
 
 def start_frontend(force_rebuild=False):
     original_dir = os.getcwd()
-    check_install_build("frontend/urban-workflows/", force_rebuild=force_rebuild)
-    os.chdir(original_dir)
     check_install_build("frontend/utk-workflow/src/utk-ts", force_rebuild=force_rebuild)
+    os.chdir(original_dir)
+    check_install_build("frontend/urban-workflows/", force_rebuild=force_rebuild)
     os.chdir(original_dir)
     os.chdir("frontend/urban-workflows/")
     print(f"{COLOR_FRONTEND}[Frontend] Current working directory for npm commands: {os.getcwd()}{COLOR_RESET}")
@@ -160,8 +160,34 @@ def start_frontend(force_rebuild=False):
     print(f"{COLOR_FRONTEND}[Frontend] Frontend server started successfully.{COLOR_RESET}")
     return process
 
-def start_backend(host, port):
+def prepare_backend_database(force=False):
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    backend_dir = os.path.join(script_dir, "backend")
+    db_file = os.path.join(backend_dir, "provenance.db")
+
+    if not os.path.exists(db_file) or force:
+        print(f"{COLOR_BACKEND}[Backend] Preparing backend database...{COLOR_RESET}")
+        try:
+            os.chdir(backend_dir)
+            subprocess.run(["python", "create_provenance_db.py"], check=True)
+
+            env = {**os.environ, "FLASK_APP": "server.py"}
+            subprocess.run(["flask", "db", "upgrade"], check=True, env=env)
+            subprocess.run(["flask", "db", "migrate", "-m", "Migration"], check=True, env=env)
+            os.chdir(script_dir)
+            print(f"{COLOR_BACKEND}[Backend] Database initialized successfully.{COLOR_RESET}")
+        except Exception as e:
+            print(f"{COLOR_BACKEND}[Backend] Failed to initialize the database: {e}{COLOR_RESET}")
+            clean_shutdown()
+    else:
+        print(f"{COLOR_BACKEND}[Backend] Database already exists. Skipping initialization.{COLOR_RESET}")
+
+
+def start_backend(host, port, force_db_init=False):
     print(f"Starting backend on {host}:{port}...")
+
+    prepare_backend_database(force=force_db_init)
+
     process = subprocess.Popen(
         ["python", "-u", "-m", "backend.server"],
         stdout=subprocess.PIPE,
@@ -236,7 +262,8 @@ def main():
         {command_prefix} start                       # Start all servers (Backend, Sandbox, Frontend)
         {command_prefix} start backend               # Start only the backend (localhost:5002)
         {command_prefix} start sandbox               # Start only the sandbox (localhost:2000)
-        {command_prefix} start --force-rebuild       # Force rebuild the frontend and start all
+        {command_prefix} start --force-rebuild       # Re-build the frontend and start all servers
+        {command_prefix} start --force-db-init       # Re-initialize the backend database and start all servers
     """
     )
     
@@ -250,6 +277,10 @@ def main():
     parser.add_argument(
         "--force-rebuild", action="store_true",
         help="Force rebuild of the frontend without starting"
+    )
+    parser.add_argument(
+        "--force-db-init", action="store_true",
+        help="Force re-initialization of the backend database"
     )
     parser.add_argument(
         "--backend-host", default="localhost", help="Host for the backend server (default: localhost)"
@@ -283,7 +314,7 @@ def main():
         if args.server == "all":
             print("Starting all servers (Backend, Sandbox, Frontend)...")
             processes = [
-                start_backend(args.backend_host, args.backend_port),
+                start_backend(args.backend_host, args.backend_port, force_db_init=args.force_db_init),
                 start_sandbox(args.sandbox_host, args.sandbox_port),
                 start_frontend(force_rebuild=args.force_rebuild)
             ]

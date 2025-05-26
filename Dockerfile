@@ -25,19 +25,19 @@ COPY sandbox .
 # Stage 2: Backend
 WORKDIR /app/backend
 COPY backend .
-RUN python create_provenance_db.py && \
-    FLASK_APP=server.py flask db upgrade && \
-    FLASK_APP=server.py flask db migrate -m "Migration"
+# RUN python create_provenance_db.py && \
+    # FLASK_APP=server.py flask db upgrade && \
+    # FLASK_APP=server.py flask db migrate -m "Migration"
 
 # Stage 3: Frontend
 WORKDIR /app/frontend
 COPY frontend .
 
-WORKDIR /app/frontend/utk-workflow/src/utk-ts
-RUN npm ci --prefer-offline --no-audit && npm run build
+# WORKDIR /app/frontend/utk-workflow/src/utk-ts
+# RUN npm ci --prefer-offline --no-audit && npm run build
 
-WORKDIR /app/frontend/urban-workflows
-RUN npm ci --prefer-offline --no-audit && npm run build
+# WORKDIR /app/frontend/urban-workflows
+# RUN npm ci --prefer-offline --no-audit && npm run build
 
 # Final Stage: Unified Service
 WORKDIR /app
@@ -46,11 +46,12 @@ WORKDIR /app
 EXPOSE 2000 5002 8080
 
 # Dockerfile with Health Check
-HEALTHCHECK --start-period=15s --interval=15s --timeout=10s --retries=3 CMD \
+HEALTHCHECK --start-period=120s --interval=15s --timeout=10s --retries=3 CMD \
   curl -sf http://localhost:2000/health && \
   curl -sf http://localhost:5002/health && \
   curl -sf http://localhost:8080
   
 # RUN chmod +x curio.py && ln -s /app/curio.py /usr/local/bin/curio
 # CMD ["curio", "start", "all", "--backend-host", "0.0.0.0", "--backend-port", "5002", "--sandbox-host", "0.0.0.0", "--sandbox-port", "2000"]
+# CMD ["python", "curio.py", "start", "all", "--backend-host", "0.0.0.0", "--backend-port", "5002", "--sandbox-host", "0.0.0.0", "--sandbox-port", "2000"]
 CMD ["python", "curio.py", "start", "all", "--backend-host", "0.0.0.0", "--backend-port", "5002", "--sandbox-host", "0.0.0.0", "--sandbox-port", "2000"]

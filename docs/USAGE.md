@@ -52,7 +52,8 @@ Usage:
   python curio.py start                       # Start all servers (Backend, Sandbox, Frontend)
   python curio.py start backend               # Start only the backend (localhost:5002)
   python curio.py start sandbox               # Start only the sandbox (localhost:2000)
-  python curio.py start --force-rebuild       # Force rebuild the frontend and start all
+  python curio.py start --force-rebuild       # Re-build the frontend and start all servers
+  python curio.py start --force-db-init       # Re-initialize the backend database and start all servers
 ```
 
 ---
@@ -88,16 +89,6 @@ pip install -r requirements.txt
 conda install -c conda-forge nodejs=22.13.0
 ```
 
-
-Prepare the backend database:
-
-```bash
-cd backend
-python create_provenance_db.py
-FLASK_APP=server.py flask db upgrade
-cd ..
-```
-
 You can now use `curio.py` to start everything:
 
 ```bash
@@ -114,11 +105,21 @@ python curio.py start sandbox
 python curio.py start frontend
 ```
 
-To force rebuild the frontend:
+To force the rebuild of the frontend:
 
 ```bash
 python curio.py start --force-rebuild
 ```
+
+This will delete and reinstall frontend dependencies and rerun the frontend build process.
+
+To force the re-initialization of the backend database:
+
+```bash
+python curio.py start --force-db-init
+```
+
+This will recreate the provenance database and apply all migrations.
 
 ### Ray tracing
 

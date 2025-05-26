@@ -23,7 +23,7 @@ jobs:
       - name: 🧪 Wait for services to become healthy
         run: |
           echo "Waiting for servers to be healthy..."
-          timeout 60 bash -c '
+          timeout 120 bash -c '
           until [ "$(docker inspect -f "{{.State.Health.Status}}" $(docker compose ps -q curio))" = "healthy" ]; do
             echo "Still waiting..."
             sleep 2
