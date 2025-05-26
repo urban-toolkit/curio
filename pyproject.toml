@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "utk-curio"
+version = "0.5.0"
+description = "Curio CLI to build frontend and run services"
+authors = [{ name = "UTK" }]
+dependencies = []
+readme = "README.md"
+license = "MIT"
+
+[project.scripts]
+curio = "utk_curio.cli_entry:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]

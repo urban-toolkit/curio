@@ -119,15 +119,21 @@ def force_rebuild_frontend():
     check_install_build("frontend/utk-workflow/src/utk-ts", force_rebuild=True)
     print(f"{COLOR_FRONTEND}[Frontend] Force rebuild complete.{COLOR_RESET}")
 
-def start_frontend(force_rebuild=False):
+def start_frontend(force_rebuild=False, no_server=False):
     original_dir = os.getcwd()
     check_install_build("frontend/utk-workflow/src/utk-ts", force_rebuild=force_rebuild)
     os.chdir(original_dir)
     check_install_build("frontend/urban-workflows/", force_rebuild=force_rebuild)
     os.chdir(original_dir)
+
+    # If we're not starting the server, just exit here
+    if no_server:
+        print(f"{COLOR_FRONTEND}[Frontend] Build completed with --force-rebuild, server not started.{COLOR_RESET}")
+        return None
+
     os.chdir("frontend/urban-workflows/")
     print(f"{COLOR_FRONTEND}[Frontend] Current working directory for npm commands: {os.getcwd()}{COLOR_RESET}")
-    
+
     try:
         # Start the Node.js server
         process = subprocess.Popen(
@@ -161,38 +167,53 @@ def start_frontend(force_rebuild=False):
     return process
 
 def prepare_backend_database(force=False):
+    # script_dir = os.path.dirname(os.path.abspath(__file__))
+    # backend_dir = os.path.join(script_dir, "backend")
+    # db_file = os.path.join(backend_dir, "provenance.db")
     script_dir = os.path.dirname(os.path.abspath(__file__))
     backend_dir = os.path.join(script_dir, "backend")
-    db_file = os.path.join(backend_dir, "provenance.db")
+    db_dir = os.path.join(os.getcwd(), ".curio")
+    db_file = os.path.join(db_dir, "provenance.db")
 
     if not os.path.exists(db_file) or force:
+        if not os.path.exists(db_dir):
+            os.makedirs(db_dir)
+
         print(f"{COLOR_BACKEND}[Backend] Preparing backend database...{COLOR_RESET}")
+        print(f"{COLOR_BACKEND}[Backend] Using database path: {db_file}{COLOR_RESET}")
         try:
-            os.chdir(backend_dir)
-            subprocess.run(["python", "create_provenance_db.py"], check=True)
+            subprocess.run(["python", "create_provenance_db.py", os.path.abspath(db_file)], cwd=backend_dir, check=True)
 
             env = {**os.environ, "FLASK_APP": "server.py"}
-            subprocess.run(["flask", "db", "upgrade"], check=True, env=env)
-            subprocess.run(["flask", "db", "migrate", "-m", "Migration"], check=True, env=env)
-            os.chdir(script_dir)
+            subprocess.run(["flask", "db", "upgrade"], check=True, cwd=backend_dir, env=env)
+            subprocess.run(["flask", "db", "migrate", "-m", "Migration"], check=True, cwd=backend_dir, env=env)
             print(f"{COLOR_BACKEND}[Backend] Database initialized successfully.{COLOR_RESET}")
         except Exception as e:
             print(f"{COLOR_BACKEND}[Backend] Failed to initialize the database: {e}{COLOR_RESET}")
             clean_shutdown()
     else:
         print(f"{COLOR_BACKEND}[Backend] Database already exists. Skipping initialization.{COLOR_RESET}")
+    
 
-
-def start_backend(host, port, force_db_init=False):
+def start_backend(host, port, force_db_init=False, no_server=False):
     print(f"Starting backend on {host}:{port}...")
 
     prepare_backend_database(force=force_db_init)
+
+    # If we're only initializing the database, skip starting the server
+    if no_server:
+        print(f"{COLOR_BACKEND}[Backend] Database initialization completed with --force-db-init, server not started.{COLOR_RESET}")
+        return None
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # backend_server = os.path.join(script_dir, "backend", "server.py")
 
     process = subprocess.Popen(
         ["python", "-u", "-m", "backend.server"],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        cwd=script_dir,
         env={**os.environ}
     )
     threading.Thread(target=stream_output, args=(process, "Backend", COLOR_BACKEND), daemon=True).start()
@@ -201,11 +222,16 @@ def start_backend(host, port, force_db_init=False):
 
 def start_sandbox(host, port):
     print(f"Starting sandbox on {host}:{port}...")
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # sandbox_server = os.path.join(script_dir, "sandbox", "server.py")
+
     process = subprocess.Popen(
         ["python", "-u", "-m", "sandbox.server"],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        cwd=script_dir,
         env={**os.environ}
     )
     threading.Thread(target=stream_output, args=(process, "Sandbox", COLOR_SANDBOX), daemon=True).start()
@@ -259,24 +285,24 @@ def main():
         formatter_class=argparse.RawTextHelpFormatter,
         epilog=f"""
     Examples:
-        {command_prefix} start                       # Start all servers (Backend, Sandbox, Frontend)
+        {command_prefix} start                       # Start all servers (backend, sandbox, frontend)
         {command_prefix} start backend               # Start only the backend (localhost:5002)
         {command_prefix} start sandbox               # Start only the sandbox (localhost:2000)
-        {command_prefix} start --force-rebuild       # Re-build the frontend and start all servers
-        {command_prefix} start --force-db-init       # Re-initialize the backend database and start all servers
+        {command_prefix} --force-rebuild             # Re-build the frontend
+        {command_prefix} --force-db-init             # Re-initialize the backend database
     """
     )
     
     parser.add_argument(
-        "command", choices=["start"], help="Command to execute (start)"
+        "command", nargs="?", choices=["start"], help="Command to execute (start)"
     )
     parser.add_argument(
         "server", nargs="?", default="all", choices=["all", "frontend", "backend", "sandbox"],
-        help="Script to manager Curio's servers (all, frontend, backend, sandbox)"
+        help="Script to manage Curio's servers (all, frontend, backend, sandbox)"
     )
     parser.add_argument(
         "--force-rebuild", action="store_true",
-        help="Force rebuild of the frontend without starting"
+        help="Force rebuild of the frontend"
     )
     parser.add_argument(
         "--force-db-init", action="store_true",
@@ -308,6 +334,21 @@ def main():
         sandbox_host=args.sandbox_host,
         sandbox_port=args.sandbox_port
     )
+
+    if os.getenv("CURIO_NO_DEV") == "1":
+        if args.force_rebuild or args.force_db_init:
+            print("Error: --force-rebuild and --force-db-init are not available when running Curio from pip. If you really need it, refer to the documentation to run Curio from curio.py.")
+            sys.exit(1)
+
+    # Handle standalone rebuild or db init without starting servers
+    if not args.command:
+        if args.force_rebuild:
+            print("Rebuilding frontend...")
+            start_frontend(force_rebuild=True, no_server=True)
+        if args.force_db_init:
+            print("Re-initializing backend database...")
+            start_backend(args.backend_host, args.backend_port, force_db_init=True, no_server=True)
+        sys.exit(0)
 
     if args.command == "start":
 

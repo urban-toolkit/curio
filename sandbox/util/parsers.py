@@ -84,7 +84,7 @@ def check_valid_output(data, boxType):
     elif data['dataType'] not in valid_types:
         raise Exception(f'{boxType} only supports DataFrame, GeoDataFrame, and Raster as output')
 
-def save_memory_mapped_file(data, shared_disk_path='./.data/'):
+def save_memory_mapped_file(data, shared_disk_path='./.curio/data/'):
     """
     Saves the input data as a memory-mapped JSON file with a unique name.
 
@@ -96,8 +96,9 @@ def save_memory_mapped_file(data, shared_disk_path='./.data/'):
         str: The path of the saved memory-mapped file.
     """
     
-    # Ensure the shared directory exists
-    os.makedirs(shared_disk_path, exist_ok=True)
+    resolved_path = os.path.join(os.getcwd(), shared_disk_path)
+    # Ensure the directory exists
+    os.makedirs(resolved_path, exist_ok=True)
     
     json_bytes = json.dumps(data, ensure_ascii=False).encode('utf-8')
     input_hash = hashlib.sha256(json_bytes[:512]).digest()[:4].hex()
@@ -105,13 +106,14 @@ def save_memory_mapped_file(data, shared_disk_path='./.data/'):
     # Create a unique filename using hash of the input and current time
     timestamp = str(int(time.time()))
     unique_filename = f"{timestamp}_{input_hash[:10]}.data" 
-    file_path = os.path.join(shared_disk_path, unique_filename)
+    file_path = os.path.join(resolved_path, unique_filename)
 
     # Save the input data directly without compression as a memory-mapped file
     compressed_data = zlib.compress(json_bytes)
     # compressed_data = json.dump(data, file, ensure_ascii=False) # json.dumps(data).encode('utf-8')
     with open(file_path, "wb") as file:
         file.write(compressed_data)
+        file.flush()
 
     return file_path
 

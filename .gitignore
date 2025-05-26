@@ -21,7 +21,7 @@ wheels/
 
 flask_cache/
 
-.data/
+.curio/
 simple_example
 templates/
 
