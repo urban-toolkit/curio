@@ -33,12 +33,12 @@ jobs:
       - name: 🧪 Run backend unit tests
         run: |
           docker compose exec curio \
-            python -m unittest discover -s backend/tests -t . -p "test_*.py" -v
+            python -m unittest discover -s utk_curio/backend/tests -t . -p "test_*.py" -v
 
       - name: 🧪 Run sandbox unit tests
         run: |
           docker compose exec curio \
-            python -m unittest discover -s sandbox/tests -t . -p "test_*.py" -v
+            python -m unittest discover -s utk_curio/sandbox/tests -t . -p "test_*.py" -v
 
       - name: 🌐 Check frontend availability
         run: |
