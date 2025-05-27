@@ -2,8 +2,6 @@ include README.md
 recursive-include utk_curio/backend *
 recursive-include utk_curio/sandbox *
 recursive-include utk_curio/frontend *
-global-prune **/node_modules
-prune backend
-prune frontend
-prune sandbox
+prune utk_curio/frontend/urban-workflows/node_modules
+prune utk_curio/frontend/utk-workflow/src/utk-ts/node_modules
 exclude *.map

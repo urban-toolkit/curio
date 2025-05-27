@@ -7,15 +7,38 @@ name = "utk-curio"
 version = "0.5.0"
 description = "Curio CLI to build frontend and run services"
 authors = [{ name = "UTK" }]
-dependencies = []
 readme = "README.md"
 license = "MIT"
 
+dependencies = [
+  "requests==2.31.0",
+  "pyarrow==15.0.0",
+  "pillow==10.2.0",
+  "rasterio==1.3.9",
+  "python-dotenv==1.0.1",
+  "Flask==3.1.0",
+  "Flask-Caching==2.3.0",
+  "fiona==1.9.6",
+  "synxflow==1.0.1",
+  "Flask-Migrate==4.0.5",
+  "Flask-SQLAlchemy==3.1.1",
+  "google-auth==2.27.0",
+  "pandas==2.2.1",
+  "geopandas==1.0.1",
+  "pytest==8.3.4",
+  "pytest-playwright==0.7.0",
+  "pytest-flask==1.3.0",
+  "black==24.10.0"
+]
+
 [project.scripts]
-curio = "utk_curio.cli_entry:main"
+curio = "utk_curio.main:main"
 
 [tool.setuptools]
 include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+
+
