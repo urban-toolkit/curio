@@ -4,7 +4,7 @@ import os
 import sys
 import json
 from flask import Flask, jsonify
-from backend.app.api.routes import bp
+from utk_curio.backend.app.api.routes import bp
 
 # Initialize the Flask app for testing
 app = Flask(__name__)
