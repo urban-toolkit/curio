@@ -20,18 +20,18 @@ RUN pip install --prefer-binary --no-cache-dir -r requirements.txt
 
 # Stage 1: Sandbox
 WORKDIR /app/utk_curio/sandbox
-COPY sandbox .
+COPY utk_curio/sandbox .
 
 # Stage 2: Backend
-WORKDIR /app/backend
-COPY backend .
+WORKDIR /app/utk_curio/backend
+COPY utk_curio/backend .
 # RUN python create_provenance_db.py && \
     # FLASK_APP=server.py flask db upgrade && \
     # FLASK_APP=server.py flask db migrate -m "Migration"
 
 # Stage 3: Frontend
 WORKDIR /app/utk_curio/frontend
-COPY frontend .
+COPY utk_curio/frontend .
 
 # WORKDIR /app/frontend/utk-workflow/src/utk-ts
 # RUN npm ci --prefer-offline --no-audit && npm run build
