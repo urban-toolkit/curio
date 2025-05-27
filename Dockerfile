@@ -16,7 +16,6 @@ RUN apt-get update && \
 COPY curio.py .
 COPY requirements.txt .
 COPY templates/ templates/
-COPY data/ data/
 COPY tests/ tests/
 COPY utk_curio/sandbox/utk-0.8.9.tar.gz /app/utk_curio/sandbox/utk-0.8.9.tar.gz
 RUN pip install --prefer-binary --no-cache-dir -r requirements.txt
