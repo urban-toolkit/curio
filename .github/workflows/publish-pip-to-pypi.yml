@@ -4,6 +4,9 @@ on:
   release:
     types: [created]
 
+permissions:
+  contents: read  # needed for actions/checkout and uploading assets
+
 jobs:
   build-and-publish:
     name: Build and Upload to PyPI

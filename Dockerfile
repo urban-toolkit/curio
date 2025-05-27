@@ -15,11 +15,11 @@ RUN apt-get update && \
 # Python Dependencies (cached)
 COPY curio.py .
 COPY requirements.txt .
-COPY sandbox/utk-0.8.9.tar.gz /app/sandbox/utk-0.8.9.tar.gz
+COPY utk_curio/sandbox/utk-0.8.9.tar.gz /app/utk_curio/sandbox/utk-0.8.9.tar.gz
 RUN pip install --prefer-binary --no-cache-dir -r requirements.txt
 
 # Stage 1: Sandbox
-WORKDIR /app/sandbox
+WORKDIR /app/utk_curio/sandbox
 COPY sandbox .
 
 # Stage 2: Backend
@@ -30,7 +30,7 @@ COPY backend .
     # FLASK_APP=server.py flask db migrate -m "Migration"
 
 # Stage 3: Frontend
-WORKDIR /app/frontend
+WORKDIR /app/utk_curio/frontend
 COPY frontend .
 
 # WORKDIR /app/frontend/utk-workflow/src/utk-ts
