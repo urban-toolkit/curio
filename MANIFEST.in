@@ -1,4 +1,7 @@
 include README.md
+include data/
+include templates/
+include tests/
 recursive-include utk_curio/backend *
 recursive-include utk_curio/sandbox *
 recursive-include utk_curio/frontend *

@@ -17,7 +17,7 @@ import time
 import hashlib
 import ast
 
-from sandbox.util.parsers import *
+from utk_curio.sandbox.util.parsers import *
 
 def userCode(arg):
 {userCode}

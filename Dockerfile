@@ -15,29 +15,36 @@ RUN apt-get update && \
 # Python Dependencies (cached)
 COPY curio.py .
 COPY requirements.txt .
+COPY templates/ templates/
+COPY data/ data/
+COPY tests/ tests/
 COPY utk_curio/sandbox/utk-0.8.9.tar.gz /app/utk_curio/sandbox/utk-0.8.9.tar.gz
 RUN pip install --prefer-binary --no-cache-dir -r requirements.txt
 
 # Stage 1: Sandbox
 WORKDIR /app/utk_curio/sandbox
-COPY utk_curio/sandbox .
+COPY utk_curio/sandbox/ .
 
 # Stage 2: Backend
 WORKDIR /app/utk_curio/backend
-COPY utk_curio/backend .
+COPY utk_curio/backend/ .
 # RUN python create_provenance_db.py && \
     # FLASK_APP=server.py flask db upgrade && \
     # FLASK_APP=server.py flask db migrate -m "Migration"
 
 # Stage 3: Frontend
 WORKDIR /app/utk_curio/frontend
-COPY utk_curio/frontend .
+COPY utk_curio/frontend/ .
 
-# WORKDIR /app/frontend/utk-workflow/src/utk-ts
-# RUN npm ci --prefer-offline --no-audit && npm run build
+# Stage 4: Other files
+WORKDIR /app/utk_curio
+COPY utk_curio/ .
 
-# WORKDIR /app/frontend/urban-workflows
-# RUN npm ci --prefer-offline --no-audit && npm run build
+WORKDIR /app/utk_curio/frontend/utk-workflow/src/utk-ts
+RUN npm install && npm run build
+
+WORKDIR /app/utk_curio/frontend/urban-workflows
+RUN npm install && npm run build
 
 # Final Stage: Unified Service
 WORKDIR /app
@@ -54,4 +61,4 @@ HEALTHCHECK --start-period=120s --interval=15s --timeout=10s --retries=3 CMD \
 # RUN chmod +x curio.py && ln -s /app/curio.py /usr/local/bin/curio
 # CMD ["curio", "start", "all", "--backend-host", "0.0.0.0", "--backend-port", "5002", "--sandbox-host", "0.0.0.0", "--sandbox-port", "2000"]
 # CMD ["python", "curio.py", "start", "all", "--backend-host", "0.0.0.0", "--backend-port", "5002", "--sandbox-host", "0.0.0.0", "--sandbox-port", "2000"]
-CMD ["python", "curio.py", "start", "all", "--force-rebuild", "--force-db-init", "--backend-host", "0.0.0.0", "--backend-port", "5002", "--sandbox-host", "0.0.0.0", "--sandbox-port", "2000"]
+CMD ["python", "curio.py", "start", "all", "--backend-host", "0.0.0.0", "--backend-port", "5002", "--sandbox-host", "0.0.0.0", "--sandbox-port", "2000"]

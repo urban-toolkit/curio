@@ -44,16 +44,33 @@ def upload_file():
 
 @app.route('/datasets', methods=['GET'])
 def list_datasets():
-
     allowed_extensions = {'.json', '.geojson', '.csv'}
-    
-    folder_path = DATA_DIR
-    folder = Path(folder_path)
-    files = [
-        f.as_posix() for f in folder.iterdir()
-        if f.is_file() and f.suffix.lower() in allowed_extensions
-    ]
-    
+
+    files = []
+
+    # Source 1: /data relative to the root of the installed pip package
+    project_root_data = Path(__file__).parent.parent.parent / 'data'
+    print("Loading datasets from pip package location:", project_root_data)
+
+    if project_root_data.exists() and project_root_data.is_dir():
+        files.extend([
+            f.as_posix() for f in project_root_data.iterdir()
+            if f.is_file() and f.suffix.lower() in allowed_extensions
+        ])
+
+    # Source 2: /data relative to current working directory
+    # cwd_data = os.getcwd() / 'data'
+    launch_dir = os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())
+    data_dir = os.path.join(launch_dir, "data")
+    data_dir = Path(data_dir)
+    print("Loading datasets from working directory:", data_dir)
+
+    if data_dir.exists() and data_dir.is_dir():
+        files.extend([
+            f.as_posix() for f in data_dir.iterdir()
+            if f.is_file() and f.suffix.lower() in allowed_extensions
+        ])
+
     return jsonify(files)
 
 @app.route('/exec', methods=['POST'])
@@ -70,6 +87,11 @@ def exec():
 
     # Load default python wrapper code
     full_code = open('sandbox/python_wrapper.txt', 'r').read()
+
+    # Set path to be relative to the place where curio is called
+    original_dir = os.getcwd()
+    launch_dir = os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())
+    os.chdir(launch_dir)
 
     code = request.json['code']
     file_path = request.json['file_path']
@@ -107,6 +129,8 @@ def exec():
     # print("----------", jsonOutput, flush=True)
 
     app.logger.info(f'/exec: Request end in time: {(time.time() - start_time) / 60} mins')
+
+    os.chdir(original_dir)
 
     return jsonify(jsonOutput)
 
