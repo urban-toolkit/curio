@@ -25,4 +25,4 @@ pytest-flask==1.3.0
 black==24.10.0
 
 # Local
-sandbox/utk-0.8.9.tar.gz
+utk_curio/sandbox/utk-0.8.9.tar.gz
