@@ -1,10 +1,14 @@
 include README.md
-include data/
-include templates/
-include tests/
+include pyproject.toml
+include LICENSE
+recursive-include templates *
+recursive-include tests *
+
 recursive-include utk_curio/backend *
 recursive-include utk_curio/sandbox *
 recursive-include utk_curio/frontend *
+
 prune utk_curio/frontend/urban-workflows/node_modules
 prune utk_curio/frontend/utk-workflow/src/utk-ts/node_modules
+
 exclude *.map

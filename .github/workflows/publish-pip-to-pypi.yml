@@ -28,6 +28,10 @@ jobs:
 
     - name: 🛠 Build sdist and wheel
       run: python -m build
+    
+    - name: Check wheel metadata
+      run: |
+          twine check dist/*
 
     - name: 🚀 Publish to PyPI
       uses: pypa/gh-action-pypi-publish@v1.8.11
