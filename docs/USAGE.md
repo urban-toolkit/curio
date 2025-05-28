@@ -1,16 +1,12 @@
 # Usage
 
-## Table of contents
-
-- [Usage](#usage)
-  - [Table of contents](#table-of-contents)
-  - [Installation overview](#installation-overview)
-  - [Installation from pip](#installation-from-pip)
-  - [Installation from git](#installation-from-git)
-    - [Installing via Docker](#installing-via-docker)
-    - [Installing manually (with `curio.py`)](#installing-manually-with-curiopy)
-  - [Ray tracing](#ray-tracing)
-  - [Quick start](#quick-start)
+- [Installation overview](#installation-overview)
+- [Installation from pip](#installation-from-pip)
+- [Installation from git](#installation-from-git)
+  - [Installing via Docker](#installing-via-docker)
+  - [Installing manually (with `curio.py`)](#installing-manually-with-curiopy)
+- [Ray tracing](#ray-tracing)
+- [Quick start](#quick-start)
 
 
 ## Installation overview
