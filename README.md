@@ -13,7 +13,6 @@ Curio is a framework for collaborative urban visual analytics that uses a datafl
 - [Overview](#overview)
   - [Key features](#key-features)
 - [Usage and contributions](#usage-and-contributions)
-- [Core team](#core-team)
 - [Citation](#citation)
 - [License](#license)
 - [Acknowledgements](#acknowledgements)
@@ -36,12 +35,12 @@ See the full [Changelog](https://github.com/urban-toolkit/curio/commits/v0.5.3) 
 
 We're actively working on several enhancements to make Curio more powerful, extensible, and user-friendly:
 
-- 🔌 **UTK-Serverless Integration:** Integration with UTK’s upcoming serverless version is underway.
-- 🧪 **Expanded Testing Suite:** A more comprehensive testing framework is being extended to also cover frontend scenarios.
-- 🧠 **Enhanced Learning Resources:** More example dataflows and revised documentation are being created.
-- 🧩 **Modular Node Architecture:** A refactor is in progress to support a plug-in architecture, allowing programmers to define and register custom dataflow nodes more easily.
-- 📓 **Notebook Interoperability:** We are building support for importing/exporting dataflows to and from Jupyter notebooks.
-- 🧾 **Advanced Provenance Tracking:** We are improving how Curio tracks and visualizes the history of user actions.
+- 🔌 **UTK-Serverless Integration:** Integration with UTK’s upcoming serverless version is underway (Summer 2025).
+- 🧪 **Expanded Testing Suite:** A more comprehensive testing framework is being extended to also cover frontend scenarios (Fall 2025).
+- 🧠 **Enhanced Learning Resources:** More example dataflows and revised documentation are being created (Summer / Fall 2025).
+- 🧩 **Modular Node Architecture:** A refactor is in progress to support a plug-in architecture, allowing programmers to define and register custom dataflow nodes more easily (Fall 2025).
+- 📓 **Notebook Interoperability:** We are building support for importing/exporting dataflows to and from Jupyter notebooks (Fall 2025).
+- 🧾 **Advanced Provenance Tracking:** We are improving how Curio tracks and visualizes the history of user actions (Fall 2025).
 
 ---
 
@@ -81,18 +80,6 @@ If you'd like to contribute, see the [contributions](docs/CONTRIBUTIONS.md) docu
 
 ---
 
-## Core team
-
-Gustavo Moreira (UIC)  
-Leonardo Ferreira (UIC)  
-[Maryam Hosseini](https://www.maryamhosseini.me/) (UC Berkeley)  
-[Daniel de Oliveira](http://www2.ic.uff.br/~danielcmo/) (UFF)  
-[Nivan Ferreira](https://www.cin.ufpe.br/~nivan/) (UFPE)  
-[Marcos Lage](http://www.ic.uff.br/~mlage/) (UFF)  
-[Fabio Miranda](https://fmiranda.me) (UIC)  
-
----
-
 ## Citation
 
 ```
@@ -106,10 +93,6 @@ Leonardo Ferreira (UIC)
   pages={1224-1234},
   doi={10.1109/TVCG.2024.3456353}
 }
-
-```
-
----
 
 ## License
 Curio is MIT Licensed. Free for both commercial and research use.

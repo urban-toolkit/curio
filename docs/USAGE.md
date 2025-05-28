@@ -45,7 +45,7 @@ Usage:
 Curio can be installed either via pip for a quick setup or from source for more customization:
 
 ```bash
-pip install curio-urban
+pip install utk-curio
 ```
 
 This will install Curio’s CLI and required components. After installation, simply run:
