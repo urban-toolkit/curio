@@ -24,7 +24,7 @@ jobs:
     - name: 📦 Install build backend
       run: |
         python -m pip install --upgrade pip
-        pip install build
+        pip install build twine
 
     - name: 🛠 Build sdist and wheel
       run: python -m build
