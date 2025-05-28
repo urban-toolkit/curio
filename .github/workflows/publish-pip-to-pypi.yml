@@ -26,12 +26,18 @@ jobs:
         python -m pip install --upgrade pip
         pip install build twine
 
+    - name: 🧹 Clean previous builds
+      run: rm -rf dist/ *.egg-info
+
     - name: 🛠 Build sdist and wheel
-      run: python -m build
+      run: python -m build --no-isolation
     
     - name: Check wheel metadata
       run: |
           twine check dist/*
+
+    - name: 📦 Debug Wheel Contents
+      run: unzip -l dist/*.whl
 
     - name: 🚀 Publish to PyPI
       uses: pypa/gh-action-pypi-publish@v1.8.11
