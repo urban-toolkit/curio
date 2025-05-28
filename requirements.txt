@@ -6,7 +6,6 @@ python-dotenv==1.0.1
 Flask==3.1.0
 Flask-Caching==2.3.0  # https://flask-caching.readthedocs.io/en/latest/
 fiona==1.9.6
-synxflow==1.0.1
 Flask-Migrate==4.0.5
 Flask-SQLAlchemy==3.1.1
 google-auth==2.27.0

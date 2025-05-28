@@ -1,16 +1,75 @@
 # Usage
 
 ## Table of contents
+
 - [Usage](#usage)
   - [Table of contents](#table-of-contents)
-  - [Installation](#installation)
-    - [About Curio's multi-server management tool](#about-curios-multi-server-management-tool)
+  - [Installation overview](#installation-overview)
+  - [Installation from pip](#installation-from-pip)
+  - [Installation from git](#installation-from-git)
     - [Installing via Docker](#installing-via-docker)
     - [Installing manually (with `curio.py`)](#installing-manually-with-curiopy)
-    - [Ray tracing](#ray-tracing)
-    - [Quick start](#quick-start)
+  - [Ray tracing](#ray-tracing)
+  - [Quick start](#quick-start)
 
-## Installation
+
+## Installation overview
+
+Curio includes a multi-server management tool that orchestrates three key components: the **Backend** for provenance tracking and user management, the **Sandbox** for executing code modules, and the **Frontend** for building visual workflows.
+
+The `curio` launcher is a unified command-line tool for starting, stopping, and rebuilding the various Curio servers. If Curio is installed via pip, the tool is accessed using the `curio` command, which can be run from any directory. This command internally maps to the installed `curio.py` script.
+
+If Curio is installed from the Git repository, the tool should be executed using `python curio.py` from within the cloned project folder.
+
+You can inspect its help message by running:
+
+```bash
+curio --help
+```
+
+If installed from Git:
+
+```bash
+python curio.py --help
+```
+
+Sample output:
+
+```bash
+Usage:
+  curio start                       # Start all servers (Backend, Sandbox, Frontend)
+  curio start backend               # Start only the backend (localhost:5002)
+  curio start sandbox               # Start only the sandbox (localhost:2000)
+  curio start --force-rebuild       # Re-build the frontend and start all servers
+  curio start --force-db-init       # Re-initialize the backend database and start all servers
+```
+
+## Installation from pip
+
+Curio can be installed either via pip for a quick setup or from source for more customization:
+
+```bash
+pip install curio-urban
+```
+
+This will install Curio’s CLI and required components. After installation, simply run:
+
+```bash
+curio start
+```
+
+This will start the backend, sandbox, and frontend servers. You can also start components individually:
+
+```bash
+curio start backend
+curio start sandbox
+curio start frontend
+```
+
+⚠️ **Note:** The pip installation includes a pre-built frontend and does not support rebuilding it. If you need to modify or rebuild the frontend, please use the manual installation method described below.
+
+## Installation from git
+
 
 
 Begin by cloning Curio's repository:
@@ -33,46 +92,23 @@ conda create -n curio python=3.10
 conda activate curio
 ```
 
-You can install and run Curio using Docker for convenience or manually for customization. If running manually, **we recommend using `curio.py`**, a CLI tool that simplifies launching and managing Curio servers.
+There are two main ways to install Curio from the Git repository: [using Docker](#installing-via-docker) for a containerized setup, or [manually installing and running each component](#installing-manually-with-curiopy).
 
-### About Curio's multi-server management tool
-
-The `curio.py` launcher is a unified command-line tool for starting, stopping, and rebuilding the various Curio servers (backend, sandbox, and frontend).
-
-You can inspect its help message by running:
-
-```bash
-python curio.py --help
-```
-
-Sample output:
-
-```bash
-Usage:
-  python curio.py start                       # Start all servers (Backend, Sandbox, Frontend)
-  python curio.py start backend               # Start only the backend (localhost:5002)
-  python curio.py start sandbox               # Start only the sandbox (localhost:2000)
-  python curio.py start --force-rebuild       # Re-build the frontend and start all servers
-  python curio.py start --force-db-init       # Re-initialize the backend database and start all servers
-```
-
----
 
 ### Installing via Docker
 
 Docker simplifies installation by orchestrating all components.
 
-Prerequisites:
-- [Docker](https://docs.docker.com/get-started/get-docker/)
+Prerequisites: [Docker](https://docs.docker.com/get-started/get-docker/)
 
 After cloning the repository (see above), run the full Curio stack with:
 
-```console
+```bash
 docker compose up
 ```
 
 For older Docker versions, the following command may be required instead:
-```console
+```bash
 docker-compose up
 ```
 
@@ -121,11 +157,11 @@ python curio.py start --force-db-init
 
 This will recreate the provenance database and apply all migrations.
 
-### Ray tracing
+## Ray tracing
 
 To use Ray Tracing, please see UTK's [requirements](https://github.com/urban-toolkit/utk).
 
-### Quick start
+## Quick start
 
 For a simple introductory example check [this](QUICK-START.md) tutorial. See [here](README.md) for more examples.
 
