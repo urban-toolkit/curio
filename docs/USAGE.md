@@ -54,7 +54,8 @@ This will install Curio’s CLI and required components. After installation, sim
 curio start
 ```
 
-This will start the backend, sandbox, and frontend servers. You can also start components individually:
+This will start the backend, sandbox, and frontend servers. The first time Curio runs, it will automatically install UTK. You can also start components individually:
+
 
 ```bash
 curio start backend
@@ -127,7 +128,7 @@ You can now use `curio.py` to start everything:
 python curio.py start             # Starts backend, sandbox, and frontend
 ```
 
-This will build and start all required servers. Curio's frontend will be available at http://localhost:8080.
+This will build and start all required servers. The first time Curio runs, it will automatically install UTK. Curio's frontend will be available at http://localhost:8080.
 
 You can also start individual servers:
 

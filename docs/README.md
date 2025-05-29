@@ -7,10 +7,7 @@
 
 ## Making contributions
 
-- [Code guidelines](CODE-GUIDELINES.md)  
-- [How to fork](HOW-TO-FORK.md)  
-- [How to make pull requests](HOW-TO-MAKE-PULL-REQUESTS.md)  
-- [How to create issues](HOW-TO-CREATE-ISSUES.md)
+- [Contributing to Curio](CONTRIBUTIONS.md)
 
 ## Examples
 
