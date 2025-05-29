@@ -19,7 +19,7 @@ Curio is a framework for collaborative urban visual analytics that uses a datafl
 
 ## What's New
 
-Curio v0.5.5 introduces a number of improvements and fixes thanks to the efforts of new contributors. Highlights include:
+Curio v0.5 introduces a number of improvements and fixes thanks to the efforts of new contributors. Highlights include:
 
 - 📦 **Pip Installation Support:** Curio can now be installed via `pip install utk-curio`, making it easier to get started. Check the [usage](docs/USAGE.md) document for details.
 - 🚀 **Performance Improvements:** Enhanced computation execution speed in the backend.

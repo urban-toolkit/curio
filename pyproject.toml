@@ -9,7 +9,7 @@ description = "Curio: A dataflow-based framework for urban visual analytics"
 authors = [{name = "UTK", email = "fabiom@uic.edu"}]
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.9"
+requires-python = ">=3.9,<3.12"
 
 dependencies = [
   "requests==2.31.0",
