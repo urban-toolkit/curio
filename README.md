@@ -28,7 +28,7 @@ Curio v0.5.5 introduces a number of improvements and fixes thanks to the efforts
 - 🐳 **Docker Enhancements:** Fixed Docker build issues by enforcing platform and fixing dependency installation errors.
 - 🧹 **General Bug Fixes:** Resolved issues with icons, route definitions, upload status tracking, and environment variable references.
 
-See the full [Release notes](https://github.com/urban-toolkit/curio/releases) for more.
+See the full [Release notes](https://github.com/urban-toolkit/curio/releases) for more. To get started with installation and setup, see the [usage guide](docs/USAGE.md). For a quick hands-on walkthrough, try the [quick start tutorial](docs/QUICK-START.md). If you'd like to contribute, read the [contribution guide](docs/CONTRIBUTIONS.md).
 
 
 ## Roadmap
