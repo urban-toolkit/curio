@@ -82,7 +82,7 @@ Curio consists of three core components:
 * **Sandbox**: Python execution environment for code modules.
 * **Frontend**: user interface for composing workflows and interacting with modules.
 
-Curio requires **Python >= 3.9 & < 3.12**. It has been tested on Windows 11, macOS Sonoma 14.5, and Ubuntu. It is recommended to install the environment using [Anaconda](https://anaconda.org):
+Curio requires **Python >= 3.10 & < 3.12**. It has been tested on Windows 11, macOS Sonoma 14.5, and Ubuntu. It is recommended to install the environment using [Anaconda](https://anaconda.org):
 
 ```bash
 conda create -n curio python=3.10
