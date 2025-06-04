@@ -13,9 +13,7 @@
 
 Curio includes a multi-server management tool that orchestrates three key components: the **Backend** for provenance tracking and user management, the **Sandbox** for executing code modules, and the **Frontend** for building visual workflows.
 
-The `curio` launcher is a unified command-line tool for starting, stopping, and rebuilding the various Curio servers. If Curio is installed via pip, the tool is accessed using the `curio` command, which can be run from any directory. This command internally maps to the installed `curio.py` script.
-
-If Curio is installed from the Git repository, the tool should be executed using `python curio.py` from within the cloned project folder.
+The `curio` launcher is a unified command-line tool for starting, stopping, and rebuilding the various Curio servers. If Curio is installed via pip (see instructions [here](#installation-from-pip)), the tool is accessed using the `curio` command, which can be run from any directory; this command internally maps to the installed `curio.py` script. If Curio is installed from the Git repository (see instructions [here](#installation-from-git)), the tool should be executed using `python curio.py` from within the cloned project folder.
 
 You can inspect its help message by running:
 
