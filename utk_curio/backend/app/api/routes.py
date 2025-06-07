@@ -13,6 +13,7 @@ import time
 import hashlib
 import mmap
 import ast
+from pathlib import Path
 
 # The Flask app
 from utk_curio.backend.app.api import bp
@@ -107,6 +108,18 @@ def root():
 def live():
     return 'Backend is live.'
 
+@bp.route('/cwd')
+def cwd():
+    return os.getcwd()
+
+@bp.route('/launchCwd')
+def launchCwd():
+    return os.environ["CURIO_LAUNCH_CWD"]
+
+@bp.route('/sharedDataPath')
+def sharedDataPath():
+    return os.environ["CURIO_SHARED_DATA"]
+
 @bp.route('/upload', methods=['POST'])
 def upload_file():
 
@@ -153,18 +166,29 @@ def transform_to_vega(data):
 
 @bp.route('/get', methods=['GET'])
 def get_file():
-    file_path = request.args.get('fileName')
+    file_name = request.args.get('fileName')
     vega = request.args.get('vega', 'false').lower() == 'true'
 
-    if not file_path:
+    if not file_name:
         return 'No file name specified', 400
+    
+    launch_dir = os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())
+    shared_disk_path = os.environ.get("CURIO_SHARED_DISK_PATH", "./.curio/data/")
+    base_path = Path(launch_dir) / shared_disk_path
+    base_path = base_path.resolve()
 
-    if not os.path.exists(file_path):
+    requested_path = Path(file_name)
+    full_path = (base_path / requested_path).resolve()
+
+    if not str(full_path).startswith(str(base_path)):
+        return 'Invalid file path', 403
+
+    if not full_path.exists():
         return 'File does not exist', 404
 
     try:
         # Using mmap for efficient memory-mapped loading
-        with open(file_path, "rb") as file:
+        with open(full_path, "rb") as file:
             with mmap.mmap(file.fileno(), 0, access=mmap.ACCESS_READ) as mmapped_file:
                 # Decompress and decode directly from the memory-mapped file
                 decompressed_data = zlib.decompress(mmapped_file[:])

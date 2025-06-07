@@ -11,6 +11,7 @@ import signal
 import platform
 
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+from pathlib import Path
 
 output_queue = queue.Queue()
 shell_required = platform.system() == "Windows"
@@ -55,6 +56,7 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     os.environ["FLASK_SANDBOX_HOST"] = sandbox_host
     os.environ["FLASK_SANDBOX_PORT"] = str(sandbox_port)
     os.environ["CURIO_LAUNCH_CWD"] = os.getcwd()
+    os.environ["CURIO_SHARED_DATA"] = str(Path("./.curio/data").resolve())
     
     print(f"Environment Variables Set:")
     print(f"FLASK_BACKEND_HOST={os.environ['FLASK_BACKEND_HOST']}")
@@ -62,6 +64,7 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     print(f"FLASK_SANDBOX_HOST={os.environ['FLASK_SANDBOX_HOST']}")
     print(f"FLASK_SANDBOX_PORT={os.environ['FLASK_SANDBOX_PORT']}")
     print(f"CURIO_LAUNCH_CWD={os.environ['CURIO_LAUNCH_CWD']}")
+    print(f"CURIO_SHARED_DATA={os.environ['CURIO_SHARED_DATA']}")
 
 def logger():
     """

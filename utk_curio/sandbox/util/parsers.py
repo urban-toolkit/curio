@@ -10,6 +10,7 @@ import hashlib
 import ast
 
 from shapely import wkt
+from pathlib import Path
 
 # Utility Functions
 # transforms the whole input into a dict (json) in depth
@@ -84,7 +85,7 @@ def check_valid_output(data, boxType):
     elif data['dataType'] not in valid_types:
         raise Exception(f'{boxType} only supports DataFrame, GeoDataFrame, and Raster as output')
 
-def save_memory_mapped_file(data, shared_disk_path='./.curio/data/'):
+def save_memory_mapped_file(data):
     """
     Saves the input data as a memory-mapped JSON file with a unique name.
 
@@ -95,10 +96,11 @@ def save_memory_mapped_file(data, shared_disk_path='./.curio/data/'):
     Returns:
         str: The path of the saved memory-mapped file.
     """
-    launch_dir = os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())    
-    resolved_path = os.path.join(launch_dir, shared_disk_path)
+    launch_dir = Path(os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())).resolve()
+    shared_disk_path = os.environ.get("CURIO_SHARED_DISK_PATH", "./.curio/data/")
+    save_dir = (launch_dir / shared_disk_path).resolve()
     # Ensure the directory exists
-    os.makedirs(resolved_path, exist_ok=True)
+    os.makedirs(save_dir, exist_ok=True)
     
     json_bytes = json.dumps(data, ensure_ascii=False).encode('utf-8')
     input_hash = hashlib.sha256(json_bytes[:512]).digest()[:4].hex()
@@ -106,16 +108,18 @@ def save_memory_mapped_file(data, shared_disk_path='./.curio/data/'):
     # Create a unique filename using hash of the input and current time
     timestamp = str(int(time.time()))
     unique_filename = f"{timestamp}_{input_hash[:10]}.data" 
-    file_path = os.path.join(resolved_path, unique_filename)
+
+    full_path = save_dir / unique_filename
 
     # Save the input data directly without compression as a memory-mapped file
     compressed_data = zlib.compress(json_bytes)
     # compressed_data = json.dump(data, file, ensure_ascii=False) # json.dumps(data).encode('utf-8')
-    with open(file_path, "wb") as file:
+    with open(full_path, "wb") as file:
         file.write(compressed_data)
         file.flush()
 
-    return file_path
+    relative_path = full_path.relative_to(launch_dir)
+    return str(relative_path).replace("\\", "/")
 
 
 def load_memory_mapped_file(file_path):
@@ -128,6 +132,9 @@ def load_memory_mapped_file(file_path):
     Returns:
         dict: The loaded JSON data.
     """
+    # Normalize the path
+    file_path = Path(file_path).resolve()
+
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"The file {file_path} does not exist.")
 

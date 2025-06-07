@@ -29,6 +29,18 @@ def root():
 def live():
     return 'Sandbox is live.'
 
+@app.route('/cwd')
+def cwd():
+    return os.getcwd()
+
+@app.route('/launchCwd')
+def launchCwd():
+    return os.environ["CURIO_LAUNCH_CWD"]
+
+@app.route('/sharedDataPath')
+def sharedDataPath():
+    return os.environ["CURIO_SHARED_DATA"]
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:

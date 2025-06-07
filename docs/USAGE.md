@@ -126,7 +126,7 @@ You can now use `curio.py` to start everything:
 python curio.py start             # Starts backend, sandbox, and frontend
 ```
 
-This will build and start all required servers. The first time Curio runs, it will automatically install UTK. Curio's frontend will be available at http://localhost:8080.
+This will build and start all required servers. The first time Curio runs, it will automatically install UTK. The installation of all required packages might take a few minutes. When finished, Curio's frontend will be available at http://localhost:8080.
 
 You can also start individual servers:
 
