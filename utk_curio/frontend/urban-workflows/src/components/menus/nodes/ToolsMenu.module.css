@@ -1,0 +1,28 @@
+.containerStyle {
+    position: fixed;
+    z-index: 100;
+    top: 150px;
+    left: 50px;
+    background-color: #1E1F23;
+    padding: 5px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-auto-rows: 45px;
+    border-radius: 5px;
+    box-shadow: rgba(0, 0, 0, 0.35) 0px 5px 15px;
+}
+
+.optionStyle {
+    width: 45px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 10px;
+}
+
+.iconStyle {
+    font-size: 1.5em;
+    color: #fbfcf6;
+}

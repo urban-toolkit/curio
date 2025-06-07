@@ -1,0 +1,55 @@
+.text-updater-node {
+  height: 50px;
+  border: 1px solid #eee;
+  padding: 5px;
+  border-radius: 5px;
+  background: white;
+}
+
+.text-updater-node label {
+  display: block;
+  color: #777;
+  font-size: 12px;
+}
+
+.react-flow__handle-top {
+  top: -20px !important;
+  width: 20px;
+  height: 20px;
+  background: #555;
+  border-radius: 50%;
+}
+
+.react-flow__handle-left {
+  left: -20px !important;
+  width: 20px;
+  height: 20px;
+  background: #555;
+  border-radius: 50%;
+}
+
+.react-flow__handle-right {
+  right: -20px !important;
+  width: 20px;
+  height: 20px;
+  background: #555;
+  border-radius: 50%;
+}
+
+.handle_top_left {
+  left: -20px !important;
+  width: 20px;
+  height: 20px;
+  background: #555;
+  border-radius: 50%;
+  top: 10px;
+}
+
+.handle_bottom_left {
+  left: -20px !important;
+  width: 20px;
+  height: 20px;
+  background: #555;
+  border-radius: 50%;
+  top: 40px !important;
+}

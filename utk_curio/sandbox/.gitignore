@@ -1,0 +1,17 @@
+urbantk_cache
+geo*
+*.tif
+*.nc
+R03*
+Milan*
+images
+Census*
+model.pth
+dataset
+
+logs/
+flask_cache/
+
+*.csv
+*.json
+*.geojson

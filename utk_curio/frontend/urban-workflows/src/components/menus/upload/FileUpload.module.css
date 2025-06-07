@@ -1,0 +1,15 @@
+.button {
+    /* min-width: 160px; */
+}
+
+.icon {
+    margin: 0 10px;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-weight: bold;
+    background-color: transparent;
+    color: #fbfcf6;
+    border: none;
+    /* border-bottom: 3px solid #fbfcf6; */
+    border-radius: 4px;
+}

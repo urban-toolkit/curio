@@ -1,0 +1,83 @@
+root = true
+
+[*.{js,jsm,mjs,json,html,pdf.link}]
+charset = utf-8
+end_of_line = lf
+indent_size = 2
+indent_style = space
+max_line_length = 80
+
+
+[*.{jsx,ts,tsx,css}]
+charset = utf-8
+end_of_line = lf
+indent_size = 4
+indent_style = space
+max_line_length = 80
+
+[.babelrc]
+indent_size = 4
+
+[{src/components/edges/,src/components/comments/,src/hook/,src/components/login/}*.{js,jsx,ts,tsx}]
+indent_size = 2
+
+[src/hook/useCode.ts]
+indent_size = 4
+
+[{src/constants.ts,src/index.tsx}]
+indent_size = 2
+
+[{src/providers/DialogProvider.tsx,src/providers/UserProvider.tsx}]
+indent_size = 2
+
+[src/components/DataCleaning.tsx]
+indent_size = 2
+
+[src/components/Box.css]
+indent_size = 2
+
+[src/components/CommentsBox.tsx]
+indent_size = 2
+
+[src/components/ComputationAnalysisBox.tsx]
+indent_size = 2
+
+[src/components/ConstantBox.tsx]
+indent_size = 2
+
+[src/components/DataExportBox.tsx]
+indent_size = 2
+
+[src/components/DataLoadingBox.tsx]
+indent_size = 2
+
+[src/components/DataTransformationBox.tsx]
+indent_size = 2
+
+[src/components/TextBox.tsx]
+indent_size = 2
+
+[src/components/TableBox.tsx]
+indent_size = 2
+
+[src/components/UtkBox.tsx]
+indent_size = 2
+
+[src/components/VegaBox.tsx]
+indent_size = 2
+
+[src/components/GenericDialog.tsx]
+indent_size = 2
+
+[src/components/FlowSwitch.tsx]
+indent_size = 2
+
+[*.{json,pdf.link}]
+max_line_length = off
+
+[*.md]
+max_line_length = off
+trim_trailing_whitespace = false
+
+[COMMIT_EDITMSG]
+max_line_length = off

@@ -1,174 +1,103 @@
-# Curio
+# Curio [![Discord](https://img.shields.io/badge/Discord-738ADB)](https://discord.gg/vjpSMSJR8r) 	[![Docs](https://img.shields.io/badge/Documentation-brightgreen)](https://github.com/urban-toolkit/curio/tree/main/docs) [![Full stack build](https://github.com/urban-toolkit/curio/actions/workflows/docker-compose.yml/badge.svg)](https://github.com/urban-toolkit/curio/actions/workflows/docker-compose.yml) [![PyPI version](https://img.shields.io/pypi/v/utk-curio)](https://pypi.org/project/utk-curio/) 	[![Contributors](https://img.shields.io/github/contributors/urban-toolkit/curio)](https://github.com/urban-toolkit/curio/graphs/contributors)
 
-<p align="center">
-  <img src="https://github.com/urban-toolkit/curio/blob/main/images/logo.png?raw=true" alt="Curio Logo" width="250"/>
-</p>
+
+<div align="center">
+  <img src="https://github.com/urban-toolkit/curio/blob/main/logo.png?raw=true" alt="Curio Logo" height="200"/></br>
+  [<a href="https://arxiv.org/abs/2408.06139">Paper</a>] | [<a href="https://urbantk.org/curio">Website</a>]
+</div>
 
 Curio is a framework for collaborative urban visual analytics that uses a dataflow model with multiple abstraction levels (code, grammar, GUI elements) to facilitate collaboration across the design and implementation of visual analytics components. The framework allows experts to intertwine preprocessing, managing, and visualization stages while tracking provenance of code and visualizations.
 
-**Curio: A Dataflow-Based Framework for Collaborative Urban Visual Analytics**  
-Gustavo Moreira, Maryam Hosseini, Carolina Veiga, Lucas Alexandre, Nico Colaninno, Daniel de Oliveira, Nivan Ferreira, Marcos Lage, Fabio Miranda
+- [What's New](#whats-new)
+- [Roadmap](#roadmap)
+- [Overview](#overview)
+  - [Key features](#key-features)
+- [Usage and contributions](#usage-and-contributions)
+- [Citation](#citation)
+- [License](#license)
+- [Acknowledgements](#acknowledgements)
 
-Video:
+## What's New
+
+Curio v0.5 introduces a number of improvements and fixes thanks to the efforts of new contributors. Highlights include:
+
+- 📦 **Pip Installation Support:** Curio can now be installed via `pip install utk-curio`, making it easier to get started. Check the [usage](docs/USAGE.md) document for details.
+- 🚀 **Performance Improvements:** Enhanced computation execution speed in the backend.
+- 🧪 **Initial End-to-End Testing:** Integrated test for backend/sandbox testing.
+- 🧭 **New Examples Added:** Included new dataflows like "Complaints by Zip Code" and "Accessibility Analysis".
+- 🐳 **Docker Enhancements:** Fixed Docker build issues by enforcing platform and fixing dependency installation errors.
+- 🧹 **General Bug Fixes:** Resolved issues with icons, route definitions, upload status tracking, and environment variable references.
+
+See the full [Release notes](https://github.com/urban-toolkit/curio/releases) for more. To get started with installation and setup, see the [usage guide](docs/USAGE.md). For a quick hands-on walkthrough, try the [quick start tutorial](docs/QUICK-START.md). If you'd like to contribute, read the [contribution guide](docs/CONTRIBUTIONS.md).
+
+
+## Roadmap
+
+- 🔌 **UTK-Serverless Integration:** UTK and Curio's integration is being improved. A new UTK serverless version will be integrated soon.
+- 🧪 **Expanded Testing Suite:** A more comprehensive testing framework is being extended to also cover frontend scenarios.
+- 🧠 **Enhanced Learning Resources:** More example dataflows and revised documentation are being created.
+- 🧩 **Modular Node Architecture:** A refactor is in progress to support a plug-in architecture, allowing programmers to define and register custom dataflow nodes more easily.
+- 📓 **Notebook Interoperability:** We are building support for importing/exporting dataflows to and from Jupyter notebooks.
+- 🧾 **Advanced Provenance Tracking:** We are improving how Curio tracks and visualizes the history of user actions.
+- 📋 **Improved Logging System:** Curio's logging is being updated with clearer diagnostics, better error tracking, and improved debugging support.
+
+
+---
+
+## Overview
+
+**Curio: A Dataflow-Based Framework for Collaborative Urban Visual Analytics**  
+*Gustavo Moreira, Maryam Hosseini, Carolina Veiga, Lucas Alexandre, Nico Colaninno, Daniel de Oliveira, Nivan Ferreira, Marcos Lage, Fabio Miranda*  
+IEEE Transactions on Visualization and Computer Graphics ( Volume: 31, Issue: 1, January 2025)  
+Paper: [[DOI](https://doi.org/10.1109/TVCG.2024.3456353)], [[Arxiv](https://arxiv.org/abs/2408.06139)]
 
 <div align="center">
   <video src="https://github.com/urban-toolkit/curio/assets/2387594/6d29bda8-5e94-4496-a4ae-fd55adff024f" />
 </div>
 
-
-
 <p align="center">
-  <img src="https://github.com/urban-toolkit/curio/blob/main/images/banner.jpg?raw=true" alt="Curio Use Cases" width="1000"/>
+  <img src="https://github.com/urban-toolkit/curio/blob/main/banner.jpg?raw=true" alt="Curio Use Cases" width="1000"/>
 </p>
 
-## Table of contents
+This project is part of the [Urban Toolkit ecosystem](https://urbantk.org), which includes [Curio](https://github.com/urban-toolkit/curio/) and [UTK](https://github.com/urban-toolkit/utk). Curio is a framework for collaborative urban visual analytics that uses a dataflow model with multiple abstraction levels to facilitate collaboration across the design and implementation of visual analytics components. UTK is a flexible and extensible visualization framework that enables the easy authoring of web-based visualizations through a new high-level grammar specifically built with common urban use cases in mind. 
 
-1. [Features](#features)
-2. [Installation and quick start](#installation-and-quick-start)
-    1. [Curio Backend](#curio-backend)
-    2. [Python sandbox](#python-sandbox)
-    3. [UTK workflow](#utk-workflow)
-    4. [Curio frontend](#curio-frontend)
-    5. [Ray tracing](#ray-tracing)
-3. [First dataflow](#first-dataflow)
-4. [Team](#team)
 
-## Features
-
+### Key features
 - Provenance-aware dataflow
 - Modularized and collaborative visual analytics
 - Support for 2D and 3D maps
 - Linked data-driven interactions  
 - Integration with [UTK](https://urbantk.org) and [Vega-Lite](https://vega.github.io/vega-lite/)
 
-## Installation and quick start
+---
 
-Because Curio is integrated with UTK it is necessary to add it as a submodule.
+## Usage and contributions
+For detailed instructions on how to use the project, please see the [usage](docs/USAGE.md) document. A set of examples can be found [here](https://github.com/urban-toolkit/curio/tree/main/docs). 
 
-```console
-git clone git@github.com:urban-toolkit/curio.git  
-git submodule init
-git submodule update --remote --merge
+🚀 Curio now supports a Docker-based setup for easier installation and orchestration of all components. See the [usage guide](docs/USAGE.md) for instructions on running Curio with Docker.
+
+If you'd like to contribute, see the [contributions](docs/CONTRIBUTIONS.md) document for guidelines. For questions, join [UTK's Discord](https://discord.gg/vjpSMSJR8r) server.
+
+---
+
+## Citation
+
+```
+@ARTICLE{moreira2025curio,
+  author={Moreira, Gustavo and Hosseini, Maryam and Veiga, Carolina and Alexandre, Lucas and Colaninno, Nicola and de Oliveira, Daniel and Ferreira, Nivan and Lage, Marcos and Miranda, Fabio},
+  journal={IEEE Transactions on Visualization and Computer Graphics}, 
+  title={Curio: A Dataflow-Based Framework for Collaborative Urban Visual Analytics}, 
+  year={2025},
+  volume={31},
+  number={1},
+  pages={1224-1234},
+  doi={10.1109/TVCG.2024.3456353}
+}
 ```
 
-Curio is divided into three components: backend (provenance and database management), python sandbox (to run python code), and the front-end. All component need to be running.
-
-Curio was tested on Windows 11 and MacOS Sonoma 14.5.   
-
-**Python >= 3.9 & < 3.12 is needed.**
-
-### Curio Backend
-
-The backend source code is available on the `backend` folder. It is recommended to install its requirements on a virtual environment such as [Anaconda](https://anaconda.org). Inside the `backend` folder:
-
-```console
-pip install -r requirements.txt
-```
-
-Once requirements are installed we have to create a SQLite database for provenance.
-
-```console
-python create_provenance_db.py
-```
-
-Now the backend server can be started.
-
-```console
-python server.py
-```
-
-The backend is also responsible for user authentication. In order to use Curio's functionalities, you will need authentication. To do so, upgrade the database:
-
-#### Apply migrations
-
-You need to run this command before start using Curio:
-
-```shell
-# run this to apply any migration that hasn't run yet
-FLASK_APP=server.py flask db upgrade
-```
-
-If the environment variable FLASK_APP does not work on the command above, set the environnment variable in your terminal. 
-
-#### Create migration
-
-```shell
-# after updating any model, run this to generate a new migration
-FLASK_APP=server.py flask db migrate -m "Migration Name"
-```
+## License
+Curio is MIT Licensed. Free for both commercial and research use.
 
 
-### Python sandbox
-
-Since modules on Curio can run Python code. It is necessary to run a Python sandbox. On `sandbox` folder.
-
-To run without Docker (Anaconda environment recommended):
-
-```console
-pip install -r requirements.txt
-```
-
-Installing UTK's backend module to have access inside the sandbox:
-
-```console
-pip install utk-0.8.9.tar.gz
-```
-
-Run the server:
-
-```console
-python server.py
-```
-
-If you prefer to use Docker (can't use GPU for Ray Tracing):
-
-```console
-docker-compose up
-```
-
-### UTK workflow
-
-Because Curio also uses UTK's frontend it is necessary to compile the UTK submodule. On `utk-workflow` folder:
-
-```console
-cd src/utk-ts
-```
-
-NodeJS is needed to build the frontend. Anaconda is recommended:
-
-```console
-npm install
-npm run build 
-```
-
-### Curio frontend
-
-To start Curio's frontend. Simply go `urban-workflows` and run:
-
-```console
-npm install
-npm run build
-npm run start
-```
-
-### Ray tracing
-
-To use Ray Tracing from UTK's python module please consult UTK's [requirements](https://github.com/urban-toolkit/utk).
-
-## First dataflow 
-
-For a simple introductory example check [this](https://github.com/urban-toolkit/curio/blob/main/example1.md) tutorial.  
-
-![Tutorial](https://github.com/urban-toolkit/curio/blob/main/images/final_result.png?raw=true)
-
-## Team
-
-Gustavo Moreira (UIC)   
-[Maryam Hosseini](https://www.maryamhosseini.me/) (MIT)  
-Carolina Veiga (UIUC)  
-Lucas Alexandre (UFF)  
-Nico Colaninno (Polimi)  
-[Daniel de Oliveira](http://www2.ic.uff.br/~danielcmo/) (UFF)  
-[Nivan Ferreira](https://www.cin.ufpe.br/~nivan/) (UFPE)  
-[Marcos Lage](http://www.ic.uff.br/~mlage/) (UFF)  
-[Fabio Miranda](https://fmiranda.me) (UIC)  
+## Acknowledgements
+Curio and the Urban Toolkit have been supported by the National Science Foundation (NSF) (Awards [#2320261](https://www.nsf.gov/awardsearch/showAward?AWD_ID=2320261), [#2330565](https://www.nsf.gov/awardsearch/showAward?AWD_ID=2330565), and [#2411223](https://www.nsf.gov/awardsearch/showAward?AWD_ID=2411223)), Discovery Partners Institute (DPI), and IDOT.

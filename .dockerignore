@@ -1,0 +1,12 @@
+node_modules/
+**/node_modules/
+npm-debug.log
+**/dist/
+dist/
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.git/
+*.log
