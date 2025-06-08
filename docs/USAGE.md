@@ -34,6 +34,7 @@ Usage:
   curio start                       # Start all servers (Backend, Sandbox, Frontend)
   curio start backend               # Start only the backend (localhost:5002)
   curio start sandbox               # Start only the sandbox (localhost:2000)
+  curio start --verbose VERBOSE     # Verbosity level (e.g., 0=silent, 1=normal, 2=debug)
   curio start --force-rebuild       # Re-build the frontend and start all servers
   curio start --force-db-init       # Re-initialize the backend database and start all servers
 ```
