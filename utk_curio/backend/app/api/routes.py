@@ -679,130 +679,109 @@ def delete_box_prov():
 
 @bp.route('/newConnectionProv', methods=['POST'])
 def new_connection_prov():
-
-    # db_path = os.path.join(os.getcwd(), ".curio", "provenance.db")
-    db_path = get_db_path()
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-
+    """
+    Creates a new version of a workflow by adding a new connection and updating input/output relations_id.
+    """
     data = request.json.get('data')
+    if not data or not all(k in data for k in ['workflow_name', 'sourceNodeType', 'sourceNodeId', 'targetNodeType', 'targetNodeId']):
+        return jsonify({"error": "Invalid payload. Missing required keys."}), 400
 
-    # // new version (increment version number based on previous old workflow that points to a ve that points to the version)
-    # // new versioned element (pointing to the versioned element of the old workflow and pointing to the new version)
-    # // new workflow
-    # // point new workflow to the new versioned element
-    # // duplicate all activities that point to the old workflow and point to the new one (duplicate relations tied to activities)
-    # // update input relation of the activity
+    conn = None
+    try:
+        db_path = get_db_path()
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
 
-    # last workflow created with this name
-    cursor.execute("SELECT * FROM workflow WHERE workflow_id = (SELECT MAX(workflow_id) FROM workflow WHERE workflow_name = ?)", (data['workflow_name'],))
-    old_workflow = cursor.fetchone()
+        # 1. Get the latest workflow with the given name
+        cursor.execute("""
+            SELECT * FROM workflow
+            WHERE workflow_id = (
+                SELECT MAX(workflow_id) FROM workflow WHERE workflow_name = ?
+            )
+        """, (data['workflow_name'],))
+        old_workflow = cursor.fetchone()
 
-    # getting versionedElement attached to the old workflow
-    cursor.execute("SELECT * FROM versionedElement WHERE ve_id = ?", (old_workflow[2],))
-    old_workflow_ve = cursor.fetchone()
+        if not old_workflow:
+            return jsonify({"error": f"Workflow with name '{data['workflow_name']}' not found."}), 404
 
-    # getting the version atteched to the old workflow
-    cursor.execute("SELECT * FROM version WHERE version_id = ?", (old_workflow_ve[1],))
-    version = cursor.fetchone()
+        # 2. Get versioning info
+        cursor.execute("SELECT * FROM versionedElement WHERE ve_id = ?", (old_workflow['ve_id'],))
+        old_workflow_ve = cursor.fetchone()
+        cursor.execute("SELECT * FROM version WHERE version_id = ?", (old_workflow_ve['version_id'],))
+        version = cursor.fetchone()
 
-    new_version_number = str(float(version[1])+1.0)
+        # 3. Create new version, versioned element, and workflow entries
+        new_version_number = str(int(float(version['version_number'])) + 1)
+        cursor.execute("INSERT INTO version (version_number) VALUES (?)", (new_version_number,))
+        new_version_id = cursor.lastrowid
 
-    # creating new version
-    cursor.execute('''INSERT INTO version (version_number)
-                    VALUES (?)''', (new_version_number,))
+        cursor.execute(
+            "INSERT INTO versionedElement (previous_ve_id, version_id) VALUES (?, ?)",
+            (old_workflow_ve['ve_id'], new_version_id)
+        )
+        new_ve_id = cursor.lastrowid
 
-    conn.commit()
+        cursor.execute(
+            "INSERT INTO workflow (workflow_name, ve_id) VALUES (?, ?)",
+            (data['workflow_name'], new_ve_id)
+        )
+        new_workflow_id = cursor.lastrowid
 
-    # id of the new just added version
-    version_id = cursor.lastrowid
+        # 4. Duplicate activities from the old workflow to the new one
+        cursor.execute("SELECT * FROM activity WHERE workflow_id = ?", (old_workflow['workflow_id'],))
+        old_activities = cursor.fetchall()
 
-    # creating new versioned element for the new workflow
-    cursor.execute('''INSERT INTO versionedElement (previous_ve_id, version_id)
-                    VALUES (?, ?)''', (old_workflow_ve[0], version_id,))
+        for activity in old_activities:
+            # Insert a copy of the activity pointing to the new workflow
+            cursor.execute("""
+                INSERT INTO activity (workflow_id, activity_name, input_relation_id, output_relation_id, ve_id)
+                VALUES (?, ?, ?, ?, ?)
+            """, (
+                new_workflow_id,
+                activity['activity_name'],
+                activity['input_relation_id'],   
+                activity['output_relation_id'],  
+                activity['ve_id']
+            ))
 
-    conn.commit()
+        # 5. Apply the new connection to the newly created activities
+        
+        # Get the output relation from the source activity (in the new workflow)
+        source_activity_name = f"{data['sourceNodeType']}-{data['sourceNodeId']}"
+        cursor.execute("""
+            SELECT output_relation_id FROM activity
+            WHERE workflow_id = ? AND activity_name = ?
+        """, (new_workflow_id, source_activity_name))
+        source_activity_output = cursor.fetchone()
 
-    # id of the new just added versioned element
-    ve_id = cursor.lastrowid
+        if not source_activity_output:
+            raise ValueError(f"Source activity '{source_activity_name}' not found in the new workflow.")
 
-    # creating new workflow
-    cursor.execute('''INSERT INTO workflow (workflow_name, ve_id)
-                    VALUES (?, ?)''', (data['workflow_name'], ve_id,))
-
-    conn.commit()
-
-    # id of the new just added workflow
-    workflow_id = cursor.lastrowid
-
-    # getting all activities that point to the old workflow
-    cursor.execute("SELECT activity_name, input_relation_id, output_relation_id, ve_id FROM activity WHERE workflow_id = ?", (old_workflow[0],))
-
-    activities = cursor.fetchall()
-
-    duplicated_output_relations = {} # dict of old to new ids.
-
-    duplicated_activities_ids = []
-
-    # duplicating all activities and making them point to the new workflow
-    for activity in activities:
-
-        # getting the old output relation of duplicated activity
-        cursor.execute("SELECT relation_id, relation_name FROM relation WHERE relation_id = ?", (activity[2],))
-        old_output_relation = cursor.fetchone()
-
-        # # duplicate the old output relation
-        # cursor.execute('''INSERT INTO relation (relation_name)
-        #             VALUES (?)''', (old_output_relation[1],))
-
-        # conn.commit()
-
-        # # id of the new just added relation
-        # output_relation_id = cursor.lastrowid
-
-        boxType = activity[0].split("-")[0]
-
-        # # adding a attributeRelation to each output type that this activity supports
-        # for outputType in outputTypesSupported[boxType]:
-        #     cursor.execute('''INSERT INTO attributeRelation (attribute_id, relation_id)
-        #         VALUES (?, ?)''', (attributeIds[outputType], output_relation_id,))
-
-        # duplicated_output_relations[old_output_relation[0]] = output_relation_id # mapping old to new ids
-
-        # cursor.execute('''INSERT INTO activity (workflow_id, activity_name, input_relation_id, output_relation_id, ve_id)
-        #         VALUES (?, ?, ?, ?, ?)''', (workflow_id, activity[0], activity[1], output_relation_id, activity[3],))
-
-        cursor.execute('''INSERT INTO activity (workflow_id, activity_name, input_relation_id, output_relation_id, ve_id)
-                VALUES (?, ?, ?, ?, ?)''', (workflow_id, activity[0], activity[1], old_output_relation[0], activity[3],))
-
+        # Update the input relation of the target activity (in the new workflow)
+        target_activity_name = f"{data['targetNodeType']}-{data['targetNodeId']}"
+        cursor.execute("""
+            UPDATE activity
+            SET input_relation_id = ?
+            WHERE workflow_id = ? AND activity_name = ?
+        """, (source_activity_output['output_relation_id'], new_workflow_id, target_activity_name))
+        
+        # If we got here, everything went well. Commit the transaction.
         conn.commit()
+        
+        return jsonify({"message": "New workflow version created successfully.", "new_workflow_id": new_workflow_id}), 200
 
-        # id of the new just added activity
-        activity_id = cursor.lastrowid
-
-        duplicated_activities_ids.append(activity_id)
-
-    # updating duplicated activities to point to the duplicated relations
-    for old_output_id in duplicated_output_relations:
-        cursor.execute("SELECT activity_id FROM activity WHERE input_relation_id = ?", (old_output_id,))
-        activities = cursor.fetchall()
-
-        for activity in activities:
-            if activity[0] in duplicated_activities_ids: # this is a duplicated activity that needs to have input field updated to point to new duplicated relation
-                cursor.execute("UPDATE activity SET input_relation_id = ? WHERE activity_id = ?", (duplicated_output_relations[old_output_id], activity[0],))
-                conn.commit()
-
-    # get the source activity of the connection
-    cursor.execute("SELECT output_relation_id FROM activity WHERE workflow_id = ? AND activity_name = ?", (workflow_id, data['sourceNodeType']+"-"+data['sourceNodeId'],))
-    source_activity = cursor.fetchone()
-
-    # update input relation of the activity
-    cursor.execute("UPDATE activity SET input_relation_id = ? WHERE workflow_id = ? AND activity_name = ?", (source_activity[0], workflow_id, data['targetNodeType']+"-"+data['targetNodeId'],))
-
-    conn.commit()
-    conn.close()
-
-    return "",200
+    except sqlite3.Error as e:
+        if conn:
+            conn.rollback()
+        return jsonify({"error": "Database error occurred.", "details": str(e)}), 500
+    except (ValueError, TypeError) as e:
+        if conn:
+            conn.rollback()
+        return jsonify({"error": "Application data or logic error.", "details": str(e)}), 400
+    finally:
+        if conn:
+            conn.close()
 
 @bp.route('/deleteConnectionProv', methods=['POST'])
 def delete_connection_prov():
