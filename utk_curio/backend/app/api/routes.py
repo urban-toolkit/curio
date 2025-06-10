@@ -173,7 +173,7 @@ def get_file():
         return 'No file name specified', 400
     
     launch_dir = os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())
-    shared_disk_path = os.environ.get("CURIO_SHARED_DISK_PATH", "./.curio/data/")
+    shared_disk_path = os.environ.get("CURIO_SHARED_DATA", "./.curio/data/")
     base_path = Path(launch_dir) / shared_disk_path
     base_path = base_path.resolve()
 
@@ -181,10 +181,10 @@ def get_file():
     full_path = (base_path / requested_path).resolve()
 
     if not str(full_path).startswith(str(base_path)):
-        return 'Invalid file path', 403
+        return 'Invalid file path: %s'%full_path, 403
 
     if not full_path.exists():
-        return 'File does not exist', 404
+        return 'File does not exist: %s'%full_path, 404
 
     try:
         # Using mmap for efficient memory-mapped loading
@@ -207,76 +207,23 @@ def get_file():
 
     return jsonify(data), 200
 
-# def save_memory_mapped_file(data, shared_disk_path='./data/'):
-#     """
-#     Saves the input data as a memory-mapped JSON file with a unique name.
-
-#     Args:
-#         input_data (dict): The data to be saved.
-#         shared_disk_path (str): Path to the directory for saving the file.
-
-#     Returns:
-#         str: The path of the saved memory-mapped file.
-#     """
-#     # Ensure the shared directory exists
-#     os.makedirs(shared_disk_path, exist_ok=True)
-    
-#     # Create a unique filename using hash of the input and current time
-#     input_hash = hashlib.sha256(json.dumps(data).encode('utf-8')).hexdigest()
-#     timestamp = str(int(time.time()))
-#     unique_filename = f"{timestamp}_{input_hash[:10]}.json"  # Using .json for clarity
-#     file_path = os.path.join(shared_disk_path, unique_filename)
-
-#     # Save the input data directly without compression as a memory-mapped file
-#     compressed_data = zlib.compress(json.dumps(data).encode('utf-8'))
-#     with open(file_path, "wb") as file:
-#         file.write(compressed_data)
-
-#     return file_path
-
 @bp.route('/processPythonCode', methods=['POST'])
 def process_python_code():
-
-    # response = requests.post(api_address+":"+str(api_port)+"/api/v2/execute",
-    #     data=json.dumps({
-    #         "language": "python",
-    #         "version": "3.12.0",
-    #         "files": [
-    #             {
-    #                 "name": "test.py",
-    #                 "content": request.json['code']
-    #             }
-    #         ]
-    #     }),
-    #     headers={"Content-Type": "application/json"},
-    # )
-    # print(api_address, str(api_port))
-    # print(api_address+":"+str(api_port))
-    # print(request.json, flush=True)
 
     code = request.json['code']
     boxType = request.json['boxType']
     input = {'path': "", 'dataType': ""}
     if(request.json['input']):
-
         if(request.json['input']['dataType'] == 'outputs'):
             input['path'] = request.json['input']['data']
             input['dataType'] = 'outputs'
+        elif('filename' in request.json['input']):
+            input['path'] = request.json['input']['filename']
+            input['dataType'] = request.json['input']['dataType']
         else:
             input['path'] = request.json['input']['path']
             input['dataType'] = request.json['input']['dataType']
-
-    # print("-------------- input_data", input_data, flush=True)
-
-    # file_path = input_data # save_memory_mapped_file(input_data)
-    # if(file_path != ""):
-    #     with open(file_path, "rb") as file:
-    #         with mmap.mmap(file.fileno(), 0, access=mmap.ACCESS_READ) as mmapped_file:
-    #             # Decompress and load the data directly from memory
-    #             input = json.loads(zlib.decompress(mmapped_file).decode('utf-8'))
-    #             print("-------------- input", input, flush=True)
     try:
-        # print('-----------', input['path'], boxType, flush=True)
         response = requests.post(api_address+":"+str(api_port)+"/exec",
                                 data=json.dumps({
                                     "code": code,
@@ -288,30 +235,29 @@ def process_python_code():
                                 )
         
         try:
-            # print("-------------- response", response.json(), flush=True)
             response = response.json()
             stdout = response['stdout']
             stderr = response['stderr']
             output = response['output'] # contains path and dataType
             print(output, flush=True)
-            # print("-------------- response", {'stdout': stdout, 'stderr': stderr, 'inputTypes': input_types, 'output': output_path, 'outputType': output_type}, flush=True)
             
             return {'stdout': stdout, 'stderr': stderr, 'input': input, 'output': output}
         finally:
             pass
-    #         if os.path.exists(output_path):
-    #             os.remove(output_path)
     finally:
         pass
-    #     if os.path.exists(file_path):
-    #         os.remove(file_path)
 
 @bp.route('/toLayers', methods=['POST'])
 def toLayers():
 
     if(request.json['geojsons'] == None):
         abort(400, "geojsons were not included in the post request")
-
+    try:
+        import geopandas as gpd
+        for geojson in request.json['geojsons']:
+            gpd.GeoDataFrame.from_features(geojson['features'])
+    except Exception as e:
+        print("GeoPandas validation failed:", e)
     response = requests.post(api_address+":"+str(api_port)+"/toLayers",
                              data=json.dumps({
                                  "geojsons": request.json['geojsons']

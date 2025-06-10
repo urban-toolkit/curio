@@ -8,6 +8,8 @@ import os
 import time
 import hashlib
 import ast
+import datetime
+import numpy as np
 
 from shapely import wkt
 from pathlib import Path
@@ -97,28 +99,30 @@ def save_memory_mapped_file(data):
         str: The path of the saved memory-mapped file.
     """
     launch_dir = Path(os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())).resolve()
-    shared_disk_path = os.environ.get("CURIO_SHARED_DISK_PATH", "./.curio/data/")
+    shared_disk_path = os.environ.get("CURIO_SHARED_DATA", "./.curio/data/")
     save_dir = (launch_dir / shared_disk_path).resolve()
     # Ensure the directory exists
     os.makedirs(save_dir, exist_ok=True)
-    
-    json_bytes = json.dumps(data, ensure_ascii=False).encode('utf-8')
-    input_hash = hashlib.sha256(json_bytes[:512]).digest()[:4].hex()
 
-    # Create a unique filename using hash of the input and current time
+    # Prepare hash before adding filepath
+    json_bytes_initial = json.dumps(data, ensure_ascii=False).encode('utf-8')
+    input_hash = hashlib.sha256(json_bytes_initial[:1024]).digest()[:4].hex()
     timestamp = str(int(time.time()))
-    unique_filename = f"{timestamp}_{input_hash[:10]}.data" 
+    unique_filename = f"{timestamp}_{input_hash[:25]}.data"
+
+    # Inject the filename into the data
+    data['filename'] = unique_filename
+
+    # Now serialize the updated data
+    json_bytes = json.dumps(data, ensure_ascii=False).encode('utf-8')
+    compressed_data = zlib.compress(json_bytes)
 
     full_path = save_dir / unique_filename
-
-    # Save the input data directly without compression as a memory-mapped file
-    compressed_data = zlib.compress(json_bytes)
-    # compressed_data = json.dump(data, file, ensure_ascii=False) # json.dumps(data).encode('utf-8')
     with open(full_path, "wb") as file:
         file.write(compressed_data)
         file.flush()
 
-    relative_path = full_path.relative_to(launch_dir)
+    relative_path = full_path.relative_to(shared_disk_path)
     return str(relative_path).replace("\\", "/")
 
 
@@ -132,14 +136,26 @@ def load_memory_mapped_file(file_path):
     Returns:
         dict: The loaded JSON data.
     """
-    # Normalize the path
-    file_path = Path(file_path).resolve()
+    launch_dir = Path(os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())).resolve()
+    shared_disk_path = os.environ.get("CURIO_SHARED_DATA", "./.curio/data/")
+    lod_dir = (launch_dir / shared_disk_path).resolve()
 
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"The file {file_path} does not exist.")
+    # Ensure file_path is relative, then join and resolve
+    requested_path = Path(file_path)
+    full_path = (lod_dir / requested_path).resolve()
+
+    # Security check to prevent directory traversal
+    if not str(full_path).startswith(str(lod_dir)):
+        raise PermissionError(f"Access to path '{full_path}' is not allowed.")
+
+    # Normalize the path
+    # file_path = Path(file_path).resolve()
+
+    if not full_path.exists():
+        raise FileNotFoundError(f"The file {full_path} does not exist.")
 
     # Using mmap for efficient memory-mapped loading
-    with open(file_path, "rb") as file:
+    with open(full_path, "rb") as file:
         with mmap.mmap(file.fileno(), 0, access=mmap.ACCESS_READ) as mmapped_file:
             # Decompress and decode directly from the memory-mapped file
             decompressed_data = zlib.decompress(mmapped_file[:])
@@ -163,7 +179,9 @@ def parse_list(data_type, data_value):
     return values
 
 def parse_dataframe(data_value):
-    return pd.DataFrame.from_dict(data_value)
+    # return pd.DataFrame.from_dict(data_value)
+    df = pd.DataFrame.from_dict(data_value)
+    return df.astype(object).where(pd.notnull(df), np.nan)
 
 def parse_geodataframe(data_value):
     # df = pd.DataFrame.from_dict(data_value)
@@ -200,6 +218,35 @@ def parseInput(parsed_json):
 
     return None
 
+
+def make_json_safe(obj):
+    if isinstance(obj, (dict, list)):
+        return obj
+    elif isinstance(obj, (np.integer, np.floating)):
+        return obj.item()
+    elif isinstance(obj, (datetime.datetime, datetime.date)):
+        return obj.isoformat()
+    elif obj is None:
+        return None
+    elif isinstance(obj, (float, int)) and pd.isnull(obj):  # Only apply pd.isnull to scalars
+        return None
+    return obj  # Fallback for str, bool, etc.
+
+def safe_json_loads(val):
+    try:
+        if isinstance(val, str) and val.strip().startswith('{'):
+            return json.loads(val)
+    except Exception as e:
+        print("Exception in safe_json_loads", e)
+    return val
+
+def fix_json_strings(gdf):
+    gdf = gdf.copy()
+    for col in gdf.columns:
+        if col != 'geometry':
+            gdf[col] = gdf[col].apply(safe_json_loads)
+    return gdf
+
 # Output Functions
 def parseOutput(output):
     json_output = {'data': '', 'dataType': ''}
@@ -213,12 +260,17 @@ def parseOutput(output):
         json_output['data'] = output
         json_output['dataType'] = type(output).__name__
     elif isinstance(output, pd.DataFrame) and not isinstance(output, gpd.GeoDataFrame):
-        json_output['data'] = output.to_dict(orient='list')
+        # json_output['data'] = output.to_dict(orient='list')
+        clean_df = output.astype(object).where(pd.notnull(output), None)
+        clean_df = make_json_safe(clean_df)
+        json_output['data'] = clean_df.to_dict(orient='list')
         json_output['dataType'] = 'dataframe'
     elif isinstance(output, gpd.GeoDataFrame):
         # output['geometry'] = output['geometry'].apply(lambda geom: geom.wkt)
         # json_output['data'] = output.to_dict(orient='list')
-        json_output['data'] = output.__geo_interface__
+        gdf = fix_json_strings(output)
+        geojson_dict = json.loads(gdf.to_json())
+        json_output['data'] = geojson_dict
         json_output['dataType'] = 'geodataframe'
         if hasattr(output, 'metadata') and 'name' in output.metadata:
             parsed_geojson = json_output['data']

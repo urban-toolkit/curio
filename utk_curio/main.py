@@ -82,7 +82,7 @@ def stream_output(process, name, color):
             if line:
                 log_info(f"[{name}] {line.strip()}", color, 2)
         
-        log_info(f"[{name}] has stopped. No more output.", 1, color)
+        log_info(f"[{name}] has stopped. No more output.", color, 1)
     except ValueError:
         log_error(f"[{name}] Error: Output stream closed unexpectedly.")
     finally:

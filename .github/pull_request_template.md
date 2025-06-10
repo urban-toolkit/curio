@@ -25,7 +25,7 @@
 
 
 # Checklist (Check all that apply)
-- [ ] My code follows the style guidelines of this project
+- [ ] I have manually run the tests in the tests/ folder and verified they pass
 - [ ] I have commented my code, particularly in hard-to-understand areas
 - [ ] I have made corresponding changes to the documentation
 - [ ] My changes generate no new warnings
