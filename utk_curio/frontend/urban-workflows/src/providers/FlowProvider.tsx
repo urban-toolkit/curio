@@ -700,9 +700,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                             customConnection.type = EdgeType.BIDIRECTIONAL_EDGE;
                         } else {
                             customConnection.type = EdgeType.UNIDIRECTIONAL_EDGE;
-
-                            // only do provenance for in and out connections
-                            if(provenance)  
+                            
+                            if(true)  //Changed provenance to always persist connections; monitor for potential side effects.
                                 newConnection(
                                     (custom_workflow ? custom_workflow : workflowNameRef.current), 
                                     customConnection.source, 
