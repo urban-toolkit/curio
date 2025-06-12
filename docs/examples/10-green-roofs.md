@@ -1,6 +1,10 @@
 # Example: Visual analytics of green roofs
 
+Authors: Samuel Haddad, Lorena Castillejo, Aakash Kolli
+
 In this example, we will explore how Curio can facilitate the spatial analysis of urban green infrastructure by integrating tabular and geospatial data to analyze and visualize the distribution and density of green roofs in Chicago.
+
+![Curio Dataflow](./images/10.gif)
 
 Here is the overview of the entire dataflow pipeline:
 

@@ -1,5 +1,7 @@
 # Example: Visual analytics of speed camera violations
 
+Author: Ameer Mustafa, Filip Petrev, Sania Sohail, Aakash Kolli
+
 In this example, we will explore how Curio can facilitate the temporal analysis of urban mobility data by processing and aggregating tabular records to analyze and visualize trends in speed camera violations across Chicago.
 
 Here is the overview of the entire dataflow pipeline:
@@ -8,7 +10,7 @@ Here is the overview of the entire dataflow pipeline:
 
 Before you begin, please familiarize yourself with Curio’s main concepts and functionalities by reading our [usage guide](https://github.com/urban-toolkit/curio/blob/main/docs/USAGE.md).
 
-The data for this tutorial can be found [here](https://drive.google.com/drive/folders/1eCy0nMHZ3jt_MKWRLKDjl75Q9fK5xdf6?usp=sharing).
+The data for this tutorial can be found [here](data/Speed_Camera_Violations.zip).
 
 For completeness, we also include the template code in each dataflow step.
 

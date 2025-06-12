@@ -1,5 +1,7 @@
 # Example: Visual analytics of building energy efficiency
 
+Authors: Himanshu Dongre, Aakash Kolli
+
 In this example, we will learn how Curio can be used to perform a comparative analysis of building energy performance. The process involves loading and cleaning a dataset of Chicago buildings, then making a visualization to benchmark the energy efficiency across different property types.
 
 Here is the overview of the entire dataflow pipeline:

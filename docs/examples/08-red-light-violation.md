@@ -1,5 +1,7 @@
 # Example: Urban traffic violation analysis
 
+Authors: Niketan Doddamani, Purvi Vadher, Sanjay Kalaivanan, Aakash Kolli
+
 In this example, we will explore how Curio can be used to construct a comprehensive dataflow for analyzing and visualizing urban red-light traffic violations. This example demonstrates how to load, process, and visualize urban traffic data, enabling insights into violation patterns, enforcement effectiveness, and spatial trends.
 
 Here is the overview of the entire dataflow pipeline:
@@ -8,7 +10,7 @@ Here is the overview of the entire dataflow pipeline:
 
 Before you begin, please familiarize yourself with Curio’s main concepts and functionalities by reading our [usage guide](https://github.com/urban-toolkit/curio/blob/main/docs/USAGE.md).
 
-The data for this tutorial can be found [here](https://drive.google.com/drive/folders/1WL7gz4VY1iV_p7G7WI4nf-sje7cl_Bvx?usp=sharing).
+The data for this tutorial can be found [here](data/red-light-violation.zip).
 
 For completeness, we also include the template code in each dataflow step.
 
