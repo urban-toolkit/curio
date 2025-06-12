@@ -8,7 +8,7 @@ Here is the overview of the entire dataflow pipeline:
 
 Before you begin, please familiarize yourself with Curio’s main concepts and functionalities by reading our [usage guide](https://github.com/urban-toolkit/curio/blob/main/docs/USAGE.md).
 
-The data for this tutorial can be found [here](https://github.com/urban-toolkit/curio/blob/main/docs/examples/data/energy_dataset.csv).
+The data for this tutorial can be found [here](data/energy_dataset.csv).
 
 For completeness, we also include the template code in each dataflow step.
 
