@@ -23,3 +23,4 @@ Icons indicate the complexity level of each example: 🟢 Easy, 🟡 Intermediat
 - 🟡 [Red-light traffic violation analysis](examples/08-red-light-violation.md): Builds a dataflow to analyze temporal, spatial, and seasonal trends in red-light violations using interactive dashboards.
 - 🟢 [Building energy efficiency](examples/09-energy-efficiency.md): Compares mean and median energy use intensity across building types to identify outliers and efficiency gaps.
 - 🟢 [Green roofs spatial analysis](examples/10-green-roofs.md): Visualizes the distribution and density of green roofs across Chicago using dot density maps and zip code aggregation.
+- 🟡 [Building energy consumption](examples/11-building-energy.md): Analyzes temporal, spatial, and structural patterns in building energy use with interactive visualizations.
