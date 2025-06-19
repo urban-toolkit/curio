@@ -791,18 +791,15 @@ def delete_box_prov():
 
             duplicated_activities_ids.append(activity_id)
 
-    # updating duplicated activities to point to the duplicated relations
-    for old_output_id in duplicated_output_relations:
-        cursor.execute("SELECT activity_id FROM activity WHERE input_relation_id = ?", (old_output_id,))
-        activities = cursor.fetchall()
+    # # updating duplicated activities to point to the duplicated relations
+    # for old_output_id in duplicated_output_relations:
+    #     cursor.execute("SELECT activity_id FROM activity WHERE input_relation_id = ?", (old_output_id,))
+    #     activities = cursor.fetchall()
 
-        for activity in activities:
-            if activity[0] in duplicated_activities_ids: # this is a duplicated activity that needs to have input field updated to point to new duplicated relation
-                cursor.execute("UPDATE activity SET input_relation_id = ? WHERE activity_id = ?", (duplicated_output_relations[old_output_id], activity[0],))
-                conn.commit()
-
-    # update input relation of the activity
-    cursor.execute("UPDATE activity SET input_relation_id = NULL WHERE workflow_id = ? AND activity_name = ?", (workflow_id, data['targetNodeType']+"-"+data['targetNodeId'],))
+    #     for activity in activities:
+    #         if activity[0] in duplicated_activities_ids: # this is a duplicated activity that needs to have input field updated to point to new duplicated relation
+    #             cursor.execute("UPDATE activity SET input_relation_id = ? WHERE activity_id = ?", (duplicated_output_relations[old_output_id], activity[0],))
+    #             conn.commit()
 
     conn.commit()
     conn.close()
