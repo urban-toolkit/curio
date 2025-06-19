@@ -32,7 +32,7 @@ import BoxEditor from "./editing/BoxEditor";
 import { OutputIcon } from "./edges/OutputIcon";
 import { InputIcon } from "./edges/InputIcon";
 
-import { fetchData } from '../services/api';
+import { fetchData, fetchPreviewData } from '../services/api';
 
 
 function DataPoolBox({ data, isConnectable }) {
@@ -676,17 +676,75 @@ function DataPoolBox({ data, isConnectable }) {
         outputTable: any;
         data: any;
     }) => {
+        const [previewTable, setPreviewTable] = useState<any[]>([]);
+        const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+        const [usePreview, setUsePreview] = useState(false);
+
+        useEffect(() => {
+            const loadPreviewData = async () => {
+                // Only attempt preview if we have a valid data input with path
+                if (!data.input || !data.input.path || data.input === "") {
+                    setUsePreview(false);
+                    return;
+                }
+
+                setIsLoadingPreview(true);
+                try {
+                    // Fetch preview data independently
+                    const previewData = await fetchPreviewData(data.input.path);
+                    
+                    // Transform preview data to table format (same as current logic)
+                    let tableData: any[] = [];
+                    
+                    if (previewData.dataType === "dataframe" && previewData.data) {
+                        const columns = Object.keys(previewData.data);
+                        const indices = Object.keys(previewData.data[columns[0]]);
+                        
+                        tableData = indices.map((idx) => {
+                            const row: any = {};
+                            columns.forEach(col => {
+                                row[col] = previewData.data[col][idx];
+                            });
+                            return row;
+                        });
+                    } else if (previewData.dataType === "geodataframe" && previewData.data?.features) {
+                        tableData = previewData.data.features.map((feature: any) => {
+                            return { ...feature.properties };
+                        });
+                    }
+
+                    setPreviewTable(tableData);
+                    setUsePreview(true);
+                } catch (error) {
+                    console.log("[ContentComponent] Preview fetch failed, falling back to outputTable:", error);
+                    setUsePreview(false);
+                } finally {
+                    setIsLoadingPreview(false);
+                }
+            };
+
+            loadPreviewData();
+        }, [data.input]);
+
+        // Use preview data if available, otherwise fall back to outputTable
+        const displayTable = usePreview ? previewTable : outputTable;
+
         return (
             <div
                 className="nowheel"
                 style={{ overflowY: "auto", height: "100%" }}
             >
+                {isLoadingPreview && (
+                    <div style={{ padding: "10px", textAlign: "center", color: "#666" }}>
+                        Loading preview...
+                    </div>
+                )}
                 <TableContainer component={Paper}>
                     <Table aria-label="simple table">
-                        {outputTable.length > 0 ? (
+                        {displayTable.length > 0 ? (
                             <TableHead>
                                 <TableRow>
-                                    {Object.keys(outputTable[0]).map(
+                                    {Object.keys(displayTable[0]).map(
                                         (column, index) => {
                                             return (
                                                 <TableCell
@@ -711,7 +769,7 @@ function DataPoolBox({ data, isConnectable }) {
                         ) : null}
 
                         <TableBody>
-                            {outputTable
+                            {displayTable
                                 .slice(0, 100)
                                 .map((row: any, index: any) => {
                                     return (

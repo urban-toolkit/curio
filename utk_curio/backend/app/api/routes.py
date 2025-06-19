@@ -200,12 +200,143 @@ def get_file():
                 if vega:
                     data = transform_to_vega(data)
 
-        return jsonify(data)
+        return jsonify(data), 200
 
     except Exception as e:
         return f'Error loading file: {str(e)}', 500
 
-    return jsonify(data), 200
+@bp.route('/get-preview', methods=['GET'])
+def get_file_preview():
+    """
+    Get first 100 rows + metadata for DataPool display optimization.
+    Similar to /get but returns limited data to reduce transfer overhead.
+    """
+    file_name = request.args.get('fileName')
+    
+    if not file_name:
+        return 'No file name specified', 400
+    
+    launch_dir = os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())
+    shared_disk_path = os.environ.get("CURIO_SHARED_DATA", "./.curio/data/")
+    base_path = Path(launch_dir) / shared_disk_path
+    base_path = base_path.resolve()
+
+    requested_path = Path(file_name)
+    full_path = (base_path / requested_path).resolve()
+
+    if not str(full_path).startswith(str(base_path)):
+        return 'Invalid file path: %s'%full_path, 403
+
+    if not full_path.exists():
+        return 'File does not exist: %s'%full_path, 404
+
+    try:
+        # Using mmap for efficient memory-mapped loading
+        with open(full_path, "rb") as file:
+            with mmap.mmap(file.fileno(), 0, access=mmap.ACCESS_READ) as mmapped_file:
+                # Decompress and decode directly from the memory-mapped file
+                decompressed_data = zlib.decompress(mmapped_file[:])
+                data = json.loads(decompressed_data.decode('utf-8'))
+
+                if isinstance(data, str):
+                    data = json.loads(data)
+                
+                # Create preview version with limited rows
+                preview_data = create_preview_data(data)
+                
+                return jsonify(preview_data)
+
+    except Exception as e:
+        return f'Error loading preview: {str(e)}', 500
+
+def create_preview_data(data, max_rows=100):
+    """
+    Create a preview version of the data with limited rows.
+    Maintains the same structure but with fewer rows for display.
+    """
+    if not isinstance(data, dict):
+        return data
+    
+    # Handle dataframe format
+    if data.get('dataType') == 'dataframe' and 'data' in data:
+        df_data = data['data']
+        if isinstance(df_data, dict):
+            # Check if columns contain arrays (list format)
+            columns = list(df_data.keys())
+            if columns:
+                first_column_data = df_data[columns[0]]
+                
+                # Handle list format (most common)
+                if isinstance(first_column_data, list):
+                    total_rows = len(first_column_data)
+                    limited_rows = min(max_rows, total_rows)
+                    
+                    # Create limited data for each column
+                    limited_data = {}
+                    for column in columns:
+                        if isinstance(df_data[column], list):
+                            limited_data[column] = df_data[column][:limited_rows]
+                        else:
+                            limited_data[column] = df_data[column]
+                    
+                    # Create preview response
+                    preview = {
+                        **data,  # Keep all original metadata
+                        'data': limited_data,
+                        'preview': True,
+                        'previewRows': limited_rows,
+                        'totalRows': total_rows
+                    }
+                    return preview
+                
+                # Handle dictionary-indexed format
+                elif isinstance(first_column_data, dict):
+                    # Get keys (indices) and limit to max_rows
+                    all_indices = list(first_column_data.keys())
+                    limited_indices = all_indices[:max_rows]
+                    
+                    # Create limited data for each column
+                    limited_data = {}
+                    for column in columns:
+                        limited_data[column] = {
+                            idx: df_data[column][idx] 
+                            for idx in limited_indices 
+                            if idx in df_data[column]
+                        }
+                    
+                    # Create preview response
+                    preview = {
+                        **data,  # Keep all original metadata
+                        'data': limited_data,
+                        'preview': True,
+                        'previewRows': len(limited_indices),
+                        'totalRows': len(all_indices)
+                    }
+                    return preview
+    
+    # Handle geodataframe format  
+    elif data.get('dataType') == 'geodataframe' and 'data' in data:
+        gdf_data = data['data']
+        if isinstance(gdf_data, dict) and 'features' in gdf_data:
+            features = gdf_data['features']
+            if isinstance(features, list):
+                total_features = len(features)
+                limited_features = features[:max_rows]
+                
+                preview = {
+                    **data,  # Keep all original metadata
+                    'data': {
+                        **gdf_data,
+                        'features': limited_features
+                    },
+                    'preview': True,
+                    'previewRows': len(limited_features),
+                    'totalRows': total_features
+                }
+                return preview
+    
+    # Return original data if format not recognized
+    return data
 
 @bp.route('/processPythonCode', methods=['POST'])
 def process_python_code():
@@ -660,15 +791,18 @@ def delete_box_prov():
 
             duplicated_activities_ids.append(activity_id)
 
-    # # updating duplicated activities to point to the duplicated relations
-    # for old_output_id in duplicated_output_relations:
-    #     cursor.execute("SELECT activity_id FROM activity WHERE input_relation_id = ?", (old_output_id,))
-    #     activities = cursor.fetchall()
+    # updating duplicated activities to point to the duplicated relations
+    for old_output_id in duplicated_output_relations:
+        cursor.execute("SELECT activity_id FROM activity WHERE input_relation_id = ?", (old_output_id,))
+        activities = cursor.fetchall()
 
-    #     for activity in activities:
-    #         if activity[0] in duplicated_activities_ids: # this is a duplicated activity that needs to have input field updated to point to new duplicated relation
-    #             cursor.execute("UPDATE activity SET input_relation_id = ? WHERE activity_id = ?", (duplicated_output_relations[old_output_id], activity[0],))
-    #             conn.commit()
+        for activity in activities:
+            if activity[0] in duplicated_activities_ids: # this is a duplicated activity that needs to have input field updated to point to new duplicated relation
+                cursor.execute("UPDATE activity SET input_relation_id = ? WHERE activity_id = ?", (duplicated_output_relations[old_output_id], activity[0],))
+                conn.commit()
+
+    # update input relation of the activity
+    cursor.execute("UPDATE activity SET input_relation_id = NULL WHERE workflow_id = ? AND activity_name = ?", (workflow_id, data['targetNodeType']+"-"+data['targetNodeId'],))
 
     conn.commit()
     conn.close()

@@ -22,8 +22,42 @@ export async function fetchData(fileName: string, vega: boolean = false) {
         console.log(`Fetched data`, jsonData);
 
         return jsonData;
-    } catch (error) {
-        console.error("Error:", error.message);
+    } catch (error: unknown) {
+        console.error("Error:", error instanceof Error ? error.message : String(error));
+        throw error;
+    }
+}
+
+/**
+ * Fetches a preview version of the data (first 100 rows) for display purposes.
+ * This is more efficient than fetching the entire dataset when only displaying data.
+ * 
+ * @param fileName - The name of the file to fetch
+ * @returns The preview data with metadata about row counts
+ */
+export async function fetchPreviewData(fileName: string) {
+    try {
+        // Use the correct backend URL
+        const backendUrl = process.env.BACKEND_URL || 'http://localhost:5002';
+        const url = `${backendUrl}/get-preview?fileName=${encodeURIComponent(fileName)}`;
+        console.log(`[fetchPreviewData] Fetching preview from ${url}`);
+        
+        const response = await fetch(url, {
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to fetch preview ${url}: ${response.statusText}`);
+        }
+
+        const jsonData = await response.json();
+        console.log(`[fetchPreviewData] Fetched preview data:`, jsonData);
+
+        return jsonData;
+    } catch (error: unknown) {
+        console.error("[fetchPreviewData] Error:", error instanceof Error ? error.message : String(error));
         throw error;
     }
 }
