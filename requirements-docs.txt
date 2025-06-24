@@ -2,4 +2,4 @@ mkdocs>=1.5.0
 mkdocs-material>=9.0.0
 mkdocs-awesome-pages-plugin
 pymdown-extensions
-mermaid2 
+mkdocs-mermaid2-plugin 
