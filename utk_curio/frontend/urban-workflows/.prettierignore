@@ -1,3 +1,0 @@
-# Ignore artifacts:
-dist
-src/components/vega-schema.json
