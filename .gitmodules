@@ -1,0 +1,3 @@
+[submodule "utk-workflow"]
+	path = utk-workflow
+	url = git@github.com:GMMULLER/utk-workflow.git

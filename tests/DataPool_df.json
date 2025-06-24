@@ -1,0 +1,42 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "59367466-92b7-44e1-b85f-deb419863156",
+        "type": "DATA_POOL",
+        "x": 791.2037151035659,
+        "y": 756.3348326885673,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "677a92e1-32c7-43b5-9362-de382a212601",
+        "type": "DATA_LOADING",
+        "x": 4.200124570208544,
+        "y": 756.9073125580803,
+        "content": "import pandas as pd\r\n\r\nd = {'a': [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\", \"G\", \"H\", \"I\"], 'b': [28, 55, 43, 91, 81, 53, 19, 87, 52]}\r\ndf = pd.DataFrame(data=d)\r\n\r\nreturn df",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-677a92e1-32c7-43b5-9362-de382a212601out-59367466-92b7-44e1-b85f-deb419863156in",
+        "source": "677a92e1-32c7-43b5-9362-de382a212601",
+        "target": "59367466-92b7-44e1-b85f-deb419863156"
+      }
+    ],
+    "name": "DefaultWorkflow",
+    "task": "",
+    "timestamp": 1747158382772,
+    "provenance_id": "DefaultWorkflow"
+  }
+}

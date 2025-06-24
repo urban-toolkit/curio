@@ -1,0 +1,146 @@
+site_name: Curio
+repo_name: urban-toolkit/curio
+
+repo_url: https://github.com/urban-toolkit/curio
+edit_uri: blob/main/docs/
+site_url: https://makaveli2P.github.io/curio/
+
+site_author: Urban Toolkit Team
+copyright: © Urban Toolkit 2025-present
+site_description: >
+  Curio is a framework for collaborative urban visual analytics that uses a dataflow model with multiple abstraction levels (code, grammar, GUI elements) to facilitate collaboration across the design and implementation of visual analytics components. The framework allows experts to intertwine preprocessing, managing, and visualization stages while tracking provenance of code and visualizations.
+
+remote_branch: gh-pages
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+  font:
+    text: Roboto
+    code: Roboto Mono
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - navigation.indexes
+    - toc.follow
+    - content.code.copy
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - announce.dismiss
+    - content.tabs.link
+    - content.code.copy
+    - content.code.select
+    - content.code.annotate
+    - navigation.tabs
+    - navigation.top
+    - search.suggest
+    - toc.follow
+    - content.tooltips
+  icon:
+    repo: fontawesome/brands/github
+  logo: public/resources/curio_logo.ico
+  favicon: public/resources/curio_logo.ico
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - attr_list
+  - abbr
+  - pymdownx.tilde
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:mermaid2.fence_mermaid
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.snippets:
+      base_path:
+        - docs
+      restrict_base_path: false
+  - def_list
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.arithmatex:
+      generic: true
+
+plugins:
+  - search
+
+extra:
+  version:
+    provider: 'mike'
+  social:
+      - icon: fontawesome/brands/github
+        link: https://github.com/urban-toolkit/curio
+      - icon: fontawesome/brands/discord
+        link: https://discord.gg/vjpSMSJR8r
+      - icon: fontawesome/solid/globe
+        link: https://urbantk.org/curio
+      - icon: fontawesome/solid/file
+        link: https://arxiv.org/abs/2408.06139
+
+extra_css:
+  - private/custom_css/extra.css
+
+
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quick Start Tutorial: getting-started/quick_start.md
+  - Examples:
+    - Overview: examples/examples.md
+    - Visual Analytics:
+      - 🟢 Heterogeneous Data: examples/detailed_examples/01-visual-analytics.md
+      - 🟢 Building Energy Efficiency: examples/detailed_examples/09-energy-efficiency.md
+      - 🟢 Green Roofs Analysis: examples/detailed_examples/10-green-roofs.md
+    - Urban Planning:
+      - 🟡 What-if Scenarios: examples/detailed_examples/02-what-if.md
+      - 🟢 Accessibility Analysis: examples/detailed_examples/04-accessibility-analysis.md
+      - 🟢 Flooding Analysis: examples/detailed_examples/05-flooding-complaints.md
+    - Advanced Analytics:
+      - 🔴 Expert-in-the-Loop: examples/detailed_examples/03-expert-in-the-loop.md
+    - Interactive Visualizations:
+      - 🟡 Vega-Lite & UTK: examples/detailed_examples/06-interaction.md
+      - 🟡 Speed Camera Violations: examples/detailed_examples/07-speed-camera.md
+      - 🟡 Red-light Violations: examples/detailed_examples/08-red-light-violation.md
+      - 🟡 Building Energy Consumption: examples/detailed_examples/11-building-energy.md
+  - User Guide:
+    - Overview: user-guide/overview.md
+    - Backend: user-guide/modules/backend.md
+    - Sandbox: user-guide/modules/sandbox.md
+    - Urban Workflows: user-guide/modules/urban-workflows.md
+    - UTK Workflow: user-guide/modules/utk-workflow.md
+  - Contributing: ./CONTRIBUTING.md
+  - Releases: https://github.com/urban-toolkit/curio/releases

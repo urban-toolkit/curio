@@ -1,0 +1,62 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "0d87a948-dca7-4b91-a299-92a68f0e05a7",
+        "type": "DATA_LOADING",
+        "x": 2294.276773952865,
+        "y": -1048.8452034389063,
+        "content": "import geopandas as gpd\r\nimport numpy as np\r\n\r\ngdf_zip = gpd.read_file(\"tests/nyc_zip.geojson\")\r\n\r\ngdf_zip = gdf_zip.set_crs(4326)\r\n\r\ngdf_zip['value'] = np.random.randint(low=0, high=100, size=len(gdf_zip))\r\n\r\ngdf_zip = gdf_zip[[\"geometry\", \"value\"]]\r\n\r\ngdf_zip = gdf_zip.to_crs(3395)\r\n\r\ngdf_zip.metadata = {\r\n    'name': 'zip'\r\n}\r\n\r\nreturn gdf_zip",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load neighborhood geometries from the nyc_zip.geojson file using GeoPandas for further spatial analysis and visualization.",
+        "metadata": {
+          "keywords": [
+            2
+          ]
+        }
+      },
+      {
+        "id": "d2a25ce0-0684-4a29-995a-b2a7c76aa6c6",
+        "type": "VIS_UTK",
+        "x": 3565.736813150044,
+        "y": -1065.995690786559,
+        "content": "{\n    \"components\": [\n        {\n            \"id\": \"grammar_map\",\n            \"position\": {\n                \"width\": [\n                    1,\n                    12\n                ],\n                \"height\": [\n                    1,\n                    4\n                ]\n            }\n        }\n    ],\n    \"knots\": [],\n    \"ex_knots\": [\n        {\n            \"id\": \"zip0\",\n            \"out_name\": \"zip\",\n            \"in_name\": \"value\"\n        }\n    ],\n    \"grid\": {\n        \"width\": 12,\n        \"height\": 4\n    },\n    \"grammar\": false\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "cb265128-9fd3-4c58-a133-2fbae00c7101",
+        "type": "DATA_POOL",
+        "x": 2928.4904165413345,
+        "y": -1049.8113790339394,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-0d87a948-dca7-4b91-a299-92a68f0e05a7out-cb265128-9fd3-4c58-a133-2fbae00c7101in",
+        "source": "0d87a948-dca7-4b91-a299-92a68f0e05a7",
+        "target": "cb265128-9fd3-4c58-a133-2fbae00c7101"
+      },
+      {
+        "id": "reactflow__edge-cb265128-9fd3-4c58-a133-2fbae00c7101out-d2a25ce0-0684-4a29-995a-b2a7c76aa6c6in",
+        "source": "cb265128-9fd3-4c58-a133-2fbae00c7101",
+        "target": "d2a25ce0-0684-4a29-995a-b2a7c76aa6c6"
+      }
+    ],
+    "name": "DefaultWorkflow",
+    "task": "",
+    "timestamp": 1748222112788,
+    "provenance_id": "DefaultWorkflow"
+  }
+}

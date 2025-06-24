@@ -1,0 +1,56 @@
+{
+    "$id": "https://urbantk.org/grammar_plots",
+    "title": "Grammar for plot components",
+    "description": "Grammar for plot components",
+    "type": "object",
+    "properties": {
+        "variables": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "value": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "name": {
+            "type": "string"
+        },
+        "plot": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "knots": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "arrangement": {
+            "type": "string"
+        },
+        "interaction": {
+            "type": "string"
+        },
+        "interaction_effect": {
+            "type": "string"
+        },
+        "args": {
+            "type": "object",
+            "properties": {
+                "bins": {
+                    "type": "number"
+                }
+            }
+        },
+        "grammar_type": {
+            "type": "string"
+        }
+    },
+    "required": ["plot", "knots", "grammar_type"]
+}

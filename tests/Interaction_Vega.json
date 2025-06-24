@@ -1,0 +1,136 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "node2",
+        "type": "DATA_LOADING",
+        "x": -653.9530778971115,
+        "y": 801.1250959222709,
+        "content": "import geopandas as gpd\r\n\r\ngdf_neighborhood = gpd.read_file(\"tests/access_score_neighborhood.geojson\")[[\"coverage\", \"avg_attribute_count\", \"geometry\", \"neighborhood_name\"]]\r\n\r\nreturn gdf_neighborhood",
+        "out": "GEODATAFRAME",
+        "in": "JSON",
+        "goal": "Load key fields from the 'access_score_neighborhood' GeoJSON dataset, including coverage, average attribute count, and geometry for further analysis and visualization.",
+        "metadata": {
+          "keywords": [
+            7,
+            9,
+            8
+          ]
+        }
+      },
+      {
+        "id": "node5",
+        "type": "DATA_CLEANING",
+        "x": 166.8794125717717,
+        "y": 802,
+        "content": "import geopandas as gpd\r\n\r\ngdf_neighborhood = arg\r\n\r\ngdf_neighborhood = gdf_neighborhood.join(pd.json_normalize(gdf_neighborhood[\"avg_attribute_count\"])).drop(columns=[\"avg_attribute_count\"])\r\n\r\ngdf_neighborhood = gdf_neighborhood.dropna(subset=[\"coverage\"])\r\ngdf_neighborhood = gdf_neighborhood.dropna(subset=[\"geometry\"])\r\ngdf_neighborhood = gdf_neighborhood.dropna(subset=[\"neighborhood_name\"])\r\ngdf_neighborhood[\"CurbRamp\"] = gdf_neighborhood[\"CurbRamp\"].fillna(0)\r\ngdf_neighborhood[\"NoCurbRamp\"] = gdf_neighborhood[\"NoCurbRamp\"].fillna(0)\r\ngdf_neighborhood[\"Obstacle\"] = gdf_neighborhood[\"Obstacle\"].fillna(0)\r\ngdf_neighborhood[\"SurfaceProblem\"] = gdf_neighborhood[\"SurfaceProblem\"].fillna(0)\r\n\r\nreturn gdf_neighborhood",
+        "out": "GEODATAFRAME",
+        "in": "GEODATAFRAME",
+        "goal": "Clean and filter 'access_score_neighborhood' retaining key fields.",
+        "metadata": {
+          "keywords": [
+            7,
+            9
+          ]
+        }
+      },
+      {
+        "id": "node12",
+        "type": "VIS_VEGA",
+        "x": 3248.3191033971034,
+        "y": 554.4247559298842,
+        "content": "{\r\n    \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\r\n    \"params\": [\r\n        {\r\n            \"name\": \"highlight\",\r\n            \"select\": {\"type\": \"point\", \"on\": \"pointerover\"}\r\n        }\r\n    ],\r\n    \"mark\": {\r\n        \"type\": \"bar\",\r\n        \"fill\": \"#4C78A8\",\r\n        \"stroke\": \"black\",\r\n        \"cursor\": \"pointer\"\r\n    },\r\n    \"encoding\": {\r\n        \"x\": {\r\n            \"field\": \"neighborhood_name\", \r\n            \"type\": \"ordinal\",\r\n            \"sort\": \"y\"\r\n        },\r\n        \"y\": {\"field\": \"accessibility\", \"type\": \"quantitative\"},\r\n        \"fillOpacity\": {\r\n            \"condition\": {\"param\": \"highlight\", \"value\": 1},\r\n            \"value\": 0.3\r\n        },\r\n        \"color\": { \r\n            \"field\": \"interacted\", \r\n            \"type\": \"nominal\", \r\n            \"condition\": {\r\n                \"test\": \"datum.interacted === '1'\", \"value\": \"red\", \"else\": \"blue\"\r\n            } \r\n        }\r\n    },\r\n    \"config\": {\r\n        \"scale\": {\r\n            \"bandPaddingInner\": 0.2\r\n        }\r\n    }\r\n}",
+        "out": "DATAFRAME",
+        "in": "DATAFRAME",
+        "goal": "Plot accessibility by neighborhood linking with accessibility map.",
+        "metadata": {
+          "keywords": [
+            17
+          ]
+        }
+      },
+      {
+        "id": "1a815d0b-2298-4257-ab9a-857dd884338d",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": 1097.4724824063856,
+        "y": 799.2756560300706,
+        "content": "import numpy as np\r\n\r\ngdf_neighborhood = arg.set_crs(4326)\r\ngdf_neighborhood = gdf_neighborhood.to_crs(3395)\r\n\r\nw_noCurb = 1\r\nw_obstacle = 1\r\nw_surfaceProblem = 1\r\nw_curb = 1\r\n\r\nnumerator = (w_noCurb * gdf_neighborhood[\"NoCurbRamp\"] + \r\n             w_obstacle * gdf_neighborhood[\"Obstacle\"] + \r\n             w_surfaceProblem * gdf_neighborhood[\"SurfaceProblem\"])\r\n\r\ndenominator = w_curb * gdf_neighborhood[\"CurbRamp\"]\r\n\r\ngdf_neighborhood[\"accessibility\"] = np.where(\r\n    denominator == 0, \r\n    0, \r\n    numerator / denominator\r\n)\r\n\r\n# gdf_neighborhood[\"accessibility\"] = (w_noCurb * gdf_neighborhood[\"NoCurbRamp\"] + w_obstacle * gdf_neighborhood[\"Obstacle\"] + w_surfaceProblem * gdf_neighborhood[\"SurfaceProblem\"]) / (w_curb * gdf_neighborhood[\"CurbRamp\"])\r\n\r\nmin_val = gdf_neighborhood[\"accessibility\"].min()\r\nmax_val = gdf_neighborhood[\"accessibility\"].max()\r\n\r\ndenominator = max_val - min_val\r\n\r\nif denominator == 0:\r\n    gdf_neighborhood[\"accessibility\"] = 0  # Set a default value\r\nelse:\r\n    gdf_neighborhood[\"accessibility\"] = (gdf_neighborhood[\"accessibility\"] - min_val) / denominator\r\n\r\n\r\n# gdf_neighborhood[\"accessibility\"] = (gdf_neighborhood[\"accessibility\"] - gdf_neighborhood[\"accessibility\"].min()) / (gdf_neighborhood[\"accessibility\"].max() - gdf_neighborhood[\"accessibility\"].min())\r\n\r\ngdf_neighborhood = gdf_neighborhood[[\"geometry\", \"accessibility\", \"neighborhood_name\"]]\r\n\r\ngdf_neighborhood.metadata = {\r\n 'name': 'neighborhood'\r\n}\r\n\r\nreturn gdf_neighborhood",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Calculate accessibility score for neighborhood based on 'NoCurbRamp', 'Obstacle', 'Suface Problem', 'CurbRamp' attributes.",
+        "metadata": {
+          "keywords": [
+            15,
+            10
+          ]
+        }
+      },
+      {
+        "id": "3a98c743-bee9-492a-b1ce-dbc17be97f14",
+        "type": "DATA_POOL",
+        "x": 2027.9999999999995,
+        "y": 1360,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load and manage multiple datasets including 'access_attributes', 'access_score_neighborhood', and 'access_score_streets', while ensuring their cleanliness and readiness for analysis, visualization, and interactive exploration based on accessibility scores and user agreement metrics.",
+        "metadata": {
+          "keywords": [
+            15
+          ]
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge3",
+        "source": "node2",
+        "target": "node5",
+        "metadata": {
+          "keywords": [
+            7
+          ]
+        }
+      },
+      {
+        "id": "reactflow__edge-node5out-1a815d0b-2298-4257-ab9a-857dd884338din",
+        "source": "node5",
+        "target": "1a815d0b-2298-4257-ab9a-857dd884338d",
+        "metadata": {
+          "keywords": [
+            7
+          ]
+        }
+      },
+      {
+        "id": "reactflow__edge-1a815d0b-2298-4257-ab9a-857dd884338dout-3a98c743-bee9-492a-b1ce-dbc17be97f14in",
+        "source": "1a815d0b-2298-4257-ab9a-857dd884338d",
+        "target": "3a98c743-bee9-492a-b1ce-dbc17be97f14",
+        "metadata": {
+          "keywords": [
+            0
+          ]
+        }
+      },
+      {
+        "type": "Interaction",
+        "id": "reactflow__edge-3a98c743-bee9-492a-b1ce-dbc17be97f14in/out-node12in/out",
+        "source": "3a98c743-bee9-492a-b1ce-dbc17be97f14",
+        "target": "node12",
+        "metadata": {
+          "keywords": [
+            14
+          ]
+        }
+      },
+      {
+        "id": "reactflow__edge-3a98c743-bee9-492a-b1ce-dbc17be97f14out-node12in",
+        "source": "3a98c743-bee9-492a-b1ce-dbc17be97f14",
+        "target": "node12"
+      }
+    ],
+    "name": "DefaultWorkflow",
+    "task": "",
+    "timestamp": 1747771247213,
+    "provenance_id": "DefaultWorkflow"
+  }
+}

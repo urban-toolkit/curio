@@ -1,0 +1,213 @@
+{
+    "$id": "https://urbantk.org/grammar",
+    "title": "Grammar",
+    "description": "A grammar to produce visual analytics systems",
+    "type": "object",
+    "properties": {
+        "variables": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "value": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "components": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "position": {
+                        "type": "object",
+                        "properties": {
+                            "width": {
+                                "type": "array",
+                                "minItems": 2,
+                                "maxItems": 2,
+                                "items": {
+                                    "type": "integer"
+                                }
+                            },
+                            "height": {
+                                "type": "array",
+                                "minItems": 2,
+                                "maxItems": 2,
+                                "items": {
+                                    "type": "integer"
+                                }
+                            }
+                        },
+                        "required": ["width", "height"]
+                    }
+                },
+                "required": ["id"]
+            }
+        },
+        "knots": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "group": {
+                        "type": "object",
+                        "properties": {
+                            "group_name": {
+                                "type": "string"
+                            },
+                            "position": {
+                                "type": "number"
+                            }
+                        },
+                        "required": ["group_name", "position"]
+                    },
+                    "knot_op": {
+                        "type": "boolean"
+                    },
+                    "color_map": {
+                        "type": "string"
+                    },
+                    "range": {
+                        "type": "array",
+                        "minItems": 2,
+                        "maxItems": 2,
+                        "items": {
+                            "type": "number"
+                        }
+                    },
+                    "domain": {
+                        "type": "array",
+                        "minItems": 2,
+                        "maxItems": 2,
+                        "items": {
+                            "type": "number"
+                        }
+                    },
+                    "scale": {
+                       "type": "string"
+                    },
+                    "integration_scheme": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "spatial_relation": {
+                                    "type": "string"
+                                },
+                                "out": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {
+                                            "type": "string"
+                                        },
+                                        "level": {
+                                            "type": "string"
+                                        }
+                                    }
+                                },
+                                "in": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {
+                                            "type": "string"
+                                        },
+                                        "level": {
+                                            "type": "string"
+                                        }
+                                    }
+                                },
+                                "operation": {
+                                    "type": "string"
+                                },
+                                "abstract": {
+                                    "type": "boolean"
+                                },
+                                "op": {
+                                    "type": "string"
+                                },
+                                "maxDistance": {
+                                    "type": "number"
+                                },
+                                "defaultValue": {
+                                    "type": "number"
+                                }
+                            },
+                            "required": ["out"],
+                            "dependentRequired": {
+                                "in": ["spatial_relation"]
+                            }
+                        }
+                    }
+                },
+                "required": ["id", "integration_scheme"]
+            }
+        },
+        "ex_knots": {
+            "description": "Optional knots for externally joined layers",
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "out_name": {
+                        "type": "string"
+                    },
+                    "in_name": {
+                        "type": "string"
+                    }
+                },
+                "required": ["id", "out_name"]
+            }
+        },
+        "grid": {
+            "description": "Defines how the screen should be divided",
+            "type": "object",
+            "properties": {
+                "width": {
+                    "type": "integer"
+                },
+                "height": {
+                    "type": "integer"
+                }
+            },
+            "required": ["width", "height"]
+        },
+        "grammar_position": {
+            "type": "object",
+            "properties": {
+                "width": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "height": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            },
+            "required": ["width", "height"]
+        }
+    },
+    "required": ["grid", "components", "knots"]
+}

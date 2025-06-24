@@ -1,0 +1,75 @@
+.datasetContainer {
+    padding: 20px;
+    height: 100%;
+  }
+  
+.tableWrapper {
+  margin-top: 20px;
+  max-height: 80%; /* Adjust height as needed */
+  overflow-y: auto;
+  border: 1px solid #ddd;
+}
+
+.datasetTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.datasetTable th,
+.datasetTable td {
+  border: 1px solid #ddd;
+  padding: 8px;
+  text-align: left;
+}
+
+.datasetTable tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+.datasetTable tr:nth-child(odd) {
+  background-color: #ffffff;
+}
+
+.datasetTable th {
+  background-color: #f2f2f2;
+  font-weight: bold;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+ 
+.modal {
+  position: fixed;
+  display: flex;
+  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  top: calc(50% - 20%);
+  left: 40%;
+  width: 20%;
+  height: 40%;
+  background-color: white;
+  box-shadow: rgba(0, 0, 0, 0.35) 0px 5px 15px;
+  border-radius: 10px;
+  z-index: 500;
+}
+
+.modalBackground {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: black;
+  opacity: 50%;
+  z-index: 400;
+}
+
+.closeX {
+  position: absolute;
+  right: 15px;
+  top: 10px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 19px;
+}
