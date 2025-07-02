@@ -1,4 +1,4 @@
-# Onboarding Document for UTK, Curio, and Urbanite Undergraduate Students
+# Onboarding Document for UTK, Curio, and Urbanite
 
 This document is meant for **undergraduate students** involved in UTK, Curio, and Urbanite projects to get you started quickly and independently.
 
