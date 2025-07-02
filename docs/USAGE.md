@@ -71,7 +71,7 @@ curio start frontend
 Begin by cloning Curio's repository:
 
 ```bash
-git clone git@github.com:urban-toolkit/curio.git
+git clone https://github.com/urban-toolkit/curio.git
 cd curio
 ```
 
