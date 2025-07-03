@@ -4,7 +4,7 @@ This document is meant for **undergraduate students** involved in UTK, Curio, an
 
 ## 1. Overview: UTK, Curio, and Urbanite
 
-- **UTK (Urban Toolkit):** A flexible and extensible visualization framework that enables the easy authoring of web-based visualizations through a new high-level grammar specifically built with common urban use cases in mind. [GitHub](https://github.com/urban-toolkit)
+- **UTK (Urban Toolkit):** A flexible and extensible visualization framework that enables the easy authoring of web-based visualizations through a new high-level grammar specifically built with common urban use cases in mind. [GitHub](https://github.com/urban-toolkit/utk)
 
 - **Curio:** Built on top of UTK, Curio is a framework for collaborative urban visual analytics that uses a dataflow model with multiple abstraction levels (code, grammar, GUI elements) to facilitate collaboration across the design and implementation of visual analytics components. The framework allows experts to intertwine preprocessing, managing, and visualization stages while tracking provenance of code and visualizations. [GitHub](https://github.com/urban-toolkit/curio)
 
@@ -16,9 +16,9 @@ Curio uses UTK while Urbanite builds on Curio with LLM-powered capabilities. If 
 
 Install these tools before you start:
 
-- **Git for Windows:** Download and install [Git for Windows](https://git-scm.com/download/win). It comes with Git Bash, which you will use for command-line operations. Alternatively, you can install [Windows Subsystem for Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/install) for full bash support.
+- **Git for Windows:** Download and install [Git for Windows](https://git-scm.com/download/win). It comes with Git Bash, which you will use for command-line operations. See [here](https://rogerdudler.github.io/git-guide/) for a quick Git tutorial.
   
-- **Python and Pip:** Download and install [Anaconda](https://www.anaconda.com/products/distribution) for Python environment management. For understanding how to manage Python with Conda, see [Managing Python with Conda](https://docs.conda.io/projects/conda/en/latest/user-guide/getting-started.html#managing-python).
+- **Python and Pip:** Download and install [Anaconda](https://www.anaconda.com/products/distribution) for Python environment management. For understanding how to manage Python with Conda, see [Getting Started with Conda](https://docs.conda.io/projects/conda/en/latest/user-guide/getting-started.html).
 
 ## 3. General Organization of Documents
 
@@ -54,13 +54,13 @@ These guides will help you learn how to run, modify, and contribute to the proje
 ## 5. Tips for Seeking Help
 
 - Use **Discord channels** to ask questions and share issues.
-- Avoid using email for help requests unless explicitly requested.
+- Use email for help requests only if it is specifically requested or truly necessary.
 - Being proactive is important; there may be days when help is delayed, so take initiative to search the documentation, check previous issues, and try debugging on your own.
-- When asking for help, provide:
-  - The error message
-  - Steps to reproduce the error
-  - What you have tried already
-  - Screenshots if relevant
+- When asking for help, provide as much information as possible:
+  - The error message.
+  - Steps to reproduce the error.
+  - What you have tried already.
+  - Screenshots if relevant.
 
 ## 6. Task List
 
@@ -102,6 +102,10 @@ Git is a version control system that allows you to track changes in your code, c
 - **Mamba** is a fast, drop-in replacement for Conda with the same commands, speeding up environment creation and package installation.
 
 You can use any of these for managing your Python environments. If you want simplicity, use Anaconda; for lightweight flexibility, use Miniconda or Mamba.
+
+### How do I fix errors or debug issues?
+
+First, read the documentation in the repository. Check the CONTRIBUTING.md for setup and troubleshooting steps. If you need to make code changes to debug, create a fork of the repository, make your changes there, and test locally before submitting any issues or pull requests for help.
 
 ### What if I encounter issues during installation?
 
