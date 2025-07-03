@@ -128,3 +128,13 @@ If you installed the project using pip (e.g., pip install curio), it will instal
 ```bash
 curio start
 ```
+
+### Why are there two different instances of curio when I use pip versus cloning?
+
+When you install `curio` with pip, it places the `curio` executable in your Python environment’s Scripts (Windows) or bin (macOS/Linux) folder, making it accessible system-wide from any folder.
+
+When you clone the repository directly, `curio` (or `curio.py`) remains in the folder where you cloned it, and you must run it from that folder unless you set up a manual path or install it using pip.
+
+In short:
+  - Installed via pip → curio is globally available from any folder.
+  - Cloned manually → curio is local to the folder where you cloned it and must be run from there unless you install it.
