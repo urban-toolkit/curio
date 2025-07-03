@@ -31,11 +31,9 @@ Now that we loaded the dataset using the **Data Loading Node**, we can perform s
 ```
 def complaints_by_zip(df):
 
-grouped = df["ZIP_CODE"].fillna("UNKNOWN").value_counts().reset_index()
-
-grouped.columns = ["ZIP_CODE",  "Complaint_Count"]
-
-return grouped
+    grouped = df["ZIP_CODE"].fillna("UNKNOWN").value_counts().reset_index()
+    grouped.columns = ["ZIP_CODE",  "Complaint_Count"]
+    return grouped
 
 return complaints_by_zip(arg)
 ```
