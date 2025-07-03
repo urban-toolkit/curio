@@ -129,7 +129,7 @@ If you installed the project using pip (e.g., pip install curio), it will instal
 curio start
 ```
 
-### Why are there two different instances of curio when I use pip versus cloning?
+### Why are there two different instances of `curio` when I use pip versus cloning?
 
 When you install `curio` with pip, it places the `curio` executable in your Python environment’s Scripts (Windows) or bin (macOS/Linux) folder, making it accessible system-wide from any folder.
 
@@ -138,3 +138,36 @@ When you clone the repository directly, `curio` (or `curio.py`) remains in the f
 In short:
   - Installed via pip → curio is globally available from any folder.
   - Cloned manually → curio is local to the folder where you cloned it and must be run from there unless you install it.
+
+### Why do I get `bash: conda: command not found`?
+
+This error means Git Bash cannot find your `conda` installation because:
+  - Git Bash does not automatically inherit the PATH used by Anaconda/Miniconda installed on Windows.
+  - By default, `conda` is added to the Windows environment PATH, but Git Bash may need manual configuration to access it.
+
+To fix it, verify where Anaconda/Miniconda is installed. Typical installation paths include `C:\Users\<YourUsername>\Anaconda3` or `C:\Users\<YourUsername>\Miniconda3`. Then, add `conda` to your Git Bash path, replacing the appropriate paths:
+
+```bash
+echo 'export PATH="/c/Users/<YourUsername>/Anaconda3:/c/Users/<YourUsername>/Anaconda3/Scripts:/c/Users/<YourUsername>/Anaconda3/Library/bin:$PATH"' >> ~/.bashrc
+```
+
+(replace <YourUsername> with your Windows username and make sure the path is correct)
+
+Then, apply the changes:
+```bash
+source ~/.bashrc
+```
+
+Test if it works:
+```bash
+conda --version
+```
+
+If it returns a version, `conda` is now accessible in Git Bash.
+
+Also, if you want `conda activate` to work fully in Git Bash, initialize Conda for bash:
+```bash
+conda init bash
+```
+And then restart Git Bash. Check [this](https://discuss.codecademy.com/t/setting-up-conda-in-git-bash/534473) for even more information.
+
