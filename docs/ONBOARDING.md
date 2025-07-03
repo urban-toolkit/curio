@@ -2,6 +2,27 @@
 
 This document is meant for **undergraduate students** involved in UTK, Curio, and Urbanite projects to get you started quickly and independently.
 
+## Table of Contents
+
+1. [Overview: UTK, Curio, and Urbanite](#1-overview-utk-curio-and-urbanite)
+2. [Essential Installations](#2-essential-installations)
+3. [General Organization of Documents](#3-general-organization-of-documents)
+4. [Making Contributions](#4-making-contributions)
+5. [Usage and Quick Start](#5-usage-and-quick-start)
+6. [Tips for Seeking Help](#6-tips-for-seeking-help)
+7. [Task List](#7-task-list)
+8. [FAQ](#8-faq)
+    - [Should I use Windows?](#should-i-use-windows)
+    - [What is Bash?](#what-is-bash)
+    - [What is Git?](#what-is-git)
+    - [What is the difference between Conda, Miniconda, and Mamba?](#what-is-the-difference-between-conda-miniconda-and-mamba)
+    - [How do I fix errors or debug issues?](#how-do-i-fix-errors-or-debug-issues)
+    - [Why do I get “no such file” when running `python curio.py start`?](#why-do-i-get-no-such-file-when-running-python-curiopy-start)
+    - [Why are there two different instances of `curio` when I use pip versus cloning?](#why-are-there-two-different-instances-of-curio-when-i-use-pip-versus-cloning)
+    - [Why do I get `bash: conda: command not found`?](#why-do-i-get-bash-conda-command-not-found)
+    - [How do I know if my issue is with Curio, Conda, or Pip?](#how-do-i-know-if-my-issue-is-with-curio-conda-or-pip)
+    - [Why does `curio start` take so long to run the first time?](#why-does-curio-start-take-so-long-to-run-the-first-time)
+
 ## 1. Overview: UTK, Curio, and Urbanite
 
 - **UTK (Urban Toolkit):** A flexible and extensible visualization framework that enables the easy authoring of web-based visualizations through a new high-level grammar specifically built with common urban use cases in mind. [GitHub](https://github.com/urban-toolkit/utk)
@@ -171,18 +192,18 @@ And then restart Git Bash. Check [this](https://discuss.codecademy.com/t/setting
 
 When troubleshooting, it helps to identify **where the problem actually is**:
 
-✅ **Check if it’s a Curio problem:**
+**Check if it’s a Curio problem:**
 - Does `curio start` (or `python curio.py start`) fail with errors inside the app?
 - If the error mentions Curio-specific stack traces, it’s a **Curio project issue** (wrong folder, misconfiguration, or a Curio bug).
 
-✅ **Check if it’s a Conda problem:**
+**Check if it’s a Conda problem:**
 - If `conda` commands give `command not found` or environment activation fails (`conda activate` errors), it’s a **Conda installation or PATH issue**.
 - If packages are missing despite installation attempts inside Conda, verify you are in the correct environment:
     ```bash
     conda info --envs
     ```
 
-✅ **Check if it’s a Pip problem:**
+**Check if it’s a Pip problem:**
 - If `pip install` fails, or packages are missing after installation, it’s typically a **pip issue** (wrong environment, missing dependencies, or permissions).
 - Check which environment `pip` is using:
     ```bash
@@ -217,5 +238,5 @@ or
 python curio.py start
 ```
 
-is taking a long time, this is normal. On the first run, Curio needs to process Node.js files (frontend assets, JavaScript/TypeScript, etc.) for the first time. First run may take 30 seconds to a few seconds minutes as Node.js compiles and bundles assets. Subsequent runs will be significantly faster since the build artifacts are cached.
+is taking a long time, this is normal. On the first run, Curio needs to process Node.js files (frontend assets, JavaScript/TypeScript, etc.) for the first time. First run may take 30 seconds to a few minutes as Node.js compiles and bundles assets. Subsequent runs will be significantly faster since the build artifacts are cached.
 
