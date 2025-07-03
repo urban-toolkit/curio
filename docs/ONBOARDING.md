@@ -32,7 +32,7 @@ This **structure is followed across each repository (UTK, Curio, Urbanite) with 
 
 ## 4. Making Contributions
 
-You are encouraged to contribute! Please read our [Contribution Guidelines](https://github.com/urban-toolkit/curio/blob/main/CONTRIBUTING.md) before submitting pull requests.
+You are encouraged to contribute! Please read our [Contribution Guidelines](https://github.com/urban-toolkit/curio/blob/main/docs/CONTRIBUTIONS.md) before submitting pull requests.
 
 Contributions can include:
 - Fixing bugs
@@ -105,7 +105,7 @@ You can use any of these for managing your Python environments. If you want simp
 
 ### How do I fix errors or debug issues?
 
-First, read the documentation in the repository. Check the CONTRIBUTING.md for setup and troubleshooting steps. If you need to make code changes to debug, create a fork of the repository, make your changes there, and test locally before submitting any issues or pull requests for help.
+First, read the documentation in the repository. Check the documentation for setup and troubleshooting steps. If you need to make code changes to debug, create a fork of the repository, make your changes there, and test locally before submitting any issues or pull requests for help.
 
 ### What if I encounter issues during installation?
 
