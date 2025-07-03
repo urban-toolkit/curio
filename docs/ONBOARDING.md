@@ -106,11 +106,7 @@ You can use any of these for managing your Python environments. If you want simp
 
 First, read the documentation in the repository. Check the documentation for setup. If you need to make code changes to debug, create a fork of the repository, make your changes there, and test locally before submitting any issues or pull requests for help.
 
-### What if I encounter issues during installation?
-
-Check the Discord channels for pinned troubleshooting steps or ask a clear question with error details.
-
-### Why do I get “no such file” when running python curio.py start?
+### Why do I get “no such file” when running `python curio.py start`?
 
 If you are getting an error like:
 ```bash
@@ -170,4 +166,56 @@ Also, if you want `conda activate` to work fully in Git Bash, initialize Conda f
 conda init bash
 ```
 And then restart Git Bash. Check [this](https://discuss.codecademy.com/t/setting-up-conda-in-git-bash/534473) for even more information.
+
+### How do I know if my issue is with Curio, Conda, or Pip?
+
+When troubleshooting, it helps to identify **where the problem actually is**:
+
+✅ **Check if it’s a Curio problem:**
+- Does `curio start` (or `python curio.py start`) fail with errors inside the app?
+- If the error mentions Curio-specific stack traces, it’s a **Curio project issue** (wrong folder, misconfiguration, or a Curio bug).
+
+✅ **Check if it’s a Conda problem:**
+- If `conda` commands give `command not found` or environment activation fails (`conda activate` errors), it’s a **Conda installation or PATH issue**.
+- If packages are missing despite installation attempts inside Conda, verify you are in the correct environment:
+    ```bash
+    conda info --envs
+    ```
+
+✅ **Check if it’s a Pip problem:**
+- If `pip install` fails, or packages are missing after installation, it’s typically a **pip issue** (wrong environment, missing dependencies, or permissions).
+- Check which environment `pip` is using:
+    ```bash
+    which pip
+    pip --version
+    ```
+Ensure it matches your active environment (`conda info`).
+
+If you are still unsure, please gather the following so we can pinpoint whether it’s **Curio, Conda, or Pip** and resolve it.
+- The exact command you ran.
+- The **full error message**.
+- Your current working directory:
+    ```bash
+    pwd
+    ```
+- Outputs of:
+    ```bash
+    which python
+    which pip
+    conda info --envs
+    ```
+### Why does `curio start` (or `python curio.py start`) take so long to run the first time?
+
+If your first run of:
+```bash
+curio start
+```
+
+or
+
+```bash
+python curio.py start
+```
+
+is taking a long time, this is normal. On the first run, Curio needs to process Node.js files (frontend assets, JavaScript/TypeScript, etc.) for the first time. First run may take 30 seconds to a few seconds minutes as Node.js compiles and bundles assets. Subsequent runs will be significantly faster since the build artifacts are cached.
 
