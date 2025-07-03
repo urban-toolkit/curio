@@ -109,3 +109,22 @@ First, read the documentation in the repository. Check the documentation for set
 ### What if I encounter issues during installation?
 
 Check the Discord channels for pinned troubleshooting steps or ask a clear question with error details.
+
+### Why do I get “no such file” when running python curio.py start?
+
+If you are getting an error like:
+```bash
+python: can't open file 'curio.py': [Errno 2] No such file or directory
+```
+it means Python cannot find `curio.py` in your current working directory. To solve it, you must run the command inside the folder where you cloned the repository, where curio.py is located:
+
+```bash
+cd path/to/your/cloned/repo
+python curio.py start
+```
+
+If you installed the project using pip (e.g., pip install curio), it will install the entry point automatically, allowing you to run the following from any folder without needing to be in the project directory:
+
+```bash
+curio start
+```
