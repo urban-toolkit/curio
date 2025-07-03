@@ -32,7 +32,7 @@ This **structure is followed across each repository (UTK, Curio, Urbanite) with 
 
 ## 4. Making Contributions
 
-You are encouraged to contribute! Please read our [Contribution Guidelines](https://github.com/urban-toolkit/curio/blob/main/CONTRIBUTING.md) before submitting pull requests.
+You are encouraged to contribute! Please read our [Contribution Guidelines](https://github.com/urban-toolkit/curio/blob/main/docs/CONTRIBUTIONS.md) before submitting pull requests.
 
 Contributions can include:
 - Fixing bugs
@@ -66,9 +66,8 @@ These guides will help you learn how to run, modify, and contribute to the proje
 
 Use this list to guide your first week of onboarding and to ensure your environment is correctly set up:
 
-- [ ] **Install Git for Windows** (or WSL) and confirm `git` is available in your terminal.
+- [ ] **Install Git for Windows** and confirm `git` is available in your terminal.
 - [ ] **Install Anaconda** (or Miniconda + Mamba) and confirm `conda` is available.
-- [ ] **Install Node.js** and confirm `node` and `npm` are available.
 - [ ] **Fork and clone the repository** you will work on (UTK, Curio, or Urbanite).
 - [ ] **Create and activate your Conda environment.**
 - [ ] **Refer to the repository for installation steps.**
@@ -78,7 +77,7 @@ Use this list to guide your first week of onboarding and to ensure your environm
     - Where to add new scripts or visualization specs
     - How documentation is organized
 - [ ] **Join the Discord channel**.
-- [ ] **Read the CONTRIBUTING.md** to understand how to submit contributions.
+- [ ] **Read the CONTRIBUTIONS.md** to understand how to submit contributions.
 - [ ] **Complete a first small task** (e.g., fixing a typo in documentation or running an existing example).
 
 ## 7. FAQ
@@ -105,7 +104,7 @@ You can use any of these for managing your Python environments. If you want simp
 
 ### How do I fix errors or debug issues?
 
-First, read the documentation in the repository. Check the CONTRIBUTING.md for setup and troubleshooting steps. If you need to make code changes to debug, create a fork of the repository, make your changes there, and test locally before submitting any issues or pull requests for help.
+First, read the documentation in the repository. Check the documentation for setup. If you need to make code changes to debug, create a fork of the repository, make your changes there, and test locally before submitting any issues or pull requests for help.
 
 ### What if I encounter issues during installation?
 
