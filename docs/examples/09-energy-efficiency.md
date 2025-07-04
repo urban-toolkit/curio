@@ -53,45 +53,87 @@ Then, we create a 2D Plot (Vega-Lite) node to create a bar and tick chart, which
 ```json
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
-  "data": { "name": "table" },
-  "title": "Mean and Median Weather Normalized Site EUI by Property Type",
-  "width": 700,
+  "description": "ENERGY STAR Score by Primary Property Type (mean bars with median ticks)",
+  "title": "ENERGY STAR Score by Primary Property Type",
+  "data": { "name": "edf" },
+  "width": 600,
   "height": 400,
   "layer": [
     {
+      "transform": [
+        {
+          "aggregate": [
+            { "op": "mean", "field": "ENERGY STAR Score", "as": "mean_score" }
+          ],
+          "groupby": ["Primary Property Type"]
+        }
+      ],
       "mark": "bar",
       "encoding": {
-        "x": {
-          "field": "PRIMARY PROPERTY TYPE",
-          "type": "nominal",
-          "sort": "-y",
-          "title": "Property Type"
-        },
         "y": {
-          "aggregate": "mean",
-          "field": "WEATHER NORMALIZED SITE EUI (KBTU/SQ FT)",
-          "type": "quantitative",
-          "title": "Mean Weather Normalized Site EUI"
-        },
-        "color": {
-          "field": "PRIMARY PROPERTY TYPE",
+          "field": "Primary Property Type",
           "type": "nominal",
-          "legend": null
-        }
+          "title": "Primary Property Type"
+        },
+        "x": {
+          "field": "mean_score",
+          "type": "quantitative",
+          "scale": { "domain": [0, 100] },
+          "title": "Mean ENERGY STAR Score"
+        },
+        "tooltip": [
+          {
+            "field": "Primary Property Type",
+            "type": "nominal",
+            "title": "Primary Property Type"
+          },
+          {
+            "field": "mean_score",
+            "type": "quantitative",
+            "title": "Mean ENERGY STAR Score",
+            "format": ".2f"
+          }
+        ]
       }
     },
     {
-      "mark": { "type": "tick", "color": "black", "size": 40 },
+      "transform": [
+        {
+          "aggregate": [
+            { "op": "median", "field": "ENERGY STAR Score", "as": "median_score" }
+          ],
+          "groupby": ["Primary Property Type"]
+        }
+      ],
+      "mark": {
+        "type": "tick",
+        "color": "red",
+        "thickness": 2
+      },
       "encoding": {
-        "x": {
-          "field": "PRIMARY PROPERTY TYPE",
+        "y": {
+          "field": "Primary Property Type",
           "type": "nominal"
         },
-        "y": {
-          "aggregate": "median",
-          "field": "WEATHER NORMALIZED SITE EUI (KBTU/SQ FT)",
-          "type": "quantitative"
-        }
+        "x": {
+          "field": "median_score",
+          "type": "quantitative",
+          "scale": { "domain": [0, 100] },
+          "title": "Median ENERGY STAR Score"
+        },
+        "tooltip": [
+          {
+            "field": "Primary Property Type",
+            "type": "nominal",
+            "title": "Primary Property Type"
+          },
+          {
+            "field": "median_score",
+            "type": "quantitative",
+            "title": "Median ENERGY STAR Score",
+            "format": ".2f"
+          }
+        ]
       }
     }
   ]
