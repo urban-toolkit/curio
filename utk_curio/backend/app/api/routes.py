@@ -398,59 +398,145 @@ def toLayers():
 
     return response.json()
 
+# @bp.route('/signin', methods=['POST'])
+# def signin():
+#     # google_oauth = GoogleOAuth()
+#     # user_data = google_oauth.verify_token(request.json.get('token'))
+#     # if not user_data:
+#     #     return jsonify({'error': 'Invalid token'}), 400
+
+#     # create new session token
+#     # new_session = UserSession(user_id=user.id)
+#     user_data = {
+#         'id': 1,
+#         'name': 'Test',
+#         'email': 'Test@mail.com',
+#         'provider': "",
+#         'uid': "",
+#         'picture': "",
+#         'type': 'programmer'
+#     }
+#     new_session = UserSession(user_id=user_data.get('id'))
+#     db.session.add(new_session)
+#     db.session.commit()
+
+
+#     # get user from database
+
+#     user = User.query.filter_by(
+#         id=user_data.get('id'),
+#         # provider=user_data.get('provider'),
+#         # provider_uid= user_data.get('uid')
+#     ).first()
+
+#     if user:
+#         user.name = user_data.get('name')
+#         user.profile_image = user_data.get('picture')
+#     else:
+#         user = User(
+#             email=user_data.get('email'),
+#             name=user_data.get('name'),
+#             profile_image=user_data.get('picture'),
+#             provider=user_data.get('provider'),
+#             provider_uid=user_data.get('uid'))
+#         db.session.add(user)
+#     db.session.commit()
+
+
+#     return jsonify({
+#         'user': {
+#             'name': user.name,
+#             'profile_image': user.profile_image,
+#             'type': user.type
+#         },
+#         'token': new_session.token
+#     }), 200
+
 @bp.route('/signin', methods=['POST'])
 def signin():
-    # google_oauth = GoogleOAuth()
-    # user_data = google_oauth.verify_token(request.json.get('token'))
-    # if not user_data:
-    #     return jsonify({'error': 'Invalid token'}), 400
+    try:
+        google_oauth = GoogleOAuth()
+        user_data = google_oauth.verify_token(request.json.get('token'))
 
-    # create new session token
-    # new_session = UserSession(user_id=user.id)
-    user_data = {
-        'id': 1,
-        'name': 'Test',
-        'email': 'Test@mail.com',
-        'provider': "",
-        'uid': "",
-        'picture': "",
-        'type': 'programmer'
-    }
-    new_session = UserSession(user_id=user_data.get('id'))
-    db.session.add(new_session)
-    db.session.commit()
+        if not user_data:
+            return jsonify({'error': 'Invalid token'}), 400
+
+        user = User.query.filter_by(provider_uid=user_data['uid']).first()
+
+        if not user:
+            user = User(
+                email=user_data['email'],
+                name=user_data['name'],
+                profile_image=user_data['picture'],
+                type='programmer',  
+                provider='google',
+                provider_uid=user_data['uid']
+            )
+            db.session.add(user)
+            db.session.commit()
+
+        new_session = UserSession(user_id=user.id)
+        db.session.add(new_session)
+        db.session.commit()
+
+        return jsonify({
+            'user': {
+                'name': user.name,
+                'email': user.email,
+                'profile_image': user.profile_image,
+                'type': user.type,
+                'uid': user.provider_uid,
+                'provider': user.provider
+            },
+            'token': new_session.token
+        }), 200
+    
+    except:
+        # create new session token
+        user_data = {
+            'id': 1,
+            'name': 'Test',
+            'email': 'Test@mail.com',
+            'provider': "",
+            'uid': "",
+            'picture': "",
+            'type': 'programmer'
+        }
+        new_session = UserSession(user_id=user_data.get('id'))
+        db.session.add(new_session)
+        db.session.commit()
 
 
-    # get user from database
+        # get user from database
 
-    user = User.query.filter_by(
-        id=user_data.get('id'),
-        # provider=user_data.get('provider'),
-        # provider_uid= user_data.get('uid')
-    ).first()
+        user = User.query.filter_by(
+            id=user_data.get('id'),
+            # provider=user_data.get('provider'),
+            # provider_uid= user_data.get('uid')
+        ).first()
 
-    if user:
-        user.name = user_data.get('name')
-        user.profile_image = user_data.get('picture')
-    else:
-        user = User(
-            email=user_data.get('email'),
-            name=user_data.get('name'),
-            profile_image=user_data.get('picture'),
-            provider=user_data.get('provider'),
-            provider_uid=user_data.get('uid'))
-        db.session.add(user)
-    db.session.commit()
+        if user:
+            user.name = user_data.get('name')
+            user.profile_image = user_data.get('picture')
+        else:
+            user = User(
+                email=user_data.get('email'),
+                name=user_data.get('name'),
+                profile_image=user_data.get('picture'),
+                provider=user_data.get('provider'),
+                provider_uid=user_data.get('uid'))
+            db.session.add(user)
+        db.session.commit()
 
 
-    return jsonify({
-        'user': {
-            'name': user.name,
-            'profile_image': user.profile_image,
-            'type': user.type
-        },
-        'token': new_session.token
-    }), 200
+        return jsonify({
+            'user': {
+                'name': user.name,
+                'profile_image': user.profile_image,
+                'type': user.type
+            },
+            'token': new_session.token
+        }), 200
 
 @bp.route('/getUser', methods=['GET'])
 @require_auth
