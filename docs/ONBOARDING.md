@@ -22,6 +22,7 @@ This document is meant for **undergraduate students** involved in UTK, Curio, an
     - [Why do I get `bash: conda: command not found`?](#why-do-i-get-bash-conda-command-not-found)
     - [How do I know if my issue is with Curio, Conda, or Pip?](#how-do-i-know-if-my-issue-is-with-curio-conda-or-pip)
     - [Why does `curio start` take so long to run the first time?](#why-does-curio-start-take-so-long-to-run-the-first-time)
+    - [I am getting a "No such file or directory" error when loading a file](#i-am-getting-a-no-such-file-or-directory-error-when-loading-a-file)
 
 ## 1. Overview: UTK, Curio, and Urbanite
 
@@ -239,4 +240,8 @@ python curio.py start
 ```
 
 is taking a long time, this is normal. On the first run, Curio needs to process Node.js files (frontend assets, JavaScript/TypeScript, etc.) for the first time. First run may take 30 seconds to a few minutes as Node.js compiles and bundles assets. Subsequent runs will be significantly faster since the build artifacts are cached.
+
+### I am getting a "No such file or directory" error when loading a file
+
+Check the folder you are running Curio from; the file path you provide is relative to that location.
 
