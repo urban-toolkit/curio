@@ -62,10 +62,8 @@ curio/
 │       └── utk-workflow/           # Embedded version of [UTK](https://github.com/urban-toolkit/utk)
 │
 ├── curio.py                        # CLI entry point for running and managing all services
-├── examples/                       # Example dataflows and use cases
 ├── tests/                          # Dataflow examples for testing
-├── docs/                           # Markdown documentation and usage guides
-├── images/                         # Static images for documentation
+├── docs/                           # Documentation, usage guides, and examples
 └── requirements.txt                # Backend and sandbox dependencies
 ```
 
