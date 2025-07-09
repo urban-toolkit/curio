@@ -5,13 +5,14 @@ This document is meant for **undergraduate students** involved in UTK, Curio, an
 ## Table of Contents
 
 1. [Overview: UTK, Curio, and Urbanite](#1-overview-utk-curio-and-urbanite)
-2. [Essential Installations](#2-essential-installations)
-3. [General Organization of Documents](#3-general-organization-of-documents)
-4. [Making Contributions](#4-making-contributions)
-5. [Usage and Quick Start](#5-usage-and-quick-start)
-6. [Tips for Seeking Help](#6-tips-for-seeking-help)
-7. [Task List](#7-task-list)
-8. [FAQ](#8-faq)
+2. [Core Technologies(#2-core-technologies)
+3. [Essential Installations](#3-essential-installations)
+4. [General Organization of Documents](#4-general-organization-of-documents)
+5. [Making Contributions](#5-making-contributions)
+6. [Usage and Quick Start](#6-usage-and-quick-start)
+7. [Tips for Seeking Help](#7-tips-for-seeking-help)
+8. [Task List](#8-task-list)
+9. [FAQ](#9-faq)
     - [Should I use Windows?](#should-i-use-windows)
     - [What is Bash?](#what-is-bash)
     - [What is Git?](#what-is-git)
@@ -34,7 +35,11 @@ This document is meant for **undergraduate students** involved in UTK, Curio, an
 
 Curio uses UTK while Urbanite builds on Curio with LLM-powered capabilities. If you would like to learn more about the design and research behind these tools, please see the research papers linked in each repository.
 
-## 2. Essential Installations
+## 2. Core Technologies
+
+Curio is built using React and TypeScript. For an overview of React, see [this](https://react-tutorial.app/) and [this](https://react.dev/learn) tutorials.
+
+## 3. Essential Installations
 
 Install these tools before you start:
 
@@ -42,7 +47,7 @@ Install these tools before you start:
   
 - **Python and Pip:** Download and install [Anaconda](https://www.anaconda.com/products/distribution) for Python environment management. For understanding how to manage Python with Conda, see [Getting Started with Conda](https://docs.conda.io/projects/conda/en/latest/user-guide/getting-started.html).
 
-## 3. General Organization of Documents
+## 4. General Organization of Documents
 
 This folder structure represents the **overall structure followed in each of the UTK, Curio, and Urbanite repositories**:
 
@@ -52,7 +57,7 @@ This folder structure represents the **overall structure followed in each of the
 
 This **structure is followed across each repository (UTK, Curio, Urbanite) with minor variations**.
 
-## 4. Making Contributions
+## 5. Making Contributions
 
 You are encouraged to contribute! Please read our [Contribution Guidelines](https://github.com/urban-toolkit/curio/blob/main/docs/CONTRIBUTIONS.md) before submitting pull requests.
 
@@ -64,7 +69,7 @@ Contributions can include:
 
 Remember: **what you get is what you give**. The more you invest in exploring, building, and contributing, the more you will learn and gain from these projects. It is up to you how much you get out of this experience.
 
-## 5. Usage and Quick Start
+## 6. Usage and Quick Start
 
 To learn how to use Curio:
 
@@ -73,7 +78,7 @@ To learn how to use Curio:
 
 These guides will help you learn how to run, modify, and contribute to the projects independently.
 
-## 5. Tips for Seeking Help
+## 7. Tips for Seeking Help
 
 - Use **Discord channels** to ask questions and share issues.
 - Use email for help requests only if it is specifically requested or truly necessary.
@@ -84,7 +89,7 @@ These guides will help you learn how to run, modify, and contribute to the proje
   - What you have tried already.
   - Screenshots if relevant.
 
-## 6. Task List
+## 8. Task List
 
 Use this list to guide your first week of onboarding and to ensure your environment is correctly set up:
 
@@ -102,7 +107,7 @@ Use this list to guide your first week of onboarding and to ensure your environm
 - [ ] **Read the CONTRIBUTIONS.md** to understand how to submit contributions.
 - [ ] **Complete a first small task** (e.g., fixing a typo in documentation or running an existing example).
 
-## 7. FAQ
+## 9. FAQ
 
 ### Should I use Windows?
 
