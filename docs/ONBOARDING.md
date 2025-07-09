@@ -37,7 +37,61 @@ Curio uses UTK while Urbanite builds on Curio with LLM-powered capabilities. If 
 
 ## 2. Core Technologies
 
-Curio is built using React and TypeScript. For an overview of React, see [this](https://react-tutorial.app/) and [this](https://react.dev/learn) tutorials.
+Curio is built using **React** and **TypeScript**. For an overview of React, see [this tutorial](https://react.dev/learn) and [this tutorial](https://beta.reactjs.org/learn).
+
+### How a React program is usually built and deployed
+
+A typical React application development and deployment pipeline follows these stages:
+
+#### 1. Development
+
+- Code is written in **TypeScript** using React components, typically with state management via hooks (e.g., `useState`, `useEffect`).
+- Development happens locally using **Webpack Dev Server**, which provides hot module reloading for a fast feedback loop.
+- Styling is handled using CSS Modules.
+
+#### 2. Building
+
+- The app is bundled and transpiled using **Webpack**, converting TypeScript and JSX into browser-compatible JavaScript.
+- This process:
+  - Minifies assets
+  - Tree-shakes unused code
+  - Optimizes images and static assets for performance
+- The output is a `dist/` or `build/` folder containing:
+  - `index.html`
+  - Minified JS bundles (e.g., `main.[hash].js`)
+  - CSS files
+  - Other static assets
+
+#### 3. Deployment
+
+- The `dist/` or `build/` folder can be deployed:
+- Environment variables (API keys, feature flags) are injected during build time or runtime using environment files (`.env`).
+
+### How this is handled in Curio
+
+In Curio, these stages are automated using `curio.py`, which manages building, serving, and orchestrating the **frontend, backend, and sandbox environments** during local development and testing.
+
+However, you can also **build and serve each component manually** if needed:
+
+- **Frontend**:
+  - Build manually using the appropriate `npm run build` in `frontend/urban-workflows`.
+  - Serve using:
+    - `npm run start` (development with Webpack Dev Server)
+    - or `python -m http.server 8080 --directory dist` (serving built files).
+
+- **Backend**:
+  - Run using `python -m backend.server`.
+  - Initializes the database if necessary before serving requests.
+
+- **Sandbox**:
+  - Run using `python -m sandbox.server`
+  - Useful for isolated environment testing.
+
+
+These functions handle environment setup, server startup, and process management.
+
+> **Note:** You need to **start these servers in the appropriate folder** (check `utk_curio/frontend/urban-workflows`, `utk_curio/backend`, `utk_curio/sandbox` folders) to ensure relative imports and environment paths work correctly.
+
 
 ## 3. Essential Installations
 
