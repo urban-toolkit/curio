@@ -5,7 +5,7 @@ This document is meant for **undergraduate students** involved in UTK, Curio, an
 ## Table of Contents
 
 1. [Overview: UTK, Curio, and Urbanite](#1-overview-utk-curio-and-urbanite)
-2. [Core Technologies(#2-core-technologies)
+2. [Core Technologies](#2-core-technologies)
 3. [Essential Installations](#3-essential-installations)
 4. [General Organization of Documents](#4-general-organization-of-documents)
 5. [Making Contributions](#5-making-contributions)
