@@ -12,7 +12,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCircleInfo } from "@fortawesome/free-solid-svg-icons";
 import { useUserContext } from "../providers/UserProvider";
 
-function MergeFlowBox({ data, isConnectable }) {
+function MergeFlowBox({ data, isConnectable }: { data: any; isConnectable: boolean }) {
     const [output, setOutput] = useState<{ code: string; content: string }>({
         code: "",
         content: JSON.stringify({ data: [], dataType: "outputs" }),
@@ -64,15 +64,24 @@ function MergeFlowBox({ data, isConnectable }) {
 
         let newOutput: any = { data: [], dataType: "outputs" };
 
-        if (Array.isArray(data.input) && data.input.length > 0) {
-            for (const input of data.input) {
-                if (input != "" && input != undefined) {
-                    newOutput.data.push(input);
-                }
+        if (Array.isArray(data.input)) {
+            // Process primary input [0] then secondary input [1]
+            const primaryInput = data.input[0];
+            const secondaryInput = data.input[1];
+            
+            if (primaryInput !== undefined && primaryInput !== "") {
+                newOutput.data.push(primaryInput);
             }
-
-            setOutput({ code: "success", content: newOutput });
-            data.outputCallback(data.nodeId, newOutput);
+            
+            if (secondaryInput !== undefined && secondaryInput !== "") {
+                newOutput.data.push(secondaryInput);
+            }
+            
+            // Only trigger output callback if we have at least one valid input
+            if (newOutput.data.length > 0) {
+                setOutput({ code: "success", content: newOutput });
+                data.outputCallback(data.nodeId, newOutput);
+            }
         }
     }, [data.input]);
 
