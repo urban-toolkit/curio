@@ -153,6 +153,21 @@ python curio.py start --force-db-init
 
 This will recreate the provenance database and apply all migrations.
 
+If you want to manually perform `npm install`, you should then:
+
+```bash
+cd utk_curio/frontend/utk-workflow/src/utk-ts
+npm install
+npm run build
+```
+And:
+```bash
+cd utk_curio/frontend/urban-workflows
+npm install
+npm run build
+```
+
+
 ## Ray tracing
 
 To use Ray Tracing, please see UTK's [requirements](https://github.com/urban-toolkit/utk).
@@ -162,5 +177,4 @@ To use Ray Tracing, please see UTK's [requirements](https://github.com/urban-too
 For a simple introductory example check [this](QUICK-START.md) tutorial. See [here](README.md) for more examples.
 
 ![Tutorial](images/final_result.png?raw=true)
-
 
