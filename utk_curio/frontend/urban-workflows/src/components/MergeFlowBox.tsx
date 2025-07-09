@@ -103,24 +103,25 @@ function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps) {
   return (
     <>
       {/* Dynamic input handles */}
-      {inputOrder.map((i) => (
-        <Handle
-          key={`in_${i}`}
-          type="target"
-          position={Position.Left}
-          id={`in_${i}`}
-          style={{ top: `${((i + 1) * 100) / (inputCount + 1)}%` }}
-          isConnectable={isConnectable}
-        />
-      ))}
+{inputOrder.map((i) => (
+  <Handle
+    key={`in_${i}`}
+    type="target"
+    position={Position.Left}
+    id={`in_${i}`}
+    style={{ top: `${((i + 1) * 100) / (inputCount + 1)}%` }}
+    isConnectable={isConnectable}
+  />
+))}
 
-      {/* Single output handle */}
-      <Handle
-        type="source"
-        position={Position.Right}
-        id="out"
-        isConnectable={isConnectable}
-      />
+/* Single output handle */
+<Handle
+  type="source"
+  position={Position.Right}
+  id="out"
+  isConnectable={isConnectable}
+/>
+
 
       <BoxContainer
         nodeId={data.nodeId}
