@@ -10,7 +10,6 @@ import { BoxContainer } from "./styles";
 import CSS from "csstype";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCircleInfo } from "@fortawesome/free-solid-svg-icons";
-import { useUserContext } from "../providers/UserProvider";
 
 interface MergeFlowBoxProps {
   data: {
