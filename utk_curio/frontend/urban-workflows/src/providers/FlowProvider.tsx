@@ -138,9 +138,6 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         _setWorkflowName(data);
     };
 
-    const showMergeNodeGuidance = () => {
-        console.info("🔗 Merge Node Guide: Connect primary data to TOP-LEFT input ('in'), secondary data to BOTTOM-LEFT input ('in_2'). Position matters for predictable processing!");
-    };
 
     useEffect(() => {
         addWorkflow(workflowNameRef.current);
@@ -663,11 +660,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                         (edge.targetHandle === "in" || edge.targetHandle === "in_2")
                     );
                     
-                    // Show guidance if this is the first connection
-                    if (existingConnections.length === 0) {
-                        showMergeNodeGuidance();
-                    } else if (existingConnections.length >= 2) {
-                        alert("Merge node can only accept 2 input connections (primary and secondary data)");
+                    if (existingConnections.length >= 2) {
+                        alert("Connection Limit Reached!\n\nMerge nodes can only accept 2 input connections:\n• TOP-LEFT input = Primary data\n• BOTTOM-LEFT input = Secondary data\n\nPlease remove an existing connection first.");
                         allowConnection = false;
                     }
                 }
