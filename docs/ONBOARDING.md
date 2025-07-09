@@ -92,6 +92,8 @@ These functions handle environment setup, server startup, and process management
 
 > **Note:** You need to **start these servers in the appropriate folder** (check `utk_curio/frontend/urban-workflows`, `utk_curio/backend`, `utk_curio/sandbox` folders) to ensure relative imports and environment paths work correctly.
 
+> **Note:** There are several ways to install and use Curio (pip, Docker, manual installation). Check the [USAGE.md](USAGE.md) document for more details.
+
 
 ## 3. Essential Installations
 
@@ -113,7 +115,7 @@ This **structure is followed across each repository (UTK, Curio, Urbanite) with 
 
 ## 5. Making Contributions
 
-You are encouraged to contribute! Please read our [Contribution Guidelines](https://github.com/urban-toolkit/curio/blob/main/docs/CONTRIBUTIONS.md) before submitting pull requests.
+You are encouraged to contribute! Please read our [Contribution Guidelines](https://github.com/urban-toolkit/curio/blob/main/docs/CONTRIBUTIONS.md) before submitting pull requests. Also check [USAGE.md](USAGE.md) for more details on required installations.
 
 Contributions can include:
 - Fixing bugs
