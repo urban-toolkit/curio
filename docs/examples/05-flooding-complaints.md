@@ -31,11 +31,9 @@ Now that we loaded the dataset using the **Data Loading Node**, we can perform s
 ```
 def complaints_by_zip(df):
 
-grouped = df["ZIP_CODE"].fillna("UNKNOWN").value_counts().reset_index()
-
-grouped.columns = ["ZIP_CODE",  "Complaint_Count"]
-
-return grouped
+    grouped = df["ZIP_CODE"].fillna("UNKNOWN").value_counts().reset_index()
+    grouped.columns = ["ZIP_CODE",  "Complaint_Count"]
+    return grouped
 
 return complaints_by_zip(arg)
 ```
@@ -43,6 +41,7 @@ return complaints_by_zip(arg)
 <img src="./images/5-3.png" title="" alt="Example 5-3" data-align="center">
 
 ## Step 3: Display results using a table
-In the last step, we performed computational analysis to get the total number of complaints per zip code. A possible way to see these types of results is using a table. We will connect the **Computational Analysis Node** with a **Table Node** to display our results in Table format. You do not need to include any code in the **Table Node**.
+
+In the last step, we performed computational analysis to get the total number of complaints per zip code. A possible way to see these types of results is using a table. We will connect the **Computational Analysis Node** with a **Data Pool Node** to display our results in Table format. You do not need to include any code in the **Data Pool Node**.
 
 <img src="./images/5-4.png" title="" alt="Example 5-4" data-align="center">

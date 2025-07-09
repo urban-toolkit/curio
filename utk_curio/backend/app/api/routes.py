@@ -200,12 +200,143 @@ def get_file():
                 if vega:
                     data = transform_to_vega(data)
 
-        return jsonify(data)
+        return jsonify(data), 200
 
     except Exception as e:
         return f'Error loading file: {str(e)}', 500
 
-    return jsonify(data), 200
+@bp.route('/get-preview', methods=['GET'])
+def get_file_preview():
+    """
+    Get first 100 rows + metadata for DataPool display optimization.
+    Similar to /get but returns limited data to reduce transfer overhead.
+    """
+    file_name = request.args.get('fileName')
+    
+    if not file_name:
+        return 'No file name specified', 400
+    
+    launch_dir = os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())
+    shared_disk_path = os.environ.get("CURIO_SHARED_DATA", "./.curio/data/")
+    base_path = Path(launch_dir) / shared_disk_path
+    base_path = base_path.resolve()
+
+    requested_path = Path(file_name)
+    full_path = (base_path / requested_path).resolve()
+
+    if not str(full_path).startswith(str(base_path)):
+        return 'Invalid file path: %s'%full_path, 403
+
+    if not full_path.exists():
+        return 'File does not exist: %s'%full_path, 404
+
+    try:
+        # Using mmap for efficient memory-mapped loading
+        with open(full_path, "rb") as file:
+            with mmap.mmap(file.fileno(), 0, access=mmap.ACCESS_READ) as mmapped_file:
+                # Decompress and decode directly from the memory-mapped file
+                decompressed_data = zlib.decompress(mmapped_file[:])
+                data = json.loads(decompressed_data.decode('utf-8'))
+
+                if isinstance(data, str):
+                    data = json.loads(data)
+                
+                # Create preview version with limited rows
+                preview_data = create_preview_data(data)
+                
+                return jsonify(preview_data)
+
+    except Exception as e:
+        return f'Error loading preview: {str(e)}', 500
+
+def create_preview_data(data, max_rows=100):
+    """
+    Create a preview version of the data with limited rows.
+    Maintains the same structure but with fewer rows for display.
+    """
+    if not isinstance(data, dict):
+        return data
+    
+    # Handle dataframe format
+    if data.get('dataType') == 'dataframe' and 'data' in data:
+        df_data = data['data']
+        if isinstance(df_data, dict):
+            # Check if columns contain arrays (list format)
+            columns = list(df_data.keys())
+            if columns:
+                first_column_data = df_data[columns[0]]
+                
+                # Handle list format (most common)
+                if isinstance(first_column_data, list):
+                    total_rows = len(first_column_data)
+                    limited_rows = min(max_rows, total_rows)
+                    
+                    # Create limited data for each column
+                    limited_data = {}
+                    for column in columns:
+                        if isinstance(df_data[column], list):
+                            limited_data[column] = df_data[column][:limited_rows]
+                        else:
+                            limited_data[column] = df_data[column]
+                    
+                    # Create preview response
+                    preview = {
+                        **data,  # Keep all original metadata
+                        'data': limited_data,
+                        'preview': True,
+                        'previewRows': limited_rows,
+                        'totalRows': total_rows
+                    }
+                    return preview
+                
+                # Handle dictionary-indexed format
+                elif isinstance(first_column_data, dict):
+                    # Get keys (indices) and limit to max_rows
+                    all_indices = list(first_column_data.keys())
+                    limited_indices = all_indices[:max_rows]
+                    
+                    # Create limited data for each column
+                    limited_data = {}
+                    for column in columns:
+                        limited_data[column] = {
+                            idx: df_data[column][idx] 
+                            for idx in limited_indices 
+                            if idx in df_data[column]
+                        }
+                    
+                    # Create preview response
+                    preview = {
+                        **data,  # Keep all original metadata
+                        'data': limited_data,
+                        'preview': True,
+                        'previewRows': len(limited_indices),
+                        'totalRows': len(all_indices)
+                    }
+                    return preview
+    
+    # Handle geodataframe format  
+    elif data.get('dataType') == 'geodataframe' and 'data' in data:
+        gdf_data = data['data']
+        if isinstance(gdf_data, dict) and 'features' in gdf_data:
+            features = gdf_data['features']
+            if isinstance(features, list):
+                total_features = len(features)
+                limited_features = features[:max_rows]
+                
+                preview = {
+                    **data,  # Keep all original metadata
+                    'data': {
+                        **gdf_data,
+                        'features': limited_features
+                    },
+                    'preview': True,
+                    'previewRows': len(limited_features),
+                    'totalRows': total_features
+                }
+                return preview
+    
+    # Return original data if format not recognized
+    return data
 
 @bp.route('/processPythonCode', methods=['POST'])
 def process_python_code():
@@ -267,59 +398,145 @@ def toLayers():
 
     return response.json()
 
+# @bp.route('/signin', methods=['POST'])
+# def signin():
+#     # google_oauth = GoogleOAuth()
+#     # user_data = google_oauth.verify_token(request.json.get('token'))
+#     # if not user_data:
+#     #     return jsonify({'error': 'Invalid token'}), 400
+
+#     # create new session token
+#     # new_session = UserSession(user_id=user.id)
+#     user_data = {
+#         'id': 1,
+#         'name': 'Test',
+#         'email': 'Test@mail.com',
+#         'provider': "",
+#         'uid': "",
+#         'picture': "",
+#         'type': 'programmer'
+#     }
+#     new_session = UserSession(user_id=user_data.get('id'))
+#     db.session.add(new_session)
+#     db.session.commit()
+
+
+#     # get user from database
+
+#     user = User.query.filter_by(
+#         id=user_data.get('id'),
+#         # provider=user_data.get('provider'),
+#         # provider_uid= user_data.get('uid')
+#     ).first()
+
+#     if user:
+#         user.name = user_data.get('name')
+#         user.profile_image = user_data.get('picture')
+#     else:
+#         user = User(
+#             email=user_data.get('email'),
+#             name=user_data.get('name'),
+#             profile_image=user_data.get('picture'),
+#             provider=user_data.get('provider'),
+#             provider_uid=user_data.get('uid'))
+#         db.session.add(user)
+#     db.session.commit()
+
+
+#     return jsonify({
+#         'user': {
+#             'name': user.name,
+#             'profile_image': user.profile_image,
+#             'type': user.type
+#         },
+#         'token': new_session.token
+#     }), 200
+
 @bp.route('/signin', methods=['POST'])
 def signin():
-    # google_oauth = GoogleOAuth()
-    # user_data = google_oauth.verify_token(request.json.get('token'))
-    # if not user_data:
-    #     return jsonify({'error': 'Invalid token'}), 400
+    try:
+        google_oauth = GoogleOAuth()
+        user_data = google_oauth.verify_token(request.json.get('token'))
 
-    # create new session token
-    # new_session = UserSession(user_id=user.id)
-    user_data = {
-        'id': 1,
-        'name': 'Test',
-        'email': 'Test@mail.com',
-        'provider': "",
-        'uid': "",
-        'picture': "",
-        'type': 'programmer'
-    }
-    new_session = UserSession(user_id=user_data.get('id'))
-    db.session.add(new_session)
-    db.session.commit()
+        if not user_data:
+            return jsonify({'error': 'Invalid token'}), 400
+
+        user = User.query.filter_by(provider_uid=user_data['uid']).first()
+
+        if not user:
+            user = User(
+                email=user_data['email'],
+                name=user_data['name'],
+                profile_image=user_data['picture'],
+                type='programmer',  
+                provider='google',
+                provider_uid=user_data['uid']
+            )
+            db.session.add(user)
+            db.session.commit()
+
+        new_session = UserSession(user_id=user.id)
+        db.session.add(new_session)
+        db.session.commit()
+
+        return jsonify({
+            'user': {
+                'name': user.name,
+                'email': user.email,
+                'profile_image': user.profile_image,
+                'type': user.type,
+                'uid': user.provider_uid,
+                'provider': user.provider
+            },
+            'token': new_session.token
+        }), 200
+    
+    except:
+        # create new session token
+        user_data = {
+            'id': 1,
+            'name': 'Test',
+            'email': 'Test@mail.com',
+            'provider': "",
+            'uid': "",
+            'picture': "",
+            'type': 'programmer'
+        }
+        new_session = UserSession(user_id=user_data.get('id'))
+        db.session.add(new_session)
+        db.session.commit()
 
 
-    # get user from database
+        # get user from database
 
-    user = User.query.filter_by(
-        id=user_data.get('id'),
-        # provider=user_data.get('provider'),
-        # provider_uid= user_data.get('uid')
-    ).first()
+        user = User.query.filter_by(
+            id=user_data.get('id'),
+            # provider=user_data.get('provider'),
+            # provider_uid= user_data.get('uid')
+        ).first()
 
-    if user:
-        user.name = user_data.get('name')
-        user.profile_image = user_data.get('picture')
-    else:
-        user = User(
-            email=user_data.get('email'),
-            name=user_data.get('name'),
-            profile_image=user_data.get('picture'),
-            provider=user_data.get('provider'),
-            provider_uid=user_data.get('uid'))
-        db.session.add(user)
-    db.session.commit()
+        if user:
+            user.name = user_data.get('name')
+            user.profile_image = user_data.get('picture')
+        else:
+            user = User(
+                email=user_data.get('email'),
+                name=user_data.get('name'),
+                profile_image=user_data.get('picture'),
+                provider=user_data.get('provider'),
+                provider_uid=user_data.get('uid'))
+            db.session.add(user)
+        db.session.commit()
 
 
-    return jsonify({
-        'user': {
-            'name': user.name,
-            'profile_image': user.profile_image,
-            'type': user.type
-        },
-        'token': new_session.token
-    }), 200
+        return jsonify({
+            'user': {
+                'name': user.name,
+                'profile_image': user.profile_image,
+                'type': user.type
+            },
+            'token': new_session.token
+        }), 200
 
 @bp.route('/getUser', methods=['GET'])
 @require_auth

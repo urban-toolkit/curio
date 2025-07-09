@@ -2,6 +2,28 @@
 
 This document is meant for **undergraduate students** involved in UTK, Curio, and Urbanite projects to get you started quickly and independently.
 
+## Table of Contents
+
+1. [Overview: UTK, Curio, and Urbanite](#1-overview-utk-curio-and-urbanite)
+2. [Essential Installations](#2-essential-installations)
+3. [General Organization of Documents](#3-general-organization-of-documents)
+4. [Making Contributions](#4-making-contributions)
+5. [Usage and Quick Start](#5-usage-and-quick-start)
+6. [Tips for Seeking Help](#6-tips-for-seeking-help)
+7. [Task List](#7-task-list)
+8. [FAQ](#8-faq)
+    - [Should I use Windows?](#should-i-use-windows)
+    - [What is Bash?](#what-is-bash)
+    - [What is Git?](#what-is-git)
+    - [What is the difference between Conda, Miniconda, and Mamba?](#what-is-the-difference-between-conda-miniconda-and-mamba)
+    - [How do I fix errors or debug issues?](#how-do-i-fix-errors-or-debug-issues)
+    - [Why do I get “no such file” when running `python curio.py start`?](#why-do-i-get-no-such-file-when-running-python-curiopy-start)
+    - [Why are there two different instances of `curio` when I use pip versus cloning?](#why-are-there-two-different-instances-of-curio-when-i-use-pip-versus-cloning)
+    - [Why do I get `bash: conda: command not found`?](#why-do-i-get-bash-conda-command-not-found)
+    - [How do I know if my issue is with Curio, Conda, or Pip?](#how-do-i-know-if-my-issue-is-with-curio-conda-or-pip)
+    - [Why does `curio start` take so long to run the first time?](#why-does-curio-start-take-so-long-to-run-the-first-time)
+    - [I am getting a "No such file or directory" error when loading a file](#i-am-getting-a-no-such-file-or-directory-error-when-loading-a-file)
+
 ## 1. Overview: UTK, Curio, and Urbanite
 
 - **UTK (Urban Toolkit):** A flexible and extensible visualization framework that enables the easy authoring of web-based visualizations through a new high-level grammar specifically built with common urban use cases in mind. [GitHub](https://github.com/urban-toolkit/utk)
@@ -106,11 +128,7 @@ You can use any of these for managing your Python environments. If you want simp
 
 First, read the documentation in the repository. Check the documentation for setup. If you need to make code changes to debug, create a fork of the repository, make your changes there, and test locally before submitting any issues or pull requests for help.
 
-### What if I encounter issues during installation?
-
-Check the Discord channels for pinned troubleshooting steps or ask a clear question with error details.
-
-### Why do I get “no such file” when running python curio.py start?
+### Why do I get “no such file” when running `python curio.py start`?
 
 If you are getting an error like:
 ```bash
@@ -129,7 +147,7 @@ If you installed the project using pip (e.g., pip install curio), it will instal
 curio start
 ```
 
-### Why are there two different instances of curio when I use pip versus cloning?
+### Why are there two different instances of `curio` when I use pip versus cloning?
 
 When you install `curio` with pip, it places the `curio` executable in your Python environment’s Scripts (Windows) or bin (macOS/Linux) folder, making it accessible system-wide from any folder.
 
@@ -138,3 +156,91 @@ When you clone the repository directly, `curio` (or `curio.py`) remains in the f
 In short:
   - Installed via pip → curio is globally available from any folder.
   - Cloned manually → curio is local to the folder where you cloned it and must be run from there unless you install it.
+
+### Why do I get `bash: conda: command not found`?
+
+This error means Git Bash cannot find your `conda` installation because:
+  - Git Bash does not automatically inherit the PATH used by Anaconda/Miniconda installed on Windows.
+  - By default, `conda` is added to the Windows environment PATH, but Git Bash may need manual configuration to access it.
+
+To fix it, verify where Anaconda/Miniconda is installed. Typical installation paths include `C:\Users\<YourUsername>\Anaconda3` or `C:\Users\<YourUsername>\Miniconda3`. Then, add `conda` to your Git Bash path, replacing the appropriate paths:
+
+```bash
+echo 'export PATH="/c/Users/<YourUsername>/Anaconda3:/c/Users/<YourUsername>/Anaconda3/Scripts:/c/Users/<YourUsername>/Anaconda3/Library/bin:$PATH"' >> ~/.bashrc
+```
+
+(replace <YourUsername> with your Windows username and make sure the path is correct)
+
+Then, apply the changes:
+```bash
+source ~/.bashrc
+```
+
+Test if it works:
+```bash
+conda --version
+```
+
+If it returns a version, `conda` is now accessible in Git Bash.
+
+Also, if you want `conda activate` to work fully in Git Bash, initialize Conda for bash:
+```bash
+conda init bash
+```
+And then restart Git Bash. Check [this](https://discuss.codecademy.com/t/setting-up-conda-in-git-bash/534473) for even more information.
+
+### How do I know if my issue is with Curio, Conda, or Pip?
+
+When troubleshooting, it helps to identify **where the problem actually is**:
+
+**Check if it’s a Curio problem:**
+- Does `curio start` (or `python curio.py start`) fail with errors inside the app?
+- If the error mentions Curio-specific stack traces, it’s a **Curio project issue** (wrong folder, misconfiguration, or a Curio bug).
+
+**Check if it’s a Conda problem:**
+- If `conda` commands give `command not found` or environment activation fails (`conda activate` errors), it’s a **Conda installation or PATH issue**.
+- If packages are missing despite installation attempts inside Conda, verify you are in the correct environment:
+    ```bash
+    conda info --envs
+    ```
+
+**Check if it’s a Pip problem:**
+- If `pip install` fails, or packages are missing after installation, it’s typically a **pip issue** (wrong environment, missing dependencies, or permissions).
+- Check which environment `pip` is using:
+    ```bash
+    which pip
+    pip --version
+    ```
+Ensure it matches your active environment (`conda info`).
+
+If you are still unsure, please gather the following so we can pinpoint whether it’s **Curio, Conda, or Pip** and resolve it.
+- The exact command you ran.
+- The **full error message**.
+- Your current working directory:
+    ```bash
+    pwd
+    ```
+- Outputs of:
+    ```bash
+    which python
+    which pip
+    conda info --envs
+    ```
+### Why does `curio start` (or `python curio.py start`) take so long to run the first time?
+
+If your first run of:
+```bash
+curio start
+```
+
+or
+
+```bash
+python curio.py start
+```
+
+is taking a long time, this is normal. On the first run, Curio needs to process Node.js files (frontend assets, JavaScript/TypeScript, etc.) for the first time. First run may take 30 seconds to a few minutes as Node.js compiles and bundles assets. Subsequent runs will be significantly faster since the build artifacts are cached.
+
+### I am getting a "No such file or directory" error when loading a file
+
+Check the folder you are running Curio from; the file path you provide is relative to that location.
