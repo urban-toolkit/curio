@@ -91,7 +91,7 @@ function MergeFlowBox({ data, isConnectable }: { data: any; isConnectable: boole
                 type="target"
                 position={Position.Left}
                 className={"handle_top_left"}
-                id="in"
+                id="in_1"
                 isConnectable={isConnectable}
             />
             <Handle

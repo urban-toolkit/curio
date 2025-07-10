@@ -454,8 +454,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                         while (inputList.length < 2) inputList.push(undefined);
                         while (sourceList.length < 2) sourceList.push(undefined);
                         
-                        // Map handle to array index: "in" -> 0 (primary), "in_2" -> 1 (secondary)
-                        const handleIndex = targetHandle === "in" ? 0 : targetHandle === "in_2" ? 1 : -1;
+                                        // Map handle to array index: "in_1" -> 0 (primary), "in_2" -> 1 (secondary)
+                const handleIndex = targetHandle === "in_1" ? 0 : targetHandle === "in_2" ? 1 : -1;
                         
                         if (handleIndex >= 0) {
                             inputList[handleIndex] = output;
@@ -514,7 +514,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                                     while (inputList.length < 2) inputList.push(undefined);
                                     while (sourceList.length < 2) sourceList.push(undefined);
                                     
-                                    const handleIndex = connection.targetHandle === "in" ? 0 : connection.targetHandle === "in_2" ? 1 : -1;
+                                    const handleIndex = connection.targetHandle === "in_1" ? 0 : connection.targetHandle === "in_2" ? 1 : -1;
                                     
                                     if (handleIndex >= 0) {
                                         // Clear the specific position
@@ -609,9 +609,9 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                     "An in/out connection can only be connected to another in/out connection"
                 );
             } else if (
-                ((connection.sourceHandle == "in" || connection.sourceHandle == "in_2") &&
+                ((connection.sourceHandle == "in" || connection.sourceHandle == "in_1" || connection.sourceHandle == "in_2") &&
                     connection.targetHandle != "out") ||
-                ((connection.targetHandle == "in" || connection.targetHandle == "in_2") &&
+                ((connection.targetHandle == "in" || connection.targetHandle == "in_1" || connection.targetHandle == "in_2") &&
                     connection.sourceHandle != "out")
             ) {
                 validHandleCombination = false;
@@ -620,9 +620,9 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 );
             } else if (
                 (connection.sourceHandle == "out" &&
-                    (connection.targetHandle != "in" && connection.targetHandle != "in_2")) ||
+                    (connection.targetHandle != "in" && connection.targetHandle != "in_1" && connection.targetHandle != "in_2")) ||
                 (connection.targetHandle == "out" &&
-                    (connection.sourceHandle != "in" && connection.sourceHandle != "in_2"))
+                    (connection.sourceHandle != "in" && connection.sourceHandle != "in_1" && connection.sourceHandle != "in_2"))
             ) {
                 validHandleCombination = false;
                 alert(
@@ -657,7 +657,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 if (inBox === BoxType.MERGE_FLOW && allowConnection) {
                     const existingConnections = edges.filter((edge: Edge) => 
                         edge.target === connection.target && 
-                        (edge.targetHandle === "in" || edge.targetHandle === "in_2")
+                        (edge.targetHandle === "in_1" || edge.targetHandle === "in_2")
                     );
                     
                     if (existingConnections.length >= 2) {
