@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Handle, Position } from "reactflow";
+import { useReactFlow } from "reactflow";
 import "bootstrap/dist/css/bootstrap.min.css";
 import DescriptionModal from "./DescriptionModal";
 import { BoxType } from "../constants";
@@ -26,7 +27,7 @@ interface MergeFlowBoxProps {
 }
 
 function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps) {
-  const defaultCount = data.inputCount ?? 2;
+  const defaultCount = data.inputCount ?? 1;
   const [inputCount, setInputCount] = useState<number>(defaultCount);
   const [inputValues, setInputValues] = useState<any[]>(
     Array(defaultCount).fill(undefined)
@@ -70,7 +71,7 @@ function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps) {
 
   const iconStyle: CSS.Properties = {
     fontSize: "1.2em",
-    color: "#3B0952",
+    color: "#1C191A",
     cursor: "pointer",
     marginLeft: "5px",
   };
@@ -132,22 +133,24 @@ function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps) {
 
   return (
     <>
-      {/* Dynamic input handles with connection limits */}
-      {Array.from({ length: inputCount }).map((_, index) => (
+      {Array.from({ length: inputCount }).map((_, index) => {
+  const id = index === 0 ? "in" : index === 1 ? "in_2" : `in_${index}`;
+  return (
     <Handle
-      key={`in_${index}`}
+      key={id}
       type="target"
       position={Position.Left}
-      id={`in_${index}`}
+      id={id}
       style={{
         top: `${((index + 1) * 120) / (inputCount + 1)}%`,
         zIndex: 10,
         pointerEvents: "auto",
       }}
       isConnectable={isConnectable}
-      // Remove connectionLimit prop
     />
-  ))}
+  );
+})}
+
 
 
       <Handle
@@ -159,7 +162,7 @@ function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps) {
       />
 
       <div style={{ marginBottom: "8px", textAlign: "center" }}>
-        <label style={{ fontSize: "0.85em" }}>Inputs:</label>
+        <label style={{ fontSize: "0.85em" }}></label>
         <select
           value={inputCount}
           onChange={(e) => handleInputCountChange(parseInt(e.target.value))}

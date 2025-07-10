@@ -35,6 +35,7 @@
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
+        "inputCount": 5,
         "metadata": {
           "keywords": []
         }
