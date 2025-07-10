@@ -38,7 +38,7 @@ export function useCode(): IUseCode {
 
     const outputCallback = useCallback(
         (nodeId: string, output: string) => {
-            applyNewOutput({nodeId: nodeId, output: output});
+            applyNewOutput({ nodeId: nodeId, output: output });
         },
         [setOutputs]
     );
@@ -48,17 +48,17 @@ export function useCode(): IUseCode {
             let newInteractions: IInteraction[] = [];
             let newNode = true;
 
-            for(const interaction of prevInteractions){
-                if(interaction.nodeId == nodeId){
-                    newInteractions.push({nodeId: nodeId, details: interactions, priority: 1});
+            for (const interaction of prevInteractions) {
+                if (interaction.nodeId == nodeId) {
+                    newInteractions.push({ nodeId: nodeId, details: interactions, priority: 1 });
                     newNode = false;
-                }else{
-                    newInteractions.push({...interaction, priority: 0});
+                } else {
+                    newInteractions.push({ ...interaction, priority: 0 });
                 }
             }
 
-            if(newNode)
-                newInteractions.push({nodeId: nodeId, details: interactions, priority: 1});
+            if (newNode)
+                newInteractions.push({ nodeId: nodeId, details: interactions, priority: 1 });
 
             return newInteractions;
         })
@@ -70,58 +70,57 @@ export function useCode(): IUseCode {
         let nodes = [];
         let edges = [];
 
-        for(const node of trill.dataflow.nodes){
+        for (const node of trill.dataflow.nodes) {
             let x = node.x;
             let y = node.y;
 
-            if(x == undefined || y == undefined){
+            if (x == undefined || y == undefined) {
                 let position = getPosition();
                 x = position.x + 800;
                 y = position.y;
             }
 
             let nodeMeta: any = {
-                nodeId: node.id, 
-                code: node.content, 
-                position: {x: x, y: y}
+                nodeId: node.id,
+                code: node.content,
+                position: { x: x, y: y }
             }
 
-            if(node.goal != undefined)
+            if (node.goal != undefined)
                 nodeMeta.goal = node.goal;
 
-            if(node.in != undefined)
+            if (node.in != undefined)
                 nodeMeta.inType = node.in;
 
-            if(node.out != undefined)
+            if (node.out != undefined)
                 nodeMeta.out = node.out;
 
-            if(node.warnings != undefined)
+            if (node.warnings != undefined)
                 nodeMeta.warnings = node.warnings;
 
-            if(node.metadata != undefined && node.metadata.keywords != undefined)
+            if (node.metadata != undefined && node.metadata.keywords != undefined)
                 nodeMeta.keywords = node.metadata.keywords;
 
-            if(suggestionType != undefined)
+            if (suggestionType != undefined)
                 nodeMeta.suggestionType = suggestionType;
 
             nodes.push(generateCodeNode(node.type, nodeMeta));
 
         }
 
-        for(const edge of trill.dataflow.edges){
+        for (const edge of trill.dataflow.edges) {
 
             let targetHandle = "in";
-
-            if(edge.id.includes("in_1")) { // For the first input of the merge node
-                targetHandle = "in_1";
-            } else if(edge.id.includes("in_2")) { // For the second input of the merge node
-                targetHandle = "in_2";
+            const match = edge.id.match(/in(_\\d+)?/);
+            if (match) {
+                targetHandle = match[0];
             }
+
 
             let add_edge: any = {
                 id: edge.id,
                 type: EdgeType.UNIDIRECTIONAL_EDGE,
-                markerEnd: {type: "arrow"},
+                markerEnd: { type: "arrow" },
                 source: edge.source,
                 sourceHandle: "out",
                 target: edge.target,
@@ -130,14 +129,14 @@ export function useCode(): IUseCode {
 
             add_edge.data = {}
 
-            if(suggestionType != undefined)
+            if (suggestionType != undefined)
                 add_edge.data.suggestionType = suggestionType;
 
-            if(edge.metadata != undefined && edge.metadata.keywords != undefined)
+            if (edge.metadata != undefined && edge.metadata.keywords != undefined)
                 add_edge.data.keywords = edge.metadata.keywords;
 
-            if(edge.type == "Interaction"){
-                add_edge.markerStart = {type: "arrow"};
+            if (edge.type == "Interaction") {
+                add_edge.markerStart = { type: "arrow" };
                 add_edge.sourceHandle = "in/out";
                 add_edge.targetHandle = "in/out";
                 add_edge.type = EdgeType.BIDIRECTIONAL_EDGE;
@@ -146,12 +145,12 @@ export function useCode(): IUseCode {
             edges.push(add_edge);
         }
 
-        if(suggestionType == undefined)
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false); 
-        else if(suggestionType == "workflow")
+        if (suggestionType == undefined)
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false);
+        else if (suggestionType == "workflow")
             loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, true); // if loading as suggestion deactivate provenance and merge
         else
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, true); 
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, true);
 
     }
 

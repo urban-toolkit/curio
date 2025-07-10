@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Handle, Position } from "reactflow";
-import { useReactFlow } from "reactflow";
+import { Handle, Position, useReactFlow } from "reactflow";
 import "bootstrap/dist/css/bootstrap.min.css";
 import DescriptionModal from "./DescriptionModal";
 import { BoxType } from "../constants";
@@ -27,23 +26,19 @@ interface MergeFlowBoxProps {
 }
 
 function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps) {
-  const defaultCount = data.inputCount ?? 1;
-  const [inputCount, setInputCount] = useState<number>(defaultCount);
-  const [inputValues, setInputValues] = useState<any[]>(
-    Array(defaultCount).fill(undefined)
-  );
-
+  const { getEdges } = useReactFlow();
+  const [inputCount, setInputCount] = useState<number>(1);
+  const [inputValues, setInputValues] = useState<any[]>(Array(1).fill(undefined));
   const [output, setOutput] = useState<{ code: string; content: any }>({
     code: "",
     content: { data: [], dataType: "outputs" },
   });
   const [templateData, setTemplateData] = useState<Template | any>({});
   const [showDescriptionModal, setDescriptionModal] = useState(false);
-
   const { editUserTemplate } = useTemplateContext();
 
   useEffect(() => {
-    if (data.templateId != undefined) {
+    if (data.templateId !== undefined) {
       setTemplateData({
         id: data.templateId,
         type: BoxType.MERGE_FLOW,
@@ -56,6 +51,19 @@ function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps) {
       });
     }
   }, [data.templateId]);
+
+  useEffect(() => {
+    const inputConnections = getEdges().filter(
+      (edge) => edge.target === data.nodeId && edge.targetHandle?.startsWith("in")
+    );
+
+    const usedHandles = new Set(inputConnections.map(edge => edge.targetHandle));
+
+    if (usedHandles.size < 5 && usedHandles.size >= inputCount) {
+      setInputCount(usedHandles.size + 1);
+      setInputValues((prev) => [...prev, undefined]);
+    }
+  }, [getEdges, data.nodeId, inputCount]);
 
   const setTemplateConfig = (template: Template) => {
     setTemplateData({ ...template, inputCount });
@@ -76,55 +84,41 @@ function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps) {
     marginLeft: "5px",
   };
 
-  const handleInputCountChange = (newCount: number) => {
-    setInputCount(newCount);
-    setInputValues(Array(newCount).fill(undefined));
-    if (data.inputCount !== undefined) {
-      data.inputCount = newCount;
-    }
-  };
-
-  // Handle input updates for specific ports
   const handleInputUpdate = (index: number, value: any) => {
     const newValues = [...inputValues];
     newValues[index] = value;
     setInputValues(newValues);
-    
-    // Filter out undefined inputs
-    const validInputs = newValues.filter(val => val !== undefined);
-    
-    const newOutput = { 
-      data: validInputs, 
-      dataType: "outputs" 
+
+    const validInputs = newValues.filter((val) => val !== undefined);
+    const newOutput = {
+      data: validInputs,
+      dataType: "outputs",
     };
-    
+
     setOutput({ code: "success", content: newOutput });
     data.outputCallback(data.nodeId, newOutput);
   };
 
-  // Listen for input changes from parent
   useEffect(() => {
     if (data.input && Array.isArray(data.input)) {
-      // Process inputs in order
       const newValues = [...inputValues];
       let changed = false;
-      
+
       data.input.forEach((input, idx) => {
         if (idx < inputCount && input !== newValues[idx]) {
           newValues[idx] = input;
           changed = true;
         }
       });
-      
+
       if (changed) {
         setInputValues(newValues);
-        
-        const validInputs = newValues.filter(val => val !== undefined);
-        const newOutput = { 
-          data: validInputs, 
-          dataType: "outputs" 
+        const validInputs = newValues.filter((val) => val !== undefined);
+        const newOutput = {
+          data: validInputs,
+          dataType: "outputs",
         };
-        
+
         setOutput({ code: "success", content: newOutput });
         data.outputCallback(data.nodeId, newOutput);
       }
@@ -133,25 +127,21 @@ function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps) {
 
   return (
     <>
-      {Array.from({ length: inputCount }).map((_, index) => {
-  const id = index === 0 ? "in" : index === 1 ? "in_2" : `in_${index}`;
-  return (
-    <Handle
-      key={id}
-      type="target"
-      position={Position.Left}
-      id={id}
-      style={{
-        top: `${((index + 1) * 120) / (inputCount + 1)}%`,
-        zIndex: 10,
-        pointerEvents: "auto",
-      }}
-      isConnectable={isConnectable}
-    />
-  );
-})}
-
-
+      {/* Dynamic input handles */}
+      {Array.from({ length: inputCount }).map((_, index) => (
+        <Handle
+          key={`in_${index}`}
+          type="target"
+          position={Position.Left}
+          id={index === 0 ? "in" : `in_${index}`}
+          style={{
+            top: `${((index + 1) * 120) / (inputCount + 1)}%`,
+            zIndex: 10,
+            pointerEvents: "auto",
+          }}
+          isConnectable={isConnectable}
+        />
+      ))}
 
       <Handle
         type="source"
@@ -160,24 +150,6 @@ function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps) {
         isConnectable={isConnectable}
         style={{ top: "60%", zIndex: 10, pointerEvents: "auto" }}
       />
-
-      <div style={{ marginBottom: "8px", textAlign: "center" }}>
-        <label style={{ fontSize: "0.85em" }}></label>
-        <select
-          value={inputCount}
-          onChange={(e) => handleInputCountChange(parseInt(e.target.value))}
-          style={{ fontSize: "0.85em", marginLeft: "4px" }}
-        >
-          {[1, 2, 3, 4, 5].map((num) => (
-            <option key={num} value={num}>{num}</option>
-          ))}
-        </select>
-        <FontAwesomeIcon
-          icon={faCircleInfo}
-          title="Select how many inputs this box accepts"
-          style={iconStyle}
-        />
-      </div>
 
       <BoxContainer
         nodeId={data.nodeId}
