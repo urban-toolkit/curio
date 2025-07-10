@@ -35,6 +35,16 @@ This document is meant for **undergraduate students** involved in UTK, Curio, an
 
 Curio uses UTK while Urbanite builds on Curio with LLM-powered capabilities. If you would like to learn more about the design and research behind these tools, please see the research papers linked in each repository.
 
+
+> "We have seen that computer programming is an art, because it applies accumulated knowledge to the world, because it requires skill and ingenuity, and especially because it produces objects of beauty. A programmer who subconsciously views himself as an artist will enjoy what he does and will do it better."  
+> — Donald Knuth
+
+As you code for Curio, remember that things not working is a normal, expected part of programming. Debugging is not just about fixing mistakes; it is how programmers learn, understand, and improve their work. Each error you encounter is an opportunity to clarify your thinking, discover how the systems and frameworks truly work, and refine your design. **This is the craft you are developing.** Treat debugging and refinement as part of your learning, not interruptions to it.
+
+As you learn, consider reading [Peter Norvig’s "Teach Yourself Programming in Ten Years"](https://norvig.com/21-days.html). Norvig emphasizes that programming is not about shortcuts or overnight mastery but about learning deeply, practicing consistently, and staying curious while building meaningful systems. Likewise, Donald Knuth, one of the most respected computer scientists, describes programming as an art that requires creativity, skill, and the pursuit of clarity and beauty in your work. You can read his classic perspective in ["Computer Programming as an Art"](https://dl.acm.org/doi/pdf/10.1145/1283920.1283929).
+
+When your code breaks or your pipeline fails, take a breath: this is not a reason for frustration, but an invitation to engage with programming and strengthen your ability to think, debug, and build effectively.
+
 ## 2. Core Technologies
 
 Curio is built using **React** and **TypeScript**. For an overview of React, see [this tutorial](https://react.dev/learn) and [this tutorial](https://beta.reactjs.org/learn).
