@@ -119,6 +119,7 @@ nav:
   - Getting Started:
     - Installation: getting-started/installation.md
     - Quick Start Tutorial: getting-started/quick_start.md
+    - Onboarding: getting-started/onboarding.md
   - Examples:
     - Overview: examples/examples.md
     - Visual Analytics:

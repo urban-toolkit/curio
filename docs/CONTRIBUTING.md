@@ -54,10 +54,8 @@ curio/
 │       └── utk-workflow/            # Embedded version of UTK
 │
 ├── curio.py                         # CLI entry point for running and managing all services
-├── examples/                        # Example dataflows and use cases
 ├── tests/                           # Dataflow examples for testing
-├── docs/                            # Markdown documentation and usage guides
-├── images/                          # Static images for documentation
+├── docs/                            # Documentation, usage guides, and examples
 └── requirements.txt                 # Backend and sandbox dependencies
 ```
 
@@ -160,7 +158,7 @@ git push origin my-feature
 
 ### 6. Submit a Pull Request
 
-Open a PR on GitHub with a detailed description and link to relevant issues.
+Open a PR on GitHub with a detailed description and link to relevant issues. **When you create a PR, make sure you create a PR selecting the branch of the upstream repository you'd like to merge changes into (usually urban-toolkit/curio main).**
 
 ---
 
