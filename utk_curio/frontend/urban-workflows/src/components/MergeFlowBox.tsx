@@ -140,7 +140,7 @@ function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps) {
       position={Position.Left}
       id={`in_${index}`}
       style={{
-        top: `${((index + 1) * 100) / (inputCount + 1)}%`,
+        top: `${((index + 1) * 120) / (inputCount + 1)}%`,
         zIndex: 10,
         pointerEvents: "auto",
       }}
@@ -155,7 +155,7 @@ function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps) {
         position={Position.Right}
         id="out"
         isConnectable={isConnectable}
-        style={{ top: "50%", zIndex: 10, pointerEvents: "auto" }}
+        style={{ top: "60%", zIndex: 10, pointerEvents: "auto" }}
       />
 
       <div style={{ marginBottom: "8px", textAlign: "center" }}>
