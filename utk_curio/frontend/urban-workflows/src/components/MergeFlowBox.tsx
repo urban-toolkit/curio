@@ -1,10 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { Handle, Position } from "reactflow";
-
 import "bootstrap/dist/css/bootstrap.min.css";
 import DescriptionModal from "./DescriptionModal";
 import { BoxType } from "../constants";
-
 import { Template, useTemplateContext } from "../providers/TemplateProvider";
 import { BoxContainer } from "./styles";
 import CSS from "csstype";
@@ -28,23 +26,21 @@ interface MergeFlowBoxProps {
 }
 
 function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps) {
-  // Default to 2 inputs or saved value
   const defaultCount = data.inputCount ?? 2;
   const [inputCount, setInputCount] = useState<number>(defaultCount);
-  // Track order of inputs
-  const [inputOrder, setInputOrder] = useState<number[]>(
-    Array.from({ length: defaultCount }, (_, i) => i)
+  const [inputValues, setInputValues] = useState<any[]>(
+    Array(defaultCount).fill(undefined)
   );
 
-  const [output, setOutput] = useState<{ code: string; content: any }>(
-    { code: "", content: { data: [], dataType: "outputs" } }
-  );
+  const [output, setOutput] = useState<{ code: string; content: any }>({
+    code: "",
+    content: { data: [], dataType: "outputs" },
+  });
   const [templateData, setTemplateData] = useState<Template | any>({});
   const [showDescriptionModal, setDescriptionModal] = useState(false);
 
   const { editUserTemplate } = useTemplateContext();
 
-  // When template data loads, sync saved inputCount
   useEffect(() => {
     if (data.templateId != undefined) {
       setTemplateData({
@@ -60,73 +56,130 @@ function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps) {
     }
   }, [data.templateId]);
 
-  // Update inputOrder when count changes
-  useEffect(() => {
-    setInputOrder(Array.from({ length: inputCount }, (_, i) => i));
-  }, [inputCount]);
-
   const setTemplateConfig = (template: Template) => {
     setTemplateData({ ...template, inputCount });
   };
 
   const promptDescription = () => setDescriptionModal(true);
-  const closeDescription   = () => setDescriptionModal(false);
+  const closeDescription = () => setDescriptionModal(false);
 
   const updateTemplate = (template: Template) => {
     setTemplateConfig(template);
-    editUserTemplate({ ...template});
+    editUserTemplate({ ...template });
   };
 
   const iconStyle: CSS.Properties = {
     fontSize: "1.2em",
-    color: "#888787",
+    color: "#3B0952",
     cursor: "pointer",
     marginLeft: "5px",
   };
 
-  // Merge inputs in the order defined by inputOrder
-  useEffect(() => {
-    let newOutput: any = { data: [], dataType: "outputs" };
-    const arr = Array.isArray(data.input) ? data.input : [];
-
-    for (const idx of inputOrder) {
-      const val = arr[idx];
-      if (val !== undefined && val !== "") {
-        newOutput.data.push(val);
-      }
+  const handleInputCountChange = (newCount: number) => {
+    setInputCount(newCount);
+    setInputValues(Array(newCount).fill(undefined));
+    if (data.inputCount !== undefined) {
+      data.inputCount = newCount;
     }
+  };
 
+  // Handle input updates for specific ports
+  const handleInputUpdate = (index: number, value: any) => {
+    const newValues = [...inputValues];
+    newValues[index] = value;
+    setInputValues(newValues);
+    
+    // Filter out undefined inputs
+    const validInputs = newValues.filter(val => val !== undefined);
+    
+    const newOutput = { 
+      data: validInputs, 
+      dataType: "outputs" 
+    };
+    
     setOutput({ code: "success", content: newOutput });
     data.outputCallback(data.nodeId, newOutput);
-  }, [data.input, inputOrder]);
+  };
+
+  // Listen for input changes from parent
+  useEffect(() => {
+    if (data.input && Array.isArray(data.input)) {
+      // Process inputs in order
+      const newValues = [...inputValues];
+      let changed = false;
+      
+      data.input.forEach((input, idx) => {
+        if (idx < inputCount && input !== newValues[idx]) {
+          newValues[idx] = input;
+          changed = true;
+        }
+      });
+      
+      if (changed) {
+        setInputValues(newValues);
+        
+        const validInputs = newValues.filter(val => val !== undefined);
+        const newOutput = { 
+          data: validInputs, 
+          dataType: "outputs" 
+        };
+        
+        setOutput({ code: "success", content: newOutput });
+        data.outputCallback(data.nodeId, newOutput);
+      }
+    }
+  }, [data.input]);
 
   return (
     <>
-      {/* Dynamic input handles */}
-{inputOrder.map((i) => (
-  <Handle
-    key={`in_${i}`}
-    type="target"
-    position={Position.Left}
-    id={`in_${i}`}
-    style={{ top: `${((i + 1) * 100) / (inputCount + 1)}%` }}
-    isConnectable={isConnectable}
-  />
-))}
+      {/* Dynamic input handles with connection limits */}
+      {Array.from({ length: inputCount }).map((_, index) => (
+    <Handle
+      key={`in_${index}`}
+      type="target"
+      position={Position.Left}
+      id={`in_${index}`}
+      style={{
+        top: `${((index + 1) * 100) / (inputCount + 1)}%`,
+        zIndex: 10,
+        pointerEvents: "auto",
+      }}
+      isConnectable={isConnectable}
+      // Remove connectionLimit prop
+    />
+  ))}
 
-/* Single output handle */
-<Handle
-  type="source"
-  position={Position.Right}
-  id="out"
-  isConnectable={isConnectable}
-/>
 
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="out"
+        isConnectable={isConnectable}
+        style={{ top: "50%", zIndex: 10, pointerEvents: "auto" }}
+      />
+
+      <div style={{ marginBottom: "8px", textAlign: "center" }}>
+        <label style={{ fontSize: "0.85em" }}>Inputs:</label>
+        <select
+          value={inputCount}
+          onChange={(e) => handleInputCountChange(parseInt(e.target.value))}
+          style={{ fontSize: "0.85em", marginLeft: "4px" }}
+        >
+          {[1, 2, 3, 4, 5].map((num) => (
+            <option key={num} value={num}>{num}</option>
+          ))}
+        </select>
+        <FontAwesomeIcon
+          icon={faCircleInfo}
+          title="Select how many inputs this box accepts"
+          style={iconStyle}
+        />
+      </div>
 
       <BoxContainer
         nodeId={data.nodeId}
         data={data}
-        boxHeight={50 + inputCount * 20}
+        boxHeight={60 + inputCount * 25}
         boxWidth={120}
         noContent={true}
         templateData={templateData}
@@ -134,26 +187,6 @@ function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps) {
         updateTemplate={updateTemplate}
         promptDescription={promptDescription}
       >
-        {/* Input count selector */}
-        <div style={{ marginBottom: "8px", textAlign: "center" }}>
-          <label style={{ fontSize: "0.85em" }}>Inputs:</label>
-          <select
-            value={inputCount}
-            onChange={(e) => setInputCount(parseInt(e.target.value))}
-            style={{ fontSize: "0.85em", marginLeft: "4px" }}
-          >
-            {[1, 2, 3, 4, 5].map((num) => (
-              <option key={num} value={num}>{num}</option>
-            ))}
-          </select>
-          <FontAwesomeIcon
-            icon={faCircleInfo}
-            title="Select how many inputs this box accepts"
-            style={iconStyle}
-          />
-        </div>
-
-        {/* Description modal trigger */}
         <DescriptionModal
           nodeId={data.nodeId}
           boxType={BoxType.MERGE_FLOW}

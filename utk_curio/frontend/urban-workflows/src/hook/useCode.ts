@@ -64,9 +64,7 @@ export function useCode(): IUseCode {
         })
     }, [setInteractions]);
 
-    // suggestionType: "workflow" | "connection" | "none"
     const loadTrill = (trill: any, suggestionType?: string) => {
-
         let nodes = [];
         let edges = [];
 
@@ -105,17 +103,16 @@ export function useCode(): IUseCode {
                 nodeMeta.suggestionType = suggestionType;
 
             nodes.push(generateCodeNode(node.type, nodeMeta));
-
         }
 
         for(const edge of trill.dataflow.edges){
-
-            let targetHandle = "in";
-
-            if(edge.id.includes("in_1")) { // For the first input of the merge node
-                targetHandle = "in_1";
-            } else if(edge.id.includes("in_2")) { // For the second input of the merge node
-                targetHandle = "in_2";
+            let targetHandle = "in_0"; // Default to first input
+            
+            // Parse input number from edge ID if available (supports in_1, in_2, etc.)
+            const inputMatch = edge.id.match(/in_(\d+)/);
+            if (inputMatch) {
+                // Convert to zero-based index (in_1 becomes in_0, in_2 becomes in_1, etc.)
+                targetHandle = `in_${parseInt(inputMatch[1]) - 1}`;
             }
 
             let add_edge: any = {
@@ -125,7 +122,7 @@ export function useCode(): IUseCode {
                 source: edge.source,
                 sourceHandle: "out",
                 target: edge.target,
-                targetHandle
+                targetHandle: targetHandle
             }
 
             add_edge.data = {}
@@ -149,10 +146,9 @@ export function useCode(): IUseCode {
         if(suggestionType == undefined)
             loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false); 
         else if(suggestionType == "workflow")
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, true); // if loading as suggestion deactivate provenance and merge
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, true);
         else
             loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, true); 
-
     }
 
     const generateCodeNode = useCallback((boxType: string, options: CreateCodeNodeOptions = {}) => {
@@ -203,7 +199,6 @@ export function useCode(): IUseCode {
         };
 
         return node;
-
     }, [addNode, outputCallback, getPosition]);
 
     const createCodeNode = useCallback((boxType: string, options: CreateCodeNodeOptions = {}) => {

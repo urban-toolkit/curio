@@ -1,73 +1,37 @@
+
 {
   "dataflow": {
     "nodes": [
       {
-        "id": "c16e25b5-9ed4-4b87-8049-dde62c9bfa5a",
+        "id": "dataNode1",
         "type": "DATA_LOADING",
         "x": 482.5,
         "y": 65.75,
-        "content": "import pandas as pd\r\n\r\nd = {'a': [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\", \"G\", \"H\", \"I\"], 'b': [10, 20, 30, 40, 50, 60, 70, 80, 90]}\r\ndf = pd.DataFrame(data=d)\r\n\r\nreturn df",
+        "content": "import pandas as pd\n\nd = {'a': [\"A\", \"B\", \"C\"], 'b': [10, 20, 30]}\nreturn pd.DataFrame(data=d)",
         "out": "DEFAULT",
-        "in": "DEFAULT",
-        "goal": "",
-        "metadata": {
-          "keywords": []
-        }
+        "in": "DEFAULT"
       },
       {
-        "id": "e392ed5c-0df1-4815-a76f-542930b855d4",
+        "id": "dataNode2",
         "type": "DATA_LOADING",
-        "x": 470.92954493246634,
-        "y": 442.9922730405202,
-        "content": "import pandas as pd\r\n\r\nd = {'a': [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\", \"G\", \"H\", \"I\"], 'b': [2, 4, 6, 8, 10, 12, 14, 16, 18]}\r\ndf = pd.DataFrame(data=d)\r\n\r\nreturn df",
+        "x": 470.9,
+        "y": 442.9,
+        "content": "import pandas as pd\n\nd = {'a': [\"A\", \"B\", \"D\"], 'b': [2, 4, 6]}\nreturn pd.DataFrame(data=d)",
         "out": "DEFAULT",
-        "in": "DEFAULT",
-        "goal": "",
-        "metadata": {
-          "keywords": []
-        }
+        "in": "DEFAULT"
       },
       {
-        "id": "fba24a09-19fe-429e-b0b0-037229e7b1dc",
+        "id": "mergeNode",
         "type": "MERGE_FLOW",
-        "x": 1163.927360131805,
-        "y": 369.7850896067386,
+        "x": 1163.9,
+        "y": 369.8,
         "out": "DEFAULT",
-        "in": "DEFAULT",
-        "goal": "",
-        "metadata": {
-          "keywords": []
-        }
-      },
-      {
-        "id": "9c3f8293-8cc9-4ed8-8840-ca60655e21d7",
-        "type": "COMPUTATION_ANALYSIS",
-        "x": 1423.551666086507,
-        "y": 260.04505115875406,
-        "content": "return arg",
-        "out": "DEFAULT",
-        "in": "DEFAULT",
-        "goal": "",
-        "metadata": {
-          "keywords": []
-        }
-      },
-      {
-        "id": "3d6376b4-782b-4c98-89f6-8eff022beb87",
-        "type": "COMPUTATION_ANALYSIS",
-        "x": 2139.7937357893034,
-        "y": 262.01337478768164,
-        "content": "df1 = arg[0]\r\ndf2 = arg[1]\r\n\r\nmerged_df = pd.merge(df1, df2, on='a', suffixes=('_df1', '_df2'))\r\nmerged_df['b_average'] = (merged_df['b_df1'] + merged_df['b_df2']) / 2\r\n\r\noverall_average = merged_df['b_average'].mean()\r\nprint(overall_average)\r\nreturn overall_average",
-        "out": "DEFAULT",
-        "in": "DEFAULT",
-        "goal": "",
-        "metadata": {
-          "keywords": []
-        }
+        "in": "DEFAULT"
       }
     ],
     "edges": [
       {
+<<<<<<< HEAD
         "id": "reactflow__edge-c16e25b5-9ed4-4b87-8049-dde62c9bfa5aout-fba24a09-19fe-429e-b0b0-037229e7b1dcin_1",
         "source": "c16e25b5-9ed4-4b87-8049-dde62c9bfa5a",
         "sourceHandle": "out",
@@ -94,11 +58,20 @@
         "sourceHandle": "out",
         "target": "3d6376b4-782b-4c98-89f6-8eff022beb87",
         "targetHandle": "in"
+=======
+        "id": "dataNode1-out-mergeNode-in_0",
+        "source": "dataNode1",
+        "target": "mergeNode"
+      },
+      {
+        "id": "dataNode2-out-mergeNode-in_1",
+        "source": "dataNode2",
+        "target": "mergeNode"
+>>>>>>> 25c4916 (Changes to Merge Box)
       }
     ],
-    "name": "DefaultWorkflow",
-    "task": "",
-    "timestamp": 1747342705197,
-    "provenance_id": "DefaultWorkflow"
+    "name": "MergeWorkflow",
+    "task": "Data Merging Example",
+    "timestamp": 1747342705197
   }
 }
