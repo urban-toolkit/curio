@@ -25,13 +25,15 @@ function DataExportBox({ data, isConnectable }) {
     content: "",
     outputType: ""
   }); // stores the output produced by the last execution of this box
+  
+  const [downloadFormat, setDownloadFormat] = useState<string>("csv");
   const [code, setCode] = useState<string>("");
   const sendCode = async () => {
-    setOutput({ code: "exec", content: "", outputType: "" }); // trigger spinner
+    setOutput({ code: "exec", content: "", outputType: downloadFormat }); // trigger spinner
 
     await downloadData();
 
-    setOutput({ code: "success", content: "Download complete.", outputType: "" }); // hide spinner
+    setOutput({ code: "success", content: "Download complete.", outputType: downloadFormat }); // hide spinner
   };
 
   const [templateData, setTemplateData] = useState<Template | any>({});
@@ -92,57 +94,35 @@ function DataExportBox({ data, isConnectable }) {
     editUserTemplate(template);
   };
 
+  const customWidgetsCallback = (div: HTMLElement) => {
+    const label = document.createElement("label");
+    label.setAttribute("for", "exportFormat");
+    label.style.marginRight = "5px";
+    label.textContent = "Export format: ";
 
-  // useEffect(() => {
-  //   const downloadData = async () => {
-  //     if (output.code !== "success") return;
+    const select = document.createElement("select");
+    select.setAttribute("name", "exportFormat");
+    select.setAttribute("id", data.nodeId + "_select_format");
 
-  //     let filePath = "";
-  //     if (data.input && typeof data.input === "object" && data.input.path) {
-  //       filePath = data.input.path;
-  //     }
+    ["csv", "json", "geojson"].forEach((optionText) => {
+      const option = document.createElement("option");
+      option.setAttribute("value", optionText);
+      option.textContent = optionText.toUpperCase();
+      select.appendChild(option);
+    });
 
-  //     if (!filePath) return;
+    select.value = downloadFormat;
+    select.addEventListener("change", (event) => {
+      if (event.target) {
+        const target = event.target as HTMLOptionElement;
+        setDownloadFormat(target.value);
+      }
+    });
 
-  //     try {
-  //       const result: any = await fetchData(`${filePath}`);
-  //       let fileName = "data_export";
-  //       let fileContent = "";
+    div.appendChild(label);
+    div.appendChild(select);
+  };
 
-  //       if (result.dataType === "dataframe" && result.data) {
-  //         const columns = Object.keys(result.data);
-  //         const rows = result.data[columns[0]]?.length || 0;
-  //         const csvRows = [] as string[];
-  //         csvRows.push(columns.join(","));
-  //         for (let i = 0; i < rows; i++) {
-  //           const row = columns.map((col) => result.data[col][i]);
-  //           csvRows.push(row.join(","));
-  //         }
-  //         fileContent = csvRows.join("\n");
-  //         fileName += ".csv";
-  //       } else if (result.dataType === "geodataframe" && result.data) {
-  //         fileContent = JSON.stringify(result.data);
-  //         fileName += ".geojson";
-  //       } else {
-  //         fileContent = JSON.stringify(result.data);
-  //         fileName += ".json";
-  //       }
-
-  //       const blob = new Blob([fileContent], { type: "text/plain;charset=utf-8" });
-  //       const link = document.createElement("a");
-  //       link.href = URL.createObjectURL(blob);
-  //       link.download = fileName;
-  //       document.body.appendChild(link);
-  //       link.click();
-  //       document.body.removeChild(link);
-  //     } catch (err) {
-  //       console.error("Failed to download data", err);
-  //     }
-  //   };
-
-  //   downloadData();
-  // }, [output]);
-  
   const downloadData = async () => {
   let filePath = "";
   if (data.input && typeof data.input === "object" && data.input.path) {
@@ -156,7 +136,7 @@ function DataExportBox({ data, isConnectable }) {
     let fileName = "data_export";
     let fileContent = "";
 
-    if (result.dataType === "dataframe" && result.data) {
+    if (downloadFormat === "csv" && result.data) {
       const columns = Object.keys(result.data);
       const rows = result.data[columns[0]]?.length || 0;
       const csvRows = [] as string[];
@@ -167,7 +147,7 @@ function DataExportBox({ data, isConnectable }) {
       }
       fileContent = csvRows.join("\n");
       fileName += ".csv";
-    } else if (result.dataType === "geodataframe") {
+    } else if (downloadFormat === "geojson") {
       fileContent = JSON.stringify(result.data);
       fileName += ".geojson";
     } else {
@@ -188,8 +168,9 @@ function DataExportBox({ data, isConnectable }) {
 };
 
 useEffect(() => {
-  setOutput({ code: "success", content: "", outputType: "" });
-}, [data.input]);
+  setOutput({ code: "success", content: "", outputType: downloadFormat });
+}, [data.input, downloadFormat]);
+
 
 
   const iconStyle: CSS.Properties = {
@@ -245,9 +226,10 @@ useEffect(() => {
           setSendCodeCallback={(_: any) => {}}
           code={false}
           grammar={false}
-          widgets={false}
+          widgets={true}
           provenance={false}
           setOutputCallback={setOutput}
+          customWidgetsCallback={customWidgetsCallback}
           data={data}
           output={output}
           boxType={BoxType.DATA_EXPORT}
