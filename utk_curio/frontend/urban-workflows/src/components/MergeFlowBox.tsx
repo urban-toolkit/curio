@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Handle, Position, useReactFlow } from "reactflow";
+import { Handle, Position, useReactFlow, useStoreApi } from "reactflow";
 import "bootstrap/dist/css/bootstrap.min.css";
 import DescriptionModal from "./DescriptionModal";
 import { BoxType } from "../constants";
@@ -20,15 +20,14 @@ interface MergeFlowBoxProps {
     accessLevel?: string;
     defaultCode?: string;
     customTemplate?: any;
-    inputCount?: number;
   };
   isConnectable: boolean;
 }
 
-function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps) {
-  const { getEdges } = useReactFlow();
+export default function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps) {
+  const edges = useStoreApi().getState().edges;
   const [inputCount, setInputCount] = useState<number>(1);
-  const [inputValues, setInputValues] = useState<any[]>(Array(1).fill(undefined));
+  const [inputValues, setInputValues] = useState<any[]>([undefined]);
   const [output, setOutput] = useState<{ code: string; content: any }>({
     code: "",
     content: { data: [], dataType: "outputs" },
@@ -37,6 +36,7 @@ function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps) {
   const [showDescriptionModal, setDescriptionModal] = useState(false);
   const { editUserTemplate } = useTemplateContext();
 
+  // Sync templateData when templateId or inputCount changes
   useEffect(() => {
     if (data.templateId !== undefined) {
       setTemplateData({
@@ -47,34 +47,28 @@ function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps) {
         accessLevel: data.accessLevel,
         code: data.defaultCode,
         custom: data.customTemplate,
-        inputCount,
       });
     }
-  }, [data.templateId]);
+  }, [data.templateId, data.templateName, data.description, data.accessLevel, data.defaultCode, data.customTemplate]);
 
+  // Watch edges reactively
   useEffect(() => {
-    const inputConnections = getEdges().filter(
-      (edge) => edge.target === data.nodeId && edge.targetHandle?.startsWith("in")
+    const inputConnections = (edges as any[]).filter(
+      (edge: any) => edge.target === data.nodeId && edge.targetHandle?.startsWith("in")
     );
-
-    const usedHandles = new Set(inputConnections.map(edge => edge.targetHandle));
+    const usedHandles = new Set<string>(inputConnections.map((e: any) => e.targetHandle));
 
     if (usedHandles.size < 5 && usedHandles.size >= inputCount) {
       setInputCount(usedHandles.size + 1);
       setInputValues((prev) => [...prev, undefined]);
     }
-  }, [getEdges, data.nodeId, inputCount]);
-
-  const setTemplateConfig = (template: Template) => {
-    setTemplateData({ ...template, inputCount });
-  };
+  }, [edges, data.nodeId, inputCount]);
 
   const promptDescription = () => setDescriptionModal(true);
   const closeDescription = () => setDescriptionModal(false);
 
   const updateTemplate = (template: Template) => {
-    setTemplateConfig(template);
-    editUserTemplate({ ...template });
+    editUserTemplate(template);
   };
 
   const iconStyle: CSS.Properties = {
@@ -84,71 +78,54 @@ function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps) {
     marginLeft: "5px",
   };
 
-  const handleInputUpdate = (index: number, value: any) => {
-    const newValues = [...inputValues];
-    newValues[index] = value;
-    setInputValues(newValues);
-
-    const validInputs = newValues.filter((val) => val !== undefined);
-    const newOutput = {
-      data: validInputs,
-      dataType: "outputs",
-    };
-
+  // Notify parent when inputValues change
+  useEffect(() => {
+    const newOutput = { data: inputValues.filter((v) => v !== undefined), dataType: "outputs" };
     setOutput({ code: "success", content: newOutput });
     data.outputCallback(data.nodeId, newOutput);
-  };
+  }, [inputValues, data, data.nodeId]);
 
+  // Update inputValues from data.input
   useEffect(() => {
-    if (data.input && Array.isArray(data.input)) {
-      const newValues = [...inputValues];
-      let changed = false;
-
-      data.input.forEach((input, idx) => {
-        if (idx < inputCount && input !== newValues[idx]) {
-          newValues[idx] = input;
-          changed = true;
-        }
+    if (Array.isArray(data.input)) {
+      setInputValues((prev) => {
+        const updated = [...prev];
+        data.input!.forEach((val, idx) => {
+          if (idx < updated.length) updated[idx] = val;
+        });
+        return updated;
       });
-
-      if (changed) {
-        setInputValues(newValues);
-        const validInputs = newValues.filter((val) => val !== undefined);
-        const newOutput = {
-          data: validInputs,
-          dataType: "outputs",
-        };
-
-        setOutput({ code: "success", content: newOutput });
-        data.outputCallback(data.nodeId, newOutput);
-      }
     }
   }, [data.input]);
 
   return (
     <>
       {/* Dynamic input handles */}
-      {Array.from({ length: inputCount }).map((_, index) => (
-        <Handle
-          key={`in_${index}`}
-          type="target"
-          position={Position.Left}
-          id={index === 0 ? "in" : `in_${index}`}
-          style={{
-            top: `${((index + 1) * 120) / (inputCount + 1)}%`,
-            zIndex: 10,
-            pointerEvents: "auto",
-          }}
-          isConnectable={isConnectable}
-        />
-      ))}
+      {Array.from({ length: inputCount }).map((_, index) => {
+        const handleId = index === 0 ? "in" : `in_${index}`;
+        const used = (edges as any[]).some(
+          (e: any) => e.target === data.nodeId && e.targetHandle === handleId
+        );
+        return (
+          <Handle
+            key={handleId}
+            type="target"
+            position={Position.Left}
+            id={handleId}
+            isConnectable={isConnectable}
+            isValidConnection={() => !used}
+            style={{ top: `${((index + 1) * 120) / (inputCount + 1)}%`, zIndex: 10 }}
+          />
+        );
+      })}
 
+      {/* Single output handle */}
       <Handle
         type="source"
         position={Position.Right}
         id="out"
         isConnectable={isConnectable}
-        style={{ top: "60%", zIndex: 10, pointerEvents: "auto" }}
+        style={{ top: "60%", zIndex: 10 }}
       />
 
       <BoxContainer
@@ -156,9 +133,9 @@ function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps) {
         data={data}
         boxHeight={60 + inputCount * 25}
         boxWidth={120}
-        noContent={true}
+        noContent
         templateData={templateData}
-        setOutputCallback={setOutput}
+        setOutputCallback={setInputValues}
         updateTemplate={updateTemplate}
         promptDescription={promptDescription}
       >
@@ -176,5 +153,3 @@ function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps) {
     </>
   );
 }
-
-export default MergeFlowBox;
