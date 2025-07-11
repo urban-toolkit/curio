@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { Handle, Position, useStoreApi, Edge } from "reactflow";
+
 import "bootstrap/dist/css/bootstrap.min.css";
 import DescriptionModal from "./DescriptionModal";
 import { BoxType } from "../constants";
+
 import { Template, useTemplateContext } from "../providers/TemplateProvider";
 import { BoxContainer } from "./styles";
+import CSS from "csstype";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCircleInfo } from "@fortawesome/free-solid-svg-icons";
 
@@ -27,7 +30,6 @@ export default function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps)
   const store = useStoreApi();
   const edges = (store.getState().edges ?? []) as Edge[];
 
-  const [inputCount, setInputCount] = useState<number>(2);
   const [inputValues, setInputValues] = useState<any[]>(Array(2).fill(undefined));
   const [output, setOutput] = useState<{ code: string; content: any }>({
     code: "",
@@ -35,10 +37,16 @@ export default function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps)
   });
   const [templateData, setTemplateData] = useState<Template | any>({});
   const [showDescriptionModal, setDescriptionModal] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   const { editUserTemplate } = useTemplateContext();
 
+  // Compute how many handles to show based on connected inputs
+  const usedHandles = edges
+    .filter((e) => e.target === data.nodeId && e.targetHandle?.startsWith("in"))
+    .map((e) => e.targetHandle as string);
+  const uniqueUsedCount = new Set(usedHandles).size;
+  const handleCount = Math.min(5, Math.max(2, uniqueUsedCount + 1));
+
+  // Sync template data
   useEffect(() => {
     if (data.templateId) {
       setTemplateData({
@@ -60,66 +68,11 @@ export default function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps)
     data.customTemplate,
   ]);
 
-  // Check if a handle is already connected
-  const isHandleConnected = (handleId: string) => {
-    return edges.some((e) => e.target === data.nodeId && e.targetHandle === handleId);
-  };
-
-  // Validation for connections to inputs
-  const isValidConnectionForInput = (connection: any, handleId: string) => {
-    if (connection.sourceHandle !== "out") return false;
-
-    // Prevent multiple edges on the same handle
-    if (isHandleConnected(handleId)) {
-      setError(`Input handle ${handleId} is already connected.`);
-      return false;
-    }
-
-    // Prevent exceeding 5 inputs
-    const connectedInputs = edges.filter(
-      (e) => e.target === data.nodeId && e.targetHandle?.startsWith("in")
-    );
-    if (connectedInputs.length >= 5) {
-      setError("Maximum of 5 inputs allowed.");
-      return false;
-    }
-
-    // Ensure target and handle matches
-    if (connection.target !== data.nodeId || connection.targetHandle !== handleId) return false;
-
-    setError(null); // clear errors if valid
-    return true;
-  };
-
-  // Adjust handles based on edges and limit max to 5
-  useEffect(() => {
-    const used = edges
-      .filter((e) => e.target === data.nodeId && e.targetHandle?.startsWith("in"))
-      .map((e) => e.targetHandle as string);
-
-    const unique = Array.from(new Set(used));
-    let desired = Math.min(5, Math.max(2, unique.length + 1));
-
-    // Only add new handle if last handle is connected
-    if (desired > 2 && !unique.includes(`in_${desired - 1}`)) {
-      desired = desired - 1;
-    }
-
-    if (desired !== inputCount) {
-      setInputCount(desired);
-      setInputValues((prev) => {
-        const arr = [...prev];
-        while (arr.length < desired) arr.push(undefined);
-        return arr.slice(0, desired);
-      });
-    }
-  }, [edges, data.nodeId, inputCount]);
-
   const promptDescription = () => setDescriptionModal(true);
   const closeDescription = () => setDescriptionModal(false);
   const updateTemplate = (template: Template) => editUserTemplate(template);
 
-  // Emit output when inputs change
+  // Emit output on input change
   useEffect(() => {
     const dataArr = inputValues.filter((v) => v !== undefined);
     const newOut = { data: dataArr, dataType: "outputs" };
@@ -127,7 +80,7 @@ export default function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps)
     data.outputCallback(data.nodeId, newOut);
   }, [inputValues, data, data.nodeId]);
 
-  // Reflect external input changes
+  // Sync incoming inputs to state
   useEffect(() => {
     if (Array.isArray(data.input)) {
       setInputValues((prev) => {
@@ -143,7 +96,7 @@ export default function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps)
   return (
     <>
       {/* Input handles */}
-      {Array.from({ length: inputCount }).map((_, idx) => {
+      {Array.from({ length: handleCount }).map((_, idx) => {
         const id = idx === 0 ? "in" : `in_${idx}`;
         return (
           <Handle
@@ -152,9 +105,14 @@ export default function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps)
             position={Position.Left}
             id={id}
             isConnectable={isConnectable}
-            isValidConnection={(connection) => isValidConnectionForInput(connection, id)}
+            isValidConnection={(connection) =>
+              connection.sourceHandle === "out" &&
+              connection.target === data.nodeId &&
+              connection.targetHandle === id &&
+              !usedHandles.includes(id) // prevent multiple edges to same handle
+            }
             style={{
-              top: `${((idx + 1) * 100) / (inputCount + 1)}%`,
+              top: `${((idx + 1) * 100) / (handleCount + 1)}%`,
               zIndex: 10,
               pointerEvents: "auto",
             }}
@@ -174,7 +132,7 @@ export default function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps)
       <BoxContainer
         nodeId={data.nodeId}
         data={data}
-        boxHeight={40 + inputCount * 30}
+        boxHeight={40 + handleCount * 30}
         boxWidth={120}
         noContent
         templateData={templateData}

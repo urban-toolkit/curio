@@ -8,7 +8,7 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "start": "webpack serve --open --mode development",
-    "start:e2e": "cross-env PORT=3000 webpack serve --mode development --port $PORT",
+    "start:e2e": "export PORT=3000 && webpack serve --mode development --port $PORT",
     "build": "webpack --mode development",
     "lint": "eslint src/",
     "format": "npx prettier . --write",
