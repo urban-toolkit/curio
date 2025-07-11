@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { useRef } from "react";
 import { Handle, Position } from "reactflow";
 import BoxEditor from "./editing/BoxEditor";
 
@@ -28,7 +27,7 @@ function DataExportBox({ data, isConnectable }) {
   
   const [downloadFormat, setDownloadFormat] = useState<string>("csv");
   const [code, setCode] = useState<string>("");
-  
+
   const sendCode = async () => {
     // Set output to "exec" to trigger loading spinner in the UI
     setOutput({ code: "exec", content: "", outputType: downloadFormat });
