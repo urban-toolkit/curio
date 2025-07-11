@@ -104,6 +104,34 @@ These functions handle environment setup, server startup, and process management
 
 > **Note:** There are several ways to install and use Curio (pip, Docker, manual installation). Check the [USAGE.md](USAGE.md) document for more details.
 
+### Frontend Codebase Overview
+
+The `mainCanvas` component (located here: `utk_curio/frontend/urban-workflows/src/components/MainCanvas.tsx`) is responsible for building and rendering the entire editor canvas. Inside the `components` folder, you will find modular subcomponents. For example:
+
+- `TableBox` → renders and manages table nodes
+- `ImageBox` → handles image nodes
+- `UserMenu`, `ToolsMenu`, `TopMenu` → UI layers
+
+If you check the `MainCanvas.tsx` file, at around line 97, you will see something similar to:
+
+```tsx
+return (
+    <div>
+        <ReactFlow />
+        <UserMenu />
+        <ToolsMenu />
+        {/* other components */}
+    </div>
+);
+```
+
+This JSX structure defines the editor layout with React components, not raw HTML. Components are implemented in other files. For examples:
+
+```tsx
+<TopMenu />
+```
+
+References to: `components/menu/top/TopMenu.tsx`. Similarly, style classes (e.g., `className="rightSide"`) are defined in other files (e.g., `UpMenu.module.css`).
 
 ## 3. Essential Installations
 
