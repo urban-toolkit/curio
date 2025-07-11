@@ -98,30 +98,31 @@ export function useCode(): IUseCode {
     }
 
     for (const edge of trill.dataflow.edges) {
-      let targetHandle = edge.targetHandle;
+  // Start with any existing targetHandle (e.g. loaded from JSON)
+  let targetHandle = edge.targetHandle;
 
-      // Fix for merge box convention: use "in" for index 0, then "in_1", "in_2", etc.
-      if (!targetHandle && typeof edge.index === "number") {
-        targetHandle = edge.index === 0 ? "in" : `in_${edge.index}`;
-      } else if (!targetHandle && edge.id.includes("in_")) {
-        const match = edge.id.match(/in_(\d+)/);
-        if (match) {
-          const index = parseInt(match[1], 10);
-          targetHandle = index === 0 ? "in" : `in_${index}`;
-        }
-      } else if (!targetHandle && edge.id.includes("in")) {
-        targetHandle = "in";
-      }
+  if (!targetHandle) {
+    // Try to extract a number after "in_"
+    const m = edge.id.match(/in_(\d+)/);
+    if (m) {
+      const idx = parseInt(m[1], 10);
+      targetHandle = idx === 0 ? "in" : `in_${idx}`;
+    } else {
+      // Default to the first handle
+      targetHandle = "in";
+    }
+  }
 
-      let add_edge: any = {
-        id: edge.id,
-        type: EdgeType.UNIDIRECTIONAL_EDGE,
-        markerEnd: { type: "arrow" },
-        source: edge.source,
-        sourceHandle: "out",
-        target: edge.target,
-        targetHandle,
-      };
+  const add_edge: any = {
+    id: edge.id,
+    type: EdgeType.UNIDIRECTIONAL_EDGE,
+    markerEnd: { type: "arrow" },
+    source: edge.source,
+    sourceHandle: "out",
+    target: edge.target,
+    targetHandle,
+    data: {},
+  };
 
       add_edge.data = {};
 
