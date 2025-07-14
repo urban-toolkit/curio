@@ -1,15 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { Handle, Position, useStoreApi, Edge } from "reactflow";
-
 import "bootstrap/dist/css/bootstrap.min.css";
 import DescriptionModal from "./DescriptionModal";
 import { BoxType } from "../constants";
-
 import { Template, useTemplateContext } from "../providers/TemplateProvider";
 import { BoxContainer } from "./styles";
-import CSS from "csstype";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faCircleInfo } from "@fortawesome/free-solid-svg-icons";
 
 interface MergeFlowBoxProps {
   data: {
@@ -28,25 +23,32 @@ interface MergeFlowBoxProps {
 
 export default function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps) {
   const store = useStoreApi();
-  const edges = (store.getState().edges ?? []) as Edge[];
-
-  const [inputValues, setInputValues] = useState<any[]>(Array(2).fill(undefined));
-  const [output, setOutput] = useState<{ code: string; content: any }>({
-    code: "",
-    content: { data: [], dataType: "outputs" },
-  });
+  const [edges, setEdges] = useState<Edge[]>([]);
+  const [handleCount, setHandleCount] = useState<number>(2);
+  const [inputValues, setInputValues] = useState<any[]>(Array(5).fill(undefined));
   const [templateData, setTemplateData] = useState<Template | any>({});
   const [showDescriptionModal, setDescriptionModal] = useState(false);
   const { editUserTemplate } = useTemplateContext();
 
-  // Compute how many handles to show based on connected inputs
-  const usedHandles = edges
-    .filter((e) => e.target === data.nodeId && e.targetHandle?.startsWith("in"))
-    .map((e) => e.targetHandle as string);
-  const uniqueUsedCount = new Set(usedHandles).size;
-  const handleCount = Math.min(5, Math.max(2, uniqueUsedCount + 1));
+  // Subscribe to global edges
+  useEffect(() => {
+    const unsubscribe = store.subscribe(({ edges: ef }) => {
+      setEdges(ef ?? []);
+    });
+    return () => unsubscribe();
+  }, [store]);
 
-  // Sync template data
+  // Dynamically adjust handle count (min 2, max 5)
+  useEffect(() => {
+    const used = edges
+      .filter(e => e.target === data.nodeId && e.targetHandle?.startsWith("in_"))
+      .map(e => e.targetHandle as string);
+    const uniqueCount = new Set(used).size;
+    const next = Math.min(5, Math.max(2, uniqueCount + 1));
+    setHandleCount(next);
+  }, [edges, data.nodeId]);
+
+  // Initialize template data
   useEffect(() => {
     if (data.templateId) {
       setTemplateData({
@@ -68,65 +70,60 @@ export default function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps)
     data.customTemplate,
   ]);
 
-  const promptDescription = () => setDescriptionModal(true);
-  const closeDescription = () => setDescriptionModal(false);
-  const updateTemplate = (template: Template) => editUserTemplate(template);
-
-  // Emit output on input change
+  // Emit output when inputs update
   useEffect(() => {
-    const dataArr = inputValues.filter((v) => v !== undefined);
-    const newOut = { data: dataArr, dataType: "outputs" };
-    setOutput({ code: "success", content: newOut });
-    data.outputCallback(data.nodeId, newOut);
-  }, [inputValues, data, data.nodeId]);
+    const outArr = inputValues.filter(v => v !== undefined);
+    data.outputCallback(data.nodeId, { data: outArr, dataType: "outputs" });
+  }, [inputValues, data.nodeId, data.outputCallback]);
 
-  // Sync incoming inputs to state
+  // Sync external inputs
   useEffect(() => {
     if (Array.isArray(data.input)) {
-      setInputValues((prev) => {
-        const arr = [...prev];
-        data.input!.forEach((val, idx) => {
-          if (idx < arr.length) arr[idx] = val;
-        });
-        return arr;
+      setInputValues(prev => {
+        const cp = [...prev];
+        data.input!.forEach((val, i) => { if (i < cp.length) cp[i] = val; });
+        return cp;
       });
     }
   }, [data.input]);
 
+  const promptDescription = () => setDescriptionModal(true);
+  const closeDescription = () => setDescriptionModal(false);
+  const updateTemplate = (t: Template) => editUserTemplate(t);
+
   return (
     <>
-      {/* Input handles */}
+      {/* dynamic input handles */}
       {Array.from({ length: handleCount }).map((_, idx) => {
-        const id = idx === 0 ? "in" : `in_${idx}`;
+        const handleId = `in_${idx}`;
         return (
           <Handle
-            key={id}
+            key={handleId}
+            id={handleId}
             type="target"
             position={Position.Left}
-            id={id}
             isConnectable={isConnectable}
-            isValidConnection={(connection) =>
-              connection.sourceHandle === "out" &&
-              connection.target === data.nodeId &&
-              connection.targetHandle === id &&
-              !usedHandles.includes(id) // prevent multiple edges to same handle
+            isValidConnection={conn =>
+              conn.sourceHandle === "out" &&
+              conn.target === data.nodeId &&
+              conn.targetHandle === handleId &&
+              !edges.some(e => e.target === data.nodeId && e.targetHandle === handleId)
             }
             style={{
               top: `${((idx + 1) * 100) / (handleCount + 1)}%`,
-              zIndex: 10,
               pointerEvents: "auto",
             }}
           />
         );
       })}
 
-      {/* Output handle */}
+      {/* output handle */}
       <Handle
         type="source"
         position={Position.Right}
         id="out"
         isConnectable={isConnectable}
-        style={{ top: "60%" }}
+        style={{ top: "50%" }}
       />
 
       <BoxContainer
