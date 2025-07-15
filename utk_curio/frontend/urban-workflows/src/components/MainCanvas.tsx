@@ -36,7 +36,8 @@ import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { buttonStyle } from "./styles";
 import { ToolsMenu, UpMenu } from "components/menus";
 import UniDirectionalEdge from "./edges/UniDirectionalEdge";
-
+import introJs from 'intro.js';//new import
+import "intro.js/introjs.css";//this too
 import "./MainCanvas.css";
 
 export function MainCanvas() {
@@ -93,7 +94,72 @@ export function MainCanvas() {
 
     const [fileMenuOpen, setFileMenuOpen] = useState(false);
     const closeFileMenu = () => setFileMenuOpen(false);
+    console.log("test4");
+    //JAMES ADDED STUFF VIA CHAT GPT START
+    useEffect(() => {
+        const intro = introJs();
 
+        intro.setOptions({
+            steps: [
+        {
+            intro: "Welcome to Curio! An IDE used for urban analytics. Let's take a tour!"
+        },
+        {
+          element: '#step-one',  
+          intro: 'This is a Data Loading node. You can code an array for basic sets of data, or load in a file. Then add your code to add it to a dataframe to return.'
+        },
+        {
+          element: '#step-two',  
+          intro: 'Please read this! This is very important.'
+        },
+        {
+          element: '#step-three',  
+          intro: 'Please read this! This is very important.'
+        },
+        {
+          element: '#step-four',  
+          intro: 'The Data Transformation Node can select different parts of your data to narrow down the focus of your analysis.'
+        },
+        {
+          element: '#step-five',  
+          intro: 'This is a Data Cleaning Node. You can polish your data by removing outliers, fill in missing values, etc. It can also create identifiers for your data.'
+        },
+        {
+          element: '#step-six',  
+          intro: 'Please read this! This is very important.'
+        },
+        {
+          element: '#step-seven',  
+          intro: 'Please read this! This is very important.'
+        },
+        {
+          element: '#step-eight',  
+          intro: 'A 2D Plot Node - also known as a Vega Lite Node - can be used to graph your data on various 2D graphs such as heatmats and bar charts.'
+        },
+        {
+          element: '#step-nine',  
+          intro: 'Please read this! This is very important.'
+        },
+        {
+          element: '#step-ten',  
+          intro: 'Please read this! This is very important.'
+        },
+        {
+          element: '#step-final',  
+          intro: 'Drag and drop nodes into your environment. Now get started!'
+        }
+        ],
+        
+        showStepNumbers: false,
+        showProgress: false,
+        exitOnOverlayClick: false,
+        tooltipClass: "custom-intro-tooltip" 
+    });
+
+        intro.start();
+    }, []);
+
+    //JAMES ADDED STUFF VIA CHAT GPT END
     return (
         <div
             style={{ width: "100vw", height: "100vh" }}
