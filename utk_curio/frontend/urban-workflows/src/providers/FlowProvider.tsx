@@ -593,7 +593,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 }
 
                 if (inBox === BoxType.MERGE_FLOW && allowConnection) {
-                    const availableHandles = Array(5).fill(1).map((_, i) => `in_${i}`);
+                    const availableHandles = Array(5).fill(0).map((_, i) => `in_${i}`);
                     const usedHandles = new Set(
                         edges
                             .filter((edge: Edge) =>
@@ -603,9 +603,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                             .map((edge: Edge) => edge.targetHandle)
                     );
 
-
-                    if (usedHandles.size > 7) {
-                        alert("Connection Limit Reached!\n\nMerge nodes can only accept up to 7 input connections.");
+                    if (usedHandles.size >= 5) {
+                        alert("Connection Limit Reached!\n\nMerge nodes can only accept up to 5 input connections.");
                         allowConnection = false;
                     } else if (usedHandles.has(connection.targetHandle)) {
                         alert("This input already has a connection.\n\nEach input handle can only accept one connection.");

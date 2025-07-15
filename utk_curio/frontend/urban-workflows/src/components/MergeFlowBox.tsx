@@ -38,16 +38,6 @@ export default function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps)
     return () => unsubscribe();
   }, [store]);
 
-  // Dynamically adjust handle count (min 2, max 5)
-  useEffect(() => {
-    const used = edges
-      .filter(e => e.target === data.nodeId && e.targetHandle?.startsWith("in_"))
-      .map(e => e.targetHandle as string);
-    const uniqueCount = new Set(used).size;
-    const next = Math.min(5, Math.max(2, uniqueCount + 1));
-    setHandleCount(next);
-  }, [edges, data.nodeId]);
-
   // Initialize template data
   useEffect(() => {
     if (data.templateId) {
@@ -93,24 +83,25 @@ export default function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps)
 
   return (
     <>
-      {/* dynamic input handles */}
-      {Array.from({ length: handleCount }).map((_, idx) => {
+      {/* input handles */}
+      {Array.from({ length: 5 }).map((_, idx) => {
         const handleId = `in_${idx}`;
+        const connected = edges.some(e => e.target === data.nodeId && e.targetHandle === handleId);
+        
         return (
           <Handle
             key={handleId}
             id={handleId}
             type="target"
             position={Position.Left}
-            isConnectable={isConnectable}
-            isValidConnection={conn =>
-              conn.sourceHandle === "out" &&
-              conn.target === data.nodeId &&
-              conn.targetHandle === handleId &&
-              !edges.some(e => e.target === data.nodeId && e.targetHandle === handleId)
-            }
+            isConnectable={isConnectable && !connected}
             style={{
-              top: `${((idx + 1) * 100) / (handleCount + 1)}%`,
+              top: `${((idx + 1) * 100) / 6}%`,
+              backgroundColor: connected ? "green" : "red",
+              width: "17px",
+              height: "17px",
+              borderRadius: "50%",
+              zIndex: 10,
               pointerEvents: "auto",
             }}
           />
@@ -129,8 +120,8 @@ export default function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps)
       <BoxContainer
         nodeId={data.nodeId}
         data={data}
-        boxHeight={40 + handleCount * 30}
-        boxWidth={120}
+        boxHeight={60 + 5 * 50}
+        boxWidth={100}
         noContent
         templateData={templateData}
         setOutputCallback={setInputValues}
