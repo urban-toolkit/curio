@@ -26,12 +26,13 @@
     "@mui/material": "^5.15.10",
     "@react-oauth/google": "^0.12.1",
     "bootstrap": "^5.3.2",
+    "intro.js": "^8.3.1",
     "js-cookie": "^3.0.5",
     "jsoneditor": "^10.0.0",
     "react": "^18.2.0",
     "react-bootstrap": "^2.10.1",
     "react-dom": "^18.2.0",
-    "reactflow": "^11.10.3",
+    "reactflow": "^11.11.4",
     "reagraph": "^4.15.24",
     "utk": "file:../utk-workflow/src/utk-ts/dist",
     "uuid": "^9.0.1",
@@ -60,6 +61,6 @@
     "typescript-eslint": "^8.23.0",
     "webpack": "^5.90.0",
     "webpack-cli": "^5.1.4",
-    "webpack-dev-server": "^4.15.1"
+    "webpack-dev-server": "^5.2.2"
   }
 }
