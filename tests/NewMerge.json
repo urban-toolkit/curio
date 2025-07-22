@@ -1,0 +1,543 @@
+[
+  {
+    "name": "1‑load → merge → visualization",
+    "dataflow": {
+      "nodes": [
+        {
+          "id": "load1",
+          "type": "DATA_LOADING",
+          "x": 100,
+          "y": 100,
+          "content": "return df1",
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "merge1",
+          "type": "MERGE_FLOW",
+          "x": 300,
+          "y": 100,
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "vis1",
+          "type": "VISUALIZATION",
+          "x": 500,
+          "y": 100,
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        }
+      ],
+      "edges": [
+        {
+          "id": "e1",
+          "source": "load1",
+          "sourceHandle": "out",
+          "target": "merge1",
+          "targetHandle": "in_1"
+        },
+        {
+          "id": "e2",
+          "source": "merge1",
+          "sourceHandle": "out",
+          "target": "vis1",
+          "targetHandle": "in"
+        }
+      ]
+    }
+  },
+  {
+    "name": "1‑load → merge → data_pool",
+    "dataflow": {
+      "nodes": [
+        {
+          "id": "load1",
+          "type": "DATA_LOADING",
+          "x": 100,
+          "y": 200,
+          "content": "return df1",
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "merge1",
+          "type": "MERGE_FLOW",
+          "x": 300,
+          "y": 200,
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "pool1",
+          "type": "DATA_POOL",
+          "x": 500,
+          "y": 200,
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        }
+      ],
+      "edges": [
+        {
+          "id": "e1",
+          "source": "load1",
+          "sourceHandle": "out",
+          "target": "merge1",
+          "targetHandle": "in_1"
+        },
+        {
+          "id": "e2",
+          "source": "merge1",
+          "sourceHandle": "out",
+          "target": "pool1",
+          "targetHandle": "in"
+        }
+      ]
+    }
+  },
+  {
+    "name": "1‑load → merge → pool → vis",
+    "dataflow": {
+      "nodes": [
+        {
+          "id": "load1",
+          "type": "DATA_LOADING",
+          "x": 100,
+          "y": 300,
+          "content": "return df1",
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "merge1",
+          "type": "MERGE_FLOW",
+          "x": 300,
+          "y": 300,
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "pool1",
+          "type": "DATA_POOL",
+          "x": 500,
+          "y": 300,
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "vis1",
+          "type": "VISUALIZATION",
+          "x": 700,
+          "y": 300,
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        }
+      ],
+      "edges": [
+        {
+          "id": "e1",
+          "source": "load1",
+          "sourceHandle": "out",
+          "target": "merge1",
+          "targetHandle": "in_1"
+        },
+        {
+          "id": "e2",
+          "source": "merge1",
+          "sourceHandle": "out",
+          "target": "pool1",
+          "targetHandle": "in"
+        },
+        {
+          "id": "e3",
+          "source": "pool1",
+          "sourceHandle": "out",
+          "target": "vis1",
+          "targetHandle": "in"
+        }
+      ]
+    }
+  },
+  {
+    "name": "2‑loads → merge → visualization",
+    "dataflow": {
+      "nodes": [
+        {
+          "id": "load1",
+          "type": "DATA_LOADING",
+          "x": 100,
+          "y": 400,
+          "content": "return df1",
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "load2",
+          "type": "DATA_LOADING",
+          "x": 100,
+          "y": 500,
+          "content": "return df2",
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "merge2",
+          "type": "MERGE_FLOW",
+          "x": 300,
+          "y": 450,
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "vis2",
+          "type": "VISUALIZATION",
+          "x": 500,
+          "y": 450,
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        }
+      ],
+      "edges": [
+        {
+          "id": "e4",
+          "source": "load1",
+          "sourceHandle": "out",
+          "target": "merge2",
+          "targetHandle": "in_1"
+        },
+        {
+          "id": "e5",
+          "source": "load2",
+          "sourceHandle": "out",
+          "target": "merge2",
+          "targetHandle": "in_2"
+        },
+        {
+          "id": "e6",
+          "source": "merge2",
+          "sourceHandle": "out",
+          "target": "vis2",
+          "targetHandle": "in"
+        }
+      ]
+    }
+  },
+  {
+    "name": "2‑loads → merge → pool",
+    "dataflow": {
+      "nodes": [
+        {
+          "id": "load1",
+          "type": "DATA_LOADING",
+          "x": 100,
+          "y": 600,
+          "content": "return df1",
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "load2",
+          "type": "DATA_LOADING",
+          "x": 100,
+          "y": 700,
+          "content": "return df2",
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "merge2",
+          "type": "MERGE_FLOW",
+          "x": 300,
+          "y": 650,
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "pool2",
+          "type": "DATA_POOL",
+          "x": 500,
+          "y": 650,
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        }
+      ],
+      "edges": [
+        {
+          "id": "e7",
+          "source": "load1",
+          "sourceHandle": "out",
+          "target": "merge2",
+          "targetHandle": "in_1"
+        },
+        {
+          "id": "e8",
+          "source": "load2",
+          "sourceHandle": "out",
+          "target": "merge2",
+          "targetHandle": "in_2"
+        },
+        {
+          "id": "e9",
+          "source": "merge2",
+          "sourceHandle": "out",
+          "target": "pool2",
+          "targetHandle": "in"
+        }
+      ]
+    }
+  },
+  {
+    "name": "2‑loads → merge → pool → vis",
+    "dataflow": {
+      "nodes": [
+        {
+          "id": "load1",
+          "type": "DATA_LOADING",
+          "x": 100,
+          "y": 800,
+          "content": "return df1",
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "load2",
+          "type": "DATA_LOADING",
+          "x": 100,
+          "y": 900,
+          "content": "return df2",
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "merge2",
+          "type": "MERGE_FLOW",
+          "x": 300,
+          "y": 850,
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "pool2",
+          "type": "DATA_POOL",
+          "x": 500,
+          "y": 850,
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "vis2",
+          "type": "VISUALIZATION",
+          "x": 700,
+          "y": 850,
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        }
+      ],
+      "edges": [
+        {
+          "id": "e10",
+          "source": "load1",
+          "sourceHandle": "out",
+          "target": "merge2",
+          "targetHandle": "in_1"
+        },
+        {
+          "id": "e11",
+          "source": "load2",
+          "sourceHandle": "out",
+          "target": "merge2",
+          "targetHandle": "in_2"
+        },
+        {
+          "id": "e12",
+          "source": "merge2",
+          "sourceHandle": "out",
+          "target": "pool2",
+          "targetHandle": "in"
+        },
+        {
+          "id": "e13",
+          "source": "pool2",
+          "sourceHandle": "out",
+          "target": "vis2",
+          "targetHandle": "in"
+        }
+      ]
+    }
+  },
+  {
+    "name": "3‑loads → merge → visualization",
+    "dataflow": {
+      "nodes": [
+        {
+          "id": "load1",
+          "type": "DATA_LOADING",
+          "x": 100,
+          "y": 1000,
+          "content": "return df1",
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "load2",
+          "type": "DATA_LOADING",
+          "x": 100,
+          "y": 1100,
+          "content": "return df2",
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "load3",
+          "type": "DATA_LOADING",
+          "x": 100,
+          "y": 1200,
+          "content": "return df3",
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "merge3",
+          "type": "MERGE_FLOW",
+          "x": 300,
+          "y": 1100,
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "vis3",
+          "type": "VISUALIZATION",
+          "x": 500,
+          "y": 1100,
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        }
+      ],
+      "edges": [
+        {
+          "id": "e14",
+          "source": "load1",
+          "sourceHandle": "out",
+          "target": "merge3",
+          "targetHandle": "in_1"
+        },
+        {
+          "id": "e15",
+          "source": "load2",
+          "sourceHandle": "out",
+          "target": "merge3",
+          "targetHandle": "in_2"
+        },
+        {
+          "id": "e16",
+          "source": "load3",
+          "sourceHandle": "out",
+          "target": "merge3",
+          "targetHandle": "in_3"
+        },
+        {
+          "id": "e17",
+          "source": "merge3",
+          "sourceHandle": "out",
+          "target": "vis3",
+          "targetHandle": "in"
+        }
+      ]
+    }
+  },
+  {
+    "name": "3‑loads → merge → pool → vis",
+    "dataflow": {
+      "nodes": [
+        {
+          "id": "load1",
+          "type": "DATA_LOADING",
+          "x": 100,
+          "y": 1300,
+          "content": "return df1",
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "load2",
+          "type": "DATA_LOADING",
+          "x": 100,
+          "y": 1400,
+          "content": "return df2",
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "load3",
+          "type": "DATA_LOADING",
+          "x": 100,
+          "y": 1500,
+          "content": "return df3",
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "merge3",
+          "type": "MERGE_FLOW",
+          "x": 300,
+          "y": 1400,
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "pool3",
+          "type": "DATA_POOL",
+          "x": 500,
+          "y": 1400,
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        },
+        {
+          "id": "vis3",
+          "type": "VISUALIZATION",
+          "x": 700,
+          "y": 1400,
+          "in": "DEFAULT",
+          "out": "DEFAULT"
+        }
+      ],
+      "edges": [
+        {
+          "id": "e18",
+          "source": "load1",
+          "sourceHandle": "out",
+          "target": "merge3",
+          "targetHandle": "in_1"
+        },
+        {
+          "id": "e19",
+          "source": "load2",
+          "sourceHandle": "out",
+          "target": "merge3",
+          "targetHandle": "in_2"
+        },
+        {
+          "id": "e20",
+          "source": "load3",
+          "sourceHandle": "out",
+          "target": "merge3",
+          "targetHandle": "in_3"
+        },
+        {
+          "id": "e21",
+          "source": "merge3",
+          "sourceHandle": "out",
+          "target": "pool3",
+          "targetHandle": "in"
+        },
+        {
+          "id": "e22",
+          "source": "pool3",
+          "sourceHandle": "out",
+          "target": "vis3",
+          "targetHandle": "in"
+        }
+      ]
+    }
+  }
+]
