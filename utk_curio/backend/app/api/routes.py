@@ -14,6 +14,7 @@ import hashlib
 import mmap
 import ast
 from pathlib import Path
+import re
 
 # The Flask app
 from utk_curio.backend.app.api import bp
@@ -695,6 +696,7 @@ def new_box_prov():
 
     # id of the new just added relation
     output_relation_id = cursor.lastrowid
+    input_relation_id = cursor.lastrowid
 
     boxType = data['activity_name'].split("-")[0]
 
@@ -704,8 +706,8 @@ def new_box_prov():
             VALUES (?, ?)''', (attributeIds[outputType], output_relation_id,))
 
     # creating new activity
-    cursor.execute('''INSERT INTO activity (workflow_id, activity_name, output_relation_id)
-                    VALUES (?, ?, ?)''', (workflow_id, data['activity_name'], output_relation_id,))
+    cursor.execute('''INSERT INTO activity (workflow_id, activity_name, input_relation_id, output_relation_id)
+                    VALUES (?, ?, ?, ?)''', (workflow_id, data['activity_name'], input_relation_id, output_relation_id,))
 
     conn.commit()
 
@@ -1171,10 +1173,25 @@ def box_exec_prov():
     activity = cursor.fetchone()
 
     # creating new workflow execution
-    cursor.execute('''INSERT INTO workflowExecution (workflowexec_start_time, workflowexec_end_time, workflow_id)
-                    VALUES (?, ?, ?)''', (data["activityexec_start_time"], data["activityexec_end_time"], workflow[0],))
 
-    conn.commit()
+    if(data['interaction'] == True):
+        time.sleep(1) #Ensure that interaction is in the table before box_exec_prov executes. Consider finding a better approach for this logic.
+
+
+        cursor.execute("SELECT int_id FROM interaction ORDER BY int_id DESC LIMIT 1")
+        int_id = cursor.fetchone()[0]
+
+
+        cursor.execute('''INSERT INTO workflowExecution (workflowexec_start_time, workflowexec_end_time, workflow_id, int_id)
+                        VALUES (?, ?, ?, ?)''', (data["activityexec_start_time"], data["activityexec_end_time"], workflow[0], int_id))
+
+        conn.commit()
+    else:
+        cursor.execute('''INSERT INTO workflowExecution (workflowexec_start_time, workflowexec_end_time, workflow_id)
+                VALUES (?, ?, ?)''', (data["activityexec_start_time"], data["activityexec_end_time"], workflow[0],))
+
+        conn.commit()
+
 
     # id of the new just added workflowExecution
     workflowExecution_id = cursor.lastrowid
@@ -1243,19 +1260,22 @@ def box_exec_prov():
                         WHERE attribute.attribute_type = ? AND relation.relation_id = ?''', ('Data', output_relation_id))
 
     output_attributes = cursor.fetchall()
-    # print(output_attributes)
 
-    for input_attribute in input_attributes:
+    for input_attribute in input_attributes: #
         # creating attributeValues
+        # cursor.execute('''INSERT INTO attributeValue (attribute_id, ri_id, value)
+        #                 VALUES (?, ?, ?)''', (input_attribute[0], input_ri_id, data['types_input'][input_attribute[1]],))
         cursor.execute('''INSERT INTO attributeValue (attribute_id, ri_id, value)
-                        VALUES (?, ?, ?)''', (input_attribute[0], input_ri_id, data['types_input'][input_attribute[1]],))
+                VALUES (?, ?, ?)''', (input_attribute[0], input_ri_id+1, data['inputData'],))
 
         conn.commit()
 
-    for output_attribute in output_attributes:
+    for output_attribute in output_attributes: #
         # creating attributeValues
+        # cursor.execute('''INSERT INTO attributeValue (attribute_id, ri_id, value)
+        #                 VALUES (?, ?, ?)''', (output_attribute[0], output_ri_id, data['types_output'][output_attribute[1]],))
         cursor.execute('''INSERT INTO attributeValue (attribute_id, ri_id, value)
-                        VALUES (?, ?, ?)''', (output_attribute[0], output_ri_id, data['types_output'][output_attribute[1]],))
+                VALUES (?, ?, ?)''', (output_attribute[0], output_ri_id+1, data['outputData'],))
 
         conn.commit()
 
@@ -1384,6 +1404,217 @@ def truncate_db_prov():
 
     return "",200
 
+@bp.route('/insert_attribute_value_change', methods=['POST'])
+def insert_attribute_value_change():
+    data = request.json.get('data')
+    activity_name = data.get('activity_name')
+
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    try:
+        # 1. Search act ID
+        cursor.execute("SELECT activity_id, input_relation_id FROM activity WHERE activity_name = ?", (activity_name,))
+        activity = cursor.fetchone()
+        if not activity:
+            return {'message': f'Activity "{activity_name}" not found'}, 404
+        activity_id, input_relation_id = activity
+
+        cursor.execute("SELECT int_id FROM interaction ORDER BY int_id DESC LIMIT 1")
+        interaction = cursor.fetchone()
+
+        if interaction is None:
+            return {'message': 'Interaction not found'}, 404
+
+        int_id = interaction[0]
+
+        # 2. Fetch the last attributeValue linked to the relationship
+
+
+        cursor.execute("""
+            SELECT re_id
+            FROM relationInstance
+            WHERE relation_id = ?
+            ORDER BY re_id DESC
+        """, (input_relation_id,))
+
+        relation_id = [row[0] for row in cursor.fetchall()]     
+
+        placeholders = ', '.join(['?'] * len(relation_id))
+
+        cursor.execute(f"""
+        SELECT av_id, value
+        FROM attributeValue
+        WHERE ri_id IN ({placeholders})
+        ORDER BY av_id DESC
+        """, relation_id)
+
+        attr = cursor.fetchall()
+
+        attr = [row for row in attr if row[1] not in (None, '')][0]
+
+        
+
+        if not attr:
+            return {'message': 'No attribute value found for the relationship of this activity'}, 404
+        av_id, old_value = attr
+
+        # 3. Insert value change
+        cursor.execute("""
+            INSERT INTO attributeValueChange (av_id, int_id, old_value)
+            VALUES (?, ?, ?)
+        """, (av_id, int_id, old_value))
+        conn.commit()
+
+        return {'message': 'Value change successfully recorded'}, 201
+
+    except Exception as e:
+        conn.rollback()
+        return {'error': str(e)}, 500
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@bp.route('/insert_visualization', methods=['POST'])
+def insert_visualization():
+    data = request.json.get('data')
+    activity_name = data.get('activity_name')
+
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+
+    try: 
+        # mapping id executions
+        cursor.execute("SELECT vis_path, vis_content, activityexec_id from visualization")
+        old_activityexec_id = cursor.fetchall()
+
+        for vis in old_activityexec_id:
+            # Restoring the activity IDs
+            cursor.execute("SELECT activity_id FROM activityExecution WHERE activityexec_id = ? ORDER BY activityexec_id DESC LIMIT 1",
+            (vis[2],))
+            activity_id = cursor.fetchone()[0]
+            # Fetching new execution ID
+            cursor.execute("SELECT activityexec_id FROM activityExecution WHERE activity_id = ? ORDER BY activityexec_id DESC LIMIT 1",
+            (activity_id,))
+            activityexec_id = cursor.fetchone()[0]
+
+            cursor.execute("""
+            INSERT INTO visualization (vis_path, vis_content, activityexec_id)
+            VALUES (?, ?, ?)
+            """, (vis[0], vis[1], activityexec_id))
+            
+            
+            conn.commit()            
+    except: 
+        pass
+
+
+    try:
+        # 1. Search act id
+        cursor.execute("SELECT activity_id FROM activity WHERE activity_name = ? ORDER BY activity_id DESC LIMIT 1",
+            (activity_name,))
+        activity = cursor.fetchone()
+        if not activity:
+            return {'message': f'Atividade "{activity_name}" não encontrada.'}, 404
+        activity_id = activity[0]
+
+        # 2. Fetch the execution ID of the most recent activity
+
+        cursor.execute("SELECT activityexec_id FROM activityExecution WHERE activity_id = ? ORDER BY activityexec_id DESC LIMIT 1",
+            (activity_id,))
+        activityExecution = cursor.fetchone()
+        activityExecution_id = activityExecution[0]
+
+        # 3. Getting the name of the visualization box
+
+        match = re.match(r"([A-Z]+_[A-Z]+)-", activity_name)
+        vis_name = match.group(1)
+
+        # 4. Adding to the Visualization table
+
+        cursor.execute("""
+            INSERT INTO visualization (vis_path, vis_content, activityexec_id)
+            VALUES (?, ?, ?)
+        """, ("", vis_name, activityExecution_id))
+        conn.commit()
+
+        # 5. Deleting duplicates
+        cursor.execute("""
+        DELETE FROM visualization
+        WHERE vis_id NOT IN (
+            SELECT MIN(vis_id)
+            FROM visualization
+            GROUP BY activityexec_id
+            )
+        """)
+        conn.commit()
+
+        return {'message': 'Visualization registered successfully'}, 201
+
+    except Exception as e:
+        conn.rollback()
+        return {'error': str(e)}, 500
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@bp.route('/insert_interaction', methods=['POST'])
+def insert_interaction():
+    data = request.json.get('data')
+    activity_name = data.get('activity_name')
+
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    try:
+
+        # 1. Search act id
+        cursor.execute("SELECT activity_id FROM activity WHERE activity_name = ? ORDER BY activity_id DESC LIMIT 1",
+            (activity_name,))
+        activity = cursor.fetchone()
+        if not activity:
+            return {'message': f'Atividade "{activity_name}" não encontrada.'}, 404
+        activity_id = activity[0]
+
+        # 2. Fetch the execution ID of the most recent activity
+
+        cursor.execute("SELECT activityexec_id FROM activityExecution WHERE activity_id = ? ORDER BY activityexec_id DESC LIMIT 1",
+            (activity_id,))
+        activityExecution = cursor.fetchone()
+        activityExecution_id = activityExecution[0]
+
+        # 3. Searching the visualization table
+
+        cursor.execute("SELECT vis_id FROM visualization WHERE activityexec_id = ? ORDER BY activityexec_id DESC LIMIT 1",
+            (activityExecution_id,))
+        vis_id = cursor.fetchone()
+        vis_id = vis_id[0]
+
+        # 3. Inserting into the interaction table
+
+        cursor.execute("""
+            INSERT INTO interaction (int_time, user_id, vis_id)
+            VALUES (?, ?, ?)
+        """, (data['int_time'], "", vis_id))
+        conn.commit()
+
+        return {'message': 'Visualization successfully recorded'}, 201
+
+    except Exception as e:
+        conn.rollback()
+        return {'error': str(e)}, 500
+
+    finally:
+        cursor.close()
+        conn.close()
 
 
 def create_template_object(folder, filename, code):
