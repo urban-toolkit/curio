@@ -63,12 +63,18 @@ export default function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps)
   useEffect(() => {
     const outArr = inputValues.filter(v => v !== undefined);
 
-    // Debugging: Log the output array and node ID
-    console.log("MergeFlowBox Output:", { nodeId: data.nodeId, outArr });
+    // Debugging: Log the output array, node ID, and input values
+    console.log("MergeFlowBox Debug:", {
+      nodeId: data.nodeId,
+      inputValues,
+      filteredOutput: outArr,
+    });
 
-    if (outArr.length > 0) {
-      data.outputCallback(data.nodeId, { data: outArr, dataType: "outputs" });
-    }
+    // Emit output even if the array is empty
+    data.outputCallback(data.nodeId, {
+      data: outArr.length > 0 ? outArr : [],
+      dataType: "outputs",
+    });
   }, [inputValues, data.nodeId, data.outputCallback]);
 
   // Sync external inputs
@@ -81,17 +87,6 @@ export default function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps)
       });
     }
   }, [data.input]);
-
-  // Debugging: Log the entire data object
-  useEffect(() => {
-    console.log("[MergeFlowBox] Data object:", data);
-  }, [data]);
-
-  // Ensure templateName fallback
-  const fileName = data?.templateName || "defaultFileName";
-  useEffect(() => {
-    console.log("[MergeFlowBox] Derived fileName:", fileName);
-  }, [fileName]);
 
   const promptDescription = () => setDescriptionModal(true);
   const closeDescription = () => setDescriptionModal(false);

@@ -35,6 +35,8 @@ def checkIOType(data, boxType, input=True):
 
 # Input Validation
 def validate_input(data, boxType):
+    if isinstance(data, list):
+        return
     if boxType in ['DATA_EXPORT', 'DATA_CLEANING']:
         check_dataframe_input(data, boxType)
     elif boxType == 'DATA_TRANSFORMATION':
@@ -52,8 +54,10 @@ def validate_output(data, boxType):
 
 # Input Type Checks
 def check_dataframe_input(data, boxType):
-    if data['dataType'] == 'outputs' and len(data['data']) > 1:
-        raise Exception(f'{boxType} only supports one input')
+    if isinstance(data, list):
+        return
+    if data['dataType'] == 'outputs' and len(data['data']) > 5:
+        raise Exception(f'{boxType} only supports five inputs')
 
     valid_types = {'dataframe', 'geodataframe'}
     if data['dataType'] == 'outputs':
@@ -76,6 +80,8 @@ def check_transformation_input(data, boxType):
         raise Exception(f'{boxType} only supports DataFrame, GeoDataFrame, and Raster as input')
 
 def check_valid_output(data, boxType):
+    if isinstance(data, list):
+        return
     valid_types = {'dataframe', 'geodataframe', 'raster'}
 
     if data['dataType'] == 'outputs':
