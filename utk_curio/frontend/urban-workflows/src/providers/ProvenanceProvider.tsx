@@ -123,6 +123,12 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
         targetNodeId: string,
         targetNodeType: BoxType
     ) => {
+        if (!workflow_name || !sourceNodeId || !sourceNodeType || !targetNodeId || !targetNodeType) {
+            console.error("[newConnection] Missing or invalid data in payload", {
+                workflow_name, sourceNodeId, sourceNodeType, targetNodeId, targetNodeType,
+            });
+            return;
+        }
 
         fetch(process.env.BACKEND_URL + "/newConnectionProv", {
             method: "POST",

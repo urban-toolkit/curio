@@ -73,25 +73,24 @@ export default function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps)
 
   // Sync external inputs
   useEffect(() => {
-    if (Array.isArray(data.input)) {
-      setInputValues(prev => {
-        const cp = Array.isArray(prev) ? [...prev] : Array(5).fill(undefined);
-        data.input!.forEach((val, i) => { if (i < cp.length) cp[i] = val; });
-        return cp;
+  if (Array.isArray(data.input)) {
+    console.log("[MergeFlowBox] Incoming data.input:", data.input);
+    
+    setInputValues(prev => {
+      const cp = Array.isArray(prev) ? [...prev] : Array(5).fill(undefined);
+
+      data.input!.forEach((val, i) => {
+        console.log(`  → assigning cp[${i}] =`, val);
+        if (i < cp.length) cp[i] = val;
       });
-    }
-  }, [data.input]);
 
-  // Debugging: Log the entire data object
-  useEffect(() => {
-    console.log("[MergeFlowBox] Data object:", data);
-  }, [data]);
+      console.log("[MergeFlowBox] Updated inputValues copy:", cp);
+      return cp;
+    });
+  }
+}, [data.input]);
 
-  // Ensure templateName fallback
-  const fileName = data?.templateName || "defaultFileName";
-  useEffect(() => {
-    console.log("[MergeFlowBox] Derived fileName:", fileName);
-  }, [fileName]);
+
 
   const promptDescription = () => setDescriptionModal(true);
   const closeDescription = () => setDescriptionModal(false);
