@@ -1,4 +1,4 @@
-import React, {
+ import React, {
     createContext,
     useState,
     useContext,
@@ -393,6 +393,9 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                         const handleIndex = match ? parseInt(match[1], 10) : -1;
 
                         if (handleIndex >= 0) {
+                            while (inputList.length <= handleIndex) inputList.push(undefined);
+                            while (sourceList.length <= handleIndex) sourceList.push(undefined);
+
                             inputList[handleIndex] = output;
                             sourceList[handleIndex] = getOutput;
                         }
@@ -465,6 +468,9 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 >>>>>>> d7a8dc1 (Changed flow provider to accept up to 5 merged inputs from the merge box)
                                     if (handleIndex >= 0) {
                                         // Clear the specific position
+                                        while (inputList.length <= handleIndex) inputList.push(undefined);
+                                        while (sourceList.length <= handleIndex) sourceList.push(undefined);
+
                                         inputList[handleIndex] = undefined;
                                         sourceList[handleIndex] = undefined;
                                     }
