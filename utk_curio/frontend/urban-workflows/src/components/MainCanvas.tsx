@@ -90,6 +90,19 @@ export function MainCanvas() {
     const [selectedEdgeId, setSelectedEdgeId] = useState<string>(""); // can only remove selected edges
 
     const [dashboardOn, setDashboardOn] = useState<boolean>(false);
+    const { dashboardPins } = useFlowContext();
+
+    // Apply dashboard mode changes
+    const handleDashboardToggle = (value: boolean) => {
+        setDashboardOn(value);
+        setDashBoardMode(value);
+    };
+
+    // Filter nodes based on dashboard mode
+    const filteredNodes = useMemo(() => {
+        if (!dashboardOn) return nodes;
+        return nodes.filter(node => dashboardPins[node.id]);
+    }, [nodes, dashboardOn, dashboardPins]);
 
     const [fileMenuOpen, setFileMenuOpen] = useState(false);
     const closeFileMenu = () => setFileMenuOpen(false);
@@ -101,7 +114,7 @@ export function MainCanvas() {
             onClick={closeFileMenu}
         >
             <ReactFlow
-                nodes={nodes}
+                nodes={filteredNodes}
                 edges={edges}
                 onDragOver={(event) => {
                     event.preventDefault();
@@ -218,8 +231,8 @@ export function MainCanvas() {
                 <UserMenu />
                 <ToolsMenu />
                 <UpMenu 
-                    setDashBoardMode={setDashBoardMode}
-                    setDashboardOn={setDashboardOn}
+                    setDashBoardMode={(value) => handleDashboardToggle(value)}
+                    setDashboardOn={handleDashboardToggle}
                     dashboardOn={dashboardOn}
                     fileMenuOpen={fileMenuOpen}
                     setFileMenuOpen={setFileMenuOpen}
