@@ -6,7 +6,7 @@
         "type": "DATA_LOADING",
         "x": 442.45352285745105,
         "y": 376.648698354997,
-        "content": "# -*- coding: utf-8 -*-\r\nimport pandas as pd\r\nfrom PIL import Image\r\nimport io\r\nimport base64\r\n\r\ndef image_to_base64(img: Image.Image) -> str:\r\n    \"\"\"Convert a PIL Image to a base64-encoded PNG string.\"\"\"\r\n    buffer = io.BytesIO()\r\n    img.save(buffer, format=\"PNG\")\r\n    return base64.b64encode(buffer.getvalue()).decode(\"utf-8\")\r\n\r\n# Create 100x100 solid-color images\r\nred_img  = Image.new(\"RGB\", (100, 100), (255,   0,   0))  # solid red\r\nblue_img = Image.new(\"RGB\", (100, 100), (  0,   0, 255))  # solid blue\r\n\r\n# Build the DataFrame\r\ndf = pd.DataFrame({\r\n    \"image_id\": [0,1],\r\n    \"image_content\": [\r\n        image_to_base64(red_img),\r\n        image_to_base64(blue_img)\r\n    ]\r\n})\r\n\r\nreturn df",
+        "content": "# -*- coding: utf-8 -*-\r\nimport pandas as pd \r\nfrom PIL import Image\r\nimport io\r\nimport os\r\nimport base64\r\n\r\ndef image_to_base64(img: Image.Image) -> str:\r\n    \"\"\"Convert a PIL Image to a base64-encoded PNG string.\"\"\"\r\n    buffer = io.BytesIO()\r\n    img.save(buffer, format=\"PNG\")    \r\n    return base64.b64encode(buffer.getvalue()).decode(\"utf-8\")\r\n\r\n#Reading folder of images, change path to be from your computer\r\nlocal_path = 'C:/Users/HP/curio/tests/ImageTest'\r\nfolder = os.listdir(local_path)\r\ndata = []\r\nimg_num = []\r\ncount = -1\r\nfor image in folder:\r\n    full_path = os.path.join(local_path, image)\r\n    if os.path.isfile(full_path):\r\n        img = Image.open(full_path)\r\n        base64_img = image_to_base64(img)\r\n        data.append(base64_img)\r\n        count += 1\r\n        img_num.append(count)\r\n\r\n# Build the DataFrame\r\ndf = pd.DataFrame({\"image_id\": [img_num], \"image_content\": [data]})\r\nreturn df",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -36,7 +36,7 @@
     ],
     "name": "DefaultWorkflow",
     "task": "",
-    "timestamp": 1747159687413,
+    "timestamp": 1754930657019,
     "provenance_id": "DefaultWorkflow"
   }
 }
