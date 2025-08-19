@@ -73,24 +73,24 @@ export class Camera {
     }
 
     getProjectionMatrix(): Float32Array | number[] {
-        return this.mProjectionMatrix;
+        return new Float32Array(this.mProjectionMatrix);
     }
 
     getViewMatrix(): Float32Array | number[] {
-        return this.mViewMatrix;
+        return new Float32Array(this.mViewMatrix);
     }
 
     getModelViewMatrix(): Float32Array | number[] {
         const modelViewMatrix = mat4.mul(mat4.create(), this.mViewMatrix, this.mModelMatrix);
-        return modelViewMatrix;
+        return new Float32Array(modelViewMatrix);
     }
 
     getWorldOrigin(): Float32Array | number[] {
-        return this.wOrigin;
+        return new Float32Array(this.wOrigin);
     }
 
     getEye(): Float32Array | number[] {
-        return this.wEye;
+        return new Float32Array(this.wEye);
     }
 
     getGroundResolution(): number {
