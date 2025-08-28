@@ -25,7 +25,10 @@ interface ProvenanceContextProps {
         activity_name: string,
         types_input: any,
         types_output: any,
-        activity_source_code: string
+        activity_source_code: string,
+        inputData: string,
+        outputData: string,
+        interaction: boolean
     ) => void;
     provenanceGraphBoxesRef: any;
     truncateDB: () => void;
@@ -165,7 +168,10 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
         activity_name: string,
         types_input: any,
         types_output: any,
-        activity_source_code: string
+        activity_source_code: string,
+        inputData: string = "",
+        outputData: string = "",
+        interaction: boolean = false
     ) => {
         fetch(process.env.BACKEND_URL + "/boxExecProv", {
             method: "POST",
@@ -178,6 +184,9 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
                     types_input,
                     types_output,
                     activity_source_code,
+                    inputData,
+                    outputData,
+                    interaction
                 },
             }),
             headers: {

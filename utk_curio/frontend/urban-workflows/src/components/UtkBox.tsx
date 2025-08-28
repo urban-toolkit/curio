@@ -82,6 +82,8 @@ function UtkBox({ data, isConnectable }) {
 
   const [disablePlay, setDisablePlay] = useState<boolean>(true);
 
+  const [inputData, setInputData] = useState();
+
   useEffect(() => {
     data.code = code;
   }, [code]);
@@ -237,6 +239,20 @@ function UtkBox({ data, isConnectable }) {
 
       let typesOuput: string[] = [...typesInput];
 
+      let dfIN = []
+      let dfOUT = ''
+
+      if (data.input) {
+        data.input.data.features.forEach(item => { 
+          // Remove geometry key
+          const { geometry, ...rest } = item;
+          dfIN.push(JSON.stringify(rest));
+        });
+      }
+      
+
+      setInputData(dfIN)
+
       boxExecProv(
         startTime,
         endTime,
@@ -244,8 +260,22 @@ function UtkBox({ data, isConnectable }) {
         BoxType.VIS_UTK + "-" + data.nodeId,
         mapTypes(typesInput),
         mapTypes(typesOuput),
-        code
+        code,
+        JSON.stringify(dfIN),
+        dfOUT
       );
+
+      fetch(`${process.env.BACKEND_URL}/insert_visualization`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          data: {
+            activity_name: BoxType.VIS_UTK + "-" + data.nodeId,
+          },
+        }),
+      });
 
       setOutput({ code: "success", content: "" });
     } catch (error: any) {
@@ -332,6 +362,132 @@ function UtkBox({ data, isConnectable }) {
       },
     };
   };
+
+  //Interaction
+  useEffect(() => {
+  let dfIN: string[] = [];
+
+  if (data.input.data) {
+    console.log(data)
+    data.input.data.features.forEach((item: any) => {
+      // Remove "geometry" key
+      const { geometry, ...rest } = item;
+      dfIN.push(JSON.stringify(rest));
+    });
+  }
+
+  const isEqual = JSON.stringify(inputData) === JSON.stringify(dfIN);
+
+  if (!isEqual && inputData !== undefined) {
+    fetch(`${process.env.BACKEND_URL}/insert_attribute_value_change`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        data: {
+          activity_name: BoxType.VIS_UTK + "-" + data.nodeId,
+        },
+      }),
+    });
+
+    setInputData(dfIN);
+
+    const formatDate = (date: Date): string => {
+      const month = date.toLocaleString("default", { month: "short" });
+      const day = date.getDate();
+      const year = date.getFullYear();
+      const hours = date.getHours();
+      const minutes = date.getMinutes();
+      const seconds = date.getSeconds();
+
+      return `${month} ${day} ${year} ${hours}:${minutes}:${seconds}`;
+    };
+
+    const endTime = formatDate(new Date());
+    const startTime = formatDate(new Date());
+
+    const getType = (inputs: any[]): string[] => {
+      let typesInput: string[] = [];
+
+      for (const input of inputs) {
+        let parsedInput = input;
+
+        if (typeof input === "string") {
+          parsedInput = JSON.parse(input);
+        }
+
+        if (parsedInput.dataType === "outputs") {
+          typesInput = typesInput.concat(getType(parsedInput.data));
+        } else {
+          typesInput.push(parsedInput.dataType);
+        }
+      }
+
+      return typesInput;
+    };
+
+    let typesInput: string[] = [];
+    if (data.input !== "") {
+      typesInput = getType([data.input]);
+    }
+
+    const typesOutput = [...typesInput];
+
+    const mapTypes = (typesList: string[]) => {
+      const mapTypes = {
+        DATAFRAME: 0,
+        GEODATAFRAME: 0,
+        VALUE: 0,
+        LIST: 0,
+        JSON: 0,
+      };
+
+      for (const typeValue of typesList) {
+        if (["int", "str", "float", "bool"].includes(typeValue)) {
+          mapTypes.VALUE = 1;
+        } else if (typeValue === "list") {
+          mapTypes.LIST = 1;
+        } else if (typeValue === "dict") {
+          mapTypes.JSON = 1;
+        } else if (typeValue === "dataframe") {
+          mapTypes.DATAFRAME = 1;
+        } else if (typeValue === "geodataframe") {
+          mapTypes.GEODATAFRAME = 1;
+        }
+      }
+
+      return mapTypes;
+    };
+
+    boxExecProv(
+      startTime,
+      endTime,
+      workflowNameRef.current,
+      BoxType.VIS_UTK + "-" + data.nodeId,
+      mapTypes(typesInput),
+      mapTypes(typesOutput),
+      code,
+      JSON.stringify(dfIN),
+      "",
+      true
+    );
+
+    fetch(`${process.env.BACKEND_URL}/insert_visualization`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        data: {
+          activity_name: BoxType.VIS_UTK + "-" + data.nodeId,
+        },
+      }),
+    });
+
+  }
+}, [data]);
+
 
   useEffect(() => {
     const processData = async () => {

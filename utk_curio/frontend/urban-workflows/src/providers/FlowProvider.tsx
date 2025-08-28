@@ -26,7 +26,7 @@ import { ConnectionValidator } from "../ConnectionValidator";
 import { BoxType, EdgeType, VisInteractionType } from "../constants";
 import { useProvenanceContext } from "./ProvenanceProvider";
 import { TrillGenerator } from "../TrillGenerator";
-
+import { applyDashboardLayout } from "../utils/dashboardLayout";
 
 export interface IOutput {
     nodeId: string;
@@ -53,6 +53,7 @@ interface FlowContextProps {
     workflowNameRef: React.MutableRefObject<string>;
     allMinimized: number;
     expandStatus: 'expanded' | 'minimized';
+    dashboardPins: { [key: string]: boolean };
     setOutputs: (updateFn: (outputs: IOutput[]) => IOutput[]) => void;
     setInteractions: (updateFn: (interactions: IInteraction[]) => IInteraction[]) => void;
     applyNewPropagation: (propagation: IPropagation) => void;
@@ -81,6 +82,7 @@ export const FlowContext = createContext<FlowContextProps>({
     workflowNameRef: { current: "" },
     allMinimized: 0,
     expandStatus: 'expanded',
+    dashboardPins: {},
     setOutputs: () => { },
     setInteractions: () => {},
     applyNewPropagation: () => {},
@@ -232,155 +234,87 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     }
 
     const setDashBoardMode = (value: boolean) => {
-        // setNodes((nds: any) =>
-        //     nds.map((node: any) => {
-        //         if(dashboardPins[node.id] == true){
-        //             node.data = {
-        //                 ...node.data,
-        //                 hidden: false
-        //             };
-        //         }else{
-        //             node.data = {
-        //                 ...node.data,
-        //                 hidden: value
-        //             };
-        //         }
+        console.log(`=== Dashboard mode ${value ? 'enabled' : 'disabled'} ===`);
+        if (value) {
+            // When entering dashboard mode, apply the automatic layout
+            setNodes((nds) => {
+                console.log('Current nodes before dashboard layout:', nds.map(n => ({
+                    id: n.id,
+                    type: n.type,
+                    position: n.position,
+                    pinned: dashboardPins[n.id]
+                })));
 
-        //         // Detect nodes by having the class react-flow__node
-        //         // The node id is in the attribute data-id
-
-        //         let position = {...node.position};
-
-        //         if(value){
-        //             if(positionsInDashboardRef.current[node.id] != undefined){
-        //                 position = {...positionsInDashboardRef.current[node.id]};
-        //             }
-        //         }else{
-        //             if(positionsInWorkflowRef.current[node.id] != undefined){
-        //                 position = {...positionsInWorkflowRef.current[node.id]};
-        //             }
-        //         }
-
-        //         return {
-        //             ...node,
-        //             position
-        //         };
-        //     })
-        // );
-
-        const nodesDiv = document.querySelectorAll(".react-flow__node");
-
-        // Hide each element
-        nodesDiv.forEach((element) => {
-            if (value) {
-                // @ts-ignore
-                if (!dashboardPins[element.getAttribute("data-id")]) {
-                    // @ts-ignore
-                    element.style.display = "none";
-                } else {
-                    // @ts-ignore
-                    element.style.display = "block";
-
-                    // @ts-ignore
-                    if (
-                        positionsInDashboardRef.current[
-                            element.getAttribute("data-id")
-                        ] != undefined
-                    ) {
-                        setNodes((oldNodes) => {
-                            // @ts-ignore
-                            console.log(
-                                positionsInDashboardRef.current[
-                                    element.getAttribute("data-id")
-                                ]
-                            );
-                            // @ts-ignore
-                            return applyNodeChanges(
-                                [
-                                    positionsInDashboardRef.current[
-                                        element.getAttribute("data-id")
-                                    ],
-                                ],
-                                oldNodes
-                            );
-                        });
+                // Save current positions as workflow positions if not already set
+                const nodesWithWorkflowPositions = nds.map(node => {
+                    const workflowPos = node.data.workflowPosition || node.position;
+                    return {
+                        ...node,
+                        data: {
+                            ...node.data,
+                            workflowPosition: workflowPos
+                        }
+                    };
+                });
+                
+                console.log('Applying dashboard layout to nodes:', nodesWithWorkflowPositions.length);
+                console.log('Dashboard pins:', dashboardPins);
+                
+                // Apply the dashboard layout to pinned nodes
+                const updatedNodes = applyDashboardLayout(nodesWithWorkflowPositions, edges, dashboardPins);
+                
+                console.log('Updated nodes after layout:', updatedNodes.map(n => ({
+                    id: n.id,
+                    type: n.type,
+                    position: n.position,
+                    data: n.data
+                })));
+                
+                // Update positions in the dashboard state
+                updatedNodes.forEach((node) => {
+                    if (dashboardPins[node.id]) {
+                        console.log(`Updating dashboard position for node ${node.id}:`, node.position);
+                        updatePositionDashboard(node.id, node.position);
                     }
-                }
-            } else {
-                // @ts-ignore
-                element.style.display = "block";
+                });
+                
+                return updatedNodes;
+            });
+        } else {
+            // When exiting dashboard mode, reset to workflow positions
+            setNodes((nds) => {
+                const resetNodes = nds.map(node => {
+                    const workflowPos = node.data.workflowPosition || node.position;
+                    console.log(`Resetting node ${node.id} to workflow position:`, workflowPos);
+                    return {
+                        ...node,
+                        position: workflowPos,
+                        data: {
+                            ...node.data,
+                            // Clear temporary dashboard position
+                            dashboardPosition: undefined
+                        }
+                    };
+                });
+                console.log('Nodes after reset:', resetNodes);
+                return resetNodes;
+            });
+        }
+    };
 
-                // @ts-ignore
-                if (
-                    positionsInWorkflowRef.current[
-                        element.getAttribute("data-id")
-                    ] != undefined
-                ) {
-                    // @ts-ignore
-                    console.log(
-                        positionsInWorkflowRef.current[
-                            element.getAttribute("data-id")
-                        ]
-                    );
-                    // @ts-ignore
-                    setNodes((oldNodes) =>
-                        applyNodeChanges(
-                            [
-                                positionsInWorkflowRef.current[
-                                    element.getAttribute("data-id")
-                                ],
-                            ],
-                            oldNodes
-                        )
-                    );
-                }
-            }
-        });
-
-        const edgesPath = document.querySelectorAll(".react-flow__edge-path");
-
-        // Hide each element
-        edgesPath.forEach((element) => {
-            if (value) {
-                // @ts-ignore
-                element.style.display = "none";
-            } else {
-                // @ts-ignore
-                element.style.display = "block";
-            }
-        });
-
-        const edgesInteraction = document.querySelectorAll(
-            ".react-flow__edge-interaction"
-        );
-
-        // Hide each element
-        edgesInteraction.forEach((element) => {
-            if (value) {
-                // @ts-ignore
-                element.style.display = "none";
-            } else {
-                // @ts-ignore
-                element.style.display = "block";
-            }
-        });
+    const updatePositionDashboard = (nodeId: string, position: { x: number; y: number }) => {
+        setPositionsInDashboard((prev: any) => ({
+            ...prev,
+            [nodeId]: position
+        }));
     };
 
     const updatePositionWorkflow = (nodeId: string, change: any) => {
-        setPositionsInWorkflow({
-            ...positionsInWorkflowRef.current,
-            [nodeId]: { ...change },
-        });
+        setPositionsInWorkflow((prev: any) => ({
+            ...prev,
+            [nodeId]: change
+        }));
     };
-
-    const updatePositionDashboard = (nodeId: string, change: any) => {
-        setPositionsInDashboard({
-            ...positionsInDashboardRef.current,
-            [nodeId]: { ...change },
-        });
-    };
-
-    // TODO: implement listener for position changes in nodes.
 
     const setPinForDashboard = (nodeId: string, value: boolean) => {
         let newDashboardPins: any = {};
@@ -550,28 +484,27 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             setOutputs((opts: any) =>
                 opts.filter((opt: any) => {
                     for (const change of changes) {
-                        // @ts-ignore
-                        if (
-                            opt.nodeId == change.id &&
-                            change.type == "remove"
-                        ) {
-                            // node was removed
-                            return false;
+                        if (change.type === "remove" && 'id' in change) {
+                            if (opt.nodeId === change.id) {
+                                // node was removed
+                                return false;
+                            }
                         }
                     }
-
                     return true;
                 })
             );
 
             for (const change of changes) {
-                if (change.type == "remove") {
-                    let node = reactFlow.getNode(change.id) as Node;
-                    deleteBox(workflowNameRef.current, node.type + "_" + node.id);
+                if (change.type === "remove" && 'id' in change) {
+                    const node = reactFlow.getNode(change.id) as Node;
+                    if (node) {
+                        deleteBox(workflowNameRef.current, node.type + "_" + node.id);
+                    }
                 }
             }
         },
-        [setOutputs]
+        [setOutputs, reactFlow, deleteBox]
     );
 
     const onConnect = useCallback(
@@ -997,7 +930,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
         onNodesDelete(allowedChanges);
         return onNodesChange(allowedChanges);
-    }
+    };
 
     return (
         <FlowContext.Provider
@@ -1007,6 +940,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 workflowNameRef,
                 allMinimized,
                 expandStatus,
+                dashboardPins,
                 setExpandStatus,
                 setOutputs,
                 setInteractions,
