@@ -13,7 +13,7 @@ import Row from "react-bootstrap/Row";
 import CSS from "csstype";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import "./BoxEditor.css";
-
+ 
 import {
     faGear,
     faCircleInfo,
@@ -26,7 +26,7 @@ import {
     faRightFromBracket,
 } from "@fortawesome/free-solid-svg-icons";
 import { OverlayTrigger, Tooltip } from "react-bootstrap";
-
+ 
 type BoxEditorProps = {
     outputId?: string;
     setSendCodeCallback: any;
@@ -50,8 +50,9 @@ type BoxEditorProps = {
     provenance?: boolean;
     customWidgetsCallback?: any;
     contentComponent?: any;
+    disableWidgets?: boolean; // Added prop to freeze widget buttons
 };
-
+ 
 function BoxEditor({
     outputId,
     setSendCodeCallback,
@@ -70,6 +71,7 @@ function BoxEditor({
     provenance,
     customWidgetsCallback,
     contentComponent,
+    disableWidgets,
 }: BoxEditorProps) {
     const [userCode, setUserCode] = useState<string>(""); // python or grammar with marks unresolved
     const [defaultCode, setDefaultCode] = useState<string>("");
@@ -78,20 +80,20 @@ function BoxEditor({
     const [replacedCodeDirty, setReplacedCodeDirty] = useState<boolean>(false); // code has to rerun every time button is pressed (having changes or not)
     const [activeTab, setActiveTab] = useState("widgets");
     const [fullscreen, setFullscreen] = useState<string>("");
-
+ 
     const contentComponentBypass = useRef(false);
-
+ 
     const sendCodeToWidgets = (code: string) => {
         setUserCode(code);
         setMarkersDirty((prev: boolean) => {
             return !prev;
         });
     };
-
+ 
     useEffect(() => {
         setSendCodeCallback(sendCodeToWidgets);
     }, []);
-
+ 
     useEffect(() => {
         if (
             contentComponent != undefined &&
@@ -100,10 +102,10 @@ function BoxEditor({
         ) {
             setActiveTab("output");
         }
-
+ 
         contentComponentBypass.current = true;
     }, [contentComponent]);
-
+ 
     const sendReplacedCode = (code: string) => {
         if (fullscreen == "" || fullscreen == undefined) setActiveTab("output");
         setReplacedCode(code);
@@ -111,26 +113,26 @@ function BoxEditor({
             return !prev;
         });
     };
-
+ 
     useEffect(() => {
         setDefaultCode(defaultValue);
     }, [defaultValue]);
-
+ 
     const navigateProv = (code: string) => {
         setDefaultCode(code);
         sendCodeToWidgets(code);
     };
-
+ 
     const handleTabSelect = (eventKey: any) => {
         setActiveTab(eventKey);
     };
-
+ 
     const tabContentStyle: CSS.Properties = {
         height: "100%",
         backgroundColor: "#f2f2f2",
         borderRadius: "10px",
     };
-
+ 
     const tabContentFullscreen: CSS.Properties = {
         height: "100%",
         // marginTop: "auto",
@@ -142,27 +144,27 @@ function BoxEditor({
         backgroundColor: "#f2f2f2",
         borderRadius: "10px",
     };
-
+ 
     const activeTabContentStyle =
         fullscreen != "" && fullscreen != undefined
             ? tabContentFullscreen
             : tabContentStyle;
-
+ 
     const iconStyle: CSS.Properties = {
         cursor: "pointer",
         fontSize: "14px",
         color: "#888787",
     };
-
+ 
     const navItemStyle: CSS.Properties = {
         maxWidth: "100%",
     };
-
+ 
     const navLinkStyle: CSS.Properties = {
         display: "flex",
         justifyContent: "center",
     };
-
+ 
     return (
         <>
             <div
@@ -192,10 +194,12 @@ function BoxEditor({
                                             sendReplacedCode={sendReplacedCode}
                                             userCode={userCode}
                                             nodeId={data.nodeId}
+                                            data={{...data, boxType}}
+                                            disableWidgets={disableWidgets}
                                         />
                                     </Tab.Pane>
                                 ) : null}
-
+ 
                                 {code ? (
                                     <Tab.Pane
                                         eventKey="code"
@@ -221,7 +225,7 @@ function BoxEditor({
                                         />
                                     </Tab.Pane>
                                 ) : null}
-
+ 
                                 {grammar ? (
                                     <Tab.Pane
                                         eventKey="grammar"
@@ -244,7 +248,7 @@ function BoxEditor({
                                         />
                                     </Tab.Pane>
                                 ) : null}
-
+ 
                                 {provenance == undefined || provenance ? (
                                     <Tab.Pane
                                         eventKey="provenance"
@@ -257,7 +261,7 @@ function BoxEditor({
                                         />
                                     </Tab.Pane>
                                 ) : null}
-
+ 
                                 <Tab.Pane
                                     eventKey="output"
                                     style={{ height: "100%", overflowY: "auto" }}
@@ -279,7 +283,7 @@ function BoxEditor({
                                                 width: "100%",
                                                 height: "100%",
                                                 whiteSpace: "pre-wrap",
-                                                 overflowY: "auto"
+                                                overflowY: "auto",
                                             }}
                                             className={"nowheel nodrag"}
                                         >
@@ -337,7 +341,7 @@ function BoxEditor({
                                     </OverlayTrigger>
                                 </Col>
                             ) : null}
-
+ 
                             {code ? (
                                 <Col>
                                     <OverlayTrigger
@@ -358,7 +362,7 @@ function BoxEditor({
                                     </OverlayTrigger>
                                 </Col>
                             ) : null}
-
+ 
                             {grammar ? (
                                 <Col>
                                     <OverlayTrigger
@@ -379,7 +383,7 @@ function BoxEditor({
                                     </OverlayTrigger>
                                 </Col>
                             ) : null}
-
+ 
                             {provenance == undefined || provenance ? (
                                 <Col>
                                     <OverlayTrigger
@@ -400,7 +404,7 @@ function BoxEditor({
                                     </OverlayTrigger>
                                 </Col>
                             ) : null}
-
+ 
                             <Col>
                                 <OverlayTrigger
                                     placement="right"
@@ -442,10 +446,10 @@ function BoxEditor({
         </>
     );
 }
-
+ 
 const overlayTriggerProps = {
     show: 120,
     hide: 10,
 };
-
+ 
 export default BoxEditor;

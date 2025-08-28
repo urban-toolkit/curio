@@ -1,0 +1,5 @@
+{
+  "devDependencies": {
+    "minimatch": "^10.0.3"
+  }
+}
