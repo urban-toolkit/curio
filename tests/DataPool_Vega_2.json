@@ -6,7 +6,7 @@
         "type": "DATA_LOADING",
         "x": 275,
         "y": 314.5,
-        "content": "import geopandas as gpd\r\nimport pandas as pd\r\nfrom shapely.geometry import Point\r\n# Read the green roofs dataset\r\ngreen_roofs_df = pd.read_csv('tests\\Green_Roofs.csv')\r\n\r\n# Create the dataset into geo dataframe using latitude and longitude columns\r\ngeometry = [Point(xy) for xy in zip(green_roofs_df['LONGITUDE'], green_roofs_df['LATITUDE'])]\r\ngreen_roofs_df = gpd.GeoDataFrame(green_roofs_df, geometry=geometry, crs=4326)\r\nchicago = gpd.read_file(\"chicago.geojson\") \r\n\r\n# Joining the green roofs dataset with the chicago neighborhood geojson file\r\njoined = gpd.sjoin(green_roofs_df, chicago, predicate='within')\r\nreturn joined",
+        "content": "import geopandas as gpd\r\nimport pandas as pd\r\nfrom shapely.geometry import Point\r\n# Read the green roofs dataset\r\ngreen_roofs_df = pd.read_csv('./tests/Green_Roofs.csv')\r\n\r\n# Create the dataset into geo dataframe using latitude and longitude columns\r\ngeometry = [Point(xy) for xy in zip(green_roofs_df['LONGITUDE'], green_roofs_df['LATITUDE'])]\r\ngreen_roofs_df = gpd.GeoDataFrame(green_roofs_df, geometry=geometry, crs=4326)\r\nchicago = gpd.read_file(\"./tests/chicago.geojson\") \r\n\r\n# Joining the green roofs dataset with the chicago neighborhood geojson file\r\njoined = gpd.sjoin(green_roofs_df, chicago, predicate='within')\r\nreturn joined",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

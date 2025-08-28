@@ -1,17 +1,25 @@
 import requests as internal_requests
 from google.oauth2 import id_token
 from google.auth.transport import requests
+import os
+from dotenv import load_dotenv
 
-# TODO: pass to env variables
-REDIRECT_URI='http://localhost:8080'
+load_dotenv()
 
+REDIRECT_URI = os.getenv('REDIRECT_URI', 'http://localhost:8080')
+
+if 'CLIENT_ID' in os.environ:
+    CLIENT_ID = os.environ['CLIENT_ID']
+
+if 'CLIENT_SECRET' in os.environ:
+    CLIENT_SECRET = os.environ['CLIENT_SECRET']
 class GoogleOAuth:
     def verify_token(self, auth_code):
         token_data = {
             'code': auth_code,
             'client_id': CLIENT_ID,
             'client_secret': CLIENT_SECRET,
-            'redirect_uri': REDIRECT_URI,
+            'redirect_uri': [REDIRECT_URI],
             'grant_type': 'authorization_code',
         }
         token_url = 'https://oauth2.googleapis.com/token'
@@ -25,8 +33,7 @@ class GoogleOAuth:
         except Exception as e:
             print(e)
             return None
-
-        print(token)
+        
         try:
             idinfo = id_token.verify_oauth2_token(token, requests.Request(), CLIENT_ID)
 
