@@ -223,13 +223,22 @@ function DataPoolBox({ data, isConnectable }) {
 
                 return mapTypes;
             };
+            //data array error - James
+            /*let typesInput: string[] = [];
 
-            let typesInput: string[] = [];
 
             if (data.input != "") typesInput = data.input.dataType;//getType([data.input]);
 
             let typesOuput: string[] = [...typesInput];
-
+            */
+           let typesInput: string[] = [];
+            if (data.input && data.input.dataType) {
+            typesInput = Array.isArray(data.input.dataType)
+                ? data.input.dataType
+                : [data.input.dataType];
+            }
+            let typesOuput: string[] = [...typesInput];
+            //end data array error - James 
             boxExecProv(
                 startTime,
                 startTime,
@@ -251,19 +260,14 @@ function DataPoolBox({ data, isConnectable }) {
             let parsedOutput = output;
             // parsedOutput.data = parsedOutput.data;
             // console.log("Creating table", parsedOutput);
-
             if (parsedOutput.dataType == "dataframe") {
                 let columns = Object.keys(parsedOutput.data);
                 let dfIndices = Object.keys(parsedOutput.data[columns[0]]);
-
                 for (let i = 0; i < dfIndices.length; i++) {
                     let element: any = {};
-
                     for (const column of columns) {
-                        element[column] =
-                            parsedOutput.data[column][dfIndices[i]];
+                        element[column] = parsedOutput.data[column][dfIndices[i]];
                     }
-
                     tableData.push(element);
                 }
             }
@@ -879,6 +883,7 @@ function DataPoolBox({ data, isConnectable }) {
                     boxType={BoxType.DATA_POOL}
                     defaultValue={""}
                     readOnly={false}
+                    fullscreen={""}
                 />
 
                 <OutputIcon type="1" />

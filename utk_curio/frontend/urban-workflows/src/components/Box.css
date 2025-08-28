@@ -53,3 +53,22 @@
   border-radius: 50%;
   top: 40px !important;
 }
+
+.error-traceback-scroll {
+  max-height: 100%;
+  overflow-y: auto;
+  background: #ffebee;
+  border-radius: 8px;
+  padding: 16px;
+  font-family: monospace;
+  color: #b71c1c;
+}
+.my-error-node .error-traceback-scroll {
+  max-height: 100%;
+  overflow-y: auto;
+  background: #ffebee;
+  border-radius: 8px;
+  padding: 16px;
+  font-family: monospace;
+  color: #b71c1c;
+}
