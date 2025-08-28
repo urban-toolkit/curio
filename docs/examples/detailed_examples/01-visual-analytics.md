@@ -170,7 +170,12 @@ We can visualize the result of the previous operations by adding a UTK map. The 
 
 In this step, we create a linked scatterplot through a Vega-Lite node connected to the output of the data node in Step 5.
 
+<<<<<<< HEAD:docs/examples/detailed_examples/01-visual-analytics.md
 ![Example 1-9](../images/1-9.png)
+=======
+<img src="./images/1-9.png" title="" alt="Example 1-9" data-align="center">
+
+>>>>>>> main:docs/examples/01-visual-analytics.md
 ```json
 {
  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
