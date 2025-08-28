@@ -79,7 +79,7 @@ export class Camera {
     getViewMatrix(): Float32Array | number[] {
         return this.mViewMatrix instanceof Float32Array ? this.mViewMatrix : new Float32Array(this.mViewMatrix as number[]);
     }
-
+  
     getModelViewMatrix(): Float32Array | number[] {
         const modelViewMatrix = mat4.mul(mat4.create(), this.mViewMatrix, this.mModelMatrix);
         return modelViewMatrix instanceof Float32Array ? modelViewMatrix : new Float32Array(modelViewMatrix as number[]);
