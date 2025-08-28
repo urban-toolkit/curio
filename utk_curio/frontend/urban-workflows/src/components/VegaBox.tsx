@@ -293,7 +293,17 @@ function VegaBox({ data, isConnectable }) {
           .initialize("#vega" + data.nodeId)
           .hover();
 
-        view.runAsync();
+        view.runAsync().then(() => {
+          const container = document.getElementById("vega" + data.nodeId);
+          const parentContainer = container?.parentElement;
+          if (parentContainer) {
+            // Check if the container has any elements with the class 'vega-bind'
+            const hasBindings = container.querySelector('.vega-bind') !== null;
+            
+            // Dynamically adjust the padding of the parent container based on the presence of bindings
+            parentContainer.style.paddingBottom = hasBindings ? '25px' : '';
+          }
+        });
 
         setCurrentView(view);
 

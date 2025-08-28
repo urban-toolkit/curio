@@ -45,6 +45,8 @@ def validate_output(data, boxType):
     if boxType in ['DATA_LOADING', 'DATA_CLEANING', 'DATA_TRANSFORMATION']:
         check_valid_output(data, boxType)
     elif boxType == 'DATA_EXPORT':
+        if data.get('dataType') in ['', None]:
+            return
         raise Exception(f'{boxType} does not support output')
 
 
