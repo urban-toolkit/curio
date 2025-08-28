@@ -18,6 +18,8 @@ import { useFlowContext } from "../providers/FlowProvider";
 import { OutputIcon } from "./edges/OutputIcon";
 import { InputIcon } from "./edges/InputIcon";
 
+import { fetchData } from "../services/api";
+
 function ImageBox({ data, isConnectable }) {
     const [output, setOutput] = useState<{ code: string; content: string }>({
         code: "",
@@ -58,151 +60,150 @@ function ImageBox({ data, isConnectable }) {
     }, [data.templateId]);
 
     useEffect(() => {
-        if (data.input != "" && dataInputBypass.current) {
-            const formatDate = (date: Date) => {
-                // Get individual date components
-                const month = date.toLocaleString("default", {
-                    month: "short",
-                });
-                const day = date.getDate();
-                const year = date.getFullYear();
-                const hours = date.getHours();
-                const minutes = date.getMinutes();
-                const seconds = date.getSeconds();
+        const loadImageData = async () => {
+            if (data.input && dataInputBypass.current) {
+                const formatDate = (date: Date) => {
+                    // Get individual date components
+                    const month = date.toLocaleString("default", {
+                        month: "short",
+                    });
+                    const day = date.getDate();
+                    const year = date.getFullYear();
+                    const hours = date.getHours();
+                    const minutes = date.getMinutes();
+                    const seconds = date.getSeconds();
 
-                // Format the string
-                const formattedDate = `${month} ${day} ${year} ${hours}:${minutes}:${seconds}`;
+                    // Format the string
+                    const formattedDate = `${month} ${day} ${year} ${hours}:${minutes}:${seconds}`;
 
-                return formattedDate;
-            };
-
-            let startTime = formatDate(new Date());
-
-            const getType = (inputs: any[]) => {
-                let typesInput: string[] = [];
-
-                for (const input of inputs) {
-                    let parsedInput = input;
-
-                    if (typeof input == "string")
-                        parsedInput = JSON.parse(parsedInput);
-
-                    if (parsedInput.dataType == "outputs") {
-                        typesInput = typesInput.concat(
-                            getType(parsedInput.data)
-                        );
-                    } else {
-                        typesInput.push(parsedInput.dataType);
-                    }
-                }
-
-                return typesInput;
-            };
-
-            const mapTypes = (typesList: string[]) => {
-                let mapTypes: any = {
-                    "DATAFRAME": 0,
-                    "GEODATAFRAME": 0,
-                    "VALUE": 0,
-                    "LIST": 0,
-                    "JSON": 0,
+                    return formattedDate;
                 };
 
-                for (const typeValue of typesList) {
-                    if (
-                        typeValue == "int" ||
-                        typeValue == "str" ||
-                        typeValue == "float" ||
-                        typeValue == "bool"
-                    ) {
-                        mapTypes["VALUE"] = 1;
-                    } else if (typeValue == "list") {
-                        mapTypes["LIST"] = 1;
-                    } else if (typeValue == "dict") {
-                        mapTypes["JSON"] = 1;
-                    } else if (typeValue == "dataframe") {
-                        mapTypes["DATAFRAME"] = 1;
-                    } else if (typeValue == "geodataframe") {
-                        mapTypes["GEODATAFRAME"] = 1;
+                const startTime = formatDate(new Date());
+                const typesInput = [data.input.dataType];
+                const typesOutput = [...typesInput];
+
+                // const getType = (inputs: any[]) => {
+                //     let typesInput: string[] = [];
+
+                //     for (const input of inputs) {
+                //         let parsedInput = input;
+
+                //         if (typeof input == "string")
+                //             parsedInput = JSON.parse(parsedInput);
+
+                //         if (parsedInput.dataType == "outputs") {
+                //             typesInput = typesInput.concat(
+                //                 getType(parsedInput.data)
+                //             );
+                //         } else {
+                //             typesInput.push(parsedInput.dataType);
+                //         }
+                //     }
+
+                //     return typesInput;
+                // };
+
+                const mapTypes = (typesList: string[]) => {
+                    let mapTypes: any = {
+                        "DATAFRAME": 0,
+                        "GEODATAFRAME": 0,
+                        "VALUE": 0,
+                        "LIST": 0,
+                        "JSON": 0,
+                    };
+
+                    for (const typeValue of typesList) {
+                        if (
+                            typeValue == "int" ||
+                            typeValue == "str" ||
+                            typeValue == "float" ||
+                            typeValue == "bool"
+                        ) {
+                            mapTypes["VALUE"] = 1;
+                        } else if (typeValue == "list") {
+                            mapTypes["LIST"] = 1;
+                        } else if (typeValue == "dict") {
+                            mapTypes["JSON"] = 1;
+                        } else if (typeValue == "dataframe") {
+                            mapTypes["DATAFRAME"] = 1;
+                        } else if (typeValue == "geodataframe") {
+                            mapTypes["GEODATAFRAME"] = 1;
+                        }
                     }
-                }
 
-                return mapTypes;
-            };
+                    return mapTypes;
+                };
 
-            let typesInput: string[] = [];
-
-            if (data.input != "") {
-                typesInput = getType([data.input]);
-            }
-
-            let typesOuput: string[] = [...typesInput];
-
-            boxExecProv(
-                startTime,
-                startTime,
-                workflowNameRef.current,
-                BoxType.VIS_IMAGE + "-" + data.nodeId,
-                mapTypes(typesInput),
-                mapTypes(typesOuput),
-                ""
-            );
-
-            let parsedInput = JSON.parse(data.input);
-
-            if (parsedInput.dataType != "dataframe") {
-                alert("Image box can only receive dataframe");
-                dataInputBypass.current = true;
-                return;
-            }
-
-            parsedInput.data = JSON.parse(parsedInput.data);
-
-            if (
-                parsedInput.data.image_id == undefined ||
-                parsedInput.data.image_content == undefined
-            ) {
-                alert(
-                    "Image needs to receive a dataframe with image_id and image_content columns."
+                boxExecProv(
+                    startTime,
+                    startTime,
+                    workflowNameRef.current,
+                    BoxType.VIS_IMAGE + "-" + data.nodeId,
+                    mapTypes(typesInput),
+                    mapTypes(typesOutput),
+                    ""
                 );
-                dataInputBypass.current = true;
-                return;
-            }
 
-            let newImages: string[] = [];
-            let interacted: string[] = [];
+                let parsedInput = data.input;
 
-            for (const key of Object.keys(parsedInput.data.image_content)) {
-                let iterator: string[] = [];
-
-                if (Array.isArray(parsedInput.data.image_content[key])) {
-                    iterator = [...parsedInput.data.image_content[key]];
-                } else {
-                    iterator = [parsedInput.data.image_content[key]];
+                if (parsedInput.path) {
+                    try {
+                        parsedInput = await fetchData(parsedInput.path);
+                    } catch (err) {
+                        console.error("Failed to fetch image data:", err);
+                        alert("Error fetching image data. Please try again.");
+                        return;
+                    }
                 }
 
-                for (const base64ImageContent of iterator) {
-                    if (parsedInput.data.interacted != undefined) {
-                        interacted.push(parsedInput.data.interacted[key]);
+                if (
+                    parsedInput.dataType !== "dataframe" ||
+                    !parsedInput.data?.image_id ||
+                    !parsedInput.data?.image_content
+                ) {
+                    alert("Image needs a DataFrame with 'image_id' and 'image_content' columns.");
+                    dataInputBypass.current = true;
+                    return;
+                }
+
+                const newImages: string[] = [];
+                const interacted: string[] = [];
+
+                for (const key of Object.keys(parsedInput.data.image_content)) {
+                    let iterator: string[] = [];
+
+                    if (Array.isArray(parsedInput.data.image_content[key])) {
+                        iterator = [...parsedInput.data.image_content[key]];
                     } else {
-                        interacted.push("0");
+                        iterator = [parsedInput.data.image_content[key]];
                     }
 
-                    newImages.push(
-                        "data:image/png;base64," + base64ImageContent
-                    );
+                    for (const base64ImageContent of iterator) {
+                        if (parsedInput.data.interacted != undefined) {
+                            interacted.push(parsedInput.data.interacted[key]);
+                        } else {
+                            interacted.push("0");
+                        }
+
+                        newImages.push(
+                            "data:image/png;base64," + base64ImageContent
+                        );
+                    }
                 }
+
+                setImages(newImages);
+                setInteracted(interacted);
+
+                // replicating input to the output
+                setOutput({ code: "success", content: data.input });
+                data.outputCallback(data.nodeId, data.input);
             }
 
-            setImages(newImages);
-            setInteracted(interacted);
+            dataInputBypass.current = true;
+        };
 
-            // replicating input to the output
-            setOutput({ code: "success", content: data.input });
-            data.outputCallback(data.nodeId, data.input);
-        }
-
-        dataInputBypass.current = true;
+        loadImageData();
     }, [data.input]);
 
     const setTemplateConfig = (template: Template) => {
