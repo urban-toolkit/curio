@@ -9,6 +9,8 @@ import clsx from 'clsx';
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faDatabase, faFileImport, faFileExport } from "@fortawesome/free-solid-svg-icons";
 import logo from 'assets/curio.png';
+import introJs from 'intro.js';//new import
+import "intro.js/introjs.css";//this too
 
 export default function UpMenu({
     setDashBoardMode,
@@ -25,6 +27,7 @@ export default function UpMenu({
 }) {
     const [isEditing, setIsEditing] = useState(false);
     const [trillProvenanceOpen, setTrillProvenanceOpen] = useState(false);
+    const [tutorialOpen, setTutorialOpen] = useState(false);
     const [datasetsOpen, setDatasetsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -140,6 +143,73 @@ export default function UpMenu({
         };
     }, [fileMenuOpen]);
 
+    //New code here James
+
+     useEffect(() => {
+        const intro = introJs();
+
+        intro.setOptions({
+            steps: [
+        {
+            intro: "Welcome to Curio! An IDE used for urban analytics. Let's take a tour!"
+        },
+        {
+          element: '#step-one',  
+          intro: 'This is a Data Loading node. You can code an array for basic sets of data, or load in a file. Then add your code to add it to a dataframe to return.'
+        },
+        {
+          element: '#step-two',  
+          intro: 'Please read this! This is very important.'
+        },
+        {
+          element: '#step-three',  
+          intro: 'Please read this! This is very important.'
+        },
+        {
+          element: '#step-four',  
+          intro: 'The Data Transformation Node can select different parts of your data to narrow down the focus of your analysis.'
+        },
+        {
+          element: '#step-five',  
+          intro: 'This is a Data Cleaning Node. You can polish your data by removing outliers, fill in missing values, etc. It can also create identifiers for your data.'
+        },
+        {
+          element: '#step-six',  
+          intro: 'Please read this! This is very important.'
+        },
+        {
+          element: '#step-seven',  
+          intro: 'Please read this! This is very important.'
+        },
+        {
+          element: '#step-eight',  
+          intro: 'A 2D Plot Node - also known as a Vega Lite Node - can be used to graph your data on various 2D graphs such as heatmats and bar charts.'
+        },
+        {
+          element: '#step-nine',  
+          intro: 'Please read this! This is very important.'
+        },
+        {
+          element: '#step-ten',  
+          intro: 'This is a merge flow box. Use it to merge multiple pieces of data into one. It can take up to 5 inputs. Red handles indicate that there is not an edge for the handle. Green indicates that there is an edge. One handle may not have multiple edges.'
+        },
+        {
+          element: '#step-final',  
+          intro: 'Drag and drop nodes into your environment. Now get started!'
+        }
+        ],
+        
+        showStepNumbers: false,
+        showProgress: false,
+        exitOnOverlayClick: false,
+        tooltipClass: "custom-intro-tooltip" 
+    });
+
+        intro.start();
+    }, []);
+
+    //new code end
+
     return (
         <>
             <div className={clsx(styles.menuBar, "nowheel", "nodrag")}>
@@ -179,6 +249,8 @@ export default function UpMenu({
                         Dashboard Mode
                 </button>
                 <button className={styles.button} onClick={openTrillProvenanceModal}>Provenance</button>
+                
+                
             </div>
             {/* Right-side top menu */}
             <div className={styles.rightSide}>

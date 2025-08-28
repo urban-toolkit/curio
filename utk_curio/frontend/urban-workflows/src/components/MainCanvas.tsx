@@ -36,7 +36,6 @@ import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { buttonStyle } from "./styles";
 import { ToolsMenu, UpMenu } from "components/menus";
 import UniDirectionalEdge from "./edges/UniDirectionalEdge";
-
 import "./MainCanvas.css";
 
 export function MainCanvas() {
@@ -93,7 +92,6 @@ export function MainCanvas() {
 
     const [fileMenuOpen, setFileMenuOpen] = useState(false);
     const closeFileMenu = () => setFileMenuOpen(false);
-
     return (
         <div
             style={{ width: "100vw", height: "100vh" }}
