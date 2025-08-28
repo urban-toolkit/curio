@@ -4,7 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
     "start": "webpack serve --open --mode development",
     "start:e2e": "export PORT=3000 && webpack serve --mode development --port $PORT",
     "build": "webpack --mode development",
@@ -26,12 +28,13 @@
     "@mui/material": "^5.15.10",
     "@react-oauth/google": "^0.12.1",
     "bootstrap": "^5.3.2",
+    "intro.js": "^8.3.1",
     "js-cookie": "^3.0.5",
     "jsoneditor": "^10.0.0",
     "react": "^18.2.0",
     "react-bootstrap": "^2.10.1",
     "react-dom": "^18.2.0",
-    "reactflow": "^11.10.3",
+    "reactflow": "^11.11.4",
     "reagraph": "^4.15.24",
     "utk": "file:../utk-workflow/src/utk-ts/dist",
     "uuid": "^9.0.1",
@@ -43,6 +46,10 @@
     "@babel/preset-react": "^7.23.3",
     "@babel/preset-typescript": "^7.23.3",
     "@eslint/js": "^9.19.0",
+    "@testing-library/jest-dom": "^5.16.4",
+    "@testing-library/react": "^13.2.0",
+    "@testing-library/user-event": "^13.5.0",
+    "@types/jest": "^27.5.1",
     "@types/js-cookie": "^3.0.6",
     "@types/uuid": "^9.0.8",
     "babel-loader": "^9.1.3",
@@ -53,6 +60,9 @@
     "eslint-plugin-react": "^7.37.4",
     "globals": "^15.14.0",
     "html-webpack-plugin": "^5.6.0",
+    "identity-obj-proxy": "^3.0.0",
+    "jest": "^27.4.3",
+    "jest-environment-jsdom": "^27.4.3",
     "prettier": "3.4.2",
     "source-map-loader": "^5.0.0",
     "style-loader": "^3.3.4",
@@ -61,5 +71,28 @@
     "webpack": "^5.90.0",
     "webpack-cli": "^5.1.4",
     "webpack-dev-server": "^4.15.1"
+  },
+  "jest": {
+    "testEnvironment": "jsdom",
+    "setupFilesAfterEnv": ["<rootDir>/src/setupTests.ts"],
+    "moduleNameMapper": {
+      "\\.(css|less|scss|sass)$": "identity-obj-proxy",
+      "\\.(jpg|jpeg|png|gif|svg)$": "identity-obj-proxy",
+      "^components/(.*)$": "<rootDir>/src/components/$1",
+      "^assets/(.*)$": "<rootDir>/assets/$1"
+    },
+    "transform": {
+      "^.+\\.(ts|tsx)$": "babel-jest"
+    },
+    "testMatch": [
+      "<rootDir>/src/tests/**/*.{ts,tsx}",
+      "<rootDir>/src/**/*.{test,spec}.{ts,tsx}"
+    ],
+    "moduleFileExtensions": ["ts", "tsx", "js", "jsx", "json"],
+    "collectCoverageFrom": [
+      "src/**/*.{ts,tsx}",
+      "!src/**/*.d.ts",
+      "!src/index.tsx"
+    ]
   }
 }

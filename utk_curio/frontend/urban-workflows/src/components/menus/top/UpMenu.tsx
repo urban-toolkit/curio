@@ -9,6 +9,8 @@ import clsx from 'clsx';
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faDatabase, faFileImport, faFileExport } from "@fortawesome/free-solid-svg-icons";
 import logo from 'assets/curio.png';
+import introJs from 'intro.js';//new import
+import "intro.js/introjs.css";//this too
 
 export default function UpMenu({
     setDashBoardMode,
@@ -25,6 +27,7 @@ export default function UpMenu({
 }) {
     const [isEditing, setIsEditing] = useState(false);
     const [trillProvenanceOpen, setTrillProvenanceOpen] = useState(false);
+    const [tutorialOpen, setTutorialOpen] = useState(false);
     const [datasetsOpen, setDatasetsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -62,6 +65,17 @@ export default function UpMenu({
             setIsEditing(false);
         }
     };
+    //James new defintions made here
+
+    const closeTutorial = () => {
+        setTutorialOpen(false);
+    }
+
+    const openTutorial = () => {
+        setTutorialOpen(true);
+    }
+
+    //James new defintions end
 
     const exportTrill = (e:any) => {
         let trill_spec = TrillGenerator.generateTrill(nodes, edges, workflowNameRef.current);
@@ -140,6 +154,75 @@ export default function UpMenu({
         };
     }, [fileMenuOpen]);
 
+    //New code here James
+
+     useEffect(() => {
+        if(tutorialOpen){
+            const intro = introJs();
+
+        intro.setOptions({
+            steps: [
+        {
+            intro: "Welcome to Curio! An IDE used for urban analytics. Let's take a tour!"
+        },
+        {
+          element: '#step-one',  
+          intro: 'This is a Data Loading node. You can code an array for basic sets of data, or load in a file. Then add your code to add it to a dataframe to return.'
+        },
+        {
+          element: '#step-two',  
+          intro: 'Ignore data export. It will soon be retired.'
+        },
+        {
+          element: '#step-three',  
+          intro: 'This is a data analysis node: It performs calculations on the loaded data in order to prepare it for visualization.'
+        },
+        {
+          element: '#step-four',  
+          intro: 'The Data Transformation Node can select different parts of your data to narrow down the focus of your analysis.'
+        },
+        {
+          element: '#step-five',  
+          intro: 'This is a Data Cleaning Node. You can polish your data by removing outliers, fill in missing values, etc. It can also create identifiers for your data.'
+        },
+        {
+          element: '#step-six',  
+          intro: 'This is a data pool node: It is used for displaying data on a grid.'
+        },
+        {
+          element: '#step-seven',  
+          intro: 'This is a 3D Visualization node: It is used to display data in a 3D form. The "grammar" section is code for json files.'
+        },
+        {
+          element: '#step-eight',  
+          intro: 'This is a vega lite node: It is used to display data in any 2D form, like various graphs. The "grammar" section is code for json files.'
+        },
+        {
+          element: '#step-nine',  
+          intro: 'The image node shows a gallary of images.'
+        },
+        {
+          element: '#step-ten',  
+          intro: 'This is a merge flow box. Use it to merge multiple pieces of data into one. It can take up to 5 inputs. Red handles indicate that there is not an edge for the handle. Green indicates that there is an edge. One handle may not have multiple edges.'
+        },
+        {
+          element: '#step-final',  
+          intro: 'Drag and drop nodes into your environment. Now get started!'
+        }
+        ],
+        
+        showStepNumbers: false,
+        showProgress: false,
+        exitOnOverlayClick: false,
+        tooltipClass: "custom-intro-tooltip" ,
+    });
+        intro.start();
+        setTutorialOpen(false);
+        }
+    }, [tutorialOpen]);
+
+    //new code end
+
     return (
         <>
             <div className={clsx(styles.menuBar, "nowheel", "nodrag")}>
@@ -179,6 +262,8 @@ export default function UpMenu({
                         Dashboard Mode
                 </button>
                 <button className={styles.button} onClick={openTrillProvenanceModal}>Provenance</button>
+                <button className={styles.button} onClick={openTutorial}>Tutorial</button>
+                
             </div>
             {/* Right-side top menu */}
             <div className={styles.rightSide}>

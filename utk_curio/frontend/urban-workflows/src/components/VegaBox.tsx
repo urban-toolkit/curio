@@ -481,6 +481,23 @@ function VegaBox({ data, isConnectable }) {
 
       let typesOuput: string[] = [...typesInput];
 
+      let dfStringIN = ""
+      let dfStringOUT = ""
+
+      if (data.input !== "") {
+        let parsedIncome = data.input;
+    
+        let df = parsedIncome["data"];
+        dfStringIN = JSON.stringify(df); 
+      }
+
+      if (data.output) {
+        let parsedIncome = data.output;
+      
+        let df = parsedIncome["data"];
+        dfStringOUT = JSON.stringify(df); 
+      }
+
       boxExecProv(
         startTime,
         endTime,
@@ -488,10 +505,70 @@ function VegaBox({ data, isConnectable }) {
         BoxType.VIS_VEGA + "-" + data.nodeId,
         mapTypes(typesInput),
         mapTypes(typesOuput),
-        code
+        code,
+        dfStringIN,
+        dfStringOUT
       );
+
+        fetch(`${process.env.BACKEND_URL}/insert_visualization`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          data: {
+            activity_name: BoxType.VIS_VEGA + "-" + data.nodeId,
+          },
+        }),
+      });
+
+
     }
   };
+
+   // Maping interaction
+  useEffect(()=>{
+    if (Object.keys(interactionsRef.current).length > 0) {
+
+      if(interactionsRef.current.highlight.type != 'UNDETERMINED'){
+
+        const formatDate = (date: Date) => {
+          // Get individual date components
+          const month = date.toLocaleString("default", { month: "short" });
+          const day = date.getDate();
+          const year = date.getFullYear();
+          const hours = date.getHours();
+          const minutes = date.getMinutes();
+          const seconds = date.getSeconds();
+  
+          // Format the string
+          const formattedDate = `${month} ${day} ${year} ${hours}:${minutes}:${seconds}`;
+  
+          return formattedDate;
+        };
+
+
+        let int_time = formatDate(new Date());
+       
+        fetch(`${process.env.BACKEND_URL}/insert_interaction`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            data: {
+              activity_name: BoxType.VIS_VEGA + "-" + data.nodeId,
+              int_time: int_time
+            },
+          }),
+        });
+        
+      }
+      
+    }
+
+  }, [interactions])
+
 
   useEffect(() => {
     data.interactionsCallback(interactions, data.nodeId);
