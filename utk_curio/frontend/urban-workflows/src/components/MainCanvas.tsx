@@ -235,6 +235,8 @@ export function MainCanvas() {
                 <Background />
                 <Controls />
             </ReactFlow>
+            <input hidden type="file" name="file" id="file" />
+
         </div>
     );
 }

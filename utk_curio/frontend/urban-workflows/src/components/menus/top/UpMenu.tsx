@@ -65,6 +65,17 @@ export default function UpMenu({
             setIsEditing(false);
         }
     };
+    //James new defintions made here
+
+    const closeTutorial = () => {
+        setTutorialOpen(false);
+    }
+
+    const openTutorial = () => {
+        setTutorialOpen(true);
+    }
+
+    //James new defintions end
 
     const exportTrill = (e:any) => {
         let trill_spec = TrillGenerator.generateTrill(nodes, edges, workflowNameRef.current);
@@ -146,7 +157,8 @@ export default function UpMenu({
     //New code here James
 
      useEffect(() => {
-        const intro = introJs();
+        if(tutorialOpen){
+            const intro = introJs();
 
         intro.setOptions({
             steps: [
@@ -159,11 +171,11 @@ export default function UpMenu({
         },
         {
           element: '#step-two',  
-          intro: 'Please read this! This is very important.'
+          intro: 'Ignore data export. It will soon be retired.'
         },
         {
           element: '#step-three',  
-          intro: 'Please read this! This is very important.'
+          intro: 'This is a data analysis node: It performs calculations on the loaded data in order to prepare it for visualization.'
         },
         {
           element: '#step-four',  
@@ -175,19 +187,19 @@ export default function UpMenu({
         },
         {
           element: '#step-six',  
-          intro: 'Please read this! This is very important.'
+          intro: 'This is a data pool node: It is used for displaying data on a grid.'
         },
         {
           element: '#step-seven',  
-          intro: 'Please read this! This is very important.'
+          intro: 'This is a 3D Visualization node: It is used to display data in a 3D form. The "grammar" section is code for json files.'
         },
         {
           element: '#step-eight',  
-          intro: 'A 2D Plot Node - also known as a Vega Lite Node - can be used to graph your data on various 2D graphs such as heatmats and bar charts.'
+          intro: 'This is a vega lite node: It is used to display data in any 2D form, like various graphs. The "grammar" section is code for json files.'
         },
         {
           element: '#step-nine',  
-          intro: 'Please read this! This is very important.'
+          intro: 'The image node shows a gallary of images.'
         },
         {
           element: '#step-ten',  
@@ -202,11 +214,12 @@ export default function UpMenu({
         showStepNumbers: false,
         showProgress: false,
         exitOnOverlayClick: false,
-        tooltipClass: "custom-intro-tooltip" 
+        tooltipClass: "custom-intro-tooltip" ,
     });
-
         intro.start();
-    }, []);
+        setTutorialOpen(false);
+        }
+    }, [tutorialOpen]);
 
     //new code end
 
@@ -249,7 +262,7 @@ export default function UpMenu({
                         Dashboard Mode
                 </button>
                 <button className={styles.button} onClick={openTrillProvenanceModal}>Provenance</button>
-                
+                <button className={styles.button} onClick={openTutorial}>Tutorial</button>
                 
             </div>
             {/* Right-side top menu */}
