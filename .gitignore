@@ -27,3 +27,5 @@ templates/
 
 logs/
 instance/
+node_modules/
+urbantk_cache/
