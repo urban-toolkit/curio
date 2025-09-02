@@ -7,7 +7,7 @@ import { BoxContainer, buttonStyle } from "./styles";
 import CSS from "csstype";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faGear, faCircleInfo } from "@fortawesome/free-solid-svg-icons";
-import "./Box.css"
+import "./Box.css";
 
 // Bootstrap
 import "bootstrap/dist/css/bootstrap.min.css";
@@ -19,10 +19,14 @@ import { OutputIcon } from "./edges/OutputIcon";
 import { InputIcon } from "./edges/InputIcon";
 
 function DataCleaningBox({ data, isConnectable }) {
-  const [output, setOutput] = useState<{ code: string; content: string, outputType: string }>({
+  const [output, setOutput] = useState<{
+    code: string;
+    content: string;
+    outputType: string;
+  }>({
     code: "",
     content: "",
-    outputType: ""
+    outputType: "",
   }); // stores the output produced by the last execution of this box
   const [code, setCode] = useState<string>("");
   const [sendCode, setSendCode] = useState();
@@ -146,17 +150,19 @@ function DataCleaningBox({ data, isConnectable }) {
           data={data}
           output={output}
           boxType={BoxType.DATA_CLEANING}
-          defaultValue={templateData.code ? templateData.code : data.defaultCode}
+          defaultValue={
+            templateData.code ? templateData.code : data.defaultCode
+          }
           // readOnly={
           //   (templateData.custom != undefined &&
           //     templateData.custom == false) ||
           //   !(user != null && user.type == "programmer")
           // }
           readOnly={
-            (templateData.custom != undefined &&
-              templateData.custom == false)
+            templateData.custom != undefined && templateData.custom == false
           }
           floatCode={setCode}
+          disableWidgets={true} // Freeze widget buttons instead of hiding them
         />
         <OutputIcon type="1" />
       </BoxContainer>
