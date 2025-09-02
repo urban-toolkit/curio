@@ -5,7 +5,7 @@ import BoxEditor from "./editing/BoxEditor";
 // Bootstrap
 import "bootstrap/dist/css/bootstrap.min.css";
 import { BoxType } from "../constants";
-import "./Box.css"
+import "./Box.css";
 
 import { Template, useTemplateContext } from "../providers/TemplateProvider";
 import { BoxContainer, buttonStyle } from "./styles";
@@ -19,10 +19,14 @@ import { useUserContext } from "../providers/UserProvider";
 import { OutputIcon } from "./edges/OutputIcon";
 
 function DataLoadingBox({ data, isConnectable }) {
-  const [output, setOutput] = useState<{ code: string; content: string, outputType: string }>({
+  const [output, setOutput] = useState<{
+    code: string;
+    content: string;
+    outputType: string;
+  }>({
     code: "",
     content: "",
-    outputType: ""
+    outputType: "",
   }); // stores the output produced by the last execution of this box
   const [code, setCode] = useState<string>("");
   const [sendCode, setSendCode] = useState();
@@ -102,13 +106,13 @@ function DataLoadingBox({ data, isConnectable }) {
         templateData={templateData}
         code={code}
         user={user}
-        handleType={"out"}
         sendCodeToWidgets={sendCode}
         setOutputCallback={setOutput}
         promptModal={promptModal}
         updateTemplate={updateTemplate}
         setTemplateConfig={setTemplateConfig}
         promptDescription={promptDescription}
+        disablePlay={true}
       >
         <DescriptionModal
           nodeId={data.nodeId}
@@ -131,23 +135,17 @@ function DataLoadingBox({ data, isConnectable }) {
         />
         <BoxEditor
           setSendCodeCallback={setSendCodeCallback}
-          code={true}
+          code={false}
           grammar={false}
           widgets={true}
           setOutputCallback={setOutput}
           data={data}
           output={output}
           boxType={BoxType.DATA_LOADING}
-          defaultValue={templateData.code ? templateData.code : data.defaultCode}
-          // readOnly={
-          //   (templateData.custom != undefined &&
-          //     templateData.custom == false) ||
-          //   !(user != null && user.type == "programmer")
-          // }
-          readOnly={
-            (templateData.custom != undefined &&
-              templateData.custom == false)
+          defaultValue={
+            templateData.code ? templateData.code : data.defaultCode
           }
+          readOnly={true}
           floatCode={setCode}
         />
 
