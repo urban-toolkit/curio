@@ -264,7 +264,7 @@ function BoxEditor({
  
                                 <Tab.Pane
                                     eventKey="output"
-                                    style={{ height: "100%" }}
+                                    style={{ height: "100%", overflowY: "auto" }}
                                 >
                                     {outputId != undefined ? (
                                         <div
