@@ -448,14 +448,6 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                                 if (targetNode.type === BoxType.MERGE_FLOW) {
                                     let inputList = Array.isArray(node.data.input) ? [...node.data.input] : [undefined, undefined];
                                     let sourceList = Array.isArray(node.data.source) ? [...node.data.source] : [undefined, undefined];
-<<<<<<< HEAD
-                                    
-                                    while (inputList.length < 2) inputList.push(undefined);
-                                    while (sourceList.length < 2) sourceList.push(undefined);
-                                    
-                                    const handleIndex = connection.targetHandle === "in_1" ? 0 : connection.targetHandle === "in_2" ? 1 : -1;
-                                    
-=======
 
                                     while (inputList.length < 6) inputList.push(undefined);
                                     while (sourceList.length < 6) sourceList.push(undefined);
@@ -465,7 +457,6 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
 
 
->>>>>>> d7a8dc1 (Changed flow provider to accept up to 5 merged inputs from the merge box)
                                     if (handleIndex >= 0) {
                                         // Clear the specific position
                                         while (inputList.length <= handleIndex) inputList.push(undefined);
@@ -621,14 +612,9 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                             .map((edge: Edge) => edge.targetHandle)
                     );
 
-<<<<<<< HEAD
-                    if (usedHandles.size >= 5) {
-                        alert("Connection Limit Reached!\n\nMerge nodes can only accept up to 5 input connections.");
-=======
 
                     if (usedHandles.size > 7) {
                         alert("Connection Limit Reached!\n\nMerge nodes can only accept up to 7 input connections.");
->>>>>>> d7a8dc1 (Changed flow provider to accept up to 5 merged inputs from the merge box)
                         allowConnection = false;
                     } else if (usedHandles.has(connection.targetHandle)) {
                         alert("This input already has a connection.\n\nEach input handle can only accept one connection.");
@@ -735,17 +721,10 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                     if (node.type == BoxType.MERGE_FLOW) {
                         let inputList = Array.isArray(node.data.input) ? [...node.data.input] : [undefined, undefined];
                         let sourceList = Array.isArray(node.data.source) ? [...node.data.source] : [undefined, undefined];
-<<<<<<< HEAD
-                        
-                        while (inputList.length < 2) inputList.push(undefined);
-                        while (sourceList.length < 2) sourceList.push(undefined);
-                        
-=======
 
                         while (inputList.length < 6) inputList.push(undefined);
                         while (sourceList.length < 6) sourceList.push(undefined);
 
->>>>>>> d7a8dc1 (Changed flow provider to accept up to 5 merged inputs from the merge box)
                         for (let i = 0; i < sourceList.length; i++) {
                             if (sourceList[i] === newOutput.nodeId) {
                                 inputList[i] = newOutput.output;
