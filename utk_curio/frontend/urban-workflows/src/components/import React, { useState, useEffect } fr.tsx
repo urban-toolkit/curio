@@ -63,34 +63,30 @@ export default function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps)
   useEffect(() => {
     const outArr = inputValues.filter(v => v !== undefined);
 
-    // Debugging: Log the output array and node ID
-    console.log("MergeFlowBox Output:", { nodeId: data.nodeId, outArr });
+    // Debugging: Log the output array, node ID, and input values
+    console.log("MergeFlowBox Debug:", {
+      nodeId: data.nodeId,
+      inputValues,
+      filteredOutput: outArr,
+    });
 
-    if (outArr.length > 0) {
-      data.outputCallback(data.nodeId, { data: outArr, dataType: "outputs" });
-    }
+    // Emit output even if the array is empty
+    data.outputCallback(data.nodeId, {
+      data: outArr.length > 0 ? outArr : [],
+      dataType: "outputs",
+    });
   }, [inputValues, data.nodeId, data.outputCallback]);
 
   // Sync external inputs
   useEffect(() => {
-  if (Array.isArray(data.input)) {
-    console.log("[MergeFlowBox] Incoming data.input:", data.input);
-    
-    setInputValues(prev => {
-      const cp = Array.isArray(prev) ? [...prev] : Array(5).fill(undefined);
-
-      data.input!.forEach((val, i) => {
-        console.log(`  → assigning cp[${i}] =`, val);
-        if (i < cp.length) cp[i] = val;
+    if (Array.isArray(data.input)) {
+      setInputValues(prev => {
+        const cp = Array.isArray(prev) ? [...prev] : Array(5).fill(undefined);
+        data.input!.forEach((val, i) => { if (i < cp.length) cp[i] = val; });
+        return cp;
       });
-
-      console.log("[MergeFlowBox] Updated inputValues copy:", cp);
-      return cp;
-    });
-  }
-}, [data.input]);
-
-
+    }
+  }, [data.input]);
 
   const promptDescription = () => setDescriptionModal(true);
   const closeDescription = () => setDescriptionModal(false);
@@ -162,4 +158,19 @@ export default function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps)
       </BoxContainer>
     </>
   );
+}
+
+async function processData(fileName: string) {
+  try {
+    if (!fileName) {
+      throw new Error("Missing fileName for processing data.");
+    }
+
+    const data = await fetchData(fileName);
+    console.log("[DataPoolBox] Successfully fetched data:", data);
+    // ...existing code...
+  } catch (error) {
+    console.error("[DataPoolBox] Error processing data asynchronously:", error);
+    // Optionally, display a user-friendly error message in the UI
+  }
 }

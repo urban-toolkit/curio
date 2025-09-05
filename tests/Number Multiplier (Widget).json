@@ -1,0 +1,117 @@
+ {
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "bec54c59-0eab-434c-bcdd-0af2b5483110",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": 191.1469114284135,
+        "y": 234.402739109306,
+        "content": "import pandas as pd\r\n\r\nd = {\r\n    'a': [\"A\",\"B\",\"C\",\"D\",\"E\",\"F\",\"G\",\"H\",\"I\"],\r\n    'b': [28,55,43,91,81,53,19,87,52]\r\n}\r\ndf = pd.DataFrame(data=d)\r\ndf.metadata = {'name': 'Original Numbers'}\r\nreturn df\r\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "f325441e-55be-4415-aa1b-b2055f590de2",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": 195.43583062245654,
+        "y": 550.3276961461662,
+        "content": "# Multiplier widget\r\nnumber_multiplier = [!! Number Multiplier$INPUT_VALUE$10 !!]\r\nreturn {'multiplier': number_multiplier}\r\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "57c6f62a-25cd-4cd9-adb1-1910b892bd9d",
+        "type": "MERGE_FLOW",
+        "x": 904.1638875870271,
+        "y": 397.8885956112505,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "08c869fd-041f-425d-aabb-c1e7582f9e58",
+        "type": "DATA_POOL",
+        "x": 2354.7489667632362,
+        "y": 106.26740201911902,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "c8c48cdb-323d-4f80-ace9-7ac358277f90",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": 1225.94899488328,
+        "y": 504.9918929109867,
+        "content": "import pandas as pd\r\n\r\ndf = None\r\nmult = None\r\n\r\n# Extract dataframe + multiplier from merged input\r\nif isinstance(arg, (list, tuple)):\r\n    for item in arg:\r\n        if isinstance(item, pd.DataFrame):\r\n            df = item\r\n        elif isinstance(item, dict) and 'multiplier' in item:\r\n            mult = item['multiplier']\r\n\r\n# Defaults\r\nif df is None:\r\n    df = pd.DataFrame({'a': [], 'b': []})\r\nif mult is None:\r\n    mult = 1\r\n\r\ndf = df.copy()\r\nif 'b' in df.columns:\r\n    df['b'] = pd.to_numeric(df['b'], errors='coerce') * float(mult)\r\n\r\ndf.metadata = {'name': 'Multiplied Numbers'}\r\nreturn df\r\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "c7bb20ab-e568-4d9b-a1ad-d7f1ab81e318",
+        "type": "MERGE_FLOW",
+        "x": 1986.3714374646984,
+        "y": 353.6091209635538,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-bec54c59-0eab-434c-bcdd-0af2b5483110out-57c6f62a-25cd-4cd9-adb1-1910b892bd9din_0",
+        "source": "bec54c59-0eab-434c-bcdd-0af2b5483110",
+        "target": "57c6f62a-25cd-4cd9-adb1-1910b892bd9d"
+      },
+      {
+        "id": "reactflow__edge-f325441e-55be-4415-aa1b-b2055f590de2out-57c6f62a-25cd-4cd9-adb1-1910b892bd9din_4",
+        "source": "f325441e-55be-4415-aa1b-b2055f590de2",
+        "target": "57c6f62a-25cd-4cd9-adb1-1910b892bd9d"
+      },
+      {
+        "id": "reactflow__edge-57c6f62a-25cd-4cd9-adb1-1910b892bd9dout-c8c48cdb-323d-4f80-ace9-7ac358277f90in",
+        "source": "57c6f62a-25cd-4cd9-adb1-1910b892bd9d",
+        "target": "c8c48cdb-323d-4f80-ace9-7ac358277f90"
+      },
+      {
+        "id": "reactflow__edge-c7bb20ab-e568-4d9b-a1ad-d7f1ab81e318out-08c869fd-041f-425d-aabb-c1e7582f9e58in",
+        "source": "c7bb20ab-e568-4d9b-a1ad-d7f1ab81e318",
+        "target": "08c869fd-041f-425d-aabb-c1e7582f9e58"
+      },
+      {
+        "id": "reactflow__edge-c8c48cdb-323d-4f80-ace9-7ac358277f90out-c7bb20ab-e568-4d9b-a1ad-d7f1ab81e318in_1",
+        "source": "c8c48cdb-323d-4f80-ace9-7ac358277f90",
+        "target": "c7bb20ab-e568-4d9b-a1ad-d7f1ab81e318"
+      },
+      {
+        "id": "reactflow__edge-bec54c59-0eab-434c-bcdd-0af2b5483110out-c7bb20ab-e568-4d9b-a1ad-d7f1ab81e318in_0",
+        "source": "bec54c59-0eab-434c-bcdd-0af2b5483110",
+        "target": "c7bb20ab-e568-4d9b-a1ad-d7f1ab81e318"
+      }
+    ],
+    "name": "Number Multiplier (Widget)",
+    "task": "",
+    "timestamp": 1755198877216,
+    "provenance_id": "Number Multiplier (Widget)"
+  }
+}

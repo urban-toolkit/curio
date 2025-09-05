@@ -17,7 +17,7 @@ For completeness, we also include the template code in each dataflow step.
 ## Step 1: Load energy efficieency data
 
 We begin by loading the energy efficiency dataset into Curio using a Data Loading node.
-
+Make sure to include your full file path to the file as well. pd.read_csv(r'C:\Users\Username\Full Filepath Here\energy_dataset.csv')
 ```python
 import pandas as pd
 

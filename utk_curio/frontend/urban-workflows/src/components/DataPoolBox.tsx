@@ -4,15 +4,11 @@ import { Handle, Position } from "reactflow";
 import CSS from "csstype";
 
 // Bootstrap
-import Button from "react-bootstrap/Button";
 import "bootstrap/dist/css/bootstrap.min.css";
 import { BoxType, ResolutionType, VisInteractionType } from "../constants";
-import Tab from "react-bootstrap/Tab";
-import "./Box.css"
 
+import "./Box.css"
 import { BoxContainer } from "./styles";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faCircleInfo } from "@fortawesome/free-solid-svg-icons";
 
 // mui
 import Table from "@mui/material/Table";
@@ -26,13 +22,14 @@ import { IPropagation, useFlowContext } from "../providers/FlowProvider";
 import DescriptionModal from "./DescriptionModal";
 import TemplateModal from "./TemplateModal";
 import { Template } from "../providers/TemplateProvider";
-import { useUserContext } from "../providers/UserProvider";
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import BoxEditor from "./editing/BoxEditor";
 import { OutputIcon } from "./edges/OutputIcon";
 import { InputIcon } from "./edges/InputIcon";
 
 import { fetchData, fetchPreviewData } from '../services/api';
+import Tabs from "react-bootstrap/Tabs";
+import Tab from "react-bootstrap/Tab";
 
 
 function DataPoolBox({ data, isConnectable }) {
@@ -68,88 +65,56 @@ function DataPoolBox({ data, isConnectable }) {
         color: "#888787",
     };
 
+    const [activeTab, setActiveTab] = useState<string>("0"); // Track the active tab
+    const [tabData, setTabData] = useState<any[]>([]); // Store data for each tab
+
     useEffect(() => {
-        const processDataAsync = async () => {
-            try {
-                let newInput = data.input;
+  const processDataAsync = async () => {
+    try {
+      // Normalize input wrappers: handle merge outputs
+      let wrappers: any[] = [];
+      if (data.input && typeof data.input === 'object') {
+        if (data.input.dataType === 'outputs' && Array.isArray(data.input.data)) {
+          wrappers = data.input.data;
+        } else {
+          wrappers = [data.input];
+        }
+      }
 
-                if (newInput !== "") {
-                    // Fetching data asynchronously
-                    const parsedInput = await fetchData(`${newInput.path}`);
-                    // parsedInput.data = data.input;//JSON.parse(parsedInput.data);
+      // Fetch each wrapper by filename or path
+      const fetched = await Promise.all(
+        wrappers.map(async (w) => {
+          const fileId = w.filename ?? w.path;
+          if (!fileId) return null;
+          try {
+            return await fetchData(fileId);
+          } catch (err) {
+            console.error('Fetch failed for', fileId, err);
+            return null;
+          }
+        })
+      );
 
-                    if(parsedInput.dataType == "dataframe") {
-                        let columns = Object.keys(parsedInput.data);
-                        let dfIndices = Object.keys(parsedInput.data[columns[0]]);
+      // Filter out nulls
+      const tabd = (fetched.filter((x) => x != null) as any[]);
+      setTabData(tabd);
 
-                        if (parsedInput.data.interacted == undefined) {
-                            parsedInput.data.interacted = {};
+      // Local output (string)
+      setOutput({ code: 'success', content: JSON.stringify(tabd, null, 2) });
 
-                            for (const dfIndex of dfIndices) {
-                                // initializing the interacted attribute
-                                parsedInput.data.interacted[dfIndex] = "0";
-                            }
-                        }
+      // Notify downstream of raw array
+      data.outputCallback(data.nodeId, tabd);
+    } catch (error) {
+      console.error('Error processing data asynchronously:', error);
+      setTabData([]);
+      setOutput({ code: 'error', content: 'Failed to process data.' });
+    }
+  };
+  processDataAsync();
+}, [data.input, data.newPropagation]);
 
-                        if (data.propagation != undefined) {
-                            // handling possible propagation of interaction from another pool
-                            let propagatedIndices = Object.keys(data.propagation).map(
-                                (index: string) => {
-                                    return parseInt(index);
-                                }
-                            );
 
-                            let interactedKeys = Object.keys(
-                                parsedInput.data.interacted
-                            );
 
-                            for (let i = 0; i < interactedKeys.length; i++) {
-                                let key = interactedKeys[i];
-
-                                if (propagatedIndices.includes(i)) {
-                                    parsedInput.data.interacted[key] = data.propagation[i];
-                                }
-                            }
-                        }
-                    }
-                    else if(parsedInput.dataType == "geodataframe") {
-                        for (const feature of parsedInput.data.features) {
-                            // initializing the interacted attribute
-                            feature.properties.interacted = "0";
-                        }
-
-                        if (data.propagation != undefined) {
-                            // handling possible propagation of interaction from another pool
-                            let propagatedIndices = Object.keys(data.propagation).map(
-                                (index: string) => {
-                                    return parseInt(index);
-                                }
-                            );
-
-                            for (let i = 0; i < parsedInput.data.features.length; i++) {
-                                if (propagatedIndices.includes(i))
-                                    parsedInput.data.features[i].properties.interacted = data.propagation[i];
-                            }
-                        }
-                    }
-
-                    // Stringify the modified data for output
-                    // parsedInput.data = JSON.stringify(parsedInput.data);
-                    newInput = parsedInput; // JSON.stringify(parsedInput);
-                }
-
-                // Update the output and trigger callback
-                setOutput({ code: "success", content: newInput });
-                data.outputCallback(data.nodeId, newInput);
-            } catch (error) {
-                console.error("Error processing data asynchronously:", error);
-                setOutput({ code: "error", content: "Failed to process data." });
-            }
-        };
-
-        // Invoke the async function
-        processDataAsync();
-    }, [data.input, data.newPropagation]);
 
     useEffect(() => {
         if (dataInputBypass.current) {
@@ -253,37 +218,33 @@ function DataPoolBox({ data, isConnectable }) {
         dataInputBypass.current = true;
     }, [data.input]);
 
-    const createTable = (output: string) => {
+    const createTable = (output: any) => {
         let tableData = [];
 
-        if (output != "") {
-            let parsedOutput = output;
-            // parsedOutput.data = parsedOutput.data;
-            // console.log("Creating table", parsedOutput);
-            if (parsedOutput.dataType == "dataframe") {
-                let columns = Object.keys(parsedOutput.data);
-                let dfIndices = Object.keys(parsedOutput.data[columns[0]]);
-                for (let i = 0; i < dfIndices.length; i++) {
-                    let element: any = {};
-                    for (const column of columns) {
-                        element[column] = parsedOutput.data[column][dfIndices[i]];
-                    }
-                    tableData.push(element);
+        if (output && output.dataType === "dataframe") {
+            let columns = Object.keys(output.data);
+            let dfIndices = Object.keys(output.data[columns[0]]);
+
+            for (let i = 0; i < dfIndices.length; i++) {
+                let element: any = {};
+
+                for (const column of columns) {
+                    element[column] = output.data[column][dfIndices[i]];
                 }
+
+                tableData.push(element);
             }
-            else if(parsedOutput.dataType == "geodataframe" && parsedOutput.data.features.length > 0) {
-                let columns = Object.keys(parsedOutput.data.features[0].properties);
+        } else if (output && output.dataType === "geodataframe" && output.data.features.length > 0) {
+            let columns = Object.keys(output.data.features[0].properties);
 
-                for (let i = 0; i < parsedOutput.data.features.length; i++) {
-                    let element: any = {};
+            for (let i = 0; i < output.data.features.length; i++) {
+                let element: any = {};
 
-                    for (const column of columns) {
-                        element[column] =
-                            parsedOutput.data.features[i].properties[column];
-                    }
-
-                    tableData.push(element);
+                for (const column of columns) {
+                    element[column] = output.data.features[i].properties[column];
                 }
+
+                tableData.push(element);
             }
         }
 
@@ -674,146 +635,57 @@ function DataPoolBox({ data, isConnectable }) {
     };
 
     const ContentComponent = ({
-        outputTable,
-        data,
+        tabData,
+        activeTab,
     }: {
-        outputTable: any;
-        data: any;
+        tabData: any[];
+        activeTab: string;
     }) => {
-        const [previewTable, setPreviewTable] = useState<any[]>([]);
-        const [isLoadingPreview, setIsLoadingPreview] = useState(false);
-        const [usePreview, setUsePreview] = useState(false);
+        const displayTable = tabData[parseInt(activeTab)] || {};
 
-        useEffect(() => {
-            const loadPreviewData = async () => {
-                // Only attempt preview if we have a valid data input with path
-                if (!data.input || !data.input.path || data.input === "") {
-                    setUsePreview(false);
-                    return;
-                }
-
-                setIsLoadingPreview(true);
-                try {
-                    // Fetch preview data independently
-                    const previewData = await fetchPreviewData(data.input.path);
-                    
-                    // Transform preview data to table format (same as current logic)
-                    let tableData: any[] = [];
-                    
-                    if (previewData.dataType === "dataframe" && previewData.data) {
-                        const columns = Object.keys(previewData.data);
-                        const indices = Object.keys(previewData.data[columns[0]]);
-                        
-                        tableData = indices.map((idx) => {
-                            const row: any = {};
-                            columns.forEach(col => {
-                                row[col] = previewData.data[col][idx];
-                            });
-                            return row;
-                        });
-                    } else if (previewData.dataType === "geodataframe" && previewData.data?.features) {
-                        tableData = previewData.data.features.map((feature: any) => {
-                            return { ...feature.properties };
-                        });
-                    }
-
-                    setPreviewTable(tableData);
-                    setUsePreview(true);
-                } catch (error) {
-                    console.log("[ContentComponent] Preview fetch failed, falling back to outputTable:", error);
-                    setUsePreview(false);
-                } finally {
-                    setIsLoadingPreview(false);
-                }
-            };
-
-            loadPreviewData();
-        }, [data.input]);
-
-        // Use preview data if available, otherwise fall back to outputTable
-        const displayTable = usePreview ? previewTable : outputTable;
+        const tableData = createTable(displayTable);
 
         return (
             <div
                 className="nowheel"
                 style={{ overflowY: "auto", height: "100%" }}
             >
-                {isLoadingPreview && (
-                    <div style={{ padding: "10px", textAlign: "center", color: "#666" }}>
-                        Loading preview...
-                    </div>
-                )}
                 <TableContainer component={Paper}>
                     <Table aria-label="simple table">
-                        {displayTable.length > 0 ? (
+                        {tableData.length > 0 ? (
                             <TableHead>
                                 <TableRow>
-                                    {Object.keys(displayTable[0]).map(
-                                        (column, index) => {
-                                            return (
-                                                <TableCell
-                                                    style={{
-                                                        fontWeight: "bold",
-                                                    }}
-                                                    key={
-                                                        "cell_header_" +
-                                                        index +
-                                                        "_" +
-                                                        data.nodeId
-                                                    }
-                                                    align="right"
-                                                >
-                                                    {column}
-                                                </TableCell>
-                                            );
-                                        }
-                                    )}
+                                    {Object.keys(tableData[0]).map((column, index) => (
+                                        <TableCell
+                                            style={{ fontWeight: "bold" }}
+                                            key={`cell_header_${index}`}
+                                            align="right"
+                                        >
+                                            {column}
+                                        </TableCell>
+                                    ))}
                                 </TableRow>
                             </TableHead>
                         ) : null}
 
                         <TableBody>
-                            {displayTable
-                                .slice(0, 100)
-                                .map((row: any, index: any) => {
-                                    return (
-                                        <TableRow
-                                            key={"row_" + index + data.nodeId}
-                                            sx={{
-                                                "&:last-child td, &:last-child th":
-                                                    { border: 0 },
-                                            }}
+                            {tableData.slice(0, 100).map((row: any, index: any) => (
+                                <TableRow
+                                    key={`row_${index}`}
+                                    sx={{ "&:last-child td, &:last-child th": { border: 0 } }}
+                                >
+                                    {Object.keys(row).map((column, columnIndex) => (
+                                        <TableCell
+                                            key={`cell_${columnIndex}_${index}`}
+                                            align="right"
                                         >
-                                            {Object.keys(row).map(
-                                                (column, columnIndex) => {
-                                                    return (
-                                                        <TableCell
-                                                            key={
-                                                                "cell_" +
-                                                                columnIndex +
-                                                                "_" +
-                                                                index +
-                                                                "_" +
-                                                                data.nodeId
-                                                            }
-                                                            align="right"
-                                                        >
-                                                            {row[column] !=
-                                                                undefined &&
-                                                            row[column] != null
-                                                                ? shortenString(
-                                                                      row[
-                                                                          column
-                                                                      ].toString()
-                                                                  )
-                                                                : "null"}
-                                                        </TableCell>
-                                                    );
-                                                }
-                                            )}
-                                        </TableRow>
-                                    );
-                                })}
+                                            {row[column] != undefined && row[column] != null
+                                                ? shortenString(row[column].toString())
+                                                : "null"}
+                                        </TableCell>
+                                    ))}
+                                </TableRow>
+                            ))}
                         </TableBody>
                     </Table>
                 </TableContainer>
@@ -867,10 +739,26 @@ function DataPoolBox({ data, isConnectable }) {
                 <BoxEditor
                     customWidgetsCallback={customWidgetsCallback}
                     contentComponent={
-                        <ContentComponent
-                            outputTable={outputTable}
-                            data={data}
-                        />
+                        <Tabs
+                            id="data-tabs"
+                            activeKey={activeTab}
+                            onSelect={(k) => setActiveTab(k || "0")}
+                            className="mb-3"
+                        >
+                            {Array.isArray(tabData) && tabData.length > 0 ? (
+                                tabData.map((_, index) => (
+                                    <Tab eventKey={index.toString()} title={`Tab ${index + 1}`} key={index}>
+                                        <ContentComponent tabData={tabData} activeTab={activeTab} />
+                                    </Tab>
+                                ))
+                            ) : (
+                                <Tab eventKey="0" title="No Data">
+                                    <div style={{ padding: "10px", textAlign: "center" }}>
+                                        No data available.
+                                    </div>
+                                </Tab>
+                            )}
+                        </Tabs>
                     }
                     setSendCodeCallback={(_: any) => {}}
                     code={false}

@@ -1,0 +1,131 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "59367466-92b7-44e1-b85f-deb419863156",
+        "type": "DATA_POOL",
+        "x": 1560.9896176973423,
+        "y": 1206.9218014276676,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "f5d5c6d5-c5af-41fa-a5c5-7d1180de358f",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": -34.98601012336397,
+        "y": 621.6614746870667,
+        "content": "import pandas as pd\r\n\r\nd = {'a': [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\", \"G\", \"H\", \"I\"], 'b': [28, 55, 43, 91, 81, 53, 19, 87, 52]}\r\ndf = pd.DataFrame(data=d)\r\n\r\nreturn df",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "f947ea8b-27f7-4968-83cb-bb6b45242498",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": -35.27567674193297,
+        "y": 961.5934854916319,
+        "content": "import pandas as pd\r\n\r\ne = {'x': [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\", \"G\", \"H\", \"I\"], 'y': [28, 55, 43, 91, 81, 53, 19, 87, 52]}\r\ndf = pd.DataFrame(data=e)\r\n\r\nreturn df",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "df45c018-6da7-4a4e-be9c-aca061252358",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": -40.62564769177684,
+        "y": 1245.006615248715,
+        "content": "import pandas as pd\r\n\r\nf = {'u': [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\", \"G\", \"H\", \"I\"], 'v': [28, 55, 43, 91, 81, 53, 19, 87, 52]}\r\ndf = pd.DataFrame(data=f)\r\n\r\nreturn df",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "ee7503f5-04a7-427c-a61d-86d069eea9fe",
+        "type": "MERGE_FLOW",
+        "x": 880.5541335080813,
+        "y": 1215.0592146265444,
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "f0f8183e-ef9f-40ee-a800-5ed974dc71ed",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": -38.50816626243429,
+        "y": 1557.3166066344456,
+        "content": "import pandas as pd\r\n\r\nz = {'s': [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\", \"G\", \"H\", \"I\"], 't': [28, 55, 43, 91, 81, 53, 19, 87, 52]}\r\ndf = pd.DataFrame(data=z)\r\n\r\nreturn df",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "6af4345b-7fa3-4acb-bfde-79470b22aa5c",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": -35.7472311842717,
+        "y": 1874.8241406231452,
+        "content": "import pandas as pd\r\n\r\ny = {'m': [\"A\", \"B\", \"C\", \"D\", \"E\", \"F\", \"G\", \"H\", \"I\"], 'n': [28, 55, 43, 91, 81, 53, 19, 87, 52]}\r\ndf = pd.DataFrame(data=y)\r\n\r\nreturn df",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-ee7503f5-04a7-427c-a61d-86d069eea9feout-59367466-92b7-44e1-b85f-deb419863156in",
+        "source": "ee7503f5-04a7-427c-a61d-86d069eea9fe",
+        "target": "59367466-92b7-44e1-b85f-deb419863156"
+      },
+      {
+        "id": "reactflow__edge-f5d5c6d5-c5af-41fa-a5c5-7d1180de358fout-ee7503f5-04a7-427c-a61d-86d069eea9fein_0",
+        "source": "f5d5c6d5-c5af-41fa-a5c5-7d1180de358f",
+        "target": "ee7503f5-04a7-427c-a61d-86d069eea9fe"
+      },
+      {
+        "id": "reactflow__edge-f947ea8b-27f7-4968-83cb-bb6b45242498out-ee7503f5-04a7-427c-a61d-86d069eea9fein_1",
+        "source": "f947ea8b-27f7-4968-83cb-bb6b45242498",
+        "target": "ee7503f5-04a7-427c-a61d-86d069eea9fe"
+      },
+      {
+        "id": "reactflow__edge-df45c018-6da7-4a4e-be9c-aca061252358out-ee7503f5-04a7-427c-a61d-86d069eea9fein_2",
+        "source": "df45c018-6da7-4a4e-be9c-aca061252358",
+        "target": "ee7503f5-04a7-427c-a61d-86d069eea9fe"
+      },
+      {
+        "id": "reactflow__edge-f0f8183e-ef9f-40ee-a800-5ed974dc71edout-ee7503f5-04a7-427c-a61d-86d069eea9fein_3",
+        "source": "f0f8183e-ef9f-40ee-a800-5ed974dc71ed",
+        "target": "ee7503f5-04a7-427c-a61d-86d069eea9fe"
+      },
+      {
+        "id": "reactflow__edge-6af4345b-7fa3-4acb-bfde-79470b22aa5cout-ee7503f5-04a7-427c-a61d-86d069eea9fein_4",
+        "source": "6af4345b-7fa3-4acb-bfde-79470b22aa5c",
+        "target": "ee7503f5-04a7-427c-a61d-86d069eea9fe"
+      }
+    ],
+    "name": "MergeFlow",
+    "task": "",
+    "timestamp": 1753817996370,
+    "provenance_id": "MergeFlow"
+  }
+}

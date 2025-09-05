@@ -30,5 +30,6 @@ instance/
 
 node_modules/
 urbantk_cache/
+urbantk_cache/*
 site
 coverage/

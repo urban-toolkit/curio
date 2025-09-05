@@ -18,7 +18,7 @@ For completeness, we also include the template code in each dataflow step.
 
 ## Step 1: Load the green roofs data
 
-We begin the first dataflow by loading the green roofs dataset into Curio using a Data Loading node. This step reads the CSV file and prepares it for further processing.
+We begin the first dataflow by loading the green roofs dataset into Curio using a Data Loading node. This step reads the CSV file and prepares it for further processing. If code in a data loadning node has a runtime error, try changing the text inside the file to the full file path. Example: instead of pd.read_csv('Green_Roofs.csv'), try pd.read_csv(r'C:\Users\Username\Rest of Filepath\Green_Roofs\Green_Roofs.csv')
 
 ```python
 import pandas as pd
