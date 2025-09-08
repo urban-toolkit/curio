@@ -717,7 +717,7 @@ return df`;
                         <div className="file-input-container">
                             <input
                                 type="file"
-                                accept=".csv"
+                                accept=".csv,.geojson"
                                 onChange={handleFileSelect}
                                 style={{ display: "none" }}
                                 id={`file-input-${nodeId}`}

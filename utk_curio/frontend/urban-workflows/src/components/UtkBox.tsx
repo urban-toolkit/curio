@@ -496,6 +496,8 @@ function UtkBox({ data, isConnectable }) {
 
         let validInput = true;
 
+        console.log("parsedInput.dataType", parsedInput.dataType);
+
         // validate input
         if (parsedInput.dataType == "outputs") {
           for (const elem of parsedInput.data) {
