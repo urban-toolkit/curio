@@ -112,7 +112,7 @@ function DataLoadingBox({ data, isConnectable }) {
         updateTemplate={updateTemplate}
         setTemplateConfig={setTemplateConfig}
         promptDescription={promptDescription}
-        disablePlay={true}
+        disablePlay={false}
       >
         <DescriptionModal
           nodeId={data.nodeId}
@@ -135,7 +135,7 @@ function DataLoadingBox({ data, isConnectable }) {
         />
         <BoxEditor
           setSendCodeCallback={setSendCodeCallback}
-          code={false}
+          code={true}
           grammar={false}
           widgets={true}
           setOutputCallback={setOutput}
@@ -145,7 +145,7 @@ function DataLoadingBox({ data, isConnectable }) {
           defaultValue={
             templateData.code ? templateData.code : data.defaultCode
           }
-          readOnly={true}
+          readOnly={false}
           floatCode={setCode}
         />
 
