@@ -1,4 +1,4 @@
-# Curio [![Discord](https://img.shields.io/badge/Discord-738ADB)](https://discord.gg/ajT6wF8TmN) 	[![Docs](https://img.shields.io/badge/Documentation-brightgreen)](https://urban-toolkit.github.io/curio/) [![Full stack build](https://github.com/urban-toolkit/curio/actions/workflows/docker-compose.yml/badge.svg)](https://github.com/urban-toolkit/curio/actions/workflows/docker-compose.yml) [![PyPI version](https://img.shields.io/pypi/v/utk-curio)](https://pypi.org/project/utk-curio/) 	[![Contributors](https://img.shields.io/github/contributors/urban-toolkit/curio)](https://github.com/urban-toolkit/curio/graphs/contributors)
+# Curio [![Discord](https://img.shields.io/badge/Discord-738ADB)](https://discord.gg/ajT6wF8TmN) 	[![Docs](https://img.shields.io/badge/Documentation-brightgreen)](https://github.com/urban-toolkit/curio/tree/main/docs) [![Full stack build](https://github.com/urban-toolkit/curio/actions/workflows/docker-compose.yml/badge.svg)](https://github.com/urban-toolkit/curio/actions/workflows/docker-compose.yml) [![PyPI version](https://img.shields.io/pypi/v/utk-curio)](https://pypi.org/project/utk-curio/) 	[![Contributors](https://img.shields.io/github/contributors/urban-toolkit/curio)](https://github.com/urban-toolkit/curio/graphs/contributors)
 
 
 <div align="center">
@@ -21,14 +21,14 @@ Curio is a framework for collaborative urban visual analytics that uses a datafl
 
 Curio v0.5 introduces a number of improvements and fixes thanks to the efforts of new contributors. Highlights include:
 
-- 📦 **Pip Installation Support:** Curio can now be installed via `pip install utk-curio`, making it easier to get started. Check the [installation guide](docs/getting-started/installation.md) for details.
+- 📦 **Pip Installation Support:** Curio can now be installed via `pip install utk-curio`, making it easier to get started. Check the [usage](docs/USAGE.md) document for details.
 - 🚀 **Performance Improvements:** Enhanced computation execution speed in the backend.
 - 🧪 **Initial End-to-End Testing:** Integrated test for backend/sandbox testing.
 - 🧭 **New Examples Added:** Included new dataflows like "Complaints by Zip Code" and "Accessibility Analysis".
 - 🐳 **Docker Enhancements:** Fixed Docker build issues by enforcing platform and fixing dependency installation errors.
 - 🧹 **General Bug Fixes:** Resolved issues with icons, route definitions, upload status tracking, and environment variable references.
 
-See the full [Release notes](https://github.com/urban-toolkit/curio/releases) for more. To get started with installation and setup, see the [installation guide](docs/getting-started/installation.md). For a quick hands-on walkthrough, try the [quick start tutorial](docs/getting-started/quick_start.md). If you'd like to contribute, read the [contribution guide](docs/CONTRIBUTING.md).
+See the full [Release notes](https://github.com/urban-toolkit/curio/releases) for more. To get started with installation and setup, see the [usage guide](docs/USAGE.md). For a quick hands-on walkthrough, try the [quick start tutorial](docs/QUICK-START.md). If you'd like to contribute, read the [contribution guide](docs/CONTRIBUTIONS.md).
 
 
 ## Roadmap
@@ -72,11 +72,11 @@ This project is part of the [Urban Toolkit ecosystem](https://urbantk.org), whic
 ---
 
 ## Usage and contributions
-For detailed instructions on how to use the project, please see the [installation guide](docs/getting-started/installation.md). A comprehensive set of examples can be found in our [examples section](docs/examples/examples.md). 
+For detailed instructions on how to use the project, please see the [usage](docs/USAGE.md) document. A set of examples can be found [here](https://github.com/urban-toolkit/curio/tree/main/docs). 
 
-🚀 Curio now supports a Docker-based setup for easier installation and orchestration of all components. See the [installation guide](docs/getting-started/installation.md) for instructions on running Curio with Docker.
+🚀 Curio now supports a Docker-based setup for easier installation and orchestration of all components. See the [usage guide](docs/USAGE.md) for instructions on running Curio with Docker.
 
-If you'd like to contribute, see the [contributions](docs/CONTRIBUTING.md) document for guidelines. For questions, join [UTK's Discord](https://discord.gg/vjpSMSJR8r) server.
+If you'd like to contribute, see the [contributions](docs/CONTRIBUTIONS.md) document for guidelines. For questions, join [UTK's Discord](https://discord.gg/ajT6wF8TmN) server.
 
 ---
 
