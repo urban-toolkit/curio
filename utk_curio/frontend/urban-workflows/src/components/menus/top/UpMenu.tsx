@@ -163,51 +163,47 @@ export default function UpMenu({
         intro.setOptions({
             steps: [
         {
-            intro: "Welcome to Curio! An IDE used for urban analytics. Let's take a tour!"
+            intro: "Welcome to Curio, a framework for urban analytics. Let's take a quick tour to help you get started."
         },
         {
-          element: '#step-one',  
-          intro: 'This is a Data Loading node. You can code an array for basic sets of data, or load in a file. Then add your code to add it to a dataframe to return.'
+          element: '#step-loading',  
+          intro: "This is a Data Loading Node. Here, you can create an array for basic datasets or import data from a file. Once loaded, add your code to convert the data into a DataFrame for further analysis."
         },
         {
-          element: '#step-two',  
-          intro: 'Ignore data export. It will soon be retired.'
+          element: '#step-analysis',  
+          intro: "This is a Data Analysis Node. Use it to perform calculations and operations on your dataset, preparing it for visualization."
         },
         {
-          element: '#step-three',  
-          intro: 'This is a data analysis node: It performs calculations on the loaded data in order to prepare it for visualization.'
+          element: '#step-transformation',  
+          intro: "The Data Transformation Node allows you to filter, segment, or restructure your data."
         },
         {
-          element: '#step-four',  
-          intro: 'The Data Transformation Node can select different parts of your data to narrow down the focus of your analysis.'
+          element: '#step-cleaning',  
+          intro: "This is a Data Cleaning Node. Use it to refine your dataset by handling missing values, removing outliers, and generating identifiers for data quality purposes."
         },
         {
-          element: '#step-five',  
-          intro: 'This is a Data Cleaning Node. You can polish your data by removing outliers, fill in missing values, etc. It can also create identifiers for your data.'
+          element: '#step-pool',  
+          intro: "This is a Data Pool Node. It enables you to display your processed data in a structured grid format for easy review."
         },
         {
-          element: '#step-six',  
-          intro: 'This is a data pool node: It is used for displaying data on a grid.'
+          element: '#step-utk',  
+          intro: "This is a UTK Node. It renders your data in an interactive 3D environment using UTK."
         },
         {
-          element: '#step-seven',  
-          intro: 'This is a 3D Visualization node: It is used to display data in a 3D form. The "grammar" section is code for json files.'
+          element: '#step-vega',  
+          intro: "This is a Vega-Lite Node. Use it to visualize data in 2D formats (bar charts, scatter plots, and line graphs) using a JSON specification."
         },
         {
-          element: '#step-eight',  
-          intro: 'This is a vega lite node: It is used to display data in any 2D form, like various graphs. The "grammar" section is code for json files.'
+          element: '#step-image',  
+          intro: "The Image Node displays a gallery of images."
         },
         {
-          element: '#step-nine',  
-          intro: 'The image node shows a gallary of images.'
-        },
-        {
-          element: '#step-ten',  
-          intro: 'This is a merge flow box. Use it to merge multiple pieces of data into one. It can take up to 5 inputs. Red handles indicate that there is not an edge for the handle. Green indicates that there is an edge. One handle may not have multiple edges.'
+          element: '#step-merge',  
+          intro: "This is a Merge Flow Node. It allows you to combine multiple data streams into a single dataset. Red handles indicate a missing connection, while green handles show that a connection has been established. Note: each handle can only connect to one edge."
         },
         {
           element: '#step-final',  
-          intro: 'Drag and drop nodes into your environment. Now get started!'
+          intro: "That's it! Drag and drop nodes into your workspace and begin exploring your data with Curio."
         }
         ],
         
