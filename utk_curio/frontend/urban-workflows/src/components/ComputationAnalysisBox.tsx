@@ -17,7 +17,7 @@ import { OutputIcon } from "./edges/OutputIcon";
 import { InputIcon } from "./edges/InputIcon";
 import Tabs from "react-bootstrap/Tabs";
 import Tab from "react-bootstrap/Tab";
-import { COMMON_ERRORS } from "./COMMON_ERRORS";
+// import { COMMON_ERRORS } from "./COMMON_ERRORS";
 
 function ComputationAnalysisBox({ data, isConnectable }) {
   const [output, setOutput] = useState<{ code: string; content: string, outputType: string }>({
@@ -98,8 +98,8 @@ function ComputationAnalysisBox({ data, isConnectable }) {
     // If error, show error tab with friendly and traceback
     if (output?.code === "error") {
       const match = output.content.match(/(\w+Error):/);
-      let errorType = match ? match[1] : null;
-      let friendlyMessage = errorType ? (COMMON_ERRORS[errorType] || "❗ An unknown error occurred.") : null;
+      // let errorType = match ? match[1] : null;
+      // let friendlyMessage = errorType ? (COMMON_ERRORS[errorType] || "❗ An unknown error occurred.") : null;
       setTabData([
         {
           title: "Output",
@@ -109,7 +109,7 @@ function ComputationAnalysisBox({ data, isConnectable }) {
         {
           title: "Error",
           content: {
-            friendly: friendlyMessage ? `❌Error: ${friendlyMessage}` : null,
+            friendly: output.content,
             traceback: output.content
           },
           type: "error"
@@ -143,17 +143,18 @@ function ComputationAnalysisBox({ data, isConnectable }) {
 
   // ContentComponent for three tabs (Output, Error, Warning)
   const ContentComponent = ({ tabData, activeTab }: { tabData: any[]; activeTab: string }) => {
+    setActiveTab("code");
     return (
       <Tabs
         id="computation-tabs"
         activeKey={activeTab}
         onSelect={(k: string | null) => setActiveTab(k || "0")}
-        className="mb-3"
+        className="mb-2"
       >
         <Tab eventKey="0" title="Output">
           <div style={{ padding: "15px" }}>
-            <h4>Output</h4>
-            <div style={{ fontSize: "1.2em", color: "#666" }}>{tabData[0]?.content || "No output available."}</div>
+            <h6>Output</h6>
+            <div style={{ fontSize: "12px", color: "#666" }}>{tabData[0]?.content || "No output available."}</div>
           </div>
         </Tab>
         <Tab eventKey="1" title="Error">
@@ -169,7 +170,7 @@ function ComputationAnalysisBox({ data, isConnectable }) {
               {(tabData[1]?.content?.friendly || tabData[1]?.content?.traceback) ? (
                 <div className="error-traceback-scroll" style={{ flex: 1, display: "flex", flexDirection: "column", padding: 0 }}>
                   {/* Error message */}
-                  {tabData[1]?.content?.friendly && (
+                  {/* {tabData[1]?.content?.friendly && (
                     <div
                       style={{
                         background: "#fff8e1",
@@ -184,14 +185,14 @@ function ComputationAnalysisBox({ data, isConnectable }) {
                     >
                       {tabData[1].content.friendly}
                     </div>
-                  )}
+                  )} */}
                   {/* Traceback */}
                   {tabData[1]?.content?.traceback && (
                     <div
                       style={{
                         background: "#ffebee",
                         color: "#b71c1c",
-                        padding: "16px",
+                        padding: "12px",
                         fontWeight: 400,
                         fontFamily: "monospace",
                         borderBottomLeftRadius: "8px",
@@ -200,7 +201,7 @@ function ComputationAnalysisBox({ data, isConnectable }) {
                         flexDirection: "column"
                       }}
                     >
-                      <div style={{ fontWeight: 600, marginBottom: 8 }}>Traceback:</div>
+                      <div style={{ fontWeight: 600 }}>Traceback:</div>
                       <pre style={{ margin: 0, fontSize: "1em", background: "none", color: "inherit" }}>{tabData[1].content.traceback}</pre>
                     </div>
                   )}
@@ -214,7 +215,7 @@ function ComputationAnalysisBox({ data, isConnectable }) {
         <Tab eventKey="2" title="Warning">
           <div style={{ padding: "15px" }}>
             {tabData[2]?.content?.friendly && (
-              <div style={{ background: "#fffbe6", color: "#8a6d3b", padding: "10px", borderRadius: "5px", marginBottom: "10px", fontWeight: "bold" }}>
+              <div style={{ background: "#fffbe6", color: "#8a6d3b", padding: "10px", borderRadius: "5px", fontWeight: "bold" }}>
                 {tabData[2].content.friendly}
               </div>
             )}

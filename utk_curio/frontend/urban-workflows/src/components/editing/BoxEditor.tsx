@@ -78,9 +78,9 @@ function BoxEditor({
     const [markersDirty, setMarkersDirty] = useState<boolean>(false); // make WidgetsEditor update replacedCode
     const [replacedCode, setReplacedCode] = useState<string>(""); // python or grammar with marks resolved
     const [replacedCodeDirty, setReplacedCodeDirty] = useState<boolean>(false); // code has to rerun every time button is pressed (having changes or not)
-    const [activeTab, setActiveTab] = useState("widgets");
     const [fullscreen, setFullscreen] = useState<string>("");
- 
+    const [activeTab, setActiveTab] = useState("widgets");
+
     const contentComponentBypass = useRef(false);
  
     const sendCodeToWidgets = (code: string) => {
@@ -95,9 +95,10 @@ function BoxEditor({
     }, []);
  
     useEffect(() => {
+        console.log(contentComponent);
         if (
-            contentComponent != undefined &&
-            contentComponentBypass.current &&
+            contentComponent != undefined && 
+            contentComponentBypass.current && 
             (fullscreen == "" || fullscreen == undefined)
         ) {
             setActiveTab("output");
