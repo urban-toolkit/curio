@@ -15,7 +15,8 @@ import {
     faCircleDot,
 } from "@fortawesome/free-solid-svg-icons";
 import { useUserContext } from "../providers/UserProvider";
-
+import { useLLMContext } from "../providers/LLMProvider";
+import { ConnectionValidator } from "../ConnectionValidator";
 import Col from "react-bootstrap/Col";
 import Nav from "react-bootstrap/Nav";
 import Row from "react-bootstrap/Row";
@@ -39,15 +40,19 @@ import {
     faCodeMerge,
     faImage,
     faTable,
+    faCirclePlus,
     faFont,
     faCube,
+    faTriangleExclamation,
     faChartLine,
-    faXmark
+    faXmark,
+    faAnglesUp
 } from "@fortawesome/free-solid-svg-icons";
-import { AccessLevelType, BoxType } from "../constants";
+import { AccessLevelType, BoxType, SupportedType } from "../constants";
 import "./styles.css";
 import { Template, useTemplateContext } from "../providers/TemplateProvider";
 import { useCode } from "../hook/useCode";
+import { TrillGenerator } from "TrillGenerator";
 
 // Box Container
 export const BoxContainer = ({
@@ -68,6 +73,7 @@ export const BoxContainer = ({
     noContent,
     setTemplateConfig,
     disableComments = false,
+    handleType,
     styles = {},
     disablePlay = false
 }: {
@@ -90,18 +96,33 @@ export const BoxContainer = ({
     disableComments?: boolean;
     styles?: CSS.Properties;
     disablePlay?: boolean;
+    handleType?: string;
 }) => {
     const { 
+        nodes, 
+        edges, 
+        workflowNameRef, 
         applyRemoveChanges, 
         setPinForDashboard,
         allMinimized,
-        setExpandStatus
+        setExpandStatus,
+        updateDataNode,
+        updateDefaultCode,
+        workflowGoal,
+        acceptSuggestion
     } = useFlowContext();
     const { getTemplates, deleteTemplate, fetchTemplates } = useTemplateContext();
-    const { createCodeNode } = useCode();
+    const { createCodeNode, loadTrill } = useCode();
     const [showComments, setShowComments] = useState(false);
     const [comments, setComments] = useState<IComment[]>([]);
+    const [goal, setGoal] = useState(data.goal);
     const [pinnedToDashboard, setPinnedToDashboard] = useState<boolean>(false);
+    const [expectedInputType, setExpectedInputType] = useState(data.in);
+    const [expectedOutputType, setExpectedOutputType] = useState(data.out);
+    const [isConnectionLeftOpen, setIsConnectionLeftOpen] = useState(false);
+    const [isConnectionRightOpen, setIsConnectionRightOpen] = useState(false);
+    const [showWarnings, setShowWarnings] = useState<boolean>(false);
+    const [isSubtasksOpen, setIsSubtasksOpen] = useState(false);
     const [currentBoxWidth, setCurrentBoxWidth] = useState<number | undefined>(
         boxWidth
     );
@@ -112,6 +133,45 @@ export const BoxContainer = ({
     const [minimized, setMinimized] = useState(
         data.nodeType == BoxType.MERGE_FLOW
     );
+    const { openAIRequest, setCurrentEventPipeline, AIModeRef } = useLLMContext();
+
+    useEffect(() => {
+        setGoal(data.goal);
+    }, [data.goal])
+
+    useEffect(() => {
+
+        if(data.output != undefined && data.output.code == 'success'){
+            setExpectedOutputType(data.output.outputType);
+        }
+
+        if(data.input != undefined && data.input != ""){
+            try {
+                let parsed_input = JSON.parse(data.input);
+
+                let dataType = parsed_input.dataType;
+                
+                if(dataType == 'int' || dataType == 'str' || dataType == 'float' || dataType == 'bool')
+                    setExpectedInputType(SupportedType.VALUE)
+                else if(dataType == 'list')
+                    setExpectedInputType(SupportedType.LIST)
+                else if(dataType == 'dict')
+                    setExpectedInputType(SupportedType.JSON)
+                else if(dataType == 'dataframe')
+                    setExpectedInputType(SupportedType.DATAFRAME)
+                else if(dataType == 'geodataframe')
+                    setExpectedInputType(SupportedType.GEODATAFRAME)
+                else if(dataType == 'raster')
+                    setExpectedInputType(SupportedType.RASTER)
+                else if(dataType == 'outputs')
+                    setExpectedInputType("MULTIPLE")
+
+            } catch (error) {
+                console.error("Invalid input type", error);
+            }
+        }
+
+    }, [data.output, data.input])
 
     useEffect(() => {
         if(data.nodeType != BoxType.MERGE_FLOW){
@@ -164,22 +224,10 @@ export const BoxContainer = ({
             nodeId + "resizable"
         ) as HTMLElement;
 
-        resizer.addEventListener("mousedown", initResize, false);
-
         let startX = 0;
         let startY = 0;
         let startWidth = 0;
         let startHeight = 0;
-
-        function initResize(e: any) {
-            startX = e.clientX;
-            startY = e.clientY;
-            startWidth = resizable.offsetWidth;
-            startHeight = resizable.offsetHeight;
-
-            window.addEventListener("mousemove", resize, false);
-            window.addEventListener("mouseup", stopResize, false);
-        }
 
         function resize(e: any) {
             const newWidth = startWidth + (e.clientX - startX);
@@ -192,11 +240,50 @@ export const BoxContainer = ({
             setCurrentBoxHeight(newHeight);
         }
 
+        function initResize(e: any) {
+            startX = e.clientX;
+            startY = e.clientY;
+            startWidth = resizable.offsetWidth;
+            startHeight = resizable.offsetHeight;
+
+            window.addEventListener("mousemove", resize, false);
+            window.addEventListener("mouseup", stopResize, false);
+        }
+
+        resizer.addEventListener("mousedown", initResize, false);
+
         function stopResize(e: any) {
             window.removeEventListener("mousemove", resize, false);
             window.removeEventListener("mouseup", stopResize, false);
         }
     }, []);
+
+    const updateDataGoal = (goal: string) => {
+        if(data.goal != goal){
+
+            setCurrentEventPipeline("Directly editing a Subtask");
+
+            let newData = {...data}; 
+            newData.goal = goal; 
+            updateDataNode(nodeId, newData);
+        }
+    }
+
+    const generateSubtaskFromExec = async (node_content: string, node_type: BoxType, current_task: string) => {
+        try {
+            let result = await openAIRequest("default_preamble", "new_subtask_from_exec_prompt", " Node content: " + node_content + "\n" + "Node type: " + node_type + " Task: " + current_task);
+            
+            console.log("generateSubtaskFromExec result", result);
+
+            let new_subtask = result.result;
+
+            setGoal(new_subtask);
+            updateDataGoal(new_subtask);
+        } catch (error) {
+            console.error("Error communicating with LLM", error);
+            alert("Error communicating with LLM");
+        }
+    }
 
     const deleteComment = (commentId: number) => {
         setComments(comments.filter((comment) => comment.id !== commentId));
@@ -246,6 +333,94 @@ export const BoxContainer = ({
         setPinnedToDashboard(!value);
         setPinForDashboard(nodeId, !value);
     };
+
+    const handleChangeExpectedInputType = (event: React.ChangeEvent<HTMLSelectElement>) => {
+        setExpectedInputType(event.target.value as SupportedType);
+    };
+
+    const handleChangeExpectedOutputType = (event: React.ChangeEvent<HTMLSelectElement>) => {
+        setExpectedOutputType(event.target.value as SupportedType);
+    };
+
+    const generateConnectionSuggestions = async (nodes: any, edges: any, workflowNameRef: any, workflowGoal: string, inOrOut: string) => {
+
+        let trill_spec = TrillGenerator.generateTrill(nodes, edges, workflowNameRef.current, workflowGoal);
+
+        try {
+    
+            let result = await openAIRequest("default_preamble", "new_connection_prompt", "Dataflow task: " + workflowGoal + "\n nodeId: " + nodeId + "\n Subtask: " + goal + "\n Your suggested nodes will be connected to the: " + inOrOut + "\n Current Trill: " + JSON.stringify(trill_spec));
+
+            let clean_result = result.result.replaceAll("```json", "").replaceAll("```python", "");
+            clean_result = clean_result.replaceAll("```", "");
+
+            console.log("generateConnectionSuggestions result", clean_result);
+
+            let parsed_result = JSON.parse(clean_result);
+            parsed_result.dataflow.name = workflowNameRef.current;
+
+            parsed_result.dataflow.edges = [];
+
+            for(const node of parsed_result.dataflow.nodes){
+                if(inOrOut == "input"){
+                    parsed_result.dataflow.edges.push({
+                        id: "reactflow__" + node.id + "_" + nodeId + "_1",
+                        source: node.id,
+                        target: nodeId
+                    }); 
+                }else if(inOrOut == "output"){
+                    parsed_result.dataflow.edges.push({
+                        id: "reactflow__" + nodeId + "_" + node.id + "_1",
+                        source: nodeId,
+                        target: node.id
+                    });  
+                }
+            }
+
+            loadTrill(parsed_result, "connection");
+        } catch (error) {
+            console.error("Error communicating with LLM", error);
+            alert("Error communicating with LLM");
+        }
+
+    }
+
+    const generateContentNode = async (nodes: any, edges: any, workflowNameRef: any, goal: string, workflowGoal: string) => {
+
+        const isConfirmed = window.confirm("Are you sure you want to proceed? This will overwrite the node's content.");
+    
+        if(isConfirmed){
+
+            let trill_spec = TrillGenerator.generateTrill(nodes, edges, workflowNameRef.current, workflowGoal);
+
+            try {
+
+                for(const node of trill_spec.dataflow.nodes){ // reseting the content of the node before sending to the LLM
+                    if(node.id == nodeId){
+                        node.content = "";
+                    }
+                }
+
+                let result = await openAIRequest("default_preamble", "new_content_prompt", "Current Trill: " + JSON.stringify(trill_spec) + "\n" + " Node ID: " + nodeId + "\n" + "Subtask: "+goal+" Task: " + "\n" + workflowGoal);
+    
+                let clean_result = result.result.replaceAll("```json", "").replaceAll("```python", "");
+                clean_result = clean_result.replaceAll("```", "");
+
+                console.log("generateContentNode result", clean_result);
+
+                updateDefaultCode(nodeId, clean_result);
+
+            } catch (error) {
+                console.error("Error communicating with LLM", error);
+                alert("Error communicating with LLM");
+            }
+        }
+
+    }
+
+    const clickGenerateContentNode = () => {
+        setCurrentEventPipeline("Generate content for node");
+        generateContentNode(nodes, edges, workflowNameRef, goal, workflowGoal);
+    }
 
     const boxIconTranslation = (boxType: BoxType) => {
         if (boxType === BoxType.COMPUTATION_ANALYSIS) {
@@ -314,9 +489,118 @@ export const BoxContainer = ({
 
     return (
         <>
+
+            {/* <div 
+                id={nodeId+"resizer"} 
+                className={"resizer nowheel nodrag"} 
+                style={{
+                    ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
+                }}>
+            </div> */}
+            
+            {data.suggestionAcceptable ?
+                <button 
+                    style={
+                        {...buttonAcceptSuggestion}
+                    } 
+                    onClick={() => {
+                        acceptSuggestion(nodeId)
+                    }}>
+                        Accept Suggestion
+                </button> :
+                null
+            }
+
+            {!minimized && AIModeRef.current ?
+                <button style={{border: "none", background: "none", color: "#1d3853", ...(isSubtasksOpen ? openSubtasksButton : closedSubtasksButton)}} onClick={() => setIsSubtasksOpen(!isSubtasksOpen)}>
+                    <FontAwesomeIcon icon={faAnglesUp} style={{...(isSubtasksOpen ? {} : {transform: "rotate(180deg)"})}} />
+                </button> : null            
+            }
+
+            {!minimized && isSubtasksOpen ?
+                <div style={{...goalInput, ...(currentBoxWidth ? {width: (currentBoxWidth-4)+"px"} : {}), ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {opacity: "50%", pointerEvents: "none"} : {})}} className={"nodrag"}>
+                    <label htmlFor={nodeId+"_goal_box_input"}>Subtask: </label>
+                    <input id={nodeId+"_goal_box_input"} type={"text"} style={{width: "65%", border: "none", background: "transparent", color: "rgb(251, 252, 246)", borderBottom: "1px solid rgb(46, 91, 136)"}} value={goal} onBlur={() => {updateDataGoal(goal)}} onChange={(value: any) => {setGoal(value.target.value)}}/>
+                    {data.nodeType != BoxType.VIS_UTK ? <button style={buttonStyle} onClick={clickGenerateContentNode} >Get code</button> : null}
+                </div> : null
+            }
+
+            {!minimized && data.warnings != undefined && data.warnings.length > 0 ?
+                <div style={{display: "flex", flexDirection: "row", position: "absolute", bottom: "-45px", right: "20px", ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {opacity: "50%"} : {})}}>   
+                    <FontAwesomeIcon style={{fontSize: "24px", color: "#e8c548"}} icon={faTriangleExclamation} onMouseEnter={() => {setShowWarnings(true)}} onMouseLeave={() => {setShowWarnings(false)}} />
+                    <ul style={{padding: "5px", backgroundColor: "white", border: "1px solid black", zIndex: 300, position: "fixed", width: "300px", height: "200px", marginLeft: "30px", overflowY: "auto", ...(showWarnings ? {} : {display: "none"})}}>
+                        {   
+                            data.warnings.map((warning: string, index: number) => (
+                                <li key={nodeId+"_warning_"+index} ><p>{warning}</p></li>
+                            ))
+                        }
+                    </ul> 
+                </div> : null
+            }
+
+            {!minimized && (handleType == "in/out" || handleType == "in") && AIModeRef.current ?
+                <button style={{border: "none", background: "none", color: "#1d3853", ...(isConnectionLeftOpen ? openConnectionLeftButton : closedConnectionLeftButton)}} onClick={() => setIsConnectionLeftOpen(!isConnectionLeftOpen)}>
+                    <FontAwesomeIcon icon={faAnglesUp} style={{...(isConnectionLeftOpen ? {transform: "rotate(90deg)"} : {transform: "rotate(270deg)"})}} />
+                </button> : null            
+            }
+
+            {!minimized && (handleType == "in/out" || handleType == "out") && AIModeRef.current ?
+                <button style={{border: "none", background: "none", color: "#1d3853", ...(isConnectionRightOpen ? openConnectionRightButton : closedConnectionRightButton)}} onClick={() => setIsConnectionRightOpen(!isConnectionRightOpen)}>
+                    <FontAwesomeIcon icon={faAnglesUp} style={{...(isConnectionRightOpen ? {transform: "rotate(270deg)"} : {transform: "rotate(90deg)"})}} />
+                </button> : null            
+            }
+
+            {!minimized && isConnectionLeftOpen && (handleType == "in/out" || handleType == "in") ?
+                <div style={inputTypeSelect}>
+                    <select id={nodeId+"_expected_box_input_type"} value={expectedInputType} onChange={handleChangeExpectedInputType}>
+                        {Object.values(SupportedType).map((type) => {
+
+                            if(ConnectionValidator._inputTypesSupported[data.nodeType].includes(type))
+                                return <option key={type} value={type}>
+                                    {type}
+                                </option>
+                            else
+                                return null
+                        })}
+                        <option value="MUTLIPLE">MULTIPLE</option>
+                        <option value="DEFAULT">EXPECTED INPUT</option>
+                    </select>
+                </div> : null
+            }
+
+            {!minimized && isConnectionLeftOpen && (handleType == "in/out" || handleType == "in") && !(data.suggestionType != "none" && data.suggestionType != undefined) ?
+                <FontAwesomeIcon style={newInConnectionStyle} icon={faCirclePlus} onClick={() => {generateConnectionSuggestions(nodes, edges, workflowNameRef, goal, "input")}} /> : null
+            }
+
+            {
+                !minimized && isConnectionRightOpen && (handleType == "in/out" || handleType == "out") ?
+                <div style={outputTypeSelect}>
+                    <select id={nodeId+"_expected_box_output_type"} value={expectedOutputType} onChange={handleChangeExpectedOutputType}>
+                        {Object.values(SupportedType).map((type) => {
+
+                            if(ConnectionValidator._outputTypesSupported[data.nodeType].includes(type))
+                                return <option key={type} value={type}>
+                                    {type}
+                                </option>
+                            else
+                                return null
+                        })}
+                        <option value="MUTLIPLE">MULTIPLE</option>
+                        <option value="DEFAULT">EXPECTED OUTPUT</option>
+                    </select>
+                </div> : null
+            }
+
+            {!minimized && isConnectionRightOpen && (handleType == "in/out" || handleType == "out") && !(data.suggestionType != "none" && data.suggestionType != undefined) ?
+                <FontAwesomeIcon style={newOutConnectionStyle} icon={faCirclePlus} onClick={() => {generateConnectionSuggestions(nodes, edges, workflowNameRef, goal, "output")}} /> : null
+            }
+
             <div
                 id={nodeId + "resizer"}
                 className={"resizer nowheel nodrag"}
+                style={{
+                    ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
+                }}
             ></div>
             <div
                 id={nodeId + "resizable"}
@@ -327,6 +611,9 @@ export const BoxContainer = ({
                     width: currentBoxWidth + "px",
                     height: currentBoxHeight + "px",
                     ...(minimized ? { display: "none" } : {}),
+                    ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {opacity: 0.5, borderWidth: "2px", borderStyle: "dashed", pointerEvents: "none"} : {}), 
+                    ...(data.suggestionAcceptable ? {borderColor: "#1d3853"} : {}), 
+                    ...(data.keywordHighlighted ? {backgroundColor: "#1E1F23"} : {})
                 }}
                 onContextMenu={onContextMenu}
             >
@@ -344,14 +631,17 @@ export const BoxContainer = ({
                     >
                         <p
                             style={{
-                                textAlign: "center",
-                                marginBottom: 0,
-                                fontSize: "12px",
-                                fontWeight: "bold",
-                                position: "fixed",
-                                top: "10px",
-                                left: 0,
-                                color: "#888787",
+                                ...{
+                                    textAlign: "center",
+                                    marginBottom: 0,
+                                    fontSize: "12px",
+                                    fontWeight: "bold",
+                                    position: "fixed",
+                                    top: "10px",
+                                    left: 0,
+                                    color: "#888787",
+                                },
+                                ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {color: "#888787"})
                             }}
                         >
                             {boxNameTranslation(data.nodeType)}
@@ -392,13 +682,19 @@ export const BoxContainer = ({
                                         promptDescription();
                                     }}
                                     icon={faCircleInfo}
-                                    style={iconStyle}
+                                    style={{
+                                        ...iconStyle,
+                                        ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {color: "#888787"})
+                                    }}
                                 />
                             </li>
                             <li style={{ marginLeft: "10px" }}>
                                 <FontAwesomeIcon
                                     icon={faComments}
-                                    style={iconStyle}
+                                    style={{
+                                        ...iconStyle,
+                                        ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {color: "#888787"})
+                                    }}
                                     onClick={() =>
                                         setShowComments(!showComments)
                                     }
@@ -407,7 +703,10 @@ export const BoxContainer = ({
                             <li style={{ marginLeft: "10px" }}>
                                 <FontAwesomeIcon
                                     icon={faXmark}
-                                    style={iconStyle}
+                                    style={{
+                                        ...iconStyle, 
+                                        ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {color: "#888787"})
+                                    }}
                                     onClick={onDelete}
                                 />
                             </li>
@@ -422,7 +721,10 @@ export const BoxContainer = ({
                                 <li style={{ marginLeft: "10px" }}>
                                     <FontAwesomeIcon
                                         icon={faFloppyDisk}
-                                        style={iconStyle}
+                                        style={{
+                                            ...iconStyle, 
+                                            ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {color: "#888787"})
+                                        }}
                                         onClick={() => {
                                             updateTemplate({
                                                 ...templateData,
@@ -442,15 +744,18 @@ export const BoxContainer = ({
 
                 <Row
                     style={{
-                        width: "50%",
-                        marginRight: "auto",
-                        height: "25px",
-                        marginLeft: "10px",
-                        marginTop: "-25px",
+                        ...{
+                            width: "25%",
+                            marginRight: "auto",
+                            height: "25px",
+                            marginLeft: "10px",
+                            marginTop: "-25px",
+                        },
+                        ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})      
                     }}
                 >
                     {sendCodeToWidgets != undefined ? (
-                        <Row>
+                        <Row style={{gap: "15px"}}>
                             {!disablePlay ?
                                 <Col md={2}>
                                     <FontAwesomeIcon
@@ -467,6 +772,7 @@ export const BoxContainer = ({
                                                 content: "",
                                             });
                                             sendCodeToWidgets(code); // will resolve markers
+                                            generateSubtaskFromExec((code ? code : ""), data.nodeType, workflowGoal);
                                         }}
                                     />
                                 </Col> : null
@@ -719,13 +1025,16 @@ export const BoxContainer = ({
                     <FontAwesomeIcon
                         icon={faCircleDot}
                         style={{
-                            color: "red",
-                            cursor: "pointer",
-                            fontSize: "10px",
-                            position: "fixed",
-                            top: "12px",
-                            left: "10px",
-                            zIndex: 11,
+                            ...{
+                                color: "red",
+                                cursor: "pointer",
+                                fontSize: "10px",
+                                position: "fixed",
+                                top: "12px",
+                                left: "10px",
+                                zIndex: 11,
+                            },
+                            ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
                         }}
                         onClick={() => {
                             updatePin(nodeId, pinnedToDashboard);
@@ -734,13 +1043,17 @@ export const BoxContainer = ({
                 ) : (
                     <FontAwesomeIcon
                         style={{
-                            color: "888",
-                            cursor: "pointer",
-                            fontSize: "10px",
-                            position: "fixed",
-                            top: "12px",
-                            left: "10px",
-                            zIndex: 11,
+                            ...{
+                                color: "888",
+                                cursor: "pointer",
+                                fontSize: "10px",
+                                position: "fixed",
+                                top: "12px",
+                                left: "10px",
+                                zIndex: 11,
+                            },
+                            ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {color: "888"}),
+                            ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
                         }}
                         icon={faCircle}
                         onClick={() => {
@@ -748,11 +1061,15 @@ export const BoxContainer = ({
                         }}
                     />
                 )}
-                <RightClickMenu
-                    menuPosition={menuPosition}
-                    showMenu={showMenu}
-                    options={options}
-                />
+
+                {
+                    !(data.suggestionType != "none" && data.suggestionType != undefined) ?
+                    <RightClickMenu
+                        menuPosition={menuPosition}
+                        showMenu={showMenu}
+                        options={options}
+                    /> : null
+                }
             </div>
 
             {showComments && (
@@ -767,15 +1084,18 @@ export const BoxContainer = ({
             {minimized ? (
                 <div
                     style={{
-                        width: currentBoxWidth + "px",
-                        height: currentBoxHeight + "px",
-                        backgroundColor: "white",
-                        boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px",
-                        borderRadius: "10px",
-                        padding: "5px",
-                        justifyContent: "center",
-                        display: "flex",
-                        alignItems: "center",
+                        ...{
+                            width: currentBoxWidth + "px",
+                            height: currentBoxHeight + "px",
+                            backgroundColor: "white",
+                            boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px",
+                            borderRadius: "10px",
+                            padding: "5px",
+                            justifyContent: "center",
+                            display: "flex",
+                            alignItems: "center",
+                        },
+                        ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
                     }}
                     onClick={() => {
                         if (data.nodeType != BoxType.MERGE_FLOW) {
@@ -797,7 +1117,11 @@ export const BoxContainer = ({
                 >
                     <FontAwesomeIcon
                         icon={boxIconTranslation(data.nodeType)}
-                        style={{ ...iconStyle, fontSize: "23px" }}
+                        style={{ 
+                            ...iconStyle, 
+                            fontSize: "23px",
+                            ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {color: "#888787"})
+                        }}
                     />
                 </div>
             ) : null}
@@ -895,4 +1219,102 @@ const buttonStyleExpert: CSS.Properties = {
 const buttonStyleAny: CSS.Properties = {
     color: "#545353",
     padding: 0,
+};
+
+const buttonAcceptSuggestion: CSS.Properties = {
+    position: "absolute",
+    top: "-50px",
+    cursor: "pointer",
+    backgroundColor: "#1E1F23",
+    color: "rgb(251, 252, 246)",
+    fontFamily: "Rubik",
+    padding: "6px 10px",
+    fontWeight: "bold",
+    border: "none",
+    borderRadius: "4px",
+};
+
+const openSubtasksButton: CSS.Properties = {
+    position: "absolute",
+    bottom: "-80px",
+    left: "calc(50% - 12px)"
+}
+
+const closedSubtasksButton: CSS.Properties = {
+    position: "absolute",
+    bottom: "-25px",
+    left: "calc(50% - 12px)"
+}
+
+const openConnectionLeftButton: CSS.Properties = {
+    position: "absolute",
+    left: "-190px",
+    top: "calc(50% - 12px)"
+}
+
+const closedConnectionLeftButton: CSS.Properties = {
+    position: "absolute",
+    left: "-35px",
+    top: "calc(50% - 12px)"
+}
+
+const openConnectionRightButton: CSS.Properties = {
+    position: "absolute",
+    right: "-190px",
+    top: "calc(50% - 12px)"
+}
+
+const closedConnectionRightButton: CSS.Properties = {
+    position: "absolute",
+    right: "-35px",
+    top: "calc(50% - 12px)"
+}
+
+const goalInput: CSS.Properties = {
+    position: "absolute",
+    bottom: "-50px",
+    left: "2px",
+    backgroundColor: "#1E1F23",
+    color: "rgb(251, 252, 246)",
+    borderRadius: "0 0 10px 10px",
+    fontFamily: "Rubik",
+    paddingTop: "10px",
+    height: "60px",
+    display: "flex", 
+    justifyContent: "center",
+    alignItems: "center"
+}
+
+const inputTypeSelect: CSS.Properties = {
+    position: "absolute",
+    left: "-160px",
+    fontSize: "13px",
+    top: "calc(50% - 13px)",
+    fontFamily: "Rubik",
+    color: "#1E1F23"
+}
+
+const newInConnectionStyle: CSS.Properties = {
+    position: "absolute",
+    left: "-105px",
+    fontSize: "25px",
+    top: "calc(50% - 50px)",
+    color: "#1E1F23"
+};
+
+const outputTypeSelect: CSS.Properties = {
+    position: "absolute",
+    right: "-160px",
+    fontSize: "13px",
+    top: "calc(50% - 13px)",
+    fontFamily: "Rubik",
+    color: "#1E1F23"
+}
+
+const newOutConnectionStyle: CSS.Properties = {
+    position: "absolute",
+    right: "-100px",
+    fontSize: "25px",
+    top: "calc(50% - 50px)",
+    color: "#1E1F23"
 };

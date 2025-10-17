@@ -85,20 +85,20 @@ function TextBox({ data, isConnectable }) {
         type="target"
         position={Position.Left}
         id="in"
-        isConnectable={isConnectable}
+        isConnectable={isConnectable && (data.suggestionType == undefined || data.suggestionType == "none")}
       />
       <Handle
         type="source"
         position={Position.Right}
         id="out"
-        isConnectable={isConnectable}
+        isConnectable={isConnectable && (data.suggestionType == undefined || data.suggestionType == "none")}
       />
       {/* Data flows in both ways */}
       <Handle
         type="source"
         position={Position.Top}
         id="in/out"
-        isConnectable={isConnectable}
+        isConnectable={isConnectable && (data.suggestionType == undefined || data.suggestionType == "none")}
       />
       <BoxContainer
         nodeId={data.nodeId}

@@ -3,7 +3,7 @@ import { BoxType } from "../constants";
 
 interface ProvenanceContextProps {
     addUser: (user_name: string, user_type: string, user_IP: string) => void;
-    addWorkflow: (workflow_name: string) => void;
+    addWorkflow: (workflow_name: string) => Promise<void>;
     newBox: (workflow_name: string, activity_name: string) => void;
     deleteBox: (workflow_name: string, activity_name: string) => void;
     newConnection: (
@@ -36,7 +36,7 @@ interface ProvenanceContextProps {
 
 export const ProvenanceContext = createContext<ProvenanceContextProps>({
     addUser: () => {},
-    addWorkflow: () => {},
+    addWorkflow: () => new Promise((resolve, reject) => {resolve()}),
     newBox: () => {},
     deleteBox: () => {},
     newConnection: () => {},
@@ -71,6 +71,9 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const newBox = (workflow_name: string, activity_name: string) => {
+        console.log("workflow_name", workflow_name);
+        console.log("activity_name", activity_name);
+
         fetch(process.env.BACKEND_URL + "/newBoxProv", {
             method: "POST",
             body: JSON.stringify({

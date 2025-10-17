@@ -13,8 +13,24 @@ select {
 }
  
 select:focus {
-    border-color: dodgerblue;
-    box-shadow: 0 0 5px rgba(30, 144, 255, 0.5);
+    border-color: #1E1F23;
+    box-shadow: 0 0 5px #1E1F23;
+}
+
+.nav-link.active {
+    background-color: #1E1F23!important;
+}
+
+.nav-link {
+    color: #1E1F23;
+}
+
+.nav-link:hover {
+    color: #757886!important;
+}
+
+.nav-tabs .nav-link.active {
+    color: #f9f9f9;
 }
  
 /* CSV Upload Widget Styles */
@@ -44,7 +60,7 @@ select:focus {
     padding: 8px;
     background-color: #e3f2fd;
     border-radius: 4px;
-    color: #1976d2;
+    color: #1E1F23;
 }
  
 .upload-result {

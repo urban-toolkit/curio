@@ -1,0 +1,29 @@
+For your information. Some keywords are used to describe the task being done by a dataflow:
+
+- Action: can usually be mapped to a specific node or part of the dataflow. Are commonly denoted by verbs. Examples: "Load", "Visualize", "Filter", "Clean".
+- Dataset: semantic references to datasets. Can be a single word or a set of words that describe the dataset. Examples: "311 requests", "Sidewalk", "Crime", "Temperature".
+- Where: a geographical location of interest. Examples: "New York City", "Brazil", "Illinois", "Chicago".
+- When: related to time. Examples: "over time", "on 1999", "12/06/2000", "between June and September".
+- About: related to the organization of the workflow. Examples: "two scenarios", "the second part of the dataflow", "the first half of the dataflow".
+- Interaction: denote interactions between nodes, with a node or with the data. Examples: "brushing", "click", "higlight", "widgets".
+- Source: source of the dataset. Examples: "API", "local file", "simulation".
+- Connection: describe how nodes or parts of the workflow are connected to each other. They can be explicit references to connection or implicit. Examples: "then", "after that", "second step", "connected".
+- Content: references to the content of a node or part of the workflow. They can make references to a column of a dataset, machine learning models, type of visualization and so on. Examples: "column", "model".
+- Metadata: information about the data like its format, number of columns, type. Examples: "2D", "3D", "JSON", "CSV".
+- None: all keywords that are not of any other type.
+
+A keyword is a single or set of words.
+
+Your job is to generate a Task description that accurately captures what the dataflow the user created is doing.
+
+You will be given three inputs: 
+
+- The current description of the Task (could be empty).
+- A set of current keywords and their types (can be empty).
+- A Trill specification describing the current dataflow (can be empty).
+
+About the trill specification pay special attention to the "goal" field in each node to better understand their purposes.
+
+Based on the three inputs generate the new Task description. 
+
+**DO NOT INCLUDE ANY EXTRA TEXT BEYOND THE TASK DESCRIPTION. THE TASK SHOULD BE A PARAGRAPH OR MAXIMUM 300 WORDS. DO NOT USE BULLET POINTS. PHRASE THE TASK AS A SET OF SUBTASKS LIKE: "Load the data from the API, clean the data, extract geometry columns..." BE AS SPECIFIC AS YOU CAN. DO NOT NEGLECT THE "goal" FIELD ON THE NODES THAT IS THE BEST WAY TO KNOW WHAT IS THE PURPOSE OF THE NODE**

@@ -1,0 +1,9 @@
+textarea:focus {
+    outline: none;
+    box-shadow: none;
+}
+
+textarea::placeholder {
+    color: rgb(171, 172, 166);
+    opacity: 1; 
+}

@@ -10,20 +10,24 @@ import uuid
 import os
 import zlib
 import time
-import hashlib
 import mmap
-import ast
 from pathlib import Path
 import re
+import pandas as pd
+import geopandas as gpd
+from openai import OpenAI
 
 # The Flask app
 from utk_curio.backend.app.api import bp
-
 
 # Sandbox address
 api_address='http://'+os.getenv('FLASK_SANDBOX_HOST', 'localhost')
 api_port=int(os.getenv('FLASK_SANDBOX_PORT', 2000))
 
+conversation = {}
+
+tokens_left = 200000 # Tokens allowed per minute
+last_refresh = time.time() # Last time that 60 minutes elapsed
 
 inputTypesSupported = {
     "DATA_LOADING": [],
@@ -1688,3 +1692,160 @@ def add_template():
         return jsonify({'error': str(e)}), 500
 
     return jsonify({'message': f"Template saved to {filepath}"}), 200
+
+def get_loaded_files_metadata(folder_path):
+    metadata = ""
+
+    for file in os.listdir(folder_path):
+        file_path = os.path.join(folder_path, file)
+        if file.endswith(".csv"):
+            df = pd.read_csv(file_path)
+            columns = [f"{col} ({df[col].dtype})" for col in df.columns]
+            geometry_type = "None"
+        elif file.endswith(".json") or file.endswith(".geojson"):
+            try:
+                gdf = gpd.read_file(file_path, parse_dates=False)
+                columns = [f"{col} ({gdf[col].dtype})" for col in gdf.columns]
+                if "geometry" in gdf.columns:
+                    geometry_type = gdf.geom_type.unique().tolist()
+                else:
+                    geometry_type = "None"
+            except Exception:
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        columns = list(data[0].keys()) if isinstance(data, list) and data else []
+                        geometry_type = "None"
+                except Exception:
+                    columns = []
+                    geometry_type = "Unreadable JSON"
+        else:
+            continue
+        
+        metadata += f"File name: {file}\nColumns: {', '.join(columns)}\nGeometry type: {geometry_type}\n\n"
+
+    return metadata
+
+@bp.route('/openAI', methods=['POST'])
+def llm_openaAI():
+    global conversation
+
+    data = request.get_json()
+
+    preamble_file = data.get("preamble", None)
+    prompt_file = data.get("prompt", None)
+    text = data.get("text", None)
+    chatId = data.get("chatId", None)
+
+    past_conversation = []
+
+    if chatId != None and chatId in conversation:
+        past_conversation = conversation[chatId]
+
+    prompt_preamble_file = open("./LLMPrompts/"+preamble_file+".txt")
+    prompt_preamble = prompt_preamble_file.read()
+
+    prompt_preamble += "In case you need. This is the list of files and metadata currently loaded into the system"
+
+    metadata = get_loaded_files_metadata("./")
+
+    prompt_preamble += "\n" + metadata
+
+    prompt_file_obj = open("./LLMPrompts/"+prompt_file+".txt")
+    prompt_text = prompt_file_obj.read()
+
+    if len(past_conversation) == 0: # Adding the prompt to the conversation
+        past_conversation.append({"role": "system", "content": prompt_preamble + "\n" + prompt_text})
+
+    api_file = open("api.env")
+    api_key = api_file.read()
+
+    client = OpenAI(
+        api_key=api_key
+    )
+    
+    past_conversation.append({"role": "user", "content": text})
+
+    completion = client.chat.completions.create(
+        model="gpt-4o-mini",
+        store=True,
+        messages=past_conversation
+    )
+
+    # completion = client.chat.completions.create(
+    #     model="o3-mini",
+    #     store=True,
+    #     messages=past_conversation
+    # )
+
+    assistant_reply = completion.choices[0].message.content
+
+    past_conversation.append({"role": "assistant", "content": assistant_reply})
+
+    if chatId != None: # User want to save chat
+        conversation[chatId] = past_conversation
+
+    return jsonify({"result": completion.choices[0].message.content})
+
+@bp.route('/checkUsageOpenAI', methods=['POST'])
+def check_usage_OpenAI():
+    global conversation
+    global tokens_left
+    global last_refresh
+
+    data = request.get_json()
+
+    preamble_file = data.get("preamble", None)
+    prompt_file = data.get("prompt", None)
+    text = data.get("text", None)
+    chatId = data.get("chatId", None)
+
+    past_conversation = []
+
+    if chatId != None and chatId in conversation:
+        past_conversation = conversation[chatId]
+
+    print("Current dir", os.getcwd())
+
+    prompt_preamble_file = open("./LLMPrompts/"+preamble_file+".txt")
+    prompt_preamble = prompt_preamble_file.read()
+
+    prompt_file_obj = open("./LLMPrompts/"+prompt_file+".txt")
+    prompt_text = prompt_file_obj.read()
+
+    if len(past_conversation) == 0: # Adding the prompt to the conversation
+        past_conversation.append({"role": "system", "content": prompt_preamble + "\n" + prompt_text})
+
+    past_conversation.append({"role": "user", "content": text})
+
+    total_tokens = 0
+
+    for message in past_conversation:
+        total_tokens += len(message["content"].split()) * 1.5 # estimating the number of tokens
+
+    print("total_tokens", total_tokens)
+    print("tokens_left", tokens_left)
+
+    now_time = time.time()
+
+    if((now_time - last_refresh) >= 60): # One minute passed
+        tokens_left = 200000
+
+    if(tokens_left > total_tokens):
+        tokens_left -= total_tokens
+        return jsonify({"result": "yes"})
+    
+    return jsonify({"result": (60 - (now_time - last_refresh))})
+
+@bp.route('/cleanOpenAIChat', methods=['GET'])
+def clean_openai_chat():
+    global conversation
+
+    chatId = request.args.get('chatId', None)
+
+    if chatId == None:
+        return jsonify({"message": "You need to specify which chatId is being cleaned"}), 400
+
+    conversation[chatId] = []
+
+    return jsonify({"message": "Success"}), 200

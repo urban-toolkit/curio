@@ -380,10 +380,11 @@ return (
         type="target"
         position={Position.Left}
         id="in"
-        isConnectable={isConnectable}
+        isConnectable={isConnectable && (data.suggestionType == undefined || data.suggestionType == "none")}
       />
       <BoxContainer
         nodeId={data.nodeId}
+        handleType={"in"}
         data={data}
         output={output}
         templateData={templateData}
@@ -416,50 +417,51 @@ return (
           boxType={BoxType.DATA_EXPORT}
           code={code}
         />
-       <BoxEditor
-    setSendCodeCallback={setSendCodeCallback}
-    code={true}
-    grammar={false}
-    widgets={true}
-    setOutputCallback={setOutput}
-    data={data}
-    output={output}
-    boxType={BoxType.DATA_EXPORT}
-    defaultValue={templateData.code ? templateData.code : data.defaultCode}
-    readOnly={
-        (templateData.custom != undefined &&
-            templateData.custom == false)
-    }
-    floatCode={setCode}
-    contentComponent={
-        <ContentComponent
-            tabData={tabData}
-            activeTab={activeTab}
-            setActiveTab={setActiveTab}
-        //<BoxEditor
-        //  setSendCodeCallback={(_: any) => {}}
-        //  code={false}
-        //  grammar={false}
-        //  widgets={true}
-        //  provenance={false}
-        //  setOutputCallback={setOutput}
-        //  customWidgetsCallback={customWidgetsCallback}
-        //  data={data}
-        //  output={output}
-        //  boxType={BoxType.DATA_EXPORT}
-        //  defaultValue={templateData.code ? templateData.code : data.defaultCode}
-        //  // readOnly={
-        //  //   (templateData.custom != undefined &&
-        //  //     templateData.custom == false) ||
-        //  //   !(user != null && user.type == "programmer")
-        //  // }
-        //  readOnly={
-        //    (templateData.custom != undefined &&
-        //      templateData.custom == false)
-        //  }
-        //  floatCode={setCode}
-        />
-    }
+      <BoxEditor
+        // setSendCodeCallback={setSendCodeCallback}
+        setSendCodeCallback={() => {}}
+        code={false}
+        grammar={false}
+        widgets={false}
+        setOutputCallback={setOutput}
+        data={data}
+        output={output}
+        boxType={BoxType.DATA_EXPORT}
+        defaultValue={templateData.code ? templateData.code : data.defaultCode}
+        readOnly={
+            (templateData.custom != undefined &&
+                templateData.custom == false)
+        }
+        floatCode={setCode}
+        contentComponent={
+            <ContentComponent
+                tabData={tabData}
+                activeTab={activeTab}
+                setActiveTab={setActiveTab}
+            //<BoxEditor
+            //  setSendCodeCallback={(_: any) => {}}
+            //  code={false}
+            //  grammar={false}
+            //  widgets={true}
+            //  provenance={false}
+            //  setOutputCallback={setOutput}
+            //  customWidgetsCallback={customWidgetsCallback}
+            //  data={data}
+            //  output={output}
+            //  boxType={BoxType.DATA_EXPORT}
+            //  defaultValue={templateData.code ? templateData.code : data.defaultCode}
+            //  // readOnly={
+            //  //   (templateData.custom != undefined &&
+            //  //     templateData.custom == false) ||
+            //  //   !(user != null && user.type == "programmer")
+            //  // }
+            //  readOnly={
+            //    (templateData.custom != undefined &&
+            //      templateData.custom == false)
+            //  }
+            //  floatCode={setCode}
+            />
+        }
       />
       </BoxContainer>
     </>

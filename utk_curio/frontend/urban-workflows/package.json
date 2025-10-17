@@ -28,12 +28,15 @@
     "@mui/material": "^5.15.10",
     "@react-oauth/google": "^0.12.1",
     "bootstrap": "^5.3.2",
+    "html2canvas": "^1.4.1",
     "intro.js": "^8.3.2",
     "js-cookie": "^3.0.5",
     "jsoneditor": "^10.0.0",
     "react": "^18.2.0",
     "react-bootstrap": "^2.10.1",
     "react-dom": "^18.2.0",
+    "react-draggable": "^4.5.0",
+    "react-markdown": "^10.1.0",
     "reactflow": "^11.11.4",
     "reagraph": "^4.15.24",
     "utk": "file:../utk-workflow/src/utk-ts/dist",
@@ -46,10 +49,10 @@
     "@babel/preset-react": "^7.23.3",
     "@babel/preset-typescript": "^7.23.3",
     "@eslint/js": "^9.19.0",
-    "@types/intro.js": "^5.1.5",
     "@testing-library/jest-dom": "^5.16.4",
     "@testing-library/react": "^13.2.0",
     "@testing-library/user-event": "^13.5.0",
+    "@types/intro.js": "^5.1.5",
     "@types/jest": "^27.5.1",
     "@types/js-cookie": "^3.0.6",
     "@types/uuid": "^9.0.8",
@@ -75,7 +78,9 @@
   },
   "jest": {
     "testEnvironment": "jsdom",
-    "setupFilesAfterEnv": ["<rootDir>/src/setupTests.ts"],
+    "setupFilesAfterEnv": [
+      "<rootDir>/src/setupTests.ts"
+    ],
     "moduleNameMapper": {
       "\\.(css|less|scss|sass)$": "identity-obj-proxy",
       "\\.(jpg|jpeg|png|gif|svg)$": "identity-obj-proxy",
@@ -89,7 +94,13 @@
       "<rootDir>/src/tests/**/*.{ts,tsx}",
       "<rootDir>/src/**/*.{test,spec}.{ts,tsx}"
     ],
-    "moduleFileExtensions": ["ts", "tsx", "js", "jsx", "json"],
+    "moduleFileExtensions": [
+      "ts",
+      "tsx",
+      "js",
+      "jsx",
+      "json"
+    ],
     "collectCoverageFrom": [
       "src/**/*.{ts,tsx}",
       "!src/**/*.d.ts",

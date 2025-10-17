@@ -97,10 +97,11 @@ function DataLoadingBox({ data, isConnectable }) {
         type="source"
         position={Position.Right}
         id="out"
-        isConnectable={isConnectable}
+        isConnectable={isConnectable && (data.suggestionType == undefined || data.suggestionType == "none")}
       />
       <BoxContainer
         nodeId={data.nodeId}
+        handleType={"out"}
         data={data}
         output={output}
         templateData={templateData}
@@ -135,7 +136,7 @@ function DataLoadingBox({ data, isConnectable }) {
         />
         <BoxEditor
           setSendCodeCallback={setSendCodeCallback}
-          code={true}
+          code={false}
           grammar={false}
           widgets={true}
           setOutputCallback={setOutput}

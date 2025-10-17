@@ -1,0 +1,7 @@
+To create his dataflow the user defined a set of subtasks that are put together to form a bigger task that describe the purpose of the dataflow. 
+
+Your job is to generate the appropriate content for a node given the trill specification of the current dataflow, the node id, the node subtask, the task.
+
+Generate the content of the node paying attention to how it is controllable, as mentioned before. For example, Vega nodes are controlled through the Vega-Lite JSON grammar, while most of the other boxes are controllable through python. 
+
+**ONLY OUTPUT THE CONTENT FOR THE NODE AND NOT ANY OTHER TEXT. IF A BOX IS NOT CONTROLLABLE OUTPUT 'not controllable'**

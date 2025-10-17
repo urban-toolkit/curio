@@ -1,0 +1,4 @@
+**THIS IS VERY IMPORTANT: YOU EXPLANATION SHOULD HAVE MAXIMUM 500 WORDS**
+
+Requests from user will have this single node as the object of interest. You will also be provided with the current input and output type of this node:
+

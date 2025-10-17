@@ -17,6 +17,7 @@ interface MergeFlowBoxProps {
     accessLevel?: string;
     defaultCode?: string;
     customTemplate?: any;
+    suggestionType?: string;
   };
   isConnectable: boolean;
 }
@@ -109,7 +110,7 @@ export default function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps)
             id={handleId}
             type="target"
             position={Position.Left}
-            isConnectable={isConnectable && !connected}
+            isConnectable={isConnectable && !connected && (data.suggestionType == undefined || data.suggestionType == "none")}
             style={{
               top: `${((idx + 1) * 100) / 6}%`,
               backgroundColor: connected ? "green" : "red",
@@ -128,7 +129,7 @@ export default function MergeFlowBox({ data, isConnectable }: MergeFlowBoxProps)
         type="source"
         position={Position.Right}
         id="out"
-        isConnectable={isConnectable}
+        isConnectable={isConnectable && (data.suggestionType == undefined || data.suggestionType == "none")}
         style={{ top: "50%" }}
       />
 

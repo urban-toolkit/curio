@@ -52,9 +52,13 @@ interface FlowContextProps {
     nodes: Node[];
     edges: Edge[];
     workflowNameRef: React.MutableRefObject<string>;
+    suggestionsLeft: number;
     allMinimized: number;
+    workflowGoal: string;
+    loading: boolean;
     expandStatus: 'expanded' | 'minimized';
     dashboardPins: { [key: string]: boolean };
+    setWorkflowGoal: (goal: string) => void;
     setOutputs: (updateFn: (outputs: IOutput[]) => IOutput[]) => void;
     setInteractions: (updateFn: (interactions: IInteraction[]) => IInteraction[]) => void;
     applyNewPropagation: (propagation: IPropagation) => void;
@@ -66,7 +70,16 @@ interface FlowContextProps {
     onEdgesDelete: (connections: Edge[]) => void;
     onNodesDelete: (changes: NodeChange[]) => void;
     applyRemoveChanges: (changes: NodeRemoveChange[]) => void;
+    eraseWorkflowSuggestions: () => void;
+    acceptSuggestion: (nodeId: string) => void;
+    flagBasedOnKeyword: (keywordIndex?: number) => void;
     setPinForDashboard: (nodeId: string, value: boolean) => void;
+    cleanCanvas: () => void;
+    updateSubtasks: (trill: any) => void;
+    updateKeywords: (trill: any) => void;
+    updateDataNode: (nodeId: string, newData: any) => void;
+    updateDefaultCode: (nodeId: string, content: string) => void;
+    updateWarnings: (trill_spec: any) => void;
     setDashBoardMode: (value: boolean) => void;
     updatePositionWorkflow: (nodeId: string, position: any) => void;
     updatePositionDashboard: (nodeId: string, position: any) => void;
@@ -81,9 +94,13 @@ export const FlowContext = createContext<FlowContextProps>({
     nodes: [],
     edges: [],
     workflowNameRef: { current: "" },
+    suggestionsLeft: 0,
+    workflowGoal: "",
     allMinimized: 0,
     expandStatus: 'expanded',
     dashboardPins: {},
+    loading: false,
+    setWorkflowGoal: () => {},
     setOutputs: () => { },
     setInteractions: () => { },
     applyNewPropagation: () => { },
@@ -103,6 +120,15 @@ export const FlowContext = createContext<FlowContextProps>({
     setWorkflowName: () => { },
     setAllMinimized: () => { },
     setExpandStatus: () => { },
+    eraseWorkflowSuggestions: () => {},
+    updateDataNode: () => {},
+    flagBasedOnKeyword: () => {},
+    updateSubtasks: () => {},
+    updateKeywords: () => {},
+    updateDefaultCode: () => {},
+    updateWarnings: () => {},
+    cleanCanvas: () => {},
+    acceptSuggestion: () => {},
     loadParsedTrill: async () => { }
 });
 
@@ -115,6 +141,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const [allMinimized, setAllMinimized] = useState<number>(0);
     const [expandStatus, setExpandStatus] = useState<'expanded' | 'minimized'>('expanded');
     const [fitViewOnLoad, setFitViewOnLoad] = useState(false);
+    const [suggestionsLeft, setSuggestionsLeft] = useState<number>(0); // Number of suggestions left
+    const [workflowGoal, setWorkflowGoal] = useState("");
 
     const [positionsInDashboard, _setPositionsInDashboard] = useState<any>({}); // [nodeId] -> change
     const positionsInDashboardRef = useRef(positionsInDashboard);
@@ -134,6 +162,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const { newBox, addWorkflow, deleteBox, newConnection, deleteConnection } =
         useProvenanceContext();
 
+    const [loading, setLoading] = useState<boolean>(false);
+
     const [workflowName, _setWorkflowName] = useState<string>("DefaultWorkflow");
     const workflowNameRef = React.useRef(workflowName);
     const setWorkflowName = (data: any) => {
@@ -141,11 +171,16 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         _setWorkflowName(data);
     };
 
-
-    useEffect(() => {
-        addWorkflow(workflowNameRef.current);
+    const initializeProvenance = async () => {
+        setLoading(true);
+        await addWorkflow(workflowNameRef.current);
         let empty_trill = TrillGenerator.generateTrill([], [], workflowNameRef.current);
         TrillGenerator.intializeProvenance(empty_trill);
+        setLoading(false);
+    }
+
+    useEffect(() => {
+        initializeProvenance();
     }, []);
 
     useEffect(() => {
@@ -161,6 +196,28 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             return () => clearTimeout(timeout);
         }
     }, [fitViewOnLoad]);
+
+    const updateDataNode = (nodeId: string, newData: any) => {
+        let copy_newData = {...newData};
+
+        console.log("updateDataNode");
+
+        setNodes(prevNodes => {
+
+            let newNodes = [];
+
+            for(const node of prevNodes){
+                let newNode = {...node};
+
+                if(newNode.id == nodeId)
+                    newNode.data = copy_newData;
+            
+                newNodes.push(newNode);
+            }
+
+            return [...newNodes];
+        });
+    }
 
     const loadParsedTrill = async (workflowName: string, task: string, loaded_nodes: any, loaded_edges: any, provenance?: boolean, merge?: boolean) => {
 
@@ -234,6 +291,378 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         // TODO: Unset dashboardMode (setDashBoardMode)
     }
 
+    const updateDefaultCode = (nodeId: string, content: string) => {
+        console.log("updateDefaultCode");
+        setNodes(prevNodes => {
+
+            let newNodes = [];
+
+            for(const node of prevNodes){
+                let newNode = {...node};
+
+                if(node.id == nodeId){
+                    node.data.defaultCode = content;
+                }
+
+                newNodes.push(newNode);
+            }
+
+            return newNodes;
+        });
+    }
+
+    const updateKeywords = (trill_spec: any) => { // Given a trill specification with nodes and edges with the same IDs as the current nodes and edges attach the keywords.
+
+        let node_to_keywords: any = {};
+        let edge_to_keywords: any = {};
+
+        if(trill_spec.dataflow != undefined){
+            for(const node of trill_spec.dataflow.nodes){
+                if(node.metadata != undefined && node.metadata.keywords != undefined){
+                    node_to_keywords[node.id] = [...node.metadata.keywords];
+                }
+            }
+
+            for(const edge of trill_spec.dataflow.edges){
+                if(edge.metadata != undefined && edge.metadata.keywords != undefined){
+                    edge_to_keywords[edge.id] = [...edge.metadata.keywords];
+                } 
+            }
+        }
+
+        console.log("updateKeywords");
+        setNodes(prevNodes => {
+
+            let newNodes = [];
+
+            for(const node of prevNodes){
+                let newNode = {...node};
+
+                if(node_to_keywords[newNode.id] != undefined)
+                    newNode.data.keywords = node_to_keywords[newNode.id]
+
+                newNodes.push(newNode);
+            }
+
+            return newNodes;
+        });
+
+        setEdges(prevEdges => {
+
+            let newEdges = [];
+
+            for(const edge of prevEdges){
+                let newEdge = {...edge};
+
+                if(edge_to_keywords[newEdge.id] != undefined)
+                    newEdge.data.keywords = edge_to_keywords[newEdge.id]
+
+                newEdges.push(newEdge);
+            }
+
+            return newEdges;
+        });
+
+    }
+
+    const updateSubtasks = (trill_spec: any) => { // Given a trill specification update the nodes subtasks
+       
+        let node_to_goal: any = {};
+
+        if(trill_spec.dataflow != undefined){
+            for(const node of trill_spec.dataflow.nodes){
+                if(node.goal != undefined){
+                    node_to_goal[node.id] = node.goal;
+                }
+            }
+        }
+
+        console.log("updateSubtasks");
+        setNodes(prevNodes => {
+
+            let newNodes = [];
+
+            for(const node of prevNodes){
+                let newNode = {...node};
+
+                if(node_to_goal[newNode.id] != undefined)
+                    newNode.data.goal = node_to_goal[newNode.id]
+
+                newNodes.push(newNode);
+            }
+
+            return newNodes;
+        });
+
+    }
+
+    const updateWarnings = (trill_spec: any) => { // Given a trill specification update the nodes warnings
+
+        let node_to_warning: any = {};
+
+        if(trill_spec.dataflow != undefined){
+            for(const node of trill_spec.dataflow.nodes){
+                if(node.warnings != undefined){
+                    node_to_warning[node.id] = node.warnings;
+                }
+            }
+        }
+
+        console.log("updateWarnings");
+        setNodes(prevNodes => {
+
+            let newNodes = [];
+
+            for(const node of prevNodes){
+                let newNode = {...node};
+
+                if(node_to_warning[newNode.id] != undefined)
+                    newNode.data.warnings = node_to_warning[newNode.id]
+
+                newNodes.push(newNode);
+            }
+
+            return newNodes;
+        });
+
+    }
+
+    const cleanCanvas = () => {
+
+        let edgesWithProvenance = [];
+
+        for(const edge of edges){
+            if((edge.data && !(edge.data.suggestionType != "none" && edge.data.suggestionType != undefined)) || !edge.data)
+                edgesWithProvenance.push(edge);
+        }
+
+        onEdgesDelete(edgesWithProvenance); // deleting provenance of non-suggestions
+
+        setEdges(prevNodes => []);
+
+        for(const node of nodes){
+            if((node.data && !(node.data.suggestionType != "none" && node.data.suggestionType != undefined)) || !node.data) // not a suggestion have to erase provenance
+                deleteNode(node.id);
+
+        }
+
+        console.log("cleanCanvas");
+        setNodes(prevNodes => []);
+
+        setOutputs([]);
+        setInteractions([]);
+        setDashboardPins({});
+        setPositionsInDashboard({});
+        setPositionsInWorkflow({});
+ 
+        setSuggestionsLeft(0);
+
+    }
+
+    // Considering provenance
+    const deleteNode = (nodeId: string) => {
+        const change: NodeRemoveChange = {
+            id: nodeId,
+            type: "remove",
+        };
+
+        onNodesDelete([change]);
+    };
+
+    // Go through all suggestions and flag the nodes that do not dependent on any other node in workflow suggestions
+    const flagAcceptableSuggestions = (nodes: any, edges: any) => {
+        
+        let dependOn = []; // all nodes that depend on some other node suggested node
+        let suggestedNodes = []; // all ids of suggested nodes
+
+        for(const node of nodes){
+            if(node.data.suggestionType == "workflow"){
+                suggestedNodes.push(node.id);
+            }
+        }
+
+        setSuggestionsLeft(suggestedNodes.length); // Updating number of suggestions left
+
+        for(const edge of edges){
+            if(suggestedNodes.includes(edge.source)) // The node depends on some other suggested node
+                dependOn.push(edge.target);
+        }
+
+        let nodesToUpdate = []; // Which nodes need to have their suggestionAcceptable flag flipped
+
+        for(const node of nodes){
+            if(!dependOn.includes(node.id) && node.data.suggestionType == "workflow"){ // It means that the node can be accepted as a suggestion
+                if(!node.data.suggestionAcceptable) // Check if the flag needs to be flipped
+                    nodesToUpdate.push(node.id);
+            }else if(node.data.suggestionType == "connection"){ // Connection suggestions does not care about dependencies
+                if(!node.data.suggestionAcceptable) // Check if the flag needs to be flipped
+                    nodesToUpdate.push(node.id);
+            }else{
+                if(node.data.suggestionAcceptable) // Check if the flag needs to be flipped
+                    nodesToUpdate.push(node.id);
+            }
+        }
+
+        if(nodesToUpdate.length > 0){
+
+            console.log("flagAcceptableSuggestions");
+            setNodes(prevNodes => {
+                let newNodes = [];
+    
+                for(const node of prevNodes){
+                    let newNode = {...node};
+
+                    if(nodesToUpdate.includes(newNode.id))
+                        newNode.data.suggestionAcceptable = !newNode.data.suggestionAcceptable; // flip the flag
+
+                    newNodes.push(newNode);
+                }
+    
+                return newNodes;
+            });
+        }
+
+    }
+
+    // Accept the suggestion for adding a specific node
+    const acceptSuggestion = (nodeId: string) => {
+
+        console.log("acceptSuggestion");
+        setNodes(prevNodes => {
+            let newNodes = [];
+            let suggestions = []; // ids of all suggestion nodes
+            let acceptedConnectionSuggestion = false; // if a connection suggestion is accepted all others are canceled
+            let acceptedConnectionSuggestionId = "";
+
+            for(const node of prevNodes){
+
+                let newNode = {...node};
+
+                if(newNode.id == nodeId){
+                    newNode.data.suggestionAcceptable = false;
+
+                    if(newNode.data.suggestionType == "connection"){
+                        acceptedConnectionSuggestion = true;
+                        acceptedConnectionSuggestionId = newNode.id;
+                    }
+
+                    newNode.data.suggestionType = "none";
+
+                    newBox(workflowNameRef.current, (newNode.type as string) + "-" + newNode.id); // Provenance of the accepted suggestion
+                }
+
+                newNodes.push(newNode);
+            }
+    
+            let filteredNewNodes = newNodes.filter((node) => { // if acceptedConnectionSuggestion remove the other connection suggestions
+                return !(node.data.suggestionType == "connection" && acceptedConnectionSuggestion)
+            }); 
+
+            for(const node of filteredNewNodes){
+                if(node.data.suggestionType != "none" && node.data.suggestionType != undefined) // it is a suggestion
+                    suggestions.push(node.id);
+            }
+
+            setEdges(prevEdges => {
+                let newEdges = [];
+
+                for(const edge of prevEdges){
+                    let newEdge = {...edge};
+
+                    if(!(acceptedConnectionSuggestion && newEdge.data.suggestionType == "connection") || (acceptedConnectionSuggestionId == newEdge.source || acceptedConnectionSuggestionId == newEdge.target)){ // if a connection suggestion was accepted only maintain the edge that connects the suggestion
+                        if(!suggestions.includes(edge.source) && !suggestions.includes(edge.target)) // if the source and target of an edge is not suggestion, the edge is not suggestion anymore
+                            newEdge.data.suggestionType = "none";
+    
+                        newEdges.push(newEdge);
+                    }
+
+                }
+
+                return newEdges;
+            })
+
+            return filteredNewNodes;
+        });
+
+    }
+
+    // If keywordIndex is undefied all components are unflagged
+    const flagBasedOnKeyword = (keywordIndex?: number) => {
+        console.log("flagBasedOnKeyword");
+        setNodes(prevNodes => {
+            let newNodes = [];
+
+            for(const node of prevNodes){
+                let newNode = {...node};
+
+                if(newNode.data.keywords != undefined && keywordIndex != undefined && newNode.data.keywords.includes(keywordIndex))
+                    newNode.data.keywordHighlighted = true;
+                else
+                    newNode.data.keywordHighlighted = false;
+
+                newNodes.push(newNode);
+            }
+
+            return newNodes;
+        });
+    
+        setEdges(prevEdges =>
+            prevEdges.map(edge => ({
+              ...edge,
+              data: {
+                ...edge.data,
+                keywordHighlighted:
+                  edge.data.keywords !== undefined &&
+                  keywordIndex !== undefined &&
+                  edge.data.keywords.includes(keywordIndex),
+              },
+            }))
+          );
+
+    }
+
+    useEffect(() => {
+        flagAcceptableSuggestions(nodes, edges);
+    }, [nodes, edges]);
+
+    // Erase all nodes and edges that are suggestions if the use added a node or an edge
+    const eraseWorkflowSuggestions = () => {
+        
+        setEdges(prevEdges => {
+            let newEdges = [];
+
+            for(const edge of prevEdges){
+                if(edge.data.suggestionType != "workflow"){
+                    newEdges.push({...edge});
+                }
+            }
+
+            return newEdges;
+        });
+
+        setEdges((prevEdges: any) => { // Making sure that the removal of nodes happen after the removal of nodes
+            console.log("eraseWorkflowSuggestions");
+            setNodes((prevNodes: any) => {
+                let newNodes = [];
+    
+                for(const node of prevNodes){
+                    if(node.data.suggestionType != "workflow"){
+                        let copy_node = {...node};
+                        copy_node.data.suggestionAcceptable = false; // The node is not a suggestion. Reseting the flag.
+
+                        newNodes.push({...copy_node});
+                    }
+                }
+    
+                return newNodes;
+            });
+
+            return prevEdges;
+        });
+
+        setSuggestionsLeft(0);
+    }
+    
     const setDashBoardMode = (value: boolean) => {
         console.log(`=== Dashboard mode ${value ? 'enabled' : 'disabled'} ===`);
         if (value) {
@@ -965,6 +1394,10 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 allMinimized,
                 expandStatus,
                 dashboardPins,
+                suggestionsLeft,
+                workflowGoal,
+                loading,
+                setWorkflowGoal,
                 setExpandStatus,
                 setOutputs,
                 setInteractions,
@@ -984,6 +1417,15 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 applyNewOutput,
                 setWorkflowName,
                 loadParsedTrill,
+                updateDataNode,
+                updateWarnings,
+                updateDefaultCode,
+                updateKeywords,
+                updateSubtasks,
+                cleanCanvas,
+                flagBasedOnKeyword,
+                acceptSuggestion,
+                eraseWorkflowSuggestions,
                 setAllMinimized
             }}
         >

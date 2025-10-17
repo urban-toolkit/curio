@@ -21,12 +21,14 @@ import {
     faExpand,
     faToolbox,
     faCode,
+    faList,
     faSpellCheck,
     faRotateLeft,
     faRightFromBracket,
 } from "@fortawesome/free-solid-svg-icons";
 import { OverlayTrigger, Tooltip } from "react-bootstrap";
- 
+import BoxExplanation from "./BoxExplanation";
+
 type BoxEditorProps = {
     outputId?: string;
     setSendCodeCallback: any;
@@ -34,12 +36,7 @@ type BoxEditorProps = {
     widgets: boolean;
     grammar: boolean;
     setOutputCallback: any;
-    data: {
-        nodeId: string;
-        pythonInterpreter: any;
-        input: string;
-        outputCallback: any;
-    };
+    data: any;
     output: { code: string; content: string };
     boxType: BoxType;
     applyGrammar?: any;
@@ -170,10 +167,13 @@ function BoxEditor({
         <>
             <div
                 style={{
-                    height: "calc(100% - 30px)",
-                    width: "100%",
-                    marginLeft: "auto",
-                    marginRight: "auto",
+                    ...{
+                        height: "calc(100% - 30px)",
+                        width: "100%",
+                        marginLeft: "auto",
+                        marginRight: "auto",
+                    },
+                    ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
                 }}
             >
                 <Tab.Container activeKey={activeTab} onSelect={handleTabSelect}>
@@ -250,6 +250,17 @@ function BoxEditor({
                                     </Tab.Pane>
                                 ) : null}
  
+                                {code || grammar ? (
+                                    <Tab.Pane eventKey="explanation" style={{ height: "100%" }}>
+                                        <BoxExplanation 
+                                            box_type={boxType}
+                                            code={data.code}
+                                            current_input={data.in}
+                                            current_output={data.out}
+                                        />
+                                    </Tab.Pane>
+                                ) : null}
+ 
                                 {provenance == undefined || provenance ? (
                                     <Tab.Pane
                                         eventKey="provenance"
@@ -309,7 +320,7 @@ function BoxEditor({
                         style={{
                             backgroundColor: "#f2f2f2",
                             borderRadius: "10px",
-                            width: "55%",
+                            width: "75%",
                             height: "25px",
                             marginLeft: "auto",
                             marginTop: "6px",
@@ -385,6 +396,22 @@ function BoxEditor({
                                 </Col>
                             ) : null}
  
+                            {code || grammar ? (
+                                <Col>
+                                    <OverlayTrigger
+                                        placement="right"
+                                        delay={overlayTriggerProps}
+                                        overlay={<Tooltip>Explanation</Tooltip>}
+                                    >
+                                        <Nav.Item style={navItemStyle}>
+                                            <Nav.Link eventKey="explanation" style={navLinkStyle}>
+                                                <FontAwesomeIcon icon={faList} />
+                                            </Nav.Link>
+                                        </Nav.Item>
+                                    </OverlayTrigger>
+                                </Col>
+                            ) : null}
+
                             {provenance == undefined || provenance ? (
                                 <Col>
                                     <OverlayTrigger
@@ -436,6 +463,8 @@ function BoxEditor({
                     zIndex: 11,
                     top: "12px",
                     left: "30px",
+                    ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {}),
+                    ...(data.keywordHighlighted ? {color: "white"} : {color: "#888787"})
                 }}
                 onClick={() =>
                     fullscreen != "" && fullscreen != undefined

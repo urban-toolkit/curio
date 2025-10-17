@@ -17,6 +17,7 @@ export default function BiDirectionalEdge({
   targetPosition,
   markerEnd,
   markerStart,
+  data
 }: EdgeProps) {
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
@@ -57,7 +58,7 @@ export default function BiDirectionalEdge({
       path={edgePath}
       markerEnd={markerEnd}
       markerStart={markerStart}
-      style={{ stroke: "red" }}
+      style={{stroke: data.keywordHighlighted ? 'blue' : 'red'}}
     />
   );
 }

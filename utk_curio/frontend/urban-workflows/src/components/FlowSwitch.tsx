@@ -48,13 +48,13 @@ function FlowSwitchBox({ data, isConnectable }) {
         type="target"
         position={Position.Bottom}
         id="in1"
-        isConnectable={isConnectable}
+        isConnectable={isConnectable && (data.suggestionType == undefined || data.suggestionType == "none")}
       />
       <Handle
         type="target"
         position={Position.Top}
         id="in2"
-        isConnectable={isConnectable}
+        isConnectable={isConnectable && (data.suggestionType == undefined || data.suggestionType == "none")}
       />
       <BoxContainer
         nodeId={data.nodeId}

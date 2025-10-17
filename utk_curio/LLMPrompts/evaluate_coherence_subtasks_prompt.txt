@@ -1,0 +1,49 @@
+To create his dataflow the user defined a set of subtasks that are put together to form a bigger task that describe the purpose of the dataflow. Your job is, given the task and defined subtasks and how they are attached to components of the dataflow (in the Trill specification they will appear as 'goal' on nodes) generate, if needed, warnings that should be attached to the Trill specification in a 'warnings' field on the nodes. Each warning should have maximum of 50 characters. Feel free to word it in a way that is tailored to the user dataflow. ONLY INCLUDE NODE IDs AND WARNINGS ON THE TRILL YOU OUTPUT. NO NEED TO INCLUDE EDGES For example:
+
+{
+    "dataflow": {
+        "name": "DefaultWorkflow",
+        "nodes": [
+            {
+                "id": "node1",
+                "warnings": ["The source and data format is not specified"]
+            },
+            {
+                "id": "node2",
+                "warnings": ["Data loading nodes should not be used for analysis", "Specify the types of trends in more details"],
+            },
+            {
+                "id": "node3"
+            },
+            {
+                "id": "node4"
+            },
+            {
+                "id": "node5"
+            },
+            {
+                "id": "node6"
+            }
+        ]
+    }
+}
+
+Your warnings should contribute to a more coherent dataflow. Keep your warnings shorter than 50 words. Look only for:
+
+- Incompatible analysis or visualization. For example: trying to visualize a non-geolocated data into a map, trying to use Vega lite to produce 3D visualizations (it can't).
+- Incompatible box. For example: using a computation box to load data, using a dataformat not supported by the box.
+- Boxes that overloaded with multiple subtasks that could be broken down into smaller subtasks (make sure to recommend ways to breakdown the subtask).
+- Imposibilities. The user specify a subtask that is unachievable and unrealistic for the plataform's capability. Example: real time stream of data to another application.
+- Lack of supporting nodes. A subtask that does is not correctly supported by previous boxes. For example: trying to do analysis on data that was not loaded.
+- Underspecified subtask. Not enough details to implement it.
+
+Do not generate warnings for these node types:
+
+- DATA_POOL
+- MERGE_FLOW
+- VIS_VEGA
+- VIS_UTK
+
+**BE VERY SPECIFIC, DO NOT PROVIDE VAGUE WARNINGS LIKE: 'Input data format not suited for analysis'. YOU DO NOT NEED TO OUTPUT WARNING FOR EVERY NODE**.
+
+**ONLY OUTPUT THE DATAFLOW IN TRILL WITH THE WARNINGS LISTED AS ARRAYS IN EACH NODE. DO NOT OUTPUT ANY OTHER TEXT. DO NOT OUTPUT THE EXAMPLE. IF YOU RECEIVE AN EMPTY TRILL JUST OUTPUT AN EMPTY TRILL. THIS IS CRUCIAL: DO NOT GENERATE NODES OR EDGES THAT WERE NOT PRESENT IN THE TRILL YOU RECEIVED. DO NOT GENERATE NEW NODES OR EDGES BASED ON THE TASK. THE ONLY FIELD YOU ARE ALLOWED TO CHANGE IS THE 'warning' **

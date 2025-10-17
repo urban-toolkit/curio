@@ -53,6 +53,6 @@ export default function UniDirectionalEdge({
   // });
 
   return (
-    <BaseEdge path={edgePath} markerEnd={markerEnd} style={{stroke: data.keywordHighlighted ? 'rgb(29, 56, 83)' : 'grey'}} />
+    <BaseEdge path={edgePath} markerEnd={markerEnd} style={{stroke: data.keywordHighlighted ? '#1E1F23' : 'grey'}} />
   );
 }
