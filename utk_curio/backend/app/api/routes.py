@@ -1742,7 +1742,7 @@ def llm_openaAI():
     if chatId != None and chatId in conversation:
         past_conversation = conversation[chatId]
 
-    prompt_preamble_file = open("./LLMPrompts/"+preamble_file+".txt")
+    prompt_preamble_file = open("./llm-prompts/"+preamble_file+".txt")
     prompt_preamble = prompt_preamble_file.read()
 
     prompt_preamble += "In case you need. This is the list of files and metadata currently loaded into the system"
@@ -1751,7 +1751,7 @@ def llm_openaAI():
 
     prompt_preamble += "\n" + metadata
 
-    prompt_file_obj = open("./LLMPrompts/"+prompt_file+".txt")
+    prompt_file_obj = open("./llm-prompts/"+prompt_file+".txt")
     prompt_text = prompt_file_obj.read()
 
     if len(past_conversation) == 0: # Adding the prompt to the conversation
@@ -1807,10 +1807,10 @@ def check_usage_OpenAI():
 
     print("Current dir", os.getcwd())
 
-    prompt_preamble_file = open("./LLMPrompts/"+preamble_file+".txt")
+    prompt_preamble_file = open("./llm-prompts/"+preamble_file+".txt")
     prompt_preamble = prompt_preamble_file.read()
 
-    prompt_file_obj = open("./LLMPrompts/"+prompt_file+".txt")
+    prompt_file_obj = open("./llm-prompts/"+prompt_file+".txt")
     prompt_text = prompt_file_obj.read()
 
     if len(past_conversation) == 0: # Adding the prompt to the conversation

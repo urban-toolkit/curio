@@ -949,7 +949,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const onConnect = useCallback(
         (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean) => {
             console.log(
-                "🔥 onConnect triggered:",
+                "onConnect triggered:",
                 connection.source,
                 connection.sourceHandle,
                 connection.target,
