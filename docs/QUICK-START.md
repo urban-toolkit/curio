@@ -41,7 +41,7 @@ We can now proceed and create a `Vega-Lite` node (1) that will be connected to t
 }
 ```
 
-Curio handles the data-flow and `Vega-Lite` has access to the DataFrame outputed by the previous box. After hitting run, we can see that a barchart was created:
+Curio handles the dataflow and `Vega-Lite` has access to the DataFrame outputed by the previous box. After hitting run, we can see that a barchart was created:
 
 ![Final result](images/final_result.png?raw=true)
 

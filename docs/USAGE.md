@@ -39,6 +39,9 @@ Usage:
   curio start --force-db-init       # Re-initialize the backend database and start all servers
 ```
 
+> [!NOTE]
+> When reading files from inside Curio's dataflow nodes, paths are resolved relative to the directory where you started Curio. If you see a "No such file or directory" error while loading a file, double-check the folder you're running Curio from, because the file path you provide is interpreted relative to that location.
+
 ## Installation from pip
 
 Curio can be installed either via pip for a quick setup or from source for more customization:
@@ -62,7 +65,8 @@ curio start sandbox
 curio start frontend
 ```
 
-⚠️ **Note:** The pip installation includes a pre-built frontend and does not support rebuilding it. If you need to modify or rebuild the frontend, please use the manual installation method described below.
+> [!NOTE]
+> The pip installation includes a pre-built frontend and does not support rebuilding it. If you need to modify or rebuild the frontend, please use the manual installation method described below.
 
 ## Installation from git
 

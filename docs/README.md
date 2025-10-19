@@ -8,8 +8,12 @@
 ## Making contributions
 
 - [Contributing to Curio](CONTRIBUTIONS.md)
+- [Onboarding for undergraduate students](ONBOARDING.md)
 
 ## Examples
+
+> [!NOTE]
+> Some examples use optional Python libraries that aren't included with Curio. If you hit a "ModuleNotFoundError" (or similar), install the missing package (e.g., via pip or conda).
 
 Icons indicate the complexity level of each example: 🟢 Easy, 🟡 Intermediate, 🔴 Advanced.
 
