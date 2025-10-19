@@ -5,6 +5,10 @@
   margin: 0 10px;
 }
 
+.aiToggleSwitch {
+  cursor: pointer
+}
+
 .logo {
   margin-right: 15px;
   margin-left: 15px;

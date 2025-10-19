@@ -263,7 +263,7 @@ export default function UpMenu({
                 <button className={styles.button} onClick={openTutorial}>Tutorial</button>
                 <span className={styles.aiToggleText}>Urbanite</span>
                 <div className="form-check form-switch">
-                    <input className="form-check-input" type="checkbox" role="switch" id="flexSwitchCheckChecked" onChange={(e: any) => {setAIMode(e.target.checked)}}></input>
+                    <input className={`form-check-input ${styles.aiToggleSwitch}`} type="checkbox" role="switch" id="flexSwitchCheckChecked" onChange={(e: any) => {setAIMode(e.target.checked)}}></input>
                 </div>
             </div>
             {/* Right-side top menu */}

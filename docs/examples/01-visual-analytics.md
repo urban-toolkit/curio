@@ -10,9 +10,15 @@ entire dataflow pipeline:
 
 Before you begin, please familiarize yourself with Curio’s main concepts and functionalities by reading our [usage guide](https://github.com/urban-toolkit/curio/blob/main/docs/USAGE.md).
 
-The data for this tutorial can be found [here](https://drive.google.com/drive/folders/1-cncKF-omB0av98WzKApKtyJTrgvfa0P?usp=sharing).
+The data for this tutorial can be found [here](https://drive.google.com/drive/folders/1-cncKF-omB0av98WzKApKtyJTrgvfa0P?usp=sharing). All file paths assume the data folder was unzipped into the same directory you’re running Curio from.
 
 For completeness, we also include the template code in each dataflow step.
+
+This example uses the following libraries:
+
+```bash
+pip install xarray==2025.6.1 pythermalcomfort==3.6.1 rasterstats==0.20.0
+```
 
 ## Step 1: **Load high-resolution mean radiant temperature data**
 

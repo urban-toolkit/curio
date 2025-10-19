@@ -136,7 +136,7 @@ function DataLoadingBox({ data, isConnectable }) {
         />
         <BoxEditor
           setSendCodeCallback={setSendCodeCallback}
-          code={false}
+          code={true}
           grammar={false}
           widgets={true}
           setOutputCallback={setOutput}
