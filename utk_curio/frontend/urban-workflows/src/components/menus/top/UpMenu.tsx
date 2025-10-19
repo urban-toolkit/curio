@@ -261,8 +261,8 @@ export default function UpMenu({
                 </button>
                 <button className={styles.button} onClick={openTrillProvenanceModal}>Provenance</button>
                 <button className={styles.button} onClick={openTutorial}>Tutorial</button>
+                <span className={styles.aiToggleText}>Urbanite</span>
                 <div className="form-check form-switch">
-                    <span className={styles.aiToggleText}>AI</span>
                     <input className="form-check-input" type="checkbox" role="switch" id="flexSwitchCheckChecked" onChange={(e: any) => {setAIMode(e.target.checked)}}></input>
                 </div>
             </div>

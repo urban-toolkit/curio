@@ -1,8 +1,8 @@
 .aiToggleText {
-  background: -webkit-linear-gradient(#eee, #333);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  font-size: 1.2em;
+  font-weight: bold;
+  background-color: transparent;
+  color: #fbfcf6;
+  margin: 0 10px;
 }
 
 .logo {

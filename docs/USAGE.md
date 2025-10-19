@@ -65,6 +65,8 @@ curio start sandbox
 curio start frontend
 ```
 
+Curio's frontend will be available at http://localhost:8080 by default.
+
 > [!NOTE]
 > The pip installation includes a pre-built frontend and does not support rebuilding it. If you need to modify or rebuild the frontend, please use the manual installation method described below.
 
