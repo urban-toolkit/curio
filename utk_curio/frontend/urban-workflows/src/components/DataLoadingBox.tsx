@@ -18,6 +18,8 @@ import DescriptionModal from "./DescriptionModal";
 import { useUserContext } from "../providers/UserProvider";
 import { OutputIcon } from "./edges/OutputIcon";
 
+import OutputContent from "./editing/OutputContent";
+
 function DataLoadingBox({ data, isConnectable }) {
   const [output, setOutput] = useState<{
     code: string;
@@ -91,6 +93,11 @@ function DataLoadingBox({ data, isConnectable }) {
     setSendCode(() => _sendCode);
   };
 
+  const memoizedOutputComponent = React.useMemo(
+    () => <OutputContent output={output} />,
+    [output]
+  );
+
   return (
     <>
       <Handle
@@ -148,6 +155,7 @@ function DataLoadingBox({ data, isConnectable }) {
           }
           readOnly={false}
           floatCode={setCode}
+          contentComponent={memoizedOutputComponent}
         />
 
         <OutputIcon type="N" />

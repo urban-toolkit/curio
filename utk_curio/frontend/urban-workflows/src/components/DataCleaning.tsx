@@ -18,6 +18,8 @@ import { useUserContext } from "../providers/UserProvider";
 import { OutputIcon } from "./edges/OutputIcon";
 import { InputIcon } from "./edges/InputIcon";
 
+import OutputContent from "./editing/OutputContent";
+
 function DataCleaningBox({ data, isConnectable }) {
   const [output, setOutput] = useState<{
     code: string;
@@ -91,6 +93,11 @@ function DataCleaningBox({ data, isConnectable }) {
     setSendCode(() => _sendCode);
   };
 
+  const memoizedOutputComponent = React.useMemo(
+    () => <OutputContent output={output} />,
+    [output]
+  );
+
   return (
     <>
       <Handle
@@ -163,6 +170,7 @@ function DataCleaningBox({ data, isConnectable }) {
           }
           floatCode={setCode}
           disableWidgets={true} // Freeze widget buttons instead of hiding them
+          contentComponent={memoizedOutputComponent}
         />
         <OutputIcon type="1" />
       </BoxContainer>

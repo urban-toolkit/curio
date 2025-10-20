@@ -44,6 +44,8 @@ export class PythonInterpreter {
 
         let startTime = formatDate(new Date());
 
+        console.log("unifiedLines", unifiedLines);
+
         fetch(process.env.BACKEND_URL + "/processPythonCode", {
             method: "POST",
             body: JSON.stringify({

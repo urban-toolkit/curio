@@ -1,5 +1,6 @@
-import pandas as pd 
+import pandas as pd
+import io
 
-df_point = pd.read_csv("file.csv") 
+df = pd.read_csv(io.StringIO([!! Load CSV$FILE$ !!]), sep=",")
 
-return df_point
+return df

@@ -239,7 +239,7 @@ except Exception as e:
         } else if (widget == WidgetType.FILE) {
             // anything can be used as text
             valid = true;
-            convertedValue = '"' + value + '"'; // surrounding the value in quotes to be understood as a string
+            convertedValue = '\'\'\'' + value + '\'\'\''; // surrounding the value in quotes to be understood as a string
         }
 
         if (valid) {
@@ -489,8 +489,33 @@ except Exception as e:
                             value: "True",
                             args: nonValidatedValues[elem].args,
                         };
+                } else if (widget == WidgetType.FILE) {
+
+                    let file = event.target.files[0];
+                    let reader = new FileReader();
+
+                    reader.onload = () => {
+                        console.log("reader.result", reader.result);
+
+                        newNonValidatedValues[elem] = {
+                            widget: widget,
+                            value: reader.result,
+                            args: nonValidatedValues[elem].args,
+                        };
+                    }
+
+                    reader.onerror = () => {
+                        alert("Error reading file.");
+                        newNonValidatedValues[elem] = {
+                            widget: widget,
+                            value: "",
+                            args: nonValidatedValues[elem].args,
+                        };
+                    }
+
+                    reader.readAsText(file);
+
                 } else {
-                    // TODO: implement file input
                     newNonValidatedValues[elem] = {
                         widget: widget,
                         value: event.target.value,
@@ -729,86 +754,89 @@ except Exception as e:
                         );
                     }
                 )
-            ) : customWidgetsCallback == undefined && data && data.boxType === BoxType.DATA_LOADING ? (
-                <div className="csv-upload-widget">
-                    <div className="upload-section">
-                        <div className="file-input-container">
-                            <input
-                                type="file"
-                                accept=".txt, .csv, .json, .geojson, .tsv"
-                                onChange={handleFileSelect}
-                                style={{ display: "none" }}
-                                id={`file-input-${nodeId}`}
-                            />
-                            <button
-                                className="btn btn-outline-secondary"
-                                onClick={() =>
-                                    document
-                                        .getElementById(`file-input-${nodeId}`)
-                                        ?.click()
-                                }
-                                style={{ marginRight: "10px" }}
-                                disabled={disableWidgets}
-                            >
-                                📁 Upload File
-                            </button>
-                            <button
-                                className="btn btn-success"
-                                onClick={handleRunCode}
-                                disabled={!selectedFile || isProcessing || disableWidgets}
-                            >
-                                {isProcessing
-                                    ? "⏳ Processing..."
-                                    : "▶️ Load Data"}
-                            </button>
-                        </div>
-
-                        {uploadResult && (
-                            <div
-                                className={`upload-result ${uploadResult.success ? "success" : "error"}`}
-                            >
-                                <div>{uploadResult.message}</div>
-                                {uploadResult.success &&
-                                    uploadResult.savedPath && (
-                                        <div className="output-path">
-                                            <strong>
-                                                📊 Dataframe saved to:
-                                            </strong>{" "}
-                                            <code>
-                                                {uploadResult.savedPath}
-                                            </code>
-                                        </div>
-                                    )}
-                            </div>
-                        )}
-                    </div>
-
-                    {fileInfo && (
-                        <div className="file-info-section">
-                            <div className="file-info-header">
-                                📁 File Information:
-                            </div>
-                            <div className="file-info-details">
-                                <div>
-                                    <strong>Name:</strong> {fileInfo.name}
-                                </div>
-                                <div>
-                                    <strong>Size:</strong> {fileInfo.size}
-                                </div>
-                                <div>
-                                    <strong>Type:</strong> {fileInfo.type}
-                                </div>
-                                <div>
-                                    <strong>Last Modified:</strong>{" "}
-                                    {fileInfo.lastModified}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            ) : null}
+            ) : null }
+            
         </div>
     );
 }
 
 export default WidgetsEditor;
+
+            // customWidgetsCallback == undefined && data && data.boxType === BoxType.DATA_LOADING ? (
+            //     <div className="csv-upload-widget">
+            //         <div className="upload-section">
+            //             <div className="file-input-container">
+            //                 <input
+            //                     type="file"
+            //                     accept=".txt, .csv, .json, .geojson, .tsv"
+            //                     onChange={handleFileSelect}
+            //                     style={{ display: "none" }}
+            //                     id={`file-input-${nodeId}`}
+            //                 />
+            //                 <button
+            //                     className="btn btn-outline-secondary"
+            //                     onClick={() =>
+            //                         document
+            //                             .getElementById(`file-input-${nodeId}`)
+            //                             ?.click()
+            //                     }
+            //                     style={{ marginRight: "10px" }}
+            //                     disabled={disableWidgets}
+            //                 >
+            //                     📁 Upload File
+            //                 </button>
+            //                 <button
+            //                     className="btn btn-success"
+            //                     onClick={handleRunCode}
+            //                     disabled={!selectedFile || isProcessing || disableWidgets}
+            //                 >
+            //                     {isProcessing
+            //                         ? "⏳ Processing..."
+            //                         : "▶️ Load Data"}
+            //                 </button>
+            //             </div>
+
+            //             {uploadResult && (
+            //                 <div
+            //                     className={`upload-result ${uploadResult.success ? "success" : "error"}`}
+            //                 >
+            //                     <div>{uploadResult.message}</div>
+            //                     {uploadResult.success &&
+            //                         uploadResult.savedPath && (
+            //                             <div className="output-path">
+            //                                 <strong>
+            //                                     📊 Dataframe saved to:
+            //                                 </strong>{" "}
+            //                                 <code>
+            //                                     {uploadResult.savedPath}
+            //                                 </code>
+            //                             </div>
+            //                         )}
+            //                 </div>
+            //             )}
+            //         </div>
+
+            //         {fileInfo && (
+            //             <div className="file-info-section">
+            //                 <div className="file-info-header">
+            //                     📁 File Information:
+            //                 </div>
+            //                 <div className="file-info-details">
+            //                     <div>
+            //                         <strong>Name:</strong> {fileInfo.name}
+            //                     </div>
+            //                     <div>
+            //                         <strong>Size:</strong> {fileInfo.size}
+            //                     </div>
+            //                     <div>
+            //                         <strong>Type:</strong> {fileInfo.type}
+            //                     </div>
+            //                     <div>
+            //                         <strong>Last Modified:</strong>{" "}
+            //                         {fileInfo.lastModified}
+            //                     </div>
+            //                 </div>
+            //             </div>
+            //         )}
+            //     </div>
+            // ) : null}

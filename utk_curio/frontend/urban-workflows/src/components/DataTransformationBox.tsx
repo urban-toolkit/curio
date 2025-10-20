@@ -18,6 +18,8 @@ import { useUserContext } from "../providers/UserProvider";
 import { OutputIcon } from "./edges/OutputIcon";
 import { InputIcon } from "./edges/InputIcon";
 
+import OutputContent from "./editing/OutputContent";
+
 function DataTransformationBox({ data, isConnectable }) {
   const [output, setOutput] = useState<{ code: string; content: string, outputType: string }>({
     code: "",
@@ -86,6 +88,11 @@ function DataTransformationBox({ data, isConnectable }) {
   const setSendCodeCallback = (_sendCode: any) => {
     setSendCode(() => _sendCode);
   };
+
+  const memoizedOutputComponent = React.useMemo(
+    () => <OutputContent output={output} />,
+    [output]
+  );
 
   return (
     <>
@@ -157,6 +164,7 @@ function DataTransformationBox({ data, isConnectable }) {
               templateData.custom == false)
           }
           floatCode={setCode}
+          contentComponent={memoizedOutputComponent}
         />
 
         <OutputIcon type="2" />
