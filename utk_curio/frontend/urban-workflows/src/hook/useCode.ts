@@ -112,10 +112,9 @@ export function useCode(): IUseCode {
 
             let targetHandle = "in";
 
-            if(edge.id.includes("in_1")) { // For the first input of the merge node
-                targetHandle = "in_1";
-            } else if(edge.id.includes("in_2")) { // For the second input of the merge node
-                targetHandle = "in_2";
+            for(let i = 0; i < 5; i++){
+                if(edge.id.includes("in_"+i))
+                    targetHandle = "in_"+i;
             }
 
             let add_edge: any = {

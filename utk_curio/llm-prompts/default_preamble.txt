@@ -151,7 +151,7 @@ Here is a description of the available types of node:
 - COMPUTATION_ANALYSIS: used to generic computations over the data. Process data.
 - VIS_VEGA: used to render vega-lite visualizations. Visualize data.
 - VIS_UTK: used to render Urban Toolkit Visualization (UTK). Visualize data.
-- MERGE_FLOW: used to merge one or two flows (**do not use more than two**) into a single flow. When two nodes are connected into a MERGE_FLOW it will output it as a tuple of two values.
+- MERGE_FLOW: used to merge two or more flows into a single flow. When nodes are connected into a MERGE_FLOW it will output it as a tuple. Edges that have a MERGE_FLOW node as its target should include "in_0", "in_1", "in_2", "in_3", "in_4" at the end of their id depending on the connection socket the edge is connected to.
 - DATA_POOL: used as a data repository for multiple visualizations. Is represented to the user as a table. Changes made to DATA_POOL are seen by all connected boxes. Useful to link interaction between visualizations.
 - VIS_IMAGE: The Image box is responsible for displaying images. It receives a DataFrame. The DataFrame needs to have "image_content" column with a Base64 textual representation of the image. Users can click on the images to interact with them, the interaction will be propagated to DATA_POOL if connected with an interaction edge. DO NOT CONNECT A MERGE_FLOW DIRECTLY TO THE INPUT OF VIS_VEGA, you need to insert a node before that will filter the correct DataFrame that will feed Vega.
 
@@ -275,7 +275,7 @@ Number of inputs possible for each node (it is not possible to connect multiple 
 - VIS_VEGA: 1
 - VIS_UTK: [1,n]
 - DATA_POOL: 1
-- MERGE_FLOW: 2
+- MERGE_FLOW: [2,4]
 
 Number of outputs possible for each node (if you want to output more than one data unit you need to use a tuple):
 
@@ -385,27 +385,27 @@ An example of a dataflow:
         ],
         "edges": [
             {
-                "id": "reactflow__node1_node3_1",
+                "id": "reactflow__node1_node3_in_0",
                 "source": "node1",
                 "target": "node3"
             },
             {
-                "id": "reactflow__node2_node3_1",
+                "id": "reactflow__node2_node3_in_1",
                 "source": "node2",
                 "target": "node3"
             },
             {
-                "id": "reactflow__node1_node6_1",
+                "id": "reactflow__node1_node6_in_0",
                 "source": "node1",
                 "target": "node6"
             },
             {
-                "id": "reactflow__node5_node6_1",
+                "id": "reactflow__node5_node6_in_1",
                 "source": "node5",
                 "target": "node6"
             },
             {
-                "id": "reactflow__node4_node6_1",
+                "id": "reactflow__node4_node6_in_2",
                 "source": "node4",
                 "target": "node6"
             },
@@ -437,3 +437,5 @@ An example of a dataflow:
         ]
     }
 }
+
+Attention: Edges that have a MERGE_FLOW node as its target should include "in_0", "in_1", "in_2", "in_3", "in_4" at the end of their id depending on the connection socket the edge is connected to.

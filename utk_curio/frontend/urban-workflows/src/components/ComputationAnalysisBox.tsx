@@ -90,7 +90,6 @@ function ComputationAnalysisBox({ data, isConnectable }) {
   };
 
   // Tab state for three tabs
-  const [activeTab, setActiveTab] = useState<string>("0");
   const [tabData, setTabData] = useState<any[]>([]);
 
   // Build tab data from output or error
@@ -142,13 +141,11 @@ function ComputationAnalysisBox({ data, isConnectable }) {
   }, [output]);
 
   // ContentComponent for three tabs (Output, Error, Warning)
-  const ContentComponent = ({ tabData, activeTab }: { tabData: any[]; activeTab: string }) => {
-    setActiveTab("code");
+  const ContentComponent = ({ tabData }: { tabData: any[]; }) => {
+    
     return (
       <Tabs
         id="computation-tabs"
-        activeKey={activeTab}
-        onSelect={(k: string | null) => setActiveTab(k || "0")}
         className="mb-2"
       >
         <Tab eventKey="0" title="Output">
@@ -236,8 +233,8 @@ function ComputationAnalysisBox({ data, isConnectable }) {
 
   // Memoize content component for BoxEditor
   const memoizedContentComponent = React.useMemo(
-    () => <ContentComponent tabData={tabData} activeTab={activeTab} />,
-    [tabData, activeTab]
+    () => <ContentComponent tabData={tabData} />,
+    [tabData]
   );
 
   return (
