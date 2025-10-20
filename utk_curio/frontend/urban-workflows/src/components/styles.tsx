@@ -521,7 +521,10 @@ export const BoxContainer = ({
                 <div style={{...goalInput, ...(currentBoxWidth ? {width: (currentBoxWidth-4)+"px"} : {}), ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {opacity: "50%", pointerEvents: "none"} : {})}} className={"nodrag"}>
                     <label htmlFor={nodeId+"_goal_box_input"}>Subtask: </label>
                     <input id={nodeId+"_goal_box_input"} type={"text"} style={{width: "65%", border: "none", background: "transparent", color: "rgb(251, 252, 246)", borderBottom: "1px solid rgb(46, 91, 136)"}} value={goal} onBlur={() => {updateDataGoal(goal)}} onChange={(value: any) => {setGoal(value.target.value)}}/>
-                    {data.nodeType != BoxType.VIS_UTK ? <button style={buttonStyle} onClick={clickGenerateContentNode} >Get code</button> : null}
+                    {data.nodeType != BoxType.VIS_UTK ? <button style={buttonStyle} onClick={() => {
+                        if(AIModeRef.current)
+                            clickGenerateContentNode();
+                    }} >Get code</button> : null}
                 </div> : null
             }
 
@@ -569,7 +572,13 @@ export const BoxContainer = ({
             }
 
             {!minimized && isConnectionLeftOpen && (handleType == "in/out" || handleType == "in") && !(data.suggestionType != "none" && data.suggestionType != undefined) ?
-                <FontAwesomeIcon style={newInConnectionStyle} icon={faCirclePlus} onClick={() => {generateConnectionSuggestions(nodes, edges, workflowNameRef, goal, "input")}} /> : null
+                <FontAwesomeIcon 
+                    style={newInConnectionStyle} 
+                    icon={faCirclePlus} 
+                    onClick={() => {
+                        if(AIModeRef.current)
+                            generateConnectionSuggestions(nodes, edges, workflowNameRef, goal, "input")
+                    }} /> : null
             }
 
             {
@@ -592,7 +601,10 @@ export const BoxContainer = ({
             }
 
             {!minimized && isConnectionRightOpen && (handleType == "in/out" || handleType == "out") && !(data.suggestionType != "none" && data.suggestionType != undefined) ?
-                <FontAwesomeIcon style={newOutConnectionStyle} icon={faCirclePlus} onClick={() => {generateConnectionSuggestions(nodes, edges, workflowNameRef, goal, "output")}} /> : null
+                <FontAwesomeIcon style={newOutConnectionStyle} icon={faCirclePlus} onClick={() => {
+                    if(AIModeRef.current)
+                        generateConnectionSuggestions(nodes, edges, workflowNameRef, goal, "output")
+                }} /> : null
             }
 
             <div
@@ -772,7 +784,8 @@ export const BoxContainer = ({
                                                 content: "",
                                             });
                                             sendCodeToWidgets(code); // will resolve markers
-                                            generateSubtaskFromExec((code ? code : ""), data.nodeType, workflowGoal);
+                                            if(AIModeRef.current)
+                                                generateSubtaskFromExec((code ? code : ""), data.nodeType, workflowGoal);
                                         }}
                                     />
                                 </Col> : null
