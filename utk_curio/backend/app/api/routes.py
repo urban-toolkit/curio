@@ -91,11 +91,14 @@ FOLDER_MAP = {
     "VIS_VEGA": "vega_lite"
 }
 
-TEMPLATE_DIR = "./templates"
-
 def get_db_path():
     launch_dir = os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())
     db_path = os.path.join(launch_dir, ".curio", "provenance.db")
+    return db_path
+
+def get_templates_path():
+    launch_dir = os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())
+    db_path = os.path.join(launch_dir, "templates")
     return db_path
 
 @bp.after_request
@@ -1636,7 +1639,7 @@ def generate_templates():
     templates = []
 
     for folder in TYPE_MAP.keys():
-        folder_path = os.path.join(TEMPLATE_DIR, folder)
+        folder_path = os.path.join(get_templates_path(), folder)
 
         if not os.path.isdir(folder_path):
             continue
@@ -1677,7 +1680,7 @@ def add_template():
         return jsonify({'error': f"Unknown template type: {template_type}"}), 400
 
     subfolder = FOLDER_MAP[template_type]
-    folder_path = os.path.join(TEMPLATE_DIR, subfolder)
+    folder_path = os.path.join(get_templates_path(), subfolder)
     os.makedirs(folder_path, exist_ok=True)
 
     replace_name = data['name'].replace(" ", "_")

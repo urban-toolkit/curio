@@ -673,11 +673,8 @@ export const BoxContainer = ({
                             }}
                         >
                             {promptModal != undefined &&
-                            user != undefined &&
                             templateData.id != undefined &&
-                            templateData.custom &&
-                            user != null &&
-                            user.type == "programmer" ? (
+                            templateData.custom ? (
                                 <li style={{ marginLeft: "10px" }}>
                                     <FontAwesomeIcon
                                         onClick={() => {
@@ -723,13 +720,10 @@ export const BoxContainer = ({
                                 />
                             </li>
                             {updateTemplate != undefined &&
-                            user != undefined &&
                             code != undefined &&
                             templateData.id != undefined &&
                             templateData.custom &&
-                            code != templateData.code &&
-                            user != null &&
-                            user.type == "programmer" ? (
+                            code != templateData.code ? (
                                 <li style={{ marginLeft: "10px" }}>
                                     <FontAwesomeIcon
                                         icon={faFloppyDisk}
@@ -758,7 +752,6 @@ export const BoxContainer = ({
                     style={{
                         ...{
                             width: "25%",
-                            marginRight: "auto",
                             height: "25px",
                             marginLeft: "10px",
                             marginTop: "-25px",
@@ -767,9 +760,9 @@ export const BoxContainer = ({
                     }}
                 >
                     {sendCodeToWidgets != undefined ? (
-                        <Row style={{gap: "15px"}}>
+                        <Row style={{gap: "8px", paddingRight: 0}}>
                             {!disablePlay ?
-                                <Col md={2}>
+                                <Col md={3} style={{padding: 0}}>
                                     <FontAwesomeIcon
                                         className={"nowheel nodrag"}
                                         icon={faCirclePlay}
@@ -792,8 +785,9 @@ export const BoxContainer = ({
                             }
                             {output != undefined ? (
                                 <Col
-                                    md={3}
+                                    md={2}
                                     className="d-flex align-items-center"
+                                    style={{padding: 0}}
                                 >
                                     <p
                                         style={{
@@ -822,18 +816,17 @@ export const BoxContainer = ({
                                 </Col>
                             ) : null}
                             {/* <Col md={3}> */}
-                            {promptModal != undefined &&
-                            user != undefined &&
-                            user != null &&
-                            user.type == "programmer" ? (
-                                <Col md={3}>
+                            {promptModal != undefined ? (
+                                <Col md={5} style={{padding: 0}}>
                                     <Dropdown>
                                         <Dropdown.Toggle
                                             variant="primary"
                                             style={{ 
-                                                fontSize: "9px",
+                                                fontSize: "8.5px",
+                                                padding: "6px 2px",
                                                 backgroundColor: "rgb(251, 170, 105)",
-                                                border: "none"
+                                                border: "none",
+                                                width: "100%"
                                              }}
                                              onMouseEnter={() => {fetchTemplates()}}
                                         >
@@ -848,17 +841,14 @@ export const BoxContainer = ({
                                                 maxHeight: "200px",
                                             }}
                                         >
-                                            {user != null &&
-                                            user.type == "programmer" ? (
-                                                <Dropdown.Item
-                                                    style={{ padding: 0 }}
-                                                    onClick={() => {
-                                                        promptModal(true);
-                                                    }}
-                                                >
-                                                    + New Template
-                                                </Dropdown.Item>
-                                            ) : null}
+                                            <Dropdown.Item
+                                                style={{ padding: 0 }}
+                                                onClick={() => {
+                                                    promptModal(true);
+                                                }}
+                                            >
+                                                + New Template
+                                            </Dropdown.Item>
 
                                             {getTemplates(
                                                 data.nodeType as BoxType,
@@ -884,49 +874,34 @@ export const BoxContainer = ({
                                                             template: Template,
                                                             index: number
                                                         ) => {
-                                                            if (
-                                                                (template.accessLevel ==
-                                                                    AccessLevelType.PROGRAMMER &&
-                                                                    user !=
-                                                                        null &&
-                                                                    user.type ==
-                                                                        "expert") ||
-                                                                (template.accessLevel !=
-                                                                    AccessLevelType.ANY &&
-                                                                    user ==
-                                                                        null)
-                                                            ) {
-                                                                return null;
-                                                            } else {
-                                                                return (
-                                                                    <Dropdown.Item
-                                                                        key={
-                                                                            "templates_modal_content_default_" +
-                                                                            data.nodeType +
-                                                                            index +
-                                                                            nodeId
-                                                                        }
-                                                                        style={
-                                                                            template.accessLevel ==
-                                                                            AccessLevelType.PROGRAMMER
-                                                                                ? buttonStyleProgrammer
-                                                                                : template.accessLevel ==
-                                                                                    AccessLevelType.EXPERT
-                                                                                  ? buttonStyleExpert
-                                                                                  : buttonStyleAny
-                                                                        }
-                                                                        onClick={() => {
-                                                                            setTemplateConfig(
-                                                                                template
-                                                                            );
-                                                                        }}
-                                                                    >
-                                                                        {
-                                                                            template.name
-                                                                        }
-                                                                    </Dropdown.Item>
-                                                                );
-                                                            }
+                                                            return (
+                                                                <Dropdown.Item
+                                                                    key={
+                                                                        "templates_modal_content_default_" +
+                                                                        data.nodeType +
+                                                                        index +
+                                                                        nodeId
+                                                                    }
+                                                                    style={
+                                                                        template.accessLevel ==
+                                                                        AccessLevelType.PROGRAMMER
+                                                                            ? buttonStyleProgrammer
+                                                                            : template.accessLevel ==
+                                                                                AccessLevelType.EXPERT
+                                                                                ? buttonStyleExpert
+                                                                                : buttonStyleAny
+                                                                    }
+                                                                    onClick={() => {
+                                                                        setTemplateConfig(
+                                                                            template
+                                                                        );
+                                                                    }}
+                                                                >
+                                                                    {
+                                                                        template.name
+                                                                    }
+                                                                </Dropdown.Item>
+                                                            );
                                                         }
                                                     )}
                                                 </>
@@ -956,71 +931,56 @@ export const BoxContainer = ({
                                                             template: Template,
                                                             index: number
                                                         ) => {
-                                                            if (
-                                                                (template.accessLevel ==
-                                                                    AccessLevelType.PROGRAMMER &&
-                                                                    user !=
-                                                                        null &&
-                                                                    user.type ==
-                                                                        "expert") ||
-                                                                (template.accessLevel !=
-                                                                    AccessLevelType.ANY &&
-                                                                    user ==
-                                                                        null)
-                                                            ) {
-                                                                return null;
-                                                            } else {
-                                                                return (
-                                                                    <Dropdown.Item
-                                                                        style={{
-                                                                            padding: 0,
-                                                                        }}
-                                                                        key={
-                                                                            "templates_modal_content_custom_" +
-                                                                            data.nodeType +
-                                                                            index +
-                                                                            nodeId
+                                                            return (
+                                                                <Dropdown.Item
+                                                                    style={{
+                                                                        padding: 0,
+                                                                    }}
+                                                                    key={
+                                                                        "templates_modal_content_custom_" +
+                                                                        data.nodeType +
+                                                                        index +
+                                                                        nodeId
+                                                                    }
+                                                                    onClick={() => {
+                                                                        setTemplateConfig(
+                                                                            template
+                                                                        );
+                                                                    }}
+                                                                >
+                                                                    <span
+                                                                        style={
+                                                                            template.accessLevel ==
+                                                                            AccessLevelType.PROGRAMMER
+                                                                                ? buttonStyleProgrammer
+                                                                                : template.accessLevel ==
+                                                                                    AccessLevelType.EXPERT
+                                                                                    ? buttonStyleExpert
+                                                                                    : buttonStyleAny
                                                                         }
+                                                                    >
+                                                                        {
+                                                                            template.name
+                                                                        }
+                                                                    </span>
+                                                                    <FontAwesomeIcon
                                                                         onClick={() => {
-                                                                            setTemplateConfig(
-                                                                                template
+                                                                            deleteTemplate(
+                                                                                template.id
                                                                             );
                                                                         }}
-                                                                    >
-                                                                        <span
-                                                                            style={
-                                                                                template.accessLevel ==
-                                                                                AccessLevelType.PROGRAMMER
-                                                                                    ? buttonStyleProgrammer
-                                                                                    : template.accessLevel ==
-                                                                                        AccessLevelType.EXPERT
-                                                                                      ? buttonStyleExpert
-                                                                                      : buttonStyleAny
-                                                                            }
-                                                                        >
-                                                                            {
-                                                                                template.name
-                                                                            }
-                                                                        </span>
-                                                                        <FontAwesomeIcon
-                                                                            onClick={() => {
-                                                                                deleteTemplate(
-                                                                                    template.id
-                                                                                );
-                                                                            }}
-                                                                            icon={
-                                                                                faSquareMinus
-                                                                            }
-                                                                            style={{
-                                                                                color: "#888787",
-                                                                                padding: 0,
-                                                                                marginLeft:
-                                                                                    "5px",
-                                                                            }}
-                                                                        />
-                                                                    </Dropdown.Item>
-                                                                );
-                                                            }
+                                                                        icon={
+                                                                            faSquareMinus
+                                                                        }
+                                                                        style={{
+                                                                            color: "#888787",
+                                                                            padding: 0,
+                                                                            marginLeft:
+                                                                                "5px",
+                                                                        }}
+                                                                    />
+                                                                </Dropdown.Item>
+                                                            );
                                                         }
                                                     )}
                                                 </>
