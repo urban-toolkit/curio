@@ -67,7 +67,7 @@ export function MainCanvas() {
         const handleMouseDown = (e: any) => {
             if (e.shiftKey && e.button === 0) {
                 setStartPos({ x: e.clientX, y: e.clientY });
-            setIsDragging(true);
+                setIsDragging(true);
             }
         };
         
@@ -242,23 +242,23 @@ export function MainCanvas() {
         setDashBoardMode(value);
     };
 
-    const handleWheel = (e: React.WheelEvent) => {
+    // const handleWheel = (e: React.WheelEvent) => {
 
-        // e.preventDefault();
+    //     // e.preventDefault();
 
-        // Adjust this factor to control zoom speed (lower = smoother/slower)
-        const zoomIntensity = 0.0015;
+    //     // Adjust this factor to control zoom speed (lower = smoother/slower)
+    //     const zoomIntensity = 0.0015;
 
-        const mouseScreen = { x: e.clientX, y: e.clientY };
-        const mouseFlow = screenToFlowPosition(mouseScreen);
+    //     const mouseScreen = { x: e.clientX, y: e.clientY };
+    //     const mouseFlow = screenToFlowPosition(mouseScreen);
 
-        const currentZoom = getZoom();
-        const nextZoom = Math.min(Math.max(currentZoom * (1 - e.deltaY * zoomIntensity), 0.05), 2);
-        const newX = mouseScreen.x - mouseFlow.x * nextZoom;
-        const newY = mouseScreen.y - mouseFlow.y * nextZoom;
+    //     const currentZoom = getZoom();
+    //     const nextZoom = Math.min(Math.max(currentZoom * (1 - e.deltaY * zoomIntensity), 0.05), 2);
+    //     const newX = mouseScreen.x - mouseFlow.x * nextZoom;
+    //     const newY = mouseScreen.y - mouseFlow.y * nextZoom;
 
-        setViewport({ x: newX, y: newY, zoom: nextZoom }, { duration: 200 });
-    };
+    //     setViewport({ x: newX, y: newY, zoom: nextZoom }, { duration: 200 });
+    // };
 
     // Filter nodes based on dashboard mode
     const filteredNodes = useMemo(() => {
@@ -310,7 +310,7 @@ export function MainCanvas() {
             style={{ width: "100vw", height: "100vh" }}
             onContextMenu={onContextMenu}
             onClick={closeFileMenu}
-            onWheelCapture={handleWheel}
+            // onWheelCapture={handleWheel}
         >
             {Object.keys(floatingBoxes).map((key, index) => (
                 <FloatingBox
@@ -322,7 +322,7 @@ export function MainCanvas() {
                 />
             ))}
             <ReactFlow
-                zoomOnScroll={false}
+                // zoomOnScroll={false}
                 nodes={filteredNodes}
                 edges={edges}
                 onDragOver={(event) => {
