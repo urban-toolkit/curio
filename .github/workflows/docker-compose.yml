@@ -6,8 +6,13 @@ on:
       - main
     paths:
       - 'utk_curio/**'
+      - '.github/workflows/docker-compose.yml'
   pull_request:
     branches: [ main ]
+    paths:
+      - 'utk_curio/**'
+      - '.github/workflows/docker-compose.yml'
+  workflow_dispatch:  # Run manually from Actions tab or: gh workflow run docker-compose.yml
 
 jobs:
   test-compose:
