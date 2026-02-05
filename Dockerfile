@@ -60,11 +60,11 @@ WORKDIR /app
 # Expose necessary ports
 EXPOSE 2000 5002 8080
 
-# Dockerfile with Health Check
+# Health check: backend (5002), sandbox (2000), frontend (8080). Timeouts avoid hanging.
 HEALTHCHECK --start-period=120s --interval=15s --timeout=10s --retries=3 CMD \
-  curl -sf http://localhost:2000/health && \
-  curl -sf http://localhost:5002/health && \
-  curl -sf http://localhost:8080
+  curl -sf --connect-timeout 5 --max-time 10 http://localhost:5002/health && \
+  curl -sf --connect-timeout 5 --max-time 10 http://localhost:2000/health && \
+  curl -sf --connect-timeout 5 --max-time 10 http://localhost:8080/ || exit 1
   
 # RUN chmod +x curio.py && ln -s /app/curio.py /usr/local/bin/curio
 # CMD ["curio", "start", "all", "--backend-host", "0.0.0.0", "--backend-port", "5002", "--sandbox-host", "0.0.0.0", "--sandbox-port", "2000"]
