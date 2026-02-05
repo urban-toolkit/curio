@@ -1,18 +1,6 @@
-# -----------------------------------------------------------------------------
-# Stage 1: Build frontends with Node (avoids NodeSource on slim in CI)
-# -----------------------------------------------------------------------------
-FROM node:20-bookworm-slim AS frontend-builder
-
-WORKDIR /app
-
-COPY utk_curio/frontend/utk-workflow/src/utk-ts ./utk-ts
-RUN cd utk-ts && npm install && npm run build
-
-COPY utk_curio/frontend/urban-workflows ./urban-workflows
-RUN cd urban-workflows && npm install && npm run build
 
 # -----------------------------------------------------------------------------
-# Stage 2: Unified Python service (no Node required)
+# Stage 1: Unified Python service (no Node required)
 # -----------------------------------------------------------------------------
 FROM python:3.10-slim
 
@@ -41,14 +29,30 @@ COPY utk_curio/sandbox/ .
 # Stage 2: Backend
 WORKDIR /app/utk_curio/backend
 COPY utk_curio/backend/ .
+# RUN python create_provenance_db.py && \
+    # FLASK_APP=server.py flask db upgrade && \
+    # FLASK_APP=server.py flask db migrate -m "Migration"
 
-# Stage 3: Frontend source + rest of utk_curio
+# -----------------------------------------------------------------------------
+# Stage 2: Build frontends with Node (avoids NodeSource on slim in CI)
+# -----------------------------------------------------------------------------
+FROM node:20-bookworm-slim AS frontend-builder
+
+# Stage 3: Frontend
+WORKDIR /app/utk_curio/frontend
+COPY utk_curio/frontend/ .
+
+WORKDIR /app/utk_curio/frontend/utk-workflow/src/utk-ts
+RUN npm install && npm run build
+
+WORKDIR /app/utk_curio/frontend/urban-workflows
+RUN npm install && npm run build
+
+# -----------------------------------------------------------------------------
+# Stage 3: Other files
+# -----------------------------------------------------------------------------
 WORKDIR /app/utk_curio
 COPY utk_curio/ .
-
-# Overlay built frontend artifacts from Node stage
-COPY --from=frontend-builder /app/utk-ts/dist /app/utk_curio/frontend/utk-workflow/src/utk-ts/dist
-COPY --from=frontend-builder /app/urban-workflows/dist /app/utk_curio/frontend/urban-workflows/dist
 
 # Final Stage: Unified Service
 WORKDIR /app
