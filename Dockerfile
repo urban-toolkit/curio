@@ -36,7 +36,7 @@ COPY utk_curio/backend/ .
 # -----------------------------------------------------------------------------
 # Stage 2: Build frontends with Node (avoids NodeSource on slim in CI)
 # -----------------------------------------------------------------------------
-FROM node:20-bookworm-slim AS frontend-builder
+FROM node:20-bookworm-slim
 
 # Stage 3: Frontend
 WORKDIR /app/utk_curio/frontend

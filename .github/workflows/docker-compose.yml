@@ -30,14 +30,21 @@ jobs:
 
       - name: 🧪 Wait for services to become healthy
         run: |
-          echo "Waiting for servers to be healthy..."
-          # Use container name "curio" (from docker-compose.yml container_name)
-          timeout 600 bash -c '
-            until status=$(docker inspect -f "{{.State.Health.Status}}" curio 2>/dev/null) && [ "$status" = "healthy" ]; do
-              echo "Still waiting..."
-              sleep 2
+          echo "Waiting for container to become healthy..."
+          CONTAINER_ID=$(docker compose -p curio ps -q curio)
+          if [ -z "$CONTAINER_ID" ]; then
+            echo "Container not found. docker compose -p curio ps -a:"
+            docker compose -p curio ps -a
+            exit 1
+          fi
+          export CONTAINER_ID
+          # HEALTHCHECK has 120s start-period; allow 180s total for status to become healthy
+          timeout 180 bash -c '
+            until status=$(docker inspect -f "{{.State.Health.Status}}" "$CONTAINER_ID" 2>/dev/null) && [ "$status" = "healthy" ]; do
+              echo "Still waiting (status=${status:-unknown})..."
+              sleep 3
             done
-          '
+          ' || { echo "Container did not become healthy within 180s."; docker compose -p curio ps -a; docker inspect "$CONTAINER_ID" --format "{{json .State.Health}}" 2>/dev/null || true; exit 1; }
           echo "Services are healthy."
 
       - name: 🧪 Run backend unit tests
