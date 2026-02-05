@@ -4,15 +4,18 @@ on:
   push:
     branches:
       - main
+      - karla
     paths:
       - 'utk_curio/**'
+      - 'Dockerfile'
       - '.github/workflows/docker-compose.yml'
   pull_request:
     branches: [ main ]
     paths:
       - 'utk_curio/**'
+      - 'Dockerfile'
       - '.github/workflows/docker-compose.yml'
-  workflow_dispatch:  # Run manually from Actions tab or: gh workflow run docker-compose.yml
+  # workflow_dispatch:  # Run manually from Actions tab or: gh workflow run docker-compose.yml
 
 jobs:
   test-compose:
@@ -28,24 +31,48 @@ jobs:
       - name: ▶️ Start containers
         run: docker compose -p curio up -d
 
-      # - name: 🧪 Wait for services to become healthy
-      #   run: |
-      #     echo "Waiting for container to become healthy (docker inspect)..."
-      #     CONTAINER_ID=$(docker compose -p curio ps -q curio)
-      #     if [ -z "$CONTAINER_ID" ]; then
-      #       echo "Container not found. docker compose -p curio ps -a:"
-      #       docker compose -p curio ps -a
-      #       exit 1
-      #     fi
-      #     export CONTAINER_ID
-      #     # HEALTHCHECK has 120s start-period; allow 180s for status to become healthy
-      #     timeout 180 bash -c '
-      #       until status=$(docker inspect -f "{{.State.Health.Status}}" "$CONTAINER_ID" 2>/dev/null) && [ "$status" = "healthy" ]; do
-      #         echo "Still waiting (status=${status:-unknown})..."
-      #         sleep 3
-      #       done
-      #     ' || { echo "Container did not become healthy within 180s."; docker compose -p curio ps -a; docker inspect "$CONTAINER_ID" --format "{{json .State.Health}}" 2>/dev/null || true; exit 1; }
-      #     echo "Services are healthy."
+      - name: 🧪 Wait for services to become healthy
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Waiting for curio to be healthy..."
+
+          timeout 240 bash -euo pipefail -c '
+            while true; do
+              cid="$(docker compose -p curio ps -a -q curio | head -n1 || true)"
+
+              if [[ -z "${cid}" ]]; then
+                echo "Still waiting... (curio container not created yet)"
+                docker compose -p curio ps -a || true
+                sleep 2
+                continue
+              fi
+
+              state="$(docker inspect --format "{{.State.Status}}" "${cid}" 2>/dev/null || true)"
+              health="$(docker inspect --format "{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}" "${cid}" 2>/dev/null || true)"
+
+              if [[ "${health}" == "healthy" ]]; then
+                echo "curio is healthy."
+                break
+              fi
+
+              # If there is no Docker HEALTHCHECK, accept "running"
+              if [[ "${health}" == "no-healthcheck" && "${state}" == "running" ]]; then
+                echo "curio is running (no healthcheck)."
+                break
+              fi
+
+              # If it crashed, fail fast with logs
+              if [[ "${state}" == "exited" ]]; then
+                echo "curio exited. Logs:"
+                docker compose -p curio logs --no-color --tail=200 curio || true
+                exit 1
+              fi
+
+              echo "Still waiting... (state=${state:-unknown}, health=${health:-unknown})"
+              sleep 2
+            done
+          '
 
       - name: 🧪 Run backend unit tests
         run: |
