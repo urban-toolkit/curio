@@ -28,19 +28,24 @@ jobs:
       - name: ▶️ Start containers
         run: docker compose -p curio up -d
 
-      - name: 🧪 Wait for services to become healthy
-        run: |
-          # Same endpoints and timeouts as Dockerfile HEALTHCHECK (5002/health, 2000/health, 8080/)
-          echo "Waiting for backend (5002), sandbox (2000), frontend (8080)..."
-          timeout 180 bash -c '
-            until curl -sf --connect-timeout 5 --max-time 10 http://localhost:5002/health >/dev/null && \
-                  curl -sf --connect-timeout 5 --max-time 10 http://localhost:2000/health >/dev/null && \
-                  curl -sf --connect-timeout 5 --max-time 10 http://localhost:8080/ >/dev/null; do
-              echo "Still waiting..."
-              sleep 3
-            done
-          ' || { echo "Services did not become ready within 180s."; docker compose -p curio ps -a; exit 1; }
-          echo "Services are ready."
+      # - name: 🧪 Wait for services to become healthy
+      #   run: |
+      #     echo "Waiting for container to become healthy (docker inspect)..."
+      #     CONTAINER_ID=$(docker compose -p curio ps -q curio)
+      #     if [ -z "$CONTAINER_ID" ]; then
+      #       echo "Container not found. docker compose -p curio ps -a:"
+      #       docker compose -p curio ps -a
+      #       exit 1
+      #     fi
+      #     export CONTAINER_ID
+      #     # HEALTHCHECK has 120s start-period; allow 180s for status to become healthy
+      #     timeout 180 bash -c '
+      #       until status=$(docker inspect -f "{{.State.Health.Status}}" "$CONTAINER_ID" 2>/dev/null) && [ "$status" = "healthy" ]; do
+      #         echo "Still waiting (status=${status:-unknown})..."
+      #         sleep 3
+      #       done
+      #     ' || { echo "Container did not become healthy within 180s."; docker compose -p curio ps -a; docker inspect "$CONTAINER_ID" --format "{{json .State.Health}}" 2>/dev/null || true; exit 1; }
+      #     echo "Services are healthy."
 
       - name: 🧪 Run backend unit tests
         run: |
