@@ -1,3 +1,12 @@
+## Frontend tests (Playwright)
+
+Before running frontend/E2E tests, install the Playwright browser once (use the same Python/venv you use for pytest):
+
+```shell
+playwright install chromium
+# or: python -m playwright install chromium
+```
+
 ## Database management
 
 - Create migration

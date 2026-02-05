@@ -23,6 +23,7 @@ class Config:
                              '../sandbox')
     FRONTEND_RELATIVE_PATH = (os.environ.get('FRONTEND_RELATIVE_PATH') or
                                 '../urban-workflows')
-    FRONTEND_PORT = os.environ.get('FRONTEND_PORT') or 3000
+    FRONTEND_PORT = os.environ.get('FRONTEND_PORT') or 8080
     SANDBOX_PORT = os.environ.get('SANDBOX_PORT') or 2000
+    BACKEND_PORT = os.environ.get('BACKEND_PORT') or 5002
 
