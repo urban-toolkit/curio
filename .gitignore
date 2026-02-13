@@ -32,3 +32,6 @@ node_modules/
 urbantk_cache/
 site/
 coverage/
+
+curio_docker_log.txt
+test_file.txt

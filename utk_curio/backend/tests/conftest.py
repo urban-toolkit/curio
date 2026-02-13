@@ -6,6 +6,24 @@ from server import create_app
 sys.dont_write_bytecode = True
 
 
+@pytest.fixture(scope="session")
+def browser_context_args(browser_context_args):
+    """Configure browser context for all tests."""
+    return {
+        **browser_context_args,
+    }
+
+
+@pytest.fixture(scope="session")
+def browser_type_launch_args(browser_type_launch_args):
+    """Configure browser launch options - headless by default unless --headed is passed."""
+    return {
+        **browser_type_launch_args,
+        # headless will be False only if --headed is explicitly passed
+        "headless": browser_type_launch_args.get("headless", True),
+    }
+
+
 def pytest_addoption(parser):
     parser.addoption(
         "--longrun",

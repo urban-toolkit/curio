@@ -1,12 +1,13 @@
 node_modules/
 **/node_modules/
 npm-debug.log
-**/dist/
 dist/
-.env
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .git/
 *.log
+
+# Only exclude root .env, not nested ones (frontend needs its .env for build)
+/.env

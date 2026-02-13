@@ -1,7 +1,7 @@
 from .utils import FrontendPage
 
 
-def test_backend_server(current_server, sandbox_server, page):
+def test_backend_server(current_server, page):
     """Test that the backend server is live."""
     page.goto(f"{current_server}/live")
     page.wait_for_load_state("domcontentloaded")
@@ -21,6 +21,7 @@ def test_frontend_server(app_frontend: FrontendPage, page):
     """Test that the frontend server is live."""
     app_frontend.goto_page("/")
     page.wait_for_load_state("domcontentloaded")
+    page.context.clear_cookies()  # Clear cookies to ensure login page appears
     # Wait for login UI (may be "Login" or "Logar" depending on locale)
     page.get_by_text("Login").or_(page.get_by_text("Logar")).wait_for(timeout=60000)
 
