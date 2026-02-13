@@ -5,7 +5,11 @@ import pytest
 import json
 from .utils import FrontendPage
 
-
+"""
+This test file is to test the loading of workflow files in the frontend.
+#     To watch the browser (see the menu open): run with --headed, e.g.
+#         pytest utk_curio/backend/tests/test_frontend/test_workflows.py --headed
+"""
 # Repo root is 4 levels up from this file (test_frontend -> tests -> backend -> utk_curio)
 _REPO_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
@@ -17,7 +21,6 @@ TEST_WORKFLOWS_PATH = os.path.join(_REPO_ROOT, "tests")
 # }
 
 # This is the setup, it should run for every workflow json file
-# create a fixture that loads all workflow json files from a folder
 def load_workflow_files_from_folder():
     """Load all workflow JSON files from the specified folder."""
     workflow_files = [
@@ -44,60 +47,25 @@ def load_workflow_files_from_folder():
         "Vega.json",
 
         "UTK.json",
-
     ]
 
     # append the path to the folder path
     workflow_files = [os.path.join(TEST_WORKFLOWS_PATH, filename) for filename in workflow_files]
-#     print(workflow_files)
 
-    assert len(workflow_files) > 0, f"No workflow files found in folder: {workflow_files}"
-
-    #  assert filenames are unique
-    assert len(workflow_files) == len(set(workflow_files)), "Workflow files have duplicate filenames"
 
     return workflow_files
 
-# TODO: see how to use decorators and pass an array for loop
-# use parametrize to loop through each workflow file and run the test
-@pytest.mark.parametrize("workflow_file", load_workflow_files_from_folder())
-def test_upload_default_workflow(workflow_file, app_frontend: FrontendPage,  page):
-    """Test that the frontend can load the default workflow correctly.
 
-    To watch the browser (see the menu open): run with --headed, e.g.
-      pytest utk_curio/backend/tests/test_frontend/test_workflows.py --headed
-    """
-    app_frontend.goto_page("/")
-    page.wait_for_load_state("domcontentloaded")
-    # page.wait_for_load_state("networkidle")  # wait for app/canvas to be ready
-
-    #loop through each workflow
-    print(f"Testing workflow file: {workflow_file}")
-
-    # Wait for the app to render the menu bar, then open the File dropdown
-    file_menu_btn = page.get_by_role("button", name=re.compile("File"))
-    file_menu_btn.wait_for(state="visible", timeout=15000)
-    file_menu_btn.scroll_into_view_if_needed()
-    # force=True so the click isn't captured by the canvas/ReactFlow layer on top
-    file_menu_btn.click(force=True)
-
-    # Wait for the dropdown menu to appear
-    load_spec = page.get_by_role("button", name="Load specification")
-    load_spec.wait_for(state="visible", timeout=5000)
-    assert load_spec.is_visible()
-
-    # Then click on "Load specification" and upload the default workflow file
-    with page.expect_file_chooser() as fc_info:
-        page.get_by_text("Load specification").click()
-    file_chooser = fc_info.value
-    file_chooser.set_files(workflow_file)
-
-    time.sleep(5)  # 1 min – pause to see the menu opened
-
-# @pytest.mark.parametrize("workflow_file", load_workflow_files_from_folder())
 def test_load_workflow_files():
-    """Test that workflow files can be loaded from the folder."""
+    """This test is to check that the workflow files can be loaded from the /tests folder,
+    Test if they have the expected structure (nodes and edges).
+    """
     workflow_files = load_workflow_files_from_folder()
+
+    assert len(workflow_files) > 0, f"No workflow files found in folder: {workflow_files}"
+    #  assert filenames are unique
+    assert len(workflow_files) == len(set(workflow_files)), "Workflow files have duplicate filenames"
+
     # For each workflow file print the Nodes and Edges count
     for workflow_file in workflow_files:
         with open(workflow_file, "r") as f:
@@ -144,6 +112,39 @@ def test_load_workflow_files():
             # # add assertion to check that the workflow file has at least 1 node and 1 edge
             # assert nodes_count > 0, f"Workflow file {workflow_file} has no nodes"
             # assert edges_count > 0, f"Workflow file {workflow_file} has no edges"
+
+
+@pytest.mark.parametrize("workflow_file", load_workflow_files_from_folder())
+def test_upload_all_workflow_files(workflow_file, app_frontend: FrontendPage,  page):
+    """Test that the frontend can load the default workflow correctly.
+    """
+    app_frontend.goto_page("/")
+    page.wait_for_load_state("domcontentloaded")
+    # page.wait_for_load_state("networkidle")  # wait for app/canvas to be ready
+
+    #loop through each workflow
+    print(f"Testing workflow file: {workflow_file}")
+
+    # Wait for the app to render the menu bar, then open the File dropdown
+    file_menu_btn = page.get_by_role("button", name=re.compile("File"))
+    file_menu_btn.wait_for(state="visible", timeout=15000)
+    file_menu_btn.scroll_into_view_if_needed()
+    # force=True so the click isn't captured by the canvas/ReactFlow layer on top
+    file_menu_btn.click(force=True)
+
+    # Wait for the dropdown menu to appear
+    load_spec = page.get_by_role("button", name="Load specification")
+    load_spec.wait_for(state="visible", timeout=5000)
+    assert load_spec.is_visible()
+
+    # Then click on "Load specification" and upload the default workflow file
+    with page.expect_file_chooser() as fc_info:
+        page.get_by_text("Load specification").click()
+    file_chooser = fc_info.value
+    file_chooser.set_files(workflow_file)
+
+    #  time.sleep(5)  # 1 min – pause to see the menu opened
+
 
 # ----------------
 # TODO TESTS
