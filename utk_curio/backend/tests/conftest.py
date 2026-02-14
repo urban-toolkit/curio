@@ -1,7 +1,7 @@
 import sys
 from .test_frontend.fixtures import *  # noqa
 import pytest
-from server import create_app
+from utk_curio.backend.app import create_app
 
 sys.dont_write_bytecode = True
 

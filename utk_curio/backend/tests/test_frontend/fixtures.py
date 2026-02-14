@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import time
 import pytest
@@ -10,9 +11,11 @@ from playwright.sync_api import Page
 from .utils import FrontendPage
 
 
-def _project_root():
-    """Project root (curio-main) when pytest is run from utk_curio/backend."""
-    return os.path.abspath(os.path.join(os.getcwd(), "..", ".."))
+# Repo root is 4 levels up from this file (test_frontend -> tests -> backend -> utk_curio)
+_REPO_ROOT = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
+)
+TEST_WORKFLOWS_PATH = os.path.join(_REPO_ROOT, "tests")
 
 
 def is_port_in_use(port: int) -> bool:
@@ -106,13 +109,13 @@ def curio_servers(app, request):
             "--backend-port", str(backend_port),
             "--sandbox-port", str(sandbox_port),
         ],
-        cwd=_project_root(),
+        cwd=_REPO_ROOT,
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
 
-    _wait_for_port(backend_port, timeout=20.0)
+    _wait_for_port(backend_port, timeout=40.0)
     _wait_for_port(sandbox_port, timeout=45.0)
     _wait_for_port(frontend_port, timeout=90.0)
 
@@ -163,9 +166,189 @@ def sandbox_server(curio_servers, app):
 @pytest.fixture(scope="session")
 def frontend_server(curio_servers, app):
     """Frontend URL (servers already started by curio_servers or existing stack)."""
-    yield _base_url(curio_servers, "frontend_port")
+    url = _base_url(curio_servers, "frontend_port")
+    # #region agent log
+    import json as _json, time as _time
+    _DBG = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", ".curio", "playwright.log")
+    try:
+        with open(_DBG, "a") as _f:
+            _f.write(_json.dumps({"timestamp": int(_time.time()*1000), "location": "fixtures.py:frontend_server", "message": "Frontend server URL resolved", "data": {"url": url, "curio_servers": {k: v for k, v in curio_servers.items()}}, "hypothesisId": "H2"}) + "\n")
+    except Exception:
+        pass
+    # #endregion
+    yield url
 
 
 @pytest.fixture()
 def app_frontend(frontend_server, page: Page):
     return FrontendPage(frontend_server, page)
+
+
+# ---------------------------------------------------------------------------
+# Workflow file discovery
+# ---------------------------------------------------------------------------
+
+def load_workflow_files_from_folder():
+    """Load all workflow JSON files from the specified folder.
+
+    Returns a list of absolute paths.  This is a plain function (not a
+    fixture) because ``@pytest.mark.parametrize`` evaluates its arguments
+    at **collection time**, before fixtures are resolved.
+    """
+    workflow_files = [
+        "DefaultWorkflow.json",
+
+        "DataPool_df.json",
+        "DataPool_gdf.json",
+
+        "DataPool_Vega_2.json",
+        "DataPool_Vega.json",
+        "DataPool_UTK.json",
+
+        "Image.json",
+        "Merge.json",
+        "MergeFlowDataPool.json",
+
+        "Interaction.json",
+        "Interaction_UTK.json",
+        "Interaction_Vega.json",
+
+#         "NewMerge.json",
+        "Number Multiplier (Widget).json",
+
+        "Vega.json",
+
+        "UTK.json",
+    ]
+
+    # append the path to the folder path
+    workflow_files = [os.path.join(TEST_WORKFLOWS_PATH, filename) for filename in workflow_files]
+
+    return workflow_files
+
+
+@pytest.fixture(scope="session")
+def workflow_files():
+    """Session-scoped fixture exposing the list of workflow file paths.
+
+    Wraps :func:`load_workflow_files_from_folder` so that test functions
+    can receive the file list via dependency injection instead of calling
+    the helper directly.
+    """
+    return load_workflow_files_from_folder()
+
+
+# ---------------------------------------------------------------------------
+# Reusable upload helper
+# ---------------------------------------------------------------------------
+
+def upload_workflow(page, app_frontend, workflow_file: str, expected_node_count: int):
+    """Navigate to the app, open the File menu, upload a workflow JSON,
+    and wait until the expected number of nodes appear on the canvas."""
+    # #region agent log
+    import json as _json, time as _time
+    _DBG = os.path.join(_REPO_ROOT, ".curio", "playwright.log")
+    def _dl(loc, msg, data=None, hid=""):
+        try:
+            with open(_DBG, "a") as _f:
+                _f.write(_json.dumps({"timestamp": int(_time.time()*1000), "location": loc, "message": msg, "data": data or {}, "hypothesisId": hid}) + "\n")
+        except Exception:
+            pass
+    _dl("test_workflows.py:upload_workflow", "upload_workflow called", {"page_type": type(page).__name__, "app_frontend_type": type(app_frontend).__name__, "workflow_file": workflow_file, "expected_node_count": expected_node_count, "page_is_closed": page.is_closed(), "page_url": str(page.url)}, "H1,H2,H3")
+    # #endregion
+    app_frontend.goto_page("/")
+    page.wait_for_load_state("domcontentloaded")
+
+    # Open the File dropdown in the menu bar
+    file_menu_btn = page.get_by_role("button", name=re.compile("File"))
+    file_menu_btn.wait_for(state="visible", timeout=15000)
+    file_menu_btn.scroll_into_view_if_needed()
+    # force=True so the click isn't captured by the ReactFlow canvas layer on top
+    file_menu_btn.click(force=True)
+
+    # Click "Load specification" and upload the JSON file
+    load_spec = page.get_by_role("button", name="Load specification")
+    load_spec.wait_for(state="visible", timeout=5000)
+    assert load_spec.is_visible()
+
+    with page.expect_file_chooser() as fc_info:
+        page.get_by_text("Load specification").click()
+    fc_info.value.set_files(workflow_file)
+
+    # Wait until all expected nodes have rendered on the ReactFlow canvas
+    page.wait_for_function(
+        f"document.querySelectorAll('.react-flow__node').length >= {expected_node_count}",
+        timeout=15000,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Class-scoped fixtures – one browser page per parametrized workflow
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="class")
+def workflow_page(browser):
+    """Class-scoped page: one browser tab shared by every test method."""
+    # #region agent log
+    import json as _json, time as _time
+    _DBG = os.path.join(_REPO_ROOT, ".curio", "playwright.log")
+    def _dl(loc, msg, data=None, hid=""):
+        try:
+            with open(_DBG, "a") as _f:
+                _f.write(_json.dumps({"timestamp": int(_time.time()*1000), "location": loc, "message": msg, "data": data or {}, "hypothesisId": hid}) + "\n")
+        except Exception:
+            pass
+    _dl("test_workflows.py:workflow_page", "Creating workflow_page", {"browser_type": type(browser).__name__, "browser_connected": browser.is_connected()}, "H3")
+    # #endregion
+    context = browser.new_context()
+    page = context.new_page()
+    # #region agent log
+    _dl("test_workflows.py:workflow_page", "Page created", {"page_url": str(page.url), "page_is_closed": page.is_closed()}, "H3")
+    # #endregion
+    yield page
+    page.close()
+    context.close()
+
+
+@pytest.fixture(scope="class")
+def workflow_frontend(frontend_server, workflow_page):
+    """Class-scoped FrontendPage wrapper."""
+    # #region agent log
+    import json as _json, time as _time
+    _DBG = os.path.join(_REPO_ROOT, ".curio", "playwright.log")
+    def _dl(loc, msg, data=None, hid=""):
+        try:
+            with open(_DBG, "a") as _f:
+                _f.write(_json.dumps({"timestamp": int(_time.time()*1000), "location": loc, "message": msg, "data": data or {}, "hypothesisId": hid}) + "\n")
+        except Exception:
+            pass
+    _dl("test_workflows.py:workflow_frontend", "Creating workflow_frontend", {"frontend_server": frontend_server, "page_url": str(workflow_page.url), "page_is_closed": workflow_page.is_closed()}, "H2,H3")
+    # #endregion
+    return FrontendPage(frontend_server, workflow_page)
+
+
+@pytest.fixture(scope="class")
+def loaded_workflow(request, workflow_frontend, workflow_page):
+    """Upload the workflow once and expose spec + page to the class."""
+    from .test_workflows import parse_workflow
+
+    workflow_file = request.param
+    spec = parse_workflow(workflow_file)
+    # #region agent log
+    import json as _json, time as _time
+    _DBG = os.path.join(_REPO_ROOT, ".curio", "playwright.log")
+    def _dl(loc, msg, data=None, hid=""):
+        try:
+            with open(_DBG, "a") as _f:
+                _f.write(_json.dumps({"timestamp": int(_time.time()*1000), "location": loc, "message": msg, "data": data or {}, "hypothesisId": hid}) + "\n")
+        except Exception:
+            pass
+    _dl("test_workflows.py:loaded_workflow", "About to upload_workflow", {"workflow_file": workflow_file, "nodes_count": spec.nodes_count, "page_is_closed": workflow_page.is_closed(), "page_url": str(workflow_page.url)}, "H3,H4")
+    # #endregion
+    upload_workflow(workflow_page, workflow_frontend, workflow_file, spec.nodes_count)
+    request.cls.spec = spec
+    request.cls.page = workflow_page
+    yield
+    # Pause 10 s after all tests for this workflow (visible in --headed mode)
+    # time.sleep(10)
+
