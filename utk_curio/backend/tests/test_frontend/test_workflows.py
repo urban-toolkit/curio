@@ -4,7 +4,7 @@ import pytest
 import json
 from dataclasses import dataclass
 from collections import deque
-from .fixtures import load_workflow_files_from_folder
+from .utils import load_workflow_files_from_folder
 
 """
 This test file is to test the loading of workflow files in the frontend.

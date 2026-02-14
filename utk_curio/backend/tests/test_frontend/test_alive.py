@@ -1,4 +1,9 @@
-from .utils import FrontendPage
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .utils import FrontendPage
 
 
 def test_backend_server(current_server, page):
