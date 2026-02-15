@@ -273,3 +273,36 @@ class TestWorkflowCanvas:
             f"[{wf_name}] Expected {self.spec.edges_count} edges, "
             f"found {edge_els.count()}"
         )
+
+    # -- 2. Node positions (relative ordering) -----------------------------
+
+    def test_node_positions(self, loaded_workflow):
+        """Every node must be rendered on the canvas, and relative
+        x-positions from the JSON specification must be preserved
+        (``fitView`` rescales but keeps the layout)."""
+        positions: dict[str, tuple[float, float]] = {}
+
+        for node in self.spec.nodes:
+            node_el = self._node_locator(node)
+            assert node_el.count() == 1, (
+                f"Node {node.id} ({node.type}) not found on canvas"
+            )
+            bbox = node_el.bounding_box()
+            assert bbox is not None, (
+                f"Node {node.id} ({node.type}) has no bounding box (not visible)"
+            )
+            positions[node.id] = (bbox["x"], bbox["y"])
+
+        # Verify relative x-ordering: if node A.x < B.x in the spec, then
+        # A should also appear to the left of (or at the same x as) B on
+        # the canvas.
+        sorted_by_spec_x = sorted(self.spec.nodes, key=lambda n: n.x)
+        for i in range(len(sorted_by_spec_x) - 1):
+            a = sorted_by_spec_x[i]
+            b = sorted_by_spec_x[i + 1]
+            if a.x < b.x:
+                assert positions[a.id][0] <= positions[b.id][0], (
+                    f"Node {a.id} (spec x={a.x:.1f}) should be left of "
+                    f"{b.id} (spec x={b.x:.1f}), but canvas x "
+                    f"{positions[a.id][0]:.1f} > {positions[b.id][0]:.1f}"
+                )
