@@ -14,7 +14,6 @@ from .utils import (
     wait_for_http_ready,
     e2e_existing_servers,
     base_url,
-    load_workflow_files_from_folder,
     upload_workflow,
 )
 
@@ -141,12 +140,8 @@ def app_frontend(frontend_server, page: Page):
 
 @pytest.fixture(scope="session")
 def workflow_files():
-    """Session-scoped fixture exposing the list of workflow file paths.
-
-    Wraps :func:`load_workflow_files_from_folder` so that test functions
-    can receive the file list via dependency injection instead of calling
-    the helper directly.
-    """
+    """Session-scoped fixture exposing the list of workflow file paths."""
+    from .conftest import load_workflow_files_from_folder
     return load_workflow_files_from_folder()
 
 

@@ -1,11 +1,8 @@
 import os
 import re
-import pytest
 import json
 from dataclasses import dataclass
 from collections import deque
-from .utils import load_workflow_files_from_folder
-
 """
 This test file is to test the loading of workflow files in the frontend.
 To watch the browser (see the menu open): run with --headed, e.g.
@@ -221,7 +218,6 @@ def parse_workflow(filepath: str) -> WorkflowSpec:
 # Test class
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("loaded_workflow", load_workflow_files_from_folder(), indirect=True)
 class TestWorkflowCanvas:
     """End-to-end checks for each workflow loaded into the ReactFlow canvas.
 
