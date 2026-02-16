@@ -245,21 +245,46 @@ class TestWorkflowCanvas:
         """Click *play* on every node that has a play button (topological order)
         and wait for each to finish."""
         for node in self.spec.topo_sorted_nodes():
-            if not node.has_play_button:
-                continue
             node_el = self._node_locator(node)
             node_el.scroll_into_view_if_needed()
 
-            play_btn = node_el.locator("svg.fa-circle-play")
-            if play_btn.count() == 0:
+            # if Pool box wait for data table to show
+            if node.type == "DATA_POOL":
+                data_table = node_el.locator("td.MuiTableCell-root")
+                data_table.first.wait_for(state="visible", timeout=10000)
+                time.sleep(5)
+                assert data_table.count() >= 1, (
+                    f"DataPool node {node.id} ({node.type}) is missing its "
+                    f"data table"
+                )
+
+            if not node.has_play_button:
                 continue
+
+            play_btn = node_el.locator("svg.fa-circle-play")
+            play_btn.wait_for(state="visible", timeout=5000)
             play_btn.click(force=True)
 
-            # Wait for "Done" or "Error" to appear (up to 30 s per node)
-            outcome = node_el.locator("span").filter(
+            # wait for loading spinner to appear
+            # loading_spinner = node_el.locator(".spinner-border")
+            # loading_spinner.wait_for(state="visible", timeout=10000)
+            # # wait for loading spinner to disappear
+            # loading_spinner.wait_for(state="hidden", timeout=10000)
+
+            # Wait until either "Done" or "Error" is visible
+            node_el.locator("span").filter(
                 has_text=re.compile(r"^(Done|Error)$")
-            ).first
-            outcome.wait_for(state="visible", timeout=30000)
+            ).first.wait_for(state="visible", timeout=100000)
+
+            # Wait for the execution outcome (up to 30 s)
+            done_span = node_el.locator("span").filter(has_text=re.compile(r"^Done$"))
+            error_span = node_el.locator("span").filter(has_text=re.compile(r"^Error$"))
+            done_span.first.wait_for(state="visible", timeout=100000)
+
+            assert done_span.count() >= 1, (
+                f"Node {node.id} ({node.type}) did not produce 'Done' — "
+                f"error visible: {error_span.is_visible()}"
+            )
 
     # -- 1. Node & edge counts --------------------------------------------
 
@@ -509,3 +534,112 @@ class TestWorkflowCanvas:
                     f"Passive node {node.id} ({node.type}) is missing its "
                     f"resizable container"
                 )
+
+    # # -- 4. Node execution (play button) -----------------------------------
+
+    def test_node_execution(self, loaded_workflow):
+        """Click the play button on each executable node in topological
+        order and verify that the output status shows *Done*."""
+        # First: run all playable nodes end-to-end
+        self._execute_all_playable_nodes()
+
+        # Then: assert every playable node ended with "Done"
+        for node in self.spec.nodes:
+            if not node.has_play_button:
+                continue
+
+            node_el = self._node_locator(node)
+            # wait for the done span to be visible
+            done_span = node_el.locator("span").filter(
+                has_text=re.compile(r"^Done$")
+            )
+            done_span.first.wait_for(state="visible", timeout=10000)
+            assert done_span.count() >= 1, (
+                f"Node {node.id} ({node.type}) output is not 'Done' "
+                f"after full workflow execution"
+            )
+            # wait for output tab to be visible
+            output_tab = node_el.locator(
+                '.nav-link[data-rr-ui-event-key="output"]'
+            )
+            output_tab.first.wait_for(state="visible", timeout=10000)
+            assert output_tab.count() >= 1, (
+                f"Code node {node.id} ({node.type}) is missing its "
+                f"output tab"
+            )
+            if output_tab.count() >= 1:
+                # Check if the output content box is active
+                is_active = "active" in (output_tab.get_attribute("class") or "")
+                assert is_active, (
+                    f"Output content box {node.id} ({node.type}) is not active"
+                )
+                if not is_active:
+                    output_tab.click(force=True)
+                    output_tab.wait_for(state="visible", timeout=3000)
+                
+                # OutputContent renders #computation-tabs-tab- with
+                # Output / Error / Warning sub-tabs.
+                computation_tabs = node_el.locator(f"#computation-tabs-tab-0")
+
+                # #endregion
+                if computation_tabs.count() >= 1:
+                    # and should contain a div with classes tab-pane and active
+                    active_pane = node_el.locator(".tab-pane.active")
+                    assert active_pane.count() >= 1, (
+                        f"Code node {node.id} ({node.type}) output "
+                        f"area has no active tab-pane"
+                    )
+                    # the output tab content has class tab-content
+                    tab_content = active_pane.locator(".tab-content")
+                    # wait for the tab-content to be visible
+                    tab_content.wait_for(state="visible", timeout=3000)
+                    assert tab_content.count() >= 1, (
+                        f"Code node {node.id} ({node.type}) output "
+                        f"area is missing .tab-content"
+                    )
+                    # The output box should contain a title h6 with text "Output" 
+                    output_heading = tab_content.locator("h6").filter(
+                        has_text="Output"
+                    )
+                    output_heading.first.wait_for(state="visible", timeout=10000)
+                    assert output_heading.count() >= 1, (
+                        f"Node {node.id} ({node.type}) is missing its "
+                        f"output heading"
+                    )
+                    # and should not contain a div below the h6 with text "No output available."
+                    no_output_msg = tab_content.locator("div").filter(
+                        has_text="No output available."
+                    )
+                    no_output_msg.first.wait_for(state="hidden", timeout=10000)
+                    assert no_output_msg.count() == 0, (
+                        f"Node {node.id} ({node.type}) is not missing its "
+                        f"no output message"
+                    )
+                    # and should not contain a title h6 with text "Error"
+                    error_heading = tab_content.locator("h6").filter(
+                        has_text="Error"
+                    )
+                    error_heading.first.wait_for(state="hidden", timeout=10000)
+                    assert error_heading.count() == 0, (
+                        f"Node {node.id} ({node.type}) is not missing its "
+                        f"error heading"
+                    )
+                    # and should not contain a title h6 with text "Warning"
+                    warning_heading = tab_content.locator("h6").filter(
+                        has_text="Warning"
+                    )
+                    warning_heading.first.wait_for(state="hidden", timeout=10000)
+                    assert warning_heading.count() == 0, (
+                        f"Node {node.id} ({node.type}) is not missing its "
+                        f"warning heading"
+                    )
+                    # its content should be a text with the output file path following the pattern: <uuid_regex>.data
+                    output_content = tab_content.locator("div").filter(
+                        has_text=re.compile(r"Saved to file\:\s\w+_\w+.data$")
+                    )
+                    output_content.first.wait_for(state="visible", timeout=10000)
+                    assert output_content.count() >= 1, (
+                        f"Node {node.id} ({node.type}) is missing its "
+                        f"output content"
+                    )
+           

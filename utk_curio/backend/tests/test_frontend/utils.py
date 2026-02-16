@@ -158,6 +158,19 @@ def upload_workflow(
         f"{expected_node_count}",
         timeout=15000,
     )
+    # hide the tools menu bar so it doesn't interfere with the test
+    # get parent of #step-loading
+    step_loading = page.locator("#step-loading")
+    tools_menu_bar = step_loading.locator("..")
+    if tools_menu_bar.count() >= 1:
+        page.evaluate(
+            "element => { element.style.display = 'none'; }",
+            tools_menu_bar.element_handle() # Pass the ElementHandle to the evaluate function
+        )
+
+        assert tools_menu_bar.is_hidden() is True, (
+            f"Tools menu bar is not hidden"
+        )
 
 
 # ---------------------------------------------------------------------------
