@@ -1,13 +1,13 @@
 import os
 import re
 import json
+import time
 from dataclasses import dataclass
 from collections import deque
 """
 This test file is to test the loading of workflow files in the frontend.
 To watch the browser (see the menu open): run with --headed, e.g.
 """
-
 
 def test_load_workflow_files(workflow_files):
     """
@@ -43,6 +43,15 @@ CODE_TYPES = {
     "DATA_LOADING", "DATA_CLEANING", "DATA_TRANSFORMATION",
     "DATA_EXPORT", "COMPUTATION_ANALYSIS", "CONSTANTS",
     "FLOW_SWITCH", "VIS_TEXT",
+}
+
+# Subset of CODE_TYPES whose frontend component passes ``code={true}``
+# to ``BoxEditor``, meaning they render a "code" tab with a Monaco editor.
+# The remaining CODE_TYPES (DATA_EXPORT, CONSTANTS, VIS_TEXT) use
+# ``code={false}`` and have no code tab.
+CODE_EDITOR_TYPES = {
+    "DATA_LOADING", "DATA_CLEANING", "DATA_TRANSFORMATION",
+    "COMPUTATION_ANALYSIS", "FLOW_SWITCH",
 }
 
 
@@ -301,4 +310,202 @@ class TestWorkflowCanvas:
                     f"Node {a.id} (spec x={a.x:.1f}) should be left of "
                     f"{b.id} (spec x={b.x:.1f}), but canvas x "
                     f"{positions[a.id][0]:.1f} > {positions[b.id][0]:.1f}"
+                )
+
+    # -- 3. Node type & content (code / grammar / datapool) ----------------
+
+    def test_node_type_and_content(self, loaded_workflow):
+        """Each node must render the correct editor widget for its category:
+
+        * **code** nodes  – a Monaco code editor (``.monaco-editor``)
+        * **grammar** nodes – a JSON grammar editor (``#grammarJsonEditor*``)
+        * **datapool** nodes – the data-tabs element (``#data-tabs``)
+        * **passive** nodes – just the node container (no editor expected)
+        """
+        for node in self.spec.nodes:
+            node_el = self._node_locator(node)
+            assert node_el.count() == 1, (
+                f"Node {node.id} ({node.type}) not found on canvas"
+            )
+
+            if node.category == "code":
+
+                # 1. Check if the output tab is present (always rendered in BoxEditor)
+                output_tab = node_el.locator(
+                    '.nav-link[data-rr-ui-event-key="output"]'
+                )
+
+                assert output_tab.count() >= 1, (
+                    f"Code node {node.id} ({node.type}) is missing its "
+                    f"output tab"
+                )
+                if output_tab.count() >= 1:
+                    # Check if the output content box is active
+                    is_active = "active" in (output_tab.get_attribute("class") or "")
+                    assert is_active, (
+                        f"Output content box {node.id} ({node.type}) is not active"
+                    )
+                    if not is_active:
+                        output_tab.click(force=True)
+                        output_tab.wait_for(state="visible", timeout=3000)
+                    
+                    # OutputContent renders #computation-tabs-tab- with
+                    # Output / Error / Warning sub-tabs.
+                    computation_tabs = node_el.locator(f"#computation-tabs-tab-0")
+
+                    # #endregion
+                    if computation_tabs.count() >= 1:
+                        # and should contain a div with classes tab-pane and active
+                        active_pane = node_el.locator(".tab-pane.active")
+                        assert active_pane.count() >= 1, (
+                            f"Code node {node.id} ({node.type}) output "
+                            f"area has no active tab-pane"
+                        )
+                        # the output tab content has class tab-content
+                        tab_content = active_pane.locator(".tab-content")
+                        # wait for the tab-content to be visible
+                        tab_content.wait_for(state="visible", timeout=3000)
+                        assert tab_content.count() >= 1, (
+                            f"Code node {node.id} ({node.type}) output "
+                            f"area is missing .tab-content"
+                        )
+                        # and should contain a title h6 with text "Output"
+                        output_heading = tab_content.locator("h6").filter(
+                            has_text="Output"
+                        )
+                        assert output_heading.count() >= 1, (
+                            f"Code node {node.id} ({node.type}) active "
+                            f"output pane is missing 'Output' heading"
+                        )
+                        # and should contain a div below the h6 with
+                        # text "No output available."
+                        no_output_msg = tab_content.locator("div").filter(
+                            has_text="No output available."
+                        )
+                        assert no_output_msg.count() >= 1, (
+                            f"Code node {node.id} ({node.type}) active "
+                            f"output pane is missing 'No output available.'"
+                        )
+                        # and should not contain a title h6 with text "Error"
+                        error_heading = tab_content.locator("h6").filter(
+                            has_text="Error"
+                        )
+                        assert error_heading.count() == 0, (
+                            f"Code node {node.id} ({node.type}) active "
+                            f"output pane should not contain 'Error' heading"
+                        )
+                        # and should not contain a title h6 with text "Warning"
+                        warning_heading = tab_content.locator("h6").filter(
+                            has_text="Warning"
+                        )
+                        assert warning_heading.count() == 0, (
+                            f"Code node {node.id} ({node.type}) active "
+                            f"output pane should not contain 'Warning' heading"
+                        )
+                
+                if node.type in CODE_EDITOR_TYPES:
+                    # 2. Check if the code tab is rendered
+                    code_tab = node_el.locator(
+                        '.nav-link[data-rr-ui-event-key="code"]'
+                    )
+
+                    assert code_tab.count() >= 1, (
+                        f"Code node {node.id} ({node.type}) is missing its "
+                        f"code tab"
+                    )
+                    # 3. Click on the code tab (if not already active) and wait for the editor
+                    is_active = "active" in (code_tab.get_attribute("class") or "")
+                    if not is_active:
+                        code_tab.click(force=True)
+                        code_tab.wait_for(state="visible", timeout=3000)
+                    editor = node_el.locator(".monaco-editor")
+                    editor.first.wait_for(state="visible", timeout=5000)
+                    assert editor.count() >= 1, (
+                        f"Code node {node.id} ({node.type}) is missing its "
+                        f"Monaco editor"
+                    )
+
+                    # Verify the code loaded into the Monaco editor matches the
+                    # workflow JSON content.  Monaco renders code as a complex
+                    # DOM tree (view-lines / spans), so we read the value via
+                    # the Monaco JS API instead of matching DOM text.
+                    if node.content.strip():
+                        editor_value = self.page.evaluate(
+                            """(nodeId) => {
+                                const nodeEl = document.querySelector(
+                                    `.react-flow__node[data-id="${nodeId}"]`
+                                );
+                                if (!nodeEl) return null;
+                                const editorEl = nodeEl.querySelector('.monaco-editor');
+                                if (!editorEl) return null;
+                                const editors = window.monaco?.editor?.getEditors?.() || [];
+                                const match = editors.find(
+                                    e => editorEl.contains(e.getDomNode())
+                                );
+                                return match ? match.getValue() : null;
+                            }""",
+                            node.id,
+                        )
+                        assert editor_value is not None, (
+                            f"Code node {node.id} ({node.type}): could not "
+                            f"read Monaco editor value via JS API"
+                        )
+                        assert node.content.strip() in editor_value.strip(), (
+                            f"Code node {node.id} ({node.type}): editor "
+                            f"content does not contain the expected code.\n"
+                            f"  Expected (snippet): {node.content.strip()[:120]}\n"
+                            f"  Actual   (snippet): {editor_value.strip()[:120]}"
+                        )
+                     
+
+            elif node.category == "grammar":
+                # 1. Check if the output tab is present
+                output_tab = node_el.locator(
+                    '.nav-link[data-rr-ui-event-key="output"]'
+                )
+                assert output_tab.count() >= 1, (
+                    f"Grammar node {node.id} ({node.type}) is missing its "
+                    f"output tab"
+                )
+
+                # 2. Check if the grammar tab is rendered
+                grammar_tab = node_el.locator(
+                    '.nav-link[data-rr-ui-event-key="grammar"]'
+                )
+
+                assert grammar_tab.count() >= 1, (
+                    f"Grammar node {node.id} ({node.type}) is missing its "
+                    f"grammar tab"
+                )
+                # 3. Click on the grammar tab (if not already active) and
+                #    wait for the grammar editor to be rendered
+                is_active = "active" in (grammar_tab.get_attribute("class") or "")
+                if not is_active:
+                    grammar_tab.click(force=True)
+
+                grammar_editor = node_el.locator(
+                    f'[id="grammarJsonEditor{node.id}"], '
+                    f'[id="vega-editor_{node.id}"]'
+                )
+                grammar_editor.first.wait_for(state="visible", timeout=6000)
+                assert grammar_editor.count() >= 1, (
+                    f"Grammar node {node.id} ({node.type}) is missing its "
+                    f"grammar editor"
+                )
+                # TODO: check if the grammar is rendered inside the editor
+
+            elif node.category == "datapool":
+                data_tabs = node_el.locator("#data-tabs-tab-0")
+                assert data_tabs.count() >= 1, (
+                    f"DataPool node {node.id} ({node.type}) is missing "
+                    f"#data-tabs"
+                )
+
+            else:
+                # passive nodes (MERGE_FLOW, VIS_IMAGE, …): just verify the
+                # resizable container rendered
+                resizable = node_el.locator(f'[id="{node.id}resizable"]')
+                assert resizable.count() >= 1, (
+                    f"Passive node {node.id} ({node.type}) is missing its "
+                    f"resizable container"
                 )
