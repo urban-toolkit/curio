@@ -1,4 +1,4 @@
-import React, { useState, useEffect, createElement } from "react";
+import React, { useState, useEffect, useRef, useCallback, createElement } from "react";
 import { Handle, Position } from "reactflow";
 import BoxEditor from "./editing/BoxEditor";
 
@@ -68,7 +68,7 @@ function UtkBox({ data, isConnectable }) {
   const [serverlessComponents, setServerlessComponents] = useState<any>([]);
 
   const [code, setCode] = useState<string>("");
-  const [sendCode, setSendCode] = useState();
+  const [sendCode, setSendCode] = useState<any>();
   const [templateData, setTemplateData] = useState<Template | any>({});
 
   const [newTemplateFlag, setNewTemplateFlag] = useState(false);
@@ -80,7 +80,10 @@ function UtkBox({ data, isConnectable }) {
   const { user } = useUserContext();
   const { workflowNameRef } = useFlowContext();
 
-  const [disablePlay, setDisablePlay] = useState<boolean>(true);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const isProcessingRef = useRef<boolean>(false);
+  const pendingPlayRef = useRef<boolean>(false);
+  const [showLoading, setShowLoading] = useState<boolean>(false);
 
   const [inputData, setInputData] = useState();
 
@@ -132,13 +135,40 @@ function UtkBox({ data, isConnectable }) {
     editUserTemplate(template);
   };
 
+  const sendCodeRef = useRef<any>(null);
+
   const setSendCodeCallback = (_sendCode: any) => {
-    setSendCode(() => _sendCode);
+    sendCodeRef.current = _sendCode;
+    setSendCode(() => (codeArg: string) => {
+      if (isProcessingRef.current) {
+        // Grammar not ready yet — queue the play and show spinner
+        pendingPlayRef.current = true;
+        setShowLoading(true);
+        // TODO: store the codeArg to be compiled?
+      } else {
+        _sendCode(codeArg);
+      }
+    });
   };
+
+  // Auto-trigger play when processing finishes and there's a pending play
+  useEffect(() => {
+    if (!isProcessing && pendingPlayRef.current && sendCodeRef.current) {
+      pendingPlayRef.current = false;
+      setShowLoading(false);
+      sendCodeRef.current(code);
+    }
+  }, [isProcessing]);
 
   Environment.serverless = true;
 
-  const compileGrammar = (spec: string) => {
+  const compileGrammar = (
+    spec: string,
+    overrideLayers?: any[],
+    overrideJoinedJsons?: any[],
+    overrideComponents?: any[],
+    overrideCallbacks?: any[]
+  ) => {
     try {
       const formatDate = (date: Date) => {
         // Get individual date components
@@ -160,6 +190,10 @@ function UtkBox({ data, isConnectable }) {
       const outerMainDiv = document.getElementById(
         "utk" + data.nodeId + "outer"
       ) as HTMLElement;
+      if (!outerMainDiv) {
+        console.warn("UTK output container not found, skipping compilation");
+        return;
+      }
       outerMainDiv.innerHTML = "";
       outerMainDiv.style.width = "100%";
       outerMainDiv.style.height = "100%";
@@ -169,15 +203,23 @@ function UtkBox({ data, isConnectable }) {
       mainDiv.id = "utk" + data.nodeId;
       outerMainDiv.appendChild(mainDiv);
 
-      if (spec != "") {
+      if (spec != "" && spec != "{}") {
+        const parsed = JSON.parse(spec);
+
+        // Guard: grammar must have required fields before compilation
+        if (!parsed.grid || !parsed.components || !parsed.knots) {
+          console.warn("Grammar not ready yet, missing required fields (grid/components/knots)");
+          return;
+        }
+
         const grammarInterpreter = new GrammarInterpreter(
           data.nodeId,
-          JSON.parse(spec),
+          parsed,
           mainDiv,
-          serverlessLayers,
-          serverlessJoinedJsons,
-          serverlessComponents,
-          interactionCallback
+          overrideLayers || serverlessLayers,
+          overrideJoinedJsons || serverlessJoinedJsons,
+          overrideComponents || serverlessComponents,
+          overrideCallbacks || interactionCallback
         );
         setGrammarInterpreterObj(grammarInterpreter);
       }
@@ -242,8 +284,8 @@ function UtkBox({ data, isConnectable }) {
       let dfIN = []
       let dfOUT = ''
 
-      if (data.input) {
-        data.input.data.features.forEach(item => { 
+      if (data.input && data.input.data && data.input.data.features) {
+        data.input.data.features.forEach((item: any) => { 
           // Remove geometry key
           const { geometry, ...rest } = item;
           dfIN.push(JSON.stringify(rest));
@@ -277,9 +319,9 @@ function UtkBox({ data, isConnectable }) {
         }),
       });
 
-      setOutput({ code: "success", content: "" });
+      setOutput({ code: "success", content: "", outputType: "" });
     } catch (error: any) {
-      setOutput({ code: "error", content: error.message });
+      setOutput({ code: "error", content: error.message, outputType: "" });
     }
   };
 
@@ -365,133 +407,136 @@ function UtkBox({ data, isConnectable }) {
 
   //Interaction
   useEffect(() => {
-  let dfIN: string[] = [];
+    let dfIN: string[] = [];
 
-  if (data.input.data) {
-    console.log(data)
-    data.input.data.features.forEach((item: any) => {
-      // Remove "geometry" key
-      const { geometry, ...rest } = item;
-      dfIN.push(JSON.stringify(rest));
-    });
-  }
-
-  const isEqual = JSON.stringify(inputData) === JSON.stringify(dfIN);
-
-  if (!isEqual && inputData !== undefined) {
-    fetch(`${process.env.BACKEND_URL}/insert_attribute_value_change`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        data: {
-          activity_name: BoxType.VIS_UTK + "-" + data.nodeId,
-        },
-      }),
-    });
-
-    setInputData(dfIN);
-
-    const formatDate = (date: Date): string => {
-      const month = date.toLocaleString("default", { month: "short" });
-      const day = date.getDate();
-      const year = date.getFullYear();
-      const hours = date.getHours();
-      const minutes = date.getMinutes();
-      const seconds = date.getSeconds();
-
-      return `${month} ${day} ${year} ${hours}:${minutes}:${seconds}`;
-    };
-
-    const endTime = formatDate(new Date());
-    const startTime = formatDate(new Date());
-
-    const getType = (inputs: any[]): string[] => {
-      let typesInput: string[] = [];
-
-      for (const input of inputs) {
-        let parsedInput = input;
-
-        if (typeof input === "string") {
-          parsedInput = JSON.parse(input);
-        }
-
-        if (parsedInput.dataType === "outputs") {
-          typesInput = typesInput.concat(getType(parsedInput.data));
-        } else {
-          typesInput.push(parsedInput.dataType);
-        }
-      }
-
-      return typesInput;
-    };
-
-    let typesInput: string[] = [];
-    if (data.input !== "") {
-      typesInput = getType([data.input]);
+    if (data.input.data) {
+      console.log(data)
+      data.input.data.features.forEach((item: any) => {
+        // Remove "geometry" key
+        const { geometry, ...rest } = item;
+        dfIN.push(JSON.stringify(rest));
+      });
     }
 
-    const typesOutput = [...typesInput];
+    const isEqual = JSON.stringify(inputData) === JSON.stringify(dfIN);
 
-    const mapTypes = (typesList: string[]) => {
-      const mapTypes = {
-        DATAFRAME: 0,
-        GEODATAFRAME: 0,
-        VALUE: 0,
-        LIST: 0,
-        JSON: 0,
+    if (!isEqual && inputData !== undefined) {
+      fetch(`${process.env.BACKEND_URL}/insert_attribute_value_change`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          data: {
+            activity_name: BoxType.VIS_UTK + "-" + data.nodeId,
+          },
+        }),
+      });
+
+      setInputData(dfIN);
+
+      const formatDate = (date: Date): string => {
+        const month = date.toLocaleString("default", { month: "short" });
+        const day = date.getDate();
+        const year = date.getFullYear();
+        const hours = date.getHours();
+        const minutes = date.getMinutes();
+        const seconds = date.getSeconds();
+
+        return `${month} ${day} ${year} ${hours}:${minutes}:${seconds}`;
       };
 
-      for (const typeValue of typesList) {
-        if (["int", "str", "float", "bool"].includes(typeValue)) {
-          mapTypes.VALUE = 1;
-        } else if (typeValue === "list") {
-          mapTypes.LIST = 1;
-        } else if (typeValue === "dict") {
-          mapTypes.JSON = 1;
-        } else if (typeValue === "dataframe") {
-          mapTypes.DATAFRAME = 1;
-        } else if (typeValue === "geodataframe") {
-          mapTypes.GEODATAFRAME = 1;
+      const endTime = formatDate(new Date());
+      const startTime = formatDate(new Date());
+
+      const getType = (inputs: any[]): string[] => {
+        let typesInput: string[] = [];
+
+        for (const input of inputs) {
+          let parsedInput = input;
+
+          if (typeof input === "string") {
+            parsedInput = JSON.parse(input);
+          }
+
+          if (parsedInput.dataType === "outputs") {
+            typesInput = typesInput.concat(getType(parsedInput.data));
+          } else {
+            typesInput.push(parsedInput.dataType);
+          }
         }
+
+        return typesInput;
+      };
+
+      let typesInput: string[] = [];
+      if (data.input !== "") {
+        typesInput = getType([data.input]);
       }
 
-      return mapTypes;
-    };
+      const typesOutput = [...typesInput];
 
-    boxExecProv(
-      startTime,
-      endTime,
-      workflowNameRef.current,
-      BoxType.VIS_UTK + "-" + data.nodeId,
-      mapTypes(typesInput),
-      mapTypes(typesOutput),
-      code,
-      JSON.stringify(dfIN),
-      "",
-      true
-    );
+      const mapTypes = (typesList: string[]) => {
+        const mapTypes = {
+          DATAFRAME: 0,
+          GEODATAFRAME: 0,
+          VALUE: 0,
+          LIST: 0,
+          JSON: 0,
+        };
 
-    fetch(`${process.env.BACKEND_URL}/insert_visualization`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        data: {
-          activity_name: BoxType.VIS_UTK + "-" + data.nodeId,
+        for (const typeValue of typesList) {
+          if (["int", "str", "float", "bool"].includes(typeValue)) {
+            mapTypes.VALUE = 1;
+          } else if (typeValue === "list") {
+            mapTypes.LIST = 1;
+          } else if (typeValue === "dict") {
+            mapTypes.JSON = 1;
+          } else if (typeValue === "dataframe") {
+            mapTypes.DATAFRAME = 1;
+          } else if (typeValue === "geodataframe") {
+            mapTypes.GEODATAFRAME = 1;
+          }
+        }
+
+        return mapTypes;
+      };
+
+      boxExecProv(
+        startTime,
+        endTime,
+        workflowNameRef.current,
+        BoxType.VIS_UTK + "-" + data.nodeId,
+        mapTypes(typesInput),
+        mapTypes(typesOutput),
+        code,
+        JSON.stringify(dfIN),
+        "",
+        true
+      );
+
+      fetch(`${process.env.BACKEND_URL}/insert_visualization`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      }),
-    });
+        body: JSON.stringify({
+          data: {
+            activity_name: BoxType.VIS_UTK + "-" + data.nodeId,
+          },
+        }),
+      });
 
-  }
-}, [data]);
+    }
+  }, [data]);
 
 
   useEffect(() => {
     const processData = async () => {
       if (data.input != "") {
+        setIsProcessing(true);
+        isProcessingRef.current = true;
+
         let parsedInput = data.input; //JSON.parse(data.input);
 
         let validInput = true;
@@ -512,6 +557,11 @@ function UtkBox({ data, isConnectable }) {
         }
 
         // TODO: Refresh UTK
+
+        if (!validInput) {
+          setIsProcessing(false);
+          isProcessingRef.current = false;
+        }
 
         if (validInput) {
           // send data to UTK
@@ -556,7 +606,7 @@ function UtkBox({ data, isConnectable }) {
             }
           }
 
-          fetch(process.env.BACKEND_URL + "/toLayers", {
+          const toLayersResponse = await fetch(process.env.BACKEND_URL + "/toLayers", {
             method: "POST",
             body: JSON.stringify({
               geojsons: geojsons,
@@ -564,9 +614,9 @@ function UtkBox({ data, isConnectable }) {
             headers: {
               "Content-type": "application/json; charset=UTF-8",
             },
-          })
-            .then((response) => response.json())
-            .then((json: any) => {
+          });
+          const json: any = await toLayersResponse.json();
+
               let generatedGrammar: any = {};
 
               generatedGrammar["components"] = [
@@ -804,7 +854,6 @@ function UtkBox({ data, isConnectable }) {
               setServerlessLayers(json.layers);
               setServerlessJoinedJsons(json.joinedJsons);
               setServerlessComponents(components);
-            });
 
           if (grammarInterpreterObj != null) {
             for (let i = 0; i < geojsons.length; i++) {
@@ -870,7 +919,17 @@ function UtkBox({ data, isConnectable }) {
 
           // setOutput("success");
           data.outputCallback(data.nodeId, data.input);
-          await stallDisablePlay();
+
+          // Auto-compile the grammar now that all data is ready.
+          // Pass local variables directly so we don't depend on React state propagation.
+          const grammarSpec = JSON.stringify(generatedGrammar, null, 4);
+          compileGrammar(grammarSpec, json.layers, json.joinedJsons, components, interactionCallbacks);
+          // sendCodeRef.current(code);
+          // TODO: set code dirty calling sendCodeRef
+
+          // Signal that grammar/data processing is complete
+          setIsProcessing(false);
+          isProcessingRef.current = false;
         }
       }
 
@@ -880,13 +939,6 @@ function UtkBox({ data, isConnectable }) {
 
   }, [data.input]);
 
-  async function stallDisablePlay() {
-    function delay(ms: number): Promise<void> {
-        return new Promise((resolve) => setTimeout(resolve, ms));
-    }
-    await delay(5000);
-    setDisablePlay(false);
-  }
 
   useEffect(() => {
     data.interactionsCallback(interactions, data.nodeId);
@@ -985,7 +1037,8 @@ function UtkBox({ data, isConnectable }) {
         code={code}
         user={user}
         handleType={"in/out"}
-        disablePlay={disablePlay}
+        disablePlay={false}
+        isLoading={showLoading}
         sendCodeToWidgets={sendCode}
         setOutputCallback={setOutput}
         promptModal={promptModal}
