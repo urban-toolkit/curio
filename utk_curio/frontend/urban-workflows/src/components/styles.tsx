@@ -1,6 +1,6 @@
 import React, { ReactNode, useState, useEffect } from "react";
 import CSS from "csstype";
-import { Dropdown } from "react-bootstrap";
+import { Dropdown, Spinner } from "react-bootstrap";
 
 import { useFlowContext } from "../providers/FlowProvider";
 import { Box, NodeRemoveChange } from "reactflow";
@@ -75,7 +75,8 @@ export const BoxContainer = ({
     disableComments = false,
     handleType,
     styles = {},
-    disablePlay = false
+    disablePlay = false,
+    isLoading = false
 }: {
     data: any;
     children: ReactNode;
@@ -96,6 +97,7 @@ export const BoxContainer = ({
     disableComments?: boolean;
     styles?: CSS.Properties;
     disablePlay?: boolean;
+    isLoading?: boolean;
     handleType?: string;
 }) => {
     const { 
@@ -763,24 +765,37 @@ export const BoxContainer = ({
                         <Row style={{gap: "8px", paddingRight: 0}}>
                             {!disablePlay ?
                                 <Col md={3} style={{padding: 0}}>
-                                    <FontAwesomeIcon
-                                        className={"nowheel nodrag"}
-                                        icon={faCirclePlay}
-                                        style={{
-                                            cursor: "pointer",
-                                            fontSize: "27px",
-                                            color: "rgb(251, 170, 105)",
-                                        }}
-                                        onClick={() => {
-                                            setOutputCallback({
-                                                code: "exec",
-                                                content: "",
-                                            });
-                                            sendCodeToWidgets(code); // will resolve markers
-                                            if(AIModeRef.current)
-                                                generateSubtaskFromExec((code ? code : ""), data.nodeType, workflowGoal);
-                                        }}
-                                    />
+                                    {isLoading ? (
+                                        <Spinner
+                                            animation="border"
+                                            size="sm"
+                                            style={{
+                                                color: "rgb(251, 170, 105)",
+                                                width: "24px",
+                                                height: "24px",
+                                                marginTop: "2px",
+                                            }}
+                                        />
+                                    ) : (
+                                        <FontAwesomeIcon
+                                            className={"nowheel nodrag"}
+                                            icon={faCirclePlay}
+                                            style={{
+                                                cursor: "pointer",
+                                                fontSize: "27px",
+                                                color: "rgb(251, 170, 105)",
+                                            }}
+                                            onClick={() => {
+                                                setOutputCallback({
+                                                    code: "exec",
+                                                    content: "",
+                                                });
+                                                sendCodeToWidgets(code); // will resolve markers
+                                                if(AIModeRef.current)
+                                                    generateSubtaskFromExec((code ? code : ""), data.nodeType, workflowGoal);
+                                            }}
+                                        />
+                                    )}
                                 </Col> : null
                             }
                             {output != undefined ? (

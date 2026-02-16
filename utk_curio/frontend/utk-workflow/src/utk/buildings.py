@@ -41,8 +41,8 @@ class Buildings:
             size = length / num_cells
             distances = np.arange(0, length, size)
 
-            interpolated_points = list(MultiPoint([lines.interpolate(distance) for distance in distances]))
-            points = list(MultiPoint(lines.coords))
+            interpolated_points = list(MultiPoint([lines.interpolate(distance) for distance in distances]).geoms)
+            points = list(MultiPoint(lines.coords).geoms)
 
             joined_points = []
 
@@ -366,10 +366,11 @@ class Buildings:
 
         cid = -1
         count = 0
-        # for poly in polys:   
-        for i in range(len(polys)):   
+        # for poly in polys:
+        poly_list = list(polys.geoms) if polys.geom_type == 'MultiPolygon' else [polys]
+        for i in range(len(poly_list)):
 
-            poly = polys[i]
+            poly = poly_list[i]
 
             mrr = poly.minimum_rotated_rectangle
             
@@ -421,7 +422,7 @@ class Buildings:
 
                 ccell = []
                 if cell.geom_type == 'MultiPolygon':
-                    ccell = list(cell)
+                    ccell = list(cell.geoms)
                 elif cell.geom_type == 'Polygon':
                     ccell = [cell]
 
@@ -499,7 +500,9 @@ class Buildings:
                 merged_geom = MultiPolygon([merged_geom])
 
             oriented_geom = []
-            for geom in merged_geom:
+            # Use .geoms for Shapely 2.0+ compatibility
+            geoms_to_iterate = merged_geom.geoms if hasattr(merged_geom, 'geoms') else merged_geom
+            for geom in geoms_to_iterate:
                 oriented_geom.append(polygon.orient(geom, 1)) # counter-clockwise
             oriented_geom = MultiPolygon(oriented_geom)
 

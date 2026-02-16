@@ -353,15 +353,19 @@ def process_python_code():
     boxType = request.json['boxType']
     input = {'path': "", 'dataType': ""}
     if(request.json['input']):
-        if(request.json['input']['dataType'] == 'outputs'):
-            input['path'] = request.json['input']['data']
+        req_input = request.json['input']
+        if(req_input['dataType'] == 'outputs' and 'data' in req_input):
+            # Multiple outputs from a MergeFlowBox: 'data' is a list of output objects
+            input['path'] = req_input['data']
             input['dataType'] = 'outputs'
-        elif('filename' in request.json['input']):
-            input['path'] = request.json['input']['filename']
-            input['dataType'] = request.json['input']['dataType']
-        else:
-            input['path'] = request.json['input']['path']
-            input['dataType'] = request.json['input']['dataType']
+        elif('filename' in req_input):
+            # Single file reference — load from file; the file itself embeds the real dataType.
+            # Avoid passing 'outputs' here so the wrapper loads the file normally via load_memory_mapped_file.
+            input['path'] = req_input['filename']
+            input['dataType'] = req_input['dataType'] if req_input['dataType'] != 'outputs' else 'file'
+        elif('path' in req_input):
+            input['path'] = req_input['path']
+            input['dataType'] = req_input['dataType'] if req_input['dataType'] != 'outputs' else 'file'
     try:
         response = requests.post(api_address+":"+str(api_port)+"/exec",
                                 data=json.dumps({

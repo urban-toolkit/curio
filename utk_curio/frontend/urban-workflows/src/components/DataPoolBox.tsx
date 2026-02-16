@@ -104,6 +104,16 @@ function DataPoolBox({ data, isConnectable }) {
 
       // Notify downstream of raw array
       data.outputCallback(data.nodeId, tabd);
+      // Notify downstream with proper dataType structure
+
+      if (tabd. length === 1) {
+        // Single input: pass through the object directly (preserves dataType)
+        data. outputCallback(data.nodeId, tabd [0]);
+      } else if (tabd. length > 1) {
+        // Multiple inputs: wrap as outputs
+        data.outputCallback(data.nodeId, { data: tabd, dataType: "outputs" }) ;
+       }
+
     } catch (error) {
       console.error('Error processing data asynchronously:', error);
       setTabData([]);
