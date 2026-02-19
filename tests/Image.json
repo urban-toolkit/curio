@@ -34,9 +34,9 @@
         "target": "7978e4d5-1e30-40a3-8f00-7814434b282e"
       }
     ],
-    "name": "DefaultWorkflow",
+    "name": "Image",
     "task": "",
     "timestamp": 1754930657019,
-    "provenance_id": "DefaultWorkflow"
+    "provenance_id": "Image"
   }
 }

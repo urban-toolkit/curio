@@ -26,9 +26,9 @@ interface ProvenanceContextProps {
         types_input: any,
         types_output: any,
         activity_source_code: string,
-        inputData: string,
-        outputData: string,
-        interaction: boolean
+        inputData?: string,
+        outputData?: string,
+        interaction?: boolean
     ) => void;
     provenanceGraphBoxesRef: any;
     truncateDB: () => void;

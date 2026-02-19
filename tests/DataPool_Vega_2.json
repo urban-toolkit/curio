@@ -70,9 +70,9 @@
         "target": "b601d363-50fd-4209-bee2-9997dcb050f3"
       }
     ],
-    "name": "DefaultWorkflow",
+    "name": "DataPool_Vega_2",
     "task": "",
     "timestamp": 1749534480747,
-    "provenance_id": "DefaultWorkflow"
+    "provenance_id": "DataPool_Vega_2"
   }
 }

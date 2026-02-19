@@ -9,11 +9,12 @@ import { BoxType } from "../../constants";
 import Editor from "@monaco-editor/react";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { useProvenanceContext } from "../../providers/ProvenanceProvider";
+import { ICodeData } from "../../types";
 
 type CodeEditorProps = {
     setOutputCallback: any;
     data: any;
-    output: { code: string; content: string };
+    output: ICodeData;
     boxType: BoxType;
     replacedCode: string; // code with all marks resolved
     sendCodeToWidgets: any;
@@ -137,8 +138,7 @@ function CodeEditor({
                 )
             ) {
                 // @ts-ignore
-                window.ResizeObserver[staticMethod] =
-                    OriginalResizeObserver[staticMethod];
+                window.ResizeObserver[staticMethod] = OriginalResizeObserver[staticMethod];
             }
         }
     }, []);

@@ -28,6 +28,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import { OverlayTrigger, Tooltip } from "react-bootstrap";
 import BoxExplanation from "./BoxExplanation";
+import { ICodeData } from "../../types";
 
 type BoxEditorProps = {
     outputId?: string;
@@ -37,7 +38,7 @@ type BoxEditorProps = {
     grammar: boolean;
     setOutputCallback: any;
     data: any;
-    output: { code: string; content: string };
+    output: { code: string; content: string } | ICodeData;
     boxType: BoxType;
     applyGrammar?: any;
     schema?: any;
@@ -306,7 +307,7 @@ function BoxEditor({
                                                     fontSize: "10px",
                                                 }}
                                             >
-                                                {output.content}
+                                                {output.content as string}
                                             </p>
                                         </div>
                                     )}

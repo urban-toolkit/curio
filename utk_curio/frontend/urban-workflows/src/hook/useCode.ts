@@ -2,10 +2,9 @@ import { useCallback } from "react";
 import { Node } from "reactflow";
 import { v4 as uuid } from "uuid";
 
-import { IInteraction, IOutput, useFlowContext } from "../providers/FlowProvider";
+import { IInteraction, useFlowContext } from "../providers/FlowProvider";
 import { PythonInterpreter } from "../PythonInterpreter";
 import { usePosition } from "./usePosition";
-import { Template } from "../providers/TemplateProvider";
 import { AccessLevelType, BoxType, EdgeType } from "../constants";
 
 const pythonInterpreter = new PythonInterpreter();

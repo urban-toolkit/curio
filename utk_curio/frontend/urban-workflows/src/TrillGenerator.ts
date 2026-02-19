@@ -11,12 +11,18 @@ export class TrillGenerator {
 
     static list_of_trills: any = {}; // [workflowName_timestamp] -> trill_spec
 
+    static reset() {
+        this.provenanceJSON = { id: "", nodes: [], edges: [] };
+        this.latestTrill = "";
+        this.list_of_trills = {};
+    }
+
     static intializeProvenance(trill_spec: any){
         // TODO: look for a provenance JSON for the workflow. If it does not exist initialize it. If it exists load the meta and trill versions to memory (ideally they should be on the database)
         // TODO: for now assuming that the user is never loading a trill or provenanceJSON.
 
-        this.latestTrill = trill_spec.dataflow.name+"_"+trill_spec.dataflow.timestamp; // TODO: this should change if loading external trill or provenanceJSON.
-        this.list_of_trills[trill_spec.dataflow.name+"_"+trill_spec.dataflow.timestamp] = trill_spec; // TODO: this should change if loading external trill or provenanceJSON.
+        this.latestTrill = trill_spec.dataflow.name+"_"+trill_spec.dataflow.timestamp;
+        this.list_of_trills[trill_spec.dataflow.name+"_"+trill_spec.dataflow.timestamp] = trill_spec;
 
         this.provenanceJSON.id = trill_spec.dataflow.provenance_id;
         this.provenanceJSON.nodes.push({

@@ -128,9 +128,9 @@
         "target": "node12"
       }
     ],
-    "name": "DefaultWorkflow",
+    "name": "Interaction_Vega",
     "task": "",
     "timestamp": 1747771247213,
-    "provenance_id": "DefaultWorkflow"
+    "provenance_id": "Interaction_Vega"
   }
 }

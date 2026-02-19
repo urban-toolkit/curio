@@ -169,9 +169,9 @@
         }
       }
     ],
-    "name": "DefaultWorkflow",
+    "name": "Interaction",
     "task": "",
     "timestamp": 1748222222225,
-    "provenance_id": "DefaultWorkflow"
+    "provenance_id": "Interaction"
   }
 }

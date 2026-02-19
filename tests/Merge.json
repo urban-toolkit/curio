@@ -96,9 +96,9 @@
         "targetHandle": "in"
       }
     ],
-    "name": "DefaultWorkflow",
+    "name": "Merge",
     "task": "",
     "timestamp": 1747342705197,
-    "provenance_id": "DefaultWorkflow"
+    "provenance_id": "Merge"
   }
 }
