@@ -34,9 +34,9 @@
         "target": "59367466-92b7-44e1-b85f-deb419863156"
       }
     ],
-    "name": "DefaultWorkflow",
+    "name": "DataPool_gdf",
     "task": "",
     "timestamp": 1747347735323,
-    "provenance_id": "DefaultWorkflow"
+    "provenance_id": "DataPool_gdf"
   }
 }

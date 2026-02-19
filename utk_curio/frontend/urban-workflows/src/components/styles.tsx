@@ -49,6 +49,7 @@ import {
     faAnglesUp
 } from "@fortawesome/free-solid-svg-icons";
 import { AccessLevelType, BoxType, SupportedType } from "../constants";
+import { getNodeDescriptor } from "../registry";
 import "./styles.css";
 import { Template, useTemplateContext } from "../providers/TemplateProvider";
 import { useCode } from "../hook/useCode";
@@ -425,68 +426,13 @@ export const BoxContainer = ({
     }
 
     const boxIconTranslation = (boxType: BoxType) => {
-        if (boxType === BoxType.COMPUTATION_ANALYSIS) {
-            return faMagnifyingGlassChart;
-        } else if (boxType === BoxType.CONSTANTS) {
-            return faSquareRootVariable;
-        } else if (boxType === BoxType.DATA_CLEANING) {
-            return faBroom;
-        } else if (boxType === BoxType.DATA_EXPORT) {
-            return faUpload;
-        } else if (boxType === BoxType.DATA_LOADING) {
-            return faDownload;
-        } else if (boxType === BoxType.DATA_POOL) {
-            return faServer;
-        } else if (boxType === BoxType.DATA_TRANSFORMATION) {
-            return faDatabase;
-        } else if (boxType === BoxType.FLOW_SWITCH) {
-            return faRepeat;
-        } else if (boxType === BoxType.MERGE_FLOW) {
-            return faCodeMerge;
-        } else if (boxType === BoxType.VIS_IMAGE) {
-            return faImage;
-        } else if (boxType === BoxType.VIS_TABLE) {
-            return faTable;
-        } else if (boxType === BoxType.VIS_TEXT) {
-            return faFont;
-        } else if (boxType === BoxType.VIS_UTK) {
-            return faCube;
-        } else if (boxType === BoxType.VIS_VEGA) {
-            return faChartLine;
-        }
-        return faCopy;
+        try { return getNodeDescriptor(boxType).icon; }
+        catch { return faCopy; }
     };
 
     const boxNameTranslation = (boxType: BoxType) => {
-        if (boxType === BoxType.COMPUTATION_ANALYSIS) {
-            return "Computation Analysis";
-        } else if (boxType === BoxType.CONSTANTS) {
-            return "Constants";
-        } else if (boxType === BoxType.DATA_CLEANING) {
-            return "Data Cleaning";
-        } else if (boxType === BoxType.DATA_EXPORT) {
-            return "Data Export";
-        } else if (boxType === BoxType.DATA_LOADING) {
-            return "Data Loading";
-        } else if (boxType === BoxType.DATA_POOL) {
-            return "Data Pool";
-        } else if (boxType === BoxType.DATA_TRANSFORMATION) {
-            return "Data Transformation";
-        } else if (boxType === BoxType.FLOW_SWITCH) {
-            return "Flow Switch";
-        } else if (boxType === BoxType.MERGE_FLOW) {
-            return "Merge Flow";
-        } else if (boxType === BoxType.VIS_IMAGE) {
-            return "Image";
-        } else if (boxType === BoxType.VIS_TABLE) {
-            return "Table";
-        } else if (boxType === BoxType.VIS_TEXT) {
-            return "Text";
-        } else if (boxType === BoxType.VIS_UTK) {
-            return "UTK";
-        } else if (boxType === BoxType.VIS_VEGA) {
-            return "Vega-Lite";
-        }
+        try { return getNodeDescriptor(boxType).label; }
+        catch { return boxType; }
     };
 
     return (

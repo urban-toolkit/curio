@@ -54,9 +54,9 @@
         "target": "d2a25ce0-0684-4a29-995a-b2a7c76aa6c6"
       }
     ],
-    "name": "DefaultWorkflow",
+    "name": "DataPool_UTK",
     "task": "",
     "timestamp": 1748222112788,
-    "provenance_id": "DefaultWorkflow"
+    "provenance_id": "DataPool_UTK"
   }
 }

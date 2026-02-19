@@ -84,10 +84,6 @@ jobs:
           docker compose -p curio exec curio \
             python -m unittest discover -s utk_curio/sandbox/tests -t . -p "test_*.py" -v
 
-      - name: 🌐 Check frontend availability
-        run: |
-          curl --fail http://localhost:8080 || (echo "Frontend not reachable" && exit 1)
-
       - name: 🐍 Set up Python (for e2e)
         uses: actions/setup-python@v5
         with:
@@ -99,6 +95,15 @@ jobs:
           python -m playwright install chromium
           cd utk_curio/backend
           CURIO_E2E_USE_EXISTING=1 PYTHONPATH="$GITHUB_WORKSPACE" python -m pytest tests/test_frontend/ -v
+
+      - name: Check frontend availability
+        run: |
+          curl --fail http://localhost:8080 || (echo "Frontend not reachable" && exit 1)
+
+      - name: Jest frontend unit tests
+        run: |
+          docker build --target frontend_builder -t curio-frontend-test .
+          docker run --rm curio-frontend-test npm test
 
       - name: 🧹 Tear down containers
         run: docker compose -p curio down

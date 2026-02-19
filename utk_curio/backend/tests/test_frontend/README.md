@@ -52,6 +52,7 @@ pytest utk_curio/backend/tests/test_frontend/test_workflows.py -k "Vega.json"
 | `test_node_and_edge_count` | Canvas has the exact node/edge counts from the JSON |
 | `test_node_positions` | Relative x-ordering of nodes is preserved |
 | `test_node_type_and_content` | Correct editor widget per node category (code, grammar, datapool, passive) |
+| `test_node_execution` | Nodes execute correctly and produce the expected output |
 
 ## File Layout
 

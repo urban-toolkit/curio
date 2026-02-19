@@ -59,7 +59,7 @@ def load_workflow_files_from_folder():
 
 def pytest_generate_tests(metafunc):
     """Parametrize any test / fixture that requests ``loaded_workflow``.
-
+    Ref: https://docs.pytest.org/en/stable/example/parametrize.html#a-quick-port-of-testscenarios
     This replaces the previous
     ``@pytest.mark.parametrize("loaded_workflow", ..., indirect=True)``
     on ``TestWorkflowCanvas``.  Because it lives in conftest.py, it

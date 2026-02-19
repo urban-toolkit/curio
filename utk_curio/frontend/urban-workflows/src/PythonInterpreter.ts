@@ -1,4 +1,5 @@
 import { BoxType } from "./constants";
+import { formatDate, mapTypes } from "./utils/formatters";
 // import { pythonCode } from "./pythonWrapper";
 
 export class PythonInterpreter {
@@ -27,21 +28,6 @@ export class PythonInterpreter {
             unifiedLines += "    " + line + "\n";
         }
 
-        const formatDate = (date: Date) => {
-            // Get individual date components
-            const month = date.toLocaleString("default", { month: "short" });
-            const day = date.getDate();
-            const year = date.getFullYear();
-            const hours = date.getHours();
-            const minutes = date.getMinutes();
-            const seconds = date.getSeconds();
-
-            // Format the string
-            const formattedDate = `${month} ${day} ${year} ${hours}:${minutes}:${seconds}`;
-
-            return formattedDate;
-        };
-
         let startTime = formatDate(new Date());
 
         console.log("unifiedLines", unifiedLines);
@@ -61,59 +47,6 @@ export class PythonInterpreter {
             .then((response) => response.json())
             .then((json) => {
                 let endTime = formatDate(new Date());
-
-                // const getType = (inputs: any[]) => {
-                //     let typesInput: string[] = [];
-
-                //     for (const input of inputs) {
-                //         let parsedInput = input;
-
-                //         if (typeof input == "string")
-                            
-                //             parsedInput = JSON.parse(parsedInput);
-
-                //         if (parsedInput.dataType == "outputs") {
-                //             typesInput = typesInput.concat(
-                //                 getType(parsedInput.data)
-                //             );
-                //         } else {
-                //             typesInput.push(parsedInput.dataType);
-                //         }
-                //     }
-
-                //     return typesInput;
-                // };
-
-                const mapTypes = (typesList: string[]) => {
-                    let mapTypes: any = {
-                        "DATAFRAME": 0,
-                        "GEODATAFRAME": 0,
-                        "VALUE": 0,
-                        "LIST": 0,
-                        "JSON": 0,
-                    };
-
-                    for (const typeValue of typesList) {
-                        if (
-                            typeValue == "int" ||
-                            typeValue == "str" ||
-                            typeValue == "float" ||
-                            typeValue == "bool"
-                        ) {
-                            mapTypes["VALUE"] = 1;
-                        } else if (typeValue == "list") {
-                            mapTypes["LIST"] = 1;
-                        } else if (typeValue == "dict") {
-                            mapTypes["JSON"] = 1;
-                        } else if (typeValue == "dataframe") {
-                            mapTypes["DATAFRAME"] = 1;
-                        } else if (typeValue == "geodataframe") {
-                            mapTypes["GEODATAFRAME"] = 1;
-                        }
-                    }
-
-                    return mapTypes;
-                };
 
                 let typesInput: string[] = [];
                 // console.log("------------ inputTypes", json.inputTypes)

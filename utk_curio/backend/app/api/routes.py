@@ -1188,9 +1188,12 @@ def box_exec_prov():
     if(data['interaction'] == True):
         time.sleep(1) #Ensure that interaction is in the table before box_exec_prov executes. Consider finding a better approach for this logic.
 
-
         cursor.execute("SELECT int_id FROM interaction ORDER BY int_id DESC LIMIT 1")
-        int_id = cursor.fetchone()[0]
+        _int_row = cursor.fetchone()
+        if _int_row is None:
+            conn.close()
+            return jsonify({'error': 'No interaction record found'}), 400
+        int_id = _int_row[0]
 
 
         cursor.execute('''INSERT INTO workflowExecution (workflowexec_start_time, workflowexec_end_time, workflow_id, int_id)
@@ -1539,6 +1542,8 @@ def insert_visualization():
         cursor.execute("SELECT activityexec_id FROM activityExecution WHERE activity_id = ? ORDER BY activityexec_id DESC LIMIT 1",
             (activity_id,))
         activityExecution = cursor.fetchone()
+        if not activityExecution:
+            return jsonify({'error': f'No execution found for activity "{activity_name}"'}), 400
         activityExecution_id = activityExecution[0]
 
         # 3. Getting the name of the visualization box
@@ -1600,14 +1605,18 @@ def insert_interaction():
         cursor.execute("SELECT activityexec_id FROM activityExecution WHERE activity_id = ? ORDER BY activityexec_id DESC LIMIT 1",
             (activity_id,))
         activityExecution = cursor.fetchone()
+        if not activityExecution:
+            return jsonify({'error': f'No execution found for activity "{activity_name}"'}), 400
         activityExecution_id = activityExecution[0]
 
         # 3. Searching the visualization table
 
         cursor.execute("SELECT vis_id FROM visualization WHERE activityexec_id = ? ORDER BY activityexec_id DESC LIMIT 1",
             (activityExecution_id,))
-        vis_id = cursor.fetchone()
-        vis_id = vis_id[0]
+        vis_row = cursor.fetchone()
+        if not vis_row:
+            return jsonify({'error': 'No visualization found for this activity execution'}), 400
+        vis_id = vis_row[0]
 
         # 3. Inserting into the interaction table
 

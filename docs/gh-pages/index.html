@@ -1,0 +1,2381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Curio — API Reference</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" id="hljs-light">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" id="hljs-dark" disabled>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/typescript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+  <style>
+    :root {
+      --sidebar-w: 280px;
+      --c-bg: #fafaf9;
+      --c-surface: #ffffff;
+      --c-sidebar: #f5f3f0;
+      --c-sidebar-hover: #ece9e4;
+      --c-sidebar-active: #e0dbd4;
+      --c-border: #e2dfd9;
+      --c-text: #1c1917;
+      --c-text-muted: #78716c;
+      --c-accent: #7c3aed;
+      --c-accent-light: #ede9fe;
+      --c-accent-border: #c4b5fd;
+      --c-code-bg: #f5f3f0;
+      --c-table-stripe: #faf9f7;
+      --c-link: #6d28d9;
+      --c-blockquote: #fefce8;
+      --c-blockquote-border: #facc15;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,.05);
+      --shadow-md: 0 4px 12px rgba(0,0,0,.08);
+      --radius: 8px;
+    }
+
+    [data-theme="dark"] {
+      --c-bg: #1a1a1a;
+      --c-surface: #242424;
+      --c-sidebar: #1e1e1e;
+      --c-sidebar-hover: #2a2a2a;
+      --c-sidebar-active: #333333;
+      --c-border: #3a3a3a;
+      --c-text: #e5e5e5;
+      --c-text-muted: #a3a3a3;
+      --c-accent: #a78bfa;
+      --c-accent-light: #2e1065;
+      --c-accent-border: #6d28d9;
+      --c-code-bg: #2a2a2a;
+      --c-table-stripe: #1e1e1e;
+      --c-link: #c4b5fd;
+      --c-blockquote: #422006;
+      --c-blockquote-border: #a16207;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,.2);
+      --shadow-md: 0 4px 12px rgba(0,0,0,.3);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--c-bg);
+      color: var(--c-text);
+      line-height: 1.7;
+      font-size: 15px;
+      display: flex;
+      min-height: 100vh;
+      transition: background .2s, color .2s;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      position: fixed;
+      top: 0; left: 0;
+      width: var(--sidebar-w);
+      height: 100vh;
+      background: var(--c-sidebar);
+      border-right: 1px solid var(--c-border);
+      display: flex;
+      flex-direction: column;
+      z-index: 100;
+      transition: transform .3s ease, background .2s;
+    }
+
+    .sidebar-header {
+      padding: 24px 20px 16px;
+      border-bottom: 1px solid var(--c-border);
+    }
+
+    .sidebar-header h1 {
+      font-family: 'Lora', Georgia, serif;
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--c-accent);
+      letter-spacing: -0.3px;
+    }
+
+    .sidebar-header .subtitle {
+      font-size: 12px;
+      color: var(--c-text-muted);
+      margin-top: 2px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+
+    .sidebar-search {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--c-border);
+    }
+
+    .sidebar-search input {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid var(--c-border);
+      border-radius: 6px;
+      background: var(--c-surface);
+      color: var(--c-text);
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color .15s;
+    }
+
+    .sidebar-search input::placeholder { color: var(--c-text-muted); }
+    .sidebar-search input:focus { border-color: var(--c-accent); }
+
+    .sidebar-nav {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 0;
+    }
+
+    .sidebar-nav::-webkit-scrollbar { width: 4px; }
+    .sidebar-nav::-webkit-scrollbar-thumb { background: var(--c-border); border-radius: 4px; }
+
+    .nav-section {
+      padding: 6px 16px 4px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--c-text-muted);
+      margin-top: 12px;
+    }
+
+    .nav-section:first-child { margin-top: 4px; }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 16px 7px 20px;
+      font-size: 13.5px;
+      color: var(--c-text);
+      text-decoration: none;
+      cursor: pointer;
+      transition: background .12s;
+      border-left: 3px solid transparent;
+    }
+
+    .nav-item:hover { background: var(--c-sidebar-hover); }
+
+    .nav-item.active {
+      background: var(--c-sidebar-active);
+      border-left-color: var(--c-accent);
+      font-weight: 600;
+      color: var(--c-accent);
+    }
+
+    .nav-item .nav-num {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--c-text-muted);
+      min-width: 20px;
+    }
+
+    .nav-item.active .nav-num { color: var(--c-accent); }
+
+    .sidebar-footer {
+      padding: 12px 16px;
+      border-top: 1px solid var(--c-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .theme-toggle {
+      background: none;
+      border: 1px solid var(--c-border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 13px;
+      color: var(--c-text-muted);
+      cursor: pointer;
+      transition: all .15s;
+      font-family: inherit;
+    }
+
+    .theme-toggle:hover {
+      background: var(--c-sidebar-hover);
+      color: var(--c-text);
+    }
+
+    .sidebar-footer .version {
+      font-size: 11px;
+      color: var(--c-text-muted);
+    }
+
+    /* ── Mobile toggle ── */
+    .menu-toggle {
+      display: none;
+      position: fixed;
+      top: 12px; left: 12px;
+      z-index: 200;
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 18px;
+      cursor: pointer;
+      box-shadow: var(--shadow-md);
+      color: var(--c-text);
+    }
+
+    /* ── Main ── */
+    .main {
+      margin-left: var(--sidebar-w);
+      flex: 1;
+      min-width: 0;
+    }
+
+    .content {
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 48px 40px 80px;
+    }
+
+    /* ── Prose ── */
+    .prose h1 {
+      font-family: 'Lora', Georgia, serif;
+      font-size: 32px;
+      font-weight: 600;
+      line-height: 1.25;
+      margin-bottom: 8px;
+      color: var(--c-text);
+      letter-spacing: -0.5px;
+    }
+
+    .prose h2 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-top: 48px;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--c-border);
+      color: var(--c-text);
+      letter-spacing: -0.3px;
+    }
+
+    .prose h3 {
+      font-size: 17px;
+      font-weight: 600;
+      margin-top: 32px;
+      margin-bottom: 10px;
+      color: var(--c-text);
+    }
+
+    .prose h4 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-top: 24px;
+      margin-bottom: 8px;
+      color: var(--c-text-muted);
+    }
+
+    .prose p { margin-bottom: 14px; }
+
+    .prose a {
+      color: var(--c-link);
+      text-decoration: underline;
+      text-decoration-color: var(--c-accent-border);
+      text-underline-offset: 2px;
+      transition: color .12s;
+    }
+
+    .prose a:hover { color: var(--c-accent); }
+
+    .prose strong { font-weight: 600; }
+
+    .prose ul, .prose ol {
+      margin-bottom: 14px;
+      padding-left: 24px;
+    }
+
+    .prose li { margin-bottom: 4px; }
+
+    .prose li::marker { color: var(--c-text-muted); }
+
+    .prose hr {
+      border: none;
+      border-top: 1px solid var(--c-border);
+      margin: 32px 0;
+    }
+
+    .prose > .source-badge {
+      display: inline-block;
+      background: var(--c-accent-light);
+      color: var(--c-accent);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 20px;
+      margin-bottom: 24px;
+    }
+
+    /* ── Code ── */
+    .prose code {
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 13px;
+      background: var(--c-code-bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      word-break: break-word;
+    }
+
+    .prose pre {
+      background: var(--c-code-bg);
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      overflow-x: auto;
+      margin-bottom: 16px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .prose pre code {
+      background: none;
+      padding: 0;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    /* ── Tables ── */
+    .prose table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+      font-size: 13.5px;
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .prose th {
+      background: var(--c-code-bg);
+      font-weight: 600;
+      text-align: left;
+      padding: 10px 14px;
+      border-bottom: 2px solid var(--c-border);
+      font-size: 12.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      color: var(--c-text-muted);
+    }
+
+    .prose td {
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--c-border);
+      vertical-align: top;
+    }
+
+    .prose tr:nth-child(even) td { background: var(--c-table-stripe); }
+    .prose tr:last-child td { border-bottom: none; }
+
+    .prose td code, .prose th code {
+      font-size: 12px;
+      background: var(--c-accent-light);
+      color: var(--c-accent);
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+
+    /* ── Blockquotes ── */
+    .prose blockquote {
+      background: var(--c-blockquote);
+      border-left: 4px solid var(--c-blockquote-border);
+      padding: 14px 18px;
+      margin-bottom: 16px;
+      border-radius: 0 var(--radius) var(--radius) 0;
+      font-size: 14px;
+    }
+
+    .prose blockquote p:last-child { margin-bottom: 0; }
+
+    .prose blockquote strong { color: var(--c-text); }
+
+    /* ── Page header ── */
+    .page-header {
+      margin-bottom: 32px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--c-border);
+    }
+
+    .page-header .breadcrumb {
+      font-size: 12px;
+      color: var(--c-text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    /* ── Search results ── */
+    .search-results {
+      display: none;
+    }
+
+    .search-results.visible {
+      display: block;
+    }
+
+    .search-results .result-item {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--c-border);
+      cursor: pointer;
+      transition: background .12s;
+    }
+
+    .search-results .result-item:hover { background: var(--c-sidebar-hover); }
+
+    .search-results .result-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--c-text);
+    }
+
+    .search-results .result-snippet {
+      font-size: 11.5px;
+      color: var(--c-text-muted);
+      margin-top: 2px;
+      line-height: 1.4;
+    }
+
+    .search-results mark {
+      background: var(--c-accent-light);
+      color: var(--c-accent);
+      padding: 0 2px;
+      border-radius: 2px;
+    }
+
+    .no-results {
+      padding: 20px 16px;
+      font-size: 13px;
+      color: var(--c-text-muted);
+      text-align: center;
+    }
+
+    /* ── Scroll to top ── */
+    .scroll-top {
+      position: fixed;
+      bottom: 24px; right: 24px;
+      width: 40px; height: 40px;
+      background: var(--c-accent);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      font-size: 18px;
+      cursor: pointer;
+      box-shadow: var(--shadow-md);
+      opacity: 0;
+      transform: translateY(12px);
+      transition: opacity .2s, transform .2s;
+      z-index: 50;
+    }
+
+    .scroll-top.visible { opacity: 1; transform: translateY(0); }
+    .scroll-top:hover { background: var(--c-link); }
+
+    /* ── TOC within page ── */
+    .page-toc {
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin-bottom: 32px;
+    }
+
+    .page-toc-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--c-text-muted);
+      margin-bottom: 10px;
+    }
+
+    .page-toc ul { list-style: none; padding-left: 0; }
+
+    .page-toc li {
+      margin-bottom: 3px;
+    }
+
+    .page-toc a {
+      font-size: 13px;
+      color: var(--c-text-muted);
+      text-decoration: none;
+      transition: color .12s;
+    }
+
+    .page-toc a:hover { color: var(--c-accent); }
+
+    .page-toc .toc-h3 { padding-left: 16px; }
+    .page-toc .toc-h4 { padding-left: 32px; }
+
+    /* ── Welcome page ── */
+    .welcome {
+      text-align: center;
+      padding: 80px 20px;
+    }
+
+    .welcome-logo {
+      font-family: 'Lora', Georgia, serif;
+      font-size: 48px;
+      font-weight: 600;
+      color: var(--c-accent);
+      margin-bottom: 12px;
+      letter-spacing: -1px;
+    }
+
+    .welcome-sub {
+      font-size: 18px;
+      color: var(--c-text-muted);
+      max-width: 500px;
+      margin: 0 auto 40px;
+      line-height: 1.6;
+    }
+
+    .welcome-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      max-width: 700px;
+      margin: 0 auto;
+      text-align: left;
+    }
+
+    .welcome-card {
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius);
+      padding: 20px;
+      cursor: pointer;
+      transition: all .15s;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .welcome-card:hover {
+      border-color: var(--c-accent-border);
+      box-shadow: var(--shadow-md);
+      transform: translateY(-2px);
+    }
+
+    .welcome-card .card-num {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--c-accent);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+
+    .welcome-card .card-title {
+      font-weight: 600;
+      font-size: 14px;
+      margin-top: 4px;
+      color: var(--c-text);
+    }
+
+    .welcome-card .card-desc {
+      font-size: 12.5px;
+      color: var(--c-text-muted);
+      margin-top: 6px;
+      line-height: 1.5;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 860px) {
+      .sidebar { transform: translateX(-100%); }
+      .sidebar.open { transform: translateX(0); }
+      .menu-toggle { display: block; }
+      .main { margin-left: 0; }
+      .content { padding: 60px 20px 80px; }
+    }
+  </style>
+</head>
+<body>
+
+<button class="menu-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')" aria-label="Toggle menu">&#9776;</button>
+
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <h1>Curio</h1>
+    <div class="subtitle">API Reference</div>
+  </div>
+  <div class="sidebar-search">
+    <input type="text" id="searchInput" placeholder="Search docs..." autocomplete="off">
+  </div>
+  <div class="search-results" id="searchResults"></div>
+  <nav class="sidebar-nav" id="sidebarNav">
+    <div class="nav-item active" data-page="welcome" onclick="navigateTo('welcome')">
+      <span class="nav-num">~</span> Home
+    </div>
+    <div class="nav-section">Architecture</div>
+    <div class="nav-item" data-page="01" onclick="navigateTo('01')">
+      <span class="nav-num">01</span> Architecture Overview
+    </div>
+    <div class="nav-item" data-page="02" onclick="navigateTo('02')">
+      <span class="nav-num">02</span> Constants &amp; Types
+    </div>
+    <div class="nav-item" data-page="03" onclick="navigateTo('03')">
+      <span class="nav-num">03</span> Registry
+    </div>
+    <div class="nav-section">Adapters &amp; Components</div>
+    <div class="nav-item" data-page="04" onclick="navigateTo('04')">
+      <span class="nav-num">04</span> Box Adapters
+    </div>
+    <div class="nav-item" data-page="05" onclick="navigateTo('05')">
+      <span class="nav-num">05</span> Grammar Adapters
+    </div>
+    <div class="nav-item" data-page="06" onclick="navigateTo('06')">
+      <span class="nav-num">06</span> UniversalBox
+    </div>
+    <div class="nav-section">Hooks &amp; Providers</div>
+    <div class="nav-item" data-page="07" onclick="navigateTo('07')">
+      <span class="nav-num">07</span> Hooks
+    </div>
+    <div class="nav-item" data-page="08" onclick="navigateTo('08')">
+      <span class="nav-num">08</span> Providers
+    </div>
+    <div class="nav-section">UI &amp; Services</div>
+    <div class="nav-item" data-page="09" onclick="navigateTo('09')">
+      <span class="nav-num">09</span> Components
+    </div>
+    <div class="nav-item" data-page="10" onclick="navigateTo('10')">
+      <span class="nav-num">10</span> Services &amp; Utilities
+    </div>
+    <div class="nav-section">Guides</div>
+    <div class="nav-item" data-page="11" onclick="navigateTo('11')">
+      <span class="nav-num">11</span> Vis Library Plugin
+    </div>
+    <div class="nav-section">Testing</div>
+    <div class="nav-item" data-page="e2e" onclick="navigateTo('e2e')">
+      <span class="nav-num">&bull;</span> E2E Tests
+    </div>
+    <div class="nav-item" data-page="jest" onclick="navigateTo('jest')">
+      <span class="nav-num">&bull;</span> Jest Unit Tests
+    </div>
+  </nav>
+  <div class="sidebar-footer">
+    <span class="version">v11 &middot; Feb 2026</span>
+    <button class="theme-toggle" id="themeBtn" onclick="toggleTheme()">&#9789; Dark</button>
+  </div>
+</aside>
+
+<main class="main">
+  <div class="content" id="contentArea"></div>
+</main>
+
+<button class="scroll-top" id="scrollTop" onclick="window.scrollTo({top:0})" aria-label="Back to top">&#8593;</button>
+
+<script>
+const PAGES = {};
+
+PAGES['01'] = `# Architecture Overview
+
+## Technology Stack
+
+| Layer | Technology |
+|-------|-----------|
+| UI framework | React 18 + TypeScript |
+| Workflow engine | ReactFlow |
+| Styling | Bootstrap 5, CSS Modules, styled components |
+| State management | React Context (6 providers) |
+| 3D visualization | UTK (Urban Toolkit) via \`@react-three/fiber\` |
+| 2D visualization | Vega-Lite (compiled to Vega) |
+| Backend communication | REST API via \`fetch\` |
+| Authentication | Google OAuth |
+| Code execution | Server-side Python via \`PythonInterpreter\` |
+
+## Provider Hierarchy
+
+The application wraps the main canvas in a nested provider tree. Order matters — inner providers can access outer ones.
+
+\`\`\`
+<BackendHealthBanner>          — Checks backend /live, shows banner if down
+  <ReactFlowProvider>          — ReactFlow internal store
+    <LLMProvider>              — OpenAI integration for explanations/debugging
+      <ProvenanceProvider>     — Tracks workflow execution history
+        <UserProvider>         — Google auth, user type (programmer/expert)
+          <DialogProvider>     — Generic modal dialog management
+            <FlowProvider>     — Core: nodes, edges, outputs, interactions
+              <TemplateProvider> — Template CRUD per box type
+                <MainCanvas /> — Root UI component
+              </TemplateProvider>
+            </FlowProvider>
+          </DialogProvider>
+        </UserProvider>
+      </ProvenanceProvider>
+    </LLMProvider>
+  </ReactFlowProvider>
+</BackendHealthBanner>
+\`\`\`
+
+**Entry point:** \`src/index.tsx\`
+
+## Data Flow
+
+### Node Execution Pipeline
+
+\`\`\`
+User clicks Play → BoxContainer.handlePlayButtonClick()
+  → PythonInterpreter.interpretCode(userCode, input, ...)
+    → POST /processPythonCode to backend
+      → Backend runs Python sandbox
+        → Returns { output, stderr, input, inputTypes }
+  → outputCallback(nodeId, output)
+    → FlowProvider.applyNewOutput()
+      → Propagates output to connected downstream nodes via edges
+        → Downstream node receives updated data.input
+\`\`\`
+
+### Interaction Pipeline
+
+\`\`\`
+User interacts with visualization (click, brush, select)
+  → Visualization hook (useVega / useUTK / ImageBox) detects interaction
+    → interactionsCallback(interactionsObject, nodeId)
+      → FlowProvider.setInteractions()
+        → Propagated to connected DataPool boxes via bidirectional edges
+          → DataPool.parseOutputData() applies interaction to data
+            → Propagation forwarded to other connected DataPools
+\`\`\`
+
+### Registry-Driven Rendering
+
+\`\`\`
+MainCanvas renders ReactFlow
+  → nodeTypes = { [BoxType]: UniversalBox } for all registered descriptors
+    → ReactFlow instantiates UniversalBox per node
+      → UniversalBox reads BoxDescriptor from registry
+        → Calls useBoxState() for shared state
+        → Calls adapter.useLifecycle() for type-specific logic
+        → Renders Handle[], BoxContainer, BoxEditor from adapter config
+\`\`\`
+
+## Key Architectural Patterns
+
+### 1. Registry Pattern
+All box type metadata lives in \`BoxDescriptor\` objects registered in a central \`Map\`. Consumers query the registry instead of hard-coding per-type logic.
+
+### 2. Adapter Pattern
+Each box type's unique behavior is encapsulated in a \`BoxAdapter\` with a \`useLifecycle\` hook. \`UniversalBox\` reads the adapter and delegates.
+
+### 3. Grammar Adapter Pattern
+Visualization grammars (Vega-Lite, UTK) implement a \`GrammarAdapter\` interface for spec validation, rendering, and cleanup. New grammar libraries register via \`registerGrammarAdapter()\`.
+
+### 4. Provider Pattern
+React Context providers manage cross-cutting concerns (workflow state, templates, auth, provenance, LLM). Components access them via \`useXxxContext()\` hooks.
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| \`BACKEND_URL\` | \`http://localhost:5002\` | Base URL for the Python backend |`;
+
+PAGES['02'] = `# Constants and Types
+
+**Source files:** \`src/constants.ts\`, \`src/types/nodeTypes.ts\`
+
+---
+
+## Enums
+
+### \`BoxType\`
+
+All supported workflow node types. Each value matches the ReactFlow node \`type\` string and the key used in the node registry.
+
+\`\`\`ts
+enum BoxType {
+  DATA_LOADING        = "DATA_LOADING"
+  DATA_EXPORT         = "DATA_EXPORT"
+  DATA_CLEANING       = "DATA_CLEANING"
+  DATA_TRANSFORMATION = "DATA_TRANSFORMATION"
+  COMPUTATION_ANALYSIS = "COMPUTATION_ANALYSIS"
+  FLOW_SWITCH         = "FLOW_SWITCH"
+  VIS_UTK             = "VIS_UTK"
+  VIS_VEGA            = "VIS_VEGA"
+  VIS_TABLE           = "VIS_TABLE"
+  VIS_TEXT            = "VIS_TEXT"
+  VIS_IMAGE           = "VIS_IMAGE"
+  CONSTANTS           = "CONSTANTS"
+  DATA_POOL           = "DATA_POOL"
+  MERGE_FLOW          = "MERGE_FLOW"
+  COMMENTS            = "COMMENTS"
+}
+\`\`\`
+
+### \`SupportedType\`
+
+Data types that can flow between nodes. Used by \`ConnectionValidator\` to check port compatibility.
+
+\`\`\`ts
+enum SupportedType {
+  DATAFRAME    = "DATAFRAME"
+  GEODATAFRAME = "GEODATAFRAME"
+  VALUE        = "VALUE"       // int, float, boolean, string
+  LIST         = "LIST"
+  JSON         = "JSON"        // Python dict
+  RASTER       = "RASTER"
+}
+\`\`\`
+
+### \`EdgeType\`
+
+\`\`\`ts
+enum EdgeType {
+  BIDIRECTIONAL_EDGE  = "BIDIRECTIONAL_EDGE"   // Interaction edges (top handles)
+  UNIDIRECTIONAL_EDGE = "UNIDIRECTIONAL_EDGE"  // Data flow edges (left→right)
+}
+\`\`\`
+
+### \`WidgetType\`
+
+Widget marker types used by \`WidgetsEditor\` to generate interactive UI controls from code markers.
+
+\`\`\`ts
+enum WidgetType {
+  CHECKBOX          = "CHECKBOX"
+  INPUT_VALUE       = "INPUT_VALUE"
+  INPUT_TEXT         = "INPUT_TEXT"
+  INPUT_LIST_VALUE  = "INPUT_LIST_VALUE"
+  INPUT_LIST_TEXT    = "INPUT_LIST_TEXT"
+  RANGE             = "RANGE"
+  SELECTION         = "SELECTION"
+  FILE              = "FILE"
+}
+\`\`\`
+
+### \`VisInteractionType\`
+
+Interaction types produced by visualization boxes and consumed by DataPool boxes.
+
+\`\`\`ts
+enum VisInteractionType {
+  POINT         = "POINT"        // Click/hover selection (list of indices)
+  INTERVAL      = "INTERVAL"     // Brush selection (attribute ranges)
+  UNDETERMINED  = "UNDETERMINED"  // Empty/reset selection
+}
+\`\`\`
+
+### \`ResolutionType\`
+
+How interaction conflicts between multiple connected visualizations are resolved in DataPool.
+
+\`\`\`ts
+enum ResolutionType {
+  OVERWRITE = "OVERWRITE"  // Most recent interaction wins
+  MERGE_AND = "MERGE_AND"  // Intersection of all interactions
+  MERGE_OR  = "MERGE_OR"   // Union of all interactions
+}
+\`\`\`
+
+### \`ResolutionTypeUTK\`
+
+UTK-specific spatial interaction resolution.
+
+\`\`\`ts
+enum ResolutionTypeUTK {
+  PICKING  = "PICKING"   // All coordinates must be selected
+  BRUSHING = "BRUSHING"  // At least one coordinate selected
+  NONE     = "NONE"      // Interaction disabled
+}
+\`\`\`
+
+### \`AccessLevelType\`
+
+Template access levels for user-type gating.
+
+\`\`\`ts
+enum AccessLevelType {
+  PROGRAMMER = "PROGRAMMER"
+  EXPERT     = "EXPERT"
+  ANY        = "ANY"
+}
+\`\`\`
+
+---
+
+## Interfaces
+
+### \`ICodeDataContent\`
+
+Content structure returned by backend Python execution or passed between nodes.
+
+\`\`\`ts
+interface ICodeDataContent {
+  dataType: string;   // "dataframe" | "geodataframe" | "outputs" | etc.
+  data: any;          // Column-based dict (dataframe) or GeoJSON (geodataframe)
+  metadata?: any;     // Optional metadata (e.g. { name: "layer1" } for UTK)
+}
+\`\`\`
+
+### \`ICodeData\`
+
+Wraps execution status and content.
+
+\`\`\`ts
+interface ICodeData {
+  code: string;                       // "success" | "error" | "exec" | ""
+  content: ICodeDataContent | string; // Parsed output or raw string
+}
+\`\`\`
+
+### \`INodeData\`
+
+The \`data\` object attached to every ReactFlow node. Populated by \`useCode.generateCodeNode()\`.
+
+\`\`\`ts
+interface INodeData {
+  nodeId: string;
+  input?: string;
+  defaultCode?: string;
+  pythonInterpreter?: PythonInterpreter;
+  outputCallback?: (nodeId: string, output: string) => void;
+  codeChangeCallback?: (nodeId: string, output: string) => void;
+  interactionsCallback?: (interactions: any, nodeId: string) => void;
+  propagationCallback?: (propagation: IPropagation) => void;
+  description?: string;
+  source?: string;
+  templateId?: string;
+  templateName?: string;
+  accessLevel?: AccessLevelType;
+  hidden?: boolean;
+  nodeType: string;
+  customTemplate?: boolean;
+  interactions?: IInteraction[];
+}
+\`\`\`
+
+### \`INode\`
+
+Extended ReactFlow \`Node\` with typed \`data\`.
+
+\`\`\`ts
+interface INode extends Node {
+  id: string;
+  type: string;
+  data: INodeData;
+}
+\`\`\`
+
+### \`BoxLifecycleData\`
+
+Extends \`INodeData\` with FlowProvider runtime callbacks. This is the typed first parameter of the \`BoxLifecycleHook\` contract. See [04-adapters — BoxLifecycleHook](#) for the full contract specification.`;
+
+PAGES['03'] = `# Node Registry
+
+**Source files:** \`src/registry/types.ts\`, \`src/registry/nodeRegistry.ts\`, \`src/registry/descriptors.ts\`, \`src/registry/index.ts\`
+
+The node registry is the single source of truth for all box type metadata. It drives the palette, canvas rendering, connection validation, description modals, and styling.
+
+---
+
+## \`BoxDescriptor\`
+
+Every box type has a descriptor registered at startup (via \`src/registry/descriptors.ts\`, imported from \`src/index.tsx\`).
+
+\`\`\`ts
+interface BoxDescriptor {
+  id: BoxType;
+  category: BoxCategory;
+  label: string;
+  icon: IconDefinition;
+  inputPorts: PortDef[];
+  outputPorts: PortDef[];
+  editor: EditorType;
+  grammarId?: string;
+  inPalette: boolean;
+  paletteOrder?: number;
+  description: string;
+  hasCode: boolean;
+  hasWidgets: boolean;
+  hasGrammar: boolean;
+  hasProvenance?: boolean;
+  adapter: BoxAdapter;
+  tutorialId?: string;
+}
+\`\`\`
+
+### \`PortDef\`
+
+\`\`\`ts
+interface PortDef {
+  types: SupportedType[];
+  cardinality?: "0" | "1" | "n" | "[1,n]" | "[1,2]" | "2";
+}
+\`\`\`
+
+### \`BoxCategory\`
+
+\`\`\`ts
+type BoxCategory = "data" | "computation" | "vis_grammar" | "vis_simple" | "flow";
+\`\`\`
+
+### \`EditorType\`
+
+\`\`\`ts
+type EditorType = "code" | "widgets" | "grammar" | "none";
+\`\`\`
+
+---
+
+## Registry Functions
+
+### \`registerNode(descriptor: BoxDescriptor): void\`
+
+Register a box type descriptor. Called once per box type in \`descriptors.ts\`. Warns if overwriting.
+
+### \`getNodeDescriptor(boxType: BoxType): BoxDescriptor\`
+
+Retrieve the descriptor for a given box type. Throws if not found.
+
+### \`getAllNodeTypes(): BoxDescriptor[]\`
+
+Return all registered descriptors as an array.
+
+### \`getPaletteNodeTypes(): BoxDescriptor[]\`
+
+Return descriptors where \`inPalette === true\`, sorted by \`paletteOrder\`.
+
+---
+
+## Registered Box Types
+
+| BoxType | Category | Label | Palette | Adapter Lifecycle |
+|---------|----------|-------|---------|-------------------|
+| \`DATA_LOADING\` | data | Data Loading | 0 | \`useCodeBoxLifecycle\` |
+| \`DATA_EXPORT\` | data | Data Export | 1 | \`useDataExportLifecycle\` |
+| \`DATA_TRANSFORMATION\` | data | Data Transformation | 3 | \`useCodeBoxLifecycle\` |
+| \`DATA_CLEANING\` | data | Data Cleaning | 4 | \`useCodeBoxLifecycle\` |
+| \`DATA_POOL\` | data | Data Pool | 5 | \`useDataPoolLifecycle\` |
+| \`COMPUTATION_ANALYSIS\` | computation | Computation Analysis | 2 | \`useCodeBoxLifecycle\` |
+| \`CONSTANTS\` | computation | Constants | - | \`useCodeBoxLifecycle\` |
+| \`VIS_UTK\` | vis_grammar | UTK | 6 | \`useUtkLifecycle\` |
+| \`VIS_VEGA\` | vis_grammar | Vega-Lite | 7 | \`useVegaLifecycle\` |
+| \`VIS_IMAGE\` | vis_simple | Image | 8 | \`useImageLifecycle\` |
+| \`VIS_TABLE\` | vis_simple | Table | - | \`useTableLifecycle\` |
+| \`VIS_TEXT\` | vis_simple | Text | - | \`useTextLifecycle\` |
+| \`FLOW_SWITCH\` | flow | Flow Switch | - | \`useFlowSwitchLifecycle\` |
+| \`MERGE_FLOW\` | flow | Merge Flow | 9 | \`useMergeFlowLifecycle\` |
+| \`COMMENTS\` | flow | Comments | - | no-op |
+
+---
+
+## Consumer Files
+
+These files consume registry data instead of hard-coding per-type logic:
+
+| File | What it reads |
+|------|---------------|
+| \`ConnectionValidator.ts\` | \`inputPorts\` / \`outputPorts\` → type compatibility maps |
+| \`DescriptionModal.tsx\` | \`label\`, \`description\`, port cardinality, \`hasCode\`, \`hasWidgets\` |
+| \`styles.tsx\` | \`icon\`, \`label\` for box header rendering |
+| \`ToolsMenu.tsx\` | \`getPaletteNodeTypes()\` → palette items |
+| \`MainCanvas.tsx\` | \`getAllNodeTypes()\` → ReactFlow \`nodeTypes\` map |`;
+
+PAGES['04'] = `# Box Adapters
+
+**Source files:** \`src/registry/types.ts\` (type definitions), \`src/adapters/box/\` (implementations)
+
+The adapter system replaces individual box component files with a configuration-driven approach. Each box type defines a \`BoxAdapter\` in its descriptor, and \`UniversalBox\` reads it to render appropriately.
+
+### Embedded Component Extraction
+
+Lifecycle hooks return \`contentComponent\` as a \`React.ReactNode\` for custom content areas (tables, image grids, tabs). Rather than building these UI fragments inline with \`React.createElement\` chains, all visual components are **extracted into standalone \`.tsx\` files** under \`src/adapters/box/components/\`. This provides:
+
+- **Strict JSX** — components are written with standard JSX syntax in \`.tsx\` files
+- **Reusability** — components like \`ContentTable\` are shared across multiple lifecycles
+- **Testability** — each component can be rendered and tested in isolation
+- **Clear separation** — lifecycle hooks own state & effects; extracted components own presentation
+
+---
+
+## Type Definitions
+
+### \`BoxAdapter\`
+
+\`\`\`ts
+interface BoxAdapter {
+  handles: HandleDef[];
+  editor: EditorConfig | null;
+  container: ContainerConfig;
+  inputIconType?: string;
+  outputIconType?: string;
+  showTemplateModal?: boolean;
+  useLifecycle: BoxLifecycleHook;
+}
+\`\`\`
+
+### \`HandleDef\`
+
+Explicit per-handle configuration. Replaces hard-coded \`<Handle>\` elements in individual components.
+
+\`\`\`ts
+interface HandleDef {
+  id: string;
+  type: "source" | "target";
+  position: Position;
+  style?: React.CSSProperties;
+  dynamicStyle?: (data: any, edges: Edge[]) => React.CSSProperties;
+  isConnectableOverride?: (data: any, isConnectable: boolean, edges: Edge[]) => boolean;
+}
+\`\`\`
+
+### \`EditorConfig\`
+
+Maps directly to \`BoxEditor\` props.
+
+\`\`\`ts
+interface EditorConfig {
+  code: boolean;
+  grammar: boolean;
+  widgets: boolean;
+  provenance?: boolean;
+  disableWidgets?: boolean;
+  outputId?: (nodeId: string) => string;
+}
+\`\`\`
+
+### \`ContainerConfig\`
+
+Overrides for \`BoxContainer\`.
+
+\`\`\`ts
+interface ContainerConfig {
+  handleType?: "in" | "out" | "in/out";
+  disablePlay?: boolean;
+  noContent?: boolean;
+  boxWidth?: number;
+  boxHeight?: number;
+  styles?: React.CSSProperties;
+}
+\`\`\`
+
+### \`BoxLifecycleData\`
+
+Typed input parameter for lifecycle hooks. Extends the persisted \`INodeData\` with runtime callbacks injected by \`FlowProvider\` when the node is mounted.
+
+\`\`\`ts
+interface BoxLifecycleData extends INodeData {
+  outputCallback: (nodeId: string, output: any) => void;
+  propagationCallback: (propagation: IPropagation) => void;
+  interactionsCallback: (interactions: any, nodeId: string) => void;
+  newPropagation?: number;
+  suggestionType?: string;
+}
+\`\`\`
+
+### \`BoxLifecycleHook\` (Contract)
+
+The central contract type that **every** lifecycle implementation must satisfy.
+
+\`\`\`ts
+type BoxLifecycleHook = (data: BoxLifecycleData, boxState: UseBoxStateReturn) => LifecycleResult;
+\`\`\`
+
+**Rules:**
+
+1. Must be a valid React custom hook (may call \`useState\`, \`useEffect\`, etc.)
+2. Must be deterministic in its hook call order (React rules of hooks)
+3. Must return a \`LifecycleResult\` — omit fields to accept defaults
+4. Must not call \`boxState.setSendCodeCallback\` directly — return \`setSendCodeCallbackOverride\` instead
+
+### \`LifecycleResult\`
+
+Return type of the \`BoxLifecycleHook\` contract. All fields are optional.
+
+\`\`\`ts
+interface LifecycleResult {
+  applyGrammar?: (spec: string) => Promise<void>;
+  customWidgetsCallback?: (div: HTMLElement) => void;
+  defaultValueOverride?: string;
+  sendCodeOverride?: any;
+  setSendCodeCallbackOverride?: any;
+  showLoading?: boolean;
+  contentComponent?: React.ReactNode;
+  setOutputCallbackOverride?: any;
+  dynamicHandles?: HandleDef[];
+}
+\`\`\`
+
+---
+
+## Handle Helpers
+
+**Source:** \`src/adapters/box/handleHelpers.ts\`
+
+| Helper | Handles | Used by |
+|--------|---------|---------|
+| \`standardInOut()\` | Left target \`"in"\` + Right source \`"out"\` | DataTransformation, DataCleaning, ComputationAnalysis, Constants |
+| \`outputOnly()\` | Right source \`"out"\` | DataLoading |
+| \`inputOnly()\` | Left target \`"in"\` | DataExport |
+| \`withBidirectional(base)\` | Appends Top source \`"in/out"\` to base | Vega, UTK, Table, Text, Image, DataPool |
+| \`flowSwitchHandles()\` | Bottom \`"in1"\` + Top \`"in2"\` targets, Right \`"out"\` source | FlowSwitch |
+
+---
+
+## Extracted UI Components
+
+**Source directory:** \`src/adapters/box/components/\`
+
+### \`ContentTable\`
+
+Renders a Material-UI table with bold column headers and up to 100 rows.
+
+\`\`\`ts
+interface ContentTableProps {
+  tableData: Record<string, unknown>[];
+  nodeId?: string;
+}
+\`\`\`
+
+### \`DataPoolContent\`
+
+Wraps Bootstrap \`Tabs\` containing a \`ContentTable\` per tab.
+
+\`\`\`ts
+interface DataPoolContentProps {
+  activeTab: string;
+  onSelectTab: (tab: string) => void;
+  tabData: any[];
+  tableData: Record<string, unknown>[];
+}
+\`\`\`
+
+### \`ImageGrid\`
+
+Flexbox grid of clickable base64 images.
+
+\`\`\`ts
+interface ImageGridProps {
+  nodeId: string;
+  images: string[];
+  interacted: string[];
+  onClickImage: (index: number) => void;
+}
+\`\`\`
+
+---
+
+## Lifecycle Hooks
+
+Each lifecycle hook is a \`const\` typed as \`BoxLifecycleHook\`.
+
+### \`useCodeBoxLifecycle\` — Shared by 5 box types
+Returns \`{ contentComponent }\` — a memoized \`<OutputContent>\`.
+
+### \`useDataExportLifecycle\`
+Returns \`sendCodeOverride\`, \`setSendCodeCallbackOverride\`, \`customWidgetsCallback\`, \`contentComponent\`.
+
+### \`useVegaLifecycle\`
+Returns \`{ applyGrammar }\`.
+
+### \`useUtkLifecycle\`
+Returns \`applyGrammar\`, \`sendCodeOverride\`, \`setSendCodeCallbackOverride\`, \`showLoading\`, \`customWidgetsCallback\`, \`defaultValueOverride\`.
+
+### \`useTableLifecycle\`
+Returns \`contentComponent\` (\`<ContentTable>\`), \`setSendCodeCallbackOverride\`.
+
+### \`useImageLifecycle\`
+Returns \`contentComponent\` (\`<ImageGrid>\`), \`setSendCodeCallbackOverride\`.
+
+### \`useTextLifecycle\` / \`useFlowSwitchLifecycle\`
+No-op lifecycles. Return \`{}\`.
+
+### \`useMergeFlowLifecycle\`
+Returns \`dynamicHandles\` (5 target handles), \`setOutputCallbackOverride\`.
+
+### \`useDataPoolLifecycle\`
+Returns \`contentComponent\` (\`<DataPoolContent>\`), \`customWidgetsCallback\`, \`setOutputCallbackOverride\`, \`setSendCodeCallbackOverride\`.`;
+
+PAGES['05'] = `# Grammar Adapters
+
+**Source files:** \`src/registry/grammarAdapter.ts\`, \`src/adapters/vegaLiteAdapter.ts\`, \`src/adapters/utkAdapter.ts\`
+
+Grammar adapters provide a pluggable interface for visualization grammar toolkits. Each adapter implements a standard interface and self-registers on import.
+
+---
+
+## \`GrammarAdapter\` Interface
+
+\`\`\`ts
+interface GrammarAdapter {
+  grammarId: string;
+  validate(spec: unknown): boolean;
+  render(
+    container: HTMLElement,
+    spec: unknown,
+    data?: unknown,
+    options?: { interactions?: unknown; resolutionMode?: string }
+  ): void | Promise<void>;
+  getDefaultSpec?(): unknown;
+  cleanup?(): void;
+}
+\`\`\`
+
+---
+
+## Registry Functions
+
+### \`registerGrammarAdapter(adapter: GrammarAdapter): void\`
+Register a grammar adapter. Called at module load time.
+
+### \`getGrammarAdapter(grammarId: string): GrammarAdapter\`
+Retrieve an adapter by id. Throws if not found.
+
+### \`getAllGrammarAdapters(): GrammarAdapter[]\`
+Return all registered adapters.
+
+---
+
+## Vega-Lite Adapter
+
+**File:** \`src/adapters/vegaLiteAdapter.ts\`  
+**Grammar ID:** \`"vega-lite"\`
+
+### \`validate(spec)\`
+Checks that spec is a non-null, non-array object (via JSON parse).
+
+### \`render(container, spec, data)\`
+1. Parses input data via \`parseDataframe()\` or \`parseGeoDataframe()\`
+2. Injects \`{ values, name: "data" }\` into the spec
+3. Sets responsive sizing
+4. Compiles spec via \`lite.compile(spec).spec\`
+5. Creates Vega \`View\` with SVG renderer
+6. Runs \`view.runAsync()\`
+
+### \`getDefaultSpec()\`
+
+\`\`\`json
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "mark": "point",
+  "encoding": {
+    "x": { "field": "x", "type": "quantitative" },
+    "y": { "field": "y", "type": "quantitative" }
+  }
+}
+\`\`\`
+
+---
+
+## UTK Adapter
+
+**File:** \`src/adapters/utkAdapter.ts\`  
+**Grammar ID:** \`"utk"\`
+
+Partially implemented. The adapter provides basic validation and a default spec; full rendering remains in the \`useUTK\` hook.
+
+---
+
+## How Adapters Connect to Box Types
+
+\`\`\`ts
+registerNode({
+  id: BoxType.VIS_VEGA,
+  grammarId: 'vega-lite',   // ← links to vegaLiteAdapter
+  adapter: {
+    useLifecycle: useVegaLifecycle,
+    ...
+  },
+});
+\`\`\``;
+
+PAGES['06'] = `# UniversalBox Component
+
+**Source:** \`src/components/UniversalBox.tsx\`
+
+The single React component that renders every box type in the application. It reads render configuration and lifecycle logic from the \`BoxAdapter\` attached to each \`BoxDescriptor\`.
+
+---
+
+## Props
+
+\`\`\`ts
+{ data: any; isConnectable: boolean }
+\`\`\`
+
+Standard ReactFlow node props.
+
+---
+
+## Render Pipeline
+
+\`\`\`
+1. Read descriptor
+   const descriptor = getNodeDescriptor(data.nodeType);
+   const { adapter } = descriptor;
+
+2. Shared state
+   const boxState = useBoxState(data, descriptor.id);
+
+3. Type-specific lifecycle — calls the BoxLifecycleHook contract
+   const lifecycle = adapter.useLifecycle(data, boxState);
+
+4. Resolve overrides (lifecycle values take precedence)
+   sendCode           = lifecycle.sendCodeOverride          ?? boxState.sendCode
+   setSendCodeCallback = lifecycle.setSendCodeCallbackOverride ?? boxState.setSendCodeCallback
+   setOutputCallback  = lifecycle.setOutputCallbackOverride  ?? boxState.setOutput
+   showLoading        = lifecycle.showLoading               ?? false
+   defaultValue       = lifecycle.defaultValueOverride      ?? templateData.code
+
+5. Collect handles
+   allHandles = [...adapter.handles, ...(lifecycle.dynamicHandles ?? [])]
+
+6. Render JSX
+   <Handle> for each handle in allHandles
+   <BoxContainer> with adapter.container config + resolved state
+     <InputIcon> if adapter.inputIconType
+     <DescriptionModal> always
+     <TemplateModal> if adapter.showTemplateModal
+     <BoxEditor> if adapter.editor !== null
+     <OutputIcon> if adapter.outputIconType
+\`\`\`
+
+---
+
+## Override Resolution Table
+
+| Value | Default Source | Override Source |
+|-------|--------------|----------------|
+| \`sendCode\` | \`boxState.sendCode\` | \`lifecycle.sendCodeOverride\` |
+| \`setSendCodeCallback\` | \`boxState.setSendCodeCallback\` | \`lifecycle.setSendCodeCallbackOverride\` |
+| \`setOutputCallback\` | \`boxState.setOutput\` | \`lifecycle.setOutputCallbackOverride\` |
+| \`showLoading\` | \`false\` | \`lifecycle.showLoading\` |
+| \`defaultValue\` | \`templateData.code \\|\\| data.defaultCode\` | \`lifecycle.defaultValueOverride\` |
+| \`contentComponent\` | none | \`lifecycle.contentComponent\` |
+| \`applyGrammar\` | none | \`lifecycle.applyGrammar\` |
+| \`customWidgetsCallback\` | none | \`lifecycle.customWidgetsCallback\` |
+| \`dynamicHandles\` | \`[]\` | \`lifecycle.dynamicHandles\` |
+
+---
+
+## Hook Ordering Safety
+
+React requires hooks to be called in the same order on every render. \`UniversalBox\` always calls:
+
+1. \`useBoxState()\` — always
+2. \`adapter.useLifecycle()\` — always (same function per node type)
+3. \`useEdges()\` — always
+
+Since ReactFlow creates separate component instances per node, different box types having different hooks inside their \`useLifecycle\` is safe.
+
+---
+
+## Conditional Rendering
+
+| Condition | What renders |
+|-----------|-------------|
+| \`adapter.inputIconType\` truthy | \`<InputIcon type={...} />\` |
+| \`adapter.showTemplateModal\` truthy | \`<TemplateModal />\` |
+| \`adapter.editor\` not null | \`<BoxEditor />\` with full editor config |
+| \`adapter.outputIconType\` truthy | \`<OutputIcon type={...} />\` |
+| \`adapter.container.noContent\` true | \`BoxContainer\` renders minimal layout |`;
+
+PAGES['07'] = `# Custom Hooks
+
+**Source directory:** \`src/hook/\`
+
+---
+
+## \`useBoxState(data, boxType)\` — \`useBoxState.ts\`
+
+Shared state hook used by every box type via \`UniversalBox\`. Encapsulates the common state/effect pattern that was previously duplicated across 14 box components.
+
+### Parameters
+
+| Param | Type | Description |
+|-------|------|-------------|
+| \`data\` | \`any\` | ReactFlow node data (INodeData) |
+| \`boxType\` | \`BoxType\` | The type of this box |
+
+### Return Value — \`UseBoxStateReturn\`
+
+\`\`\`ts
+{
+  output: BoxOutput;
+  setOutput: (val) => void;
+  code: string;
+  setCode: (val) => void;
+  sendCode: any;
+  templateData: Template | any;
+  setTemplateData: (val) => void;
+  newTemplateFlag: boolean;
+  showTemplateModal: boolean;
+  showDescriptionModal: boolean;
+  user: IUser | null;
+  setTemplateConfig: (template) => void;
+  promptModal: (newTemplate?) => void;
+  closeModal: () => void;
+  promptDescription: () => void;
+  closeDescription: () => void;
+  updateTemplate: (template) => void;
+  setSendCodeCallback: (callback) => void;
+}
+\`\`\`
+
+---
+
+## \`useVega({ data, code })\` — \`useVega.ts\`
+
+Manages the full Vega-Lite visualization lifecycle including data parsing, view creation, interaction handling, and provenance tracking.
+
+### Return Value
+
+\`\`\`ts
+{ handleCompileGrammar: (spec: string) => Promise<void> }
+\`\`\`
+
+### Key Behaviors
+
+- **Data parsing**: Supports both \`dataframe\` and \`geodataframe\` inputs
+- **Hot reload**: When \`data.input\` changes, inserts new data via Vega changeset
+- **Interaction detection**: Listens to Vega signals and classifies as POINT, INTERVAL, or UNDETERMINED
+- **Provenance**: Logs box execution via \`boxExecProv\`
+
+---
+
+## \`useUTK({ data, code })\` — \`useUTK.ts\`
+
+Manages the UTK (Urban Toolkit) 3D visualization lifecycle. The most complex hook in the application.
+
+### Return Value
+
+\`\`\`ts
+{
+  defaultGrammar: string;
+  handleCompileGrammar: (spec) => Promise<void>;
+  customWidgetsCallback: (div) => void;
+  showLoading: boolean;
+  sendCode: any;
+  setSendCodeCallback: (callback) => void;
+}
+\`\`\`
+
+### Key Behaviors
+
+- **GeoJSON processing**: Converts geodataframes to UTK layers
+- **Grammar generation**: Auto-generates UTK grammar from layer structure
+- **GrammarInterpreter**: Creates UTK rendering instance
+- **Interaction handling**: Supports picking and brushing
+- **Queued play**: Queues execution if grammar is still compiling
+
+---
+
+## \`useTableData({ data })\` — \`useTableData.ts\`
+
+Shared hook for table-based data display and interaction handling.
+
+### Return Value
+
+\`\`\`ts
+{
+  createTableData: (parsedOutput: ICodeDataContent) => object[];
+  parseInputData: ({ input, ...data }) => string;
+  parseOutputData: ({ output }) => { newOutput, propagationObj };
+  customWidgetsCallback: (div: HTMLElement) => void;
+  processDataAsync: () => Promise<ICodeData>;
+  setActiveTab: (tab: string) => void;
+  activeTab: string;
+  tabData: any[];
+}
+\`\`\`
+
+---
+
+## \`useCode()\` — \`useCode.ts\`
+
+Creates workflow nodes and loads Trill specifications.
+
+### Return Value
+
+\`\`\`ts
+{
+  createCodeNode: (boxType: string, options?: CreateCodeNodeOptions) => void;
+  loadTrill: (trill: any, suggestionType?: string) => void;
+}
+\`\`\`
+
+---
+
+## \`useRightClickMenu()\` — \`useRightClickMenu.tsx\`
+
+Context menu management for the canvas.
+
+---
+
+## \`usePosition()\` — \`usePosition.ts\`
+
+Viewport-aware position calculation for new node placement.
+
+---
+
+## \`useWorkflowOperations()\` — \`useWorkflowOperations.ts\`
+
+Workflow-level operations (save, load, export).`;
+
+PAGES['08'] = `# Providers
+
+**Source directory:** \`src/providers/\`
+
+All providers use React Context and expose a \`useXxxContext()\` hook.
+
+---
+
+## \`FlowProvider\` — \`FlowProvider.tsx\`
+
+The core provider managing the entire workflow state.
+
+### Context Values
+
+\`\`\`ts
+{
+  nodes: Node[];
+  edges: Edge[];
+  loading: boolean;
+  onNodesChange: (changes: NodeChange[]) => void;
+  onEdgesChange: (changes: EdgeChange[]) => void;
+  onConnect: (connection: Connection) => void;
+  isValidConnection: (connection: Connection) => boolean;
+  addNode: (node: Node, parentId?: string, provenance?: boolean) => void;
+  applyNewOutput: (output: { nodeId: string; output: any }) => void;
+  applyNewPropagation: (propagation: IPropagation) => void;
+  setInteractions: React.Dispatch<SetStateAction<IInteraction[]>>;
+  workflowNameRef: React.MutableRefObject<string>;
+  // ... and many more
+}
+\`\`\`
+
+### Output Propagation Logic
+
+When a node produces output (\`applyNewOutput\`):
+1. Stores the output in \`outputs[]\` state
+2. Finds all downstream edges from that node
+3. Updates downstream node's \`data.input\` with the output
+4. For merge nodes: accumulates inputs in order
+
+---
+
+## \`TemplateProvider\` — \`TemplateProvider.tsx\`
+
+Manages code/grammar templates per box type.
+
+### \`Template\` Interface
+
+\`\`\`ts
+interface Template {
+  id: string;
+  type: BoxType;
+  name: string;
+  description: string;
+  accessLevel: AccessLevelType;
+  code: string;
+  custom: boolean;
+}
+\`\`\`
+
+---
+
+## \`UserProvider\` — \`UserProvider.tsx\`
+
+Authentication and user profile management.
+
+\`\`\`ts
+interface IUser {
+  name: string;
+  profile_image: string;
+  type: "expert" | "programmer" | null;
+}
+\`\`\`
+
+---
+
+## \`ProvenanceProvider\` — \`ProvenanceProvider.tsx\`
+
+Tracks workflow execution provenance for reproducibility and audit.
+
+---
+
+## \`LLMProvider\` — \`LLMProvider.tsx\`
+
+OpenAI integration for workflow explanation and debugging.
+
+---
+
+## \`DialogProvider\` — \`DialogProvider.tsx\`
+
+Generic modal dialog management.
+
+---
+
+## \`BackendHealthBanner\` — \`BackendHealthBanner.tsx\`
+
+Not a context provider, but a wrapper component. Pings \`GET /live\` on mount and shows a red banner if the backend is unreachable.`;
+
+PAGES['09'] = `# Components
+
+**Source directory:** \`src/components/\`
+
+---
+
+## Core Components
+
+### \`MainCanvas\` — \`MainCanvas.tsx\`
+
+Root component rendered inside the provider tree. Sets up:
+- ReactFlow canvas with all registered node types (\`UniversalBox\` for each)
+- Edge types (bidirectional, unidirectional)
+- Drag-and-drop from palette to canvas
+- Dashboard mode filtering
+- Selection-based LLM explanation and debugging
+
+### \`UniversalBox\` — \`UniversalBox.tsx\`
+
+See [UniversalBox](#) for full documentation.
+
+### \`BoxContainer\` — \`styles.tsx\`
+
+The outer shell of every box node. Manages header, template menu, comment system, AI suggestions UI, expand/minimize state, and warnings.
+
+---
+
+## Editing Components — \`components/editing/\`
+
+### \`BoxEditor\` — \`BoxEditor.tsx\`
+
+Tabbed editor panel inside each box. Manages code, grammar, widgets, output, and provenance tabs.
+
+### \`CodeEditor\` — \`CodeEditor.tsx\`
+Monaco-based Python code editor with syntax highlighting.
+
+### \`GrammarEditor\` — \`GrammarEditor.tsx\`
+JSON editor for grammar specifications with a "Compile" button.
+
+### \`WidgetsEditor\` — \`WidgetsEditor.tsx\`
+Parses widget markers from code and generates interactive controls.
+
+### \`OutputContent\` — \`OutputContent.tsx\`
+Renders execution output (success/error messages, data previews).
+
+---
+
+## Modal Components
+
+### \`DescriptionModal\`
+Displays box type metadata pulled from the registry.
+
+### \`TemplateModal\`
+Template management UI: create, browse, select/apply.
+
+---
+
+## Edge Components — \`components/edges/\`
+
+| Component | Description |
+|-----------|-------------|
+| \`BiDirectionalEdge\` | Interaction edges with double arrows |
+| \`UniDirectionalEdge\` | Data flow edges with single arrow |
+| \`InputIcon\` | Left-side cardinality icon |
+| \`OutputIcon\` | Right-side cardinality icon |
+
+---
+
+## Menu Components — \`components/menus/\`
+
+| Component | Description |
+|-----------|-------------|
+| \`ToolsMenu\` | Left sidebar palette (registry-driven) |
+| \`UpMenu\` | Top menu bar (file ops, dashboard, AI) |
+| \`FileUpload\` | Workflow JSON upload dialog |
+| \`Expand\` | Expand/minimize all boxes |
+
+---
+
+## Adapter UI Components — \`adapters/box/components/\`
+
+| Component | File | Consumed by |
+|-----------|------|-------------|
+| \`ContentTable\` | \`ContentTable.tsx\` | \`useTableLifecycle\`, \`useDataPoolLifecycle\` |
+| \`DataPoolContent\` | \`DataPoolContent.tsx\` | \`useDataPoolLifecycle\` |
+| \`ImageGrid\` | \`ImageGrid.tsx\` | \`useImageLifecycle\` |`;
+
+PAGES['10'] = `# Services and Utilities
+
+---
+
+## API Service — \`src/services/api.ts\`
+
+### \`fetchData(fileName: string, vega?: boolean): Promise<any>\`
+
+\`\`\`
+GET {BACKEND_URL}/get?fileName={fileName}
+\`\`\`
+
+### \`fetchPreviewData(fileName: string): Promise<any>\`
+
+\`\`\`
+GET {BACKEND_URL}/get-preview?fileName={fileName}
+\`\`\`
+
+### \`transformToVega(data)\`
+
+Converts pandas-style column-dict JSON into Vega-Lite-ready row-based arrays.
+
+---
+
+## ConnectionValidator — \`src/ConnectionValidator.ts\`
+
+Static class that checks whether two box types can be connected based on their port type compatibility.
+
+### \`checkBoxCompatibility(outBox: BoxType, inBox: BoxType): boolean\`
+
+---
+
+## PythonInterpreter — \`src/PythonInterpreter.ts\`
+
+Sends user Python code to the backend for sandboxed execution.
+
+---
+
+## TrillGenerator — \`src/TrillGenerator.ts\`
+
+Generates Trill workflow specification JSON from the current node/edge state.
+
+### Trill Spec Format
+
+\`\`\`json
+{
+  "dataflow": {
+    "name": "workflow_name",
+    "task": "workflow_goal",
+    "timestamp": "...",
+    "nodes": [
+      { "id": "nodeId", "type": "BoxType", "content": "code", "x": 0, "y": 0 }
+    ],
+    "edges": [
+      { "id": "edgeId", "source": "nodeId1", "target": "nodeId2", "type": "Data|Interaction" }
+    ]
+  }
+}
+\`\`\`
+
+---
+
+## Utilities
+
+### \`src/utils/formatters.ts\`
+
+| Function | Description |
+|----------|-------------|
+| \`formatDate(date)\` | Returns provenance timestamp string |
+| \`getType(inputs)\` | Extracts \`dataType\` strings recursively |
+| \`mapTypes(typesList)\` | Maps Python types to binary presence map |
+
+### \`src/utils/parsing.ts\`
+
+| Function | Description |
+|----------|-------------|
+| \`shortenString(str)\` | Truncates at 15 chars |
+| \`get_camera(coordinates)\` | Computes UTK camera position |
+| \`parseDataframe(data)\` | Column-dict to row-array |
+| \`parseGeoDataframe(data)\` | GeoJSON features to property arrays |
+
+---
+
+## Backend API Endpoints Reference
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| \`/live\` | GET | Health check |
+| \`/get?fileName=X\` | GET | Fetch data file |
+| \`/get-preview?fileName=X\` | GET | Fetch data preview |
+| \`/processPythonCode\` | POST | Execute Python code |
+| \`/templates\` | GET | Fetch default templates |
+| \`/addTemplate\` | POST | Save user template |
+| \`/signin\` | POST | Google OAuth sign-in |
+| \`/getUser\` | GET | Get current user |
+| \`/toLayers\` | POST | Convert GeoJSON to UTK layers |
+| \`/boxExecProv\` | POST | Log box execution provenance |
+| \`/openAI\` | POST | Send LLM request |
+| \`/checkUsageOpenAI\` | POST | Check LLM rate limit |`;
+
+PAGES['11'] = `# Visualization Library Plugin Guide
+
+How to integrate [D3](https://d3js.org/), [Observable HQ](https://observablehq.com/), or any custom JavaScript visualization library into the Curio workflow system.
+
+---
+
+## Overview
+
+Curio supports plugging in new visualization libraries at two levels:
+
+1. **Grammar Adapter** — For declarative grammar-based libraries (Vega-Lite, UTK, Observable Plot)
+2. **Box Adapter Lifecycle** — For imperative libraries (D3, custom WebGL)
+
+---
+
+## Option A: Grammar Adapter (Declarative Libraries)
+
+Best for: Observable Plot, Plotly, ECharts, or any library that accepts a specification object.
+
+### Step 1 — Create the Grammar Adapter
+
+\`\`\`ts
+import { GrammarAdapter, registerGrammarAdapter } from '../registry/grammarAdapter';
+
+export const myLibAdapter: GrammarAdapter = {
+  grammarId: 'my-lib',
+
+  validate(spec: unknown): boolean {
+    try {
+      const parsed = typeof spec === 'string' ? JSON.parse(spec) : spec;
+      return parsed && typeof parsed === 'object';
+    } catch { return false; }
+  },
+
+  async render(container, spec, data): Promise<void> {
+    container.innerHTML = '';
+    // YOUR RENDERING CODE HERE
+  },
+
+  getDefaultSpec(): unknown {
+    return { /* minimal valid spec */ };
+  },
+};
+
+registerGrammarAdapter(myLibAdapter);
+\`\`\`
+
+### Step 2 — Create a Lifecycle Hook
+
+\`\`\`ts
+import { BoxLifecycleHook } from '../../registry/types';
+
+export const useMyLibLifecycle: BoxLifecycleHook = (data, boxState) => {
+  const applyGrammar = async (spec: string) => {
+    const { myLibAdapter } = await import('../myLibAdapter');
+    const container = document.getElementById('mylib' + data.nodeId);
+    if (!container) throw new Error('Container not found');
+    await myLibAdapter.render(container, spec, data.input);
+    boxState.setOutput({ code: 'success', content: '', outputType: '' });
+    data.outputCallback(data.nodeId, data.input);
+  };
+  return { applyGrammar };
+}
+\`\`\`
+
+### Step 3 — Register the Descriptor
+
+\`\`\`ts
+registerNode({
+  id: BoxType.VIS_MY_LIB,
+  category: 'vis_grammar',
+  label: 'My Library',
+  grammarId: 'my-lib',
+  adapter: {
+    handles: withBidirectional(standardInOut()),
+    editor: { code: false, grammar: true, widgets: true,
+              outputId: (nodeId) => 'mylib' + nodeId },
+    container: { handleType: 'in/out' },
+    useLifecycle: useMyLibLifecycle,
+  },
+  // ... other descriptor fields
+});
+\`\`\`
+
+---
+
+## Option B: Box Adapter Lifecycle (D3, imperative)
+
+Best for: D3, Three.js, custom Canvas/WebGL.
+
+\`\`\`ts
+export const useD3Lifecycle: BoxLifecycleHook = (data, boxState) => {
+  useEffect(() => {
+    if (!data.input) return;
+    const renderChart = async () => {
+      const d3 = await import('d3');
+      const container = document.getElementById('d3-' + data.nodeId);
+      if (!container) return;
+      container.innerHTML = '';
+      // ... D3 rendering code ...
+    };
+    renderChart();
+  }, [data.input]);
+
+  const contentComponent = React.createElement('div', {
+    id: 'd3-' + data.nodeId,
+    className: 'nowheel nodrag',
+    style: { width: '100%', height: '100%', overflow: 'auto' },
+  });
+
+  return { contentComponent, setSendCodeCallbackOverride: (_) => {} };
+}
+\`\`\`
+
+---
+
+## Option C: Observable HQ Notebooks
+
+Observable notebooks can be embedded via their runtime — import \`@observablehq/runtime\`, create a module, and render into a container div.
+
+---
+
+## Checklist
+
+1. Add \`VIS_MY_LIB\` to \`BoxType\` enum
+2. Install npm package
+3. Create lifecycle hook (typed as \`BoxLifecycleHook\`)
+4. (Optional) Create grammar adapter
+5. Register descriptor in \`descriptors.ts\`
+6. Verify: palette, connections, rendering, interactions`;
+
+PAGES['e2e'] = `# End-to-End Tests
+
+**Source directory:** \`utk_curio/backend/tests/test_frontend/\`
+
+**Framework:** Playwright (Python) with pytest
+
+**Scope:** Full-stack browser tests that start the Curio backend, sandbox, and frontend servers, then drive a headless Chromium browser to upload workflow JSON files and verify the ReactFlow canvas renders and executes correctly.
+
+---
+
+## Running
+
+\`\`\`bash
+# Full suite (starts servers automatically)
+pytest utk_curio/backend/tests/test_frontend/ -v
+
+# Headed mode (watch the browser)
+pytest utk_curio/backend/tests/test_frontend/ --headed
+
+# Against already-running servers
+CURIO_E2E_USE_EXISTING=1 pytest utk_curio/backend/tests/test_frontend/ -v
+
+# Subset of workflows only
+CURIO_E2E_WORKFLOWS=Vega.json,UTK.json pytest ... -v
+\`\`\`
+
+---
+
+## Environment Variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| \`CURIO_E2E_WORKFLOWS\` | all | Comma-separated workflow basenames to include |
+| \`CURIO_E2E_USE_EXISTING\` | unset | Set to \`1\` to skip server startup |
+| \`CURIO_E2E_HOST\` | \`localhost\` | Host for existing servers |
+| \`CURIO_E2E_BACKEND_PORT\` | \`5002\` | Backend port |
+| \`CURIO_E2E_SANDBOX_PORT\` | \`2000\` | Sandbox port |
+| \`CURIO_E2E_FRONTEND_PORT\` | \`8080\` | Frontend port |
+
+---
+
+## Test Methods
+
+### \`test_node_and_edge_count\`
+Verifies the ReactFlow canvas contains the expected number of nodes and edges.
+
+### \`test_node_positions\`
+Asserts that relative x-ordering from the specification is preserved after \`fitView\`.
+
+### \`test_node_type_and_content\`
+Validates each node renders the correct editor widget for its category (code → Monaco, grammar → JSON editor, etc.).
+
+### \`test_node_execution\`
+Executes all playable nodes in topological order and asserts "Done" status.
+
+---
+
+## Fixtures
+
+| Scope | Fixture | Description |
+|-------|---------|-------------|
+| Session | \`curio_servers\` | Starts/reuses all three servers |
+| Function | \`app_frontend\` | FrontendPage wrapper |
+| Class | \`loaded_workflow\` | Uploads workflow JSON and parses spec |
+
+---
+
+## Utilities — \`utils.py\`
+
+| Function | Description |
+|----------|-------------|
+| \`FrontendPage\` | Playwright page wrapper with navigation helpers |
+| \`upload_workflow\` | Uploads workflow JSON and waits for nodes |
+| \`wait_for_port\` | Polls until a TCP port is listening |
+| \`wait_for_http_ready\` | Polls until HTTP 200 on \`/live\` |`;
+
+PAGES['jest'] = `# Jest Unit Tests
+
+**Source directory:** \`utk_curio/frontend/urban-workflows/src/tests/\`
+
+**Framework:** Jest 27 + React Testing Library 13 + Babel
+
+**Scope:** Unit and integration tests covering the node registry, type contracts, adapter handle helpers, extracted UI components, lifecycle hook conformance, and registered descriptor validation.
+
+---
+
+## Running
+
+\`\`\`bash
+# Full suite (--forceExit required)
+npx jest --forceExit --verbose
+
+# Watch mode
+npm run test:watch
+
+# Coverage report
+npm run test:coverage
+
+# Specific test file
+npx jest src/tests/registry/types.test.ts --verbose
+\`\`\`
+
+> **Why \`--forceExit\`?** Several lifecycle hooks create async effects that leave open handles after the test completes. Without \`--forceExit\`, Jest hangs indefinitely.
+
+---
+
+## Configuration
+
+| Setting | Value |
+|---------|-------|
+| Test environment | \`jsdom\` |
+| Setup file | \`src/setupTests.ts\` |
+| Transform | \`babel-jest\` for \`.ts\` and \`.tsx\` |
+| Module mappers | CSS/image → \`identity-obj-proxy\` |
+
+---
+
+## Test Suites (83 tests)
+
+### Registry
+- **types.test.ts** — BoxLifecycleHook contract, BoxLifecycleData, LifecycleResult
+- **nodeRegistry.test.ts** — registerNode, getNodeDescriptor, getAllNodeTypes
+- **descriptors.test.ts** — All 14 registered descriptors validation
+
+### Adapters
+- **handleHelpers.test.ts** — Handle configuration factories, suggestion guard
+- **lifecycles.test.tsx** — All 10 lifecycle hooks contract conformance
+
+### Extracted UI Components
+- **ContentTable.test.tsx** — Material-UI table rendering
+- **DataPoolContent.test.tsx** — Tabbed DataPool display
+- **ImageGrid.test.tsx** — Clickable image grid
+
+### Components
+- **GenericDialog.test.tsx** — Modal dialog
+- **FileUpload.test.tsx** — File upload component
+
+---
+
+## Mocking Strategy
+
+| Module | Mock behavior |
+|--------|--------------|
+| \`hook/useVega\` | No-op \`handleCompileGrammar\` |
+| \`hook/useUTK\` | Stubbed UTK hook values |
+| \`hook/useTableData\` | Empty table data with stubbed async |
+| \`providers/*\` | No-op context values |
+| \`reactflow\` | Position constants, stubbed store |`;
+
+const PAGE_META = {
+  'welcome': { title: 'Home', section: '' },
+  '01': { title: 'Architecture Overview', section: 'Architecture' },
+  '02': { title: 'Constants & Types', section: 'Architecture' },
+  '03': { title: 'Registry', section: 'Architecture' },
+  '04': { title: 'Box Adapters', section: 'Adapters & Components' },
+  '05': { title: 'Grammar Adapters', section: 'Adapters & Components' },
+  '06': { title: 'UniversalBox', section: 'Adapters & Components' },
+  '07': { title: 'Hooks', section: 'Hooks & Providers' },
+  '08': { title: 'Providers', section: 'Hooks & Providers' },
+  '09': { title: 'Components', section: 'UI & Services' },
+  '10': { title: 'Services & Utilities', section: 'UI & Services' },
+  '11': { title: 'Vis Library Plugin Guide', section: 'Guides' },
+  'e2e': { title: 'E2E Tests', section: 'Testing' },
+  'jest': { title: 'Jest Unit Tests', section: 'Testing' },
+};
+
+const WELCOME_CARDS = [
+  { id: '01', num: '01', title: 'Architecture Overview', desc: 'Technology stack, provider hierarchy, data flow pipelines' },
+  { id: '03', num: '03', title: 'Registry', desc: 'BoxDescriptor, registration, all 15 node types' },
+  { id: '04', num: '04', title: 'Box Adapters', desc: 'BoxAdapter, HandleDef, lifecycle hooks, UI components' },
+  { id: '06', num: '06', title: 'UniversalBox', desc: 'The single component rendering all box types' },
+  { id: '07', num: '07', title: 'Hooks', desc: 'useBoxState, useVega, useUTK, useTableData' },
+  { id: '11', num: '11', title: 'Plugin Guide', desc: 'How to integrate D3, Observable, or any custom library' },
+];
+
+marked.setOptions({
+  highlight: function(code, lang) {
+    if (lang && hljs.getLanguage(lang)) {
+      return hljs.highlight(code, { language: lang }).value;
+    }
+    return hljs.highlightAuto(code).value;
+  },
+  breaks: false,
+  gfm: true,
+});
+
+let currentPage = 'welcome';
+
+function navigateTo(pageId) {
+  currentPage = pageId;
+  window.location.hash = pageId;
+  renderPage(pageId);
+  document.querySelector('.sidebar').classList.remove('open');
+  window.scrollTo({ top: 0 });
+}
+
+function renderPage(pageId) {
+  const area = document.getElementById('contentArea');
+  document.querySelectorAll('.nav-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.page === pageId);
+  });
+
+  if (pageId === 'welcome') {
+    area.innerHTML = renderWelcome();
+    return;
+  }
+
+  const md = PAGES[pageId];
+  if (!md) { area.innerHTML = '<p>Page not found.</p>'; return; }
+
+  const meta = PAGE_META[pageId] || {};
+  const html = marked.parse(md);
+  const toc = buildTOC(md);
+
+  area.innerHTML = `
+    <div class="page-header">
+      <div class="breadcrumb">${meta.section || 'Documentation'}</div>
+    </div>
+    ${toc ? `<div class="page-toc"><div class="page-toc-title">On this page</div>${toc}</div>` : ''}
+    <article class="prose">${html}</article>
+  `;
+}
+
+function renderWelcome() {
+  const cards = WELCOME_CARDS.map(c => `
+    <div class="welcome-card" onclick="navigateTo('${c.id}')">
+      <div class="card-num">${c.num}</div>
+      <div class="card-title">${c.title}</div>
+      <div class="card-desc">${c.desc}</div>
+    </div>
+  `).join('');
+
+  return `
+    <div class="welcome">
+      <div class="welcome-logo">Curio</div>
+      <div class="welcome-sub">
+        Complete API reference for the Urban Workflows frontend application.
+        Explore the architecture, registry, adapters, hooks, and components.
+      </div>
+      <div class="welcome-grid">${cards}</div>
+    </div>
+  `;
+}
+
+function buildTOC(md) {
+  const headings = [];
+  const lines = md.split('\n');
+  for (const line of lines) {
+    const m2 = line.match(/^## (.+)/);
+    const m3 = line.match(/^### (.+)/);
+    if (m2) headings.push({ level: 2, text: m2[1].replace(/`/g, '') });
+    else if (m3) headings.push({ level: 3, text: m3[1].replace(/`/g, '') });
+  }
+  if (headings.length < 2) return '';
+  const slug = t => t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  return '<ul>' + headings.map(h =>
+    `<li class="toc-h${h.level}"><a href="#${slug(h.text)}">${h.text}</a></li>`
+  ).join('') + '</ul>';
+}
+
+// Search
+const searchInput = document.getElementById('searchInput');
+const searchResults = document.getElementById('searchResults');
+const sidebarNav = document.getElementById('sidebarNav');
+
+searchInput.addEventListener('input', () => {
+  const q = searchInput.value.trim().toLowerCase();
+  if (q.length < 2) {
+    searchResults.classList.remove('visible');
+    sidebarNav.style.display = '';
+    return;
+  }
+
+  sidebarNav.style.display = 'none';
+  searchResults.classList.add('visible');
+
+  const results = [];
+  for (const [id, md] of Object.entries(PAGES)) {
+    const meta = PAGE_META[id];
+    if (!meta) continue;
+    const idx = md.toLowerCase().indexOf(q);
+    if (idx === -1) continue;
+    const start = Math.max(0, idx - 40);
+    const end = Math.min(md.length, idx + q.length + 60);
+    let snippet = (start > 0 ? '...' : '') + md.slice(start, end).replace(/[#*`|]/g, '') + (end < md.length ? '...' : '');
+    const re = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    snippet = snippet.replace(re, '<mark>$1</mark>');
+    results.push({ id, title: meta.title, snippet });
+  }
+
+  if (results.length === 0) {
+    searchResults.innerHTML = '<div class="no-results">No results found</div>';
+  } else {
+    searchResults.innerHTML = results.map(r => `
+      <div class="result-item" onclick="navigateTo('${r.id}'); searchInput.value=''; searchResults.classList.remove('visible'); sidebarNav.style.display='';">
+        <div class="result-title">${r.title}</div>
+        <div class="result-snippet">${r.snippet}</div>
+      </div>
+    `).join('');
+  }
+});
+
+// Theme
+function toggleTheme() {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  document.documentElement.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  document.getElementById('hljs-light').disabled = !isDark;
+  document.getElementById('hljs-dark').disabled = isDark;
+  document.getElementById('themeBtn').innerHTML = isDark ? '&#9789; Dark' : '&#9788; Light';
+  localStorage.setItem('curio-theme', isDark ? 'light' : 'dark');
+}
+
+(function initTheme() {
+  const saved = localStorage.getItem('curio-theme');
+  if (saved === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    document.getElementById('hljs-light').disabled = true;
+    document.getElementById('hljs-dark').disabled = false;
+    document.getElementById('themeBtn').innerHTML = '&#9788; Light';
+  }
+})();
+
+// Scroll-to-top button
+window.addEventListener('scroll', () => {
+  document.getElementById('scrollTop').classList.toggle('visible', window.scrollY > 400);
+});
+
+// Route from hash
+function routeFromHash() {
+  const hash = window.location.hash.slice(1);
+  if (hash && (PAGES[hash] || hash === 'welcome')) {
+    navigateTo(hash);
+  } else {
+    navigateTo('welcome');
+  }
+}
+
+window.addEventListener('hashchange', routeFromHash);
+routeFromHash();
+</script>
+</body>
+</html>

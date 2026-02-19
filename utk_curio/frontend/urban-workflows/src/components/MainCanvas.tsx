@@ -11,25 +11,12 @@ import ReactFlow, {
 } from "reactflow";
 
 import { useFlowContext } from "../providers/FlowProvider";
-import ComputationAnalysisBox from "./ComputationAnalysisBox";
-import DataTransformationBox from "./DataTransformationBox";
 import { BoxType, EdgeType } from "../constants";
-import DataLoadingBox from "./DataLoadingBox";
-import VegaBox from "./VegaBox";
-import TextBox from "./TextBox";
-import DataExportBox from "./DataExportBox";
-import DataCleaningBox from "./DataCleaning";
-import FlowSwitchBox from "./FlowSwitch";
-import UtkBox from "./UtkBox";
-import TableBox from "./TableBox";
-import ImageBox from "./ImageBox";
-import ConstantBox from "./ConstantBox";
+import { getAllNodeTypes } from "../registry";
+import UniversalBox from "./UniversalBox";
 import { UserMenu } from "./login/UserMenu";
-import DataPoolBox from "./DataPoolBox";
 import BiDirectionalEdge from "./edges/BiDirectionalEdge";
-import MergeFlowBox from "./MergeFlowBox";
 import { RightClickMenu } from "./styles";
-import CommentsBox from "./CommentsBox";
 import { useRightClickMenu } from "../hook/useRightClickMenu";
 import { useCode } from "../hook/useCode";
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
@@ -101,23 +88,15 @@ export function MainCanvas() {
     const { createCodeNode } = useCode();
     const { openAIRequest, AIModeRef, setAIMode } = useLLMContext();
 
-    let objectTypes: any = {};
-    objectTypes[BoxType.COMPUTATION_ANALYSIS] = ComputationAnalysisBox;
-    objectTypes[BoxType.DATA_TRANSFORMATION] = DataTransformationBox;
-    objectTypes[BoxType.DATA_LOADING] = DataLoadingBox;
-    objectTypes[BoxType.VIS_VEGA] = VegaBox;
-    objectTypes[BoxType.VIS_TEXT] = TextBox;
-    objectTypes[BoxType.DATA_EXPORT] = DataExportBox;
-    objectTypes[BoxType.DATA_CLEANING] = DataCleaningBox;
-    objectTypes[BoxType.FLOW_SWITCH] = FlowSwitchBox;
-    objectTypes[BoxType.VIS_UTK] = UtkBox;
-    objectTypes[BoxType.VIS_TABLE] = TableBox;
-    objectTypes[BoxType.VIS_IMAGE] = ImageBox;
-    objectTypes[BoxType.CONSTANTS] = ConstantBox;
-    objectTypes[BoxType.DATA_POOL] = DataPoolBox;
-    objectTypes[BoxType.MERGE_FLOW] = MergeFlowBox;
-
-    const nodeTypes = useMemo(() => objectTypes, []);
+    const nodeTypes = useMemo(() => {
+        const types: Record<string, any> = {};
+        for (const desc of getAllNodeTypes()) {
+            if (desc.adapter) {
+                types[desc.id] = UniversalBox;
+            }
+        }
+        return types;
+    }, []);
 
     let objectEdgeTypes: any = {};
     objectEdgeTypes[EdgeType.BIDIRECTIONAL_EDGE] = BiDirectionalEdge;

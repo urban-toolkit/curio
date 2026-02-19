@@ -1,10 +1,13 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 
+import './registry';
+
 import FlowProvider from "./providers/FlowProvider";
 import TemplateProvider from "./providers/TemplateProvider";
 import UserProvider from "./providers/UserProvider";
 import DialogProvider from "./providers/DialogProvider";
+import { BackendHealthBanner } from "./providers/BackendHealthBanner";
 import { MainCanvas } from "./components/MainCanvas";
 import { ReactFlowProvider } from "reactflow";
 import ProvenanceProvider from "./providers/ProvenanceProvider";
@@ -12,6 +15,7 @@ import LLMProvider from "./providers/LLMProvider";
 
 const App: React.FC = () => {
   return (
+    <BackendHealthBanner>
     <ReactFlowProvider>
       <LLMProvider>
         <ProvenanceProvider>
@@ -27,6 +31,7 @@ const App: React.FC = () => {
         </ProvenanceProvider>
       </LLMProvider>
     </ReactFlowProvider>
+    </BackendHealthBanner>
   );
 };
 
