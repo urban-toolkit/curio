@@ -115,15 +115,11 @@ def exec():
     full_code = full_code.replace('{boxType}', str(boxType))
     full_code = full_code.replace('{dataType}', str(dataType))
 
-    print("File input:", file_path)
-
     command = ['python', '-']
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     stdout, stderr = process.communicate(full_code)
 
     stdout = [item for item in stdout.split("\n") if item != '']
-
-    print("File output", stdout)
 
     if(len(stdout) > 0):
         output = json.loads(stdout[-1])
