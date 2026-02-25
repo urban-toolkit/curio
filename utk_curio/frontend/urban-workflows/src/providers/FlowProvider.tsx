@@ -298,9 +298,20 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     ) => {
         if (sourceHandle == "in/out" && targetHandle == "in/out") return;
 
-        // Look up the current output value for the source node
-        const outputEntry = outputs.find(opt => opt.nodeId === outId);
-        const output = outputEntry?.output ?? "";
+        let getOutput = outId;
+        let setInput = inId;
+
+        let output = "";
+
+        setOutputs((opts: any) =>
+            opts.map((opt: any) => {
+                if (opt.nodeId == getOutput) {
+                    output = opt.output;
+                }
+
+                return opt;
+            })
+        );
 
         setNodes((nds: any) =>
             nds.map((node: any) => {
