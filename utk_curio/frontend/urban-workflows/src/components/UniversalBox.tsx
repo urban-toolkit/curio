@@ -23,6 +23,7 @@ function UniversalBox({ data, isConnectable }: { data: any; isConnectable: boole
   const sendCode = lifecycle.sendCodeOverride ?? boxState.sendCode;
   const setSendCodeCallback = lifecycle.setSendCodeCallbackOverride ?? boxState.setSendCodeCallback;
   const setOutputCallback = lifecycle.setOutputCallbackOverride ?? boxState.setOutput;
+  const output = lifecycle.outputOverride ?? boxState.output
   const showLoading = lifecycle.showLoading ?? false;
   const defaultValue =
     lifecycle.defaultValueOverride ??
@@ -62,7 +63,7 @@ function UniversalBox({ data, isConnectable }: { data: any; isConnectable: boole
         boxHeight={adapter.container.boxHeight}
         styles={adapter.container.styles}
         disablePlay={adapter.container.disablePlay}
-        output={boxState.output}
+        output={output}
         templateData={boxState.templateData}
         code={boxState.code}
         user={boxState.user}
@@ -109,7 +110,7 @@ function UniversalBox({ data, isConnectable }: { data: any; isConnectable: boole
             disableWidgets={adapter.editor.disableWidgets}
             setOutputCallback={setOutputCallback}
             data={data}
-            output={boxState.output}
+            output={output}
             boxType={descriptor.id}
             applyGrammar={lifecycle.applyGrammar}
             customWidgetsCallback={lifecycle.customWidgetsCallback}
