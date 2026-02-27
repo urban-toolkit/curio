@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import JSONEditorReact from "./JSONEditorReact";
 import { Button } from "react-bootstrap";
+import { ICodeData } from "../../types";
 
 import "./GrammarEditor.css";
 
@@ -8,6 +9,8 @@ import "./GrammarEditor.css";
 
 // declaring the types of the props
 type GrammarEditorProps = {
+    // setOutputCallback: any;
+    output: ICodeData;
     nodeId: string;
     applyGrammar?: any;
     schema: any;
@@ -20,6 +23,8 @@ type GrammarEditorProps = {
 };
 
 export default function GrammarEditor({
+    // setOutputCallbackack,
+    output,
     nodeId,
     applyGrammar,
     schema,
@@ -71,7 +76,11 @@ export default function GrammarEditor({
     }, [grammar]);
 
     useEffect(() => {
-        if (applyGrammar != undefined && replacedCodeDirtyBypass.current) {
+        if (replacedCode != "" &&
+            replacedCodeDirtyBypass.current &&
+            output.code == "exec" &&
+            applyGrammar != undefined
+        ) {
             applyGrammar(replacedCode);
         }
 

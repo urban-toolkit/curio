@@ -7,11 +7,12 @@ import { get_camera } from "../utils/parsing";
 import { fetchData } from "../services/api";
 import { formatDate, getType, mapTypes } from "../utils/formatters";
 
-
+import { ICodeData } from '../types';
 import { useFlowContext } from "../providers/FlowProvider";
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
 
 export function useUTK({ data, code }: { data: any, code: string }) {
+  const [output, setOutput] = useState<ICodeData>({ code: '', content: '' });
   const { workflowNameRef } = useFlowContext();
 
   const [inputData, setInputData] = useState();
@@ -36,7 +37,6 @@ export function useUTK({ data, code }: { data: any, code: string }) {
 
   const [interactionArrays, setInteractionArrays] = useState<any>({}); // {[layerId] -> []}
   const [grammarInterpreterObj, setGrammarInterpreterObj] = useState<any>(null);
-
   const [grammarMapObj, _setGrammarMapObj] = useState<any>({});
   const grammarMapObjRef = React.useRef(grammarMapObj);
   const setGrammarMapObj = (data: any) => {
@@ -51,40 +51,15 @@ export function useUTK({ data, code }: { data: any, code: string }) {
   const [serverlessJoinedJsons, setServerlessJoinedJsons] = useState<any>([]);
   const [serverlessComponents, setServerlessComponents] = useState<any>([]);
 
-  const [showLoading, setShowLoading] = useState<boolean>(false);
-
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const isProcessingRef = useRef<boolean>(false);
-  const pendingPlayRef = useRef<boolean>(false);
-
-  const [sendCode, setSendCode] = useState<any>();
-  const sendCodeRef = useRef<any>(null);
+  const [sendCode, setSendCode] = useState<Function>(undefined);
 
   const setSendCodeCallback = (_sendCode: any) => {
-    sendCodeRef.current = _sendCode;
     setSendCode(() => (codeArg: string) => {
-      if (isProcessingRef.current) {
-        // Grammar not ready yet — queue the play and show spinner
-        pendingPlayRef.current = true;
-        setShowLoading(true);
-      } else {
         _sendCode(codeArg);
-      }
     });
   };
 
-  // Auto-trigger play when processing finishes and there's a pending play
-  useEffect(() => {
-    if (!isProcessing && !isProcessingRef.current && pendingPlayRef.current && sendCodeRef.current) {
-      pendingPlayRef.current = false;
-      setShowLoading(false);
-      sendCodeRef.current(code);
-    }
-  }, [isProcessing, isProcessingRef.current]);
-
-  useEffect(() => {
-    parseOutputData();
-  }, [interactionArrays]);
 
   const setToLayers = async (geojsons: any) => {
     const toLayersResponse = await fetch(
@@ -667,34 +642,31 @@ export function useUTK({ data, code }: { data: any, code: string }) {
 
   const processData = async () => {
     setIsProcessing(true);
-    isProcessingRef.current = true;
 
-    let values = await parseInputData(data.input);
-    // TODO: Refresh UTK
+    let values;
+    try {
+      values = await parseInputData(data.input);
+    } catch (error: any) {
+      setOutput({ code: 'error', content: error.message, outputType: '' });
+      setIsProcessing(false);
+      alert(error.message);
+    }
 
     const { generatedGrammar, json, components, interactionCallbacks } =
       await setToLayers(values);
 
-    // Auto-compile the grammar now that all data is ready.
-    // Pass local variables directly so we don't depend on React state propagation.
-    const grammarSpec = JSON.stringify(generatedGrammar, null, 4);
-    compileGrammar(grammarSpec, json.layers, json.joinedJsons, components, interactionCallbacks);
-
     // Signal that grammar/data processing is complete
     setIsProcessing(false);
-    isProcessingRef.current = false;
+    // Refresh UTK
+    setOutput({code: 'exec', content: ''});
+    sendCode(code)
 
   };
 
   useEffect(() => {
-    try {
-      if (data.input == "") return;
-      processData();
-    } catch (error: any) {
-      setIsProcessing(false);
-      isProcessingRef.current = false;
-      alert(error.message);
-    }
+    console.log('data.input')
+    if (data.input == "") return;
+    processData();
   }, [data.input]);
 
   const listenerSelection = (event: any) => {
@@ -766,9 +738,12 @@ export function useUTK({ data, code }: { data: any, code: string }) {
     handleCompileGrammar,
     customWidgetsCallback,
 
-    showLoading,
+    showLoading: isProcessing,
     sendCode,
 
     setSendCodeCallback,
+
+    setOutput,
+    output,
   };
 }

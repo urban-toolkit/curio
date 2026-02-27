@@ -2,7 +2,7 @@ import { BoxType, SupportedType } from '../constants';
 import { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import { Position, Edge } from 'reactflow';
 import React from 'react';
-import { INodeData } from '../types';
+import { INodeData, ICodeData } from '../types';
 import { IPropagation } from '../providers/FlowProvider';
 
 export interface PortDef {
@@ -96,6 +96,7 @@ export interface LifecycleResult {
   contentComponent?: React.ReactNode;
   /** Replace `boxState.setOutput` — used when output state is managed locally (DataPool, MergeFlow). */
   setOutputCallbackOverride?: any;
+  outputOverride?: ICodeData;
   /** Extra handles appended to `adapter.handles` at render time (MergeFlow dynamic inputs). */
   dynamicHandles?: HandleDef[];
 }

@@ -9,14 +9,17 @@ export const useUtkLifecycle: BoxLifecycleHook = (data, boxState) => {
     setSendCodeCallback,
     customWidgetsCallback,
     handleCompileGrammar,
+    setOutput,
+    output
   } = useUTK({ data: { ...data }, code: boxState.code });
 
   const applyGrammar = async (spec: string) => {
     try {
+      setOutput({ code: 'exec', content: ''});
       await handleCompileGrammar(spec);
-      boxState.setOutput({ code: 'success', content: '', outputType: '' });
+      setOutput({ code: 'success', content: '', outputType: '' });
     } catch (error: any) {
-      boxState.setOutput({ code: 'error', content: error.message, outputType: '' });
+      setOutput({ code: 'error', content: error.message, outputType: '' });
     }
   };
 
@@ -34,5 +37,7 @@ export const useUtkLifecycle: BoxLifecycleHook = (data, boxState) => {
     showLoading,
     customWidgetsCallback,
     defaultValueOverride,
+    setOutputCallbackOverride: setOutput,
+    outputOverride: output
   };
 }

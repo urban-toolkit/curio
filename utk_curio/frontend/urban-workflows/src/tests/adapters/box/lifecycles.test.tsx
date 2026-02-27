@@ -129,6 +129,7 @@ const LIFECYCLE_RESULT_KEYS: (keyof LifecycleResult)[] = [
   'contentComponent',
   'setOutputCallbackOverride',
   'dynamicHandles',
+  'outputOverride',
 ];
 
 function assertValidLifecycleResult(result: LifecycleResult) {

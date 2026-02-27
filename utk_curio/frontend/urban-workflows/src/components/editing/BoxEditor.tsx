@@ -240,6 +240,7 @@ function BoxEditor({
                                             replacedCodeDirty={
                                                 replacedCodeDirty
                                             }
+                                            output={output}
                                             replacedCode={replacedCode}
                                             sendCodeToWidgets={
                                                 sendCodeToWidgets

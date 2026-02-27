@@ -31,8 +31,8 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
   const parseInputData = async (input: any) => {
     let values: any = [];
     let parsedInput = data.input; //JSON.parse(data.input);
-    if (parsedInput == "") {
-      throw new Error("Input data must be an array");
+    if (parsedInput == "" || parsedInput == null || parsedInput == undefined) {
+      return [];
     }
 
     let inputType = parsedInput.dataType; // JSON.parse(data.input)["dataType"];

@@ -150,7 +150,7 @@ export const BoxContainer = ({
 
         if(data.input != undefined && data.input != ""){
             try {
-                let parsed_input = JSON.parse(data.input);
+                let parsed_input = typeof data.input === 'string' ? JSON.parse(data.input) : data.input;
 
                 let dataType = parsed_input.dataType;
                 
