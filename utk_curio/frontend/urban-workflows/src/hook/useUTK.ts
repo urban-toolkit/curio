@@ -51,9 +51,7 @@ export function useUTK({ data, code }: { data: any, code: string }) {
   const [serverlessJoinedJsons, setServerlessJoinedJsons] = useState<any>([]);
   const [serverlessComponents, setServerlessComponents] = useState<any>([]);
 
-  // const [showLoading, setShowLoading] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  // const isProcessingRef = useRef<boolean>(true);
   const [sendCode, setSendCode] = useState<Function>(undefined);
 
   const setSendCodeCallback = (_sendCode: any) => {
@@ -644,8 +642,6 @@ export function useUTK({ data, code }: { data: any, code: string }) {
 
   const processData = async () => {
     setIsProcessing(true);
-    // isProcessingRef.current = true;
-    // setShowLoading(true);
 
     let values;
     try {
