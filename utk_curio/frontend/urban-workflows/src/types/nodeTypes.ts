@@ -18,6 +18,7 @@ export interface ICodeDataContent {
 export interface ICodeData {
   code: string;
   content: ICodeDataContent | string;
+  outputType?: string;
 }
 
 /**
