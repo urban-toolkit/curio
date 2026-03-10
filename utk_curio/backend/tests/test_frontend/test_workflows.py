@@ -378,7 +378,7 @@ class TestWorkflowCanvas:
                     # Output / Error / Warning sub-tabs.
                     computation_tabs = node_el.locator(f"#computation-tabs-tab-0")
 
-                    # #endregion
+                    # Test computation output tab if it is a computation node
                     if computation_tabs.count() >= 1:
                         # and should contain a div with classes tab-pane and active
                         active_pane = node_el.locator(".tab-pane.active")
@@ -543,6 +543,7 @@ class TestWorkflowCanvas:
         # First: run all playable nodes end-to-end
         self._execute_all_playable_nodes()
 
+
         # Then: assert every playable node ended with "Done"
         for node in self.spec.nodes:
             if not node.has_play_button:
@@ -570,18 +571,18 @@ class TestWorkflowCanvas:
             if output_tab.count() >= 1:
                 # Check if the output content box is active
                 is_active = "active" in (output_tab.get_attribute("class") or "")
-                assert is_active, (
-                    f"Output content box {node.id} ({node.type}) is not active"
-                )
                 if not is_active:
                     output_tab.click(force=True)
                     output_tab.wait_for(state="visible", timeout=3000)
+                assert is_active, (
+                    f"Output content box {node.id} ({node.type}) is not active"
+                )
                 
                 # OutputContent renders #computation-tabs-tab- with
                 # Output / Error / Warning sub-tabs.
                 computation_tabs = node_el.locator(f"#computation-tabs-tab-0")
 
-                # #endregion
+                # Test computation output tab if it is a computation node
                 if computation_tabs.count() >= 1:
                     # and should contain a div with classes tab-pane and active
                     active_pane = node_el.locator(".tab-pane.active")
@@ -642,4 +643,36 @@ class TestWorkflowCanvas:
                         f"Node {node.id} ({node.type}) is missing its "
                         f"output content"
                     )
-           
+
+            # Check provenance graph is rendered correctly for nodes that have it.
+            provenance_tab = node_el.locator(
+                '.nav-link[data-rr-ui-event-key="provenance"]'
+            )
+            if provenance_tab.count() == 0:
+                continue  # Node has no provenance tab (e.g. DATA_POOL)
+            provenance_tab.first.wait_for(state="visible", timeout=10000)
+            provenance_tab.click(force=True)
+
+            # Canvas is inside the provenance tab pane (active after click)
+            # The provenance pane contains a reagraph canvas element (GraphCanvas)
+            provenance_pane = node_el.locator(".tab-pane.active.show")
+            canvas = provenance_pane.locator("canvas")
+            canvas.first.wait_for(state="visible", timeout=10000)
+            assert canvas.count() >= 1, (
+                f"Node {node.id} ({node.type}) is missing its canvas"
+            )
+
+            # The provenance graph uses reagraph (WebGL/Three.js), not 2D canvas.
+            has_content = canvas.first.evaluate("""
+                (canvas) => {
+                    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+                    if (!gl) return false;
+                    const w = canvas.width, h = canvas.height;
+                    if (w < 2 || h < 2) return false;
+                    return true;
+                }
+            """)
+            assert has_content, (
+                f"Node {node.id} ({node.type}) provenance canvas appears empty "
+                f"(no drawn content detected)"
+            )

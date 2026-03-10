@@ -233,7 +233,7 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
                         newProvenanceGraphs[workflow] = {};
 
                     let activities = Object.keys(
-                        provenanceGraphBoxesRef.current[workflow]
+                        provenanceGraphBoxesRef.current[workflow] || {}
                     );
 
                     for (const activity of activities) {

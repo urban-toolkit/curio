@@ -1275,22 +1275,19 @@ def box_exec_prov():
 
     output_attributes = cursor.fetchall()
 
-    for input_attribute in input_attributes: #
-        # creating attributeValues
-        # cursor.execute('''INSERT INTO attributeValue (attribute_id, ri_id, value)
-        #                 VALUES (?, ?, ?)''', (input_attribute[0], input_ri_id, data['types_input'][input_attribute[1]],))
-        cursor.execute('''INSERT INTO attributeValue (attribute_id, ri_id, value)
-                VALUES (?, ?, ?)''', (input_attribute[0], input_ri_id+1, data['inputData'],))
 
+    for input_attribute in input_attributes:
+        # creating attributeValues (use types_input for get_box_graph value='1' filter)
+        val = str(data.get('types_input', {}).get(input_attribute[1], 0))
+        cursor.execute('''INSERT INTO attributeValue (attribute_id, ri_id, value)
+                VALUES (?, ?, ?)''', (input_attribute[0], input_ri_id, val))
         conn.commit()
 
-    for output_attribute in output_attributes: #
-        # creating attributeValues
-        # cursor.execute('''INSERT INTO attributeValue (attribute_id, ri_id, value)
-        #                 VALUES (?, ?, ?)''', (output_attribute[0], output_ri_id, data['types_output'][output_attribute[1]],))
+    for output_attribute in output_attributes:
+        # creating attributeValues (use types_output for get_box_graph value='1' filter)
+        val = str(data.get('types_output', {}).get(output_attribute[1], 0))
         cursor.execute('''INSERT INTO attributeValue (attribute_id, ri_id, value)
-                VALUES (?, ?, ?)''', (output_attribute[0], output_ri_id+1, data['outputData'],))
-
+                VALUES (?, ?, ?)''', (output_attribute[0], output_ri_id, val))
         conn.commit()
 
     # duplicating all old activity executions of this workflow
