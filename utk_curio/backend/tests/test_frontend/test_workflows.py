@@ -475,11 +475,14 @@ class TestWorkflowCanvas:
                             f"Code node {node.id} ({node.type}): could not "
                             f"read Monaco editor value via JS API"
                         )
-                        assert node.content.strip() in editor_value.strip(), (
+                        # Normalize line endings: workflow/OS may use \r\n, editor uses \n
+                        expected = node.content.strip().replace("\r\n", "\n").replace("\r", "\n")
+                        actual = editor_value.strip().replace("\r\n", "\n").replace("\r", "\n")
+                        assert expected in actual, (
                             f"Code node {node.id} ({node.type}): editor "
                             f"content does not contain the expected code.\n"
-                            f"  Expected (snippet): {node.content.strip()[:120]}\n"
-                            f"  Actual   (snippet): {editor_value.strip()[:120]}"
+                            f"  Expected (snippet): {expected[:120]}\n"
+                            f"  Actual   (snippet): {actual[:120]}"
                         )
                      
 
