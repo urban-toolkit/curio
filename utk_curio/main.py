@@ -194,9 +194,10 @@ def start_frontend(force_rebuild=False, no_server=False):
 
         if os.environ.get("CURIO_DEV") == "1":
 
-            # Start the Node.js server
+            # Start the Node.js server (use CURIO_NO_OPEN=1 to prevent browser from opening)
+            start_cmd = ["npm", "run", "start", "--", "--no-open"] if os.environ.get("CURIO_NO_OPEN") else ["npm", "run", "start"]
             process = subprocess.Popen(
-                ["npm", "run", "start"],
+                start_cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
