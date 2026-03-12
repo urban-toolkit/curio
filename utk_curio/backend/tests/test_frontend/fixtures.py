@@ -60,6 +60,7 @@ def curio_servers(app, request):
     env["PORT"] = str(frontend_port)
     env["BACKEND_URL"] = f"http://127.0.0.1:{backend_port}"
     env["DONT_REWRITE_URLS"] = "false"
+    env["CURIO_NO_OPEN"] = "1"
 
     process = subprocess.Popen(
         [

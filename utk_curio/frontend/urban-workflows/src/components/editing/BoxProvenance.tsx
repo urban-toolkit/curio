@@ -33,11 +33,10 @@ function BoxProvenance({ data, boxType, setCode }: BoxProvenanceProps) {
     useEffect(() => {
         if (provenanceBypass.current) {
             let workflow_name = workflowNameRef.current;
-            let activity_name = boxType + "_" + data.nodeId;
+            let activity_name = boxType + "-" + data.nodeId;
 
             if (provenanceGraphBoxesRef.current[workflow_name] == undefined)
                 return;
-
             if (
                 provenanceGraphBoxesRef.current[workflow_name][activity_name] ==
                 undefined
@@ -88,7 +87,7 @@ function BoxProvenance({ data, boxType, setCode }: BoxProvenanceProps) {
 
     const onNodeClick = (nodeData: any) => {
         let workflow_name = workflowNameRef.current;
-        let activity_name = boxType + "_" + data.nodeId;
+        let activity_name = boxType + "-" + data.nodeId;
 
         let index = parseInt(nodeData.id.replace("n-", ""));
 

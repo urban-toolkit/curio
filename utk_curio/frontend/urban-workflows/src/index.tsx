@@ -1,5 +1,12 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import * as monaco from "monaco-editor";
+import { loader } from "@monaco-editor/react";
+
+// Use bundled Monaco instead of CDN so the editor works offline
+loader.config({ monaco });
+// Expose on window for tests and any code that uses window.monaco (e.g. getEditors())
+(window as unknown as { monaco: typeof monaco }).monaco = monaco;
 
 import './registry';
 
