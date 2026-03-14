@@ -29,67 +29,66 @@ conversation = {}
 tokens_left = 200000 # Tokens allowed per minute
 last_refresh = time.time() # Last time that 60 minutes elapsed
 
-inputTypesSupported = {
-    "DATA_LOADING": [],
-    "DATA_EXPORT": ["DATAFRAME", "GEODATAFRAME"],
-    "DATA_CLEANING": ["DATAFRAME", "GEODATAFRAME"],
-    "DATA_TRANSFORMATION": ["DATAFRAME", "GEODATAFRAME"],
-    "COMPUTATION_ANALYSIS": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"],
-    "FLOW_SWITCH": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"],
-    "VIS_UTK": ["GEODATAFRAME"],
-    "VIS_VEGA": ["DATAFRAME"],
-    "VIS_TABLE": ["DATAFRAME", "GEODATAFRAME"],
-    "VIS_TEXT": ["VALUE"],
-    "VIS_IMAGE": ["LIST"],
-    "CONSTANTS": [],
-    "DATA_POOL": ["DATAFRAME", "GEODATAFRAME"],
-    "MERGE_FLOW": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"],
-}
-
-outputTypesSupported = {
-    "DATA_LOADING": ["DATAFRAME", "GEODATAFRAME"],
-    "DATA_EXPORT": [],
-    "DATA_CLEANING": ["DATAFRAME", "GEODATAFRAME"],
-    "DATA_TRANSFORMATION": ["DATAFRAME", "GEODATAFRAME"],
-    "COMPUTATION_ANALYSIS": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"],
-    "FLOW_SWITCH": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"],
-    "VIS_UTK": ["GEODATAFRAME"],
-    "VIS_VEGA": ["DATAFRAME"],
-    "VIS_TABLE": ["DATAFRAME", "GEODATAFRAME"],
-    "VIS_TEXT": ["VALUE"],
-    "VIS_IMAGE": ["LIST"],
-    "CONSTANTS": ["VALUE"],
-    "DATA_POOL": ["DATAFRAME", "GEODATAFRAME"],
-    "MERGE_FLOW": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"],
-}
-
 attributeIds = {
     "DATAFRAME": "1",
     "GEODATAFRAME": "2",
     "VALUE": "3",
     "LIST": "4",
-    "JSON": "5"
+    "JSON": "5",
+    "RASTER": "6"
 }
 
-TYPE_MAP = {
-    "computation_analysis": "COMPUTATION_ANALYSIS",
-    "data_cleaning": "DATA_CLEANING",
-    "data_export": "DATA_EXPORT",
-    "data_loading": "DATA_LOADING",
-    "data_transformation": "DATA_TRANSFORMATION",
-    "utk": "VIS_UTK",
-    "vega_lite": "VIS_VEGA"
+# Fallback folder names for template types whose folder doesn't match box_type.lower()
+# _FOLDER_OVERRIDES = {
+#     # "VIS_UTK": "utk",
+#     # "VIS_VEGA": "vega_lite",
+# }
+
+# In-memory node-type registry populated by the frontend via POST /node-types.
+# Initialised with hardcoded defaults so provenance and templates work even if
+# the frontend hasn't registered yet (e.g. backend starts before frontend).
+_node_type_registry: dict = {
+    "DATA_LOADING":          {"inputTypes": [],                                                   "outputTypes": ["DATAFRAME", "GEODATAFRAME"]},
+    "DATA_EXPORT":           {"inputTypes": ["DATAFRAME", "GEODATAFRAME"],                        "outputTypes": []},
+    "DATA_CLEANING":         {"inputTypes": ["DATAFRAME", "GEODATAFRAME"],                        "outputTypes": ["DATAFRAME", "GEODATAFRAME"]},
+    "DATA_TRANSFORMATION":   {"inputTypes": ["DATAFRAME", "GEODATAFRAME"],                        "outputTypes": ["DATAFRAME", "GEODATAFRAME"]},
+    "COMPUTATION_ANALYSIS":  {"inputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"], "outputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"]},
+    "FLOW_SWITCH":           {"inputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"], "outputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"]},
+    "VIS_UTK":               {"inputTypes": ["GEODATAFRAME"],                                     "outputTypes": ["GEODATAFRAME"]},
+    "VIS_VEGA":              {"inputTypes": ["DATAFRAME"],                                        "outputTypes": ["DATAFRAME"]},
+    "VIS_TABLE":             {"inputTypes": ["DATAFRAME", "GEODATAFRAME"],                        "outputTypes": ["DATAFRAME", "GEODATAFRAME"]},
+    "VIS_TEXT":              {"inputTypes": ["VALUE"],                                             "outputTypes": ["VALUE"]},
+    "VIS_IMAGE":             {"inputTypes": ["LIST"],                                             "outputTypes": ["LIST"]},
+    "CONSTANTS":             {"inputTypes": [],                                                   "outputTypes": ["VALUE"]},
+    "DATA_POOL":             {"inputTypes": ["DATAFRAME", "GEODATAFRAME"],                        "outputTypes": ["DATAFRAME", "GEODATAFRAME"]},
+    "MERGE_FLOW":            {"inputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"], "outputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"]},
 }
 
-FOLDER_MAP = {
-    "COMPUTATION_ANALYSIS": "computation_analysis",
-    "DATA_CLEANING": "data_cleaning",
-    "DATA_EXPORT": "data_export",
-    "DATA_LOADING": "data_loading",
-    "DATA_TRANSFORMATION": "data_transformation",
-    "VIS_UTK": "utk",
-    "VIS_VEGA": "vega_lite"
-}
+def get_output_types(box_type: str) -> list:
+    entry = _node_type_registry.get(box_type)
+    return entry["outputTypes"] if entry else []
+
+def get_input_types(box_type: str) -> list:
+    entry = _node_type_registry.get(box_type)
+    return entry["inputTypes"] if entry else []
+
+def get_folder_for_type(box_type: str) -> str:
+    # if box_type in _FOLDER_OVERRIDES:
+    #     return _FOLDER_OVERRIDES[box_type]
+    return box_type.lower()
+
+def get_type_for_folder(folder: str) -> str:
+    # for bt, f in _FOLDER_OVERRIDES.items():
+    #     if f == folder:
+    #         return bt
+    return folder.upper()
+
+def get_template_folders() -> list:
+    """Return all folder names that may contain templates."""
+    folders = set()
+    for box_type in _node_type_registry:
+        folders.add(get_folder_for_type(box_type))
+    return sorted(folders)
 
 def get_db_path():
     launch_dir = os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())
@@ -100,6 +99,80 @@ def get_templates_path():
     launch_dir = os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())
     db_path = os.path.join(launch_dir, "templates")
     return db_path
+
+def create_new_workflow_version(conn, workflow_name):
+    """Create a new versioned workflow from the latest one with the given name.
+
+    Works regardless of the connection's row_factory setting by using a
+    dedicated cursor with tuple rows for the internal queries.
+
+    Returns (old_workflow_id, new_workflow_id).
+    """
+    prev_factory = conn.row_factory
+    conn.row_factory = None
+    cursor = conn.cursor()
+
+    # // new version (increment version number based on previous old workflow that points to a ve that points to the version)
+    # // new versioned element (pointing to the versioned element of the old workflow and pointing to the new version)
+    # // new workflow
+    # // point new workflow to the new versioned element
+
+    # last workflow created with this name
+    cursor.execute(
+        "SELECT * FROM workflow WHERE workflow_id = "
+        "(SELECT MAX(workflow_id) FROM workflow WHERE workflow_name = ?)",
+        (workflow_name,),
+    )
+    old_workflow = cursor.fetchone()
+
+    # getting versionedElement attached to the old workflow
+    cursor.execute(
+        "SELECT * FROM versionedElement WHERE ve_id = ?",
+        (old_workflow[2],),
+    )
+    old_workflow_ve = cursor.fetchone()
+
+    # getting the version attached to the old workflow
+    cursor.execute(
+        "SELECT * FROM version WHERE version_id = ?",
+        (old_workflow_ve[1],),
+    )
+    version = cursor.fetchone()
+
+    new_version_number = str(float(version[1]) + 1.0)
+
+    # creating new version
+    cursor.execute(
+        "INSERT INTO version (version_number) VALUES (?)",
+        (new_version_number,),
+    )
+    conn.commit()
+
+    # id of the new just added workflow
+    version_id = cursor.lastrowid
+
+    # creating new versioned element for the new workflow
+    cursor.execute(
+        "INSERT INTO versionedElement (previous_ve_id, version_id) VALUES (?, ?)",
+        (old_workflow_ve[0], version_id),
+    )
+    conn.commit()
+
+    # id of the new just added versioned element
+    ve_id = cursor.lastrowid
+
+    # creating new workflow
+    cursor.execute(
+        "INSERT INTO workflow (workflow_name, ve_id) VALUES (?, ?)",
+        (workflow_name, ve_id),
+    )
+    conn.commit()
+
+    # id of the new just added workflow
+    new_workflow_id = cursor.lastrowid
+
+    conn.row_factory = prev_factory
+    return old_workflow[0], new_workflow_id
 
 @bp.after_request
 def add_cors_headers(response):
@@ -115,6 +188,21 @@ def root():
 @bp.route('/live')
 def live():
     return 'Backend is live.'
+
+@bp.route('/node-types', methods=['POST'])
+def register_node_types():
+    payload = request.get_json(silent=True) or {}
+    node_types = payload.get('nodeTypes', {})
+    if not isinstance(node_types, dict) or len(node_types) == 0:
+        return jsonify({'error': 'Expected { nodeTypes: { BOX_TYPE: { inputTypes, outputTypes } } }'}), 400
+
+    _node_type_registry.clear()
+    _node_type_registry.update(node_types)
+    return jsonify({'registered': len(_node_type_registry)}), 200
+
+@bp.route('/node-types', methods=['GET'])
+def get_node_types():
+    return jsonify(_node_type_registry), 200
 
 @bp.route('/cwd')
 def cwd():
@@ -642,62 +730,18 @@ def save_workflow_prov():
 
 @bp.route('/newBoxProv', methods=['POST'])
 def new_box_prov():
+    data = request.json.get('data')
 
     # db_path = os.path.join(os.getcwd(), ".curio", "provenance.db")
     db_path = get_db_path()
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # // new version (increment version number based on previous old workflow that points to a ve that points to the version)
-    # // new versioned element (pointing to the versioned element of the old workflow and pointing to the new version)
-    # // new workflow
-    # // point new workflow to the new versioned element
+    old_workflow_id, workflow_id = create_new_workflow_version(conn, data['workflow_name'])
+
     # // create relation for new activity (output relation)
     # // new activity (pointing to the new workflow and to the new relation as output)
     # // duplicate all activities that point to the old workflow and point to the new one (duplicate relations tied to activities)
-
-    data = request.json.get('data')
-
-    # last workflow created with this name
-    cursor.execute("SELECT * FROM workflow WHERE workflow_id = (SELECT MAX(workflow_id) FROM workflow WHERE workflow_name = ?)", (data['workflow_name'],))
-    old_workflow = cursor.fetchone()
-
-    # getting versionedElement attached to the old workflow
-    cursor.execute("SELECT * FROM versionedElement WHERE ve_id = ?", (old_workflow[2],))
-    old_workflow_ve = cursor.fetchone()
-
-    # getting the version atteched to the old workflow
-    cursor.execute("SELECT * FROM version WHERE version_id = ?", (old_workflow_ve[1],))
-    version = cursor.fetchone()
-
-    new_version_number = str(float(version[1])+1.0)
-
-    # creating new version
-    cursor.execute('''INSERT INTO version (version_number)
-                    VALUES (?)''', (new_version_number,))
-
-    conn.commit()
-
-    # id of the new just added version
-    version_id = cursor.lastrowid
-
-    # creating new versioned element for the new workflow
-    cursor.execute('''INSERT INTO versionedElement (previous_ve_id, version_id)
-                    VALUES (?, ?)''', (old_workflow_ve[0], version_id,))
-
-    conn.commit()
-
-    # id of the new just added versioned element
-    ve_id = cursor.lastrowid
-
-    # creating new workflow
-    cursor.execute('''INSERT INTO workflow (workflow_name, ve_id)
-                    VALUES (?, ?)''', (data['workflow_name'], ve_id,))
-
-    conn.commit()
-
-    # id of the new just added workflow
-    workflow_id = cursor.lastrowid
 
     # creating relation for new activity
     cursor.execute('''INSERT INTO relation (relation_name)
@@ -711,10 +755,10 @@ def new_box_prov():
 
     boxType = data['activity_name'].split("-")[0]
 
-    # adding a attributeRelation to each output type that this activity supports
-    for outputType in outputTypesSupported[boxType]:
-        cursor.execute('''INSERT INTO attributeRelation (attribute_id, relation_id)
-            VALUES (?, ?)''', (attributeIds[outputType], output_relation_id,))
+    for outputType in get_output_types(boxType):
+        if outputType in attributeIds:
+            cursor.execute('''INSERT INTO attributeRelation (attribute_id, relation_id)
+                VALUES (?, ?)''', (attributeIds[outputType], output_relation_id,))
 
     # creating new activity
     cursor.execute('''INSERT INTO activity (workflow_id, activity_name, input_relation_id, output_relation_id)
@@ -723,7 +767,7 @@ def new_box_prov():
     conn.commit()
 
     # getting all activities that point to the old workflow
-    cursor.execute("SELECT activity_name, input_relation_id, output_relation_id, ve_id FROM activity WHERE workflow_id = ?", (old_workflow[0],))
+    cursor.execute("SELECT activity_name, input_relation_id, output_relation_id, ve_id FROM activity WHERE workflow_id = ?", (old_workflow_id,))
 
     activities = cursor.fetchall()
 
@@ -750,9 +794,10 @@ def new_box_prov():
         boxType = activity[0].split("-")[0]
 
         # # adding a attributeRelation to each output type that this activity supports
-        # for outputType in outputTypesSupported[boxType]:
-        #     cursor.execute('''INSERT INTO attributeRelation (attribute_id, relation_id)
-        #         VALUES (?, ?)''', (attributeIds[outputType], output_relation_id,))
+        # for outputType in get_output_types(boxType):
+        #     if outputType in attributeIds:
+        #         cursor.execute('''INSERT INTO attributeRelation (attribute_id, relation_id)
+        #             VALUES (?, ?)''', (attributeIds[outputType], output_relation_id,))
 
         # duplicated_output_relations[old_output_relation[0]] = output_relation_id # mapping old to new ids
 
@@ -787,63 +832,19 @@ def new_box_prov():
 
 @bp.route('/deleteBoxProv', methods=['POST'])
 def delete_box_prov():
-
-    # // new version (increment version number based on previous old workflow that points to a ve that points to the version)
-    # // new versioned element (pointing to the versioned element of the old workflow and pointing to the new version)
-    # // new workflow
-    # // point new workflow to the new versioned element
-    # // duplicate all activities (but the excluded box) that point to the old workflow and point to the new one
+    data = request.json.get('data')
 
     # db_path = os.path.join(os.getcwd(), ".curio", "provenance.db")
     db_path = get_db_path()
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    data = request.json.get('data')
+    old_workflow_id, workflow_id = create_new_workflow_version(conn, data['workflow_name'])
 
-    # last workflow created with this name
-    cursor.execute("SELECT * FROM workflow WHERE workflow_id = (SELECT MAX(workflow_id) FROM workflow WHERE workflow_name = ?)", (data['workflow_name'],))
-    old_workflow = cursor.fetchone()
-
-    # getting versionedElement attached to the old workflow
-    cursor.execute("SELECT * FROM versionedElement WHERE ve_id = ?", (old_workflow[2],))
-    old_workflow_ve = cursor.fetchone()
-
-    # getting the version atteched to the old workflow
-    cursor.execute("SELECT * FROM version WHERE version_id = ?", (old_workflow_ve[1],))
-    version = cursor.fetchone()
-
-    new_version_number = str(float(version[1])+1.0)
-
-    # creating new version
-    cursor.execute('''INSERT INTO version (version_number)
-                    VALUES (?)''', (new_version_number,))
-
-    conn.commit()
-
-    # id of the new just added version
-    version_id = cursor.lastrowid
-
-    # creating new versioned element for the new workflow
-    cursor.execute('''INSERT INTO versionedElement (previous_ve_id, version_id)
-                    VALUES (?, ?)''', (old_workflow_ve[0], version_id,))
-
-    conn.commit()
-
-    # id of the new just added versioned element
-    ve_id = cursor.lastrowid
-
-    # creating new workflow
-    cursor.execute('''INSERT INTO workflow (workflow_name, ve_id)
-                    VALUES (?, ?)''', (data['workflow_name'], ve_id,))
-
-    conn.commit()
-
-    # id of the new just added workflow
-    workflow_id = cursor.lastrowid
+    # // duplicate all activities (but the excluded box) that point to the old workflow and point to the new one
 
     # getting all activities that point to the old workflow
-    cursor.execute("SELECT activity_name, input_relation_id, output_relation_id, ve_id FROM activity WHERE workflow_id = ?", (old_workflow[0],))
+    cursor.execute("SELECT activity_name, input_relation_id, output_relation_id, ve_id FROM activity WHERE workflow_id = ?", (old_workflow_id,))
 
     activities = cursor.fetchall()
 
@@ -871,9 +872,10 @@ def delete_box_prov():
             boxType = activity[0].split("-")[0]
 
             # # adding a attributeRelation to each output type that this activity supports
-            # for outputType in outputTypesSupported[boxType]:
-            #     cursor.execute('''INSERT INTO attributeRelation (attribute_id, relation_id)
-            #         VALUES (?, ?)''', (attributeIds[outputType], output_relation_id,))
+            # for outputType in get_output_types(boxType):
+            #     if outputType in attributeIds:
+            #         cursor.execute('''INSERT INTO attributeRelation (attribute_id, relation_id)
+            #             VALUES (?, ?)''', (attributeIds[outputType], output_relation_id,))
 
             # duplicated_output_relations[old_output_relation[0]] = output_relation_id # mapping old to new ids
 
@@ -923,43 +925,10 @@ def new_connection_prov():
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
-        # 1. Get the latest workflow with the given name
-        cursor.execute("""
-            SELECT * FROM workflow
-            WHERE workflow_id = (
-                SELECT MAX(workflow_id) FROM workflow WHERE workflow_name = ?
-            )
-        """, (data['workflow_name'],))
-        old_workflow = cursor.fetchone()
-
-        if not old_workflow:
-            return jsonify({"error": f"Workflow with name '{data['workflow_name']}' not found."}), 404
-
-        # 2. Get versioning info
-        cursor.execute("SELECT * FROM versionedElement WHERE ve_id = ?", (old_workflow['ve_id'],))
-        old_workflow_ve = cursor.fetchone()
-        cursor.execute("SELECT * FROM version WHERE version_id = ?", (old_workflow_ve['version_id'],))
-        version = cursor.fetchone()
-
-        # 3. Create new version, versioned element, and workflow entries
-        new_version_number = str(int(float(version['version_number'])) + 1)
-        cursor.execute("INSERT INTO version (version_number) VALUES (?)", (new_version_number,))
-        new_version_id = cursor.lastrowid
-
-        cursor.execute(
-            "INSERT INTO versionedElement (previous_ve_id, version_id) VALUES (?, ?)",
-            (old_workflow_ve['ve_id'], new_version_id)
-        )
-        new_ve_id = cursor.lastrowid
-
-        cursor.execute(
-            "INSERT INTO workflow (workflow_name, ve_id) VALUES (?, ?)",
-            (data['workflow_name'], new_ve_id)
-        )
-        new_workflow_id = cursor.lastrowid
+        old_workflow_id, new_workflow_id = create_new_workflow_version(conn, data['workflow_name'])
 
         # 4. Duplicate activities from the old workflow to the new one
-        cursor.execute("SELECT * FROM activity WHERE workflow_id = ?", (old_workflow['workflow_id'],))
+        cursor.execute("SELECT * FROM activity WHERE workflow_id = ?", (old_workflow_id,))
         old_activities = cursor.fetchall()
 
         for activity in old_activities:
@@ -1015,64 +984,20 @@ def new_connection_prov():
 
 @bp.route('/deleteConnectionProv', methods=['POST'])
 def delete_connection_prov():
+    data = request.json.get('data')
 
     # db_path = os.path.join(os.getcwd(), ".curio", "provenance.db")
     db_path = get_db_path()
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    data = request.json.get('data')
+    old_workflow_id, workflow_id = create_new_workflow_version(conn, data['workflow_name'])
 
-    # // new version (increment version number based on previous old workflow that points to a ve that points to the version)
-    # // new versioned element (pointing to the versioned element of the old workflow and pointing to the new version)
-    # // new workflow
-    # // point new workflow to the new versioned element
     # // duplicate all activities that point to the old workflow and point to the new one (duplicate relations tied to activities)
     # // update input relation of the activity to NULL
 
-    # last workflow created with this name
-    cursor.execute("SELECT * FROM workflow WHERE workflow_id = (SELECT MAX(workflow_id) FROM workflow WHERE workflow_name = ?)", (data['workflow_name'],))
-    old_workflow = cursor.fetchone()
-
-    # getting versionedElement attached to the old workflow
-    cursor.execute("SELECT * FROM versionedElement WHERE ve_id = ?", (old_workflow[2],))
-    old_workflow_ve = cursor.fetchone()
-
-    # getting the version atteched to the old workflow
-    cursor.execute("SELECT * FROM version WHERE version_id = ?", (old_workflow_ve[1],))
-    version = cursor.fetchone()
-
-    new_version_number = str(float(version[1])+1.0)
-
-    # creating new version
-    cursor.execute('''INSERT INTO version (version_number)
-                    VALUES (?)''', (new_version_number,))
-
-    conn.commit()
-
-    # id of the new just added version
-    version_id = cursor.lastrowid
-
-    # creating new versioned element for the new workflow
-    cursor.execute('''INSERT INTO versionedElement (previous_ve_id, version_id)
-                    VALUES (?, ?)''', (old_workflow_ve[0], version_id,))
-
-    conn.commit()
-
-    # id of the new just added versioned element
-    ve_id = cursor.lastrowid
-
-    # creating new workflow
-    cursor.execute('''INSERT INTO workflow (workflow_name, ve_id)
-                    VALUES (?, ?)''', (data['workflow_name'], ve_id,))
-
-    conn.commit()
-
-    # id of the new just added workflow
-    workflow_id = cursor.lastrowid
-
     # getting all activities that point to the old workflow
-    cursor.execute("SELECT activity_name, input_relation_id, output_relation_id, ve_id FROM activity WHERE workflow_id = ?", (old_workflow[0],))
+    cursor.execute("SELECT activity_name, input_relation_id, output_relation_id, ve_id FROM activity WHERE workflow_id = ?", (old_workflow_id,))
 
     activities = cursor.fetchall()
 
@@ -1099,9 +1024,10 @@ def delete_connection_prov():
         boxType = activity[0].split("-")[0]
 
         # # adding a attributeRelation to each output type that this activity supports
-        # for outputType in outputTypesSupported[boxType]:
-        #     cursor.execute('''INSERT INTO attributeRelation (attribute_id, relation_id)
-        #         VALUES (?, ?)''', (attributeIds[outputType], output_relation_id,))
+        # for outputType in get_output_types(boxType):
+        #     if outputType in attributeIds:
+        #         cursor.execute('''INSERT INTO attributeRelation (attribute_id, relation_id)
+        #             VALUES (?, ?)''', (attributeIds[outputType], output_relation_id,))
 
         # duplicated_output_relations[old_output_relation[0]] = output_relation_id # mapping old to new ids
 
@@ -1147,13 +1073,12 @@ def check_db():
 
 @bp.route('/boxExecProv', methods=['POST'])
 def box_exec_prov():
+    data = request.json.get('data')
 
     # db_path = os.path.join(os.getcwd(), ".curio", "provenance.db")
     db_path = get_db_path()
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-
-    data = request.json.get('data')
 
     # new workflow execution
     # replicate all activity execution from old workflow execution (except the one related to the activity I'm currently running) and make them point to the new workflow execution
@@ -1637,7 +1562,7 @@ def insert_interaction():
 def create_template_object(folder, filename, code):
     return {
         "id": str(uuid.uuid4()),
-        "type": TYPE_MAP.get(folder, "UNKNOWN"),
+        "type": get_type_for_folder(folder),
         "name": filename.replace(".py", "").replace("_", " "),
         "description": "",
         "accessLevel": "ANY",
@@ -1648,7 +1573,7 @@ def create_template_object(folder, filename, code):
 def generate_templates():
     templates = []
 
-    for folder in TYPE_MAP.keys():
+    for folder in get_template_folders():
         folder_path = os.path.join(get_templates_path(), folder)
 
         if not os.path.isdir(folder_path):
@@ -1686,10 +1611,10 @@ def add_template():
         return jsonify({'error': 'Missing one or more required fields'}), 400
 
     template_type = data['type']
-    if template_type not in FOLDER_MAP:
+    if template_type not in _node_type_registry:
         return jsonify({'error': f"Unknown template type: {template_type}"}), 400
 
-    subfolder = FOLDER_MAP[template_type]
+    subfolder = get_folder_for_type(template_type)
     folder_path = os.path.join(get_templates_path(), subfolder)
     os.makedirs(folder_path, exist_ok=True)
 

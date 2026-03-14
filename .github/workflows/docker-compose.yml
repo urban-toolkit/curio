@@ -78,7 +78,7 @@ jobs:
       - name: 🧪 Run backend unit tests
         run: |
           docker compose -p curio exec curio \
-            python -m unittest discover -s utk_curio/backend/tests -t . -p "test_*.py" -v
+            python -m pytest utk_curio/backend/tests/ -v --ignore=utk_curio/backend/tests/test_frontend
 
       - name: 🧪 Run sandbox unit tests
         run: |
@@ -135,8 +135,8 @@ jobs:
 
       - name: Jest frontend unit tests
         run: |
-          docker build --target frontend_builder -t curio-frontend-test .
-          docker run --rm curio-frontend-test npm test
+          docker compose -p curio exec curio \
+            python curio.py test frontend
 
       - name: 🧹 Tear down containers
         run: docker compose -p curio down

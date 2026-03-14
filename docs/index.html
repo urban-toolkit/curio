@@ -14,6 +14,9 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/typescript.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/yaml.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/sql.min.js"></script>
   <style>
     :root {
       --sidebar-w: 280px;
@@ -654,6 +657,10 @@
     <div class="nav-item" data-page="11" onclick="navigateTo('11')">
       <span class="nav-num">11</span> Vis Library Plugin
     </div>
+    <div class="nav-section">Backend</div>
+    <div class="nav-item" data-page="12" onclick="navigateTo('12')">
+      <span class="nav-num">12</span> Provenance API
+    </div>
     <div class="nav-section">Testing</div>
     <div class="nav-item" data-page="e2e" onclick="navigateTo('e2e')">
       <span class="nav-num">&bull;</span> E2E Tests
@@ -661,9 +668,12 @@
     <div class="nav-item" data-page="jest" onclick="navigateTo('jest')">
       <span class="nav-num">&bull;</span> Jest Unit Tests
     </div>
+    <div class="nav-item" data-page="prov-tests" onclick="navigateTo('prov-tests')">
+      <span class="nav-num">&bull;</span> Provenance Tests
+    </div>
   </nav>
   <div class="sidebar-footer">
-    <span class="version">v11 &middot; Feb 2026</span>
+    <span class="version">v12 &middot; Feb 2026</span>
     <button class="theme-toggle" id="themeBtn" onclick="toggleTheme()">&#9789; Dark</button>
   </div>
 </aside>
@@ -1894,6 +1904,8 @@ Generates Trill workflow specification JSON from the current node/edge state.
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | \`/live\` | GET | Health check |
+| \`/node-types\` | GET | Return current node-type registry |
+| \`/node-types\` | POST | Register node-type metadata from frontend registry |
 | \`/get?fileName=X\` | GET | Fetch data file |
 | \`/get-preview?fileName=X\` | GET | Fetch data preview |
 | \`/processPythonCode\` | POST | Execute Python code |
@@ -1904,7 +1916,32 @@ Generates Trill workflow specification JSON from the current node/edge state.
 | \`/toLayers\` | POST | Convert GeoJSON to UTK layers |
 | \`/boxExecProv\` | POST | Log box execution provenance |
 | \`/openAI\` | POST | Send LLM request |
-| \`/checkUsageOpenAI\` | POST | Check LLM rate limit |`;
+| \`/checkUsageOpenAI\` | POST | Check LLM rate limit |
+
+---
+
+## Node-Type Registry Sync
+
+The frontend node registry is the single source of truth for box type metadata. On app startup, \`src/index.tsx\` sends the full registry to the backend via \`POST /node-types\`. The backend stores it in memory and uses it for provenance logging, template folder resolution, and connection validation.
+
+### \`POST /node-types\`
+
+\`\`\`json
+{
+  "nodeTypes": {
+    "DATA_LOADING": { "inputTypes": [], "outputTypes": ["DATAFRAME", "GEODATAFRAME", "RASTER"] },
+    "VIS_VEGA": { "inputTypes": ["DATAFRAME"], "outputTypes": ["DATAFRAME"] }
+  }
+}
+\`\`\`
+
+### \`GET /node-types\`
+
+Returns the current in-memory registry as a JSON object keyed by BoxType.
+
+### Graceful Fallback
+
+The backend initializes with hardcoded defaults. Once the frontend sends \`POST /node-types\`, the defaults are overwritten. This ensures zero downtime if the backend starts before the frontend.`;
 
 PAGES['11'] = `# Visualization Library Plugin Guide
 
@@ -2036,6 +2073,467 @@ Observable notebooks can be embedded via their runtime — import \`@observableh
 4. (Optional) Create grammar adapter
 5. Register descriptor in \`descriptors.ts\`
 6. Verify: palette, connections, rendering, interactions`;
+
+PAGES['12'] = `# Provenance API
+
+**Source file:** \`utk_curio/backend/app/api/routes.py\`
+
+**Database:** SQLite — \`{CURIO_LAUNCH_CWD}/.curio/provenance.db\`
+
+**Schema definition:** \`utk_curio/backend/create_provenance_db.py\`
+
+The provenance API records a complete version history of workflow evolution and execution. Every structural change (adding a box, removing a connection) produces a new immutable workflow version, preserving the full audit trail. Execution-time events (box runs, visualizations, interactions) are appended to this lineage, enabling replay and analysis of the entire workflow lifecycle.
+
+---
+
+## Versioning Model
+
+All structural mutations follow a copy-on-write pattern:
+
+1. Look up the latest \`workflow\` row for the given name.
+2. Increment the \`version\` number.
+3. Insert a new \`versionedElement\` pointing back to the previous one.
+4. Insert a new \`workflow\` row pointing to the new versioned element.
+5. Duplicate all activities from the old workflow into the new one (with exclusions or modifications depending on the operation).
+
+This logic is encapsulated in the \`create_new_workflow_version(conn, workflow_name)\` helper, which returns \`(old_workflow_id, new_workflow_id)\` and is used by \`newBoxProv\`, \`deleteBoxProv\`, \`newConnectionProv\`, and \`deleteConnectionProv\`.
+
+\`\`\`
+version 1.0 ──► versionedElement_1 ──► workflow_1
+                        ▲
+version 2.0 ──► versionedElement_2 ──► workflow_2
+                (previous_ve_id = 1)
+\`\`\`
+
+---
+
+## Database Schema
+
+| Table | Primary Key | Description |
+|-------|------------|-------------|
+| \`user\` | \`user_id\` | Application users (name, type, IP) |
+| \`versionTransaction\` | \`transaction_id\` | Versioning transactions (date, user) |
+| \`version\` | \`version_id\` | Sequential version numbers |
+| \`versionedElement\` | \`ve_id\` | Version chain nodes linking to their predecessor via \`previous_ve_id\` |
+| \`workflow\` | \`workflow_id\` | Named workflow snapshots, each pointing to a versioned element |
+| \`attribute\` | \`attribute_id\` | Data type definitions (DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON) |
+| \`relation\` | \`relation_id\` | Named input/output relations for activities |
+| \`attributeRelation\` | \`ar_id\` | Maps which data type attributes a relation supports |
+| \`activity\` | \`activity_id\` | Box instances within a workflow version, with input/output relation references |
+| \`workflowExecution\` | \`workflowexec_id\` | Records of workflow-level execution runs |
+| \`relationInstance\` | \`re_id\` | Concrete data-flow instances of relations per execution |
+| \`attributeValue\` | \`av_id\` | Data type presence flags (\`"0"\` or \`"1"\`) per relation instance |
+| \`activityExecution\` | \`activityexec_id\` | Records of individual box executions with source code and timing |
+| \`visualization\` | \`vis_id\` | Visualization metadata linked to activity executions |
+| \`interaction\` | \`int_id\` | User interaction events linked to visualizations |
+| \`attributeValueChange\` | \`avc_id\` | Historical record of attribute value modifications triggered by interactions |
+
+### Seed Data
+
+On database creation or truncation, five attribute rows are inserted:
+
+| \`attribute_id\` | \`attribute_name\` | \`attribute_type\` |
+|----------------|-----------------|-----------------|
+| 1 | DATAFRAME | Data |
+| 2 | GEODATAFRAME | Data |
+| 3 | VALUE | Data |
+| 4 | LIST | Data |
+| 5 | JSON | Data |
+
+---
+
+## Endpoints
+
+### \`POST /saveUserProv\`
+
+Registers a user in the provenance database. If a user with the same \`user_name\` already exists, the request succeeds but no duplicate row is inserted.
+
+**Request body:**
+
+\`\`\`json
+{
+  "user": {
+    "user_name": "alice",
+    "user_type": "programmer",
+    "user_IP": "127.0.0.1"
+  }
+}
+\`\`\`
+
+**Response:** \`200\` (empty body)
+
+**Tables modified:** \`user\` (INSERT, conditional)
+
+---
+
+### \`POST /saveWorkflowProv\`
+
+Creates a new workflow with version \`1.0\`. Inserts one row into each of \`version\`, \`versionedElement\`, and \`workflow\`.
+
+**Request body:**
+
+\`\`\`json
+{
+  "workflow": "my_workflow"
+}
+\`\`\`
+
+**Response:** \`200\` (empty body)
+
+**Tables modified:** \`version\`, \`versionedElement\`, \`workflow\`
+
+---
+
+### \`POST /newBoxProv\`
+
+Records the addition of a box (activity) to a workflow. Creates a new workflow version, inserts an output relation for the activity, links it to the appropriate data type attributes via \`attributeRelation\`, creates the new activity row, and duplicates all existing activities from the previous version into the new one.
+
+**Request body:**
+
+\`\`\`json
+{
+  "data": {
+    "workflow_name": "my_workflow",
+    "activity_name": "COMPUTATION_ANALYSIS-nodeId123"
+  }
+}
+\`\`\`
+
+The \`activity_name\` follows the convention \`{BoxType}-{nodeId}\`. The \`BoxType\` prefix is used to look up output types from the node-type registry.
+
+**Response:** \`200\` (empty body)
+
+**Tables modified:** \`version\`, \`versionedElement\`, \`workflow\`, \`relation\`, \`attributeRelation\`, \`activity\`
+
+---
+
+### \`POST /deleteBoxProv\`
+
+Records the removal of a box. Creates a new workflow version and duplicates all activities except the one matching \`activity_name\`.
+
+**Request body:**
+
+\`\`\`json
+{
+  "data": {
+    "workflow_name": "my_workflow",
+    "activity_name": "COMPUTATION_ANALYSIS-nodeId123"
+  }
+}
+\`\`\`
+
+**Response:** \`200\` (empty body)
+
+**Tables modified:** \`version\`, \`versionedElement\`, \`workflow\`, \`activity\`
+
+---
+
+### \`POST /newConnectionProv\`
+
+Records the addition of a connection between two boxes. Creates a new workflow version, duplicates all activities, then sets the target activity's \`input_relation_id\` to the source activity's \`output_relation_id\`.
+
+**Request body:**
+
+\`\`\`json
+{
+  "data": {
+    "workflow_name": "my_workflow",
+    "sourceNodeType": "DATA_LOADING",
+    "sourceNodeId": "abc123",
+    "targetNodeType": "COMPUTATION_ANALYSIS",
+    "targetNodeId": "def456"
+  }
+}
+\`\`\`
+
+Activity names are constructed internally as \`{sourceNodeType}-{sourceNodeId}\` and \`{targetNodeType}-{targetNodeId}\`.
+
+**Response:**
+
+- \`200\` — \`{ "message": "New workflow version created successfully.", "new_workflow_id": <int> }\`
+- \`400\` — Missing required keys, or source activity not found
+- \`404\` — Workflow not found
+- \`500\` — Database error
+
+**Tables modified:** \`version\`, \`versionedElement\`, \`workflow\`, \`activity\` (INSERT + UPDATE)
+
+---
+
+### \`POST /deleteConnectionProv\`
+
+Records the removal of a connection. Creates a new workflow version, duplicates all activities, then sets the target activity's \`input_relation_id\` to \`NULL\`.
+
+**Request body:**
+
+\`\`\`json
+{
+  "data": {
+    "workflow_name": "my_workflow",
+    "targetNodeType": "COMPUTATION_ANALYSIS",
+    "targetNodeId": "def456"
+  }
+}
+\`\`\`
+
+**Response:** \`200\` (empty body)
+
+**Tables modified:** \`version\`, \`versionedElement\`, \`workflow\`, \`activity\` (INSERT + UPDATE)
+
+---
+
+### \`POST /boxExecProv\`
+
+Records a box execution. This is the most complex provenance endpoint. It:
+
+1. Looks up the most recent \`workflowExecution\` for the workflow.
+2. Creates a new \`workflowExecution\` row (optionally linked to the latest interaction if \`interaction: true\`).
+3. Creates \`relationInstance\` rows for both the input and output relations of the activity.
+4. Inserts \`attributeValue\` rows for each data type attribute linked to those relations, recording presence (\`"1"\`) or absence (\`"0"\`) based on the submitted \`types_input\` and \`types_output\`.
+5. Duplicates all activity executions from the previous workflow execution (except the current activity).
+6. Inserts a new \`activityExecution\` row with timing and source code.
+
+**Request body:**
+
+\`\`\`json
+{
+  "data": {
+    "workflow_name": "my_workflow",
+    "activity_name": "COMPUTATION_ANALYSIS-nodeId123",
+    "activityexec_start_time": "2026-01-01T10:00:00",
+    "activityexec_end_time": "2026-01-01T10:01:00",
+    "activity_source_code": "result = df.sum()",
+    "types_input": {
+      "DATAFRAME": 1,
+      "GEODATAFRAME": 0,
+      "VALUE": 0,
+      "LIST": 0,
+      "JSON": 0
+    },
+    "types_output": {
+      "DATAFRAME": 1,
+      "GEODATAFRAME": 0,
+      "VALUE": 0,
+      "LIST": 0,
+      "JSON": 0
+    },
+    "interaction": false
+  }
+}
+\`\`\`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| \`workflow_name\` | string | Name of the workflow |
+| \`activity_name\` | string | \`{BoxType}-{nodeId}\` identifier |
+| \`activityexec_start_time\` | string | ISO 8601 start timestamp |
+| \`activityexec_end_time\` | string | ISO 8601 end timestamp |
+| \`activity_source_code\` | string | The Python code that was executed |
+| \`types_input\` | object | Attribute name to \`0\\|1\` presence map for input data types |
+| \`types_output\` | object | Attribute name to \`0\\|1\` presence map for output data types |
+| \`interaction\` | boolean | If \`true\`, links the execution to the most recent interaction record |
+
+**Response:**
+
+- \`200\` (empty body)
+- \`400\` — No interaction record found (when \`interaction: true\`)
+
+**Tables modified:** \`workflowExecution\`, \`relationInstance\`, \`attributeValue\`, \`activityExecution\`
+
+---
+
+### \`POST /getBoxGraph\`
+
+Returns the execution history for a specific activity as a graph of execution nodes.
+
+**Request body:**
+
+\`\`\`json
+{
+  "data": {
+    "workflow_name": "my_workflow",
+    "activity_name": "COMPUTATION_ANALYSIS-nodeId123"
+  }
+}
+\`\`\`
+
+**Response:** \`200\`
+
+\`\`\`json
+{
+  "graph": [
+    {
+      "id": 1,
+      "code": "result = df.sum()",
+      "inputs": ["DATAFRAME"],
+      "outputs": ["DATAFRAME", "VALUE"]
+    },
+    {
+      "id": 2,
+      "code": "result = df.mean()",
+      "inputs": ["DATAFRAME"],
+      "outputs": ["DATAFRAME"]
+    }
+  ]
+}
+\`\`\`
+
+Each graph node represents one execution of the activity. The \`inputs\` and \`outputs\` arrays contain only attribute names with value \`"1"\` (data types that were actually present during that execution).
+
+**Tables read:** \`workflow\`, \`activity\`, \`activityExecution\`, \`attributeValue\`, \`attribute\`
+
+---
+
+### \`POST /insert_visualization\`
+
+Registers a visualization for the most recent execution of an activity. Deduplicates by keeping only the first visualization per \`activityexec_id\`.
+
+**Request body:**
+
+\`\`\`json
+{
+  "data": {
+    "activity_name": "VIS_VEGA-nodeId123"
+  }
+}
+\`\`\`
+
+**Response:**
+
+- \`201\` — \`{ "message": "Visualization registered successfully" }\`
+- \`400\` — No execution found for the activity
+- \`404\` — Activity not found
+- \`500\` — Database error
+
+**Tables modified:** \`visualization\` (INSERT, DELETE for deduplication)
+
+---
+
+### \`POST /insert_interaction\`
+
+Records a user interaction event linked to the most recent visualization of an activity.
+
+**Request body:**
+
+\`\`\`json
+{
+  "data": {
+    "activity_name": "VIS_VEGA-nodeId123",
+    "int_time": "2026-01-01T12:00:00"
+  }
+}
+\`\`\`
+
+**Response:**
+
+- \`201\` — \`{ "message": "Visualization successfully recorded" }\`
+- \`400\` — No execution or no visualization found
+- \`404\` — Activity not found
+- \`500\` — Database error
+
+**Tables modified:** \`interaction\`
+
+---
+
+### \`POST /insert_attribute_value_change\`
+
+Records a historical change to an attribute value, capturing the old value and linking it to the most recent interaction.
+
+**Request body:**
+
+\`\`\`json
+{
+  "data": {
+    "activity_name": "VIS_VEGA-nodeId123"
+  }
+}
+\`\`\`
+
+**Response:**
+
+- \`201\` — \`{ "message": "Value change successfully recorded" }\`
+- \`404\` — Activity not found, or no interaction record exists
+- \`500\` — Database error
+
+**Tables modified:** \`attributeValueChange\`
+
+---
+
+### \`GET /checkDB\`
+
+Health check for the provenance database. Opens a connection and returns immediately.
+
+**Response:** \`200\` — \`"OK"\`
+
+---
+
+### \`GET /truncateDBProv\`
+
+Deletes all rows from every table in the provenance database and re-seeds the five default \`ATTRIBUTE\` rows. Used for development and testing reset.
+
+**Response:** \`200\` (empty body)
+
+**Tables modified:** All tables (DELETE), then \`attribute\` (INSERT)
+
+---
+
+## Helper Functions
+
+### \`get_db_path() -> str\`
+
+Returns the absolute path to the provenance database file. Reads \`CURIO_LAUNCH_CWD\` from the environment (falling back to \`os.getcwd()\`) and appends \`.curio/provenance.db\`.
+
+### \`create_new_workflow_version(conn, workflow_name) -> (int, int)\`
+
+Creates a new versioned workflow snapshot from the latest one with the given name. Internally:
+
+1. Fetches the most recent workflow row.
+2. Traverses to its \`versionedElement\` and \`version\`.
+3. Increments the version number by \`1.0\`.
+4. Inserts new \`version\`, \`versionedElement\`, and \`workflow\` rows.
+5. Restores the connection's original \`row_factory\` before returning.
+
+Returns \`(old_workflow_id, new_workflow_id)\`.
+
+### \`get_output_types(box_type: str) -> list\`
+
+Returns the list of output type names for a box type from the in-memory node-type registry. Returns \`[]\` if the box type is not registered.
+
+### \`get_input_types(box_type: str) -> list\`
+
+Returns the list of input type names for a box type from the in-memory node-type registry.
+
+---
+
+## Frontend Integration
+
+The provenance API is called from the frontend via the \`ProvenanceProvider\` context (\`src/providers/ProvenanceProvider.tsx\`) and the \`PythonInterpreter\` class. Key integration points:
+
+| Frontend Action | API Call |
+|----------------|----------|
+| User logs in | \`POST /saveUserProv\` |
+| Workflow created | \`POST /saveWorkflowProv\` |
+| Box added to canvas | \`POST /newBoxProv\` |
+| Box deleted from canvas | \`POST /deleteBoxProv\` |
+| Edge drawn between boxes | \`POST /newConnectionProv\` |
+| Edge removed | \`POST /deleteConnectionProv\` |
+| Box executed (play button) | \`POST /boxExecProv\` |
+| Provenance graph requested | \`POST /getBoxGraph\` |
+| Visualization rendered | \`POST /insert_visualization\` |
+| User interacts with visualization | \`POST /insert_interaction\` |
+| Attribute value changes from interaction | \`POST /insert_attribute_value_change\` |
+| Database reset (development) | \`GET /truncateDBProv\` |
+
+---
+
+## Activity Name Convention
+
+All provenance endpoints use a consistent naming scheme for activities:
+
+\`\`\`
+{BoxType}-{nodeId}
+\`\`\`
+
+Where \`BoxType\` is one of the registered node types (e.g., \`DATA_LOADING\`, \`COMPUTATION_ANALYSIS\`, \`VIS_VEGA\`) and \`nodeId\` is the unique ReactFlow node identifier. The box type prefix is extracted via \`activity_name.split("-")[0]\` for registry lookups.`;
 
 PAGES['e2e'] = `# End-to-End Tests
 
@@ -2186,6 +2684,176 @@ npx jest src/tests/registry/types.test.ts --verbose
 | \`providers/*\` | No-op context values |
 | \`reactflow\` | Position constants, stubbed store |`;
 
+PAGES['prov-tests'] = `# Provenance Unit Tests
+
+**Source directory:** \`utk_curio/backend/tests/test_prov/\`
+
+**Framework:** pytest 8.3 + Flask test client
+
+**Scope:** Unit tests for the backend provenance API covering the complete lifecycle of workflow versioning, box management, connection tracking, execution recording, visualization and interaction logging, and database maintenance.
+
+---
+
+## Running
+
+\`\`\`bash
+# Full provenance suite
+pytest utk_curio/backend/tests/test_prov/ -v
+
+# Specific test file
+pytest utk_curio/backend/tests/test_prov/test_box_prov.py -v
+
+# With coverage
+pytest utk_curio/backend/tests/test_prov/ --cov=utk_curio.backend.app.api.routes -v
+
+# All backend tests (provenance + existing)
+pytest utk_curio/backend/tests/ -v --ignore=utk_curio/backend/tests/test_frontend
+\`\`\`
+
+---
+
+## Database Isolation
+
+Each test receives a **fresh, disposable SQLite database** created via pytest's \`tmp_path\` fixture. The \`prov_db\` fixture:
+
+1. Creates a new \`.db\` file in a temporary directory
+2. Initializes the full provenance schema via \`create_provenance_db.initialize_db()\`
+3. Seeds the five default \`ATTRIBUTE\` rows (\`DATAFRAME\`, \`GEODATAFRAME\`, \`VALUE\`, \`LIST\`, \`JSON\`)
+4. Monkeypatches \`routes.get_db_path\` to return the temporary path
+
+This guarantees complete test isolation with no side effects on any real database.
+
+---
+
+## File Layout
+
+\`\`\`
+utk_curio/backend/tests/test_prov/
+  __init__.py
+  conftest.py                              Shared fixtures and utilities
+  test_create_new_workflow_version.py      Helper function (direct, no HTTP)
+  test_workflow_prov.py                    POST /saveUserProv, POST /saveWorkflowProv
+  test_box_prov.py                         POST /newBoxProv, POST /deleteBoxProv
+  test_connection_prov.py                  POST /newConnectionProv, POST /deleteConnectionProv
+  test_box_exec_prov.py                    POST /boxExecProv
+  test_get_box_graph.py                    POST /getBoxGraph
+  test_vis_interaction_prov.py             POST /insert_visualization, /insert_interaction,
+                                           /insert_attribute_value_change
+  test_db_prov.py                          GET /checkDB, GET /truncateDBProv
+\`\`\`
+
+---
+
+## Fixtures
+
+| Fixture | Scope | Description |
+|---------|-------|-------------|
+| \`prov_db\` | function | Fresh provenance database, seeds attributes, patches \`get_db_path\` |
+| \`client\` | function | Flask test client from session-scoped app |
+| \`seeded_workflow\` | function | Creates workflow \`"test_wf"\` via \`POST /saveWorkflowProv\` |
+| \`seeded_box\` | function | Adds \`COMPUTATION_ANALYSIS-box1\` activity |
+| \`two_boxes\` | function | Adds \`DATA_LOADING-src1\` and \`COMPUTATION_ANALYSIS-tgt1\` |
+| \`executed_box\` | function | Executes the seeded box via \`POST /boxExecProv\` |
+
+---
+
+## Test Suites (46 tests)
+
+### \`test_create_new_workflow_version.py\` — Helper Function (6 tests)
+
+| Test | Description |
+|------|-------------|
+| \`test_returns_old_and_new_ids\` | Returns a tuple of two distinct integer workflow IDs |
+| \`test_version_increments\` | Version number advances from \`"1.0"\` to \`"2.0"\` |
+| \`test_multiple_increments\` | Three consecutive calls produce versions \`"1.0"\`, \`"2.0"\`, \`"3.0"\` |
+| \`test_new_workflow_row_created\` | The new workflow ID maps to a row with the correct name |
+| \`test_versioned_element_chain\` | \`versionedElement.previous_ve_id\` points to the old workflow's VE |
+| \`test_preserves_row_factory\` | \`conn.row_factory = sqlite3.Row\` is preserved after the call |
+
+### \`test_workflow_prov.py\` — User and Workflow Creation (5 tests)
+
+| Test | Description |
+|------|-------------|
+| \`test_inserts_new_user\` | Inserts a user row with correct name, type, IP |
+| \`test_duplicate_user_not_inserted\` | Same user name twice produces exactly one row |
+| \`test_different_users_both_inserted\` | Two distinct names produce two rows |
+| \`test_creates_version_ve_workflow\` | Creates version \`"1.0"\`, versioned element, and workflow |
+| \`test_two_workflows_independent\` | Two workflows get independent version chains |
+
+### \`test_box_prov.py\` — Box Addition and Deletion (7 tests)
+
+| Test | Description |
+|------|-------------|
+| \`test_creates_new_workflow_version\` | Adding a box creates a second workflow version |
+| \`test_activity_inserted\` | New activity row has the correct name |
+| \`test_output_relation_created\` | Output relation named \`"{activity}_out"\` is inserted |
+| \`test_attribute_relations_created\` | \`attributeRelation\` rows link to output attributes |
+| \`test_old_activities_duplicated\` | Previous activities are carried to the new version |
+| \`test_excludes_deleted\` | Deleted activity is excluded from the new version |
+| \`test_delete_only_activity\` | Deleting the sole activity leaves zero activities |
+
+### \`test_connection_prov.py\` — Connection Management (5 tests)
+
+| Test | Description |
+|------|-------------|
+| \`test_sets_target_input_relation\` | Target's \`input_relation_id\` equals source's \`output_relation_id\` |
+| \`test_missing_keys_returns_400\` | Omitting required keys returns HTTP 400 |
+| \`test_nonexistent_workflow_returns_error\` | Unknown workflow returns error status |
+| \`test_nonexistent_source_returns_400\` | Unknown source activity returns HTTP 400 |
+| \`test_sets_target_input_to_null\` | Delete connection sets \`input_relation_id\` to NULL |
+
+### \`test_box_exec_prov.py\` — Box Execution (7 tests)
+
+| Test | Description |
+|------|-------------|
+| \`test_creates_workflow_execution\` | Inserts a \`workflowExecution\` row |
+| \`test_creates_activity_execution\` | Inserts an \`activityExecution\` row |
+| \`test_source_code_stored\` | \`activity_source_code\` matches submitted code |
+| \`test_relation_instances_created\` | At least two \`relationInstance\` rows created |
+| \`test_attribute_values_recorded\` | \`attributeValue\` rows match submitted types |
+| \`test_multiple_executions_increment\` | Two runs produce at least two execution rows |
+| \`test_interaction_links\` | \`interaction: true\` links \`workflowExecution.int_id\` |
+
+### \`test_get_box_graph.py\` — Execution Graph (3 tests)
+
+| Test | Description |
+|------|-------------|
+| \`test_returns_graph\` | Returns \`"graph"\` array with matching \`"code"\` |
+| \`test_multiple_executions\` | Two runs produce two graph entries |
+| \`test_type_mappings\` | Graph includes \`"DATAFRAME"\` in inputs/outputs |
+
+### \`test_vis_interaction_prov.py\` — Visualization, Interaction, Attribute Change (9 tests)
+
+| Test | Description |
+|------|-------------|
+| \`test_creates_visualization_row\` | Returns 201, inserts \`visualization\` row |
+| \`test_visualization_linked\` | \`activityexec_id\` matches latest execution |
+| \`test_no_execution_error\` | No execution produces error status |
+| \`test_creates_interaction_row\` | Returns 201, inserts \`interaction\` row |
+| \`test_interaction_linked\` | \`vis_id\` matches latest visualization |
+| \`test_no_visualization_error\` | No visualization produces error status |
+| \`test_records_value_change\` | Inserts \`attributeValueChange\` row |
+| \`test_has_old_value\` | \`old_value\` column populated |
+| \`test_no_interaction_404\` | No interaction produces HTTP 404 |
+
+### \`test_db_prov.py\` — Database Health and Maintenance (4 tests)
+
+| Test | Description |
+|------|-------------|
+| \`test_returns_ok\` | \`GET /checkDB\` returns 200 with \`"OK"\` |
+| \`test_clears_all_tables\` | Truncation removes all workflow/version rows |
+| \`test_reseeds_attributes\` | Five attribute rows present after truncation |
+| \`test_truncate_idempotent\` | Double truncation still yields five attributes |
+
+---
+
+## CI Integration
+
+\`\`\`yaml
+- name: Run backend unit tests
+  run: docker compose -p curio exec curio python -m pytest utk_curio/backend/tests/ -v --ignore=utk_curio/backend/tests/test_frontend
+\`\`\``;
+
 const PAGE_META = {
   'welcome': { title: 'Home', section: '' },
   '01': { title: 'Architecture Overview', section: 'Architecture' },
@@ -2199,8 +2867,10 @@ const PAGE_META = {
   '09': { title: 'Components', section: 'UI & Services' },
   '10': { title: 'Services & Utilities', section: 'UI & Services' },
   '11': { title: 'Vis Library Plugin Guide', section: 'Guides' },
+  '12': { title: 'Provenance API', section: 'Backend' },
   'e2e': { title: 'E2E Tests', section: 'Testing' },
   'jest': { title: 'Jest Unit Tests', section: 'Testing' },
+  'prov-tests': { title: 'Provenance Tests', section: 'Testing' },
 };
 
 const WELCOME_CARDS = [
@@ -2208,7 +2878,7 @@ const WELCOME_CARDS = [
   { id: '03', num: '03', title: 'Registry', desc: 'BoxDescriptor, registration, all 15 node types' },
   { id: '04', num: '04', title: 'Box Adapters', desc: 'BoxAdapter, HandleDef, lifecycle hooks, UI components' },
   { id: '06', num: '06', title: 'UniversalBox', desc: 'The single component rendering all box types' },
-  { id: '07', num: '07', title: 'Hooks', desc: 'useBoxState, useVega, useUTK, useTableData' },
+  { id: '12', num: '12', title: 'Provenance API', desc: 'Versioning model, database schema, all provenance endpoints' },
   { id: '11', num: '11', title: 'Plugin Guide', desc: 'How to integrate D3, Observable, or any custom library' },
 ];
 

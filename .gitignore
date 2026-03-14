@@ -23,7 +23,6 @@ flask_cache/
 
 .curio/
 simple_example
-templates/
 
 logs/
 instance/

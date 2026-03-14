@@ -238,6 +238,67 @@ def start_frontend(force_rebuild=False, no_server=False):
     os.chdir(original_dir)
     return process
 
+def run_frontend_tests():
+    """Run Jest unit tests for the frontend."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    test_dir = os.path.join(script_dir, "frontend", "urban-workflows")
+
+    if not os.path.exists(test_dir):
+        log_error(f"[Frontend] Test directory not found: {test_dir}")
+        sys.exit(1)
+
+    log_info("[Frontend] Running Jest unit tests...", COLOR_FRONTEND, 0)
+    result = subprocess.run(
+        ["npm", "run", "test"],
+        cwd=test_dir,
+        shell=shell_required,
+    )
+    sys.exit(result.returncode)
+
+
+def run_backend_coverage():
+    """Run backend pytest with coverage for utk_curio.backend.app (HTML under ./htmlcov).
+
+    Sets CURIO_E2E_USE_EXISTING=1 so e2e tests may attach to already-running services.
+    """
+    try:
+        import pytest_cov  # noqa: F401
+    except ImportError:
+        log_error("pytest-cov is not installed. Run: pip install pytest-cov")
+        sys.exit(1)
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.abspath(os.path.join(script_dir, ".."))
+    tests_dir = os.path.join(project_root, "utk_curio", "backend", "tests")
+    htmlcov = os.path.join(project_root, "htmlcov")
+
+    if not os.path.isdir(tests_dir):
+        log_error(f"Backend tests not found: {tests_dir}")
+        sys.exit(1)
+
+    log_info("[Backend] Running pytest with coverage...", COLOR_BACKEND, 0)
+    env = os.environ.copy()
+    sep = os.pathsep
+    prev = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = project_root + (sep + prev if prev else "")
+    env["CURIO_E2E_USE_EXISTING"] = "1"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            tests_dir,
+            "--cov=utk_curio.backend.app",
+            "--cov-report=term-missing",
+            f"--cov-report=html:{htmlcov}",
+        ],
+        cwd=project_root,
+        env=env,
+    )
+    sys.exit(result.returncode)
+
+
 def prepare_backend_database(force=False):
     # script_dir = os.path.dirname(os.path.abspath(__file__))
     # backend_dir = os.path.join(script_dir, "backend")
@@ -384,6 +445,8 @@ def main():
         {command_prefix} start                       # Start all servers (backend, sandbox, frontend)
         {command_prefix} start backend               # Start only the backend (localhost:5002)
         {command_prefix} start sandbox               # Start only the sandbox (localhost:2000)
+        {command_prefix} test frontend               # Run frontend Jest tests
+        {command_prefix} coverage                    # Backend pytest + coverage (htmlcov/)
         {command_prefix} --verbose                   # Verbosity level (e.g., 0=silent, 1=normal, 2=debug)
         {command_prefix} --force-rebuild             # Re-build the frontend (if dev mode)
         {command_prefix} --force-db-init             # Re-initialize the backend database (if dev mode)
@@ -391,7 +454,10 @@ def main():
     )
     
     parser.add_argument(
-        "command", nargs="?", choices=["start"], help="Command to execute (start)"
+        "command",
+        nargs="?",
+        choices=["start", "test", "coverage"],
+        help="Command to execute (start, test, coverage)",
     )
     parser.add_argument(
         "server", nargs="?", default="all", choices=["all", "frontend", "backend", "sandbox"],
@@ -456,6 +522,19 @@ def main():
     else:
         args.force_rebuild = False
         args.force_db_init = False
+
+    if args.command == "test":
+        if args.server == "frontend":
+            run_frontend_tests()
+        else:
+            log_error(f"No tests available for '{args.server}'. Available: frontend")
+            sys.exit(1)
+
+    if args.command == "coverage":
+        if args.server not in ("all", "backend"):
+            log_error("coverage only runs backend tests; use: curio coverage  or  curio coverage backend")
+            sys.exit(1)
+        run_backend_coverage()
 
     if args.command == "start":
         if args.server == "all":

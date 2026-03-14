@@ -9,6 +9,24 @@ loader.config({ monaco });
 (window as unknown as { monaco: typeof monaco }).monaco = monaco;
 
 import './registry';
+import { getAllNodeTypes } from './registry';
+
+// Send the frontend node-type registry to the backend so it can use it
+// for provenance, templates, and connection validation without hardcoded dicts.
+(() => {
+  const nodeTypes: Record<string, { inputTypes: string[]; outputTypes: string[] }> = {};
+  for (const desc of getAllNodeTypes()) {
+    nodeTypes[desc.id] = {
+      inputTypes: desc.inputPorts.flatMap(p => p.types),
+      outputTypes: desc.outputPorts.flatMap(p => p.types),
+    };
+  }
+  fetch(process.env.BACKEND_URL + '/node-types', {
+    method: 'POST',
+    headers: { 'Content-type': 'application/json; charset=UTF-8' },
+    body: JSON.stringify({ nodeTypes }),
+  }).catch(() => {});
+})();
 
 import FlowProvider from "./providers/FlowProvider";
 import TemplateProvider from "./providers/TemplateProvider";
