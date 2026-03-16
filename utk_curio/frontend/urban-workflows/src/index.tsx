@@ -10,9 +10,35 @@ import { ReactFlowProvider } from "reactflow";
 import ProvenanceProvider from "./providers/ProvenanceProvider";
 import LLMProvider from "./providers/LLMProvider";
 
+const InteractionLogger: React.FC = () => {
+  React.useEffect(() => {
+    const handler = (event: Event) => {
+      const target = event.target as HTMLElement | null;
+      const buttonLike = target?.closest("button, [role='button'], a");
+      if (!buttonLike) return;
+      const el = buttonLike as HTMLElement;
+      const label =
+        el.getAttribute("aria-label") ||
+        el.innerText.trim() ||
+        el.id ||
+        "(unlabeled)";
+      console.log("[Curio][UI] click", {
+        label,
+        id: el.id,
+        classes: el.className,
+        path: window.location.pathname,
+      });
+    };
+    document.addEventListener("click", handler, true);
+    return () => document.removeEventListener("click", handler, true);
+  }, []);
+  return null;
+};
+
 const App: React.FC = () => {
   return (
     <ReactFlowProvider>
+      <InteractionLogger />
       <LLMProvider>
         <ProvenanceProvider>
           <UserProvider>

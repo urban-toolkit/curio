@@ -1,6 +1,7 @@
-from flask import Flask, request, current_app
+from flask import Flask, request, current_app, g
 import os
 import logging
+import time
 from logging.handlers import RotatingFileHandler
 
 from utk_curio.backend.config import Config as config_class
@@ -25,6 +26,27 @@ def create_app(config_class=config_class):
 
     from utk_curio.backend.app.users import bp as users_bp
     app.register_blueprint(users_bp)
+
+    # Make sure request logs emit even in debug
+    app.logger.setLevel(logging.INFO)
+
+    @app.before_request
+    def _log_request_start():
+        g._req_start_time = time.time()
+
+    @app.after_request
+    def _log_request_end(response):
+        start = getattr(g, "_req_start_time", None)
+        duration_ms = int((time.time() - start) * 1000) if start else -1
+        app.logger.info(
+            "API %s %s -> %s in %sms from %s",
+            request.method,
+            request.path,
+            response.status_code,
+            duration_ms,
+            request.remote_addr,
+        )
+        return response
 
     if not app.debug and not app.testing:
         if app.config['LOG_TO_STDOUT']:

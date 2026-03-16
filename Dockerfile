@@ -49,7 +49,7 @@ RUN npm install && npm run build
 WORKDIR /app
 
 # Expose necessary ports
-EXPOSE 2000 5002 8080
+EXPOSE 2000 5002 8080 5001
 
 # Dockerfile with Health Check
 HEALTHCHECK --start-period=120s --interval=15s --timeout=10s --retries=3 CMD \
