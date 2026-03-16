@@ -60,7 +60,7 @@ COPY --from=frontend_builder /src/utk_curio/frontend/urban-workflows/dist \
     /app/utk_curio/frontend/urban-workflows/dist
 
 # Expose necessary ports
-EXPOSE 2000 5002 8080
+EXPOSE 2000 5002 8080 5001
 
 # Dockerfile with Health Check
 HEALTHCHECK --start-period=180s --interval=30s --timeout=60s --retries=20 CMD \

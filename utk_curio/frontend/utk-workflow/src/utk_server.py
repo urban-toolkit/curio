@@ -8,6 +8,7 @@ import argparse
 import json
 import psutil
 import threading
+import logging
 import requests, zipfile, io
 from flask import Flask, request, send_from_directory, abort, jsonify
 from geopy.geocoders import Nominatim
@@ -22,6 +23,7 @@ from utk.files_interface import *
 from bin.structure import Structure
 
 app = Flask(__name__)
+app.logger.setLevel(logging.INFO)
 geolocator = Nominatim(user_agent="urbantk")
 workdir = './data/'
 grammarpath = './data/grammar.json'
@@ -154,7 +156,9 @@ def serve_files(path):
 
 @app.route('/getGrammar', methods=['GET'])
 def serve_getGrammar():
+    start_time = time.time()
     grammar = {}
+    app.logger.info("getGrammar called from %s", request.remote_addr)
     with open(grammarpath, "r", encoding="utf-8") as f:
         grammar = json.load(f)
 
@@ -163,6 +167,8 @@ def serve_getGrammar():
         status=200,
         mimetype='application/json'
     )
+    duration_ms = int((time.time() - start_time) * 1000)
+    app.logger.info("getGrammar served %d bytes in %d ms", len(response.data or b""), duration_ms)
     return response
 
 @app.route('/getLayer', methods=['GET'])
