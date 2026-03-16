@@ -1,0 +1,246 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "c80722e7-8960-4308-8f1d-90b121acf126",
+        "type": "DATA_LOADING",
+        "x": 38.225362132989176,
+        "y": 82.781219641662,
+        "content": "import rasterio\ntimestamp = 12\nsrc = rasterio.open(f'milan/Milan_Tmrt_2022_203_{timestamp:02d}00D.tif')\n\nreturn src",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "48a522cd-b1d7-4947-98c2-fb50e07f1d82",
+        "type": "DATA_LOADING",
+        "x": 33.682664855133396,
+        "y": 377.73963760742413,
+        "content": "import pandas as pd\nsensor = pd.read_csv('milan/Milan_22.07.2022_Weather_File_UMEP_CSV.csv', delimiter=';')\nreturn sensor",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "289b82c8-734e-4c66-a01d-9b0097f2a7bf",
+        "type": "MERGE_FLOW",
+        "x": 731.6594881952055,
+        "y": 175.37013459436577,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "ea821796-827b-47ac-8104-4bfb4dc5eb63",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": 999.7112510818503,
+        "y": 276.4050298362549,
+        "content": "# Step 4 — Compute UTCI\n\nimport numpy as np\nfrom pythermalcomfort import models\nfrom rasterio.warp import Resampling\n\n\nsrc = arg[0]\nsensor = arg[1]\n\ntimestamp = 12\n\nupscale_factor = 0.25\ndataset = src\ndata = dataset.read(\n    out_shape=(\n        dataset.count,\n        int(dataset.height * upscale_factor),\n        int(dataset.width * upscale_factor),\n    ),\n    resampling=Resampling.nearest,\n    masked=True,\n)\ndata = data.astype(float)\ndata.data[data.data == src.nodatavals[0]] = np.nan\n\nsensor_filtered = sensor[sensor[\"it\"] == timestamp]\ntdb = float(sensor_filtered[\"Td\"].values[0])\nv = float(sensor_filtered[\"Wind\"].values[0])\nrh = float(sensor_filtered[\"RH\"].values[0])\n\n# pythermalcomfort returns a UTCI result object; extract numeric grid explicitly\nutci_result = models.utci(tdb=tdb, tr=data[0], v=v, rh=rh, units=\"SI\")\nutci_grid = np.asarray(getattr(utci_result, \"utci\", utci_result), dtype=float)\n\n# Ensure 2D array for rasterstats\nif utci_grid.ndim == 3 and utci_grid.shape[0] == 1:\n    utci_grid = utci_grid[0]\nif utci_grid.ndim != 2:\n    raise ValueError(f\"UTCI must be 2D, got shape={utci_grid.shape}, ndim={utci_grid.ndim}\")\n\nutci_list = utci_grid.tolist()\nutci_shape = [utci_grid.shape[1], utci_grid.shape[0]]  # [width, height]\n\n# print(f\"UTCI grid shape: {utci_shape}, dtype={utci_grid.dtype}\")\n# utci_list\n\nreturn (utci_list, utci_shape)\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "4b7c2234-d107-4531-b890-5c582efbe444",
+        "type": "DATA_LOADING",
+        "x": 1024.2279540383229,
+        "y": -198.33515130850827,
+        "content": "import geopandas as gpd\ngdf = gpd.read_file('milan/R03_21-11_WGS84_P_SocioDemographics_MILANO_Selected.shp')\nreturn gdf",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "964b380b-559b-4fa3-a9f7-4dcb12878504",
+        "type": "MERGE_FLOW",
+        "x": 1803.4073808341443,
+        "y": 46.618319377579155,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "cdb373b6-1b35-47db-bfd7-fe4ae1e9efdc",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": 2153.7860554743675,
+        "y": 42.133851825757915,
+        "content": "# Step 5 — Zonal Statistics\n\nfrom rasterstats import zonal_stats\nimport numpy as np\n\ndataset = arg[0]\nutci_list = arg[1][0]\nutci_shape = arg[1][1]\ngdf = arg[2]\n\nutci = np.asarray(utci_list, dtype=float)\nshape = utci_shape\n\nif utci.ndim != 2:\n    raise ValueError(f\"Expected 2D UTCI array, got shape={utci.shape}, ndim={utci.ndim}\")\n\ntransform = dataset.transform * dataset.transform.scale(\n    (dataset.width / shape[0]),\n    (dataset.height / shape[1]),\n)\n\n# Avoid nodata warning and make nodata explicit\nnodata_value = -999.0\nutci_for_stats = np.where(np.isnan(utci), nodata_value, utci)\n\njoined = zonal_stats(\n    gdf,\n    utci_for_stats,\n    stats=[\"min\", \"max\", \"mean\", \"median\"],\n    affine=transform,\n    nodata=nodata_value,\n)\n\ngdf[\"mean\"] = [d[\"mean\"] for d in joined]\nresult = gdf.loc[:, [gdf.geometry.name, \"mean\", \"gt_65\"]]\n\n\nreturn result",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "3cc268ee-ec4b-4921-ac69-6d0bb3691cb4",
+        "type": "DATA_CLEANING",
+        "x": 2885.7280934075916,
+        "y": 116.07879257349236,
+        "content": "import geopandas as gpd\n\ngdf = arg\n\nfiltered_gdf = gdf.set_crs(32632)\nfiltered_gdf = filtered_gdf.to_crs(3395)\n\nfiltered_gdf = filtered_gdf[filtered_gdf['mean']>0]\n\nfiltered_gdf.metadata = {\n   'name': 'census'\n}\n\nreturn filtered_gdf",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "35bd75ce-005e-40e1-9172-7caef9ccf046",
+        "type": "DATA_CLEANING",
+        "x": 4297.41287340717,
+        "y": 525.4473148035181,
+        "content": "gdf = arg\nreturn gdf.loc[:, [\"gt_65\"]]",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "e1cf73df-4713-46e8-95d3-ec677378e125",
+        "type": "DATA_POOL",
+        "x": 3570.121391195865,
+        "y": 114.75846698932693,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "6c4aa6a8-45eb-480e-bb3d-3fd54d13325b",
+        "type": "VIS_UTK",
+        "x": 4534.453418311515,
+        "y": -156.40671019807928,
+        "content": "{\n    \"components\": [\n        {\n            \"id\": \"grammar_map\",\n            \"position\": {\n                \"width\": [\n                    1,\n                    12\n                ],\n                \"height\": [\n                    1,\n                    4\n                ]\n            }\n        }\n    ],\n    \"knots\": [],\n    \"ex_knots\": [\n        {\n            \"id\": \"census0\",\n            \"out_name\": \"census\",\n            \"in_name\": \"gt_65\"\n        },\n        {\n            \"id\": \"census1\",\n            \"out_name\": \"census\",\n            \"in_name\": \"mean\"\n        }\n    ],\n    \"grid\": {\n        \"width\": 12,\n        \"height\": 4\n    },\n    \"grammar\": false\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "3334485c-50ad-4adf-9574-45f8a9704860",
+        "type": "VIS_VEGA",
+        "x": 4617.1544578978965,
+        "y": -518.297606871381,
+        "content": "{\n \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n \"params\": [\n   {\"name\": \"clickSelect\", \"select\": \"interval\"}\n ],\n \"mark\": {\n   \"type\": \"point\",\n   \"cursor\": \"pointer\"\n },\n \"encoding\": {\n   \"x\": {\"field\": \"gt_65\", \"type\": \"quantitative\"},\n   \"y\": {\"field\": \"mean\", \"type\": \"quantitative\", \"scale\": {\"domain\": [37, 42]}},\n   \"fillOpacity\": {\n     \"condition\": {\"param\": \"clickSelect\", \"value\": 1},\n     \"value\": 0.3\n   },\n   \"color\": {\n     \"field\": \"interacted\",\n     \"type\": \"nominal\",\n     \"condition\": {\"test\": \"datum.interacted === '1'\", \"value\": \"red\", \"else\": \"blue\"}\n   }\n },\n \"config\": {\n   \"scale\": {\n     \"bandPaddingInner\": 0.2\n   }\n }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "bcded943-0536-4d5b-adeb-e51dfc28afba",
+        "type": "VIS_VEGA",
+        "x": 5093.005321717777,
+        "y": 523.608657322518,
+        "content": "{\n \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n \"transform\": [\n   {\n     \"fold\": [\"gt_65\"],\n     \"as\": [\"Variable\", \"Value\"]\n   }\n ],\n \"mark\": {\n   \"type\": \"boxplot\",\n   \"size\": 60\n },\n \"encoding\": {\n   \"x\": {\"field\": \"Variable\", \"type\": \"nominal\", \"title\": \"Variable\"},\n   \"y\": {\"field\": \"Value\", \"type\": \"quantitative\", \"title\": \"Value\"}\n }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-c80722e7-8960-4308-8f1d-90b121acf126out-289b82c8-734e-4c66-a01d-9b0097f2a7bfin_0",
+        "source": "c80722e7-8960-4308-8f1d-90b121acf126",
+        "target": "289b82c8-734e-4c66-a01d-9b0097f2a7bf"
+      },
+      {
+        "id": "reactflow__edge-48a522cd-b1d7-4947-98c2-fb50e07f1d82out-289b82c8-734e-4c66-a01d-9b0097f2a7bfin_1",
+        "source": "48a522cd-b1d7-4947-98c2-fb50e07f1d82",
+        "target": "289b82c8-734e-4c66-a01d-9b0097f2a7bf"
+      },
+      {
+        "id": "reactflow__edge-289b82c8-734e-4c66-a01d-9b0097f2a7bfout-ea821796-827b-47ac-8104-4bfb4dc5eb63in",
+        "source": "289b82c8-734e-4c66-a01d-9b0097f2a7bf",
+        "target": "ea821796-827b-47ac-8104-4bfb4dc5eb63"
+      },
+      {
+        "id": "reactflow__edge-ea821796-827b-47ac-8104-4bfb4dc5eb63out-964b380b-559b-4fa3-a9f7-4dcb12878504in_1",
+        "source": "ea821796-827b-47ac-8104-4bfb4dc5eb63",
+        "target": "964b380b-559b-4fa3-a9f7-4dcb12878504"
+      },
+      {
+        "id": "reactflow__edge-964b380b-559b-4fa3-a9f7-4dcb12878504out-cdb373b6-1b35-47db-bfd7-fe4ae1e9efdcin",
+        "source": "964b380b-559b-4fa3-a9f7-4dcb12878504",
+        "target": "cdb373b6-1b35-47db-bfd7-fe4ae1e9efdc"
+      },
+      {
+        "id": "reactflow__edge-c80722e7-8960-4308-8f1d-90b121acf126out-964b380b-559b-4fa3-a9f7-4dcb12878504in_0",
+        "source": "c80722e7-8960-4308-8f1d-90b121acf126",
+        "target": "964b380b-559b-4fa3-a9f7-4dcb12878504"
+      },
+      {
+        "id": "reactflow__edge-4b7c2234-d107-4531-b890-5c582efbe444out-964b380b-559b-4fa3-a9f7-4dcb12878504in_2",
+        "source": "4b7c2234-d107-4531-b890-5c582efbe444",
+        "target": "964b380b-559b-4fa3-a9f7-4dcb12878504"
+      },
+      {
+        "id": "reactflow__edge-cdb373b6-1b35-47db-bfd7-fe4ae1e9efdcout-3cc268ee-ec4b-4921-ac69-6d0bb3691cb4in",
+        "source": "cdb373b6-1b35-47db-bfd7-fe4ae1e9efdc",
+        "target": "3cc268ee-ec4b-4921-ac69-6d0bb3691cb4"
+      },
+      {
+        "id": "reactflow__edge-3cc268ee-ec4b-4921-ac69-6d0bb3691cb4out-e1cf73df-4713-46e8-95d3-ec677378e125in",
+        "source": "3cc268ee-ec4b-4921-ac69-6d0bb3691cb4",
+        "target": "e1cf73df-4713-46e8-95d3-ec677378e125"
+      },
+      {
+        "id": "reactflow__edge-e1cf73df-4713-46e8-95d3-ec677378e125out-6c4aa6a8-45eb-480e-bb3d-3fd54d13325bin",
+        "source": "e1cf73df-4713-46e8-95d3-ec677378e125",
+        "target": "6c4aa6a8-45eb-480e-bb3d-3fd54d13325b"
+      },
+      {
+        "id": "reactflow__edge-e1cf73df-4713-46e8-95d3-ec677378e125out-3334485c-50ad-4adf-9574-45f8a9704860in",
+        "source": "e1cf73df-4713-46e8-95d3-ec677378e125",
+        "target": "3334485c-50ad-4adf-9574-45f8a9704860"
+      },
+      {
+        "id": "reactflow__edge-35bd75ce-005e-40e1-9172-7caef9ccf046out-bcded943-0536-4d5b-adeb-e51dfc28afbain",
+        "source": "35bd75ce-005e-40e1-9172-7caef9ccf046",
+        "target": "bcded943-0536-4d5b-adeb-e51dfc28afba"
+      },
+      {
+        "id": "reactflow__edge-e1cf73df-4713-46e8-95d3-ec677378e125out-35bd75ce-005e-40e1-9172-7caef9ccf046in",
+        "source": "e1cf73df-4713-46e8-95d3-ec677378e125",
+        "target": "35bd75ce-005e-40e1-9172-7caef9ccf046"
+      }
+    ],
+    "name": "DefaultWorkflow",
+    "task": "",
+    "timestamp": 1773700344933,
+    "provenance_id": "DefaultWorkflow"
+  }
+}

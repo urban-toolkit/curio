@@ -65,10 +65,12 @@ To do that, we connect the loaded data (raster and tabular) with a custom analys
 ![Example 1-5](images/1-5.png)
 
 ```python
-import xarray as xr
-from pythermalcomfort import models
+# Step 4 — Compute UTCI (replace entire cell)
+
 import numpy as np
+from pythermalcomfort import models
 from rasterio.warp import Resampling
+
 
 src = arg[0]
 sensor = arg[1]
@@ -78,34 +80,36 @@ timestamp = 12
 upscale_factor = 0.25
 dataset = src
 data = dataset.read(
-   out_shape=(
-       dataset.count,
-       int(dataset.height * upscale_factor),
-       int(dataset.width * upscale_factor)
-   ),
-   resampling=Resampling.nearest,
-   masked=True
+    out_shape=(
+        dataset.count,
+        int(dataset.height * upscale_factor),
+        int(dataset.width * upscale_factor),
+    ),
+    resampling=Resampling.nearest,
+    masked=True,
 )
-data.data[data.data==src.nodatavals[0]] = np.nan
+data = data.astype(float)
+data.data[data.data == src.nodatavals[0]] = np.nan
 
-sensor = sensor[sensor['it']==timestamp]
-tdb = sensor['Td'].values[0]
-v = sensor['Wind'].values[0]
-rh = sensor['RH'].values[0]
+sensor_filtered = sensor[sensor["it"] == timestamp]
+tdb = float(sensor_filtered["Td"].values[0])
+v = float(sensor_filtered["Wind"].values[0])
+rh = float(sensor_filtered["RH"].values[0])
 
-def xutci(tdb, tr, v, rh, units='SI'):
-   return xr.apply_ufunc(
-       models.utci,
-       tdb,
-       tr,
-       v,
-       rh,
-       units
-   )
+# pythermalcomfort returns a UTCI result object; extract numeric grid explicitly
+utci_result = models.utci(tdb=tdb, tr=data[0], v=v, rh=rh, units="SI")
+utci_grid = np.asarray(getattr(utci_result, "utci", utci_result), dtype=float)
 
-utci = xutci(tdb, data[0], v, rh)
+# Ensure 2D array for rasterstats
+if utci_grid.ndim == 3 and utci_grid.shape[0] == 1:
+    utci_grid = utci_grid[0]
+if utci_grid.ndim != 2:
+    raise ValueError(f"UTCI must be 2D, got shape={utci_grid.shape}, ndim={utci_grid.ndim}")
 
-return (utci.tolist(), [data.shape[-1], data.shape[-2]])
+utci_list = utci_grid.tolist()
+utci_shape = [utci_grid.shape[1], utci_grid.shape[0]]  # [width, height]
+
+return (utci_list, utci_shape)
 ```
 
 ## Step 4: Loading sociodemographic data
@@ -127,24 +131,41 @@ Now, we want to spatially join the UTCI data in the raster format with the socio
 ![Example 1-7](images/1-7.png)
 
 ```python
-import numpy as np
+# Step 5 — Zonal Statistics
+
 from rasterstats import zonal_stats
+import numpy as np
 
 dataset = arg[0]
-utci = np.array(arg[1][0])
-shape = arg[1][1]
+utci_list = arg[1][0]
+utci_shape = arg[1][1]
 gdf = arg[2]
 
+utci = np.asarray(utci_list, dtype=float)
+shape = utci_shape
+
 transform = dataset.transform * dataset.transform.scale(
-   (dataset.width / shape[0]),
-   (dataset.height / shape[1])
+    (dataset.width / shape[0]),
+    (dataset.height / shape[1]),
 )
 
-joined = zonal_stats(gdf, utci, stats=['min','max','mean','median'], affine=transform)
+# Avoid nodata warning and make nodata explicit
+nodata_value = -999.0
+utci_for_stats = np.where(np.isnan(utci), nodata_value, utci)
 
-gdf['mean'] = [d['mean'] for d in joined]
+joined = zonal_stats(
+    gdf,
+    utci_for_stats,
+    stats=["min", "max", "mean", "median"],
+    affine=transform,
+    nodata=nodata_value,
+)
 
-return gdf.loc[:, [gdf.geometry.name, 'mean', "gt_65"]]
+gdf["mean"] = [d["mean"] for d in joined]
+result = gdf.loc[:, [gdf.geometry.name, "mean", "gt_65"]]
+
+
+return result
 ```
 
 We then filter the resulting gdf to only those with mean UTCI higher than zero. Let’s create a new data cleaning node connected to the previous node and store the result on a data node:
