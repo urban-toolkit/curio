@@ -128,6 +128,8 @@ const LIFECYCLE_RESULT_KEYS: (keyof LifecycleResult)[] = [
   'showLoading',
   'contentComponent',
   'setOutputCallbackOverride',
+  'outputOverride',
+  'disablePlay',
   'dynamicHandles',
   'outputOverride',
 ];

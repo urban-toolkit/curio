@@ -6,12 +6,17 @@ jest.mock('../../../../utils/parsing', () => ({
   shortenString: (s: string) => s,
 }));
 
+jest.mock('../../../../services/api', () => ({
+  fetchPreviewData: jest.fn().mockRejectedValue(new Error('no preview in tests')),
+}));
+
 describe('DataPoolContent', () => {
   const defaultProps = {
     activeTab: '0',
     onSelectTab: jest.fn(),
     tabData: [{ col: 1 }, { col: 2 }],
     tableData: [{ name: 'Alice' }],
+    data: { nodeId: 'test-node', input: '' },
   };
 
   test('renders tab titles based on tabData length', () => {

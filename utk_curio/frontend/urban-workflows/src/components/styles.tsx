@@ -54,6 +54,7 @@ import "./styles.css";
 import { Template, useTemplateContext } from "../providers/TemplateProvider";
 import { useCode } from "../hook/useCode";
 import { TrillGenerator } from "TrillGenerator";
+import { ICodeData } from "types";
 
 // Box Container
 export const BoxContainer = ({
@@ -90,7 +91,7 @@ export const BoxContainer = ({
     user?: any;
     setOutputCallback: any;
     sendCodeToWidgets?: any;
-    output?: { code: string; content: string };
+    output?: ICodeData;
     boxWidth?: number;
     boxHeight?: number;
     noContent?: boolean;

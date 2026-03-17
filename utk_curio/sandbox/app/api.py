@@ -50,9 +50,15 @@ def upload_file():
     if file.filename == '':
         return 'No selected file'
 
-    file.save(request.form['fileName'])
+    launch_dir = os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())
+    data_dir = Path(os.path.join(launch_dir, "data"))
+    data_dir.mkdir(parents=True, exist_ok=True)
 
-    return file.filename
+    filename = os.path.basename(request.form.get('fileName', file.filename))
+    save_path = data_dir / filename
+    file.save(save_path)
+
+    return str(save_path)
 
 @app.route('/datasets', methods=['GET'])
 def list_datasets():

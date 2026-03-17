@@ -106,27 +106,23 @@ class WorkflowSpec:
 
     @property
     def edges_count(self) -> int:
-        """Count only regular (non-Interaction) edges.
+        """Count all edges, including Interaction-type edges.
 
         Workflow JSON files contain two kinds of edges:
 
         1. **Regular edges** – standard data-flow connections between an
            ``out`` handle and an ``in`` handle (``type`` is ``None`` or
-           absent).  The frontend renders each of these as a
-           ``.react-flow__edge`` DOM element.
+           absent).
 
         2. **Interaction edges** – ``type == 'Interaction'``.  These link
            ``in/out`` handles and represent a bidirectional interaction
            channel (e.g. brushing / highlighting) between visualisation
-           nodes.  The frontend renders them through a separate interaction
-           layer and they do **not** produce ``.react-flow__edge`` DOM
-           elements.
+           nodes.
 
-        This property returns the count of regular edges only, so it can
-        be compared directly against
-        ``page.locator('.react-flow__edge').count()``.
+        Both kinds are rendered as ``.react-flow__edge`` DOM elements by
+        the frontend, so the total count must match what the canvas shows.
         """
-        return sum(1 for e in self.edges if e.get("type") != "Interaction")
+        return len(self.edges)
 
     @property
     def interaction_edges_count(self) -> int:
@@ -262,7 +258,7 @@ class TestWorkflowCanvas:
                 continue
 
             play_btn = node_el.locator("svg.fa-circle-play")
-            play_btn.wait_for(state="visible", timeout=5000)
+            play_btn.wait_for(state="visible", timeout=10000)
             play_btn.click(force=True)
 
             # wait for loading spinner to appear

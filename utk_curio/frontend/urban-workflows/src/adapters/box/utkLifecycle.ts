@@ -6,6 +6,7 @@ export const useUtkLifecycle: BoxLifecycleHook = (data, boxState) => {
     sendCode,
     defaultGrammar,
     showLoading,
+    disablePlay,
     setSendCodeCallback,
     customWidgetsCallback,
     handleCompileGrammar,
@@ -31,6 +32,7 @@ export const useUtkLifecycle: BoxLifecycleHook = (data, boxState) => {
       : boxState.templateData.code;
 
   return {
+    disablePlay,
     applyGrammar,
     sendCodeOverride: sendCode,
     setSendCodeCallbackOverride: setSendCodeCallback,

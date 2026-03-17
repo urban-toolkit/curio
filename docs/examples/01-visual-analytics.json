@@ -83,7 +83,7 @@
         "id": "cdb373b6-1b35-47db-bfd7-fe4ae1e9efdc",
         "type": "COMPUTATION_ANALYSIS",
         "x": 2153.7860554743675,
-        "y": 42.133851825757915,
+        "y": 43.29854946579633,
         "content": "# Step 5 — Zonal Statistics\n\nfrom rasterstats import zonal_stats\nimport numpy as np\n\ndataset = arg[0]\nutci_list = arg[1][0]\nutci_shape = arg[1][1]\ngdf = arg[2]\n\nutci = np.asarray(utci_list, dtype=float)\nshape = utci_shape\n\nif utci.ndim != 2:\n    raise ValueError(f\"Expected 2D UTCI array, got shape={utci.shape}, ndim={utci.ndim}\")\n\ntransform = dataset.transform * dataset.transform.scale(\n    (dataset.width / shape[0]),\n    (dataset.height / shape[1]),\n)\n\n# Avoid nodata warning and make nodata explicit\nnodata_value = -999.0\nutci_for_stats = np.where(np.isnan(utci), nodata_value, utci)\n\njoined = zonal_stats(\n    gdf,\n    utci_for_stats,\n    stats=[\"min\", \"max\", \"mean\", \"median\"],\n    affine=transform,\n    nodata=nodata_value,\n)\n\ngdf[\"mean\"] = [d[\"mean\"] for d in joined]\nresult = gdf.loc[:, [gdf.geometry.name, \"mean\", \"gt_65\"]]\n\n\nreturn result",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -236,11 +236,17 @@
         "id": "reactflow__edge-e1cf73df-4713-46e8-95d3-ec677378e125out-35bd75ce-005e-40e1-9172-7caef9ccf046in",
         "source": "e1cf73df-4713-46e8-95d3-ec677378e125",
         "target": "35bd75ce-005e-40e1-9172-7caef9ccf046"
+      },
+      {
+        "type": "Interaction",
+        "id": "reactflow__edge-e1cf73df-4713-46e8-95d3-ec677378e125in/out-6c4aa6a8-45eb-480e-bb3d-3fd54d13325bin/out",
+        "source": "e1cf73df-4713-46e8-95d3-ec677378e125",
+        "target": "6c4aa6a8-45eb-480e-bb3d-3fd54d13325b"
       }
     ],
     "name": "DefaultWorkflow",
     "task": "",
-    "timestamp": 1773700344933,
+    "timestamp": 1773605226071,
     "provenance_id": "DefaultWorkflow"
   }
 }

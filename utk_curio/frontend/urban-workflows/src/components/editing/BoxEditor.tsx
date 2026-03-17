@@ -93,7 +93,6 @@ function BoxEditor({
     }, []);
  
     useEffect(() => {
-        console.log(contentComponent);
         if (
             contentComponent != undefined && 
             contentComponentBypass.current && 

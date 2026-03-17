@@ -1,8 +1,9 @@
 import { faCircle } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { TIconCardinality } from "../../registry/types";
 import React from "react";
 
-export function InputIcon({ type }: { type: "1" | "2" | "N" }) {
+export function InputIcon({ type }: { type: TIconCardinality }) {
   const defaultIconStyle = {
     fontSize: "0.25em",
     margin: "1px",

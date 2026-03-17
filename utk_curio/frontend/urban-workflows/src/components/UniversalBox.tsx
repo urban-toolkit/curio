@@ -1,4 +1,5 @@
 import React from 'react';
+import CSS from "csstype";
 import { Handle, Edge, useEdges } from 'reactflow';
 import { BoxContainer } from './styles';
 import BoxEditor from './editing/BoxEditor';
@@ -8,7 +9,7 @@ import { OutputIcon } from './edges/OutputIcon';
 import { InputIcon } from './edges/InputIcon';
 import { getNodeDescriptor } from '../registry/nodeRegistry';
 import { useBoxState } from '../hook/useBoxState';
-import { HandleDef } from '../registry/types';
+import { HandleDef, TIconCardinality } from '../registry/types';
 import './Box.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
@@ -25,6 +26,7 @@ function UniversalBox({ data, isConnectable }: { data: any; isConnectable: boole
   const setOutputCallback = lifecycle.setOutputCallbackOverride ?? boxState.setOutput;
   const output = lifecycle.outputOverride ?? boxState.output
   const showLoading = lifecycle.showLoading ?? false;
+  const disablePlay = lifecycle.disablePlay ?? adapter.container.disablePlay ?? false;
   const defaultValue =
     lifecycle.defaultValueOverride ??
     (boxState.templateData.code ? boxState.templateData.code : data.defaultCode);
@@ -61,8 +63,8 @@ function UniversalBox({ data, isConnectable }: { data: any; isConnectable: boole
         noContent={adapter.container.noContent}
         boxWidth={adapter.container.boxWidth}
         boxHeight={adapter.container.boxHeight}
-        styles={adapter.container.styles}
-        disablePlay={adapter.container.disablePlay}
+        styles={adapter.container.styles as CSS.Properties<0 | (string & {}), string & {}> | undefined}
+        disablePlay={disablePlay}
         output={output}
         templateData={boxState.templateData}
         code={boxState.code}
@@ -74,7 +76,7 @@ function UniversalBox({ data, isConnectable }: { data: any; isConnectable: boole
         setTemplateConfig={adapter.showTemplateModal ? boxState.setTemplateConfig : undefined}
         promptDescription={boxState.promptDescription}
       >
-        {adapter.inputIconType && <InputIcon type={adapter.inputIconType} />}
+        {adapter.inputIconType && <InputIcon type={adapter.inputIconType as TIconCardinality} />}
 
         <DescriptionModal
           nodeId={data.nodeId}
@@ -121,7 +123,7 @@ function UniversalBox({ data, isConnectable }: { data: any; isConnectable: boole
           />
         )}
 
-        {adapter.outputIconType && <OutputIcon type={adapter.outputIconType} />}
+        {adapter.outputIconType && <OutputIcon type={adapter.outputIconType as TIconCardinality} />}
       </BoxContainer>
     </>
   );

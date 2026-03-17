@@ -435,7 +435,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             };
 
             // accept string, null, or undefined:
-            const isInHandle = (h: string | null | undefined): boolean => !!h && h.startsWith("in");
+            const isInHandle = (h: string | null | undefined): boolean => !!h && h.startsWith("in") && h !== "in/out";
             const isInOutHandle = (h: string | null | undefined): boolean => h === "in/out";
 
 

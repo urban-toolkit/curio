@@ -65,7 +65,7 @@ To do that, we connect the loaded data (raster and tabular) with a custom analys
 ![Example 1-5](images/1-5.png)
 
 ```python
-# Step 4 — Compute UTCI (replace entire cell)
+# Step 4 — Compute UTCI
 
 import numpy as np
 from pythermalcomfort import models
