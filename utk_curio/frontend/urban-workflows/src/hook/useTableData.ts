@@ -219,22 +219,6 @@ const useTableData = ({ data }: { data: INodeData }) => {
         // parsedInput.data = JSON.stringify(parsedInput.data);
         return parsedInput; // JSON.stringify(parsedInput);
 
-        // if (item.dataType === "geodataframe" && item.data?.features) {
-        //   for (const feature of item.data.features) {
-        //     if (feature.properties && feature.properties.interacted === undefined) {
-        //       feature.properties.interacted = "0";
-        //     }
-        //   }
-        // } else if (item.dataType === "dataframe" && item.data) {
-        //   const columns = Object.keys(item.data);
-        //   if (columns.length > 0 && item.data.interacted === undefined) {
-        //     const dfIndices = Object.keys(item.data[columns[0]]);
-        //     item.data.interacted = {};
-        //     for (const idx of dfIndices) {
-        //       item.data.interacted[idx] = "0";
-        //     }
-        //   }
-        // }
       });
 
       // Build the downstream output exactly as the original DataPoolBox did:
@@ -255,7 +239,7 @@ const useTableData = ({ data }: { data: INodeData }) => {
         contentOutput  = '';
       }
 
-      if (callbackOutput !== null) {
+      if (callbackOutput !== null && data.outputCallback) {
         data.outputCallback(data.nodeId, callbackOutput);
       }
 

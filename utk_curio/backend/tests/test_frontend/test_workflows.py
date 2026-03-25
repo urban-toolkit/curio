@@ -2,8 +2,10 @@ import os
 import re
 import json
 import time
-from dataclasses import dataclass
-from collections import deque
+
+from .utils import save_workflow_test_screenshot
+from .workflow_spec import NodeSpec, CODE_EDITOR_TYPES
+
 """
 This test file is to test the loading of workflow files in the frontend.
 To watch the browser (see the menu open): run with --headed, e.g.
@@ -34,190 +36,6 @@ def test_load_workflow_files(workflow_files):
             assert edges_count > 0, f"Workflow file {workflow_file} has no edges"
 
 
-# ---------------------------------------------------------------------------
-# Data model: parse workflow JSON into structured specs
-# ---------------------------------------------------------------------------
-
-GRAMMAR_TYPES = {"VIS_VEGA", "VIS_UTK"}
-CODE_TYPES = {
-    "DATA_LOADING", "DATA_CLEANING", "DATA_TRANSFORMATION",
-    "DATA_EXPORT", "COMPUTATION_ANALYSIS", "CONSTANTS",
-    "FLOW_SWITCH", "VIS_TEXT",
-}
-
-# Subset of CODE_TYPES whose frontend component passes ``code={true}``
-# to ``BoxEditor``, meaning they render a "code" tab with a Monaco editor.
-# The remaining CODE_TYPES (DATA_EXPORT, CONSTANTS, VIS_TEXT) use
-# ``code={false}`` and have no code tab.
-CODE_EDITOR_TYPES = {
-    "DATA_LOADING", "DATA_CLEANING", "DATA_TRANSFORMATION",
-    "COMPUTATION_ANALYSIS", "FLOW_SWITCH",
-}
-
-
-def classify_node(node_type: str) -> str:
-    """Classify a workflow node type string into a test category.
-
-    Categories:
-        "code"     – has a Monaco code editor and a play button
-        "grammar"  – has a JSON / grammar editor and a play button
-        "datapool" – has ``#data-tabs`` but NO play button
-        "passive"  – no standard editor and no play button (e.g. MERGE_FLOW, VIS_IMAGE)
-    """
-    if node_type in GRAMMAR_TYPES:
-        return "grammar"
-    if node_type == "DATA_POOL":
-        return "datapool"
-    if node_type in CODE_TYPES:
-        return "code"
-    # MERGE_FLOW, VIS_IMAGE, COMMENTS, or any unknown type
-    return "passive"
-
-
-@dataclass
-class NodeSpec:
-    """Expected properties of a single node parsed from the workflow JSON."""
-    id: str
-    type: str            # e.g. "DATA_LOADING", "VIS_VEGA"
-    x: float
-    y: float
-    content: str         # raw content string (may be empty for DataPool)
-    in_type: str         # "DEFAULT", "DATAFRAME", etc.
-    out_type: str
-    category: str        # "code" | "grammar" | "datapool" | "passive"
-
-    @property
-    def has_play_button(self) -> bool:
-        """Only code and grammar nodes expose a play button."""
-        return self.category in ("code", "grammar")
-
-
-@dataclass
-class WorkflowSpec:
-    """Expected structure of a complete workflow parsed from JSON."""
-    filepath: str
-    name: str
-    nodes: list          # list[NodeSpec]
-    edges: list          # list[dict]  –  each: {id, source, target, type?}
-
-    @property
-    def nodes_count(self) -> int:
-        return len(self.nodes)
-
-    @property
-    def edges_count(self) -> int:
-        """Count all edges, including Interaction-type edges.
-
-        Workflow JSON files contain two kinds of edges:
-
-        1. **Regular edges** – standard data-flow connections between an
-           ``out`` handle and an ``in`` handle (``type`` is ``None`` or
-           absent).
-
-        2. **Interaction edges** – ``type == 'Interaction'``.  These link
-           ``in/out`` handles and represent a bidirectional interaction
-           channel (e.g. brushing / highlighting) between visualisation
-           nodes.
-
-        Both kinds are rendered as ``.react-flow__edge`` DOM elements by
-        the frontend, so the total count must match what the canvas shows.
-        """
-        return len(self.edges)
-
-    @property
-    def interaction_edges_count(self) -> int:
-        """Count Interaction-type edges.
-
-        Interaction edges (``type == 'Interaction'``) use ``in/out``
-        handles on both source and target nodes (visible in their edge
-        IDs, e.g. ``…in/out-…in/out``).  They represent a bidirectional
-        interaction channel – for instance, brushing a bar in a Vega
-        chart highlights the corresponding geometry on a UTK map, and
-        vice-versa.
-
-        The frontend does **not** render these as ``.react-flow__edge``
-        elements; instead they are managed by a dedicated interaction
-        layer.  Use this count when you need to verify interaction
-        wiring separately from the standard data-flow edge count.
-        """
-        return sum(1 for e in self.edges if e.get("type") == "Interaction")
-
-    def topo_sorted_nodes(self) -> list:
-        """Return nodes in topological (dependency) order using Kahn's algorithm.
-
-        Source / root nodes come first so upstream boxes execute before
-        downstream ones.  If cycles exist the remaining nodes are appended
-        at the end.
-        """
-        node_map = {n.id: n for n in self.nodes}
-        in_degree = {n.id: 0 for n in self.nodes}
-        adj: dict[str, list[str]] = {n.id: [] for n in self.nodes}
-
-        for edge in self.edges:
-            src, tgt = edge["source"], edge["target"]
-            if src in adj and tgt in in_degree:
-                adj[src].append(tgt)
-                in_degree[tgt] += 1
-
-        queue = deque(nid for nid, deg in in_degree.items() if deg == 0)
-        ordered: list[NodeSpec] = []
-
-        while queue:
-            nid = queue.popleft()
-            ordered.append(node_map[nid])
-            for neighbour in adj[nid]:
-                in_degree[neighbour] -= 1
-                if in_degree[neighbour] == 0:
-                    queue.append(neighbour)
-
-        # Append any remaining nodes (cycles or disconnected)
-        visited = {n.id for n in ordered}
-        for n in self.nodes:
-            if n.id not in visited:
-                ordered.append(n)
-
-        return ordered
-
-
-def parse_workflow(filepath: str) -> WorkflowSpec:
-    """Read a workflow JSON file and return a ``WorkflowSpec``."""
-    with open(filepath, "r") as f:
-        data = json.loads(f.read())
-
-    dataflow = data["dataflow"]
-
-    nodes = [
-        NodeSpec(
-            id=n["id"],
-            type=n["type"],
-            x=float(n.get("x", 0)),
-            y=float(n.get("y", 0)),
-            content=n.get("content", ""),
-            in_type=n.get("in", "DEFAULT"),
-            out_type=n.get("out", "DEFAULT"),
-            category=classify_node(n["type"]),
-        )
-        for n in dataflow["nodes"]
-    ]
-
-    edges = [
-        {
-            "id": e["id"],
-            "source": e["source"],
-            "target": e["target"],
-            "type": e.get("type"),
-        }
-        for e in dataflow["edges"]
-    ]
-
-    return WorkflowSpec(
-        filepath=filepath,
-        name=data.get("name", os.path.basename(filepath)),
-        nodes=nodes,
-        edges=edges,
-    )
-
-
 
 # ---------------------------------------------------------------------------
 # Test class
@@ -237,9 +55,21 @@ class TestWorkflowCanvas:
         """Return a Playwright ``Locator`` for a ReactFlow node element."""
         return self.page.locator(f'.react-flow__node[data-id="{node.id}"]')
 
+    def _save_screenshot(self, request):
+        """Persist canvas screenshot (see ``save_workflow_test_screenshot``)."""
+        save_workflow_test_screenshot(
+            self.page,
+            self.spec.filepath,
+            test_name=request.function.__name__,
+        )
+
     def _execute_all_playable_nodes(self):
         """Click *play* on every node that has a play button (topological order)
-        and wait for each to finish."""
+        and wait for each to finish.  Skips if already executed for the
+        current workflow (guards against repeated calls across tests that
+        share the same class-scoped page)."""
+        if getattr(self.__class__, '_executed_workflow', None) == self.spec.filepath:
+            return
         for node in self.spec.topo_sorted_nodes():
             node_el = self._node_locator(node)
             node_el.scroll_into_view_if_needed()
@@ -281,10 +111,28 @@ class TestWorkflowCanvas:
                 f"Node {node.id} ({node.type}) did not produce 'Done' — "
                 f"error visible: {error_span.is_visible()}"
             )
+            # Check if output tab is active
+
+            # wait for output tab to be visible
+            output_tab = node_el.locator(
+                '.nav-link[data-rr-ui-event-key="output"]'
+            )
+            output_tab.first.wait_for(state="visible", timeout=10000)
+            assert output_tab.count() >= 1, (
+                f"Code node {node.id} ({node.type}) is missing its "
+                f"output tab"
+            )
+            if output_tab.count() >= 1:
+                # Check if the output content box is active
+                is_active = "active" in (output_tab.get_attribute("class") or "")
+                assert is_active, (
+                    f"Output content box {node.id} ({node.type}) is not active"
+                )
+        self.__class__._executed_workflow = self.spec.filepath
 
     # -- 1. Node & edge counts --------------------------------------------
 
-    def test_node_and_edge_count(self, loaded_workflow):
+    def test_node_and_edge_count(self, loaded_workflow, request):
         """The canvas must contain the exact number of nodes and edges
         declared in the workflow JSON."""
         node_els = self.page.locator(".react-flow__node")
@@ -299,10 +147,11 @@ class TestWorkflowCanvas:
             f"[{wf_name}] Expected {self.spec.edges_count} edges, "
             f"found {edge_els.count()}"
         )
+        # self._save_screenshot(request)
 
     # -- 2. Node positions (relative ordering) -----------------------------
 
-    def test_node_positions(self, loaded_workflow):
+    def test_node_positions(self, loaded_workflow, request):
         """Every node must be rendered on the canvas, and relative
         x-positions from the JSON specification must be preserved
         (``fitView`` rescales but keeps the layout)."""
@@ -332,10 +181,11 @@ class TestWorkflowCanvas:
                     f"{b.id} (spec x={b.x:.1f}), but canvas x "
                     f"{positions[a.id][0]:.1f} > {positions[b.id][0]:.1f}"
                 )
+        # self._save_screenshot(request)
 
     # -- 3. Node type & content (code / grammar / datapool) ----------------
 
-    def test_node_type_and_content(self, loaded_workflow):
+    def test_node_type_and_content(self, loaded_workflow, request):
         """Each node must render the correct editor widget for its category:
 
         * **code** nodes  – a Monaco code editor (``.monaco-editor``)
@@ -374,7 +224,6 @@ class TestWorkflowCanvas:
                     # Output / Error / Warning sub-tabs.
                     computation_tabs = node_el.locator(f"#computation-tabs-tab-0")
 
-                    # Test computation output tab if it is a computation node
                     if computation_tabs.count() >= 1:
                         # and should contain a div with classes tab-pane and active
                         active_pane = node_el.locator(".tab-pane.active")
@@ -533,15 +382,15 @@ class TestWorkflowCanvas:
                     f"Passive node {node.id} ({node.type}) is missing its "
                     f"resizable container"
                 )
+        self._save_screenshot(request)
 
     # # -- 4. Node execution (play button) -----------------------------------
 
-    def test_node_execution(self, loaded_workflow):
+    def test_node_execution(self, loaded_workflow, request):
         """Click the play button on each executable node in topological
         order and verify that the output status shows *Done*."""
         # First: run all playable nodes end-to-end
         self._execute_all_playable_nodes()
-
 
         # Then: assert every playable node ended with "Done"
         for node in self.spec.nodes:
@@ -558,6 +407,11 @@ class TestWorkflowCanvas:
                 f"Node {node.id} ({node.type}) output is not 'Done' "
                 f"after full workflow execution"
             )
+
+            # ================================================================
+            # Check output tab is active and rendered correctly
+            # ================================================================
+
             # wait for output tab to be visible
             output_tab = node_el.locator(
                 '.nav-link[data-rr-ui-event-key="output"]'
@@ -581,7 +435,6 @@ class TestWorkflowCanvas:
                 # Output / Error / Warning sub-tabs.
                 computation_tabs = node_el.locator(f"#computation-tabs-tab-0")
 
-                # Test computation output tab if it is a computation node
                 if computation_tabs.count() >= 1:
                     # and should contain a div with classes tab-pane and active
                     active_pane = node_el.locator(".tab-pane.active")
@@ -643,7 +496,30 @@ class TestWorkflowCanvas:
                         f"output content"
                     )
 
-            # Check provenance graph is rendered correctly for nodes that have it.
+                    # TODO check .data file content
+                    # we should read the .data file content and check if it matches the ground truth data 
+                    # we should retrieve the ground truth data from the disk
+
+        self._save_screenshot(request)
+
+    # -- 5. Provenance graph -------------------------------------------------
+
+    def test_provenance_graph(self, loaded_workflow, request):
+        """After executing every playable node, each node that exposes a
+        provenance tab must render a WebGL canvas with content."""
+        self._execute_all_playable_nodes()
+
+        for node in self.spec.nodes:
+            if not node.has_play_button:
+                continue
+
+            node_el = self._node_locator(node)
+
+            # ================================================================
+            # Check provenance graph is rendered correctly
+            # ================================================================
+
+            # If the node has a provenance tab, check if the provenance graph is rendered correctly
             provenance_tab = node_el.locator(
                 '.nav-link[data-rr-ui-event-key="provenance"]'
             )
@@ -675,3 +551,5 @@ class TestWorkflowCanvas:
                 f"Node {node.id} ({node.type}) provenance canvas appears empty "
                 f"(no drawn content detected)"
             )
+        # self._save_screenshot(request)
+

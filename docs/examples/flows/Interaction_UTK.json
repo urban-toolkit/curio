@@ -6,7 +6,7 @@
         "type": "DATA_LOADING",
         "x": -653.9530778971115,
         "y": 801.1250959222709,
-        "content": "import geopandas as gpd\r\n\r\ngdf_neighborhood = gpd.read_file(\"tests/access_score_neighborhood.geojson\")[[\"coverage\", \"avg_attribute_count\", \"geometry\", \"neighborhood_name\"]]\r\n\r\nreturn gdf_neighborhood",
+        "content": "import geopandas as gpd\r\n\r\ngdf_neighborhood = gpd.read_file(\"docs/examples/data/access_score_neighborhood.geojson\")[[\"coverage\", \"avg_attribute_count\", \"geometry\", \"neighborhood_name\"]]\r\n\r\nreturn gdf_neighborhood",
         "out": "GEODATAFRAME",
         "in": "JSON",
         "goal": "Load key fields from the 'access_score_neighborhood' GeoJSON dataset, including coverage, average attribute count, and geometry for further analysis and visualization.",
@@ -35,21 +35,6 @@
         }
       },
       {
-        "id": "node12",
-        "type": "VIS_VEGA",
-        "x": 3248.3191033971034,
-        "y": 554.4247559298842,
-        "content": "{\r\n    \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\r\n    \"params\": [\r\n        {\r\n            \"name\": \"highlight\",\r\n            \"select\": {\"type\": \"point\", \"on\": \"pointerover\"}\r\n        }\r\n    ],\r\n    \"mark\": {\r\n        \"type\": \"bar\",\r\n        \"fill\": \"#4C78A8\",\r\n        \"stroke\": \"black\",\r\n        \"cursor\": \"pointer\"\r\n    },\r\n    \"encoding\": {\r\n        \"x\": {\r\n            \"field\": \"neighborhood_name\", \r\n            \"type\": \"ordinal\",\r\n            \"sort\": \"y\"\r\n        },\r\n        \"y\": {\"field\": \"accessibility\", \"type\": \"quantitative\"},\r\n        \"fillOpacity\": {\r\n            \"condition\": {\"param\": \"highlight\", \"value\": 1},\r\n            \"value\": 0.3\r\n        },\r\n        \"color\": { \r\n            \"field\": \"interacted\", \r\n            \"type\": \"nominal\", \r\n            \"condition\": {\r\n                \"test\": \"datum.interacted === '1'\", \"value\": \"red\", \"else\": \"blue\"\r\n            } \r\n        }\r\n    },\r\n    \"config\": {\r\n        \"scale\": {\r\n            \"bandPaddingInner\": 0.2\r\n        }\r\n    }\r\n}",
-        "out": "DATAFRAME",
-        "in": "DATAFRAME",
-        "goal": "Plot accessibility by neighborhood linking with accessibility map.",
-        "metadata": {
-          "keywords": [
-            17
-          ]
-        }
-      },
-      {
         "id": "1a815d0b-2298-4257-ab9a-857dd884338d",
         "type": "COMPUTATION_ANALYSIS",
         "x": 1097.4724824063856,
@@ -68,8 +53,8 @@
       {
         "id": "3a98c743-bee9-492a-b1ce-dbc17be97f14",
         "type": "DATA_POOL",
-        "x": 2027.9999999999995,
-        "y": 1360,
+        "x": 1826.5791073014293,
+        "y": 820.1920075678316,
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Load and manage multiple datasets including 'access_attributes', 'access_score_neighborhood', and 'access_score_streets', while ensuring their cleanliness and readiness for analysis, visualization, and interactive exploration based on accessibility scores and user agreement metrics.",
@@ -82,8 +67,8 @@
       {
         "id": "13d263ce-2e82-4e87-bc69-117b06a8a65b",
         "type": "VIS_UTK",
-        "x": 3245.6344324951638,
-        "y": 1393.1381375299884,
+        "x": 2619.1734374762837,
+        "y": 817.0743844120774,
         "content": "{\n    \"components\": [\n        {\n            \"id\": \"grammar_map\",\n            \"position\": {\n                \"width\": [\n                    1,\n                    12\n                ],\n                \"height\": [\n                    1,\n                    4\n                ]\n            }\n        }\n    ],\n    \"knots\": [],\n    \"ex_knots\": [\n        {\n            \"id\": \"neighborhood0\",\n            \"out_name\": \"neighborhood\",\n            \"in_name\": \"accessibility\"\n        },\n        {\n            \"id\": \"neighborhood1\",\n            \"out_name\": \"neighborhood\",\n            \"in_name\": \"neighborhood_name\"\n        }\n    ],\n    \"grid\": {\n        \"width\": 12,\n        \"height\": 4\n    },\n    \"grammar\": false\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -127,27 +112,6 @@
         }
       },
       {
-        "id": "reactflow__edge-3a98c743-bee9-492a-b1ce-dbc17be97f14out-node12in",
-        "source": "3a98c743-bee9-492a-b1ce-dbc17be97f14",
-        "target": "node12",
-        "metadata": {
-          "keywords": [
-            14
-          ]
-        }
-      },
-      {
-        "type": "Interaction",
-        "id": "reactflow__edge-3a98c743-bee9-492a-b1ce-dbc17be97f14in/out-node12in/out",
-        "source": "3a98c743-bee9-492a-b1ce-dbc17be97f14",
-        "target": "node12",
-        "metadata": {
-          "keywords": [
-            14
-          ]
-        }
-      },
-      {
         "type": "Interaction",
         "id": "reactflow__edge-3a98c743-bee9-492a-b1ce-dbc17be97f14in/out-13d263ce-2e82-4e87-bc69-117b06a8a65bin/out",
         "source": "3a98c743-bee9-492a-b1ce-dbc17be97f14",
@@ -169,9 +133,9 @@
         }
       }
     ],
-    "name": "Interaction",
+    "name": "Interaction_UTK",
     "task": "",
-    "timestamp": 1748222222225,
-    "provenance_id": "Interaction"
+    "timestamp": 1747966081929,
+    "provenance_id": "Interaction_UTK"
   }
 }

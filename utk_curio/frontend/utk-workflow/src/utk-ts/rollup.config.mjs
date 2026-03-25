@@ -31,7 +31,9 @@ const config = [
         tsconfig: "tsconfig.json",
         useTsconfigDeclarationDir: true,
         sourceMap: true,
-        inlineSources: true
+        inlineSources: true,
+        include: ["*.ts", "**/*.ts", "*.tsx", "**/*.tsx"],
+        exclude: ["*.d.ts", "**/*.d.ts"],
       }),
       copy({
         targets: [

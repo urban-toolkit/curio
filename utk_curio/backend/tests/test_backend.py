@@ -25,7 +25,7 @@ test_data = {
         "activity_source_code": "return sum(args[0]) / len(args[0])",
         "input": {
             "dataType": "dataframe",
-            "path": "./tests/test.data"  
+            "path": "./examples/data/test.data"  
         }
     }
 }
