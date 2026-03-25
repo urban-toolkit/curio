@@ -18,7 +18,7 @@
         "type": "DATA_LOADING",
         "x": 4.200124570208544,
         "y": 756.9073125580803,
-        "content": "import geopandas as gpd\r\n\r\ngdf = gpd.read_file(\"tests/access_score_neighborhood.geojson\")[[\"coverage\", \"avg_attribute_count\", \"geometry\", \"neighborhood_name\"]]\r\n\r\nreturn gdf",
+        "content": "import geopandas as gpd\r\n\r\ngdf = gpd.read_file(\"docs/examples/data/access_score_neighborhood.geojson\")[[\"coverage\", \"avg_attribute_count\", \"geometry\", \"neighborhood_name\"]]\r\n\r\nreturn gdf",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

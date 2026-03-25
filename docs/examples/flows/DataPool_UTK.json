@@ -6,7 +6,7 @@
         "type": "DATA_LOADING",
         "x": 2294.276773952865,
         "y": -1048.8452034389063,
-        "content": "import geopandas as gpd\r\nimport numpy as np\r\n\r\ngdf_zip = gpd.read_file(\"tests/nyc_zip.geojson\")\r\n\r\ngdf_zip = gdf_zip.set_crs(4326)\r\n\r\ngdf_zip['value'] = np.random.randint(low=0, high=100, size=len(gdf_zip))\r\n\r\ngdf_zip = gdf_zip[[\"geometry\", \"value\"]]\r\n\r\ngdf_zip = gdf_zip.to_crs(3395)\r\n\r\ngdf_zip.metadata = {\r\n    'name': 'zip'\r\n}\r\n\r\nreturn gdf_zip",
+        "content": "import geopandas as gpd\r\nimport numpy as np\r\n\r\ngdf_zip = gpd.read_file(\"docs/examples/data/nyc_zip.geojson\")\r\n\r\ngdf_zip = gdf_zip.set_crs(4326)\r\n\r\ngdf_zip['value'] = np.random.randint(low=0, high=100, size=len(gdf_zip))\r\n\r\ngdf_zip = gdf_zip[[\"geometry\", \"value\"]]\r\n\r\ngdf_zip = gdf_zip.to_crs(3395)\r\n\r\ngdf_zip.metadata = {\r\n    'name': 'zip'\r\n}\r\n\r\nreturn gdf_zip",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Load neighborhood geometries from the nyc_zip.geojson file using GeoPandas for further spatial analysis and visualization.",

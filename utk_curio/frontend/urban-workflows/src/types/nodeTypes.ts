@@ -26,13 +26,14 @@ export interface ICodeData {
  */
 export interface INodeData {
   nodeId: string;
-  input?: string;
+  input?: ICodeDataContent;
   defaultCode?: string;
   pythonInterpreter?: PythonInterpreter;
   outputCallback?: (nodeId: string, output: string) => void;
   codeChangeCallback?: (nodeId: string, output: string) => void;
   interactionsCallback?: (interactions: any, nodeId: string) => void;
   propagationCallback?: (propagation: IPropagation) => void;
+  propagation?: any;
   description?: string;
   source?: string;
   templateId?: string;

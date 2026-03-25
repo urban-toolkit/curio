@@ -150,10 +150,12 @@ def workflow_files():
 # Class-scoped fixtures – one browser page per parametrized workflow
 # ---------------------------------------------------------------------------
 
+VIEWPORT = {"width": 1280, "height": 720}
+
 @pytest.fixture(scope="class")
 def workflow_page(browser):
     """Class-scoped page: one browser tab shared by every test method."""
-    context = browser.new_context()
+    context = browser.new_context(viewport=VIEWPORT)
     page = context.new_page()
     debug_log(
         "fixtures.py:workflow_page",
@@ -185,7 +187,7 @@ def workflow_frontend(frontend_server, workflow_page):
 @pytest.fixture(scope="class")
 def loaded_workflow(request, workflow_frontend, workflow_page):
     """Upload the workflow once and expose spec + page to the class."""
-    from .test_workflows import parse_workflow
+    from .workflow_spec import parse_workflow
 
     workflow_file = request.param
     spec = parse_workflow(workflow_file)
@@ -204,7 +206,8 @@ def loaded_workflow(request, workflow_frontend, workflow_page):
     request.cls.spec = spec
     request.cls.page = workflow_page
     yield
-    # Pause 10 s after all tests for this workflow (visible in --headed mode)
-    # only in development mode
-    if os.environ.get("FLASK_ENV") == "testing":
-        time.sleep(3)
+    # Keep the browser open after all tests for this workflow finish.
+    # Only active in --headed mode (set CURIO_PAUSE_AFTER=1 to enable).
+    if os.environ.get("CURIO_PAUSE_AFTER"):
+        input("Tests done — press Enter to close the browser...")
+

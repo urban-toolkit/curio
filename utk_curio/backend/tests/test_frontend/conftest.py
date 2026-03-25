@@ -9,29 +9,33 @@ from .utils import REPO_ROOT
 #: Master list of workflow JSON filenames to test.
 #: Comment out / add entries here to control the full test matrix.
 WORKFLOW_FILES = [
-    "DefaultWorkflow.json",
+    # "docs/examples/01-visual-analytics.json",
 
-    "DataPool_df.json",
-    "DataPool_gdf.json",
-
-    "DataPool_Vega_2.json",
-    "DataPool_Vega.json",
-    "DataPool_UTK.json",
-
-    "Image.json",
-    "Merge.json",
-    "MergeFlowDataPool.json",
-
-    "Interaction.json",
-    "Interaction_UTK.json",
-    "Interaction_Vega.json",
-
+    # TODO: extract the worrkflows inside
     # "NewMerge.json",
-    "Number Multiplier (Widget).json",
 
-    "Vega.json",
+    "docs/examples/flows/DefaultWorkflow.json",
 
-    "UTK.json",
+    "docs/examples/flows/DataPool_df.json",
+    "docs/examples/flows/DataPool_gdf.json",
+
+    "docs/examples/flows/DataPool_Vega_2.json",
+    "docs/examples/flows/DataPool_Vega.json",
+    "docs/examples/flows/DataPool_UTK.json",
+
+    "docs/examples/flows/Image.json",
+    "docs/examples/flows/Merge.json",
+    "docs/examples/flows/MergeFlowDataPool.json",
+
+    "docs/examples/flows/Interaction.json",
+    "docs/examples/flows/Interaction_UTK.json",
+    "docs/examples/flows/Interaction_Vega.json",
+
+    "docs/examples/flows/Number Multiplier (Widget).json",
+
+    "docs/examples/flows/Vega.json",
+
+    "docs/examples/flows/UTK.json",
 ]
 
 
@@ -50,7 +54,7 @@ def load_workflow_files_from_folder():
         if subset
         else WORKFLOW_FILES
     )
-    return [os.path.join(REPO_ROOT, "tests", name) for name in names]
+    return [os.path.join(REPO_ROOT, name) for name in names]
 
 
 # ------------------------------------------------------------------ #

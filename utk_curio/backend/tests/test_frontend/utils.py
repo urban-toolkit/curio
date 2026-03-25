@@ -2,15 +2,132 @@ import os
 import re
 import json
 import time
+from io import BytesIO
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 
+import allure
 from playwright.sync_api import Page, expect
 
 # Repo root is 4 levels up: test_frontend -> tests -> backend -> utk_curio -> curio-main
 REPO_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
 )
+
+# PNGs from workflow E2E tests: ``screenshot_{workflow_stem}_{test_name}.png``
+WORKFLOW_SCREENSHOT_EXPECTED_DIR = os.path.join(
+    REPO_ROOT, "docs", "examples", "flows", "expected_outputs"
+)
+
+
+def _capture_full_page(page: Page):
+    """Return a Pillow RGB image of the full scrollable page.
+
+    Scrolls to top-left first so the capture is deterministic, then uses
+    Playwright's ``full_page=True`` to grab everything.
+    """
+    from PIL import Image
+
+    page.evaluate("window.scrollTo(0, 0)")
+    raw = page.screenshot(full_page=True)
+    return Image.open(BytesIO(raw)).convert("RGB")
+
+
+def _image_to_png_bytes(img) -> bytes:
+    """Encode a Pillow image to PNG bytes for Allure attachments."""
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def save_workflow_test_screenshot(
+    page: Page,
+    workflow_filepath: str,
+    *,
+    test_name: str,
+    pixel_threshold: int = 30,
+    max_diff_ratio: float = 0.15,
+) -> str:
+    """Compare or create an expected screenshot for a workflow test.
+
+    If the expected file already exists the current page is captured and
+    compared pixel-by-pixel against it.  Both images are resized to the
+    same dimensions before comparison so layout-only size changes don't
+    cause false positives.  The assertion fails when more than
+    *max_diff_ratio* (default 15 %) of pixels differ by more than
+    *pixel_threshold* (per-channel, 0-255).
+
+    On failure the expected, actual, and diff images are attached to the
+    Allure report so that reviewers can inspect the regression directly
+    from the GitHub Actions artifact.
+
+    If the file does **not** exist yet the screenshot is saved as the new
+    baseline.
+
+    Returns the path to the expected screenshot file.
+    """
+    from PIL import Image, ImageChops, ImageEnhance
+
+    stem = os.path.splitext(os.path.basename(workflow_filepath))[0]
+    os.makedirs(WORKFLOW_SCREENSHOT_EXPECTED_DIR, exist_ok=True)
+    filename = f"screenshot_{stem}_{test_name}.png"
+    expected_path = os.path.join(WORKFLOW_SCREENSHOT_EXPECTED_DIR, filename)
+
+    if not os.path.isfile(expected_path):
+        _capture_full_page(page).save(expected_path)
+
+    expected_img = Image.open(expected_path).convert("RGB")
+    actual_img = _capture_full_page(page)
+
+    target_w = max(actual_img.width, expected_img.width)
+    target_h = max(actual_img.height, expected_img.height)
+    actual_cmp = actual_img.resize((target_w, target_h), Image.LANCZOS)
+    expected_cmp = expected_img.resize((target_w, target_h), Image.LANCZOS)
+
+    diff = ImageChops.difference(actual_cmp, expected_cmp)
+    pixels = list(diff.getdata())
+    total = len(pixels)
+    mismatched = sum(
+        1 for r, g, b in pixels
+        if r > pixel_threshold or g > pixel_threshold or b > pixel_threshold
+    )
+    ratio = mismatched / total if total else 0.0
+
+    if ratio > max_diff_ratio:
+        actual_path = os.path.join(
+            WORKFLOW_SCREENSHOT_EXPECTED_DIR,
+            f"screenshot_{stem}_{test_name}_actual.png",
+        )
+        actual_img.save(actual_path)
+
+        diff_highlighted = ImageEnhance.Brightness(diff).enhance(3.0)
+
+        allure.attach(
+            _image_to_png_bytes(expected_cmp),
+            name=f"{filename} — expected",
+            attachment_type=allure.attachment_type.PNG,
+        )
+        allure.attach(
+            _image_to_png_bytes(actual_cmp),
+            name=f"{filename} — actual",
+            attachment_type=allure.attachment_type.PNG,
+        )
+        allure.attach(
+            _image_to_png_bytes(diff_highlighted),
+            name=f"{filename} — diff",
+            attachment_type=allure.attachment_type.PNG,
+        )
+
+        raise AssertionError(
+            f"Screenshot regression for {filename}: "
+            f"{mismatched}/{total} pixels differ ({ratio:.2%}), "
+            f"allowed {max_diff_ratio:.2%}. "
+            f"Expected {expected_img.size[0]}x{expected_img.size[1]}, "
+            f"actual {actual_img.size[0]}x{actual_img.size[1]}. "
+            f"Actual saved to {actual_path}. "
+            f"See Allure report attachments for visual diff."
+        )
+    return expected_path
 
 
 def debug_log(location: str, message: str, data: dict = None, hypothesis_id: str = ""):

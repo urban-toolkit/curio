@@ -23,7 +23,7 @@ type GrammarEditorProps = {
 };
 
 export default function GrammarEditor({
-    // setOutputCallbackack,
+    // setOutputCallback,
     output,
     nodeId,
     applyGrammar,
