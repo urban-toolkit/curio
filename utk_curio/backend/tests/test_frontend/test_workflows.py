@@ -3,7 +3,13 @@ import re
 import json
 import time
 
-from .utils import save_workflow_test_screenshot
+from .utils import (
+    save_workflow_test_screenshot,
+    get_shared_data_dir,
+    load_dot_data,
+    strip_volatile_keys,
+    execute_workflow_programmatically,
+)
 from .workflow_spec import NodeSpec, CODE_EDITOR_TYPES
 
 """
@@ -366,6 +372,9 @@ class TestWorkflowCanvas:
                     f"grammar editor"
                 )
                 # TODO: check if the grammar is rendered inside the editor
+                # Verify the json loaded into the grammar editor matches the
+                # workflow JSON content. 
+                # Grammar editor renders a JSONEditorReact component.
 
             elif node.category == "datapool":
                 data_tabs = node_el.locator("#data-tabs-tab-0")
@@ -388,11 +397,17 @@ class TestWorkflowCanvas:
 
     def test_node_execution(self, loaded_workflow, request):
         """Click the play button on each executable node in topological
-        order and verify that the output status shows *Done*."""
-        # First: run all playable nodes end-to-end
+        order and verify that the output status shows *Done*.
+
+        Before touching the browser, the workflow is executed
+        programmatically (in-process, seeded) to produce expected
+        ``.data`` files.  After the browser run the two sets of files
+        are compared.
+        """
+        expected_map = execute_workflow_programmatically(self.spec, seed=42)
+
         self._execute_all_playable_nodes()
 
-        # Then: assert every playable node ended with "Done"
         for node in self.spec.nodes:
             if not node.has_play_button:
                 continue
@@ -408,9 +423,9 @@ class TestWorkflowCanvas:
                 f"after full workflow execution"
             )
 
-            # ================================================================
+            # ---------------------------------------------------------------
             # Check output tab is active and rendered correctly
-            # ================================================================
+            # ---------------------------------------------------------------
 
             # wait for output tab to be visible
             output_tab = node_el.locator(
@@ -486,7 +501,11 @@ class TestWorkflowCanvas:
                         f"Node {node.id} ({node.type}) is not missing its "
                         f"warning heading"
                     )
-                    # its content should be a text with the output file path following the pattern: <uuid_regex>.data
+
+                    # ------------------------------------------------------------------------
+                    # Test the output tab pane content.
+                    # ------------------------------------------------------------------------
+                    # it should be a text with the output file path following the pattern: <uuid_regex>.data
                     output_content = tab_content.locator("div").filter(
                         has_text=re.compile(r"Saved to file\:\s\w+_\w+.data$")
                     )
@@ -496,9 +515,56 @@ class TestWorkflowCanvas:
                         f"output content"
                     )
 
-                    # TODO check .data file content
-                    # we should read the .data file content and check if it matches the ground truth data 
-                    # we should retrieve the ground truth data from the disk
+                    # Verify .data file content against programmatic execution
+                    data_file_name = output_content.first.evaluate(
+                        r"""(el) => {
+                            const match = el.textContent.match(/Saved to file:\s(\w+_\w+\.data)$/);
+                            return match ? match[1] : null;
+                        }"""
+                    )
+                    assert data_file_name is not None, (
+                        f"Node {node.id} ({node.type}) is missing its data file path"
+                    )
+
+                    data_file_path = os.path.join(get_shared_data_dir(), data_file_name)
+                    assert os.path.exists(data_file_path), (
+                        f"Node {node.id} ({node.type}) is missing its data file"
+                    )
+
+                    if node.id in expected_map:
+                        actual = strip_volatile_keys(load_dot_data(data_file_path))
+                        expected = strip_volatile_keys(
+                            load_dot_data(expected_map[node.id])
+                        )
+                        if actual != expected:
+                            diff_keys = [
+                                k for k in set(actual) | set(expected)
+                                if actual.get(k) != expected.get(k)
+                            ]
+                            raise AssertionError(
+                                f"Node {node.id} ({node.type}) data file content "
+                                f"does not match the programmatic execution. "
+                                f"Differing top-level keys: {diff_keys}"
+                            )
+                
+                
+                
+                # ----------------------------------------------------------
+                # TODO: Test the created SVG Vega-Lite visualizations
+                # ----------------------------------------------------------
+                # Verify Vega-Lite visualization is rendered correctly
+                # get the previous node data from saved .data file
+                # Get the grammar json content from the dataflow json
+                # programatically generate the vega lite svg vis
+                # if node.category == "grammar":
+                #     # Get the grammar json content from the dataflow json
+                #     grammar_json = self.spec.nodes.find(node.id).content
+                #     assert grammar_json is not None, (
+                #         f"Node {node.id} ({node.type}) is missing its "
+                #         f"grammar json"
+                #     )
+                #     compile the grammar json using a vega-lite compiler
+                #     assert the visualization is rendered correctly
 
         self._save_screenshot(request)
 
@@ -515,11 +581,12 @@ class TestWorkflowCanvas:
 
             node_el = self._node_locator(node)
 
-            # ================================================================
+            # ---------------------------------------------------------------
             # Check provenance graph is rendered correctly
-            # ================================================================
+            # ---------------------------------------------------------------
 
-            # If the node has a provenance tab, check if the provenance graph is rendered correctly
+            # If the node has a provenance tab, 
+            # check if the provenance graph is rendered correctly
             provenance_tab = node_el.locator(
                 '.nav-link[data-rr-ui-event-key="provenance"]'
             )

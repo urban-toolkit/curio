@@ -15,3 +15,5 @@ services:
     volumes:
       - ./templates:/app/templates
       - ./data:/app/data
+      # Share sandbox .data files with the host so Playwright (runs on host in CI) can read them
+      - ./.curio:/app/.curio
