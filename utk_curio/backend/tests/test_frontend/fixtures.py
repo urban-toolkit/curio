@@ -1,6 +1,8 @@
 import os
 import sys
+import json
 import time
+import tempfile
 import pytest
 import subprocess
 from signal import SIGINT
@@ -15,7 +17,9 @@ from .utils import (
     e2e_existing_servers,
     base_url,
     upload_workflow,
+    seed_node_code,
 )
+from .workflow_spec import CODE_TYPES
 
 
 # ---------------------------------------------------------------------------
@@ -186,11 +190,32 @@ def workflow_frontend(frontend_server, workflow_page):
 
 @pytest.fixture(scope="class")
 def loaded_workflow(request, workflow_frontend, workflow_page):
-    """Upload the workflow once and expose spec + page to the class."""
+    """Upload the workflow once and expose spec + page to the class.
+
+    The uploaded JSON has deterministic random seeds injected into every
+    node's code so that browser-side execution matches the programmatic
+    expected-data generation (see ``execute_workflow_programmatically``).
+    The original *spec* (un-seeded) is kept for content assertions — they
+    use a substring check so the seed prefix doesn't break them.
+    """
     from .workflow_spec import parse_workflow
 
     workflow_file = request.param
     spec = parse_workflow(workflow_file)
+
+    # Build a seeded copy of the workflow JSON for the browser upload
+    with open(workflow_file, "r") as f:
+        wf_data = json.load(f)
+    for node_json in wf_data["dataflow"]["nodes"]:
+        content = node_json.get("content", "")
+        if content.strip() and node_json.get("type") in CODE_TYPES:
+            node_json["content"] = seed_node_code(content)
+    seeded_tmp = tempfile.NamedTemporaryFile(
+        suffix=".json", delete=False, mode="w",
+    )
+    json.dump(wf_data, seeded_tmp)
+    seeded_tmp.close()
+
     debug_log(
         "fixtures.py:loaded_workflow",
         "About to upload_workflow",
@@ -202,12 +227,13 @@ def loaded_workflow(request, workflow_frontend, workflow_page):
         },
         "H3,H4",
     )
-    upload_workflow(workflow_page, workflow_frontend, workflow_file, spec.nodes_count)
+    upload_workflow(
+        workflow_page, workflow_frontend, seeded_tmp.name, spec.nodes_count,
+    )
     request.cls.spec = spec
     request.cls.page = workflow_page
     yield
-    # Keep the browser open after all tests for this workflow finish.
-    # Only active in --headed mode (set CURIO_PAUSE_AFTER=1 to enable).
+    os.unlink(seeded_tmp.name)
     if os.environ.get("CURIO_PAUSE_AFTER"):
         input("Tests done — press Enter to close the browser...")
 

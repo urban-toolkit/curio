@@ -112,6 +112,17 @@ class WorkflowSpec:
         """
         return sum(1 for e in self.edges if e.get("type") == "Interaction")
 
+    def upstream_nodes(self, node_id: str) -> list[str]:
+        """Return source node IDs feeding into *node_id* (data-flow edges only).
+
+        Interaction edges are excluded because they carry selection state,
+        not data.
+        """
+        return [
+            e["source"] for e in self.edges
+            if e["target"] == node_id and e.get("type") != "Interaction"
+        ]
+
     def topo_sorted_nodes(self) -> list:
         """Return nodes in topological (dependency) order using Kahn's algorithm.
 

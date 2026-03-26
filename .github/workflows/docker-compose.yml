@@ -20,10 +20,11 @@ on:
 jobs:
   test-compose:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
 
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
 
       - name: 🔨 Build all service images in parallel
         run: docker compose -p curio build --parallel
@@ -85,16 +86,26 @@ jobs:
             python -m unittest discover -s utk_curio/sandbox/tests -t . -p "test_*.py" -v
 
       - name: 🐍 Set up Python (for e2e)
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.10"
+
+      - name: 🔧 Give .curio/ permissions for host-side tests
+        run: |
+          # Docker creates .curio/ as root; the host runner needs write
+          # access to create .curio/playwright/expected/ for programmatic
+          # ground-truth data.
+          sudo chmod -R a+rwx .curio/ 2>/dev/null || mkdir -p .curio/playwright/expected
 
       - name: 🎭 Install Playwright and run e2e tests
         run: |
           pip install -r requirements.txt
           python -m playwright install chromium
           cd utk_curio/backend
-          CURIO_E2E_USE_EXISTING=1 PYTHONPATH="$GITHUB_WORKSPACE" \
+          # Hard cap so a stuck browser/test cannot burn the whole job budget (see job timeout-minutes).
+          timeout -k 10 3600 env \
+            PYTHONUNBUFFERED=1 \
+            CURIO_E2E_USE_EXISTING=1 PYTHONPATH="$GITHUB_WORKSPACE" \
             python -m pytest tests/test_frontend/ -v \
               --alluredir="$GITHUB_WORKSPACE/allure-results"
 
@@ -112,7 +123,7 @@ jobs:
 
       - name: 📤 Upload Allure report artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: allure-report
           path: allure-report
