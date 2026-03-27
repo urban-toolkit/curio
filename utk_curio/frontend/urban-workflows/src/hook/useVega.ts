@@ -12,6 +12,11 @@ import { useFlowContext } from "../providers/FlowProvider";
 const vega = require("vega");
 const lite = require("vega-lite");
 
+if (typeof window !== 'undefined') {
+  (window as any).__curio_vega = vega;
+  (window as any).__curio_vegaLite = lite;
+}
+
 export const useVega = ({ data, code }: { data: any; code: string; }) => {
   const [interactions, _setInteractions] = useState<any>({}); // {signal: {type: point/interval, data: }} // if type point data contains list of object ids. If type is interval data is an object where each key is an attribute with intervals or lists
 
@@ -274,6 +279,7 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
           let interactedElementsPoint: number[] = []; // id of the elements interacted with point/hover
 
           if (signalAttributes.length == 0) {
+            // no interaction
             let previousValue = interactionsRef.current[parsedAttr[0]];
 
             let type = VisInteractionType.UNDETERMINED;
