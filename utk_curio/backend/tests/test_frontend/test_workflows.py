@@ -9,6 +9,9 @@ from .utils import (
     load_dot_data,
     strip_volatile_keys,
     execute_workflow_programmatically,
+    dot_data_to_vega_values,
+    save_expected_svg,
+    compare_svg_structure,
 )
 from .workflow_spec import NodeSpec, CODE_EDITOR_TYPES
 
@@ -550,21 +553,112 @@ class TestWorkflowCanvas:
                 
                 
                 # ----------------------------------------------------------
-                # TODO: Test the created SVG Vega-Lite visualizations
+                # Test created SVG Vega-Lite visualizations
                 # ----------------------------------------------------------
-                # Verify Vega-Lite visualization is rendered correctly
-                # get the previous node data from saved .data file
-                # Get the grammar json content from the dataflow json
-                # programatically generate the vega lite svg vis
-                # if node.category == "grammar":
-                #     # Get the grammar json content from the dataflow json
-                #     grammar_json = self.spec.nodes.find(node.id).content
-                #     assert grammar_json is not None, (
-                #         f"Node {node.id} ({node.type}) is missing its "
-                #         f"grammar json"
-                #     )
-                #     compile the grammar json using a vega-lite compiler
-                #     assert the visualization is rendered correctly
+                if node.category == "grammar" and node.type == "VIS_VEGA":
+                    vega_container_id = f"vega{node.id}"
+
+                    # A -- Verify SVG exists and is non-empty
+                    svg_locator = node_el.locator(f"#{vega_container_id} svg")
+                    svg_locator.first.wait_for(state="visible", timeout=15000)
+                    assert svg_locator.count() >= 1, (
+                        f"Grammar node {node.id} ({node.type}) is missing "
+                        f"its rendered SVG inside #{vega_container_id}"
+                    )
+
+                    # B -- Re-compile the spec programmatically and save
+                    #      the expected SVG (mirrors .data baseline pattern)
+                    spec_json = json.loads(
+                        node.content.replace("\r\n", "\n").replace("\r", "\n")
+                    )
+
+                    upstream_ids = self.spec.upstream_nodes(node.id)
+                    vega_values: list[dict] = []
+                    for uid in upstream_ids:
+                        candidate = uid
+                        visited: set[str] = set()
+                        while candidate and candidate not in expected_map:
+                            visited.add(candidate)
+                            parents = self.spec.upstream_nodes(candidate)
+                            candidate = next(
+                                (p for p in parents if p not in visited),
+                                None,
+                            )
+                        if candidate and candidate in expected_map:
+                            upstream_data = load_dot_data(
+                                expected_map[candidate]
+                            )
+                            vega_values = dot_data_to_vega_values(upstream_data)
+                            break
+
+                    container_dims = self.page.evaluate(
+                        """(containerId) => {
+                            const el = document.getElementById(containerId);
+                            if (!el) return null;
+                            return {
+                                width: el.clientWidth,
+                                height: el.clientHeight
+                            };
+                        }""",
+                        vega_container_id,
+                    )
+
+                    expected_svg = self.page.evaluate(
+                        """({ spec, values, dims }) => {
+                            const vega = window.__curio_vega;
+                            const lite = window.__curio_vegaLite;
+                            if (!vega || !lite) return null;
+                            spec.data = { values: values, name: 'data' };
+                            spec.width = dims ? dims.width : 300;
+                            spec.height = dims ? dims.height : 200;
+                            const vegaSpec = lite.compile(spec).spec;
+                            const view = new vega.View(vega.parse(vegaSpec))
+                                .renderer('svg')
+                                .initialize(document.createElement('div'));
+                            return view.runAsync().then(() => view.toSVG());
+                        }""",
+                        {
+                            "spec": spec_json,
+                            "values": vega_values,
+                            "dims": container_dims,
+                        },
+                    )
+                    assert expected_svg is not None, (
+                        f"Grammar node {node.id} ({node.type}): "
+                        f"programmatic Vega-Lite re-compilation returned null "
+                        f"(window.__curio_vega / __curio_vegaLite missing?)"
+                    )
+
+                    dataflow_name = os.path.splitext(
+                        os.path.basename(self.spec.filepath)
+                    )[0]
+                    save_expected_svg(dataflow_name, node.id, expected_svg)
+
+                    # C -- Extract the actual SVG from the DOM
+                    actual_svg = self.page.evaluate(
+                        """(containerId) => {
+                            const el = document.getElementById(containerId);
+                            if (!el) return null;
+                            const svg = el.querySelector('svg');
+                            return svg ? svg.outerHTML : null;
+                        }""",
+                        vega_container_id,
+                    )
+                    assert actual_svg is not None, (
+                        f"Grammar node {node.id} ({node.type}): "
+                        f"could not extract SVG from #{vega_container_id}"
+                    )
+
+                    # D -- Structural comparison
+                    diffs = compare_svg_structure(
+                        actual_svg,
+                        expected_svg,
+                    )
+                    assert not diffs, (
+                        f"Grammar node {node.id} ({node.type}) SVG "
+                        f"structural mismatch:\n"
+                        + "\n".join(f"  - {d}" for d in diffs)
+                    )
 
         self._save_screenshot(request)
 
