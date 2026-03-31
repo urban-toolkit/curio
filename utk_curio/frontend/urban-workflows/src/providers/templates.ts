@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 export default async function useTemplates() {
+    if (process.env.PYODIDE_ENABLED === 'true') return [];
     try{
         const response = await fetch(process.env.BACKEND_URL + '/templates');
         if (!response.ok) {

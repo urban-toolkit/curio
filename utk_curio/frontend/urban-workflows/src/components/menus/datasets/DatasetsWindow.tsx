@@ -12,6 +12,7 @@ export default function DatasetsWindow({
     const [datasetNames, setDatasetNames] = useState<string[]>([]);
 
     useEffect(() => {
+        if (process.env.PYODIDE_ENABLED === 'true') return;
         fetch(process.env.BACKEND_URL + "/datasets", {
             method: "GET",
         })

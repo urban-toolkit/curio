@@ -173,10 +173,15 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
     const initializeProvenance = async () => {
         setLoading(true);
-        await addWorkflow(workflowNameRef.current);
-        let empty_trill = TrillGenerator.generateTrill([], [], workflowNameRef.current);
-        TrillGenerator.intializeProvenance(empty_trill);
-        setLoading(false);
+        try {
+            await addWorkflow(workflowNameRef.current);
+            let empty_trill = TrillGenerator.generateTrill([], [], workflowNameRef.current);
+            TrillGenerator.intializeProvenance(empty_trill);
+        } catch (err) {
+            console.warn('[Curio] initializeProvenance failed (backend unavailable?):', err);
+        } finally {
+            setLoading(false);
+        }
     }
 
     useEffect(() => {

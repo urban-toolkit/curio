@@ -362,8 +362,15 @@ def process_python_code():
         else:
             input['path'] = request.json['input']['path']
             input['dataType'] = request.json['input']['dataType']
+
+    sandbox_url = api_address + ":" + str(api_port) + "/exec"
+    print(f"[DEBUG /processPythonCode] boxType={boxType!r}", flush=True)
+    print(f"[DEBUG /processPythonCode] input={input}", flush=True)
+    print(f"[DEBUG /processPythonCode] code=\n{code}", flush=True)
+    print(f"[DEBUG /processPythonCode] -> POST {sandbox_url}", flush=True)
+
     try:
-        response = requests.post(api_address+":"+str(api_port)+"/exec",
+        response = requests.post(sandbox_url,
                                 data=json.dumps({
                                     "code": code,
                                     "file_path": input['path'],
@@ -372,17 +379,25 @@ def process_python_code():
                                 }),
                                 headers={"Content-Type": "application/json"},
                                 )
-        
+
+        print(f"[DEBUG /processPythonCode] sandbox HTTP status={response.status_code}", flush=True)
+
         try:
             response = response.json()
             stdout = response['stdout']
             stderr = response['stderr']
             output = response['output'] # contains path and dataType
-            print(output, flush=True)
-            
+
+            print(f"[DEBUG /processPythonCode] sandbox stdout={stdout!r}", flush=True)
+            print(f"[DEBUG /processPythonCode] sandbox stderr={stderr!r}", flush=True)
+            print(f"[DEBUG /processPythonCode] sandbox output={output}", flush=True)
+
             return {'stdout': stdout, 'stderr': stderr, 'input': input, 'output': output}
         finally:
             pass
+    except Exception as e:
+        print(f"[DEBUG /processPythonCode] ERROR calling sandbox: {e}", flush=True)
+        raise
     finally:
         pass
 

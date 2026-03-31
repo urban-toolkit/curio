@@ -1,5 +1,14 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { pyodideExecutor } from "./services/PyodideExecutor";
+
+// Preload Pyodide in the background when enabled so it's ready by the time
+// the user clicks ▶ on a node. (~30 MB download, happens once then cached.)
+if (process.env.PYODIDE_ENABLED === 'true') {
+    pyodideExecutor.load().catch((err) =>
+        console.warn('[Curio/Pyodide] Background preload failed:', err)
+    );
+}
 
 import FlowProvider from "./providers/FlowProvider";
 import TemplateProvider from "./providers/TemplateProvider";
@@ -8,7 +17,7 @@ import DialogProvider from "./providers/DialogProvider";
 import { MainCanvas } from "./components/MainCanvas";
 import { ReactFlowProvider } from "reactflow";
 import ProvenanceProvider from "./providers/ProvenanceProvider";
-import LLMProvider from "./providers/LLMProvider";
+import LLMProvider fromv "./providers/LLMProvider";
 
 const InteractionLogger: React.FC = () => {
   React.useEffect(() => {

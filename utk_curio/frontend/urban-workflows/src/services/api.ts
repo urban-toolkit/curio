@@ -1,4 +1,13 @@
+import { pyodideExecutor } from './PyodideExecutor';
+
 export async function fetchData(fileName: string, vega: boolean = false) {
+    // In-memory path for Pyodide execution, skips network entirely
+    if (fileName?.startsWith('pyodide://')) {
+        const data = pyodideExecutor.getData(fileName);
+        if (!data) throw new Error(`[Curio/Pyodide] No in-memory data found for ${fileName}`);
+        return data;
+    }
+
     try {
         // const url = `${process.env.BACKEND_URL}/get?fileName=${encodeURIComponent(fileName)}${vega ? '&vega=true' : ''}`;
         const url = `${process.env.BACKEND_URL}/get?fileName=${encodeURIComponent(fileName)}`;

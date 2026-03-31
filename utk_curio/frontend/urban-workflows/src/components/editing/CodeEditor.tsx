@@ -88,13 +88,14 @@ function CodeEditor({
 
     // marks were resolved and new code is available
     useEffect(() => {
+        console.log("[DEBUG CodeEditor] replacedCodeDirty fired — replacedCode:", replacedCode, "output.code:", output.code, "bypass:", replacedCodeDirtyBypass.current);
         if (
             replacedCode != "" &&
             replacedCodeDirtyBypass.current &&
             output.code == "exec"
         ) {
             // the code was executing and not only resolving widgets
-            // console.log(data);
+            console.log("[DEBUG CodeEditor] calling interpretCode, input:", data.input, "boxType:", boxType);
             data.pythonInterpreter.interpretCode(
                 code,
                 replacedCode,

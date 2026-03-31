@@ -510,7 +510,7 @@ function VegaBox({ data, isConnectable }) {
         dfStringOUT
       );
 
-        fetch(`${process.env.BACKEND_URL}/insert_visualization`, {
+        if (process.env.PYODIDE_ENABLED !== 'true') fetch(`${process.env.BACKEND_URL}/insert_visualization`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -550,7 +550,7 @@ function VegaBox({ data, isConnectable }) {
 
         let int_time = formatDate(new Date());
        
-        fetch(`${process.env.BACKEND_URL}/insert_interaction`, {
+        if (process.env.PYODIDE_ENABLED !== 'true') fetch(`${process.env.BACKEND_URL}/insert_interaction`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

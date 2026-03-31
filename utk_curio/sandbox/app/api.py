@@ -109,8 +109,9 @@ def exec():
     file_path = request.json['file_path']
     boxType = request.json['boxType']
     dataType = request.json['dataType']
-    
-    full_code = full_code.replace('{userCode}', str(code))
+    print(code)
+    indented_code = "\n".join("    " + line for line in str(code).splitlines())
+    full_code = full_code.replace('{userCode}', indented_code)
     full_code = full_code.replace('{filePath}', str(file_path))
     full_code = full_code.replace('{boxType}', str(boxType))
     full_code = full_code.replace('{dataType}', str(dataType))

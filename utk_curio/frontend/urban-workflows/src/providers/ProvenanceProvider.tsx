@@ -46,6 +46,9 @@ export const ProvenanceContext = createContext<ProvenanceContextProps>({
     truncateDB: () => {},
 });
 
+/** When Pyodide mode is on there is no backend, skip all provenance network calls. */
+const pyodideMode = process.env.PYODIDE_ENABLED === 'true';
+
 const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
     const [provenanceGraphBoxes, _setProvenanceGraphBoxes] = useState<any>({}); // workflow_name -> activity_name -> nodes[]
     const provenanceGraphBoxesRef = React.useRef(provenanceGraphBoxes);
@@ -55,6 +58,7 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const addUser = (user_name: string, user_type: string, user_IP: string) => {
+        if (pyodideMode) return;
         fetch(process.env.BACKEND_URL + "/saveUserProv", {
             method: "POST",
             body: JSON.stringify({
@@ -71,6 +75,7 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const newBox = (workflow_name: string, activity_name: string) => {
+        if (pyodideMode) return;
         console.log("workflow_name", workflow_name);
         console.log("activity_name", activity_name);
 
@@ -89,6 +94,7 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const deleteBox = (workflow_name: string, activity_name: string) => {
+        if (pyodideMode) return;
         fetch(process.env.BACKEND_URL + "/deleteBoxProv", {
             method: "POST",
             body: JSON.stringify({
@@ -104,19 +110,24 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const addWorkflow = async (workflow_name: string) => {
-        await fetch(process.env.BACKEND_URL + "/truncateDBProv", {
-            method: "GET",
-        });
+        if (pyodideMode) return;
+        try {
+            await fetch(process.env.BACKEND_URL + "/truncateDBProv", {
+                method: "GET",
+            });
 
-        await fetch(process.env.BACKEND_URL + "/saveWorkflowProv", {
-            method: "POST",
-            body: JSON.stringify({
-                workflow: workflow_name,
-            }),
-            headers: {
-                "Content-type": "application/json; charset=UTF-8",
-            },
-        });
+            await fetch(process.env.BACKEND_URL + "/saveWorkflowProv", {
+                method: "POST",
+                body: JSON.stringify({
+                    workflow: workflow_name,
+                }),
+                headers: {
+                    "Content-type": "application/json; charset=UTF-8",
+                },
+            });
+        } catch (err) {
+            console.warn('[Curio] addWorkflow: provenance backend unreachable, skipping:', err);
+        }
     };
 
     const newConnection = (
@@ -126,6 +137,7 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
         targetNodeId: string,
         targetNodeType: BoxType
     ) => {
+        if (pyodideMode) return;
         if (!workflow_name || !sourceNodeId || !sourceNodeType || !targetNodeId || !targetNodeType) {
             console.error("[newConnection] Missing or invalid data in payload", {
                 workflow_name, sourceNodeId, sourceNodeType, targetNodeId, targetNodeType,
@@ -155,6 +167,7 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
         targetNodeId: string,
         targetNodeType: BoxType
     ) => {
+        if (pyodideMode) return;
         fetch(process.env.BACKEND_URL + "/deleteConnectionProv", {
             method: "POST",
             body: JSON.stringify({
@@ -182,6 +195,7 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
         outputData: string = "",
         interaction: boolean = false
     ) => {
+        if (pyodideMode) return;
         fetch(process.env.BACKEND_URL + "/boxExecProv", {
             method: "POST",
             body: JSON.stringify({
@@ -270,6 +284,7 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
 
     // for test purposes (TODO: temporary)
     const truncateDB = () => {
+        if (pyodideMode) return;
         fetch(process.env.BACKEND_URL + "/truncateDBProv", {
             method: "GET",
         });

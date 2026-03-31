@@ -1,5 +1,11 @@
 import { BoxType } from "./constants";
-// import { pythonCode } from "./pythonWrapper";
+import { pyodideExecutor } from "./services/PyodideExecutor";
+
+/**
+ * Box types that require the backend sandbox (geospatial / 3D).
+ * These will never be routed to Pyodide.
+ */
+const BACKEND_ONLY_TYPES = new Set([BoxType.VIS_UTK]);
 
 export class PythonInterpreter {
     // protected _pythonWrapperCode: string[];
@@ -20,6 +26,80 @@ export class PythonInterpreter {
         workflow_name: string,
         boxExecProv: any
     ) {
+        const usePyodide =
+            process.env.PYODIDE_ENABLED === 'true' &&
+            pyodideExecutor.isLoaded() &&
+            !BACKEND_ONLY_TYPES.has(boxType);
+
+        if (usePyodide) {
+            this._runWithPyodide(unresolvedUserCode, userCode, input, boxType, nodeId, workflow_name, boxExecProv, callback);
+        } else {
+            this._runWithBackend(unresolvedUserCode, userCode, input, inputTypes, boxType, nodeId, workflow_name, boxExecProv, callback);
+        }
+    }
+
+    // ── Pyodide path ──────────────────────────────────────────────────────────
+
+    private async _runWithPyodide(
+        unresolvedUserCode: string,
+        userCode: string,
+        input: any,
+        boxType: BoxType,
+        nodeId: string,
+        workflow_name: string,
+        boxExecProv: any,
+        callback: any
+    ) {
+        const startTime = new Date().toISOString();
+
+        try {
+            const result = await pyodideExecutor.execute(userCode, input, boxType as string);
+
+            const endTime = new Date().toISOString();
+
+            const typesInput = input ? [input.dataType] : [];
+            const typesOutput = result.output && 'dataType' in result.output
+                ? [result.output.dataType]
+                : ['error'];
+
+            boxExecProv(
+                startTime, endTime, workflow_name,
+                boxType + '-' + nodeId,
+                this._mapTypes(typesInput),
+                this._mapTypes(typesOutput),
+                unresolvedUserCode
+            );
+
+            // Normalize to the same shape the backend returns so callback works unchanged
+            callback({
+                stdout: result.stdout,
+                stderr: result.stderr,
+                input: input || '',
+                output: result.output,
+            });
+        } catch (err: any) {
+            callback({
+                stdout: [],
+                stderr: String(err),
+                input: input || '',
+                output: {},
+            });
+        }
+    }
+
+    // ── Backend path (original) ───────────────────────────────────────────────
+
+    private _runWithBackend(
+        unresolvedUserCode: string,
+        userCode: string,
+        input: string,
+        inputTypes: string[],
+        boxType: BoxType,
+        nodeId: string,
+        workflow_name: string,
+        boxExecProv: any,
+        callback: any
+    ) {
         let lines = userCode.split("\n");
 
         let unifiedLines = "";
@@ -27,32 +107,15 @@ export class PythonInterpreter {
             unifiedLines += "    " + line + "\n";
         }
 
-        const formatDate = (date: Date) => {
-            // Get individual date components
-            const month = date.toLocaleString("default", { month: "short" });
-            const day = date.getDate();
-            const year = date.getFullYear();
-            const hours = date.getHours();
-            const minutes = date.getMinutes();
-            const seconds = date.getSeconds();
-
-            // Format the string
-            const formattedDate = `${month} ${day} ${year} ${hours}:${minutes}:${seconds}`;
-
-            return formattedDate;
-        };
-
-        let startTime = formatDate(new Date());
-
-        console.log("unifiedLines", unifiedLines);
+        const startTime = new Date().toISOString();
 
         fetch(process.env.BACKEND_URL + "/processPythonCode", {
             method: "POST",
             body: JSON.stringify({
                 code: unifiedLines,
-                input: input, // new
-                inputTypes: inputTypes, // new
-                boxType: boxType // new
+                input: input,
+                inputTypes: inputTypes,
+                boxType: boxType
             }),
             headers: {
                 "Content-type": "application/json; charset=UTF-8",
@@ -60,74 +123,14 @@ export class PythonInterpreter {
         })
             .then((response) => response.json())
             .then((json) => {
-                let endTime = formatDate(new Date());
-
-                // const getType = (inputs: any[]) => {
-                //     let typesInput: string[] = [];
-
-                //     for (const input of inputs) {
-                //         let parsedInput = input;
-
-                //         if (typeof input == "string")
-                            
-                //             parsedInput = JSON.parse(parsedInput);
-
-                //         if (parsedInput.dataType == "outputs") {
-                //             typesInput = typesInput.concat(
-                //                 getType(parsedInput.data)
-                //             );
-                //         } else {
-                //             typesInput.push(parsedInput.dataType);
-                //         }
-                //     }
-
-                //     return typesInput;
-                // };
-
-                const mapTypes = (typesList: string[]) => {
-                    let mapTypes: any = {
-                        "DATAFRAME": 0,
-                        "GEODATAFRAME": 0,
-                        "VALUE": 0,
-                        "LIST": 0,
-                        "JSON": 0,
-                    };
-
-                    for (const typeValue of typesList) {
-                        if (
-                            typeValue == "int" ||
-                            typeValue == "str" ||
-                            typeValue == "float" ||
-                            typeValue == "bool"
-                        ) {
-                            mapTypes["VALUE"] = 1;
-                        } else if (typeValue == "list") {
-                            mapTypes["LIST"] = 1;
-                        } else if (typeValue == "dict") {
-                            mapTypes["JSON"] = 1;
-                        } else if (typeValue == "dataframe") {
-                            mapTypes["DATAFRAME"] = 1;
-                        } else if (typeValue == "geodataframe") {
-                            mapTypes["GEODATAFRAME"] = 1;
-                        }
-                    }
-
-                    return mapTypes;
-                };
+                const endTime = new Date().toISOString();
 
                 let typesInput: string[] = [];
-                // console.log("------------ inputTypes", json.inputTypes)
-                // console.log("------------", json)
-                if (input != "") typesInput = json.input.dataType;//getType([input]);
+                if (input !== "") typesInput = [json.input?.dataType ?? ''];
 
-                let typesOuput: string[] = [];
-
-                if (json.output != "") {
-                    if (json.stderr != "") {
-                        typesOuput = ["error"];
-                    } else {
-                        typesOuput = json.output.dataType;// getType([json.output]);
-                    }
+                let typesOutput: string[] = [];
+                if (json.output !== "") {
+                    typesOutput = json.stderr !== "" ? ["error"] : [json.output?.dataType ?? ''];
                 }
 
                 boxExecProv(
@@ -135,8 +138,8 @@ export class PythonInterpreter {
                     endTime,
                     workflow_name,
                     boxType + "-" + nodeId,
-                    mapTypes(typesInput),
-                    mapTypes(typesOuput),
+                    this._mapTypes(typesInput),
+                    this._mapTypes(typesOutput),
                     unresolvedUserCode
                 );
 
@@ -162,5 +165,21 @@ export class PythonInterpreter {
 
                 callback(json);
             });
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private _mapTypes(typesList: string[]): Record<string, number> {
+        const map: Record<string, number> = {
+            DATAFRAME: 0, GEODATAFRAME: 0, VALUE: 0, LIST: 0, JSON: 0,
+        };
+        for (const t of typesList) {
+            if (['int', 'str', 'float', 'bool'].includes(t)) map.VALUE = 1;
+            else if (t === 'list') map.LIST = 1;
+            else if (t === 'json' || t === 'dict') map.JSON = 1;
+            else if (t === 'dataframe') map.DATAFRAME = 1;
+            else if (t === 'geodataframe') map.GEODATAFRAME = 1;
+        }
+        return map;
     }
 }
