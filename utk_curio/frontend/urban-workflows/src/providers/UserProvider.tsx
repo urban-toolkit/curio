@@ -92,6 +92,7 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
   );
 
   useEffect(() => {
+    if (process.env.PYODIDE_ENABLED === 'true') return;
     let cancelled = false;
 
     const bootstrap = async () => {

@@ -114,7 +114,7 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
             if (template.id == templateNew.id){
                 newTemplates.push({ ...templateNew });
 
-                if(Object.keys(template).length > 0){ // If there is a template
+                if(Object.keys(template).length > 0 && process.env.PYODIDE_ENABLED !== 'true'){ // If there is a template
                     fetch(process.env.BACKEND_URL + "/addTemplate", {
                         method: "POST",
                         body: JSON.stringify(templateNew),

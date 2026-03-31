@@ -9,6 +9,7 @@ import {
   Navigate,
   useParams,
 } from "react-router-dom";
+import { pyodideExecutor } from "./services/PyodideExecutor";
 
 (self as any).MonacoEnvironment = {
   getWorker(_: string, label: string) {
@@ -61,6 +62,14 @@ import { getAllNodeTypes } from "./registry";
     body: JSON.stringify({ nodeTypes }),
   }).catch(() => {});
 })();
+
+// Preload Pyodide in the background when enabled so it's ready by the time
+// the user clicks ▶ on a node. (~30 MB download, happens once then cached.)
+if (process.env.PYODIDE_ENABLED === 'true') {
+    pyodideExecutor.load().catch((err) =>
+        console.warn('[Curio/Pyodide] Background preload failed:', err)
+    );
+}
 
 import FlowProvider from "./providers/FlowProvider";
 import TemplateProvider from "./providers/TemplateProvider";

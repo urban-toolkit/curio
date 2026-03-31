@@ -24,6 +24,7 @@ export default function DatasetsWindow({
     };
 
     useEffect(() => {
+        if (process.env.PYODIDE_ENABLED === 'true') return;
         if (open) fetchDatasets();
     }, [open]);
 
