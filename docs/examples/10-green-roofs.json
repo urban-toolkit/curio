@@ -1,0 +1,146 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "82537c44-8195-4cd3-a5fa-8a049d53d96e",
+        "type": "DATA_LOADING",
+        "x": 261,
+        "y": 209,
+        "content": "import pandas as pd\n\ndf = pd.read_csv(\"data/Green_Roofs.csv\")\nreturn df",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "e5e7e21f-609d-496b-b231-659ee91ff9af",
+        "type": "DATA_CLEANING",
+        "x": 891.8521428018273,
+        "y": 210.48976525940256,
+        "content": "import pandas as pd\n\ndf = arg\ndf.fillna(0, inplace=True)\n\nreturn df",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "4226b7ed-c8e7-4acf-873b-2d835d9c4a07",
+        "type": "VIS_VEGA",
+        "x": 1525.938165723021,
+        "y": 210.54795738849762,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"description\": \"Histogram of Total Roof Size of Buildings in Chicago (log-scaled)\",\n  \"data\": {\n    \"name\": \"data\"\n  },\n  \"transform\": [\n    { \"filter\": \"datum.TOTAL_ROOF_SQFT > 0\" },\n    {\n      \"calculate\": \"log(datum.TOTAL_ROOF_SQFT) / log(10)\",\n      \"as\": \"log_roof_size\"\n    }\n  ],\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"log_roof_size\",\n      \"bin\": { \"maxbins\": 30 },\n      \"axis\": {\n        \"title\": \"Total Roof Size (sqft)\",\n        \"values\": [3, 4, 5, 6],\n        \"labelExpr\": \"'10^' + datum.value\"\n      }\n    },\n    \"y\": {\n      \"aggregate\": \"count\",\n      \"type\": \"quantitative\",\n      \"axis\": {\n        \"title\": \"Number of Buildings\"\n      }\n    }\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "92717c5a-2e65-4ca3-9818-d5f73c89f0a9",
+        "type": "DATA_LOADING",
+        "x": 283.21219419868953,
+        "y": 577.8176987439779,
+        "content": "import geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import Point\n# Read the green roofs dataset\ngreen_roofs_df = pd.read_csv('data/Green_Roofs.csv')\n\n# Create the dataset into geo dataframe using latitude and longitude columns\ngeometry = [Point(xy) for xy in zip(green_roofs_df['LONGITUDE'], green_roofs_df['LATITUDE'])]\ngreen_roofs_df = gpd.GeoDataFrame(green_roofs_df, geometry=geometry, crs=4326)\nchicago = gpd.read_file(\"data/chicago.geojson\")\n\n# Joining the green roofs dataset with the chicago neighborhood geojson file\njoined = gpd.sjoin(green_roofs_df, chicago, predicate='within')\nreturn joined",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "c528f5bc-5d28-4c72-9158-dfb4282c504f",
+        "type": "DATA_POOL",
+        "x": 914.9404419052586,
+        "y": 579.0066549726494,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "5c11ed5f-c993-4940-89d0-08d186e903f9",
+        "type": "VIS_VEGA",
+        "x": 1532.9036653150897,
+        "y": 586.8028707639176,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"description\": \"Dot Density Map of Green Roof Locations in Chicago with Zoom & Pan\",\n  \"width\": 500,\n  \"height\": 600,\n  \"title\": \"Green Roof Locations in Chicago\",\n  \"mark\": \"circle\",\n  \"selection\": {\n    \"grid\": {\n      \"type\": \"interval\",\n      \"bind\": \"scales\"\n    }\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"LONGITUDE\",\n      \"type\": \"quantitative\",\n      \"scale\": { \"domain\": [-88.0, -87.5] },\n      \"axis\": { \"title\": \"Longitude\" }\n    },\n    \"y\": {\n      \"field\": \"LATITUDE\",\n      \"type\": \"quantitative\",\n      \"scale\": { \"domain\": [41.6, 42.1] },\n      \"axis\": { \"title\": \"Latitude\" }\n    },\n    \"size\": {\n      \"field\": \"VEGETATED_SQFT\",\n      \"type\": \"quantitative\",\n      \"legend\": { \"title\": \"Vegetated Sqft\" }\n    },\n    \"tooltip\": [\n      { \"field\": \"VEGETATED_SQFT\", \"type\": \"quantitative\" },\n      { \"field\": \"TOTAL_ROOF_SQFT\", \"type\": \"quantitative\" },\n      { \"field\": \"zip\", \"type\": \"nominal\" }\n    ]\n  },\n  \"config\": {\n    \"view\": { \"stroke\": \"transparent\" }\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "a9995883-f2ea-4b42-b74d-59ebc727afc6",
+        "type": "DATA_TRANSFORMATION",
+        "x": 1550.814861173043,
+        "y": 1008.7750218024208,
+        "content": "import geopandas as gpd\n\njoined = arg\n\n# filter out the top 10 zip codes from the joined dataframe on 'zip' by square feet\ntop_10_largest = joined.groupby('zip')['VEGETATED_SQFT'].sum().reset_index().sort_values(by='VEGETATED_SQFT', ascending=False).head(10)\n\nreturn top_10_largest",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "d23e2587-57bf-4db4-84fe-cdb7c2de638d",
+        "type": "VIS_VEGA",
+        "x": 2210.0296422765496,
+        "y": 983.3453714927902,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"description\": \"Top 10 largest zip codes by green roof area\",\n  \"width\": 400,\n  \"height\": 200,\n  \"selection\": {\n    \"zip_select\": {\n      \"type\": \"multi\",\n      \"fields\": [\"zip\"],\n      \"toggle\": \"event.shiftKey\"\n    }\n  },\n  \"mark\": { \"type\": \"bar\", \"stroke\": \"black\", \"color\": \"green\" },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"VEGETATED_SQFT\",\n      \"type\": \"quantitative\",\n      \"axis\": {\n        \"title\": \"Total Vegetated Roof Size (sqft)\",\n        \"values\": [100000, 250000, 500000, 1000000],\n        \"format\": \",d\"\n      }\n    },\n    \"y\": {\n      \"field\": \"zip\",\n      \"type\": \"nominal\",\n      \"sort\": \"-x\",\n      \"axis\": { \"title\": \"Zip Code\" }\n    },\n    \"color\": {\n      \"field\": \"zip\",\n      \"type\": \"nominal\",\n      \"scale\": { \"scheme\": \"category20\" }\n    },\n    \"opacity\": {\n      \"condition\": { \"selection\": \"zip_select\", \"value\": 1 },\n      \"value\": 0.3\n    },\n    \"tooltip\": [\n      { \"field\": \"zip\", \"type\": \"nominal\" },\n      { \"field\": \"VEGETATED_SQFT\", \"type\": \"quantitative\" }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-82537c44-8195-4cd3-a5fa-8a049d53d96eout-e5e7e21f-609d-496b-b231-659ee91ff9afin",
+        "source": "82537c44-8195-4cd3-a5fa-8a049d53d96e",
+        "target": "e5e7e21f-609d-496b-b231-659ee91ff9af"
+      },
+      {
+        "id": "reactflow__edge-e5e7e21f-609d-496b-b231-659ee91ff9afout-4226b7ed-c8e7-4acf-873b-2d835d9c4a07in",
+        "source": "e5e7e21f-609d-496b-b231-659ee91ff9af",
+        "target": "4226b7ed-c8e7-4acf-873b-2d835d9c4a07"
+      },
+      {
+        "id": "reactflow__edge-92717c5a-2e65-4ca3-9818-d5f73c89f0a9out-c528f5bc-5d28-4c72-9158-dfb4282c504fin",
+        "source": "92717c5a-2e65-4ca3-9818-d5f73c89f0a9",
+        "target": "c528f5bc-5d28-4c72-9158-dfb4282c504f"
+      },
+      {
+        "id": "reactflow__edge-c528f5bc-5d28-4c72-9158-dfb4282c504fout-5c11ed5f-c993-4940-89d0-08d186e903f9in",
+        "source": "c528f5bc-5d28-4c72-9158-dfb4282c504f",
+        "target": "5c11ed5f-c993-4940-89d0-08d186e903f9"
+      },
+      {
+        "id": "reactflow__edge-c528f5bc-5d28-4c72-9158-dfb4282c504fout-a9995883-f2ea-4b42-b74d-59ebc727afc6in",
+        "source": "c528f5bc-5d28-4c72-9158-dfb4282c504f",
+        "target": "a9995883-f2ea-4b42-b74d-59ebc727afc6"
+      },
+      {
+        "id": "reactflow__edge-a9995883-f2ea-4b42-b74d-59ebc727afc6out-d23e2587-57bf-4db4-84fe-cdb7c2de638din",
+        "source": "a9995883-f2ea-4b42-b74d-59ebc727afc6",
+        "target": "d23e2587-57bf-4db4-84fe-cdb7c2de638d"
+      }
+    ],
+    "name": "DefaultWorkflow",
+    "task": "",
+    "timestamp": 1774933485890,
+    "provenance_id": "DefaultWorkflow"
+  }
+}

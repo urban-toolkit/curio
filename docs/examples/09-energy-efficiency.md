@@ -14,7 +14,7 @@ The data for this tutorial can be found [here](data/energy_dataset.csv).
 
 For completeness, we also include the template code in each dataflow step.
 
-## Step 1: Load energy efficieency data
+## Step 1: Load energy efficiency data
 
 We begin by loading the energy efficiency dataset into Curio using a Data Loading node.
 Make sure to include your full file path to the file as well.

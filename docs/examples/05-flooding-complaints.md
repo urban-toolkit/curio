@@ -45,3 +45,28 @@ return complaints_by_zip(arg)
 In the last step, we performed computational analysis to get the total number of complaints per zip code. A possible way to see these types of results is using a table. We will connect the **Computational Analysis Node** with a **Data Pool Node** to display our results in Table format. You do not need to include any code in the **Data Pool Node**.
 
 ![Example 5-4](images/5-4.png)
+
+## Optional Step 4: Visualize results using a Vega bar chart
+
+Let's create a "2D Plot (Vega Lite)" node connected to the output of Step 3 (data pool node) to visualize the total number of complaints per zip code using a bar chart. 
+Here is the Vega-Lite code to do so:
+
+```json
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "A simple bar chart with embedded data.",
+  "mark": "bar",
+  "encoding": {
+    "x": {"field": "ZIP_CODE", "type": "nominal", "axis": {"labelAngle": 270}},
+    "y": {"field": "Complaint_Count", "type": "quantitative", "axis": {"labelAngle": 0}},
+    "tooltip": [
+      {"field": "ZIP_CODE", "type": "nominal", "title": "Zip Code"},
+      {"field": "Complaint_Count", "type": "quantitative", "title": "Count"}
+    ]
+
+  }
+}
+```
+![Example 5-11](images/5-11.png)
+
+

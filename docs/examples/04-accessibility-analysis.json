@@ -1,0 +1,115 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "cd3b6afc-900d-417c-8064-375ed01a912f",
+        "type": "DATA_LOADING",
+        "x": 780.7342662984418,
+        "y": -73.72077606786144,
+        "content": "import geopandas as gpd\n\ngdf = gpd.read_file('data/labels_2026-03-30T13_06_26.436355935-07_00.json')\n\ngdf.metadata = {\n    'name': 'accessibility_features'\n}\n\nreturn gdf\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "a0c5d21f-ce16-4318-95fe-598451859de1",
+        "type": "DATA_CLEANING",
+        "x": 807.5045113872777,
+        "y": 242.8108198641839,
+        "content": "import pandas as pd\nimport geopandas as gpd\nimport numpy as np\nimport utk\n\ngdf = arg\n\nprocessed_gdf = gdf[['label_type', 'severity', 'neighborhood', 'geometry', 'agree_count', 'disagree_count']]\n\nprocessed_gdf['agreement_ratio'] = processed_gdf['agree_count'] / (processed_gdf['agree_count'] + processed_gdf['disagree_count'])\n\nseverity_bins = [0, 1, 2, 3, 5]\nseverity_labels = ['Low', 'Medium', 'High', 'Critical']\nprocessed_gdf['severity_level'] = pd.cut(\n    processed_gdf['severity'],\n    bins=severity_bins,\n    labels=severity_labels,\n    include_lowest=True\n)\n\nif processed_gdf.crs is None:\n    processed_gdf = processed_gdf.set_crs(\"EPSG:4326\")\nelse:\n    processed_gdf = processed_gdf.to_crs(\"EPSG:4326\")\n\nprocessed_gdf['thematic'] = processed_gdf['severity']\n\nprocessed_gdf.metadata = {\n    'name': 'accessibility_analysis'\n}\n\nreturn processed_gdf",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "6475234e-0288-49cd-b03f-19852717c980",
+        "type": "DATA_TRANSFORMATION",
+        "x": 1451.5394565230276,
+        "y": -54.128104826215974,
+        "content": "import pandas as pd\nimport numpy as np\n\ngdf = arg\n\nfeature_stats = gdf.groupby('label_type').agg(\n    count=('label_type', 'count'),\n    avg_severity=('severity', 'mean'),\n    avg_agreement=('agreement_ratio', 'mean')\n).reset_index()\n\nfeature_stats = feature_stats.fillna(0)\n\nfor col in ['avg_severity', 'avg_agreement']:\n    feature_stats[col] = feature_stats[col].astype(float)\n\nfeature_stats.metadata = {\n    'name': 'feature_stats'\n}\n\nreturn feature_stats",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "44286732-11aa-4495-8706-cb4a9ba2e6a5",
+        "type": "DATA_TRANSFORMATION",
+        "x": 1456.1844329335845,
+        "y": 330.51009137052637,
+        "content": "import pandas as pd\nimport numpy as np\n\ngdf = arg\n\nneighborhood_stats = gdf.groupby('neighborhood').agg(\n    count=('label_type', 'count'),\n    avg_severity=('severity', 'mean'),\n    avg_agreement=('agreement_ratio', 'mean')\n).reset_index()\n\nneighborhood_stats = neighborhood_stats.fillna(0)\n\nfor col in ['avg_severity', 'avg_agreement']:\n    neighborhood_stats[col] = neighborhood_stats[col].astype(float)\n\nneighborhood_stats.metadata = {\n    'name': 'neighborhood_stats'\n}\n\nreturn neighborhood_stats",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "90282349-bde0-4b34-a0ab-e9a32f48032a",
+        "type": "VIS_VEGA",
+        "x": 2142.632869286572,
+        "y": -173.1304662320116,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"data\": {\"name\": \"feature_stats\"},\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"label_type\",\n      \"type\": \"nominal\",\n      \"title\": \"Feature Type\"\n    },\n    \"y\": {\n      \"field\": \"count\",\n      \"type\": \"quantitative\",\n      \"title\": \"Number of Features\"\n    },\n    \"color\": {\n      \"field\": \"avg_severity\",\n      \"type\": \"quantitative\",\n      \"title\": \"Average Severity\",\n      \"scale\": {\n        \"scheme\": \"viridis\"\n      }\n    },\n    \"tooltip\": [\n      {\"field\": \"label_type\", \"type\": \"nominal\", \"title\": \"Feature Type\"},\n      {\"field\": \"count\", \"type\": \"quantitative\", \"title\": \"Count\"},\n      {\"field\": \"avg_severity\", \"type\": \"quantitative\", \"title\": \"Avg Severity\", \"format\": \".2f\"},\n      {\"field\": \"avg_agreement\", \"type\": \"quantitative\", \"title\": \"Avg Agreement\", \"format\": \".2f\"}\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "44609c8e-87dd-4373-ab6e-59839e8f9406",
+        "type": "VIS_VEGA",
+        "x": 2059.2074128967574,
+        "y": 200.90167099167456,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"data\": {\"name\": \"neighborhood_stats\"},\n  \"mark\": \"circle\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"neighborhood\",\n      \"type\": \"nominal\",\n      \"title\": \"Neighborhood\"\n    },\n    \"y\": {\n      \"field\": \"count\",\n      \"type\": \"quantitative\",\n      \"title\": \"Number of Features\"\n    },\n    \"size\": {\n      \"field\": \"count\",\n      \"type\": \"quantitative\",\n      \"title\": \"Number of Features\",\n      \"scale\": {\n        \"range\": [50, 500]\n      }\n    },\n    \"color\": {\n      \"field\": \"avg_severity\",\n      \"type\": \"quantitative\",\n      \"title\": \"Average Severity\",\n      \"scale\": {\n        \"scheme\": \"viridis\"\n      }\n    },\n    \"tooltip\": [\n      {\"field\": \"neighborhood\", \"type\": \"nominal\", \"title\": \"Neighborhood\"},\n      {\"field\": \"count\", \"type\": \"quantitative\", \"title\": \"Count\"},\n      {\"field\": \"avg_severity\", \"type\": \"quantitative\", \"title\": \"Avg Severity\", \"format\": \".2f\"},\n      {\"field\": \"avg_agreement\", \"type\": \"quantitative\", \"title\": \"Avg Agreement\", \"format\": \".2f\"}\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-cd3b6afc-900d-417c-8064-375ed01a912fout-a0c5d21f-ce16-4318-95fe-598451859de1in",
+        "source": "cd3b6afc-900d-417c-8064-375ed01a912f",
+        "target": "a0c5d21f-ce16-4318-95fe-598451859de1"
+      },
+      {
+        "id": "reactflow__edge-a0c5d21f-ce16-4318-95fe-598451859de1out-6475234e-0288-49cd-b03f-19852717c980in",
+        "source": "a0c5d21f-ce16-4318-95fe-598451859de1",
+        "target": "6475234e-0288-49cd-b03f-19852717c980"
+      },
+      {
+        "id": "reactflow__edge-a0c5d21f-ce16-4318-95fe-598451859de1out-44286732-11aa-4495-8706-cb4a9ba2e6a5in",
+        "source": "a0c5d21f-ce16-4318-95fe-598451859de1",
+        "target": "44286732-11aa-4495-8706-cb4a9ba2e6a5"
+      },
+      {
+        "id": "reactflow__edge-6475234e-0288-49cd-b03f-19852717c980out-90282349-bde0-4b34-a0ab-e9a32f48032ain",
+        "source": "6475234e-0288-49cd-b03f-19852717c980",
+        "target": "90282349-bde0-4b34-a0ab-e9a32f48032a"
+      },
+      {
+        "id": "reactflow__edge-44286732-11aa-4495-8706-cb4a9ba2e6a5out-44609c8e-87dd-4373-ab6e-59839e8f9406in",
+        "source": "44286732-11aa-4495-8706-cb4a9ba2e6a5",
+        "target": "44609c8e-87dd-4373-ab6e-59839e8f9406"
+      }
+    ],
+    "name": "DefaultWorkflow",
+    "task": "",
+    "timestamp": 1774927988810,
+    "provenance_id": "DefaultWorkflow"
+  }
+}

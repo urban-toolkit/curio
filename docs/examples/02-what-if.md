@@ -15,6 +15,7 @@ We want our final map to have layers representing water, parks, and buildings. T
 ```python
 # load box
 import utk
+import pandas as pd
 
 uc = utk.OSM.load([42.336844, -71.113459, 42.345559, -71.099216], layers=[{'name':'buildings', 'args': {'sizeCells': 5}}, {'name':'surface', 'args': {'sizeCells': 5}}, 'parks'])
 
@@ -39,7 +40,11 @@ gdf_parks.metadata = {
  'name': 'parks'
 }
 
-return (json_surface, json_parks, gdf_buildings, gdf_surface, gdf_parks)
+# Wrap JSON layers in DataFrames (DATA_LOADING supports DataFrame/GeoDataFrame output)
+df_json_surface = pd.DataFrame({'json_data': [json_surface]})
+df_json_parks = pd.DataFrame({'json_data': [json_parks]})
+
+return (df_json_surface, df_json_parks, gdf_buildings, gdf_surface, gdf_parks)
 ```
 
 ## Step 1.5: Getting only the buildings
@@ -93,9 +98,9 @@ We can now add another “Computation Analysis” node to do shadow simulation b
 ```python
 import utk
 
-json_surface = arg[0][0]
+json_surface = arg[0][0].iloc[0]['json_data']
 gdf_surface = arg[0][3]
-json_parks = arg[0][1]
+json_parks = arg[0][1].iloc[0]['json_data']
 gdf_parks = arg[0][4]
 
 gdf_buildings = arg[1]
@@ -169,8 +174,8 @@ Now, we repeat what was done in Step 4 but to simulate the shadows for the datas
 ```python
 import utk
 
-json_surface = arg[0]
-json_parks = arg[1]
+json_surface = arg[0].iloc[0]['json_data']
+json_parks = arg[1].iloc[0]['json_data']
 gdf_buildings = arg[2]
 gdf_surface = arg[3]
 gdf_parks = arg[4]

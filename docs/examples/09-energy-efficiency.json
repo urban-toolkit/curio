@@ -1,0 +1,61 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "345e363c-7676-45e3-9fc7-3c44f52b1b6a",
+        "type": "DATA_LOADING",
+        "x": 631.1585797343309,
+        "y": 732.285832621483,
+        "content": "import pandas as pd\n\ndf = pd.read_csv(\"data/energy_dataset.csv\")\nreturn df",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "b9d6eeac-790f-46aa-ac25-4d88514a47d8",
+        "type": "DATA_CLEANING",
+        "x": 1345.072748967887,
+        "y": 738.3612010604521,
+        "content": "edf  = arg[['Data Year', 'ID', 'Property Name', 'Address', 'ZIP Code', 'Chicago Energy Rating', 'Community Area', 'Primary Property Type', 'Gross Floor Area - Buildings (sq ft)', 'Year Built', '# of Buildings', 'ENERGY STAR Score', 'Site EUI (kBtu/sq ft)', 'Source EUI (kBtu/sq ft)', 'Weather Normalized Site EUI (kBtu/sq ft)', 'Weather Normalized Source EUI (kBtu/sq ft)', 'Total GHG Emissions (Metric Tons CO2e)', 'GHG Intensity (kg CO2e/sq ft)', 'Latitude', 'Longitude', 'Location']]\n\n# Rename the data columns for consistency and easy use\nedf.columns = ['Year', 'ID', 'Property Name', 'Address', 'ZIP Code', 'Chicago Energy Rating', 'Community Area', 'Primary Property Type', 'Gross Floor Area', 'Year Built', '# of Buildings', 'ENERGY STAR Score', 'Site EUI', 'Source EUI', 'Weather Normalized Site EUI', 'Weather Normalized Source EUI', 'Total GHG Emissions', 'GHG Intensity', 'Latitude', 'Longitude', 'Location']\n\n# Filter out rows with missing data\nedf = edf.dropna()\nedf['ZIP Code'] = edf['ZIP Code'].astype(int)\n\nreturn edf",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "5db6d526-79a1-40cf-9605-f2f525e513c0",
+        "type": "VIS_VEGA",
+        "x": 1973.7358102399758,
+        "y": 660.9503747317145,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"description\": \"ENERGY STAR Score by Primary Property Type (mean bars with median ticks)\",\n  \"title\": \"ENERGY STAR Score by Primary Property Type\",\n  \"data\": { \"name\": \"edf\" },\n  \"width\": 600,\n  \"height\": 400,\n  \"layer\": [\n    {\n      \"transform\": [\n        {\n          \"aggregate\": [\n            { \"op\": \"mean\", \"field\": \"ENERGY STAR Score\", \"as\": \"mean_score\" }\n          ],\n          \"groupby\": [\"Primary Property Type\"]\n        }\n      ],\n      \"mark\": \"bar\",\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"Primary Property Type\",\n          \"type\": \"nominal\",\n          \"title\": \"Primary Property Type\"\n        },\n        \"x\": {\n          \"field\": \"mean_score\",\n          \"type\": \"quantitative\",\n          \"scale\": { \"domain\": [0, 100] },\n          \"title\": \"Mean ENERGY STAR Score\"\n        },\n        \"tooltip\": [\n          {\n            \"field\": \"Primary Property Type\",\n            \"type\": \"nominal\",\n            \"title\": \"Primary Property Type\"\n          },\n          {\n            \"field\": \"mean_score\",\n            \"type\": \"quantitative\",\n            \"title\": \"Mean ENERGY STAR Score\",\n            \"format\": \".2f\"\n          }\n        ]\n      }\n    },\n    {\n      \"transform\": [\n        {\n          \"aggregate\": [\n            { \"op\": \"median\", \"field\": \"ENERGY STAR Score\", \"as\": \"median_score\" }\n          ],\n          \"groupby\": [\"Primary Property Type\"]\n        }\n      ],\n      \"mark\": {\n        \"type\": \"tick\",\n        \"color\": \"red\",\n        \"thickness\": 2\n      },\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"Primary Property Type\",\n          \"type\": \"nominal\"\n        },\n        \"x\": {\n          \"field\": \"median_score\",\n          \"type\": \"quantitative\",\n          \"scale\": { \"domain\": [0, 100] },\n          \"title\": \"Median ENERGY STAR Score\"\n        },\n        \"tooltip\": [\n          {\n            \"field\": \"Primary Property Type\",\n            \"type\": \"nominal\",\n            \"title\": \"Primary Property Type\"\n          },\n          {\n            \"field\": \"median_score\",\n            \"type\": \"quantitative\",\n            \"title\": \"Median ENERGY STAR Score\",\n            \"format\": \".2f\"\n          }\n        ]\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-345e363c-7676-45e3-9fc7-3c44f52b1b6aout-b9d6eeac-790f-46aa-ac25-4d88514a47d8in",
+        "source": "345e363c-7676-45e3-9fc7-3c44f52b1b6a",
+        "target": "b9d6eeac-790f-46aa-ac25-4d88514a47d8"
+      },
+      {
+        "id": "reactflow__edge-b9d6eeac-790f-46aa-ac25-4d88514a47d8out-5db6d526-79a1-40cf-9605-f2f525e513c0in",
+        "source": "b9d6eeac-790f-46aa-ac25-4d88514a47d8",
+        "target": "5db6d526-79a1-40cf-9605-f2f525e513c0"
+      }
+    ],
+    "name": "DefaultWorkflow",
+    "task": "",
+    "timestamp": 1774932415064,
+    "provenance_id": "DefaultWorkflow"
+  }
+}

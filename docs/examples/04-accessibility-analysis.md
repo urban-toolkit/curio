@@ -8,25 +8,27 @@ In this example, we will explore how Curio can be used to analyze and visualize 
 
 Before you begin, please familiarize yourself with Curio's main concepts and functionalities by reading our [usage guide](https://github.com/urban-toolkit/curio/blob/main/docs/USAGE.md).
 
-The data for this tutorial can be found [here](https://sidewalk-chicago.cs.washington.edu/api). Download the Shapefile of the Access Attributes with labels. 
+## Data
+The data for this tutorial can be found [here](https://sidewalk-chicago.cs.washington.edu/api). Download the GeoJSON of the Access Attributes with labels. 
 
 For completeness, we also include the template code in each dataflow step.
 
 
 ## Step 1: Load sidewalk accessibility data
 
-The icons on the left-hand side can be used to instantiate different nodes. Let's start by creating a "Data Loading" node to import the shapefile data containing accessibility features:
+The icons on the left-hand side can be used to instantiate different nodes. Let's start by creating a "Data Loading" node to import the GeoJSON data containing accessibility features:
 
 ```python
 import geopandas as gpd
 
-gdf = gpd.read_file('attributes_2025-02-26-08/52/11.0../data/.shp')
+gdf = gpd.read_file('docs/examples/ps_bundle/project_sidewalk_download/raw_labels_clean.geojson')
 
 gdf.metadata = {
     'name': 'accessibility_features'
 }
 
 return gdf
+
 ```
 
 ![Example 4-2](images/4-2.png)
@@ -49,9 +51,9 @@ import utk
 
 gdf = arg
 
-processed_gdf = gdf[['labelType', 'severity', 'neighborhd', 'geometry', 'nAgree', 'nDisagree']]
+processed_gdf = gdf[['label_type', 'severity', 'neighborhood', 'geometry', 'agree_count', 'disagree_count']]
 
-processed_gdf['agreement_ratio'] = processed_gdf['nAgree'] / (processed_gdf['nAgree'] + processed_gdf['nDisagree'])
+processed_gdf['agreement_ratio'] = processed_gdf['agree_count'] / (processed_gdf['agree_count'] + processed_gdf['disagree_count'])
 
 severity_bins = [0, 1, 2, 3, 5]
 severity_labels = ['Low', 'Medium', 'High', 'Critical']
@@ -93,8 +95,8 @@ import numpy as np
 
 gdf = arg
 
-feature_stats = gdf.groupby('labelType').agg(
-    count=('labelType', 'count'),
+feature_stats = gdf.groupby('label_type').agg(
+    count=('label_type', 'count'),
     avg_severity=('severity', 'mean'),
     avg_agreement=('agreement_ratio', 'mean')
 ).reset_index()
@@ -126,8 +128,8 @@ import numpy as np
 
 gdf = arg
 
-neighborhood_stats = gdf.groupby('neighborhd').agg(
-    count=('labelType', 'count'),
+neighborhood_stats = gdf.groupby('neighborhood').agg(
+    count=('label_type', 'count'),
     avg_severity=('severity', 'mean'),
     avg_agreement=('agreement_ratio', 'mean')
 ).reset_index()
@@ -161,7 +163,7 @@ To complement the spatial visualization, let's create a "2D Plot (Vega Lite)" no
   "mark": "bar",
   "encoding": {
     "x": {
-      "field": "labelType",
+      "field": "label_type",
       "type": "nominal",
       "title": "Feature Type"
     },
@@ -179,7 +181,7 @@ To complement the spatial visualization, let's create a "2D Plot (Vega Lite)" no
       }
     },
     "tooltip": [
-      {"field": "labelType", "type": "nominal", "title": "Feature Type"},
+      {"field": "label_type", "type": "nominal", "title": "Feature Type"},
       {"field": "count", "type": "quantitative", "title": "Count"},
       {"field": "avg_severity", "type": "quantitative", "title": "Avg Severity", "format": ".2f"},
       {"field": "avg_agreement", "type": "quantitative", "title": "Avg Agreement", "format": ".2f"}
@@ -208,7 +210,7 @@ Let's create another "2D Plot (Vega Lite)" node connected to the output of Step 
   "mark": "circle",
   "encoding": {
     "x": {
-      "field": "neighborhd",
+      "field": "neighborhood",
       "type": "nominal",
       "title": "Neighborhood"
     },
@@ -234,7 +236,7 @@ Let's create another "2D Plot (Vega Lite)" node connected to the output of Step 
       }
     },
     "tooltip": [
-      {"field": "neighborhd", "type": "nominal", "title": "Neighborhood"},
+      {"field": "neighborhood", "type": "nominal", "title": "Neighborhood"},
       {"field": "count", "type": "quantitative", "title": "Count"},
       {"field": "avg_severity", "type": "quantitative", "title": "Avg Severity", "format": ".2f"},
       {"field": "avg_agreement", "type": "quantitative", "title": "Avg Agreement", "format": ".2f"}

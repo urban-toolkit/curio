@@ -1,0 +1,248 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "09c6e03f-117d-45c5-af30-8f71bc3e58b6",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": 742.1487202551035,
+        "y": 175.14869513570852,
+        "content": "# computation analysis - clear\r\n\r\nimport sys\r\nimport os\r\nimport re\r\nimport torch\r\n\r\n_ROOT = os.getcwd()\r\n_CANDIDATES = [\r\n    os.environ.get(\"CITYSURFACES_DIR\"),\r\n    os.path.join(_ROOT, \"city-surfaces\"),\r\n    os.path.join(_ROOT, \"CitySurfaces\"),\r\n]\r\nCITYSURFACES_DIR = None\r\nfor _p in _CANDIDATES:\r\n    if _p and os.path.isfile(os.path.join(_p, \"config.py\")):\r\n        CITYSURFACES_DIR = os.path.abspath(_p)\r\n        break\r\nif CITYSURFACES_DIR is None:\r\n    raise FileNotFoundError(\r\n        \"CitySurfaces repo not found (need config.py). Clone \"\r\n        \"https://github.com/VIDA-NYU/city-surfaces into ./city-surfaces/ under \"\r\n        f\"your Curio launch directory, or set CITYSURFACES_DIR. cwd={_ROOT!r}\"\r\n    )\r\nsys.path.insert(0, CITYSURFACES_DIR)\r\n\r\n# CitySurfaces calls logx.msg() during model init; runx requires initialize() first (normally done in val.py main).\r\nimport tempfile\r\nfrom runx.logx import logx\r\n_log_dir = os.path.join(tempfile.gettempdir(), \"curio_citysurfaces_runx\")\r\nlogx.initialize(logdir=_log_dir, tensorboard=False, hparams={}, global_rank=0)\r\n\r\nWEIGHTS_DIR = './data/dataset/CitySurfaces_weights'\r\nWEIGHTS_FILE = os.path.join(WEIGHTS_DIR, 'block_c_10classes.pth')\r\nNUM_CLASSES = 10\r\nDEVICE = \"cuda\"\r\n\r\nfrom config import cfg\r\ncfg.immutable(False)\r\ncfg.DATASET.NUM_CLASSES = NUM_CLASSES\r\ncfg.MODEL.BNFUNC = torch.nn.BatchNorm2d\r\ncfg.MODEL.HRNET_CHECKPOINT = os.path.join(WEIGHTS_DIR, 'hrnetv2_w48_imagenet_pretrained.pth')\r\ncfg.OPTIONS.INIT_DECODER = False\r\n# val.py sets this via assert_and_infer_cfg(); required for network/mynn.py interpolate branches\r\n_m = re.match(r'^([0-9]+\\.[0-9]+)', torch.__version__)\r\ncfg.OPTIONS.TORCH_VERSION = float(_m.group(1)) if _m else 2.0\r\ncfg.immutable(True)\r\n\r\nfrom network.ocrnet import HRNet_Mscale\r\n\r\nmodel = HRNet_Mscale(num_classes=NUM_CLASSES, criterion=None).to(DEVICE)\r\n\r\n# PyTorch 2.6+ defaults weights_only=True; CitySurfaces checkpoints need False (trusted local files).\r\ncheckpoint = torch.load(WEIGHTS_FILE, map_location=DEVICE, weights_only=False)\r\nstate_dict = checkpoint.get('state_dict', checkpoint)\r\n\r\nmodel_state = model.state_dict()\r\nnew_state = {}\r\nfor k in model_state:\r\n    if k in state_dict and model_state[k].size() == state_dict[k].size():\r\n        new_state[k] = state_dict[k]\r\n    elif 'module.' + k in state_dict and model_state[k].size() == state_dict['module.' + k].size():\r\n        new_state[k] = state_dict['module.' + k]\r\n\r\nmodel_state.update(new_state)\r\nmodel.load_state_dict(model_state)\r\nmodel.eval()\r\n\r\nreturn \"Pretrained CitySurfaces model loaded (10 classes)\"",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "9def5617-0b4e-4afb-afaf-7a567af01f92",
+        "type": "DATA_LOADING",
+        "x": 1407.8484004591937,
+        "y": -31.162853315575656,
+        "content": "import geopandas as gpd\r\n# Load neighborhood data\r\nboston = gpd.read_file('./data/dataset/Census2020_BlockGroups.shp').to_crs('EPSG:4326')\r\nreturn boston",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "c66ae5dc-5727-4dba-9ad7-e0d312cbc1cb",
+        "type": "DATA_LOADING",
+        "x": 141.00018392420873,
+        "y": 572.1780685275222,
+        "content": "import pandas as pd\r\ndf = pd.read_csv('./data/dataset/gsv/boston_gsv.csv', names=['status','id','lat','lon'])\r\nsample = df[df['status']=='OK'].sample(100, random_state=42)\r\nreturn sample",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "aaff4f52-b04b-413f-9f83-7e12fb0acbf0",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": 922.533072826524,
+        "y": 577.2716150541524,
+        "content": "import sys\r\nimport os\r\nimport re\r\nimport torch\r\nimport torch.nn.functional as F\r\nimport numpy as np\r\nfrom PIL import Image\r\nfrom io import BytesIO\r\nimport base64\r\n\r\nsample = arg\r\n\r\n_ROOT = os.getcwd()\r\n_CANDIDATES = [\r\n    os.environ.get(\"CITYSURFACES_DIR\"),\r\n    os.path.join(_ROOT, \"city-surfaces\"),\r\n    os.path.join(_ROOT, \"CitySurfaces\"),\r\n]\r\nCITYSURFACES_DIR = None\r\nfor _p in _CANDIDATES:\r\n    if _p and os.path.isfile(os.path.join(_p, \"config.py\")):\r\n        CITYSURFACES_DIR = os.path.abspath(_p)\r\n        break\r\nif CITYSURFACES_DIR is None:\r\n    raise FileNotFoundError(\r\n        \"CitySurfaces repo not found (need config.py). Clone \"\r\n        \"https://github.com/VIDA-NYU/city-surfaces into ./city-surfaces/ under \"\r\n        f\"your Curio launch directory, or set CITYSURFACES_DIR. cwd={_ROOT!r}\"\r\n    )\r\nsys.path.insert(0, CITYSURFACES_DIR)\r\n\r\nimport tempfile\r\nfrom runx.logx import logx\r\n_log_dir = os.path.join(tempfile.gettempdir(), \"curio_citysurfaces_runx\")\r\nlogx.initialize(logdir=_log_dir, tensorboard=False, hparams={}, global_rank=0)\r\n\r\nWEIGHTS_DIR = './data/dataset/CitySurfaces_weights'\r\nWEIGHTS_FILE = os.path.join(WEIGHTS_DIR, 'block_c_10classes.pth')\r\nNUM_CLASSES = 10\r\nDEVICE = 'cuda'\r\nIMAGE_SIZE = 320\r\n\r\nfrom config import cfg\r\ncfg.immutable(False)\r\ncfg.DATASET.NUM_CLASSES = NUM_CLASSES\r\ncfg.MODEL.BNFUNC = torch.nn.BatchNorm2d\r\ncfg.MODEL.HRNET_CHECKPOINT = os.path.join(WEIGHTS_DIR, 'hrnetv2_w48_imagenet_pretrained.pth')\r\ncfg.OPTIONS.INIT_DECODER = False\r\n_m = re.match(r'^([0-9]+\\.[0-9]+)', torch.__version__)\r\ncfg.OPTIONS.TORCH_VERSION = float(_m.group(1)) if _m else 2.0\r\ncfg.immutable(True)\r\n\r\nfrom network.ocrnet import HRNet_Mscale\r\n\r\ndef compute_uncertainty(predictions):\r\n   sorted_probs = np.sort(predictions, axis=1)\r\n   highest_prob = sorted_probs[:, -1, :, :]\r\n   second_highest_prob = sorted_probs[:, -2, :, :]\r\n   uncertainty_margin = highest_prob - second_highest_prob\r\n   return 1.0 - uncertainty_margin\r\n\r\nmodel = HRNet_Mscale(num_classes=NUM_CLASSES, criterion=None).to(DEVICE)\r\n\r\ncheckpoint = torch.load(WEIGHTS_FILE, map_location=DEVICE, weights_only=False)\r\nstate_dict = checkpoint.get('state_dict', checkpoint)\r\nmodel_state = model.state_dict()\r\nnew_state = {}\r\nfor k in model_state:\r\n    if k in state_dict and model_state[k].size() == state_dict[k].size():\r\n        new_state[k] = state_dict[k]\r\n    elif 'module.' + k in state_dict and model_state[k].size() == state_dict['module.' + k].size():\r\n        new_state[k] = state_dict['module.' + k]\r\nmodel_state.update(new_state)\r\nmodel.load_state_dict(model_state)\r\nmodel.eval()\r\n\r\nMEAN = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(DEVICE)\r\nSTD = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(DEVICE)\r\n\r\ncolor_map = {\r\n   0: (255, 127, 14),    # concrete\r\n   1: (43, 160, 43),     # bricks\r\n   2: (31, 119, 179),    # granite\r\n   3: (153, 153, 153),   # asphalt\r\n   4: (214, 39, 40),     # mixed\r\n   5: (54, 54, 54),      # road\r\n   6: (0, 0, 0),         # background\r\n   7: (138, 0, 138),     # granite block-stone\r\n   8: (240, 110, 170),   # hexagonal\r\n   9: (139, 109, 48),    # cobblestone\r\n}\r\n\r\nlats = []\r\nlons = []\r\nuncerts = []\r\nimages = []\r\npredicted_images = []\r\nuncert_images = []\r\nfor index, row in sample.iterrows():\r\n   image_path = './data/dataset/gsv/boston/%s_left.jpg' % row['id']\r\n\r\n   pil_image = Image.open(image_path).convert(\"RGB\").resize((IMAGE_SIZE, IMAGE_SIZE))\r\n\r\n   image = np.array(pil_image, dtype=np.float32) / 255.0\r\n   input_tensor = torch.from_numpy(image.reshape(1, IMAGE_SIZE, IMAGE_SIZE, 3)).permute((0, 3, 1, 2)).to(DEVICE)\r\n   input_tensor = (input_tensor - MEAN) / STD\r\n\r\n   with torch.no_grad():\r\n       output = model({'images': input_tensor})\r\n       logits = output['pred']\r\n       predictions = F.softmax(logits, dim=1)\r\n\r\n   pred_labels = torch.argmax(predictions, dim=1)\r\n   pred_array = pred_labels.cpu().numpy()\r\n   pred_array = pred_array.reshape((IMAGE_SIZE, IMAGE_SIZE))\r\n   pred_pil = Image.new(\"RGB\", (pred_array.shape[1], pred_array.shape[0]))\r\n   for i in range(pred_array.shape[0]):\r\n       for j in range(pred_array.shape[1]):\r\n           pred_pil.putpixel((j, i), color_map[pred_array[i, j]])\r\n\r\n   buffered = BytesIO()\r\n   pred_pil.save(buffered, format=\"PNG\")\r\n   pred_str = base64.b64encode(buffered.getvalue()).decode('utf-8')\r\n\r\n   uncertainty_margin = compute_uncertainty(predictions.cpu().detach().numpy())\r\n\r\n   uncertainty_array = np.uint8(uncertainty_margin * 255)\r\n   uncertainty_array = np.transpose(uncertainty_array, (1, 2, 0))\r\n   uncertainty_array = np.squeeze(uncertainty_array, axis=2)\r\n   uncertainty_pil = Image.fromarray(uncertainty_array)\r\n\r\n   buffered = BytesIO()\r\n   uncertainty_pil.save(buffered, format=\"PNG\")\r\n   uncertainty_str = base64.b64encode(buffered.getvalue()).decode('utf-8')\r\n\r\n   lats.append(row['lat'])\r\n   lons.append(row['lon'])\r\n   uncerts.append(float(np.average(uncertainty_margin)))\r\n\r\n   buffered = BytesIO()\r\n   pil_image.save(buffered, format=\"PNG\")\r\n   img_str = base64.b64encode(buffered.getvalue()).decode('utf-8')\r\n\r\n   images.append(img_str)\r\n   predicted_images.append(pred_str)\r\n   uncert_images.append(uncertainty_str)\r\n\r\nreturn (lats, lons, uncerts, images, predicted_images, uncert_images)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "cf7bf5ef-5ce7-4e26-974b-fb782f84be19",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": 1539.053240273404,
+        "y": 571.1178690728487,
+        "content": "import geopandas as gpd\r\n\r\nlats = arg[0]\r\nlons = arg[1]\r\nuncerts = arg[2]\r\noriginal_images = arg[3]\r\npredicted_images = arg[4]\r\nuncert_images = arg[5]\r\n\r\nimage_content = list(zip(original_images, predicted_images, uncert_images))\r\n\r\ngdf = pd.DataFrame({'lat': lats, 'lon': lons, 'uncertainty': uncerts, 'image_content': image_content})\r\n\r\ngdf['image_id'] = gdf.index\r\n\r\ngdf = gpd.GeoDataFrame(\r\n   gdf, geometry=gpd.points_from_xy(gdf.lon, gdf.lat), crs=\"EPSG:4326\"\r\n)\r\n\r\ngdf = gdf.sort_values(by='image_id', ascending=True)\r\n\r\nreturn gdf",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "7902bce6-4771-4f73-9ee1-d706fc22892f",
+        "type": "MERGE_FLOW",
+        "x": 2281.837585960986,
+        "y": 110.28483419968364,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "f7172aea-3e3d-4c58-b0bc-dc02db24a733",
+        "type": "DATA_POOL",
+        "x": 2316.8473400115395,
+        "y": 561.9656919440314,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "a61f234d-78b4-4c3f-9d22-15a2855967b3",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": 3006.8473750973344,
+        "y": 575.965692655917,
+        "content": "df = pd.DataFrame(arg.drop(columns=arg.geometry.name))\r\ndf = df[df['interacted'] == '1']\r\ndf = df.sort_values(by='uncertainty', ascending=False)\r\nreturn df.head(20)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "e2e0b5d8-a0dc-4860-9a08-203871b0d28f",
+        "type": "VIS_IMAGE",
+        "x": 3632.8474069287945,
+        "y": 531.965690418562,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "55aa4581-9a68-4257-b2c7-63e3360737e3",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": 2528.8473507915232,
+        "y": 129.9656699772729,
+        "content": "import geopandas as gpd\r\n\r\nboston = arg[0]\r\ngdf = arg[1]\r\n\r\ndef agg_to_list(series):\r\n   return list(series)\r\n\r\njoined = gpd.sjoin(boston, gdf).groupby('GEOID20').agg({'uncertainty': 'mean', 'image_id': agg_to_list})\r\nboston = boston.set_index('GEOID20')\r\nboston.loc[joined.index,'uncertainty'] = joined['uncertainty']\r\nboston.loc[joined.index,'image_id'] = joined['image_id']\r\n\r\nfiltered_boston = boston.loc[joined.index]\r\n\r\nfiltered_boston = filtered_boston.rename(columns={'image_id': 'linked'})\r\n\r\nreturn filtered_boston",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "71ab6de4-b23c-42d9-a2fe-ce5141d285b2",
+        "type": "DATA_CLEANING",
+        "x": 3146.8473822161914,
+        "y": 129.9656699772729,
+        "content": "import geopandas as gpd\r\n\r\nfiltered_boston = arg\r\n\r\nfiltered_boston = filtered_boston.loc[:, [filtered_boston.geometry.name, 'uncertainty', 'linked']]\r\n\r\nfiltered_boston = filtered_boston.set_crs(4326)\r\nfiltered_boston = filtered_boston.to_crs(3395)\r\n\r\nfiltered_boston.metadata = {\r\n   'name': 'boston'\r\n}\r\n\r\nreturn filtered_boston",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "3c5db6ce-0082-47d7-80b7-1b9534b4726b",
+        "type": "DATA_POOL",
+        "x": 3754.8474131323696,
+        "y": 131.96567007897087,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "ddae8fb9-82ee-4523-bf07-9184c7fc873f",
+        "type": "VIS_UTK",
+        "x": 4472.847449641936,
+        "y": 207.96567394349316,
+        "content": "{\n    \"components\": [\n        {\n            \"id\": \"grammar_map\",\n            \"position\": {\n                \"width\": [\n                    1,\n                    12\n                ],\n                \"height\": [\n                    1,\n                    4\n                ]\n            }\n        }\n    ],\n    \"knots\": [],\n    \"ex_knots\": [\n        {\n            \"id\": \"boston0\",\n            \"out_name\": \"boston\",\n            \"in_name\": \"uncertainty\"\n        }\n    ],\n    \"grid\": {\n        \"width\": 12,\n        \"height\": 4\n    },\n    \"grammar\": false\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-c66ae5dc-5727-4dba-9ad7-e0d312cbc1cbout-aaff4f52-b04b-413f-9f83-7e12fb0acbf0in",
+        "source": "c66ae5dc-5727-4dba-9ad7-e0d312cbc1cb",
+        "target": "aaff4f52-b04b-413f-9f83-7e12fb0acbf0"
+      },
+      {
+        "id": "reactflow__edge-aaff4f52-b04b-413f-9f83-7e12fb0acbf0out-cf7bf5ef-5ce7-4e26-974b-fb782f84be19in",
+        "source": "aaff4f52-b04b-413f-9f83-7e12fb0acbf0",
+        "target": "cf7bf5ef-5ce7-4e26-974b-fb782f84be19"
+      },
+      {
+        "id": "reactflow__edge-9def5617-0b4e-4afb-afaf-7a567af01f92out-7902bce6-4771-4f73-9ee1-d706fc22892fin_0",
+        "source": "9def5617-0b4e-4afb-afaf-7a567af01f92",
+        "target": "7902bce6-4771-4f73-9ee1-d706fc22892f"
+      },
+      {
+        "id": "reactflow__edge-cf7bf5ef-5ce7-4e26-974b-fb782f84be19out-7902bce6-4771-4f73-9ee1-d706fc22892fin_1",
+        "source": "cf7bf5ef-5ce7-4e26-974b-fb782f84be19",
+        "target": "7902bce6-4771-4f73-9ee1-d706fc22892f"
+      },
+      {
+        "id": "reactflow__edge-cf7bf5ef-5ce7-4e26-974b-fb782f84be19out-f7172aea-3e3d-4c58-b0bc-dc02db24a733in",
+        "source": "cf7bf5ef-5ce7-4e26-974b-fb782f84be19",
+        "target": "f7172aea-3e3d-4c58-b0bc-dc02db24a733"
+      },
+      {
+        "id": "reactflow__edge-f7172aea-3e3d-4c58-b0bc-dc02db24a733out-a61f234d-78b4-4c3f-9d22-15a2855967b3in",
+        "source": "f7172aea-3e3d-4c58-b0bc-dc02db24a733",
+        "target": "a61f234d-78b4-4c3f-9d22-15a2855967b3"
+      },
+      {
+        "id": "reactflow__edge-a61f234d-78b4-4c3f-9d22-15a2855967b3out-e2e0b5d8-a0dc-4860-9a08-203871b0d28fin",
+        "source": "a61f234d-78b4-4c3f-9d22-15a2855967b3",
+        "target": "e2e0b5d8-a0dc-4860-9a08-203871b0d28f"
+      },
+      {
+        "id": "reactflow__edge-7902bce6-4771-4f73-9ee1-d706fc22892fout-55aa4581-9a68-4257-b2c7-63e3360737e3in",
+        "source": "7902bce6-4771-4f73-9ee1-d706fc22892f",
+        "target": "55aa4581-9a68-4257-b2c7-63e3360737e3"
+      },
+      {
+        "id": "reactflow__edge-55aa4581-9a68-4257-b2c7-63e3360737e3out-71ab6de4-b23c-42d9-a2fe-ce5141d285b2in",
+        "source": "55aa4581-9a68-4257-b2c7-63e3360737e3",
+        "target": "71ab6de4-b23c-42d9-a2fe-ce5141d285b2"
+      },
+      {
+        "id": "reactflow__edge-71ab6de4-b23c-42d9-a2fe-ce5141d285b2out-3c5db6ce-0082-47d7-80b7-1b9534b4726bin",
+        "source": "71ab6de4-b23c-42d9-a2fe-ce5141d285b2",
+        "target": "3c5db6ce-0082-47d7-80b7-1b9534b4726b"
+      },
+      {
+        "id": "reactflow__edge-3c5db6ce-0082-47d7-80b7-1b9534b4726bout-ddae8fb9-82ee-4523-bf07-9184c7fc873fin",
+        "source": "3c5db6ce-0082-47d7-80b7-1b9534b4726b",
+        "target": "ddae8fb9-82ee-4523-bf07-9184c7fc873f"
+      },
+      {
+        "type": "Interaction",
+        "id": "reactflow__edge-ddae8fb9-82ee-4523-bf07-9184c7fc873fin/out-3c5db6ce-0082-47d7-80b7-1b9534b4726bin/out",
+        "source": "ddae8fb9-82ee-4523-bf07-9184c7fc873f",
+        "target": "3c5db6ce-0082-47d7-80b7-1b9534b4726b"
+      },
+      {
+        "type": "Interaction",
+        "id": "reactflow__edge-3c5db6ce-0082-47d7-80b7-1b9534b4726bin/out-f7172aea-3e3d-4c58-b0bc-dc02db24a733in/out",
+        "source": "3c5db6ce-0082-47d7-80b7-1b9534b4726b",
+        "target": "f7172aea-3e3d-4c58-b0bc-dc02db24a733"
+      }
+    ],
+    "name": "DefaultWorkflow",
+    "task": "",
+    "timestamp": 1775107717823,
+    "provenance_id": "DefaultWorkflow"
+  }
+}

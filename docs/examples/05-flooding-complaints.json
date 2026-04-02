@@ -1,0 +1,79 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "92385949-b264-4108-abea-99df7a39b551",
+        "type": "DATA_LOADING",
+        "x": 517.200068674919,
+        "y": -166.47899921020905,
+        "content": "import pandas as pd\n\nsensor = pd.read_csv('data/Flooding_Complaints_to_311_20260330.csv')\n\nreturn sensor",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "d2ebbea0-a6c0-459e-8aa3-a16ce0983e79",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": 1191.9426493833655,
+        "y": -166.57053200602303,
+        "content": "def complaints_by_zip(df):\n\n    grouped = df[\"ZIP_CODE\"].fillna(\"UNKNOWN\").value_counts().reset_index()\n    grouped.columns = [\"ZIP_CODE\",  \"Complaint_Count\"]\n    return grouped\n\nreturn complaints_by_zip(arg)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "6a33a101-fb35-487c-8670-fae8dc7f3828",
+        "type": "DATA_POOL",
+        "x": 1808.7490483279455,
+        "y": -159.0619756483941,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "6864201f-4c0e-441b-ac7c-94e7eba7580e",
+        "type": "VIS_VEGA",
+        "x": 466.79940472834824,
+        "y": 157.15504665911408,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"description\": \"A simple bar chart with embedded data.\",\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\"field\": \"ZIP_CODE\", \"type\": \"nominal\", \"title\": \"Zip Code\", \"axis\": {\"labelAngle\": 270}},\n    \"y\": {\"field\": \"Complaint_Count\", \"type\": \"quantitative\", \"title\": \"Complaints\", \"axis\": {\"labelAngle\": 0}}\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-92385949-b264-4108-abea-99df7a39b551out-d2ebbea0-a6c0-459e-8aa3-a16ce0983e79in",
+        "source": "92385949-b264-4108-abea-99df7a39b551",
+        "target": "d2ebbea0-a6c0-459e-8aa3-a16ce0983e79"
+      },
+      {
+        "id": "reactflow__edge-d2ebbea0-a6c0-459e-8aa3-a16ce0983e79out-6a33a101-fb35-487c-8670-fae8dc7f3828in",
+        "source": "d2ebbea0-a6c0-459e-8aa3-a16ce0983e79",
+        "target": "6a33a101-fb35-487c-8670-fae8dc7f3828"
+      },
+      {
+        "id": "reactflow__edge-6a33a101-fb35-487c-8670-fae8dc7f3828out-6864201f-4c0e-441b-ac7c-94e7eba7580ein",
+        "source": "6a33a101-fb35-487c-8670-fae8dc7f3828",
+        "target": "6864201f-4c0e-441b-ac7c-94e7eba7580e"
+      }
+    ],
+    "name": "DefaultWorkflow",
+    "task": "",
+    "timestamp": 1774929521672,
+    "provenance_id": "DefaultWorkflow"
+  }
+}

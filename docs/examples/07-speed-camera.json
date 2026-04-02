@@ -1,0 +1,61 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "e1a123c1-8837-47a5-9b63-038e5ebcb530",
+        "type": "DATA_LOADING",
+        "x": 328.59505352598796,
+        "y": 144.76139201765037,
+        "content": "import pandas as pd\n\ndf = pd.read_csv(\"data/Speed_Camera_Violations.csv\")\ndf.dropna(inplace=True)\nreturn df",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "cb340f83-0a4d-457a-be66-691672f330d3",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": 1015.7273164593021,
+        "y": 186.5957786737569,
+        "content": "import pandas as pd\n\ndf = arg\n\ndf['VIOLATION DATE'] = pd.to_datetime(df['VIOLATION DATE'], format='%m/%d/%Y')\n\ndf['Year'] = df['VIOLATION DATE'].dt.year\n\nyr_sum = (df.groupby(['CAMERA ID', 'Year'])['VIOLATIONS']\n          .sum()\n          .reset_index()\n          .rename(columns={'VIOLATIONS': 'avg_violations'}))\n\ntop_ids = (df.groupby('CAMERA ID')['VIOLATIONS']\n             .sum()\n             .sort_values(ascending=False)\n             .head(5)\n             .index\n             .tolist())\n\nyr_sum = yr_sum[yr_sum['CAMERA ID'].isin(top_ids)]\n\ncamera_pos = (df.groupby('CAMERA ID')[['LATITUDE', 'LONGITUDE']]\n                .mean()\n                .reset_index())\n\nyr_sum = yr_sum.merge(camera_pos, on='CAMERA ID')\n\nreturn yr_sum",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "c2ba6e0e-e239-4167-a382-ffd1993cb3da",
+        "type": "VIS_VEGA",
+        "x": 1628.101264659358,
+        "y": 225.33136780164446,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"data\": { \"name\": \"table\" },\n  \"config\": { \"bar\": { \"continuousBandSize\": 18 } },\n  \"hconcat\": [\n    {\n      \"width\": 320,\n      \"height\": 260,\n      \"selection\": { \"yrBrush\": { \"type\": \"interval\", \"encodings\": [\"x\"] } },\n      \"mark\": { \"type\": \"bar\" },\n      \"encoding\": {\n        \"x\": { \"field\": \"Year\", \"type\": \"quantitative\", \"title\": \"Year\" },\n        \"y\": {\n          \"aggregate\": \"sum\",\n          \"field\": \"avg_violations\",\n          \"type\": \"quantitative\",\n          \"title\": \"Total Violations\"\n        },\n        \"color\": {\n          \"field\": \"CAMERA ID\",\n          \"type\": \"nominal\",\n          \"legend\": { \"title\": \"Camera ID\" }\n        }\n      }\n    },\n    {\n      \"width\": 320,\n      \"height\": 260,\n      \"transform\": [\n        { \"filter\": { \"selection\": \"yrBrush\" } },\n        {\n          \"aggregate\": [\n            { \"op\": \"sum\", \"field\": \"avg_violations\", \"as\": \"total\" }\n          ],\n          \"groupby\": [\"Year\"]\n        },\n        { \"sort\": { \"field\": \"Year\" } }\n      ],\n      \"mark\": { \"type\": \"line\", \"point\": true },\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"Year\",\n          \"type\": \"quantitative\",\n          \"title\": \"Year (brush range)\"\n        },\n        \"y\": {\n          \"field\": \"total\",\n          \"type\": \"quantitative\",\n          \"title\": \"Total Violations\"\n        }\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-e1a123c1-8837-47a5-9b63-038e5ebcb530out-cb340f83-0a4d-457a-be66-691672f330d3in",
+        "source": "e1a123c1-8837-47a5-9b63-038e5ebcb530",
+        "target": "cb340f83-0a4d-457a-be66-691672f330d3"
+      },
+      {
+        "id": "reactflow__edge-cb340f83-0a4d-457a-be66-691672f330d3out-c2ba6e0e-e239-4167-a382-ffd1993cb3dain",
+        "source": "cb340f83-0a4d-457a-be66-691672f330d3",
+        "target": "c2ba6e0e-e239-4167-a382-ffd1993cb3da"
+      }
+    ],
+    "name": "DefaultWorkflow",
+    "task": "",
+    "timestamp": 1774931268846,
+    "provenance_id": "DefaultWorkflow"
+  }
+}

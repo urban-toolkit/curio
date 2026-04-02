@@ -1,0 +1,454 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "6f4c2cd3-e83e-4e85-81de-3ec50986a2ed",
+        "type": "DATA_LOADING",
+        "x": 375,
+        "y": 233,
+        "content": "import pandas as pd\n\ndf = pd.read_csv(\"data/red-light-violation.csv\")\nreturn df",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "2704287e-a72c-454d-b6f2-7bca1e521397",
+        "type": "DATA_CLEANING",
+        "x": 1008.6336540183098,
+        "y": 120.54095241736837,
+        "content": "import pandas as pd\n\ndf = arg.copy()\ndf['VIOLATION DATE'] = pd.to_datetime(df['VIOLATION DATE'])\ndf['Year'] = df['VIOLATION DATE'].dt.year\ndf['Month'] = df['VIOLATION DATE'].dt.month\n\ndef assign_season(month):\n    if month in [12, 1, 2]:\n        return \"Winter\"\n    elif month in [3, 4, 5]:\n        return \"Spring\"\n    elif month in [6, 7, 8]:\n        return \"Summer\"\n    else:\n        return \"Fall\"\n\ndf['Season'] = df['Month'].apply(assign_season)\n\ndf_trend = df.groupby(['VIOLATION DATE', 'Year', 'Season'])['VIOLATIONS'].sum().reset_index()\ndf_trend['VIOLATION DATE'] = df_trend['VIOLATION DATE'].astype(str)\n\nreturn pd.DataFrame(df_trend)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "04062f8c-289c-4588-84b2-21be45adf916",
+        "type": "VIS_VEGA",
+        "x": 1727.0985434508193,
+        "y": 20.959673065228593,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"width\": 750,\n  \"height\": 400,\n  \"title\": \"Seasonal Violation Trend (Daily)\",\n  \"mark\": {\n    \"type\": \"line\",\n    \"point\": true\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"VIOLATION DATE\",\n      \"type\": \"temporal\",\n      \"title\": \"Date\",\n      \"axis\": {\n        \"format\": \"%Y %b\",\n        \"labelAngle\": -45\n      }\n    },\n    \"y\": {\n      \"field\": \"VIOLATIONS\",\n      \"type\": \"quantitative\",\n      \"title\": \"Violations\"\n    },\n    \"color\": {\n      \"field\": \"Season\",\n      \"type\": \"nominal\",\n      \"title\": \"Season\",\n      \"scale\": {\n        \"domain\": [\"Winter\", \"Spring\", \"Summer\", \"Fall\"],\n        \"range\": [\"#1f77b4\", \"#2ca02c\", \"#ff7f0e\", \"#9467bd\"]\n      }\n    },\n    \"tooltip\": [\n      { \"field\": \"VIOLATION DATE\", \"type\": \"temporal\", \"title\": \"Date\" },\n      { \"field\": \"Season\", \"type\": \"nominal\" },\n      { \"field\": \"VIOLATIONS\", \"type\": \"quantitative\" }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "f4cb8452-3fbf-48b3-9a4e-42d0607428cb",
+        "type": "DATA_CLEANING",
+        "x": 1012.9355197623574,
+        "y": 438.87901747688204,
+        "content": "import pandas as pd\n\ndf = arg.copy()\ndf['VIOLATION DATE'] = pd.to_datetime(df['VIOLATION DATE'])\ndf['Year'] = df['VIOLATION DATE'].dt.year\ndf['Month'] = df['VIOLATION DATE'].dt.month\n\nheatmap_data = df.groupby(['Year', 'Month'])['VIOLATIONS'].sum().reset_index()\n\nreturn pd.DataFrame(heatmap_data)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "624087f5-cd1f-4348-8b15-ea9eed203770",
+        "type": "MERGE_FLOW",
+        "x": 1761.910864170436,
+        "y": 374.4800570840619,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "ab8d8046-b68f-419f-bb36-3454e576afd4",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": 2061.2186164912064,
+        "y": 392.47640501765335,
+        "content": "import pandas as pd\n\ndf_trend = pd.DataFrame(arg[0])\nheatmap_data = pd.DataFrame(arg[1])\n\ndf_trend['VIOLATION DATE'] = pd.to_datetime(df_trend['VIOLATION DATE'])\n\nsummary = heatmap_data.groupby('Year')['VIOLATIONS'].sum().reset_index()\n\nmerged = df_trend.merge(summary, on='Year', how='left')\n\nfinal = merged[['VIOLATION DATE', 'VIOLATIONS_x', 'Season', 'VIOLATIONS_y']]\n\nfinal.columns = ['VIOLATION DATE', 'Daily Violations', 'Season', 'Yearly Total']\n\nfinal['VIOLATION DATE'] = final['VIOLATION DATE'].astype(str)\n\narray_data = final.to_dict(orient='records')\n\nshape = [final.shape[0], final.shape[1]]\n\nreturn pd.DataFrame(array_data)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "3024166a-cd2c-460e-9063-d49f912774cc",
+        "type": "DATA_CLEANING",
+        "x": 2748.2340749914592,
+        "y": 394.5487392544618,
+        "content": "import pandas as pd\n\ndf = arg.copy()\n\ndf['VIOLATION DATE'] = pd.to_datetime(df['VIOLATION DATE'], errors='coerce')\n\nif 'Year' not in df.columns:\n    df['Year'] = df['VIOLATION DATE'].dt.year\nif 'Month' not in df.columns:\n    df['Month'] = df['VIOLATION DATE'].dt.month\n\ndf['Daily Violations'] = pd.to_numeric(df['Daily Violations'], errors='coerce')\ndf['Yearly Total'] = pd.to_numeric(df['Yearly Total'], errors='coerce')\n\ndf['VIOLATION DATE'] = df['VIOLATION DATE'].astype(str)\n\nreturn pd.DataFrame(df)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "b3beb8b4-d227-48af-b0c1-d9b99564888b",
+        "type": "VIS_VEGA",
+        "x": 3411.586121566679,
+        "y": 340.584082058477,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"hconcat\": [\n    {\n      \"width\": 300,\n      \"height\": 300,\n      \"title\": \"Monthly Violations Heatmap\",\n      \"params\": [\n        {\n          \"name\": \"yearFilter\",\n          \"select\": {\n            \"type\": \"point\",\n            \"fields\": [\"Year\"],\n            \"on\": \"click\"\n          }\n        }\n      ],\n      \"mark\": \"rect\",\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"Month\",\n          \"type\": \"ordinal\",\n          \"title\": \"Month\"\n        },\n        \"y\": {\n          \"field\": \"Year\",\n          \"type\": \"ordinal\",\n          \"title\": \"Year\"\n        },\n        \"color\": {\n          \"aggregate\": \"sum\",\n          \"field\": \"Yearly Total\",\n          \"type\": \"quantitative\",\n          \"scale\": {\n            \"scheme\": \"orangered\"\n          },\n          \"title\": \"Violations\"\n        },\n        \"tooltip\": [\n          { \"field\": \"Year\", \"type\": \"ordinal\" },\n          { \"field\": \"Month\", \"type\": \"ordinal\" },\n          {\n            \"aggregate\": \"sum\",\n            \"field\": \"Yearly Total\",\n            \"type\": \"quantitative\",\n            \"title\": \"Total Violations\"\n          }\n        ]\n      }\n    },\n    {\n      \"width\": 600,\n      \"height\": 300,\n      \"title\": \"Seasonal Violation Trend (Daily)\",\n      \"transform\": [\n        {\n          \"filter\": \"yearFilter.Year == null || datum.Year == yearFilter.Year\"\n        }\n      ],\n      \"mark\": \"line\",\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"VIOLATION DATE\",\n          \"type\": \"temporal\",\n          \"title\": \"Date\"\n        },\n        \"y\": {\n          \"field\": \"Daily Violations\",\n          \"type\": \"quantitative\",\n          \"title\": \"Violations\"\n        },\n        \"color\": {\n          \"field\": \"Season\",\n          \"type\": \"nominal\"\n        },\n        \"tooltip\": [\n          { \"field\": \"VIOLATION DATE\", \"type\": \"temporal\" },\n          { \"field\": \"Daily Violations\", \"type\": \"quantitative\" },\n          { \"field\": \"Season\", \"type\": \"nominal\" }\n        ]\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "1c3f8346-a156-4716-9b67-5e3cd0c4b256",
+        "type": "DATA_CLEANING",
+        "x": 979.9569677224843,
+        "y": 790.645055168983,
+        "content": "import pandas as pd\n\ndf = arg\n\ndf[\"VIOLATION DATE\"] = pd.to_datetime(df[\"VIOLATION DATE\"])\n\ndf[\"Month\"] = df[\"VIOLATION DATE\"].dt.month\ndf[\"Year\"] = df[\"VIOLATION DATE\"].dt.year\n\ndef assign_season(month):\n    if month in [12, 1, 2]:\n        return \"Winter\"\n    elif month in [3, 4, 5]:\n        return \"Spring\"\n    elif month in [6, 7, 8]:\n        return \"Summer\"\n    else:\n        return \"Fall\"\n\ndf[\"Season\"] = df[\"Month\"].apply(assign_season)\n\ndf_seasonal = df.groupby([\"Year\", \"Season\"])[\"VIOLATIONS\"].sum().reset_index()\n\nreturn pd.DataFrame(df_seasonal)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "9acbea5b-9bb7-4eea-84dd-3dc16e25e634",
+        "type": "VIS_VEGA",
+        "x": 1699.3579321140062,
+        "y": 789.8808253060748,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"title\": \"Seasonal Red-Light Violations Over Time\",\n  \"mark\": \"area\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"Year\",\n      \"type\": \"ordinal\",\n      \"title\": \"Year\"\n    },\n    \"y\": {\n      \"field\": \"VIOLATIONS\",\n      \"type\": \"quantitative\",\n      \"title\": \"Total Violations\"\n    },\n    \"color\": {\n      \"field\": \"Season\",\n      \"type\": \"nominal\",\n      \"title\": \"Season\"\n    },\n    \"tooltip\": [\n      { \"field\": \"Year\", \"type\": \"ordinal\" },\n      { \"field\": \"Season\", \"type\": \"nominal\" },\n      { \"field\": \"VIOLATIONS\", \"type\": \"quantitative\" }\n    ]\n  },\n  \"width\": 600,\n  \"height\": 400\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "ad6d1689-5be3-4b18-a72a-ed54f74621ee",
+        "type": "DATA_CLEANING",
+        "x": 983.5579915355584,
+        "y": 1133.1955303484028,
+        "content": "import pandas as pd\n\ndf = arg\ndf[\"VIOLATION DATE\"] = pd.to_datetime(df[\"VIOLATION DATE\"])\ndf[\"Year\"] = df[\"VIOLATION DATE\"].dt.year\n\ngrouped = df.groupby([\"INTERSECTION\", \"Year\"])[\"VIOLATIONS\"].sum().reset_index()\ngrouped[\"Rank\"] = grouped.groupby(\"Year\")[\"VIOLATIONS\"].rank(ascending=False, method=\"first\")\n\ntop3 = grouped[grouped[\"Rank\"] <= 3]\n\nreturn pd.DataFrame(top3)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "9c70e329-602e-4309-98d7-b12f44c99319",
+        "type": "VIS_VEGA",
+        "x": 1683.6507233865796,
+        "y": 1137.6833042705246,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"title\": \"Top 3 Intersections with Most Violations by Year\",\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"Year\",\n      \"type\": \"ordinal\",\n      \"title\": \"Year\"\n    },\n    \"y\": {\n      \"field\": \"VIOLATIONS\",\n      \"type\": \"quantitative\",\n      \"title\": \"Violations\"\n    },\n    \"color\": {\n      \"field\": \"INTERSECTION\",\n      \"type\": \"nominal\",\n      \"title\": \"Intersection\"\n    },\n    \"tooltip\": [\n      { \"field\": \"INTERSECTION\", \"type\": \"nominal\" },\n      { \"field\": \"VIOLATIONS\", \"type\": \"quantitative\" }\n    ]\n  },\n  \"width\": 600,\n  \"height\": 400\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "da73932f-b91a-4542-98df-d731a888b8b4",
+        "type": "DATA_CLEANING",
+        "x": 1115.9473222381553,
+        "y": 1525.8757485340716,
+        "content": "import pandas as pd\nimport numpy as np\n\ndf = arg.copy()\ndf[\"VIOLATION DATE\"] = pd.to_datetime(df[\"VIOLATION DATE\"])\ndf[\"Year\"] = df[\"VIOLATION DATE\"].dt.year\n\n\ngrouped = df.groupby(\"INTERSECTION\").agg({\n    \"CAMERA ID\": \"nunique\",\n    \"VIOLATIONS\": \"sum\"\n}).reset_index().rename(columns={\"CAMERA ID\": \"CAMERA_COUNT\"})\n\ngrouped[\"CAMERA_BIN\"] = grouped[\"CAMERA_COUNT\"].apply(lambda x: \"4+\" if x >= 4 else str(x))\n\n\ncamera_order = {\"1\": 1, \"2\": 2, \"3\": 3, \"4+\": 4}\ngrouped[\"x_base\"] = grouped[\"CAMERA_BIN\"].map(camera_order)\nnp.random.seed(42)\ngrouped[\"jittered_x\"] = grouped[\"x_base\"] + np.random.uniform(-0.2, 0.2, size=len(grouped))\n\n\nreturn pd.DataFrame(grouped)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "2bbbd05f-f5cb-48a2-b96f-c55a9ac95a34",
+        "type": "DATA_CLEANING",
+        "x": 1099.118170030198,
+        "y": 1893.87321014807,
+        "content": "import pandas as pd\n\ndf = arg.copy()\n\ndf[\"VIOLATION DATE\"] = pd.to_datetime(df[\"VIOLATION DATE\"])\ndf[\"Year\"] = df[\"VIOLATION DATE\"].dt.year\n\ntrend = df.groupby(['INTERSECTION', 'Year'])['VIOLATIONS'].sum().reset_index()\nfirst = trend.groupby('INTERSECTION').first().reset_index()\nlast = trend.groupby('INTERSECTION').last().reset_index()\n\nchange = first.merge(last, on='INTERSECTION', suffixes=('_first', '_last'))\nchange = change[change['VIOLATIONS_first'] > 0]\n\nchange['Percent_Reduction'] = ((change['VIOLATIONS_first'] - change['VIOLATIONS_last']) / change['VIOLATIONS_first']) * 100\n\n\nreturn pd.DataFrame(change)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "04689857-6cf6-4ee9-801d-e7b075c16da5",
+        "type": "MERGE_FLOW",
+        "x": 1843.8447901971742,
+        "y": 1783.7251943612869,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "bed93b38-cdb2-4db3-be54-7e60d68013d9",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": 2103.8383632011264,
+        "y": 1813.3408996433254,
+        "content": "import pandas as pd\n\ngrouped = pd.DataFrame(arg[0])\nchange = pd.DataFrame(arg[1])\n\nmerged = grouped.merge(\n    change[['INTERSECTION', 'Percent_Reduction']],\n    on='INTERSECTION',\n    how='left'\n)\n\nmerged['VIOLATIONS'] = pd.to_numeric(merged['VIOLATIONS'], errors='coerce')\nmerged['Percent_Reduction'] = pd.to_numeric(merged['Percent_Reduction'], errors='coerce')\n\nmerged = merged.dropna(subset=['Percent_Reduction'])\n\narray_data = merged.to_dict(orient='records')\n\nshape = [merged.shape[0], merged.shape[1]]\n\nreturn pd.DataFrame(array_data)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "b5ff6442-ea3f-468f-8c85-8fb634eb88f1",
+        "type": "DATA_CLEANING",
+        "x": 2778.024967820585,
+        "y": 1818.0416942997729,
+        "content": "import pandas as pd\n\ndf = arg.copy()\n\ndf['VIOLATIONS'] = pd.to_numeric(df['VIOLATIONS'], errors='coerce')\ndf['CAMERA_COUNT'] = pd.to_numeric(df['CAMERA_COUNT'], errors='coerce')\ndf['Percent_Reduction'] = pd.to_numeric(df['Percent_Reduction'], errors='coerce')\ndf['jittered_x'] = pd.to_numeric(df['jittered_x'], errors='coerce')\n\ndf = df.dropna(subset=['VIOLATIONS', 'CAMERA_COUNT', 'Percent_Reduction', 'jittered_x'])\n\n\nreturn pd.DataFrame(df)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "e1c71f22-c26c-498b-964e-7413763c812a",
+        "type": "VIS_VEGA",
+        "x": 3497.854387604682,
+        "y": 1435.9966673710976,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"params\": [\n    {\n      \"name\": \"cameraFilter\",\n      \"bind\": {\n        \"input\": \"select\",\n        \"options\": [\"1\", \"2\", \"3\", \"4+\"],\n        \"labels\": [\"1 Camera\", \"2 Cameras\", \"3 Cameras\", \"4+ Cameras\"]\n      }\n    }\n  ],\n  \"hconcat\": [\n    {\n      \"width\": 500,\n      \"mark\": \"boxplot\",\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"CAMERA_BIN\",\n          \"type\": \"nominal\",\n          \"title\": \"Camera Count\"\n        },\n        \"y\": {\n          \"field\": \"VIOLATIONS\",\n          \"type\": \"quantitative\",\n          \"title\": \"Violations\"\n        },\n        \"color\": {\n          \"field\": \"CAMERA_BIN\",\n          \"type\": \"nominal\"\n        }\n      }\n    },\n    {\n      \"width\": 500,\n      \"mark\": {\n        \"type\": \"bar\",\n        \"cursor\": \"pointer\"\n      },\n      \"transform\": [\n        { \"filter\": \"cameraFilter == null || datum.CAMERA_BIN == cameraFilter\" }\n      ],\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"Percent_Reduction\",\n          \"type\": \"quantitative\",\n          \"title\": \"Percent Reduction\"\n        },\n        \"y\": {\n          \"field\": \"INTERSECTION\",\n          \"type\": \"nominal\",\n          \"sort\": \"-x\",\n          \"title\": \"Intersection\"\n        },\n        \"color\": {\n          \"field\": \"Percent_Reduction\",\n          \"type\": \"quantitative\",\n          \"scale\": { \"scheme\": \"blues\" }\n        }\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "be851609-c0f7-4cae-afae-2094965ead93",
+        "type": "DATA_CLEANING",
+        "x": 1167.7178678620523,
+        "y": 2427.5075455078904,
+        "content": "import pandas as pd\n\ndf =  pd.DataFrame(arg)\n\ndf['VIOLATION DATE'] = pd.to_datetime(df['VIOLATION DATE'], errors='coerce')\n\ndf['Year'] = df['VIOLATION DATE'].dt.year\n\ndf['VIOLATION DATE'] = df['VIOLATION DATE'].astype(str)\n\n\nreturn pd.DataFrame(df)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "18b287f6-0a05-4dbc-92d3-4eb10f177bc5",
+        "type": "DATA_CLEANING",
+        "x": 1210.6743925204216,
+        "y": 2816.070573808414,
+        "content": "import pandas as pd\n\ndf = arg\n\ndf_map = df.groupby(['INTERSECTION', 'LATITUDE', 'LONGITUDE']).agg({\n    'VIOLATIONS': 'sum',\n    'CAMERA ID': 'nunique'\n}).reset_index().rename(columns={\n    'VIOLATIONS': 'TOTAL_VIOLATIONS',\n    'CAMERA ID': 'CAMERA_COUNT'\n})\n\n\ndf_map = df_map.dropna(subset=['LATITUDE', 'LONGITUDE'])\n\ndf_map['CAMERA_BIN'] = df_map['CAMERA_COUNT'].apply(lambda x: \"4+\" if x >= 4 else str(int(x)))\n\nreturn pd.DataFrame(df_map)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "412c23ca-fafd-4af8-ab87-abd9df17241a",
+        "type": "MERGE_FLOW",
+        "x": 1961.0746764885077,
+        "y": 2606.68249481348,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "0ef770f3-e789-40b0-a6e5-5f5fea079389",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": 2237.2996229196656,
+        "y": 2625.6322442922633,
+        "content": "import pandas as pd\n\ndf_base = pd.DataFrame(arg[0])\ndf_additional = pd.DataFrame(arg[1])\n\ndf_map = df_base.groupby(['INTERSECTION', 'LATITUDE', 'LONGITUDE']).agg({\n    'VIOLATIONS': 'sum',\n    'CAMERA ID': 'nunique'\n}).reset_index().rename(columns={\n    'VIOLATIONS': 'TOTAL_VIOLATIONS',\n    'CAMERA ID': 'CAMERA_COUNT'\n})\n\ndf_map = df_map.dropna(subset=['LATITUDE', 'LONGITUDE'])\n\ndf_map[\"CAMERA_BIN\"] = df_map[\"CAMERA_COUNT\"].apply(lambda x: \"4+\" if x >= 4 else str(int(x)))\n\narray_data = df_map.to_dict(orient='records')\n\nreturn pd.DataFrame(array_data)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "d7e27f2a-2175-4fe0-8bff-8dfcd95f36f2",
+        "type": "DATA_CLEANING",
+        "x": 2892.9761783249214,
+        "y": 2625.919482255273,
+        "content": "import pandas as pd\n\ndf = pd.DataFrame(arg)\n\ndf['TOTAL_VIOLATIONS'] = pd.to_numeric(df['TOTAL_VIOLATIONS'], errors='coerce')\ndf['CAMERA_COUNT'] = pd.to_numeric(df['CAMERA_COUNT'], errors='coerce')\n\ndf['CAMERA_BIN'] = df['CAMERA_BIN'].astype(str)\n\ndf['LATITUDE'] = pd.to_numeric(df['LATITUDE'], errors='coerce')\ndf['LONGITUDE'] = pd.to_numeric(df['LONGITUDE'], errors='coerce')\n\nreturn pd.DataFrame(df)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "3ad91d4c-3f0f-4db6-98a0-83fcbc564598",
+        "type": "VIS_VEGA",
+        "x": 3549.8468098299854,
+        "y": 2449.0001447786562,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"hconcat\": [\n    {\n      \"width\": 600,\n      \"height\": 500,\n      \"title\": \"Spatial Map – Select Area to Filter\",\n      \"params\": [\n        {\n          \"name\": \"spatialBrush\",\n          \"select\": {\n            \"type\": \"interval\",\n            \"encodings\": [\"x\", \"y\"]\n          }\n        }\n      ],\n      \"mark\": \"circle\",\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"LONGITUDE\",\n          \"type\": \"quantitative\",\n          \"scale\": { \"domain\": [-87.95, -87.5] },\n          \"title\": \"Longitude\"\n        },\n        \"y\": {\n          \"field\": \"LATITUDE\",\n          \"type\": \"quantitative\",\n          \"scale\": { \"domain\": [41.6, 42.1] },\n          \"title\": \"Latitude\"\n        },\n        \"size\": {\n          \"field\": \"TOTAL_VIOLATIONS\",\n          \"type\": \"quantitative\",\n          \"scale\": { \"range\": [20, 800] },\n          \"title\": \"Total Violations\"\n        },\n        \"color\": {\n          \"field\": \"CAMERA_BIN\",\n          \"type\": \"nominal\",\n          \"title\": \"Camera Count\",\n          \"scale\": { \"scheme\": \"plasma\" }\n        },\n        \"tooltip\": [\n          { \"field\": \"INTERSECTION\", \"type\": \"nominal\" },\n          { \"field\": \"TOTAL_VIOLATIONS\", \"type\": \"quantitative\" },\n          { \"field\": \"CAMERA_COUNT\", \"type\": \"quantitative\" }\n        ]\n      }\n    },\n    {\n      \"width\": 400,\n      \"height\": 500,\n      \"title\": \"Top Intersections by Total Violations (Filtered by Spatial Selection)\",\n      \"mark\": \"bar\",\n      \"transform\": [\n        {\n          \"filter\": { \"param\": \"spatialBrush\" }\n        },\n        {\n          \"window\": [{ \"op\": \"rank\", \"as\": \"rank\" }],\n          \"sort\": [{ \"field\": \"TOTAL_VIOLATIONS\", \"order\": \"descending\" }]\n        },\n        {\n          \"filter\": \"datum.rank <= 15\"\n        }\n      ],\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"TOTAL_VIOLATIONS\",\n          \"type\": \"quantitative\",\n          \"title\": \"Total Violations\"\n        },\n        \"y\": {\n          \"field\": \"INTERSECTION\",\n          \"type\": \"nominal\",\n          \"sort\": \"-x\",\n          \"title\": \"Intersection\"\n        },\n        \"color\": {\n          \"field\": \"TOTAL_VIOLATIONS\",\n          \"type\": \"quantitative\",\n          \"scale\": { \"scheme\": \"blues\" },\n          \"legend\": null\n        },\n        \"tooltip\": [\n          { \"field\": \"INTERSECTION\", \"type\": \"nominal\" },\n          { \"field\": \"TOTAL_VIOLATIONS\", \"type\": \"quantitative\" }\n        ]\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-6f4c2cd3-e83e-4e85-81de-3ec50986a2edout-2704287e-a72c-454d-b6f2-7bca1e521397in",
+        "source": "6f4c2cd3-e83e-4e85-81de-3ec50986a2ed",
+        "target": "2704287e-a72c-454d-b6f2-7bca1e521397"
+      },
+      {
+        "id": "reactflow__edge-2704287e-a72c-454d-b6f2-7bca1e521397out-04062f8c-289c-4588-84b2-21be45adf916in",
+        "source": "2704287e-a72c-454d-b6f2-7bca1e521397",
+        "target": "04062f8c-289c-4588-84b2-21be45adf916"
+      },
+      {
+        "id": "reactflow__edge-6f4c2cd3-e83e-4e85-81de-3ec50986a2edout-f4cb8452-3fbf-48b3-9a4e-42d0607428cbin",
+        "source": "6f4c2cd3-e83e-4e85-81de-3ec50986a2ed",
+        "target": "f4cb8452-3fbf-48b3-9a4e-42d0607428cb"
+      },
+      {
+        "id": "reactflow__edge-2704287e-a72c-454d-b6f2-7bca1e521397out-624087f5-cd1f-4348-8b15-ea9eed203770in_0",
+        "source": "2704287e-a72c-454d-b6f2-7bca1e521397",
+        "target": "624087f5-cd1f-4348-8b15-ea9eed203770"
+      },
+      {
+        "id": "reactflow__edge-f4cb8452-3fbf-48b3-9a4e-42d0607428cbout-624087f5-cd1f-4348-8b15-ea9eed203770in_1",
+        "source": "f4cb8452-3fbf-48b3-9a4e-42d0607428cb",
+        "target": "624087f5-cd1f-4348-8b15-ea9eed203770"
+      },
+      {
+        "id": "reactflow__edge-624087f5-cd1f-4348-8b15-ea9eed203770out-ab8d8046-b68f-419f-bb36-3454e576afd4in",
+        "source": "624087f5-cd1f-4348-8b15-ea9eed203770",
+        "target": "ab8d8046-b68f-419f-bb36-3454e576afd4"
+      },
+      {
+        "id": "reactflow__edge-ab8d8046-b68f-419f-bb36-3454e576afd4out-3024166a-cd2c-460e-9063-d49f912774ccin",
+        "source": "ab8d8046-b68f-419f-bb36-3454e576afd4",
+        "target": "3024166a-cd2c-460e-9063-d49f912774cc"
+      },
+      {
+        "id": "reactflow__edge-3024166a-cd2c-460e-9063-d49f912774ccout-b3beb8b4-d227-48af-b0c1-d9b99564888bin",
+        "source": "3024166a-cd2c-460e-9063-d49f912774cc",
+        "target": "b3beb8b4-d227-48af-b0c1-d9b99564888b"
+      },
+      {
+        "id": "reactflow__edge-6f4c2cd3-e83e-4e85-81de-3ec50986a2edout-1c3f8346-a156-4716-9b67-5e3cd0c4b256in",
+        "source": "6f4c2cd3-e83e-4e85-81de-3ec50986a2ed",
+        "target": "1c3f8346-a156-4716-9b67-5e3cd0c4b256"
+      },
+      {
+        "id": "reactflow__edge-1c3f8346-a156-4716-9b67-5e3cd0c4b256out-9acbea5b-9bb7-4eea-84dd-3dc16e25e634in",
+        "source": "1c3f8346-a156-4716-9b67-5e3cd0c4b256",
+        "target": "9acbea5b-9bb7-4eea-84dd-3dc16e25e634"
+      },
+      {
+        "id": "reactflow__edge-6f4c2cd3-e83e-4e85-81de-3ec50986a2edout-ad6d1689-5be3-4b18-a72a-ed54f74621eein",
+        "source": "6f4c2cd3-e83e-4e85-81de-3ec50986a2ed",
+        "target": "ad6d1689-5be3-4b18-a72a-ed54f74621ee"
+      },
+      {
+        "id": "reactflow__edge-ad6d1689-5be3-4b18-a72a-ed54f74621eeout-9c70e329-602e-4309-98d7-b12f44c99319in",
+        "source": "ad6d1689-5be3-4b18-a72a-ed54f74621ee",
+        "target": "9c70e329-602e-4309-98d7-b12f44c99319"
+      },
+      {
+        "id": "reactflow__edge-6f4c2cd3-e83e-4e85-81de-3ec50986a2edout-da73932f-b91a-4542-98df-d731a888b8b4in",
+        "source": "6f4c2cd3-e83e-4e85-81de-3ec50986a2ed",
+        "target": "da73932f-b91a-4542-98df-d731a888b8b4"
+      },
+      {
+        "id": "reactflow__edge-6f4c2cd3-e83e-4e85-81de-3ec50986a2edout-2bbbd05f-f5cb-48a2-b96f-c55a9ac95a34in",
+        "source": "6f4c2cd3-e83e-4e85-81de-3ec50986a2ed",
+        "target": "2bbbd05f-f5cb-48a2-b96f-c55a9ac95a34"
+      },
+      {
+        "id": "reactflow__edge-da73932f-b91a-4542-98df-d731a888b8b4out-04689857-6cf6-4ee9-801d-e7b075c16da5in_0",
+        "source": "da73932f-b91a-4542-98df-d731a888b8b4",
+        "target": "04689857-6cf6-4ee9-801d-e7b075c16da5"
+      },
+      {
+        "id": "reactflow__edge-2bbbd05f-f5cb-48a2-b96f-c55a9ac95a34out-04689857-6cf6-4ee9-801d-e7b075c16da5in_1",
+        "source": "2bbbd05f-f5cb-48a2-b96f-c55a9ac95a34",
+        "target": "04689857-6cf6-4ee9-801d-e7b075c16da5"
+      },
+      {
+        "id": "reactflow__edge-04689857-6cf6-4ee9-801d-e7b075c16da5out-bed93b38-cdb2-4db3-be54-7e60d68013d9in",
+        "source": "04689857-6cf6-4ee9-801d-e7b075c16da5",
+        "target": "bed93b38-cdb2-4db3-be54-7e60d68013d9"
+      },
+      {
+        "id": "reactflow__edge-bed93b38-cdb2-4db3-be54-7e60d68013d9out-b5ff6442-ea3f-468f-8c85-8fb634eb88f1in",
+        "source": "bed93b38-cdb2-4db3-be54-7e60d68013d9",
+        "target": "b5ff6442-ea3f-468f-8c85-8fb634eb88f1"
+      },
+      {
+        "id": "reactflow__edge-b5ff6442-ea3f-468f-8c85-8fb634eb88f1out-e1c71f22-c26c-498b-964e-7413763c812ain",
+        "source": "b5ff6442-ea3f-468f-8c85-8fb634eb88f1",
+        "target": "e1c71f22-c26c-498b-964e-7413763c812a"
+      },
+      {
+        "id": "reactflow__edge-6f4c2cd3-e83e-4e85-81de-3ec50986a2edout-be851609-c0f7-4cae-afae-2094965ead93in",
+        "source": "6f4c2cd3-e83e-4e85-81de-3ec50986a2ed",
+        "target": "be851609-c0f7-4cae-afae-2094965ead93"
+      },
+      {
+        "id": "reactflow__edge-6f4c2cd3-e83e-4e85-81de-3ec50986a2edout-18b287f6-0a05-4dbc-92d3-4eb10f177bc5in",
+        "source": "6f4c2cd3-e83e-4e85-81de-3ec50986a2ed",
+        "target": "18b287f6-0a05-4dbc-92d3-4eb10f177bc5"
+      },
+      {
+        "id": "reactflow__edge-be851609-c0f7-4cae-afae-2094965ead93out-412c23ca-fafd-4af8-ab87-abd9df17241ain_0",
+        "source": "be851609-c0f7-4cae-afae-2094965ead93",
+        "target": "412c23ca-fafd-4af8-ab87-abd9df17241a"
+      },
+      {
+        "id": "reactflow__edge-18b287f6-0a05-4dbc-92d3-4eb10f177bc5out-412c23ca-fafd-4af8-ab87-abd9df17241ain_1",
+        "source": "18b287f6-0a05-4dbc-92d3-4eb10f177bc5",
+        "target": "412c23ca-fafd-4af8-ab87-abd9df17241a"
+      },
+      {
+        "id": "reactflow__edge-412c23ca-fafd-4af8-ab87-abd9df17241aout-0ef770f3-e789-40b0-a6e5-5f5fea079389in",
+        "source": "412c23ca-fafd-4af8-ab87-abd9df17241a",
+        "target": "0ef770f3-e789-40b0-a6e5-5f5fea079389"
+      },
+      {
+        "id": "reactflow__edge-0ef770f3-e789-40b0-a6e5-5f5fea079389out-d7e27f2a-2175-4fe0-8bff-8dfcd95f36f2in",
+        "source": "0ef770f3-e789-40b0-a6e5-5f5fea079389",
+        "target": "d7e27f2a-2175-4fe0-8bff-8dfcd95f36f2"
+      },
+      {
+        "id": "reactflow__edge-d7e27f2a-2175-4fe0-8bff-8dfcd95f36f2out-3ad91d4c-3f0f-4db6-98a0-83fcbc564598in",
+        "source": "d7e27f2a-2175-4fe0-8bff-8dfcd95f36f2",
+        "target": "3ad91d4c-3f0f-4db6-98a0-83fcbc564598"
+      }
+    ],
+    "name": "DefaultWorkflow",
+    "task": "",
+    "timestamp": 1774979610983,
+    "provenance_id": "DefaultWorkflow"
+  }
+}

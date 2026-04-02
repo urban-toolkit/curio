@@ -1,0 +1,257 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "58ded8d4-4db6-40ff-bfef-a195997b9865",
+        "type": "DATA_LOADING",
+        "x": 458,
+        "y": 289,
+        "content": "# load box\nimport utk\nimport pandas as pd\n\nuc = utk.OSM.load([42.336844, -71.113459, 42.345559, -71.099216], layers=[{'name':'buildings', 'args': {'sizeCells': 5}}, {'name':'surface', 'args': {'sizeCells': 5}}, 'parks'])\n\n# buildings\ngdf_buildings = uc.layers['gdf']['sections'][0]\ngdf_buildings['thematic'] = 0.5\ngdf_buildings.metadata = {\n 'name': 'buildings'\n}\n\n#surface\njson_surface = uc.layers['json'][1]\ngdf_surface = uc.layers['gdf']['objects'][1]\ngdf_surface.metadata = {\n 'name': 'surface'\n}\n\n#parks\njson_parks = uc.layers['json'][2]\ngdf_parks = uc.layers['gdf']['objects'][2]\ngdf_parks.metadata = {\n 'name': 'parks'\n}\n\n# Wrap JSON layers in DataFrames (DATA_LOADING supports DataFrame/GeoDataFrame output)\ndf_json_surface = pd.DataFrame({'json_data': [json_surface]})\ndf_json_parks = pd.DataFrame({'json_data': [json_parks]})\n\nreturn (df_json_surface, df_json_parks, gdf_buildings, gdf_surface, gdf_parks)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "c152be2d-20c5-4a0b-a05e-275e0d12d317",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": 1092.5667408709357,
+        "y": 288.472850829572,
+        "content": "return arg[2]",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "4afbbd11-ef72-406d-a99a-5bc29c6a17c1",
+        "type": "DATA_POOL",
+        "x": 1739.173013171256,
+        "y": 286.55698039312654,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "75eb6da0-7ae4-4af5-9faa-fbf986d1a0f4",
+        "type": "VIS_UTK",
+        "x": 2456.4427427413425,
+        "y": 297.8941307774687,
+        "content": "{}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "7f3cc834-2879-4bc3-bc58-839602f4b3e7",
+        "type": "DATA_TRANSFORMATION",
+        "x": 2096.302680378651,
+        "y": 717.9547100180329,
+        "content": "gdf = arg\n\ngdf.loc[gdf['interacted'] == '1', 'height'] *= [!! Height Multiplier$INPUT_VALUE$14 !!]\n\ngdf.metadata = {\n 'name': 'buildings'\n}\n\nreturn gdf",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "c93d6a9c-14ac-4c69-83d2-19e87e99dae0",
+        "type": "MERGE_FLOW",
+        "x": 2851.6898874373223,
+        "y": 891.0713282067035,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "ffca6c56-c04c-4d65-a8ca-ec40eb1fae99",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": 3019.7909315145744,
+        "y": 750.1002615881624,
+        "content": "import utk\r\n\r\njson_surface = arg[0][0].iloc[0]['json_data']\r\ngdf_surface = arg[0][3]\r\njson_parks = arg[0][1].iloc[0]['json_data']\r\ngdf_parks = arg[0][4]\r\n\r\ngdf_buildings = arg[1]\r\n\r\njson_layers = [json_surface]\r\n# buildings json layer\r\ngdf_buildings = gdf_buildings.set_crs('4326')\r\nmesh = utk.OSM.mesh_from_buildings_gdf(gdf_buildings, 5)['data']\r\n\r\njson_buildings = {\r\n   'id': 'buildings',\r\n   'type': 'BUILDINGS_LAYER',\r\n   'renderStyle': ['SMOOTH_COLOR_MAP_TEX'],\r\n   'styleKey': 'building',\r\n   'data': mesh\r\n}\r\n\r\njson_layers.append(json_buildings)\r\n\r\nshadow = utk.data.shadow(json_layers, [[[!! Start date$INPUT_TEXT$12/26/2015 10:00 !!], [!! End date$INPUT_TEXT$12/26/2015 16:01 !!]]])\r\n\r\nthematic_layers = shadow.get_shadow_by_layer()\r\n\r\nbuilding_index = -1\r\ncurrent_building_id = -1\r\n\r\nvalues_per_row = []\r\n\r\nfor index, row in gdf_buildings.iterrows():\r\n   if(row['building_id'] != current_building_id):\r\n       current_building_id = row['building_id']\r\n       building_index += 1\r\n\r\n   values_per_row.append(thematic_layers['shadow0_buildings']['values'][building_index])\r\n\r\ngdf_buildings[\"shadow0_buildings\"] = values_per_row\r\n\r\ngdf_buildings.metadata = {\r\n 'name': 'buildings'\r\n}\r\n\r\nvalues_per_row = []\r\n\r\nfor index, row in gdf_surface.iterrows():\r\n   values_per_row.append(thematic_layers['shadow0_surface']['values'][index])\r\n\r\ngdf_surface[\"shadow0_surface\"] = values_per_row\r\ngdf_surface[\"surface_id\"] = 0 # surface is a single big bounding box\r\n\r\ngdf_surface.metadata = {\r\n 'name': 'surface'\r\n}\r\n\r\nreturn (gdf_surface, gdf_parks, gdf_buildings)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "9075a191-c09b-440b-ae42-5e618261506e",
+        "type": "VIS_UTK",
+        "x": 3633.7299147921926,
+        "y": 530.6856066042167,
+        "content": "{}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "6f726f1a-700f-49bf-b6eb-8176c7f559e9",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": 2971.4719714512144,
+        "y": -36.13026728324641,
+        "content": "import utk\r\n\r\njson_surface = arg[0].iloc[0]['json_data']\r\njson_parks = arg[1].iloc[0]['json_data']\r\ngdf_buildings = arg[2]\r\ngdf_surface = arg[3]\r\ngdf_parks = arg[4]\r\n\r\njson_layers = [json_surface]\r\n\r\n# buildings json layer\r\ngdf_buildings = gdf_buildings.set_crs('4326')\r\nmesh = utk.OSM.mesh_from_buildings_gdf(gdf_buildings, 5)['data']\r\n\r\njson_buildings = {\r\n   'id': 'buildings',\r\n   'type': 'BUILDINGS_LAYER',\r\n   'renderStyle': ['SMOOTH_COLOR_MAP_TEX'],\r\n   'styleKey': 'building',\r\n   'data': mesh\r\n}\r\n\r\njson_layers.append(json_buildings)\r\n\r\nshadow = utk.data.shadow(json_layers, [[[!! Start date$INPUT_TEXT$12/26/2015 10:00 !!], [!! End date$INPUT_TEXT$12/26/2015 16:01 !!]]])\r\n\r\nthematic_layers = shadow.get_shadow_by_layer()\r\n\r\nbuilding_index = -1\r\ncurrent_building_id = -1\r\n\r\nvalues_per_row = []\r\n\r\nfor index, row in gdf_buildings.iterrows():\r\n   if(row['building_id'] != current_building_id):\r\n       current_building_id = row['building_id']\r\n       building_index += 1\r\n\r\n   values_per_row.append(thematic_layers['shadow0_buildings']['values'][building_index])\r\n\r\ngdf_buildings[\"shadow0_buildings\"] = values_per_row\r\n\r\ngdf_buildings.metadata = {\r\n 'name': 'buildings'\r\n}\r\n\r\nvalues_per_row = []\r\n\r\nfor index, row in gdf_surface.iterrows():\r\n   values_per_row.append(thematic_layers['shadow0_surface']['values'][index])\r\n\r\ngdf_surface[\"shadow0_surface\"] = values_per_row\r\ngdf_surface[\"surface_id\"] = 0 # surface is a single big bounding box\r\n\r\ngdf_surface.metadata = {\r\n 'name': 'surface'\r\n}\r\n\r\nreturn (gdf_surface, gdf_parks, gdf_buildings)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "03e0e49a-f493-4af1-95e8-9f004af838e0",
+        "type": "VIS_UTK",
+        "x": 3665.935161926398,
+        "y": -41.3437845510581,
+        "content": "{}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "98352a3b-23fd-4fa0-8a5f-e846e4076b76",
+        "type": "MERGE_FLOW",
+        "x": 4572.832210482975,
+        "y": 297.87724887850106,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "2de74d5b-ce5b-4a94-9951-5e2d551033bb",
+        "type": "COMPUTATION_ANALYSIS",
+        "x": 4756.184684404539,
+        "y": 320.0466057764346,
+        "content": "gdf_surface_1 = arg[0][0]\r\ngdf_buildings_1 = arg[0][2]\r\n\r\ngdf_surface_2 = arg[1][0]\r\ngdf_buildings_2 = arg[1][2]\r\n\r\ngdf_parks_3 = arg[0][1]\r\n\r\nlist_1 = gdf_surface_1.iloc[0]['shadow0_surface']\r\nlist_2 = gdf_surface_2.iloc[0]['shadow0_surface']\r\n\r\ndifference_list = [b - a for a, b in zip(list_1, list_2)]\r\n\r\ngdf_surface_2['shadow0_surface'] = [difference_list]\r\n\r\ngdf_parks_3.metadata = {\r\n 'name': 'parks'\r\n}\r\n\r\ngdf_surface_2.metadata = {\r\n 'name': 'surface'\r\n}\r\n\r\ngdf_buildings_2.metadata = {\r\n 'name': 'buildings'\r\n}\r\n\r\nreturn (gdf_parks_3, gdf_surface_2, gdf_buildings_2)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "738a627f-8072-4cf1-a7d8-3fd45d06f4a9",
+        "type": "VIS_UTK",
+        "x": 5396.49820630218,
+        "y": 136.56412747419287,
+        "content": "{\n    \"components\": [\n        {\n            \"id\": \"grammar_map\",\n            \"position\": {\n                \"width\": [\n                    1,\n                    12\n                ],\n                \"height\": [\n                    1,\n                    4\n                ]\n            }\n        }\n    ],\n    \"knots\": [],\n    \"ex_knots\": [\n        {\n            \"id\": \"parks0\",\n            \"out_name\": \"parks\"\n        },\n        {\n            \"id\": \"surface0\",\n            \"out_name\": \"surface\",\n            \"in_name\": \"shadow0_surface\"\n        },\n        {\n            \"id\": \"buildings0\",\n            \"out_name\": \"buildings\",\n            \"in_name\": \"shadow0_buildings\"\n        },\n        {\n            \"id\": \"buildings1\",\n            \"out_name\": \"buildings\",\n            \"in_name\": \"thematic\"\n        }\n    ],\n    \"grid\": {\n        \"width\": 12,\n        \"height\": 4\n    },\n    \"grammar\": false\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-58ded8d4-4db6-40ff-bfef-a195997b9865out-c152be2d-20c5-4a0b-a05e-275e0d12d317in",
+        "source": "58ded8d4-4db6-40ff-bfef-a195997b9865",
+        "target": "c152be2d-20c5-4a0b-a05e-275e0d12d317"
+      },
+      {
+        "id": "reactflow__edge-c152be2d-20c5-4a0b-a05e-275e0d12d317out-4afbbd11-ef72-406d-a99a-5bc29c6a17c1in",
+        "source": "c152be2d-20c5-4a0b-a05e-275e0d12d317",
+        "target": "4afbbd11-ef72-406d-a99a-5bc29c6a17c1"
+      },
+      {
+        "id": "reactflow__edge-4afbbd11-ef72-406d-a99a-5bc29c6a17c1out-7f3cc834-2879-4bc3-bc58-839602f4b3e7in",
+        "source": "4afbbd11-ef72-406d-a99a-5bc29c6a17c1",
+        "target": "7f3cc834-2879-4bc3-bc58-839602f4b3e7"
+      },
+      {
+        "id": "reactflow__edge-c93d6a9c-14ac-4c69-83d2-19e87e99dae0out-ffca6c56-c04c-4d65-a8ca-ec40eb1fae99in",
+        "source": "c93d6a9c-14ac-4c69-83d2-19e87e99dae0",
+        "target": "ffca6c56-c04c-4d65-a8ca-ec40eb1fae99"
+      },
+      {
+        "id": "reactflow__edge-58ded8d4-4db6-40ff-bfef-a195997b9865out-c93d6a9c-14ac-4c69-83d2-19e87e99dae0in_0",
+        "source": "58ded8d4-4db6-40ff-bfef-a195997b9865",
+        "target": "c93d6a9c-14ac-4c69-83d2-19e87e99dae0"
+      },
+      {
+        "id": "reactflow__edge-7f3cc834-2879-4bc3-bc58-839602f4b3e7out-c93d6a9c-14ac-4c69-83d2-19e87e99dae0in_1",
+        "source": "7f3cc834-2879-4bc3-bc58-839602f4b3e7",
+        "target": "c93d6a9c-14ac-4c69-83d2-19e87e99dae0"
+      },
+      {
+        "id": "reactflow__edge-58ded8d4-4db6-40ff-bfef-a195997b9865out-6f726f1a-700f-49bf-b6eb-8176c7f559e9in",
+        "source": "58ded8d4-4db6-40ff-bfef-a195997b9865",
+        "target": "6f726f1a-700f-49bf-b6eb-8176c7f559e9"
+      },
+      {
+        "id": "reactflow__edge-03e0e49a-f493-4af1-95e8-9f004af838e0out-98352a3b-23fd-4fa0-8a5f-e846e4076b76in_0",
+        "source": "03e0e49a-f493-4af1-95e8-9f004af838e0",
+        "target": "98352a3b-23fd-4fa0-8a5f-e846e4076b76"
+      },
+      {
+        "id": "reactflow__edge-9075a191-c09b-440b-ae42-5e618261506eout-98352a3b-23fd-4fa0-8a5f-e846e4076b76in_1",
+        "source": "9075a191-c09b-440b-ae42-5e618261506e",
+        "target": "98352a3b-23fd-4fa0-8a5f-e846e4076b76"
+      },
+      {
+        "id": "reactflow__edge-98352a3b-23fd-4fa0-8a5f-e846e4076b76out-2de74d5b-ce5b-4a94-9951-5e2d551033bbin",
+        "source": "98352a3b-23fd-4fa0-8a5f-e846e4076b76",
+        "target": "2de74d5b-ce5b-4a94-9951-5e2d551033bb"
+      },
+      {
+        "id": "reactflow__edge-4afbbd11-ef72-406d-a99a-5bc29c6a17c1out-75eb6da0-7ae4-4af5-9faa-fbf986d1a0f4in",
+        "source": "4afbbd11-ef72-406d-a99a-5bc29c6a17c1",
+        "target": "75eb6da0-7ae4-4af5-9faa-fbf986d1a0f4"
+      },
+      {
+        "type": "Interaction",
+        "id": "reactflow__edge-75eb6da0-7ae4-4af5-9faa-fbf986d1a0f4in/out-4afbbd11-ef72-406d-a99a-5bc29c6a17c1in/out",
+        "source": "75eb6da0-7ae4-4af5-9faa-fbf986d1a0f4",
+        "target": "4afbbd11-ef72-406d-a99a-5bc29c6a17c1"
+      },
+      {
+        "id": "reactflow__edge-ffca6c56-c04c-4d65-a8ca-ec40eb1fae99out-9075a191-c09b-440b-ae42-5e618261506ein",
+        "source": "ffca6c56-c04c-4d65-a8ca-ec40eb1fae99",
+        "target": "9075a191-c09b-440b-ae42-5e618261506e"
+      },
+      {
+        "id": "reactflow__edge-6f726f1a-700f-49bf-b6eb-8176c7f559e9out-03e0e49a-f493-4af1-95e8-9f004af838e0in",
+        "source": "6f726f1a-700f-49bf-b6eb-8176c7f559e9",
+        "target": "03e0e49a-f493-4af1-95e8-9f004af838e0"
+      },
+      {
+        "id": "reactflow__edge-2de74d5b-ce5b-4a94-9951-5e2d551033bbout-738a627f-8072-4cf1-a7d8-3fd45d06f4a9in",
+        "source": "2de74d5b-ce5b-4a94-9951-5e2d551033bb",
+        "target": "738a627f-8072-4cf1-a7d8-3fd45d06f4a9"
+      }
+    ],
+    "name": "DefaultWorkflow",
+    "task": "",
+    "timestamp": 1775089298775,
+    "provenance_id": "DefaultWorkflow"
+  }
+}

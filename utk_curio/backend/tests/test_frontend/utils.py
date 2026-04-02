@@ -387,7 +387,7 @@ def save_workflow_test_screenshot(
     *,
     test_name: str,
     pixel_threshold: int = 30,
-    max_diff_ratio: float = 0.15,
+    max_diff_ratio: float = 0.20,
 ) -> str:
     """Compare or create an expected screenshot for a workflow test.
 

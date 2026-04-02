@@ -22,7 +22,7 @@ We begin by loading the red-light violation data into Curio using a Data Loading
 ```python
 import pandas as pd
 
-df = pd.read_csv("reg-light-violation.csv")
+df = pd.read_csv("data/red-light-violation.csv")
 return df
 ```
 

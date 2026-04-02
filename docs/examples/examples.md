@@ -54,9 +54,9 @@ Icons indicate the complexity level of each example: 🟢 Easy, 🟡 Intermediat
     `Curio` provides powerful tools for urban planning and scenario analysis, allowing planners to explore
     what-if scenarios and analyze accessibility patterns across urban environments.
 
-    - 🟡 **[02 - What-if scenario planning](detailed_examples/02-what-if.md)**: Explore the impact of urban development on shadow patterns.
+    - 🔴 **[02 - What-if scenario planning](detailed_examples/02-what-if.md)**: Explore the impact of urban development on shadow patterns.
         - *What it does*: Creates interactive dataflows to simulate shadow impact from proposed buildings in Boston, allowing users to modify building heights and compare shadow patterns before and after changes.
-
+[02-what-if.md](02-what-if.md)
     - 🟢 **[04 - Accessibility analysis](detailed_examples/04-accessibility-analysis.md)**: Understand urban accessibility patterns.
         - *What it does*: Analyzes sidewalk accessibility features using severity and agreement metrics to visualize neighborhood patterns and identify improvement areas.
 

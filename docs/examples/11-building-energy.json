@@ -1,0 +1,473 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "7d41f188-ec81-4642-ba73-eeb46ae8ebe2",
+        "type": "DATA_LOADING",
+        "x": 289,
+        "y": 280.04900812844846,
+        "content": "import pandas as pd\n\n# Load the CSV directly\ndf = pd.read_csv(\"data/Energy_Usage_5000.csv\")\n\n# Select relevant columns and clean missing values\ngrouped_data = df[[\"BUILDING TYPE\", \"TOTAL KWH\", \"TOTAL THERMS\"]].dropna()\n\n# Return cleaned DataFrame\nreturn grouped_data",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "9eafa9de-726a-404b-8c97-d3d5ec94e51d",
+        "type": "DATA_CLEANING",
+        "x": 918.7421819259439,
+        "y": 85.16302769558145,
+        "content": "def remove_outliers(df, column):\n    Q1 = df[column].quantile(0.25)\n    Q3 = df[column].quantile(0.75)\n    IQR = Q3 - Q1\n    return df[(df[column] >= Q1 - 1.5 * IQR) & (df[column] <= Q3 + 1.5 * IQR)]\n\ndef clean(df):\n    # Drop only if columns exist\n    required_cols = ['CENSUS BLOCK', 'BUILDING TYPE', 'BUILDING_SUBTYPE']\n    drop_cols = [col for col in required_cols if col in df.columns]\n\n    df_cleaned = df.dropna(subset=drop_cols).copy()\n\n    # Standard KWH/THERM fill\n    kwh_columns = [col for col in df.columns if 'KWH' in col and '2010' in col and 'SQFT' not in col]\n    therm_columns = [col for col in df.columns if 'THERM' in col and '2010' in col and 'SQFT' not in col]\n    df_cleaned[kwh_columns] = df_cleaned[kwh_columns].fillna(df_cleaned[kwh_columns].median())\n    df_cleaned[therm_columns] = df_cleaned[therm_columns].fillna(df_cleaned[therm_columns].median())\n\n    for col in [\n        'TOTAL KWH', 'TOTAL THERMS',\n        'OCCUPIED UNITS PERCENTAGE', 'OCCUPIED UNITS',\n        'RENTER-OCCUPIED HOUSING UNITS'\n    ]:\n        if col in df_cleaned.columns:\n            df_cleaned[col] = df_cleaned[col].fillna(df_cleaned[col].median())\n\n    df_cleaned['ELECTRICITY ACCOUNTS'] = pd.to_numeric(df_cleaned.get('ELECTRICITY ACCOUNTS'), errors='coerce')\n    df_cleaned['GAS ACCOUNTS'] = pd.to_numeric(df_cleaned.get('GAS ACCOUNTS'), errors='coerce')\n    df_cleaned['ELECTRICITY'] = df_cleaned['TOTAL KWH']\n    df_cleaned['GAS'] = df_cleaned['TOTAL THERMS']\n\n    df_cleaned = df_cleaned.loc[:, df_cleaned.isnull().mean() < 0.2]\n\n    if 'TERM APRIL 2010' in df.columns:\n        df.rename(columns={'TERM APRIL 2010': 'THERM APRIL 2010'}, inplace=True)\n\n    # Standardize community names\n    if 'COMMUNITY AREA NAME' in df_cleaned.columns:\n        df_cleaned['COMMUNITY AREA NAME'] = df_cleaned['COMMUNITY AREA NAME'].str.strip().str.upper()\n        df_cleaned['COMMUNITY AREA NAME'] = df_cleaned['COMMUNITY AREA NAME'].replace({\n            \"LAKEVIEW\": \"LAKE VIEW\",\n            \"O'HARE\": \"OHARE\"\n        })\n\n    # Ensure total columns are present\n    if 'TOTAL KWH' in df_cleaned.columns:\n        df_cleaned['TOTAL KWH'] = df_cleaned['TOTAL KWH'].fillna(df_cleaned['TOTAL KWH'].median())\n    if 'TOTAL THERMS' in df_cleaned.columns:\n        df_cleaned['TOTAL THERMS'] = df_cleaned['TOTAL THERMS'].fillna(df_cleaned['TOTAL THERMS'].median())\n\n    if 'AVERAGE BUILDING AGE' in df_cleaned.columns:\n        df_cleaned['DECADE BUILT'] = (2010 - df_cleaned['AVERAGE BUILDING AGE']) // 10 * 10\n\n    df_cleaned = remove_outliers(df_cleaned, 'TOTAL KWH')\n    df_cleaned = remove_outliers(df_cleaned, 'TOTAL THERMS')\n\n\n\n    return df_cleaned\n\n\n# Run cleaning and return\nreturn clean(arg)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "fc8f5cba-2ecd-4702-b19f-d471b49104c8",
+        "type": "DATA_TRANSFORMATION",
+        "x": 1541.661478388754,
+        "y": 278.5160079213447,
+        "content": "# Assume `arg` is the cleaned DataFrame from the previous card\nimport pandas as pd\n\nenergy_long = pd.melt(\n    arg,\n    id_vars='BUILDING TYPE',\n    value_vars=['TOTAL KWH', 'TOTAL THERMS'],\n    var_name='ENERGY TYPE',\n    value_name='VALUE'\n)\n\ntotal_by_type = energy_long.groupby('BUILDING TYPE')['VALUE'].transform('sum')\nenergy_long['PERCENTAGE'] = (energy_long['VALUE'] / total_by_type) * 100\n\nreturn energy_long",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "53e8c833-202d-40d2-8ccf-d0b304566593",
+        "type": "VIS_VEGA",
+        "x": 2222.5877292601053,
+        "y": 139.628508289395,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"data\": { \"name\": \"energy_transformed_1\" },\n  \"mark\": \"rect\",\n  \"encoding\": {\n    \"x\": { \"field\": \"BUILDING TYPE\", \"type\": \"nominal\" },\n    \"y\": { \"field\": \"ENERGY TYPE\", \"type\": \"nominal\" },\n    \"color\": {\n      \"field\": \"VALUE\",\n      \"type\": \"quantitative\",\n      \"scale\": { \"scheme\": \"viridis\" }\n    },\n    \"tooltip\": [\n      { \"field\": \"BUILDING TYPE\" },\n      { \"field\": \"ENERGY TYPE\" },\n      { \"field\": \"VALUE\", \"format\": \".2f\" },\n      { \"field\": \"PERCENTAGE\", \"format\": \".1f\" }\n    ]\n  },\n  \"title\": \"Energy Consumption Heatmap (KWH + THERMS)\"\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "22d68832-0b7b-4a7c-8f11-989d4780f56f",
+        "type": "VIS_VEGA",
+        "x": 2220.063225195882,
+        "y": 452.6670122531995,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"data\": { \"name\": \"energy_transformed_1\" },\n  \"mark\": \"circle\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"BUILDING TYPE\",\n      \"type\": \"nominal\",\n      \"axis\": { \"labelAngle\": -45 }\n    },\n    \"y\": { \"field\": \"VALUE\", \"type\": \"quantitative\" },\n    \"color\": { \"field\": \"ENERGY TYPE\", \"type\": \"nominal\" },\n    \"size\": { \"field\": \"VALUE\", \"type\": \"quantitative\" },\n    \"tooltip\": [\n      { \"field\": \"BUILDING TYPE\" },\n      { \"field\": \"ENERGY TYPE\" },\n      { \"field\": \"VALUE\", \"format\": \".2f\" }\n    ]\n  },\n  \"title\": \"Dot Plot of Energy Usage by Building Type\"\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "7a1c0e5b-3c39-4727-a616-f4ca97fdbb44",
+        "type": "DATA_TRANSFORMATION",
+        "x": 1562.203911586845,
+        "y": 789.4085653758109,
+        "content": "# Group by building type and compute average gas usage\ndf_avg_gas = arg.groupby(\"BUILDING TYPE\")[\"TOTAL THERMS\"].mean().reset_index()\ndf_avg_gas.rename(columns={\"TOTAL THERMS\": \"AVG TOTAL THERMS\"}, inplace=True)\n\nreturn df_avg_gas",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "ce74522c-d689-4cf9-bb41-e4f6a24882d4",
+        "type": "VIS_VEGA",
+        "x": 2214.5469292357034,
+        "y": 808.3170586409951,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"data\": { \"name\": \"avg_gas_by_building\" },\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"BUILDING TYPE\",\n      \"type\": \"nominal\",\n      \"axis\": { \"labelAngle\": -45 }\n    },\n    \"y\": { \"field\": \"AVG TOTAL THERMS\", \"type\": \"quantitative\" },\n    \"tooltip\": [\n      { \"field\": \"BUILDING TYPE\" },\n      { \"field\": \"AVG TOTAL THERMS\", \"format\": \".2f\" }\n    ],\n    \"color\": { \"field\": \"BUILDING TYPE\", \"type\": \"nominal\" }\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "15aa8924-3c5a-42a3-a89e-456f675c469a",
+        "type": "DATA_LOADING",
+        "x": 228.15683441031678,
+        "y": 1271.2887493356407,
+        "content": "import pandas as pd\n\ndf = pd.read_csv(\"data/Energy_Usage_5000.csv\")\n\n# Standardize column names right away for consistency\ndf.columns = [col.upper().strip() for col in df.columns]\n\n# Just return full dataset for now no filtering yet\nreturn df",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "23a15771-4d9a-479f-911f-b6f758850574",
+        "type": "DATA_CLEANING",
+        "x": 934.3905051537082,
+        "y": 1285.119141936728,
+        "content": "def remove_outliers(df, column):\n    Q1 = df[column].quantile(0.25)\n    Q3 = df[column].quantile(0.75)\n    IQR = Q3 - Q1\n    return df[(df[column] >= Q1 - 1.5 * IQR) & (df[column] <= Q3 + 1.5 * IQR)]\n\ndef clean(df):\n    # We assume column names are already uppercased by the data loading card\n    required_cols = ['COMMUNITY AREA NAME', 'TOTAL KWH', 'TOTAL THERMS', 'BUILDING TYPE']\n    df = df.dropna(subset=required_cols).copy()\n\n    df['COMMUNITY AREA NAME'] = df['COMMUNITY AREA NAME'].str.strip().str.upper()\n    df['TOTAL KWH'] = df['TOTAL KWH'].fillna(df['TOTAL KWH'].median())\n    df['TOTAL THERMS'] = df['TOTAL THERMS'].fillna(df['TOTAL THERMS'].median())\n\n    df = remove_outliers(df, 'TOTAL KWH')\n    df = remove_outliers(df, 'TOTAL THERMS')\n\n    return df\n\nreturn clean(arg)",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "2cd9e67d-4e07-4852-8a55-f6b50cd3658d",
+        "type": "DATA_TRANSFORMATION",
+        "x": 1632.54988655806,
+        "y": 1285.1191419367285,
+        "content": "df_avg = arg[[\"COMMUNITY AREA NAME\", \"TOTAL KWH\", \"TOTAL THERMS\"]].dropna()\n\nagg_df = df_avg.groupby(\"COMMUNITY AREA NAME\").agg({\n    \"TOTAL KWH\": \"mean\",\n    \"TOTAL THERMS\": \"mean\"\n}).reset_index()\n\nagg_df[\"AVG ENERGY USE\"] = agg_df[\"TOTAL KWH\"] + agg_df[\"TOTAL THERMS\"]\n\ntop10 = agg_df.sort_values(\"AVG ENERGY USE\", ascending=False).head(10)\n\nreturn top10",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "4e7a7f96-4615-4099-bbb9-b5811b560361",
+        "type": "VIS_VEGA",
+        "x": 2282.5603451069387,
+        "y": 1287.3077293392498,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"data\": { \"name\": \"top10_avg_energy_by_community\" },\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"COMMUNITY AREA NAME\",\n      \"type\": \"nominal\",\n      \"sort\": \"-y\",\n      \"axis\": { \"labelAngle\": -45 }\n    },\n    \"y\": {\n      \"field\": \"AVG ENERGY USE\",\n      \"type\": \"quantitative\",\n      \"title\": \"Avg Energy Use (KWH + THERMS)\"\n    },\n    \"tooltip\": [\n      { \"field\": \"COMMUNITY AREA NAME\" },\n      { \"field\": \"AVG ENERGY USE\", \"format\": \".2f\" }\n    ],\n    \"color\": {\n      \"field\": \"AVG ENERGY USE\",\n      \"type\": \"quantitative\",\n      \"scale\": { \"scheme\": \"blues\" }\n    }\n  },\n  \"title\": \"Top 10 Communities by Avg Energy Consumption\"\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "0957871c-b1f3-4c89-84de-3dc8f88e49c7",
+        "type": "DATA_TRANSFORMATION",
+        "x": 1643.4928235706673,
+        "y": 1663.744762572944,
+        "content": "df_scatter = arg[[\"TOTAL KWH\", \"TOTAL THERMS\", \"BUILDING TYPE\"]].dropna()\ndf_scatter = df_scatter[(df_scatter[\"TOTAL KWH\"] > 0) & (df_scatter[\"TOTAL THERMS\"] > 0)]\n\nreturn df_scatter",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "2ba732cf-7fa3-4a59-b41f-faa3d707994f",
+        "type": "VIS_VEGA",
+        "x": 2328.5206805598905,
+        "y": 1665.9333499754655,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"data\": { \"name\": \"scatter_energy_usage\" },\n  \"mark\": \"point\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"TOTAL KWH\",\n      \"type\": \"quantitative\",\n      \"scale\": { \"type\": \"log\" }\n    },\n    \"y\": {\n      \"field\": \"TOTAL THERMS\",\n      \"type\": \"quantitative\",\n      \"scale\": { \"type\": \"log\" }\n    },\n    \"color\": { \"field\": \"BUILDING TYPE\", \"type\": \"nominal\" },\n    \"tooltip\": [\n      { \"field\": \"BUILDING TYPE\" },\n      { \"field\": \"TOTAL KWH\" },\n      { \"field\": \"TOTAL THERMS\" }\n    ]\n  },\n  \"title\": \"Electricity vs Gas Usage by Building Type (Log Scale)\"\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "e54363aa-e9c8-45d2-a5d0-3938185d4445",
+        "type": "DATA_TRANSFORMATION",
+        "x": 1633.7516776457119,
+        "y": 2057.884875457448,
+        "content": "df_strip = arg[[\"BUILDING TYPE\", \"TOTAL THERMS\"]].dropna()\n\n# Remove large outliers for visualization clarity\ndf_strip = df_strip[df_strip[\"TOTAL THERMS\"] < 500_000]\n\nreturn df_strip",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "0503ce30-db2c-4a6f-833f-459969113302",
+        "type": "VIS_VEGA",
+        "x": 2302.2764124269243,
+        "y": 2057.7375489869264,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"data\": { \"name\": \"df_strip\" },\n  \"mark\": \"tick\",\n  \"encoding\": {\n    \"x\": { \"field\": \"TOTAL THERMS\", \"type\": \"quantitative\" },\n    \"y\": { \"field\": \"BUILDING TYPE\", \"type\": \"nominal\" },\n    \"color\": { \"field\": \"BUILDING TYPE\", \"type\": \"nominal\" },\n    \"tooltip\": [{ \"field\": \"BUILDING TYPE\" }, { \"field\": \"TOTAL THERMS\" }]\n  },\n  \"title\": \"Gas Usage Spread by Building Type (Strip Plot)\"\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "e62ad390-9e0a-44aa-87f8-644c33974d04",
+        "type": "DATA_LOADING",
+        "x": 191.01654509870087,
+        "y": 2463.568139350984,
+        "content": "import pandas as pd\ndf = pd.read_csv(\"data/Energy_Usage_5000.csv\")\nreturn df",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "42ba84c5-edcf-49b5-ab3b-b5658e018f60",
+        "type": "DATA_CLEANING",
+        "x": 839.8139176795285,
+        "y": 2468.4377908759784,
+        "content": "# Filter for KWH month columns\nmonth_cols = [col for col in arg.columns if col.startswith(\"KWH \") and \"2010\" in col]\nrequired_cols = [\"COMMUNITY AREA NAME\"] + month_cols\n\ndf = arg[required_cols].dropna()\n\n# Melt to long format\ndf_long = pd.melt(\n    df,\n    id_vars=[\"COMMUNITY AREA NAME\"],\n    value_vars=month_cols,\n    var_name=\"Month\",\n    value_name=\"KWH\"\n)\n\n# Extract month name (e.g., \"JANUARY\")\ndf_long[\"Month\"] = df_long[\"Month\"].str.extract(r\"KWH (.+?) 2010\")[0].str.upper()\ndf_long = df_long.dropna(subset=[\"Month\", \"KWH\", \"COMMUNITY AREA NAME\"])\n\nreturn df_long",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "e7753795-7c01-4773-a9a0-ffeb648cf9bf",
+        "type": "DATA_TRANSFORMATION",
+        "x": 1464.0100502510975,
+        "y": 2484.8640048910197,
+        "content": "# Get top 20 communities by average KWH\ntop_20 = arg.groupby(\"COMMUNITY AREA NAME\")[\"KWH\"].mean().sort_values(ascending=False).head(20).index\n\n# Filter the long-form data\ndf_top20 = arg[arg[\"COMMUNITY AREA NAME\"].isin(top_20)].copy()\nreturn df_top20",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "d537cc76-27b7-41b4-95dc-7ec65ec1ec42",
+        "type": "VIS_VEGA",
+        "x": 2116.5937966110787,
+        "y": 2371.33640676152,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"params\": [\n    {\n      \"name\": \"commPick\",\n      \"select\": {\n        \"type\": \"point\",\n        \"fields\": [\"COMMUNITY AREA NAME\"]\n      }\n    }\n  ],\n  \"vconcat\": [\n    {\n      \"title\": \"Click on a Line to Highlight a Community\",\n      \"width\": 650,\n      \"height\": 400,\n      \"mark\": {\n        \"type\": \"line\",\n        \"interpolate\": \"monotone\"\n      },\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"Month\",\n          \"type\": \"nominal\",\n          \"sort\": [\n            \"JANUARY\",\n            \"FEBRUARY\",\n            \"MARCH\",\n            \"APRIL\",\n            \"MAY\",\n            \"JUNE\",\n            \"JULY\",\n            \"AUGUST\",\n            \"SEPTEMBER\",\n            \"OCTOBER\",\n            \"NOVEMBER\",\n            \"DECEMBER\"\n          ],\n          \"axis\": { \"labelAngle\": 45 }\n        },\n        \"y\": {\n          \"field\": \"KWH\",\n          \"type\": \"quantitative\",\n          \"title\": \"Total KWH\",\n          \"scale\": { \"zero\": false }\n        },\n        \"color\": {\n          \"field\": \"COMMUNITY AREA NAME\",\n          \"type\": \"nominal\",\n          \"scale\": { \"scheme\": \"category20\" },\n          \"legend\": { \"columns\": 2 }\n        },\n        \"opacity\": {\n          \"condition\": { \"param\": \"commPick\", \"value\": 1 },\n          \"value\": 0.2\n        },\n        \"tooltip\": [\n          { \"field\": \"COMMUNITY AREA NAME\", \"title\": \"Community\" },\n          { \"field\": \"Month\" },\n          { \"field\": \"KWH\", \"format\": \",.0f\" }\n        ]\n      }\n    },\n    {\n      \"title\": \"Average KWH of Selected Community\",\n      \"width\": 650,\n      \"height\": 300,\n      \"mark\": \"bar\",\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"COMMUNITY AREA NAME\",\n          \"type\": \"nominal\",\n          \"sort\": \"-x\"\n        },\n        \"x\": {\n          \"aggregate\": \"mean\",\n          \"field\": \"KWH\",\n          \"type\": \"quantitative\",\n          \"title\": \"Avg KWH\"\n        },\n        \"color\": {\n          \"field\": \"COMMUNITY AREA NAME\",\n          \"type\": \"nominal\"\n        }\n      },\n      \"transform\": [{ \"filter\": { \"param\": \"commPick\" } }]\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "e3b53a07-079f-402c-82c5-69d30fe06b24",
+        "type": "DATA_LOADING",
+        "x": 334.59154802016326,
+        "y": 3248.3998129298852,
+        "content": "import pandas as pd\n\ndf = pd.read_csv(\"data/Energy_Usage_5000.csv\")\n\nmonth_cols = [col for col in df.columns if col.startswith(\"KWH \") and \"2010\" in col]\nrequired_cols = [\"COMMUNITY AREA NAME\"] + month_cols\n\ndf = df[required_cols].dropna()\nreturn df",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "03b3d67d-9bfd-466d-89c3-a616f6951f7d",
+        "type": "DATA_CLEANING",
+        "x": 988.7398703963299,
+        "y": 3245.6840382978507,
+        "content": "df_long = pd.melt(\n    arg,\n    id_vars=[\"COMMUNITY AREA NAME\"],\n    value_vars=[col for col in arg.columns if \"KWH\" in col],\n    var_name=\"Month\",\n    value_name=\"KWH\"\n)\n\ndf_long[\"Month\"] = df_long[\"Month\"].str.extract(r\"KWH (.+?) 2010\")[0].str.upper()\ndf_long = df_long.dropna(subset=[\"Month\", \"KWH\", \"COMMUNITY AREA NAME\"])\n\nreturn df_long",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "2deacd81-afd9-4521-bd35-636b30e7c755",
+        "type": "DATA_TRANSFORMATION",
+        "x": 1635.674892727564,
+        "y": 3245.6840382978507,
+        "content": "top20_names = arg.groupby(\"COMMUNITY AREA NAME\")[\"KWH\"].mean().sort_values(ascending=False).head(20).index\ndf_top20 = arg[arg[\"COMMUNITY AREA NAME\"].isin(top20_names)].copy()\n\nreturn df_top20",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "d7ba337c-dd7b-49f8-970b-e3114585c58b",
+        "type": "VIS_VEGA",
+        "x": 2298.2557331195762,
+        "y": 2969.3344479807083,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"vconcat\": [\n    {\n      \"title\": \"Monthly Average Energy Usage (Brush to Select Months)\",\n      \"params\": [\n        {\n          \"name\": \"monthBrush\",\n          \"select\": {\n            \"type\": \"interval\",\n            \"encodings\": [\"x\"]\n          }\n        }\n      ],\n      \"mark\": \"bar\",\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"Month\",\n          \"type\": \"ordinal\",\n          \"scale\": {\n            \"domain\": [\n              \"JANUARY\",\n              \"FEBRUARY\",\n              \"MARCH\",\n              \"APRIL\",\n              \"MAY\",\n              \"JUNE\",\n              \"JULY\",\n              \"AUGUST\",\n              \"SEPTEMBER\",\n              \"OCTOBER\",\n              \"NOVEMBER\",\n              \"DECEMBER\"\n            ]\n          },\n          \"axis\": {\n            \"labelAngle\": -40,\n            \"labelFontSize\": 11\n          }\n        },\n        \"y\": {\n          \"aggregate\": \"mean\",\n          \"field\": \"KWH\",\n          \"type\": \"quantitative\",\n          \"title\": \"Avg KWH\"\n        },\n        \"tooltip\": [\n          { \"field\": \"Month\" },\n          { \"aggregate\": \"mean\", \"field\": \"KWH\", \"title\": \"Avg KWH\" }\n        ],\n        \"color\": {\n          \"value\": \"#4C78A8\"\n        }\n      }\n    },\n    {\n      \"title\": \"Avg KWH by Community (Filtered by Selected Months)\",\n      \"transform\": [\n        {\n          \"filter\": { \"param\": \"monthBrush\" }\n        }\n      ],\n      \"mark\": \"bar\",\n      \"encoding\": {\n        \"y\": {\n          \"field\": \"COMMUNITY AREA NAME\",\n          \"type\": \"nominal\",\n          \"sort\": \"-x\"\n        },\n        \"x\": {\n          \"aggregate\": \"mean\",\n          \"field\": \"KWH\",\n          \"type\": \"quantitative\",\n          \"title\": \"Avg KWH\"\n        },\n        \"color\": {\n          \"field\": \"COMMUNITY AREA NAME\",\n          \"type\": \"nominal\"\n        },\n        \"tooltip\": [\n          { \"field\": \"COMMUNITY AREA NAME\" },\n          { \"aggregate\": \"mean\", \"field\": \"KWH\", \"title\": \"Avg KWH\" }\n        ]\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "f5b36cc1-63de-4c10-aca9-c28dd2f3ba3a",
+        "type": "DATA_LOADING",
+        "x": 284.23288736253073,
+        "y": 4331.441877628825,
+        "content": "import pandas as pd\n\ndf = pd.read_csv(\"data/Energy_Usage_5000.csv\")\n\ncolumns_needed = [\"AVERAGE STORIES\", \"AVERAGE BUILDING AGE\", \"TOTAL KWH\"] + [col for col in df.columns if col.startswith(\"KWH \") and \"2010\" in col]\n\ndf = df[columns_needed].dropna()\nreturn df",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "5c3fa75a-a919-432b-9e95-83e6f1691c8d",
+        "type": "DATA_CLEANING",
+        "x": 923.29778760684,
+        "y": 4328.222101719643,
+        "content": "def story_bracket(stories):\n    if stories <= 1:\n        return \"1 story\"\n    elif stories == 2:\n        return \"2 stories\"\n    elif 3 <= stories <= 5:\n        return \"3-5 stories\"\n    elif 6 <= stories <= 10:\n        return \"6-10 stories\"\n    else:\n        return \"11+ stories\"\n\ndef age_bracket(age):\n    if age <= 20:\n        return \"0-20 yrs\"\n    elif age <= 40:\n        return \"21-40 yrs\"\n    elif age <= 60:\n        return \"41-60 yrs\"\n    elif age <= 80:\n        return \"61-80 yrs\"\n    else:\n        return \"81+ yrs\"\n\ndf = arg.copy()\n\ndf[\"STORY BRACKET\"] = df[\"AVERAGE STORIES\"].apply(story_bracket)\ndf[\"AGE BRACKET\"] = df[\"AVERAGE BUILDING AGE\"].apply(age_bracket)\nreturn df",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "ffa68346-1c37-48f0-9284-7d34a397692f",
+        "type": "DATA_TRANSFORMATION",
+        "x": 1582.9750032181962,
+        "y": 4329.916777694951,
+        "content": "import pandas as pd\n\ndf_long = pd.melt(\n    arg,\n    id_vars=[\"STORY BRACKET\", \"AGE BRACKET\", \"TOTAL KWH\"],\n    value_vars=[col for col in arg.columns if col.startswith(\"KWH \")],\n    var_name=\"Month\",\n    value_name=\"KWH\"\n)\n\ndf_long[\"Month\"] = df_long[\"Month\"].str.extract(r\"KWH (.+?) 2010\")[0].str.upper()\ndf_long = df_long.dropna(subset=[\"Month\", \"KWH\", \"STORY BRACKET\", \"AGE BRACKET\"])\n\nreturn df_long",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "82ef1d71-15c8-481c-a61b-eb172822f7a6",
+        "type": "VIS_VEGA",
+        "x": 2227.7406502306258,
+        "y": 4046.7907357068716,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"params\": [\n    {\n      \"name\": \"storySelect\",\n      \"bind\": {\n        \"input\": \"select\",\n        \"options\": [\n          \"1 story\",\n          \"2 stories\",\n          \"3-5 stories\",\n          \"6-10 stories\",\n          \"11+ stories\"\n        ]\n      },\n      \"value\": \"1 story\"\n    }\n  ],\n  \"vconcat\": [\n    {\n      \"width\": 600,\n      \"title\": {\n        \"text\": \"Distribution of Total KWH by Age (Box Plot)\",\n        \"align\": \"center\"\n      },\n      \"transform\": [{ \"filter\": \"datum['STORY BRACKET'] == storySelect\" }],\n      \"mark\": \"boxplot\",\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"AGE BRACKET\",\n          \"type\": \"nominal\",\n          \"sort\": [\"0-20 yrs\", \"21-40 yrs\", \"41-60 yrs\", \"61-80 yrs\", \"81+ yrs\"]\n        },\n        \"y\": {\n          \"field\": \"TOTAL KWH\",\n          \"type\": \"quantitative\",\n          \"title\": \"Total KWH\"\n        },\n        \"color\": {\n          \"field\": \"AGE BRACKET\",\n          \"type\": \"nominal\",\n          \"legend\": {\n            \"orient\": \"right\",\n            \"anchor\": \"middle\",\n            \"direction\": \"vertical\"\n          }\n        },\n        \"tooltip\": [{ \"field\": \"AGE BRACKET\" }, { \"field\": \"TOTAL KWH\" }]\n      }\n    },\n    {\n      \"width\": 600,\n      \"title\": {\n        \"text\": \"Monthly Avg KWH Trend by Age (for Selected Stories)\",\n        \"align\": \"center\"\n      },\n      \"transform\": [{ \"filter\": \"datum['STORY BRACKET'] == storySelect\" }],\n      \"mark\": { \"type\": \"line\", \"point\": true },\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"Month\",\n          \"type\": \"ordinal\",\n          \"sort\": [\n            \"JANUARY\",\n            \"FEBRUARY\",\n            \"MARCH\",\n            \"APRIL\",\n            \"MAY\",\n            \"JUNE\",\n            \"JULY\",\n            \"AUGUST\",\n            \"SEPTEMBER\",\n            \"OCTOBER\",\n            \"NOVEMBER\",\n            \"DECEMBER\"\n          ]\n        },\n        \"y\": {\n          \"aggregate\": \"mean\",\n          \"field\": \"KWH\",\n          \"type\": \"quantitative\",\n          \"title\": \"Avg Monthly KWH\"\n        },\n        \"color\": {\n          \"field\": \"AGE BRACKET\",\n          \"type\": \"nominal\",\n          \"legend\": {\n            \"orient\": \"right\",\n            \"anchor\": \"middle\",\n            \"direction\": \"vertical\"\n          }\n        },\n        \"tooltip\": [\n          { \"field\": \"Month\" },\n          { \"aggregate\": \"mean\", \"field\": \"KWH\" },\n          { \"field\": \"AGE BRACKET\" }\n        ]\n      }\n    }\n  ],\n  \"config\": {\n    \"concat\": { \"align\": \"center\" }\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-7d41f188-ec81-4642-ba73-eeb46ae8ebe2out-9eafa9de-726a-404b-8c97-d3d5ec94e51din",
+        "source": "7d41f188-ec81-4642-ba73-eeb46ae8ebe2",
+        "target": "9eafa9de-726a-404b-8c97-d3d5ec94e51d"
+      },
+      {
+        "id": "reactflow__edge-9eafa9de-726a-404b-8c97-d3d5ec94e51dout-fc8f5cba-2ecd-4702-b19f-d471b49104c8in",
+        "source": "9eafa9de-726a-404b-8c97-d3d5ec94e51d",
+        "target": "fc8f5cba-2ecd-4702-b19f-d471b49104c8"
+      },
+      {
+        "id": "reactflow__edge-fc8f5cba-2ecd-4702-b19f-d471b49104c8out-53e8c833-202d-40d2-8ccf-d0b304566593in",
+        "source": "fc8f5cba-2ecd-4702-b19f-d471b49104c8",
+        "target": "53e8c833-202d-40d2-8ccf-d0b304566593"
+      },
+      {
+        "id": "reactflow__edge-fc8f5cba-2ecd-4702-b19f-d471b49104c8out-22d68832-0b7b-4a7c-8f11-989d4780f56fin",
+        "source": "fc8f5cba-2ecd-4702-b19f-d471b49104c8",
+        "target": "22d68832-0b7b-4a7c-8f11-989d4780f56f"
+      },
+      {
+        "id": "reactflow__edge-9eafa9de-726a-404b-8c97-d3d5ec94e51dout-7a1c0e5b-3c39-4727-a616-f4ca97fdbb44in",
+        "source": "9eafa9de-726a-404b-8c97-d3d5ec94e51d",
+        "target": "7a1c0e5b-3c39-4727-a616-f4ca97fdbb44"
+      },
+      {
+        "id": "reactflow__edge-7a1c0e5b-3c39-4727-a616-f4ca97fdbb44out-ce74522c-d689-4cf9-bb41-e4f6a24882d4in",
+        "source": "7a1c0e5b-3c39-4727-a616-f4ca97fdbb44",
+        "target": "ce74522c-d689-4cf9-bb41-e4f6a24882d4"
+      },
+      {
+        "id": "reactflow__edge-15aa8924-3c5a-42a3-a89e-456f675c469aout-23a15771-4d9a-479f-911f-b6f758850574in",
+        "source": "15aa8924-3c5a-42a3-a89e-456f675c469a",
+        "target": "23a15771-4d9a-479f-911f-b6f758850574"
+      },
+      {
+        "id": "reactflow__edge-23a15771-4d9a-479f-911f-b6f758850574out-2cd9e67d-4e07-4852-8a55-f6b50cd3658din",
+        "source": "23a15771-4d9a-479f-911f-b6f758850574",
+        "target": "2cd9e67d-4e07-4852-8a55-f6b50cd3658d"
+      },
+      {
+        "id": "reactflow__edge-2cd9e67d-4e07-4852-8a55-f6b50cd3658dout-4e7a7f96-4615-4099-bbb9-b5811b560361in",
+        "source": "2cd9e67d-4e07-4852-8a55-f6b50cd3658d",
+        "target": "4e7a7f96-4615-4099-bbb9-b5811b560361"
+      },
+      {
+        "id": "reactflow__edge-23a15771-4d9a-479f-911f-b6f758850574out-0957871c-b1f3-4c89-84de-3dc8f88e49c7in",
+        "source": "23a15771-4d9a-479f-911f-b6f758850574",
+        "target": "0957871c-b1f3-4c89-84de-3dc8f88e49c7"
+      },
+      {
+        "id": "reactflow__edge-0957871c-b1f3-4c89-84de-3dc8f88e49c7out-2ba732cf-7fa3-4a59-b41f-faa3d707994fin",
+        "source": "0957871c-b1f3-4c89-84de-3dc8f88e49c7",
+        "target": "2ba732cf-7fa3-4a59-b41f-faa3d707994f"
+      },
+      {
+        "id": "reactflow__edge-23a15771-4d9a-479f-911f-b6f758850574out-e54363aa-e9c8-45d2-a5d0-3938185d4445in",
+        "source": "23a15771-4d9a-479f-911f-b6f758850574",
+        "target": "e54363aa-e9c8-45d2-a5d0-3938185d4445"
+      },
+      {
+        "id": "reactflow__edge-e54363aa-e9c8-45d2-a5d0-3938185d4445out-0503ce30-db2c-4a6f-833f-459969113302in",
+        "source": "e54363aa-e9c8-45d2-a5d0-3938185d4445",
+        "target": "0503ce30-db2c-4a6f-833f-459969113302"
+      },
+      {
+        "id": "reactflow__edge-e62ad390-9e0a-44aa-87f8-644c33974d04out-42ba84c5-edcf-49b5-ab3b-b5658e018f60in",
+        "source": "e62ad390-9e0a-44aa-87f8-644c33974d04",
+        "target": "42ba84c5-edcf-49b5-ab3b-b5658e018f60"
+      },
+      {
+        "id": "reactflow__edge-42ba84c5-edcf-49b5-ab3b-b5658e018f60out-e7753795-7c01-4773-a9a0-ffeb648cf9bfin",
+        "source": "42ba84c5-edcf-49b5-ab3b-b5658e018f60",
+        "target": "e7753795-7c01-4773-a9a0-ffeb648cf9bf"
+      },
+      {
+        "id": "reactflow__edge-e7753795-7c01-4773-a9a0-ffeb648cf9bfout-d537cc76-27b7-41b4-95dc-7ec65ec1ec42in",
+        "source": "e7753795-7c01-4773-a9a0-ffeb648cf9bf",
+        "target": "d537cc76-27b7-41b4-95dc-7ec65ec1ec42"
+      },
+      {
+        "id": "reactflow__edge-e3b53a07-079f-402c-82c5-69d30fe06b24out-03b3d67d-9bfd-466d-89c3-a616f6951f7din",
+        "source": "e3b53a07-079f-402c-82c5-69d30fe06b24",
+        "target": "03b3d67d-9bfd-466d-89c3-a616f6951f7d"
+      },
+      {
+        "id": "reactflow__edge-03b3d67d-9bfd-466d-89c3-a616f6951f7dout-2deacd81-afd9-4521-bd35-636b30e7c755in",
+        "source": "03b3d67d-9bfd-466d-89c3-a616f6951f7d",
+        "target": "2deacd81-afd9-4521-bd35-636b30e7c755"
+      },
+      {
+        "id": "reactflow__edge-2deacd81-afd9-4521-bd35-636b30e7c755out-d7ba337c-dd7b-49f8-970b-e3114585c58bin",
+        "source": "2deacd81-afd9-4521-bd35-636b30e7c755",
+        "target": "d7ba337c-dd7b-49f8-970b-e3114585c58b"
+      },
+      {
+        "id": "reactflow__edge-f5b36cc1-63de-4c10-aca9-c28dd2f3ba3aout-5c3fa75a-a919-432b-9e95-83e6f1691c8din",
+        "source": "f5b36cc1-63de-4c10-aca9-c28dd2f3ba3a",
+        "target": "5c3fa75a-a919-432b-9e95-83e6f1691c8d"
+      },
+      {
+        "id": "reactflow__edge-5c3fa75a-a919-432b-9e95-83e6f1691c8dout-ffa68346-1c37-48f0-9284-7d34a397692fin",
+        "source": "5c3fa75a-a919-432b-9e95-83e6f1691c8d",
+        "target": "ffa68346-1c37-48f0-9284-7d34a397692f"
+      },
+      {
+        "id": "reactflow__edge-ffa68346-1c37-48f0-9284-7d34a397692fout-82ef1d71-15c8-481c-a61b-eb172822f7a6in",
+        "source": "ffa68346-1c37-48f0-9284-7d34a397692f",
+        "target": "82ef1d71-15c8-481c-a61b-eb172822f7a6"
+      }
+    ],
+    "name": "DefaultWorkflow",
+    "task": "",
+    "timestamp": 1774982904170,
+    "provenance_id": "DefaultWorkflow"
+  }
+}
