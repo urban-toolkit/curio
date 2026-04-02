@@ -135,8 +135,8 @@ jobs:
 
       - name: Jest frontend unit tests
         run: |
-          docker compose -p curio exec curio \
-            python curio.py test frontend
+          docker build --target frontend_builder -t curio-frontend-test .
+          docker run --rm curio-frontend-test npm test
 
       - name: 🧹 Tear down containers
         run: docker compose -p curio down
