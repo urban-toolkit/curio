@@ -1,24 +1,24 @@
 import React, { createContext, useContext, ReactNode, useState } from "react";
-import { BoxType } from "../constants";
+import { NodeType } from "../constants";
 
 interface ProvenanceContextProps {
     addUser: (user_name: string, user_type: string, user_IP: string) => void;
     addWorkflow: (workflow_name: string) => Promise<void>;
-    newBox: (workflow_name: string, activity_name: string) => void;
-    deleteBox: (workflow_name: string, activity_name: string) => void;
+    newNode: (workflow_name: string, activity_name: string) => void;
+    deleteNode: (workflow_name: string, activity_name: string) => void;
     newConnection: (
         workflow_name: string,
         sourceNodeId: string,
-        sourceNodeType: BoxType,
+        sourceNodeType: NodeType,
         targetNodeId: string,
-        targetNodeType: BoxType
+        targetNodeType: NodeType
     ) => void;
     deleteConnection: (
         workflow_name: string,
         targetNodeId: string,
-        targetNodeType: BoxType
+        targetNodeType: NodeType
     ) => void;
-    boxExecProv: (
+    nodeExecProv: (
         activityexec_start_time: string,
         activityexec_end_time: string,
         workflow_name: string,
@@ -30,28 +30,28 @@ interface ProvenanceContextProps {
         outputData?: string,
         interaction?: boolean
     ) => void;
-    provenanceGraphBoxesRef: any;
+    provenanceGraphNodesRef: any;
     truncateDB: () => void;
 }
 
 export const ProvenanceContext = createContext<ProvenanceContextProps>({
     addUser: () => {},
     addWorkflow: () => new Promise((resolve, reject) => {resolve()}),
-    newBox: () => {},
-    deleteBox: () => {},
+    newNode: () => {},
+    deleteNode: () => {},
     newConnection: () => {},
     deleteConnection: () => {},
-    boxExecProv: () => {},
-    provenanceGraphBoxesRef: {},
+    nodeExecProv: () => {},
+    provenanceGraphNodesRef: {},
     truncateDB: () => {},
 });
 
 const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
-    const [provenanceGraphBoxes, _setProvenanceGraphBoxes] = useState<any>({}); // workflow_name -> activity_name -> nodes[]
-    const provenanceGraphBoxesRef = React.useRef(provenanceGraphBoxes);
-    const setProvenanceGraphBoxes = (data: any) => {
-        provenanceGraphBoxesRef.current = data;
-        _setProvenanceGraphBoxes(data);
+    const [provenanceGraphNodes, _setProvenanceGraphNodes] = useState<any>({}); // workflow_name -> activity_name -> nodes[]
+    const provenanceGraphNodesRef = React.useRef(provenanceGraphNodes);
+    const setProvenanceGraphNodes = (data: any) => {
+        provenanceGraphNodesRef.current = data;
+        _setProvenanceGraphNodes(data);
     };
 
     const addUser = (user_name: string, user_type: string, user_IP: string) => {
@@ -70,11 +70,11 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
         });
     };
 
-    const newBox = (workflow_name: string, activity_name: string) => {
+    const newNode = (workflow_name: string, activity_name: string) => {
         console.log("workflow_name", workflow_name);
         console.log("activity_name", activity_name);
 
-        fetch(process.env.BACKEND_URL + "/newBoxProv", {
+        fetch(process.env.BACKEND_URL + "/newNodeProv", {
             method: "POST",
             body: JSON.stringify({
                 data: {
@@ -88,8 +88,8 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
         });
     };
 
-    const deleteBox = (workflow_name: string, activity_name: string) => {
-        fetch(process.env.BACKEND_URL + "/deleteBoxProv", {
+    const deleteNode = (workflow_name: string, activity_name: string) => {
+        fetch(process.env.BACKEND_URL + "/deleteNodeProv", {
             method: "POST",
             body: JSON.stringify({
                 data: {
@@ -122,9 +122,9 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
     const newConnection = (
         workflow_name: string,
         sourceNodeId: string,
-        sourceNodeType: BoxType,
+        sourceNodeType: NodeType,
         targetNodeId: string,
-        targetNodeType: BoxType
+        targetNodeType: NodeType
     ) => {
         if (!workflow_name || !sourceNodeId || !sourceNodeType || !targetNodeId || !targetNodeType) {
             console.error("[newConnection] Missing or invalid data in payload", {
@@ -153,7 +153,7 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
     const deleteConnection = (
         workflow_name: string,
         targetNodeId: string,
-        targetNodeType: BoxType
+        targetNodeType: NodeType
     ) => {
         fetch(process.env.BACKEND_URL + "/deleteConnectionProv", {
             method: "POST",
@@ -170,7 +170,7 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
         });
     };
 
-    const boxExecProv = (
+    const nodeExecProv = (
         activityexec_start_time: string,
         activityexec_end_time: string,
         workflow_name: string,
@@ -182,7 +182,7 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
         outputData: string = "",
         interaction: boolean = false
     ) => {
-        fetch(process.env.BACKEND_URL + "/boxExecProv", {
+        fetch(process.env.BACKEND_URL + "/nodeExecProv", {
             method: "POST",
             body: JSON.stringify({
                 data: {
@@ -202,14 +202,14 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
                 "Content-type": "application/json; charset=UTF-8",
             },
         }).then((value: any) => {
-            getBoxGraph(workflow_name, activity_name);
+            getNodeGraph(workflow_name, activity_name);
         });
     };
 
-    const getBoxGraph = (workflow_name: string, activity_name: string) => {
+    const getNodeGraph = (workflow_name: string, activity_name: string) => {
         // Call after writing the running provenance in the database
 
-        fetch(process.env.BACKEND_URL + "/getBoxGraph", {
+        fetch(process.env.BACKEND_URL + "/getNodeGraph", {
             method: "POST",
             body: JSON.stringify({
                 data: {
@@ -226,14 +226,14 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
                 let newProvenanceGraphs: any = {};
                 let added = false;
 
-                let workflows = Object.keys(provenanceGraphBoxesRef.current);
+                let workflows = Object.keys(provenanceGraphNodesRef.current);
 
                 for (const workflow of workflows) {
                     if (newProvenanceGraphs[workflow] == undefined)
                         newProvenanceGraphs[workflow] = {};
 
                     let activities = Object.keys(
-                        provenanceGraphBoxesRef.current[workflow] || {}
+                        provenanceGraphNodesRef.current[workflow] || {}
                     );
 
                     for (const activity of activities) {
@@ -247,7 +247,7 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
                         } else {
                             // TODO: replicate array of objects
                             newProvenanceGraphs[workflow][activity] =
-                                provenanceGraphBoxesRef.current[workflow][
+                                provenanceGraphNodesRef.current[workflow][
                                     activity
                                 ].map((obj: any) => {
                                     return { ...obj };
@@ -264,7 +264,7 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
                         json["graph"];
                 }
 
-                setProvenanceGraphBoxes(newProvenanceGraphs);
+                setProvenanceGraphNodes(newProvenanceGraphs);
             });
     };
 
@@ -280,12 +280,12 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
             value={{
                 addUser,
                 addWorkflow,
-                newBox,
+                newNode,
                 truncateDB,
-                deleteBox,
+                deleteNode,
                 newConnection,
-                boxExecProv,
-                provenanceGraphBoxesRef,
+                nodeExecProv,
+                provenanceGraphNodesRef,
                 deleteConnection,
             }}
         >

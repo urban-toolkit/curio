@@ -1,5 +1,5 @@
 import { IPropagation, useFlowContext } from "../providers/FlowProvider";
-import { BoxType, ResolutionType, VisInteractionType } from "../constants";
+import { NodeType, ResolutionType, VisInteractionType } from "../constants";
 import { ICodeDataContent, ICodeData, INodeData, INode } from "../types";
 import { useEffect, useRef, useState } from "react";
 import { formatDate, mapTypes } from "../utils/formatters";
@@ -12,7 +12,7 @@ const useTableData = ({ data }: { data: INodeData }) => {
 
   const dataInputBypass = useRef(false);
   const { workflowNameRef } = useFlowContext();
-  const { boxExecProv } = useProvenanceContext();
+  const { nodeExecProv } = useProvenanceContext();
 
   useEffect(() => {
     if (dataInputBypass.current) {
@@ -34,11 +34,11 @@ const useTableData = ({ data }: { data: INodeData }) => {
       }
       let typesOuput: string[] = [...typesInput];
       //end data array error - James
-      boxExecProv(
+      nodeExecProv(
         startTime,
         startTime,
         workflowNameRef.current,
-        BoxType.DATA_POOL + "-" + data.nodeId,
+        NodeType.DATA_POOL + "-" + data.nodeId,
         mapTypes(typesInput),
         mapTypes(typesOuput),
         ""

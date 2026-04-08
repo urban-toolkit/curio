@@ -16,7 +16,7 @@ CODE_TYPES = {
 }
 
 # Subset of CODE_TYPES whose frontend component passes ``code={true}``
-# to ``BoxEditor``, meaning they render a "code" tab with a Monaco editor.
+# to ``NodeEditor``, meaning they render a "code" tab with a Monaco editor.
 # The remaining CODE_TYPES (DATA_EXPORT, CONSTANTS, VIS_TEXT) use
 # ``code={false}`` and have no code tab.
 CODE_EDITOR_TYPES = {
@@ -126,7 +126,7 @@ class WorkflowSpec:
     def topo_sorted_nodes(self) -> list:
         """Return nodes in topological (dependency) order using Kahn's algorithm.
 
-        Source / root nodes come first so upstream boxes execute before
+        Source / root nodes come first so upstream nodes execute before
         downstream ones.  If cycles exist the remaining nodes are appended
         at the end.
         """

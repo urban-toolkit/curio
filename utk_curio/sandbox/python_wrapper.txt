@@ -24,7 +24,7 @@ def userCode(arg):
 
 file_path = "{filePath}"
 dataType = "{dataType}"
-boxType = "{boxType}"
+nodeType = "{nodeType}"
 input = ''
 
 if(dataType == 'outputs'):
@@ -38,7 +38,7 @@ elif(file_path):
 incomingInput = None
 
 if input:
-    checkIOType(input, boxType)
+    checkIOType(input, nodeType)
     if(dataType == 'outputs'):
         incomingInput = []
         for elem in input:
@@ -50,7 +50,7 @@ else:
 
 output = userCode(incomingInput)
 parsedOutput = parseOutput(output)
-checkIOType(parsedOutput, boxType, False)
+checkIOType(parsedOutput, nodeType, False)
 
 # print(parsedOutput)
 # print(type(parsedOutput['data'][0]))

@@ -631,13 +631,13 @@
     </div>
     <div class="nav-section">Adapters &amp; Components</div>
     <div class="nav-item" data-page="04" onclick="navigateTo('04')">
-      <span class="nav-num">04</span> Box Adapters
+      <span class="nav-num">04</span> Node Adapters
     </div>
     <div class="nav-item" data-page="05" onclick="navigateTo('05')">
       <span class="nav-num">05</span> Grammar Adapters
     </div>
     <div class="nav-item" data-page="06" onclick="navigateTo('06')">
-      <span class="nav-num">06</span> UniversalBox
+      <span class="nav-num">06</span> UniversalNode
     </div>
     <div class="nav-section">Hooks &amp; Providers</div>
     <div class="nav-item" data-page="07" onclick="navigateTo('07')">
@@ -715,7 +715,7 @@ The application wraps the main canvas in a nested provider tree. Order matters �
         <UserProvider>         — Google auth, user type (programmer/expert)
           <DialogProvider>     — Generic modal dialog management
             <FlowProvider>     — Core: nodes, edges, outputs, interactions
-              <TemplateProvider> — Template CRUD per box type
+              <TemplateProvider> — Template CRUD per node type
                 <MainCanvas /> — Root UI component
               </TemplateProvider>
             </FlowProvider>
@@ -734,7 +734,7 @@ The application wraps the main canvas in a nested provider tree. Order matters �
 ### Node Execution Pipeline
 
 \`\`\`
-User clicks Play → BoxContainer.handlePlayButtonClick()
+User clicks Play → NodeContainer.handlePlayButtonClick()
   → PythonInterpreter.interpretCode(userCode, input, ...)
     → POST /processPythonCode to backend
       → Backend runs Python sandbox
@@ -749,10 +749,10 @@ User clicks Play → BoxContainer.handlePlayButtonClick()
 
 \`\`\`
 User interacts with visualization (click, brush, select)
-  → Visualization hook (useVega / useUTK / ImageBox) detects interaction
+  → Visualization hook (useVega / useUTK / ImageNode) detects interaction
     → interactionsCallback(interactionsObject, nodeId)
       → FlowProvider.setInteractions()
-        → Propagated to connected DataPool boxes via bidirectional edges
+        → Propagated to connected DataPool nodes via bidirectional edges
           → DataPool.parseOutputData() applies interaction to data
             → Propagation forwarded to other connected DataPools
 \`\`\`
@@ -761,21 +761,21 @@ User interacts with visualization (click, brush, select)
 
 \`\`\`
 MainCanvas renders ReactFlow
-  → nodeTypes = { [BoxType]: UniversalBox } for all registered descriptors
-    → ReactFlow instantiates UniversalBox per node
-      → UniversalBox reads BoxDescriptor from registry
-        → Calls useBoxState() for shared state
+  → nodeTypes = { [NodeType]: UniversalNode } for all registered descriptors
+    → ReactFlow instantiates UniversalNode per node
+      → UniversalNode reads NodeDescriptor from registry
+        → Calls useNodeState() for shared state
         → Calls adapter.useLifecycle() for type-specific logic
-        → Renders Handle[], BoxContainer, BoxEditor from adapter config
+        → Renders Handle[], NodeContainer, NodeEditor from adapter config
 \`\`\`
 
 ## Key Architectural Patterns
 
 ### 1. Registry Pattern
-All box type metadata lives in \`BoxDescriptor\` objects registered in a central \`Map\`. Consumers query the registry instead of hard-coding per-type logic.
+All node type metadata lives in \`NodeDescriptor\` objects registered in a central \`Map\`. Consumers query the registry instead of hard-coding per-type logic.
 
 ### 2. Adapter Pattern
-Each box type's unique behavior is encapsulated in a \`BoxAdapter\` with a \`useLifecycle\` hook. \`UniversalBox\` reads the adapter and delegates.
+Each node type's unique behavior is encapsulated in a \`NodeAdapter\` with a \`useLifecycle\` hook. \`UniversalNode\` reads the adapter and delegates.
 
 ### 3. Grammar Adapter Pattern
 Visualization grammars (Vega-Lite, UTK) implement a \`GrammarAdapter\` interface for spec validation, rendering, and cleanup. New grammar libraries register via \`registerGrammarAdapter()\`.
@@ -797,12 +797,12 @@ PAGES['02'] = `# Constants and Types
 
 ## Enums
 
-### \`BoxType\`
+### \`NodeType\`
 
 All supported workflow node types. Each value matches the ReactFlow node \`type\` string and the key used in the node registry.
 
 \`\`\`ts
-enum BoxType {
+enum NodeType {
   DATA_LOADING        = "DATA_LOADING"
   DATA_EXPORT         = "DATA_EXPORT"
   DATA_CLEANING       = "DATA_CLEANING"
@@ -864,7 +864,7 @@ enum WidgetType {
 
 ### \`VisInteractionType\`
 
-Interaction types produced by visualization boxes and consumed by DataPool boxes.
+Interaction types produced by visualization nodes and consumed by DataPool nodes.
 
 \`\`\`ts
 enum VisInteractionType {
@@ -975,26 +975,26 @@ interface INode extends Node {
 }
 \`\`\`
 
-### \`BoxLifecycleData\`
+### \`NodeLifecycleData\`
 
-Extends \`INodeData\` with FlowProvider runtime callbacks. This is the typed first parameter of the \`BoxLifecycleHook\` contract. See [04-adapters — BoxLifecycleHook](#) for the full contract specification.`;
+Extends \`INodeData\` with FlowProvider runtime callbacks. This is the typed first parameter of the \`NodeLifecycleHook\` contract. See [04-adapters — NodeLifecycleHook](#) for the full contract specification.`;
 
 PAGES['03'] = `# Node Registry
 
 **Source files:** \`src/registry/types.ts\`, \`src/registry/nodeRegistry.ts\`, \`src/registry/descriptors.ts\`, \`src/registry/index.ts\`
 
-The node registry is the single source of truth for all box type metadata. It drives the palette, canvas rendering, connection validation, description modals, and styling.
+The node registry is the single source of truth for all node type metadata. It drives the palette, canvas rendering, connection validation, description modals, and styling.
 
 ---
 
-## \`BoxDescriptor\`
+## \`NodeDescriptor\`
 
-Every box type has a descriptor registered at startup (via \`src/registry/descriptors.ts\`, imported from \`src/index.tsx\`).
+Every node type has a descriptor registered at startup (via \`src/registry/descriptors.ts\`, imported from \`src/index.tsx\`).
 
 \`\`\`ts
-interface BoxDescriptor {
-  id: BoxType;
-  category: BoxCategory;
+interface NodeDescriptor {
+  id: NodeType;
+  category: NodeCategory;
   label: string;
   icon: IconDefinition;
   inputPorts: PortDef[];
@@ -1008,7 +1008,7 @@ interface BoxDescriptor {
   hasWidgets: boolean;
   hasGrammar: boolean;
   hasProvenance?: boolean;
-  adapter: BoxAdapter;
+  adapter: NodeAdapter;
   tutorialId?: string;
 }
 \`\`\`
@@ -1022,10 +1022,10 @@ interface PortDef {
 }
 \`\`\`
 
-### \`BoxCategory\`
+### \`NodeCategory\`
 
 \`\`\`ts
-type BoxCategory = "data" | "computation" | "vis_grammar" | "vis_simple" | "flow";
+type NodeCategory = "data" | "computation" | "vis_grammar" | "vis_simple" | "flow";
 \`\`\`
 
 ### \`EditorType\`
@@ -1038,35 +1038,35 @@ type EditorType = "code" | "widgets" | "grammar" | "none";
 
 ## Registry Functions
 
-### \`registerNode(descriptor: BoxDescriptor): void\`
+### \`registerNode(descriptor: NodeDescriptor): void\`
 
-Register a box type descriptor. Called once per box type in \`descriptors.ts\`. Warns if overwriting.
+Register a node type descriptor. Called once per node type in \`descriptors.ts\`. Warns if overwriting.
 
-### \`getNodeDescriptor(boxType: BoxType): BoxDescriptor\`
+### \`getNodeDescriptor(nodeType: NodeType): NodeDescriptor\`
 
-Retrieve the descriptor for a given box type. Throws if not found.
+Retrieve the descriptor for a given node type. Throws if not found.
 
-### \`getAllNodeTypes(): BoxDescriptor[]\`
+### \`getAllNodeTypes(): NodeDescriptor[]\`
 
 Return all registered descriptors as an array.
 
-### \`getPaletteNodeTypes(): BoxDescriptor[]\`
+### \`getPaletteNodeTypes(): NodeDescriptor[]\`
 
 Return descriptors where \`inPalette === true\`, sorted by \`paletteOrder\`.
 
 ---
 
-## Registered Box Types
+## Registered Node Types
 
-| BoxType | Category | Label | Palette | Adapter Lifecycle |
+| NodeType | Category | Label | Palette | Adapter Lifecycle |
 |---------|----------|-------|---------|-------------------|
-| \`DATA_LOADING\` | data | Data Loading | 0 | \`useCodeBoxLifecycle\` |
+| \`DATA_LOADING\` | data | Data Loading | 0 | \`useCodeNodeLifecycle\` |
 | \`DATA_EXPORT\` | data | Data Export | 1 | \`useDataExportLifecycle\` |
-| \`DATA_TRANSFORMATION\` | data | Data Transformation | 3 | \`useCodeBoxLifecycle\` |
-| \`DATA_CLEANING\` | data | Data Cleaning | 4 | \`useCodeBoxLifecycle\` |
+| \`DATA_TRANSFORMATION\` | data | Data Transformation | 3 | \`useCodeNodeLifecycle\` |
+| \`DATA_CLEANING\` | data | Data Cleaning | 4 | \`useCodeNodeLifecycle\` |
 | \`DATA_POOL\` | data | Data Pool | 5 | \`useDataPoolLifecycle\` |
-| \`COMPUTATION_ANALYSIS\` | computation | Computation Analysis | 2 | \`useCodeBoxLifecycle\` |
-| \`CONSTANTS\` | computation | Constants | - | \`useCodeBoxLifecycle\` |
+| \`COMPUTATION_ANALYSIS\` | computation | Computation Analysis | 2 | \`useCodeNodeLifecycle\` |
+| \`CONSTANTS\` | computation | Constants | - | \`useCodeNodeLifecycle\` |
 | \`VIS_UTK\` | vis_grammar | UTK | 6 | \`useUtkLifecycle\` |
 | \`VIS_VEGA\` | vis_grammar | Vega-Lite | 7 | \`useVegaLifecycle\` |
 | \`VIS_IMAGE\` | vis_simple | Image | 8 | \`useImageLifecycle\` |
@@ -1086,19 +1086,19 @@ These files consume registry data instead of hard-coding per-type logic:
 |------|---------------|
 | \`ConnectionValidator.ts\` | \`inputPorts\` / \`outputPorts\` → type compatibility maps |
 | \`DescriptionModal.tsx\` | \`label\`, \`description\`, port cardinality, \`hasCode\`, \`hasWidgets\` |
-| \`styles.tsx\` | \`icon\`, \`label\` for box header rendering |
+| \`styles.tsx\` | \`icon\`, \`label\` for node header rendering |
 | \`ToolsMenu.tsx\` | \`getPaletteNodeTypes()\` → palette items |
 | \`MainCanvas.tsx\` | \`getAllNodeTypes()\` → ReactFlow \`nodeTypes\` map |`;
 
-PAGES['04'] = `# Box Adapters
+PAGES['04'] = `# Node Adapters
 
-**Source files:** \`src/registry/types.ts\` (type definitions), \`src/adapters/box/\` (implementations)
+**Source files:** \`src/registry/types.ts\` (type definitions), \`src/adapters/node/\` (implementations)
 
-The adapter system replaces individual box component files with a configuration-driven approach. Each box type defines a \`BoxAdapter\` in its descriptor, and \`UniversalBox\` reads it to render appropriately.
+The adapter system replaces individual node component files with a configuration-driven approach. Each node type defines a \`NodeAdapter\` in its descriptor, and \`UniversalNode\` reads it to render appropriately.
 
 ### Embedded Component Extraction
 
-Lifecycle hooks return \`contentComponent\` as a \`React.ReactNode\` for custom content areas (tables, image grids, tabs). Rather than building these UI fragments inline with \`React.createElement\` chains, all visual components are **extracted into standalone \`.tsx\` files** under \`src/adapters/box/components/\`. This provides:
+Lifecycle hooks return \`contentComponent\` as a \`React.ReactNode\` for custom content areas (tables, image grids, tabs). Rather than building these UI fragments inline with \`React.createElement\` chains, all visual components are **extracted into standalone \`.tsx\` files** under \`src/adapters/node/components/\`. This provides:
 
 - **Strict JSX** — components are written with standard JSX syntax in \`.tsx\` files
 - **Reusability** — components like \`ContentTable\` are shared across multiple lifecycles
@@ -1109,17 +1109,17 @@ Lifecycle hooks return \`contentComponent\` as a \`React.ReactNode\` for custom 
 
 ## Type Definitions
 
-### \`BoxAdapter\`
+### \`NodeAdapter\`
 
 \`\`\`ts
-interface BoxAdapter {
+interface NodeAdapter {
   handles: HandleDef[];
   editor: EditorConfig | null;
   container: ContainerConfig;
   inputIconType?: string;
   outputIconType?: string;
   showTemplateModal?: boolean;
-  useLifecycle: BoxLifecycleHook;
+  useLifecycle: NodeLifecycleHook;
 }
 \`\`\`
 
@@ -1140,7 +1140,7 @@ interface HandleDef {
 
 ### \`EditorConfig\`
 
-Maps directly to \`BoxEditor\` props.
+Maps directly to \`NodeEditor\` props.
 
 \`\`\`ts
 interface EditorConfig {
@@ -1155,25 +1155,25 @@ interface EditorConfig {
 
 ### \`ContainerConfig\`
 
-Overrides for \`BoxContainer\`.
+Overrides for \`NodeContainer\`.
 
 \`\`\`ts
 interface ContainerConfig {
   handleType?: "in" | "out" | "in/out";
   disablePlay?: boolean;
   noContent?: boolean;
-  boxWidth?: number;
-  boxHeight?: number;
+  nodeWidth?: number;
+  nodeHeight?: number;
   styles?: React.CSSProperties;
 }
 \`\`\`
 
-### \`BoxLifecycleData\`
+### \`NodeLifecycleData\`
 
 Typed input parameter for lifecycle hooks. Extends the persisted \`INodeData\` with runtime callbacks injected by \`FlowProvider\` when the node is mounted.
 
 \`\`\`ts
-interface BoxLifecycleData extends INodeData {
+interface NodeLifecycleData extends INodeData {
   outputCallback: (nodeId: string, output: any) => void;
   propagationCallback: (propagation: IPropagation) => void;
   interactionsCallback: (interactions: any, nodeId: string) => void;
@@ -1182,12 +1182,12 @@ interface BoxLifecycleData extends INodeData {
 }
 \`\`\`
 
-### \`BoxLifecycleHook\` (Contract)
+### \`NodeLifecycleHook\` (Contract)
 
 The central contract type that **every** lifecycle implementation must satisfy.
 
 \`\`\`ts
-type BoxLifecycleHook = (data: BoxLifecycleData, boxState: UseBoxStateReturn) => LifecycleResult;
+type NodeLifecycleHook = (data: NodeLifecycleData, nodeState: UseNodeStateReturn) => LifecycleResult;
 \`\`\`
 
 **Rules:**
@@ -1195,11 +1195,11 @@ type BoxLifecycleHook = (data: BoxLifecycleData, boxState: UseBoxStateReturn) =>
 1. Must be a valid React custom hook (may call \`useState\`, \`useEffect\`, etc.)
 2. Must be deterministic in its hook call order (React rules of hooks)
 3. Must return a \`LifecycleResult\` — omit fields to accept defaults
-4. Must not call \`boxState.setSendCodeCallback\` directly — return \`setSendCodeCallbackOverride\` instead
+4. Must not call \`nodeState.setSendCodeCallback\` directly — return \`setSendCodeCallbackOverride\` instead
 
 ### \`LifecycleResult\`
 
-Return type of the \`BoxLifecycleHook\` contract. All fields are optional.
+Return type of the \`NodeLifecycleHook\` contract. All fields are optional.
 
 \`\`\`ts
 interface LifecycleResult {
@@ -1219,7 +1219,7 @@ interface LifecycleResult {
 
 ## Handle Helpers
 
-**Source:** \`src/adapters/box/handleHelpers.ts\`
+**Source:** \`src/adapters/node/handleHelpers.ts\`
 
 | Helper | Handles | Used by |
 |--------|---------|---------|
@@ -1233,7 +1233,7 @@ interface LifecycleResult {
 
 ## Extracted UI Components
 
-**Source directory:** \`src/adapters/box/components/\`
+**Source directory:** \`src/adapters/node/components/\`
 
 ### \`ContentTable\`
 
@@ -1276,9 +1276,9 @@ interface ImageGridProps {
 
 ## Lifecycle Hooks
 
-Each lifecycle hook is a \`const\` typed as \`BoxLifecycleHook\`.
+Each lifecycle hook is a \`const\` typed as \`NodeLifecycleHook\`.
 
-### \`useCodeBoxLifecycle\` — Shared by 5 box types
+### \`useCodeNodeLifecycle\` — Shared by 5 node types
 Returns \`{ contentComponent }\` — a memoized \`<OutputContent>\`.
 
 ### \`useDataExportLifecycle\`
@@ -1385,11 +1385,11 @@ Partially implemented. The adapter provides basic validation and a default spec;
 
 ---
 
-## How Adapters Connect to Box Types
+## How Adapters Connect to Node Types
 
 \`\`\`ts
 registerNode({
-  id: BoxType.VIS_VEGA,
+  id: NodeType.VIS_VEGA,
   grammarId: 'vega-lite',   // ← links to vegaLiteAdapter
   adapter: {
     useLifecycle: useVegaLifecycle,
@@ -1398,11 +1398,11 @@ registerNode({
 });
 \`\`\``;
 
-PAGES['06'] = `# UniversalBox Component
+PAGES['06'] = `# UniversalNode Component
 
-**Source:** \`src/components/UniversalBox.tsx\`
+**Source:** \`src/components/UniversalNode.tsx\`
 
-The single React component that renders every box type in the application. It reads render configuration and lifecycle logic from the \`BoxAdapter\` attached to each \`BoxDescriptor\`.
+The single React component that renders every node type in the application. It reads render configuration and lifecycle logic from the \`NodeAdapter\` attached to each \`NodeDescriptor\`.
 
 ---
 
@@ -1424,15 +1424,15 @@ Standard ReactFlow node props.
    const { adapter } = descriptor;
 
 2. Shared state
-   const boxState = useBoxState(data, descriptor.id);
+   const nodeState = useNodeState(data, descriptor.id);
 
-3. Type-specific lifecycle — calls the BoxLifecycleHook contract
-   const lifecycle = adapter.useLifecycle(data, boxState);
+3. Type-specific lifecycle — calls the NodeLifecycleHook contract
+   const lifecycle = adapter.useLifecycle(data, nodeState);
 
 4. Resolve overrides (lifecycle values take precedence)
-   sendCode           = lifecycle.sendCodeOverride          ?? boxState.sendCode
-   setSendCodeCallback = lifecycle.setSendCodeCallbackOverride ?? boxState.setSendCodeCallback
-   setOutputCallback  = lifecycle.setOutputCallbackOverride  ?? boxState.setOutput
+   sendCode           = lifecycle.sendCodeOverride          ?? nodeState.sendCode
+   setSendCodeCallback = lifecycle.setSendCodeCallbackOverride ?? nodeState.setSendCodeCallback
+   setOutputCallback  = lifecycle.setOutputCallbackOverride  ?? nodeState.setOutput
    showLoading        = lifecycle.showLoading               ?? false
    defaultValue       = lifecycle.defaultValueOverride      ?? templateData.code
 
@@ -1441,11 +1441,11 @@ Standard ReactFlow node props.
 
 6. Render JSX
    <Handle> for each handle in allHandles
-   <BoxContainer> with adapter.container config + resolved state
+   <NodeContainer> with adapter.container config + resolved state
      <InputIcon> if adapter.inputIconType
      <DescriptionModal> always
      <TemplateModal> if adapter.showTemplateModal
-     <BoxEditor> if adapter.editor !== null
+     <NodeEditor> if adapter.editor !== null
      <OutputIcon> if adapter.outputIconType
 \`\`\`
 
@@ -1455,9 +1455,9 @@ Standard ReactFlow node props.
 
 | Value | Default Source | Override Source |
 |-------|--------------|----------------|
-| \`sendCode\` | \`boxState.sendCode\` | \`lifecycle.sendCodeOverride\` |
-| \`setSendCodeCallback\` | \`boxState.setSendCodeCallback\` | \`lifecycle.setSendCodeCallbackOverride\` |
-| \`setOutputCallback\` | \`boxState.setOutput\` | \`lifecycle.setOutputCallbackOverride\` |
+| \`sendCode\` | \`nodeState.sendCode\` | \`lifecycle.sendCodeOverride\` |
+| \`setSendCodeCallback\` | \`nodeState.setSendCodeCallback\` | \`lifecycle.setSendCodeCallbackOverride\` |
+| \`setOutputCallback\` | \`nodeState.setOutput\` | \`lifecycle.setOutputCallbackOverride\` |
 | \`showLoading\` | \`false\` | \`lifecycle.showLoading\` |
 | \`defaultValue\` | \`templateData.code \\|\\| data.defaultCode\` | \`lifecycle.defaultValueOverride\` |
 | \`contentComponent\` | none | \`lifecycle.contentComponent\` |
@@ -1469,13 +1469,13 @@ Standard ReactFlow node props.
 
 ## Hook Ordering Safety
 
-React requires hooks to be called in the same order on every render. \`UniversalBox\` always calls:
+React requires hooks to be called in the same order on every render. \`UniversalNode\` always calls:
 
-1. \`useBoxState()\` — always
+1. \`useNodeState()\` — always
 2. \`adapter.useLifecycle()\` — always (same function per node type)
 3. \`useEdges()\` — always
 
-Since ReactFlow creates separate component instances per node, different box types having different hooks inside their \`useLifecycle\` is safe.
+Since ReactFlow creates separate component instances per node, different node types having different hooks inside their \`useLifecycle\` is safe.
 
 ---
 
@@ -1485,9 +1485,9 @@ Since ReactFlow creates separate component instances per node, different box typ
 |-----------|-------------|
 | \`adapter.inputIconType\` truthy | \`<InputIcon type={...} />\` |
 | \`adapter.showTemplateModal\` truthy | \`<TemplateModal />\` |
-| \`adapter.editor\` not null | \`<BoxEditor />\` with full editor config |
+| \`adapter.editor\` not null | \`<NodeEditor />\` with full editor config |
 | \`adapter.outputIconType\` truthy | \`<OutputIcon type={...} />\` |
-| \`adapter.container.noContent\` true | \`BoxContainer\` renders minimal layout |`;
+| \`adapter.container.noContent\` true | \`NodeContainer\` renders minimal layout |`;
 
 PAGES['07'] = `# Custom Hooks
 
@@ -1495,22 +1495,22 @@ PAGES['07'] = `# Custom Hooks
 
 ---
 
-## \`useBoxState(data, boxType)\` — \`useBoxState.ts\`
+## \`useNodeState(data, nodeType)\` — \`useNodeState.ts\`
 
-Shared state hook used by every box type via \`UniversalBox\`. Encapsulates the common state/effect pattern that was previously duplicated across 14 box components.
+Shared state hook used by every node type via \`UniversalNode\`. Encapsulates the common state/effect pattern that was previously duplicated across 14 node components.
 
 ### Parameters
 
 | Param | Type | Description |
 |-------|------|-------------|
 | \`data\` | \`any\` | ReactFlow node data (INodeData) |
-| \`boxType\` | \`BoxType\` | The type of this box |
+| \`nodeType\` | \`NodeType\` | The type of this node |
 
-### Return Value — \`UseBoxStateReturn\`
+### Return Value — \`UseNodeStateReturn\`
 
 \`\`\`ts
 {
-  output: BoxOutput;
+  output: NodeOutput;
   setOutput: (val) => void;
   code: string;
   setCode: (val) => void;
@@ -1548,7 +1548,7 @@ Manages the full Vega-Lite visualization lifecycle including data parsing, view 
 - **Data parsing**: Supports both \`dataframe\` and \`geodataframe\` inputs
 - **Hot reload**: When \`data.input\` changes, inserts new data via Vega changeset
 - **Interaction detection**: Listens to Vega signals and classifies as POINT, INTERVAL, or UNDETERMINED
-- **Provenance**: Logs box execution via \`boxExecProv\`
+- **Provenance**: Logs node execution via \`nodeExecProv\`
 
 ---
 
@@ -1608,7 +1608,7 @@ Creates workflow nodes and loads Trill specifications.
 
 \`\`\`ts
 {
-  createCodeNode: (boxType: string, options?: CreateCodeNodeOptions) => void;
+  createCodeNode: (nodeType: string, options?: CreateCodeNodeOptions) => void;
   loadTrill: (trill: any, suggestionType?: string) => void;
 }
 \`\`\`
@@ -1675,14 +1675,14 @@ When a node produces output (\`applyNewOutput\`):
 
 ## \`TemplateProvider\` — \`TemplateProvider.tsx\`
 
-Manages code/grammar templates per box type.
+Manages code/grammar templates per node type.
 
 ### \`Template\` Interface
 
 \`\`\`ts
 interface Template {
   id: string;
-  type: BoxType;
+  type: NodeType;
   name: string;
   description: string;
   accessLevel: AccessLevelType;
@@ -1740,27 +1740,27 @@ PAGES['09'] = `# Components
 ### \`MainCanvas\` — \`MainCanvas.tsx\`
 
 Root component rendered inside the provider tree. Sets up:
-- ReactFlow canvas with all registered node types (\`UniversalBox\` for each)
+- ReactFlow canvas with all registered node types (\`UniversalNode\` for each)
 - Edge types (bidirectional, unidirectional)
 - Drag-and-drop from palette to canvas
 - Dashboard mode filtering
 - Selection-based LLM explanation and debugging
 
-### \`UniversalBox\` — \`UniversalBox.tsx\`
+### \`UniversalNode\` — \`UniversalNode.tsx\`
 
-See [UniversalBox](#) for full documentation.
+See [UniversalNode](#) for full documentation.
 
-### \`BoxContainer\` — \`styles.tsx\`
+### \`NodeContainer\` — \`styles.tsx\`
 
-The outer shell of every box node. Manages header, template menu, comment system, AI suggestions UI, expand/minimize state, and warnings.
+The outer shell of every workflow node. Manages header, template menu, comment system, AI suggestions UI, expand/minimize state, and warnings.
 
 ---
 
 ## Editing Components — \`components/editing/\`
 
-### \`BoxEditor\` — \`BoxEditor.tsx\`
+### \`NodeEditor\` — \`NodeEditor.tsx\`
 
-Tabbed editor panel inside each box. Manages code, grammar, widgets, output, and provenance tabs.
+Tabbed editor panel inside each node. Manages code, grammar, widgets, output, and provenance tabs.
 
 ### \`CodeEditor\` — \`CodeEditor.tsx\`
 Monaco-based Python code editor with syntax highlighting.
@@ -1779,7 +1779,7 @@ Renders execution output (success/error messages, data previews).
 ## Modal Components
 
 ### \`DescriptionModal\`
-Displays box type metadata pulled from the registry.
+Displays node type metadata pulled from the registry.
 
 ### \`TemplateModal\`
 Template management UI: create, browse, select/apply.
@@ -1804,11 +1804,11 @@ Template management UI: create, browse, select/apply.
 | \`ToolsMenu\` | Left sidebar palette (registry-driven) |
 | \`UpMenu\` | Top menu bar (file ops, dashboard, AI) |
 | \`FileUpload\` | Workflow JSON upload dialog |
-| \`Expand\` | Expand/minimize all boxes |
+| \`Expand\` | Expand/minimize all nodes |
 
 ---
 
-## Adapter UI Components — \`adapters/box/components/\`
+## Adapter UI Components — \`adapters/node/components/\`
 
 | Component | File | Consumed by |
 |-----------|------|-------------|
@@ -1842,9 +1842,9 @@ Converts pandas-style column-dict JSON into Vega-Lite-ready row-based arrays.
 
 ## ConnectionValidator — \`src/ConnectionValidator.ts\`
 
-Static class that checks whether two box types can be connected based on their port type compatibility.
+Static class that checks whether two node types can be connected based on their port type compatibility.
 
-### \`checkBoxCompatibility(outBox: BoxType, inBox: BoxType): boolean\`
+### \`checkBoxCompatibility(outNodeType: NodeType, inNodeType: NodeType): boolean\`
 
 ---
 
@@ -1867,7 +1867,7 @@ Generates Trill workflow specification JSON from the current node/edge state.
     "task": "workflow_goal",
     "timestamp": "...",
     "nodes": [
-      { "id": "nodeId", "type": "BoxType", "content": "code", "x": 0, "y": 0 }
+      { "id": "nodeId", "type": "NodeType", "content": "code", "x": 0, "y": 0 }
     ],
     "edges": [
       { "id": "edgeId", "source": "nodeId1", "target": "nodeId2", "type": "Data|Interaction" }
@@ -1914,7 +1914,7 @@ Generates Trill workflow specification JSON from the current node/edge state.
 | \`/signin\` | POST | Google OAuth sign-in |
 | \`/getUser\` | GET | Get current user |
 | \`/toLayers\` | POST | Convert GeoJSON to UTK layers |
-| \`/boxExecProv\` | POST | Log box execution provenance |
+| \`/nodeExecProv\` | POST | Log node execution provenance |
 | \`/openAI\` | POST | Send LLM request |
 | \`/checkUsageOpenAI\` | POST | Check LLM rate limit |
 
@@ -1922,7 +1922,7 @@ Generates Trill workflow specification JSON from the current node/edge state.
 
 ## Node-Type Registry Sync
 
-The frontend node registry is the single source of truth for box type metadata. On app startup, \`src/index.tsx\` sends the full registry to the backend via \`POST /node-types\`. The backend stores it in memory and uses it for provenance logging, template folder resolution, and connection validation.
+The frontend node registry is the single source of truth for node type metadata. On app startup, \`src/index.tsx\` sends the full registry to the backend via \`POST /node-types\`. The backend stores it in memory and uses it for provenance logging, template folder resolution, and connection validation.
 
 ### \`POST /node-types\`
 
@@ -1937,7 +1937,7 @@ The frontend node registry is the single source of truth for box type metadata. 
 
 ### \`GET /node-types\`
 
-Returns the current in-memory registry as a JSON object keyed by BoxType.
+Returns the current in-memory registry as a JSON object keyed by NodeType.
 
 ### Graceful Fallback
 
@@ -1954,7 +1954,7 @@ How to integrate [D3](https://d3js.org/), [Observable HQ](https://observablehq.c
 Curio supports plugging in new visualization libraries at two levels:
 
 1. **Grammar Adapter** — For declarative grammar-based libraries (Vega-Lite, UTK, Observable Plot)
-2. **Box Adapter Lifecycle** — For imperative libraries (D3, custom WebGL)
+2. **Node Adapter Lifecycle** — For imperative libraries (D3, custom WebGL)
 
 ---
 
@@ -1993,15 +1993,15 @@ registerGrammarAdapter(myLibAdapter);
 ### Step 2 — Create a Lifecycle Hook
 
 \`\`\`ts
-import { BoxLifecycleHook } from '../../registry/types';
+import { NodeLifecycleHook } from '../../registry/types';
 
-export const useMyLibLifecycle: BoxLifecycleHook = (data, boxState) => {
+export const useMyLibLifecycle: NodeLifecycleHook = (data, nodeState) => {
   const applyGrammar = async (spec: string) => {
     const { myLibAdapter } = await import('../myLibAdapter');
     const container = document.getElementById('mylib' + data.nodeId);
     if (!container) throw new Error('Container not found');
     await myLibAdapter.render(container, spec, data.input);
-    boxState.setOutput({ code: 'success', content: '', outputType: '' });
+    nodeState.setOutput({ code: 'success', content: '', outputType: '' });
     data.outputCallback(data.nodeId, data.input);
   };
   return { applyGrammar };
@@ -2012,7 +2012,7 @@ export const useMyLibLifecycle: BoxLifecycleHook = (data, boxState) => {
 
 \`\`\`ts
 registerNode({
-  id: BoxType.VIS_MY_LIB,
+  id: NodeType.VIS_MY_LIB,
   category: 'vis_grammar',
   label: 'My Library',
   grammarId: 'my-lib',
@@ -2029,12 +2029,12 @@ registerNode({
 
 ---
 
-## Option B: Box Adapter Lifecycle (D3, imperative)
+## Option B: Node Adapter Lifecycle (D3, imperative)
 
 Best for: D3, Three.js, custom Canvas/WebGL.
 
 \`\`\`ts
-export const useD3Lifecycle: BoxLifecycleHook = (data, boxState) => {
+export const useD3Lifecycle: NodeLifecycleHook = (data, nodeState) => {
   useEffect(() => {
     if (!data.input) return;
     const renderChart = async () => {
@@ -2067,9 +2067,9 @@ Observable notebooks can be embedded via their runtime — import \`@observableh
 
 ## Checklist
 
-1. Add \`VIS_MY_LIB\` to \`BoxType\` enum
+1. Add \`VIS_MY_LIB\` to \`NodeType\` enum
 2. Install npm package
-3. Create lifecycle hook (typed as \`BoxLifecycleHook\`)
+3. Create lifecycle hook (typed as \`NodeLifecycleHook\`)
 4. (Optional) Create grammar adapter
 5. Register descriptor in \`descriptors.ts\`
 6. Verify: palette, connections, rendering, interactions`;
@@ -2082,7 +2082,7 @@ PAGES['12'] = `# Provenance API
 
 **Schema definition:** \`utk_curio/backend/create_provenance_db.py\`
 
-The provenance API records a complete version history of workflow evolution and execution. Every structural change (adding a box, removing a connection) produces a new immutable workflow version, preserving the full audit trail. Execution-time events (box runs, visualizations, interactions) are appended to this lineage, enabling replay and analysis of the entire workflow lifecycle.
+The provenance API records a complete version history of workflow evolution and execution. Every structural change (adding a node, removing a connection) produces a new immutable workflow version, preserving the full audit trail. Execution-time events (node runs, visualizations, interactions) are appended to this lineage, enabling replay and analysis of the entire workflow lifecycle.
 
 ---
 
@@ -2096,7 +2096,7 @@ All structural mutations follow a copy-on-write pattern:
 4. Insert a new \`workflow\` row pointing to the new versioned element.
 5. Duplicate all activities from the old workflow into the new one (with exclusions or modifications depending on the operation).
 
-This logic is encapsulated in the \`create_new_workflow_version(conn, workflow_name)\` helper, which returns \`(old_workflow_id, new_workflow_id)\` and is used by \`newBoxProv\`, \`deleteBoxProv\`, \`newConnectionProv\`, and \`deleteConnectionProv\`.
+This logic is encapsulated in the \`create_new_workflow_version(conn, workflow_name)\` helper, which returns \`(old_workflow_id, new_workflow_id)\` and is used by \`newNodeProv\`, \`deleteNodeProv\`, \`newConnectionProv\`, and \`deleteConnectionProv\`.
 
 \`\`\`
 version 1.0 ──► versionedElement_1 ──► workflow_1
@@ -2119,11 +2119,11 @@ version 2.0 ──► versionedElement_2 ──► workflow_2
 | \`attribute\` | \`attribute_id\` | Data type definitions (DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON) |
 | \`relation\` | \`relation_id\` | Named input/output relations for activities |
 | \`attributeRelation\` | \`ar_id\` | Maps which data type attributes a relation supports |
-| \`activity\` | \`activity_id\` | Box instances within a workflow version, with input/output relation references |
+| \`activity\` | \`activity_id\` | Node instances within a workflow version, with input/output relation references |
 | \`workflowExecution\` | \`workflowexec_id\` | Records of workflow-level execution runs |
 | \`relationInstance\` | \`re_id\` | Concrete data-flow instances of relations per execution |
 | \`attributeValue\` | \`av_id\` | Data type presence flags (\`"0"\` or \`"1"\`) per relation instance |
-| \`activityExecution\` | \`activityexec_id\` | Records of individual box executions with source code and timing |
+| \`activityExecution\` | \`activityexec_id\` | Records of individual node executions with source code and timing |
 | \`visualization\` | \`vis_id\` | Visualization metadata linked to activity executions |
 | \`interaction\` | \`int_id\` | User interaction events linked to visualizations |
 | \`attributeValueChange\` | \`avc_id\` | Historical record of attribute value modifications triggered by interactions |
@@ -2184,9 +2184,9 @@ Creates a new workflow with version \`1.0\`. Inserts one row into each of \`vers
 
 ---
 
-### \`POST /newBoxProv\`
+### \`POST /newNodeProv\`
 
-Records the addition of a box (activity) to a workflow. Creates a new workflow version, inserts an output relation for the activity, links it to the appropriate data type attributes via \`attributeRelation\`, creates the new activity row, and duplicates all existing activities from the previous version into the new one.
+Records the addition of a node (activity) to a workflow. Creates a new workflow version, inserts an output relation for the activity, links it to the appropriate data type attributes via \`attributeRelation\`, creates the new activity row, and duplicates all existing activities from the previous version into the new one.
 
 **Request body:**
 
@@ -2199,7 +2199,7 @@ Records the addition of a box (activity) to a workflow. Creates a new workflow v
 }
 \`\`\`
 
-The \`activity_name\` follows the convention \`{BoxType}-{nodeId}\`. The \`BoxType\` prefix is used to look up output types from the node-type registry.
+The \`activity_name\` follows the convention \`{NodeType}-{nodeId}\`. The \`NodeType\` prefix is used to look up output types from the node-type registry.
 
 **Response:** \`200\` (empty body)
 
@@ -2207,9 +2207,9 @@ The \`activity_name\` follows the convention \`{BoxType}-{nodeId}\`. The \`BoxTy
 
 ---
 
-### \`POST /deleteBoxProv\`
+### \`POST /deleteNodeProv\`
 
-Records the removal of a box. Creates a new workflow version and duplicates all activities except the one matching \`activity_name\`.
+Records the removal of a node. Creates a new workflow version and duplicates all activities except the one matching \`activity_name\`.
 
 **Request body:**
 
@@ -2230,7 +2230,7 @@ Records the removal of a box. Creates a new workflow version and duplicates all 
 
 ### \`POST /newConnectionProv\`
 
-Records the addition of a connection between two boxes. Creates a new workflow version, duplicates all activities, then sets the target activity's \`input_relation_id\` to the source activity's \`output_relation_id\`.
+Records the addition of a connection between two nodes. Creates a new workflow version, duplicates all activities, then sets the target activity's \`input_relation_id\` to the source activity's \`output_relation_id\`.
 
 **Request body:**
 
@@ -2281,9 +2281,9 @@ Records the removal of a connection. Creates a new workflow version, duplicates 
 
 ---
 
-### \`POST /boxExecProv\`
+### \`POST /nodeExecProv\`
 
-Records a box execution. This is the most complex provenance endpoint. It:
+Records a node execution. This is the most complex provenance endpoint. It:
 
 1. Looks up the most recent \`workflowExecution\` for the workflow.
 2. Creates a new \`workflowExecution\` row (optionally linked to the latest interaction if \`interaction: true\`).
@@ -2324,7 +2324,7 @@ Records a box execution. This is the most complex provenance endpoint. It:
 | Field | Type | Description |
 |-------|------|-------------|
 | \`workflow_name\` | string | Name of the workflow |
-| \`activity_name\` | string | \`{BoxType}-{nodeId}\` identifier |
+| \`activity_name\` | string | \`{NodeType}-{nodeId}\` identifier |
 | \`activityexec_start_time\` | string | ISO 8601 start timestamp |
 | \`activityexec_end_time\` | string | ISO 8601 end timestamp |
 | \`activity_source_code\` | string | The Python code that was executed |
@@ -2341,7 +2341,7 @@ Records a box execution. This is the most complex provenance endpoint. It:
 
 ---
 
-### \`POST /getBoxGraph\`
+### \`POST /getNodeGraph\`
 
 Returns the execution history for a specific activity as a graph of execution nodes.
 
@@ -2494,13 +2494,13 @@ Creates a new versioned workflow snapshot from the latest one with the given nam
 
 Returns \`(old_workflow_id, new_workflow_id)\`.
 
-### \`get_output_types(box_type: str) -> list\`
+### \`get_output_types(node_type: str) -> list\`
 
-Returns the list of output type names for a box type from the in-memory node-type registry. Returns \`[]\` if the box type is not registered.
+Returns the list of output type names for a node type from the in-memory node-type registry. Returns \`[]\` if the node type is not registered.
 
-### \`get_input_types(box_type: str) -> list\`
+### \`get_input_types(node_type: str) -> list\`
 
-Returns the list of input type names for a box type from the in-memory node-type registry.
+Returns the list of input type names for a node type from the in-memory node-type registry.
 
 ---
 
@@ -2512,12 +2512,12 @@ The provenance API is called from the frontend via the \`ProvenanceProvider\` co
 |----------------|----------|
 | User logs in | \`POST /saveUserProv\` |
 | Workflow created | \`POST /saveWorkflowProv\` |
-| Box added to canvas | \`POST /newBoxProv\` |
-| Box deleted from canvas | \`POST /deleteBoxProv\` |
-| Edge drawn between boxes | \`POST /newConnectionProv\` |
+| Node added to canvas | \`POST /newNodeProv\` |
+| Node deleted from canvas | \`POST /deleteNodeProv\` |
+| Edge drawn between nodes | \`POST /newConnectionProv\` |
 | Edge removed | \`POST /deleteConnectionProv\` |
-| Box executed (play button) | \`POST /boxExecProv\` |
-| Provenance graph requested | \`POST /getBoxGraph\` |
+| Node executed (play button) | \`POST /nodeExecProv\` |
+| Provenance graph requested | \`POST /getNodeGraph\` |
 | Visualization rendered | \`POST /insert_visualization\` |
 | User interacts with visualization | \`POST /insert_interaction\` |
 | Attribute value changes from interaction | \`POST /insert_attribute_value_change\` |
@@ -2530,10 +2530,10 @@ The provenance API is called from the frontend via the \`ProvenanceProvider\` co
 All provenance endpoints use a consistent naming scheme for activities:
 
 \`\`\`
-{BoxType}-{nodeId}
+{NodeType}-{nodeId}
 \`\`\`
 
-Where \`BoxType\` is one of the registered node types (e.g., \`DATA_LOADING\`, \`COMPUTATION_ANALYSIS\`, \`VIS_VEGA\`) and \`nodeId\` is the unique ReactFlow node identifier. The box type prefix is extracted via \`activity_name.split("-")[0]\` for registry lookups.`;
+Where \`NodeType\` is one of the registered node types (e.g., \`DATA_LOADING\`, \`COMPUTATION_ANALYSIS\`, \`VIS_VEGA\`) and \`nodeId\` is the unique ReactFlow node identifier. The node type prefix is extracted via \`activity_name.split("-")[0]\` for registry lookups.`;
 
 PAGES['e2e'] = `# End-to-End Tests
 
@@ -2655,7 +2655,7 @@ npx jest src/tests/registry/types.test.ts --verbose
 ## Test Suites (83 tests)
 
 ### Registry
-- **types.test.ts** — BoxLifecycleHook contract, BoxLifecycleData, LifecycleResult
+- **types.test.ts** — NodeLifecycleHook contract, NodeLifecycleData, LifecycleResult
 - **nodeRegistry.test.ts** — registerNode, getNodeDescriptor, getAllNodeTypes
 - **descriptors.test.ts** — All 14 registered descriptors validation
 
@@ -2690,7 +2690,7 @@ PAGES['prov-tests'] = `# Provenance Unit Tests
 
 **Framework:** pytest 8.3 + Flask test client
 
-**Scope:** Unit tests for the backend provenance API covering the complete lifecycle of workflow versioning, box management, connection tracking, execution recording, visualization and interaction logging, and database maintenance.
+**Scope:** Unit tests for the backend provenance API covering the complete lifecycle of workflow versioning, node management, connection tracking, execution recording, visualization and interaction logging, and database maintenance.
 
 ---
 
@@ -2701,7 +2701,7 @@ PAGES['prov-tests'] = `# Provenance Unit Tests
 pytest utk_curio/backend/tests/test_prov/ -v
 
 # Specific test file
-pytest utk_curio/backend/tests/test_prov/test_box_prov.py -v
+pytest utk_curio/backend/tests/test_prov/test_node_prov.py -v
 
 # With coverage
 pytest utk_curio/backend/tests/test_prov/ --cov=utk_curio.backend.app.api.routes -v
@@ -2733,10 +2733,10 @@ utk_curio/backend/tests/test_prov/
   conftest.py                              Shared fixtures and utilities
   test_create_new_workflow_version.py      Helper function (direct, no HTTP)
   test_workflow_prov.py                    POST /saveUserProv, POST /saveWorkflowProv
-  test_box_prov.py                         POST /newBoxProv, POST /deleteBoxProv
+  test_node_prov.py                        POST /newNodeProv, POST /deleteNodeProv
   test_connection_prov.py                  POST /newConnectionProv, POST /deleteConnectionProv
-  test_box_exec_prov.py                    POST /boxExecProv
-  test_get_box_graph.py                    POST /getBoxGraph
+  test_node_exec_prov.py                   POST /nodeExecProv
+  test_get_node_graph.py                   POST /getNodeGraph
   test_vis_interaction_prov.py             POST /insert_visualization, /insert_interaction,
                                            /insert_attribute_value_change
   test_db_prov.py                          GET /checkDB, GET /truncateDBProv
@@ -2753,7 +2753,7 @@ utk_curio/backend/tests/test_prov/
 | \`seeded_workflow\` | function | Creates workflow \`"test_wf"\` via \`POST /saveWorkflowProv\` |
 | \`seeded_box\` | function | Adds \`COMPUTATION_ANALYSIS-box1\` activity |
 | \`two_boxes\` | function | Adds \`DATA_LOADING-src1\` and \`COMPUTATION_ANALYSIS-tgt1\` |
-| \`executed_box\` | function | Executes the seeded box via \`POST /boxExecProv\` |
+| \`executed_box\` | function | Executes the seeded box via \`POST /nodeExecProv\` |
 
 ---
 
@@ -2780,11 +2780,11 @@ utk_curio/backend/tests/test_prov/
 | \`test_creates_version_ve_workflow\` | Creates version \`"1.0"\`, versioned element, and workflow |
 | \`test_two_workflows_independent\` | Two workflows get independent version chains |
 
-### \`test_box_prov.py\` — Box Addition and Deletion (7 tests)
+### \`test_node_prov.py\` — Node Addition and Deletion (7 tests)
 
 | Test | Description |
 |------|-------------|
-| \`test_creates_new_workflow_version\` | Adding a box creates a second workflow version |
+| \`test_creates_new_workflow_version\` | Adding a node creates a second workflow version |
 | \`test_activity_inserted\` | New activity row has the correct name |
 | \`test_output_relation_created\` | Output relation named \`"{activity}_out"\` is inserted |
 | \`test_attribute_relations_created\` | \`attributeRelation\` rows link to output attributes |
@@ -2802,7 +2802,7 @@ utk_curio/backend/tests/test_prov/
 | \`test_nonexistent_source_returns_400\` | Unknown source activity returns HTTP 400 |
 | \`test_sets_target_input_to_null\` | Delete connection sets \`input_relation_id\` to NULL |
 
-### \`test_box_exec_prov.py\` — Box Execution (7 tests)
+### \`test_node_exec_prov.py\` — Node Execution (7 tests)
 
 | Test | Description |
 |------|-------------|
@@ -2814,7 +2814,7 @@ utk_curio/backend/tests/test_prov/
 | \`test_multiple_executions_increment\` | Two runs produce at least two execution rows |
 | \`test_interaction_links\` | \`interaction: true\` links \`workflowExecution.int_id\` |
 
-### \`test_get_box_graph.py\` — Execution Graph (3 tests)
+### \`test_get_node_graph.py\` — Execution Graph (3 tests)
 
 | Test | Description |
 |------|-------------|
@@ -2859,9 +2859,9 @@ const PAGE_META = {
   '01': { title: 'Architecture Overview', section: 'Architecture' },
   '02': { title: 'Constants & Types', section: 'Architecture' },
   '03': { title: 'Registry', section: 'Architecture' },
-  '04': { title: 'Box Adapters', section: 'Adapters & Components' },
+  '04': { title: 'Node Adapters', section: 'Adapters & Components' },
   '05': { title: 'Grammar Adapters', section: 'Adapters & Components' },
-  '06': { title: 'UniversalBox', section: 'Adapters & Components' },
+  '06': { title: 'UniversalNode', section: 'Adapters & Components' },
   '07': { title: 'Hooks', section: 'Hooks & Providers' },
   '08': { title: 'Providers', section: 'Hooks & Providers' },
   '09': { title: 'Components', section: 'UI & Services' },
@@ -2875,10 +2875,11 @@ const PAGE_META = {
 
 const WELCOME_CARDS = [
   { id: '01', num: '01', title: 'Architecture Overview', desc: 'Technology stack, provider hierarchy, data flow pipelines' },
-  { id: '03', num: '03', title: 'Registry', desc: 'BoxDescriptor, registration, all 15 node types' },
-  { id: '04', num: '04', title: 'Box Adapters', desc: 'BoxAdapter, HandleDef, lifecycle hooks, UI components' },
-  { id: '06', num: '06', title: 'UniversalBox', desc: 'The single component rendering all box types' },
   { id: '12', num: '12', title: 'Provenance API', desc: 'Versioning model, database schema, all provenance endpoints' },
+  { id: '03', num: '03', title: 'Registry', desc: 'NodeDescriptor, registration, all 15 node types' },
+  { id: '04', num: '04', title: 'Node Adapters', desc: 'NodeAdapter, HandleDef, lifecycle hooks, UI components' },
+  { id: '06', num: '06', title: 'UniversalNode', desc: 'The single component rendering all node types' },
+  { id: '07', num: '07', title: 'Hooks', desc: 'useNodeState, useVega, useUTK, useTableData' },
   { id: '11', num: '11', title: 'Plugin Guide', desc: 'How to integrate D3, Observable, or any custom library' },
 ];
 

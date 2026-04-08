@@ -11,9 +11,9 @@ import ReactFlow, {
 } from "reactflow";
 
 import { useFlowContext } from "../providers/FlowProvider";
-import { BoxType, EdgeType } from "../constants";
+import { NodeType, EdgeType } from "../constants";
 import { getAllNodeTypes } from "../registry";
-import UniversalBox from "./UniversalBox";
+import UniversalNode from "./UniversalNode";
 import { UserMenu } from "./login/UserMenu";
 import BiDirectionalEdge from "./edges/BiDirectionalEdge";
 import { RightClickMenu } from "./styles";
@@ -30,7 +30,7 @@ import { TrillGenerator } from "../TrillGenerator";
 
 import html2canvas from "html2canvas";
 
-import FloatingBox from "./FloatingBox";
+import FloatingPanel from "./FloatingPanel";
 import WorkflowGoal from "./menus/top/WorkflowGoal";
 
 export function MainCanvas() {
@@ -92,7 +92,7 @@ export function MainCanvas() {
         const types: Record<string, any> = {};
         for (const desc of getAllNodeTypes()) {
             if (desc.adapter) {
-                types[desc.id] = UniversalBox;
+                types[desc.id] = UniversalNode;
             }
         }
         return types;
@@ -119,7 +119,7 @@ export function MainCanvas() {
 
     const [isComponentsSelected, setIsComponentsSelected] = useState<boolean>(false); 
 
-    const [floatingBoxes, setFloatingBoxes] = useState<any>({});
+    const [floatingPanels, setFloatingPanels] = useState<any>({});
 
     // Selecting boxes to generate explanation
     const [selectedComponents, setSelectedComponents] = useState<any>({});
@@ -158,11 +158,11 @@ export function MainCanvas() {
         openAIRequest("default_preamble", "explanation_prompt", text).then((response: any) => {
             console.log("Response:", response);
 
-            setFloatingBoxes((prevFloatingBoxes: any) => {
+            setFloatingPanels((prev: any) => {
                 let uniqueId = crypto.randomUUID()+"";
                 
                 return {
-                    ...prevFloatingBoxes,
+                    ...prev,
                     [uniqueId]: {
                         title: "Explanation from "+workflowNameRef.current,
                         imageUrl: image_url,
@@ -187,11 +187,11 @@ export function MainCanvas() {
         openAIRequest("default_preamble", "debug_prompt", text).then((response: any) => {
             console.log("Response:", response);
 
-            setFloatingBoxes((prevFloatingBoxes: any) => {
+            setFloatingPanels((prev: any) => {
                 let uniqueId = crypto.randomUUID()+"";
                 
                 return {
-                    ...prevFloatingBoxes,
+                    ...prev,
                     [uniqueId]: {
                         title: "Debugging "+workflowNameRef.current,
                         imageUrl: image_url,
@@ -207,11 +207,11 @@ export function MainCanvas() {
     }
 
     // Delete a floating box from the list based on the id
-    const deleteFloatingBox = (id: string) => {
-        setFloatingBoxes((prevFloatingBoxes: any) => {
-            const newFloatingBoxes = { ...prevFloatingBoxes };
-            delete newFloatingBoxes[id];
-            return newFloatingBoxes;
+    const deleteFloatingPanel = (id: string) => {
+        setFloatingPanels((prev: any) => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
         });
     }
 
@@ -291,13 +291,13 @@ export function MainCanvas() {
             onClick={closeFileMenu}
             // onWheelCapture={handleWheel}
         >
-            {Object.keys(floatingBoxes).map((key, index) => (
-                <FloatingBox
+            {Object.keys(floatingPanels).map((key, index) => (
+                <FloatingPanel
                     key={key}
-                    title={floatingBoxes[key].title}
-                    imageUrl={floatingBoxes[key].imageUrl}
-                    markdownText={floatingBoxes[key].markdownText}
-                    onClose={() => {deleteFloatingBox(key)}}
+                    title={floatingPanels[key].title}
+                    imageUrl={floatingPanels[key].imageUrl}
+                    markdownText={floatingPanels[key].markdownText}
+                    onClose={() => {deleteFloatingPanel(key)}}
                 />
             ))}
             <ReactFlow
@@ -311,7 +311,7 @@ export function MainCanvas() {
                 onDrop={(event) => {
                     event.preventDefault();
             
-                    const type = event.dataTransfer.getData("application/reactflow") as BoxType;
+                    const type = event.dataTransfer.getData("application/reactflow") as NodeType;
                     if (!type) return;
             
                     // const bounds = event.currentTarget.getBoundingClientRect();

@@ -1,11 +1,11 @@
 import React from "react";
-import { BoxType } from "../../../constants";
+import { NodeType } from "../../../constants";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { Tooltip, OverlayTrigger } from "react-bootstrap";
 import { getPaletteNodeTypes } from "../../../registry";
 import styles from "./ToolsMenu.module.css";
 
-function DraggableTool({ boxType, icon, tooltip, tutorialID}: { boxType: BoxType; icon: any; tooltip: string; tutorialID?: string }) {
+function DraggableTool({ nodeType, icon, tooltip, tutorialID}: { nodeType: NodeType; icon: any; tooltip: string; tutorialID?: string }) {
     return (
         <OverlayTrigger
             placement="right"
@@ -17,7 +17,7 @@ function DraggableTool({ boxType, icon, tooltip, tutorialID}: { boxType: BoxType
                 className={styles.optionStyle}
                 draggable
                 onDragStart={(event) => {
-                    event.dataTransfer.setData("application/reactflow", boxType);
+                    event.dataTransfer.setData("application/reactflow", nodeType);
                     event.dataTransfer.effectAllowed = "move";
                 }}
             >
@@ -35,7 +35,7 @@ export default function ToolsMenu() {
                 {paletteTypes.map(desc => (
                     <DraggableTool
                         key={desc.id}
-                        boxType={desc.id}
+                        nodeType={desc.id}
                         icon={desc.icon}
                         tooltip={desc.label}
                         tutorialID={desc.tutorialId}

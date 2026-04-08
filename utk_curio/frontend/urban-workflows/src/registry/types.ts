@@ -1,4 +1,4 @@
-import { BoxType, SupportedType } from '../constants';
+import { NodeType, SupportedType } from '../constants';
 import { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import { Position, Edge } from 'reactflow';
 import React from 'react';
@@ -11,7 +11,7 @@ export interface PortDef {
 }
 
 export type EditorType = 'code' | 'widgets' | 'grammar' | 'none';
-export type BoxCategory = 'data' | 'computation' | 'vis_grammar' | 'vis_simple' | 'flow';
+export type NodeCategory = 'data' | 'computation' | 'vis_grammar' | 'vis_simple' | 'flow';
 
 /* ── Handle configuration ──────────────────────────────────────────── */
 
@@ -28,7 +28,7 @@ export interface HandleDef {
   isConnectableOverride?: (data: any, isConnectable: boolean, edges: Edge[]) => boolean;
 }
 
-/* ── BoxEditor configuration ───────────────────────────────────────── */
+/* ── NodeEditor configuration ──────────────────────────────────────── */
 
 export interface EditorConfig {
   code: boolean;
@@ -40,28 +40,28 @@ export interface EditorConfig {
   outputId?: (nodeId: string) => string;
 }
 
-/* ── BoxContainer overrides ────────────────────────────────────────── */
+/* ── NodeContainer overrides ───────────────────────────────────────── */
 
 export interface ContainerConfig {
   handleType?: 'in' | 'out' | 'in/out';
   disablePlay?: boolean;
   noContent?: boolean;
-  boxWidth?: number;
-  boxHeight?: number;
+  nodeWidth?: number;
+  nodeHeight?: number;
   styles?: React.CSSProperties;
 }
 
-/* ── Box Lifecycle Contract ────────────────────────────────────────── */
+/* ── Node Lifecycle Contract ───────────────────────────────────────── */
 
-export type UseBoxStateReturn = ReturnType<typeof import('../hook/useBoxState').useBoxState>;
+export type UseNodeStateReturn = ReturnType<typeof import('../hook/useNodeState').useNodeState>;
 
 /**
- * Runtime data passed to every lifecycle hook by UniversalBox.
+ * Runtime data passed to every lifecycle hook by UniversalNode.
  *
  * Extends the persisted `INodeData` with FlowProvider runtime callbacks
  * that are injected when the node is mounted on the canvas.
  */
-export interface BoxLifecycleData extends INodeData {
+export interface NodeLifecycleData extends INodeData {
   /** FlowProvider callback — push this node's output to downstream nodes. */
   outputCallback: (nodeId: string, output: any) => void;
   /** FlowProvider callback — propagate interaction resolution data. */
@@ -77,7 +77,7 @@ export interface BoxLifecycleData extends INodeData {
 /**
  * The return value of a lifecycle hook.
  *
- * Every field is optional. UniversalBox applies defaults from `useBoxState`
+ * Every field is optional. UniversalNode applies defaults from `useNodeState`
  * for any field the lifecycle does not override. A no-op lifecycle may
  * return `{}`.
  */
@@ -90,17 +90,20 @@ export interface LifecycleResult {
   defaultValueOverride?: string;
   /** Replace the default "play" action with a custom send-code routine. */
   sendCodeOverride?: any;
-  /** Replace the `setSendCodeCallback` wiring between BoxEditor and the play button. */
+  /** Replace the `setSendCodeCallback` wiring between NodeEditor and the play button. */
   setSendCodeCallbackOverride?: any;
-  /** When `true`, BoxContainer shows a loading spinner instead of the play button. */
+  /** When `true`, NodeContainer shows a loading spinner instead of the play button. */
   showLoading?: boolean;
-  /** Custom React subtree rendered inside the BoxEditor content area. */
+  /** Custom React subtree rendered inside the NodeEditor content area. */
   contentComponent?: React.ReactNode;
-  /** Replace `boxState.setOutput` — used when output state is managed locally (DataPool, MergeFlow). */
+  /** Replace `nodeState.setOutput` — used when output state is managed locally (DataPool, MergeFlow). */
   setOutputCallbackOverride?: any;
   outputOverride?: ICodeData;
   /** Extra handles appended to `adapter.handles` at render time (MergeFlow dynamic inputs). */
-  /** Replace `boxState.output` — used when output state is managed locally (DataPool, MergeFlow). */
+  /** Replace `nodeState.output` — used when output state is managed locally (DataPool, MergeFlow). */
+  outputOverride?: ICodeData;
+  /** Extra handles appended to `adapter.handles` at render time (MergeFlow dynamic inputs). */
+  /** Replace `nodeState.output` — used when output state is managed locally (DataPool, MergeFlow). */
   outputOverride?: ICodeData;
   /** Extra handles appended to `adapter.handles` at render time (MergeFlow dynamic inputs). */
   dynamicHandles?: HandleDef[];
@@ -109,11 +112,11 @@ export interface LifecycleResult {
 }
 
 /**
- * Contract type for box lifecycle hooks.
+ * Contract type for node lifecycle hooks.
  *
  * Every lifecycle implementation **must** satisfy this signature.
- * The hook is called by `UniversalBox` on every render — it receives
- * the node's runtime `data` and the shared `boxState` from `useBoxState`,
+ * The hook is called by `UniversalNode` on every render — it receives
+ * the node's runtime `data` and the shared `nodeState` from `useNodeState`,
  * and returns a `LifecycleResult` whose fields selectively override
  * defaults.
  *
@@ -121,28 +124,28 @@ export interface LifecycleResult {
  * 1. Must be a valid React custom hook (may call `useState`, `useEffect`, etc.).
  * 2. Must be deterministic in its hook call order (React rules of hooks).
  * 3. Must return a `LifecycleResult` — omit fields to accept defaults.
- * 4. Must not call `boxState.setSendCodeCallback` directly — return
- *    `setSendCodeCallbackOverride` instead so UniversalBox can wire it.
+ * 4. Must not call `nodeState.setSendCodeCallback` directly — return
+ *    `setSendCodeCallbackOverride` instead so UniversalNode can wire it.
  */
-export type BoxLifecycleHook = (data: BoxLifecycleData, boxState: UseBoxStateReturn) => LifecycleResult;
+export type NodeLifecycleHook = (data: NodeLifecycleData, nodeState: UseNodeStateReturn) => LifecycleResult;
 
-/* ── Full adapter for a box type ───────────────────────────────────── */
+/* ── Full adapter for a node type ──────────────────────────────────── */
 
-export interface BoxAdapter {
+export interface NodeAdapter {
   handles: HandleDef[];
   editor: EditorConfig | null;
   container: ContainerConfig;
   inputIconType?: string;
   outputIconType?: string;
   showTemplateModal?: boolean;
-  useLifecycle: BoxLifecycleHook;
+  useLifecycle: NodeLifecycleHook;
 }
 
 /* ── Descriptor ────────────────────────────────────────────────────── */
 
-export interface BoxDescriptor {
-  id: BoxType;
-  category: BoxCategory;
+export interface NodeDescriptor {
+  id: NodeType;
+  category: NodeCategory;
   label: string;
   icon: IconDefinition;
   inputPorts: PortDef[];
@@ -156,6 +159,6 @@ export interface BoxDescriptor {
   hasWidgets: boolean;
   hasGrammar: boolean;
   hasProvenance?: boolean;
-  adapter: BoxAdapter;
+  adapter: NodeAdapter;
   tutorialId?: string;
 }

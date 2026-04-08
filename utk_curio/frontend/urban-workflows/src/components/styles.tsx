@@ -3,7 +3,7 @@ import CSS from "csstype";
 import { Dropdown, Spinner } from "react-bootstrap";
 
 import { useFlowContext } from "../providers/FlowProvider";
-import { Box, NodeRemoveChange } from "reactflow";
+import { NodeRemoveChange } from "reactflow";
 
 import { CommentsList, IComment } from "./comments/CommentsList";
 import { useRightClickMenu } from "../hook/useRightClickMenu";
@@ -48,7 +48,7 @@ import {
     faXmark,
     faAnglesUp
 } from "@fortawesome/free-solid-svg-icons";
-import { AccessLevelType, BoxType, SupportedType } from "../constants";
+import { AccessLevelType, NodeType, SupportedType } from "../constants";
 import { getNodeDescriptor } from "../registry";
 import "./styles.css";
 import { Template, useTemplateContext } from "../providers/TemplateProvider";
@@ -56,8 +56,8 @@ import { useCode } from "../hook/useCode";
 import { TrillGenerator } from "TrillGenerator";
 import { ICodeData } from "types";
 
-// Box Container
-export const BoxContainer = ({
+// Node Container
+export const NodeContainer = ({
     data,
     children,
     nodeId,
@@ -70,8 +70,8 @@ export const BoxContainer = ({
     setOutputCallback,
     sendCodeToWidgets,
     output,
-    boxWidth,
-    boxHeight,
+    nodeWidth,
+    nodeHeight,
     noContent,
     setTemplateConfig,
     disableComments = false,
@@ -92,8 +92,8 @@ export const BoxContainer = ({
     setOutputCallback: any;
     sendCodeToWidgets?: any;
     output?: ICodeData;
-    boxWidth?: number;
-    boxHeight?: number;
+    nodeWidth?: number;
+    nodeHeight?: number;
     noContent?: boolean;
     setTemplateConfig?: any;
     disableComments?: boolean;
@@ -127,15 +127,15 @@ export const BoxContainer = ({
     const [isConnectionRightOpen, setIsConnectionRightOpen] = useState(false);
     const [showWarnings, setShowWarnings] = useState<boolean>(false);
     const [isSubtasksOpen, setIsSubtasksOpen] = useState(false);
-    const [currentBoxWidth, setCurrentBoxWidth] = useState<number | undefined>(
-        boxWidth
+    const [currentNodeWidth, setCurrentNodeWidth] = useState<number | undefined>(
+        nodeWidth
     );
-    const [currentBoxHeight, setCurrentBoxHeight] = useState<
+    const [currentNodeHeight, setCurrentNodeHeight] = useState<
         number | undefined
-    >(boxHeight);
+    >(nodeHeight);
     const { showMenu, menuPosition, onContextMenu } = useRightClickMenu();
     const [minimized, setMinimized] = useState(
-        data.nodeType == BoxType.MERGE_FLOW
+        data.nodeType == NodeType.MERGE_FLOW
     );
     const { openAIRequest, setCurrentEventPipeline, AIModeRef } = useLLMContext();
 
@@ -178,7 +178,7 @@ export const BoxContainer = ({
     }, [data.output, data.input])
 
     useEffect(() => {
-        if(data.nodeType != BoxType.MERGE_FLOW){
+        if(data.nodeType != NodeType.MERGE_FLOW){
             if(allMinimized > 0){
                 setMinimized(true);
             }else{
@@ -188,21 +188,21 @@ export const BoxContainer = ({
     }, [allMinimized])
 
     useEffect(() => {
-        if (data.nodeType != BoxType.MERGE_FLOW) {
+        if (data.nodeType != NodeType.MERGE_FLOW) {
             if (minimized) {
-                setCurrentBoxWidth(70);
-                setCurrentBoxHeight(40);
+                setCurrentNodeWidth(70);
+                setCurrentNodeHeight(40);
             } else {
-                if (boxWidth == undefined) {
-                    setCurrentBoxWidth(525);
+                if (nodeWidth == undefined) {
+                    setCurrentNodeWidth(525);
                 } else {
-                    setCurrentBoxWidth(boxWidth);
+                    setCurrentNodeWidth(nodeWidth);
                 }
 
-                if (boxHeight == undefined) {
-                    setCurrentBoxHeight(267);
+                if (nodeHeight == undefined) {
+                    setCurrentNodeHeight(267);
                 } else {
-                    setCurrentBoxHeight(boxHeight);
+                    setCurrentNodeHeight(nodeHeight);
                 }
             }
 
@@ -213,12 +213,12 @@ export const BoxContainer = ({
     }, [minimized]);
 
     useEffect(() => {
-        if (boxWidth == undefined) {
-            setCurrentBoxWidth(525);
+        if (nodeWidth == undefined) {
+            setCurrentNodeWidth(525);
         }
 
-        if (boxHeight == undefined) {
-            setCurrentBoxHeight(267);
+        if (nodeHeight == undefined) {
+            setCurrentNodeHeight(267);
         }
 
         const resizer = document.getElementById(
@@ -240,8 +240,8 @@ export const BoxContainer = ({
             resizable.style.width = newWidth + "px";
             resizable.style.height = newHeight + "px";
     
-            setCurrentBoxWidth(newWidth);
-            setCurrentBoxHeight(newHeight);
+            setCurrentNodeWidth(newWidth);
+            setCurrentNodeHeight(newHeight);
         }
 
         function initResize(e: any) {
@@ -273,7 +273,7 @@ export const BoxContainer = ({
         }
     }
 
-    const generateSubtaskFromExec = async (node_content: string, node_type: BoxType, current_task: string) => {
+    const generateSubtaskFromExec = async (node_content: string, node_type: NodeType, current_task: string) => {
         try {
             let result = await openAIRequest("default_preamble", "new_subtask_from_exec_prompt", " Node content: " + node_content + "\n" + "Node type: " + node_type + " Task: " + current_task);
             
@@ -426,14 +426,14 @@ export const BoxContainer = ({
         generateContentNode(nodes, edges, workflowNameRef, goal, workflowGoal);
     }
 
-    const boxIconTranslation = (boxType: BoxType) => {
-        try { return getNodeDescriptor(boxType).icon; }
+    const nodeIconTranslation = (nodeType: NodeType) => {
+        try { return getNodeDescriptor(nodeType).icon; }
         catch { return faCopy; }
     };
 
-    const boxNameTranslation = (boxType: BoxType) => {
-        try { return getNodeDescriptor(boxType).label; }
-        catch { return boxType; }
+    const nodeNameTranslation = (nodeType: NodeType) => {
+        try { return getNodeDescriptor(nodeType).label; }
+        catch { return nodeType; }
     };
 
     return (
@@ -467,10 +467,10 @@ export const BoxContainer = ({
             }
 
             {!minimized && isSubtasksOpen ?
-                <div style={{...goalInput, ...(currentBoxWidth ? {width: (currentBoxWidth-4)+"px"} : {}), ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {opacity: "50%", pointerEvents: "none"} : {})}} className={"nodrag"}>
+                <div style={{...goalInput, ...(currentNodeWidth ? {width: (currentNodeWidth-4)+"px"} : {}), ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {opacity: "50%", pointerEvents: "none"} : {})}} className={"nodrag"}>
                     <label htmlFor={nodeId+"_goal_box_input"}>Subtask: </label>
                     <input id={nodeId+"_goal_box_input"} type={"text"} style={{width: "65%", border: "none", background: "transparent", color: "rgb(251, 252, 246)", borderBottom: "1px solid rgb(46, 91, 136)"}} value={goal} onBlur={() => {updateDataGoal(goal)}} onChange={(value: any) => {setGoal(value.target.value)}}/>
-                    {data.nodeType != BoxType.VIS_UTK ? <button style={buttonStyle} onClick={() => {
+                    {data.nodeType != NodeType.VIS_UTK ? <button style={buttonStyle} onClick={() => {
                         if(AIModeRef.current)
                             clickGenerateContentNode();
                     }} >Get code</button> : null}
@@ -567,10 +567,10 @@ export const BoxContainer = ({
                 id={nodeId + "resizable"}
                 className={"resizable"}
                 style={{
-                    ...boxContainerStyles,
+                    ...nodeContainerStyles,
                     ...styles,
-                    width: currentBoxWidth + "px",
-                    height: currentBoxHeight + "px",
+                    width: currentNodeWidth + "px",
+                    height: currentNodeHeight + "px",
                     ...(minimized ? { display: "none" } : {}),
                     ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {opacity: 0.5, borderWidth: "2px", borderStyle: "dashed", pointerEvents: "none"} : {}), 
                     ...(data.suggestionAcceptable ? {borderColor: "#1d3853"} : {}), 
@@ -605,7 +605,7 @@ export const BoxContainer = ({
                                 ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {color: "#888787"})
                             }}
                         >
-                            {boxNameTranslation(data.nodeType)}
+                            {nodeNameTranslation(data.nodeType)}
                             {templateData.name != undefined
                                 ? " - " + templateData.name
                                 : null}
@@ -813,7 +813,7 @@ export const BoxContainer = ({
                                             </Dropdown.Item>
 
                                             {getTemplates(
-                                                data.nodeType as BoxType,
+                                                data.nodeType as NodeType,
                                                 false
                                             ).length > 0 ? (
                                                 <>
@@ -829,7 +829,7 @@ export const BoxContainer = ({
                                                         Default Templates
                                                     </Dropdown.ItemText>
                                                     {getTemplates(
-                                                        data.nodeType as BoxType,
+                                                        data.nodeType as NodeType,
                                                         false
                                                     ).map(
                                                         (
@@ -870,7 +870,7 @@ export const BoxContainer = ({
                                             ) : null}
 
                                             {getTemplates(
-                                                data.nodeType as BoxType,
+                                                data.nodeType as NodeType,
                                                 true
                                             ).length > 0 ? (
                                                 <>
@@ -886,7 +886,7 @@ export const BoxContainer = ({
                                                         Custom Templates
                                                     </Dropdown.ItemText>
                                                     {getTemplates(
-                                                        data.nodeType as BoxType,
+                                                        data.nodeType as NodeType,
                                                         true
                                                     ).map(
                                                         (
@@ -1020,8 +1020,8 @@ export const BoxContainer = ({
                 <div
                     style={{
                         ...{
-                            width: currentBoxWidth + "px",
-                            height: currentBoxHeight + "px",
+                            width: currentNodeWidth + "px",
+                            height: currentNodeHeight + "px",
                             backgroundColor: "white",
                             boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px",
                             borderRadius: "10px",
@@ -1033,17 +1033,17 @@ export const BoxContainer = ({
                         ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
                     }}
                     onClick={() => {
-                        if (data.nodeType != BoxType.MERGE_FLOW) {
-                            if (boxWidth == undefined) {
-                                setCurrentBoxWidth(525);
+                        if (data.nodeType != NodeType.MERGE_FLOW) {
+                            if (nodeWidth == undefined) {
+                                setCurrentNodeWidth(525);
                             } else {
-                                setCurrentBoxWidth(boxWidth);
+                                setCurrentNodeWidth(nodeWidth);
                             }
 
-                            if (boxHeight == undefined) {
-                                setCurrentBoxHeight(267);
+                            if (nodeHeight == undefined) {
+                                setCurrentNodeHeight(267);
                             } else {
-                                setCurrentBoxHeight(boxHeight);
+                                setCurrentNodeHeight(nodeHeight);
                             }
 
                             setMinimized(false);
@@ -1051,7 +1051,7 @@ export const BoxContainer = ({
                     }}
                 >
                     <FontAwesomeIcon
-                        icon={boxIconTranslation(data.nodeType)}
+                        icon={nodeIconTranslation(data.nodeType)}
                         style={{ 
                             ...iconStyle, 
                             fontSize: "23px",
@@ -1073,7 +1073,7 @@ export const BoxContainer = ({
                     zIndex: 8,
                 }}
                 onClick={() => {
-                    if (data.nodeType == BoxType.MERGE_FLOW) {
+                    if (data.nodeType == NodeType.MERGE_FLOW) {
                         setMinimized(true);
                     } else {
                         setMinimized(!minimized);
@@ -1090,7 +1090,7 @@ export const iconStyle: CSS.Properties = {
     color: "#888787",
 };
 
-const boxContainerStyles: CSS.Properties = {
+const nodeContainerStyles: CSS.Properties = {
     position: "relative",
     backgroundColor: "white",
     boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px",
@@ -1127,7 +1127,7 @@ export const RightClickMenu = ({
     );
 };
 
-const boxContentStyle: CSS.Properties = {
+const nodeContentStyle: CSS.Properties = {
     backgroundColor: "white",
 };
 

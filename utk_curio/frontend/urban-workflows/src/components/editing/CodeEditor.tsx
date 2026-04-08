@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 // Bootstrap
 import Button from "react-bootstrap/Button";
 import "bootstrap/dist/css/bootstrap.min.css";
-import { BoxType } from "../../constants";
+import { NodeType } from "../../constants";
 
 // Editor
 import Editor from "@monaco-editor/react";
@@ -15,7 +15,7 @@ type CodeEditorProps = {
     setOutputCallback: any;
     data: any;
     output: ICodeData;
-    boxType: BoxType;
+    nodeType: NodeType;
     replacedCode: string; // code with all marks resolved
     sendCodeToWidgets: any;
     replacedCodeDirty: boolean;
@@ -28,7 +28,7 @@ function CodeEditor({
     setOutputCallback,
     data,
     output,
-    boxType,
+    nodeType,
     replacedCode,
     sendCodeToWidgets,
     replacedCodeDirty,
@@ -39,7 +39,7 @@ function CodeEditor({
     const [code, setCode] = useState<string>(""); // code with all original markers
 
     const { workflowNameRef } = useFlowContext();
-    const { boxExecProv } = useProvenanceContext();
+    const { nodeExecProv } = useProvenanceContext();
 
     const replacedCodeDirtyBypass = useRef(false);
     const defaultValueBypass = useRef(false);
@@ -102,10 +102,10 @@ function CodeEditor({
                 data.input,
                 data.inputTypes,
                 processExecutionResult,
-                boxType,
+                nodeType,
                 data.nodeId,
                 workflowNameRef.current,
-                boxExecProv
+                nodeExecProv
             );
         }
 

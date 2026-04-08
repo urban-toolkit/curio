@@ -68,7 +68,7 @@ class TestRoutes(unittest.TestCase):
     def test_process_python_code(self):
         test_code = {
             "code": test_data["data"]["activity_source_code"],
-            "boxType": test_data["data"]["activity_name"],
+            "nodeType": test_data["data"]["activity_name"],
             "input": {
                 "dataType": test_data["data"]["input"]["dataType"],
                 "path": test_data["data"]["input"].get("path", ""),
@@ -91,16 +91,16 @@ class TestRoutes(unittest.TestCase):
         response = self.client.post('/saveWorkflowProv', json=test_data)
         self.assertEqual(response.status_code, 200)
     
-        response = self.client.post('/newBoxProv', json=test_data)
+        response = self.client.post('/newNodeProv', json=test_data)
         self.assertEqual(response.status_code, 200)
 
-        # response = self.client.post('/boxExecProv', json=test_data)
+        # response = self.client.post('/nodeExecProv', json=test_data)
         # self.assertEqual(response.status_code, 200)
 
-        response = self.client.post('/getBoxGraph', json=test_data)
+        response = self.client.post('/getNodeGraph', json=test_data)
         self.assertEqual(response.status_code, 200)
 
-        response = self.client.post('/deleteBoxProv', json=test_data)
+        response = self.client.post('/deleteNodeProv', json=test_data)
         self.assertEqual(response.status_code, 200)
 
 

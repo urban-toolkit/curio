@@ -16,18 +16,18 @@ export {
 } from './grammarAdapter';
 
 export type {
-  BoxDescriptor,
+  NodeDescriptor,
   PortDef,
   EditorType,
-  BoxCategory,
+  NodeCategory,
   HandleDef,
   EditorConfig,
   ContainerConfig,
-  BoxAdapter,
-  BoxLifecycleHook,
-  BoxLifecycleData,
+  NodeAdapter,
+  NodeLifecycleHook,
+  NodeLifecycleData,
   LifecycleResult,
-  UseBoxStateReturn,
+  UseNodeStateReturn,
 } from './types';
 
 export type {

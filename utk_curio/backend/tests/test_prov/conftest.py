@@ -50,10 +50,10 @@ def seeded_workflow(client, prov_db):
 
 @pytest.fixture
 def seeded_box(client, seeded_workflow):
-    """Adds a COMPUTATION_ANALYSIS box to the seeded workflow. Returns (workflow_name, activity_name)."""
+    """Adds a COMPUTATION_ANALYSIS node to the seeded workflow. Returns (workflow_name, activity_name)."""
     activity = "COMPUTATION_ANALYSIS-box1"
     resp = client.post(
-        "/newBoxProv",
+        "/newNodeProv",
         json={"data": {"workflow_name": seeded_workflow, "activity_name": activity}},
     )
     assert resp.status_code == 200
@@ -62,15 +62,15 @@ def seeded_box(client, seeded_workflow):
 
 @pytest.fixture
 def two_boxes(client, seeded_workflow):
-    """Adds two boxes and returns (workflow_name, source_activity, target_activity)."""
+    """Adds two nodes and returns (workflow_name, source_activity, target_activity)."""
     src = "DATA_LOADING-src1"
     tgt = "COMPUTATION_ANALYSIS-tgt1"
     client.post(
-        "/newBoxProv",
+        "/newNodeProv",
         json={"data": {"workflow_name": seeded_workflow, "activity_name": src}},
     )
     client.post(
-        "/newBoxProv",
+        "/newNodeProv",
         json={"data": {"workflow_name": seeded_workflow, "activity_name": tgt}},
     )
     return seeded_workflow, src, tgt
@@ -78,10 +78,10 @@ def two_boxes(client, seeded_workflow):
 
 @pytest.fixture
 def executed_box(client, seeded_box):
-    """Executes a box once and returns (workflow_name, activity_name)."""
+    """Executes a node once and returns (workflow_name, activity_name)."""
     wf, activity = seeded_box
     resp = client.post(
-        "/boxExecProv",
+        "/nodeExecProv",
         json={
             "data": {
                 "workflow_name": wf,

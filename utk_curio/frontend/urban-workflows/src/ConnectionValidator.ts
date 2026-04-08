@@ -1,4 +1,4 @@
-import { BoxType, SupportedType } from "./constants";
+import { NodeType, SupportedType } from "./constants";
 import { getAllNodeTypes } from "./registry";
 
 let _inputCache: Record<string, SupportedType[]> | null = null;
@@ -34,15 +34,15 @@ export class ConnectionValidator {
     }
 
     static checkBoxCompatibility(
-        outBox: BoxType | undefined,
-        inBox: BoxType | undefined
+        outNodeType: NodeType | undefined,
+        inNodeType: NodeType | undefined
     ) {
-        if (outBox == undefined || inBox == undefined) return false;
+        if (outNodeType == undefined || inNodeType == undefined) return false;
 
         let intersection = ConnectionValidator._inputTypesSupported[
-            inBox
+            inNodeType
         ].filter((value: any) => {
-            return ConnectionValidator._outputTypesSupported[outBox].includes(
+            return ConnectionValidator._outputTypesSupported[outNodeType].includes(
                 value
             );
         });

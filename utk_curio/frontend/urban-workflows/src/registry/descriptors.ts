@@ -1,4 +1,4 @@
-import { BoxType, SupportedType } from '../constants';
+import { NodeType, SupportedType } from '../constants';
 import { Position } from 'reactflow';
 import {
   faMagnifyingGlassChart,
@@ -26,7 +26,7 @@ import {
   inputOnly,
   withBidirectional,
   flowSwitchHandles,
-  useCodeBoxLifecycle,
+  useCodeNodeLifecycle,
   useDataExportLifecycle,
   useVegaLifecycle,
   useUtkLifecycle,
@@ -36,7 +36,7 @@ import {
   useFlowSwitchLifecycle,
   useMergeFlowLifecycle,
   useDataPoolLifecycle,
-} from '../adapters/box';
+} from '../adapters/node';
 
 const ALL_TYPES = [
   SupportedType.DATAFRAME,
@@ -58,10 +58,10 @@ const TABULAR_DATA = [
   SupportedType.GEODATAFRAME,
 ];
 
-// ── Data boxes ──────────────────────────────────────────────────────────
+// ── Data nodes ──────────────────────────────────────────────────────────
 
 registerNode({
-  id: BoxType.DATA_LOADING,
+  id: NodeType.DATA_LOADING,
   category: 'data',
   label: 'Data Loading',
   icon: faUpload,
@@ -81,12 +81,12 @@ registerNode({
     container: { handleType: 'out', disablePlay: false },
     outputIconType: 'N',
     showTemplateModal: true,
-    useLifecycle: useCodeBoxLifecycle,
+    useLifecycle: useCodeNodeLifecycle,
   },
 });
 
 registerNode({
-  id: BoxType.DATA_EXPORT,
+  id: NodeType.DATA_EXPORT,
   category: 'data',
   label: 'Data Export',
   icon: faDownload,
@@ -110,7 +110,7 @@ registerNode({
 });
 
 registerNode({
-  id: BoxType.DATA_CLEANING,
+  id: NodeType.DATA_CLEANING,
   category: 'data',
   label: 'Data Cleaning',
   icon: faBroom,
@@ -131,12 +131,12 @@ registerNode({
     inputIconType: '1',
     outputIconType: '1',
     showTemplateModal: true,
-    useLifecycle: useCodeBoxLifecycle,
+    useLifecycle: useCodeNodeLifecycle,
   },
 });
 
 registerNode({
-  id: BoxType.DATA_TRANSFORMATION,
+  id: NodeType.DATA_TRANSFORMATION,
   category: 'data',
   label: 'Data Transformation',
   icon: faDatabase,
@@ -157,12 +157,12 @@ registerNode({
     inputIconType: '2',
     outputIconType: '2',
     showTemplateModal: true,
-    useLifecycle: useCodeBoxLifecycle,
+    useLifecycle: useCodeNodeLifecycle,
   },
 });
 
 registerNode({
-  id: BoxType.DATA_POOL,
+  id: NodeType.DATA_POOL,
   category: 'data',
   label: 'Data Pool',
   icon: faServer,
@@ -187,10 +187,10 @@ registerNode({
   },
 });
 
-// ── Computation boxes ───────────────────────────────────────────────────
+// ── Computation nodes ───────────────────────────────────────────────────
 
 registerNode({
-  id: BoxType.COMPUTATION_ANALYSIS,
+  id: NodeType.COMPUTATION_ANALYSIS,
   category: 'computation',
   label: 'Computation Analysis',
   icon: faMagnifyingGlassChart,
@@ -211,12 +211,12 @@ registerNode({
     inputIconType: 'N',
     outputIconType: 'N',
     showTemplateModal: true,
-    useLifecycle: useCodeBoxLifecycle,
+    useLifecycle: useCodeNodeLifecycle,
   },
 });
 
 registerNode({
-  id: BoxType.CONSTANTS,
+  id: NodeType.CONSTANTS,
   category: 'computation',
   label: 'Constants',
   icon: faSquareRootVariable,
@@ -234,14 +234,14 @@ registerNode({
     container: { handleType: 'in/out' },
     outputIconType: '1',
     showTemplateModal: true,
-    useLifecycle: useCodeBoxLifecycle,
+    useLifecycle: useCodeNodeLifecycle,
   },
 });
 
-// ── Grammar visualization boxes ─────────────────────────────────────────
+// ── Grammar visualization nodes ─────────────────────────────────────────
 
 registerNode({
-  id: BoxType.VIS_VEGA,
+  id: NodeType.VIS_VEGA,
   category: 'vis_grammar',
   label: 'Vega-Lite',
   icon: faChartLine,
@@ -269,7 +269,7 @@ registerNode({
 });
 
 registerNode({
-  id: BoxType.VIS_UTK,
+  id: NodeType.VIS_UTK,
   category: 'vis_grammar',
   label: 'UTK',
   icon: faCube,
@@ -296,10 +296,10 @@ registerNode({
   },
 });
 
-// ── Simple visualization boxes ──────────────────────────────────────────
+// ── Simple visualization nodes ──────────────────────────────────────────
 
 registerNode({
-  id: BoxType.VIS_TABLE,
+  id: NodeType.VIS_TABLE,
   category: 'vis_simple',
   label: 'Table',
   icon: faTable,
@@ -324,7 +324,7 @@ registerNode({
 });
 
 registerNode({
-  id: BoxType.VIS_TEXT,
+  id: NodeType.VIS_TEXT,
   category: 'vis_simple',
   label: 'Text',
   icon: faFont,
@@ -347,7 +347,7 @@ registerNode({
 });
 
 registerNode({
-  id: BoxType.VIS_IMAGE,
+  id: NodeType.VIS_IMAGE,
   category: 'vis_simple',
   label: 'Image',
   icon: faImage,
@@ -373,10 +373,10 @@ registerNode({
   },
 });
 
-// ── Flow boxes ──────────────────────────────────────────────────────────
+// ── Flow nodes ──────────────────────────────────────────────────────────
 
 registerNode({
-  id: BoxType.FLOW_SWITCH,
+  id: NodeType.FLOW_SWITCH,
   category: 'flow',
   label: 'Flow Switch',
   icon: faRepeat,
@@ -400,7 +400,7 @@ registerNode({
 });
 
 registerNode({
-  id: BoxType.MERGE_FLOW,
+  id: NodeType.MERGE_FLOW,
   category: 'flow',
   label: 'Merge Flow',
   icon: faCodeMerge,
@@ -424,16 +424,16 @@ registerNode({
         isConnectable && (data.suggestionType == undefined || data.suggestionType === 'none'),
     }],
     editor: null,
-    container: { noContent: true, boxWidth: 100, boxHeight: 60 + 5 * 50 },
+    container: { noContent: true, nodeWidth: 100, nodeHeight: 60 + 5 * 50 },
     showTemplateModal: false,
     useLifecycle: useMergeFlowLifecycle,
   },
 });
 
-// ── Special boxes ───────────────────────────────────────────────────────
+// ── Special nodes ───────────────────────────────────────────────────────
 
 registerNode({
-  id: BoxType.COMMENTS,
+  id: NodeType.COMMENTS,
   category: 'flow',
   label: 'Comments',
   icon: faCopy,

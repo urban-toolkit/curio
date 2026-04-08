@@ -1,4 +1,4 @@
-import { BoxType } from '../../constants';
+import { NodeType } from '../../constants';
 
 jest.mock('../../hook/useVega', () => ({
   useVega: () => ({ handleCompileGrammar: jest.fn() }),
@@ -24,7 +24,7 @@ jest.mock('../../hook/useTableData', () => ({
 }));
 
 jest.mock('../../providers/ProvenanceProvider', () => ({
-  useProvenanceContext: () => ({ boxExecProv: jest.fn() }),
+  useProvenanceContext: () => ({ nodeExecProv: jest.fn() }),
 }));
 
 jest.mock('../../providers/FlowProvider', () => ({
@@ -44,10 +44,10 @@ jest.mock('reactflow', () => ({
 import '../../registry/descriptors';
 import { getAllNodeTypes, getNodeDescriptor } from '../../registry/nodeRegistry';
 
-const ALL_BOX_TYPES = Object.values(BoxType).filter((v) => v !== BoxType.COMMENTS);
+const ALL_BOX_TYPES = Object.values(NodeType).filter((v) => v !== NodeType.COMMENTS);
 
 describe('Registered descriptors', () => {
-  test('every BoxType (except COMMENTS) has a registered descriptor', () => {
+  test('every NodeType (except COMMENTS) has a registered descriptor', () => {
     for (const bt of ALL_BOX_TYPES) {
       expect(() => getNodeDescriptor(bt)).not.toThrow();
     }
@@ -107,7 +107,7 @@ describe('Registered descriptors', () => {
   });
 
   test('handles contain at least one entry for non-special box types', () => {
-    const excluded = new Set([BoxType.MERGE_FLOW, BoxType.COMMENTS]);
+    const excluded = new Set([NodeType.MERGE_FLOW, NodeType.COMMENTS]);
     const descriptors = getAllNodeTypes().filter((d) => !excluded.has(d.id));
     for (const desc of descriptors) {
       expect(desc.adapter.handles.length).toBeGreaterThan(0);

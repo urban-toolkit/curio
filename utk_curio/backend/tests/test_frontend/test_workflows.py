@@ -83,7 +83,7 @@ class TestWorkflowCanvas:
             node_el = self._node_locator(node)
             node_el.scroll_into_view_if_needed()
 
-            # if Pool box wait for data table to show
+            # if Pool node wait for data table to show
             if node.type == "DATA_POOL":
                 data_table = node_el.locator("td.MuiTableCell-root")
                 data_table.first.wait_for(state="visible", timeout=10000)
@@ -210,7 +210,7 @@ class TestWorkflowCanvas:
 
             if node.category == "code":
 
-                # 1. Check if the output tab is present (always rendered in BoxEditor)
+                # 1. Check if the output tab is present (always rendered in NodeEditor)
                 output_tab = node_el.locator(
                     '.nav-link[data-rr-ui-event-key="output"]'
                 )

@@ -22,7 +22,7 @@ import {
 import { ConnectionValidator } from "../ConnectionValidator";
 import {
     AccessLevelType,
-    BoxType,
+    NodeType,
     EdgeType,
     VisInteractionType,
 } from "../constants";
@@ -31,7 +31,7 @@ import { v4 as uuid } from "uuid";
 
 export interface Template {
     id: string;
-    type: BoxType;
+    type: NodeType;
     name: string;
     description: string;
     accessLevel: AccessLevelType;
@@ -40,9 +40,9 @@ export interface Template {
 }
 
 interface TemplateContextProps {
-    getTemplates: (type: BoxType, custom: boolean) => Template[];
+    getTemplates: (type: NodeType, custom: boolean) => Template[];
     createUserTemplate: (
-        type: BoxType,
+        type: NodeType,
         name: string,
         description: string,
         accessLevel: AccessLevelType,
@@ -78,7 +78,7 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
     }, []);
 
     const createUserTemplate = (
-        type: BoxType,
+        type: NodeType,
         name: string,
         description: string,
         accessLevel: AccessLevelType,
@@ -131,7 +131,7 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
         setUserTemplates(newTemplates);
     };
 
-    const getTemplates = (type: BoxType, custom: boolean) => {
+    const getTemplates = (type: NodeType, custom: boolean) => {
         let returnedTemplates = [];
         let templates = [];
 

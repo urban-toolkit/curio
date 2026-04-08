@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 
 // Bootstrap
 import "bootstrap/dist/css/bootstrap.min.css";
-import { WidgetType, BoxType } from "../../constants";
+import { WidgetType, NodeType } from "../../constants";
 import { PythonInterpreter } from "../../PythonInterpreter";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { useProvenanceContext } from "../../providers/ProvenanceProvider";
@@ -44,7 +44,7 @@ function WidgetsEditor({
 
     const markersDirtyBypass = useRef(false);
     const { workflowNameRef } = useFlowContext();
-    const { boxExecProv } = useProvenanceContext();
+    const { nodeExecProv } = useProvenanceContext();
 
     // File upload handling functions
     const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -172,10 +172,10 @@ except Exception as e:
                         sendReplacedCode(pythonCode);
                     }
                 },
-                BoxType.DATA_LOADING,
+                NodeType.DATA_LOADING,
                 nodeId,
                 workflowNameRef.current,
-                boxExecProv
+                nodeExecProv
             );
         } catch (error) {
             setIsProcessing(false);
@@ -762,7 +762,7 @@ except Exception as e:
 
 export default WidgetsEditor;
 
-            // customWidgetsCallback == undefined && data && data.boxType === BoxType.DATA_LOADING ? (
+            // customWidgetsCallback == undefined && data && data.nodeType === NodeType.DATA_LOADING ? (
             //     <div className="csv-upload-widget">
             //         <div className="upload-section">
             //             <div className="file-input-container">

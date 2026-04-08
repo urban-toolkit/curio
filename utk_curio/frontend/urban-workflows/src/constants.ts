@@ -1,4 +1,4 @@
-export enum BoxType {
+export enum NodeType {
   DATA_LOADING = "DATA_LOADING",
   DATA_EXPORT = "DATA_EXPORT",
   DATA_CLEANING = "DATA_CLEANING",

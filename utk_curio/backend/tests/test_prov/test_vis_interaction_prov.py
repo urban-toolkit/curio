@@ -42,7 +42,7 @@ class TestInsertVisualization:
 
 class TestInsertInteraction:
     def _setup_vis(self, client, executed_box, prov_db):
-        """Helper: create a visualization for the executed box."""
+        """Helper: create a visualization for the executed node."""
         _, activity = executed_box
         client.post(
             "/insert_visualization",
@@ -83,7 +83,7 @@ class TestInsertInteraction:
 
 class TestInsertAttributeValueChange:
     def _full_setup(self, client, executed_box, prov_db):
-        """Helper: executed box + visualization + interaction."""
+        """Helper: executed node + visualization + interaction."""
         wf, activity = executed_box
         client.post(
             "/insert_visualization",

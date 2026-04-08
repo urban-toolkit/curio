@@ -6,14 +6,14 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import Button from "react-bootstrap/Button";
 import Modal from "react-bootstrap/Modal";
 import { Template, useTemplateContext } from "../providers/TemplateProvider";
-import { AccessLevelType, BoxType } from "../constants";
+import { AccessLevelType, NodeType } from "../constants";
 
 type TemplateModalProps = {
     templateId?: string;
     callBack: any;
     show: boolean;
     handleClose: any;
-    boxType: BoxType;
+    nodeType: NodeType;
     code: string;
     newTemplateFlag: boolean;
 };
@@ -23,7 +23,7 @@ function TemplateModal({
     callBack,
     show,
     handleClose,
-    boxType,
+    nodeType,
     code,
     newTemplateFlag,
 }: TemplateModalProps) {
@@ -40,7 +40,7 @@ function TemplateModal({
             if (newTemplateFlag) {
                 // creating new template
                 template = createUserTemplate(
-                    boxType,
+                    nodeType,
                     name,
                     description,
                     accessLevel as AccessLevelType,
@@ -53,7 +53,7 @@ function TemplateModal({
 
                 template = {
                     id: templateId,
-                    type: boxType,
+                    type: nodeType,
                     name,
                     description,
                     accessLevel,

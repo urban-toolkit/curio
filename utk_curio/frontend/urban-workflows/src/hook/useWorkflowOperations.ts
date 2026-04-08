@@ -45,7 +45,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     } = deps;
 
     const reactFlow = useReactFlow();
-    const { newBox, addWorkflow } = useProvenanceContext();
+    const { newNode, addWorkflow } = useProvenanceContext();
 
     // fitViewOnLoad is internal to workflow loading
     const [fitViewOnLoad, setFitViewOnLoad] = useState(false);
@@ -308,7 +308,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                     acceptedConnectionSuggestionId = node.id;
                 }
 
-                newBox(workflowNameRef.current, (node.type as string) + "-" + node.id);
+                newNode(workflowNameRef.current, (node.type as string) + "-" + node.id);
 
                 return {
                     ...node,

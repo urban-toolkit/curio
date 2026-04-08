@@ -6,7 +6,7 @@
  * This adapter provides the standard GrammarAdapter interface for registration
  * and basic validate/getDefaultSpec operations.
  *
- * Full render integration with GrammarVisBox is deferred to Phase 6.
+ * Full render integration with GrammarVisNode is deferred to Phase 6.
  */
 
 import { GrammarAdapter, registerGrammarAdapter } from '../registry/grammarAdapter';

@@ -2,7 +2,7 @@
  * VegaLiteAdapter: GrammarAdapter implementation for Vega-Lite visualizations.
  *
  * Wraps the Vega-Lite compile + Vega View creation logic that was previously
- * embedded inside useVega / VegaBox. This adapter can be used standalone or
+ * embedded inside useVega / VegaNode. This adapter can be used standalone or
  * via the grammar adapter registry.
  */
 

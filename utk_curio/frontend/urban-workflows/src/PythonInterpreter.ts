@@ -1,4 +1,4 @@
-import { BoxType } from "./constants";
+import { NodeType } from "./constants";
 import { formatDate, mapTypes } from "./utils/formatters";
 // import { pythonCode } from "./pythonWrapper";
 
@@ -16,10 +16,10 @@ export class PythonInterpreter {
         input: string,
         inputTypes: string[],
         callback: any,
-        boxType: BoxType,
+        nodeType: NodeType,
         nodeId: string,
         workflow_name: string,
-        boxExecProv: any
+        nodeExecProv: any
     ) {
         let lines = userCode.split("\n");
 
@@ -38,7 +38,7 @@ export class PythonInterpreter {
                 code: unifiedLines,
                 input: input, // new
                 inputTypes: inputTypes, // new
-                boxType: boxType // new
+                nodeType: nodeType // new
             }),
             headers: {
                 "Content-type": "application/json; charset=UTF-8",
@@ -63,24 +63,24 @@ export class PythonInterpreter {
                     }
                 }
 
-                boxExecProv(
+                nodeExecProv(
                     startTime,
                     endTime,
                     workflow_name,
-                    boxType + "-" + nodeId,
+                    nodeType + "-" + nodeId,
                     mapTypes(typesInput),
                     mapTypes(typesOuput),
                     unresolvedUserCode
                 );
 
-                // fetch(process.env.BACKEND_URL+"/boxExecProv", {
+                // fetch(process.env.BACKEND_URL+"/nodeExecProv", {
                 //     method: "POST",
                 //     body: JSON.stringify({
                 //         data: {
                 //             activityexec_start_time: startTime,
                 //             activityexec_end_time: endTime,
                 //             workflow_name,
-                //             activity_name: boxType+"_"+nodeId,
+                //             activity_name: nodeType+"_"+nodeId,
                 //             types_input: mapTypes(typesInput),
                 //             types_output: mapTypes(typesOuput),
                 //             activity_source_code: userCode
@@ -90,7 +90,7 @@ export class PythonInterpreter {
                 //         "Content-type": "application/json; charset=UTF-8",
                 //     }
                 // }).then((value: any) => {
-                //     updateBoxGraph(workflow_name, boxType+"_"+nodeId);
+                //     updateBoxGraph(workflow_name, nodeType+"_"+nodeId);
                 // })
 
                 callback(json);

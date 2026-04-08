@@ -4,7 +4,7 @@
  * Each grammar toolkit (Vega-Lite, UTK, future D3/Scout) implements this
  * interface and registers itself via registerGrammarAdapter().
  *
- * GrammarVisBox (or individual grammar boxes) call getGrammarAdapter(grammarId)
+ * GrammarVisNode (or individual grammar nodes) call getGrammarAdapter(grammarId)
  * to obtain the correct adapter at runtime.
  */
 

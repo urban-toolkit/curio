@@ -20,7 +20,7 @@ REPO_ROOT = os.path.abspath(
 
 # PNGs from workflow E2E tests: ``screenshot_{workflow_stem}_{test_name}.png``
 WORKFLOW_SCREENSHOT_EXPECTED_DIR = os.path.join(
-    REPO_ROOT, "docs", "examples", "flows", "expected_outputs"
+    REPO_ROOT, "docs", "examples", "dataflows", "expected_outputs"
 )
 
 

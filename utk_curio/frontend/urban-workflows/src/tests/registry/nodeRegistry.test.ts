@@ -1,19 +1,19 @@
-import { BoxType, SupportedType } from '../../constants';
+import { NodeType, SupportedType } from '../../constants';
 import {
   registerNode,
   getNodeDescriptor,
   getAllNodeTypes,
   getPaletteNodeTypes,
 } from '../../registry/nodeRegistry';
-import { BoxDescriptor, BoxLifecycleHook } from '../../registry/types';
+import { NodeDescriptor, NodeLifecycleHook } from '../../registry/types';
 import { faCircle } from '@fortawesome/free-solid-svg-icons';
 import { Position } from 'reactflow';
 
-const noopLifecycle: BoxLifecycleHook = () => ({});
+const noopLifecycle: NodeLifecycleHook = () => ({});
 
-function makeDescriptor(overrides: Partial<BoxDescriptor> = {}): BoxDescriptor {
+function makeDescriptor(overrides: Partial<NodeDescriptor> = {}): NodeDescriptor {
   return {
-    id: BoxType.DATA_LOADING,
+    id: NodeType.DATA_LOADING,
     category: 'data',
     label: 'Test Node',
     icon: faCircle,
@@ -38,27 +38,27 @@ function makeDescriptor(overrides: Partial<BoxDescriptor> = {}): BoxDescriptor {
 
 describe('nodeRegistry', () => {
   describe('registerNode + getNodeDescriptor', () => {
-    test('registers and retrieves a descriptor by BoxType', () => {
-      const desc = makeDescriptor({ id: BoxType.DATA_LOADING });
+    test('registers and retrieves a descriptor by NodeType', () => {
+      const desc = makeDescriptor({ id: NodeType.DATA_LOADING });
       registerNode(desc);
 
-      const result = getNodeDescriptor(BoxType.DATA_LOADING);
+      const result = getNodeDescriptor(NodeType.DATA_LOADING);
       expect(result).toBe(desc);
-      expect(result.id).toBe(BoxType.DATA_LOADING);
+      expect(result.id).toBe(NodeType.DATA_LOADING);
       expect(result.label).toBe('Test Node');
     });
 
-    test('throws for unregistered BoxType', () => {
-      expect(() => getNodeDescriptor('NONEXISTENT' as BoxType)).toThrow(
-        /No descriptor registered for BoxType/,
+    test('throws for unregistered NodeType', () => {
+      expect(() => getNodeDescriptor('NONEXISTENT' as NodeType)).toThrow(
+        /No descriptor registered for NodeType/,
       );
     });
 
     test('overwrites duplicate registration with warning', () => {
       const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
 
-      const first = makeDescriptor({ id: BoxType.CONSTANTS, label: 'First' });
-      const second = makeDescriptor({ id: BoxType.CONSTANTS, label: 'Second' });
+      const first = makeDescriptor({ id: NodeType.CONSTANTS, label: 'First' });
+      const second = makeDescriptor({ id: NodeType.CONSTANTS, label: 'Second' });
 
       registerNode(first);
       registerNode(second);
@@ -66,7 +66,7 @@ describe('nodeRegistry', () => {
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('CONSTANTS'),
       );
-      expect(getNodeDescriptor(BoxType.CONSTANTS).label).toBe('Second');
+      expect(getNodeDescriptor(NodeType.CONSTANTS).label).toBe('Second');
 
       warnSpy.mockRestore();
     });
@@ -83,20 +83,20 @@ describe('nodeRegistry', () => {
   describe('getPaletteNodeTypes', () => {
     test('returns only inPalette descriptors sorted by paletteOrder', () => {
       registerNode(makeDescriptor({
-        id: BoxType.DATA_CLEANING,
+        id: NodeType.DATA_CLEANING,
         inPalette: true,
         paletteOrder: 99,
         label: 'Z-Last',
       }));
       registerNode(makeDescriptor({
-        id: BoxType.VIS_TEXT,
+        id: NodeType.VIS_TEXT,
         inPalette: false,
         label: 'Hidden',
       }));
 
       const palette = getPaletteNodeTypes();
       expect(palette.every((d) => d.inPalette)).toBe(true);
-      expect(palette.find((d) => d.id === BoxType.VIS_TEXT)).toBeUndefined();
+      expect(palette.find((d) => d.id === NodeType.VIS_TEXT)).toBeUndefined();
 
       for (let i = 1; i < palette.length; i++) {
         expect((palette[i - 1].paletteOrder ?? 999))

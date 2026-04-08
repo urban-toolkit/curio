@@ -1,26 +1,26 @@
-import { BoxType } from '../constants';
-import { BoxDescriptor } from './types';
+import { NodeType } from '../constants';
+import { NodeDescriptor } from './types';
 
-const registry = new Map<BoxType, BoxDescriptor>();
+const registry = new Map<NodeType, NodeDescriptor>();
 
-export function registerNode(descriptor: BoxDescriptor): void {
+export function registerNode(descriptor: NodeDescriptor): void {
   if (registry.has(descriptor.id)) {
-    console.warn(`BoxDescriptor for ${descriptor.id} is being overwritten`);
+    console.warn(`NodeDescriptor for ${descriptor.id} is being overwritten`);
   }
   registry.set(descriptor.id, descriptor);
 }
 
-export function getNodeDescriptor(boxType: BoxType): BoxDescriptor {
-  const desc = registry.get(boxType);
-  if (!desc) throw new Error(`No descriptor registered for BoxType: ${boxType}`);
+export function getNodeDescriptor(nodeType: NodeType): NodeDescriptor {
+  const desc = registry.get(nodeType);
+  if (!desc) throw new Error(`No descriptor registered for NodeType: ${nodeType}`);
   return desc;
 }
 
-export function getAllNodeTypes(): BoxDescriptor[] {
+export function getAllNodeTypes(): NodeDescriptor[] {
   return Array.from(registry.values());
 }
 
-export function getPaletteNodeTypes(): BoxDescriptor[] {
+export function getPaletteNodeTypes(): NodeDescriptor[] {
   return Array.from(registry.values())
     .filter(d => d.inPalette)
     .sort((a, b) => (a.paletteOrder ?? 999) - (b.paletteOrder ?? 999));

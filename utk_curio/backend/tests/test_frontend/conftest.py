@@ -9,33 +9,43 @@ from .utils import REPO_ROOT
 #: Master list of workflow JSON filenames to test.
 #: Comment out / add entries here to control the full test matrix.
 WORKFLOW_FILES = [
+    # Uncomment to run the deatailed examples
     # "docs/examples/01-visual-analytics.json",
+    # "docs/examples/02-what-if.json",
+    # "docs/examples/03-expert-in-the-loop.json",
+    # "docs/examples/04-accessibility-analysis.json",
+    # "docs/examples/05-flooding-complaints.json",
+    # "docs/examples/07-speed-camera.json",
+    # "docs/examples/08-red-light-violation.json",
+    # "docs/examples/09-energy-efficiency.json",
+    # "docs/examples/10-green-roofs.json",
+
 
     # TODO: extract the worrkflows inside
     # "NewMerge.json",
 
-    "docs/examples/flows/DefaultWorkflow.json",
+    "docs/examples/dataflows/DefaultWorkflow.json",
 
-    "docs/examples/flows/DataPool_df.json",
-    "docs/examples/flows/DataPool_gdf.json",
+    "docs/examples/dataflows/DataPool_df.json",
+    "docs/examples/dataflows/DataPool_gdf.json",
 
-    "docs/examples/flows/DataPool_Vega_2.json",
-    "docs/examples/flows/DataPool_Vega.json",
-    "docs/examples/flows/DataPool_UTK.json",
+    "docs/examples/dataflows/DataPool_Vega_2.json",
+    "docs/examples/dataflows/DataPool_Vega.json",
+    "docs/examples/dataflows/DataPool_UTK.json",
 
-    "docs/examples/flows/Image.json",
-    "docs/examples/flows/Merge.json",
-    "docs/examples/flows/MergeFlowDataPool.json",
+    "docs/examples/dataflows/Image.json",
+    "docs/examples/dataflows/Merge.json",
+    "docs/examples/dataflows/MergeFlowDataPool.json",
 
-    "docs/examples/flows/Interaction.json",
-    "docs/examples/flows/Interaction_UTK.json",
-    "docs/examples/flows/Interaction_Vega.json",
+    "docs/examples/dataflows/Interaction.json",
+    "docs/examples/dataflows/Interaction_UTK.json",
+    "docs/examples/dataflows/Interaction_Vega.json",
 
-    "docs/examples/flows/Number Multiplier (Widget).json",
+    "docs/examples/dataflows/Number Multiplier (Widget).json",
 
-    "docs/examples/flows/Vega.json",
+    "docs/examples/dataflows/Vega.json",
 
-    "docs/examples/flows/UTK.json",
+    "docs/examples/dataflows/UTK.json",
 ]
 
 

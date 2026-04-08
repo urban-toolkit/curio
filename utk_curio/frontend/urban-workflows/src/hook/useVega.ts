@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { BoxType, VisInteractionType } from "../constants";
+import { NodeType, VisInteractionType } from "../constants";
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
 
 import { fetchData, transformToVega } from "../services/api";
@@ -153,7 +153,7 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
           },
           body: JSON.stringify({
             data: {
-              activity_name: BoxType.VIS_VEGA + "-" + data.nodeId,
+              activity_name: NodeType.VIS_VEGA + "-" + data.nodeId,
               int_time: int_time,
             },
           }),
@@ -167,7 +167,7 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
   }, [interactions]);
 
   const { workflowNameRef } = useFlowContext();
-  const { boxExecProv } = useProvenanceContext();
+  const { nodeExecProv } = useProvenanceContext();
   const handleCompileGrammar = async (spec: string) => {
     let startTime = formatDate(new Date());
 
@@ -199,11 +199,11 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
       dfStringOUT = JSON.stringify(df);
     }
 
-    boxExecProv(
+    nodeExecProv(
       startTime,
       endTime,
       workflowNameRef.current,
-      BoxType.VIS_VEGA + "-" + data.nodeId,
+      NodeType.VIS_VEGA + "-" + data.nodeId,
       mapTypes(typesInput),
       mapTypes(typesOuput),
       code,
@@ -218,7 +218,7 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
       },
       body: JSON.stringify({
         data: {
-          activity_name: BoxType.VIS_VEGA + "-" + data.nodeId,
+          activity_name: NodeType.VIS_VEGA + "-" + data.nodeId,
         },
       }),
     });
@@ -268,7 +268,7 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
           [parsedAttr[0]]: {
             type: VisInteractionType.UNDETERMINED,
             data: [],
-            source: BoxType.VIS_VEGA,
+            source: NodeType.VIS_VEGA,
           },
         });
 
@@ -300,7 +300,7 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
                 type: interactionsRef.current[interactionKey].type,
                 data: interactionsRef.current[interactionKey].data,
                 priority: 0,
-                source: BoxType.VIS_VEGA,
+                source: NodeType.VIS_VEGA,
               };
             }
 
@@ -308,7 +308,7 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
               type: type,
               data: data,
               priority: 1,
-              source: BoxType.VIS_VEGA,
+              source: NodeType.VIS_VEGA,
             };
 
             setInteractions(newObj);
@@ -333,7 +333,7 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
               type: VisInteractionType.POINT,
               data: interactedElementsPoint,
               priority: 1,
-              source: BoxType.VIS_VEGA,
+              source: NodeType.VIS_VEGA,
             };
 
             setInteractions(newObj);
@@ -355,7 +355,7 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
               type: VisInteractionType.INTERVAL,
               data: { ...value },
               priority: 1,
-              source: BoxType.VIS_VEGA,
+              source: NodeType.VIS_VEGA,
             };
 
             setInteractions(newObj);

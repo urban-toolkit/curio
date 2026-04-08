@@ -113,12 +113,12 @@ def exec():
 
     code = request.json['code']
     file_path = request.json['file_path']
-    boxType = request.json['boxType']
+    nodeType = request.json['nodeType']
     dataType = request.json['dataType']
     
     full_code = full_code.replace('{userCode}', str(code))
     full_code = full_code.replace('{filePath}', str(file_path))
-    full_code = full_code.replace('{boxType}', str(boxType))
+    full_code = full_code.replace('{nodeType}', str(nodeType))
     full_code = full_code.replace('{dataType}', str(dataType))
 
     command = ['python', '-']

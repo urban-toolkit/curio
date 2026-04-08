@@ -1,16 +1,16 @@
 import { Position } from 'reactflow';
 import type {
-  BoxLifecycleHook,
-  BoxLifecycleData,
+  NodeLifecycleHook,
+  NodeLifecycleData,
   LifecycleResult,
-  BoxAdapter,
+  NodeAdapter,
   HandleDef,
   EditorConfig,
   ContainerConfig,
-  UseBoxStateReturn,
+  UseNodeStateReturn,
 } from '../../registry/types';
 
-const mockBoxState = {
+const mockNodeState = {
   output: { code: '', content: '', outputType: '' },
   setOutput: jest.fn(),
   code: '',
@@ -29,9 +29,9 @@ const mockBoxState = {
   closeDescription: jest.fn(),
   updateTemplate: jest.fn(),
   setSendCodeCallback: jest.fn(),
-} as unknown as UseBoxStateReturn;
+} as unknown as UseNodeStateReturn;
 
-const mockData: BoxLifecycleData = {
+const mockData: NodeLifecycleData = {
   nodeId: 'test-node-1',
   nodeType: 'DATA_LOADING',
   outputCallback: jest.fn(),
@@ -39,15 +39,15 @@ const mockData: BoxLifecycleData = {
   interactionsCallback: jest.fn(),
 };
 
-describe('BoxLifecycleHook contract', () => {
+describe('NodeLifecycleHook contract', () => {
   test('a no-op lifecycle satisfies the contract', () => {
-    const hook: BoxLifecycleHook = (_data, _boxState) => ({});
-    const result = hook(mockData, mockBoxState);
+    const hook: NodeLifecycleHook = (_data, _nodeState) => ({});
+    const result = hook(mockData, mockNodeState);
     expect(result).toEqual({});
   });
 
   test('a lifecycle returning all fields satisfies the contract', () => {
-    const hook: BoxLifecycleHook = (_data, _boxState) => ({
+    const hook: NodeLifecycleHook = (_data, _nodeState) => ({
       applyGrammar: async () => {},
       customWidgetsCallback: () => {},
       defaultValueOverride: 'code here',
@@ -59,7 +59,7 @@ describe('BoxLifecycleHook contract', () => {
       dynamicHandles: [{ id: 'dyn_0', type: 'target', position: Position.Left }],
     });
 
-    const result = hook(mockData, mockBoxState);
+    const result = hook(mockData, mockNodeState);
     expect(result.applyGrammar).toBeInstanceOf(Function);
     expect(result.showLoading).toBe(true);
     expect(result.dynamicHandles).toHaveLength(1);
@@ -73,7 +73,7 @@ describe('BoxLifecycleHook contract', () => {
   });
 });
 
-describe('BoxLifecycleData', () => {
+describe('NodeLifecycleData', () => {
   test('contains required INodeData fields', () => {
     expect(mockData.nodeId).toBe('test-node-1');
     expect(mockData.nodeType).toBe('DATA_LOADING');
@@ -91,10 +91,10 @@ describe('BoxLifecycleData', () => {
   });
 });
 
-describe('BoxAdapter', () => {
-  test('useLifecycle field accepts a BoxLifecycleHook', () => {
-    const lifecycle: BoxLifecycleHook = () => ({});
-    const adapter: BoxAdapter = {
+describe('NodeAdapter', () => {
+  test('useLifecycle field accepts a NodeLifecycleHook', () => {
+    const lifecycle: NodeLifecycleHook = () => ({});
+    const adapter: NodeAdapter = {
       handles: [],
       editor: { code: true, grammar: false, widgets: false },
       container: {},
@@ -102,11 +102,11 @@ describe('BoxAdapter', () => {
     };
 
     expect(adapter.useLifecycle).toBe(lifecycle);
-    expect(adapter.useLifecycle(mockData, mockBoxState)).toEqual({});
+    expect(adapter.useLifecycle(mockData, mockNodeState)).toEqual({});
   });
 
-  test('editor can be null for non-editor boxes', () => {
-    const adapter: BoxAdapter = {
+  test('editor can be null for non-editor nodes', () => {
+    const adapter: NodeAdapter = {
       handles: [],
       editor: null,
       container: { noContent: true },

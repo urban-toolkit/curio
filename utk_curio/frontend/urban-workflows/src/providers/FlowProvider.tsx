@@ -22,7 +22,7 @@ import {
     NodeRemoveChange,
 } from "reactflow";
 import { ConnectionValidator } from "../ConnectionValidator";
-import { BoxType, EdgeType } from "../constants";
+import { NodeType, EdgeType } from "../constants";
 import { useProvenanceContext } from "./ProvenanceProvider";
 import { TrillGenerator } from "../TrillGenerator";
 import { applyDashboardLayout } from "../utils/dashboardLayout";
@@ -162,7 +162,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const reactFlow = useReactFlow();
-    const { newBox, addWorkflow, deleteBox, newConnection, deleteConnection } =
+    const { newNode, addWorkflow, deleteNode, newConnection, deleteConnection } =
         useProvenanceContext();
 
     const [loading, setLoading] = useState<boolean>(false);
@@ -283,14 +283,14 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             });
 
             if (provenance) // If there should be provenance tracking
-                newBox((customWorkflowName ? customWorkflowName : workflowNameRef.current), (node.type as string) + "-" + node.id);
+                newNode((customWorkflowName ? customWorkflowName : workflowNameRef.current), (node.type as string) + "-" + node.id);
         },
         [setNodes]
     );
 
     // updates a single box with the new input (new connections)
     const applyOutput = (
-        inBox: BoxType,
+        inNodeType: NodeType,
         inId: string,
         outId: string,
         sourceHandle: string,
@@ -317,7 +317,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             nds.map((node: any) => {
                 if (node.id !== inId) return node;
 
-                if (inBox == BoxType.MERGE_FLOW) {
+                if (inNodeType == NodeType.MERGE_FLOW) {
                     const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
                     const handleIndex = parseHandleIndex(targetHandle);
                     if (handleIndex >= 0) {
@@ -345,7 +345,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                     deleteConnection(
                         workflowNameRef.current,
                         targetNode.id,
-                        targetNode.type as BoxType
+                        targetNode.type as NodeType
                     );
                 }
 
@@ -358,7 +358,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                         nds.map((node: any) => {
                             if (node.id !== resetInput) return node;
 
-                            if (targetNode.type === BoxType.MERGE_FLOW) {
+                            if (targetNode.type === NodeType.MERGE_FLOW) {
                                 const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
                                 const handleIndex = parseHandleIndex(connection.targetHandle);
                                 if (handleIndex >= 0) {
@@ -396,12 +396,12 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 if (change.type === "remove" && 'id' in change) {
                     const node = reactFlow.getNode(change.id) as Node;
                     if (node) {
-                        deleteBox(workflowNameRef.current, node.type + "_" + node.id);
+                        deleteNode(workflowNameRef.current, node.type + "_" + node.id);
                     }
                 }
             }
         },
-        [setOutputs, reactFlow, deleteBox]
+        [setOutputs, reactFlow, deleteNode]
     );
 
     const onConnect = useCallback(
@@ -466,29 +466,29 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
             if (validHandleCombination) {
                 // Check compatibility between inputs and outputs
-                let inBox: BoxType | undefined = undefined;
-                let outBox: BoxType | undefined = undefined;
+                let inNodeType: NodeType | undefined = undefined;
+                let outNodeType: NodeType | undefined = undefined;
 
                 for (const elem of nodes) {
                     if (elem.id == connection.source) {
-                        outBox = elem.type as BoxType;
+                        outNodeType = elem.type as NodeType;
                     }
 
                     if (elem.id == connection.target) {
-                        inBox = elem.type as BoxType;
+                        inNodeType = elem.type as NodeType;
                     }
                 }
 
                 let allowConnection = ConnectionValidator.checkBoxCompatibility(
-                    outBox,
-                    inBox
+                    outNodeType,
+                    inNodeType
                 );
 
                 if (!allowConnection) {
                     alert("Input and output types of these boxes are not compatible");
                 }
 
-                if (inBox === BoxType.MERGE_FLOW && allowConnection) {
+                if (inNodeType === NodeType.MERGE_FLOW && allowConnection) {
                     const availableHandles = Array(5).fill(1).map((_, i) => `in_${i}`);
                     const usedHandles = new Set(
                         edges
@@ -523,7 +523,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
                 if (allowConnection) {
                     applyOutput(
-                        inBox as BoxType,
+                        inNodeType as NodeType,
                         connection.target as string,
                         connection.source as string,
                         connection.sourceHandle as string,
@@ -554,9 +554,9 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                                 newConnection(
                                     (custom_workflow ? custom_workflow : workflowNameRef.current),
                                     customConnection.source,
-                                    outBox as BoxType,
+                                    outNodeType as NodeType,
                                     customConnection.target,
-                                    inBox as BoxType
+                                    inNodeType as NodeType
                                 );
                         }
 
@@ -593,7 +593,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             nds.map((node: any) => {
                 if (!nodesAffected.includes(node.id)) return node;
 
-                if (node.type == BoxType.MERGE_FLOW) {
+                if (node.type == NodeType.MERGE_FLOW) {
                     const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
                     const sourceIndex = sourceList.findIndex((s: any) => s === newOutput.nodeId);
                     if (sourceIndex >= 0) {
@@ -647,7 +647,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         }
 
         for (let i = 0; i < nodes.length; i++) {
-            if (nodes[i].type == BoxType.DATA_POOL) {
+            if (nodes[i].type == NodeType.DATA_POOL) {
                 poolsIds.push(nodes[i].id);
             }
         }
@@ -660,8 +660,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 edges[i].sourceHandle == "in/out" &&
                 edges[i].targetHandle == "in/out" &&
                 !(
-                    targetNode.type == BoxType.DATA_POOL &&
-                    sourceNode.type == BoxType.DATA_POOL
+                    targetNode.type == NodeType.DATA_POOL &&
+                    sourceNode.type == NodeType.DATA_POOL
                 )
             ) {
                 if (
@@ -725,8 +725,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 if (
                     edge.sourceHandle == "in/out" &&
                     edge.targetHandle == "in/out" &&
-                    targetNode.type == BoxType.DATA_POOL &&
-                    sourceNode.type == BoxType.DATA_POOL
+                    targetNode.type == NodeType.DATA_POOL &&
+                    sourceNode.type == NodeType.DATA_POOL
                 ) {
                     if (edge.target != propagationObj.nodeId) {
                         sendTo.push(edge.target);

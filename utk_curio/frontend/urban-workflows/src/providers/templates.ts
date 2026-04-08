@@ -17,7 +17,7 @@ export default async function useTemplates() {
 // export const templates = [
 //     {
 //         id: uuid(),
-//         type: BoxType.DATA_LOADING,
+//         type: NodeType.DATA_LOADING,
 //         name: "Parks (OSM)",
 //         description: "Load parks for Chicago using OSM",
 //         accessLevel: AccessLevelType.ANY,
@@ -30,7 +30,7 @@ export default async function useTemplates() {
 //     },
 //     {
 //         id: uuid(),
-//         type: BoxType.DATA_LOADING,
+//         type: NodeType.DATA_LOADING,
 //         name: "Load Observation Points",
 //         description: "",
 //         accessLevel: AccessLevelType.ANY,
@@ -39,7 +39,7 @@ export default async function useTemplates() {
 //     },
 //     {
 //         id: uuid(),
-//         type: BoxType.DATA_CLEANING,
+//         type: NodeType.DATA_CLEANING,
 //         name: "Clean Observation Points",
 //         description: "",
 //         accessLevel: AccessLevelType.ANY,
@@ -48,7 +48,7 @@ export default async function useTemplates() {
 //     },
 //     {
 //         id: uuid(),
-//         type: BoxType.COMPUTATION_ANALYSIS,
+//         type: NodeType.COMPUTATION_ANALYSIS,
 //         name: "Uncertainty Points",
 //         description: "",
 //         accessLevel: AccessLevelType.ANY,
@@ -57,7 +57,7 @@ export default async function useTemplates() {
 //     },
 //     {
 //         id: uuid(),
-//         type: BoxType.DATA_LOADING,
+//         type: NodeType.DATA_LOADING,
 //         name: "Load Neighborhood Data",
 //         description: "",
 //         accessLevel: AccessLevelType.ANY,
@@ -66,7 +66,7 @@ export default async function useTemplates() {
 //     },
 //     {
 //         id: uuid(),
-//         type: BoxType.DATA_CLEANING,
+//         type: NodeType.DATA_CLEANING,
 //         name: "Clean Neighborhood Data",
 //         description: "",
 //         accessLevel: AccessLevelType.ANY,
@@ -75,7 +75,7 @@ export default async function useTemplates() {
 //     },
 //     {
 //         id: uuid(),
-//         type: BoxType.COMPUTATION_ANALYSIS,
+//         type: NodeType.COMPUTATION_ANALYSIS,
 //         name: "Accessibility Neighborhood",
 //         description: "",
 //         accessLevel: AccessLevelType.ANY,
@@ -84,7 +84,7 @@ export default async function useTemplates() {
 //     },
 //     {
 //         id: uuid(),
-//         type: BoxType.VIS_VEGA,
+//         type: NodeType.VIS_VEGA,
 //         name: "Accessibility Neighbodhood Barchart",
 //         description: "",
 //         accessLevel: AccessLevelType.ANY,
@@ -93,7 +93,7 @@ export default async function useTemplates() {
 //     },
 //     {
 //         id: uuid(),
-//         type: BoxType.DATA_TRANSFORMATION,
+//         type: NodeType.DATA_TRANSFORMATION,
 //         name: "Group Uncertainty by Neighborhood",
 //         description: "",
 //         accessLevel: AccessLevelType.ANY,
@@ -102,7 +102,7 @@ export default async function useTemplates() {
 //     },
 //     {
 //         id: uuid(),
-//         type: BoxType.DATA_LOADING,
+//         type: NodeType.DATA_LOADING,
 //         name: "Load Street Data",
 //         description: "",
 //         accessLevel: AccessLevelType.ANY,
@@ -111,7 +111,7 @@ export default async function useTemplates() {
 //     },
 //     {
 //         id: uuid(),
-//         type: BoxType.DATA_CLEANING,
+//         type: NodeType.DATA_CLEANING,
 //         name: "Clean Street Data",
 //         description: "",
 //         accessLevel: AccessLevelType.ANY,
@@ -120,7 +120,7 @@ export default async function useTemplates() {
 //     },
 //     {
 //         id: uuid(),
-//         type: BoxType.COMPUTATION_ANALYSIS,
+//         type: NodeType.COMPUTATION_ANALYSIS,
 //         name: "Accessibility Street",
 //         description: "",
 //         accessLevel: AccessLevelType.ANY,
@@ -129,7 +129,7 @@ export default async function useTemplates() {
 //     },
 //     {
 //         id: uuid(),
-//         type: BoxType.DATA_TRANSFORMATION,
+//         type: NodeType.DATA_TRANSFORMATION,
 //         name: "Street Buffer",
 //         description: "",
 //         accessLevel: AccessLevelType.ANY,
@@ -138,7 +138,7 @@ export default async function useTemplates() {
 //     },
 //     {
 //         id: uuid(),
-//         type: BoxType.DATA_TRANSFORMATION,
+//         type: NodeType.DATA_TRANSFORMATION,
 //         name: "Group Uncertainty by Street",
 //         description: "",
 //         accessLevel: AccessLevelType.ANY,
