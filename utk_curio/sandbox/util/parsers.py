@@ -248,11 +248,32 @@ def safe_json_loads(val):
         print("Exception in safe_json_loads", e)
     return val
 
+def _make_serializable(val):
+    """Recursively convert numpy/pandas types to native Python types."""
+    if isinstance(val, np.ndarray):
+        return [_make_serializable(v) for v in val.tolist()]
+    elif isinstance(val, (np.integer,)):
+        return int(val)
+    elif isinstance(val, (np.floating,)):
+        return float(val)
+    elif isinstance(val, (np.bool_,)):
+        return bool(val)
+    elif isinstance(val, (pd.Timestamp, datetime.datetime, datetime.date)):
+        return val.isoformat()
+    elif isinstance(val, dict):
+        return {k: _make_serializable(v) for k, v in val.items()}
+    elif isinstance(val, list):
+        return [_make_serializable(v) for v in val]
+    return val
+
+
 def fix_json_strings(gdf):
     gdf = gdf.copy()
     for col in gdf.columns:
         if col != 'geometry':
             gdf[col] = gdf[col].apply(safe_json_loads)
+            gdf[col] = gdf[col].apply(_make_serializable)
+
     return gdf
 
 # Output Functions
