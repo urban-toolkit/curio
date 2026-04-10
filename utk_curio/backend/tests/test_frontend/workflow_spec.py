@@ -1,7 +1,19 @@
 import json
 import os
+import re
 from dataclasses import dataclass
 from collections import deque
+
+
+def _merge_edge_handle_index(edge_id: str) -> int | None:
+    """Parse ``in_N`` from a React Flow edge id (matches frontend ``useCode.ts``).
+
+    MERGE_FLOW inputs are ordered by handle slot ``in_0``, ``in_1``, … — not by
+    the order edges appear in the JSON file.
+    """
+    # e.g. ``…78504in_0`` (no hyphen before ``in_``)
+    m = re.search(r"in_(\d+)$", edge_id or "")
+    return int(m.group(1)) if m else None
 
 
 # ---------------------------------------------------------------------------
@@ -117,11 +129,24 @@ class WorkflowSpec:
 
         Interaction edges are excluded because they carry selection state,
         not data.
+
+        For ``MERGE_FLOW`` targets, sources are ordered by ``in_0``, ``in_1``,
+        … as encoded in each edge's ``id`` (same as the canvas / sandbox).
         """
-        return [
-            e["source"] for e in self.edges
+        node_map = {n.id: n for n in self.nodes}
+        target = node_map.get(node_id)
+        edges_to = [
+            e for e in self.edges
             if e["target"] == node_id and e.get("type") != "Interaction"
         ]
+        if target and target.type == "MERGE_FLOW" and len(edges_to) > 1:
+
+            def sort_key(e: dict) -> tuple:
+                idx = _merge_edge_handle_index(e.get("id", ""))
+                return (idx if idx is not None else 10**9, e.get("id", ""))
+
+            edges_to = sorted(edges_to, key=sort_key)
+        return [e["source"] for e in edges_to]
 
     def topo_sorted_nodes(self) -> list:
         """Return nodes in topological (dependency) order using Kahn's algorithm.
