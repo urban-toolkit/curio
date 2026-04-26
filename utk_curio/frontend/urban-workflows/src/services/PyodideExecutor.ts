@@ -1,20 +1,5 @@
-/**
- * PyodideExecutor — runs Python code in-browser via Pyodide (WebAssembly CPython).
- *
- * Data flow:
- *   1. User clicks ▶ on a node
- *   2. PythonInterpreter calls PyodideExecutor.execute(code, inputRef, boxType)
- *   3. Executor converts inputRef → Python object, runs user code, converts output → JS
- *   4. Output stored in in-memory DataStore, keyed by "pyodide://<uuid>"
- *   5. Downstream nodes / VegaBox call fetchData("pyodide://...") which is intercepted
- *      by api.ts and served from DataStore instead of hitting the backend
- *
- * Supported data types: dataframe, json, list, str/int/float/bool
- * NOT supported (no GDAL in Pyodide): geodataframe (geopandas), raster (rasterio)
- */
-
 export const PYODIDE_PREFIX = 'pyodide://';
-import { getAllFiles } from './IndexedDBFiles';
+import { getAllFiles, clearAllFiles } from './IndexedDBFiles';
 
 export interface PyodideResult {
     stdout: string[];
@@ -107,7 +92,7 @@ class PyodideExecutor {
         return typeof path === 'string' && path.startsWith(PYODIDE_PREFIX);
     }
 
-    // ── Virtual Filesystem ────────────────────────────────────────────────────
+    // Virtual Filesystem
 
     /** Write a file into Pyodide's /data/ directory so user code can read it by path. */
     writeFile(name: string, content: Uint8Array): void {
@@ -115,7 +100,18 @@ class PyodideExecutor {
         this.pyodide.FS.writeFile(`/data/${name}`, content);
     }
 
-    /** List files currently available in /data/. */
+    /** Remove all uploaded files from the virtual FS and IndexedDB. */
+    async clearFiles(): Promise<void> {
+        if (this.pyodide) {
+            try {
+                const files = (this.pyodide.FS.readdir('/data') as string[]).filter(f => f !== '.' && f !== '..');
+                for (const f of files) this.pyodide.FS.unlink(`/data/${f}`);
+            } catch (_) {}
+        }
+        await clearAllFiles();
+    }
+
+    // List files currently available in /data/.
     listFiles(): string[] {
         if (!this.pyodide) return [];
         try {
@@ -125,7 +121,7 @@ class PyodideExecutor {
         }
     }
 
-    // ── Execution ─────────────────────────────────────────────────────────────
+    // Execution
 
     /**
      * Execute user Python code in Pyodide.
@@ -137,13 +133,11 @@ class PyodideExecutor {
     async execute(code: string, inputRef: any, boxType: string): Promise<PyodideResult> {
         if (!this.pyodide) throw new Error('[Curio/Pyodide] Not loaded yet');
 
-        // ── Capture stdout / stderr ──────────────────────────────────────────
         const stdoutLines: string[] = [];
         let stderrText = '';
         this.pyodide.setStdout({ batched: (s: string) => stdoutLines.push(s) });
         this.pyodide.setStderr({ batched: (s: string) => { stderrText += s + '\n'; } });
 
-        // ── Resolve input data ────────────────────────────────────────────────
         let inputData: any = null;
         if (inputRef && inputRef !== '') {
             if (this.isInMemoryPath(inputRef.path)) {
@@ -156,8 +150,6 @@ class PyodideExecutor {
         // Pass input to Python globals
         this.pyodide.globals.set('_curio_input_raw', inputData ? this.pyodide.toPy(inputData) : null);
 
-        // ── Build wrapper ─────────────────────────────────────────────────────
-        // Indent user code by 4 spaces so it sits inside def userCode(arg):
         const indented = code.split('\n').map(l => '    ' + l).join('\n');
 
         const wrapper = `

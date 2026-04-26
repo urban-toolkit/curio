@@ -45,6 +45,17 @@ export default function DatasetsWindow({
                         <span className={styles.closeX} onClick={closeModal}>X</span>
                         <div className={styles.datasetContainer}>
                             <h2>Available Datasets</h2>
+                            {process.env.PYODIDE_ENABLED === 'true' && datasetNames.length > 0 && (
+                                <button
+                                    onClick={async () => {
+                                        await pyodideExecutor.clearFiles();
+                                        setDatasetNames([]);
+                                    }}
+                                    style={{ marginBottom: '8px', cursor: 'pointer' }}
+                                >
+                                    Clear All Files
+                                </button>
+                            )}
                             <div className={styles.tableWrapper}>
                                 <table className={styles.datasetTable}>
                                     <thead>

@@ -47,7 +47,7 @@ export const ProvenanceContext = createContext<ProvenanceContextProps>({
     truncateDB: () => {},
 });
 
-/** When Pyodide mode is on there is no backend, skip all provenance network calls. */
+/* When Pyodide mode is on there is no backend, skip all provenance network calls. */
 const pyodideMode = process.env.PYODIDE_ENABLED === 'true';
 
 const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
@@ -129,7 +129,7 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
 
     const addWorkflow = async (workflow_name: string) => {
         if (pyodideMode) {
-            // Clear previous session's execution records for a fresh workflow
+            // clear previous session's execution records for a fresh workflow
             await clearExecRecords().catch(() => {});
             setProvenanceGraphBoxes({});
             return;
