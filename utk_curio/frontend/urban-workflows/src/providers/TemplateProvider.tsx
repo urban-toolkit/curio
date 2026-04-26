@@ -66,15 +66,21 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
         useState<Template[]>([]);
     const [userTemplates, setUserTemplates] = useState<Template[]>([]);
 
+    const STORAGE_KEY = 'curio_user_templates';
+
     const fetchTemplates = async () => {
         const templates = await useTemplates();
-        console.log("Templates:", templates);
         setDefaultTemplates(templates);
-
     }
 
     useEffect(() => {
-        fetchTemplates()
+        fetchTemplates();
+        if (process.env.PYODIDE_ENABLED === 'true') {
+            try {
+                const saved = localStorage.getItem(STORAGE_KEY);
+                if (saved) setUserTemplates(JSON.parse(saved));
+            } catch (_) {}
+        }
     }, []);
 
     const createUserTemplate = (
@@ -103,6 +109,9 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
         newTemplates.push({ ...template });
 
         setUserTemplates(newTemplates);
+        if (process.env.PYODIDE_ENABLED === 'true') {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(newTemplates));
+        }
 
         return { ...template };
     };
@@ -129,6 +138,9 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
         }
 
         setUserTemplates(newTemplates);
+        if (process.env.PYODIDE_ENABLED === 'true') {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(newTemplates));
+        }
     };
 
     const getTemplates = (type: NodeType, custom: boolean) => {
@@ -158,6 +170,9 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
         }
 
         setUserTemplates(newTemplates);
+        if (process.env.PYODIDE_ENABLED === 'true') {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(newTemplates));
+        }
     };
 
     return (
