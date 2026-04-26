@@ -1,18 +1,24 @@
 import React, { useEffect, useState } from "react";
 import styles from "./DatasetsWindow.module.css";
+import { pyodideExecutor } from '../../../services/PyodideExecutor';
 
 export default function DatasetsWindow({
     open,
-    closeModal
+    closeModal,
+    uploadVersion = 0,
 } : {
     open: boolean;
     closeModal: any;
+    uploadVersion?: number;
 }) {
-   
+
     const [datasetNames, setDatasetNames] = useState<string[]>([]);
 
     useEffect(() => {
-        if (process.env.PYODIDE_ENABLED === 'true') return;
+        if (process.env.PYODIDE_ENABLED === 'true') {
+            setDatasetNames(pyodideExecutor.listFiles());
+            return;
+        }
         fetch(process.env.BACKEND_URL + "/datasets", {
             method: "GET",
         })
@@ -23,17 +29,16 @@ export default function DatasetsWindow({
                 return response.json();
             })
             .then(data => {
-                console.log('List of files:', data);
                 setDatasetNames(data);
             })
             .catch(error => {
                 console.error('Error fetching files:', error);
             });
-    }, [open]);
+    }, [open, uploadVersion]);
 
     return (
         <>
-            {open ? 
+            {open ?
                 <div>
                     <div className={styles.modalBackground}></div>
                     <div className={styles.modal}>
@@ -45,12 +50,16 @@ export default function DatasetsWindow({
                                     <thead>
                                     <tr>
                                         <th>Name</th>
+                                        {process.env.PYODIDE_ENABLED === 'true' && <th>Path</th>}
                                     </tr>
                                     </thead>
                                     <tbody>
                                         {datasetNames.map((dataset, index) => (
                                             <tr key={index}>
-                                            <td>{dataset}</td>
+                                                <td>{dataset}</td>
+                                                {process.env.PYODIDE_ENABLED === 'true' && (
+                                                    <td><code>/data/{dataset}</code></td>
+                                                )}
                                             </tr>
                                         ))}
                                     </tbody>

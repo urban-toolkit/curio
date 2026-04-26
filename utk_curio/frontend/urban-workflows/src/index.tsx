@@ -17,7 +17,7 @@ import DialogProvider from "./providers/DialogProvider";
 import { MainCanvas } from "./components/MainCanvas";
 import { ReactFlowProvider } from "reactflow";
 import ProvenanceProvider from "./providers/ProvenanceProvider";
-import LLMProvider fromv "./providers/LLMProvider";
+import LLMProvider from "./providers/LLMProvider";
 
 const InteractionLogger: React.FC = () => {
   React.useEffect(() => {

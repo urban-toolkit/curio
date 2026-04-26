@@ -31,6 +31,7 @@ export default function UpMenu({
     const [trillProvenanceOpen, setTrillProvenanceOpen] = useState(false);
     const [tutorialOpen, setTutorialOpen] = useState(false);
     const [datasetsOpen, setDatasetsOpen] = useState(false);
+    const [uploadVersion, setUploadVersion] = useState(0);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
     const { nodes, edges, workflowNameRef, setWorkflowName } = useFlowContext();
@@ -269,7 +270,7 @@ export default function UpMenu({
             {/* Right-side top menu */}
             <div className={styles.rightSide}>
                 <Expand />
-                <FileUpload />
+                <FileUpload onUploadSuccess={() => setUploadVersion(v => v + 1)} />
                 <button className={styles.button} onClick={openDatasetsModal}><FontAwesomeIcon icon={faDatabase} /></button>
             </div>
             {/* Editable Workflow Name */}
@@ -300,9 +301,10 @@ export default function UpMenu({
                 workflowName={workflowNameRef.current}
             />
             {/* Datasets Modal */}
-            <DatasetsWindow 
+            <DatasetsWindow
                 open={datasetsOpen}
                 closeModal={closeDatasetsModal}
+                uploadVersion={uploadVersion}
             />
         </>
 
