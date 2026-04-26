@@ -31,3 +31,13 @@ export async function getAllFiles(): Promise<{ name: string; data: Uint8Array }[
         req.onerror = () => reject(req.error);
     });
 }
+
+export async function clearAllFiles(): Promise<void> {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const req = tx.objectStore(STORE_NAME).clear();
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+    });
+}

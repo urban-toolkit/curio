@@ -101,6 +101,19 @@ export default function DatasetsWindow({
                         </div>
                     )}
 
+                    {process.env.PYODIDE_ENABLED === 'true' && datasetNames.length > 0 && (
+                        <button
+                            className={styles.uploadButton}
+                            onClick={async () => {
+                                await pyodideExecutor.clearFiles();
+                                setDatasetNames([]);
+                            }}
+                            style={{ marginBottom: '8px' }}
+                        >
+                            Clear All Files
+                        </button>
+                    )}
+
                     <div className={styles.datasetList}>
                         {datasetNames.length === 0 ? (
                             <p className={styles.empty}>No datasets available.</p>
