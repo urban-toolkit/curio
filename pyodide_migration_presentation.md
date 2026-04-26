@@ -127,15 +127,39 @@ PYODIDE_ENABLED=false  → original client-server mode (unchanged)
 
 ---
 
-## Slide 9: What Is Still Left
+## Slide 9: File Handling Strategy (3 Categories)
 
-**Phase 2 (Provenance — optional):**
-- Replace SQLite provenance with IndexedDB
-- Replace template storage with localStorage
+**This addresses how backend / local / temporary files are each handled:**
 
-**Phase 3 (File I/O):**
-- File upload → Pyodide virtual filesystem
-- `pd.read_csv('/data/file.csv')` support via Emscripten FS
+| Category | Server Mode | Pyodide Mode |
+|---|---|---|
+| **Backend files** | `.data` files on Flask disk (zlib JSON) | Not used — replaced by in-memory DataStore |
+| **Uploaded files** | `POST /upload` → saved to server FS | Written to Pyodide virtual FS (`/data/`) **and** persisted in browser IndexedDB |
+| **Computed data** | `.data` file written after each cell run | `pyodide://uuid` key in in-memory Map |
+
+**Persistence details (Pyodide mode):**
+
+- **Uploaded files**: Written to `IndexedDB (curio_files)` on upload. On next page load, Pyodide reads them back from IndexedDB and restores them to `/data/` — **survives refresh**.
+- **Computed data** (`pyodide://` refs): Intentionally in-memory. Re-running the cell regenerates them — same behavior as Jupyter notebooks.
+- **Provenance**: Stored in `IndexedDB (curio_provenance)` — **survives refresh**.
+- **User templates**: Stored in `localStorage` — **survives refresh**.
+
+---
+
+## Slide 10: What Is Now Complete
+
+**Phase 1 (Python execution):** ✅
+- Pyodide replaces Flask sandbox — Python runs entirely in browser
+- In-memory DataStore replaces `.data` files
+
+**Phase 2 (Persistence):** ✅
+- Provenance → IndexedDB (per-box execution history survives refresh)
+- Templates → localStorage (user templates survive refresh)
+
+**Phase 3 (File I/O):** ✅
+- File upload → Pyodide virtual FS (`/data/filename.csv`)
+- Uploaded files persisted to IndexedDB → restored on reload
+- Users write `pd.read_csv('/data/myfile.csv')` — no path changes needed
 
 **Permanent backend (not replaceable):**
 - UTK 3D geospatial visualization (requires native C++ libs)
@@ -144,7 +168,7 @@ PYODIDE_ENABLED=false  → original client-server mode (unchanged)
 
 ---
 
-## Slide 10: Trade-offs
+## Slide 11: Trade-offs
 
 | Dimension | Client-Server | Pyodide (In-Browser) |
 |---|---|---|
@@ -155,11 +179,12 @@ PYODIDE_ENABLED=false  → original client-server mode (unchanged)
 | Offline use | No | Yes |
 | Multi-user | Yes (shared backend) | No (isolated tabs) |
 | 3D / Geo support | Yes (UTK) | No (still needs server) |
-| Data persistence | Filesystem (durable) | In-memory (lost on refresh) |
+| Uploaded file persistence | Filesystem (durable) | IndexedDB (durable across refresh) |
+| Computed data persistence | Filesystem (durable) | In-memory (re-run to regenerate) |
 
 ---
 
-## Slide 11: Recommended Path Forward
+## Slide 12: Recommended Path Forward
 
 **Hybrid model:**
 
@@ -169,11 +194,12 @@ PYODIDE_ENABLED=false  → original client-server mode (unchanged)
 │  - Data science workflows           │
 │  - No setup required                │
 │  - Works offline                    │
+│  - Uploaded files persist via IDB   │
 ├─────────────────────────────────────┤
 │  Backend mode (opt-in)              │
 │  - UTK 3D geospatial visualization  │
-│  - Large datasets                   │
-│  - Provenance & collaboration       │
+│  - Large datasets (>500MB)          │
+│  - Multi-user collaboration         │
 └─────────────────────────────────────┘
 ```
 
@@ -181,11 +207,11 @@ Ship Pyodide mode as the default experience. Keep backend as an optional power-u
 
 ---
 
-## Slide 12: Summary
+## Slide 13: Summary
 
 - **Problem:** Curio required 3 servers to run a single Python cell
 - **Solution:** Pyodide — full CPython in WebAssembly, runs in browser
-- **Result:** Core data workflows work with zero backend
+- **Result:** Core data workflows work with zero backend; uploaded files persist via IndexedDB
 - **Approach:** Feature-flagged, backward-compatible, no regressions
-- **Next:** File upload support + IndexedDB provenance
+- **File strategy:** Backend files → replaced; uploaded files → IndexedDB; computed data → intentionally temporary (Jupyter model)
 - **Permanent exception:** 3D geospatial (UTK) stays on server

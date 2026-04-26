@@ -14,6 +14,7 @@
  */
 
 export const PYODIDE_PREFIX = 'pyodide://';
+import { getAllFiles } from './IndexedDBFiles';
 
 export interface PyodideResult {
     stdout: string[];
@@ -69,6 +70,17 @@ class PyodideExecutor {
 
             // Create virtual filesystem directory for user-uploaded files
             try { this.pyodide.FS.mkdir('/data'); } catch (_) { /* already exists */ }
+
+            // Restore previously uploaded files from IndexedDB into the virtual FS
+            try {
+                const saved = await getAllFiles();
+                for (const file of saved) {
+                    this.pyodide.FS.writeFile(`/data/${file.name}`, file.data);
+                }
+                if (saved.length > 0) {
+                    console.log(`[Curio/Pyodide] Restored ${saved.length} file(s) from IndexedDB`);
+                }
+            } catch (_) {}
 
             console.log('[Curio/Pyodide] Ready — pandas + numpy loaded');
         })();
