@@ -1,5 +1,6 @@
-import React, { createContext, useContext, ReactNode, useState } from "react";
+import React, { createContext, useContext, ReactNode, useState, useEffect } from "react";
 import { BoxType } from "../constants";
+import { appendExecRecord, getAllExecRecords, clearExecRecords } from "../services/IndexedDBProvenance";
 
 interface ProvenanceContextProps {
     addUser: (user_name: string, user_type: string, user_IP: string) => void;
@@ -57,6 +58,23 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
         _setProvenanceGraphBoxes(data);
     };
 
+    // In Pyodide mode, load persisted execution records from IndexedDB on mount
+    // and rebuild provenanceGraphBoxesRef so BoxProvenance can render history.
+    useEffect(() => {
+        if (!pyodideMode) return;
+        getAllExecRecords().then(flat => {
+            const rebuilt: any = {};
+            for (const [key, records] of Object.entries(flat)) {
+                const sep = key.indexOf('__');
+                const workflow = key.slice(0, sep);
+                const activity = key.slice(sep + 2);
+                if (!rebuilt[workflow]) rebuilt[workflow] = {};
+                rebuilt[workflow][activity] = records;
+            }
+            setProvenanceGraphBoxes(rebuilt);
+        }).catch(() => {});
+    }, []);
+
     const addUser = (user_name: string, user_type: string, user_IP: string) => {
         if (pyodideMode) return;
         fetch(process.env.BACKEND_URL + "/saveUserProv", {
@@ -110,7 +128,12 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const addWorkflow = async (workflow_name: string) => {
-        if (pyodideMode) return;
+        if (pyodideMode) {
+            // Clear previous session's execution records for a fresh workflow
+            await clearExecRecords().catch(() => {});
+            setProvenanceGraphBoxes({});
+            return;
+        }
         try {
             await fetch(process.env.BACKEND_URL + "/truncateDBProv", {
                 method: "GET",
@@ -195,7 +218,25 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
         outputData: string = "",
         interaction: boolean = false
     ) => {
-        if (pyodideMode) return;
+        if (pyodideMode) {
+            const record = {
+                inputs: Array.isArray(types_input) ? types_input : [String(types_input ?? '')],
+                outputs: Array.isArray(types_output) ? types_output : [String(types_output ?? '')],
+                code: activity_source_code,
+            };
+            appendExecRecord(workflow_name, activity_name, record).then(updated => {
+                const current = provenanceGraphBoxesRef.current;
+                const updatedGraph = {
+                    ...current,
+                    [workflow_name]: {
+                        ...(current[workflow_name] ?? {}),
+                        [activity_name]: updated,
+                    },
+                };
+                setProvenanceGraphBoxes(updatedGraph);
+            }).catch(() => {});
+            return;
+        }
         fetch(process.env.BACKEND_URL + "/boxExecProv", {
             method: "POST",
             body: JSON.stringify({
