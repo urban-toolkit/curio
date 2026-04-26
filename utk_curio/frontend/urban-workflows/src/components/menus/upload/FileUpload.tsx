@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faFileArrowUp, faXmark, faCheck } from "@fortawesome/free-solid-svg-icons";
 import { pyodideExecutor } from '../../../services/PyodideExecutor';
+import { saveFile } from '../../../services/IndexedDBFiles';
 
 const FileUpload = ({ onUploadSuccess }: { onUploadSuccess?: () => void }) => {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
@@ -22,7 +23,9 @@ const FileUpload = ({ onUploadSuccess }: { onUploadSuccess?: () => void }) => {
     try {
       if (process.env.PYODIDE_ENABLED === 'true') {
         const buffer = await file.arrayBuffer();
-        pyodideExecutor.writeFile(file.name, new Uint8Array(buffer));
+        const bytes = new Uint8Array(buffer);
+        pyodideExecutor.writeFile(file.name, bytes);
+        await saveFile(file.name, bytes);
         onUploadSuccess?.();
       } else {
         const formData = new FormData();
