@@ -1,13 +1,16 @@
 import React, { useEffect, useRef, useState } from "react";
 import styles from "./DatasetsWindow.module.css";
 import ModalShell from "../../ModalShell";
+import { pyodideExecutor } from '../../../services/PyodideExecutor';
 
 export default function DatasetsWindow({
     open,
-    closeModal
+    closeModal,
+    uploadVersion = 0,
 }: {
     open: boolean;
     closeModal: () => void;
+    uploadVersion?: number;
 }) {
     const [datasetNames, setDatasetNames] = useState<string[]>([]);
     const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
@@ -24,9 +27,12 @@ export default function DatasetsWindow({
     };
 
     useEffect(() => {
-        if (process.env.PYODIDE_ENABLED === 'true') return;
+        if (process.env.PYODIDE_ENABLED === 'true') {
+            setDatasetNames(pyodideExecutor.listFiles());
+            return;
+        }
         if (open) fetchDatasets();
-    }, [open]);
+    }, [open, uploadVersion]);
 
     useEffect(() => {
         if (uploadStatus === 'success' || uploadStatus === 'error') {
@@ -71,27 +77,29 @@ export default function DatasetsWindow({
                     <h2 className={styles.title}>Datasets</h2>
                     <p className={styles.subtitle}>files available in the sandbox</p>
 
-                    <div className={styles.uploadRow}>
-                        <input
-                            type="file"
-                            ref={fileInputRef}
-                            style={{ display: 'none' }}
-                            onChange={handleFileChange}
-                            disabled={uploadStatus === 'uploading'}
-                        />
-                        <button
-                            className={styles.uploadButton}
-                            onClick={handleUploadClick}
-                            disabled={uploadStatus === 'uploading'}
-                        >
-                            {uploadStatus === 'uploading' ? (
-                                <>
-                                    <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
-                                    {' '}Uploading…
-                                </>
-                            ) : uploadStatus === 'success' ? 'Uploaded!' : uploadStatus === 'error' ? 'Upload failed' : 'Upload Dataset'}
-                        </button>
-                    </div>
+                    {process.env.PYODIDE_ENABLED !== 'true' && (
+                        <div className={styles.uploadRow}>
+                            <input
+                                type="file"
+                                ref={fileInputRef}
+                                style={{ display: 'none' }}
+                                onChange={handleFileChange}
+                                disabled={uploadStatus === 'uploading'}
+                            />
+                            <button
+                                className={styles.uploadButton}
+                                onClick={handleUploadClick}
+                                disabled={uploadStatus === 'uploading'}
+                            >
+                                {uploadStatus === 'uploading' ? (
+                                    <>
+                                        <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
+                                        {' '}Uploading…
+                                    </>
+                                ) : uploadStatus === 'success' ? 'Uploaded!' : uploadStatus === 'error' ? 'Upload failed' : 'Upload Dataset'}
+                            </button>
+                        </div>
+                    )}
 
                     <div className={styles.datasetList}>
                         {datasetNames.length === 0 ? (
@@ -100,6 +108,9 @@ export default function DatasetsWindow({
                             datasetNames.map((name, i) => (
                                 <div key={i} className={styles.datasetRow}>
                                     <span className={styles.datasetName}>{name}</span>
+                                    {process.env.PYODIDE_ENABLED === 'true' && (
+                                        <code className={styles.datasetPath}>/data/{name}</code>
+                                    )}
                                 </div>
                             ))
                         )}

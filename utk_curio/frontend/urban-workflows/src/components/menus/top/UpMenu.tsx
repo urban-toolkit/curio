@@ -55,6 +55,7 @@ export default function UpMenu({
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
     const [aiModeOn, setAiModeOn] = useState(false);
+    const [uploadVersion, setUploadVersion] = useState(0);
 
     const menuBarRef = useRef<HTMLDivElement>(null);
     const loadTrillInputRef = useRef<HTMLInputElement>(null);
@@ -564,7 +565,7 @@ export default function UpMenu({
                 closeModal={closeTrillProvenanceModal}
                 workflowName={workflowNameRef.current}
             />
-            <DatasetsWindow open={datasetsOpen} closeModal={closeDatasetsModal} />
+            <DatasetsWindow open={datasetsOpen} closeModal={closeDatasetsModal} uploadVersion={uploadVersion} />
             <PackageManagerWindow
                 open={packagesOpen}
                 closeModal={() => setPackagesOpen(false)}

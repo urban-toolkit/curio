@@ -66,6 +66,10 @@ class PyodideExecutor {
 
             // Load bundled packages (no network fetch for these)
             await this.pyodide.loadPackage(['pandas', 'numpy']);
+
+            // Create virtual filesystem directory for user-uploaded files
+            try { this.pyodide.FS.mkdir('/data'); } catch (_) { /* already exists */ }
+
             console.log('[Curio/Pyodide] Ready — pandas + numpy loaded');
         })();
 
@@ -89,6 +93,24 @@ class PyodideExecutor {
 
     isInMemoryPath(path: string): boolean {
         return typeof path === 'string' && path.startsWith(PYODIDE_PREFIX);
+    }
+
+    // ── Virtual Filesystem ────────────────────────────────────────────────────
+
+    /** Write a file into Pyodide's /data/ directory so user code can read it by path. */
+    writeFile(name: string, content: Uint8Array): void {
+        if (!this.pyodide) throw new Error('[Curio/Pyodide] Not loaded yet');
+        this.pyodide.FS.writeFile(`/data/${name}`, content);
+    }
+
+    /** List files currently available in /data/. */
+    listFiles(): string[] {
+        if (!this.pyodide) return [];
+        try {
+            return (this.pyodide.FS.readdir('/data') as string[]).filter(f => f !== '.' && f !== '..');
+        } catch {
+            return [];
+        }
     }
 
     // ── Execution ─────────────────────────────────────────────────────────────
