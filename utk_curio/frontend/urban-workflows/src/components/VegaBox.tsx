@@ -43,7 +43,8 @@ function VegaBox({ data, isConnectable }) {
     _setCurrentView(data);
   };
 
-  const [code, setCode] = useState<string>("");
+  // can be removed later, keeps code persistent
+  const [code, setCode] = useState<string>(data.defaultCode ?? "");
   const [sendCode, setSendCode] = useState();
   const [templateData, setTemplateData] = useState<Template | any>({});
 
