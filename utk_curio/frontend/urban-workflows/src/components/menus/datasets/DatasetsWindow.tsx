@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import styles from "./DatasetsWindow.module.css";
 import ModalShell from "../../ModalShell";
 import { pyodideExecutor } from '../../../services/PyodideExecutor';
+import { getAllFiles } from '../../../services/IndexedDBFiles';
 
 export default function DatasetsWindow({
     open,
@@ -28,7 +29,12 @@ export default function DatasetsWindow({
 
     useEffect(() => {
         if (process.env.PYODIDE_ENABLED === 'true') {
-            setDatasetNames(pyodideExecutor.listFiles());
+            // Read from IndexedDB directly rather than the virtual FS.
+            // listFiles() returns [] when Pyodide hasn't finished loading yet,
+            // but IndexedDB is always available immediately after a refresh.
+            getAllFiles()
+                .then(files => setDatasetNames(files.map(f => f.name)))
+                .catch(() => setDatasetNames(pyodideExecutor.listFiles()));
             return;
         }
         if (open) fetchDatasets();
