@@ -87,10 +87,26 @@ import SignIn from "./pages/auth/SignIn";
 import SignUp from "./pages/auth/SignUp";
 import ProjectsList from "./pages/projects/ProjectsList";
 import { ProjectLoader } from "./components/ProjectLoader";
+import { useCode } from "./hook/useCode";
+
+const WorkflowRestorer: React.FC = () => {
+    const { loadTrill } = useCode();
+
+    React.useEffect(() => {
+        if (process.env.PYODIDE_ENABLED !== 'true') return;
+        try {
+            const saved = localStorage.getItem('curio_workflow');
+            if (saved) loadTrill(JSON.parse(saved));
+        } catch (_) {}
+    }, []);
+
+    return null;
+};
 
 const MainCanvasRoute: React.FC = () => (
   <DialogProvider>
     <FlowProvider>
+      <WorkflowRestorer />
       <TemplateProvider>
         <ProjectLoader>
           <MainCanvas />

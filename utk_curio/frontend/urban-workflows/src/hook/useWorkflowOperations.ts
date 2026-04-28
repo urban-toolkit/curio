@@ -279,6 +279,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
 
     const cleanCanvas = () => {
         console.log("cleanCanvas");
+        if (process.env.PYODIDE_ENABLED === 'true') localStorage.removeItem('curio_workflow');
         // Use reactFlow to get fresh state (avoid stale closure)
         const currentEdges = reactFlow.getEdges();
         const currentNodes = reactFlow.getNodes();

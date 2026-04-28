@@ -275,6 +275,9 @@ function computeTopologicalLevels(nodes: Node[], edges: Edge[]): string[][] {
     return levels;
 }
 
+const WORKFLOW_STORAGE_KEY = 'curio_workflow';
+const pyodideMode = process.env.PYODIDE_ENABLED === 'true';
+
 const FlowProvider = ({ children }: { children: ReactNode }) => {
     const { showToast } = useToastContext();
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
@@ -298,6 +301,23 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const [dashboardPins, setDashboardPins] = useState<any>({}); // {[nodeId] -> boolean}
     const [dashboardOn, setDashboardOn] = useState<boolean>(false);
     const [dashboardLocked, setDashboardLocked] = useState<boolean>(true);
+
+    // Delay before auto-save activates, giving WorkflowRestorer time to populate nodes/edges first.
+    const saveEnabled = useRef(false);
+    useEffect(() => {
+        if (!pyodideMode) return;
+        const t = setTimeout(() => { saveEnabled.current = true; }, 1500);
+        return () => clearTimeout(t);
+    }, []);
+
+    // Auto-save the full workflow as a Trill JSON to localStorage on every change.
+    useEffect(() => {
+        if (!pyodideMode || !saveEnabled.current) return;
+        try {
+            const trill = TrillGenerator.generateTrill(nodes, edges, workflowNameRef.current);
+            localStorage.setItem(WORKFLOW_STORAGE_KEY, JSON.stringify(trill));
+        } catch (_) {}
+    }, [nodes, edges]);
 
     const positionsInDashboardRef = useRef<any>({});
     const setPositionsInDashboard = (data: any) => {
