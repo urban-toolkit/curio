@@ -132,6 +132,9 @@ export const FlowContext = createContext<FlowContextProps>({
     loadParsedTrill: async () => { }
 });
 
+const WORKFLOW_STORAGE_KEY = 'curio_workflow';
+const pyodideMode = process.env.PYODIDE_ENABLED === 'true';
+
 const FlowProvider = ({ children }: { children: ReactNode }) => {
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -143,6 +146,24 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const [fitViewOnLoad, setFitViewOnLoad] = useState(false);
     const [suggestionsLeft, setSuggestionsLeft] = useState<number>(0); // Number of suggestions left
     const [workflowGoal, setWorkflowGoal] = useState("");
+
+    // Delay before auto-save activates, giving the restore in WorkflowRestorer time to
+    // finish populating nodes/edges first so we don't overwrite the saved state with [].
+    const saveEnabled = useRef(false);
+    useEffect(() => {
+        if (!pyodideMode) return;
+        const t = setTimeout(() => { saveEnabled.current = true; }, 1500);
+        return () => clearTimeout(t);
+    }, []);
+
+    // Auto-save the full workflow as a Trill JSON to localStorage on every change.
+    useEffect(() => {
+        if (!pyodideMode || !saveEnabled.current) return;
+        try {
+            const trill = TrillGenerator.generateTrill(nodes, edges, workflowNameRef.current);
+            localStorage.setItem(WORKFLOW_STORAGE_KEY, JSON.stringify(trill));
+        } catch (_) {}
+    }, [nodes, edges]);
 
     const [positionsInDashboard, _setPositionsInDashboard] = useState<any>({}); // [nodeId] -> change
     const positionsInDashboardRef = useRef(positionsInDashboard);
@@ -433,6 +454,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     }
 
     const cleanCanvas = () => {
+        // Clear the persisted workflow so the blank canvas is what restores on refresh.
+        if (pyodideMode) localStorage.removeItem(WORKFLOW_STORAGE_KEY);
 
         let edgesWithProvenance = [];
 

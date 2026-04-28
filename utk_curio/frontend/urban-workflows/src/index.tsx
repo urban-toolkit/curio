@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { pyodideExecutor } from "./services/PyodideExecutor";
+import { useCode } from "./hook/useCode";
 
 // Preload Pyodide in the background when enabled so it's ready by the time
 // the user clicks ▶ on a node. (~30 MB download, happens once then cached.)
@@ -18,6 +19,24 @@ import { MainCanvas } from "./components/MainCanvas";
 import { ReactFlowProvider } from "reactflow";
 import ProvenanceProvider from "./providers/ProvenanceProvider";
 import LLMProvider from "./providers/LLMProvider";
+
+// Restores the saved workflow from localStorage on page load (Pyodide mode only).
+// Must render inside FlowProvider so useCode can access FlowContext.
+const WorkflowRestorer: React.FC = () => {
+    const { loadTrill } = useCode();
+
+    React.useEffect(() => {
+        if (process.env.PYODIDE_ENABLED !== 'true') return;
+        try {
+            const saved = localStorage.getItem('curio_workflow');
+            if (saved) {
+                loadTrill(JSON.parse(saved));
+            }
+        } catch (_) {}
+    }, []);
+
+    return null;
+};
 
 const InteractionLogger: React.FC = () => {
   React.useEffect(() => {
@@ -53,6 +72,7 @@ const App: React.FC = () => {
           <UserProvider>
             <DialogProvider>
               <FlowProvider>
+                <WorkflowRestorer />
                 <TemplateProvider>
                   <MainCanvas />
                 </TemplateProvider>
