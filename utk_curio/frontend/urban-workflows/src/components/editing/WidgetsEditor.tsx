@@ -334,7 +334,9 @@ except Exception as e:
 
         let errorReplacing = false;
 
-        const replacedCode = userCode.replace(regex, (match, content) => {
+        // adding ?? '' so if user clicks without using a grammar, code doesn't break
+        // can be removed later if it's not mandatory.
+        const replacedCode = (userCode ?? '').replace(regex, (match, content) => {
             const param = computeMark(content, currentWidgetsValues);
             const atribs = Object.keys(param);
 
