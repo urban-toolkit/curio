@@ -1,8 +1,23 @@
+/**
+ * PythonInterpreter — execution router for Curio's Python nodes.
+ *
+ * Determines at runtime whether a node's code should run in Pyodide (browser)
+ * or be sent to the backend sandbox (/processPythonCode). The decision is made
+ * per-execution so the two modes can coexist inside the same workflow:
+ *
+ *   Pyodide path  — used when PYODIDE_ENABLED=true AND Pyodide is loaded AND
+ *                   the node type is not in BACKEND_ONLY_TYPES.
+ *   Backend path  — used for all other cases (server mode, or VIS_UTK nodes).
+ *
+ * Both paths produce the same callback shape { stdout, stderr, input, output }
+ * so callers don't branch on execution mode.
+ */
 import { NodeType } from "./constants";
 import { formatDate, mapTypes } from "./utils/formatters";
 import { getToken } from "./utils/authApi";
 import { pyodideExecutor } from "./services/PyodideExecutor";
 
+/** VIS_UTK nodes require server-side geopandas/rasterio not available in Pyodide. */
 const BACKEND_ONLY_TYPES = new Set([NodeType.VIS_UTK]);
 
 export class PythonInterpreter {
@@ -176,6 +191,12 @@ export class PythonInterpreter {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    /**
+     * Converts Python type strings (e.g. "dataframe", "list") to the binary
+     * presence map expected by the provenance schema { DATAFRAME: 0|1, ... }.
+     * The backend returns these directly; we replicate the same shape for
+     * Pyodide executions so boxExecProv receives consistent data either way.
+     */
     private _mapTypes(typesList: string[]): Record<string, number> {
         const map: Record<string, number> = {
             DATAFRAME: 0, GEODATAFRAME: 0, VALUE: 0, LIST: 0, JSON: 0,

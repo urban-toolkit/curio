@@ -1,3 +1,10 @@
+/**
+ * IndexedDB persistence layer for user-uploaded files in Pyodide mode.
+ *
+ * Because Pyodide's virtual filesystem is in-memory and lost on page refresh,
+ * files are mirrored here so they can be restored into /data/ on the next load.
+ * The store uses the filename as its key so overwriting the same file is idempotent.
+ */
 const DB_NAME = 'curio_files';
 const DB_VERSION = 1;
 const STORE_NAME = 'uploads';

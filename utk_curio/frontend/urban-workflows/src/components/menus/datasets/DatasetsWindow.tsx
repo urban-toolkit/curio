@@ -11,6 +11,8 @@ export default function DatasetsWindow({
 }: {
     open: boolean;
     closeModal: () => void;
+    /** Incremented by the upload handler each time a new file is added so the
+      * effect re-runs and the list refreshes without requiring a modal reopen. */
     uploadVersion?: number;
 }) {
     const [datasetNames, setDatasetNames] = useState<string[]>([]);

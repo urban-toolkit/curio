@@ -1,3 +1,18 @@
+/**
+ * PyodideExecutor — in-browser Python execution for Curio's Pyodide mode.
+ *
+ * Replaces the backend sandbox (/processPythonCode) so the app runs without any
+ * server. The executor is a singleton that:
+ *   1. Lazily loads Pyodide from CDN the first time it is needed (~30 MB, cached).
+ *   2. Installs pandas and numpy from Pyodide's bundled package index.
+ *   3. Exposes a virtual filesystem at /data/ where user-uploaded files live.
+ *   4. Runs user code inside a wrapper that normalises inputs and outputs to the
+ *      same {dataType, data} envelope that the backend sandbox returns, so the
+ *      rest of the app doesn't need to know which execution path was used.
+ *   5. Stores results in an in-memory Map keyed by a `pyodide://` URI.
+ *      Downstream nodes resolve these URIs through api.ts#fetchData, which
+ *      intercepts the prefix and serves the object directly from the Map.
+ */
 export const PYODIDE_PREFIX = 'pyodide://';
 import { getAllFiles, clearAllFiles } from './IndexedDBFiles';
 

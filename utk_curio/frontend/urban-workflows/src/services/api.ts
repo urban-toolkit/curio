@@ -1,3 +1,13 @@
+/**
+ * Data-fetching service with transparent Pyodide support.
+ *
+ * fetchData() is the single point through which all downstream nodes retrieve
+ * their input data. When Pyodide execution is active, output is stored in an
+ * in-memory Map inside PyodideExecutor rather than on the server filesystem.
+ * The `pyodide://` prefix signals that the data should be read from that Map
+ * rather than fetched over the network, keeping the rest of the app unaware of
+ * which execution mode is in use.
+ */
 import { getToken } from "../utils/authApi";
 import { pyodideExecutor } from './PyodideExecutor';
 

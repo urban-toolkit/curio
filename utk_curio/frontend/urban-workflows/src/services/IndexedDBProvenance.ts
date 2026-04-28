@@ -1,3 +1,13 @@
+/**
+ * IndexedDB persistence layer for provenance records in Pyodide mode.
+ *
+ * In the original client-server setup, provenance (execution history) is stored
+ * in a backend database. Pyodide mode has no backend, so each box execution is
+ * appended here instead. Records survive page refresh and are reloaded by
+ * ProvenanceProvider on mount so the provenance graph remains intact.
+ *
+ * Key format: "<workflow_name>__<activity_name>" (double-underscore separator).
+ */
 const DB_NAME = 'curio_provenance';
 const DB_VERSION = 1;
 const STORE_NAME = 'box_executions';

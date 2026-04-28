@@ -66,6 +66,8 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
         useState<Template[]>([]);
     const [userTemplates, setUserTemplates] = useState<Template[]>([]);
 
+    // In Pyodide mode there is no backend to sync templates with, so user-created
+    // templates are stored in localStorage under this key instead.
     const STORAGE_KEY = 'curio_user_templates';
 
     const fetchTemplates = async () => {
