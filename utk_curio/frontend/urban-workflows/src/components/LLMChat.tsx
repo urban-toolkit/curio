@@ -63,7 +63,7 @@ const ChatComponent = () => {
         fetch(process.env.BACKEND_URL+"/llm/clean?chatId=ChatComponent", {
             method: "GET",
             headers: token ? { "Authorization": `Bearer ${token}` } : {},
-        });
+        }).catch(() => {});
     }
 
     const applyGoal = (task: string) => {
