@@ -1,3 +1,18 @@
+/**
+ * ProvenanceProvider — dual-mode provenance tracking for Curio.
+ *
+ * Server mode  : every workflow event (new box, connection, execution) is sent
+ *                to the backend provenance API, which stores it in a database.
+ *                The provenance graph is fetched back after each execution.
+ *
+ * Pyodide mode : no backend is available, so execution records are written to
+ *                IndexedDB (curio_provenance) instead. On mount the provider
+ *                re-reads IndexedDB and rebuilds provenanceGraphBoxesRef so the
+ *                BoxProvenance panel can show history from a previous session.
+ *
+ * All seven public functions check `pyodideMode` and return early (skipping the
+ * fetch) when running client-side, keeping the interface identical for callers.
+ */
 import React, { createContext, useContext, ReactNode, useState, useEffect } from "react";
 import { BoxType } from "../constants";
 import { appendExecRecord, getAllExecRecords, clearExecRecords } from "../services/IndexedDBProvenance";

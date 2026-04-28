@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
 
+/**
+ * Fetch the default (non-custom) templates from the backend.
+ * Returns an empty array in Pyodide mode because there is no backend to call;
+ * user-created templates are handled separately via localStorage in TemplateProvider.
+ */
 export default async function useTemplates() {
     if (process.env.PYODIDE_ENABLED === 'true') return [];
     try{

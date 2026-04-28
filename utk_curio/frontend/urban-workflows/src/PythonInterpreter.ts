@@ -1,9 +1,24 @@
+/**
+ * PythonInterpreter — execution router for Curio's Python nodes.
+ *
+ * Determines at runtime whether a node's code should run in Pyodide (browser)
+ * or be sent to the backend sandbox (/processPythonCode). The decision is made
+ * per-execution so the two modes can coexist inside the same workflow:
+ *
+ *   Pyodide path  — used when PYODIDE_ENABLED=true AND Pyodide is loaded AND
+ *                   the box type is not in BACKEND_ONLY_TYPES.
+ *   Backend path  — used for all other cases (server mode, or VIS_UTK boxes).
+ *
+ * Both paths produce the same callback shape { stdout, stderr, input, output }
+ * so callers (styles.tsx / BoxContainer) don't branch on execution mode.
+ */
 import { BoxType } from "./constants";
 import { pyodideExecutor } from "./services/PyodideExecutor";
 
 /**
- * Box types that require the backend sandbox (geospatial / 3D).
- * These will never be routed to Pyodide.
+ * VIS_UTK boxes render 3D urban scenes via the UTK server and depend on
+ * server-side geopandas/rasterio libraries not available in Pyodide.
+ * All other box types can run client-side.
  */
 const BACKEND_ONLY_TYPES = new Set([BoxType.VIS_UTK]);
 
@@ -169,6 +184,12 @@ export class PythonInterpreter {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    /**
+     * Converts Python type strings (e.g. "dataframe", "list") to the binary
+     * presence map expected by the provenance schema { DATAFRAME: 0|1, ... }.
+     * The backend returns these directly; we replicate the same shape for
+     * Pyodide executions so boxExecProv receives consistent data either way.
+     */
     private _mapTypes(typesList: string[]): Record<string, number> {
         const map: Record<string, number> = {
             DATAFRAME: 0, GEODATAFRAME: 0, VALUE: 0, LIST: 0, JSON: 0,
