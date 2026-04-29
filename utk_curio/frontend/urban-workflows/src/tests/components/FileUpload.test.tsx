@@ -73,17 +73,17 @@ describe('FileUpload Interface Component', () => {
     
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     const testFile = createMockFile('test.csv', 1024, 'text/csv');
-
+    
     // Simulate file selection
     Object.defineProperty(fileInput, 'files', {
       value: [testFile],
       writable: false,
     });
-
+    
     await act(async () => {
       fireEvent.change(fileInput);
     });
-    
+
     // Should eventually show success state (upload completes quickly with mock)
     await waitFor(() => {
       const uploadButton = screen.getByRole('button');
@@ -113,16 +113,16 @@ describe('FileUpload Interface Component', () => {
     
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     const testFile = createMockFile('success.json', 2048, 'application/json');
-
+    
     Object.defineProperty(fileInput, 'files', {
       value: [testFile],
       writable: false,
     });
-
+    
     await act(async () => {
       fireEvent.change(fileInput);
     });
-    
+
     // Wait for upload to complete and success state
     await waitFor(() => {
       const uploadButton = screen.getByRole('button');
@@ -144,16 +144,16 @@ describe('FileUpload Interface Component', () => {
     
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     const testFile = createMockFile('error.txt', 512, 'text/plain');
-
+    
     Object.defineProperty(fileInput, 'files', {
       value: [testFile],
       writable: false,
     });
-
+    
     await act(async () => {
       fireEvent.change(fileInput);
     });
-    
+
     // Wait for upload to fail and error state
     await waitFor(() => {
       const uploadButton = screen.getByRole('button');
@@ -179,16 +179,16 @@ describe('FileUpload Interface Component', () => {
     
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     const testFile = createMockFile('server-error.pdf', 1024, 'application/pdf');
-
+    
     Object.defineProperty(fileInput, 'files', {
       value: [testFile],
       writable: false,
     });
-
+    
     await act(async () => {
       fireEvent.change(fileInput);
     });
-    
+
     // Should show error state for server errors
     await waitFor(() => {
       const uploadButton = screen.getByRole('button');
@@ -210,16 +210,16 @@ describe('FileUpload Interface Component', () => {
     
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     const testFile = createMockFile('timeout-test.txt', 256, 'text/plain');
-
+    
     Object.defineProperty(fileInput, 'files', {
       value: [testFile],
       writable: false,
     });
-
+    
     await act(async () => {
       fireEvent.change(fileInput);
     });
-    
+
     // Wait for success state
     await waitFor(() => {
       const successIcon = screen.getByRole('button').querySelector('svg[data-icon="check"]');
@@ -254,8 +254,10 @@ describe('FileUpload Interface Component', () => {
       writable: false,
     });
     
-    fireEvent.change(fileInput);
-    
+    await act(async () => {
+      fireEvent.change(fileInput);
+    });
+
     // Button should be disabled during upload
     await waitFor(() => {
       const uploadButton = screen.getByRole('button');
@@ -305,16 +307,16 @@ describe('FileUpload Interface Component', () => {
     
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     const testFile = createMockFile('important-data.xlsx', 4096, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-
+    
     Object.defineProperty(fileInput, 'files', {
       value: [testFile],
       writable: false,
     });
-
+    
     await act(async () => {
       fireEvent.change(fileInput);
     });
-    
+
     await waitFor(() => {
       expect(mockFetch).toHaveBeenCalled();
     });
@@ -354,11 +356,11 @@ describe('FileUpload Interface Component', () => {
       value: [workflowFile],
       writable: false,
     });
-
+    
     await act(async () => {
       fireEvent.change(fileInput);
     });
-    
+
     // 4. Upload completes: success state (mock resolves immediately)
     await waitFor(() => {
       expect(uploadButton).not.toBeDisabled();
