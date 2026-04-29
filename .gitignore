@@ -1,4 +1,5 @@
 .claude/
+.idea/
 dist/
 *.eggs
 *.egg-info
