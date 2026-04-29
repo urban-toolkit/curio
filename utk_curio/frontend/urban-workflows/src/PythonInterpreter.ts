@@ -51,7 +51,7 @@ export class PythonInterpreter {
         }
     }
 
-    // ── Pyodide path ──────────────────────────────────────────────────────────
+    // ─ Pyodide path
 
     private async _runWithPyodide(
         unresolvedUserCode: string,
@@ -189,7 +189,7 @@ export class PythonInterpreter {
             });
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // ── Helpers
 
     /**
      * Converts Python type strings (e.g. "dataframe", "list") to the binary

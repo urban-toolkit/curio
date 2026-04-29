@@ -88,7 +88,7 @@ class PyodideExecutor {
         return this.loadPromise;
     }
 
-    // ── DataStore ────────────────────────────────────────────────────────────
+    // ── DataStore
 
     /** Persist a result object and return its pyodide:// reference key. */
     storeData(data: any): string {
