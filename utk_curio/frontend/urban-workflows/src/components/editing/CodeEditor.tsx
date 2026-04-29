@@ -7,6 +7,7 @@ import { NodeType } from "../../constants";
 import Editor from "@monaco-editor/react";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { useProvenanceContext } from "../../providers/ProvenanceProvider";
+import { useCollaborationContext } from "../../providers/CollaborationProvider";
 import { ICodeData } from "../../types";
 
 type CodeEditorProps = {
@@ -34,14 +35,22 @@ function CodeEditor({
     defaultValue,
     floatCode,
 }: CodeEditorProps) {
-    const [code, setCode] = useState<string>(""); // code with all original markers
+    const [code, setCode] = useState<string>(
+        typeof defaultValue === "string" ? defaultValue : ""
+    ); // code with all original markers
     const [execCount, setExecCount] = useState<number>(0);
 
     const { workflowNameRef, markNodeExecuted, markNodeStale, signalNodeExecDone } = useFlowContext();
     const { nodeExecProv } = useProvenanceContext();
+    const { requestCodeChange } = useCollaborationContext();
 
     const replacedCodeDirtyBypass = useRef(false);
-    const defaultValueBypass = useRef(false);
+    const codeRef = useRef(code);
+    const requestCodeChangeRef = useRef(requestCodeChange);
+    const lastApprovedStampRef = useRef<number | undefined>(data?._approvedCodeStamp);
+
+    useEffect(() => { codeRef.current = code; }, [code]);
+    useEffect(() => { requestCodeChangeRef.current = requestCodeChange; }, [requestCodeChange]);
 
     // @ts-ignore
     const handleCodeChange = (value, event) => {
@@ -49,14 +58,23 @@ function CodeEditor({
         markNodeStale(data.nodeId);
     };
 
+    // Unified handler for both "defaultValue changed" (new shared code arrived
+    // or the user navigated provenance) and "code-change proposal accepted".
     useEffect(() => {
-        if (defaultValue != undefined && defaultValueBypass.current) {
-            setCode(defaultValue);
-            sendCodeToWidgets(defaultValue); // will resolve markers for templated boxes
-        }
+        if (typeof defaultValue !== "string") return;
+        const stamp = data?._approvedCodeStamp;
+        const stampAdvanced = stamp !== undefined && stamp !== lastApprovedStampRef.current;
 
-        defaultValueBypass.current = true;
-    }, [defaultValue]);
+        if (stampAdvanced) {
+            lastApprovedStampRef.current = stamp;
+            setCode(defaultValue);
+            setOutputCallback({ code: "exec", content: "" });
+            sendCodeToWidgets(defaultValue);
+        } else if (defaultValue !== code) {
+            setCode(defaultValue);
+            sendCodeToWidgets(defaultValue);
+        }
+    }, [defaultValue, data?._approvedCodeStamp]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
         if (floatCode != undefined) floatCode(code);
@@ -68,18 +86,27 @@ function CodeEditor({
         }
     }, [output.code]);
 
+    const commitCodeChange = () => {
+        if (!readOnly && data?.nodeId) {
+            requestCodeChangeRef.current(data.nodeId, codeRef.current);
+        }
+    };
+
     const processExecutionResult = (result: any) => {
-        const hasOutput = result.output?.path !== "";
+        const stdout = typeof result?.stdout === "string" ? result.stdout : "";
+        const stderr = typeof result?.stderr === "string" ? result.stderr : "";
+        const savedPath = result?.output?.path;
+        const hasOutput = !!savedPath && savedPath !== "";
 
         if (hasOutput) {
-            let outputContent = "stdout:\n" + result.stdout.slice(0, 100);
-            if (result.stderr) outputContent += "\nstderr:\n" + result.stderr;
-            outputContent += "\nSaved to file: " + result.output.path;
+            let outputContent = "stdout:\n" + stdout.slice(0, 100);
+            if (stderr) outputContent += "\nstderr:\n" + stderr;
+            outputContent += "\nSaved to file: " + savedPath;
             setOutputCallback({ code: "success", content: outputContent });
-            data.outputCallback(data.nodeId, result.output);
+            if (typeof data?.outputCallback === 'function') data.outputCallback(data.nodeId, result.output);
             markNodeExecuted(data.nodeId);
         } else {
-            setOutputCallback({ code: "error", content: result.stderr });
+            setOutputCallback({ code: "error", content: stderr });
             signalNodeExecDone(data.nodeId);
         }
     };
@@ -95,9 +122,26 @@ function CodeEditor({
             setOutputCallback({ code: "error", content: "No code to execute" });
             return;
         }
+        if (!readOnly && typeof defaultValue === "string" && code !== defaultValue) {
+            requestCodeChangeRef.current(data.nodeId, code);
+            setOutputCallback({
+                code: "warning",
+                content: "Code change is waiting for collaborator approval before it can run.",
+            });
+            signalNodeExecDone(data.nodeId);
+            return;
+        }
         const interpreter = (nodeType === NodeType.JS_COMPUTATION && data.jsInterpreter)
             ? data.jsInterpreter
             : data.pythonInterpreter;
+        if (!interpreter || typeof interpreter.interpretCode !== "function") {
+            setOutputCallback({
+                code: "error",
+                content: "Interpreter is not available for this node. Try refreshing the workflow or re-adding the node.",
+            });
+            signalNodeExecDone(data.nodeId);
+            return;
+        }
         interpreter.interpretCode(
             code,
             replacedCode,
@@ -158,6 +202,9 @@ function CodeEditor({
                     theme="vs"
                     value={code}
                     onChange={handleCodeChange}
+                    onMount={(editor) => {
+                        editor.onDidBlurEditorText(commitCodeChange);
+                    }}
                     options={{
                         // @ts-ignore
                         inlineSuggest: true,

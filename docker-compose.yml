@@ -1,5 +1,6 @@
 services:
   curio:
+    platform: linux/amd64
     build:
       context: .
       dockerfile: Dockerfile
@@ -15,5 +16,4 @@ services:
     volumes:
       - ./templates:/app/templates
       - ./data:/app/data
-      # Share sandbox .data files with the host so Playwright (runs on host in CI) can read them
-      - ./.curio:/app/.curio
+      - /Users/kirtanpatel/Downloads:/Users/kirtanpatel/Downloads:ro

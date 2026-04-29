@@ -48,6 +48,16 @@ export interface IPropagation {
     propagation: any; // {[index]: [interaction value]}
 }
 
+const outputDisplayForNode = (output: any) => ({
+    code: output ? "success" : "",
+    content: output?.path
+        ? `Shared output available.\nSaved to file: ${output.path}\nType: ${output.dataType || "unknown"}`
+        : output
+            ? "Shared output available."
+            : "No output available.",
+    outputType: output?.dataType || "",
+});
+
 // applyNewOutputs = useCallback((newOutNodeId: string, newOutput: string)
 
 interface PlayAllState {
@@ -59,6 +69,9 @@ interface PlayAllState {
 interface FlowContextProps {
     nodes: Node[];
     edges: Edge[];
+    setNodes: (updater: Node[] | ((prev: Node[]) => Node[])) => void;
+    setEdges: (updater: Edge[] | ((prev: Edge[]) => Edge[])) => void;
+    outputs: IOutput[];
     setOutputs: (updateFn: (outputs: IOutput[]) => IOutput[]) => void;
     setInteractions: (updateFn: (interactions: IInteraction[]) => IInteraction[]) => void;
     applyNewPropagation: (propagation: IPropagation) => void;
@@ -165,6 +178,9 @@ export const useNodeActionsContext = () => useContext(NodeActionsContext);
 export const FlowContext = createContext<FlowContextProps>({
     nodes: [],
     edges: [],
+    setNodes: () => { },
+    setEdges: () => { },
+    outputs: [],
     setOutputs: () => { },
     setInteractions: () => { },
     applyNewPropagation: () => { },
@@ -440,9 +456,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         if (sourceHandle == "in/out" && targetHandle == "in/out") return;
 
         let getOutput = outId;
-        let setInput = inId;
-
-        let output = "";
+        let output: any = "";
 
         setOutputs((opts: any) =>
             opts.map((opt: any) => {
@@ -841,6 +855,20 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
         setNodes((nds: any) =>
             nds.map((node: any) => {
+                if (node.id === newOutput.nodeId) {
+                    const displayOutput = outputDisplayForNode(newOutput.output);
+                    return {
+                        ...node,
+                        data: {
+                            ...node.data,
+                            output: displayOutput,
+                            lastOutput: newOutput.output,
+                            outputRef: (newOutput.output as any)?.path,
+                            outputDataType: (newOutput.output as any)?.dataType,
+                        },
+                    };
+                }
+
                 if (!nodesAffected.includes(node.id)) return node;
 
                 if (node.type == NodeType.MERGE_FLOW) {
@@ -1071,6 +1099,9 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             value={{
                 nodes,
                 edges,
+                setNodes,
+                setEdges,
+                outputs,
                 setOutputs,
                 setInteractions,
                 applyNewPropagation,

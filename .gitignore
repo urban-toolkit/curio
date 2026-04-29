@@ -1,4 +1,3 @@
-.claude/
 dist/
 *.eggs
 *.egg-info
@@ -24,6 +23,7 @@ flask_cache/
 
 .curio/
 simple_example
+templates/
 
 logs/
 instance/

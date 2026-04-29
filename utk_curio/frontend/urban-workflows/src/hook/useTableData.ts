@@ -239,7 +239,7 @@ const useTableData = ({ data }: { data: INodeData }) => {
         contentOutput  = '';
       }
 
-      if (callbackOutput !== null && data.outputCallback) {
+      if (callbackOutput !== null && typeof data.outputCallback === 'function') {
         data.outputCallback(data.nodeId, callbackOutput);
       }
 

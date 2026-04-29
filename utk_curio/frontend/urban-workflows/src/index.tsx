@@ -63,6 +63,7 @@ import { getAllNodeTypes } from "./registry";
 })();
 
 import FlowProvider from "./providers/FlowProvider";
+import CollaborationProvider from "./providers/CollaborationProvider";
 import TemplateProvider from "./providers/TemplateProvider";
 import UserProvider, { useUserContext } from "./providers/UserProvider";
 import DialogProvider from "./providers/DialogProvider";
@@ -82,11 +83,13 @@ import { ProjectLoader } from "./components/ProjectLoader";
 const MainCanvasRoute: React.FC = () => (
   <DialogProvider>
     <FlowProvider>
-      <TemplateProvider>
-        <ProjectLoader>
-          <MainCanvas />
-        </ProjectLoader>
-      </TemplateProvider>
+      <CollaborationProvider>
+        <TemplateProvider>
+          <ProjectLoader>
+            <MainCanvas />
+          </ProjectLoader>
+        </TemplateProvider>
+      </CollaborationProvider>
     </FlowProvider>
   </DialogProvider>
 );

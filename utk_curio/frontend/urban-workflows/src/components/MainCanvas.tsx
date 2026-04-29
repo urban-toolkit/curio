@@ -22,6 +22,7 @@ import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { buttonStyle } from "./styles";
 import { ToolsMenu, UpMenu } from "components/menus";
 import UniDirectionalEdge from "./edges/UniDirectionalEdge";
+import { useCollaborationContext } from "../providers/CollaborationProvider";
 import "./MainCanvas.css";
 import LLMChat from "./LLMChat";
 import { useLLMContext } from "../providers/LLMProvider";
@@ -412,12 +413,357 @@ export function MainCanvas() {
             </div>
     }
 
+    const {
+        isConnected,
+        connectedUsers,
+        conflicts,
+        codeChangeProposals,
+        activityLog,
+        dismissConflict,
+        resolveConflict,
+        approveCodeChange,
+        rejectCodeChange,
+        myUserId,
+        myUserName,
+        myColor,
+        setUserName
+    } = useCollaborationContext();
+    const [nameDraft, setNameDraft] = useState(myUserName);
+    const [proposalComments, setProposalComments] = useState<Record<string, string>>({});
+
+    useEffect(() => {
+        setNameDraft(myUserName);
+    }, [myUserName]);
+
+    const shortId = (id?: string) => id ? id.slice(0, 6) : "unknown";
+    const userLabel = (user?: { name?: string; userId?: string }) =>
+        user?.name || (user?.userId ? `User ${shortId(user.userId)}` : "Unknown user");
+    const formatTime = (timestamp?: number) =>
+        timestamp ? new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+    const conflictTitle = (type: string) => {
+        if (type === "node_edit") return "Concurrent node edit";
+        if (type === "node_delete") return "Node delete conflict";
+        if (type === "node_deleted") return "Deleted node changed";
+        if (type === "edge_dependency") return "Downstream dependency changed";
+        if (type === "edge_deleted") return "Edge already deleted";
+        if (type === "node_lock") return "Node already being edited";
+        return "Collaboration conflict";
+    };
+    const allUsers = [
+        { userId: myUserId, name: myUserName, color: myColor },
+        ...connectedUsers.filter((u) => u.userId !== myUserId)
+    ];
+    const allUserNames = new Map(allUsers.map((u) => [u.userId, userLabel(u)]));
+    const commitUserName = () => setUserName(nameDraft);
+
     return (
         <>
         {!loading ? <div
             style={{ width: "100vw", height: "100vh", backgroundColor: dashboardOn ? "#ffffff" : "#f0f0f0" }}
             // onWheelCapture={handleWheel}
         >
+            <div style={{
+                position: "fixed",
+                top: 8,
+                right: 12,
+                zIndex: 1000,
+                width: 340,
+                maxHeight: "calc(100vh - 24px)",
+                overflowY: "auto",
+                background: "rgba(255,255,255,0.96)",
+                border: "1px solid #d9dee7",
+                borderRadius: 8,
+                boxShadow: "0 6px 24px rgba(15,23,42,0.18)",
+                padding: 10,
+                fontSize: 12,
+                color: "#172033"
+            }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <div style={{
+                        width: 9,
+                        height: 9,
+                        borderRadius: "50%",
+                        background: isConnected ? "#2f9e44" : "#c92a2a",
+                        flex: "0 0 auto"
+                    }} title={isConnected ? "Connected" : "Disconnected"} />
+                    <input
+                        value={nameDraft}
+                        onChange={(event) => setNameDraft(event.target.value)}
+                        onBlur={commitUserName}
+                        onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                                commitUserName();
+                                (event.currentTarget as HTMLInputElement).blur();
+                            }
+                        }}
+                        style={{
+                            minWidth: 0,
+                            flex: 1,
+                            border: "1px solid #cfd6e4",
+                            borderRadius: 6,
+                            padding: "5px 7px",
+                            fontSize: 12,
+                            fontWeight: 600
+                        }}
+                        aria-label="User name"
+                    />
+                    <span style={{ color: "#667085", fontVariantNumeric: "tabular-nums" }}>
+                        {shortId(myUserId)}
+                    </span>
+                </div>
+
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: conflicts.length ? 10 : 8 }}>
+                    {allUsers.map((u) => (
+                        <div key={u.userId} title={userLabel(u)} style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 5,
+                            maxWidth: 150,
+                            border: "1px solid #e5e7eb",
+                            borderRadius: 999,
+                            padding: "3px 7px 3px 4px",
+                            background: "#fff"
+                        }}>
+                            <span style={{
+                                width: 18,
+                                height: 18,
+                                borderRadius: "50%",
+                                background: u.color,
+                                color: "#fff",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: 9,
+                                fontWeight: 700,
+                                flex: "0 0 auto"
+                            }}>
+                                {(u.name || u.userId).slice(0, 2).toUpperCase()}
+                            </span>
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {u.userId === myUserId ? "You" : userLabel(u)}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+
+                {codeChangeProposals.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
+                        {codeChangeProposals.map((proposal) => {
+                            const required = proposal.requiredUserIds || [];
+                            const approvals = proposal.approvals || {};
+                            const comments = proposal.comments || {};
+                            const acceptedCount = required.filter((uid) => approvals[uid]).length;
+                            const missing = required.filter((uid) => !approvals[uid]);
+                            const needsMyDecision = required.includes(myUserId);
+                            const myApproved = Boolean(approvals[myUserId]);
+                            const myComment = proposalComments[proposal.proposalId] ?? comments[myUserId]?.comment ?? "";
+                            const proposedCode =
+                                proposal.node?.data?.code ??
+                                proposal.node?.data?.defaultCode ??
+                                "";
+
+                            return (
+                                <div key={proposal.proposalId} style={{
+                                    border: "1px solid #fedf89",
+                                    background: "#fffbeb",
+                                    borderRadius: 8,
+                                    padding: 9
+                                }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
+                                        <strong style={{ color: "#92400e" }}>Code change needs approval</strong>
+                                        <span style={{ color: "#92400e", fontVariantNumeric: "tabular-nums" }}>
+                                            {acceptedCount}/{required.length}
+                                        </span>
+                                    </div>
+                                    <div style={{ color: "#4b5563", lineHeight: 1.35 }}>
+                                        <strong>{userLabel(proposal.proposedBy)}</strong> changed code on node <strong>{shortId(proposal.nodeId)}</strong>.
+                                        The shared node will not update until every required user accepts.
+                                    </div>
+                                    {proposal.changeSummary && proposal.changeSummary.length > 0 && (
+                                        <div style={{ marginTop: 7, color: "#344054" }}>
+                                            Changed: <strong>{proposal.changeSummary.join(", ")}</strong>
+                                        </div>
+                                    )}
+                                    {proposedCode && (
+                                        <pre style={{
+                                            marginTop: 7,
+                                            marginBottom: 0,
+                                            maxHeight: 120,
+                                            overflow: "auto",
+                                            background: "#111827",
+                                            color: "#f9fafb",
+                                            borderRadius: 6,
+                                            padding: 7,
+                                            fontSize: 10,
+                                            whiteSpace: "pre-wrap"
+                                        }}>
+                                            {proposedCode}
+                                        </pre>
+                                    )}
+                                    {missing.length > 0 && (
+                                        <div style={{ marginTop: 7, color: "#344054" }}>
+                                            Waiting for: <strong>{missing.map((uid) => allUserNames.get(uid) || shortId(uid)).join(", ")}</strong>
+                                        </div>
+                                    )}
+                                    {Object.values(comments).length > 0 && (
+                                        <div style={{ marginTop: 7, color: "#344054", display: "flex", flexDirection: "column", gap: 4 }}>
+                                            {Object.values(comments).map((entry: any) => (
+                                                <div key={entry.user?.userId || entry.timestamp}>
+                                                    <strong>{userLabel(entry.user)}:</strong> {entry.comment || "No comment"}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {needsMyDecision ? (
+                                        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 9 }}>
+                                            <textarea
+                                                value={myComment}
+                                                onChange={(event) => setProposalComments((prev) => ({
+                                                    ...prev,
+                                                    [proposal.proposalId]: event.target.value
+                                                }))}
+                                                placeholder="Comment if you do not accept this code change"
+                                                style={{
+                                                    width: "100%",
+                                                    minHeight: 46,
+                                                    resize: "vertical",
+                                                    border: "1px solid #fbbf24",
+                                                    borderRadius: 6,
+                                                    padding: 6,
+                                                    fontSize: 11
+                                                }}
+                                            />
+                                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                                <button
+                                                    onClick={() => approveCodeChange(proposal.proposalId)}
+                                                    disabled={myApproved}
+                                                    style={{
+                                                        ...buttonStyle,
+                                                        padding: "4px 8px",
+                                                        fontSize: 11,
+                                                        opacity: myApproved ? 0.55 : 1
+                                                    }}
+                                                >
+                                                    {myApproved ? "Accepted" : "Accept code"}
+                                                </button>
+                                                <button
+                                                    onClick={() => rejectCodeChange(proposal.proposalId, myComment)}
+                                                    style={{ ...buttonStyle, padding: "4px 8px", fontSize: 11, backgroundColor: "#b45309" }}
+                                                >
+                                                    Comment / do not accept
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div style={{ marginTop: 7, color: "#667085" }}>
+                                            {proposal.proposedBy?.userId === myUserId
+                                                ? "Waiting for other users to accept your code change."
+                                                : "You are not required for this approval."}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+
+                {conflicts.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
+                        {conflicts.map((c) => (
+                            <div key={c.conflictId} style={{
+                                border: "1px solid #f1aeb5",
+                                background: "#fff5f5",
+                                borderRadius: 8,
+                                padding: 9
+                            }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
+                                    <strong style={{ color: "#9f1239" }}>{conflictTitle(c.type)}</strong>
+                                    <button
+                                        onClick={() => dismissConflict(c.conflictId)}
+                                        style={{
+                                            border: "none",
+                                            background: "transparent",
+                                            color: "#9f1239",
+                                            cursor: "pointer",
+                                            fontWeight: 700
+                                        }}
+                                        aria-label="Dismiss conflict"
+                                    >
+                                        x
+                                    </button>
+                                </div>
+                                <div style={{ color: "#4b5563", lineHeight: 1.35 }}>
+                                    {c.message || "A collaboration conflict needs attention."}
+                                </div>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 7, color: "#344054" }}>
+                                    <span>By: <strong>{userLabel(c.actor || c.requestedBy)}</strong></span>
+                                    <span>Current: <strong>{userLabel(c.currentOwner || c.lockedBy || c.deletedBy)}</strong></span>
+                                    {c.nodeId && <span>Node: <strong>{shortId(c.nodeId)}</strong></span>}
+                                    {c.edgeId && <span>Edge: <strong>{shortId(c.edgeId)}</strong></span>}
+                                    {c.serverRevision !== undefined && <span>Server rev: <strong>{c.serverRevision}</strong></span>}
+                                    {c.baseRevision !== undefined && <span>My base: <strong>{c.baseRevision}</strong></span>}
+                                </div>
+                                {c.changeSummary && c.changeSummary.length > 0 && (
+                                    <div style={{ marginTop: 7, color: "#344054" }}>
+                                        Changed: <strong>{c.changeSummary.join(", ")}</strong>
+                                    </div>
+                                )}
+                                {c.affectedNodeIds && c.affectedNodeIds.length > 0 && (
+                                    <div style={{ marginTop: 7, color: "#344054" }}>
+                                        Affects: <strong>{c.affectedNodeIds.map(shortId).join(", ")}</strong>
+                                    </div>
+                                )}
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 9 }}>
+                                    <button onClick={() => resolveConflict(c, "keep_mine")} style={{ ...buttonStyle, padding: "4px 8px", fontSize: 11 }}>
+                                        Keep mine
+                                    </button>
+                                    <button onClick={() => resolveConflict(c, "accept_other")} style={{ ...buttonStyle, padding: "4px 8px", fontSize: 11, backgroundColor: "#475467" }}>
+                                        Accept other
+                                    </button>
+                                    <button onClick={() => resolveConflict(c, "manual")} style={{ ...buttonStyle, padding: "4px 8px", fontSize: 11, backgroundColor: "#7c3aed" }}>
+                                        Manual
+                                    </button>
+                                    <button onClick={() => resolveConflict(c, "cancel")} style={{ ...buttonStyle, padding: "4px 8px", fontSize: 11, backgroundColor: "#b42318" }}>
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                <div>
+                    <div style={{ fontWeight: 700, marginBottom: 5 }}>Activity</div>
+                    {activityLog.length === 0 ? (
+                        <div style={{ color: "#667085" }}>No recent activity</div>
+                    ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                            {activityLog.slice(0, 8).map((item) => (
+                                <div key={item.id} style={{
+                                    display: "grid",
+                                    gridTemplateColumns: "auto 1fr auto",
+                                    alignItems: "center",
+                                    gap: 6,
+                                    borderTop: "1px solid #eef2f7",
+                                    paddingTop: 5
+                                }}>
+                                    <span style={{
+                                        width: 8,
+                                        height: 8,
+                                        borderRadius: "50%",
+                                        background: item.user?.color || "#98a2b3"
+                                    }} />
+                                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                        <strong>{userLabel(item.user)}</strong> {item.label.replace(userLabel(item.user), "").trim()}
+                                    </span>
+                                    <span style={{ color: "#667085", fontVariantNumeric: "tabular-nums" }}>{formatTime(item.timestamp)}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+
             {Object.keys(floatingPanels).map((key, index) => (
                 <FloatingPanel
                     key={key}

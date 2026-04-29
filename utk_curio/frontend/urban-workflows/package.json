@@ -44,6 +44,7 @@
     "autk-map": "1.3.1-beta.0",
     "autk-plot": "1.3.1-beta.0",
     "utk": "file:../utk-workflow/src/utk-ts/dist",
+    "socket.io-client": "^4.7.5",
     "uuid": "^9.0.1",
     "vega-lite": "^5.16.3"
   },

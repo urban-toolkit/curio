@@ -12,7 +12,13 @@ export interface NodeOutput {
 
 export function useNodeState(data: any, nodeType: NodeType) {
   const [output, setOutput] = useState<NodeOutput>(data.output ?? { code: '', content: '', outputType: '' });
-  const [code, setCode] = useState<string>(data.code ?? '');
+  const [code, setCode] = useState<string>(
+    typeof data.code === 'string'
+      ? data.code
+      : typeof data.defaultCode === 'string'
+        ? data.defaultCode
+        : ''
+  );
   const [sendCode, setSendCode] = useState<any>();
   const [templateData, setTemplateData] = useState<Template | any>({});
   const [newTemplateFlag, setNewTemplateFlag] = useState(false);
@@ -22,9 +28,21 @@ export function useNodeState(data: any, nodeType: NodeType) {
   const { editUserTemplate } = useTemplateContext();
   const { user } = useUserContext();
 
-  useEffect(() => { data.code = code; }, [code]);
-
   useEffect(() => { data.output = output; }, [output]);
+
+  // Reverse-sync: when collaboration updates node.data.output via setNodes, pull into local state
+  useEffect(() => {
+    if (data.output && data.output.content && data.output.content !== output.content) {
+      setOutput(data.output);
+    }
+  }, [data.output?.content, data.output?.code]);
+
+  // Reverse-sync: when collaboration updates node.data.code via setNodes, pull into local state
+  useEffect(() => {
+    if (data.code && data.code !== code) {
+      setCode(data.code);
+    }
+  }, [data.code]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (data.templateId != undefined) {

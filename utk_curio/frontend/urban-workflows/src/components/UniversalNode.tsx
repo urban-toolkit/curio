@@ -11,6 +11,7 @@ import { getNodeDescriptor } from '../registry/nodeRegistry';
 import { useNodeState } from '../hook/useNodeState';
 import { HandleDef, TIconCardinality } from '../registry/types';
 import { useFlowContext } from '../providers/FlowProvider';
+import { useCollaborationContext } from '../providers/CollaborationProvider';
 import './Node.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
@@ -21,6 +22,11 @@ const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }:
   const nodeState = useNodeState(data, descriptor.id);
   const lifecycle = adapter.useLifecycle(data, nodeState);
   const edges = useEdges();
+
+  const { lockedNodes, myUserId, lockNode, unlockNode } = useCollaborationContext();
+  const lockInfo = lockedNodes[data.nodeId];
+  const isLockedByOther = !!(lockInfo && lockInfo.userId !== myUserId);
+  const isLockedByMe = !!(lockInfo && lockInfo.userId === myUserId);
 
   const sendCode = lifecycle.sendCodeOverride ?? nodeState.sendCode;
   const setSendCodeCallback = lifecycle.setSendCodeCallbackOverride ?? nodeState.setSendCodeCallback;
@@ -61,6 +67,7 @@ const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }:
     };
   }, []);
   const defaultValue =
+    data.code ??
     lifecycle.defaultValueOverride ??
     (nodeState.templateData.code ? nodeState.templateData.code : data.defaultCode);
   const readOnly =
@@ -68,8 +75,28 @@ const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }:
 
   const allHandles = [...adapter.handles, ...(lifecycle.dynamicHandles ?? [])];
 
+  const lockBorderStyle: React.CSSProperties = isLockedByOther
+    ? { outline: `3px solid ${lockInfo!.color}`, borderRadius: 8 }
+    : isLockedByMe
+    ? { outline: `3px dashed ${lockInfo!.color}`, borderRadius: 8 }
+    : {};
+
   return (
-    <>
+    <div
+      style={{ position: 'relative', ...lockBorderStyle }}
+      onFocus={() => { if (!isLockedByOther) lockNode(data.nodeId); }}
+      onBlur={() => { if (isLockedByMe) unlockNode(data.nodeId); }}
+    >
+      {isLockedByOther && lockInfo && (
+        <div style={{
+          position: 'absolute', top: -18, right: 4,
+          background: lockInfo.color, color: '#fff',
+          fontSize: 10, padding: '1px 6px', borderRadius: 4,
+          zIndex: 10, pointerEvents: 'none', whiteSpace: 'nowrap',
+        }}>
+          Editing: {lockInfo.name || lockInfo.userId.slice(0, 6)}
+        </div>
+      )}
       {!dashboardOn && allHandles.map((h: HandleDef) => {
         const connectable =
           h.isConnectableOverride
@@ -158,7 +185,7 @@ const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }:
 
         {!dashboardOn && adapter.outputIconType && <OutputIcon type={adapter.outputIconType as TIconCardinality} />}
       </NodeContainer>
-    </>
+    </div>
   );
 });
 

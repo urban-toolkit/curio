@@ -705,7 +705,7 @@ export function useUTK({ data, code }: { data: any, code: string }) {
           }
 
           // setOutput("success");
-          data.outputCallback(data.nodeId, data.input);
+          if (typeof data.outputCallback === 'function') data.outputCallback(data.nodeId, data.input);
           await stallDisablePlay();
         }
       }
@@ -726,7 +726,7 @@ export function useUTK({ data, code }: { data: any, code: string }) {
 
   // interactions
   useEffect(() => {
-    data.interactionsCallback(interactions, data.nodeId);
+    if (typeof data.interactionsCallback === 'function') data.interactionsCallback(interactions, data.nodeId);
   }, [interactions]);
 
   const listenerSelection = (event: any) => {

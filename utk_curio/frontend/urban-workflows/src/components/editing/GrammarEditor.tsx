@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Editor from "@monaco-editor/react";
 import { ICodeData } from "../../types";
+import { useCollaborationContext } from "../../providers/CollaborationProvider";
 
 type GrammarEditorProps = {
     output: ICodeData;
@@ -27,19 +28,25 @@ export default function GrammarEditor({
     floatCode,
     readOnly,
 }: GrammarEditorProps) {
-    const [grammar, _setGrammar] = useState("{}");
+    const [grammar, _setGrammar] = useState(
+        typeof defaultValue === "string" ? defaultValue : "{}"
+    );
     const grammarRef = useRef(grammar);
     const setGrammar = (data: string) => {
         grammarRef.current = data;
         _setGrammar(data);
     };
 
+    const { requestCodeChange } = useCollaborationContext();
+    const requestCodeChangeRef = useRef(requestCodeChange);
+    useEffect(() => { requestCodeChangeRef.current = requestCodeChange; }, [requestCodeChange]);
+
     const replacedCodeDirtyBypass = useRef(false);
-    const defaultValueBypass = useRef(false);
 
     useEffect(() => {
-        if (defaultValueBypass.current) setGrammar(defaultValue);
-        defaultValueBypass.current = true;
+        if (defaultValue != undefined && defaultValue !== grammarRef.current) {
+            setGrammar(defaultValue);
+        }
     }, [defaultValue]);
 
     useEffect(() => {
@@ -62,6 +69,10 @@ export default function GrammarEditor({
         if (!readOnly) setGrammar(value);
     };
 
+    const commitGrammarChange = () => {
+        if (!readOnly) requestCodeChangeRef.current(nodeId, grammarRef.current);
+    };
+
     return (
         <div
             id={"vega-editor_" + nodeId}
@@ -75,6 +86,9 @@ export default function GrammarEditor({
                 path={`grammar-${nodeId}.json`}
                 value={grammar}
                 onChange={(value) => updateGrammarContent(value ?? "{}", readOnly)}
+                onMount={(editor) => {
+                    editor.onDidBlurEditorText(commitGrammarChange);
+                }}
                 options={{
                     fontSize: 13,
                     fontFamily: "'Source Code Pro', Consolas, 'Courier New', monospace",

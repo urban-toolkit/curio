@@ -325,10 +325,10 @@ export const useDataPoolLifecycle: NodeLifecycleHook = (data, nodeState) => {
 
       const clonedOutput = JSON.parse(JSON.stringify(newOutput));
       setOutput({ code: "success", content: clonedOutput });
-      data.outputCallback(data.nodeId, clonedOutput);
+      if (typeof data.outputCallback === 'function') data.outputCallback(data.nodeId, clonedOutput);
 
       // call callback propagation
-      data.propagationCallback(propagationObj);
+      if (typeof data.propagationCallback === 'function') data.propagationCallback(propagationObj);
     }
   }, [data.interactions]);
 

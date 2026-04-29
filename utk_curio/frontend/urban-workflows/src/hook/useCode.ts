@@ -244,6 +244,7 @@ export function useCode(): IUseCode {
                 nodeId: nodeId,
                 pythonInterpreter: pythonInterpreter,
                 jsInterpreter: jsInterpreter,
+                code,
                 defaultCode: code,
                 description,
                 templateId,

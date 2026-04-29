@@ -17,7 +17,9 @@ const config = [
       format: "esm",
     },
     plugins: [
-      resolve(),
+      resolve({
+        extensions: ['.mjs', '.js', '.json', '.node', '.ts', '.tsx']
+      }),
       json(),
       commonjs(),
       css({
@@ -28,6 +30,7 @@ const config = [
         sourceMap: true
       }),
       typescript({
+        include: ['src/**/*.ts', 'src/**/*.tsx', 'old/**/*.ts', 'old/**/*.tsx'],
         tsconfig: "tsconfig.json",
         useTsconfigDeclarationDir: true,
         sourceMap: true,
