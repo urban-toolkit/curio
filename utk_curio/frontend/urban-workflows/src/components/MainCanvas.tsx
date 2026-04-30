@@ -464,11 +464,11 @@ export function MainCanvas() {
         >
             <div style={{
                 position: "fixed",
-                top: 8,
+                top: 64,
                 right: 12,
                 zIndex: 1000,
                 width: 340,
-                maxHeight: "calc(100vh - 24px)",
+                maxHeight: "calc(100vh - 80px)",
                 overflowY: "auto",
                 background: "rgba(255,255,255,0.96)",
                 border: "1px solid #d9dee7",

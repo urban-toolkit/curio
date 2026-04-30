@@ -95,6 +95,7 @@ interface CollaborationContextProps {
   requestCodeChange: (nodeId: string, code: string) => void;
   approveCodeChange: (proposalId: string) => void;
   rejectCodeChange: (proposalId: string, comment: string) => void;
+  syncNodeOutput: (nodeId: string, displayOutput: { code: string; content: string }) => void;
 }
 
 const CollaborationContext = createContext<CollaborationContextProps>({
@@ -116,6 +117,7 @@ const CollaborationContext = createContext<CollaborationContextProps>({
   requestCodeChange: () => {},
   approveCodeChange: () => {},
   rejectCodeChange: () => {},
+  syncNodeOutput: () => {},
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -155,11 +157,12 @@ function serializeNode(node: any): any {
   return { ...node, data };
 }
 
-/** Lightweight snapshot of the node fields that matter for collaboration. */
+/** Lightweight snapshot of the node fields that matter for collaboration.
+ *  Position is intentionally excluded — node placement is local-only and
+ *  shouldn't trigger updates or conflicts. */
 function nodeFingerprintPayload(node: any): Record<string, any> {
   const d = node.data || {};
   return {
-    position: node.position,
     input: d.input,
     source: d.source,
     defaultCode: d.defaultCode,
@@ -178,7 +181,6 @@ function summarizeNodeChange(previousFingerprint: string | undefined, node: any)
     const previous = JSON.parse(previousFingerprint);
     const current = nodeFingerprintPayload(node);
     const labels: Record<string, string> = {
-      position: 'position',
       input: 'input',
       source: 'source',
       defaultCode: 'default code',
@@ -314,6 +316,11 @@ const CollaborationProvider = ({ children }: { children: ReactNode }) => {
 
     return {
       ...node,
+      // Position is local-only — preserve the user's current placement
+      // instead of letting a remote node_added/node_updated payload move
+      // their canvas. Only fall back to the remote position on first add
+      // when there is no existing local node yet.
+      position: existingNode?.position ?? node.position,
       data: {
         ...existingData,
         ...remoteData,
@@ -555,6 +562,17 @@ const CollaborationProvider = ({ children }: { children: ReactNode }) => {
       }
     });
 
+    // ── Execution display sync ───────────────────────────────────────────────
+
+    socket.on('node_exec_display', (data: any) => {
+      const { nodeId, displayOutput } = data;
+      if (!nodeId || !displayOutput) return;
+      setNodes((prev: any[]) => prev.map((n) => {
+        if (n.id !== nodeId) return n;
+        return { ...n, data: { ...n.data, output: displayOutput } };
+      }));
+    });
+
     // ── Lock events ───────────────────────────────────────────────────────
 
     socket.on('node_locked', (data: { nodeId: string; userId: string; color: string; name?: string }) => {
@@ -586,7 +604,15 @@ const CollaborationProvider = ({ children }: { children: ReactNode }) => {
 
     socket.on('code_change_requested', upsertProposal);
     socket.on('code_change_approved', upsertProposal);
-    socket.on('code_change_rejected', upsertProposal);
+    socket.on('code_change_rejected', (proposal: CodeChangeProposal) => {
+      // Superseded proposals (a different proposal for this node was applied
+      // first) are dropped silently — first-accept-wins.
+      if (proposal.status === 'superseded') {
+        setCodeChangeProposals((prev) => prev.filter((p) => p.proposalId !== proposal.proposalId));
+        return;
+      }
+      upsertProposal(proposal);
+    });
     socket.on('code_change_applied', (proposal: CodeChangeProposal & { node?: any; revision?: number }) => {
       setCodeChangeProposals((prev) => prev.filter((p) => p.proposalId !== proposal.proposalId));
       if (proposal.node) {
@@ -833,7 +859,14 @@ const CollaborationProvider = ({ children }: { children: ReactNode }) => {
   }, [hydrateNodeForRuntime, setEdges, setNodes]);
 
   const resolveConflict = useCallback((conflict: Conflict, action: ConflictResolutionAction) => {
-    if (action !== 'keep_mine') {
+    const actorId = conflict.actor?.userId;
+    const isActor = !!actorId && actorId === myUserId;
+
+    // Local revert is only meaningful for the actor: their canvas may
+    // already reflect the rejected action, so they need the server's view
+    // back. Non-actors are already on the server's view; the server will
+    // broadcast any state change resulting from the resolution.
+    if (isActor && action !== 'keep_mine') {
       applyServerVersion(conflict);
     }
     setConflicts((prev) => prev.filter((c) => c.conflictId !== conflict.conflictId));
@@ -845,6 +878,16 @@ const CollaborationProvider = ({ children }: { children: ReactNode }) => {
       conflict,
     });
   }, [applyServerVersion, myUserId, myUserName, sessionId]);
+
+  const syncNodeOutput = useCallback((nodeId: string, displayOutput: { code: string; content: string }) => {
+    socketRef.current?.emit('node_exec_display', {
+      sessionId,
+      userId: myUserId,
+      userName: myUserName,
+      nodeId,
+      displayOutput,
+    });
+  }, [myUserId, myUserName, sessionId]);
 
   const requestCodeChange = useCallback((nodeId: string, code: string) => {
     const node = nodes.find((n: any) => n.id === nodeId);
@@ -910,6 +953,7 @@ const CollaborationProvider = ({ children }: { children: ReactNode }) => {
       requestCodeChange,
       approveCodeChange,
       rejectCodeChange,
+      syncNodeOutput,
     }}>
       {children}
     </CollaborationContext.Provider>

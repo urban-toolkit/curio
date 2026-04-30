@@ -299,6 +299,28 @@ def _apply_code_proposal(room: str, proposal_id: str, applied_by: str) -> bool:
         node_id,
         {'proposalId': proposal_id},
     )
+
+    # First-accept-wins: any other pending proposals on the same node are
+    # now based on stale code. Cancel them so they don't overwrite this
+    # accepted change if approved later.
+    proposals_dict = _pending_code_proposals(room)
+    for other_id, other in list(proposals_dict.items()):
+        if other.get('nodeId') != node_id:
+            continue
+        if other.get('status') != 'pending':
+            continue
+        other['status'] = 'superseded'
+        emit('code_change_rejected', _proposal_payload(other), to=room)
+        proposals_dict.pop(other_id, None)
+        _record_activity(
+            room,
+            'code_change_superseded',
+            applied_by,
+            f"Cancelled obsolete proposal for node {node_id[:6]} (another change accepted first)",
+            node_id,
+            {'proposalId': other_id, 'reason': 'first_accept_wins'},
+        )
+
     return True
 
 
@@ -758,6 +780,13 @@ def on_output_produced(data):
     emit('output_produced', {**data, 'user': _user_payload(room, user_id)}, to=room, include_self=False)
 
 
+@socketio.on('node_exec_display')
+def on_node_exec_display(data):
+    """Broadcast execution display state (running/success/error) to collaborators."""
+    room = data.get('sessionId', 'default')
+    emit('node_exec_display', data, to=room, include_self=False)
+
+
 @socketio.on('approve_code_change')
 def on_approve_code_change(data):
     room = data.get('sessionId', 'default')
@@ -865,7 +894,11 @@ def on_resolve_conflict(data):
     operation = conflict.get('operation')
     conflict_id = conflict.get('conflictId')
 
-    if action == 'keep_mine':
+    actor_id = (conflict.get('actor') or {}).get('userId')
+    is_actor = bool(actor_id) and user_id == actor_id
+
+    if action == 'keep_mine' and is_actor:
+        # Original actor forces their action through.
         if operation == 'node_updated' and conflict.get('incomingNode'):
             on_node_updated({
                 'sessionId': room,
@@ -896,6 +929,75 @@ def on_resolve_conflict(data):
                 'force': True,
             })
         _record_activity(room, 'conflict_resolved', user_id, 'Resolved conflict by keeping local change', conflict.get('entityId'))
+    elif action == 'keep_mine' and not is_actor:
+        # A bystander wants to keep the current server state (the actor's
+        # action stays rejected). The actor's local state may be ahead of
+        # the server (e.g. they removed an edge locally before the server
+        # rejected it), so emit the canonical server entity back to the
+        # room to restore the actor's view.
+        if operation == 'edge_removed' and conflict.get('currentEdge'):
+            edge = conflict['currentEdge']
+            emit('edge_added', {
+                'edge': edge,
+                'revision': _current_revision(room, 'edges', edge.get('id')),
+                'user': _user_payload(room, user_id),
+            }, to=room, include_self=False)
+        elif operation == 'node_removed' and conflict.get('currentNode'):
+            node = conflict['currentNode']
+            emit('node_added', {
+                'node': node,
+                'revision': _current_revision(room, 'nodes', node.get('id')),
+                'user': _user_payload(room, user_id),
+            }, to=room, include_self=False)
+        elif operation == 'edge_added' and conflict.get('incomingEdge'):
+            edge = conflict['incomingEdge']
+            emit('edge_removed', {
+                'edgeId': edge.get('id'),
+                'user': _user_payload(room, user_id),
+            }, to=room, include_self=False)
+        elif operation == 'node_updated' and conflict.get('currentNode'):
+            node = conflict['currentNode']
+            emit('node_updated', {
+                'node': node,
+                'revision': _current_revision(room, 'nodes', node.get('id')),
+                'user': _user_payload(room, user_id),
+            }, to=room, include_self=False)
+        _record_activity(room, 'conflict_resolved', user_id, 'Resolved conflict by keeping current state', conflict.get('entityId'))
+    elif action == 'accept_other' and not is_actor:
+        # A bystander accepts the actor's proposed action — force it through.
+        # (For the original actor, "accept_other" means giving up on their
+        # own change; the frontend reverts their local view to the server
+        # snapshot, and the server doesn't need to do anything.)
+        if operation == 'node_updated' and conflict.get('incomingNode'):
+            on_node_updated({
+                'sessionId': room,
+                'userId': actor_id or user_id,
+                'node': conflict['incomingNode'],
+                'force': True,
+                'changeSummary': conflict.get('changeSummary') or [],
+            })
+        elif operation == 'node_removed' and conflict.get('nodeId'):
+            on_node_removed({
+                'sessionId': room,
+                'userId': actor_id or user_id,
+                'nodeId': conflict['nodeId'],
+                'force': True,
+            })
+        elif operation == 'edge_added' and conflict.get('incomingEdge'):
+            on_edge_added({
+                'sessionId': room,
+                'userId': actor_id or user_id,
+                'edge': conflict['incomingEdge'],
+                'force': True,
+            })
+        elif operation == 'edge_removed' and conflict.get('edgeId'):
+            on_edge_removed({
+                'sessionId': room,
+                'userId': actor_id or user_id,
+                'edgeId': conflict['edgeId'],
+                'force': True,
+            })
+        _record_activity(room, 'conflict_resolved', user_id, 'Resolved conflict by accepting remote change', conflict.get('entityId'))
     elif action == 'accept_other':
         _record_activity(room, 'conflict_resolved', user_id, 'Resolved conflict by accepting remote change', conflict.get('entityId'))
     elif action == 'manual':

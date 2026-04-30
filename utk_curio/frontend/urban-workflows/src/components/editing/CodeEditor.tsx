@@ -42,15 +42,17 @@ function CodeEditor({
 
     const { workflowNameRef, markNodeExecuted, markNodeStale, signalNodeExecDone } = useFlowContext();
     const { nodeExecProv } = useProvenanceContext();
-    const { requestCodeChange } = useCollaborationContext();
+    const { requestCodeChange, syncNodeOutput } = useCollaborationContext();
 
     const replacedCodeDirtyBypass = useRef(false);
     const codeRef = useRef(code);
     const requestCodeChangeRef = useRef(requestCodeChange);
+    const syncNodeOutputRef = useRef(syncNodeOutput);
     const lastApprovedStampRef = useRef<number | undefined>(data?._approvedCodeStamp);
 
     useEffect(() => { codeRef.current = code; }, [code]);
     useEffect(() => { requestCodeChangeRef.current = requestCodeChange; }, [requestCodeChange]);
+    useEffect(() => { syncNodeOutputRef.current = syncNodeOutput; }, [syncNodeOutput]);
 
     // @ts-ignore
     const handleCodeChange = (value, event) => {
@@ -103,10 +105,13 @@ function CodeEditor({
             if (stderr) outputContent += "\nstderr:\n" + stderr;
             outputContent += "\nSaved to file: " + savedPath;
             setOutputCallback({ code: "success", content: outputContent });
+            syncNodeOutputRef.current(data.nodeId, { code: "success", content: outputContent });
             if (typeof data?.outputCallback === 'function') data.outputCallback(data.nodeId, result.output);
             markNodeExecuted(data.nodeId);
         } else {
-            setOutputCallback({ code: "error", content: stderr });
+            const displayContent = stderr || stdout || "Execution complete (no output)";
+            setOutputCallback({ code: "error", content: displayContent });
+            syncNodeOutputRef.current(data.nodeId, { code: "error", content: displayContent });
             signalNodeExecDone(data.nodeId);
         }
     };
@@ -142,6 +147,7 @@ function CodeEditor({
             signalNodeExecDone(data.nodeId);
             return;
         }
+        syncNodeOutputRef.current(data.nodeId, { code: "exec", content: "" });
         interpreter.interpretCode(
             code,
             replacedCode,

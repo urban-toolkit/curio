@@ -218,12 +218,14 @@ def get_file():
     if not file_name:
         return 'No artifact id specified', 400
 
-    session_id = get_current_token()
     try:
         t0 = time.perf_counter()
+        # Read endpoints do not pass sessionId so collaborators can fetch
+        # artifacts produced by any participant in the room. Writes still
+        # tag artifacts with the originating session for provenance.
         resp = _sandbox_session.get(
             api_address + ":" + str(api_port) + "/get",
-            params={"fileName": file_name, "sessionId": session_id},
+            params={"fileName": file_name},
             timeout=60,
         )
         resp.raise_for_status()
@@ -250,12 +252,13 @@ def get_file_preview():
         return 'No artifact id specified', 400
 
     max_rows = 100
-    session_id = get_current_token()
     try:
         t0 = time.perf_counter()
+        # Read endpoints do not pass sessionId so collaborators can fetch
+        # artifacts produced by any participant in the room.
         resp = _sandbox_session.get(
             api_address + ":" + str(api_port) + "/get",
-            params={"fileName": file_name, "maxRows": max_rows, "sessionId": session_id},
+            params={"fileName": file_name, "maxRows": max_rows},
             timeout=60,
         )
         resp.raise_for_status()

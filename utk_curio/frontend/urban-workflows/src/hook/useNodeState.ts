@@ -32,7 +32,7 @@ export function useNodeState(data: any, nodeType: NodeType) {
 
   // Reverse-sync: when collaboration updates node.data.output via setNodes, pull into local state
   useEffect(() => {
-    if (data.output && data.output.content && data.output.content !== output.content) {
+    if (data.output && (data.output.content !== output.content || data.output.code !== output.code)) {
       setOutput(data.output);
     }
   }, [data.output?.content, data.output?.code]);
