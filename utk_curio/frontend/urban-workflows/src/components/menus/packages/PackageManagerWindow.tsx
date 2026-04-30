@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import styles from "./PackageManagerWindow.module.css";
 import ModalShell from "../../ModalShell";
 import { useFlowContext } from "../../../providers/FlowProvider";
+import { BACKEND_URL } from "../../../utils/backendUrl";
 
 export default function PackageManagerWindow({
     open,
@@ -26,7 +27,7 @@ export default function PackageManagerWindow({
         setInstalling(true);
         setInstallLog([]);
         try {
-            const response = await fetch(process.env.BACKEND_URL + "/installPackages", {
+            const response = await fetch(BACKEND_URL + "/installPackages", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ packages }),

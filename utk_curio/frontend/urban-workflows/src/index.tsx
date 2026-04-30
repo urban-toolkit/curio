@@ -43,6 +43,7 @@ loader.config({ monaco });
 
 import "./registry";
 import { getAllNodeTypes } from "./registry";
+import { BACKEND_URL } from "./utils/backendUrl";
 
 (() => {
   const nodeTypes: Record<
@@ -55,7 +56,7 @@ import { getAllNodeTypes } from "./registry";
       outputTypes: desc.outputPorts.flatMap((p) => p.types),
     };
   }
-  fetch(process.env.BACKEND_URL + "/node-types", {
+  fetch(BACKEND_URL + "/node-types", {
     method: "POST",
     headers: { "Content-type": "application/json; charset=UTF-8" },
     body: JSON.stringify({ nodeTypes }),
@@ -116,7 +117,7 @@ const ProjectsRoute: React.FC = () => {
 
 const App: React.FC = () => {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={(process.env.PUBLIC_PATH || "/").replace(/\/$/, "") || undefined}>
       <BackendHealthBanner>
         <ToastProvider>
           <ReactFlowProvider>
@@ -148,7 +149,11 @@ const App: React.FC = () => {
                     />
                     <Route
                       path="/"
-                      element={<HomeRedirect />}
+                      element={
+                        <RequireAuth>
+                          <HomeRedirect />
+                        </RequireAuth>
+                      }
                     />
                   </Routes>
                 </UserProvider>

@@ -3,6 +3,7 @@ import styles from './FileUpload.module.css';
 import clsx from 'clsx';
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faFileArrowUp, faXmark, faCheck } from "@fortawesome/free-solid-svg-icons";
+import { BACKEND_URL } from "../../../utils/backendUrl";
 
 const FileUpload = ({  }) => {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
@@ -23,7 +24,7 @@ const FileUpload = ({  }) => {
     setUploadStatus('uploading');
 
     try {
-      const res = await fetch(`${process.env.BACKEND_URL}/upload`, {
+      const res = await fetch(`${BACKEND_URL}/upload`, {
         method: 'POST',
         body: formData,
       });

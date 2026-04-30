@@ -1,0 +1,125 @@
+name: Deploy
+
+# One-time setup:
+#   1. Tailscale: create OAuth client (scope: auth_keys, tag: tag:ci).
+#      Repo secrets: TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET
+#   2. Tailscale ACL: tag:ci -> tag:curio-server:22
+#   3. On the server, run:
+#        sudo tailscale up --advertise-tags=tag:curio-server --ssh
+#      The Tailscale device keeps its OS hostname `utk`.
+#   4. SSH key: deploy user has the public key in
+#      /home/deploy/.ssh/authorized_keys; private key is GH secret
+#      DEPLOY_SSH_KEY.
+#   5. On the server, set up two side-by-side checkouts:
+#        sudo -iu deploy
+#        git clone https://github.com/<you>/curio.git /srv/curio        # stable
+#        git clone https://github.com/<you>/curio.git /srv/curio-dev   # test
+#
+#      And a per-checkout .env so the two stacks don't collide on
+#      container names or ports:
+#
+#        # /srv/curio/.env  (stable — keeps the original ports)
+#        CURIO_CONTAINER_NAME=curio
+#        CURIO_PORT_2000=2000
+#        CURIO_PORT_5002=5002
+#        CURIO_PORT_8080=8080
+#
+#        # /srv/curio-dev/.env
+#        CURIO_CONTAINER_NAME=curio-dev
+#        CURIO_PORT_2000=2010
+#        CURIO_PORT_5002=5012
+#        CURIO_PORT_8080=8090
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'utk_curio/**'
+      - 'Dockerfile'
+      - 'docker-compose.yml'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to deploy to stable (branch, tag, or SHA)'
+        required: false
+        default: 'main'
+
+jobs:
+  deploy-dev:
+    # Runs on every push (matching the paths filter) AND alongside deploy-stable
+    # whenever the workflow is manually dispatched, so dev tracks stable.
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-dev
+      cancel-in-progress: false
+    environment: dev
+    steps:
+      - name: Connect to tailnet
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H utk >> ~/.ssh/known_hosts
+
+      - name: Deploy ${{ inputs.ref || github.ref_name }} to curio-dev stack
+        run: |
+          ssh -i ~/.ssh/id_ed25519 deploy@utk \
+            bash -s "${{ inputs.ref || github.ref_name }}" <<'EOF'
+          set -euo pipefail
+          ref="$1"
+          cd /srv/curio-dev
+          git fetch --prune --tags origin
+          git checkout --detach "$ref" 2>/dev/null || git checkout "$ref"
+          mkdir -p instance .curio
+          export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
+          export BACKEND_URL=https://curio-dev.urbantk.org/api
+          docker compose -p curio-dev down --remove-orphans 2>/dev/null || true
+          docker compose -p curio-dev up -d --build
+          EOF
+
+  deploy-stable:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-stable
+      cancel-in-progress: false
+    environment: stable
+    steps:
+      - name: Connect to tailnet
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H utk >> ~/.ssh/known_hosts
+
+      - name: Deploy ${{ inputs.ref }} to stable stack
+        run: |
+          ssh -i ~/.ssh/id_ed25519 deploy@utk \
+            bash -s "${{ inputs.ref }}" <<'EOF'
+          set -euo pipefail
+          ref="$1"
+          cd /srv/curio
+          git fetch --prune --tags origin
+          git checkout --detach "$ref" 2>/dev/null || git checkout "$ref"
+          mkdir -p instance .curio
+          export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
+          export BACKEND_URL=https://curio.urbantk.org/api
+          docker compose -p curio down --remove-orphans 2>/dev/null || true
+          docker compose -p curio up -d --build
+          EOF

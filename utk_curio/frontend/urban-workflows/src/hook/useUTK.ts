@@ -6,6 +6,7 @@ import { Environment, GrammarInterpreter } from "utk";
 import { get_camera } from "../utils/parsing";
 import { fetchData } from "../services/api";
 import { getToken } from "../utils/authApi";
+import { BACKEND_URL } from "../utils/backendUrl";
 import { formatDate, getType, mapTypes } from "../utils/formatters";
 
 import { ICodeData } from "../types";
@@ -78,7 +79,7 @@ export function useUTK({ data, code }: { data: any, code: string }) {
     if (!isEqual && inputData !== undefined) {
       const _token = getToken();
       const _authHeader: Record<string, string> = _token ? { "Authorization": `Bearer ${_token}` } : {};
-      fetch(`${process.env.BACKEND_URL}/insert_attribute_value_change`, {
+      fetch(`${BACKEND_URL}/insert_attribute_value_change`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -391,7 +392,7 @@ export function useUTK({ data, code }: { data: any, code: string }) {
           }
 
           const _tok = getToken();
-          fetch(process.env.BACKEND_URL + "/toLayers", {
+          fetch(BACKEND_URL + "/toLayers", {
             method: "POST",
             body: JSON.stringify({
               geojsons: geojsons,

@@ -7,6 +7,7 @@ import React, {
     useEffect
 } from "react";
 import { getToken } from "../utils/authApi";
+import { BACKEND_URL } from "../utils/backendUrl";
 
 interface LLMContextProps {
     llmRequest: (preamble_file: string, prompt_file: string, text: string, chatId?: string) => any;
@@ -47,7 +48,7 @@ const LLMProvider = ({ children }: { children: ReactNode }) => {
         if(chatId)
             message.chatId = chatId;
 
-        const response_usage = await fetch(`${process.env.BACKEND_URL}/llm/check`, {
+        const response_usage = await fetch(`${BACKEND_URL}/llm/check`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -66,7 +67,7 @@ const LLMProvider = ({ children }: { children: ReactNode }) => {
         if(result_usage.result != "yes")
             await new Promise(resolve => setTimeout(resolve, (result_usage.result + 15) * 1000));
 
-        const response = await fetch(`${process.env.BACKEND_URL}/llm/chat`, {
+        const response = await fetch(`${BACKEND_URL}/llm/chat`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",

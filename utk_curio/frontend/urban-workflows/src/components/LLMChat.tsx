@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useLLMContext } from "../providers/LLMProvider";
 import { getToken } from "../utils/authApi";
+import { BACKEND_URL } from "../utils/backendUrl";
 import { useFlowContext } from "../providers/FlowProvider";
 import CSS from "csstype";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -60,7 +61,7 @@ const ChatComponent = () => {
         setLoading(false);
         setMessages([]);
         const token = getToken();
-        fetch(process.env.BACKEND_URL+"/llm/clean?chatId=ChatComponent", {
+        fetch(BACKEND_URL+"/llm/clean?chatId=ChatComponent", {
             method: "GET",
             headers: token ? { "Authorization": `Bearer ${token}` } : {},
         });

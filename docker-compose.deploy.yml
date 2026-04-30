@@ -1,0 +1,29 @@
+# Compose override used only by the deploy workflow
+# (.github/workflows/deploy.yml).
+#
+# Adds the --deploy flag to the runtime command so the deployed stack
+# boots with auth + projects enabled (CURIO_NO_AUTH=0, CURIO_NO_PROJECT=0).
+services:
+  curio:
+    command:
+      - python
+      - curio.py
+      - start
+      - all
+      - --deploy
+      - --backend-host
+      - 0.0.0.0
+      - --backend-port
+      - "5002"
+      - --sandbox-host
+      - 0.0.0.0
+      - --sandbox-port
+      - "2000"
+      - --backend-host
+      - 0.0.0.0
+      - --backend-port
+      - "5002"
+      - --sandbox-host
+      - 0.0.0.0
+      - --sandbox-port
+      - "2000"

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
+import { BACKEND_URL } from "../utils/backendUrl";
 
 export default async function useTemplates() {
     try{
-        const response = await fetch(process.env.BACKEND_URL + '/templates');
+        const response = await fetch(BACKEND_URL + '/templates');
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }

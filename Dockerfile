@@ -27,6 +27,18 @@ FROM node:20-bookworm-slim AS frontend_builder
 WORKDIR /src
 COPY utk_curio/frontend/ /src/utk_curio/frontend/
 
+# BACKEND_URL and PUBLIC_PATH are baked into the JS bundle at build time.
+# Passed in via docker compose build args (see docker-compose.yml).
+# PUBLIC_PATH is also exported as ENV so webpack.config.js (which runs in
+# Node before dotenv-webpack populates process.env from .env) can read it.
+ARG BACKEND_URL
+ARG PUBLIC_PATH
+ENV PUBLIC_PATH=$PUBLIC_PATH
+RUN if [ -n "$BACKEND_URL" ]; then \
+      sed -i "s|^BACKEND_URL=.*|BACKEND_URL=$BACKEND_URL|" \
+        /src/utk_curio/frontend/urban-workflows/.env; \
+    fi
+
 WORKDIR /src/utk_curio/frontend/utk-workflow/src/utk-ts
 RUN npm install && npm run build
 

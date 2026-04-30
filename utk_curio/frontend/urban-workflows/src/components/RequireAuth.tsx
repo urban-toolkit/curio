@@ -1,7 +1,7 @@
 import React from "react";
-import { Navigate } from "react-router-dom";
 import { useUserContext } from "../providers/UserProvider";
 import { Loading } from "./login/Loading";
+import SignIn from "../pages/auth/SignIn";
 
 export const RequireAuth: React.FC<{ children: React.ReactNode }> = ({
   children,
@@ -11,7 +11,7 @@ export const RequireAuth: React.FC<{ children: React.ReactNode }> = ({
   if (loading) return <Loading />;
   if (!user) {
     if (!enableUserAuth) return <Loading />;
-    return <Navigate to="/auth/signin" replace />;
+    return <SignIn />;
   }
 
   return <>{children}</>;

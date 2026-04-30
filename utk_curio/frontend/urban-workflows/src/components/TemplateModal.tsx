@@ -3,6 +3,7 @@ import ModalShell from "./ModalShell";
 import content from "./modal-content.module.css";
 import { Template, useTemplateContext } from "../providers/TemplateProvider";
 import { AccessLevelType, NodeType } from "../constants";
+import { BACKEND_URL } from "../utils/backendUrl";
 
 type TemplateModalProps = {
     templateId?: string;
@@ -60,7 +61,7 @@ function TemplateModal({
         }
 
         if (Object.keys(template).length > 0) {
-            fetch(process.env.BACKEND_URL + "/addTemplate", {
+            fetch(BACKEND_URL + "/addTemplate", {
                 method: "POST",
                 body: JSON.stringify(template),
                 headers: {

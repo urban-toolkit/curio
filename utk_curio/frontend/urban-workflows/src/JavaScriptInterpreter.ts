@@ -1,6 +1,7 @@
 import { NodeType } from "./constants";
 import { formatDate, mapTypes } from "./utils/formatters";
 import { getToken } from "./utils/authApi";
+import { BACKEND_URL } from "./utils/backendUrl";
 
 export class JavaScriptInterpreter {
     public interpretCode(
@@ -25,7 +26,7 @@ export class JavaScriptInterpreter {
         let startTime = formatDate(new Date());
 
         const _token = getToken();
-        fetch(process.env.BACKEND_URL + "/processJavaScriptCode", {
+        fetch(BACKEND_URL + "/processJavaScriptCode", {
             method: "POST",
             body: JSON.stringify({
                 code: userCode,

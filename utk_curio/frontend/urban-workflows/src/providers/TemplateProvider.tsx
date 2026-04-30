@@ -28,6 +28,7 @@ import {
 } from "../constants";
 import useTemplates from "./templates";
 import { v4 as uuid } from "uuid";
+import { BACKEND_URL } from "../utils/backendUrl";
 
 export interface Template {
     id: string;
@@ -115,7 +116,7 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
                 newTemplates.push({ ...templateNew });
 
                 if(Object.keys(template).length > 0){ // If there is a template
-                    fetch(process.env.BACKEND_URL + "/addTemplate", {
+                    fetch(BACKEND_URL + "/addTemplate", {
                         method: "POST",
                         body: JSON.stringify(templateNew),
                         headers: {

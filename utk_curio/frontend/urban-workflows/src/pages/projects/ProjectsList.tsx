@@ -7,6 +7,7 @@ import { notebookToTrill } from "../../NotebookConvertor";
 import logo from "assets/curio-2.png";
 import DataflowThumbnail from "../../components/DataflowThumbnail";
 import LlmSettingsModal from "../../components/LlmSettingsModal";
+import { BACKEND_URL } from "../../utils/backendUrl";
 
 type ViewMode = "grid" | "list";
 type FilterTab = "all" | "recent" | "archived";
@@ -108,7 +109,7 @@ const ProjectsList: React.FC = () => {
     reader.onload = async (event: ProgressEvent<FileReader>) => {
       try {
         const json = JSON.parse(event.target?.result as string) as Record<string, unknown>;
-        const trillSpec = await notebookToTrill(json, process.env.BACKEND_URL as string);
+        const trillSpec = await notebookToTrill(json, BACKEND_URL);
         const name = file.name.replace(/\.ipynb$/i, "");
         await projectsApi.create({ name, spec: trillSpec as unknown as Record<string, unknown>, outputs: [] });
         loadProjects();

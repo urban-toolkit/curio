@@ -4,16 +4,28 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: curio
+      args:
+        BACKEND_URL: ${BACKEND_URL:-http://localhost:5002}
+        PUBLIC_PATH: ${PUBLIC_PATH:-/}
+    container_name: ${CURIO_CONTAINER_NAME:-curio}
     tty: true
     stdin_open: true
     environment:
       - PYTHONUNBUFFERED=1
+      # Google OAuth — read by utk_curio/backend/app/services/google_oauth.py.
+      # Values come from the per-stack .env file alongside this compose file.
+      - REDIRECT_URI=${REDIRECT_URI:-}
+      - CLIENT_ID=${CLIENT_ID:-}
+      - CLIENT_SECRET=${CLIENT_SECRET:-}
     ports:
-      - "2000:2000"
-      - "5002:5002"
-      - "8080:8080"
+      - "${CURIO_PORT_2000:-2000}:2000"
+      - "${CURIO_PORT_5002:-5002}:5002"
+      - "${CURIO_PORT_8080:-8080}:8080"
     volumes:
       - ./templates:/app/templates
       - ./data:/app/data
       - /Users/kirtanpatel/Downloads:/Users/kirtanpatel/Downloads:ro
+      # Share sandbox .data files with the host so Playwright (runs on host in CI) can read them
+      - ./.curio:/app/.curio
+      # Persist the Flask SQLite DB (users, projects, sessions) across container recreates
+      - ./instance:/app/instance

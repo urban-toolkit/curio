@@ -11,6 +11,7 @@ import { io, Socket } from 'socket.io-client';
 import { v4 as uuidv4 } from 'uuid';
 import { useFlowContext } from './FlowProvider';
 import { PythonInterpreter } from '../PythonInterpreter';
+import { BACKEND_URL } from '../utils/backendUrl';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -121,10 +122,6 @@ const CollaborationContext = createContext<CollaborationContextProps>({
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-const BACKEND_URL =
-  (window as any).__CURIO_BACKEND_URL__ ||
-  `http://${window.location.hostname}:5002`;
 
 // Runtime-only fields in node.data — class instances or functions that must be
 // recreated locally in each browser. Never sync them over the socket, and always

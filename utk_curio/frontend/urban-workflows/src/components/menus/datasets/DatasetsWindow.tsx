@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import styles from "./DatasetsWindow.module.css";
 import ModalShell from "../../ModalShell";
+import { BACKEND_URL } from "../../../utils/backendUrl";
 
 export default function DatasetsWindow({
     open,
@@ -14,7 +15,7 @@ export default function DatasetsWindow({
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const fetchDatasets = () => {
-        fetch(process.env.BACKEND_URL + "/datasets", { method: "GET" })
+        fetch(BACKEND_URL + "/datasets", { method: "GET" })
             .then(res => {
                 if (!res.ok) throw new Error('Error retrieving datasets: ' + res.statusText);
                 return res.json();
@@ -46,7 +47,7 @@ export default function DatasetsWindow({
 
         setUploadStatus('uploading');
         try {
-            const res = await fetch(`${process.env.BACKEND_URL}/upload`, {
+            const res = await fetch(`${BACKEND_URL}/upload`, {
                 method: 'POST',
                 body: formData,
             });

@@ -616,6 +616,24 @@ def main():
     setup_logging()
     verbosity = int(args.verbose)
 
+    # ENABLE_COLLAB=true → expose dev servers on the LAN so other browsers
+    # on the same network can join the collab session. Override the host
+    # args (loopback by default) and resolve the LAN IP for a join hint.
+    collab_enabled = os.getenv("ENABLE_COLLAB", "").lower() == "true"
+    lan_ip = None
+    if collab_enabled:
+        import socket as _socket
+        try:
+            s = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))  # no packets sent — just routes to a public IP
+            lan_ip = s.getsockname()[0]
+            s.close()
+        except Exception:
+            lan_ip = None
+        args.backend_host = "0.0.0.0"
+        args.sandbox_host = "0.0.0.0"
+        args.frontend_host = "0.0.0.0"
+
     set_environment_variables(
         backend_host=args.backend_host,
         backend_port=args.backend_port,
@@ -625,6 +643,13 @@ def main():
         no_project=args.no_project,
         deploy=args.deploy,
     )
+
+    if collab_enabled:
+        log_always("ENABLE_COLLAB=true — Curio is reachable on the LAN.")
+        if lan_ip:
+            log_always(f"Share this URL with collaborators: http://{lan_ip}:{args.frontend_port}")
+        else:
+            log_always(f"Share this URL with collaborators: http://<your-LAN-IP>:{args.frontend_port}")
 
     # if os.getenv("CURIO_DEV") != "1":
         # if args.force_rebuild or args.force_db_init:
