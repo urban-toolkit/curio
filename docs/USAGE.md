@@ -11,6 +11,8 @@
 - [Ray tracing](#ray-tracing)
 - [Quick start](#quick-start)
 
+> [!NOTE]
+> This guide covers running Curio locally for development or single-user use. To host a multi-user instance on a server with HTTPS, see the [deployment guide](DEPLOYMENT.md).
 
 ## Installation overview
 

@@ -76,6 +76,8 @@ For detailed instructions on how to use the project, please see the [usage](docs
 
 🚀 Curio now supports a Docker-based setup for easier installation and orchestration of all components. See the [usage guide](docs/USAGE.md) for instructions on running Curio with Docker.
 
+🌐 To host a multi-user instance on your own server with HTTPS, see the [deployment guide](docs/DEPLOYMENT.md).
+
 If you'd like to contribute, see the [contributions](docs/CONTRIBUTING.md) document for guidelines. For questions, join [UTK's Discord](https://discord.gg/ajT6wF8TmN) server.
 
 ---

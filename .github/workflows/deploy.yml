@@ -83,7 +83,8 @@ jobs:
           export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
           export BACKEND_URL=https://curio-dev.urbantk.org/api
           docker compose -p curio-dev down --remove-orphans 2>/dev/null || true
-          docker compose -p curio-dev up -d --build
+          docker compose -p curio-dev build --no-cache
+          docker compose -p curio-dev up -d
           EOF
 
   deploy-stable:
@@ -121,5 +122,6 @@ jobs:
           export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
           export BACKEND_URL=https://curio.urbantk.org/api
           docker compose -p curio down --remove-orphans 2>/dev/null || true
-          docker compose -p curio up -d --build
+          docker compose -p curio build --no-cache
+          docker compose -p curio up -d
           EOF
