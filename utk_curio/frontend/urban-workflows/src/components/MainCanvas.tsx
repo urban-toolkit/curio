@@ -714,18 +714,25 @@ export function MainCanvas() {
                                     </div>
                                 )}
                                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 9 }}>
-                                    <button onClick={() => resolveConflict(c, "keep_mine")} style={{ ...buttonStyle, padding: "4px 8px", fontSize: 11 }}>
-                                        Keep mine
-                                    </button>
-                                    <button onClick={() => resolveConflict(c, "accept_other")} style={{ ...buttonStyle, padding: "4px 8px", fontSize: 11, backgroundColor: "#475467" }}>
-                                        Accept other
-                                    </button>
-                                    <button onClick={() => resolveConflict(c, "manual")} style={{ ...buttonStyle, padding: "4px 8px", fontSize: 11, backgroundColor: "#7c3aed" }}>
-                                        Manual
-                                    </button>
-                                    <button onClick={() => resolveConflict(c, "cancel")} style={{ ...buttonStyle, padding: "4px 8px", fontSize: 11, backgroundColor: "#b42318" }}>
-                                        Cancel
-                                    </button>
+                                    {(() => {
+                                        // "Accept" lets the proposed action go through; "Decline" cancels it.
+                                        // The underlying action depends on whether you proposed the change:
+                                        //   actor accepting → keep_mine (force), declining → accept_other (revert)
+                                        //   bystander accepting → accept_other (force), declining → keep_mine (cancel)
+                                        const isActor = !!c.actor && c.actor.userId === myUserId;
+                                        const acceptAction: "keep_mine" | "accept_other" = isActor ? "keep_mine" : "accept_other";
+                                        const declineAction: "keep_mine" | "accept_other" = isActor ? "accept_other" : "keep_mine";
+                                        return (
+                                            <>
+                                                <button onClick={() => resolveConflict(c, acceptAction)} style={{ ...buttonStyle, padding: "4px 8px", fontSize: 11, backgroundColor: "#f15a4f" }}>
+                                                    Accept
+                                                </button>
+                                                <button onClick={() => resolveConflict(c, declineAction)} style={{ ...buttonStyle, padding: "4px 8px", fontSize: 11 }}>
+                                                    Decline
+                                                </button>
+                                            </>
+                                        );
+                                    })()}
                                 </div>
                             </div>
                         ))}
