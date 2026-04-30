@@ -1,3 +1,4 @@
+.claude/
 dist/
 *.eggs
 *.egg-info
