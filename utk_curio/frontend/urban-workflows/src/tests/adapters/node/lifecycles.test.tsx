@@ -8,18 +8,6 @@ jest.mock('../../../hook/useVega', () => ({
   useVega: () => ({ handleCompileGrammar: jest.fn().mockResolvedValue(undefined) }),
 }));
 
-jest.mock('../../../hook/useUTK', () => ({
-  useUTK: () => ({
-    sendCode: jest.fn(),
-    defaultGrammar: '{}',
-    showLoading: false,
-    setSendCodeCallback: jest.fn(),
-    customWidgetsCallback: jest.fn(),
-    handleCompileGrammar: jest.fn().mockResolvedValue(undefined),
-  }),
-}));
-
-
 jest.mock('../../../providers/ProvenanceProvider', () => ({
   useProvenanceContext: () => ({
     nodeExecProv: jest.fn(),
@@ -75,7 +63,6 @@ jest.mock('../../../utils/formatters', () => ({
 import { useCodeNodeLifecycle } from '../../../adapters/node/codeNodeLifecycle';
 import { useDataExportLifecycle } from '../../../adapters/node/dataExportLifecycle';
 import { useVegaLifecycle } from '../../../adapters/node/vegaLifecycle';
-import { useUtkLifecycle } from '../../../adapters/node/utkLifecycle';
 import { useSimpleVisLifecycle } from '../../../adapters/node/simpleVisLifecycle';
 import { useFlowSwitchLifecycle } from '../../../adapters/node/flowSwitchLifecycle';
 import { useMergeFlowLifecycle } from '../../../adapters/node/mergeFlowLifecycle';
@@ -180,19 +167,6 @@ describe('Lifecycle hooks — NodeLifecycleHook contract conformance', () => {
       const result = await callLifecycle(useVegaLifecycle);
       assertValidLifecycleResult(result.current);
       expect(typeof result.current.applyGrammar).toBe('function');
-    });
-  });
-
-  describe('useUtkLifecycle', () => {
-    test('returns full grammar lifecycle fields', async () => {
-      const result = await callLifecycle(useUtkLifecycle);
-      assertValidLifecycleResult(result.current);
-      expect(typeof result.current.applyGrammar).toBe('function');
-      expect(result.current.sendCodeOverride).toBeDefined();
-      expect(result.current.setSendCodeCallbackOverride).toBeDefined();
-      expect(typeof result.current.showLoading).toBe('boolean');
-      expect(typeof result.current.customWidgetsCallback).toBe('function');
-      expect(result.current.defaultValueOverride).toBeDefined();
     });
   });
 

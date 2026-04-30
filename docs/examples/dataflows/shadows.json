@@ -1,0 +1,78 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "shadows-db",
+        "type": "AUTK_DB",
+        "x": 200,
+        "y": 200,
+        "content": "import { AutkSpatialDb } from 'autk-db';\n\nconst db = new AutkSpatialDb();\nawait db.init();\n\nawait db.loadOsm({\n    queryArea: { geocodeArea: 'Chicago', areas: ['Loop', 'Near South Side'] },\n    outputTableName: 'table_osm',\n    autoLoadLayers: {\n        coordinateFormat: 'EPSG:3395',\n        layers: ['surface', 'parks', 'water', 'roads', 'buildings'],\n        dropOsmTable: true,\n    },\n});\n\nawait db.loadCsv({\n    csvFileUrl: 'https://raw.githubusercontent.com/urban-toolkit/autark/main/usecases/public/data/shadows_chicago.csv',\n    outputTableName: 'shadows',\n    geometryColumns: { latColumnName: 'latitude', longColumnName: 'longitude', coordinateFormat: 'EPSG:3395' },\n});\n\nconst layers = [];\nfor (const layer of db.getLayerTables()) {\n    layers.push({ name: layer.name, type: layer.type, geojson: await db.getLayer(layer.name) });\n}\nreturn layers;",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load OSM Chicago Loop + Near South Side layers and accumulated shadow CSV measurements.",
+        "metadata": { "keywords": [] }
+      },
+      {
+        "id": "shadows-compute",
+        "type": "AUTK_COMPUTE",
+        "x": 800,
+        "y": 200,
+        "content": "// Per-road shadow metric via GPU shader. Full WGSL lives upstream at\n//   usecases/src/shadows/shadow.wgsl\n// Paste it into wgslBody when running the full analysis.\n\nconst roads = arg.find(l => l.name === 'table_osm_roads')?.geojson;\nif (!roads) throw new Error('roads layer missing');\n\n// Pick a representative footprint + height to demonstrate; in the full\n// analysis these come from a building selected via map picking.\nconst buildings = arg.find(l => l.name === 'table_osm_buildings')?.geojson;\nconst sample = buildings?.features?.[0];\nconst footprint = sample?.geometry?.coordinates?.[0]?.flat() ?? [0, 0];\nconst height = sample?.properties?.height ?? 30;\n\nconst wgslBody = /* paste shadow.wgsl here */ `\n  return vec2f(0.0, 0.0);\n`;\n\nconst geojsonCompute = new ComputeGpgpu();\nconst computedRoads = await geojsonCompute.run({\n    collection: roads,\n    variableMapping: { seg: 'geometry.coordinates', sjoin_avg: 'sjoin.avg.6' },\n    attributeMatrices: { seg: { rows: 'auto', cols: 2 } },\n    uniforms: { bld_height: height, doy: 172 },\n    uniformMatrices: { ring: { data: footprint, cols: 2 } },\n    outputColumns: ['shadow', 'contribution'],\n    wgslBody,\n});\n\nreturn arg.map(l => l.name === 'table_osm_roads' ? { ...l, geojson: computedRoads } : l);",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "GPU compute of per-road shadow minutes and contribution % using a building footprint and height.",
+        "metadata": { "keywords": [] }
+      },
+      {
+        "id": "shadows-map",
+        "type": "AUTK_MAP",
+        "x": 1400,
+        "y": 100,
+        "content": "// Render layers and color roads by shadow contribution.\nconst map = new AutkMap(container);\nawait map.init();\nfor (const layer of arg) {\n    map.loadCollection(layer.name, { collection: layer.geojson, type: layer.type });\n}\nmap.updateRenderInfo('table_osm_buildings', { isPick: true });\nmap.updateRenderInfo('table_osm_roads', { isColorMap: true });\nmap.updateThematic('table_osm_roads', {\n    collection: arg.find(l => l.name === 'table_osm_roads').geojson,\n    property: 'properties.compute.contribution',\n});\nmap.draw();\nreturn map;",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Show roads colored by shadow contribution percentage; pick buildings to drive the histogram.",
+        "metadata": { "keywords": [] }
+      },
+      {
+        "id": "shadows-histogram",
+        "type": "AUTK_PLOT",
+        "x": 1400,
+        "y": 600,
+        "content": "// Brushable histogram of shadow values across road segments.\nconst roads = arg.find(l => l.name === 'table_osm_roads')?.geojson ?? arg[0]?.geojson;\nreturn new AutkChart(container, {\n    type: 'barchart',\n    collection: roads,\n    attributes: { axis: ['sjoin.avg.6', '@transform'] },\n    labels: { axis: ['Hours of shadow', '#Road segments'], title: 'Shadow distribution' },\n    width: 600,\n    height: 380,\n    events: ['brushX'],\n    transform: { preset: 'binning-1d', options: { bins: 13 } },\n});",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Histogram of road shadow hours, brushable to highlight matching road segments on the map.",
+        "metadata": { "keywords": [] }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-shadows-db-to-compute",
+        "source": "shadows-db",
+        "target": "shadows-compute"
+      },
+      {
+        "id": "edge-shadows-compute-to-map",
+        "source": "shadows-compute",
+        "target": "shadows-map"
+      },
+      {
+        "id": "edge-shadows-compute-to-hist",
+        "source": "shadows-compute",
+        "target": "shadows-histogram"
+      },
+      {
+        "id": "edge-shadows-map-hist-interaction",
+        "source": "shadows-map",
+        "target": "shadows-histogram",
+        "type": "Interaction"
+      }
+    ],
+    "name": "Chicago Shadows",
+    "task": "Load OSM Chicago Loop and a CSV of accumulated shadow measurements, GPU-compute per-road shadow contribution from a building, and link a histogram brush to map highlights.",
+    "timestamp": 1777407600001,
+    "provenance_id": "shadows",
+    "packages": []
+  }
+}

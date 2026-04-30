@@ -10,7 +10,7 @@
 # Options:
 #   --use-existing      Skip start/stop and clean; use already-running Curio servers
 #   --headed            Open a visible browser window during E2E tests
-#   --workflows A,B     Run only the named workflow files (e.g. Vega.json,UTK.json)
+#   --workflows A,B     Run only the named workflow files (e.g. Vega.json,niteroi.json)
 #   --backend-only      Run only backend unit tests
 #   --sandbox-only      Run only sandbox unit tests
 #   --jest-only         Run only Jest frontend unit tests
@@ -131,7 +131,6 @@ pip install -r "$REPO_ROOT/requirements.txt" -q
 
 if [[ $USE_EXISTING -eq 0 ]]; then
   echo "==> Installing frontend npm dependencies..."
-  (cd "$REPO_ROOT/utk_curio/frontend/utk-workflow/src/utk-ts" && npm install -q)
   (cd "$REPO_ROOT/utk_curio/frontend/urban-workflows" && npm install -q)
 fi
 

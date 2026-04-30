@@ -540,10 +540,9 @@ def save_to_duckdb(value, node_id=None, session_id=None):
             )
             prepared.to_parquet(buf)  # GeoParquet — CRS preserved automatically
             # parquet drops Python-side attributes like ``gdf.metadata`` (set by
-            # parse_geodataframe when upstream JSON carried a metadata.name). VIS_UTK
-            # hard-requires that name (useUTK.ts early-returns without it, which
-            # leaves disablePlay=true and stalls the play button), so stash it in
-            # value_json and restore on load.
+            # parse_geodataframe when upstream JSON carried a metadata.name).
+            # Grammar visualizers historically depended on this name, so stash it
+            # in value_json and restore on load to preserve compatibility.
             meta = getattr(value, 'metadata', None)
             meta_json = _serialize_parquet_meta(
                 frame_metadata=meta,

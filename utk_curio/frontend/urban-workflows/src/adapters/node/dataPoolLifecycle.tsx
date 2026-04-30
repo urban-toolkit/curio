@@ -61,21 +61,6 @@ export const useDataPoolLifecycle: NodeLifecycleHook = (data, nodeState) => {
           let selects = Object.keys(details);
 
           for (const select of selects) {
-              if (details[select].source == NodeType.VIS_UTK) {
-                  // interactions from UTK only affect matching named geodataframes
-                  if (parsedInput.data.metadata == undefined) {
-                      continue;
-                  }
-
-                  if (parsedInput.data.metadata.name == undefined) {
-                      continue;
-                  }
-
-                  if (parsedInput.data.metadata.name != select) {
-                      continue;
-                  }
-              }
-
               if (details[select].type == VisInteractionType.POINT) {
                   // solve point interaction
                   localInteractedIndices.push({

@@ -37,3 +37,4 @@ curio_docker_log.txt
 test_file.txt
 
 data/
+_curio_*.mjs

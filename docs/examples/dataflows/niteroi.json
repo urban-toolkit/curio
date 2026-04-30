@@ -1,0 +1,94 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "niteroi-db",
+        "type": "AUTK_DB",
+        "x": 200,
+        "y": 200,
+        "content": "import { AutkSpatialDb } from 'autk-db';\n\nconst db = new AutkSpatialDb();\nawait db.init();\n\nawait db.loadOsm({\n    queryArea: { geocodeArea: 'Rio de Janeiro', areas: ['Niterói'] },\n    outputTableName: 'table_osm',\n    autoLoadLayers: {\n        coordinateFormat: 'EPSG:3395',\n        layers: ['surface', 'parks', 'water', 'roads'],\n        dropOsmTable: true,\n    },\n});\n\nconst layers = [];\nfor (const layer of db.getLayerTables()) {\n    layers.push({ name: layer.name, type: layer.type, geojson: await db.getLayer(layer.name) });\n}\nreturn layers;",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load OSM surface, parks, water, and roads layers for Niterói from Overpass.",
+        "metadata": { "keywords": [] }
+      },
+      {
+        "id": "niteroi-raster",
+        "type": "DATA_LOADING",
+        "x": 200,
+        "y": 500,
+        "content": "import requests\n\n# Niterói land surface temperature raster (24 yearly bands, 2001–2024).\n# Returned as a single-row GeoDataFrame so the path travels through the dataflow.\nimport geopandas as gpd\nfrom shapely.geometry import Point\n\nurl = 'https://raw.githubusercontent.com/urban-toolkit/autark/main/usecases/public/data/niteroi_lst_verao_2001_2024.tif'\n\ngdf = gpd.GeoDataFrame(\n    {'geotiff_url': [url], 'band_count': [24]},\n    geometry=[Point(0, 0)],\n    crs='EPSG:4326',\n)\nreturn gdf",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Reference the LST GeoTIFF (2001–2024) for Niterói. Body cells carry only the URL; loading happens server-side in autk-db.",
+        "metadata": { "keywords": [] }
+      },
+      {
+        "id": "niteroi-compute",
+        "type": "AUTK_COMPUTE",
+        "x": 700,
+        "y": 350,
+        "content": "// Spatial join roads × LST raster within a 1km buffer, then run an OLS\n// regression per road feature using ComputeGpgpu. The full WGSL shader\n// lives in the upstream Autark repo at\n//   usecases/src/niteroi/lst-regression-shader.ts\n// Paste it inline here and pass it as `wgslBody`.\n\n// Pull the roads layer out of the upstream layer array.\nconst roads = arg.find(l => l.name === 'table_osm_roads')?.geojson;\nif (!roads) throw new Error('roads layer missing from upstream');\n\nconst BAND_COUNT = 24;\n\nconst wgslBody = /* paste lstRegressionShader here */ `\n  // OLS slope + intercept across the 24 LST bands per feature.\n  return vec2f(0.0, 0.0);\n`;\n\nconst compute = new ComputeGpgpu();\nconst computedRoads = await compute.run({\n    collection: roads,\n    variableMapping: { bands: 'lst_timeseries' },\n    attributeArrays: { bands: BAND_COUNT },\n    outputColumns: ['angle', 'intercept'],\n    wgslBody,\n});\n\n// Replace the roads layer with the computed version.\nreturn arg.map(l => l.name === 'table_osm_roads'\n    ? { ...l, geojson: computedRoads }\n    : l);",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Per-road OLS regression of yearly LST values via GPU shader.",
+        "metadata": { "keywords": [] }
+      },
+      {
+        "id": "niteroi-map",
+        "type": "AUTK_MAP",
+        "x": 1300,
+        "y": 200,
+        "content": "// Render the layer stack and color roads by their warming angle.\nconst map = new AutkMap(container);\nawait map.init();\nfor (const layer of arg) {\n    map.loadCollection(layer.name, { collection: layer.geojson, type: layer.type });\n}\nmap.updateRenderInfo('table_osm_roads', { isPick: true, isColorMap: true });\nmap.updateThematic('table_osm_roads', {\n    collection: arg.find(l => l.name === 'table_osm_roads').geojson,\n    property: 'properties.compute.angle',\n});\nmap.draw();\nreturn map;",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Render Niterói layers with roads thematically colored by warming slope.",
+        "metadata": { "keywords": [] }
+      },
+      {
+        "id": "niteroi-scatter",
+        "type": "AUTK_PLOT",
+        "x": 1300,
+        "y": 600,
+        "content": "// Scatterplot: baseline LST vs warming angle, brushable.\nconst roads = arg.find(l => l.name === 'table_osm_roads')?.geojson ?? arg[0]?.geojson;\nreturn new AutkChart(container, {\n    type: 'scatterplot',\n    collection: roads,\n    attributes: { axis: ['compute.intercept', 'compute.angle'] },\n    labels: { axis: ['Baseline LST (°C)', 'Warming angle (°)'], title: 'LST regression' },\n    tickFormats: ['.1~f', '.3~f'],\n    width: 600,\n    height: 380,\n    events: ['brush'],\n});",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Brushable scatterplot of road regression results.",
+        "metadata": { "keywords": [] }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-db-to-compute",
+        "source": "niteroi-db",
+        "target": "niteroi-compute"
+      },
+      {
+        "id": "edge-raster-to-compute",
+        "source": "niteroi-raster",
+        "target": "niteroi-compute"
+      },
+      {
+        "id": "edge-compute-to-map",
+        "source": "niteroi-compute",
+        "target": "niteroi-map"
+      },
+      {
+        "id": "edge-compute-to-scatter",
+        "source": "niteroi-compute",
+        "target": "niteroi-scatter"
+      },
+      {
+        "id": "edge-map-scatter-interaction",
+        "source": "niteroi-map",
+        "target": "niteroi-scatter",
+        "type": "Interaction"
+      }
+    ],
+    "name": "Niteroi LST Regression",
+    "task": "Download OSM Niterói layers, fetch a 24-year land surface temperature GeoTIFF, run a per-road GPU regression, and explore warming trends with a brushable scatterplot linked to the map.",
+    "timestamp": 1777407600000,
+    "provenance_id": "niteroi",
+    "packages": []
+  }
+}

@@ -215,7 +215,6 @@ def check_install_build(dir, force_rebuild=False):
 def force_rebuild_frontend():
     log_info(f"[Frontend] Force rebuild requested.", COLOR_FRONTEND, 0)
     check_install_build("frontend/urban-workflows/", force_rebuild=True)
-    check_install_build("frontend/utk-workflow/src/utk-ts", force_rebuild=True)
     log_info(f"[Frontend] Force rebuild complete.", COLOR_FRONTEND, 0)
 
 def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=False):
@@ -224,8 +223,6 @@ def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=F
     # Only check if running dev mode
     original_dir = os.getcwd()
     if os.getenv("CURIO_DEV") == "1":
-        check_install_build("frontend/utk-workflow/src/utk-ts", force_rebuild=force_rebuild)
-        os.chdir(original_dir)
         check_install_build("frontend/urban-workflows/", force_rebuild=force_rebuild)
         os.chdir(original_dir)
 
@@ -510,21 +507,6 @@ def get_command_prefix():
             return "curio"
     return "python curio.py"
 
-def ensure_utk_installed():
-    try:
-        import utk
-    except ImportError:
-        log_always("Installing bundled utk tarball...")
-        import subprocess, sys, os
-        tarball_path = os.path.join(os.path.dirname(__file__), "sandbox", "utk-0.8.9.tar.gz")
-
-        result = subprocess.run([sys.executable, "-m", "pip", "install", tarball_path], capture_output=True, text=True)
-        log_info(result.stdout.strip(), verbose_level=2)
-        if result.returncode == 0:
-            log_info("Installed utk successfully.", verbose_level=1)
-        else:
-            log_error(f"Failed to install utk:\n{result.stderr.strip()}")
-
 def main():
 
     global processes
@@ -659,7 +641,6 @@ def main():
 
     if args.command == "start":
         if args.server == "all":
-            ensure_utk_installed()
             log_always("Starting all servers (backend, sandbox, frontend)...")
             processes = [
                 start_backend(args.backend_host, args.backend_port, force_db_init=args.force_db_init),
@@ -670,7 +651,6 @@ def main():
             if args.server == "backend":
                 processes.append(start_backend(args.backend_host, args.backend_port))
             elif args.server == "sandbox":
-                ensure_utk_installed()
                 processes.append(start_sandbox(args.sandbox_host, args.sandbox_port))
             elif args.server == "frontend":
                 processes.append(start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=args.force_rebuild))

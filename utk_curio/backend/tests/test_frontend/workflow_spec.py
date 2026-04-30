@@ -20,7 +20,7 @@ def _merge_edge_handle_index(edge_id: str) -> int | None:
 # Data model: parse workflow JSON into structured specs
 # ---------------------------------------------------------------------------
 
-GRAMMAR_TYPES = {"VIS_VEGA", "VIS_UTK"}
+GRAMMAR_TYPES = {"VIS_VEGA"}
 CODE_TYPES = {
     "DATA_LOADING", "DATA_TRANSFORMATION",
     "DATA_EXPORT", "COMPUTATION_ANALYSIS", "CONSTANTS",
