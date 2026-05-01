@@ -1,3 +1,7 @@
+html, body {
+    overflow: hidden;
+}
+
 /* Promote the panning layer to a GPU compositor layer in Firefox */
 .react-flow__viewport {
     will-change: transform;

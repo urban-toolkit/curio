@@ -1,57 +1,17 @@
-.datasetContainer {
-    padding: 20px;
-    height: 100%;
-  }
-  
-.tableWrapper {
-  margin-top: 20px;
-  max-height: 80%; /* Adjust height as needed */
-  overflow-y: auto;
-  border: 1px solid #ddd;
-}
-
-.datasetTable {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.datasetTable th,
-.datasetTable td {
-  border: 1px solid #ddd;
-  padding: 8px;
-  text-align: left;
-}
-
-.datasetTable tr:nth-child(even) {
-  background-color: #f9f9f9;
-}
-
-.datasetTable tr:nth-child(odd) {
-  background-color: #ffffff;
-}
-
-.datasetTable th {
-  background-color: #f2f2f2;
-  font-weight: bold;
-  position: sticky;
-  top: 0;
-  z-index: 1;
-}
- 
 .modal {
   position: fixed;
   display: flex;
-  justify-content: center;
   flex-direction: column;
-  align-items: center;
-  top: calc(50% - 20%);
-  left: 40%;
-  width: 20%;
-  height: 40%;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 480px;
+  max-height: 80vh;
   background-color: white;
   box-shadow: rgba(0, 0, 0, 0.35) 0px 5px 15px;
   border-radius: 10px;
   z-index: 500;
+  overflow: hidden;
 }
 
 .modalBackground {
@@ -72,4 +32,79 @@
   cursor: pointer;
   font-weight: bold;
   font-size: 19px;
+}
+
+.container {
+  padding: 24px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.title {
+  margin: 0;
+  font-size: 18px;
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: #666;
+}
+
+.uploadRow {
+  display: flex;
+  gap: 8px;
+}
+
+.uploadButton {
+  padding: 6px 14px;
+  background-color: #1E1F23;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.uploadButton:hover:not(:disabled) {
+  background-color: rgb(251, 170, 105);
+}
+
+.uploadButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.datasetList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid #eee;
+  border-radius: 4px;
+  padding: 6px;
+}
+
+.empty {
+  margin: 0;
+  font-size: 13px;
+  color: #999;
+  text-align: center;
+  padding: 10px 0;
+}
+
+.datasetRow {
+  display: flex;
+  align-items: center;
+  background: #f9f9f9;
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+
+.datasetName {
+  font-size: 13px;
+  font-family: monospace;
 }

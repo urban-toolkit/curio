@@ -1,12 +1,5 @@
-.aiToggleText {
-  font-weight: bold;
-  background-color: transparent;
-  color: #fbfcf6;
-  margin: 0 10px;
-}
-
-.aiToggleSwitch {
-  cursor: pointer
+.aiIconActive {
+  color: rgb(251, 170, 105);
 }
 
 .logo {
@@ -73,7 +66,9 @@
   flex-direction: row;
   cursor: pointer;
   align-items: center;
-  justify-content: space-evenly;
+  justify-content: flex-start;
+  gap: 10px;
+  padding-left: 12px;
 }
 
 .dropDownRow button {

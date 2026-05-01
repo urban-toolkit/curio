@@ -340,8 +340,6 @@ export function MainCanvas() {
         return nodes.filter(node => dashboardPins[node.id]);
     }, [nodes, dashboardOn, dashboardPins]);
 
-    const [fileMenuOpen, setFileMenuOpen] = useState(false);
-    const closeFileMenu = () => setFileMenuOpen(false);
 
     const loadingAnimation = () => {
         return <div id="plug-loader" role="status" aria-live="polite" aria-busy="true">
@@ -383,7 +381,6 @@ export function MainCanvas() {
         {!loading ? <div
             style={{ width: "100vw", height: "100vh", backgroundColor: "#f0f0f0" }}
             onContextMenu={onContextMenu}
-            onClick={closeFileMenu}
             // onWheelCapture={handleWheel}
         >
             {Object.keys(floatingPanels).map((key, index) => (
@@ -401,8 +398,6 @@ export function MainCanvas() {
                 setDashBoardMode={(value) => handleDashboardToggle(value)}
                 setDashboardOn={handleDashboardToggle}
                 dashboardOn={dashboardOn}
-                fileMenuOpen={fileMenuOpen}
-                setFileMenuOpen={setFileMenuOpen}
                 setAIMode={setAIMode}
             />
             <RightClickMenu
@@ -432,7 +427,6 @@ export function MainCanvas() {
                 isValidConnection={isValidConnection}
                 connectionMode={ConnectionMode.Loose}
                 minZoom={0.05}
-                fitView
                 onlyRenderVisibleElements
                 translateExtent={CANVAS_EXTENT}
             >
