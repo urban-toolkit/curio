@@ -19,13 +19,11 @@ FLASK_APP=server.py flask db upgrade
 
 ## Test databases
 
-Any test that boots the real backend (Playwright/E2E suite under `tests/test_frontend/`) runs against a **dedicated, wiped-clean test database**, never the dev `urban_workflow.db` / `.curio/provenance.db`. This keeps dev and test state fully separate.
+Any test that boots the real backend (Playwright/E2E suite under `tests/test_frontend/`) runs against a **dedicated, wiped-clean test database**, never the dev `urban_workflow.db`. This keeps dev and test state fully separate.
 
 - Export `CURIO_TESTING=1` (done automatically by `test.sh` and `curio coverage`).
-- The backend then resolves:
-  - `SQLALCHEMY_DATABASE_URI` → `sqlite:///<CURIO_LAUNCH_CWD>/.curio/test/urban_workflow_test.db` (override with `DATABASE_URL_TEST`).
-  - Provenance DB (`get_db_path()`) → `<CURIO_LAUNCH_CWD>/.curio/test/provenance.db`.
-- A session-scoped fixture in `tests/conftest.py` wipes both files and re-applies migrations at the start of every pytest session; a per-test autouse fixture truncates mutable tables between tests.
+- The backend then resolves `SQLALCHEMY_DATABASE_URI` → `sqlite:///<CURIO_LAUNCH_CWD>/.curio/test/urban_workflow_test.db` (override with `DATABASE_URL_TEST`).
+- A session-scoped fixture in `tests/conftest.py` wipes the file and re-applies migrations at the start of every pytest session; a per-test autouse fixture truncates mutable tables between tests.
 - Unit tests in `tests/test_users/` and `app/projects/tests/` already use in-memory `sqlite://` and do not need `CURIO_TESTING`.
 
 ### Test-only DB stub endpoints

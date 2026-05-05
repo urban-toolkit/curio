@@ -320,80 +320,54 @@ def _is_testing() -> bool:
     return os.environ.get("CURIO_TESTING", "").lower() in ("1", "true", "yes")
 
 
-def prepare_backend_database(force=False):
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.abspath(os.path.join(script_dir, ".."))
+def prepare_backend_database():
+    project_root = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-    # When CURIO_TESTING=1 the backend reads .curio/test/*.db (see
-    # backend/config.py + app/api/routes.py::get_db_path). Mirror that here
-    # so `curio start` bootstraps the correct schema — otherwise the first
-    # request to the running backend hits "no such table: user" because we
-    # migrated the dev DB instead of the test one.
     testing = _is_testing()
     launch_dir = os.environ.get("CURIO_LAUNCH_CWD") or os.getcwd()
-    if testing:
-        db_dir = os.path.join(launch_dir, ".curio", "test")
-    else:
-        db_dir = os.path.join(launch_dir, ".curio")
-    db_file = os.path.join(db_dir, "provenance.db")
+    db_dir = os.path.join(launch_dir, ".curio", "test") if testing else os.path.join(launch_dir, ".curio")
 
-    # Testing always re-runs (equivalent to force=True) so every
-    # `curio start` lands on an empty-but-migrated DB, like Django's
-    # TEST_RUNNER.
-    needs_init = testing or force or not os.path.exists(db_file)
+    if not os.path.exists(db_dir):
+        os.makedirs(db_dir)
 
-    if needs_init:
-        if not os.path.exists(db_dir):
-            os.makedirs(db_dir)
-
-        log_info(f"[Backend] Preparing backend database...", COLOR_BACKEND, 0)
-        log_info(f"[Backend] Using database path: {db_file}", COLOR_BACKEND, 0)
-        try:
-            env = {
-                **os.environ,
-                "FLASK_APP": "utk_curio.backend.app:create_app",
-                "PYTHONPATH": project_root + os.pathsep + os.environ.get("PYTHONPATH", ""),
-            }
-            # Make sure the `flask db upgrade` subprocess targets the test
-            # sqlite file (not the dev one). backend/config._resolve_database_uri
-            # already prefers DATABASE_URL_TEST when CURIO_TESTING is set, but
-            # we set both explicitly so intent is obvious in the child env.
-            if testing:
-                test_sqla = os.path.join(db_dir, "urban_workflow_test.db")
-                test_url = os.environ.get(
-                    "DATABASE_URL_TEST", f"sqlite:///{test_sqla}"
-                )
-                env["CURIO_TESTING"] = "1"
-                env["CURIO_LAUNCH_CWD"] = launch_dir
-                env["DATABASE_URL_TEST"] = test_url
-                env["DATABASE_URL"] = test_url
-                # Remove any stale file so the session starts empty.
-                for stale in (db_file, test_sqla):
-                    try:
-                        os.remove(stale)
-                    except FileNotFoundError:
-                        pass
-
-            subprocess.run(
-                [sys.executable, "backend/create_provenance_db.py", os.path.abspath(db_file)],
-                cwd=script_dir, check=True, env=env,
+    log_info(f"[Backend] Preparing backend database...", COLOR_BACKEND, 0)
+    try:
+        env = {
+            **os.environ,
+            "FLASK_APP": "utk_curio.backend.app:create_app",
+            "PYTHONPATH": project_root + os.pathsep + os.environ.get("PYTHONPATH", ""),
+        }
+        # Make sure the `flask db upgrade` subprocess targets the test
+        # sqlite file (not the dev one). backend/config._resolve_database_uri
+        # already prefers DATABASE_URL_TEST when CURIO_TESTING is set, but
+        # we set both explicitly so intent is obvious in the child env.
+        if testing:
+            test_sqla = os.path.join(db_dir, "urban_workflow_test.db")
+            test_url = os.environ.get(
+                "DATABASE_URL_TEST", f"sqlite:///{test_sqla}"
             )
+            env["CURIO_TESTING"] = "1"
+            env["CURIO_LAUNCH_CWD"] = launch_dir
+            env["DATABASE_URL_TEST"] = test_url
+            env["DATABASE_URL"] = test_url
+            # Testing wipes the SQLA file so every `curio start` lands on
+            # an empty-but-migrated DB, like Django's TEST_RUNNER.
+            try:
+                os.remove(test_sqla)
+            except FileNotFoundError:
+                pass
 
-            subprocess.run(
-                ["flask", "db", "upgrade", "--directory", "utk_curio/backend/migrations"],
-                check=True, cwd=project_root, env=env,
-            )
-            # if not testing:
-            #     subprocess.run(
-            #         ["flask", "db", "migrate", "-m", "Migration", "--directory", "utk_curio/backend/migrations"],
-            #         check=True, cwd=project_root, env=env,
-            #     )
-            log_info(f"[Backend] Database initialized successfully.", COLOR_BACKEND, 0)
-        except Exception as e:
-            log_error(f"[Backend] Failed to initialize the database: {e}")
-            clean_shutdown()
-    else:
-        log_info(f"[Backend] Database already exists. Skipping initialization.", COLOR_BACKEND, 0)
+        # `flask db upgrade` is idempotent — alembic skips already-applied
+        # revisions. Running it on every startup avoids the "schema is
+        # stale" class of deploy bug.
+        subprocess.run(
+            ["flask", "db", "upgrade", "--directory", "utk_curio/backend/migrations"],
+            check=True, cwd=project_root, env=env,
+        )
+        log_info(f"[Backend] Database initialized successfully.", COLOR_BACKEND, 0)
+    except Exception as e:
+        log_error(f"[Backend] Failed to initialize the database: {e}")
+        clean_shutdown()
     
 
 def _kill_port(port: int) -> None:
@@ -429,11 +403,11 @@ def _kill_port(port: int) -> None:
         log_warning(f"[Backend] Could not check port {port}: {e}")
 
 
-def start_backend(host, port, force_db_init=False, no_server=False):
+def start_backend(host, port, no_server=False):
     _kill_port(int(port))
     log_info(f"Starting backend on {host}:{port}...", COLOR_BACKEND, 0)
 
-    prepare_backend_database(force=force_db_init)
+    prepare_backend_database()
 
     # If we're only initializing the database, skip starting the server
     if no_server:
@@ -646,7 +620,7 @@ def main():
                 start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=True, no_server=True)
             if args.force_db_init:
                 log_info("Re-initializing backend database...", COLOR_FRONTEND, 0)
-                start_backend(args.backend_host, args.backend_port, force_db_init=True, no_server=True)
+                start_backend(args.backend_host, args.backend_port, no_server=True)
             sys.exit(0)
     else:
         args.force_rebuild = False
@@ -670,7 +644,7 @@ def main():
             ensure_utk_installed()
             log_always("Starting all servers (backend, sandbox, frontend)...")
             processes = [
-                start_backend(args.backend_host, args.backend_port, force_db_init=args.force_db_init),
+                start_backend(args.backend_host, args.backend_port),
                 start_sandbox(args.sandbox_host, args.sandbox_port),
                 start_frontend(args.frontend_host, int(args.frontend_port), force_rebuild=args.force_rebuild)
             ]

@@ -40,24 +40,6 @@ _SQLA_MUTABLE_TABLES = (
     "user",
 )
 
-_PROV_MUTABLE_TABLES = (
-    "attributeValueChange",
-    "interaction",
-    "visualization",
-    "activityExecution",
-    "attributeValue",
-    "relationInstance",
-    "workflowExecution",
-    "activity",
-    "attributeRelation",
-    "relation",
-    "workflow",
-    "versionedElement",
-    "version",
-    "versionTransaction",
-    "user",
-)
-
 
 def _truncate_sqlite(db_path: str, tables: tuple) -> None:
     """Delete all rows from *tables* in the sqlite file at *db_path*.

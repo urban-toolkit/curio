@@ -23,12 +23,12 @@ CURIO_E2E_USE_EXISTING=1 pytest utk_curio/backend/tests/test_frontend/
 
 These tests boot the **real** backend through `curio.py start`, so they must never touch the developer's dev DB. The strategy keeps dev and test state fully separate:
 
-- `CURIO_TESTING=1` switches `utk_curio/backend/config.py` to a test-only SQLAlchemy URL and `app/api/routes.py::get_db_path()` to a test-only provenance path, both under `<CURIO_LAUNCH_CWD>/.curio/test/` (never the dev `.curio/provenance.db` or `urban_workflow.db`).
+- `CURIO_TESTING=1` switches `utk_curio/backend/config.py` to a test-only SQLAlchemy URL under `<CURIO_LAUNCH_CWD>/.curio/test/urban_workflow_test.db` (never the dev `urban_workflow.db`).
 - A session-scoped `test_databases` fixture in `utk_curio/backend/tests/conftest.py` runs **once before any E2E test or the `curio start` subprocess**:
   1. creates a clean workspace directory (temp by default, or `CURIO_TEST_WORKSPACE` if set),
   2. sets `CURIO_LAUNCH_CWD`, `DATABASE_URL` (→ `sqlite:///…/urban_workflow_test.db`), and `CURIO_TESTING=1` in `os.environ` so the subprocess inherits them,
-  3. **wipes** any pre-existing `.curio/test/provenance.db` / `urban_workflow_test.db` and re-creates the schema via `create_provenance_db.initialize_db()` + `flask db upgrade`.
-- A function-scoped autouse `e2e_clean_db` fixture truncates the mutable tables (`user`, `user_session`, `auth_attempt`, `project`, `workflow`, `specification`, and per-run provenance rows) between tests so hardcoded usernames like `e2etestuser`, `ownera`, `ownerb`, `prjtester` can be re-created fresh in every test.
+  3. **wipes** any pre-existing `urban_workflow_test.db` and re-creates the schema via `flask db upgrade`.
+- A function-scoped autouse `e2e_clean_db` fixture truncates the mutable tables (`user`, `user_session`, `auth_attempt`, `project`, `exec_cache_entry`) between tests so hardcoded usernames like `e2etestuser`, `ownera`, `ownerb`, `prjtester` can be re-created fresh in every test.
 
 In other words: **every pytest invocation starts against an empty database**, and tests are independent of each other — the same isolation Django's test runner aims to provide.
 
