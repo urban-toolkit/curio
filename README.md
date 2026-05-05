@@ -11,11 +11,14 @@
   </p>
 
   <p>
-    <a href="https://curio.urbantk.org"><img alt="Try it online" src="https://img.shields.io/badge/Try_it_online-curio.urbantk.org-2ea44f?style=for-the-badge&logo=rocket&logoColor=white"/></a>
-    <a href="https://curio-dev.urbantk.org"><img alt="Dev build" src="https://img.shields.io/badge/Dev_build-curio--dev.urbantk.org-8957e5?style=for-the-badge&logo=flask&logoColor=white"/></a>
     <a href="docs/README.md"><img alt="Documentation" src="https://img.shields.io/badge/Documentation-0366d6?style=for-the-badge&logo=readthedocs&logoColor=white"/></a>
     <a href="docs/QUICK-START.md"><img alt="Usage" src="https://img.shields.io/badge/Installation-f59e0b?style=for-the-badge&logo=lightning&logoColor=white"/></a>
     <a href="https://discord.gg/ajT6wF8TmN"><img alt="Discord" src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white"/></a>
+  </p>
+
+  <p>
+    <a href="https://curio.urbantk.org"><img alt="Try it online" src="https://img.shields.io/badge/Try_it_online-curio.urbantk.org-2ea44f?style=for-the-badge&logo=rocket&logoColor=white"/></a>
+    <a href="https://curio-dev.urbantk.org"><img alt="Dev build" src="https://img.shields.io/badge/Dev_build-curio--dev.urbantk.org-8957e5?style=for-the-badge&logo=flask&logoColor=white"/></a>
   </p>
 
   <p>
