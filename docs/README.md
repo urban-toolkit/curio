@@ -10,6 +10,7 @@
 
 - [Contributing to Curio](CONTRIBUTING.md)
 - [Onboarding for undergraduate students](ONBOARDING.md)
+- [System architecture](ARCHITECTURE.md)
 
 ## Examples
 
