@@ -56,6 +56,9 @@ import { useCode } from "../hook/useCode";
 import { TrillGenerator } from "TrillGenerator";
 import { ICodeData } from "types";
 
+const MIN_NODE_WIDTH = 200;
+const MIN_NODE_HEIGHT = 150;
+
 // Node Container
 export const NodeContainer = ({
     data,
@@ -231,11 +234,11 @@ export const NodeContainer = ({
     }, [minimized]);
 
     useEffect(() => {
-        if (nodeWidth == undefined) {
+        if (nodeWidth == undefined || nodeWidth < MIN_NODE_WIDTH) {
             setCurrentNodeWidth(525);
         }
 
-        if (nodeHeight == undefined) {
+        if (nodeHeight == undefined || nodeHeight < MIN_NODE_HEIGHT) {
             setCurrentNodeHeight(350);
         }
     }, []);
@@ -256,8 +259,8 @@ export const NodeContainer = ({
         let startHeight = 0;
 
         function resize(e: any) {
-            const newWidth = startWidth + (e.clientX - startX);
-            const newHeight = startHeight + (e.clientY - startY);
+            const newWidth = Math.max(MIN_NODE_WIDTH, startWidth + (e.clientX - startX));
+            const newHeight = Math.max(MIN_NODE_HEIGHT, startHeight + (e.clientY - startY));
 
             resizable.style.width = newWidth + "px";
             resizable.style.height = newHeight + "px";
@@ -272,18 +275,22 @@ export const NodeContainer = ({
 
             const newWidth = resizable.offsetWidth;
             const newHeight = resizable.offsetHeight;
+            // Read the live node data instead of the closure-captured `data`,
+            // which can be stale (e.g. captured before upstream `input` flowed
+            // in) and would overwrite live fields when spread back.
+            const liveData = getNodes().find((n) => n.id === nodeId)?.data ?? data;
             if (dashboardOn) {
-                if (data.dashboardWidth !== newWidth || data.dashboardHeight !== newHeight) {
+                if (liveData.dashboardWidth !== newWidth || liveData.dashboardHeight !== newHeight) {
                     updateDataNode(nodeId, {
-                        ...data,
+                        ...liveData,
                         dashboardWidth: newWidth,
                         dashboardHeight: newHeight,
                     });
                 }
             } else {
-                if (data.nodeWidth !== newWidth || data.nodeHeight !== newHeight) {
+                if (liveData.nodeWidth !== newWidth || liveData.nodeHeight !== newHeight) {
                     updateDataNode(nodeId, {
-                        ...data,
+                        ...liveData,
                         nodeWidth: newWidth,
                         nodeHeight: newHeight,
                     });

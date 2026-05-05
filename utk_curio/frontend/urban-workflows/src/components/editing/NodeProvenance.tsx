@@ -169,25 +169,27 @@ function NodeProvenanceInner({ data, nodeType, setCode, active = false }: NodePr
             className="nodrag nopan nowheel"
             style={{ width: "100%", height: "100%", position: "relative" }}
         >
-            <ReactFlow
-                nodes={layoutedNodes}
-                edges={layoutedEdges}
-                nodeTypes={nodeTypes}
-                edgeTypes={edgeTypes}
-                onNodeClick={onNodeClick}
-                nodesDraggable={false}
-                nodesConnectable={false}
-                elementsSelectable={false}
-                zoomOnDoubleClick={false}
-                noPanClassName="inner-nopan"
-                noWheelClassName="inner-nowheel"
-                fitView
-                fitViewOptions={{ padding: 0.2 }}
-                style={{ background: "#e8e8e8" }}
-                proOptions={{ hideAttribution: true }}
-            >
-                <Controls showInteractive={false} />
-            </ReactFlow>
+            {active && (
+                <ReactFlow
+                    nodes={layoutedNodes}
+                    edges={layoutedEdges}
+                    nodeTypes={nodeTypes}
+                    edgeTypes={edgeTypes}
+                    onNodeClick={onNodeClick}
+                    nodesDraggable={false}
+                    nodesConnectable={false}
+                    elementsSelectable={false}
+                    zoomOnDoubleClick={false}
+                    noPanClassName="inner-nopan"
+                    noWheelClassName="inner-nowheel"
+                    fitView
+                    fitViewOptions={{ padding: 0.2 }}
+                    style={{ background: "#e8e8e8" }}
+                    proOptions={{ hideAttribution: true }}
+                >
+                    <Controls showInteractive={false} />
+                </ReactFlow>
+            )}
         </div>
     );
 }
