@@ -4,14 +4,6 @@ jest.mock('../../hook/useVega', () => ({
   useVega: () => ({ handleCompileGrammar: jest.fn() }),
 }));
 
-jest.mock('../../hook/useUTK', () => ({
-  useUTK: () => ({
-    sendCode: jest.fn(), defaultGrammar: '{}', showLoading: false,
-    setSendCodeCallback: jest.fn(), customWidgetsCallback: jest.fn(),
-    handleCompileGrammar: jest.fn(),
-  }),
-}));
-
 jest.mock('../../hook/useTableData', () => ({
   __esModule: true,
   default: () => ({

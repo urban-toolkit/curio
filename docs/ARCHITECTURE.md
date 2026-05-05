@@ -120,10 +120,10 @@ All node types are enumerated in `src/constants.ts` as the `NodeType` enum. Ther
 
 | Category | Node Types |
 |---|---|
-| Data | `DATA_LOADING`, `DATA_TRANSFORMATION`, `DATA_SUMMARY`, `DATA_EXPORT`, `DATA_POOL` |
-| Computation | `COMPUTATION_ANALYSIS`, `JS_COMPUTATION`, `MERGE_FLOW`, `FLOW_SWITCH`, `CONSTANTS` |
-| Map visualization | `VIS_UTK` |
-| Chart/table visualization | `VIS_VEGA`, `VIS_SIMPLE` |
+| Data | `DATA_LOADING`, `DATA_TRANSFORMATION`, `DATA_SUMMARY`, `DATA_EXPORT`, `DATA_POOL`, `AUTK_DB` |
+| Computation | `COMPUTATION_ANALYSIS`, `JS_COMPUTATION`, `MERGE_FLOW`, `FLOW_SWITCH`, `CONSTANTS`, `AUTK_COMPUTE` |
+| Map visualization | `AUTK_MAP` |
+| Chart/table visualization | `VIS_VEGA`, `VIS_SIMPLE`, `AUTK_PLOT` |
 | Annotation | `COMMENTS` |
 
 Each type is registered in `src/registry/descriptors.ts` with a `NodeDescriptor` and in the backend route file with its allowed input/output data types.
@@ -189,7 +189,10 @@ Lifecycle hooks live in `src/adapters/node/`. Current implementations:
 |---|---|
 | `useCodeNodeLifecycle` | Most data and computation nodes |
 | `useVegaLifecycle` | `VIS_VEGA` |
-| `useUtkLifecycle` | `VIS_UTK` |
+| `useAutkMapLifecycle` | `AUTK_MAP` (built via `createAutkLifecycle`) |
+| `useAutkPlotLifecycle` | `AUTK_PLOT` (built via `createAutkLifecycle`) |
+| `useAutkComputeLifecycle` | `AUTK_COMPUTE` (built via `createAutkLifecycle`) |
+| `useAutkDbLifecycle` | `AUTK_DB` (server-side, default code template) |
 | `useDataPoolLifecycle` | `DATA_POOL` |
 | `useMergeFlowLifecycle` | `MERGE_FLOW` |
 | `useFlowSwitchLifecycle` | `FLOW_SWITCH` |
@@ -350,7 +353,7 @@ The sandbox runs as a completely separate Flask process. It:
 
 ## Interactions and Propagation
 
-Visualization nodes (`VIS_UTK`, `VIS_VEGA`, `VIS_SIMPLE`) can emit user interactions (selections, filters, brushes) that flow **upstream** through the dataflow graph, causing upstream nodes to re-execute with the filtered subset.
+Visualization nodes (`AUTK_MAP`, `AUTK_PLOT`, `VIS_VEGA`, `VIS_SIMPLE`) can emit user interactions (selections, filters, brushes) that flow **upstream** through the dataflow graph, causing upstream nodes to re-execute with the filtered subset.
 
 ### IInteraction
 
@@ -373,8 +376,6 @@ When multiple interactions reach the same node, the node resolves them using a s
 | `OVERWRITE` | Only the most recent interaction applies |
 | `MERGE_AND` | Row must satisfy all active interactions |
 | `MERGE_OR` | Row must satisfy at least one active interaction |
-| `PICKING` (UTK) | All coordinates must be within the selected area |
-| `BRUSHING` (UTK) | At least one coordinate must be within the selected area |
 
 The propagation counter (`INodeData.propagation`) is incremented each time an interaction change needs to trigger a re-execution, allowing nodes to detect when they need to re-run without comparing the full interaction payload.
 
@@ -400,7 +401,7 @@ The backend is a Flask application in `utk_curio/backend/`. All routes are defin
 | `/upload` | POST | Upload a file to `.curio/data/` |
 | `/get` | GET | Download a data file by name |
 | `/get-preview` | GET | Download first 100 rows of a data file |
-| `/toLayers` | POST | Convert GeoJSON to UTK map layers |
+| `/toLayers` | POST | Convert GeoJSON to map layers |
 | `/installPackages` | POST | Install Python packages in sandbox |
 | `/node-types` | GET/POST | Get or register node type metadata |
 

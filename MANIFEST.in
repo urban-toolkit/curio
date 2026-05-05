@@ -9,6 +9,5 @@ recursive-include utk_curio/sandbox *
 recursive-include utk_curio/frontend *
 
 prune utk_curio/frontend/urban-workflows/node_modules
-prune utk_curio/frontend/utk-workflow/src/utk-ts/node_modules
 
 exclude *.map

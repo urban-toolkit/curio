@@ -1,0 +1,78 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "interaction-db",
+        "type": "AUTK_DB",
+        "x": 200,
+        "y": 300,
+        "content": "import { AutkSpatialDb } from 'autk-db';\n\nconst db = new AutkSpatialDb();\nawait db.init();\n\nawait db.loadOsm({\n    queryArea: { geocodeArea: 'Chicago', areas: ['Loop'] },\n    outputTableName: 'table_osm',\n    autoLoadLayers: {\n        coordinateFormat: 'EPSG:3395',\n        layers: ['buildings'],\n        dropOsmTable: true,\n    },\n});\n\nconst layers = [];\nfor (const layer of db.getLayerTables()) {\n    layers.push({ name: layer.name, type: layer.type, geojson: await db.getLayer(layer.name) });\n}\nreturn layers;",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load OSM building footprints for the Chicago Loop.",
+        "metadata": { "keywords": [] }
+      },
+      {
+        "id": "interaction-compute",
+        "type": "AUTK_COMPUTE",
+        "x": 700,
+        "y": 300,
+        "content": "// Annotate every building feature with footprint area (m²) and parsed\n// height (m). EPSG:3395 coords are global Mercator (~1e7 magnitude), so\n// shoelace is run against a per-polygon local origin to preserve\n// precision for small footprints. OSM 'height' tags are strings\n// (e.g. '30', '120 ft') so we extract the leading number.\nconst ringArea = (ring) => {\n    if (!ring || ring.length < 3) return 0;\n    const ox = ring[0][0], oy = ring[0][1];\n    let s = 0;\n    for (let i = 0; i < ring.length; i++) {\n        const j = (i + 1) % ring.length;\n        const x1 = ring[i][0] - ox, y1 = ring[i][1] - oy;\n        const x2 = ring[j][0] - ox, y2 = ring[j][1] - oy;\n        s += x1 * y2 - x2 * y1;\n    }\n    return Math.abs(s) / 2;\n};\nconst featureArea = (geom) => {\n    if (!geom) return null;\n    if (geom.type === 'Polygon') return ringArea(geom.coordinates[0]);\n    if (geom.type === 'MultiPolygon') return geom.coordinates.reduce((s, p) => s + ringArea(p[0]), 0);\n    // autk-db emits one Feature per building with a GeometryCollection of the\n    // building's parts; sum each part's outer-ring area.\n    if (geom.type === 'GeometryCollection') return (geom.geometries || []).reduce((s, g) => s + (featureArea(g) || 0), 0);\n    return null;\n};\nconst parseHeight = (h) => {\n    if (h == null) return null;\n    if (typeof h === 'number') return Number.isFinite(h) ? h : null;\n    const m = String(h).match(/-?\\d+(?:\\.\\d+)?/);\n    return m ? parseFloat(m[0]) : null;\n};\n\nreturn arg.map(layer => {\n    if (layer.name !== 'table_osm_buildings') return layer;\n    const features = layer.geojson.features.map(f => ({\n        ...f,\n        properties: {\n            ...f.properties,\n            area: featureArea(f.geometry),\n            height: parseHeight(f.properties?.height),\n        },\n    }));\n    return { ...layer, geojson: { ...layer.geojson, features } };\n});",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Add a computed footprint-area property to every building feature.",
+        "metadata": { "keywords": [] }
+      },
+      {
+        "id": "interaction-map",
+        "type": "AUTK_MAP",
+        "x": 1200,
+        "y": 150,
+        "content": "// Render buildings, color by height, and enable picking.\nconst map = new AutkMap(container);\nawait map.init();\nfor (const layer of arg) {\n    map.loadCollection(layer.name, { collection: layer.geojson, type: layer.type });\n}\nconst buildings = arg.find(l => l.name === 'table_osm_buildings').geojson;\nmap.updateRenderInfo('table_osm_buildings', { isPick: true, isColorMap: true });\nmap.updateThematic('table_osm_buildings', { collection: buildings, property: 'properties.height' });\nmap.draw();\nreturn map;",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Buildings colored by height, with picking enabled.",
+        "metadata": { "keywords": [] }
+      },
+      {
+        "id": "interaction-scatter",
+        "type": "AUTK_PLOT",
+        "x": 1200,
+        "y": 600,
+        "content": "// Scatter footprint area (m²) vs height (m). Both attributes come\n// from the upstream Compute node. Buildings missing a height tag fall\n// off the y axis as NaN.\nconst buildings = arg.find(l => l.name === 'table_osm_buildings').geojson;\nreturn new AutkChart(container, {\n    type: 'scatterplot',\n    collection: buildings,\n    attributes: { axis: ['area', 'height'] },\n    labels: { axis: ['Footprint area (m²)', 'Height (m)'], title: 'Chicago Loop buildings' },\n    width: 600,\n    height: 380,\n    events: ['brush'],\n});",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Scatter of building footprint area vs height, brushable and linked to the map.",
+        "metadata": { "keywords": [] }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-db-to-compute",
+        "source": "interaction-db",
+        "target": "interaction-compute"
+      },
+      {
+        "id": "edge-compute-to-map",
+        "source": "interaction-compute",
+        "target": "interaction-map"
+      },
+      {
+        "id": "edge-compute-to-scatter",
+        "source": "interaction-compute",
+        "target": "interaction-scatter"
+      },
+      {
+        "id": "edge-map-to-scatter-interaction",
+        "source": "interaction-map",
+        "target": "interaction-scatter",
+        "type": "Interaction"
+      }
+    ],
+    "name": "Autark Interaction",
+    "task": "Minimal Autark teaching example: load OSM buildings, annotate footprint area in a Compute node, render the buildings on a map colored by height, scatter area vs height in a brushable plot, and link map ↔ plot.",
+    "timestamp": 1777407600000,
+    "provenance_id": "autark_interaction",
+    "packages": []
+  }
+}

@@ -8,18 +8,6 @@ jest.mock('../../../hook/useVega', () => ({
   useVega: () => ({ handleCompileGrammar: jest.fn().mockResolvedValue(undefined) }),
 }));
 
-jest.mock('../../../hook/useUTK', () => ({
-  useUTK: () => ({
-    sendCode: jest.fn(),
-    defaultGrammar: '{}',
-    showLoading: false,
-    setSendCodeCallback: jest.fn(),
-    customWidgetsCallback: jest.fn(),
-    handleCompileGrammar: jest.fn().mockResolvedValue(undefined),
-  }),
-}));
-
-
 jest.mock('../../../providers/ProvenanceProvider', () => ({
   useProvenanceContext: () => ({
     nodeExecProv: jest.fn(),
@@ -72,14 +60,25 @@ jest.mock('../../../utils/formatters', () => ({
   mapTypes: (t: any) => t,
 }));
 
+jest.mock('autk-map', () => ({ AutkMap: jest.fn() }), { virtual: true });
+jest.mock('autk-plot', () => ({ AutkChart: jest.fn() }), { virtual: true });
+jest.mock(
+  'autk-compute',
+  () => ({ ComputeGpgpu: jest.fn(), ComputeRender: jest.fn() }),
+  { virtual: true },
+);
+
 import { useCodeNodeLifecycle } from '../../../adapters/node/codeNodeLifecycle';
 import { useDataExportLifecycle } from '../../../adapters/node/dataExportLifecycle';
 import { useVegaLifecycle } from '../../../adapters/node/vegaLifecycle';
-import { useUtkLifecycle } from '../../../adapters/node/utkLifecycle';
 import { useSimpleVisLifecycle } from '../../../adapters/node/simpleVisLifecycle';
 import { useFlowSwitchLifecycle } from '../../../adapters/node/flowSwitchLifecycle';
 import { useMergeFlowLifecycle } from '../../../adapters/node/mergeFlowLifecycle';
 import { useDataPoolLifecycle } from '../../../adapters/node/dataPoolLifecycle';
+import { useAutkMapLifecycle } from '../../../adapters/node/autkMapLifecycle';
+import { useAutkPlotLifecycle } from '../../../adapters/node/autkPlotLifecycle';
+import { useAutkComputeLifecycle } from '../../../adapters/node/autkComputeLifecycle';
+import { useAutkDbLifecycle } from '../../../adapters/node/autkDbLifecycle';
 
 function makeMockData(overrides: Partial<NodeLifecycleData> = {}): NodeLifecycleData {
   return {
@@ -183,19 +182,6 @@ describe('Lifecycle hooks — NodeLifecycleHook contract conformance', () => {
     });
   });
 
-  describe('useUtkLifecycle', () => {
-    test('returns full grammar lifecycle fields', async () => {
-      const result = await callLifecycle(useUtkLifecycle);
-      assertValidLifecycleResult(result.current);
-      expect(typeof result.current.applyGrammar).toBe('function');
-      expect(result.current.sendCodeOverride).toBeDefined();
-      expect(result.current.setSendCodeCallbackOverride).toBeDefined();
-      expect(typeof result.current.showLoading).toBe('boolean');
-      expect(typeof result.current.customWidgetsCallback).toBe('function');
-      expect(result.current.defaultValueOverride).toBeDefined();
-    });
-  });
-
   describe('useSimpleVisLifecycle', () => {
     test('renders table for tabular input', async () => {
       const result = await callLifecycle(useSimpleVisLifecycle, {
@@ -262,6 +248,63 @@ describe('Lifecycle hooks — NodeLifecycleHook contract conformance', () => {
       expect(typeof result.current.customWidgetsCallback).toBe('function');
       expect(typeof result.current.setOutputCallbackOverride).toBe('function');
       expect(typeof result.current.setSendCodeCallbackOverride).toBe('function');
+    });
+  });
+
+  describe('useAutkMapLifecycle', () => {
+    test('returns canvas contentComponent, default code, and sendCodeOverride', async () => {
+      const result = await callLifecycle(useAutkMapLifecycle);
+      assertValidLifecycleResult(result.current);
+      expect(result.current.contentComponent).toBeDefined();
+      expect(typeof result.current.defaultValueOverride).toBe('string');
+      expect(result.current.defaultValueOverride).toContain('AutkMap');
+      expect(typeof result.current.sendCodeOverride).toBe('function');
+    });
+
+    test('omits defaultValueOverride when node already has code', async () => {
+      const result = await callLifecycle(useAutkMapLifecycle, {
+        defaultCode: 'const map = new AutkMap(container);',
+      } as any);
+      assertValidLifecycleResult(result.current);
+      expect(result.current.defaultValueOverride).toBeUndefined();
+    });
+  });
+
+  describe('useAutkPlotLifecycle', () => {
+    test('returns div contentComponent, default code, and sendCodeOverride', async () => {
+      const result = await callLifecycle(useAutkPlotLifecycle);
+      assertValidLifecycleResult(result.current);
+      expect(result.current.contentComponent).toBeDefined();
+      expect(typeof result.current.defaultValueOverride).toBe('string');
+      expect(result.current.defaultValueOverride).toContain('AutkChart');
+      expect(typeof result.current.sendCodeOverride).toBe('function');
+    });
+  });
+
+  describe('useAutkComputeLifecycle', () => {
+    test('returns hidden contentComponent, default code, and sendCodeOverride', async () => {
+      const result = await callLifecycle(useAutkComputeLifecycle);
+      assertValidLifecycleResult(result.current);
+      expect(result.current.contentComponent).toBeDefined();
+      expect(typeof result.current.defaultValueOverride).toBe('string');
+      expect(typeof result.current.sendCodeOverride).toBe('function');
+    });
+  });
+
+  describe('useAutkDbLifecycle', () => {
+    test('seeds default code on a fresh palette drop', async () => {
+      const result = await callLifecycle(useAutkDbLifecycle);
+      assertValidLifecycleResult(result.current);
+      expect(typeof result.current.defaultValueOverride).toBe('string');
+      expect(result.current.defaultValueOverride).toContain('AutkSpatialDb');
+    });
+
+    test('returns no override when example or saved code already exists', async () => {
+      const result = await callLifecycle(useAutkDbLifecycle, {
+        defaultCode: 'await db.init();',
+      } as any);
+      assertValidLifecycleResult(result.current);
+      expect(result.current.defaultValueOverride).toBeUndefined();
     });
   });
 });

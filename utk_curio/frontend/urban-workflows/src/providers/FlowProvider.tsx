@@ -930,10 +930,12 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                     sourceNode.type == NodeType.DATA_POOL
                 )
             ) {
-                if (
-                    interactedIds.includes(edges[i].source) &&
-                    poolsIds.includes(edges[i].target)
-                ) {
+                const sourcePool = poolsIds.includes(edges[i].source);
+                const targetPool = poolsIds.includes(edges[i].target);
+                const sourceInteracted = interactedIds.includes(edges[i].source);
+                const targetInteracted = interactedIds.includes(edges[i].target);
+
+                if (sourceInteracted && targetPool) {
                     // then the target is the pool
 
                     if (toSend[edges[i].target] == undefined) {
@@ -945,10 +947,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                             interactionDict[edges[i].source]
                         );
                     }
-                } else if (
-                    interactedIds.includes(edges[i].target) &&
-                    poolsIds.includes(edges[i].source)
-                ) {
+                } else if (targetInteracted && sourcePool) {
                     // then the source is the pool
                     if (toSend[edges[i].source] == undefined) {
                         toSend[edges[i].source] = [
@@ -958,6 +957,31 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                         toSend[edges[i].source].push(
                             interactionDict[edges[i].target]
                         );
+                    }
+                } else if (!sourcePool && !targetPool) {
+                    // Direct interaction edge between two non-pool nodes
+                    // (e.g. AutkMap ↔ AutkPlot linked brushing).
+                    if (sourceInteracted) {
+                        if (toSend[edges[i].target] == undefined) {
+                            toSend[edges[i].target] = [
+                                interactionDict[edges[i].source],
+                            ];
+                        } else {
+                            toSend[edges[i].target].push(
+                                interactionDict[edges[i].source]
+                            );
+                        }
+                    }
+                    if (targetInteracted) {
+                        if (toSend[edges[i].source] == undefined) {
+                            toSend[edges[i].source] = [
+                                interactionDict[edges[i].target],
+                            ];
+                        } else {
+                            toSend[edges[i].source].push(
+                                interactionDict[edges[i].target]
+                            );
+                        }
                     }
                 }
             }

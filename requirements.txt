@@ -30,6 +30,3 @@ allure-pytest==2.13.5
 # Code quality
 # ------------------------------------------------------------------------------
 black==24.10.0
-
-# Local
-utk_curio/sandbox/utk-0.8.9.tar.gz

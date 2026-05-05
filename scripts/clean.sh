@@ -14,9 +14,6 @@ rm -rf "$REPO_ROOT/.curio"
 rm -rf "$REPO_ROOT/utk_curio/frontend/urban-workflows/node_modules"
 rm -rf "$REPO_ROOT/utk_curio/frontend/urban-workflows/dist"
 rm -rf "$REPO_ROOT/utk_curio/frontend/urban-workflows/build"
-rm -rf "$REPO_ROOT/utk_curio/frontend/utk-workflow/src/utk-ts/node_modules"
-rm -rf "$REPO_ROOT/utk_curio/frontend/utk-workflow/src/utk-ts/dist"
-rm -rf "$REPO_ROOT/utk_curio/frontend/utk-workflow/src/utk-ts/build"
 find "$REPO_ROOT" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 find "$REPO_ROOT" -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
 rm -rf "$REPO_ROOT/dist" "$REPO_ROOT/build" "$REPO_ROOT/htmlcov"

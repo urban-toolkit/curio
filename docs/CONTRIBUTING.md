@@ -46,7 +46,7 @@ Contributing to Curio offers the opportunity to:
 | Component | Technology                             | Function                                                             |
 | --------- | -------------------------------------- | -------------------------------------------------------------------- |
 | Backend   | Python, Flask                          | REST API for managing users, workflows, and provenance               |
-| Frontend  | JavaScript, UTK, Vega-Lite             | Browser-based interface for authoring and interacting with dataflows |
+| Frontend  | JavaScript, Autark, Vega-Lite          | Browser-based interface for authoring and interacting with dataflows |
 | Execution | Python sandbox (multiprocess)          | Secure module for executing user code                                |
 | DevOps    | Docker, Docker Compose, GitHub Actions | Containerization, deployment, and CI/CD                              |
 | Packaging | PyPI (`utk-curio`)                     | Distributes the CLI and backend/frontend bundle                      |
@@ -63,10 +63,9 @@ curio/
 │   ├── sandbox/                     # Executes user Python code in a secure environment
 │   │   └── tests/                   # pytest files for sandbox
 │   └── frontend/                    # All frontend logic
-│       ├── urban-workflows/         # Main Curio interface for dataflow editing
-│       │   └── src/
-│       │       └── components/     # React components and CSS
-│       └── utk-workflow/           # Embedded version of [UTK](https://github.com/urban-toolkit/utk)
+│       └── urban-workflows/         # Main Curio interface for dataflow editing
+│           └── src/
+│               └── components/     # React components and CSS
 │
 ├── curio.py                        # CLI entry point for running and managing all services
 ├── tests/                          # Dataflow examples for testing
@@ -198,7 +197,7 @@ Common shortcuts:
 ./scripts/test.sh --use-existing --unit-only
 
 # watch the browser, specific workflows only
-./scripts/test.sh --use-existing --e2e-only --headed --workflows Vega.json,UTK.json
+./scripts/test.sh --use-existing --e2e-only --headed --workflows Vega.json,niteroi.json
 ```
 
 See `./scripts/test.sh --help` for all options, or read the sections below for more detail.
@@ -248,7 +247,7 @@ CURIO_E2E_USE_EXISTING=1 pytest utk_curio/backend/tests/test_frontend/
 Run only specific workflows by setting `CURIO_E2E_WORKFLOWS` (comma-separated basenames):
 
 ```bash
-CURIO_E2E_WORKFLOWS=Vega.json,UTK.json pytest utk_curio/backend/tests/test_frontend/test_workflows.py
+CURIO_E2E_WORKFLOWS=Vega.json,niteroi.json pytest utk_curio/backend/tests/test_frontend/test_workflows.py
 ```
 
 Preview which tests will run without executing them:

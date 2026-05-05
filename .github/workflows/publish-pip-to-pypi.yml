@@ -27,12 +27,6 @@ jobs:
       with:
         node-version: '23'
 
-    - name: 📁 Install and build utk-ts frontend
-      run: |
-        npm install
-        npm run build
-      working-directory: ./utk_curio/frontend/utk-workflow/src/utk-ts
-
     - name: 📁 Install and build urban-workflows frontend
       run: |
         npm install

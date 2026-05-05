@@ -7,7 +7,7 @@ import { IPropagation } from '../providers/FlowProvider';
 
 export interface PortDef {
   types: SupportedType[];
-  cardinality?: '0' | '1' | 'n' | '[1,n]' | '[1,2]' | '2';
+  cardinality?: '0' | '1' | 'n' | '[0,1]' | '[1,n]' | '[1,2]' | '2';
 }
 
 export type EditorType = 'code' | 'widgets' | 'grammar' | 'none';
@@ -148,6 +148,8 @@ export interface NodeDescriptor {
   grammarId?: string;
   inPalette: boolean;
   paletteOrder?: number;
+  /** Optional small label rendered as a badge over the icon in ToolsMenu (e.g. "AUTK", "Vega-Lite"). */
+  badge?: string;
   description: string;
   hasCode: boolean;
   hasWidgets: boolean;

@@ -11,9 +11,12 @@ const NODE_COLORS: Record<string, string> = {
   MERGE_FLOW: "#8e44ad",
   DATA_POOL: "#8e44ad",
   CONSTANTS: "#8e44ad",
-  VIS_UTK: "#1abc9c",
   VIS_VEGA: "#1abc9c",
   VIS_SIMPLE: "#1abc9c",
+  AUTK_MAP: "#1abc9c",
+  AUTK_PLOT: "#1abc9c",
+  AUTK_COMPUTE: "#8e44ad",
+  AUTK_DB: "#3498db",
   COMMENTS: "#95a5a6",
 };
 

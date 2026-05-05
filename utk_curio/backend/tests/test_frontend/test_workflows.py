@@ -474,7 +474,7 @@ class TestWorkflowCanvas:
                             )
 
             elif node.category == "grammar":
-                # Grammar nodes (VIS_VEGA, VIS_UTK) keep a dedicated output tab
+                # Grammar nodes (VIS_VEGA) keep a dedicated output tab
                 # because they pass outputId to NodeEditor.
                 output_tab = node_el.locator(
                     '.nav-link[data-rr-ui-event-key="output"]'
