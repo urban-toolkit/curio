@@ -19,6 +19,7 @@ import {
 } from "reactflow";
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { useToastContext } from "../providers/ToastProvider";
+import { useUserContext } from "../providers/UserProvider";
 import { updateNodeData, updateNodesByMap, updateEdgesByMap, extractNodeFieldMap, extractKeywordMaps } from "../utils/flowNodeUtils";
 import { TrillGenerator } from "../TrillGenerator";
 import { projectsApi, OutputRef } from "../api/projectsApi";
@@ -59,6 +60,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     const nodesInitialized = useNodesInitialized();
     const { getAllNodeProvenance } = useProvenanceContext();
     const { showToast } = useToastContext();
+    const { user, enableUserAuth } = useUserContext();
+    const blockGuestSaves = enableUserAuth && !!user?.is_guest;
 
     // fitViewOnLoad is internal to workflow loading
     const [fitViewOnLoad, setFitViewOnLoad] = useState(false);
@@ -508,6 +511,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             .filter((r: OutputRef | null): r is OutputRef => r !== null);
 
     const saveCurrentProject = useCallback(async (nameOverride?: string) => {
+        if (blockGuestSaves) {
+            throw new Error("Guest users cannot save projects");
+        }
         const currentNodes = reactFlow.getNodes();
         const currentEdges = reactFlow.getEdges();
         const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current);
@@ -539,11 +545,11 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             setProjectDirty(false);
             return detail;
         }
-    }, [projectId, projectName, workflowNameRef, reactFlow, deps.outputsRef]);
+    }, [projectId, projectName, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves]);
 
     // Auto-save every 30 seconds when a project has been explicitly saved at least once
     useEffect(() => {
-        if (!projectId || !projectDirty) return;
+        if (!projectId || !projectDirty || blockGuestSaves) return;
         const id = window.setInterval(async () => {
             try {
                 await saveCurrentProject();
@@ -552,9 +558,12 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             }
         }, 30_000);
         return () => window.clearInterval(id);
-    }, [projectId, projectDirty, saveCurrentProject]);
+    }, [projectId, projectDirty, saveCurrentProject, blockGuestSaves]);
 
     const saveAsNewProject = useCallback(async (name: string) => {
+        if (blockGuestSaves) {
+            throw new Error("Guest users cannot save projects");
+        }
         const currentNodes = reactFlow.getNodes();
         const currentEdges = reactFlow.getEdges();
         const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current);
@@ -573,7 +582,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setProjectSavedAt(new Date());
         setProjectDirty(false);
         return detail;
-    }, [workflowNameRef, reactFlow, deps.outputsRef]);
+    }, [workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves]);
 
     const loadProject = useCallback(async (id: string) => {
         const result = await projectsApi.get(id);

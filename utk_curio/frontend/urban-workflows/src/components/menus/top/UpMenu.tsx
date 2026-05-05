@@ -35,6 +35,7 @@ import introJs from "intro.js";
 import "intro.js/introjs.css";
 import { useNavigate } from "react-router-dom";
 import { useUserContext } from "../../../providers/UserProvider";
+import { useToastContext } from "../../../providers/ToastProvider";
 
 export default function UpMenu({
     setDashBoardMode,
@@ -80,6 +81,7 @@ export default function UpMenu({
         setExpandStatus,
     } = useNodeActionsContext();
     const { loadTrill } = useCode();
+    const { showToast } = useToastContext();
 
     const toggleMenu = (menu: string) => {
         setActiveMenu((prev) => (prev === menu ? null : menu));
@@ -155,7 +157,7 @@ export default function UpMenu({
             await saveCurrentProject();
         } catch (err: any) {
             console.error("Save failed:", err);
-            alert(`Save failed: ${err?.message || "unknown error"}`);
+            showToast(err?.message || "Save failed", "error");
             setSaving(false);
             return;
         }

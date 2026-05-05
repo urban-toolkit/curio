@@ -519,9 +519,9 @@ def ensure_utk_installed():
         tarball_path = os.path.join(os.path.dirname(__file__), "sandbox", "utk-0.8.9.tar.gz")
 
         result = subprocess.run([sys.executable, "-m", "pip", "install", tarball_path], capture_output=True, text=True)
-        log_info(result.stdout.strip(), verbose_level=2)
+        log_info(result.stdout.strip(), COLOR_SANDBOX, verbose_level=2)
         if result.returncode == 0:
-            log_info("Installed utk successfully.", verbose_level=1)
+            log_info("Installed utk successfully.", COLOR_SANDBOX, verbose_level=1)
         else:
             log_error(f"Failed to install utk:\n{result.stderr.strip()}")
 
@@ -583,13 +583,14 @@ def main():
     )
     parser.add_argument(
         "--auth", action="store_true", default=False,
-        help="Enable authentication (sets CURIO_NO_AUTH=0)"
+        help="Enable authentication (sets CURIO_NO_AUTH=0). Default: off (CURIO_NO_AUTH=1)"
     )
     parser.add_argument(
         "--no-project", action="store_true", default=False,
         help=(
             "Skip login and projects pages "
-            "(sets CURIO_NO_AUTH=1, CURIO_NO_PROJECT=1)"
+            "(sets CURIO_NO_AUTH=1, CURIO_NO_PROJECT=1). "
+            "Default: off (CURIO_NO_PROJECT=0)"
         )
     )
     parser.add_argument(

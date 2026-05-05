@@ -128,30 +128,41 @@ def test_ownership_404(app, db, user_and_token, tmp_curio):
         services.load_project(other, detail.id)
 
 
-def test_guest_quota_enforcement(app, db, guest_user_and_token, tmp_curio, monkeypatch):
-    user, _ = guest_user_and_token
-    monkeypatch.setattr(services, "GUEST_PROJECT_LIMIT", 2)
-
-    services.save_project(user, ProjectCreate(name="G1", spec=_make_spec()))
-    services.save_project(user, ProjectCreate(name="G2", spec=_make_spec()))
-
-    with pytest.raises(services.ProjectError, match="limit"):
-        services.save_project(user, ProjectCreate(name="G3", spec=_make_spec()))
-
-
-def test_shared_guest_bypasses_prod_guest_restrictions(
-    app, db, guest_user_and_token, tmp_curio, monkeypatch
-):
+def test_shared_guest_can_save(app, db, guest_user_and_token, tmp_curio):
     user, _ = guest_user_and_token
     user.username = services.CURIO_SHARED_GUEST_USERNAME
     db.session.commit()
-
-    monkeypatch.setattr(services, "CURIO_ENV", "prod")
-    monkeypatch.setattr(services, "ALLOW_GUEST_LOGIN", False)
-    monkeypatch.setattr(services, "GUEST_PROJECT_LIMIT", 1)
 
     first = services.save_project(user, ProjectCreate(name="Shared1", spec=_make_spec()))
     second = services.save_project(user, ProjectCreate(name="Shared2", spec=_make_spec()))
 
     assert first.id
     assert second.id
+
+
+def test_guest_cannot_create_project(app, db, guest_user_and_token, tmp_curio):
+    user, _ = guest_user_and_token
+
+    with pytest.raises(services.ProjectError, match="Guest users cannot save"):
+        services.save_project(user, ProjectCreate(name="Blocked", spec=_make_spec()))
+
+
+def test_guest_cannot_update_project(app, db, user_and_token, tmp_curio):
+    user, _ = user_and_token
+    detail = services.save_project(user, ProjectCreate(name="Mine", spec=_make_spec()))
+
+    user.is_guest = True
+    db.session.commit()
+
+    with pytest.raises(services.ProjectError, match="Guest users cannot save"):
+        services.update_project(user, detail.id, ProjectUpdate(name="Renamed"))
+
+
+def test_non_guest_can_save_and_update(app, db, user_and_token, tmp_curio):
+    user, _ = user_and_token
+
+    detail = services.save_project(user, ProjectCreate(name="RealUser", spec=_make_spec()))
+    assert detail.id
+
+    updated = services.update_project(user, detail.id, ProjectUpdate(name="Renamed"))
+    assert updated.name == "Renamed"
