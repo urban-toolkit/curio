@@ -135,18 +135,8 @@ def test_auth_required(client, tmp_curio):
     assert resp.status_code in (401, 403)
 
 
-def test_non_shared_guest_cannot_create_project(client, monkeypatch, tmp_curio):
-    from utk_curio.backend.app.users import routes as user_routes
-
-    monkeypatch.setattr(user_routes, "ALLOW_GUEST_LOGIN", True)
-
-    signin = client.post(
-        "/api/auth/signin/guest",
-        data=json.dumps({}),
-        headers={"Content-Type": "application/json"},
-    )
-    assert signin.status_code == 200
-    token = signin.get_json()["token"]
+def test_non_shared_guest_cannot_create_project(client, guest_user_and_token, tmp_curio):
+    _, token = guest_user_and_token
 
     create = client.post(
         "/api/projects",
