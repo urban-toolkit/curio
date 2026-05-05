@@ -37,6 +37,8 @@ export interface WorkflowOperationsDeps {
     setPositionsInWorkflow: (data: any) => void;
     setWorkflowName: (name: string) => void;
     workflowNameRef: React.MutableRefObject<string>;
+    setWorkflowDescription: (description: string) => void;
+    workflowDescriptionRef: React.MutableRefObject<string>;
     onEdgesDelete: (connections: Edge[]) => void;
     onNodesDelete: (changes: NodeChange[]) => void;
     onNodesChange: (changes: NodeChange[]) => void;
@@ -52,6 +54,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setDashboardPins, setPositionsInDashboard, setPositionsInWorkflow,
         setWorkflowName,
         workflowNameRef,
+        setWorkflowDescription,
+        workflowDescriptionRef,
         onEdgesDelete, onNodesDelete, onNodesChange,
         onConnect, addNode,
     } = deps;
@@ -175,11 +179,12 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setNodes((prevNodes: Node[]) => updateNodeData(prevNodes, nodeId, () => ({ ...newData })));
     }, [setNodes]);
 
-    const loadParsedTrill = async (workflowName: string, task: string, loaded_nodes: any, loaded_edges: any, provenance?: boolean, merge?: boolean, incomingPackages?: string[]) => {
+    const loadParsedTrill = async (workflowName: string, task: string, loaded_nodes: any, loaded_edges: any, provenance?: boolean, merge?: boolean, incomingPackages?: string[], incomingDescription?: string) => {
         if (!merge) {
             TrillGenerator.reset();
             setWorkflowName(workflowName);
-            const empty_trill = TrillGenerator.generateTrill([], [], workflowName);
+            setWorkflowDescription(incomingDescription || "");
+            const empty_trill = TrillGenerator.generateTrill([], [], workflowName, "", [], incomingDescription || "");
             TrillGenerator.intializeProvenance(empty_trill);
             setPackages(incomingPackages || []);
             console.log("loadParsedTrill reseting nodes");
@@ -516,7 +521,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         }
         const currentNodes = reactFlow.getNodes();
         const currentEdges = reactFlow.getEdges();
-        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current);
+        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", [], workflowDescriptionRef.current);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
 
@@ -566,7 +571,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         }
         const currentNodes = reactFlow.getNodes();
         const currentEdges = reactFlow.getEdges();
-        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current);
+        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", [], workflowDescriptionRef.current);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
 

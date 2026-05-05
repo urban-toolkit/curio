@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "description": "Microclimate analysis in Milan combining raster temperature, weather sensors, and demographic geometries.",
     "nodes": [
       {
         "id": "c80722e7-8960-4308-8f1d-90b121acf126",

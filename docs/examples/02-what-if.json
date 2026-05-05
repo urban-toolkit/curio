@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "description": "Compute and compare shadow impact of proposed Boston buildings across times and seasons.",
     "nodes": [
       {
         "id": "58ded8d4-4db6-40ff-bfef-a195997b9865",

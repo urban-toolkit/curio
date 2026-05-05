@@ -92,12 +92,13 @@ def stream_output(process, name, color):
         if process.stderr:
             process.stderr.close()
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, auth=False, no_project=False, deploy=False):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, auth=False, no_project=False, deploy=False, with_examples=False):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
     os.environ["FLASK_SANDBOX_HOST"] = sandbox_host
     os.environ["FLASK_SANDBOX_PORT"] = str(sandbox_port)
+    os.environ["CURIO_SEED_EXAMPLES"] = "1" if (with_examples or deploy) else "0"
     # Respect an already-set CURIO_LAUNCH_CWD / CURIO_SHARED_DATA so the test
     # harness can point the backend at a dedicated workspace (see
     # utk_curio/backend/tests/conftest.py). Only fall back to cwd otherwise.
@@ -126,6 +127,7 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     log_always(f"CURIO_SHARED_DATA={os.environ['CURIO_SHARED_DATA']}")
     log_always(f"CURIO_NO_AUTH={os.environ['CURIO_NO_AUTH']}")
     log_always(f"CURIO_NO_PROJECT={os.environ['CURIO_NO_PROJECT']}")
+    log_always(f"CURIO_SEED_EXAMPLES={os.environ['CURIO_SEED_EXAMPLES']}")
 
 def logger():
     """
@@ -597,6 +599,10 @@ def main():
         "--deploy", action="store_true", default=False,
         help="Enable authentication and projects (sets CURIO_NO_AUTH=0, CURIO_NO_PROJECT=0)"
     )
+    parser.add_argument(
+        "--with-examples", action="store_true", default=False,
+        help="Seed example projects from docs/examples/ on startup (sets CURIO_SEED_EXAMPLES=1)"
+    )
     if os.getenv("CURIO_DEV") == "1":
         parser.add_argument(
             "--force-rebuild", action="store_true",
@@ -625,6 +631,7 @@ def main():
         auth=args.auth,
         no_project=args.no_project,
         deploy=args.deploy,
+        with_examples=args.with_examples,
     )
 
     # if os.getenv("CURIO_DEV") != "1":

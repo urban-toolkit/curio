@@ -116,9 +116,9 @@ export class TrillGenerator {
         TrillGenerator.list_of_trills = data.versions || {};
     }
 
-    static generateTrill(nodes: any, edges: any, name: string, task: string = "", packages: string[] = []){
+    static generateTrill(nodes: any, edges: any, name: string, task: string = "", packages: string[] = [], description: string = ""){
 
-        let trill = {
+        let trill: any = {
             dataflow: {
                 nodes: [] as any,
                 edges: [] as any,
@@ -128,6 +128,9 @@ export class TrillGenerator {
                 provenance_id: name,
                 packages,
             }
+        }
+        if (description) {
+            trill.dataflow.description = description;
         }
 
         for(const node of nodes){

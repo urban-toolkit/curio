@@ -82,6 +82,9 @@ interface FlowContextProps {
     dashboardPins: { [key: string]: boolean };
     workflowNameRef: React.MutableRefObject<string>;
     setWorkflowName: (name: string) => void;
+    workflowDescriptionRef: React.MutableRefObject<string>;
+    workflowDescription: string;
+    setWorkflowDescription: (description: string) => void;
     allMinimized: number;
     setAllMinimized: (value: number) => void;
     expandStatus: 'expanded' | 'minimized';
@@ -92,7 +95,7 @@ interface FlowContextProps {
     loading: boolean;
 
     applyRemoveChanges: (changes: NodeRemoveChange[]) => void;
-    loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[]) => void;
+    loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[], description?: string) => void;
     packages: string[];
     setPackages: (pkgs: string[]) => void;
     addPackage: (pkg: string) => void;
@@ -187,6 +190,9 @@ export const FlowContext = createContext<FlowContextProps>({
     // NEW CODE
     dashboardPins: {},
     workflowNameRef: { current: "" },
+    workflowDescriptionRef: { current: "" },
+    workflowDescription: "",
+    setWorkflowDescription: () => {},
     loading: false,
     suggestionsLeft: 0,
     workflowGoal: "",
@@ -317,6 +323,13 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const setWorkflowName = useCallback((data: any) => {
         workflowNameRef.current = data;
         _setWorkflowName(data);
+    }, []);
+
+    const [workflowDescription, _setWorkflowDescription] = useState<string>("");
+    const workflowDescriptionRef = React.useRef(workflowDescription);
+    const setWorkflowDescription = useCallback((data: string) => {
+        workflowDescriptionRef.current = data || "";
+        _setWorkflowDescription(data || "");
     }, []);
 
     const initializeProvenance = () => {
@@ -1027,6 +1040,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         setDashboardPins, setPositionsInDashboard, setPositionsInWorkflow,
         setWorkflowName,
         workflowNameRef,
+        setWorkflowDescription,
+        workflowDescriptionRef,
         onEdgesDelete, onNodesDelete, onNodesChange,
         onConnect, addNode,
     });
@@ -1097,6 +1112,9 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 setDashboardLocked,
                 workflowNameRef,
                 setWorkflowName,
+                workflowDescriptionRef,
+                workflowDescription,
+                setWorkflowDescription,
                 loading,
 
                 ...workflowOps,

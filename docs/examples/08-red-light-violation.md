@@ -11,7 +11,7 @@ Here is the overview of the entire dataflow pipeline:
 
 Before you begin, please familiarize yourself with Curio’s main concepts and functionalities by reading our [usage guide](https://github.com/urban-toolkit/curio/blob/main/docs/USAGE.md).
 
-The data for this tutorial can be found [here](data/red-light-violation.zip).
+The data for this tutorial can be found [here](data/08-red_light_violations.zip).
 
 For completeness, we also include the template code in each dataflow step.
 
@@ -22,7 +22,7 @@ We begin by loading the red-light violation data into Curio using a Data Loading
 ```python
 import pandas as pd
 
-df = pd.read_csv("data/red-light-violation.csv")
+df = pd.read_csv("data/08-red_light_violations.zip")
 return df
 ```
 

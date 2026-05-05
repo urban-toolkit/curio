@@ -1,12 +1,13 @@
 {
   "dataflow": {
+    "description": "Aggregate Chicago 311 flooding complaints by ZIP code with Pandas.",
     "nodes": [
       {
         "id": "92385949-b264-4108-abea-99df7a39b551",
         "type": "DATA_LOADING",
         "x": 517.200068674919,
         "y": -166.47899921020905,
-        "content": "import pandas as pd\n\nsensor = pd.read_csv('data/Flooding_Complaints_to_311_20260330.csv')\n\nreturn sensor",
+        "content": "import pandas as pd\n\nsensor = pd.read_csv('data/05-flooding_complaints.csv.zip')\n\nreturn sensor",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

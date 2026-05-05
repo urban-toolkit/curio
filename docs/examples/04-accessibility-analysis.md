@@ -21,7 +21,7 @@ The icons on the left-hand side can be used to instantiate different nodes. Let'
 ```python
 import geopandas as gpd
 
-gdf = gpd.read_file('data/labels_2026-03-30T13_06_26.436355935-07_00.json')
+gdf = gpd.read_file('zip://data/04-labels.json.zip!04-labels.json')
 
 gdf.metadata = {
     'name': 'accessibility_features'

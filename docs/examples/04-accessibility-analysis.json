@@ -1,12 +1,13 @@
 {
   "dataflow": {
+    "description": "Analyze and visualize sidewalk accessibility data from Project Sidewalk.",
     "nodes": [
       {
         "id": "cd3b6afc-900d-417c-8064-375ed01a912f",
         "type": "DATA_LOADING",
         "x": 780.7342662984418,
         "y": -73.72077606786144,
-        "content": "import geopandas as gpd\n\ngdf = gpd.read_file('data/labels_2026-03-30T13_06_26.436355935-07_00.json')\n\ngdf.metadata = {\n    'name': 'accessibility_features'\n}\n\nreturn gdf\n",
+        "content": "import geopandas as gpd\n\ngdf = gpd.read_file('zip://data/04-labels.json.zip!04-labels.json')\n\ngdf.metadata = {\n    'name': 'accessibility_features'\n}\n\nreturn gdf\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

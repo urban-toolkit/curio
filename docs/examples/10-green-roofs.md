@@ -12,18 +12,18 @@ Here is the overview of the entire dataflow pipeline:
 
 Before you begin, please familiarize yourself with Curio’s main concepts and functionalities by reading our [usage guide](https://github.com/urban-toolkit/curio/blob/main/docs/USAGE.md).
 
-The data for this tutorial can be found [here](data/Green_Roofs.zip).
+The data for this tutorial can be found [here](data/10-green_roofs.csv).
 
 For completeness, we also include the template code in each dataflow step.
 
 ## Step 1: Load the green roofs data
 
-We begin the first dataflow by loading the green roofs dataset into Curio using a Data Loading node. This step reads the CSV file and prepares it for further processing. If code in a data loadning node has a runtime error, try changing the text inside the file to the full file path. Example: instead of pd.read_csv('Green_Roofs.csv'), try pd.read_csv(r'C:\Users\Username\Rest of Filepath\Green_Roofs\Green_Roofs.csv')
+We begin the first dataflow by loading the green roofs dataset into Curio using a Data Loading node. This step reads the CSV file and prepares it for further processing. If code in a data loadning node has a runtime error, try changing the text inside the file to the full file path. Example: instead of pd.read_csv('data/10-green_roofs.csv'), try pd.read_csv(r'C:\Users\Username\Rest of Filepath\data\10-green_roofs.csv')
 
 ```python
 import pandas as pd
 
-df = pd.read_csv("Green_Roofs.csv")
+df = pd.read_csv("data/10-green_roofs.csv")
 return df
 ```
 
@@ -93,7 +93,7 @@ import geopandas as gpd
 import pandas as pd
 from shapely.geometry import Point
 # Read the green roofs dataset
-green_roofs_df = pd.read_csv('Green_Roofs.csv')
+green_roofs_df = pd.read_csv('data/10-green_roofs.csv')
 
 # Create the dataset into geo dataframe using latitude and longitude columns
 geometry = [Point(xy) for xy in zip(green_roofs_df['LONGITUDE'], green_roofs_df['LATITUDE'])]

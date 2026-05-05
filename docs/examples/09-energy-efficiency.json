@@ -1,12 +1,13 @@
 {
   "dataflow": {
+    "description": "Benchmark energy efficiency across Chicago building types from a ZIP-level dataset.",
     "nodes": [
       {
         "id": "345e363c-7676-45e3-9fc7-3c44f52b1b6a",
         "type": "DATA_LOADING",
         "x": 631.1585797343309,
         "y": 732.285832621483,
-        "content": "import pandas as pd\n\ndf = pd.read_csv(\"data/energy_dataset.csv\")\nreturn df",
+        "content": "import pandas as pd\n\ndf = pd.read_csv(\"data/09-energy_dataset.csv\")\nreturn df",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

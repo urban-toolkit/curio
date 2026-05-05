@@ -1,12 +1,13 @@
 {
   "dataflow": {
+    "description": "Dashboard of Chicago red-light violation patterns, enforcement effectiveness, and spatial trends.",
     "nodes": [
       {
         "id": "6f4c2cd3-e83e-4e85-81de-3ec50986a2ed",
         "type": "DATA_LOADING",
         "x": 375,
         "y": 233,
-        "content": "import pandas as pd\n\ndf = pd.read_csv(\"data/red-light-violation.csv\")\nreturn df",
+        "content": "import pandas as pd\n\ndf = pd.read_csv(\"data/08-red_light_violations.zip\")\nreturn df",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

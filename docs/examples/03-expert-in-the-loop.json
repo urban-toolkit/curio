@@ -1,5 +1,6 @@
 {
   "dataflow": {
+    "description": "Inspect a sidewalk-material classifier with expert-in-the-loop review of street view imagery.",
     "nodes": [
       {
         "id": "09c6e03f-117d-45c5-af30-8f71bc3e58b6",
