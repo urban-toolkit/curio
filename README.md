@@ -100,8 +100,8 @@ See the full [release notes](https://github.com/urban-toolkit/curio/releases) fo
 
 ## Overview
 
-**Curio: A Dataflow-Based Framework for Collaborative Urban Visual Analytics**
-*Gustavo Moreira, Maryam Hosseini, Carolina Veiga, Lucas Alexandre, Nico Colaninno, Daniel de Oliveira, Nivan Ferreira, Marcos Lage, Fabio Miranda*
+**Curio: A Dataflow-Based Framework for Collaborative Urban Visual Analytics**  
+*Gustavo Moreira, Maryam Hosseini, Carolina Veiga, Lucas Alexandre, Nico Colaninno, Daniel de Oliveira, Nivan Ferreira, Marcos Lage, Fabio Miranda*  
 IEEE Transactions on Visualization and Computer Graphics (Volume: 31, Issue: 1, January 2025)  
 Paper: [[DOI](https://doi.org/10.1109/TVCG.2024.3456353)], [[Arxiv](https://arxiv.org/abs/2408.06139)]
 
