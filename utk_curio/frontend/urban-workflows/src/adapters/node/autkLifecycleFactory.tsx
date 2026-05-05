@@ -219,20 +219,64 @@ export function createAutkLifecycle(config: AutkLifecycleConfig): NodeLifecycleH
             // eslint-disable-next-line react-hooks/exhaustive-deps
         }, [data.interactions]);
 
+        // Forward node-container resizes to autk modules.
+        // AutkMap binds only to `window.resize`, so when the user drags the
+        // node resize handle nothing fires. Sizing the wrapper via CSS
+        // `height: 100%` is fragile because it relies on every parent in the
+        // Tab.Pane chain having a definite height. Instead, observe the
+        // wrapper's parent (the Tab.Pane) and pin the wrapper to its
+        // pixel dimensions, then dispatch a synthetic window.resize so
+        // AutkMap's existing handler picks the new dims up.
+        useEffect(() => {
+            if (config.container !== 'canvas') return;
+            const wrapper = containerRef.current?.parentElement;
+            const target = wrapper?.parentElement;
+            if (!wrapper || !target || typeof ResizeObserver === 'undefined') return;
+            const sync = () => {
+                const w = target.clientWidth;
+                const h = target.clientHeight;
+                if (w <= 0 || h <= 0) return;
+                wrapper.style.width = w + 'px';
+                wrapper.style.height = h + 'px';
+                window.dispatchEvent(new Event('resize'));
+            };
+            sync();
+            const ro = new ResizeObserver(sync);
+            ro.observe(target);
+            return () => ro.disconnect();
+        }, []);
+
         let contentComponent: React.ReactNode;
+        // `nodrag nopan nowheel` opts the autk container out of React Flow's
+        // node drag, viewport pan, and wheel handling so clicks/brushes/wheel
+        // inside the canvas or chart go to autk-map / autk-plot instead of
+        // dragging the node.
+        const interactionClass = 'nodrag nopan nowheel';
         if (config.container === 'canvas') {
             contentComponent = (
-                <div style={config.containerStyle ?? { width: '100%', height: 400, overflow: 'hidden' }}>
+                <div
+                    className={interactionClass}
+                    style={
+                        config.containerStyle ?? {
+                            width: '100%',
+                            height: '100%',
+                            minHeight: 400,
+                            overflow: 'hidden',
+                        }
+                    }
+                >
                     <canvas
                         ref={containerRef as React.RefObject<HTMLCanvasElement>}
-                        width={600}
-                        height={400}
+                        style={{ display: 'block', width: '100%', height: '100%' }}
                     />
                 </div>
             );
         } else if (config.container === 'div') {
             contentComponent = (
-                <div style={config.containerStyle ?? { width: '100%', minHeight: 400, overflow: 'auto' }}>
+                <div
+                    className={interactionClass}
+                    style={config.containerStyle ?? { width: '100%', minHeight: 400, overflow: 'auto' }}
+                >
                     <div ref={containerRef as React.RefObject<HTMLDivElement>} />
                 </div>
             );

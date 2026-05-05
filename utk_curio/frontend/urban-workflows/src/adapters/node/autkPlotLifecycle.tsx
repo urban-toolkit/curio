@@ -7,8 +7,8 @@ const DEFAULT_CODE = `// 'arg' is the data from the upstream node.
 // AutkChart types: 'scatterplot' | 'barchart' | 'linechart' |
 //                  'heatmatrix' | 'parallel-coordinates' | 'table'
 //
-// 'arg' may be an Autark layer array, a single FeatureCollection, or a
-// DataFrame — pick the shape your chart needs:
+// 'arg' arrives as an Autark layer array (FeatureCollection inputs are
+// auto-wrapped by the host) or a DataFrame for tabular charts.
 const collection = Array.isArray(arg) ? arg[0]?.geojson : arg;
 
 // Return the AutkChart instance to enable bidirectional brushing with the map.
@@ -26,7 +26,7 @@ export const useAutkPlotLifecycle = createAutkLifecycle({
     container: 'div',
     defaultCode: DEFAULT_CODE,
     bidirectional: true,
-    autoWrapFeatureCollection: false,
+    autoWrapFeatureCollection: true,
     bindInteractions: (chart, emit) => {
         if (chart?.events?.on) {
             const forward = (kind: string) => ({ selection }: any) => {
