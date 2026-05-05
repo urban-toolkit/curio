@@ -21,7 +21,7 @@ We begin creating a Data Loading node to load the speed camera violations datase
 ```python
 import pandas as pd
 
-df = pd.read_csv("data/07-speed_camera_violations.zip")
+df = pd.read_csv("docs/examples/data/07-speed_camera_violations.zip")
 df.dropna(inplace=True)
 return df
 ```

@@ -18,12 +18,12 @@ For completeness, we also include the template code in each dataflow step.
 
 ## Step 1: Load the green roofs data
 
-We begin the first dataflow by loading the green roofs dataset into Curio using a Data Loading node. This step reads the CSV file and prepares it for further processing. If code in a data loadning node has a runtime error, try changing the text inside the file to the full file path. Example: instead of pd.read_csv('data/10-green_roofs.csv'), try pd.read_csv(r'C:\Users\Username\Rest of Filepath\data\10-green_roofs.csv')
+We begin the first dataflow by loading the green roofs dataset into Curio using a Data Loading node. This step reads the CSV file and prepares it for further processing. If code in a data loadning node has a runtime error, try changing the text inside the file to the full file path. Example: instead of pd.read_csv('docs/examples/data/10-green_roofs.csv'), try pd.read_csv(r'C:\Users\Username\Rest of Filepath\docs\examples\data\10-green_roofs.csv')
 
 ```python
 import pandas as pd
 
-df = pd.read_csv("data/10-green_roofs.csv")
+df = pd.read_csv("docs/examples/data/10-green_roofs.csv")
 return df
 ```
 
@@ -93,12 +93,12 @@ import geopandas as gpd
 import pandas as pd
 from shapely.geometry import Point
 # Read the green roofs dataset
-green_roofs_df = pd.read_csv('data/10-green_roofs.csv')
+green_roofs_df = pd.read_csv('docs/examples/data/10-green_roofs.csv')
 
 # Create the dataset into geo dataframe using latitude and longitude columns
 geometry = [Point(xy) for xy in zip(green_roofs_df['LONGITUDE'], green_roofs_df['LATITUDE'])]
 green_roofs_df = gpd.GeoDataFrame(green_roofs_df, geometry=geometry, crs=4326)
-chicago = gpd.read_file("chicago.geojson")
+chicago = gpd.read_file("docs/examples/data/chicago.geojson")
 
 # Joining the green roofs dataset with the chicago neighborhood geojson file
 joined = gpd.sjoin(green_roofs_df, chicago, predicate='within')

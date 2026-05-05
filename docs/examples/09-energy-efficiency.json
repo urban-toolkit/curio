@@ -7,7 +7,7 @@
         "type": "DATA_LOADING",
         "x": 631.1585797343309,
         "y": 732.285832621483,
-        "content": "import pandas as pd\n\ndf = pd.read_csv(\"data/09-energy_dataset.csv\")\nreturn df",
+        "content": "import pandas as pd\n\ndf = pd.read_csv(\"docs/examples/data/09-energy_dataset.csv\")\nreturn df",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

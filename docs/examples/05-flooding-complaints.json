@@ -7,7 +7,7 @@
         "type": "DATA_LOADING",
         "x": 517.200068674919,
         "y": -166.47899921020905,
-        "content": "import pandas as pd\n\nsensor = pd.read_csv('data/05-flooding_complaints.csv.zip')\n\nreturn sensor",
+        "content": "import pandas as pd\n\nsensor = pd.read_csv('docs/examples/data/05-flooding_complaints.csv.zip')\n\nreturn sensor",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

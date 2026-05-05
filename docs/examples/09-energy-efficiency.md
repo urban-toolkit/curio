@@ -22,7 +22,7 @@ Make sure to include your full file path to the file as well.
 ```python
 import pandas as pd
 
-df = pd.read_csv("data/09-energy_dataset.csv")
+df = pd.read_csv("docs/examples/data/09-energy_dataset.csv")
 return df
 ```
 

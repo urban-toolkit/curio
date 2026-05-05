@@ -7,7 +7,7 @@
         "type": "DATA_LOADING",
         "x": 328.59505352598796,
         "y": 144.76139201765037,
-        "content": "import pandas as pd\n\ndf = pd.read_csv(\"data/07-speed_camera_violations.zip\")\ndf.dropna(inplace=True)\nreturn df",
+        "content": "import pandas as pd\n\ndf = pd.read_csv(\"docs/examples/data/07-speed_camera_violations.zip\")\ndf.dropna(inplace=True)\nreturn df",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

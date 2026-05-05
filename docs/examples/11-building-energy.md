@@ -25,7 +25,7 @@ We begin by creating a Data Loading node to import the building energy usage dat
 import pandas as pd
 
 # Load the CSV directly
-df = pd.read_csv("data/11-energy_usage.csv")
+df = pd.read_csv("docs/examples/data/11-energy_usage.csv")
 
 # Select relevant columns and clean missing values
 grouped_data = df[["BUILDING TYPE", "TOTAL KWH", "TOTAL THERMS"]].dropna()
@@ -229,7 +229,7 @@ We create a Data Loading node to import the dataset for community-level analysis
 ```python
 import pandas as pd
 
-df = pd.read_csv("data/11-energy_usage.csv")
+df = pd.read_csv("docs/examples/data/11-energy_usage.csv")
 
 # Standardize column names right away for consistency
 df.columns = [col.upper().strip() for col in df.columns]
@@ -396,7 +396,7 @@ We create a Data Loading node to
 
 ```python
 import pandas as pd
-df = pd.read_csv("data/11-energy_usage.csv")
+df = pd.read_csv("docs/examples/data/11-energy_usage.csv")
 return df
 ```
 
@@ -543,7 +543,7 @@ We create a Data Loading node to import the dataset, followed by a Data Cleaning
 ```python
 import pandas as pd
 
-df = pd.read_csv("data/11-energy_usage.csv")
+df = pd.read_csv("docs/examples/data/11-energy_usage.csv")
 
 month_cols = [col for col in df.columns if col.startswith("KWH ") and "2010" in col]
 required_cols = ["COMMUNITY AREA NAME"] + month_cols
@@ -683,7 +683,7 @@ We create a Data Loading node to import the dataset, followed by a Data Cleaning
 ```python
 import pandas as pd
 
-df = pd.read_csv("data/11-energy_usage.csv")
+df = pd.read_csv("docs/examples/data/11-energy_usage.csv")
 
 columns_needed = ["AVERAGE STORIES", "AVERAGE BUILDING AGE", "TOTAL KWH"] + [col for col in df.columns if col.startswith("KWH ") and "2010" in col]
 

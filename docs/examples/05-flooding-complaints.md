@@ -17,7 +17,7 @@ This example uses the [Flooding Complaints to 311](https://data.cityofchicago.or
 ```
 import pandas as pd
 
-sensor = pd.read_csv('data/05-flooding_complaints.csv.zip')
+sensor = pd.read_csv('docs/examples/data/05-flooding_complaints.csv.zip')
 
 return sensor
 ```

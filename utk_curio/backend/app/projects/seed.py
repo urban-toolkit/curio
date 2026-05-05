@@ -3,9 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
-import shutil
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -56,22 +54,6 @@ def _description_from_spec(spec: dict) -> Optional[str]:
 
 def _example_id(stem: str) -> str:
     return str(uuid.uuid5(_EXAMPLES_NAMESPACE, stem))
-
-
-def _copy_example_data(launch_cwd: Path, examples_data_dir: Path) -> None:
-    if not examples_data_dir.exists():
-        return
-    dest_root = launch_cwd / "data"
-    dest_root.mkdir(parents=True, exist_ok=True)
-    for entry in examples_data_dir.iterdir():
-        dest = dest_root / entry.name
-        try:
-            if entry.is_dir():
-                shutil.copytree(entry, dest, dirs_exist_ok=True)
-            else:
-                shutil.copy2(entry, dest)
-        except Exception:
-            logger.exception("Failed to copy example data %s", entry)
 
 
 def seed_example_projects(user) -> int:
@@ -165,9 +147,6 @@ def seed_example_projects(user) -> int:
     pruned = _prune_non_example_projects(user, ukey, keep_ids)
     if pruned:
         logger.info("Pruned %d non-example guest project(s)", pruned)
-
-    launch_cwd = Path(os.environ.get("CURIO_LAUNCH_CWD") or os.getcwd())
-    _copy_example_data(launch_cwd, examples_dir / "data")
 
     return seeded
 
