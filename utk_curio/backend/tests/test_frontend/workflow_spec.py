@@ -114,7 +114,7 @@ class WorkflowSpec:
         handles on both source and target nodes (visible in their edge
         IDs, e.g. ``…in/out-…in/out``).  They represent a bidirectional
         interaction channel – for instance, brushing a bar in a Vega
-        chart highlights the corresponding geometry on a UTK map, and
+        chart highlights the corresponding geometry on an Autark map, and
         vice-versa.
 
         The frontend does **not** render these as ``.react-flow__edge``

@@ -60,10 +60,10 @@ jest.mock('../../../utils/formatters', () => ({
   mapTypes: (t: any) => t,
 }));
 
-jest.mock('autk-map', () => ({ AutkMap: jest.fn() }), { virtual: true });
-jest.mock('autk-plot', () => ({ AutkChart: jest.fn() }), { virtual: true });
+jest.mock('@urban-toolkit/autk-map', () => ({ AutkMap: jest.fn() }), { virtual: true });
+jest.mock('@urban-toolkit/autk-plot', () => ({ AutkChart: jest.fn() }), { virtual: true });
 jest.mock(
-  'autk-compute',
+  '@urban-toolkit/autk-compute',
   () => ({ ComputeGpgpu: jest.fn(), ComputeRender: jest.fn() }),
   { virtual: true },
 );

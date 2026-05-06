@@ -1,6 +1,6 @@
 import { NodeLifecycleHook } from '../../registry/types';
 
-const DEFAULT_CODE = `import { AutkSpatialDb } from 'autk-db';
+const DEFAULT_CODE = `import { AutkSpatialDb } from '@urban-toolkit/autk-db';
 
 const db = new AutkSpatialDb();
 await db.init();

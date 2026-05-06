@@ -2,7 +2,7 @@ import { createAutkLifecycle } from './autkLifecycleFactory';
 
 const DEFAULT_CODE = `// 'arg' is the data from the upstream node.
 // 'container' is the div element rendered inside this node.
-// 'AutkChart' is imported from autk-plot automatically.
+// 'AutkChart' is imported from @urban-toolkit/autk-plot automatically.
 //
 // AutkChart types: 'scatterplot' | 'barchart' | 'linechart' |
 //                  'heatmatrix' | 'parallel-coordinates' | 'table'
@@ -20,8 +20,7 @@ return new AutkChart(container, {
 });`;
 
 export const useAutkPlotLifecycle = createAutkLifecycle({
-    // autk-plot's package.json points types to a non-existent path; cast to skip resolution.
-    moduleImport: () => import('autk-plot' as any),
+    moduleImport: () => import('@urban-toolkit/autk-plot' as any),
     globals: ['AutkChart'],
     container: 'div',
     defaultCode: DEFAULT_CODE,
