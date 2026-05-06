@@ -1089,10 +1089,8 @@ def upload_workflow(
     )
     page.wait_for_load_state("domcontentloaded")
 
-    plug = page.locator("#plug-loader")
     try:
-        plug.wait_for(state="attached", timeout=60000)
-        plug.wait_for(state="detached", timeout=120000)
+        page.wait_for_load_state("networkidle", timeout=30000)
     except PlaywrightError:
         pass
 

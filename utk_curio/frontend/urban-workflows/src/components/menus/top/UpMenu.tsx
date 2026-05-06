@@ -351,6 +351,7 @@ export default function UpMenu({
                 <div className={styles.dropdownWrapper}>
                     <button
                         className={styles.button}
+                        data-testid="file-menu-btn"
                         onClick={(e) => {
                             e.stopPropagation();
                             toggleMenu("file");

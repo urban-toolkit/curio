@@ -133,17 +133,24 @@ class TestWorkflowCanvas:
                 # ``MouseEvent`` that React's onClick picks up regardless
                 # of where the element actually sits on screen.
                 play_btn.dispatch_event("click")
-                deadline = 20.0
-                step = 0.25
-                waited = 0.0
-                while waited < deadline:
-                    if spinner.count() > 0 or counter.count() > 0:
-                        return
-                    time.sleep(step)
-                    waited += step
-                last_error = TimeoutError(
-                    f"No spinner or counter-flip within {deadline:.0f}s"
-                )
+                try:
+                    self.page.wait_for_function(
+                        """(nodeId) => {
+                            const el = document.querySelector(`.react-flow__node[data-id="${nodeId}"]`);
+                            if (!el) return false;
+                            if (el.querySelector('.spinner-border')) return true;
+                            const texts = [...el.querySelectorAll('.nowheel.nodrag, span')]
+                                .map(e => e.textContent);
+                            return texts.some(
+                                t => /\[(\d+|\*)\]:/.test(t) || /^(Running|Done|Error)$/.test(t.trim())
+                            );
+                        }""",
+                        arg=node.id,
+                        timeout=20000,
+                    )
+                    return
+                except PlaywrightTimeoutError:
+                    last_error = TimeoutError("No spinner or counter-flip within 20s")
             except PlaywrightTimeoutError as e:
                 last_error = e
         raise AssertionError(
@@ -165,10 +172,9 @@ class TestWorkflowCanvas:
         # very first ``play_btn.click(force=True)`` of the workflow is
         # occasionally dropped on the floor.
         try:
-            self.page.wait_for_load_state("networkidle", timeout=10000)
+            self.page.locator("svg.fa-circle-play").first.wait_for(state="visible", timeout=5000)
         except PlaywrightTimeoutError:
-            pass
-        time.sleep(0.5)
+            pass  # all-passive workflow — no play buttons present
         for node in self.spec.topo_sorted_nodes():
             node_el = self._node_locator(node)
             node_el.scroll_into_view_if_needed()
@@ -188,7 +194,6 @@ class TestWorkflowCanvas:
                     output_tab.first.click(force=True)
                 data_table = node_el.locator("td.MuiTableCell-root")
                 data_table.first.wait_for(state="visible", timeout=30000)
-                time.sleep(2)
                 assert data_table.count() >= 1, (
                     f"DataPool node {node.id} ({node.type}) is missing its "
                     f"data table"
