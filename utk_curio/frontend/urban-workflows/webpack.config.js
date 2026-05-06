@@ -36,9 +36,11 @@ module.exports = {
     extensions: [".tsx", ".ts", ".js"],
     modules: [path.resolve(__dirname, 'src'), 'node_modules'],
     alias: {
-      vega: nm("vega"),
-      "vega-lite": nm("vega-lite"),
-      "vega-util": nm("vega-util"),
+      // vega v6 packages are ESM-only with no "main" field — webpack ignores "exports"
+      // when an alias targets a directory, so we point directly to the built ESM files.
+      vega: nm("vega", "build", "vega.module.js"),
+      "vega-lite": nm("vega-lite", "build", "index.js"),
+      "vega-util": nm("vega-util", "build", "index.js"),
       "d3-format": nm("d3-format"),
     },
   },
@@ -69,6 +71,11 @@ module.exports = {
         test: /\.css$/,
         exclude: /\.module\.css$/,
         use: ["style-loader", "css-loader"],
+      },
+      {
+        test: /\.js$/,
+        include: /node_modules\/vega/,
+        resolve: { fullySpecified: false },
       },
       {
         enforce: "pre",
