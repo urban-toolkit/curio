@@ -42,7 +42,7 @@ Do not generate warnings for these node types:
 - DATA_POOL
 - MERGE_FLOW
 - VIS_VEGA
-- VIS_UTK
+- AUTK_MAP
 
 **BE VERY SPECIFIC, DO NOT PROVIDE VAGUE WARNINGS LIKE: 'Input data format not suited for analysis'. YOU DO NOT NEED TO OUTPUT WARNING FOR EVERY NODE**.
 

@@ -149,7 +149,7 @@ Here is a description of the available types of node:
 - DATA_TRANSFORMATION: used to transform or clean data. Process data.
 - COMPUTATION_ANALYSIS: used to generic computations over the data. Process data.
 - VIS_VEGA: used to render vega-lite visualizations. Visualize data.
-- VIS_UTK: used to render Urban Toolkit Visualization (UTK). Visualize data.
+- AUTK_MAP: used to render Autark urban 3D map layers (autk-map). Visualize geospatial data.
 - MERGE_FLOW: used to merge two or more flows into a single flow. When nodes are connected into a MERGE_FLOW it will output it as a tuple. Edges that have a MERGE_FLOW node as its target should include "in_0", "in_1", "in_2", "in_3", "in_4" at the end of their id depending on the connection socket the edge is connected to.
 - DATA_POOL: used as a data repository for multiple visualizations. Is represented to the user as a table. Changes made to DATA_POOL are seen by all connected boxes. Useful to link interaction between visualizations.
 - VIS_SIMPLE: displays incoming data automatically. Renders a table for DataFrames/GeoDataFrames, an image grid for DataFrames with an "image_content" column (Base64 images), or passes through other values. Users can click on images to interact with them; the interaction will be propagated to DATA_POOL if connected with an interaction edge. DO NOT CONNECT A MERGE_FLOW DIRECTLY TO THE INPUT OF VIS_VEGA, you need to insert a node before that will filter the correct DataFrame that will feed Vega.
@@ -161,7 +161,7 @@ Nodes are uncontrollable, controllable through python code or controllable throu
 - DATA_TRANSFORMATION: controllable through python code.
 - COMPUTATION_ANALYSIS: controllable through python code.
 - VIS_VEGA: controllable through grammar.
-- VIS_UTK: controllable through grammar.
+- AUTK_MAP: controllable through JavaScript code.
 - MERGE_FLOW: uncontrollable.
 - DATA_POOL: uncontrollable.
 
@@ -213,7 +213,7 @@ When generating the grammar for Vega-Lite do not include the data field. It will
   }
 }
 
-UTK is a visualization framework that can deal with 2D and 3D data. UTK nodes should also receive GeoDataFrame from the previous node or a tuple with multiple GeoDataFrames. Geometry column of the GeoDataFrame will become the geometrical presentation on the UTK, any other column will be used to color the geometry (more than one column is allowed). An example of a node sending data to UTK:
+Autark is the visualization framework used by Curio for 2D and 3D urban map rendering. AUTK_MAP nodes receive a GeoDataFrame from the previous node (or a tuple of GeoDataFrames). The geometry column becomes the spatial presentation; any other column can be used to color the geometry (more than one column is allowed). An example of a node sending data to AUTK_MAP:
 
 ```python
 import geopandas as gpd
@@ -232,7 +232,7 @@ filtered_gdf.metadata = {
 return filtered_gdf
 ```
 
-Notice that the GeoDataFrame needs to be anotated with metadata = {'name': 'layer_name'}. That is how UTK differenciate multiple GeoDataFrames. Aditionally the GeoDataFrame needs to use CRS 3395.
+Notice that the GeoDataFrame needs to be annotated with metadata = {'name': 'layer_name'}. That is how AUTK_MAP differentiates multiple GeoDataFrames. Additionally the GeoDataFrame needs to use CRS 3395.
 
 Visualization nodes 
 
@@ -245,7 +245,7 @@ Input supported:
 - DATA_TRANSFORMATION: DATAFRAME, GEODATAFRAME, RASTER
 - COMPUTATION_ANALYSIS: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
 - VIS_VEGA: DATAFRAME
-- VIS_UTK: GEODATAFRAME
+- AUTK_MAP: GEODATAFRAME
 - VIS_SIMPLE: DATAFRAME, GEODATAFRAME, VALUE
 - MERGE_FLOW: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
 - DATA_POOL: DATAFRAME, GEODATAFRAME
@@ -257,7 +257,7 @@ Output supported:
 - DATA_TRANSFORMATION: DATAFRAME, GEODATAFRAME, RASTER
 - COMPUTATION_ANALYSIS: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
 - VIS_VEGA: DATAFRAME
-- VIS_UTK: GEODATAFRAME
+- AUTK_MAP: GEODATAFRAME
 - VIS_SIMPLE: DATAFRAME, GEODATAFRAME, VALUE
 - MERGE_FLOW: DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, RASTER
 - DATA_POOL: DATAFRAME, GEODATAFRAME
@@ -270,7 +270,7 @@ Number of inputs possible for each node (it is not possible to connect multiple 
 - DATA_TRANSFORMATION: [1,2]
 - COMPUTATION_ANALYSIS: [1,n]
 - VIS_VEGA: 1
-- VIS_UTK: [1,n]
+- AUTK_MAP: [1,n]
 - VIS_SIMPLE: 1
 - DATA_POOL: 1
 - MERGE_FLOW: [2,4]
@@ -281,7 +281,7 @@ Number of outputs possible for each node (if you want to output more than one da
 - DATA_TRANSFORMATION: [1,2]
 - COMPUTATION_ANALYSIS: [1,n]
 - VIS_VEGA: 1
-- VIS_UTK: [1,n]
+- AUTK_MAP: [1,n]
 - VIS_SIMPLE: 1
 - DATA_POOL: 1
 
@@ -317,7 +317,7 @@ Visualizations can be connected to DATA_POOL with an edge of type: "Interaction"
 Nodes that can have interaction connection edge:
 
 - VIS_VEGA
-- VIS_UTK
+- AUTK_MAP
 - VIS_SIMPLE
 - DATA_POOL
 

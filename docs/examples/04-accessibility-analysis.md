@@ -41,13 +41,12 @@ Now, let's create a "Data Cleaning" node and connect it to the output of Step 1.
 1. Selecting relevant columns
 2. Calculating agreement metrics
 3. Categorizing severity levels
-4. Adding necessary information for UTK visualization
+4. Adding necessary information for downstream visualization
 
 ```python
 import pandas as pd
 import geopandas as gpd
 import numpy as np
-import utk
 
 gdf = arg
 
@@ -83,7 +82,7 @@ This cleaning step is essential because:
 - The agreement ratio helps us understand the consensus about each feature
 - Severity categories make it easier to visualize different levels of accessibility issues
 - The correct coordinate reference system ensures proper geospatial visualization
-- The thematic value enables color coding in UTK visualizations
+- The thematic value enables color coding in downstream visualizations
 
 ## Step 3: Feature type analysis
 

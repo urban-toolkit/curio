@@ -1,6 +1,6 @@
 {
   "dataflow": {
-    "description": "Coordinate interactions between a Vega-Lite plot and a UTK map view.",
+    "description": "Coordinate interactions between a Vega-Lite plot and an Autark map view.",
     "nodes": [
       {
         "id": "node2",
@@ -82,13 +82,13 @@
       },
       {
         "id": "13d263ce-2e82-4e87-bc69-117b06a8a65b",
-        "type": "VIS_UTK",
+        "type": "AUTK_MAP",
         "x": 3245.6344324951638,
         "y": 1393.1381375299884,
-        "content": "{\n    \"components\": [\n        {\n            \"id\": \"grammar_map\",\n            \"position\": {\n                \"width\": [\n                    1,\n                    12\n                ],\n                \"height\": [\n                    1,\n                    4\n                ]\n            }\n        }\n    ],\n    \"knots\": [],\n    \"ex_knots\": [\n        {\n            \"id\": \"neighborhood0\",\n            \"out_name\": \"neighborhood\",\n            \"in_name\": \"accessibility\"\n        },\n        {\n            \"id\": \"neighborhood1\",\n            \"out_name\": \"neighborhood\",\n            \"in_name\": \"neighborhood_name\"\n        }\n    ],\n    \"grid\": {\n        \"width\": 12,\n        \"height\": 4\n    },\n    \"grammar\": false\n}",
+        "content": "// 'arg' is the neighborhood GeoJSON (EPSG:3395) coming from the\n// upstream Data Pool. Render the polygons coloured by accessibility\n// score and enable picking so the linked Vega-Lite bar chart can\n// highlight the brushed neighborhoods.\nconst collection = arg?.features ? arg : (Array.isArray(arg) ? (arg[0]?.geojson ?? arg[0]) : arg);\nconst LAYER = 'neighborhood';\n\nconst map = new AutkMap(container);\nawait map.init();\n\nmap.loadCollection(LAYER, { collection, type: 'polygon' });\nmap.updateRenderInfo(LAYER, { isPick: true, isColorMap: true });\nmap.updateThematic(LAYER, { collection, property: 'properties.accessibility' });\nmap.draw();\nreturn map;",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Render accessibility map visualization for neighborhoods using geo-data.",
+        "goal": "Render accessibility map for neighborhoods, picking-linked to the Vega-Lite bar chart.",
         "metadata": {
           "keywords": [
             17

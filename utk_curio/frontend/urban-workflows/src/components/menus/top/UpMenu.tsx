@@ -293,7 +293,7 @@ export default function UpMenu({
                 },
                 {
                     element: "#step-utk",
-                    intro: "This is a UTK Node. It renders your data in an interactive 3D environment using UTK.",
+                    intro: "This is an Autark Map Node. It renders your data in an interactive 3D environment using Autark (autk-map).",
                 },
                 {
                     element: "#step-vega",

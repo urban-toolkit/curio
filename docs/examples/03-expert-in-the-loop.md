@@ -621,7 +621,26 @@ In this step, we want to create a spatial map showing the distribution of predic
 
 ![Example 3-5](images/3-5.png)
 
-To achieve that, let’s create a data node and a UTK visualization node connected to the neighborhood data node. UTK’s grammar is automatically populated once an input is received.
+To achieve that, let's create a Data Pool and an `AUTK_MAP` node connected to the neighborhood data node. The map renders Boston census tracts as a polygon layer coloured by the model's mean prediction uncertainty.
+
+```javascript
+// 'arg' is the Boston neighborhoods GeoJSON (EPSG:3395) coming from
+// the upstream Data Pool.
+const collection = arg?.features ? arg : (Array.isArray(arg) ? (arg[0]?.geojson ?? arg[0]) : arg);
+const LAYER = 'boston';
+
+const map = new AutkMap(container);
+await map.init();
+
+map.loadCollection(LAYER, { collection, type: 'polygon' });
+map.updateRenderInfo(LAYER, { isPick: true, isColorMap: true });
+map.updateThematic(LAYER, { collection, property: 'properties.uncertainty' });
+map.draw();
+return map;
+```
+
+!!! note "WebGPU required"
+    Autark relies on WebGPU. Run this example in a Chromium-based browser (Chrome / Edge) on a machine with a working GPU stack.
 
 ## Step 9: Analyzing and identifying shortcomings
 

@@ -1,0 +1,105 @@
+{
+  "dataflow": {
+    "name": "Chicago Shadows",
+    "description": "Compute how many minutes of shadow a Chicago Loop building casts onto each surrounding road segment using a WebGPU shader, then explore the result on a thematic map and a brushable histogram.",
+    "task": "Load OSM Chicago Loop, run a WebGPU shader that attributes per-road shadow minutes from a single building, filter to the segments that were actually shadowed, and explore the result with a thematic map and brushable histogram.",
+    "timestamp": 1746489600000,
+    "provenance_id": "shadow-analysis",
+    "packages": [],
+    "nodes": [
+      {
+        "id": "shadow-db",
+        "type": "AUTK_DB",
+        "x": 200,
+        "y": 200,
+        "content": "import { AutkSpatialDb } from '@urban-toolkit/autk-db';\n\nconst db = new AutkSpatialDb();\nawait db.init();\n\nawait db.loadOsm({\n    queryArea: { geocodeArea: 'Chicago', areas: ['Loop'] },\n    outputTableName: 'table_osm',\n    autoLoadLayers: {\n        coordinateFormat: 'EPSG:3395',\n        layers: ['surface', 'parks', 'water', 'roads', 'buildings'],\n        dropOsmTable: true,\n    },\n});\n\nconst layers = [];\nfor (const layer of db.getLayerTables()) {\n    layers.push({ name: layer.name, type: layer.type, geojson: await db.getLayer(layer.name) });\n}\nreturn layers;",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load OSM surface, parks, water, roads, and buildings layers for the Chicago Loop.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "shadow-shader",
+        "type": "AUTK_COMPUTE",
+        "x": 800,
+        "y": 200,
+        "content": "// Pick the first OSM building and run a WGSL shader that accumulates how\n// many minutes of shadow it casts onto each road segment, hour by hour,\n// from 07:00 to 19:00 on the June solstice in Chicago.\n\nfunction getRing(feature) {\n    let g = feature.geometry;\n    if (g.type === 'GeometryCollection') {\n        g = g.geometries.find(x => x.type === 'Polygon' || x.type === 'MultiPolygon');\n    }\n    if (!g) return null;\n    if (g.type === 'Polygon') return g.coordinates[0];\n    if (g.type === 'MultiPolygon') return g.coordinates[0][0];\n    return null;\n}\n\nconst buildings = arg.find(l => l.name === 'table_osm_buildings').geojson;\nconst roads     = arg.find(l => l.name === 'table_osm_roads').geojson;\n\nconst feature = buildings.features[0];\nconst footprint = getRing(feature);\nconst height = parseFloat(feature.properties?.height) || 30;\n\nconst SHADOW_WGSL = `\nlet pi      = 3.14159265359;\nlet lat_rad = 0.73027;\nlet lon_ref = -75.0;\nlet lon_loc = -87.65;\n\nlet dec_rad = -0.40928 * cos(2.0 * pi / 365.0 * (doy + 10.0));\n\nlet ax = seg[0u]; let ay = seg[1u];\nlet bx = seg[2u]; let by = seg[3u];\n\nvar accumulated: f32 = 0.0;\nfor (var hour = 7i; hour <= 19i; hour++) {\n    let solar_time = f32(hour) + (lon_ref - lon_loc) / 15.0;\n    let h_rad = (solar_time - 12.0) * pi / 12.0;\n    let sin_alt = sin(lat_rad) * sin(dec_rad) + cos(lat_rad) * cos(dec_rad) * cos(h_rad);\n    let alt_rad = asin(clamp(sin_alt, -1.0, 1.0));\n    if alt_rad <= 0.0 { continue; }\n\n    let az_rad = atan2(sin(h_rad), sin(lat_rad) * cos(h_rad) - cos(lat_rad) * tan(dec_rad)) + pi;\n    let sdx = -sin(az_rad);\n    let sdy = -cos(az_rad);\n    let shadow_len = bld_height / tan(alt_rad);\n\n    let perp_x = sdy;\n    let perp_y = -sdx;\n\n    var u_lo: f32 =  1e30; var u_hi: f32 = -1e30;\n    var v_lo: f32 =  1e30; var v_hi: f32 = -1e30;\n    for (var ri = 0u; ri < ring_rows; ri++) {\n        let rx = ring[ri * 2u];\n        let ry = ring[ri * 2u + 1u];\n        let ru = rx * perp_x + ry * perp_y;\n        let rv = rx * sdx + ry * sdy;\n        u_lo = min(u_lo, ru); u_hi = max(u_hi, ru);\n        v_lo = min(v_lo, rv); v_hi = max(v_hi, rv);\n    }\n    let v_hi_shadow = v_hi + shadow_len;\n\n    let au = ax * perp_x + ay * perp_y; let av = ax * sdx + ay * sdy;\n    let bu = bx * perp_x + by * perp_y; let bv = bx * sdx + by * sdy;\n\n    var hit = false;\n    if au >= u_lo && au <= u_hi && av >= v_lo && av <= v_hi_shadow { hit = true; }\n    else if bu >= u_lo && bu <= u_hi && bv >= v_lo && bv <= v_hi_shadow { hit = true; }\n    else if !(max(au, bu) < u_lo || min(au, bu) > u_hi) &&\n            !(max(av, bv) < v_lo || min(av, bv) > v_hi_shadow) {\n        let du = bu - au;\n        let dv = bv - av;\n        if abs(du) > 0.001 {\n            let t0 = (u_lo - au) / du;\n            let t1 = (u_hi - au) / du;\n            let t_enter = max(min(t0, t1), 0.0);\n            let t_exit  = min(max(t0, t1), 1.0);\n            if t_enter <= t_exit {\n                let v_enter = av + t_enter * dv;\n                let v_exit  = av + t_exit  * dv;\n                if max(v_enter, v_exit) >= v_lo && min(v_enter, v_exit) <= v_hi_shadow {\n                    hit = true;\n                }\n            }\n        } else {\n            if max(av, bv) >= v_lo && min(av, bv) <= v_hi_shadow { hit = true; }\n        }\n    }\n    if hit { accumulated += 60.0; }\n}\n\nvar out: OutputArray;\nout[0] = accumulated;\nreturn out;\n`;\n\nconst compute = new ComputeGpgpu();\nconst computedRoads = await compute.run({\n    collection: roads,\n    variableMapping: { seg: 'geometry.coordinates' },\n    attributeMatrices: { seg: { rows: 'auto', cols: 2 } },\n    uniforms: { bld_height: height, doy: 172 },\n    uniformMatrices: { ring: { data: footprint, cols: 2 } },\n    outputColumns: ['shadow'],\n    wgslBody: SHADOW_WGSL,\n});\n\nreturn arg.map(l => l.name === 'table_osm_roads' ? { ...l, geojson: computedRoads } : l);",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Run a WebGPU shader that accumulates per-road shadow minutes cast by the first building, hour by hour, on the June solstice.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "shadow-shaded-roads",
+        "type": "AUTK_COMPUTE",
+        "x": 1100,
+        "y": 600,
+        "content": "const ROADS_LAYER = 'table_osm_roads';\nconst roads = arg.find(l => l.name === ROADS_LAYER).geojson;\n\nconst shaded = {\n    type: 'FeatureCollection',\n    features: roads.features.filter(f => (f.properties?.compute?.shadow ?? 0) > 0),\n};\n\nreturn arg.map(l => l.name === ROADS_LAYER ? { ...l, geojson: shaded } : l);",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Filter the roads layer down to only the segments that the building actually shadowed (compute.shadow > 0), so the histogram bins a meaningful distribution instead of one tall zero-bar.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "shadow-map",
+        "type": "AUTK_MAP",
+        "x": 1400,
+        "y": 100,
+        "content": "const map = new AutkMap(container);\nawait map.init();\nfor (const layer of arg) {\n    map.loadCollection(layer.name, { collection: layer.geojson, type: layer.type });\n}\nmap.updateRenderInfo('table_osm_roads', { isPick: true, isColorMap: true });\nmap.updateThematic('table_osm_roads', {\n    collection: arg.find(l => l.name === 'table_osm_roads').geojson,\n    property: 'properties.compute.shadow',\n});\nmap.draw();\nreturn map;",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Render Chicago Loop layers with the full road network coloured by accumulated shadow minutes (unshaded roads stay visible for context).",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "shadow-histogram",
+        "type": "AUTK_PLOT",
+        "x": 1700,
+        "y": 600,
+        "content": "const roads = arg.find(l => l.name === 'table_osm_roads')?.geojson ?? arg[0]?.geojson;\nreturn new AutkChart(container, {\n    type: 'barchart',\n    collection: roads,\n    attributes: { axis: ['compute.shadow', '@transform'] },\n    labels: { axis: ['Minutes of shadow', '#Shaded road segments'], title: 'Shadow distribution' },\n    width: 600,\n    height: 380,\n    events: ['brushX'],\n    transform: { preset: 'binning-1d', options: { bins: 13 } },\n});",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Brushable histogram of shadow minutes across the segments the building shadowed.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-shadow-db-to-shader",
+        "source": "shadow-db",
+        "target": "shadow-shader"
+      },
+      {
+        "id": "edge-shadow-shader-to-map",
+        "source": "shadow-shader",
+        "target": "shadow-map"
+      },
+      {
+        "id": "edge-shadow-shader-to-shaded",
+        "source": "shadow-shader",
+        "target": "shadow-shaded-roads"
+      },
+      {
+        "id": "edge-shadow-shaded-to-hist",
+        "source": "shadow-shaded-roads",
+        "target": "shadow-histogram"
+      },
+      {
+        "id": "edge-shadow-map-hist-interaction",
+        "source": "shadow-map",
+        "target": "shadow-histogram",
+        "type": "Interaction"
+      }
+    ]
+  }
+}

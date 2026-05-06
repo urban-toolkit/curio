@@ -134,13 +134,13 @@
       },
       {
         "id": "6c4aa6a8-45eb-480e-bb3d-3fd54d13325b",
-        "type": "VIS_UTK",
+        "type": "AUTK_MAP",
         "x": 4534.453418311515,
         "y": -156.40671019807928,
-        "content": "{\n    \"components\": [\n        {\n            \"id\": \"grammar_map\",\n            \"position\": {\n                \"width\": [\n                    1,\n                    12\n                ],\n                \"height\": [\n                    1,\n                    4\n                ]\n            }\n        }\n    ],\n    \"knots\": [],\n    \"ex_knots\": [\n        {\n            \"id\": \"census0\",\n            \"out_name\": \"census\",\n            \"in_name\": \"gt_65\"\n        },\n        {\n            \"id\": \"census1\",\n            \"out_name\": \"census\",\n            \"in_name\": \"mean\"\n        }\n    ],\n    \"grid\": {\n        \"width\": 12,\n        \"height\": 4\n    },\n    \"grammar\": false\n}",
+        "content": "// 'arg' is the census GeoJSON FeatureCollection coming from the\n// upstream Data Pool (in EPSG:3395). Render it as a polygon layer,\n// color by mean UTCI, and enable picking so the linked Vega-Lite\n// scatterplot can highlight selected census tracts.\nconst collection = arg?.features ? arg : (Array.isArray(arg) ? (arg[0]?.geojson ?? arg[0]) : arg);\nconst LAYER = 'census';\n\nconst map = new AutkMap(container);\nawait map.init();\n\nmap.loadCollection(LAYER, { collection, type: 'polygon' });\nmap.updateRenderInfo(LAYER, { isPick: true, isColorMap: true });\nmap.updateThematic(LAYER, { collection, property: 'properties.mean' });\nmap.draw();\nreturn map;",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "",
+        "goal": "Render Milan census polygons colored by mean UTCI; picking is wired to the linked Vega-Lite scatterplot.",
         "metadata": {
           "keywords": []
         }

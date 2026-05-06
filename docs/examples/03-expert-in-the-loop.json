@@ -160,13 +160,13 @@
       },
       {
         "id": "ddae8fb9-82ee-4523-bf07-9184c7fc873f",
-        "type": "VIS_UTK",
+        "type": "AUTK_MAP",
         "x": 4472.847449641936,
         "y": 207.96567394349316,
-        "content": "{\n    \"components\": [\n        {\n            \"id\": \"grammar_map\",\n            \"position\": {\n                \"width\": [\n                    1,\n                    12\n                ],\n                \"height\": [\n                    1,\n                    4\n                ]\n            }\n        }\n    ],\n    \"knots\": [],\n    \"ex_knots\": [\n        {\n            \"id\": \"boston0\",\n            \"out_name\": \"boston\",\n            \"in_name\": \"uncertainty\"\n        }\n    ],\n    \"grid\": {\n        \"width\": 12,\n        \"height\": 4\n    },\n    \"grammar\": false\n}",
+        "content": "// 'arg' is the Boston neighborhoods GeoJSON (EPSG:3395) coming from\n// the upstream Data Pool. Render it as a polygon layer and color\n// each tract by the model's mean prediction uncertainty.\nconst collection = arg?.features ? arg : (Array.isArray(arg) ? (arg[0]?.geojson ?? arg[0]) : arg);\nconst LAYER = 'boston';\n\nconst map = new AutkMap(container);\nawait map.init();\n\nmap.loadCollection(LAYER, { collection, type: 'polygon' });\nmap.updateRenderInfo(LAYER, { isPick: true, isColorMap: true });\nmap.updateThematic(LAYER, { collection, property: 'properties.uncertainty' });\nmap.draw();\nreturn map;",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "",
+        "goal": "Render Boston neighborhoods colored by mean prediction uncertainty.",
         "metadata": {
           "keywords": []
         }
