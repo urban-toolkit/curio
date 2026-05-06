@@ -53,7 +53,7 @@ Here is the Vega-Lite code to do so:
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "description": "A simple bar chart with embedded data.",
   "mark": "bar",
   "encoding": {

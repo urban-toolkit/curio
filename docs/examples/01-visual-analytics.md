@@ -220,7 +220,7 @@ In this step, we create a linked scatterplot through a Vega-Lite node connected 
 
 ```json
 {
- "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+ "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
  "params": [
    {"name": "clickSelect", "select": "interval"}
  ],
@@ -264,7 +264,7 @@ Finally, we create a Vega-Lite node connected to the data cleaning node:
 
 ```json
 {
- "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+ "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
  "transform": [
    {
      "fold": ["gt_65"],

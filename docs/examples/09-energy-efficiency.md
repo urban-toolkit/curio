@@ -53,7 +53,7 @@ Then, we create a 2D Plot (Vega-Lite) node to create a bar and tick chart, which
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "description": "ENERGY STAR Score by Primary Property Type (mean bars with median ticks)",
   "title": "ENERGY STAR Score by Primary Property Type",
   "data": { "name": "edf" },

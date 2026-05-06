@@ -131,7 +131,7 @@ Next, we use a 2D Plot (Vega-Lite) node to create a heatmap showing the distribu
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": { "name": "energy_transformed_1" },
   "mark": "rect",
   "encoding": {
@@ -159,7 +159,7 @@ We then create another a 2D Plot (Vega-Lite) node to visualize the distribution 
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": { "name": "energy_transformed_1" },
   "mark": "circle",
   "encoding": {
@@ -199,7 +199,7 @@ We then use a 2D Plot (Vega-Lite) node to create a bar chart visualizing the ave
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": { "name": "avg_gas_by_building" },
   "mark": "bar",
   "encoding": {
@@ -289,7 +289,7 @@ We then use a 2D Plot (Vega-Lite) node to create a bar chart of the top 10 commu
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": { "name": "top10_avg_energy_by_community" },
   "mark": "bar",
   "encoding": {
@@ -333,7 +333,7 @@ We then use a 2D Plot (Vega-Lite) node to create a scatter plot of electricity v
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": { "name": "scatter_energy_usage" },
   "mark": "point",
   "encoding": {
@@ -375,7 +375,7 @@ Finally, we use a 2D Plot (Vega-Lite) node to create a strip plot showing the sp
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": { "name": "df_strip" },
   "mark": "tick",
   "encoding": {
@@ -442,7 +442,7 @@ Lastly, we use a 2D Plot (Vega-Lite) node to ...
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "params": [
     {
       "name": "commPick",
@@ -584,7 +584,7 @@ Lastly, we use a 2D Plot (Vega-Lite) node to create an interactive bar chart sho
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "vconcat": [
     {
       "title": "Monthly Average Energy Usage (Brush to Select Months)",
@@ -750,7 +750,7 @@ Lastly, we use a 2D Plot (Vega-Lite) node to create a box plot and line chart sh
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "params": [
     {
       "name": "storySelect",

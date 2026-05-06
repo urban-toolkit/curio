@@ -78,7 +78,7 @@ We create a 2D Plot (Vega-Lite) node and connect it to the Computation Analysis 
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": { "name": "table" },
   "width": 320,
   "height": 260,
@@ -107,7 +107,7 @@ We add a second 2D Plot (Vega-Lite) node, also connected to the Computation Anal
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": { "name": "table" },
   "width": 320,
   "height": 260,

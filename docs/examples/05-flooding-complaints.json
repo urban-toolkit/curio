@@ -46,7 +46,7 @@
         "type": "VIS_VEGA",
         "x": 466.79940472834824,
         "y": 157.15504665911408,
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"description\": \"A simple bar chart with embedded data.\",\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\"field\": \"ZIP_CODE\", \"type\": \"nominal\", \"title\": \"Zip Code\", \"axis\": {\"labelAngle\": 270}},\n    \"y\": {\"field\": \"Complaint_Count\", \"type\": \"quantitative\", \"title\": \"Complaints\", \"axis\": {\"labelAngle\": 0}}\n  }\n}",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"A simple bar chart with embedded data.\",\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\"field\": \"ZIP_CODE\", \"type\": \"nominal\", \"title\": \"Zip Code\", \"axis\": {\"labelAngle\": 270}},\n    \"y\": {\"field\": \"Complaint_Count\", \"type\": \"quantitative\", \"title\": \"Complaints\", \"axis\": {\"labelAngle\": 0}}\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

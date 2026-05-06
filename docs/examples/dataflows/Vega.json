@@ -19,7 +19,7 @@
         "type": "VIS_VEGA",
         "x": 1495.310854988554,
         "y": 441.3274150435921,
-        "content": "{\r\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\r\n  \"description\": \"A simple bar chart with embedded data.\",\r\n  \"mark\": \"bar\",\r\n  \"encoding\": {\r\n    \"x\": {\"field\": \"a\", \"type\": \"nominal\", \"axis\": {\"labelAngle\": 0}},\r\n    \"y\": {\"field\": \"b\", \"type\": \"quantitative\"}\r\n  }\r\n}",
+        "content": "{\r\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\r\n  \"description\": \"A simple bar chart with embedded data.\",\r\n  \"mark\": \"bar\",\r\n  \"encoding\": {\r\n    \"x\": {\"field\": \"a\", \"type\": \"nominal\", \"axis\": {\"labelAngle\": 0}},\r\n    \"y\": {\"field\": \"b\", \"type\": \"quantitative\"}\r\n  }\r\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

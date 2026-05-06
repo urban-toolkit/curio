@@ -48,7 +48,7 @@ Now, we use a 2D Plot (Vega-Lite) node to create a histogram visualization to un
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "description": "Histogram of Total Roof Size of Buildings in Chicago (log-scaled)",
   "data": {
     "name": "data"
@@ -117,7 +117,7 @@ Then, we use the 2D Plot (Vega-Lite) node to create a dot density map to explore
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "description": "Dot Density Map of Green Roof Locations in Chicago with Zoom & Pan",
   "width": 500,
   "height": 600,
@@ -184,7 +184,7 @@ Now, we create a 2D Plot (Vega-Lite) node to create a bar chart that visualizes 
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "description": "Top 10 largest zip codes by green roof area",
   "width": 400,
   "height": 200,

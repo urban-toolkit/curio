@@ -157,7 +157,7 @@ To complement the spatial visualization, let's create a "2D Plot (Vega Lite)" no
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": {"name": "feature_stats"},
   "mark": "bar",
   "encoding": {
@@ -204,7 +204,7 @@ Let's create another "2D Plot (Vega Lite)" node connected to the output of Step 
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": {"name": "neighborhood_stats"},
   "mark": "circle",
   "encoding": {

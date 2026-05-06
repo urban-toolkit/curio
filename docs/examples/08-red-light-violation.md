@@ -66,7 +66,7 @@ Now, to visualize the seasonal trends in red-light violations, we then create a 
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "width": 750,
   "height": 400,
   "title": "Seasonal Violation Trend (Daily)",
@@ -188,7 +188,7 @@ Lastly, we create a 2D Plot (Vega-Lite) node to visualize both monthly and seaso
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "hconcat": [
     {
       "width": 300,
@@ -312,7 +312,7 @@ Then, we use a Vega-Lite node to create a stacked area chart to visualize how re
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "title": "Seasonal Red-Light Violations Over Time",
   "mark": "area",
   "encoding": {
@@ -369,7 +369,7 @@ We then make a 2D Plot (Vega-Lite) node to visualize the top intersections using
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "title": "Top 3 Intersections with Most Violations by Year",
   "mark": "bar",
   "encoding": {
@@ -510,7 +510,7 @@ Lastly, we use a linked visualization to show violation distribution and complia
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "params": [
     {
       "name": "cameraFilter",
@@ -675,7 +675,7 @@ Lastly, we create a 2D Plot (Vega-Lite) node to visualize the spatial distributi
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "hconcat": [
     {
       "width": 600,

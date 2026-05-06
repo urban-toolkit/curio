@@ -205,7 +205,7 @@ To use incoming data in a node controllable through grammar the node has to rece
 When generating the grammar for Vega-Lite do not include the data field. It will be populated automatically based on the dataframe of the previous node. For example we can connect the previous dataframe into this Vega-Lite grammar:
 
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "mark": "bar",
   "encoding": {
     "x": {"field": "a", "type": "nominal", "axis": {"labelAngle": 0}},
@@ -293,7 +293,7 @@ Visualizations can be connected to DATA_POOL with an edge of type: "Interaction"
 
 ```json 
 { 
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json", 
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json", 
   "params": [ {"name": "clickSelect", "select": "interval"} ], 
   "mark": { "type": "point", "cursor": "pointer" }, 
   "encoding": { 
@@ -368,7 +368,7 @@ An example of a dataflow:
             {
                 "id": "node9",
                 "type": "VIS_VEGA",
-                "content": "{\n"$schema": \"https://vega.github.io/schema/vega-lite/v5.json\",\n\"params\": [\n{\"name\": \"clickSelect\", \"select\": \"interval\"}\n],\n\"mark\": {\n\"type\": \"point\",\n\"cursor\": \"pointer\"\n},\n\"encoding\": {\n\"x\": {\"field\": \"gt_65\", \"type\": \"quantitative\"},\n\"y\": {\"field\": \"mean\", \"type\": \"quantitative\", \"scale\": {\"domain\": [37, 42]}},\n\"fillOpacity\": {\n\"condition\": {\"param\": \"clickSelect\", \"value\": 1},\n\"value\": 0.3\n},\n\"color\": {\n\"field\": \"interacted\",\n\"type\": \"nominal\",\n\"condition\": {\"test\": \"datum.interacted === '1'\", \"value\": \"red\", \"else\": \"blue\"}\n}\n},\n\"config\": {\n\"scale\": {\n\"bandPaddingInner\": 0.2\n}\n}\n}"
+                "content": "{\n"$schema": \"https://vega.github.io/schema/vega-lite/v6.json\",\n\"params\": [\n{\"name\": \"clickSelect\", \"select\": \"interval\"}\n],\n\"mark\": {\n\"type\": \"point\",\n\"cursor\": \"pointer\"\n},\n\"encoding\": {\n\"x\": {\"field\": \"gt_65\", \"type\": \"quantitative\"},\n\"y\": {\"field\": \"mean\", \"type\": \"quantitative\", \"scale\": {\"domain\": [37, 42]}},\n\"fillOpacity\": {\n\"condition\": {\"param\": \"clickSelect\", \"value\": 1},\n\"value\": 0.3\n},\n\"color\": {\n\"field\": \"interacted\",\n\"type\": \"nominal\",\n\"condition\": {\"test\": \"datum.interacted === '1'\", \"value\": \"red\", \"else\": \"blue\"}\n}\n},\n\"config\": {\n\"scale\": {\n\"bandPaddingInner\": 0.2\n}\n}\n}"
             },
             {
                 "id": "node10",
@@ -378,7 +378,7 @@ An example of a dataflow:
             {
                 "id": "node11",
                 "type": "VIS_VEGA",
-                "content": "{\n\"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n\"transform\": [\n{\n\"fold\": [\"gt_65\"],\n\"as\": [\"Variable\", \"Value\"]\n}\n],\n\"mark\": {\n\"type\": \"boxplot\",\n\"size\": 60\n},\n\"encoding\": {\n\"x\": {\"field\": \"Variable\", \"type\": \"nominal\", \"title\": \"Variable\"},\n\"y\": {\"field\": \"Value\", \"type\": \"quantitative\", \"title\": \"Value\"}\n}\n}"
+                "content": "{\n\"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n\"transform\": [\n{\n\"fold\": [\"gt_65\"],\n\"as\": [\"Variable\", \"Value\"]\n}\n],\n\"mark\": {\n\"type\": \"boxplot\",\n\"size\": 60\n},\n\"encoding\": {\n\"x\": {\"field\": \"Variable\", \"type\": \"nominal\", \"title\": \"Variable\"},\n\"y\": {\"field\": \"Value\", \"type\": \"quantitative\", \"title\": \"Value\"}\n}\n}"
             }
         ],
         "edges": [
