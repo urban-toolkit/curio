@@ -1,4 +1,5 @@
 import { createAutkLifecycle } from './autkLifecycleFactory';
+import { VisInteractionType } from '../../constants';
 
 const DEFAULT_CODE = `// 'arg' is the layer array — either an Autark layer array
 // [{ name: string, type: string, geojson: GeoJSON.FeatureCollection }, ...]
@@ -15,16 +16,113 @@ map.draw();
 return map;`;
 
 export const useAutkMapLifecycle = createAutkLifecycle({
-    moduleImport: () => import('autk-map'),
+    moduleImport: () => import('@urban-toolkit/autk-map'),
     globals: ['AutkMap'],
     container: 'canvas',
     defaultCode: DEFAULT_CODE,
     bidirectional: true,
     autoWrapFeatureCollection: true,
+    // Fast path. The lifecycle's default behaviour is to rebuild the
+    // entire AutkMap whenever ``data.input`` changes. That is correct
+    // when the upstream data was actually recomputed, but it's
+    // disastrous when the only change is a selection round-trip from a
+    // linked Vega chart (or any other interaction-driven DataPool
+    // refresh): every hover frame would tear down and reinitialise
+    // WebGPU, leaking GPU memory until the renderer fails with
+    // "Not enough memory left".
+    //
+    // Detect that case by comparing the new layer array to the cached
+    // one: same shape, same per-feature property keys (excluding the
+    // ``interacted`` flag the DataPool flips), same scalar property
+    // values. If everything except ``interacted`` matches, we extract
+    // the new selection per layer and tell the factory to apply it
+    // through ``setHighlightedIds`` on the live instance instead of
+    // rebuilding.
+    skipRerunIf: (newArg, oldArg) => {
+        if (!Array.isArray(oldArg) || !Array.isArray(newArg)) return false;
+        if (oldArg.length !== newArg.length) return false;
+        const selectionByLayer: Record<string, number[]> = {};
+        for (let li = 0; li < newArg.length; li++) {
+            const o = oldArg[li];
+            const n = newArg[li];
+            if (!o || !n) return false;
+            if (o.name !== n.name || o.type !== n.type) return false;
+            const og = o.geojson;
+            const ng = n.geojson;
+            const ofeats = og?.features;
+            const nfeats = ng?.features;
+            if (!Array.isArray(ofeats) || !Array.isArray(nfeats)) return false;
+            if (ofeats.length !== nfeats.length) return false;
+            const indices: number[] = [];
+            for (let i = 0; i < nfeats.length; i++) {
+                const op = ofeats[i].properties || {};
+                const np = nfeats[i].properties || {};
+                const okeys = Object.keys(op);
+                const nkeys = Object.keys(np);
+                // ``interacted`` may exist on either side independently;
+                // every other key must be present on both with equal
+                // scalar values.
+                const oset = new Set(okeys.filter((k) => k !== 'interacted'));
+                const nset = new Set(nkeys.filter((k) => k !== 'interacted'));
+                if (oset.size !== nset.size) return false;
+                for (const k of oset) {
+                    if (!nset.has(k)) return false;
+                    if (op[k] !== np[k]) return false;
+                }
+                if (String(np.interacted) === '1') indices.push(i);
+            }
+            selectionByLayer[n.name] = indices;
+        }
+        return { selectionByLayer };
+    },
+    // Preserve picking selection across input-driven reruns. Picking
+    // emits an interaction → DataPool updates `interacted` → DataPool
+    // pushes new output back into this map's input → the lifecycle
+    // rebuilds the map. Without rehydration the highlight visibly
+    // flashes off; we snapshot every layer's highlightedIds and apply
+    // them to the matching layer on the rebuilt map.
+    serializeState: (map) => {
+        const layers = map?.layerManager?.layers ?? map?._layerManager?.layers;
+        if (!layers || typeof layers[Symbol.iterator] !== 'function') return null;
+        const state: Record<string, number[]> = {};
+        for (const layer of layers) {
+            const id = layer?.layerInfo?.id;
+            const ids = layer?.highlightedIds;
+            if (id && Array.isArray(ids) && ids.length > 0) {
+                state[id] = [...ids];
+            }
+        }
+        return Object.keys(state).length > 0 ? state : null;
+    },
+    restoreState: (map, state) => {
+        if (!state || typeof map?.setHighlightedIds !== 'function') return;
+        for (const [layerId, ids] of Object.entries(state as Record<string, number[]>)) {
+            try {
+                map.setHighlightedIds(layerId, ids);
+            } catch {
+                // Layer may not have been recreated (e.g. removed upstream); skip.
+            }
+        }
+        if (typeof map?.draw === 'function') map.draw();
+    },
     bindInteractions: (map, emit) => {
         if (map?.events?.on) {
             map.events.on('picking', ({ selection, layerId }: any) => {
-                emit({ autk: { kind: 'pick', selection, layerId } });
+                // Two payloads at once:
+                //  - `autk`: kept for AUTK_MAP↔AUTK_PLOT linked brushing
+                //    (consumed by autkPlotLifecycle's `applyInteractions`).
+                //  - `pick`: Vega-shaped POINT entry that
+                //    dataPoolLifecycle.tsx parses out of `details[key].type`,
+                //    so picking propagates to a downstream Data Pool's
+                //    `interacted` column on Interaction edges.
+                emit({
+                    autk: { kind: 'pick', selection, layerId },
+                    pick: {
+                        type: VisInteractionType.POINT,
+                        data: Array.isArray(selection) ? selection : [],
+                        priority: 1,
+                    },
+                });
             });
         }
 

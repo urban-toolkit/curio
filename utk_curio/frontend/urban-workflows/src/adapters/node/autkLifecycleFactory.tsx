@@ -55,6 +55,33 @@ export interface AutkLifecycleConfig {
      * AutkCompute directly without a manual JS bridge.
      */
     autoWrapFeatureCollection?: boolean;
+    /**
+     * Optional serializer called on the OLD instance just before it is torn
+     * down by a rerun. Whatever it returns is handed to `restoreState` once
+     * the new instance has been built. Used to preserve transient UI state
+     * (selection/highlight) across input-driven reruns.
+     */
+    serializeState?: (instance: any) => any;
+    /**
+     * Optional restorer called on the NEW instance after the user's code has
+     * returned and `bindInteractions` has run. Receives whatever
+     * `serializeState` returned for the previous instance.
+     */
+    restoreState?: (instance: any, state: any) => void;
+    /**
+     * Optional fast-path. Called when ``data.input`` changes but the
+     * resolved ``arg`` differs from the previous one only in selection
+     * state (i.e. ``properties.interacted``). When it returns a directive
+     * the factory will skip the full ``runCode`` rebuild and instead apply
+     * the directive's ``selectionByLayer`` map to the existing instance —
+     * avoiding the WebGPU teardown/rebuild that otherwise leaks GPU memory
+     * during high-frequency feedback loops (e.g. linked Vega → DataPool →
+     * AutkMap on hover).
+     *
+     * Return ``false`` (or anything falsy) to fall back to the normal
+     * full rerun path.
+     */
+    skipRerunIf?: (newArg: any, oldArg: any) => false | { selectionByLayer: Record<string, number[]> };
 }
 
 /**
@@ -133,14 +160,95 @@ export function createAutkLifecycle(config: AutkLifecycleConfig): NodeLifecycleH
         const containerRef = useRef<HTMLCanvasElement | HTMLDivElement | null>(null);
         const instanceRef = useRef<any>(null);
         const interactionsBoundRef = useRef(false);
+        // Most recent resolved input arg, kept so ``skipRerunIf`` can diff
+        // a fresh input against it before deciding whether to rebuild.
+        const lastResolvedArgRef = useRef<any>(null);
 
         const runCode = useCallback(
             async (code: string) => {
                 if (config.container !== 'hidden' && !containerRef.current) return;
                 const containerEl = containerRef.current;
 
+                // Fast path: if the new input differs from the last one only in
+                // selection state, ``skipRerunIf`` returns a directive telling
+                // us which features to highlight. Apply it to the live
+                // instance and bail out before any teardown/rebuild. This is
+                // what keeps Vega → DataPool → AutkMap feedback loops from
+                // leaking WebGPU memory during high-frequency hover events.
+                if (
+                    config.skipRerunIf
+                    && instanceRef.current
+                    && lastResolvedArgRef.current != null
+                ) {
+                    let resolvedNewArg: any;
+                    try {
+                        resolvedNewArg = await resolveAutkInput(
+                            data.input,
+                            !!config.autoWrapFeatureCollection,
+                        );
+                    } catch {
+                        resolvedNewArg = undefined;
+                    }
+                    if (resolvedNewArg !== undefined) {
+                        let directive: false | { selectionByLayer: Record<string, number[]> } = false;
+                        try {
+                            directive = config.skipRerunIf(resolvedNewArg, lastResolvedArgRef.current);
+                        } catch (e) {
+                            console.warn('Autark skipRerunIf failed:', e);
+                            directive = false;
+                        }
+                        if (directive && directive.selectionByLayer) {
+                            try {
+                                for (const [layerId, ids] of Object.entries(directive.selectionByLayer)) {
+                                    if (typeof instanceRef.current.setHighlightedIds === 'function') {
+                                        instanceRef.current.setHighlightedIds(layerId, ids);
+                                    }
+                                }
+                                if (typeof instanceRef.current.draw === 'function') {
+                                    instanceRef.current.draw();
+                                }
+                                lastResolvedArgRef.current = resolvedNewArg;
+                                nodeState.setOutput({ code: 'success', content: '' });
+                                return;
+                            } catch (e) {
+                                console.warn('Autark fast-path apply failed; falling back to full rerun:', e);
+                                // Fall through to the full rebuild below.
+                            }
+                        }
+                    }
+                }
+
                 if (containerEl && config.container === 'div') {
                     containerEl.innerHTML = '';
+                }
+                // Snapshot transient state (e.g. picking selection) from the
+                // outgoing instance before it is replaced. The new instance
+                // will rehydrate from this in the post-bindInteractions step
+                // so an input-driven rerun does not visibly clear the user's
+                // current selection.
+                let savedState: any = undefined;
+                if (config.serializeState && instanceRef.current) {
+                    try {
+                        savedState = config.serializeState(instanceRef.current);
+                    } catch (e) {
+                        console.warn('Autark serializeState failed:', e);
+                    }
+                }
+                // Tear down the outgoing instance before allocating a new one.
+                // For AutkMap this releases WebGPU buffers/textures, cancels
+                // the animation frame, and removes the legend UI elements
+                // appended to the canvas wrapper. Without this, every
+                // input-driven rerun (e.g. linked Vega → DataPool feedback)
+                // leaks GPU memory and stacks duplicate legend DOM, which
+                // eventually surfaces as
+                // ``DOMException: Not enough memory left`` and a
+                // ``WebGPU is not available`` renderer init failure.
+                if (instanceRef.current && typeof instanceRef.current.destroy === 'function') {
+                    try {
+                        instanceRef.current.destroy();
+                    } catch (e) {
+                        console.warn('Autark instance destroy failed:', e);
+                    }
                 }
                 interactionsBoundRef.current = false;
                 instanceRef.current = null;
@@ -152,6 +260,9 @@ export function createAutkLifecycle(config: AutkLifecycleConfig): NodeLifecycleH
                     nodeState.setOutput({ code: 'error', content: 'Failed to fetch input data.' });
                     return;
                 }
+                // Cache the resolved input so the next ``data.input`` change
+                // can diff against it via ``skipRerunIf``.
+                lastResolvedArgRef.current = arg;
 
                 nodeState.setOutput({ code: 'exec', content: '' });
                 try {
@@ -179,6 +290,13 @@ export function createAutkLifecycle(config: AutkLifecycleConfig): NodeLifecycleH
                                 interactionsBoundRef.current = true;
                             } catch (e) {
                                 console.warn('Autark bindInteractions failed:', e);
+                            }
+                        }
+                        if (config.restoreState && savedState !== undefined) {
+                            try {
+                                config.restoreState(returnValue, savedState);
+                            } catch (e) {
+                                console.warn('Autark restoreState failed:', e);
                             }
                         }
                     }
@@ -253,11 +371,16 @@ export function createAutkLifecycle(config: AutkLifecycleConfig): NodeLifecycleH
         // dragging the node.
         const interactionClass = 'nodrag nopan nowheel';
         if (config.container === 'canvas') {
+            // `position: relative` makes the wrapper the canvas's offsetParent.
+            // autk-map's UI overlays (legend, menu, perf) are appended here and
+            // positioned via `canvas.offsetTop/Left` — without this they'd be
+            // measured against a far-up ancestor and land outside the node.
             contentComponent = (
                 <div
                     className={interactionClass}
                     style={
                         config.containerStyle ?? {
+                            position: 'relative',
                             width: '100%',
                             height: '100%',
                             minHeight: 400,
