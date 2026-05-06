@@ -46,8 +46,8 @@ describe('ImageGrid', () => {
       />,
     );
     const images = screen.getAllByRole('img');
-    expect(images[0]).toHaveStyle({ border: '3px solid red' });
-    expect(images[1]).not.toHaveStyle({ border: '3px solid red' });
+    expect(images[0]).toHaveStyle({ border: '3px solid rgb(255, 0, 0)' });
+    expect(images[1]).not.toHaveStyle({ border: '3px solid rgb(255, 0, 0)' });
   });
 
   test('does not apply selected style when interacted array length differs from images', () => {
@@ -58,7 +58,7 @@ describe('ImageGrid', () => {
       />,
     );
     const images = screen.getAllByRole('img');
-    expect(images[0]).not.toHaveStyle({ border: '3px solid red' });
+    expect(images[0]).not.toHaveStyle({ border: '3px solid rgb(255, 0, 0)' });
   });
 
   test('renders container with correct id', () => {
