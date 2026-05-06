@@ -234,6 +234,8 @@ export const NodeContainer = ({
     }, [minimized]);
 
     useEffect(() => {
+        if (data.nodeType == NodeType.MERGE_FLOW) return;
+
         if (nodeWidth == undefined || nodeWidth < MIN_NODE_WIDTH) {
             setCurrentNodeWidth(525);
         }
@@ -244,6 +246,8 @@ export const NodeContainer = ({
     }, []);
 
     useEffect(() => {
+        if (data.nodeType == NodeType.MERGE_FLOW) return;
+
         const resizer = document.getElementById(
             nodeId + "resizer"
         ) as HTMLElement;
@@ -603,7 +607,7 @@ export const NodeContainer = ({
                 }} /> : null
             }
 
-            {(!dashboardOn || !dashboardLocked) && <div
+            {(!dashboardOn || !dashboardLocked) && data.nodeType != NodeType.MERGE_FLOW && <div
                 id={nodeId + "resizer"}
                 className={"resizer nowheel nodrag"}
                 style={{
@@ -1031,7 +1035,7 @@ export const NodeContainer = ({
                 </div>
             ) : null}
 
-            {noContent ? (
+            {noContent && data.nodeType != NodeType.MERGE_FLOW ? (
                 <FontAwesomeIcon
                     icon={faUpRightAndDownLeftFromCenter}
                     style={{
