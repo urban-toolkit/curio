@@ -51,7 +51,10 @@
   "overrides": {
     "uuid": "^14.0.0",
     "jsdom": "^29.0.0",
-    "dompurify": "^3.3.4"
+    "dompurify": "^3.3.4",
+    "babel-plugin-istanbul": "^8.0.0",
+    "test-exclude": "^8.0.0",
+    "glob": "^13.0.0"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",
