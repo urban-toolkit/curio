@@ -21,11 +21,12 @@ def _merge_edge_handle_index(edge_id: str) -> int | None:
 # ---------------------------------------------------------------------------
 
 GRAMMAR_TYPES = {"VIS_VEGA"}
+JS_CODE_TYPES = {"AUTK_MAP", "AUTK_PLOT", "AUTK_COMPUTE", "AUTK_DB"}
 CODE_TYPES = {
     "DATA_LOADING", "DATA_TRANSFORMATION",
     "DATA_EXPORT", "COMPUTATION_ANALYSIS", "CONSTANTS",
     "FLOW_SWITCH",
-}
+} | JS_CODE_TYPES
 
 # Subset of CODE_TYPES whose frontend component passes ``code={true}``
 # to ``NodeEditor``, meaning they render a "code" tab with a Monaco editor.
@@ -34,7 +35,7 @@ CODE_TYPES = {
 CODE_EDITOR_TYPES = {
     "DATA_LOADING", "DATA_TRANSFORMATION",
     "COMPUTATION_ANALYSIS", "FLOW_SWITCH",
-}
+} | JS_CODE_TYPES
 
 
 def classify_node(node_type: str) -> str:

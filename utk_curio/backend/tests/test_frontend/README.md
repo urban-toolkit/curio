@@ -21,11 +21,9 @@ CURIO_E2E_USE_EXISTING=1 pytest utk_curio/backend/tests/test_frontend/
 
 ### AUTK / WebGPU note
 
-Autark (`AUTK_MAP` / `AUTK_COMPUTE` / `AUTK_PLOT`) renders via WebGPU. **Playwright's bundled Chromium binaries — both `chrome-headless-shell` and the full `chromium` — ship without WebGPU**: `navigator.gpu` is `undefined` regardless of launch flags. AUTK_MAP nodes therefore display a visible `Error` badge in default headless runs because `await map.init()` rejects.
+Autark (`AUTK_MAP` / `AUTK_COMPUTE` / `AUTK_PLOT` / `AUTK_DB`) renders via WebGPU. The `browser_type_launch_args` fixture in `conftest.py` passes `--enable-unsafe-webgpu` and a platform-appropriate ANGLE backend (`--use-angle=metal` on macOS, `--use-angle=d3d11` on Windows, `--use-gl=swiftshader` on Linux) so WebGPU is available in headless Chromium just as in autark's own Playwright tests.
 
-The Playwright assertions still pass for these fixtures (`AutkMap.json`, `DataPool_AutkMap.json`, `Interaction_AutkMap.json`, `Interaction_Autark.json`, `Interaction_Vega_Autark.json`, `Regression.json`) — `AUTK_MAP` is a `passive` node, so `test_node_execution` doesn't inspect its status. The visible `Error` is cosmetic for the headless run.
-
-To actually exercise WebGPU rendering, use `--headed` so the suite drives your real Chrome install (which has WebGPU).
+AUTK_ nodes are classified as `"code"` nodes and exercise the full test matrix (`test_node_type_and_content` checks the Monaco editor; `test_node_execution` verifies each node reaches **Done**). Their JavaScript code is excluded from the Python random-seed injection used by other `CODE_TYPES` nodes.
 
 ## Test database contract
 

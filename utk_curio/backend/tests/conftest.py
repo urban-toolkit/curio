@@ -122,22 +122,28 @@ def browser_context_args(browser_context_args):
 
 @pytest.fixture(scope="session")
 def browser_type_launch_args(browser_type_launch_args):
-    """Configure browser launch options - headless by default unless --headed is passed.
+    """Configure browser launch options.
 
-    Note on AUTK fixtures: Autark renders via WebGPU, and Playwright's
-    bundled Chromium binaries do not ship WebGPU on Windows/Linux/macOS
-    (verified against ``HeadlessChrome/145.0.0.0`` and
-    ``chrome-headless-shell``). AUTK_MAP nodes therefore set
-    ``code: 'error'`` in headless runs because ``await map.init()`` rejects
-    when ``navigator.gpu`` is undefined. The Playwright assertions still
-    pass — AUTK_MAP is a ``passive`` node so ``test_node_execution`` does
-    not inspect its status. To actually exercise rendering, run the suite
-    with ``--headed`` against your real Chrome (which has WebGPU).
+    Passes the flags that unlock WebGPU in Playwright's bundled Chromium
+    (same set used by autark's own playwright.config.ts).  The ANGLE backend
+    varies by platform: Metal on macOS, D3D11 on Windows, SwiftShader on Linux.
     """
+    if sys.platform == "darwin":
+        angle_backend = "--use-angle=metal"
+    elif sys.platform == "win32":
+        angle_backend = "--use-angle=d3d11"
+    else:  # Linux / CI
+        angle_backend = "--use-gl=swiftshader"
+
     return {
         **browser_type_launch_args,
-        # headless will be False only if --headed is explicitly passed
         "headless": browser_type_launch_args.get("headless", True),
+        "args": [
+            "--enable-unsafe-webgpu",
+            "--enable-features=Vulkan,VulkanFromANGLE,DefaultANGLEVulkan,WebGPUService",
+            angle_backend,
+            *browser_type_launch_args.get("args", []),
+        ],
     }
 
 

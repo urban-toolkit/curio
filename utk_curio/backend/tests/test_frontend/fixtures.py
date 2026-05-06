@@ -21,7 +21,7 @@ from .utils import (
     seed_node_code,
     stub_login_and_enter_workflow,
 )
-from .workflow_spec import CODE_TYPES
+from .workflow_spec import CODE_TYPES, JS_CODE_TYPES
 
 
 # ---------------------------------------------------------------------------
@@ -372,7 +372,8 @@ def loaded_workflow(
         wf_data = json.load(f)
     for node_json in wf_data["dataflow"]["nodes"]:
         content = node_json.get("content", "")
-        if content.strip() and node_json.get("type") in CODE_TYPES:
+        node_type = node_json.get("type")
+        if content.strip() and node_type in CODE_TYPES and node_type not in JS_CODE_TYPES:
             node_json["content"] = seed_node_code(content)
     seeded_tmp = tempfile.NamedTemporaryFile(
         suffix=".json", delete=False, mode="w",
