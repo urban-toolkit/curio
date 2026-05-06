@@ -10,7 +10,7 @@
 # Options:
 #   --use-existing      Skip start/stop and clean; use already-running Curio servers
 #   --headed            Open a visible browser window during E2E tests
-#   --workflows A,B     Run only the named workflow files (e.g. Vega.json,niteroi.json)
+#   --workflows A,B     Run only the named workflow files (e.g. Vega.json,Regression.json)
 #   --backend-only      Run only backend unit tests
 #   --sandbox-only      Run only sandbox unit tests
 #   --jest-only         Run only Jest frontend unit tests

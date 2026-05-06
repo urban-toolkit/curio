@@ -43,8 +43,8 @@
       {
         "id": "08c869fd-041f-425d-aabb-c1e7582f9e58",
         "type": "DATA_POOL",
-        "x": 2354.7489667632362,
-        "y": 106.26740201911902,
+        "x": 1902.3580486667424,
+        "y": 300.14922406047356,
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -56,8 +56,8 @@
       {
         "id": "c8c48cdb-323d-4f80-ace9-7ac358277f90",
         "type": "COMPUTATION_ANALYSIS",
-        "x": 1225.94899488328,
-        "y": 504.9918929109867,
+        "x": 1051.9524879230898,
+        "y": 528.1914271723454,
         "content": "import pandas as pd\r\n\r\ndf = None\r\nmult = None\r\n\r\n# Extract dataframe + multiplier from merged input\r\nif isinstance(arg, (list, tuple)):\r\n    for item in arg:\r\n        if isinstance(item, pd.DataFrame):\r\n            df = item\r\n        elif isinstance(item, dict) and 'multiplier' in item:\r\n            mult = item['multiplier']\r\n\r\n# Defaults\r\nif df is None:\r\n    df = pd.DataFrame({'a': [], 'b': []})\r\nif mult is None:\r\n    mult = 1\r\n\r\ndf = df.copy()\r\nif 'b' in df.columns:\r\n    df['b'] = pd.to_numeric(df['b'], errors='coerce') * float(mult)\r\n\r\ndf.metadata = {'name': 'Multiplied Numbers'}\r\nreturn df\r\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -69,8 +69,8 @@
       {
         "id": "c7bb20ab-e568-4d9b-a1ad-d7f1ab81e318",
         "type": "MERGE_FLOW",
-        "x": 1986.3714374646984,
-        "y": 353.6091209635538,
+        "x": 1674.8348345264535,
+        "y": 363.55177850413605,
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -112,10 +112,10 @@
         "target": "c7bb20ab-e568-4d9b-a1ad-d7f1ab81e318"
       }
     ],
-    "name": "Number Multiplier (Widget)",
+    "name": "Widget",
     "task": "",
-    "timestamp": 1776883655103,
-    "provenance_id": "Number Multiplier (Widget)",
+    "timestamp": 1778043232850,
+    "provenance_id": "Widget",
     "packages": []
   }
 }

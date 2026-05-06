@@ -4,13 +4,15 @@
       {
         "id": "interaction-db",
         "type": "AUTK_DB",
-        "x": 200,
-        "y": 300,
-        "content": "import { AutkSpatialDb } from 'autk-db';\n\nconst db = new AutkSpatialDb();\nawait db.init();\n\nawait db.loadOsm({\n    queryArea: { geocodeArea: 'Chicago', areas: ['Loop'] },\n    outputTableName: 'table_osm',\n    autoLoadLayers: {\n        coordinateFormat: 'EPSG:3395',\n        layers: ['buildings'],\n        dropOsmTable: true,\n    },\n});\n\nconst layers = [];\nfor (const layer of db.getLayerTables()) {\n    layers.push({ name: layer.name, type: layer.type, geojson: await db.getLayer(layer.name) });\n}\nreturn layers;",
+        "x": 113.99346206201045,
+        "y": 297.5070568713626,
+        "content": "import { AutkSpatialDb } from '@urban-toolkit/autk-db';\n\nconst db = new AutkSpatialDb();\nawait db.init();\n\nawait db.loadOsm({\n    queryArea: { geocodeArea: 'Chicago', areas: ['Loop'] },\n    outputTableName: 'table_osm',\n    autoLoadLayers: {\n        coordinateFormat: 'EPSG:3395',\n        layers: ['buildings'],\n        dropOsmTable: true,\n    },\n});\n\nconst layers = [];\nfor (const layer of db.getLayerTables()) {\n    layers.push({ name: layer.name, type: layer.type, geojson: await db.getLayer(layer.name) });\n}\nreturn layers;",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Load OSM building footprints for the Chicago Loop.",
-        "metadata": { "keywords": [] }
+        "metadata": {
+          "keywords": []
+        }
       },
       {
         "id": "interaction-compute",
@@ -21,29 +23,35 @@
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Add a computed footprint-area property to every building feature.",
-        "metadata": { "keywords": [] }
+        "metadata": {
+          "keywords": []
+        }
       },
       {
         "id": "interaction-map",
         "type": "AUTK_MAP",
-        "x": 1200,
-        "y": 150,
+        "x": 1274.7882938591213,
+        "y": 93.90877960565899,
         "content": "// Render buildings, color by height, and enable picking.\nconst map = new AutkMap(container);\nawait map.init();\nfor (const layer of arg) {\n    map.loadCollection(layer.name, { collection: layer.geojson, type: layer.type });\n}\nconst buildings = arg.find(l => l.name === 'table_osm_buildings').geojson;\nmap.updateRenderInfo('table_osm_buildings', { isPick: true, isColorMap: true });\nmap.updateThematic('table_osm_buildings', { collection: buildings, property: 'properties.height' });\nmap.draw();\nreturn map;",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Buildings colored by height, with picking enabled.",
-        "metadata": { "keywords": [] }
+        "metadata": {
+          "keywords": []
+        }
       },
       {
         "id": "interaction-scatter",
         "type": "AUTK_PLOT",
-        "x": 1200,
-        "y": 600,
+        "x": 1290.9924241952642,
+        "y": 608.7253009502308,
         "content": "// Scatter footprint area (m²) vs height (m). Both attributes come\n// from the upstream Compute node. Buildings missing a height tag fall\n// off the y axis as NaN.\nconst buildings = arg.find(l => l.name === 'table_osm_buildings').geojson;\nreturn new AutkChart(container, {\n    type: 'scatterplot',\n    collection: buildings,\n    attributes: { axis: ['area', 'height'] },\n    labels: { axis: ['Footprint area (m²)', 'Height (m)'], title: 'Chicago Loop buildings' },\n    width: 600,\n    height: 380,\n    events: ['brush'],\n});",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Scatter of building footprint area vs height, brushable and linked to the map.",
-        "metadata": { "keywords": [] }
+        "metadata": {
+          "keywords": []
+        }
       }
     ],
     "edges": [
@@ -63,16 +71,16 @@
         "target": "interaction-scatter"
       },
       {
+        "type": "Interaction",
         "id": "edge-map-to-scatter-interaction",
         "source": "interaction-map",
-        "target": "interaction-scatter",
-        "type": "Interaction"
+        "target": "interaction-scatter"
       }
     ],
-    "name": "Autark Interaction",
-    "task": "Minimal Autark teaching example: load OSM buildings, annotate footprint area in a Compute node, render the buildings on a map colored by height, scatter area vs height in a brushable plot, and link map ↔ plot.",
-    "timestamp": 1777407600000,
-    "provenance_id": "autark_interaction",
+    "name": "Interaction_Autark",
+    "task": "",
+    "timestamp": 1778039391471,
+    "provenance_id": "Interaction_Autark",
     "packages": []
   }
 }

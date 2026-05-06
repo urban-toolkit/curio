@@ -34,9 +34,9 @@
         "target": "59367466-92b7-44e1-b85f-deb419863156"
       }
     ],
-    "name": "DataPool_gdf",
+    "name": "DataPool_Geodataframe",
     "task": "",
     "timestamp": 1747347735323,
-    "provenance_id": "DataPool_gdf"
+    "provenance_id": "DataPool_Geodataframe"
   }
 }

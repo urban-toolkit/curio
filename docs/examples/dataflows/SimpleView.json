@@ -34,9 +34,9 @@
         "target": "e2b31f4a-5c67-4890-b123-c4d5e6f7a812"
       }
     ],
-    "name": "SimpleView_Table",
+    "name": "SimpleView",
     "task": "",
     "timestamp": 1779840000000,
-    "provenance_id": "SimpleView_Table"
+    "provenance_id": "SimpleView"
   }
 }

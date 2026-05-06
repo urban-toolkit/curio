@@ -34,9 +34,9 @@
         "target": "59367466-92b7-44e1-b85f-deb419863156"
       }
     ],
-    "name": "DataPool_df",
+    "name": "DataPool_Dataframe",
     "task": "",
     "timestamp": 1747158382772,
-    "provenance_id": "DataPool_df"
+    "provenance_id": "DataPool_Dataframe"
   }
 }

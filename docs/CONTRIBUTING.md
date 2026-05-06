@@ -197,7 +197,7 @@ Common shortcuts:
 ./scripts/test.sh --use-existing --unit-only
 
 # watch the browser, specific workflows only
-./scripts/test.sh --use-existing --e2e-only --headed --workflows Vega.json,niteroi.json
+./scripts/test.sh --use-existing --e2e-only --headed --workflows Vega.json,Regression.json
 ```
 
 See `./scripts/test.sh --help` for all options, or read the sections below for more detail.
@@ -247,7 +247,7 @@ CURIO_E2E_USE_EXISTING=1 pytest utk_curio/backend/tests/test_frontend/
 Run only specific workflows by setting `CURIO_E2E_WORKFLOWS` (comma-separated basenames):
 
 ```bash
-CURIO_E2E_WORKFLOWS=Vega.json,niteroi.json pytest utk_curio/backend/tests/test_frontend/test_workflows.py
+CURIO_E2E_WORKFLOWS=Vega.json,Regression.json pytest utk_curio/backend/tests/test_frontend/test_workflows.py
 ```
 
 Preview which tests will run without executing them:
