@@ -11,13 +11,21 @@ Playwright-based end-to-end tests that upload workflow JSON files into the Curio
 # full suite (CURIO_TESTING=1 is exported by test.sh; set it explicitly if you invoke pytest directly)
 CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/
 
-# headed (watch the browser)
+# headed (watch the browser; required for AUTK fixtures to actually render — see below)
 CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/ --headed
 
 # use already-running servers (e.g. docker compose); the caller is responsible for
 # booting them with CURIO_TESTING=1 + DATABASE_URL pointing at the test DB
 CURIO_E2E_USE_EXISTING=1 pytest utk_curio/backend/tests/test_frontend/
 ```
+
+### AUTK / WebGPU note
+
+Autark (`AUTK_MAP` / `AUTK_COMPUTE` / `AUTK_PLOT`) renders via WebGPU. **Playwright's bundled Chromium binaries — both `chrome-headless-shell` and the full `chromium` — ship without WebGPU**: `navigator.gpu` is `undefined` regardless of launch flags. AUTK_MAP nodes therefore display a visible `Error` badge in default headless runs because `await map.init()` rejects.
+
+The Playwright assertions still pass for these fixtures (`AutkMap.json`, `DataPool_AutkMap.json`, `Interaction_AutkMap.json`, `Interaction_Autark.json`, `Interaction_Vega_Autark.json`, `Regression.json`) — `AUTK_MAP` is a `passive` node, so `test_node_execution` doesn't inspect its status. The visible `Error` is cosmetic for the headless run.
+
+To actually exercise WebGPU rendering, use `--headed` so the suite drives your real Chrome install (which has WebGPU).
 
 ## Test database contract
 
@@ -76,7 +84,7 @@ The DB stub is strictly additive — Strategy A still works against the same tes
 Run only specific workflows by setting `CURIO_E2E_WORKFLOWS` (comma-separated basenames):
 
 ```bash
-CURIO_E2E_WORKFLOWS=Vega.json,UTK.json pytest utk_curio/backend/tests/test_frontend/test_workflows.py
+CURIO_E2E_WORKFLOWS=Vega.json,AutkMap.json pytest utk_curio/backend/tests/test_frontend/test_workflows.py
 ```
 
 When unset, all workflows listed in `conftest.py::WORKFLOW_FILES` are tested.

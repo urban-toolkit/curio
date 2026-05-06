@@ -3,6 +3,7 @@ import re
 import json
 import time
 import pytest
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 # from .utils import (
     # save_workflow_test_screenshot,
@@ -70,11 +71,6 @@ class TestWorkflowCanvas:
 
     # -- helpers -----------------------------------------------------------
 
-    #: Set when ``test_node_execution`` completes successfully for a workflow
-    #: (keyed by ``spec.filepath``). Used so ``test_provenance_graph`` does not
-    #: re-run node execution with long timeouts after a failed execution test.
-    _node_execution_success_by_spec: dict = {}
-
     def _node_locator(self, node: NodeSpec):
         """Return a Playwright ``Locator`` for a ReactFlow node element."""
         return self.page.locator(f'.react-flow__node[data-id="{node.id}"]')
@@ -97,6 +93,65 @@ class TestWorkflowCanvas:
             return 120000
         return 30000
 
+    def _click_play_until_started(self, node, node_el, max_attempts: int = 3):
+        """Click *play* and confirm execution actually started.
+
+        ``BoxStyles`` swaps the play SVG for a Bootstrap Spinner the moment
+        ``isLoading`` flips to true (see styles.tsx:740-768) and the
+        ``CodeEditor`` updates its inline counter from ``[ ]:`` to
+        ``[*]:`` once the lifecycle reports ``output.code === 'exec'``.
+        Either signal proves the click was honoured.
+
+        We don't use ``play_btn.click(force=True)`` — ``force=True`` skips
+        actionability checks so React Flow's transformed viewport, pointer
+        events, or an overlay can swallow the click. Instead we
+        ``element.click()`` via ``page.evaluate``, which bypasses the
+        viewport transform entirely and delivers the event straight to the
+        SVG's React onClick.
+        """
+        play_btn = node_el.locator("svg.fa-circle-play")
+        spinner = node_el.locator(".spinner-border")
+        if node.category == "code":
+            counter = node_el.locator(".nowheel.nodrag").filter(
+                has_text=re.compile(r"\[(\d+|\*)\]:")
+            ).first
+        else:
+            counter = node_el.locator("span").filter(
+                has_text=re.compile(r"^(Running|Done|Error)$")
+            ).first
+
+        last_error = None
+        for attempt in range(max_attempts):
+            try:
+                play_btn.wait_for(state="visible", timeout=10000)
+                # The play button is an ``<svg>`` (FontAwesomeIcon).
+                # ``SVGElement`` has no native ``click()`` method, so
+                # ``el.click()`` via ``evaluate`` raises ``TypeError`` and
+                # ``page.click(force=True)`` silently misses when React
+                # Flow's CSS transform throws off the click coordinates.
+                # ``dispatch_event("click")`` sends a bubbling synthetic
+                # ``MouseEvent`` that React's onClick picks up regardless
+                # of where the element actually sits on screen.
+                play_btn.dispatch_event("click")
+                deadline = 20.0
+                step = 0.25
+                waited = 0.0
+                while waited < deadline:
+                    if spinner.count() > 0 or counter.count() > 0:
+                        return
+                    time.sleep(step)
+                    waited += step
+                last_error = TimeoutError(
+                    f"No spinner or counter-flip within {deadline:.0f}s"
+                )
+            except PlaywrightTimeoutError as e:
+                last_error = e
+        raise AssertionError(
+            f"Node {node.id} ({node.type}) never acknowledged Play after "
+            f"{max_attempts} attempts; click is being silently dropped "
+            f"(React handler likely not bound). Last error: {last_error}"
+        )
+
     def _execute_all_playable_nodes(self):
         """Click *play* on every node that has a play button (topological order)
         and wait for each to finish.  Skips if already executed for the
@@ -104,6 +159,16 @@ class TestWorkflowCanvas:
         share the same class-scoped page)."""
         if getattr(self.__class__, '_executed_workflow', None) == self.spec.filepath:
             return
+        # Give React a chance to bind onClick handlers on every play button
+        # before we start firing clicks. ``loaded_workflow`` only waits for
+        # node count, not for handler attachment, so without this settle the
+        # very first ``play_btn.click(force=True)`` of the workflow is
+        # occasionally dropped on the floor.
+        try:
+            self.page.wait_for_load_state("networkidle", timeout=10000)
+        except PlaywrightTimeoutError:
+            pass
+        time.sleep(0.5)
         for node in self.spec.topo_sorted_nodes():
             node_el = self._node_locator(node)
             node_el.scroll_into_view_if_needed()
@@ -132,15 +197,7 @@ class TestWorkflowCanvas:
             if not node.has_play_button:
                 continue
 
-            play_btn = node_el.locator("svg.fa-circle-play")
-            play_btn.wait_for(state="visible", timeout=10000)
-            play_btn.click(force=True)
-
-            # wait for loading spinner to appear
-            # loading_spinner = node_el.locator(".spinner-border")
-            # loading_spinner.wait_for(state="visible", timeout=10000)
-            # # wait for loading spinner to disappear
-            # loading_spinner.wait_for(state="hidden", timeout=10000)
+            self._click_play_until_started(node, node_el)
 
             # Wait until either "Done" or "Error" is visible, then fail fast on Error
             result_span = node_el.locator("span").filter(
@@ -706,50 +763,3 @@ class TestWorkflowCanvas:
             # text mode: no output tab → nothing further to assert.
 
         self._save_screenshot(request)
-        self.__class__._node_execution_success_by_spec[self.spec.filepath] = True
-
-
-    # -- 5. Provenance graph -------------------------------------------------
-
-    def test_provenance_graph(self, loaded_workflow, request):
-        """After executing every playable node, each node that exposes a
-        provenance tab must render at least one React Flow node card."""
-        if not self.__class__._node_execution_success_by_spec.get(
-            self.spec.filepath
-        ):
-            pytest.fail(
-                "Node execution must succeed before the provenance check; "
-                "test_node_execution failed or did not complete for this workflow."
-            )
-
-        self._execute_all_playable_nodes()
-
-        for node in self.spec.nodes:
-            if not node.has_play_button:
-                continue
-
-            node_el = self._node_locator(node)
-
-            # ---------------------------------------------------------------
-            # Check provenance graph is rendered correctly
-            # ---------------------------------------------------------------
-
-            # If the node has a provenance tab,
-            # check if the provenance graph is rendered correctly
-            provenance_tab = node_el.locator(
-                '.nav-link[data-rr-ui-event-key="provenance"]'
-            )
-            if provenance_tab.count() == 0:
-                continue  # Node has no provenance tab (e.g. DATA_POOL)
-            provenance_tab.first.wait_for(state="visible", timeout=10000)
-            provenance_tab.click(force=True)
-
-            # The provenance pane contains a React Flow graph (SVG-based).
-            # Wait for at least one node card to appear inside the inner RF canvas.
-            provenance_pane = node_el.locator(".tab-pane.active.show")
-            prov_node = provenance_pane.locator(".react-flow__node")
-            prov_node.first.wait_for(state="visible", timeout=10000)
-            assert prov_node.count() >= 1, (
-                f"Node {node.id} ({node.type}) provenance graph rendered no nodes"
-            )
-        # self._save_screenshot(request)

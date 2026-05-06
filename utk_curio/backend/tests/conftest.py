@@ -122,7 +122,18 @@ def browser_context_args(browser_context_args):
 
 @pytest.fixture(scope="session")
 def browser_type_launch_args(browser_type_launch_args):
-    """Configure browser launch options - headless by default unless --headed is passed."""
+    """Configure browser launch options - headless by default unless --headed is passed.
+
+    Note on AUTK fixtures: Autark renders via WebGPU, and Playwright's
+    bundled Chromium binaries do not ship WebGPU on Windows/Linux/macOS
+    (verified against ``HeadlessChrome/145.0.0.0`` and
+    ``chrome-headless-shell``). AUTK_MAP nodes therefore set
+    ``code: 'error'`` in headless runs because ``await map.init()`` rejects
+    when ``navigator.gpu`` is undefined. The Playwright assertions still
+    pass — AUTK_MAP is a ``passive`` node so ``test_node_execution`` does
+    not inspect its status. To actually exercise rendering, run the suite
+    with ``--headed`` against your real Chrome (which has WebGPU).
+    """
     return {
         **browser_type_launch_args,
         # headless will be False only if --headed is explicitly passed
