@@ -45,7 +45,7 @@
         "type": "AUTK_PLOT",
         "x": 1290.9924241952642,
         "y": 608.7253009502308,
-        "content": "// Scatter footprint area (m²) vs height (m). Both attributes come\n// from the upstream Compute node. Buildings missing a height tag fall\n// off the y axis as NaN.\nconst buildings = arg.find(l => l.name === 'table_osm_buildings').geojson;\nreturn new AutkChart(container, {\n    type: 'scatterplot',\n    collection: buildings,\n    attributes: { axis: ['area', 'height'] },\n    labels: { axis: ['Footprint area (m²)', 'Height (m)'], title: 'Chicago Loop buildings' },\n    width: 600,\n    height: 380,\n    events: ['brush'],\n});",
+        "content": "// Scatter footprint area (m²) vs height (m). Both attributes come\n// from the upstream Compute node. Buildings missing a height tag fall\n// off the y axis as NaN.\nconst buildings = arg.find(l => l.name === 'table_osm_buildings').geojson;\nreturn new AutkPlot(container, {\n    type: 'scatterplot',\n    collection: buildings,\n    attributes: { axis: ['area', 'height'] },\n    labels: { axis: ['Footprint area (m²)', 'Height (m)'], title: 'Chicago Loop buildings' },\n    width: 600,\n    height: 380,\n    events: ['brush'],\n});",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Scatter of building footprint area vs height, brushable and linked to the map.",

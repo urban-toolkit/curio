@@ -139,7 +139,7 @@ The histogram consumes the **filtered** layer array from `shadow-shaded-roads`, 
 
 ```javascript
 const roads = arg.find(l => l.name === 'table_osm_roads')?.geojson ?? arg[0]?.geojson;
-return new AutkChart(container, {
+return new AutkPlot(container, {
     type: 'barchart',
     collection: roads,
     attributes: { axis: ['compute.shadow', '@transform'] },

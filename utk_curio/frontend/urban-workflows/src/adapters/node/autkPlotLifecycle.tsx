@@ -2,17 +2,17 @@ import { createAutkLifecycle } from './autkLifecycleFactory';
 
 const DEFAULT_CODE = `// 'arg' is the data from the upstream node.
 // 'container' is the div element rendered inside this node.
-// 'AutkChart' is imported from @urban-toolkit/autk-plot automatically.
+// 'AutkPlot' is imported from @urban-toolkit/autk-plot automatically.
 //
-// AutkChart types: 'scatterplot' | 'barchart' | 'linechart' |
+// AutkPlot types: 'scatterplot' | 'barchart' | 'linechart' |
 //                  'heatmatrix' | 'parallel-coordinates' | 'table'
 //
 // 'arg' arrives as an Autark layer array (FeatureCollection inputs are
 // auto-wrapped by the host) or a DataFrame for tabular charts.
 const collection = Array.isArray(arg) ? arg[0]?.geojson : arg;
 
-// Return the AutkChart instance to enable bidirectional brushing with the map.
-return new AutkChart(container, {
+// Return the AutkPlot instance to enable bidirectional brushing with the map.
+return new AutkPlot(container, {
     type: 'scatterplot',
     collection,
     attributes: { axis: ['x', 'y'] },
@@ -21,7 +21,7 @@ return new AutkChart(container, {
 
 export const useAutkPlotLifecycle = createAutkLifecycle({
     moduleImport: () => import('@urban-toolkit/autk-plot' as any),
-    globals: ['AutkChart'],
+    globals: ['AutkPlot'],
     container: 'div',
     defaultCode: DEFAULT_CODE,
     bidirectional: true,

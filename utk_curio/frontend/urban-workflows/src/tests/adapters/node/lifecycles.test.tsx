@@ -61,7 +61,7 @@ jest.mock('../../../utils/formatters', () => ({
 }));
 
 jest.mock('@urban-toolkit/autk-map', () => ({ AutkMap: jest.fn() }), { virtual: true });
-jest.mock('@urban-toolkit/autk-plot', () => ({ AutkChart: jest.fn() }), { virtual: true });
+jest.mock('@urban-toolkit/autk-plot', () => ({ AutkPlot: jest.fn() }), { virtual: true });
 jest.mock(
   '@urban-toolkit/autk-compute',
   () => ({ ComputeGpgpu: jest.fn(), ComputeRender: jest.fn() }),
@@ -276,7 +276,7 @@ describe('Lifecycle hooks — NodeLifecycleHook contract conformance', () => {
       assertValidLifecycleResult(result.current);
       expect(result.current.contentComponent).toBeDefined();
       expect(typeof result.current.defaultValueOverride).toBe('string');
-      expect(result.current.defaultValueOverride).toContain('AutkChart');
+      expect(result.current.defaultValueOverride).toContain('AutkPlot');
       expect(typeof result.current.sendCodeOverride).toBe('function');
     });
   });

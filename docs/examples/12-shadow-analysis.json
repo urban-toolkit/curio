@@ -64,7 +64,7 @@
         "type": "AUTK_PLOT",
         "x": 1700,
         "y": 600,
-        "content": "const roads = arg.find(l => l.name === 'table_osm_roads')?.geojson ?? arg[0]?.geojson;\nreturn new AutkChart(container, {\n    type: 'barchart',\n    collection: roads,\n    attributes: { axis: ['compute.shadow', '@transform'] },\n    labels: { axis: ['Minutes of shadow', '#Shaded road segments'], title: 'Shadow distribution' },\n    width: 600,\n    height: 380,\n    events: ['brushX'],\n    transform: { preset: 'binning-1d', options: { bins: 13 } },\n});",
+        "content": "const roads = arg.find(l => l.name === 'table_osm_roads')?.geojson ?? arg[0]?.geojson;\nreturn new AutkPlot(container, {\n    type: 'barchart',\n    collection: roads,\n    attributes: { axis: ['compute.shadow', '@transform'] },\n    labels: { axis: ['Minutes of shadow', '#Shaded road segments'], title: 'Shadow distribution' },\n    width: 600,\n    height: 380,\n    events: ['brushX'],\n    transform: { preset: 'binning-1d', options: { bins: 13 } },\n});",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Brushable histogram of shadow minutes across the segments the building shadowed.",
