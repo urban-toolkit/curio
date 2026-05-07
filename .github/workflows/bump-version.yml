@@ -1,0 +1,85 @@
+name: Bump version
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  models: read
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip if this is a version bump commit
+        run: |
+          MSG=$(git log -1 --format="%s")
+          if [[ "$MSG" == chore:\ bump\ version\ to\ * ]]; then
+            echo "SKIP=true" >> $GITHUB_ENV
+          fi
+
+      - name: Setup Node
+        if: env.SKIP != 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Classify bump type via GitHub Models
+        if: env.SKIP != 'true'
+        run: |
+          LAST_TAG=$(git describe --tags --match "v*" --abbrev=0 2>/dev/null || echo "v0.0.0")
+          COMMITS=$(git log "${LAST_TAG}..HEAD" --format="- %s" | grep -v "^- chore: bump version" || true)
+
+          if [ -z "$COMMITS" ]; then
+            echo "BUMP=patch" >> $GITHUB_ENV
+            exit 0
+          fi
+
+          RESPONSE=$(curl -sf https://models.inference.ai.azure.com/chat/completions \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"model\": \"gpt-4o-mini\",
+              \"max_tokens\": 10,
+              \"messages\": [{
+                \"role\": \"user\",
+                \"content\": \"Curio is a dataflow visual analytics tool. Given these commits, decide: MINOR (new user-visible feature or capability) or PATCH (bugfix, refactor, deps, docs, tests, CI). Reply with exactly one word: minor or patch.\n\nCommits:\n$COMMITS\"
+              }]
+            }" || true)
+
+          DECISION=$(echo "$RESPONSE" | python3 -c \
+            "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'].strip().lower())" \
+            2>/dev/null || echo "patch")
+
+          [[ "$DECISION" == "minor" ]] && BUMP="minor" || BUMP="patch"
+          echo "BUMP=$BUMP" >> $GITHUB_ENV
+          echo "GitHub Models decided: $BUMP"
+
+      - name: Bump version
+        if: env.SKIP != 'true'
+        run: |
+          cd utk_curio/frontend/urban-workflows
+          npm version ${{ env.BUMP }} --no-git-tag-version --silent
+          NEW_VERSION=$(node -p "require('./package.json').version")
+          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+          cd -
+
+          python3 -c "
+          import re, pathlib
+          p = pathlib.Path('utk_curio/__init__.py')
+          p.write_text(re.sub(r'__version__\s*=\s*[\"\''].*?[\"\'']', '__version__ = \"$NEW_VERSION\"', p.read_text()))
+          "
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add utk_curio/frontend/urban-workflows/package.json \
+                  utk_curio/frontend/urban-workflows/package-lock.json \
+                  utk_curio/__init__.py
+          git commit -m "chore: bump version to $NEW_VERSION"
+          git push

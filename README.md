@@ -17,13 +17,14 @@
   </p>
 
   <p>
-    <a href="https://curio.urbantk.org"><img alt="Try it online" src="https://img.shields.io/badge/Try_it_online-curio.urbantk.org-2ea44f?style=for-the-badge&logo=rocket&logoColor=white"/></a>
-    <a href="https://curio-dev.urbantk.org"><img alt="Dev build" src="https://img.shields.io/badge/Dev_build-curio--dev.urbantk.org-8957e5?style=for-the-badge&logo=flask&logoColor=white"/></a>
+    <a href="https://pypi.org/project/utk-curio/"><img alt="PyPI" src="https://img.shields.io/pypi/v/utk-curio?style=for-the-badge&label=PyPI&color=0073b7"/></a>
+    <a href="https://github.com/urban-toolkit/curio"><img alt="GitHub" src="https://img.shields.io/github/package-json/v/urban-toolkit/curio?style=for-the-badge&label=GitHub&color=24292e"/></a>
+    <a href="https://curio.urbantk.org"><img alt="curio.urbantk.org" src="https://img.shields.io/badge/dynamic/json?style=for-the-badge&url=https%3A%2F%2Fraw.githubusercontent.com%2Furban-toolkit%2Fcurio%2Fdeploy-badges%2Fstable.json&query=%24.version&label=curio.urbantk.org&color=2ea44f"/></a>
+    <a href="https://curio-dev.urbantk.org"><img alt="curio-dev.urbantk.org" src="https://img.shields.io/badge/dynamic/json?style=for-the-badge&url=https%3A%2F%2Fraw.githubusercontent.com%2Furban-toolkit%2Fcurio%2Fdeploy-badges%2Fdev.json&query=%24.version&label=curio-dev.urbantk.org&color=8957e5"/></a>
   </p>
 
   <p>
     <a href="https://github.com/urban-toolkit/curio/actions/workflows/docker-compose.yml"><img alt="Full stack build" src="https://github.com/urban-toolkit/curio/actions/workflows/docker-compose.yml/badge.svg"/></a>
-    <a href="https://pypi.org/project/utk-curio/"><img alt="PyPI version" src="https://img.shields.io/pypi/v/utk-curio"/></a>
     <a href="https://github.com/urban-toolkit/curio/graphs/contributors"><img alt="Contributors" src="https://img.shields.io/github/contributors/urban-toolkit/curio"/></a>
     <a href="https://github.com/urban-toolkit/curio/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"/></a>
   </p>

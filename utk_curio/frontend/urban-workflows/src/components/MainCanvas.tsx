@@ -26,6 +26,7 @@ import "./MainCanvas.css";
 import LLMChat from "./LLMChat";
 import { useLLMContext } from "../providers/LLMProvider";
 import { TrillGenerator } from "../TrillGenerator";
+import VersionBadge from "./VersionBadge";
 
 import html2canvas from "html2canvas";
 
@@ -511,6 +512,7 @@ export function MainCanvas() {
             <input hidden type="file" name="file" id="file" />
 
         </div> : loadingAnimation() }
+        <VersionBadge />
         </>
 
     );

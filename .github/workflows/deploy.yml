@@ -55,7 +55,14 @@ jobs:
       group: deploy-dev
       cancel-in-progress: false
     environment: dev
+    permissions:
+      contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Connect to tailnet
         uses: tailscale/github-action@v3
         with:
@@ -88,14 +95,38 @@ jobs:
           docker compose -p curio-dev up -d
           EOF
 
+      - name: Record deployed version
+        run: |
+          VERSION=$(node -p "require('./utk_curio/frontend/urban-workflows/package.json').version")
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code origin deploy-badges &>/dev/null; then
+            git fetch origin deploy-badges
+            git worktree add /tmp/deploy-badges origin/deploy-badges
+          else
+            git worktree add --orphan /tmp/deploy-badges deploy-badges
+          fi
+          echo "{\"version\": \"$VERSION\", \"deployed_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > /tmp/deploy-badges/dev.json
+          cd /tmp/deploy-badges
+          git add dev.json
+          git commit -m "record dev deploy $VERSION" || true
+          git push origin HEAD:deploy-badges
+
   deploy-stable:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-stable
       cancel-in-progress: false
     environment: stable
+    permissions:
+      contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Connect to tailnet
         uses: tailscale/github-action@v3
         with:
@@ -110,10 +141,10 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H utk >> ~/.ssh/known_hosts
 
-      - name: Deploy ${{ inputs.ref }} to stable stack
+      - name: Deploy ${{ inputs.ref || github.ref_name }} to stable stack
         run: |
           ssh -i ~/.ssh/id_ed25519 deploy@utk \
-            bash -s "${{ inputs.ref }}" <<'EOF'
+            bash -s "${{ inputs.ref || github.ref_name }}" <<'EOF'
           set -euo pipefail
           ref="$1"
           cd /srv/curio
@@ -126,3 +157,20 @@ jobs:
           docker compose -p curio build --no-cache
           docker compose -p curio up -d
           EOF
+
+      - name: Record deployed version
+        run: |
+          VERSION=$(node -p "require('./utk_curio/frontend/urban-workflows/package.json').version")
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code origin deploy-badges &>/dev/null; then
+            git fetch origin deploy-badges
+            git worktree add /tmp/deploy-badges origin/deploy-badges
+          else
+            git worktree add --orphan /tmp/deploy-badges deploy-badges
+          fi
+          echo "{\"version\": \"$VERSION\", \"deployed_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > /tmp/deploy-badges/stable.json
+          cd /tmp/deploy-badges
+          git add stable.json
+          git commit -m "record stable deploy $VERSION" || true
+          git push origin HEAD:deploy-badges
