@@ -73,7 +73,7 @@ This will install Curio’s CLI and required components. After installation, sim
 curio start
 ```
 
-This will start the backend, sandbox, and frontend servers. The first time Curio runs, it will automatically install UTK. You can also start components individually:
+This will start the backend, sandbox, and frontend servers. You can also start components individually:
 
 
 ```bash
@@ -150,7 +150,7 @@ You can now use `curio.py` to start everything:
 python curio.py start             # Starts backend, sandbox, and frontend
 ```
 
-This will build and start all required servers. The first time Curio runs, it will automatically install UTK. The installation of all required packages might take a few minutes. When finished, Curio's frontend will be available at http://localhost:8080.
+This will build and start all required servers. The installation of all required packages might take a few minutes. When finished, Curio's frontend will be available at http://localhost:8080.
 
 You can also start individual servers:
 
@@ -249,10 +249,6 @@ GUEST_LLM_MODEL=claude-haiku-4-5-20251001
 ```
 
 If `GUEST_LLM_API_KEY` is not set, the LLM Assistant will return an error for guest users rather than failing silently.
-
-## Ray tracing
-
-To use Ray Tracing, please see UTK's [requirements](https://github.com/urban-toolkit/utk).
 
 ## Quick start
 

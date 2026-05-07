@@ -1,12 +1,13 @@
 {
   "dataflow": {
+    "description": "Analyze and visualize sidewalk accessibility data from Project Sidewalk.",
     "nodes": [
       {
         "id": "cd3b6afc-900d-417c-8064-375ed01a912f",
         "type": "DATA_LOADING",
         "x": 780.7342662984418,
         "y": -73.72077606786144,
-        "content": "import geopandas as gpd\n\ngdf = gpd.read_file('data/labels_2026-03-30T13_06_26.436355935-07_00.json')\n\ngdf.metadata = {\n    'name': 'accessibility_features'\n}\n\nreturn gdf\n",
+        "content": "import geopandas as gpd\n\ngdf = gpd.read_file('zip://data/04-labels.json.zip!04-labels.json')\n\ngdf.metadata = {\n    'name': 'accessibility_features'\n}\n\nreturn gdf\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -19,7 +20,7 @@
         "type": "DATA_TRANSFORMATION",
         "x": 807.5045113872777,
         "y": 242.8108198641839,
-        "content": "import pandas as pd\nimport geopandas as gpd\nimport numpy as np\nimport utk\n\ngdf = arg\n\nprocessed_gdf = gdf[['label_type', 'severity', 'neighborhood', 'geometry', 'agree_count', 'disagree_count']]\n\nprocessed_gdf['agreement_ratio'] = processed_gdf['agree_count'] / (processed_gdf['agree_count'] + processed_gdf['disagree_count'])\n\nseverity_bins = [0, 1, 2, 3, 5]\nseverity_labels = ['Low', 'Medium', 'High', 'Critical']\nprocessed_gdf['severity_level'] = pd.cut(\n    processed_gdf['severity'],\n    bins=severity_bins,\n    labels=severity_labels,\n    include_lowest=True\n)\n\nif processed_gdf.crs is None:\n    processed_gdf = processed_gdf.set_crs(\"EPSG:4326\")\nelse:\n    processed_gdf = processed_gdf.to_crs(\"EPSG:4326\")\n\nprocessed_gdf['thematic'] = processed_gdf['severity']\n\nprocessed_gdf.metadata = {\n    'name': 'accessibility_analysis'\n}\n\nreturn processed_gdf",
+        "content": "import pandas as pd\nimport geopandas as gpd\nimport numpy as np\n\ngdf = arg\n\nprocessed_gdf = gdf[['label_type', 'severity', 'neighborhood', 'geometry', 'agree_count', 'disagree_count']]\n\nprocessed_gdf['agreement_ratio'] = processed_gdf['agree_count'] / (processed_gdf['agree_count'] + processed_gdf['disagree_count'])\n\nseverity_bins = [0, 1, 2, 3, 5]\nseverity_labels = ['Low', 'Medium', 'High', 'Critical']\nprocessed_gdf['severity_level'] = pd.cut(\n    processed_gdf['severity'],\n    bins=severity_bins,\n    labels=severity_labels,\n    include_lowest=True\n)\n\nif processed_gdf.crs is None:\n    processed_gdf = processed_gdf.set_crs(\"EPSG:4326\")\nelse:\n    processed_gdf = processed_gdf.to_crs(\"EPSG:4326\")\n\nprocessed_gdf['thematic'] = processed_gdf['severity']\n\nprocessed_gdf.metadata = {\n    'name': 'accessibility_analysis'\n}\n\nreturn processed_gdf",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -58,7 +59,7 @@
         "type": "VIS_VEGA",
         "x": 2142.632869286572,
         "y": -173.1304662320116,
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"data\": {\"name\": \"feature_stats\"},\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"label_type\",\n      \"type\": \"nominal\",\n      \"title\": \"Feature Type\"\n    },\n    \"y\": {\n      \"field\": \"count\",\n      \"type\": \"quantitative\",\n      \"title\": \"Number of Features\"\n    },\n    \"color\": {\n      \"field\": \"avg_severity\",\n      \"type\": \"quantitative\",\n      \"title\": \"Average Severity\",\n      \"scale\": {\n        \"scheme\": \"viridis\"\n      }\n    },\n    \"tooltip\": [\n      {\"field\": \"label_type\", \"type\": \"nominal\", \"title\": \"Feature Type\"},\n      {\"field\": \"count\", \"type\": \"quantitative\", \"title\": \"Count\"},\n      {\"field\": \"avg_severity\", \"type\": \"quantitative\", \"title\": \"Avg Severity\", \"format\": \".2f\"},\n      {\"field\": \"avg_agreement\", \"type\": \"quantitative\", \"title\": \"Avg Agreement\", \"format\": \".2f\"}\n    ]\n  }\n}",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\"name\": \"feature_stats\"},\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"label_type\",\n      \"type\": \"nominal\",\n      \"title\": \"Feature Type\"\n    },\n    \"y\": {\n      \"field\": \"count\",\n      \"type\": \"quantitative\",\n      \"title\": \"Number of Features\"\n    },\n    \"color\": {\n      \"field\": \"avg_severity\",\n      \"type\": \"quantitative\",\n      \"title\": \"Average Severity\",\n      \"scale\": {\n        \"scheme\": \"viridis\"\n      }\n    },\n    \"tooltip\": [\n      {\"field\": \"label_type\", \"type\": \"nominal\", \"title\": \"Feature Type\"},\n      {\"field\": \"count\", \"type\": \"quantitative\", \"title\": \"Count\"},\n      {\"field\": \"avg_severity\", \"type\": \"quantitative\", \"title\": \"Avg Severity\", \"format\": \".2f\"},\n      {\"field\": \"avg_agreement\", \"type\": \"quantitative\", \"title\": \"Avg Agreement\", \"format\": \".2f\"}\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -71,7 +72,7 @@
         "type": "VIS_VEGA",
         "x": 2059.2074128967574,
         "y": 200.90167099167456,
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"data\": {\"name\": \"neighborhood_stats\"},\n  \"mark\": \"circle\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"neighborhood\",\n      \"type\": \"nominal\",\n      \"title\": \"Neighborhood\"\n    },\n    \"y\": {\n      \"field\": \"count\",\n      \"type\": \"quantitative\",\n      \"title\": \"Number of Features\"\n    },\n    \"size\": {\n      \"field\": \"count\",\n      \"type\": \"quantitative\",\n      \"title\": \"Number of Features\",\n      \"scale\": {\n        \"range\": [50, 500]\n      }\n    },\n    \"color\": {\n      \"field\": \"avg_severity\",\n      \"type\": \"quantitative\",\n      \"title\": \"Average Severity\",\n      \"scale\": {\n        \"scheme\": \"viridis\"\n      }\n    },\n    \"tooltip\": [\n      {\"field\": \"neighborhood\", \"type\": \"nominal\", \"title\": \"Neighborhood\"},\n      {\"field\": \"count\", \"type\": \"quantitative\", \"title\": \"Count\"},\n      {\"field\": \"avg_severity\", \"type\": \"quantitative\", \"title\": \"Avg Severity\", \"format\": \".2f\"},\n      {\"field\": \"avg_agreement\", \"type\": \"quantitative\", \"title\": \"Avg Agreement\", \"format\": \".2f\"}\n    ]\n  }\n}",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\"name\": \"neighborhood_stats\"},\n  \"mark\": \"circle\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"neighborhood\",\n      \"type\": \"nominal\",\n      \"title\": \"Neighborhood\"\n    },\n    \"y\": {\n      \"field\": \"count\",\n      \"type\": \"quantitative\",\n      \"title\": \"Number of Features\"\n    },\n    \"size\": {\n      \"field\": \"count\",\n      \"type\": \"quantitative\",\n      \"title\": \"Number of Features\",\n      \"scale\": {\n        \"range\": [50, 500]\n      }\n    },\n    \"color\": {\n      \"field\": \"avg_severity\",\n      \"type\": \"quantitative\",\n      \"title\": \"Average Severity\",\n      \"scale\": {\n        \"scheme\": \"viridis\"\n      }\n    },\n    \"tooltip\": [\n      {\"field\": \"neighborhood\", \"type\": \"nominal\", \"title\": \"Neighborhood\"},\n      {\"field\": \"count\", \"type\": \"quantitative\", \"title\": \"Count\"},\n      {\"field\": \"avg_severity\", \"type\": \"quantitative\", \"title\": \"Avg Severity\", \"format\": \".2f\"},\n      {\"field\": \"avg_agreement\", \"type\": \"quantitative\", \"title\": \"Avg Agreement\", \"format\": \".2f\"}\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

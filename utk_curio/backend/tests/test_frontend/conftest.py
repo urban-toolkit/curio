@@ -12,7 +12,7 @@ from .fixtures import _clean_db
 #: Master list of workflow JSON filenames to test.
 #: Comment out / add entries here to control the full test matrix.
 WORKFLOW_FILES = [
-    # Uncomment to run the deatailed examples
+    # Uncomment to run the detailed examples
     # "docs/examples/01-visual-analytics.json",
     # "docs/examples/02-what-if.json",
     # "docs/examples/03-expert-in-the-loop.json",
@@ -23,33 +23,34 @@ WORKFLOW_FILES = [
     # "docs/examples/09-energy-efficiency.json",
     # "docs/examples/10-green-roofs.json",
 
-
-    # TODO: extract the worrkflows inside
-    # "NewMerge.json",
-
     "docs/examples/dataflows/DefaultWorkflow.json",
 
-    "docs/examples/dataflows/DataPool_df.json",
-    "docs/examples/dataflows/DataPool_gdf.json",
+    "docs/examples/dataflows/DataPool_Dataframe.json",
+    "docs/examples/dataflows/DataPool_Geodataframe.json",
 
-    "docs/examples/dataflows/DataPool_Vega_2.json",
     "docs/examples/dataflows/DataPool_Vega.json",
-    "docs/examples/dataflows/DataPool_UTK.json",
+    "docs/examples/dataflows/DataPool_Vega_2.json",
+    "docs/examples/dataflows/DataPool_AutkMap.json",
 
     "docs/examples/dataflows/Image.json",
-    "docs/examples/dataflows/SimpleView_Table.json",
+    "docs/examples/dataflows/SimpleView.json",
     "docs/examples/dataflows/Merge.json",
     "docs/examples/dataflows/MergeFlowDataPool.json",
 
-    "docs/examples/dataflows/Interaction.json",
-    "docs/examples/dataflows/Interaction_UTK.json",
-    "docs/examples/dataflows/Interaction_Vega.json",
+    "docs/examples/dataflows/JSComputation.json",
 
-    "docs/examples/dataflows/Number_Multiplier_Widget.json",
+    "docs/examples/dataflows/Interaction_Vega.json",
+    "docs/examples/dataflows/Interaction_Vega_Simple.json",
+    "docs/examples/dataflows/Interaction_AutkMap.json",
+    "docs/examples/dataflows/Interaction_Autark.json",
+    "docs/examples/dataflows/Interaction_Vega_Autark.json",
+
+    "docs/examples/dataflows/Widget.json",
 
     "docs/examples/dataflows/Vega.json",
+    "docs/examples/dataflows/AutkMap.json",
 
-    "docs/examples/dataflows/UTK.json",
+    "docs/examples/dataflows/Regression.json",
 ]
 
 
@@ -58,17 +59,32 @@ def load_workflow_files_from_folder():
 
     Respects the ``CURIO_E2E_WORKFLOWS`` environment variable: when set
     to a comma-separated list of basenames (e.g.
-    ``CURIO_E2E_WORKFLOWS=Vega.json,UTK.json``) only those workflows
-    are included.  This makes it easy to run a quick subset during
-    development or in CI smoke tests.
+    ``CURIO_E2E_WORKFLOWS=Vega.json,AutkMap.json``) only those workflows
+    are included.  Basenames are resolved against ``WORKFLOW_FILES`` so
+    callers don't need to know the ``docs/examples/dataflows/`` prefix.
+    This makes it easy to run a quick subset during development or in CI
+    smoke tests.
     """
     subset = os.environ.get("CURIO_E2E_WORKFLOWS")
-    names = (
-        [n.strip() for n in subset.split(",") if n.strip()]
-        if subset
-        else WORKFLOW_FILES
-    )
-    return [os.path.join(REPO_ROOT, name) for name in names]
+    if not subset:
+        return [os.path.join(REPO_ROOT, name) for name in WORKFLOW_FILES]
+    requested = [n.strip() for n in subset.split(",") if n.strip()]
+    by_basename = {os.path.basename(p): p for p in WORKFLOW_FILES}
+    resolved: list[str] = []
+    for name in requested:
+        # Already a relative path that exists in WORKFLOW_FILES — use as-is.
+        if name in WORKFLOW_FILES:
+            resolved.append(name)
+            continue
+        # Bare basename — look it up in the master list.
+        match = by_basename.get(os.path.basename(name))
+        if match is None:
+            raise ValueError(
+                f"CURIO_E2E_WORKFLOWS entry {name!r} is not in WORKFLOW_FILES; "
+                f"valid basenames: {sorted(by_basename)}"
+            )
+        resolved.append(match)
+    return [os.path.join(REPO_ROOT, name) for name in resolved]
 
 
 # ------------------------------------------------------------------ #

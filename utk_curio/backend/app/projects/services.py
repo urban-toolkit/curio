@@ -20,13 +20,8 @@ from utk_curio.backend.app.projects.schemas import (
     _slugify,
 )
 from utk_curio.backend.config import (
-    ALLOW_GUEST_LOGIN,
-    CURIO_ENV,
     CURIO_SHARED_GUEST_USERNAME,
 )
-
-
-GUEST_PROJECT_LIMIT = 20
 
 
 class ProjectError(Exception):
@@ -43,18 +38,9 @@ def _user_dir_key(user) -> str:
     return storage._GUEST_KEY if _is_shared_guest(user) else str(user.id)
 
 
-def _check_guest_quota(user) -> None:
-    if not user.is_guest:
-        return
-    if _is_shared_guest(user):
-        return
-    if CURIO_ENV == "prod" and not ALLOW_GUEST_LOGIN:
-        raise ProjectError("Guest users cannot save projects in production", 403)
-    count = repo.list_for_user(user.id, scope="mine")
-    if len(count) >= GUEST_PROJECT_LIMIT:
-        raise ProjectError(
-            f"Guest project limit ({GUEST_PROJECT_LIMIT}) reached", 403
-        )
+def _assert_guest_can_save(user) -> None:
+    if user.is_guest and not _is_shared_guest(user):
+        raise ProjectError("Guest users cannot save projects", 403)
 
 
 def _extract_graph_preview(spec: Optional[dict]) -> Optional[dict]:
@@ -133,7 +119,7 @@ def _output_refs_from_manifest(manifest: Optional[dict]) -> List[OutputRef]:
 # ---------------------------------------------------------------------------
 
 def save_project(user, data: ProjectCreate) -> ProjectDetail:
-    _check_guest_quota(user)
+    _assert_guest_can_save(user)
 
     project_id = str(uuid4())
     ukey = _user_dir_key(user)
@@ -161,6 +147,7 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
 
 
 def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
+    _assert_guest_can_save(user)
     project = repo.get_for_user(project_id, user.id)
     ukey = _user_dir_key(user)
     existing_spec = storage.read_spec(ukey, project_id)

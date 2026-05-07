@@ -1,289 +1,210 @@
-# Example: What-if scenarios with shadow data
+# Example: What-if scenarios with Autark
 
-In this example, we will explore how Curio can be used to create a dataflow that computes the shadow impact from proposed buildings in Boston. It is possible to compute the shadow impact of the proposed building over different times and seasons to support evidence-based environmental impact analysis. Here is the overview of the whole dataflow pipeline:
+In this example, we walk through a what-if dataflow that lets users pick buildings in Boston, raise their heights with a multiplier widget, and compare the modified scenario against the baseline. The dataflow uses Curio's [Autark integration](12-shadow-analysis.md) to keep the picking-driven workflow entirely in the browser. Building **height** is used as a what-if proxy that's directly visible on the rendered map — replace the compute step with a WebGPU shadow shader (see [Example 12](12-shadow-analysis.md)) when you want a full shadow study.
 
-![Example 2-1](images/2-1.png)
+!!! note "WebGPU required"
+    Autark relies on WebGPU. Run this example in a Chromium-based browser (Chrome / Edge) on a machine with a working GPU stack. `navigator.gpu` must be available.
 
-Before you begin, please familiarize yourself with Curio’s main concepts and functionalities by reading our [usage guide](https://github.com/urban-toolkit/curio/blob/main/docs/USAGE.md).
+For completeness, we include the template code in each dataflow step.
 
-For completeness, we also include the template code in each dataflow step.
+## Pipeline overview
 
-## Step 1: Loading physical layers
-
-We want our final map to have layers representing water, parks, and buildings. The icons on the left-hand side can be used to instantiate different nodes, including data loading nodes. Let’s start by using UTK’s Python API to download the necessary data. Change the node view to load and run the following code:
-
-```python
-# load box
-import utk
-import pandas as pd
-
-uc = utk.OSM.load([42.336844, -71.113459, 42.345559, -71.099216], layers=[{'name':'buildings', 'args': {'sizeCells': 5}}, {'name':'surface', 'args': {'sizeCells': 5}}, 'parks'])
-
-# buildings
-gdf_buildings = uc.layers['gdf']['sections'][0]
-gdf_buildings['thematic'] = 0.5
-gdf_buildings.metadata = {
- 'name': 'buildings'
-}
-
-#surface
-json_surface = uc.layers['json'][1]
-gdf_surface = uc.layers['gdf']['objects'][1]
-gdf_surface.metadata = {
- 'name': 'surface'
-}
-
-#parks
-json_parks = uc.layers['json'][2]
-gdf_parks = uc.layers['gdf']['objects'][2]
-gdf_parks.metadata = {
- 'name': 'parks'
-}
-
-# Wrap JSON layers in DataFrames (DATA_LOADING supports DataFrame/GeoDataFrame output)
-df_json_surface = pd.DataFrame({'json_data': [json_surface]})
-df_json_parks = pd.DataFrame({'json_data': [json_parks]})
-
-return (df_json_surface, df_json_parks, gdf_buildings, gdf_surface, gdf_parks)
+```
+AUTK_DB ─▶ AUTK_COMPUTE ─▶ DATA_POOL ─┬─▶ AUTK_MAP   (baseline + picking)
+                                      │
+                                      ├─▶ AUTK_MAP   (baseline, side-by-side)
+                                      │
+                                      └─▶ AUTK_COMPUTE (apply multiplier) ─┬─▶ AUTK_MAP (modified)
+                                                                            │
+                                                                            └─▶ AUTK_MAP (delta)
 ```
 
-## Step 1.5: Getting only the buildings
+## Step 1: Loading physical layers (`AUTK_DB`)
 
-From the composed output we want to get the GeoDataframe representing the buildings. That is why we need this intermediate step. Instantiate a “Computation Analysis” node, connect the output of the previous node to the input of the current and change the view to code and run the following code:
+Instantiate an `AUTK_DB` node and load the buildings, surface, and parks for Boston via the Overpass API. Autark's spatial database materializes each layer in EPSG:3395 and exposes it as a regular GeoJSON `FeatureCollection`.
 
-```python
-return arg[2]
+```javascript
+import { AutkSpatialDb } from '@urban-toolkit/autk-db';
+
+const db = new AutkSpatialDb();
+await db.init();
+
+await db.loadOsm({
+    queryArea: { geocodeArea: 'Boston' },
+    outputTableName: 'table_osm',
+    autoLoadLayers: {
+        coordinateFormat: 'EPSG:3395',
+        layers: ['buildings', 'surface', 'parks'],
+        dropOsmTable: true,
+    },
+});
+
+const layers = [];
+for (const layer of db.getLayerTables()) {
+    layers.push({
+        name: layer.name,
+        type: layer.type,
+        geojson: await db.getLayer(layer.name),
+    });
+}
+return layers;
 ```
 
-Finally store the output in a data node.
+## Step 2: Annotate buildings with footprint area and baseline height (`AUTK_COMPUTE`)
 
-![Example 2-2](images/2-2.png)
+The next node walks each building feature, adds a numeric `area` (m²) computed from the polygon ring, and stores the parsed OSM `height` tag in two places: the original value as `baselineHeight`, and a working copy as `height` (mutated by Step 4).
 
-## Step 2: UTK for interactions
+```javascript
+const ringArea = (ring) => {
+    if (!ring || ring.length < 3) return 0;
+    const ox = ring[0][0], oy = ring[0][1];
+    let s = 0;
+    for (let i = 0; i < ring.length; i++) {
+        const j = (i + 1) % ring.length;
+        const x1 = ring[i][0] - ox, y1 = ring[i][1] - oy;
+        const x2 = ring[j][0] - ox, y2 = ring[j][1] - oy;
+        s += x1 * y2 - x2 * y1;
+    }
+    return Math.abs(s) / 2;
+};
+const featureArea = (geom) => {
+    if (!geom) return null;
+    if (geom.type === 'Polygon') return ringArea(geom.coordinates[0]);
+    if (geom.type === 'MultiPolygon') return geom.coordinates.reduce((s, p) => s + ringArea(p[0]), 0);
+    if (geom.type === 'GeometryCollection') return (geom.geometries || []).reduce((s, g) => s + (featureArea(g) || 0), 0);
+    return null;
+};
+const parseHeight = (h) => {
+    if (h == null) return null;
+    if (typeof h === 'number') return Number.isFinite(h) ? h : null;
+    const m = String(h).match(/-?\d+(?:\.\d+)?/);
+    return m ? parseFloat(m[0]) : null;
+};
 
-Now we can add an UTK node instance that will receive the output of the previous data node and be used to change the height of the buildings. After connecting the nodes, change interaction mode to “PICKING” and run UTK.
-
-![Example 2-3](images/2-3.png)
-
-## Step 3: Changing building height
-
-Let’s now create a “Data Transformation” node and connect it to the same data node that feeds UTK in Step 2. To goal is to detect which buildings were interacted with and change its height. Change the view to “Code” and execute:
-
-```python
-gdf = arg
-
-gdf.loc[gdf['interacted'] == '1', 'height'] *= [!! Height Multiplier$INPUT_VALUE$14 !!]
-
-gdf.metadata = {
- 'name': 'buildings'
-}
-
-return gdf
+return arg.map(layer => {
+    if (layer.name !== 'table_osm_buildings') return layer;
+    const features = layer.geojson.features.map(f => {
+        const baseline = parseHeight(f.properties?.height) ?? 10;
+        return {
+            ...f,
+            properties: {
+                ...f.properties,
+                area: featureArea(f.geometry),
+                baselineHeight: baseline,
+                height: baseline,
+            },
+        };
+    });
+    return { ...layer, geojson: { ...layer.geojson, features } };
+});
 ```
 
-The Marker ``[!! Height Multiplier$INPUT_VALUE$14 !!]`` exposes a widget to control a height multiplier.
+Wire the compute output to a `DATA_POOL` so the same annotated layers can fan out to every downstream view.
 
-![Example 2-4](images/2-4.png)
+## Step 3: Picking-enabled baseline map (`AUTK_MAP`)
 
-## Step 3.5: Merging flows
+Connect the pool to an `AUTK_MAP` node. Calling `updateRenderInfo(layer, { isPick: true, isColorMap: true })` enables click selection on the buildings layer and the picking interaction edge. Buildings clicked on the map gain an `interacted = '1'` flag downstream.
 
-As an intermediate step we will use a “Merge” node to unify the flow from Step 1 and Step 3.
+```javascript
+const map = new AutkMap(container);
+await map.init();
 
-![Example 2-5](images/2-5.png)
-
-## Shadow simulation (after height modification)
-
-We can now add another “Computation Analysis” node to do shadow simulation based on the buildings Dataframe. To do that we connect the node to the merge of Step 3.5. Bear in mind that a NVIDIA GPU is needed. And execute the following code:
-
-```python
-import utk
-
-json_surface = arg[0][0].iloc[0]['json_data']
-gdf_surface = arg[0][3]
-json_parks = arg[0][1].iloc[0]['json_data']
-gdf_parks = arg[0][4]
-
-gdf_buildings = arg[1]
-
-json_layers = [json_surface]
-# buildings json layer
-gdf_buildings = gdf_buildings.set_crs('4326')
-mesh = utk.OSM.mesh_from_buildings_gdf(gdf_buildings, 5)['data']
-
-json_buildings = {
-   'id': 'buildings',
-   'type': 'BUILDINGS_LAYER',
-   'renderStyle': ['SMOOTH_COLOR_MAP_TEX'],
-   'styleKey': 'building',
-   'data': mesh
+for (const layer of arg) {
+    map.loadCollection(layer.name, { collection: layer.geojson, type: layer.type });
 }
 
-json_layers.append(json_buildings)
-
-shadow = utk.data.shadow(json_layers, [[[!! Start date$INPUT_TEXT$12/26/2015 10:00 !!], [!! End date$INPUT_TEXT$12/26/2015 16:01 !!]]])
-
-thematic_layers = shadow.get_shadow_by_layer()
-
-building_index = -1
-current_building_id = -1
-
-values_per_row = []
-
-for index, row in gdf_buildings.iterrows():
-   if(row['building_id'] != current_building_id):
-       current_building_id = row['building_id']
-       building_index += 1
-
-   values_per_row.append(thematic_layers['shadow0_buildings']['values'][building_index])
-
-gdf_buildings["shadow0_buildings"] = values_per_row
-
-gdf_buildings.metadata = {
- 'name': 'buildings'
-}
-
-values_per_row = []
-
-for index, row in gdf_surface.iterrows():
-   values_per_row.append(thematic_layers['shadow0_surface']['values'][index])
-
-gdf_surface["shadow0_surface"] = values_per_row
-gdf_surface["surface_id"] = 0 # surface is a single big bounding box
-
-gdf_surface.metadata = {
- 'name': 'surface'
-}
-
-return (gdf_surface, gdf_parks, gdf_buildings)
+const buildings = arg.find(l => l.name === 'table_osm_buildings').geojson;
+map.updateRenderInfo('table_osm_buildings', { isPick: true, isColorMap: true });
+map.updateThematic('table_osm_buildings', { collection: buildings, property: 'properties.height' });
+map.draw();
+return map;
 ```
 
-The Markers ``[!! Start date$INPUT_TEXT$12/26/2015 10:00 !!]`` and ``[!! End date$INPUT_TEXT$12/26/2015 16:01 !!]`` expose a widget to control the start and end date on the shadow simulation.
+## Step 4: Apply the height multiplier (`AUTK_COMPUTE`)
 
-![Example 2-6](images/2-6.png)
+Add another `AUTK_COMPUTE` node connected to the same data pool. Picked buildings carry `interacted = '1'`, so we multiply only their heights and record the per-building `heightDelta` for the delta view further down.
 
-## Step 5: Visualizing shadows
+```javascript
+const MULTIPLIER = [!! Height Multiplier$INPUT_VALUE$1.4 !!];
 
-To visualize the result of the simulation we can add an UTK node and connect to the output of Step 4. Don’t forget to run the UTK node.
-
-![Example 2-7](images/2-7.png)
-
-## Step 6: Shadow simulation (before height modification)
-
-Now, we repeat what was done in Step 4 but to simulate the shadows for the dataset before the height modification. To do that, add a “Computation Analysis” node, connect it to the output of Step 1, and execute the following code:
-
-```python
-import utk
-
-json_surface = arg[0].iloc[0]['json_data']
-json_parks = arg[1].iloc[0]['json_data']
-gdf_buildings = arg[2]
-gdf_surface = arg[3]
-gdf_parks = arg[4]
-
-json_layers = [json_surface]
-
-# buildings json layer
-gdf_buildings = gdf_buildings.set_crs('4326')
-mesh = utk.OSM.mesh_from_buildings_gdf(gdf_buildings, 5)['data']
-
-json_buildings = {
-   'id': 'buildings',
-   'type': 'BUILDINGS_LAYER',
-   'renderStyle': ['SMOOTH_COLOR_MAP_TEX'],
-   'styleKey': 'building',
-   'data': mesh
-}
-
-json_layers.append(json_buildings)
-
-shadow = utk.data.shadow(json_layers, [[[!! Start date$INPUT_TEXT$12/26/2015 10:00 !!], [!! End date$INPUT_TEXT$12/26/2015 16:01 !!]]])
-
-thematic_layers = shadow.get_shadow_by_layer()
-
-building_index = -1
-current_building_id = -1
-
-values_per_row = []
-
-for index, row in gdf_buildings.iterrows():
-   if(row['building_id'] != current_building_id):
-       current_building_id = row['building_id']
-       building_index += 1
-
-   values_per_row.append(thematic_layers['shadow0_buildings']['values'][building_index])
-
-gdf_buildings["shadow0_buildings"] = values_per_row
-
-gdf_buildings.metadata = {
- 'name': 'buildings'
-}
-
-values_per_row = []
-
-for index, row in gdf_surface.iterrows():
-   values_per_row.append(thematic_layers['shadow0_surface']['values'][index])
-
-gdf_surface["shadow0_surface"] = values_per_row
-gdf_surface["surface_id"] = 0 # surface is a single big bounding box
-
-gdf_surface.metadata = {
- 'name': 'surface'
-}
-
-return (gdf_surface, gdf_parks, gdf_buildings)
+return arg.map(layer => {
+    if (layer.name !== 'table_osm_buildings') return layer;
+    const features = layer.geojson.features.map(f => {
+        const baseline = f.properties?.baselineHeight ?? 10;
+        const isInteracted = String(f.properties?.interacted) === '1';
+        const newHeight = isInteracted ? baseline * MULTIPLIER : baseline;
+        return {
+            ...f,
+            properties: {
+                ...f.properties,
+                height: newHeight,
+                heightDelta: newHeight - baseline,
+            },
+        };
+    });
+    return { ...layer, geojson: { ...layer.geojson, features } };
+});
 ```
 
-## Step 7: Visualizing shadows
+The marker `[!! Height Multiplier$INPUT_VALUE$1.4 !!]` exposes a numeric widget on the node so the multiplier can be tuned without re-editing the code.
 
-Similar to Step 5, create a UTK node to visualize the shadows simulated on Step 6.
+## Step 5: Modified-scenario view (`AUTK_MAP`)
 
-![Example 2-8](images/2-8.png)
+Render the multiplier output as a second map, coloured by the new `height`. This is the "after" view in the comparison.
 
-## Step 7.5: Merging the what-if flow
+```javascript
+const map = new AutkMap(container);
+await map.init();
 
-To see the difference between the shadows calculated on Step 4 and 6 we have to merge the data flow of Steps 5 and 7.
-
-![Example 2-9](images/2-9.png)
-
-## Step 8: What-if scenario
-
-To create the what-if scenario we can calculate the difference between the shadow calculated for the buildings before and after modifying the heights. Create a “Computation Analysis” node connected to the output of Step 7.5 and execute the following code:
-
-```python
-gdf_surface_1 = arg[0][0]
-gdf_buildings_1 = arg[0][2]
-
-gdf_surface_2 = arg[1][0]
-gdf_buildings_2 = arg[1][2]
-
-gdf_parks_3 = arg[0][1]
-
-list_1 = gdf_surface_1.iloc[0]['shadow0_surface']
-list_2 = gdf_surface_2.iloc[0]['shadow0_surface']
-
-difference_list = [b - a for a, b in zip(list_1, list_2)]
-
-gdf_surface_2['shadow0_surface'] = [difference_list]
-
-gdf_parks_3.metadata = {
- 'name': 'parks'
+for (const layer of arg) {
+    map.loadCollection(layer.name, { collection: layer.geojson, type: layer.type });
 }
 
-gdf_surface_2.metadata = {
- 'name': 'surface'
-}
-
-gdf_buildings_2.metadata = {
- 'name': 'buildings'
-}
-
-return (gdf_parks_3, gdf_surface_2, gdf_buildings_2)
+const buildings = arg.find(l => l.name === 'table_osm_buildings').geojson;
+map.updateRenderInfo('table_osm_buildings', { isColorMap: true });
+map.updateThematic('table_osm_buildings', { collection: buildings, property: 'properties.height' });
+map.draw();
+return map;
 ```
 
-![Example 2-10](images/2-10.png)
+## Step 6: Side-by-side baseline view (`AUTK_MAP`)
 
-## Step 9: Visualizing what-if scenario
+Add a third `AUTK_MAP` node connected back to the data pool. Setting the thematic property to `properties.baselineHeight` keeps this view fixed on the original heights so it can sit next to the modified map for visual comparison. Picking is left off here.
 
-Finally, to visualize the result, we can add a UTK node connected to Step 8.
+```javascript
+const map = new AutkMap(container);
+await map.init();
 
-![Example 2-11](images/2-11.png)
+for (const layer of arg) {
+    map.loadCollection(layer.name, { collection: layer.geojson, type: layer.type });
+}
+
+const buildings = arg.find(l => l.name === 'table_osm_buildings').geojson;
+map.updateRenderInfo('table_osm_buildings', { isColorMap: true });
+map.updateThematic('table_osm_buildings', { collection: buildings, property: 'properties.baselineHeight' });
+map.draw();
+return map;
+```
+
+## Step 7: Delta view (`AUTK_MAP`)
+
+The fourth map renders `heightDelta` (modified − baseline). Buildings the user did not pick stay at zero and fade into the background; picked buildings stand out in proportion to how much the multiplier raised them.
+
+```javascript
+const map = new AutkMap(container);
+await map.init();
+
+for (const layer of arg) {
+    map.loadCollection(layer.name, { collection: layer.geojson, type: layer.type });
+}
+
+const buildings = arg.find(l => l.name === 'table_osm_buildings').geojson;
+map.updateRenderInfo('table_osm_buildings', { isColorMap: true });
+map.updateThematic('table_osm_buildings', { collection: buildings, property: 'properties.heightDelta' });
+map.draw();
+return map;
+```
+
+## Final result
+
+The three side-by-side maps now form a what-if comparison: pick buildings on the picker map, edit the multiplier widget, and the modified and delta maps update on the next run. Swapping the multiplier compute node for a [WebGPU shadow shader](12-shadow-analysis.md) extends this same topology into a full shadow-impact study.

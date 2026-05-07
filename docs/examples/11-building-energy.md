@@ -11,7 +11,7 @@ Here is the overview of the entire dataflow pipeline:
 
 Before you begin, please familiarize yourself with Curio’s main concepts and functionalities by reading our [usage guide](https://github.com/urban-toolkit/curio/blob/main/docs/USAGE.md).
 
-The data for this tutorial can be found [here](data/Energy_Usage_5000.csv).
+The data for this tutorial can be found [here](data/11-energy_usage.csv).
 
 For completeness, we also include the template code in each dataflow step.
 
@@ -25,7 +25,7 @@ We begin by creating a Data Loading node to import the building energy usage dat
 import pandas as pd
 
 # Load the CSV directly
-df = pd.read_csv("Energy_Usage_5000.csv")
+df = pd.read_csv("docs/examples/data/11-energy_usage.csv")
 
 # Select relevant columns and clean missing values
 grouped_data = df[["BUILDING TYPE", "TOTAL KWH", "TOTAL THERMS"]].dropna()
@@ -131,7 +131,7 @@ Next, we use a 2D Plot (Vega-Lite) node to create a heatmap showing the distribu
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": { "name": "energy_transformed_1" },
   "mark": "rect",
   "encoding": {
@@ -159,7 +159,7 @@ We then create another a 2D Plot (Vega-Lite) node to visualize the distribution 
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": { "name": "energy_transformed_1" },
   "mark": "circle",
   "encoding": {
@@ -199,7 +199,7 @@ We then use a 2D Plot (Vega-Lite) node to create a bar chart visualizing the ave
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": { "name": "avg_gas_by_building" },
   "mark": "bar",
   "encoding": {
@@ -229,7 +229,7 @@ We create a Data Loading node to import the dataset for community-level analysis
 ```python
 import pandas as pd
 
-df = pd.read_csv("Energy_Usage_5000.csv")
+df = pd.read_csv("docs/examples/data/11-energy_usage.csv")
 
 # Standardize column names right away for consistency
 df.columns = [col.upper().strip() for col in df.columns]
@@ -289,7 +289,7 @@ We then use a 2D Plot (Vega-Lite) node to create a bar chart of the top 10 commu
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": { "name": "top10_avg_energy_by_community" },
   "mark": "bar",
   "encoding": {
@@ -333,7 +333,7 @@ We then use a 2D Plot (Vega-Lite) node to create a scatter plot of electricity v
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": { "name": "scatter_energy_usage" },
   "mark": "point",
   "encoding": {
@@ -375,7 +375,7 @@ Finally, we use a 2D Plot (Vega-Lite) node to create a strip plot showing the sp
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": { "name": "df_strip" },
   "mark": "tick",
   "encoding": {
@@ -396,7 +396,7 @@ We create a Data Loading node to
 
 ```python
 import pandas as pd
-df = pd.read_csv("Energy_Usage_5000../data/../data/.csv")
+df = pd.read_csv("docs/examples/data/11-energy_usage.csv")
 return df
 ```
 
@@ -442,7 +442,7 @@ Lastly, we use a 2D Plot (Vega-Lite) node to ...
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "params": [
     {
       "name": "commPick",
@@ -543,7 +543,7 @@ We create a Data Loading node to import the dataset, followed by a Data Cleaning
 ```python
 import pandas as pd
 
-df = pd.read_csv("Energy_Usage_5000../data/../data/.csv")
+df = pd.read_csv("docs/examples/data/11-energy_usage.csv")
 
 month_cols = [col for col in df.columns if col.startswith("KWH ") and "2010" in col]
 required_cols = ["COMMUNITY AREA NAME"] + month_cols
@@ -584,7 +584,7 @@ Lastly, we use a 2D Plot (Vega-Lite) node to create an interactive bar chart sho
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "vconcat": [
     {
       "title": "Monthly Average Energy Usage (Brush to Select Months)",
@@ -683,7 +683,7 @@ We create a Data Loading node to import the dataset, followed by a Data Cleaning
 ```python
 import pandas as pd
 
-df = pd.read_csv("Energy_Usage_5000.csv")
+df = pd.read_csv("docs/examples/data/11-energy_usage.csv")
 
 columns_needed = ["AVERAGE STORIES", "AVERAGE BUILDING AGE", "TOTAL KWH"] + [col for col in df.columns if col.startswith("KWH ") and "2010" in col]
 
@@ -750,7 +750,7 @@ Lastly, we use a 2D Plot (Vega-Lite) node to create a box plot and line chart sh
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "params": [
     {
       "name": "storySelect",

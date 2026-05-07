@@ -120,14 +120,108 @@ def browser_context_args(browser_context_args):
     }
 
 
+def _find_system_chrome() -> str | None:
+    """Locate the system-installed Google Chrome executable.
+
+    Playwright's ``channel='chrome'`` silently falls back to bundled
+    Chromium when its registry resolution fails — we hit this on
+    Windows and the bundled binary lacks WebGPU on this platform. The
+    fix is to point ``executable_path`` directly at the real Chrome
+    binary, bypassing channel resolution entirely.
+
+    Returns ``None`` when Chrome is not found, in which case the
+    caller falls back to bundled Chromium.
+    """
+    candidates: list[str] = []
+    if sys.platform == "win32":
+        program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
+        program_files_x86 = os.environ.get(
+            "ProgramFiles(x86)", r"C:\Program Files (x86)"
+        )
+        local_app_data = os.environ.get(
+            "LOCALAPPDATA", os.path.expanduser(r"~\AppData\Local")
+        )
+        candidates += [
+            os.path.join(program_files, r"Google\Chrome\Application\chrome.exe"),
+            os.path.join(program_files_x86, r"Google\Chrome\Application\chrome.exe"),
+            os.path.join(local_app_data, r"Google\Chrome\Application\chrome.exe"),
+        ]
+    elif sys.platform == "darwin":
+        candidates += [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        ]
+    else:  # Linux / CI
+        candidates += [
+            "/usr/bin/google-chrome",
+            "/usr/bin/google-chrome-stable",
+            "/usr/bin/chromium-browser",
+            "/usr/bin/chromium",
+            "/snap/bin/chromium",
+        ]
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
+    for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"):
+        found = shutil.which(name)
+        if found:
+            return found
+    return None
+
+
 @pytest.fixture(scope="session")
 def browser_type_launch_args(browser_type_launch_args):
-    """Configure browser launch options - headless by default unless --headed is passed."""
-    return {
+    """Configure browser launch options.
+
+    Points ``executable_path`` at the system Google Chrome instead of
+    Playwright's bundled Chromium. Playwright's bundled Chromium on
+    Windows ships without a working Dawn/WebGPU runtime — verified
+    empirically: ``requestAdapter()`` returns null in the
+    ``headless-shell`` variant, the full Chromium binary, headed
+    *and* headless, with every documented flag combination
+    (``--enable-unsafe-webgpu``, ``--enable-unsafe-swiftshader``,
+    ``WebGPUService``, ``--use-angle=vulkan``). Real Chrome 113+ on
+    the same host returns a hardware adapter immediately. The earlier
+    attempt at ``channel='chrome'`` was silently ignored by Playwright
+    and continued launching bundled Chromium; ``executable_path``
+    bypasses channel resolution.
+
+    Falls back to bundled Chromium when Chrome cannot be found, in
+    which case AUTK_MAP/PLOT/COMPUTE will hit
+    ``_tolerate_webgpu_error`` and skip with a warning rather than
+    failing the suite. All GitHub-hosted runners
+    (``ubuntu-latest`` / ``windows-latest`` / ``macos-latest``) have
+    Chrome preinstalled.
+
+    Flag set is intentionally minimal: ``--enable-unsafe-webgpu`` lets
+    Dawn expose adapters in non-secure contexts and on unstable
+    configs, ``--enable-unsafe-swiftshader`` lets Dawn fall back to a
+    software adapter on hosts without a hardware GPU (e.g. CI
+    runners). We deliberately do *not* pass
+    ``--use-angle=*`` or ``--enable-features=Vulkan,VulkanFromANGLE,
+    DefaultANGLEVulkan,WebGPUService``: those are the flags
+    urban-toolkit/autark uses on macOS to force Metal/Vulkan paths,
+    but on Windows they make Dawn ask for a Vulkan adapter the host
+    doesn't have and ``requestAdapter()`` returns null. Real Chrome on
+    Windows defaults to D3D12 and works correctly when left alone.
+    Verified empirically on Chrome 148 / Windows 11 against
+    https://example.com — adapter is created with the minimal flags
+    and disappears the moment either of the autark flags is added.
+    """
+    launch_args = {
         **browser_type_launch_args,
-        # headless will be False only if --headed is explicitly passed
         "headless": browser_type_launch_args.get("headless", True),
+        "args": [
+            "--enable-unsafe-webgpu",
+            "--enable-unsafe-swiftshader",
+            *browser_type_launch_args.get("args", []),
+        ],
     }
+
+    chrome_path = _find_system_chrome()
+    if chrome_path:
+        launch_args["executable_path"] = chrome_path
+
+    return launch_args
 
 
 def pytest_addoption(parser):

@@ -12,6 +12,10 @@ with app.app_context():
         n = reconcile_guest_projects(guest)
         if n:
             app.logger.info("Reconciled %d guest project(s) from filesystem", n)
+        if os.environ.get("CURIO_SEED_EXAMPLES", "").lower() in ("1", "true", "yes"):
+            from utk_curio.backend.app.projects.seed import seed_example_projects
+            s = seed_example_projects(guest)
+            app.logger.info("Seeded %d example project(s)", s)
     except Exception:
         app.logger.warning("Could not ensure guest user on startup", exc_info=True)
 

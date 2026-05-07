@@ -76,8 +76,8 @@ Icons indicate the complexity level of each example: 🟢 Easy, 🟡 Intermediat
     `Curio` creates rich interactive experiences that allow users to explore urban data through
     multiple linked views and coordinated interactions between different visualization components.
 
-    - 🟡 **[06 - Interactions between Vega-Lite and UTK](detailed_examples/06-interaction.md)**: Connect maps and charts seamlessly.
-        - *What it does*: Demonstrates how to link user interactions between UTK map components and Vega-Lite plots for coordinated multi-view exploration.
+    - 🟡 **[06 - Interactions between Vega-Lite and Autark](detailed_examples/06-interaction.md)**: Connect maps and charts seamlessly.
+        - *What it does*: Demonstrates how to link user interactions between Autark map components and Vega-Lite plots for coordinated multi-view exploration.
 
     - 🟡 **[07 - Speed camera violations](detailed_examples/07-speed-camera.md)**: Analyze traffic patterns over time.
         - *What it does*: Performs temporal aggregation and creates linked bar and line charts to analyze top camera violations over years with interactive filtering.

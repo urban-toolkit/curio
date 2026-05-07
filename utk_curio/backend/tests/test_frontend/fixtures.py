@@ -21,7 +21,7 @@ from .utils import (
     seed_node_code,
     stub_login_and_enter_workflow,
 )
-from .workflow_spec import CODE_TYPES
+from .workflow_spec import CODE_TYPES, JS_CODE_TYPES
 
 
 # ---------------------------------------------------------------------------
@@ -37,24 +37,6 @@ _SQLA_MUTABLE_TABLES = (
     "project",
     "auth_attempt",
     "user_session",
-    "user",
-)
-
-_PROV_MUTABLE_TABLES = (
-    "attributeValueChange",
-    "interaction",
-    "visualization",
-    "activityExecution",
-    "attributeValue",
-    "relationInstance",
-    "workflowExecution",
-    "activity",
-    "attributeRelation",
-    "relation",
-    "workflow",
-    "versionedElement",
-    "version",
-    "versionTransaction",
     "user",
 )
 
@@ -307,9 +289,41 @@ VIEWPORT = {"width": 1280, "height": 720}
 
 @pytest.fixture(scope="class")
 def workflow_page(browser):
-    """Class-scoped page: one browser tab shared by every test method."""
+    """Class-scoped page: one browser tab shared by every test method.
+
+    Attaches ``console`` and ``pageerror`` listeners that append to
+    ``page._curio_browser_log``. autkLifecycleFactory's catch block stores
+    the autk error message into React state but never calls
+    ``console.error``, so without these listeners the JS-side reason for
+    an AUTK Error badge is invisible to pytest. test_workflows.py reads
+    the captured list when it sees an AUTK Error (and dumps it to disk
+    next to ``*_actual.png``).
+    """
     context = browser.new_context(viewport=VIEWPORT)
     page = context.new_page()
+    page._curio_browser_log = []  # type: ignore[attr-defined]
+
+    def _on_console(msg):
+        try:
+            location = msg.location
+        except Exception:
+            location = {}
+        page._curio_browser_log.append({  # type: ignore[attr-defined]
+            "kind": "console",
+            "type": msg.type,
+            "text": msg.text,
+            "location": location,
+        })
+
+    def _on_pageerror(exc):
+        page._curio_browser_log.append({  # type: ignore[attr-defined]
+            "kind": "pageerror",
+            "message": str(exc),
+        })
+
+    page.on("console", _on_console)
+    page.on("pageerror", _on_pageerror)
+
     debug_log(
         "fixtures.py:workflow_page",
         "Page created",
@@ -385,17 +399,21 @@ def loaded_workflow(
     workflow_file = request.param
     spec = parse_workflow(workflow_file)
 
-    # Build a seeded copy of the workflow JSON for the browser upload
-    with open(workflow_file, "r") as f:
+    # Build a seeded copy of the workflow JSON for the browser upload.
+    # Force UTF-8 — without it, Windows opens in cp1252 and mangles any
+    # non-ASCII string in the workflow (e.g. "Niterói" in Regression.json
+    # becomes "NiterÃ³i", which Overpass then can't match).
+    with open(workflow_file, "r", encoding="utf-8") as f:
         wf_data = json.load(f)
     for node_json in wf_data["dataflow"]["nodes"]:
         content = node_json.get("content", "")
-        if content.strip() and node_json.get("type") in CODE_TYPES:
+        node_type = node_json.get("type")
+        if content.strip() and node_type in CODE_TYPES and node_type not in JS_CODE_TYPES:
             node_json["content"] = seed_node_code(content)
     seeded_tmp = tempfile.NamedTemporaryFile(
-        suffix=".json", delete=False, mode="w",
+        suffix=".json", delete=False, mode="w", encoding="utf-8",
     )
-    json.dump(wf_data, seeded_tmp)
+    json.dump(wf_data, seeded_tmp, ensure_ascii=False)
     seeded_tmp.close()
 
     # DB-stub login + DB-stubbed empty project, then navigate *directly* to

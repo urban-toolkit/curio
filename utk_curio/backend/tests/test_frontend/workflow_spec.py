@@ -20,12 +20,13 @@ def _merge_edge_handle_index(edge_id: str) -> int | None:
 # Data model: parse workflow JSON into structured specs
 # ---------------------------------------------------------------------------
 
-GRAMMAR_TYPES = {"VIS_VEGA", "VIS_UTK"}
+GRAMMAR_TYPES = {"VIS_VEGA"}
+JS_CODE_TYPES = {"AUTK_MAP", "AUTK_PLOT", "AUTK_COMPUTE", "AUTK_DB"}
 CODE_TYPES = {
     "DATA_LOADING", "DATA_TRANSFORMATION",
     "DATA_EXPORT", "COMPUTATION_ANALYSIS", "CONSTANTS",
     "FLOW_SWITCH",
-}
+} | JS_CODE_TYPES
 
 # Subset of CODE_TYPES whose frontend component passes ``code={true}``
 # to ``NodeEditor``, meaning they render a "code" tab with a Monaco editor.
@@ -34,7 +35,7 @@ CODE_TYPES = {
 CODE_EDITOR_TYPES = {
     "DATA_LOADING", "DATA_TRANSFORMATION",
     "COMPUTATION_ANALYSIS", "FLOW_SWITCH",
-}
+} | JS_CODE_TYPES
 
 
 def classify_node(node_type: str) -> str:
@@ -114,7 +115,7 @@ class WorkflowSpec:
         handles on both source and target nodes (visible in their edge
         IDs, e.g. ``…in/out-…in/out``).  They represent a bidirectional
         interaction channel – for instance, brushing a bar in a Vega
-        chart highlights the corresponding geometry on a UTK map, and
+        chart highlights the corresponding geometry on an Autark map, and
         vice-versa.
 
         The frontend does **not** render these as ``.react-flow__edge``
@@ -186,8 +187,13 @@ class WorkflowSpec:
 
 
 def parse_workflow(filepath: str) -> WorkflowSpec:
-    """Read a workflow JSON file and return a ``WorkflowSpec``."""
-    with open(filepath, "r") as f:
+    """Read a workflow JSON file and return a ``WorkflowSpec``.
+
+    Forces UTF-8 — Windows defaults to cp1252 here, which mangles
+    non-ASCII content (e.g. "Niterói" in Regression.json) and breaks
+    string-equality checks against the Monaco editor value.
+    """
+    with open(filepath, "r", encoding="utf-8") as f:
         data = json.loads(f.read())
 
     dataflow = data["dataflow"]

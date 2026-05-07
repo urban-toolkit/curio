@@ -10,7 +10,7 @@ Here is the overview of the entire dataflow pipeline:
 
 Before you begin, please familiarize yourself with Curio’s main concepts and functionalities by reading our [usage guide](https://github.com/urban-toolkit/curio/blob/main/docs/USAGE.md).
 
-The data for this tutorial can be found [here](data/Speed_Camera_Violations.zip).
+The data for this tutorial can be found [here](data/07-speed_camera_violations.zip).
 
 For completeness, we also include the template code in each dataflow step.
 
@@ -21,7 +21,7 @@ We begin creating a Data Loading node to load the speed camera violations datase
 ```python
 import pandas as pd
 
-df = pd.read_csv("Speed_Camera_Violations../data/../data/.csv")
+df = pd.read_csv("docs/examples/data/07-speed_camera_violations.zip")
 df.dropna(inplace=True)
 return df
 ```
@@ -72,64 +72,67 @@ return yr_sum
 
 This analysis aggregates the violations by camera and year, identifying the top 5 cameras with the highest total violations.
 
-## Step 4: Linked View Visualization – Interactive Exploration
+## Step 4: Per-Camera Bar Chart
 
-We then create a linked view visualization using the 2D Plot (Vega-Lite) node. This visualization includes both a stacked bar chart and a line chart to explore total violations over time.
+We create a 2D Plot (Vega-Lite) node and connect it to the Computation Analysis node. This first plot stacks per-camera violations by year.
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": { "name": "table" },
+  "width": 320,
+  "height": 260,
   "config": { "bar": { "continuousBandSize": 18 } },
-  "hconcat": [
-    {
-      "width": 320,
-      "height": 260,
-      "selection": { "yrBrush": { "type": "interval", "encodings": ["x"] } },
-      "mark": { "type": "bar" },
-      "encoding": {
-        "x": { "field": "Year", "type": "quantitative", "title": "Year" },
-        "y": {
-          "aggregate": "sum",
-          "field": "avg_violations",
-          "type": "quantitative",
-          "title": "Total Violations"
-        },
-        "color": {
-          "field": "CAMERA ID",
-          "type": "nominal",
-          "legend": { "title": "Camera ID" }
-        }
-      }
+  "mark": { "type": "bar" },
+  "encoding": {
+    "x": { "field": "Year", "type": "quantitative", "title": "Year" },
+    "y": {
+      "aggregate": "sum",
+      "field": "avg_violations",
+      "type": "quantitative",
+      "title": "Total Violations"
     },
-    {
-      "width": 320,
-      "height": 260,
-      "transform": [
-        { "filter": { "selection": "yrBrush" } },
-        {
-          "aggregate": [
-            { "op": "sum", "field": "avg_violations", "as": "total" }
-          ],
-          "groupby": ["Year"]
-        },
-        { "sort": { "field": "Year" } }
-      ],
-      "mark": { "type": "line", "point": true },
-      "encoding": {
-        "x": {
-          "field": "Year",
-          "type": "quantitative",
-          "title": "Year (brush range)"
-        },
-        "y": {
-          "field": "total",
-          "type": "quantitative",
-          "title": "Total Violations"
-        }
-      }
+    "color": {
+      "field": "CAMERA ID",
+      "type": "nominal",
+      "legend": { "title": "Camera ID" }
     }
-  ]
+  }
+}
+```
+
+## Step 5: Total Violations Line Chart
+
+We add a second 2D Plot (Vega-Lite) node, also connected to the Computation Analysis node, that aggregates totals across cameras and renders a line chart.
+
+```json
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+  "data": { "name": "table" },
+  "width": 320,
+  "height": 260,
+  "transform": [
+    {
+      "aggregate": [
+        { "op": "sum", "field": "avg_violations", "as": "total" }
+      ],
+      "groupby": ["Year"]
+    },
+    { "sort": { "field": "Year" } }
+  ],
+  "mark": { "type": "line", "point": true },
+  "encoding": {
+    "x": {
+      "field": "Year",
+      "type": "quantitative",
+      "title": "Year"
+    },
+    "y": {
+      "field": "total",
+      "type": "quantitative",
+      "title": "Total Violations"
+    }
+  }
 }
 ```
 

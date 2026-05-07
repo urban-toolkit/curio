@@ -17,7 +17,7 @@ This example uses the [Flooding Complaints to 311](https://data.cityofchicago.or
 ```
 import pandas as pd
 
-sensor = pd.read_csv('Flooding_Complaints_to_311_20250402../data/.csv')
+sensor = pd.read_csv('docs/examples/data/05-flooding_complaints.csv.zip')
 
 return sensor
 ```
@@ -53,7 +53,7 @@ Here is the Vega-Lite code to do so:
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "description": "A simple bar chart with embedded data.",
   "mark": "bar",
   "encoding": {

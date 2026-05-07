@@ -1,12 +1,13 @@
 {
   "dataflow": {
+    "description": "Aggregate Chicago 311 flooding complaints by ZIP code with Pandas.",
     "nodes": [
       {
         "id": "92385949-b264-4108-abea-99df7a39b551",
         "type": "DATA_LOADING",
         "x": 517.200068674919,
         "y": -166.47899921020905,
-        "content": "import pandas as pd\n\nsensor = pd.read_csv('data/Flooding_Complaints_to_311_20260330.csv')\n\nreturn sensor",
+        "content": "import pandas as pd\n\nsensor = pd.read_csv('docs/examples/data/05-flooding_complaints.csv.zip')\n\nreturn sensor",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -45,7 +46,7 @@
         "type": "VIS_VEGA",
         "x": 466.79940472834824,
         "y": 157.15504665911408,
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"description\": \"A simple bar chart with embedded data.\",\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\"field\": \"ZIP_CODE\", \"type\": \"nominal\", \"title\": \"Zip Code\", \"axis\": {\"labelAngle\": 270}},\n    \"y\": {\"field\": \"Complaint_Count\", \"type\": \"quantitative\", \"title\": \"Complaints\", \"axis\": {\"labelAngle\": 0}}\n  }\n}",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"A simple bar chart with embedded data.\",\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\"field\": \"ZIP_CODE\", \"type\": \"nominal\", \"title\": \"Zip Code\", \"axis\": {\"labelAngle\": 270}},\n    \"y\": {\"field\": \"Complaint_Count\", \"type\": \"quantitative\", \"title\": \"Complaints\", \"axis\": {\"labelAngle\": 0}}\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

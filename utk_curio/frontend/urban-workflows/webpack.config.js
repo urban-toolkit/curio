@@ -61,9 +61,11 @@ module.exports = {
     extensions: [".tsx", ".ts", ".js"],
     modules: [path.resolve(__dirname, 'src'), 'node_modules'],
     alias: {
-      vega: nm("vega"),
-      "vega-lite": nm("vega-lite"),
-      "vega-util": nm("vega-util"),
+      // vega v6 packages are ESM-only with no "main" field — webpack ignores "exports"
+      // when an alias targets a directory, so we point directly to the built ESM files.
+      vega: nm("vega", "build", "vega.module.js"),
+      "vega-lite": nm("vega-lite", "build", "index.js"),
+      "vega-util": nm("vega-util", "build", "index.js"),
       "d3-format": nm("d3-format"),
     },
   },
@@ -76,6 +78,9 @@ module.exports = {
         use: "babel-loader",
       },
       // CSS Modules (e.g., Button.module.css)
+      // css-loader v7 flipped `modules.namedExport` to true by default, which
+      // breaks `import styles from "./X.module.css"` (no default export).
+      // Force it back to false so existing default-import usage keeps working.
       {
         test: /\.module\.css$/,
         use: [
@@ -83,7 +88,10 @@ module.exports = {
           {
             loader: "css-loader",
             options: {
-              modules: true,
+              modules: {
+                namedExport: false,
+                exportLocalsConvention: "as-is",
+              },
             },
           },
         ],
@@ -94,6 +102,11 @@ module.exports = {
         test: /\.css$/,
         exclude: /\.module\.css$/,
         use: ["style-loader", "css-loader"],
+      },
+      {
+        test: /\.js$/,
+        include: /node_modules\/vega/,
+        resolve: { fullySpecified: false },
       },
       {
         enforce: "pre",

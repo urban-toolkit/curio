@@ -442,9 +442,6 @@ def save_to_duckdb(value, node_id=None, session_id=None):
     Returns:
         str: the id of the new artifact row.
     """
-    import time as _time
-    t_start = _time.perf_counter()
-
     init_db()
     con = get_connection()
     try:
@@ -455,7 +452,6 @@ def save_to_duckdb(value, node_id=None, session_id=None):
                 "INSERT INTO artifacts (id, node_id, kind) VALUES (?, ?, ?)",
                 [art_id, node_id, 'null']
             )
-            kind_logged = 'null'
 
         # --- Tuple: split into children + parent pointer row ---
         elif isinstance(value, tuple):
@@ -464,7 +460,6 @@ def save_to_duckdb(value, node_id=None, session_id=None):
                 "INSERT INTO artifacts (id, node_id, kind, value_json) VALUES (?, ?, ?, ?)",
                 [art_id, node_id, 'outputs', json.dumps(child_ids)]
             )
-            kind_logged = 'outputs'
 
         # --- bool MUST come before int (bool is a subclass of int) ---
         elif isinstance(value, bool):
@@ -472,28 +467,24 @@ def save_to_duckdb(value, node_id=None, session_id=None):
                 "INSERT INTO artifacts (id, node_id, kind, value_int) VALUES (?, ?, ?, ?)",
                 [art_id, node_id, 'bool', 1 if value else 0]
             )
-            kind_logged = 'bool'
 
         elif isinstance(value, int):
             con.execute(
                 "INSERT INTO artifacts (id, node_id, kind, value_int) VALUES (?, ?, ?, ?)",
                 [art_id, node_id, 'int', value]
             )
-            kind_logged = 'int'
 
         elif isinstance(value, float):
             con.execute(
                 "INSERT INTO artifacts (id, node_id, kind, value_float) VALUES (?, ?, ?, ?)",
                 [art_id, node_id, 'float', value]
             )
-            kind_logged = 'float'
 
         elif isinstance(value, str):
             con.execute(
                 "INSERT INTO artifacts (id, node_id, kind, value_str) VALUES (?, ?, ?, ?)",
                 [art_id, node_id, 'str', value]
             )
-            kind_logged = 'str'
 
         elif isinstance(value, list):
             try:
@@ -503,7 +494,6 @@ def save_to_duckdb(value, node_id=None, session_id=None):
                     "INSERT INTO artifacts (id, node_id, kind, value_json) VALUES (?, ?, ?, ?)",
                     [art_id, node_id, 'list', payload]
                 )
-                kind_logged = 'list'
             except TypeError:
                 # fallback: list contains DataFrames/GeoDataFrames/etc.
                 # recursively save each element as its own artifact, store the IDs here
@@ -512,7 +502,6 @@ def save_to_duckdb(value, node_id=None, session_id=None):
                     "INSERT INTO artifacts (id, node_id, kind, value_json) VALUES (?, ?, ?, ?)",
                     [art_id, node_id, 'list_of_ids', json.dumps(child_ids)]
                 )
-                kind_logged = 'list_of_ids'
 
         elif isinstance(value, dict):
             try:
@@ -521,7 +510,6 @@ def save_to_duckdb(value, node_id=None, session_id=None):
                     "INSERT INTO artifacts (id, node_id, kind, value_json) VALUES (?, ?, ?, ?)",
                     [art_id, node_id, 'dict', payload]
                 )
-                kind_logged = 'dict'
             except TypeError:
                 # fallback: dict values contain DataFrames/GeoDataFrames/etc.
                 child_id_map = {k: save_to_duckdb(v, node_id=node_id, session_id=session_id) for k, v in value.items()}
@@ -529,7 +517,6 @@ def save_to_duckdb(value, node_id=None, session_id=None):
                     "INSERT INTO artifacts (id, node_id, kind, value_json) VALUES (?, ?, ?, ?)",
                     [art_id, node_id, 'dict_of_ids', json.dumps(child_id_map)]
                 )
-                kind_logged = 'dict_of_ids'
 
         # --- GeoDataFrame MUST come before DataFrame (gpd.GeoDataFrame subclasses pd.DataFrame) ---
         elif isinstance(value, gpd.GeoDataFrame):
@@ -540,10 +527,9 @@ def save_to_duckdb(value, node_id=None, session_id=None):
             )
             prepared.to_parquet(buf)  # GeoParquet — CRS preserved automatically
             # parquet drops Python-side attributes like ``gdf.metadata`` (set by
-            # parse_geodataframe when upstream JSON carried a metadata.name). VIS_UTK
-            # hard-requires that name (useUTK.ts early-returns without it, which
-            # leaves disablePlay=true and stalls the play button), so stash it in
-            # value_json and restore on load.
+            # parse_geodataframe when upstream JSON carried a metadata.name).
+            # Grammar visualizers historically depended on this name, so stash it
+            # in value_json and restore on load to preserve compatibility.
             meta = getattr(value, 'metadata', None)
             meta_json = _serialize_parquet_meta(
                 frame_metadata=meta,
@@ -553,7 +539,6 @@ def save_to_duckdb(value, node_id=None, session_id=None):
                 "INSERT INTO artifacts (id, node_id, kind, blob, value_json) VALUES (?, ?, ?, ?, ?)",
                 [art_id, node_id, 'geodataframe', buf.getvalue(), meta_json]
             )
-            kind_logged = f'geodataframe rows={len(value)}'
 
         elif isinstance(value, pd.DataFrame):
             buf = io.BytesIO()
@@ -566,14 +551,12 @@ def save_to_duckdb(value, node_id=None, session_id=None):
                 "INSERT INTO artifacts (id, node_id, kind, blob, value_json) VALUES (?, ?, ?, ?, ?)",
                 [art_id, node_id, 'dataframe', buf.getvalue(), meta_json]
             )
-            kind_logged = f'dataframe rows={len(value)}'
 
         elif isinstance(value, rasterio.io.DatasetReader):
             con.execute(
                 "INSERT INTO artifacts (id, node_id, kind, value_str) VALUES (?, ?, ?, ?)",
                 [art_id, node_id, 'raster', value.name]
             )
-            kind_logged = 'raster'
 
         else:
             raise TypeError(f"save_to_duckdb: unsupported type {type(value)}")
@@ -584,8 +567,6 @@ def save_to_duckdb(value, node_id=None, session_id=None):
                 [session_id, art_id]
             )
 
-        elapsed = _time.perf_counter() - t_start
-        print(f"[duckdb] save {kind_logged} id={art_id} node={node_id} took={elapsed:.4f}s")
         return art_id
 
     finally:
@@ -601,9 +582,6 @@ def load_from_duckdb(art_id, session_id=None):
 
     Returns the reconstructed Python value (DataFrame, GeoDataFrame, tuple, int, etc.).
     """
-    import time as _time
-    t_start = _time.perf_counter()
-
     # Reuse the persistent R/W connection (sandbox) or open a fresh R/O connection
     # (backend) — avoids conflicting connection modes on the same file.
     con = get_read_connection()
@@ -667,30 +645,19 @@ def load_from_duckdb(art_id, session_id=None):
         elif kind == 'list_of_ids':
             child_ids = json.loads(v_json)
             con.close()                       # close before recursing — one conn per call
-            result = [load_from_duckdb(cid, session_id=session_id) for cid in child_ids]
-            elapsed = _time.perf_counter() - t_start
-            print(f"[duckdb] load list_of_ids id={art_id} children={len(child_ids)} took={elapsed:.4f}s")
-            return result
+            return [load_from_duckdb(cid, session_id=session_id) for cid in child_ids]
         elif kind == 'dict_of_ids':
             child_id_map = json.loads(v_json)
             con.close()
-            result = {k: load_from_duckdb(cid, session_id=session_id) for k, cid in child_id_map.items()}
-            elapsed = _time.perf_counter() - t_start
-            print(f"[duckdb] load dict_of_ids id={art_id} children={len(child_id_map)} took={elapsed:.4f}s")
-            return result
+            return {k: load_from_duckdb(cid, session_id=session_id) for k, cid in child_id_map.items()}
         elif kind == 'outputs':
             child_ids = json.loads(v_json)
             # Close this connection before recursing (one connection per call)
             con.close()
-            result = tuple(load_from_duckdb(cid, session_id=session_id) for cid in child_ids)
-            elapsed = _time.perf_counter() - t_start
-            print(f"[duckdb] load outputs id={art_id} children={len(child_ids)} took={elapsed:.4f}s")
-            return result
+            return tuple(load_from_duckdb(cid, session_id=session_id) for cid in child_ids)
         else:
             raise ValueError(f"Unknown kind: {kind}")
 
-        elapsed = _time.perf_counter() - t_start
-        print(f"[duckdb] load {kind} id={art_id} took={elapsed:.4f}s")
         return result
 
     finally:

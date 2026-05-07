@@ -100,18 +100,42 @@ function CodeEditor({
         const savedPath = result?.output?.path;
         const hasOutput = !!savedPath && savedPath !== "";
 
+        // result.stdout is list[str] from the sandbox; join with newlines so
+        // multi-line autkdb output is readable instead of comma-coerced. Cap
+        // at the last 4000 chars so a runaway log loop can't lock the panel,
+        // and show the tail since errors usually surface there.
+        const STDOUT_CAP = 4000;
+        const stdoutLines: string[] = Array.isArray(result.stdout)
+            ? result.stdout
+            : (result.stdout ? [String(result.stdout)] : []);
+        let stdoutText = stdoutLines.join("\n");
+        let stdoutTruncated = false;
+        if (stdoutText.length > STDOUT_CAP) {
+            stdoutText = stdoutText.slice(-STDOUT_CAP);
+            stdoutTruncated = true;
+        }
+        const stdoutBlock = stdoutText
+            ? "stdout:\n" + (stdoutTruncated
+                ? `... [truncated to last ${STDOUT_CAP} chars]\n` + stdoutText
+                : stdoutText)
+            : "";
+
         if (hasOutput) {
-            let outputContent = "stdout:\n" + stdout.slice(0, 100);
-            if (stderr) outputContent += "\nstderr:\n" + stderr;
-            outputContent += "\nSaved to file: " + savedPath;
+            let outputContent = stdoutBlock;
+            if (result.stderr) {
+                outputContent += (outputContent ? "\n" : "") + "stderr:\n" + result.stderr;
+            }
+            outputContent += (outputContent ? "\n" : "") + "Saved to file: " + result.output.path;
             setOutputCallback({ code: "success", content: outputContent });
             syncNodeOutputRef.current(data.nodeId, { code: "success", content: outputContent });
             if (typeof data?.outputCallback === 'function') data.outputCallback(data.nodeId, result.output);
             markNodeExecuted(data.nodeId);
         } else {
-            const displayContent = stderr || stdout || "Execution complete (no output)";
-            setOutputCallback({ code: "error", content: displayContent });
-            syncNodeOutputRef.current(data.nodeId, { code: "error", content: displayContent });
+            let errorContent = "";
+            if (stdoutBlock) errorContent += stdoutBlock + "\n";
+            errorContent += result.stderr || "(no stderr)";
+            setOutputCallback({ code: "error", content: errorContent });
+            syncNodeOutputRef.current(data.nodeId, { code: "error", content: errorContent });
             signalNodeExecDone(data.nodeId);
         }
     };
@@ -136,7 +160,8 @@ function CodeEditor({
             signalNodeExecDone(data.nodeId);
             return;
         }
-        const interpreter = (nodeType === NodeType.JS_COMPUTATION && data.jsInterpreter)
+        const isJsNode = nodeType === NodeType.JS_COMPUTATION || nodeType === NodeType.AUTK_DB;
+        const interpreter = (isJsNode && data.jsInterpreter)
             ? data.jsInterpreter
             : data.pythonInterpreter;
         if (!interpreter || typeof interpreter.interpretCode !== "function") {
@@ -204,7 +229,7 @@ function CodeEditor({
             <div style={{ flex: 2, minHeight: 0 }}>
                 <Editor
                     height="100%"
-                    language={nodeType === NodeType.JS_COMPUTATION ? "javascript" : "python"}
+                    language={(nodeType === NodeType.JS_COMPUTATION || nodeType === NodeType.AUTK_DB) ? "javascript" : "python"}
                     theme="vs"
                     value={code}
                     onChange={handleCodeChange}

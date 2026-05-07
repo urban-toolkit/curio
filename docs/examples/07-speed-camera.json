@@ -1,12 +1,13 @@
 {
   "dataflow": {
+    "description": "Temporal analysis of Chicago speed camera violations across districts and seasons.",
     "nodes": [
       {
         "id": "e1a123c1-8837-47a5-9b63-038e5ebcb530",
         "type": "DATA_LOADING",
         "x": 328.59505352598796,
         "y": 144.76139201765037,
-        "content": "import pandas as pd\n\ndf = pd.read_csv(\"data/Speed_Camera_Violations.csv\")\ndf.dropna(inplace=True)\nreturn df",
+        "content": "import pandas as pd\n\ndf = pd.read_csv(\"docs/examples/data/07-speed_camera_violations.zip\")\ndf.dropna(inplace=True)\nreturn df",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -28,11 +29,24 @@
         }
       },
       {
-        "id": "c2ba6e0e-e239-4167-a382-ffd1993cb3da",
+        "id": "c2ba6e0e-e239-4167-a382-ffd1993cb3d1",
         "type": "VIS_VEGA",
         "x": 1628.101264659358,
-        "y": 225.33136780164446,
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\n  \"data\": { \"name\": \"table\" },\n  \"config\": { \"bar\": { \"continuousBandSize\": 18 } },\n  \"hconcat\": [\n    {\n      \"width\": 320,\n      \"height\": 260,\n      \"selection\": { \"yrBrush\": { \"type\": \"interval\", \"encodings\": [\"x\"] } },\n      \"mark\": { \"type\": \"bar\" },\n      \"encoding\": {\n        \"x\": { \"field\": \"Year\", \"type\": \"quantitative\", \"title\": \"Year\" },\n        \"y\": {\n          \"aggregate\": \"sum\",\n          \"field\": \"avg_violations\",\n          \"type\": \"quantitative\",\n          \"title\": \"Total Violations\"\n        },\n        \"color\": {\n          \"field\": \"CAMERA ID\",\n          \"type\": \"nominal\",\n          \"legend\": { \"title\": \"Camera ID\" }\n        }\n      }\n    },\n    {\n      \"width\": 320,\n      \"height\": 260,\n      \"transform\": [\n        { \"filter\": { \"selection\": \"yrBrush\" } },\n        {\n          \"aggregate\": [\n            { \"op\": \"sum\", \"field\": \"avg_violations\", \"as\": \"total\" }\n          ],\n          \"groupby\": [\"Year\"]\n        },\n        { \"sort\": { \"field\": \"Year\" } }\n      ],\n      \"mark\": { \"type\": \"line\", \"point\": true },\n      \"encoding\": {\n        \"x\": {\n          \"field\": \"Year\",\n          \"type\": \"quantitative\",\n          \"title\": \"Year (brush range)\"\n        },\n        \"y\": {\n          \"field\": \"total\",\n          \"type\": \"quantitative\",\n          \"title\": \"Total Violations\"\n        }\n      }\n    }\n  ]\n}",
+        "y": 60,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": { \"name\": \"table\" },\n  \"width\": 320,\n  \"height\": 260,\n  \"config\": { \"bar\": { \"continuousBandSize\": 18 } },\n  \"mark\": { \"type\": \"bar\" },\n  \"encoding\": {\n    \"x\": { \"field\": \"Year\", \"type\": \"quantitative\", \"title\": \"Year\" },\n    \"y\": {\n      \"aggregate\": \"sum\",\n      \"field\": \"avg_violations\",\n      \"type\": \"quantitative\",\n      \"title\": \"Total Violations\"\n    },\n    \"color\": {\n      \"field\": \"CAMERA ID\",\n      \"type\": \"nominal\",\n      \"legend\": { \"title\": \"Camera ID\" }\n    }\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "c2ba6e0e-e239-4167-a382-ffd1993cb3d2",
+        "type": "VIS_VEGA",
+        "x": 1628.101264659358,
+        "y": 420,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": { \"name\": \"table\" },\n  \"width\": 320,\n  \"height\": 260,\n  \"transform\": [\n    {\n      \"aggregate\": [\n        { \"op\": \"sum\", \"field\": \"avg_violations\", \"as\": \"total\" }\n      ],\n      \"groupby\": [\"Year\"]\n    },\n    { \"sort\": { \"field\": \"Year\" } }\n  ],\n  \"mark\": { \"type\": \"line\", \"point\": true },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"Year\",\n      \"type\": \"quantitative\",\n      \"title\": \"Year\"\n    },\n    \"y\": {\n      \"field\": \"total\",\n      \"type\": \"quantitative\",\n      \"title\": \"Total Violations\"\n    }\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -48,9 +62,14 @@
         "target": "cb340f83-0a4d-457a-be66-691672f330d3"
       },
       {
-        "id": "reactflow__edge-cb340f83-0a4d-457a-be66-691672f330d3out-c2ba6e0e-e239-4167-a382-ffd1993cb3dain",
+        "id": "reactflow__edge-cb340f83-0a4d-457a-be66-691672f330d3out-c2ba6e0e-e239-4167-a382-ffd1993cb3d1in",
         "source": "cb340f83-0a4d-457a-be66-691672f330d3",
-        "target": "c2ba6e0e-e239-4167-a382-ffd1993cb3da"
+        "target": "c2ba6e0e-e239-4167-a382-ffd1993cb3d1"
+      },
+      {
+        "id": "reactflow__edge-cb340f83-0a4d-457a-be66-691672f330d3out-c2ba6e0e-e239-4167-a382-ffd1993cb3d2in",
+        "source": "cb340f83-0a4d-457a-be66-691672f330d3",
+        "target": "c2ba6e0e-e239-4167-a382-ffd1993cb3d2"
       }
     ],
     "name": "DefaultWorkflow",

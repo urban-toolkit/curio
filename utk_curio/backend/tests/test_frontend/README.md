@@ -11,7 +11,7 @@ Playwright-based end-to-end tests that upload workflow JSON files into the Curio
 # full suite (CURIO_TESTING=1 is exported by test.sh; set it explicitly if you invoke pytest directly)
 CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/
 
-# headed (watch the browser)
+# headed (watch the browser; required for AUTK fixtures to actually render — see below)
 CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/ --headed
 
 # use already-running servers (e.g. docker compose); the caller is responsible for
@@ -19,16 +19,22 @@ CURIO_TESTING=1 pytest utk_curio/backend/tests/test_frontend/ --headed
 CURIO_E2E_USE_EXISTING=1 pytest utk_curio/backend/tests/test_frontend/
 ```
 
+### AUTK / WebGPU note
+
+Autark (`AUTK_MAP` / `AUTK_COMPUTE` / `AUTK_PLOT` / `AUTK_DB`) renders via WebGPU. The `browser_type_launch_args` fixture in `conftest.py` passes `--enable-unsafe-webgpu` and a platform-appropriate ANGLE backend (`--use-angle=metal` on macOS, `--use-angle=d3d11` on Windows, `--use-gl=swiftshader` on Linux) so WebGPU is available in headless Chromium just as in autark's own Playwright tests.
+
+AUTK_ nodes are classified as `"code"` nodes and exercise the full test matrix (`test_node_type_and_content` checks the Monaco editor; `test_node_execution` verifies each node reaches **Done**). Their JavaScript code is excluded from the Python random-seed injection used by other `CODE_TYPES` nodes.
+
 ## Test database contract
 
 These tests boot the **real** backend through `curio.py start`, so they must never touch the developer's dev DB. The strategy keeps dev and test state fully separate:
 
-- `CURIO_TESTING=1` switches `utk_curio/backend/config.py` to a test-only SQLAlchemy URL and `app/api/routes.py::get_db_path()` to a test-only provenance path, both under `<CURIO_LAUNCH_CWD>/.curio/test/` (never the dev `.curio/provenance.db` or `urban_workflow.db`).
+- `CURIO_TESTING=1` switches `utk_curio/backend/config.py` to a test-only SQLAlchemy URL under `<CURIO_LAUNCH_CWD>/.curio/test/urban_workflow_test.db` (never the dev `urban_workflow.db`).
 - A session-scoped `test_databases` fixture in `utk_curio/backend/tests/conftest.py` runs **once before any E2E test or the `curio start` subprocess**:
   1. creates a clean workspace directory (temp by default, or `CURIO_TEST_WORKSPACE` if set),
   2. sets `CURIO_LAUNCH_CWD`, `DATABASE_URL` (→ `sqlite:///…/urban_workflow_test.db`), and `CURIO_TESTING=1` in `os.environ` so the subprocess inherits them,
-  3. **wipes** any pre-existing `.curio/test/provenance.db` / `urban_workflow_test.db` and re-creates the schema via `create_provenance_db.initialize_db()` + `flask db upgrade`.
-- A function-scoped autouse `e2e_clean_db` fixture truncates the mutable tables (`user`, `user_session`, `auth_attempt`, `project`, `workflow`, `specification`, and per-run provenance rows) between tests so hardcoded usernames like `e2etestuser`, `ownera`, `ownerb`, `prjtester` can be re-created fresh in every test.
+  3. **wipes** any pre-existing `urban_workflow_test.db` and re-creates the schema via `flask db upgrade`.
+- A function-scoped autouse `e2e_clean_db` fixture truncates the mutable tables (`user`, `user_session`, `auth_attempt`, `project`, `exec_cache_entry`) between tests so hardcoded usernames like `e2etestuser`, `ownera`, `ownerb`, `prjtester` can be re-created fresh in every test.
 
 In other words: **every pytest invocation starts against an empty database**, and tests are independent of each other — the same isolation Django's test runner aims to provide.
 
@@ -76,7 +82,7 @@ The DB stub is strictly additive — Strategy A still works against the same tes
 Run only specific workflows by setting `CURIO_E2E_WORKFLOWS` (comma-separated basenames):
 
 ```bash
-CURIO_E2E_WORKFLOWS=Vega.json,UTK.json pytest utk_curio/backend/tests/test_frontend/test_workflows.py
+CURIO_E2E_WORKFLOWS=Vega.json,AutkMap.json pytest utk_curio/backend/tests/test_frontend/test_workflows.py
 ```
 
 When unset, all workflows listed in `conftest.py::WORKFLOW_FILES` are tested.

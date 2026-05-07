@@ -11,7 +11,7 @@ Here is the overview of the entire dataflow pipeline:
 
 Before you begin, please familiarize yourself with Curio’s main concepts and functionalities by reading our [usage guide](https://github.com/urban-toolkit/curio/blob/main/docs/USAGE.md).
 
-The data for this tutorial can be found [here](data/red-light-violation.zip).
+The data for this tutorial can be found [here](data/08-red_light_violations.zip).
 
 For completeness, we also include the template code in each dataflow step.
 
@@ -22,7 +22,7 @@ We begin by loading the red-light violation data into Curio using a Data Loading
 ```python
 import pandas as pd
 
-df = pd.read_csv("data/red-light-violation.csv")
+df = pd.read_csv("docs/examples/data/08-red_light_violations.zip")
 return df
 ```
 
@@ -66,7 +66,7 @@ Now, to visualize the seasonal trends in red-light violations, we then create a 
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "width": 750,
   "height": 400,
   "title": "Seasonal Violation Trend (Daily)",
@@ -188,7 +188,7 @@ Lastly, we create a 2D Plot (Vega-Lite) node to visualize both monthly and seaso
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "hconcat": [
     {
       "width": 300,
@@ -312,7 +312,7 @@ Then, we use a Vega-Lite node to create a stacked area chart to visualize how re
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "title": "Seasonal Red-Light Violations Over Time",
   "mark": "area",
   "encoding": {
@@ -369,7 +369,7 @@ We then make a 2D Plot (Vega-Lite) node to visualize the top intersections using
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "title": "Top 3 Intersections with Most Violations by Year",
   "mark": "bar",
   "encoding": {
@@ -510,7 +510,7 @@ Lastly, we use a linked visualization to show violation distribution and complia
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "params": [
     {
       "name": "cameraFilter",
@@ -675,7 +675,7 @@ Lastly, we create a 2D Plot (Vega-Lite) node to visualize the spatial distributi
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "hconcat": [
     {
       "width": 600,

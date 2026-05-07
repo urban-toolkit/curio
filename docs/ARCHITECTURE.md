@@ -120,10 +120,10 @@ All node types are enumerated in `src/constants.ts` as the `NodeType` enum. Ther
 
 | Category | Node Types |
 |---|---|
-| Data | `DATA_LOADING`, `DATA_TRANSFORMATION`, `DATA_SUMMARY`, `DATA_EXPORT`, `DATA_POOL` |
-| Computation | `COMPUTATION_ANALYSIS`, `JS_COMPUTATION`, `MERGE_FLOW`, `FLOW_SWITCH`, `CONSTANTS` |
-| Map visualization | `VIS_UTK` |
-| Chart/table visualization | `VIS_VEGA`, `VIS_SIMPLE` |
+| Data | `DATA_LOADING`, `DATA_TRANSFORMATION`, `DATA_SUMMARY`, `DATA_EXPORT`, `DATA_POOL`, `AUTK_DB` |
+| Computation | `COMPUTATION_ANALYSIS`, `JS_COMPUTATION`, `MERGE_FLOW`, `FLOW_SWITCH`, `CONSTANTS`, `AUTK_COMPUTE` |
+| Map visualization | `AUTK_MAP` |
+| Chart/table visualization | `VIS_VEGA`, `VIS_SIMPLE`, `AUTK_PLOT` |
 | Annotation | `COMMENTS` |
 
 Each type is registered in `src/registry/descriptors.ts` with a `NodeDescriptor` and in the backend route file with its allowed input/output data types.
@@ -189,7 +189,10 @@ Lifecycle hooks live in `src/adapters/node/`. Current implementations:
 |---|---|
 | `useCodeNodeLifecycle` | Most data and computation nodes |
 | `useVegaLifecycle` | `VIS_VEGA` |
-| `useUtkLifecycle` | `VIS_UTK` |
+| `useAutkMapLifecycle` | `AUTK_MAP` (built via `createAutkLifecycle`) |
+| `useAutkPlotLifecycle` | `AUTK_PLOT` (built via `createAutkLifecycle`) |
+| `useAutkComputeLifecycle` | `AUTK_COMPUTE` (built via `createAutkLifecycle`) |
+| `useAutkDbLifecycle` | `AUTK_DB` (server-side, default code template) |
 | `useDataPoolLifecycle` | `DATA_POOL` |
 | `useMergeFlowLifecycle` | `MERGE_FLOW` |
 | `useFlowSwitchLifecycle` | `FLOW_SWITCH` |
@@ -350,7 +353,7 @@ The sandbox runs as a completely separate Flask process. It:
 
 ## Interactions and Propagation
 
-Visualization nodes (`VIS_UTK`, `VIS_VEGA`, `VIS_SIMPLE`) can emit user interactions (selections, filters, brushes) that flow **upstream** through the dataflow graph, causing upstream nodes to re-execute with the filtered subset.
+Visualization nodes (`AUTK_MAP`, `AUTK_PLOT`, `VIS_VEGA`, `VIS_SIMPLE`) can emit user interactions (selections, filters, brushes) that flow **upstream** through the dataflow graph, causing upstream nodes to re-execute with the filtered subset.
 
 ### IInteraction
 
@@ -373,8 +376,6 @@ When multiple interactions reach the same node, the node resolves them using a s
 | `OVERWRITE` | Only the most recent interaction applies |
 | `MERGE_AND` | Row must satisfy all active interactions |
 | `MERGE_OR` | Row must satisfy at least one active interaction |
-| `PICKING` (UTK) | All coordinates must be within the selected area |
-| `BRUSHING` (UTK) | At least one coordinate must be within the selected area |
 
 The propagation counter (`INodeData.propagation`) is incremented each time an interaction change needs to trigger a re-execution, allowing nodes to detect when they need to re-run without comparing the full interaction payload.
 
@@ -382,36 +383,7 @@ The propagation counter (`INodeData.propagation`) is incremented each time an in
 
 ## Provenance Tracking
 
-Curio records a detailed history of every meaningful operation. This data is stored in a SQLite database at `.curio/provenance.db`, managed by `utk_curio/backend/create_provenance_db.py` and accessed via `backend/app/api/routes.py`.
-
-### Tracked Events
-
-| Event | Endpoint |
-|---|---|
-| Workflow created / versioned | `POST /saveWorkflowProv` |
-| Node added to canvas | `POST /newNodeProv` |
-| Node removed from canvas | `POST /deleteNodeProv` |
-| Edge created | `POST /newConnectionProv` |
-| Node executed | `POST /nodeExecProv` |
-
-### Core Entities
-
-```
-User ──── Workflow ──── Version ──── Activity (node instance)
-                                        │
-                                    Relation (edge)
-                                        │
-                                 ActivityExecution
-                                        │
-                              Attribute (data type)
-```
-
-- **Activity** — a node as it exists in a particular workflow version.
-- **Relation** — a directed connection between two activities.
-- **ActivityExecution** — one execution of a node, with timestamps, input/output types, and the source code at that moment.
-- **Attribute** — records what data type was produced or consumed.
-
-The full execution history for a node can be retrieved via `POST /getNodeGraph`, which returns the chain of executions and their provenance metadata.
+Curio records a per-node execution history (start/end time, source code, input/output types, parent execution) so users can replay a node's evolution from the canvas. Tracking lives entirely in the browser: [`src/providers/ProvenanceProvider.tsx`](../utk_curio/frontend/urban-workflows/src/providers/ProvenanceProvider.tsx) keeps the graph in React state and persists it as part of the saved workflow JSON. Nothing is stored server-side.
 
 ---
 
@@ -429,20 +401,9 @@ The backend is a Flask application in `utk_curio/backend/`. All routes are defin
 | `/upload` | POST | Upload a file to `.curio/data/` |
 | `/get` | GET | Download a data file by name |
 | `/get-preview` | GET | Download first 100 rows of a data file |
-| `/toLayers` | POST | Convert GeoJSON to UTK map layers |
+| `/toLayers` | POST | Convert GeoJSON to map layers |
 | `/installPackages` | POST | Install Python packages in sandbox |
 | `/node-types` | GET/POST | Get or register node type metadata |
-
-### Provenance Routes
-
-| Endpoint | Method | Purpose |
-|---|---|---|
-| `/saveWorkflowProv` | POST | Create or version a workflow |
-| `/newNodeProv` | POST | Record node creation |
-| `/deleteNodeProv` | POST | Record node deletion |
-| `/newConnectionProv` | POST | Record edge creation |
-| `/nodeExecProv` | POST | Record node execution |
-| `/getNodeGraph` | POST | Retrieve execution history for a node |
 
 ### Template Routes
 
@@ -467,7 +428,7 @@ The backend is a Flask application in `utk_curio/backend/`. All routes are defin
 |---|---|
 | `src/index.tsx` | App entry point and provider nesting order |
 | `src/providers/FlowProvider.tsx` | Canonical workflow state (nodes, edges, outputs, interactions) |
-| `src/providers/ProvenanceProvider.tsx` | Records all user actions to the backend |
+| `src/providers/ProvenanceProvider.tsx` | In-memory per-node execution history (saved with the workflow JSON) |
 | `src/components/UniversalNode.tsx` | Single React component that renders all node types |
 | `src/registry/descriptors.ts` | Node descriptor registrations for all 17 types |
 | `src/registry/types.ts` | TypeScript interfaces for descriptors and adapters |
@@ -484,7 +445,6 @@ The backend is a Flask application in `utk_curio/backend/`. All routes are defin
 | `backend/app/api/routes.py` | All REST endpoints |
 | `backend/app/users/models.py` | `User` and `UserSession` SQLAlchemy models |
 | `backend/extensions.py` | SQLAlchemy and Flask-Migrate initialization |
-| `backend/create_provenance_db.py` | Provenance DB schema and initialization |
 
 ### Sandbox
 

@@ -189,7 +189,26 @@ return filtered_gdf
 
 ## Step 6: Create a map visualization
 
-We can visualize the result of the previous operations by adding a UTK map. The grammar for the map is automatically populated once it receives an input from a previous box.
+We can visualize the result of the previous operations by adding an `AUTK_MAP` node connected to the Data Pool. The map renders the census polygons coloured by their mean UTCI and enables picking so the linked scatterplot in the next step can highlight selected tracts.
+
+```javascript
+// 'arg' is the census GeoJSON FeatureCollection coming from the
+// upstream Data Pool (in EPSG:3395).
+const collection = arg?.features ? arg : (Array.isArray(arg) ? (arg[0]?.geojson ?? arg[0]) : arg);
+const LAYER = 'census';
+
+const map = new AutkMap(container);
+await map.init();
+
+map.loadCollection(LAYER, { collection, type: 'polygon' });
+map.updateRenderInfo(LAYER, { isPick: true, isColorMap: true });
+map.updateThematic(LAYER, { collection, property: 'properties.mean' });
+map.draw();
+return map;
+```
+
+!!! note "WebGPU required"
+    Autark relies on WebGPU. Run this example in a Chromium-based browser (Chrome / Edge) on a machine with a working GPU stack.
 
 ![Example 1-8](images/1-8.png)
 
@@ -201,7 +220,7 @@ In this step, we create a linked scatterplot through a Vega-Lite node connected 
 
 ```json
 {
- "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+ "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
  "params": [
    {"name": "clickSelect", "select": "interval"}
  ],
@@ -245,7 +264,7 @@ Finally, we create a Vega-Lite node connected to the data cleaning node:
 
 ```json
 {
- "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+ "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
  "transform": [
    {
      "fold": ["gt_65"],

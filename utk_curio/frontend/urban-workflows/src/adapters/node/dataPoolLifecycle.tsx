@@ -61,21 +61,6 @@ export const useDataPoolLifecycle: NodeLifecycleHook = (data, nodeState) => {
           let selects = Object.keys(details);
 
           for (const select of selects) {
-              if (details[select].source == NodeType.VIS_UTK) {
-                  // interactions from UTK only affect matching named geodataframes
-                  if (parsedInput.data.metadata == undefined) {
-                      continue;
-                  }
-
-                  if (parsedInput.data.metadata.name == undefined) {
-                      continue;
-                  }
-
-                  if (parsedInput.data.metadata.name != select) {
-                      continue;
-                  }
-              }
-
               if (details[select].type == VisInteractionType.POINT) {
                   // solve point interaction
                   localInteractedIndices.push({
@@ -379,14 +364,21 @@ export const useDataPoolLifecycle: NodeLifecycleHook = (data, nodeState) => {
     return [];
   }, [output, tabData, activeTab, createTableData]);
 
-  const contentComponent = (
-    <DataPoolContent
-      activeTab={activeTab}
-      onSelectTab={setActiveTab}
-      tabData={tabData}
-      tableData={tableData}
-      data={data}
-    />
+  // Memoize so the JSX reference is stable across re-renders. NodeEditor
+  // auto-switches to the "output" tab whenever `contentComponent` changes
+  // identity — without this, any re-render (e.g. React Flow deselecting the
+  // node on a pane click) would yank the user out of the code editor.
+  const contentComponent = useMemo(
+    () => (
+      <DataPoolContent
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        tabData={tabData}
+        tableData={tableData}
+        data={data}
+      />
+    ),
+    [activeTab, setActiveTab, tabData, tableData, data],
   );
 
   return {

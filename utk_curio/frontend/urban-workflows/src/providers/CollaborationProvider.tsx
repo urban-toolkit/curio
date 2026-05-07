@@ -8,6 +8,7 @@ import React, {
   ReactNode,
 } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { useParams } from 'react-router-dom';
 import { v4 as uuidv4 } from 'uuid';
 import { useFlowContext } from './FlowProvider';
 import { PythonInterpreter } from '../PythonInterpreter';
@@ -239,7 +240,6 @@ const CollaborationProvider = ({ children }: { children: ReactNode }) => {
     setInteractions,
     applyNewOutput,
     applyNewPropagation,
-    workflowNameRef,
   } = useFlowContext();
 
   const socketRef = useRef<Socket | null>(null);
@@ -344,7 +344,11 @@ const CollaborationProvider = ({ children }: { children: ReactNode }) => {
   // Track previous output fingerprints to detect local changes
   const prevOutputFingerprints = useRef<Map<string, string>>(new Map());
 
-  const sessionId = workflowNameRef.current || 'default';
+  // Anchor the room to the URL so two browsers on the same /dataflow/<id>
+  // land in the same socket.io room. workflowName is per-browser local
+  // state and would silently splinter users.
+  const { id: dataflowId } = useParams<{ id?: string }>();
+  const sessionId = dataflowId || 'default';
 
   // ── Socket setup ────────────────────────────────────────────────────────
 

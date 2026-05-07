@@ -21,7 +21,7 @@ The icons on the left-hand side can be used to instantiate different nodes. Let'
 ```python
 import geopandas as gpd
 
-gdf = gpd.read_file('data/labels_2026-03-30T13_06_26.436355935-07_00.json')
+gdf = gpd.read_file('zip://data/04-labels.json.zip!04-labels.json')
 
 gdf.metadata = {
     'name': 'accessibility_features'
@@ -41,13 +41,12 @@ Now, let's create a "Data Cleaning" node and connect it to the output of Step 1.
 1. Selecting relevant columns
 2. Calculating agreement metrics
 3. Categorizing severity levels
-4. Adding necessary information for UTK visualization
+4. Adding necessary information for downstream visualization
 
 ```python
 import pandas as pd
 import geopandas as gpd
 import numpy as np
-import utk
 
 gdf = arg
 
@@ -83,7 +82,7 @@ This cleaning step is essential because:
 - The agreement ratio helps us understand the consensus about each feature
 - Severity categories make it easier to visualize different levels of accessibility issues
 - The correct coordinate reference system ensures proper geospatial visualization
-- The thematic value enables color coding in UTK visualizations
+- The thematic value enables color coding in downstream visualizations
 
 ## Step 3: Feature type analysis
 
@@ -158,7 +157,7 @@ To complement the spatial visualization, let's create a "2D Plot (Vega Lite)" no
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": {"name": "feature_stats"},
   "mark": "bar",
   "encoding": {
@@ -205,7 +204,7 @@ Let's create another "2D Plot (Vega Lite)" node connected to the output of Step 
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
   "data": {"name": "neighborhood_stats"},
   "mark": "circle",
   "encoding": {

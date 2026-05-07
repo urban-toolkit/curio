@@ -79,10 +79,11 @@ jobs:
           cd /srv/curio-dev
           git fetch --prune --tags origin
           git checkout --detach "$ref" 2>/dev/null || git checkout "$ref"
-          mkdir -p instance .curio
           export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
           export BACKEND_URL=https://curio-dev.urbantk.org/api
           docker compose -p curio-dev down --remove-orphans 2>/dev/null || true
+          rm -rf .curio
+          mkdir -p instance .curio
           docker compose -p curio-dev build --no-cache
           docker compose -p curio-dev up -d
           EOF

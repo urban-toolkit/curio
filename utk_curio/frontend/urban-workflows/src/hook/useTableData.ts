@@ -223,8 +223,8 @@ const useTableData = ({ data }: { data: INodeData }) => {
 
       // Build the downstream output exactly as the original DataPoolBox did:
       // send the fetched data object directly (no path attached) so downstream
-      // boxes like UTK use the in-memory data rather than re-fetching from the
-      // server and losing the initialised 'interacted' field.
+      // boxes like AUTK_MAP use the in-memory data rather than re-fetching from
+      // the server and losing the initialised 'interacted' field.
       let callbackOutput: any;
       let contentOutput: any;
 

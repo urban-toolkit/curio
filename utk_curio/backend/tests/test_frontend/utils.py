@@ -532,12 +532,15 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
     sandbox_port = int(os.environ.get('FLASK_SANDBOX_PORT', '2000'))
     sandbox_url = f'http://{sandbox_host}:{sandbox_port}'
 
+    from .workflow_spec import JS_CODE_TYPES
+
     outputs: dict[str, dict] = {}   # node_id → {"path": artifact_id, "dataType": ...}
     expected: dict[str, str] = {}   # node_id → duckdb artifact id
 
     for node in spec.topo_sorted_nodes():
-        # Non-code nodes: propagate upstream output without execution
-        if node.category != "code":
+        # Non-code nodes — and JS-code nodes whose source the Python sandbox
+        # cannot parse — propagate upstream output without execution.
+        if node.category != "code" or node.type in JS_CODE_TYPES:
             upstreams = spec.upstream_nodes(node.id)
             if len(upstreams) == 1 and upstreams[0] in outputs:
                 outputs[node.id] = outputs[upstreams[0]]
@@ -677,6 +680,65 @@ def _image_to_png_bytes(img) -> bytes:
     buf = BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()
+
+
+def dump_browser_log(
+    workflow_filepath: str,
+    test_name: str,
+    log_entries: list,
+    autk_errors: dict | None = None,
+    webgpu_diagnostics: dict | None = None,
+) -> str:
+    """Write captured browser console + pageerror events (and any AUTK error
+    tab text we extracted from the DOM) to a plain text file alongside the
+    expected screenshot, and attach it to the Allure report.
+
+    Returns the path written.
+    """
+    stem = os.path.splitext(os.path.basename(workflow_filepath))[0]
+    os.makedirs(WORKFLOW_SCREENSHOT_EXPECTED_DIR, exist_ok=True)
+    log_path = os.path.join(
+        WORKFLOW_SCREENSHOT_EXPECTED_DIR,
+        f"screenshot_{stem}_{test_name}_browser_log.txt",
+    )
+    lines: list[str] = []
+    lines.append(f"# Browser log for {stem} :: {test_name}")
+    lines.append(f"# Captured {len(log_entries)} console/pageerror events")
+    lines.append("")
+    if webgpu_diagnostics is not None:
+        lines.append("## WebGPU diagnostics (probed once per session)")
+        lines.append(json.dumps(webgpu_diagnostics, indent=2, default=str))
+        lines.append("")
+    if autk_errors:
+        lines.append("## AUTK error tab text (extracted from DOM)")
+        for node_id, text in autk_errors.items():
+            lines.append(f"--- node {node_id} ---")
+            lines.append(text or "(empty)")
+            lines.append("")
+    lines.append("## Console / pageerror events (chronological)")
+    for entry in log_entries:
+        if entry.get("kind") == "pageerror":
+            lines.append(f"[pageerror] {entry.get('message', '')}")
+        else:
+            loc = entry.get("location") or {}
+            url = loc.get("url", "")
+            line_no = loc.get("lineNumber", "")
+            lines.append(
+                f"[{entry.get('type', 'log')}] {entry.get('text', '')}"
+                f"  ({url}:{line_no})"
+            )
+    payload = "\n".join(lines) + "\n"
+    with open(log_path, "w", encoding="utf-8") as f:
+        f.write(payload)
+    try:
+        allure.attach(
+            payload,
+            name=f"screenshot_{stem}_{test_name}_browser_log.txt",
+            attachment_type=allure.attachment_type.TEXT,
+        )
+    except Exception:
+        pass
+    return log_path
 
 
 def save_workflow_test_screenshot(
@@ -1089,10 +1151,8 @@ def upload_workflow(
     )
     page.wait_for_load_state("domcontentloaded")
 
-    plug = page.locator("#plug-loader")
     try:
-        plug.wait_for(state="attached", timeout=60000)
-        plug.wait_for(state="detached", timeout=120000)
+        page.wait_for_load_state("networkidle", timeout=30000)
     except PlaywrightError:
         pass
 

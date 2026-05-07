@@ -35,6 +35,7 @@ import introJs from "intro.js";
 import "intro.js/introjs.css";
 import { useNavigate } from "react-router-dom";
 import { useUserContext } from "../../../providers/UserProvider";
+import { useToastContext } from "../../../providers/ToastProvider";
 
 export default function UpMenu({
     setDashBoardMode,
@@ -80,6 +81,7 @@ export default function UpMenu({
         setExpandStatus,
     } = useNodeActionsContext();
     const { loadTrill } = useCode();
+    const { showToast } = useToastContext();
 
     const toggleMenu = (menu: string) => {
         setActiveMenu((prev) => (prev === menu ? null : menu));
@@ -155,7 +157,7 @@ export default function UpMenu({
             await saveCurrentProject();
         } catch (err: any) {
             console.error("Save failed:", err);
-            alert(`Save failed: ${err?.message || "unknown error"}`);
+            showToast(err?.message || "Save failed", "error");
             setSaving(false);
             return;
         }
@@ -291,7 +293,7 @@ export default function UpMenu({
                 },
                 {
                     element: "#step-utk",
-                    intro: "This is a UTK Node. It renders your data in an interactive 3D environment using UTK.",
+                    intro: "This is an Autark Map Node. It renders your data in an interactive 3D environment using Autark (autk-map).",
                 },
                 {
                     element: "#step-vega",
@@ -349,6 +351,7 @@ export default function UpMenu({
                 <div className={styles.dropdownWrapper}>
                     <button
                         className={styles.button}
+                        data-testid="file-menu-btn"
                         onClick={(e) => {
                             e.stopPropagation();
                             toggleMenu("file");

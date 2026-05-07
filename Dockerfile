@@ -15,7 +15,6 @@ COPY scripts/ scripts/
 COPY templates/ templates/
 COPY docs/examples/ docs/examples/
 COPY utk_curio/ utk_curio/
-COPY utk_curio/sandbox/utk-0.8.9.tar.gz /app/utk_curio/sandbox/utk-0.8.9.tar.gz
 
 RUN pip install --upgrade pip setuptools wheel && \
     pip install --prefer-binary --no-cache-dir -r requirements.txt
@@ -39,9 +38,6 @@ RUN if [ -n "$BACKEND_URL" ]; then \
         /src/utk_curio/frontend/urban-workflows/.env; \
     fi
 
-WORKDIR /src/utk_curio/frontend/utk-workflow/src/utk-ts
-RUN npm install && npm run build
-
 WORKDIR /src/utk_curio/frontend/urban-workflows
 RUN npm install && npm run build
 
@@ -54,8 +50,6 @@ FROM runtime_base AS runtime
 ENV CURIO_DEV=0
 
 # Adjust these COPY paths if your build outputs to "build/" instead of "dist/"
-COPY --from=frontend_builder /src/utk_curio/frontend/utk-workflow/src/utk-ts/dist \
-    /app/utk_curio/frontend/utk-workflow/src/utk-ts/dist
 COPY --from=frontend_builder /src/utk_curio/frontend/urban-workflows/dist \
     /app/utk_curio/frontend/urban-workflows/dist
 
@@ -71,4 +65,4 @@ HEALTHCHECK --start-period=180s --interval=30s --timeout=60s --retries=20 CMD \
 # RUN chmod +x curio.py && ln -s /app/curio.py /usr/local/bin/curio
 # CMD ["curio", "start", "all", "--backend-host", "0.0.0.0", "--backend-port", "5002", "--sandbox-host", "0.0.0.0", "--sandbox-port", "2000"]
 # CMD ["python", "curio.py", "start", "all", "--backend-host", "0.0.0.0", "--backend-port", "5002", "--sandbox-host", "0.0.0.0", "--sandbox-port", "2000"]
-CMD ["python", "curio.py", "start", "all", "--backend-host", "0.0.0.0", "--backend-port", "5002", "--sandbox-host", "0.0.0.0", "--sandbox-port", "2000"]
+CMD ["python", "curio.py", "start", "all", "--backend-host", "0.0.0.0", "--backend-port", "5002", "--sandbox-host", "0.0.0.0", "--sandbox-port", "2000", "--with-examples"]

@@ -10,28 +10,35 @@
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
-        "metadata": { "keywords": [] }
+        "metadata": {
+          "keywords": []
+        }
       },
       {
         "id": "pool",
         "type": "DATA_POOL",
-        "x": 900,
-        "y": 400,
+        "x": 940.3952772073924,
+        "y": 398.1211498973306,
+        "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
-        "metadata": { "keywords": [] }
+        "metadata": {
+          "keywords": []
+        }
       },
       {
         "id": "vega",
         "type": "VIS_VEGA",
-        "x": 1400,
-        "y": 400,
-        "content": "{\r\n    \"$schema\": \"https://vega.github.io/schema/vega-lite/v5.json\",\r\n    \"params\": [\r\n        {\r\n            \"name\": \"highlight\",\r\n            \"select\": {\"type\": \"point\", \"on\": \"pointerover\"}\r\n        }\r\n    ],\r\n    \"mark\": {\r\n        \"type\": \"bar\",\r\n        \"stroke\": \"black\",\r\n        \"cursor\": \"pointer\"\r\n    },\r\n    \"encoding\": {\r\n        \"x\": {\r\n            \"field\": \"label\",\r\n            \"type\": \"ordinal\",\r\n            \"sort\": \"y\"\r\n        },\r\n        \"y\": {\"field\": \"value\", \"type\": \"quantitative\"},\r\n        \"fillOpacity\": {\r\n            \"condition\": {\"param\": \"highlight\", \"value\": 1},\r\n            \"value\": 0.3\r\n        },\r\n        \"color\": {\r\n            \"field\": \"interacted\",\r\n            \"type\": \"nominal\",\r\n            \"condition\": {\r\n                \"test\": \"datum.interacted === '1'\", \"value\": \"red\", \"else\": \"blue\"\r\n            }\r\n        }\r\n    }\r\n}",
+        "x": 1479.8511293634497,
+        "y": 393.4240246406571,
+        "content": "{\r\n    \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\r\n    \"params\": [\r\n        {\r\n            \"name\": \"highlight\",\r\n            \"select\": {\"type\": \"point\", \"on\": \"pointerover\"}\r\n        }\r\n    ],\r\n    \"mark\": {\r\n        \"type\": \"bar\",\r\n        \"stroke\": \"black\",\r\n        \"cursor\": \"pointer\"\r\n    },\r\n    \"encoding\": {\r\n        \"x\": {\r\n            \"field\": \"label\",\r\n            \"type\": \"ordinal\",\r\n            \"sort\": \"y\"\r\n        },\r\n        \"y\": {\"field\": \"value\", \"type\": \"quantitative\"},\r\n        \"fillOpacity\": {\r\n            \"condition\": {\"param\": \"highlight\", \"value\": 1},\r\n            \"value\": 0.3\r\n        },\r\n        \"color\": {\r\n            \"field\": \"interacted\",\r\n            \"type\": \"nominal\",\r\n            \"condition\": {\r\n                \"test\": \"datum.interacted === '1'\", \"value\": \"red\", \"else\": \"blue\"\r\n            }\r\n        }\r\n    }\r\n}",
         "out": "DATAFRAME",
         "in": "DATAFRAME",
         "goal": "",
-        "metadata": { "keywords": [] }
+        "metadata": {
+          "keywords": []
+        }
       }
     ],
     "edges": [
@@ -54,7 +61,8 @@
     ],
     "name": "Interaction_Vega_Simple",
     "task": "",
-    "timestamp": 1745712000000,
-    "provenance_id": "Interaction_Vega_Simple"
+    "timestamp": 1778038130482,
+    "provenance_id": "Interaction_Vega_Simple",
+    "packages": []
   }
 }

@@ -1,7 +1,7 @@
 /**
  * GrammarAdapter: pluggable interface for grammar-based visualizations.
  *
- * Each grammar toolkit (Vega-Lite, UTK, future D3/Scout) implements this
+ * Each grammar toolkit (Vega-Lite, future D3/Scout) implements this
  * interface and registers itself via registerGrammarAdapter().
  *
  * GrammarVisNode (or individual grammar nodes) call getGrammarAdapter(grammarId)

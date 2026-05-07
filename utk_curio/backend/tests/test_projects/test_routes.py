@@ -135,31 +135,16 @@ def test_auth_required(client, tmp_curio):
     assert resp.status_code in (401, 403)
 
 
-def test_guest_can_create_project_when_curio_env_is_numeric_zero(
-    client, monkeypatch, tmp_curio
-):
-    from utk_curio.backend.app.projects import services
-    from utk_curio.backend.app.users import routes as user_routes
-
-    monkeypatch.setattr(services, "CURIO_ENV", "0")
-    monkeypatch.setattr(services, "ALLOW_GUEST_LOGIN", True)
-    monkeypatch.setattr(user_routes, "ALLOW_GUEST_LOGIN", True)
-
-    signin = client.post(
-        "/api/auth/signin/guest",
-        data=json.dumps({}),
-        headers={"Content-Type": "application/json"},
-    )
-    assert signin.status_code == 200
-    token = signin.get_json()["token"]
+def test_non_shared_guest_cannot_create_project(client, guest_user_and_token, tmp_curio):
+    _, token = guest_user_and_token
 
     create = client.post(
         "/api/projects",
-        data=json.dumps({"name": "Zero Env Guest", "spec": _spec(), "outputs": []}),
+        data=json.dumps({"name": "Blocked Guest", "spec": _spec(), "outputs": []}),
         headers=_auth(token),
     )
-    assert create.status_code == 201
-    assert create.get_json()["name"] == "Zero Env Guest"
+    assert create.status_code == 403
+    assert "Guest users cannot save" in create.get_json()["error"]
 
 
 def test_ownership_isolation(client, user_and_token, db, tmp_curio):

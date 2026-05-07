@@ -38,3 +38,10 @@ curio_docker_log.txt
 test_file.txt
 
 data/
+_curio_*.mjs
+
+# Diagnostic dumps written next to expected screenshots when an e2e test
+# captures browser console / WebGPU / autk error info. Useful for
+# debugging a failing run, not something to track in git.
+docs/examples/dataflows/expected_outputs/*_browser_log.txt
+docs/examples/dataflows/expected_outputs/*_actual.png
