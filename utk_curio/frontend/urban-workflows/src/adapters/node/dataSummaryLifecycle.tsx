@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
@@ -178,10 +178,18 @@ export const useDataSummaryLifecycle: NodeLifecycleHook = (data, nodeState) => {
     }
   }, [nodeState.output]);
 
-  const contentComponent = summaryData ? (
-    <SummaryContent summary={summaryData} nodeId={data.nodeId} />
-  ) : (
-    <OutputContent output={nodeState.output} />
+  // Memoize so the JSX reference is stable across re-renders. NodeEditor
+  // auto-switches to the "output" tab whenever `contentComponent` changes
+  // identity — without this, any re-render (e.g. React Flow deselecting the
+  // node on a pane click) would yank the user out of the code editor.
+  const contentComponent = useMemo(
+    () =>
+      summaryData ? (
+        <SummaryContent summary={summaryData} nodeId={data.nodeId} />
+      ) : (
+        <OutputContent output={nodeState.output} />
+      ),
+    [summaryData, data.nodeId, nodeState.output],
   );
 
   return { contentComponent, defaultValueOverride };

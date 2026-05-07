@@ -364,14 +364,21 @@ export const useDataPoolLifecycle: NodeLifecycleHook = (data, nodeState) => {
     return [];
   }, [output, tabData, activeTab, createTableData]);
 
-  const contentComponent = (
-    <DataPoolContent
-      activeTab={activeTab}
-      onSelectTab={setActiveTab}
-      tabData={tabData}
-      tableData={tableData}
-      data={data}
-    />
+  // Memoize so the JSX reference is stable across re-renders. NodeEditor
+  // auto-switches to the "output" tab whenever `contentComponent` changes
+  // identity — without this, any re-render (e.g. React Flow deselecting the
+  // node on a pane click) would yank the user out of the code editor.
+  const contentComponent = useMemo(
+    () => (
+      <DataPoolContent
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        tabData={tabData}
+        tableData={tableData}
+        data={data}
+      />
+    ),
+    [activeTab, setActiveTab, tabData, tableData, data],
   );
 
   return {

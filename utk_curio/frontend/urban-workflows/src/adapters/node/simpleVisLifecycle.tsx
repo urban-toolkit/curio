@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import { NodeLifecycleHook } from '../../registry/types';
 import { NodeType, VisInteractionType } from '../../constants';
 import { useProvenanceContext } from '../../providers/ProvenanceProvider';
@@ -136,7 +136,7 @@ export const useSimpleVisLifecycle: NodeLifecycleHook = (data, nodeState) => {
     data.interactionsCallback(interactions, data.nodeId);
   }, [interactions]);
 
-  const clickImage = (index: number) => {
+  const clickImage = useCallback((index: number) => {
     setInteractions({
       images_click: {
         type: VisInteractionType.POINT,
@@ -145,27 +145,35 @@ export const useSimpleVisLifecycle: NodeLifecycleHook = (data, nodeState) => {
         source: NodeType.VIS_SIMPLE,
       },
     });
-  };
+  }, []);
 
-  let contentComponent: React.ReactNode | undefined;
-  if (currentMode === 'table') {
-    contentComponent = <ContentTable tableData={outputTable} nodeId={data.nodeId} />;
-  } else if (currentMode === 'image') {
-    contentComponent = (
-      <ImageGrid
-        nodeId={data.nodeId}
-        images={images}
-        interacted={interacted}
-        onClickImage={clickImage}
-      />
-    );
-  } else if (currentMode === 'text' && textContent) {
-    contentComponent = (
-      <pre style={{ margin: 0, padding: '8px', fontSize: '12px', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-        {textContent}
-      </pre>
-    );
-  }
+  // Memoize so the JSX reference is stable across re-renders. NodeEditor
+  // auto-switches to the "output" tab whenever `contentComponent` changes
+  // identity — without this, any re-render (e.g. React Flow deselecting the
+  // node on a pane click) would yank the user out of the code editor.
+  const contentComponent = useMemo<React.ReactNode | undefined>(() => {
+    if (currentMode === 'table') {
+      return <ContentTable tableData={outputTable} nodeId={data.nodeId} />;
+    }
+    if (currentMode === 'image') {
+      return (
+        <ImageGrid
+          nodeId={data.nodeId}
+          images={images}
+          interacted={interacted}
+          onClickImage={clickImage}
+        />
+      );
+    }
+    if (currentMode === 'text' && textContent) {
+      return (
+        <pre style={{ margin: 0, padding: '8px', fontSize: '12px', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+          {textContent}
+        </pre>
+      );
+    }
+    return undefined;
+  }, [currentMode, outputTable, images, interacted, textContent, data.nodeId, clickImage]);
 
   return {
     contentComponent,

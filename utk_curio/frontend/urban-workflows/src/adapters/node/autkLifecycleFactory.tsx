@@ -364,52 +364,60 @@ export function createAutkLifecycle(config: AutkLifecycleConfig): NodeLifecycleH
             return () => ro.disconnect();
         }, []);
 
-        let contentComponent: React.ReactNode;
-        // `nodrag nopan nowheel` opts the autk container out of React Flow's
-        // node drag, viewport pan, and wheel handling so clicks/brushes/wheel
-        // inside the canvas or chart go to autk-map / autk-plot instead of
-        // dragging the node.
-        const interactionClass = 'nodrag nopan nowheel';
-        if (config.container === 'canvas') {
-            // `position: relative` makes the wrapper the canvas's offsetParent.
-            // autk-map's UI overlays (legend, menu, perf) are appended here and
-            // positioned via `canvas.offsetTop/Left` — without this they'd be
-            // measured against a far-up ancestor and land outside the node.
-            contentComponent = (
-                <div
-                    className={interactionClass}
-                    style={
-                        config.containerStyle ?? {
-                            position: 'relative',
-                            width: '100%',
-                            height: '100%',
-                            minHeight: 400,
-                            overflow: 'hidden',
+        // Memoize so the JSX reference is stable across re-renders that don't
+        // change the output. NodeEditor auto-switches to the "output" tab
+        // whenever `contentComponent` changes identity. Keying on
+        // `nodeState.output` keeps the reference stable on incidental rerenders
+        // (e.g. React Flow deselecting the node on a pane click) but rebuilds
+        // it when the node finishes a run — so a successful run still moves
+        // the user to the output tab.
+        const contentComponent = React.useMemo<React.ReactNode>(() => {
+            // `nodrag nopan nowheel` opts the autk container out of React Flow's
+            // node drag, viewport pan, and wheel handling so clicks/brushes/wheel
+            // inside the canvas or chart go to autk-map / autk-plot instead of
+            // dragging the node.
+            const interactionClass = 'nodrag nopan nowheel';
+            if (config.container === 'canvas') {
+                // `position: relative` makes the wrapper the canvas's offsetParent.
+                // autk-map's UI overlays (legend, menu, perf) are appended here and
+                // positioned via `canvas.offsetTop/Left` — without this they'd be
+                // measured against a far-up ancestor and land outside the node.
+                return (
+                    <div
+                        className={interactionClass}
+                        style={
+                            config.containerStyle ?? {
+                                position: 'relative',
+                                width: '100%',
+                                height: '100%',
+                                minHeight: 400,
+                                overflow: 'hidden',
+                            }
                         }
-                    }
-                >
-                    <canvas
-                        ref={containerRef as React.RefObject<HTMLCanvasElement>}
-                        style={{ display: 'block', width: '100%', height: '100%' }}
-                    />
-                </div>
-            );
-        } else if (config.container === 'div') {
-            contentComponent = (
-                <div
-                    className={interactionClass}
-                    style={config.containerStyle ?? { width: '100%', minHeight: 400, overflow: 'auto' }}
-                >
-                    <div ref={containerRef as React.RefObject<HTMLDivElement>} />
-                </div>
-            );
-        } else {
-            contentComponent = (
+                    >
+                        <canvas
+                            ref={containerRef as React.RefObject<HTMLCanvasElement>}
+                            style={{ display: 'block', width: '100%', height: '100%' }}
+                        />
+                    </div>
+                );
+            }
+            if (config.container === 'div') {
+                return (
+                    <div
+                        className={interactionClass}
+                        style={config.containerStyle ?? { width: '100%', minHeight: 400, overflow: 'auto' }}
+                    >
+                        <div ref={containerRef as React.RefObject<HTMLDivElement>} />
+                    </div>
+                );
+            }
+            return (
                 <div style={{ display: 'none' }}>
                     <canvas ref={containerRef as React.RefObject<HTMLCanvasElement>} width={1} height={1} />
                 </div>
             );
-        }
+        }, [nodeState.output]);
 
         // Only seed the boilerplate when the node has no code yet (fresh palette drop).
         // When loading an example, data.defaultCode carries the example's content and
