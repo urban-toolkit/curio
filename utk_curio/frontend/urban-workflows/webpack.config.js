@@ -53,6 +53,9 @@ module.exports = {
         use: "babel-loader",
       },
       // CSS Modules (e.g., Button.module.css)
+      // css-loader v7 flipped `modules.namedExport` to true by default, which
+      // breaks `import styles from "./X.module.css"` (no default export).
+      // Force it back to false so existing default-import usage keeps working.
       {
         test: /\.module\.css$/,
         use: [
@@ -60,7 +63,10 @@ module.exports = {
           {
             loader: "css-loader",
             options: {
-              modules: true,
+              modules: {
+                namedExport: false,
+                exportLocalsConvention: "as-is",
+              },
             },
           },
         ],

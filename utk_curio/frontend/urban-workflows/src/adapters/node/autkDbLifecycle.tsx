@@ -1,3 +1,4 @@
+import React from 'react';
 import { NodeLifecycleHook } from '../../registry/types';
 
 const DEFAULT_CODE = `import { AutkSpatialDb } from '@urban-toolkit/autk-db';
@@ -25,10 +26,32 @@ for (const layer of db.getLayerTables()) {
 }
 return layers;`;
 
+// AUTK_DB executes server-side via the Node.js sandbox (CodeEditor.tsx
+// routes ``isJsNode`` through ``data.jsInterpreter``), so this lifecycle
+// does NOT import @urban-toolkit/autk-db in the browser — that package
+// pulls in node:path / node:module / node:worker_threads and would break
+// webpack. We only render a placeholder output panel so NodeEditor exposes
+// the standard "output" tab; execution status (Done / Error) is set by
+// CodeEditor's processExecutionResult callback after the sandbox replies.
+const AUTK_DB_OUTPUT_PLACEHOLDER = (
+    <div
+        className="nowheel nodrag"
+        style={{
+            padding: 12,
+            color: '#666',
+            fontSize: '0.85em',
+            lineHeight: 1.4,
+        }}
+    >
+        AutkDB executes server-side via the Node.js sandbox.
+        The returned layer array is forwarded to downstream nodes.
+    </div>
+);
+
 export const useAutkDbLifecycle: NodeLifecycleHook = (data, _nodeState) => {
-    // Only seed the boilerplate when the node has no code yet (fresh palette drop).
-    // When loading an example, data.defaultCode carries the example's content and
-    // must take precedence.
-    if (data.defaultCode || data.code) return {};
-    return { defaultValueOverride: DEFAULT_CODE };
+    const hasExistingCode = !!(data.defaultCode || (data as any).code);
+    return {
+        contentComponent: AUTK_DB_OUTPUT_PLACEHOLDER,
+        defaultValueOverride: hasExistingCode ? undefined : DEFAULT_CODE,
+    };
 };

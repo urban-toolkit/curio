@@ -71,15 +71,40 @@ function CodeEditor({
     const processExecutionResult = (result: any) => {
         const hasOutput = result.output?.path !== "";
 
+        // result.stdout is list[str] from the sandbox; join with newlines so
+        // multi-line autkdb output is readable instead of comma-coerced. Cap
+        // at the last 4000 chars so a runaway log loop can't lock the panel,
+        // and show the tail since errors usually surface there.
+        const STDOUT_CAP = 4000;
+        const stdoutLines: string[] = Array.isArray(result.stdout)
+            ? result.stdout
+            : (result.stdout ? [String(result.stdout)] : []);
+        let stdoutText = stdoutLines.join("\n");
+        let stdoutTruncated = false;
+        if (stdoutText.length > STDOUT_CAP) {
+            stdoutText = stdoutText.slice(-STDOUT_CAP);
+            stdoutTruncated = true;
+        }
+        const stdoutBlock = stdoutText
+            ? "stdout:\n" + (stdoutTruncated
+                ? `... [truncated to last ${STDOUT_CAP} chars]\n` + stdoutText
+                : stdoutText)
+            : "";
+
         if (hasOutput) {
-            let outputContent = "stdout:\n" + result.stdout.slice(0, 100);
-            if (result.stderr) outputContent += "\nstderr:\n" + result.stderr;
-            outputContent += "\nSaved to file: " + result.output.path;
+            let outputContent = stdoutBlock;
+            if (result.stderr) {
+                outputContent += (outputContent ? "\n" : "") + "stderr:\n" + result.stderr;
+            }
+            outputContent += (outputContent ? "\n" : "") + "Saved to file: " + result.output.path;
             setOutputCallback({ code: "success", content: outputContent });
             data.outputCallback(data.nodeId, result.output);
             markNodeExecuted(data.nodeId);
         } else {
-            setOutputCallback({ code: "error", content: result.stderr });
+            let errorContent = "";
+            if (stdoutBlock) errorContent += stdoutBlock + "\n";
+            errorContent += result.stderr || "(no stderr)";
+            setOutputCallback({ code: "error", content: errorContent });
             signalNodeExecDone(data.nodeId);
         }
     };
