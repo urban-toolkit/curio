@@ -18,8 +18,8 @@ google-generativeai>=0.8.6
 duckdb>=1.5.0
 tqdm>=4.66.3
 pygments>=2.20.0
-flask-socketio==5.3.6
-python-socketio==5.11.3
+flask-socketio>=5.5.0
+python-socketio>=5.12.0
 
 # Testing
 # ------------------------------------------------------------------------------

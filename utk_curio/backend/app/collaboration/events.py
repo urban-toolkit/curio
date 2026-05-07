@@ -403,7 +403,6 @@ def on_join(data):
     user_id = data.get('userId') or request.sid
     user_name = _display_name(data, user_id)
     color = _assign_color(room, user_id)
-    print(f"[COLLAB] join_session room={room!r} user={user_name!r} sid={request.sid} existing_in_room={list(_room_users.get(room, {}).keys())}", flush=True)
 
     join_room(room)
 
