@@ -1,6 +1,6 @@
 {
   "dataflow": {
-    "description": "Spatial analysis of green roof distribution and density across Chicago neighborhoods.",
+    "description": "Spatial density + zip-code aggregation in Vega-Lite, fanned out via DATA_POOL (Chicago green roofs).",
     "nodes": [
       {
         "id": "82537c44-8195-4cd3-a5fa-8a049d53d96e",
@@ -46,7 +46,7 @@
         "type": "DATA_LOADING",
         "x": 283.21219419868953,
         "y": 577.8176987439779,
-        "content": "import geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import Point\n# Read the green roofs dataset\ngreen_roofs_df = pd.read_csv('docs/examples/data/10-green_roofs.csv')\n\n# Create the dataset into geo dataframe using latitude and longitude columns\ngeometry = [Point(xy) for xy in zip(green_roofs_df['LONGITUDE'], green_roofs_df['LATITUDE'])]\ngreen_roofs_df = gpd.GeoDataFrame(green_roofs_df, geometry=geometry, crs=4326)\nchicago = gpd.read_file(\"docs/examples/data/chicago.geojson\")\n\n# Joining the green roofs dataset with the chicago neighborhood geojson file\njoined = gpd.sjoin(green_roofs_df, chicago, predicate='within')\nreturn joined",
+        "content": "import geopandas as gpd\nimport pandas as pd\nfrom shapely.geometry import Point\n\n# Read the green-roofs CSV and project to a GeoDataFrame in WGS84.\ngreen_roofs_df = pd.read_csv('docs/examples/data/10-green_roofs.csv')\ngeometry = [Point(xy) for xy in zip(green_roofs_df['LONGITUDE'], green_roofs_df['LATITUDE'])]\ngreen_roofs_df = gpd.GeoDataFrame(green_roofs_df, geometry=geometry, crs=4326)\n\n# Spatially attach the Chicago zip-code polygon to each rooftop.\nchicago = gpd.read_file('docs/examples/data/chicago.geojson')\njoined = gpd.sjoin(green_roofs_df, chicago, predicate='within')\n\n# Keep only the columns downstream views actually use, and drop geometry so the\n# DATA_POOL serializes a plain DataFrame instead of the full GeoDataFrame.\nreturn pd.DataFrame(joined[['LONGITUDE', 'LATITUDE', 'VEGETATED_SQFT', 'TOTAL_ROOF_SQFT', 'zip']])\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -72,7 +72,7 @@
         "type": "VIS_VEGA",
         "x": 1532.9036653150897,
         "y": 586.8028707639176,
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Dot Density Map of Green Roof Locations in Chicago with Zoom & Pan\",\n  \"width\": 500,\n  \"height\": 600,\n  \"title\": \"Green Roof Locations in Chicago\",\n  \"mark\": \"circle\",\n  \"selection\": {\n    \"grid\": {\n      \"type\": \"interval\",\n      \"bind\": \"scales\"\n    }\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"LONGITUDE\",\n      \"type\": \"quantitative\",\n      \"scale\": { \"domain\": [-88.0, -87.5] },\n      \"axis\": { \"title\": \"Longitude\" }\n    },\n    \"y\": {\n      \"field\": \"LATITUDE\",\n      \"type\": \"quantitative\",\n      \"scale\": { \"domain\": [41.6, 42.1] },\n      \"axis\": { \"title\": \"Latitude\" }\n    },\n    \"size\": {\n      \"field\": \"VEGETATED_SQFT\",\n      \"type\": \"quantitative\",\n      \"legend\": { \"title\": \"Vegetated Sqft\" }\n    },\n    \"tooltip\": [\n      { \"field\": \"VEGETATED_SQFT\", \"type\": \"quantitative\" },\n      { \"field\": \"TOTAL_ROOF_SQFT\", \"type\": \"quantitative\" },\n      { \"field\": \"zip\", \"type\": \"nominal\" }\n    ]\n  },\n  \"config\": {\n    \"view\": { \"stroke\": \"transparent\" }\n  }\n}",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Dot Density Map of Green Roof Locations in Chicago with Zoom & Pan\",\n  \"width\": 500,\n  \"height\": 600,\n  \"title\": \"Green Roof Locations in Chicago\",\n  \"mark\": \"circle\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"LONGITUDE\",\n      \"type\": \"quantitative\",\n      \"scale\": {\n        \"domain\": [\n          -88.0,\n          -87.5\n        ]\n      },\n      \"axis\": {\n        \"title\": \"Longitude\"\n      }\n    },\n    \"y\": {\n      \"field\": \"LATITUDE\",\n      \"type\": \"quantitative\",\n      \"scale\": {\n        \"domain\": [\n          41.6,\n          42.1\n        ]\n      },\n      \"axis\": {\n        \"title\": \"Latitude\"\n      }\n    },\n    \"size\": {\n      \"field\": \"VEGETATED_SQFT\",\n      \"type\": \"quantitative\",\n      \"legend\": {\n        \"title\": \"Vegetated Sqft\"\n      }\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"VEGETATED_SQFT\",\n        \"type\": \"quantitative\"\n      },\n      {\n        \"field\": \"TOTAL_ROOF_SQFT\",\n        \"type\": \"quantitative\"\n      },\n      {\n        \"field\": \"zip\",\n        \"type\": \"nominal\"\n      }\n    ]\n  },\n  \"config\": {\n    \"view\": {\n      \"stroke\": \"transparent\"\n    }\n  },\n  \"params\": [\n    {\n      \"name\": \"grid\",\n      \"select\": \"interval\",\n      \"bind\": \"scales\"\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -85,7 +85,7 @@
         "type": "DATA_TRANSFORMATION",
         "x": 1550.814861173043,
         "y": 1008.7750218024208,
-        "content": "import geopandas as gpd\n\njoined = arg\n\n# filter out the top 10 zip codes from the joined dataframe on 'zip' by square feet\ntop_10_largest = joined.groupby('zip')['VEGETATED_SQFT'].sum().reset_index().sort_values(by='VEGETATED_SQFT', ascending=False).head(10)\n\nreturn top_10_largest",
+        "content": "joined = arg\n\ntop_10_largest = (joined.groupby('zip')['VEGETATED_SQFT']\n    .sum()\n    .reset_index()\n    .sort_values(by='VEGETATED_SQFT', ascending=False)\n    .head(10))\n\nreturn top_10_largest\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -98,7 +98,7 @@
         "type": "VIS_VEGA",
         "x": 2210.0296422765496,
         "y": 983.3453714927902,
-        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Top 10 largest zip codes by green roof area\",\n  \"width\": 400,\n  \"height\": 200,\n  \"selection\": {\n    \"zip_select\": {\n      \"type\": \"multi\",\n      \"fields\": [\"zip\"],\n      \"toggle\": \"event.shiftKey\"\n    }\n  },\n  \"mark\": { \"type\": \"bar\", \"stroke\": \"black\", \"color\": \"green\" },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"VEGETATED_SQFT\",\n      \"type\": \"quantitative\",\n      \"axis\": {\n        \"title\": \"Total Vegetated Roof Size (sqft)\",\n        \"values\": [100000, 250000, 500000, 1000000],\n        \"format\": \",d\"\n      }\n    },\n    \"y\": {\n      \"field\": \"zip\",\n      \"type\": \"nominal\",\n      \"sort\": \"-x\",\n      \"axis\": { \"title\": \"Zip Code\" }\n    },\n    \"color\": {\n      \"field\": \"zip\",\n      \"type\": \"nominal\",\n      \"scale\": { \"scheme\": \"category20\" }\n    },\n    \"opacity\": {\n      \"condition\": { \"selection\": \"zip_select\", \"value\": 1 },\n      \"value\": 0.3\n    },\n    \"tooltip\": [\n      { \"field\": \"zip\", \"type\": \"nominal\" },\n      { \"field\": \"VEGETATED_SQFT\", \"type\": \"quantitative\" }\n    ]\n  }\n}",
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Top 10 largest zip codes by green roof area\",\n  \"width\": 400,\n  \"height\": 200,\n  \"mark\": {\n    \"type\": \"bar\",\n    \"stroke\": \"black\",\n    \"color\": \"green\"\n  },\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"VEGETATED_SQFT\",\n      \"type\": \"quantitative\",\n      \"axis\": {\n        \"title\": \"Total Vegetated Roof Size (sqft)\",\n        \"values\": [\n          100000,\n          250000,\n          500000,\n          1000000\n        ],\n        \"format\": \",d\"\n      }\n    },\n    \"y\": {\n      \"field\": \"zip\",\n      \"type\": \"nominal\",\n      \"sort\": \"-x\",\n      \"axis\": {\n        \"title\": \"Zip Code\"\n      }\n    },\n    \"color\": {\n      \"field\": \"zip\",\n      \"type\": \"nominal\",\n      \"scale\": {\n        \"scheme\": \"category20\"\n      }\n    },\n    \"opacity\": {\n      \"condition\": {\n        \"param\": \"zip_select\",\n        \"value\": 1\n      },\n      \"value\": 0.3\n    },\n    \"tooltip\": [\n      {\n        \"field\": \"zip\",\n        \"type\": \"nominal\"\n      },\n      {\n        \"field\": \"VEGETATED_SQFT\",\n        \"type\": \"quantitative\"\n      }\n    ]\n  },\n  \"params\": [\n    {\n      \"name\": \"zip_select\",\n      \"select\": {\n        \"type\": \"point\",\n        \"fields\": [\n          \"zip\"\n        ],\n        \"toggle\": \"event.shiftKey\"\n      }\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -139,7 +139,7 @@
         "target": "d23e2587-57bf-4db4-84fe-cdb7c2de638d"
       }
     ],
-    "name": "DefaultWorkflow",
+    "name": "Vega-Lite spatial density",
     "task": "",
     "timestamp": 1774933485890,
     "provenance_id": "DefaultWorkflow"

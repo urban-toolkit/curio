@@ -1,6 +1,6 @@
 # Example: What-if scenarios with Autark
 
-In this example, we walk through a what-if dataflow that lets users pick buildings in Boston, raise their heights with a multiplier widget, and compare the modified scenario against the baseline. The dataflow uses Curio's [Autark integration](12-shadow-analysis.md) to keep the picking-driven workflow entirely in the browser. Building **height** is used as a what-if proxy that's directly visible on the rendered map — replace the compute step with a WebGPU shadow shader (see [Example 12](12-shadow-analysis.md)) when you want a full shadow study.
+In this example, we walk through a what-if dataflow that lets users pick buildings in Boston, raise their heights with a multiplier widget, and compare the modified scenario against the baseline. The dataflow uses Curio's Autark integration to keep the picking-driven workflow entirely in the browser. Building **height** is used as a what-if proxy that's directly visible on the rendered map — replace the compute step with a WebGPU shadow shader (see [Example 7](07-autark-gpu-shader.md)) when you want a full shadow study.
 
 !!! note "WebGPU required"
     Autark relies on WebGPU. Run this example in a Chromium-based browser (Chrome / Edge) on a machine with a working GPU stack. `navigator.gpu` must be available.
@@ -9,14 +9,14 @@ For completeness, we include the template code in each dataflow step.
 
 ## Pipeline overview
 
-```
-AUTK_DB ─▶ AUTK_COMPUTE ─▶ DATA_POOL ─┬─▶ AUTK_MAP   (baseline + picking)
-                                      │
-                                      ├─▶ AUTK_MAP   (baseline, side-by-side)
-                                      │
-                                      └─▶ AUTK_COMPUTE (apply multiplier) ─┬─▶ AUTK_MAP (modified)
-                                                                            │
-                                                                            └─▶ AUTK_MAP (delta)
+```mermaid
+flowchart LR
+  DB[AUTK_DB<br/>Boston OSM] --> CA[AUTK_COMPUTE<br/>area + baselineHeight] --> P[DATA_POOL]
+  P --> M1[AUTK_MAP<br/>baseline + picking]
+  P --> M2[AUTK_MAP<br/>baseline side-by-side]
+  P --> CM[AUTK_COMPUTE<br/>apply multiplier]
+  CM --> M3[AUTK_MAP<br/>modified]
+  CM --> M4[AUTK_MAP<br/>delta]
 ```
 
 ## Step 1: Loading physical layers (`AUTK_DB`)
@@ -207,4 +207,4 @@ return map;
 
 ## Final result
 
-The three side-by-side maps now form a what-if comparison: pick buildings on the picker map, edit the multiplier widget, and the modified and delta maps update on the next run. Swapping the multiplier compute node for a [WebGPU shadow shader](12-shadow-analysis.md) extends this same topology into a full shadow-impact study.
+The three side-by-side maps now form a what-if comparison: pick buildings on the picker map, edit the multiplier widget, and the modified and delta maps update on the next run. Swapping the multiplier compute node for a [WebGPU shadow shader](07-autark-gpu-shader.md) extends this same topology into a full shadow-impact study.

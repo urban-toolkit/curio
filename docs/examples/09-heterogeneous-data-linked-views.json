@@ -1,13 +1,13 @@
 {
   "dataflow": {
-    "description": "Microclimate analysis in Milan combining raster temperature, weather sensors, and demographic geometries.",
+    "description": "Cross-grammar Autark <-> Vega-Lite brushing on raster + tabular + GeoJSON merged via MERGE_FLOW and fanned out via DATA_POOL (Milan urban heat exposure / UTCI).",
     "nodes": [
       {
         "id": "c80722e7-8960-4308-8f1d-90b121acf126",
         "type": "DATA_LOADING",
         "x": 38.225362132989176,
         "y": 82.781219641662,
-        "content": "import rasterio\ntimestamp = 12\nsrc = rasterio.open(f'milan/Milan_Tmrt_2022_203_{timestamp:02d}00D.tif')\n\nreturn src",
+        "content": "import rasterio\nsrc = rasterio.open('docs/examples/data/09-milan_mrt.tif')\n\nreturn src",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -20,7 +20,7 @@
         "type": "DATA_LOADING",
         "x": 33.682664855133396,
         "y": 377.73963760742413,
-        "content": "import pandas as pd\nsensor = pd.read_csv('milan/Milan_22.07.2022_Weather_File_UMEP_CSV.csv', delimiter=';')\nreturn sensor",
+        "content": "import pandas as pd\nsensor = pd.read_csv('docs/examples/data/09-milan_weather.csv', delimiter=';')\nreturn sensor",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -46,7 +46,7 @@
         "type": "COMPUTATION_ANALYSIS",
         "x": 999.7112510818503,
         "y": 276.4050298362549,
-        "content": "# Step 4 — Compute UTCI\n\nimport numpy as np\nfrom pythermalcomfort import models\nfrom rasterio.warp import Resampling\n\n\nsrc = arg[0]\nsensor = arg[1]\n\ntimestamp = 12\n\nupscale_factor = 0.25\ndataset = src\ndata = dataset.read(\n    out_shape=(\n        dataset.count,\n        int(dataset.height * upscale_factor),\n        int(dataset.width * upscale_factor),\n    ),\n    resampling=Resampling.nearest,\n    masked=True,\n)\ndata = data.astype(float)\ndata.data[data.data == src.nodatavals[0]] = np.nan\n\nsensor_filtered = sensor[sensor[\"it\"] == timestamp]\ntdb = float(sensor_filtered[\"Td\"].values[0])\nv = float(sensor_filtered[\"Wind\"].values[0])\nrh = float(sensor_filtered[\"RH\"].values[0])\n\n# pythermalcomfort returns a UTCI result object; extract numeric grid explicitly\nutci_result = models.utci(tdb=tdb, tr=data[0], v=v, rh=rh, units=\"SI\")\nutci_grid = np.asarray(getattr(utci_result, \"utci\", utci_result), dtype=float)\n\n# Ensure 2D array for rasterstats\nif utci_grid.ndim == 3 and utci_grid.shape[0] == 1:\n    utci_grid = utci_grid[0]\nif utci_grid.ndim != 2:\n    raise ValueError(f\"UTCI must be 2D, got shape={utci_grid.shape}, ndim={utci_grid.ndim}\")\n\nutci_list = utci_grid.tolist()\nutci_shape = [utci_grid.shape[1], utci_grid.shape[0]]  # [width, height]\n\n# print(f\"UTCI grid shape: {utci_shape}, dtype={utci_grid.dtype}\")\n# utci_list\n\nreturn (utci_list, utci_shape)\n",
+        "content": "# Step 4 \u00e2\u20ac\u201d Compute UTCI\n\nimport numpy as np\nfrom pythermalcomfort import models\nfrom rasterio.warp import Resampling\n\nsrc = arg[0]\nsensor = arg[1]\n\ntimestamp = 12\n\n# Bundled raster is already at the working resolution; no further downsample needed.\nupscale_factor = 1.0\ndataset = src\ndata = dataset.read(\n    out_shape=(\n        dataset.count,\n        int(dataset.height * upscale_factor),\n        int(dataset.width * upscale_factor),\n    ),\n    resampling=Resampling.nearest,\n    masked=True,\n)\ndata = data.astype(float).filled(np.nan)\n\nsensor_filtered = sensor[sensor[\"it\"] == timestamp]\ntdb = float(sensor_filtered[\"Td\"].values[0])\nv = float(sensor_filtered[\"Wind\"].values[0])\nrh = float(sensor_filtered[\"RH\"].values[0])\n\n# `limit_inputs=False` keeps UTCI valid for tr - tdb > 30 (common at noon in Milan).\nutci_result = models.utci(tdb=tdb, tr=data[0], v=v, rh=rh, units=\"SI\", limit_inputs=False)\nutci_grid = np.asarray(getattr(utci_result, \"utci\", utci_result), dtype=float)\n\nif utci_grid.ndim == 3 and utci_grid.shape[0] == 1:\n    utci_grid = utci_grid[0]\nif utci_grid.ndim != 2:\n    raise ValueError(f\"UTCI must be 2D, got shape={utci_grid.shape}, ndim={utci_grid.ndim}\")\n\nutci_list = utci_grid.tolist()\nutci_shape = [utci_grid.shape[1], utci_grid.shape[0]]\n\nreturn (utci_list, utci_shape)\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -59,7 +59,7 @@
         "type": "DATA_LOADING",
         "x": 1024.2279540383229,
         "y": -198.33515130850827,
-        "content": "import geopandas as gpd\ngdf = gpd.read_file('milan/R03_21-11_WGS84_P_SocioDemographics_MILANO_Selected.shp')\nreturn gdf",
+        "content": "import geopandas as gpd\ngdf = gpd.read_file('docs/examples/data/09-milan_census.geojson')\nreturn gdf",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -85,7 +85,7 @@
         "type": "COMPUTATION_ANALYSIS",
         "x": 2153.7860554743675,
         "y": 43.29854946579633,
-        "content": "# Step 5 — Zonal Statistics\n\nfrom rasterstats import zonal_stats\nimport numpy as np\n\ndataset = arg[0]\nutci_list = arg[1][0]\nutci_shape = arg[1][1]\ngdf = arg[2]\n\nutci = np.asarray(utci_list, dtype=float)\nshape = utci_shape\n\nif utci.ndim != 2:\n    raise ValueError(f\"Expected 2D UTCI array, got shape={utci.shape}, ndim={utci.ndim}\")\n\ntransform = dataset.transform * dataset.transform.scale(\n    (dataset.width / shape[0]),\n    (dataset.height / shape[1]),\n)\n\n# Avoid nodata warning and make nodata explicit\nnodata_value = -999.0\nutci_for_stats = np.where(np.isnan(utci), nodata_value, utci)\n\njoined = zonal_stats(\n    gdf,\n    utci_for_stats,\n    stats=[\"min\", \"max\", \"mean\", \"median\"],\n    affine=transform,\n    nodata=nodata_value,\n)\n\ngdf[\"mean\"] = [d[\"mean\"] for d in joined]\nresult = gdf.loc[:, [gdf.geometry.name, \"mean\", \"gt_65\"]]\n\n\nreturn result",
+        "content": "# Step 5 \u00e2\u20ac\u201d Zonal Statistics\n\nfrom rasterstats import zonal_stats\nimport numpy as np\n\ndataset = arg[0]\nutci_list = arg[1][0]\nutci_shape = arg[1][1]\ngdf = arg[2]\n\nutci = np.asarray(utci_list, dtype=float)\nshape = utci_shape\n\nif utci.ndim != 2:\n    raise ValueError(f\"Expected 2D UTCI array, got shape={utci.shape}, ndim={utci.ndim}\")\n\ntransform = dataset.transform * dataset.transform.scale(\n    (dataset.width / shape[0]),\n    (dataset.height / shape[1]),\n)\n\n# Avoid nodata warning and make nodata explicit\nnodata_value = -999.0\nutci_for_stats = np.where(np.isnan(utci), nodata_value, utci)\n\njoined = zonal_stats(\n    gdf,\n    utci_for_stats,\n    stats=[\"min\", \"max\", \"mean\", \"median\"],\n    affine=transform,\n    nodata=nodata_value,\n)\n\ngdf[\"mean\"] = [d[\"mean\"] for d in joined]\nresult = gdf.loc[:, [gdf.geometry.name, \"mean\", \"gt_65\"]]\n\n\nreturn result",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -245,7 +245,7 @@
         "target": "6c4aa6a8-45eb-480e-bb3d-3fd54d13325b"
       }
     ],
-    "name": "DefaultWorkflow",
+    "name": "Heterogeneous data + linked views",
     "task": "",
     "timestamp": 1773605226071,
     "provenance_id": "DefaultWorkflow"

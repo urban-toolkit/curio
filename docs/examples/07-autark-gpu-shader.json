@@ -1,7 +1,7 @@
 {
   "dataflow": {
-    "name": "Chicago Shadows",
-    "description": "Compute how many minutes of shadow a Chicago Loop building casts onto each surrounding road segment using a WebGPU shader, then explore the result on a thematic map and a brushable histogram.",
+    "name": "Autark GPU shader",
+    "description": "WGSL shader executed via AUTK_COMPUTE; brushable AUTK_PLOT linked to AUTK_MAP (Chicago Loop shadow study).",
     "task": "Load OSM Chicago Loop, run a WebGPU shader that attributes per-road shadow minutes from a single building, filter to the segments that were actually shadowed, and explore the result with a thematic map and brushable histogram.",
     "timestamp": 1746489600000,
     "provenance_id": "shadow-analysis",

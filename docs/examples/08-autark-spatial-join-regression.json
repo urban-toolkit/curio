@@ -1,0 +1,141 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "niteroi-osm",
+        "type": "AUTK_DB",
+        "x": 137.34494773519168,
+        "y": -22.21951219512195,
+        "content": "import { AutkSpatialDb } from '@urban-toolkit/autk-db';\n\n// Load Niter\u00c3\u00b3i's OSM surface, parks, water, and roads from Overpass.\n// Layers are emitted in EPSG:4326 (WGS84) so the downstream JS_COMPUTATION\n// can re-ingest them via loadCustomLayer \u00e2\u20ac\u201d which always assumes the input\n// FeatureCollection is in EPSG:4326 \u00e2\u20ac\u201d and reproject to a metric CRS for the\n// spatial join.\nconst db = new AutkSpatialDb();\nawait db.init();\n\nawait db.loadOsm({\n    queryArea: { geocodeArea: 'Rio de Janeiro', areas: ['Niter\u00c3\u00b3i'] },\n    outputTableName: 'table_osm',\n    autoLoadLayers: {\n        coordinateFormat: 'EPSG:4326',\n        layers: ['surface', 'parks', 'water', 'roads'],\n        dropOsmTable: true,\n    },\n});\n\nconst layers = [];\nfor (const layer of db.getLayerTables()) {\n    layers.push({ name: layer.name, type: layer.type, geojson: await db.getLayer(layer.name) });\n}\nreturn layers;",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load OSM surface, parks, water, and roads layers for Niter\u00c3\u00b3i from Overpass.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "niteroi-raster",
+        "type": "DATA_LOADING",
+        "x": 140,
+        "y": 380,
+        "content": "import base64\nimport requests\nimport geopandas as gpd\nfrom shapely.geometry import Point\n\n# Fetch the Niter\u00c3\u00b3i land surface temperature raster (24 yearly bands,\n# 2001\u00e2\u20ac\u201c2024) and embed the bytes as base64 inside a single-row\n# GeoDataFrame so the downstream join can reuse them without refetching.\nurl = 'https://raw.githubusercontent.com/urban-toolkit/autark/main/usecases/public/data/niteroi_lst_verao_2001_2024.tif'\nresp = requests.get(url, timeout=120)\nresp.raise_for_status()\ngeotiff_b64 = base64.b64encode(resp.content).decode('ascii')\n\ngdf = gpd.GeoDataFrame(\n    {'geotiff_b64': [geotiff_b64], 'band_count': [24]},\n    geometry=[Point(0, 0)],\n    crs='EPSG:4326',\n)\nreturn gdf",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Reference the LST GeoTIFF (2001\u00e2\u20ac\u201c2024) for Niter\u00c3\u00b3i. Body cells carry only the URL; the raster is loaded later in autk-db.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "niteroi-merge",
+        "type": "MERGE_FLOW",
+        "x": 734.9721254355401,
+        "y": 294.3414634146341,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Bundle the OSM layers and the raster URL row into a single 2-element input for the spatial join.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "niteroi-join",
+        "type": "JS_COMPUTATION",
+        "x": 840,
+        "y": 220,
+        "content": "import { AutkSpatialDb } from '@urban-toolkit/autk-db';\n\n// arg[0] = OSM layer array (EPSG:4326) from niteroi-osm\n// arg[1] = single-row FeatureCollection carrying the GeoTIFF bytes (base64)\nconst [osmLayers, rasterFc] = arg;\nif (!Array.isArray(osmLayers)) throw new Error('osm layers missing from upstream');\nconst geotiffB64 = rasterFc?.features?.[0]?.properties?.geotiff_b64;\nif (!geotiffB64) throw new Error('geotiff_b64 missing from upstream raster row');\n\n// Decode the base64-embedded raster bytes back into a clean ArrayBuffer\n// (slicing off any Buffer prefix so loadGeoTiff sees just the raster).\nconst nodeBuf = Buffer.from(geotiffB64, 'base64');\nconst geotiffArrayBuffer = nodeBuf.buffer.slice(\n    nodeBuf.byteOffset,\n    nodeBuf.byteOffset + nodeBuf.byteLength,\n);\n\nconst BAND_COUNT = 24;\n\nconst db = new AutkSpatialDb();\nawait db.init();\n\n// Re-ingest each OSM layer (already in EPSG:4326) as a custom table and\n// project to EPSG:3395 so the metric NEAR distance works.\nfor (const layer of osmLayers) {\n    await db.loadCustomLayer({\n        geojsonObject: layer.geojson,\n        outputTableName: layer.name,\n        coordinateFormat: 'EPSG:3395',\n        layerType: layer.type,\n    });\n}\n\n// Reuse the bytes the Python DataLoading node already fetched \u00e2\u20ac\u201d no second\n// HTTP request, no URL needed here.\nawait db.loadGeoTiff({\n    geotiffArrayBuffer,\n    outputTableName: 'lst',\n    sourceCrs: 'EPSG:4326',\n    coordinateFormat: 'EPSG:3395',\n});\n\n// Spatial join: average each LST band within 1 km of every road segment.\nawait db.spatialQuery({\n    tableRootName: 'table_osm_roads',\n    tableJoinName: 'lst',\n    spatialPredicate: 'NEAR',\n    nearDistance: 1000,\n    output: { type: 'MODIFY_ROOT' },\n    joinType: 'LEFT',\n    groupBy: {\n        selectColumns: Array.from({ length: BAND_COUNT }, (_, i) => ({\n            tableName: 'lst',\n            column: `band_${i + 1}`,\n            aggregateFn: 'avg',\n            aggregateFnResultColumnName: `band_${i + 1}`,\n        })),\n    },\n});\n\n// Reshape per-band averages into a single lst_timeseries array per road.\nconst bandSelects = Array.from({ length: BAND_COUNT }, (_, i) =>\n    `COALESCE(json_extract(properties, '$.sjoin.avg.band_${i + 1}')::DOUBLE, 0)`\n).join(', ');\n\nawait db.rawQuery({\n    query: `\n        SELECT\n            geometry,\n            json_merge_patch(\n                COALESCE(CAST(properties AS JSON), '{}'::JSON),\n                json_object('lst_timeseries', [${bandSelects}])\n            ) AS properties\n        FROM table_osm_roads\n    `,\n    output: { type: 'CREATE_TABLE', tableName: 'table_osm_roads', source: 'osm', tableType: 'roads' },\n});\n\n// Rebuild the layer array uniformly from the local db (all in EPSG:3395)\n// so the downstream map gets a consistent CRS across surface/parks/water/roads.\nconst layers = [];\nfor (const layer of osmLayers) {\n    layers.push({\n        name: layer.name,\n        type: layer.type,\n        geojson: await db.getLayer(layer.name),\n    });\n}\nlayers.push({ name: 'lst', type: 'raster', geojson: await db.getGeoTiffLayer('lst') });\n\nreturn layers;",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Re-ingest the OSM layers, load the LST raster, then spatially join LST band averages to roads within 1 km.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "niteroi-compute",
+        "type": "AUTK_COMPUTE",
+        "x": 1418.9547038327526,
+        "y": 226.63763066202088,
+        "content": "// Per-road OLS regression of yearly LST values via GPU shader.\nconst roads = arg.find(l => l.name === 'table_osm_roads')?.geojson;\nif (!roads) throw new Error('roads layer missing from upstream');\n\nconst BAND_COUNT = 24;\nconst START_YEAR = 2001;\n\n// Mirrors the upstream Autark reference shader at\n// usecases/src/niteroi/lst-regression-shader.ts \u00e2\u20ac\u201d out[0] is the warming\n// angle (atan of slope, in degrees), out[1] the regression intercept.\nconst wgslBody = `\n  var n = f32(bands_length);\n  var sum_x  = 0.0;\n  var sum_y  = 0.0;\n  var sum_xy = 0.0;\n  var sum_x2 = 0.0;\n\n  for (var i = 0u; i < bands_length; i++) {\n    let x   = f32(i);\n    let y   = bands[i];\n    sum_x  += x;\n    sum_y  += y;\n    sum_xy += x * y;\n    sum_x2 += x * x;\n  }\n\n  let denom = n * sum_x2 - sum_x * sum_x;\n  var slope     = 0.0;\n  var intercept = 0.0;\n  if (denom != 0.0) {\n    slope     = (n * sum_xy - sum_x * sum_y) / denom;\n    intercept = (sum_y - slope * sum_x) / n;\n  }\n\n  var out: OutputArray;\n  out[0] = atan(slope) * (180.0 / 3.14159265358979);\n  out[1] = intercept;\n  return out;\n`;\n\nconst compute = new ComputeGpgpu();\nlet computedRoads = await compute.run({\n    collection: roads,\n    variableMapping: { bands: 'lst_timeseries' },\n    attributeArrays: { bands: BAND_COUNT },\n    outputColumns: ['angle', 'intercept'],\n    wgslBody,\n});\n\n// Convert per-feature band arrays into {timestamp, value} so any downstream\n// timeseries chart can use year strings as bucket keys.\ncomputedRoads = {\n    ...computedRoads,\n    features: computedRoads.features.map(f => ({\n        ...f,\n        properties: {\n            ...f.properties,\n            lst_timeseries: ((f.properties?.lst_timeseries ?? [])).map((v, i) => ({\n                timestamp: String(START_YEAR + i),\n                value: v,\n            })),\n        },\n    })),\n};\n\nreturn arg.map(l => l.name === 'table_osm_roads'\n    ? { ...l, geojson: computedRoads }\n    : l);",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Per-road OLS regression of yearly LST values via GPU shader.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "niteroi-map",
+        "type": "AUTK_MAP",
+        "x": 2060.77284162171,
+        "y": 20.593803870134792,
+        "content": "// Render the OSM layer stack with the LST raster underneath, and\n// color roads by their warming angle.\nconst map = new AutkMap(container);\nawait map.init();\nfor (const layer of arg) {\n    map.loadCollection(layer.name, { collection: layer.geojson, type: layer.type });\n}\nmap.updateRenderInfo('lst', { isSkip: true, opacity: 0.65 });\nmap.updateRenderInfo('table_osm_roads', { isPick: true, isColorMap: true });\nmap.updateThematic('table_osm_roads', {\n    collection: arg.find(l => l.name === 'table_osm_roads').geojson,\n    property: 'properties.compute.angle',\n});\nmap.draw();\nreturn map;",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Render Niter\u00c3\u00b3i layers + LST raster with roads thematically colored by warming slope.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "niteroi-scatter",
+        "type": "AUTK_PLOT",
+        "x": 2047.0278745644598,
+        "y": 563.459930313589,
+        "content": "// Scatterplot: baseline LST vs warming angle, brushable.\nconst roads = arg.find(l => l.name === 'table_osm_roads')?.geojson ?? arg[0]?.geojson;\nreturn new AutkPlot(container, {\n    type: 'scatterplot',\n    collection: roads,\n    attributes: { axis: ['compute.intercept', 'compute.angle'] },\n    labels: { axis: ['Baseline LST (\u00c2\u00b0C)', 'Warming angle (\u00c2\u00b0)'], title: 'LST regression' },\n    tickFormats: ['.1~f', '.3~f'],\n    width: 600,\n    height: 380,\n    events: ['brush'],\n});",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Brushable scatterplot of road regression results.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-niteroi-osmout-niteroi-mergein_0",
+        "source": "niteroi-osm",
+        "target": "niteroi-merge"
+      },
+      {
+        "id": "reactflow__edge-niteroi-rasterout-niteroi-mergein_1",
+        "source": "niteroi-raster",
+        "target": "niteroi-merge"
+      },
+      {
+        "id": "edge-merge-to-join",
+        "source": "niteroi-merge",
+        "target": "niteroi-join"
+      },
+      {
+        "id": "edge-join-to-compute",
+        "source": "niteroi-join",
+        "target": "niteroi-compute"
+      },
+      {
+        "id": "edge-compute-to-map",
+        "source": "niteroi-compute",
+        "target": "niteroi-map"
+      },
+      {
+        "id": "edge-compute-to-scatter",
+        "source": "niteroi-compute",
+        "target": "niteroi-scatter"
+      },
+      {
+        "type": "Interaction",
+        "id": "edge-map-scatter-interaction",
+        "source": "niteroi-map",
+        "target": "niteroi-scatter"
+      }
+    ],
+    "name": "Autark spatial join + regression",
+    "task": "",
+    "timestamp": 1778125768137,
+    "provenance_id": "Regression",
+    "packages": [],
+    "description": "DuckDB spatial join in JS_COMPUTATION + per-feature OLS GPU regression + linked Autark scatter (Niteroi LST warming, 2001-2024)."
+  }
+}

@@ -1,6 +1,6 @@
-# Example: Shadow analysis with Autark
+# Example: Per-feature GPU shader with Autark
 
-In this example we use Curio's Autark integration to estimate how many minutes of shadow a single Chicago Loop building casts onto each surrounding road segment over the course of a June day. The dataflow has five nodes — load OSM, run a WebGPU shader, filter to the shadowed subset, render a thematic map, and plot a brushable histogram.
+In this example we use Curio's Autark integration to run a WGSL shader through `AUTK_COMPUTE` and visualise the per-feature output through linked `AUTK_MAP` and `AUTK_PLOT` nodes. The driving question is "how many minutes of shadow does a single Chicago Loop building cast onto each surrounding road segment over the course of a June day?" — the shader answers it per road segment in one GPU pass. The dataflow has five nodes: load OSM, run the shader, filter to the shadowed subset, render a thematic map, and plot a brushable histogram. The shadow study is the example data, but the same `AUTK_DB → AUTK_COMPUTE → AUTK_MAP + AUTK_PLOT` topology works for any per-feature GPU computation.
 
 It is a stripped-down translation of the upstream Autark use case at [github.com/urban-toolkit/autark/tree/main/usecases/src/shadows](https://github.com/urban-toolkit/autark/tree/main/usecases/src/shadows). The upstream version supports per-month variants, ground-truth baselines, and live picking; this example deliberately omits all of those to keep the focus on the GPU compute step.
 
@@ -9,10 +9,12 @@ It is a stripped-down translation of the upstream Autark use case at [github.com
 
 ## Pipeline overview
 
-```text
-shadow-db ─▶ shadow-shader ─┬─▶ shadow-map ◀──────────────┐
-                            │                              │ Interaction
-                            └─▶ shadow-shaded-roads ─▶ shadow-histogram
+```mermaid
+flowchart LR
+  DB[AUTK_DB<br/>Chicago Loop OSM] --> SH[AUTK_COMPUTE<br/>WGSL shadow shader]
+  SH --> M[AUTK_MAP<br/>thematic shadow]
+  SH --> F[AUTK_COMPUTE<br/>filter shadowed roads] --> H[AUTK_PLOT<br/>brushable histogram]
+  M <-. Interaction .-> H
 ```
 
 The graph forks at `shadow-shader`: the **map** wants the full road network for context (so unshadowed roads remain visible), while the **histogram** wants only the segments that were actually shadowed (otherwise the zero-bin dominates the chart). The Interaction edge between map and histogram keeps brushing in sync.
