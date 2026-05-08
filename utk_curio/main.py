@@ -369,11 +369,23 @@ def prepare_backend_database():
         # `flask db upgrade` is idempotent — alembic skips already-applied
         # revisions. Running it on every startup avoids the "schema is
         # stale" class of deploy bug.
-        subprocess.run(
+        result = subprocess.run(
             ["flask", "db", "upgrade", "--directory", "utk_curio/backend/migrations"],
             check=True, cwd=project_root, env=env,
+            capture_output=True, text=True,
         )
+        if result.stdout.strip():
+            log_info(result.stdout.strip(), COLOR_BACKEND, 2)
+        if result.stderr.strip():
+            log_info(result.stderr.strip(), COLOR_BACKEND, 2)
         log_info(f"[Backend] Database initialized successfully.", COLOR_BACKEND, 0)
+    except subprocess.CalledProcessError as e:
+        log_error(f"[Backend] Database migration failed (exit code {e.returncode}).")
+        if e.stdout.strip():
+            log_error(e.stdout.strip())
+        if e.stderr.strip():
+            log_error(e.stderr.strip())
+        clean_shutdown()
     except Exception as e:
         log_error(f"[Backend] Failed to initialize the database: {e}")
         clean_shutdown()

@@ -61,7 +61,6 @@ import uuid
 import os
 import time
 import pandas as pd
-import geopandas as gpd
 from utk_curio.backend.config import (
     GUEST_LLM_API_TYPE,
     GUEST_LLM_BASE_URL,
@@ -572,6 +571,7 @@ def get_loaded_files_metadata(folder_path):
             geometry_type = "None"
         elif file.endswith(".json") or file.endswith(".geojson"):
             try:
+                import geopandas as gpd
                 gdf = gpd.read_file(file_path, parse_dates=False)
                 columns = [f"{col} ({gdf[col].dtype})" for col in gdf.columns]
                 if "geometry" in gdf.columns:
