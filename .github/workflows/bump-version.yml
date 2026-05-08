@@ -70,11 +70,12 @@ jobs:
           echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
           cd -
 
-          python3 -c "
-          import re, pathlib
+          NEW_VERSION="$NEW_VERSION" python3 <<'PYEOF'
+          import os, re, pathlib
+          v = os.environ['NEW_VERSION']
           p = pathlib.Path('utk_curio/__init__.py')
-          p.write_text(re.sub(r'__version__\s*=\s*[\"\''].*?[\"\'']', '__version__ = \"$NEW_VERSION\"', p.read_text()))
-          "
+          p.write_text(re.sub(r'''__version__\s*=\s*["'].*?["']''', f'__version__ = "{v}"', p.read_text()))
+          PYEOF
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
