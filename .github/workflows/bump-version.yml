@@ -3,6 +3,8 @@ name: Bump version
 on:
   push:
     branches: [main]
+    paths:
+      - 'utk_curio/**'
 
 permissions:
   contents: write
