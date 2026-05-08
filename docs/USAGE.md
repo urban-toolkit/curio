@@ -104,10 +104,10 @@ Curio consists of three core components:
 * **Sandbox**: Python execution environment for code modules.
 * **Frontend**: user interface for composing workflows and interacting with modules.
 
-Curio requires **Python >= 3.10 & < 3.12**. It has been tested on Windows 11, macOS Sonoma 14.5, and Ubuntu. It is recommended to install the environment using [Anaconda](https://anaconda.org):
+Curio requires **Python >= 3.11 & < 3.12**. It has been tested on Windows 11, macOS Sonoma 14.5, and Ubuntu. It is recommended to install the environment using [Anaconda](https://anaconda.org):
 
 ```bash
-conda create -n curio python=3.10
+conda create -n curio python=3.11
 conda activate curio
 ```
 
@@ -178,12 +178,6 @@ This will recreate the provenance database and apply all migrations.
 
 If you want to manually perform `npm install`, you should then:
 
-```bash
-cd utk_curio/frontend/utk-workflow/src/utk-ts
-npm install
-npm run build
-```
-And:
 ```bash
 cd utk_curio/frontend/urban-workflows
 npm install

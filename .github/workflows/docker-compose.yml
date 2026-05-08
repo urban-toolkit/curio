@@ -88,7 +88,7 @@ jobs:
       - name: 🐍 Set up Python (for e2e)
         uses: actions/setup-python@v6
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
       - name: 🔧 Give .curio/ permissions for host-side tests
         run: |

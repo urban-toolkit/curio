@@ -149,7 +149,7 @@ After forking:
 3. **Set up a virtual environment**
 
    ```bash
-   conda create -n curio python=3.10
+   conda create -n curio python=3.11
    conda activate curio
    pip install -r requirements.txt
    ```
