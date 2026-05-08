@@ -37,6 +37,11 @@ def root():
 def live():
     return 'Sandbox is live.'
 
+@app.route('/version', methods=['GET'])
+def version():
+    from utk_curio import __version__
+    return jsonify({'version': __version__})
+
 @app.route('/get', methods=['GET'])
 def get_artifact():
     import pandas as _pd

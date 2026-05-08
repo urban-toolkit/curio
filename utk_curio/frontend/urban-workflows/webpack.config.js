@@ -1,10 +1,6 @@
 const path = require("path");
-const webpack = require("webpack");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
 const Dotenv = require("dotenv-webpack");
-
-const { version: pkgVersion } = require("./package.json");
-const appVersion = process.env.APP_VERSION || pkgVersion;
 
 // The `utk` file dependency bundles `require("vega-lite")`; without aliases, webpack can
 // resolve that package from `utk-ts/node_modules`, which may be incomplete. Pin the Vega/D3
@@ -111,6 +107,5 @@ module.exports = {
       path: ".env",
       systemvars: true,
     }),
-    new webpack.DefinePlugin({ APP_VERSION: JSON.stringify(appVersion) }),
   ],
 };

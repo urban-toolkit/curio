@@ -12,7 +12,7 @@ jobs:
   bump:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -23,12 +23,6 @@ jobs:
           if [[ "$MSG" == chore:\ bump\ version\ to\ * ]]; then
             echo "SKIP=true" >> $GITHUB_ENV
           fi
-
-      - name: Setup Node
-        if: env.SKIP != 'true'
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
 
       - name: Classify bump type via GitHub Models
         if: env.SKIP != 'true'
@@ -64,23 +58,26 @@ jobs:
       - name: Bump version
         if: env.SKIP != 'true'
         run: |
-          cd utk_curio/frontend/urban-workflows
-          npm version ${{ env.BUMP }} --no-git-tag-version --silent
-          NEW_VERSION=$(node -p "require('./package.json').version")
-          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
-          cd -
-
-          NEW_VERSION="$NEW_VERSION" python3 <<'PYEOF'
+          NEW_VERSION=$(BUMP="${{ env.BUMP }}" python3 <<'PYEOF'
           import os, re, pathlib
-          v = os.environ['NEW_VERSION']
           p = pathlib.Path('utk_curio/__init__.py')
-          p.write_text(re.sub(r'''__version__\s*=\s*["'].*?["']''', f'__version__ = "{v}"', p.read_text()))
+          text = p.read_text()
+          current = re.search(r'__version__\s*=\s*["\'](.+?)["\']', text).group(1)
+          parts = list(map(int, current.split('.')))
+          if os.environ['BUMP'] == 'minor':
+              parts[1] += 1
+              parts[2] = 0
+          else:
+              parts[2] += 1
+          new = '.'.join(map(str, parts))
+          p.write_text(re.sub(r'''__version__\s*=\s*["'].*?["']''', f'__version__ = "{new}"', text))
+          print(new)
           PYEOF
+          )
+          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add utk_curio/frontend/urban-workflows/package.json \
-                  utk_curio/frontend/urban-workflows/package-lock.json \
-                  utk_curio/__init__.py
+          git add utk_curio/__init__.py
           git commit -m "chore: bump version to $NEW_VERSION"
           git push
