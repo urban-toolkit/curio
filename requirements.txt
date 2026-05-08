@@ -18,6 +18,9 @@ google-generativeai>=0.8.6
 duckdb>=1.5.0
 tqdm>=4.66.3
 pygments>=2.20.0
+xarray==2026.4.0
+pythermalcomfort==3.9.3
+rasterstats==0.20.0
 
 # Testing
 # ------------------------------------------------------------------------------
