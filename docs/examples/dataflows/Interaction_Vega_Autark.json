@@ -6,7 +6,7 @@
         "type": "DATA_LOADING",
         "x": -653.9530778971115,
         "y": 801.1250959222709,
-        "content": "import geopandas as gpd\r\n\r\ngdf_neighborhood = gpd.read_file(\"docs/examples/data/06-access_score.geojson\")[[\"coverage\", \"avg_attribute_count\", \"geometry\", \"neighborhood_name\"]]\r\n\r\nreturn gdf_neighborhood",
+        "content": "import geopandas as gpd\r\n\r\ngdf_neighborhood = gpd.read_file(\"docs/examples/data/access_score.geojson\")[[\"coverage\", \"avg_attribute_count\", \"geometry\", \"neighborhood_name\"]]\r\n\r\nreturn gdf_neighborhood",
         "out": "GEODATAFRAME",
         "in": "JSON",
         "goal": "Load key fields from the 'access_score_neighborhood' GeoJSON dataset, including coverage, average attribute count, and geometry for further analysis and visualization.",
