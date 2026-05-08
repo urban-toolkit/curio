@@ -48,8 +48,224 @@ TODO
 # Sandbox Changes
 
 ## ```python_wrapper.txt```
-The only change I needed to make in the Sandbox was to update this file so that .......
-TODO
+For this file, we update the way it checks the input type because the input may now be a GeoDataframe/Dataframe. The code of ```if input:``` that was here before will try and do a
+True/False check on our Dataframe, and this will cause an ambiguity error (something like "The truth value of a DataFrame is ambiguous.")! Due to this, we have to use the ```isinstance``` function to check what we are working with. If it is a Dataframe, we skip the dictionary parsing that was done previously.
+
+```
+# Use type-checking first to safely short-circuit the boolean evaluation of DataFrames
+if isinstance(input, (pd.DataFrame, gpd.GeoDataFrame)) or input:
+    checkIOType(input, nodeType)
+    if(dataType == 'outputs'):
+        incomingInput = []
+        for elem in input:
+            # Bypass the legacy dict parser if the element is already a DataFrame
+            if isinstance(elem, (pd.DataFrame, gpd.GeoDataFrame)):
+                incomingInput.append(elem)
+            else:
+                incomingInput.append(parseInput(elem))
+    else:
+        # Bypass the legacy dict parser if the input is already a DataFrame
+        if isinstance(input, (pd.DataFrame, gpd.GeoDataFrame)):
+            incomingInput = input
+        else:
+            incomingInput = parseInput(input)
+else:
+    incomingInput = ''
+```
+
+## ```util/parsers.py```
+For this file, we had to make serveral changes to functions to ensure we were storing files in Parquet format where possible and loading, reading, and passing this data right.
+
+In the ```check_dataframe_input``` function, we updated it to accept and pass through any raw Dataframe objects, The raw Dataframe is what we now return when we read the .parquet files, so we don't want to do ```data.get('dataType)``` on these as this will mistakenly try to access a column named 'dataType'. 
+```
+def check_dataframe_input(data, nodeType):
+    if isinstance(data, list):
+        return
+        
+    # NEW: If it is already a raw DataFrame, it is valid!
+    if isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
+        return 
+
+    # Legacy dictionary checks
+    if data.get('dataType') == 'outputs' and len(data.get('data', [])) > 5:
+        raise Exception(f'{nodeType} only supports five inputs')
+
+    valid_types = {'dataframe', 'geodataframe'}
+    if data.get('dataType') == 'outputs':
+        for elem in data.get('data', []):
+            if elem.get('dataType') not in valid_types:
+                raise Exception(f'{nodeType} only supports DataFrame and GeoDataFrame as input')
+    elif data.get('dataType') not in valid_types:
+        raise Exception(f'{nodeType} only supports DataFrame and GeoDataFrame as input')
+```
+
+For the same reason as above, we updated the ```checck_transformation_input``` function to also accept raw DataFrame or Raster objects.
+```
+def check_transformation_input(data, nodeType):
+    if isinstance(data, list):
+        return
+        
+    # NEW: If it is already a raw DataFrame or Raster, it is valid!
+    if isinstance(data, (pd.DataFrame, gpd.GeoDataFrame)):
+        return 
+    if isinstance(data, rasterio.io.DatasetReader):
+        return
+
+    # Legacy dictionary checks
+    valid_types = {'dataframe', 'geodataframe', 'raster'}
+    if data.get('dataType') == 'outputs' and len(data.get('data', [])) > 2:
+        raise Exception(f'{nodeType} only supports one or two inputs')
+
+    if data.get('dataType') == 'outputs':
+        for elem in data.get('data', []):
+            if elem.get('dataType') not in valid_types:
+                raise Exception(f'{nodeType} only supports DataFrame, GeoDataFrame, and Raster as input')
+    elif data.get('dataType') not in valid_types:
+        raise Exception(f'{nodeType} only supports DataFrame, GeoDataFrame, and Raster as input')
+```
+
+One of the main changes for our Curio project was saving the data in .parquet files so we get on-disk, in-memory columnar storage. To do this, we update the ```save_memory_mapped_file``` function to save tabular data to .parquet files instead of .data files. 
+```
+def save_memory_mapped_file(data):
+    """
+    Saves tabular data as a Parquet file and nested dicts as standard JSON.
+
+    Args:
+        data (dict | pd.DataFrame): The data to be saved.
+
+    Returns:
+        str: The relative path of the saved file.
+    """
+    launch_dir = Path(os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())).resolve()
+    shared_disk_path = os.environ.get("CURIO_SHARED_DATA", "./.curio/data/")
+    save_dir = (launch_dir / shared_disk_path).resolve()
+    
+    # Ensure the directory exists
+    os.makedirs(save_dir, exist_ok=True)
+
+    timestamp = str(int(time.time()))
+
+    # Extract the actual payload from the wrapper dictionary
+    payload = data.get('data') if isinstance(data, dict) and 'data' in data else data
+
+    # 1. PARQUET EXPORT: If payload is tabular, save it as Parquet
+    if isinstance(payload, (pd.DataFrame, gpd.GeoDataFrame)):
+        unique_filename = f"{timestamp}_output.parquet"
+        full_path = save_dir / unique_filename
+        
+        try:
+            # Attempt to save the DataFrame to Parquet natively
+            payload.to_parquet(full_path, engine='pyarrow', index=False)
+        except Exception as e:
+            # Fallback: PyArrow strictly enforces column types.
+            # If a user's code mixes types (like putting a 0 in a string column),
+            # we coerce all object columns to strings so the system doesn't crash.
+            for col in payload.select_dtypes(include=['object']).columns:
+                payload[col] = payload[col].astype(str)
+                
+            # Try saving again
+            payload.to_parquet(full_path, engine='pyarrow', index=False)
+
+    # 2. JSON EXPORT: If data is a dict (metadata, vega specs), save as JSON
+    elif isinstance(data, dict):
+        json_bytes_initial = json.dumps(data, ensure_ascii=False).encode('utf-8')
+        input_hash = hashlib.sha256(json_bytes_initial[:1024]).digest()[:4].hex()
+        unique_filename = f"{timestamp}_{input_hash[:25]}.json"
+        # Inject the filename into the data
+        data['filename'] = unique_filename
+        full_path = save_dir / unique_filename
+        
+        with open(full_path, "w", encoding="utf-8") as file:
+            json.dump(data, file, ensure_ascii=False)
+            
+    else:
+        raise TypeError("Unsupported data type. Must be a Pandas DataFrame or dict.")
+
+    relative_path = full_path.relative_to(shared_disk_path)
+    return str(relative_path).replace("\\", "/")
+```
+
+Since we now store files in Parquet form, we need to ensure we update the ```load_memory_mapped_file``` function so that when it encounters a .parquet file it properly reads it
+back into a Dataframe.
+```
+def load_memory_mapped_file(file_path):
+    """
+    Loads data from Parquet, JSON, or legacy compressed data files.
+
+    Args:
+        file_path (str): The path of the file to load.
+
+    Returns:
+        dict | pd.DataFrame: The loaded data.
+    """
+    launch_dir = Path(os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())).resolve()
+    shared_disk_path = os.environ.get("CURIO_SHARED_DATA", "./.curio/data/")
+    lod_dir = (launch_dir / shared_disk_path).resolve()
+
+    requested_path = Path(file_path)
+    full_path = (lod_dir / requested_path).resolve()
+
+    # Security check to prevent directory traversal
+    if not str(full_path).startswith(str(lod_dir)):
+        raise PermissionError(f"Access to path '{full_path}' is not allowed.")
+
+    if not full_path.exists():
+        raise FileNotFoundError(f"The file {full_path} does not exist.")
+
+    # 1. LOAD PARQUET
+    if full_path.suffix == '.parquet':
+        # Instantly reads the columnar data back into a DataFrame
+        return pd.read_parquet(full_path, engine='pyarrow')
+        
+    # 2. LOAD STANDARD JSON
+    elif full_path.suffix == '.json':
+        with open(full_path, "r", encoding="utf-8") as file:
+            return json.load(file)
+            
+    # 3. LOAD LEGACY COMPRESSED DATA
+    else:
+        with open(full_path, "rb") as file:
+            with mmap.mmap(file.fileno(), 0, access=mmap.ACCESS_READ) as mmapped_file:
+                decompressed_data = zlib.decompress(mmapped_file[:])
+                return json.loads(decompressed_data.decode('utf-8'))
+```
+
+Lastly for the ```parsers.py``` file, we update the ```parseOutput``` function so that we keep the Dataframe and GeoDataframe objects as they are, without converting them
+to a dictionary of GeoJSON string (as was done before).
+```
+# Output Functions
+def parseOutput(output):
+    json_output = {'data': '', 'dataType': ''}
+    if isinstance(output, (int, float, bool, str)):
+        json_output['data'] = output
+        json_output['dataType'] = type(output).__name__
+    elif isinstance(output, list):
+        json_output['data'] = [parseOutput(elem) for elem in output]
+        json_output['dataType'] = type(output).__name__
+    elif isinstance(output, dict):
+        json_output['data'] = output
+        json_output['dataType'] = type(output).__name__
+    elif isinstance(output, pd.DataFrame) and not isinstance(output, gpd.GeoDataFrame):
+        # Keep the raw DataFrame object instead of converting to a dict
+        json_output['data'] = output
+        json_output['dataType'] = 'dataframe'
+    elif isinstance(output, gpd.GeoDataFrame):
+        # Keep the raw GeoDataFrame object instead of converting to a GeoJSON string
+        json_output['data'] = output
+        json_output['dataType'] = 'geodataframe'
+        
+        # Preserve metadata if it exists
+        if hasattr(output, 'metadata') and 'name' in output.metadata:
+            json_output['metadata'] = {'name': output.metadata['name']}
+    elif isinstance(output, rasterio.io.DatasetReader):
+        json_output['data'] = output.name
+        json_output['dataType'] = 'raster'
+    elif isinstance(output, tuple):
+        json_output['data'] = [parseOutput(elem) for elem in output]
+        json_output['dataType'] = 'outputs'
+
+    return json_output
+```
 
 # Frontend Changes
 
