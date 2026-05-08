@@ -518,6 +518,17 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         const outputRefs: OutputRef[] = buildOutputRefs();
 
         const name = nameOverride || projectName || workflowNameRef.current;
+        /*
+        In pyodide mode there's no backend running, so projectsApi.update/create would always throw "Failed to
+        fetch". The localStorage path already existed for auto-save in FlowProvider.tsx —
+        this just makes the manual save button use the same storage instead of crashing.
+         */
+        if (process.env.PYODIDE_ENABLED === 'true') {
+            localStorage.setItem('curio_workflow', JSON.stringify(spec));
+            setProjectSavedAt(new Date());
+            setProjectDirty(false);
+            return;
+        }
 
         if (projectId) {
             const detail = await projectsApi.update(projectId, {
