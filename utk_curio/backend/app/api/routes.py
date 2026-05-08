@@ -3,6 +3,58 @@ import requests
 import json
 
 _sandbox_session = requests.Session()
+
+
+# Per-route timeouts for backend -> sandbox bridge calls (in seconds).
+# These were 120 / 60 historically; bumped here so legitimate long-running
+# nodes (large CSV loads, heavy spatial ops, GPU compute) don't hit the
+# request library's deadline before the sandbox has had a chance to respond.
+SANDBOX_EXEC_TIMEOUT     = 600  # /processPythonCode and /processJavaScriptCode
+SANDBOX_GET_TIMEOUT      = 300  # /get (full artifact JSON)
+SANDBOX_PREVIEW_TIMEOUT  = 60   # /get-preview (always small by definition)
+SANDBOX_UPLOAD_TIMEOUT   = 60
+SANDBOX_INSTALL_TIMEOUT  = 600  # `pip install` of optional libraries can be slow
+
+
+def _sandbox_call(method: str, path: str, *, label: str, timeout: int, **kwargs):
+    """Call the sandbox over `_sandbox_session` with consistent error handling.
+
+    Catches `requests.Timeout` and `requests.ConnectionError` and returns a
+    Flask `(jsonify(...), status)` tuple with a clear error message instead
+    of letting the exception escape (which would otherwise surface to the
+    browser as an opaque 'NetworkError when attempting to fetch resource').
+
+    On success returns the `requests.Response` object directly so callers can
+    parse the JSON / forward it as before.
+
+    Returns either:
+      - `requests.Response` on success
+      - `(flask_response, status_code)` tuple on transport-level failure
+    """
+    url = api_address + ":" + str(api_port) + path
+    fn = getattr(_sandbox_session, method)
+    try:
+        return fn(url, timeout=timeout, **kwargs)
+    except requests.Timeout as e:
+        print(f"[backend {label}] sandbox call timed out after {timeout}s: {e}", flush=True)
+        return jsonify({
+            'error': 'sandbox_timeout',
+            'message': (f'The sandbox did not respond within {timeout}s on {path}. '
+                        'The node is likely still running — check the sandbox log. '
+                        'For large data loads, consider trimming columns or rows '
+                        'before returning from the node.'),
+            'path': path,
+            'timeout_seconds': timeout,
+        }), 504
+    except requests.ConnectionError as e:
+        print(f"[backend {label}] sandbox connection error on {path}: {e}", flush=True)
+        return jsonify({
+            'error': 'sandbox_unreachable',
+            'message': (f'Could not reach the sandbox on {path}. '
+                        'Check that the sandbox process is running '
+                        f'({api_address}:{api_port}).'),
+            'path': path,
+        }), 502
 from utk_curio.backend.extensions import db
 from utk_curio.backend.app.users.dependencies import require_auth, get_current_token
 import uuid
@@ -209,7 +261,13 @@ def upload_file():
     if file.filename == '':
         return 'No selected file'
 
-    response = _sandbox_session.post(api_address+":"+str(api_port)+"/upload", files={'file': file}, data={'fileName': file.filename}, timeout=60)
+    response = _sandbox_call(
+        'post', '/upload',
+        label='/upload', timeout=SANDBOX_UPLOAD_TIMEOUT,
+        files={'file': file}, data={'fileName': file.filename},
+    )
+    if isinstance(response, tuple):  # transport-level failure
+        return response
 
     if response.status_code == 200:
         return 'File uploaded successfully'
@@ -227,13 +285,15 @@ def get_file():
         return 'No artifact id specified', 400
 
     session_id = get_current_token()
+    t0 = time.perf_counter()
+    resp = _sandbox_call(
+        'get', '/get',
+        label='/get', timeout=SANDBOX_GET_TIMEOUT,
+        params={"fileName": file_name, "sessionId": session_id},
+    )
+    if isinstance(resp, tuple):  # transport-level failure (timeout / unreachable)
+        return resp
     try:
-        t0 = time.perf_counter()
-        resp = _sandbox_session.get(
-            api_address + ":" + str(api_port) + "/get",
-            params={"fileName": file_name, "sessionId": session_id},
-            timeout=60,
-        )
         resp.raise_for_status()
         data = resp.json()
         if vega:
@@ -259,18 +319,19 @@ def get_file_preview():
 
     max_rows = 100
     session_id = get_current_token()
+    t0 = time.perf_counter()
+    resp = _sandbox_call(
+        'get', '/get',
+        label='/get-preview', timeout=SANDBOX_PREVIEW_TIMEOUT,
+        params={"fileName": file_name, "maxRows": max_rows, "sessionId": session_id},
+    )
+    if isinstance(resp, tuple):
+        return resp
     try:
-        t0 = time.perf_counter()
-        resp = _sandbox_session.get(
-            api_address + ":" + str(api_port) + "/get",
-            params={"fileName": file_name, "maxRows": max_rows, "sessionId": session_id},
-            timeout=60,
-        )
         resp.raise_for_status()
         data = resp.json()
         print(f"[/get-preview] id={file_name} took={time.perf_counter()-t0:.4f}s", flush=True)
         return jsonify(data), 200
-
     except Exception as e:
         return f'Error loading preview: {str(e)}', 500
 
@@ -287,16 +348,20 @@ def process_python_code():
 
     session_id = get_current_token()
     t1 = _time.perf_counter()
-    response = _sandbox_session.post(api_address+":"+str(api_port)+"/exec",
-                            data=json.dumps({
-                                "code": code,
-                                "file_path": input['path'],
-                                "nodeType": nodeType,
-                                "dataType": input['dataType'],
-                                "session_id": session_id,
-                            }),
-                            headers={"Content-Type": "application/json"},
-                            timeout=120)
+    response = _sandbox_call(
+        'post', '/exec',
+        label='/processPythonCode', timeout=SANDBOX_EXEC_TIMEOUT,
+        data=json.dumps({
+            "code": code,
+            "file_path": input['path'],
+            "nodeType": nodeType,
+            "dataType": input['dataType'],
+            "session_id": session_id,
+        }),
+        headers={"Content-Type": "application/json"},
+    )
+    if isinstance(response, tuple):
+        return response
     t2 = _time.perf_counter()
 
     try:
@@ -341,8 +406,9 @@ def process_javascript_code():
 
     session_id = get_current_token()
     t1 = _time.perf_counter()
-    response = _sandbox_session.post(
-        api_address + ":" + str(api_port) + "/execJs",
+    response = _sandbox_call(
+        'post', '/execJs',
+        label='/processJavaScriptCode', timeout=SANDBOX_EXEC_TIMEOUT,
         data=json.dumps({
             "code": code,
             "file_path": input['path'],
@@ -351,8 +417,9 @@ def process_javascript_code():
             "session_id": session_id,
         }),
         headers={"Content-Type": "application/json"},
-        timeout=120,
     )
+    if isinstance(response, tuple):
+        return response
     t2 = _time.perf_counter()
 
     try:
@@ -389,16 +456,15 @@ def process_javascript_code():
 @require_auth
 def install_packages():
     packages = request.json.get('packages', [])
-    try:
-        response = _sandbox_session.post(
-            api_address + ":" + str(api_port) + "/install",
-            data=json.dumps({"packages": packages}),
-            headers={"Content-Type": "application/json"},
-            timeout=120,
-        )
-        return response.json()
-    finally:
-        pass
+    response = _sandbox_call(
+        'post', '/install',
+        label='/installPackages', timeout=SANDBOX_INSTALL_TIMEOUT,
+        data=json.dumps({"packages": packages}),
+        headers={"Content-Type": "application/json"},
+    )
+    if isinstance(response, tuple):
+        return response
+    return response.json()
 
 @bp.route('/signin', methods=['POST'])
 def signin_legacy():
