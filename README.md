@@ -18,7 +18,7 @@
 
   <p>
     <a href="https://pypi.org/project/utk-curio/"><img alt="PyPI" src="https://img.shields.io/pypi/v/utk-curio?style=for-the-badge&label=PyPI&color=0073b7"/></a>
-    <a href="https://github.com/urban-toolkit/curio"><img alt="GitHub" src="https://img.shields.io/github/package-json/v/urban-toolkit/curio?style=for-the-badge&label=GitHub&color=24292e"/></a>
+    <a href="https://github.com/urban-toolkit/curio"><img alt="GitHub" src="https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2Furban-toolkit%2Fcurio%2Fmain%2Futk_curio%2F__init__.py&search=__version__%5Cs*%3D%5Cs*%22(.%2B%3F)%22&replace=%241&style=for-the-badge&label=GitHub&color=24292e"/></a>
     <a href="https://curio.urbantk.org"><img alt="curio.urbantk.org" src="https://img.shields.io/badge/dynamic/json?style=for-the-badge&url=https%3A%2F%2Fcurio.urbantk.org%2Fapi%2Fversion&query=%24.version&label=curio.urbantk.org&color=2ea44f&cacheSeconds=300"/></a>
     <a href="https://curio-dev.urbantk.org"><img alt="curio-dev.urbantk.org" src="https://img.shields.io/badge/dynamic/json?style=for-the-badge&url=https%3A%2F%2Fcurio-dev.urbantk.org%2Fapi%2Fversion&query=%24.version&label=curio-dev.urbantk.org&color=8957e5&cacheSeconds=300"/></a>
   </p>

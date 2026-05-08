@@ -75,23 +75,18 @@ jobs:
       - name: Deploy to curio-dev stack
         env:
           REF_INPUT: ${{ inputs.ref || '' }}
-          EVENT_NAME: ${{ github.event_name }}
         run: |
-          ref="$REF_INPUT"
-          if [ "$EVENT_NAME" = "push" ]; then
-            ref="main"
-          fi
           ssh -i ~/.ssh/id_ed25519 deploy@utk \
-            bash -s "$ref" <<'EOF'
+            bash -s "$REF_INPUT" <<'EOF'
           set -euo pipefail
           ref="$1"
           cd /srv/curio-dev
           git fetch --prune --tags origin
           if [ -z "$ref" ]; then
-            ref=$(git describe --tags --abbrev=0 --match 'v*' origin/main)
+            ref="main"
           fi
-          git checkout --detach "$ref" 2>/dev/null \
-            || git checkout --detach "origin/$ref"
+          git checkout --detach "origin/$ref" 2>/dev/null \
+            || git checkout --detach "$ref"
           echo "Deploying $ref ($(git rev-parse --short HEAD))"
           export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
           export BACKEND_URL=https://curio-dev.urbantk.org/api
@@ -139,8 +134,8 @@ jobs:
           if [ -z "$ref" ]; then
             ref=$(git describe --tags --abbrev=0 --match 'v*' origin/main)
           fi
-          git checkout --detach "$ref" 2>/dev/null \
-            || git checkout --detach "origin/$ref"
+          git checkout --detach "origin/$ref" 2>/dev/null \
+            || git checkout --detach "$ref"
           echo "Deploying $ref ($(git rev-parse --short HEAD))"
           mkdir -p instance .curio
           export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
