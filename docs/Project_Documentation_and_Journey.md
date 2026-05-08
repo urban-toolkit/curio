@@ -2,13 +2,12 @@
 ## Intro & Background
 For my course project, I aimed to "modify the data transfer between nodes in Curio to leverage Apache Arrow for data storage and DuckDB as a query engine". 
 After 14 weeks of the course I had acheived what I had in mind for this goal, and that initial effort and modification can be seen in this ```main``` branch 
-of this forked repository (the branch I am contributing to Curio). In week 14, a major modification to Curio was made that overlapped with my goal: DuckDB was implemented to handle file storage and
-file management for Curio, replacing the temporary file storage strategy that involved storing files on disk in the folder **./.curio/data**. Using DuckDB as
-for file storage as well was a goal I had for my version as well, but I wasn't able to get it working within the course timeline.
+of this forked repository (the branch I am contributing to Curio). 
 
-## Important Note
-The ```feature/duck-db-and-arrow-transfer``` branch is my attempt at merging my initial effort of leveraging Arrow + DuckDB with Stefan's contribution of using DuckDB in Curio for file storage. **At present, 
-the version of Curio implemented here does not function completely.** It works for some things, it has bugs for some other things (for more on this branch, see the docs/ folder of the forked repo after switching branches). 
+In week 14, a major modification to Curio was made that overlapped with my goal: DuckDB was implemented to handle file storage and file management for Curio, replacing the temporary file storage strategy that involved storing files on disk in the folder **./.curio/data**. Using DuckDB as for file storage as well was a goal I had for my version as well, but I wasn't able to get it working within the course timeline.
+
+### Side Note on Another Experimental Branch I Made
+The ```feature/duck-db-and-arrow-transfer``` branch is my attempt at merging my initial effort of leveraging Arrow + DuckDB with Stefan's contribution of using DuckDB in Curio for file storage. **At present, the version of Curio implemented here does not function completely.** It works for some things, it has bugs for some other things (for more on this branch, see the docs/ folder of the forked repo after switching branches). 
 
 ## What is the Rest of this Markdown?
 In the rest of this markdown, I document the main changes I made to Curio to add in the following:
@@ -42,8 +41,79 @@ These changes span three pieces of Curio to do this: **Backend, Sandbox, and Fro
 
 # Backend Changes
 ## ```app/api/routes.py```
-TODO
-TODO
+In the backend, the change we made was to spin up a temporary, in-memory DuckDB instance to efficiently and directly query the .parquet files and retrieve the data in an Arrow Table, and then stream this Arrow Table to the frontend instead of JSON. To do this, we modify the ```get_file``` function so that when we encounter .parquet files, we use a DuckDB instance to query that data and retrieve it in an Arrow Table, and then we write it to an Arrow byte-stream. We wrap the byte-stream in a ```Response``` to specify to the frontend that this is an Arrow byte-stream and it needs to be parsed and handled properly.
+
+```
+# for duckDB + Arrow integration
+import duckdb
+import pyarrow as pa
+from flask import Response
+
+// ... all the rest of the code and functions between imports and get_file()
+
+def get_file():
+    file_name = request.args.get('fileName')
+    vega = request.args.get('vega', 'false').lower() == 'true'
+
+    if not file_name:
+        return 'No file name specified', 400
+
+    launch_dir = Path(os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())).resolve()
+    shared_disk_path = os.environ.get("CURIO_SHARED_DATA", "./.curio/data/")
+    base_path = (launch_dir / shared_disk_path).resolve()
+    
+    requested_path = Path(file_name)
+    full_path = (base_path / requested_path).resolve()
+
+    # Security check
+    if not str(full_path).startswith(str(base_path)):
+        return 'Invalid file path: %s' % full_path, 403
+
+    if not full_path.exists():
+        return 'File does not exist: %s' % full_path, 404
+
+    try:
+        # PARQUET FILES (The DuckDB Fast Path)
+        if full_path.suffix == '.parquet':
+            # Create a lightning-fast in-memory instance
+            con = duckdb.connect()
+            
+            # Query the file and convert directly to Apache Arrow
+            arrow_table = con.execute(f"SELECT * FROM '{full_path}'").fetch_arrow_table()
+            
+            if vega:
+                # Vega expects a standard JSON array of objects
+                vega_data = arrow_table.to_pylist()
+                return jsonify(vega_data), 200
+            else:
+                # Stream the Arrow IPC format directly!
+                sink = pa.BufferOutputStream()
+                with pa.ipc.new_stream(sink, arrow_table.schema) as writer:
+                    writer.write_table(arrow_table)
+                
+                return Response(
+                    sink.getvalue().to_pybytes(),
+                    mimetype='application/vnd.apache.arrow.stream'
+                )
+
+        # STANDARD JSON FILES (Metadata, Vega specs, etc.)
+        elif full_path.suffix == '.json':
+            with open(full_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return jsonify(data), 200
+
+        # LEGACY FILES (Fallback to prevent breaking old nodes)
+        else:
+            with open(full_path, "rb") as file:
+                with mmap.mmap(file.fileno(), 0, access=mmap.ACCESS_READ) as mmapped_file:
+                    decompressed_data = zlib.decompress(mmapped_file[:])
+                    data = json.loads(decompressed_data.decode('utf-8'))
+                    
+            return jsonify({"data": data, "dataType": "dataframe"}), 200
+
+    except Exception as e:
+        return f'Error loading file: {str(e)}', 500
+```
 
 # Sandbox Changes
 
@@ -511,3 +581,14 @@ export async function fetchData(fileName: string, vega: boolean = false) {
 ```
 
 # Concluding Notes
+## The Original Goal & End Achievement
+I set out at the beginning of the semester to try and do the following: integrate DuckDB and Apache Arrow as an alternative backend execution engine and data structure to handle the data transfer between nodes in Curio. Overall, I managed to achieve this through the following changes:
+1. Store .parquet files on-disk instead of .data files (still in the folder **./.curio/data**). This means we skip the serialization & compression steps done before and instead store files in-memory in columnar format.
+2. Spin up a temporary, in-memory DuckDB instance to efficiently and directly query the .parquet files and retrieve the data in an Arrow Table.
+3. Streaming the Arrow Table to the frontend instead of JSON.
+
+## What Wasn't Done By Me but Was Done By Stefan
+About midway through the course, I wanted to explore an alternative implementation design for this project, in which I use DuckDB for file storage as well, instead of having on-disk Parquet files handling storage. I tried to get this working but did not get it done within the course timeline. However, a recent contribution made by Stefan did get this working! Due to his work, now Curio does use DuckDB for file storage/management, which was the main bottleneck in the original system when discussing the data transfer between nodes.
+
+## Concluding Thoughts & Thanks
+I hope this markdown and the whole project can be somehow helpful to all members and contributors working on Curio! I also want to that Professor Miranda for a great final semester, and hope all goes well with Curio and any other project you all create moving forward!
