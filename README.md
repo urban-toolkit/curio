@@ -1,92 +1,334 @@
-# Curio [![Discord](https://img.shields.io/badge/Discord-738ADB)](https://discord.gg/ajT6wF8TmN) 	[![Docs](https://img.shields.io/badge/Documentation-brightgreen)](https://github.com/urban-toolkit/curio/tree/main/docs) [![Full stack build](https://github.com/urban-toolkit/curio/actions/workflows/docker-compose.yml/badge.svg)](https://github.com/urban-toolkit/curio/actions/workflows/docker-compose.yml) [![PyPI version](https://img.shields.io/pypi/v/utk-curio)](https://pypi.org/project/utk-curio/) 	[![Contributors](https://img.shields.io/github/contributors/urban-toolkit/curio)](https://github.com/urban-toolkit/curio/graphs/contributors)
+# Curio-Replay
 
+Fine-grained interaction provenance and time-travel replay for Curio urban visual analytics workflows.
 
-<div align="center">
-  <img src="https://github.com/urban-toolkit/curio/blob/main/logo.png?raw=true" alt="Curio Logo" height="200"/></br>
-  [<a href="https://arxiv.org/abs/2408.06139">Paper</a>] | [<a href="https://urbantk.org/curio">Website</a>]
-</div>
+[![Python 3.11](https://img.shields.io/badge/Python-3.11-blue)](https://www.python.org/)
+[![React 18](https://img.shields.io/badge/React-18-61dafb)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6)](https://www.typescriptlang.org/)
+[![Built on Curio](https://img.shields.io/badge/Built%20on-Curio-f59e0b)](https://github.com/urban-toolkit/curio)
 
-Curio is a framework for collaborative urban visual analytics that uses a dataflow model with multiple abstraction levels (code, grammar, GUI elements) to facilitate collaboration across the design and implementation of visual analytics components. The framework allows experts to intertwine preprocessing, managing, and visualization stages while tracking provenance of code and visualizations.
+## Problem Statement
 
-- [What's New](#whats-new)
-- [Roadmap](#roadmap)
-- [Overview](#overview)
-  - [Key features](#key-features)
-- [Usage and contributions](#usage-and-contributions)
-- [Citation](#citation)
-- [License](#license)
-- [Acknowledgements](#acknowledgements)
+[Curio](https://github.com/urban-toolkit/curio) is a collaborative, dataflow-based framework for urban visual analytics. Curio records workflow-level provenance, but the final saved workflow does not fully explain the analyst's path: which nodes were added, connected, moved, executed, edited, or removed during exploration.
 
-## What's New
+Curio-Replay adds interaction-level provenance and time-travel replay to Curio. It records fine-grained user actions in the visual workflow editor and reconstructs the workflow over time so analysts and collaborators can review, debug, and reproduce the exploration process.
 
-Curio v0.5 introduces a number of improvements and fixes thanks to the efforts of new contributors. Highlights include:
+| Problem | Impact |
+|---|---|
+| Lost interaction history | Intermediate workflow edits disappear once only the final state is saved. |
+| Weak reproducibility | Collaborators cannot replay how a result was produced. |
+| Hard debugging | It is difficult to identify which action introduced a broken or unexpected state. |
 
-- 📦 **Pip Installation Support:** Curio can now be installed via `pip install utk-curio`, making it easier to get started. Check the [usage](docs/USAGE.md) document for details.
-- 🚀 **Performance Improvements:** Enhanced computation execution speed in the backend.
-- 🧪 **Initial End-to-End Testing:** Integrated test for backend/sandbox testing.
-- 🧭 **New Examples Added:** Included new dataflows like "Complaints by Zip Code" and "Accessibility Analysis".
-- 🐳 **Docker Enhancements:** Fixed Docker build issues by enforcing platform and fixing dependency installation errors.
-- 🧹 **General Bug Fixes:** Resolved issues with icons, route definitions, upload status tracking, and environment variable references.
+## Demo
 
-See the full [Release notes](https://github.com/urban-toolkit/curio/releases) for more. To get started with installation and setup, see the [usage guide](docs/USAGE.md). For a quick hands-on walkthrough, try the [quick start tutorial](docs/QUICK-START.md). If you'd like to contribute, read the [contribution guide](docs/CONTRIBUTIONS.md).
+### Video Walkthrough
 
+[![Watch the Curio-Replay demo](https://img.youtube.com/vi/o_u9zjbeAgc/maxresdefault.jpg)](https://youtu.be/o_u9zjbeAgc)
 
-## Roadmap
+### Screenshots
 
-- 🔌 **UTK-Serverless Integration:** UTK and Curio's integration is being improved. A new UTK serverless version will be integrated soon.
-- 🧪 **Expanded Testing Suite:** A more comprehensive testing framework is being extended to also cover frontend scenarios.
-- 🧠 **Enhanced Learning Resources:** More example dataflows and revised documentation are being created.
-- 🧩 **Modular Node Architecture:** A refactor is in progress to support a plug-in architecture, allowing programmers to define and register custom dataflow nodes more easily.
-- 📓 **Notebook Interoperability:** We are building support for importing/exporting dataflows to and from Jupyter notebooks.
-- 🧾 **Advanced Provenance Tracking:** We are improving how Curio tracks and visualizes the history of user actions.
-- 📋 **Improved Logging System:** Curio's logging is being updated with clearer diagnostics, better error tracking, and improved debugging support.
+Put the demo screenshots in `docs/assets/` with these exact filenames:
 
+| File | What to put there |
+|---|---|
+| `docs/assets/teaser.png` | A 3-panel image: live canvas, replay panel open, and an earlier replay step. |
+| `docs/assets/demo_thumbnail.png` | Screenshot from the best frame of the walkthrough video. |
+| `docs/assets/architecture.png` | A diagram showing React UI -> logging layer -> Flask API -> SQLite provenance database. |
+| `docs/assets/replay_panel.png` | Full-window replay screenshot with workflow nodes and the event timeline visible. |
+| `docs/assets/event_timeline.png` | Cropped right-side event timeline with the active event highlighted. |
+| `docs/assets/toolbar.png` | Cropped bottom replay toolbar with session selector, play controls, seek slider, and restore button. |
+| `docs/assets/overhead_plot.png` | Evaluation plot generated from event-capture latency measurements. |
 
----
+After adding the files, these images will render in the GitHub README:
 
-## Overview
+![Curio-Replay teaser](docs/assets/teaser.png)
 
-**Curio: A Dataflow-Based Framework for Collaborative Urban Visual Analytics**  
-*Gustavo Moreira, Maryam Hosseini, Carolina Veiga, Lucas Alexandre, Nico Colaninno, Daniel de Oliveira, Nivan Ferreira, Marcos Lage, Fabio Miranda*  
-IEEE Transactions on Visualization and Computer Graphics ( Volume: 31, Issue: 1, January 2025)  
-Paper: [[DOI](https://doi.org/10.1109/TVCG.2024.3456353)], [[Arxiv](https://arxiv.org/abs/2408.06139)]
+![Replay panel](docs/assets/replay_panel.png)
 
-<div align="center">
-  <video src="https://github.com/urban-toolkit/curio/assets/2387594/6d29bda8-5e94-4496-a4ae-fd55adff024f" />
-</div>
+![Event timeline](docs/assets/event_timeline.png)
 
-<p align="center">
-  <img src="https://github.com/urban-toolkit/curio/blob/main/banner.jpg?raw=true" alt="Curio Use Cases" width="1000"/>
-</p>
+![Replay toolbar](docs/assets/toolbar.png)
 
-This project is part of the [Urban Toolkit ecosystem](https://urbantk.org), which includes [Curio](https://github.com/urban-toolkit/curio/) and [UTK](https://github.com/urban-toolkit/utk). Curio is a framework for collaborative urban visual analytics that uses a dataflow model with multiple abstraction levels to facilitate collaboration across the design and implementation of visual analytics components. UTK is a flexible and extensible visualization framework that enables the easy authoring of web-based visualizations through a new high-level grammar specifically built with common urban use cases in mind. 
+![System architecture](docs/assets/architecture.png)
 
+## Dataset Access
 
-### Key features
-- Provenance-aware dataflow
-- Modularized and collaborative visual analytics
-- Support for 2D and 3D maps
-- Linked data-driven interactions  
-- Integration with [UTK](https://urbantk.org) and [Vega-Lite](https://vega.github.io/vega-lite/)
+No large external dataset is required to run the replay system. The main dataset is the interaction log generated while a user edits a Curio workflow.
 
----
+Curio-Replay stores generated session data in Curio's local SQLite provenance database:
 
-## Usage and contributions
-For detailed instructions on how to use the project, please see the [usage](docs/USAGE.md) document. A set of examples can be found [here](https://github.com/urban-toolkit/curio/tree/main/docs). 
+```text
+.curio/provenance.db
+```
 
-🚀 Curio now supports a Docker-based setup for easier installation and orchestration of all components. See the [usage guide](docs/USAGE.md) for instructions on running Curio with Docker.
+The replay extension uses three interaction-provenance tables:
 
-If you'd like to contribute, see the [contributions](docs/CONTRIBUTIONS.md) document for guidelines. For questions, join [UTK's Discord](https://discord.gg/ajT6wF8TmN) server.
+| Table | Purpose |
+|---|---|
+| `interaction_session` | Stores one row per analyst session. |
+| `interaction_event` | Stores timestamped node, edge, parameter, and execution events. |
+| `graph_snapshot` | Stores full graph snapshots used to make replay seeking efficient. |
 
----
+If an external urban dataset is used for the final evaluation and cannot be redistributed, document it here:
+
+```text
+Dataset name: REPLACE_WITH_DATASET_NAME
+Access URL: REPLACE_WITH_OFFICIAL_DOWNLOAD_OR_REQUEST_URL
+License/terms: REPLACE_WITH_LICENSE_OR_TERMS
+Local raw-data path: data/raw/
+Processed sample path: data/sample/
+```
+
+If redistribution is allowed, place a small sample in `data/sample/` and include the processing script that recreates the processed data from the raw source.
+
+## Setup
+
+### Prerequisites
+
+- Python 3.11+
+- Node.js 18+
+- npm 9+
+- macOS, Linux, or Windows with WSL2
+
+### Clone
+
+```bash
+git clone https://github.com/eaguilar02/curio.git
+cd curio
+```
+
+### Python Environment
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Frontend Dependencies
+
+```bash
+cd utk_curio/frontend/urban-workflows
+npm install
+cd ../../..
+```
+
+Pinned dependency files:
+
+| Ecosystem | File |
+|---|---|
+| Python | `requirements.txt` |
+| JavaScript/TypeScript | `utk_curio/frontend/urban-workflows/package-lock.json` |
+
+## How to Run
+
+Start Curio from the repository root:
+
+```bash
+source venv/bin/activate
+python curio.py start
+```
+
+Open:
+
+```text
+http://localhost:8080
+```
+
+Services:
+
+| Service | URL |
+|---|---|
+| React frontend | `http://localhost:8080` |
+| Flask backend | `http://localhost:5002` |
+| Python sandbox | `http://localhost:2000` |
+
+Stop the app:
+
+```bash
+python curio.py stop
+```
+
+## How to Reproduce Key Results
+
+All evaluation scripts and outputs should live under:
+
+```text
+evaluation/
+```
+
+Use this workflow:
+
+1. Start Curio.
+2. Create or load a workflow.
+3. Perform a replay session by adding nodes, connecting edges, changing parameters, executing nodes, and opening Replay.
+4. Save or export the recorded session from `.curio/provenance.db`.
+5. Run the evaluation scripts below.
+6. Save logs, CSV files, configs, and plots under `evaluation/sample_sessions/results/`.
+
+### Replay Fidelity
+
+Goal: verify that replay reconstructs the same final graph state as the original session.
+
+```bash
+python evaluation/check_fidelity.py
+```
+
+Expected output:
+
+```text
+evaluation/sample_sessions/results/fidelity_log.txt
+```
+
+Report:
+
+- number of sessions tested
+- number of events per session
+- replay load time
+- final graph equality pass/fail
+
+### Event Capture Overhead
+
+Goal: measure event logging overhead.
+
+1. Start Curio.
+2. Open the browser console.
+3. Run `evaluation/run_synthetic_events.js`.
+4. Save the CSV output as:
+
+```text
+evaluation/sample_sessions/results/latency.csv
+```
+
+Generate the plot:
+
+```bash
+python evaluation/plot_overhead.py
+```
+
+Expected plot:
+
+```text
+docs/assets/overhead_plot.png
+```
+
+### Scalability
+
+Goal: measure event counts, snapshot counts, snapshot sizes, and replay seek time after a larger stress-test session.
+
+```bash
+python evaluation/check_scalability.py
+```
+
+Expected output:
+
+```text
+evaluation/sample_sessions/results/scalability_log.txt
+```
+
+## Results Artifacts
+
+Use this results layout:
+
+```text
+evaluation/
+├── README.md
+├── check_fidelity.py
+├── check_scalability.py
+├── load_sample_session.py
+├── plot_overhead.py
+├── run_synthetic_events.js
+└── results/
+    ├── fidelity_log.txt
+    ├── scalability_log.txt
+    ├── latency.csv
+    ├── evaluation_config.json
+    └── sample_session.json
+```
+
+Artifact provenance:
+
+| Artifact | Produced by |
+|---|---|
+| `fidelity_log.txt` | `python evaluation/check_fidelity.py` |
+| `scalability_log.txt` | `python evaluation/check_scalability.py` |
+| `latency.csv` | Browser console run of `run_synthetic_events.js` |
+| `overhead_plot.png` | `python evaluation/plot_overhead.py` |
+| `sample_session.json` | Export from `.curio/provenance.db` using `load_sample_session.py` or an export helper. |
+
+## Project Structure
+
+```text
+curio/
+├── README.md
+├── requirements.txt
+├── docs/
+│   └── assets/
+│       ├── teaser.png
+│       ├── demo_thumbnail.png
+│       ├── architecture.png
+│       ├── replay_panel.png
+│       ├── event_timeline.png
+│       ├── toolbar.png
+│       └── overhead_plot.png
+├── evaluation/
+│   ├── README.md
+│   ├── check_fidelity.py
+│   ├── check_scalability.py
+│   ├── load_sample_session.py
+│   ├── plot_overhead.py
+│   ├── run_synthetic_events.js
+│   └── sample_sessions/
+│       └── results/
+├── utk_curio/
+│   ├── backend/
+│   │   ├── db_migration.py
+│   │   └── app/api/logging_routes.py
+│   └── frontend/
+│       └── urban-workflows/
+│           ├── package.json
+│           ├── package-lock.json
+│           └── src/
+│               ├── logging/
+│               ├── replay/
+│               └── components/replay/
+└── tests/
+```
+
+## Key Modules
+
+| Module | Role |
+|---|---|
+| `utk_curio/backend/db_migration.py` | Creates or updates the SQLite tables used for interaction provenance. |
+| `utk_curio/backend/app/api/logging_routes.py` | Backend API routes for session lifecycle, event logging, and graph snapshots. |
+| `utk_curio/frontend/urban-workflows/src/logging/LoggingContext.tsx` | Manages the frontend logging session lifecycle. |
+| `utk_curio/frontend/urban-workflows/src/logging/EventBuffer.ts` | Buffers and batches captured interaction events. |
+| `utk_curio/frontend/urban-workflows/src/logging/EventInterceptor.ts` | Central capture point for user interaction events. |
+| `utk_curio/frontend/urban-workflows/src/logging/SnapshotManager.ts` | Stores periodic graph snapshots for efficient replay. |
+| `utk_curio/frontend/urban-workflows/src/replay/ReplayEngine.ts` | Reconstructs graph state from events and snapshots. |
+| `utk_curio/frontend/urban-workflows/src/components/replay/ReplayPage.tsx` | Replay page wrapper and session-loading UI. |
+| `utk_curio/frontend/urban-workflows/src/components/replay/ReplayCanvas.tsx` | Read-only replay canvas and event timeline. |
+| `utk_curio/frontend/urban-workflows/src/components/replay/ReplayControls.tsx` | Playback buttons, seek slider, step counter, and restore control. |
+
+## Final Checklist
+
+- Replace dataset placeholders if an external dataset is used.
+- Add screenshots to `docs/assets/` using the exact filenames listed above.
+- Complete the evaluation scripts in `evaluation/`.
+- Save evaluation logs and CSV files under `evaluation/sample_sessions/results/`.
+- Generate `docs/assets/overhead_plot.png` from `latency.csv`.
+- Verify setup from a fresh clone.
+- Commit `README.md`, `requirements.txt`, `utk_curio/frontend/urban-workflows/package-lock.json`, demo assets, and evaluation artifacts.
 
 ## Citation
 
-```
+This project builds on Curio:
+
+```bibtex
 @ARTICLE{moreira2025curio,
   author={Moreira, Gustavo and Hosseini, Maryam and Veiga, Carolina and Alexandre, Lucas and Colaninno, Nicola and de Oliveira, Daniel and Ferreira, Nivan and Lage, Marcos and Miranda, Fabio},
-  journal={IEEE Transactions on Visualization and Computer Graphics}, 
-  title={Curio: A Dataflow-Based Framework for Collaborative Urban Visual Analytics}, 
+  journal={IEEE Transactions on Visualization and Computer Graphics},
+  title={Curio: A Dataflow-Based Framework for Collaborative Urban Visual Analytics},
   year={2025},
   volume={31},
   number={1},
@@ -94,10 +336,3 @@ If you'd like to contribute, see the [contributions](docs/CONTRIBUTIONS.md) docu
   doi={10.1109/TVCG.2024.3456353}
 }
 ```
-
-## License
-Curio is MIT Licensed. Free for both commercial and research use.
-
-
-## Acknowledgements
-Curio and the Urban Toolkit have been supported by the National Science Foundation (NSF) (Awards [#2320261](https://www.nsf.gov/awardsearch/showAward?AWD_ID=2320261), [#2330565](https://www.nsf.gov/awardsearch/showAward?AWD_ID=2330565), and [#2411223](https://www.nsf.gov/awardsearch/showAward?AWD_ID=2411223)), Discovery Partners Institute (DPI), and IDOT.
