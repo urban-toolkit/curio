@@ -214,8 +214,6 @@ curio/
 │   ├── README.md
 │   └── assets/
 │       ├── demo_thumbnail.png
-│       ├── architecture.png
-│       ├── replay_panel.png
 │       ├── event_timeline.png
 │       ├── toolbar.png
 │       └── overhead_plot.png
@@ -337,7 +335,9 @@ python curio.py stop
 
 ## Using the Replay System
 
-![Replay panel](docs/assets/replay_panel.png)
+<p align="center">
+  <img src="assets/demo_thumbnail.png" alt="Replay system preview" width="800">
+</p>
 
 1. Build a workflow in the Curio canvas.
 2. Add nodes, connect edges, change parameters, and run nodes.
@@ -346,14 +346,17 @@ python curio.py stop
 5. Click **Load**.
 6. Use the replay controls to move through the workflow history.
 
-![Event timeline closeup](docs/assets/event_timeline.png)
+<p align="center">
+  <img src="assets/event_timeline.png" alt="Event timeline closeup" width="200">
+</p>
 
 The event timeline shows the sequence of user actions recorded during the session.
 
-![Replay toolbar](docs/assets/toolbar.png)
+<p align="center">
+  <img src="assets/toolbar.png" alt="Replay toolbar" width="900">
+</p>
 
 The replay canvas is read-only, so users can inspect workflow history without changing the original workflow.
-
 ---
 
 ## How to Reproduce Key Results
@@ -427,7 +430,11 @@ evaluation/overhead_summary.csv
 ```
 
 <p align="center">
-  <img src="docs/assets/overhead_plot.png" alt="Per-event capture overhead graph" width="850">
+  <img src="assets/overhead_plot.png" alt="Per-event capture overhead graph" width="520">
+</p>
+
+<p align="center">
+  <em>Per-event logging latency stayed below the 10 ms budget for all event types.</em>
 </p>
 
 ---
@@ -542,16 +549,10 @@ Sessions are stored in:
 .curio/provenance.db
 ```
 
-A sample session is included at:
+A sample session can be stored in:
 
 ```text
-evaluation/sample_sessions/session_s3_88events.json
-```
-
-To load the sample session:
-
-```bash
-python3 evaluation/load_sample_session.py
+evaluation/sample_sessions/
 ```
 
 ---
