@@ -79,7 +79,7 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 deploy@utk \
             bash -s "$REF_INPUT" <<'EOF'
           set -euo pipefail
-          ref="$1"
+          ref="${1:-}"
           cd /srv/curio-dev
           git fetch --prune --tags origin
           if [ -z "$ref" ]; then
@@ -128,7 +128,7 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 deploy@utk \
             bash -s "$REF_INPUT" <<'EOF'
           set -euo pipefail
-          ref="$1"
+          ref="${1:-}"
           cd /srv/curio
           git fetch --prune --tags origin
           if [ -z "$ref" ]; then
