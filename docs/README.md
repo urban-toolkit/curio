@@ -14,19 +14,20 @@
 
 ## Examples
 
-> [!NOTE]
-> Some examples use optional Python libraries that aren't included with Curio. If you hit a "ModuleNotFoundError" (or similar), install the missing package (e.g., via pip or conda).
+Each example below has a JSON dataflow you can import into Curio plus a step-by-step markdown walkthrough. Pipeline overviews in the walkthroughs are drawn with [Mermaid](https://mermaid.js.org/) `flowchart` blocks, which GitHub renders inline.
+
+The same examples are also seeded into the public deployments at [**curio.urbantk.org**](https://curio.urbantk.org) (stable) and [**curio-dev.urbantk.org**](https://curio-dev.urbantk.org) (latest `main`) — sign in to fork them into your own projects, or browse them read-only as a guest.
 
 Icons indicate the complexity level of each example: 🟢 Easy, 🟡 Intermediate, 🔴 Advanced.
 
-- 🟢 [Visual analytics of heterogeneous data](examples/01-visual-analytics.md): Integrates raster, meteorological, and sociodemographic data to compute thermal indices and map urban heat exposure.
-- 🟡 [What-if scenario planning](examples/02-what-if.md): Simulates sunlight obstruction based on 3D building geometry and explores shadow changes through interactive height adjustments.
-- 🔴 [Expert-in-the-loop urban accessibility analysis](examples/03-expert-in-the-loop.md): Trains and evaluates a computer vision model for sidewalk material classification with human-in-the-loop inspection.
-- 🟢 [Accessibility analysis](examples/04-accessibility-analysis.md): Analyzes sidewalk accessibility features using severity and agreement metrics to visualize neighborhood patterns.
-- 🟢 [Flooding analysis](examples/05-flooding-complaints.md): Aggregates and visualizes 311 service requests for flooding by zip code using simple data transformation.
-- 🟡 [Interactions between Vega-Lite and AutkMap](examples/06-interaction.md): Demonstrates how to link user interactions between an AutkMap visualization and Vega-Lite plots.
-- 🟡 [Speed camera violations](examples/07-speed-camera.md): Performs temporal aggregation and creates linked bar and line charts to analyze top camera violations over years.
-- 🟡 [Red-light traffic violation analysis](examples/08-red-light-violation.md): Builds a dataflow to analyze temporal, spatial, and seasonal trends in red-light violations using interactive dashboards.
-- 🟢 [Building energy efficiency](examples/09-energy-efficiency.md): Compares mean and median energy use intensity across building types to identify outliers and efficiency gaps.
-- 🟢 [Green roofs spatial analysis](examples/10-green-roofs.md): Visualizes the distribution and density of green roofs across Chicago using dot density maps and zip code aggregation.
-- 🟡 [Building energy consumption](examples/11-building-energy.md): Analyzes temporal, spatial, and structural patterns in building energy use with interactive visualizations.
+| # | Example | Functionality | Use case | Complexity |
+|---|---|---|---|---|
+| 01 | [Vega-Lite chained transforms](examples/01-vega-lite-chained-transforms.md) | Multiple Vega-Lite views fed from a chain of `DATA_TRANSFORMATION` cleanups | Sidewalk accessibility (Project Sidewalk, Chicago) | 🟢 |
+| 02 | [Vega-Lite spatial density](examples/02-vega-lite-spatial-density.md) | Spatial density + zip-code aggregation in Vega-Lite, fan-out via `DATA_POOL` | Chicago green roofs | 🟢 |
+| 03 | [Vega-Lite linked temporal charts](examples/03-vega-lite-linked-temporal-charts.md) | Temporal aggregation feeding linked bar + line Vega-Lite views | Chicago speed-camera violations | 🟡 |
+| 04 | [Vega-Lite multi-flow dashboard](examples/04-vega-lite-multi-flow-dashboard.md) | Multiple independent dataflows joined via `MERGE_FLOW` into one coordinated dashboard | Chicago red-light violations | 🟡 |
+| 05 | [Vega-Lite multi-view drilldown](examples/05-vega-lite-multi-view-drilldown.md) | Five parallel dataflows producing a faceted Vega-Lite drill-down across orthogonal axes | Chicago building energy use | 🟡 |
+| 06 | [Autark what-if picking](examples/06-autark-what-if-picking.md) | Picking-driven scenario with widget multiplier; side-by-side baseline / modified / delta maps via `DATA_POOL` fan-out | Boston building-height shadow study | 🔴 |
+| 07 | [Autark GPU shader](examples/07-autark-gpu-shader.md) | WGSL shader executed via `AUTK_COMPUTE`; brushable `AUTK_PLOT` ↔ `AUTK_MAP` | Chicago Loop shadow | 🔴 |
+| 08 | [Autark spatial join + regression](examples/08-autark-spatial-join-regression.md) | DuckDB spatial join in `JS_COMPUTATION` + per-feature OLS GPU regression + linked Autark scatter | Niterói land-surface temperature warming | 🔴 |
+| 09 | [Heterogeneous data + linked views](examples/09-heterogeneous-data-linked-views.md) | Cross-grammar Autark ↔ Vega-Lite brushing on raster + tabular + GeoJSON merged via `MERGE_FLOW` and fanned out via `DATA_POOL` | Milan urban heat exposure (UTCI) | 🔴 |

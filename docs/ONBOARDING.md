@@ -1,10 +1,10 @@
-# Onboarding Document for UTK, Curio, and Urbanite
+# Onboarding Document for Curio
 
-This document is meant for **undergraduate students** involved in UTK, Curio, and Urbanite projects to get you started quickly and independently.
+This document is meant for **undergraduate students** involved in the Curio project to get you started quickly and independently.
 
 ## Table of Contents
 
-1. [Overview: UTK, Curio, and Urbanite](#1-overview-utk-curio-and-urbanite)
+1. [Overview: Curio](#1-overview-curio)
 2. [Core Technologies](#2-core-technologies)
 3. [Essential Installations](#3-essential-installations)
 4. [General Organization of Documents](#4-general-organization-of-documents)
@@ -25,15 +25,15 @@ This document is meant for **undergraduate students** involved in UTK, Curio, an
     - [Why does `curio start` take so long to run the first time?](#why-does-curio-start-take-so-long-to-run-the-first-time)
     - [I am getting a "No such file or directory" error when loading a file](#i-am-getting-a-no-such-file-or-directory-error-when-loading-a-file)
 
-## 1. Overview: UTK, Curio, and Urbanite
+## 1. Overview: Curio
 
-- **UTK (Urban Toolkit):** A flexible and extensible visualization framework that enables the easy authoring of web-based visualizations through a new high-level grammar specifically built with common urban use cases in mind. [GitHub](https://github.com/urban-toolkit/utk)
+**Curio** is a framework for collaborative urban visual analytics that uses a dataflow model with multiple abstraction levels (code, grammar, GUI elements) to facilitate collaboration across the design and implementation of visual analytics components. The framework allows experts to intertwine preprocessing, managing, and visualization stages while tracking provenance of code and visualizations. [GitHub](https://github.com/urban-toolkit/curio)
 
-- **Curio:** A framework for collaborative urban visual analytics that uses a dataflow model with multiple abstraction levels (code, grammar, GUI elements) to facilitate collaboration across the design and implementation of visual analytics components. The framework allows experts to intertwine preprocessing, managing, and visualization stages while tracking provenance of code and visualizations. Map rendering is provided by the **Autark** library (autk-db, autk-compute, autk-map, autk-plot). [GitHub](https://github.com/urban-toolkit/curio)
+In-browser map rendering and GPU compute are provided by the **Autark** library family (`@urban-toolkit/autk-db`, `autk-compute`, `autk-map`, `autk-plot`). These are exposed in dataflows through the `AUTK_DB`, `AUTK_COMPUTE`, `AUTK_MAP`, and `AUTK_PLOT` node types.
 
-- **Urbanite:** Building on Curio, Urbanite extends the dataflow-based approach by incorporating large language models (LLMs) to enable human-AI collaboration in urban visual analytics. It allows users to specify intent at multiple scopes, enabling interactive alignment across specification, process, and evaluation stages, with features for explainability, multi-resolution task definition, and interaction provenance. [GitHub](https://github.com/urban-toolkit/urbanite)
+**Urbanite** is a separate research project that has been integrated into Curio, adding LLM-powered assistance for dataflow authoring. See [urbantk.org/urbanite](https://urbantk.org/urbanite) for the paper.
 
-Curio uses the Autark library for in-browser map rendering, while Urbanite builds on Curio with LLM-powered capabilities. If you would like to learn more about the design and research behind these tools, please see the research papers linked in each repository.
+If you would like to learn more about the design and research behind Curio, please see the research papers linked in the repository.
 
 
 > "We have seen that computer programming is an art, because it applies accumulated knowledge to the world, because it requires skill and ingenuity, and especially because it produces objects of beauty. A programmer who subconsciously views himself as an artist will enjoy what he does and will do it better."  
@@ -143,13 +143,11 @@ Install these tools before you start:
 
 ## 4. General Organization of Documents
 
-This folder structure represents the **overall structure followed in each of the UTK, Curio, and Urbanite repositories**:
+This is the folder structure of the Curio repository:
 
 - `docs/` – Usage guides, examples, contribution guidelines, developer references
 - `tests/` – Unit tests and integration tests
-- `utk_curio/` – Source code for the UTK and Curio frameworks
-
-This **structure is followed across each repository (UTK, Curio, Urbanite) with minor variations**.
+- `utk_curio/` – Source code for Curio (backend, frontend, sandbox)
 
 ## 5. Making Contributions
 
@@ -159,7 +157,7 @@ Contributions can include:
 - Fixing bugs
 - Adding examples
 - Improving documentation
-- Building new visualizations with Curio or Urbanite
+- Building new visualizations with Curio
 
 Remember: **what you get is what you give**. The more you invest in exploring, building, and contributing, the more you will learn and gain from these projects. It is up to you how much you get out of this experience.
 
@@ -189,7 +187,7 @@ Use this list to guide your first week of onboarding and to ensure your environm
 
 - [ ] **Install Git for Windows** and confirm `git` is available in your terminal.
 - [ ] **Install Anaconda** (or Miniconda + Mamba) and confirm `conda` is available.
-- [ ] **Fork and clone the repository** you will work on (UTK, Curio, or Urbanite).
+- [ ] **Fork and clone the Curio repository.**
 - [ ] **Create and activate your Conda environment.**
 - [ ] **Refer to the repository for installation steps.**
 - [ ] **Run the tool** to confirm everything is working.
