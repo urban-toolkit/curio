@@ -11,6 +11,7 @@ export { useAutkPlotLifecycle } from './autkPlotLifecycle';
 export { useAutkComputeLifecycle } from './autkComputeLifecycle';
 export { useAutkDbLifecycle } from './autkDbLifecycle';
 export { createAutkLifecycle } from './autkLifecycleFactory';
+export { useGrammarLifecycle } from './useGrammarLifecycle';
 
 export { standardInOut, outputOnly, inputOnly, withBidirectional, flowSwitchHandles } from './handleHelpers';
 

@@ -1,5 +1,7 @@
 import './descriptors';
 import '../adapters/vegaLiteAdapter';
+import '../adapters/d3Adapter';
+//import '../adapters/utkAdapter';
 
 export {
   registerNode,

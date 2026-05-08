@@ -1,0 +1,44 @@
+{
+  "dataflow": {
+    "description": "Collapsible tree visualization of hierarchical neighborhood data.",
+    "nodes": [
+      {
+        "id": "b2c3d4e5-0001-4000-8000-000000000001",
+        "type": "DATA_LOADING",
+        "x": 38.0,
+        "y": 82.0,
+        "content": "import pandas as pd\n\ndf = pd.DataFrame([\n    {\"node\": \"City\",          \"parent\": None,            \"value\": None},\n    {\"node\": \"North District\",\"parent\": \"City\",           \"value\": None},\n    {\"node\": \"South District\",\"parent\": \"City\",           \"value\": None},\n    {\"node\": \"Downtown\",      \"parent\": \"North District\", \"value\": 42000},\n    {\"node\": \"Midtown\",       \"parent\": \"North District\", \"value\": 31000},\n    {\"node\": \"Uptown\",        \"parent\": \"South District\", \"value\": 18000},\n    {\"node\": \"Eastside\",      \"parent\": \"South District\", \"value\": 27000},\n    {\"node\": \"Westside\",      \"parent\": \"South District\", \"value\": 14000},\n    {\"node\": \"Southbank\",     \"parent\": \"South District\", \"value\": 22000},\n])\n\nreturn df",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "b2c3d4e5-0002-4000-8000-000000000002",
+        "type": "VIS_D3",
+        "x": 600.0,
+        "y": 82.0,
+        "content": "({ d3, container, data }) => {\n  const WIDTH = 620;\n  const MY = 14, ML = 54, MR = 130;\n  const DX = 28;\n  const innerW = WIDTH - ML - MR;\n\n  // \u2500\u2500 Reconstruct hierarchy from edge-list dataframe \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n  const map = {};\n  data.forEach(r => { map[r.node] = { name: r.node, value: r.value, children: [] }; });\n  let rootData = null;\n  data.forEach(r => {\n    if (!r.parent || r.parent === \"None\" || r.parent === \"\") rootData = map[r.node];\n    else if (map[r.parent]) map[r.parent].children.push(map[r.node]);\n  });\n\n  function prune(n) {\n    if (!n.children.length) delete n.children;\n    else n.children.forEach(prune);\n  }\n  prune(rootData);\n\n  // \u2500\u2500 D3 setup \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n  const hier = d3.hierarchy(rootData);\n  const treeLayout = d3.tree().nodeSize([DX, innerW / (1 + hier.height)]);\n  const diagonal = d3.linkHorizontal().x(d => d.y).y(d => d.x);\n\n  container.innerHTML = \"\";\n\n  const svg = d3.select(container).append(\"svg\")\n    .attr(\"width\", WIDTH)\n    .style(\"font\", \"12px sans-serif\")\n    .style(\"overflow\", \"visible\");\n\n  const g = svg.append(\"g\").attr(\"transform\", `translate(${ML},0)`);\n  const gLink = g.append(\"g\")\n    .attr(\"fill\", \"none\").attr(\"stroke\", \"#aaa\").attr(\"stroke-width\", 1.5);\n  const gNode = g.append(\"g\")\n    .attr(\"cursor\", \"pointer\").attr(\"pointer-events\", \"all\");\n\n  const colorMap = {\n    0: { fill: \"#B5D4F4\", stroke: \"#185FA5\", text: \"#0C447C\" },\n    1: { fill: \"#9FE1CB\", stroke: \"#0F6E56\", text: \"#085041\" },\n    2: { fill: \"#D3D1C7\", stroke: \"#5F5E5A\", text: \"#444441\" },\n  };\n  function col(depth) { return colorMap[Math.min(depth, 2)]; }\n\n  let seq = 0;\n  hier.descendants().forEach(d => {\n    d.id = seq++;\n    d._children = d.children ? d.children.slice() : null;\n    if (d.depth > 0) d.children = null;\n  });\n  hier.x0 = 0;\n  hier.y0 = 0;\n\n  // \u2500\u2500 Update \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n  function update(source) {\n    treeLayout(hier);\n\n    const nodes = hier.descendants();\n    const links = hier.links();\n\n    let minX = Infinity, maxX = -Infinity;\n    nodes.forEach(d => { if (d.x < minX) minX = d.x; if (d.x > maxX) maxX = d.x; });\n    const treeH = maxX - minX + MY * 2 + DX;\n    const oy = -minX + MY + DX / 2;\n\n    svg.transition().duration(280).attr(\"height\", treeH);\n\n    // \u2500\u2500 Nodes \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n    const node = gNode.selectAll(\"g.nd\").data(nodes, d => d.id);\n\n    const enter = node.enter().append(\"g\").attr(\"class\", \"nd\")\n      .attr(\"transform\", `translate(${source.y0 ?? source.y},${(source.x0 ?? source.x) + oy})`)\n      .attr(\"opacity\", 0)\n      .on(\"click\", (_, d) => {\n        if (d._children) {\n          d.children = d.children ? null : d._children.slice();\n          update(d);\n        }\n      });\n\n    enter.append(\"circle\")\n      .attr(\"r\", d => d.depth === 0 ? 6 : 4)\n      .attr(\"fill\",   d => col(d.depth).fill)\n      .attr(\"stroke\", d => col(d.depth).stroke)\n      .attr(\"stroke-width\", 1.5);\n\n    enter.append(\"text\")\n      .attr(\"dy\", \"0.32em\")\n      .attr(\"x\", d => d.depth === 0 ? -10 : 8)\n      .attr(\"text-anchor\", d => d.depth === 0 ? \"end\" : \"start\")\n      .attr(\"fill\", d => col(d.depth).text)\n      .each(function(d) {\n        const el = d3.select(this);\n        el.append(\"tspan\").attr(\"font-weight\", \"500\").text(d.data.name);\n        if (d.data.value != null) {\n          el.append(\"tspan\")\n            .attr(\"font-size\", \"10px\")\n            .attr(\"fill\", \"#888\")\n            .text(\"  \" + Number(d.data.value).toLocaleString());\n        }\n      });\n\n    node.merge(enter).transition().duration(280)\n      .attr(\"transform\", d => `translate(${d.y},${d.x + oy})`)\n      .attr(\"opacity\", 1);\n\n    node.exit().transition().duration(280)\n      .attr(\"transform\", `translate(${source.y},${source.x + oy})`)\n      .attr(\"opacity\", 0)\n      .remove();\n\n    // \u2500\u2500 Links \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n    const link = gLink.selectAll(\"path.lk\").data(links, d => d.target.id);\n\n    const linkEnter = link.enter().append(\"path\").attr(\"class\", \"lk\")\n      .attr(\"d\", () => {\n        const o = { x: (source.x0 ?? source.x) + oy, y: source.y0 ?? source.y };\n        return diagonal({ source: o, target: o });\n      });\n\n    link.merge(linkEnter).transition().duration(280)\n      .attr(\"d\", d => diagonal({\n        source: { x: d.source.x + oy, y: d.source.y },\n        target: { x: d.target.x + oy, y: d.target.y },\n      }));\n\n    link.exit().transition().duration(280)\n      .attr(\"d\", () => {\n        const o = { x: source.x + oy, y: source.y };\n        return diagonal({ source: o, target: o });\n      })\n      .remove();\n\n    nodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });\n  }\n\n  update(hier);\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-b2c3d4e5-0001-4000-8000-000000000001out-b2c3d4e5-0002-4000-8000-000000000002in",
+        "source": "b2c3d4e5-0001-4000-8000-000000000001",
+        "target": "b2c3d4e5-0002-4000-8000-000000000002"
+      }
+    ],
+    "name": "CollapsibleTreeWorkflow",
+    "task": "",
+    "timestamp": 1746410000000,
+    "provenance_id": "CollapsibleTreeWorkflow"
+  }
+}

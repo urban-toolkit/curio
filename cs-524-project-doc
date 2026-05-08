@@ -1,0 +1,183 @@
+# Architecture: Visualisation Grammar Integration
+
+**Curio fork · Simran Mishra & Yukta Salvi · 2026**
+
+This document describes the architecture introduced in this fork: a shared, adapter-based pipeline for grammar execution. It is intended for contributors who want to understand the system or add new grammar types.
+
+---
+
+## Background
+
+Curio supports multiple visualisation grammars — currently **Vega-Lite** and **UTK** — that allow nodes in a dataflow to render charts, maps, and other visual outputs. Before this refactor, each grammar had its own lifecycle hook, creating duplication and high maintenance overhead.
+
+This refactor introduces a unified execution path where all grammars share a single lifecycle and delegate rendering to registered adapters.
+
+---
+
+## Core Concepts
+
+### Intermediate Representation (IR)
+
+When a grammar node is executed, its specification is first compiled into a grammar-agnostic IR. The `GrammarExecutionLayer` receives this IR and is responsible for routing it to the correct adapter.
+
+### GrammarAdapterRegistry
+
+A central registry maps grammar type identifiers to their adapter implementations:
+
+```typescript
+// Example registration
+GrammarAdapterRegistry.register('vega-lite', new VegaLiteAdapter());
+GrammarAdapterRegistry.register('utk',       new UtkAdapter());
+GrammarAdapterRegistry.register('d3',        new D3Adapter());
+```
+
+Adapters must implement the `IGrammarAdapter` interface:
+
+```typescript
+interface IGrammarAdapter {
+  render(ir: GrammarIR, container: HTMLElement): Promise<void>;
+  validate?(spec: unknown): ValidationResult;
+}
+```
+
+### GrammarExecutionLayer
+
+The execution layer is the single entry point for all grammar rendering:
+
+```typescript
+// Called by useGrammarLifecycle for every grammar type
+GrammarExecutionLayer.execute(ir)
+  → GrammarAdapterRegistry.get(ir.grammarType)
+  → adapter.render(ir, container)
+```
+
+### useGrammarLifecycle
+
+Replaces both `useVegaLifecycle` and `useUtkLifecycle`. All grammar node descriptors now point to this single hook:
+
+```typescript
+// In getNodeDescriptor()
+case 'vega-lite':
+case 'utk':
+case 'vis_d3':
+  return { lifecycle: useGrammarLifecycle };
+```
+
+---
+
+## Shared Validation Layer
+
+A validation step runs before adapter dispatch. Validation errors are surfaced uniformly regardless of which grammar is active.
+
+```
+Grammar Spec
+    │
+    ▼
+[ Validation Layer ]  ──(invalid)──► Error UI (consistent across grammars)
+    │
+  (valid)
+    ▼
+[ GrammarExecutionLayer ]
+    │
+    ▼
+[ Adapter.render() ]
+```
+
+Validation is optional per adapter — adapters that do not provide a `validate()` method skip this step.
+
+---
+
+## Adding a New Grammar
+
+To add support for a new grammar, follow these steps:
+
+### 1. Create an Adapter
+
+```typescript
+// src/adapters/MyGrammarAdapter.ts
+import { IGrammarAdapter, GrammarIR, ValidationResult } from '../types';
+
+export class MyGrammarAdapter implements IGrammarAdapter {
+  validate(spec: unknown): ValidationResult {
+    // Return { valid: false, message: '...' } for invalid specs
+    return { valid: true };
+  }
+
+  async render(ir: GrammarIR, container: HTMLElement): Promise<void> {
+    // Render into container using your grammar's library
+  }
+}
+```
+
+### 2. Register the Adapter
+
+```typescript
+// In GrammarAdapterRegistry initialisation
+GrammarAdapterRegistry.register('my-grammar', new MyGrammarAdapter());
+```
+
+### 3. Add a Node Descriptor
+
+```typescript
+// In getNodeDescriptor()
+case 'my-grammar':
+  return {
+    lifecycle: useGrammarLifecycle,
+    // ... other descriptor fields
+  };
+```
+
+That's all. No new lifecycle file, no changes to the rendering pipeline.
+
+---
+
+## Testing
+
+Tests for the adapter dispatch path live in:
+
+```
+tests/adapter-tests-for-integration-layer/
+└── adapterRenderPath.test.ts
+```
+
+The TDD approach used during development:
+
+```
+Write failing test → Implement adapter dispatch → Confirm test passes
+```
+
+When adding a new adapter, add a corresponding test that:
+1. Registers a mock adapter
+2. Calls `GrammarExecutionLayer.execute()` with a known IR
+3. Asserts that the mock adapter's `render()` was invoked
+
+---
+
+## D3 Reference Implementation
+
+The `D3Adapter` (`src/adapters/D3Adapter.ts`) is a minimal, working reference implementation. It uses the `VIS_D3` node type and demonstrates the full path from descriptor → lifecycle → execution layer → adapter → DOM output, without modifying any pre-existing grammar code.
+
+---
+
+## What Was Removed
+
+| Removed | Replaced By |
+|---|---|
+| `useVegaLifecycle.ts` | `useGrammarLifecycle.ts` + `VegaLiteAdapter.ts` |
+| `useUtkLifecycle.ts` | `useGrammarLifecycle.ts` + `UtkAdapter.ts` |
+| Per-grammar DOM setup in lifecycle | Moved into each adapter's `render()` |
+| Per-grammar GeoJSON preprocessing in UTK hook | Moved into `UtkAdapter.render()` |
+
+---
+
+## Related Files
+
+| File | Purpose |
+|---|---|
+| `src/GrammarExecutionLayer.ts` | Central dispatch |
+| `src/GrammarAdapterRegistry.ts` | Registry of grammar → adapter mappings |
+| `src/hooks/useGrammarLifecycle.ts` | Unified React hook |
+| `src/adapters/VegaLiteAdapter.ts` | Vega-Lite rendering |
+| `src/adapters/UtkAdapter.ts` | UTK / geospatial rendering |
+| `src/adapters/D3Adapter.ts` | D3 proof-of-concept |
+| `tests/adapter-tests-for-integration-layer/` | TDD test suite |
