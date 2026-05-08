@@ -13,6 +13,8 @@ import ReactMarkdown from "react-markdown";
 import "./LLMChat.css";
 
 const ChatComponent = () => {
+    if (process.env.PYODIDE_ENABLED === 'true') return null;
+
     const { llmRequest, setCurrentEventPipeline } = useLLMContext();
     const { setWorkflowGoal, cleanCanvas } = useFlowContext();
     const [messages, setMessages] = useState<{ role: string; text: string }[]>([]);

@@ -92,9 +92,13 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
   );
 
   useEffect(() => {
-    // Pyodide mode has no backend, so session restoration is skipped entirely.
-    // The app runs anonymously — no login prompt is shown.
-    if (process.env.PYODIDE_ENABLED === 'true') return;
+    // Pyodide mode has no backend — run anonymously with no login prompt.
+    if (process.env.PYODIDE_ENABLED === 'true') {
+      setEnableUserAuth(false);
+      setSkipProjectPage(true);
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
 
     const bootstrap = async () => {

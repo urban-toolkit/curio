@@ -65,6 +65,12 @@ if _OWNS_WORKSPACE:
 
 os.environ["CURIO_TESTING"] = "1"
 os.environ["CURIO_LAUNCH_CWD"] = _TEST_WORKSPACE
+# Symlink docs/ into the test workspace so the sandbox (which os.chdir()s to
+# CURIO_LAUNCH_CWD) can resolve relative data paths like
+# docs/examples/data/nyc_zip.geojson that live in the real repo tree.
+_docs_link = os.path.join(_TEST_WORKSPACE, "docs")
+if not os.path.exists(_docs_link):
+    os.symlink(os.path.join(_REPO_ROOT, "docs"), _docs_link)
 os.environ.setdefault("CURIO_SHARED_DATA", os.path.join(
     _TEST_WORKSPACE, ".curio", "data",
 ))

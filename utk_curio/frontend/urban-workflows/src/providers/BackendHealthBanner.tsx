@@ -11,6 +11,7 @@ export const BackendHealthBanner: React.FC<{ children: React.ReactNode }> = ({ c
     const [dismissed, setDismissed] = useState(false);
 
     useEffect(() => {
+        if (process.env.PYODIDE_ENABLED === 'true') return;
         let cancelled = false;
         fetch(`${BACKEND_URL}/live`, { method: "GET" })
             .then((res) => {

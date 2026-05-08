@@ -136,6 +136,24 @@ class PyodideExecutor {
         }
     }
 
+    // Package installation via micropip
+
+    async installPackages(packages: string[]): Promise<{ package: string; success: boolean; output: string }[]> {
+        if (!this.pyodide) await this.load();
+        await this.pyodide.loadPackage('micropip');
+        const micropip = this.pyodide.pyimport('micropip');
+        const results: { package: string; success: boolean; output: string }[] = [];
+        for (const pkg of packages) {
+            try {
+                await micropip.install(pkg);
+                results.push({ package: pkg, success: true, output: `Installed ${pkg}` });
+            } catch (err: any) {
+                results.push({ package: pkg, success: false, output: String(err) });
+            }
+        }
+        return results;
+    }
+
     // Execution
 
     /**

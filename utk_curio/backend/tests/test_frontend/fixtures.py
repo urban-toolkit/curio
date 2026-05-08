@@ -124,6 +124,12 @@ def curio_servers(session_app, request):
     env["BACKEND_URL"] = f"http://127.0.0.1:{backend_port}"
     env["DONT_REWRITE_URLS"] = "false"
     env["CURIO_NO_OPEN"] = "1"
+    # Disable Flask reloader so it doesn't restart the backend mid-suite when
+    # pytest imports or tempfiles trigger inotify events.
+    env["FLASK_USE_RELOADER"] = "0"
+    # E2E tests exercise backend auth/project flows — PYODIDE_ENABLED would
+    # bypass auth in the frontend (systemvars=true lets this override .env).
+    env["PYODIDE_ENABLED"] = "false"
     # Ensure the backend child uses the dedicated test DB (session fixture in
     # tests/conftest.py wipes + bootstraps it). These are already in
     # os.environ via the copy above; set them explicitly so CI overrides are

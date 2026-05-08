@@ -2,6 +2,9 @@ import React, { useState } from "react";
 import styles from "./PackageManagerWindow.module.css";
 import ModalShell from "../../ModalShell";
 import { useFlowContext } from "../../../providers/FlowProvider";
+import { pyodideExecutor } from "../../../services/PyodideExecutor";
+
+const pyodideMode = process.env.PYODIDE_ENABLED === 'true';
 
 export default function PackageManagerWindow({
     open,
@@ -26,19 +29,24 @@ export default function PackageManagerWindow({
         setInstalling(true);
         setInstallLog([]);
         try {
-            const response = await fetch(process.env.BACKEND_URL + "/installPackages", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ packages }),
-            });
-            const data = await response.json();
-            setInstallLog(
-                data.results.map((r: any) => ({
-                    package: r.package,
-                    success: r.success,
-                    output: [r.stdout, r.stderr].filter(Boolean).join("\n").trim(),
-                }))
-            );
+            if (pyodideMode) {
+                const results = await pyodideExecutor.installPackages(packages);
+                setInstallLog(results);
+            } else {
+                const response = await fetch(process.env.BACKEND_URL + "/installPackages", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ packages }),
+                });
+                const data = await response.json();
+                setInstallLog(
+                    data.results.map((r: any) => ({
+                        package: r.package,
+                        success: r.success,
+                        output: [r.stdout, r.stderr].filter(Boolean).join("\n").trim(),
+                    }))
+                );
+            }
         } catch (err) {
             setInstallLog([{ package: "error", success: false, output: String(err) }]);
         }

@@ -56,11 +56,13 @@ import { getAllNodeTypes } from "./registry";
       outputTypes: desc.outputPorts.flatMap((p) => p.types),
     };
   }
-  fetch(process.env.BACKEND_URL + "/node-types", {
-    method: "POST",
-    headers: { "Content-type": "application/json; charset=UTF-8" },
-    body: JSON.stringify({ nodeTypes }),
-  }).catch(() => {});
+  if (process.env.PYODIDE_ENABLED !== 'true') {
+    fetch(process.env.BACKEND_URL + "/node-types", {
+      method: "POST",
+      headers: { "Content-type": "application/json; charset=UTF-8" },
+      body: JSON.stringify({ nodeTypes }),
+    }).catch(() => {});
+  }
 })();
 
 // Preload Pyodide in the background when enabled so it's ready by the time
