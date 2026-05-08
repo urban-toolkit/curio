@@ -49,44 +49,32 @@ export function LoggingProvider({
     const snapMgr = SnapshotManager.getInstance();
 
     buffer.setSessionIdGetter(() => sessionIdRef.current);
-
     snapMgr.setSessionIdGetter(() => sessionIdRef.current);
     snapMgr.setGraphStateGetter(getGraphState);
 
-    fetch('http://localhost:5002/api/log/session/start', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({
-        user_id:       userId,
-        workflow_id:   workflowId,
-        workflow_name: workflowName,
-      }),
-    })
-      .then(r => r.json())
-      .then((data: { session_id: number }) => {
-        const sid = data.session_id;
-
-        setSessionId(sid);
-        sessionIdRef.current = sid;
-
-        buffer.setSessionIdGetter(() => sid);
-        snapMgr.setSessionIdGetter(() => sid);
-
-        EventInterceptor.getInstance().capture({
-          event_type: 'SESSION_STARTED',
-          node_id:    null,
-          event_time: EventInterceptor.now(),
-          event_data: {
-            userAgent:  navigator.userAgent,
-            workflowId: workflowId,
-          },
+    const createSession = () =>
+      fetch('http://localhost:5002/api/log/session/start', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ user_id: userId, workflow_id: workflowId, workflow_name: workflowName }),
+      })
+        .then(r => r.json())
+        .then((data: { session_id: number }) => {
+          const sid = data.session_id;
+          setSessionId(sid);
+          sessionIdRef.current = sid;
+          buffer.setSessionIdGetter(() => sid);
+          snapMgr.setSessionIdGetter(() => sid);
+          EventInterceptor.getInstance().capture({
+            event_type: 'SESSION_STARTED',
+            node_id:    null,
+            event_time: EventInterceptor.now(),
+            event_data: { userAgent: navigator.userAgent, workflowId: workflowId },
+          });
+          buffer.flush();
         });
 
-        buffer.flush();
-      })
-      .catch(err => {
-        console.error('[LoggingContext] POST /api/log/session/start failed:', err);
-      });
+    createSession();
 
     const handleUnload = () => {
       const sid = sessionIdRef.current;
