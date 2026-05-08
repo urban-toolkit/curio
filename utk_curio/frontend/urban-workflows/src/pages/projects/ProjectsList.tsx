@@ -8,6 +8,7 @@ import logo from "assets/curio-2.png";
 import DataflowThumbnail from "../../components/DataflowThumbnail";
 import LlmSettingsModal from "../../components/LlmSettingsModal";
 import { BACKEND_URL } from "../../utils/backendUrl";
+import VersionBadge from "../../components/VersionBadge";
 
 type ViewMode = "grid" | "list";
 type FilterTab = "all" | "recent" | "archived";
@@ -285,6 +286,7 @@ const ProjectsList: React.FC = () => {
           </div>
         )}
       </main>
+      <VersionBadge />
     </div>
   );
 };

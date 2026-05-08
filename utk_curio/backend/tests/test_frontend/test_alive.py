@@ -24,6 +24,30 @@ def test_sandbox_server(sandbox_server, page):
     assert "Sandbox is live." in page.content()
 
 
+def test_backend_version(current_server, page):
+    """Backend /version returns the package version as JSON."""
+    from utk_curio import __version__
+
+    resp = page.request.get(f"{current_server}/version")
+    assert resp.ok, f"GET {current_server}/version returned {resp.status}"
+    body = resp.json()
+    assert body.get("version") == __version__, (
+        f"Expected version {__version__!r}, got {body!r}"
+    )
+
+
+def test_sandbox_version(sandbox_server, page):
+    """Sandbox /version returns the package version as JSON."""
+    from utk_curio import __version__
+
+    resp = page.request.get(f"{sandbox_server}/version")
+    assert resp.ok, f"GET {sandbox_server}/version returned {resp.status}"
+    body = resp.json()
+    assert body.get("version") == __version__, (
+        f"Expected version {__version__!r}, got {body!r}"
+    )
+
+
 def test_frontend_server(app_frontend: FrontendPage, page):
     """Test that the frontend server is live and redirects to auth."""
     app_frontend.goto_page("/")

@@ -165,6 +165,11 @@ def root():
 def live():
     return 'Backend is live.'
 
+@bp.route('/version')
+def version():
+    from utk_curio import __version__
+    return jsonify({'version': __version__})
+
 @bp.route('/node-types', methods=['POST'])
 def register_node_types():
     payload = request.get_json(silent=True) or {}
