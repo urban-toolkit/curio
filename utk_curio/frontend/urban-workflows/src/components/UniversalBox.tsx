@@ -28,7 +28,6 @@ function UniversalBox({ data, isConnectable }: { data: any; isConnectable: boole
   const defaultValue =
     lifecycle.defaultValueOverride ??
     (boxState.templateData.code ? boxState.templateData.code : data.defaultCode);
-  console.debug(`[UniversalBox ${data.nodeId}] defaultValue="${defaultValue?.slice?.(0,60)}" data.defaultCode="${data.defaultCode?.slice?.(0,60)}" data.code="${data.code?.slice?.(0,60)}"`);
   const readOnly =
     boxState.templateData.custom != undefined && boxState.templateData.custom === false;
 

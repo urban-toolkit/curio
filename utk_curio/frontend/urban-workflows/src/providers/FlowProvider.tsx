@@ -180,12 +180,6 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
     const getGraphState = useCallback(() => {
         const rawNodes = reactFlow.getNodes();
-        console.debug('[getGraphState] raw nodes sample:', rawNodes.slice(0, 3).map(n => ({
-            id: n.id,
-            type: n.type,
-            'data.code': n.data.code,
-            'data.defaultCode': n.data.defaultCode,
-        })));
         const nodes = rawNodes.map(node => ({
             ...node,
             data: {
@@ -193,11 +187,6 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 defaultCode: nodeCodeRegistry.get(node.id) ?? node.data.code ?? node.data.defaultCode,
             },
         }));
-        console.debug('[getGraphState] mapped nodes sample:', nodes.slice(0, 3).map(n => ({
-            id: n.id,
-            'data.defaultCode': n.data.defaultCode,
-            'registry': nodeCodeRegistry.get(n.id)?.slice(0, 60),
-        })));
         return { nodes, edges: reactFlow.getEdges() };
     }, [reactFlow]);
 
@@ -315,12 +304,6 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                     nodeCodeRegistry.delete(node.id);
                 }
             });
-            console.debug('[restoreGraph] restoring nodes:', nodes.map(n => ({
-                id: n.id,
-                type: n.type,
-                'data.defaultCode': n.data.defaultCode,
-                'registry': nodeCodeRegistry.get(n.id)?.slice(0, 60),
-            })));
             setNodes(nodes);
             setEdges(edges);
             eventInterceptor.capture({

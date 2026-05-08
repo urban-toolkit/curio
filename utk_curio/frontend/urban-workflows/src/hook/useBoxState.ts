@@ -29,7 +29,6 @@ export function useBoxState(data: any, boxType: BoxType) {
   useEffect(() => {
     data.code = code;
     if (data.nodeId && code) {
-      console.debug(`[useBoxState registry] node=${data.nodeId} code="${code.slice(0,60)}"`);
       nodeCodeRegistry.set(data.nodeId, code);
     }
   }, [data, code]);

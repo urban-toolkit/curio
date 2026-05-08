@@ -38,7 +38,6 @@ function CodeEditor({
     defaultValue,
     floatCode,
 }: CodeEditorProps) {
-    console.debug(`[CodeEditor mount] defaultValue="${(defaultValue ?? "").slice(0,60)}"`);
     const [code, setCode] = useState<string>(defaultValue ?? ""); // code with all original markers
 
     const { workflowNameRef } = useFlowContext();
@@ -54,7 +53,6 @@ function CodeEditor({
     };
 
     useEffect(() => {
-        console.debug(`[CodeEditor defaultValue effect] bypass=${defaultValueBypass.current} defaultValue="${(defaultValue ?? "").slice(0,60)}"`);
         if (defaultValue != undefined && defaultValueBypass.current) {
             setCode(defaultValue);
             sendCodeToWidgets(defaultValue); // will resolve markers for templated boxes
