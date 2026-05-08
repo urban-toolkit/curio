@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'utk_curio/**'
+      - 'docs/**'
 
 permissions:
   contents: write
