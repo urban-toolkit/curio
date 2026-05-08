@@ -14,6 +14,9 @@
     "format": "npx prettier . --write",
     "format-check": "npx prettier . --check"
   },
+  "engines": {
+    "node": ">=25"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",

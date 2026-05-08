@@ -10,6 +10,7 @@ import argparse
 import signal
 import platform
 import logging
+import shutil
 
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
@@ -191,13 +192,21 @@ def check_install_build(dir, force_rebuild=False):
         if os.path.exists("build"):
             subprocess.run(["rm", "-rf", "build"], check=True)
     
+    if shutil.which("npm") is None:
+        log_error("[Frontend] npm not found in PATH. Install Node.js 25 from https://nodejs.org, or via conda ('conda install -c conda-forge nodejs=25'), and make sure 'npm' is available in your terminal, then retry.")
+        clean_shutdown()
+        return
+
     # Check if node_modules exist, if not, run npm install
     if not os.path.exists("node_modules"):
         log_info(f"[Frontend] node_modules not found. Running npm install...", COLOR_FRONTEND, 0)
         try:
             subprocess.run(["npm", "install"], check=True, shell=shell_required)
+        except subprocess.CalledProcessError as e:
+            log_error(f"[Frontend] 'npm install' failed (exit code {e.returncode}). Check the output above for details.")
+            clean_shutdown()
         except Exception as e:
-            log_error(f"[Frontend] Unexpected Error: {str(e)}")
+            log_error(f"[Frontend] Failed to run 'npm install': {e}")
             clean_shutdown()
     else:
         log_info(f"[Frontend] node_modules directory already exists. Skipping npm install.", COLOR_FRONTEND, 0)
@@ -208,8 +217,11 @@ def check_install_build(dir, force_rebuild=False):
         log_info(f"[Frontend] {build_dir} directory not found. Running npm run build...", COLOR_FRONTEND, 0)
         try:
             subprocess.run(["npm", "run", "build"], check=True, shell=shell_required)
+        except subprocess.CalledProcessError as e:
+            log_error(f"[Frontend] 'npm run build' failed (exit code {e.returncode}). Check the output above for details.")
+            clean_shutdown()
         except Exception as e:
-            log_error(f"[Frontend] Unexpected Error: {str(e)}")
+            log_error(f"[Frontend] Failed to run 'npm run build': {e}")
             clean_shutdown()
     else:
         log_info(f"[Frontend] {build_dir} directory exists. Skipping npm run build.", COLOR_FRONTEND, 0)
