@@ -36,7 +36,7 @@ coverage/
 curio_docker_log.txt
 test_file.txt
 
-data/
+/data/
 _curio_*.mjs
 
 # Diagnostic dumps written next to expected screenshots when an e2e test
