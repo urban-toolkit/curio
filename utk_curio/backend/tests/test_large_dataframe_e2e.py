@@ -82,7 +82,7 @@ def _shutdown_sandbox(proc: subprocess.Popen) -> None:
 
 
 class TestLargeDataFrameE2E(unittest.TestCase):
-    """Stress-test the full backend <-> sandbox bridge with a 1M-row DataFrame."""
+    """Stress-test the full backend <-> sandbox bridge with a 50M-row DataFrame."""
 
     sandbox_proc: subprocess.Popen | None = None
     sandbox_port: int = 0
@@ -171,13 +171,13 @@ class TestLargeDataFrameE2E(unittest.TestCase):
         return resp
 
     def test_one_million_row_load_and_preview(self):
-        """The original NetworkError reproducer: 1M-row DataFrame load,
+        """The original NetworkError reproducer: 50M-row DataFrame load,
         then preview. Should complete well under the new 600s / 300s timeouts."""
         code = """\
             import pandas as pd
             import numpy as np
             rng = np.random.default_rng(42)
-            n = 1_000_000
+            n = 50_000_000
             df = pd.DataFrame({
                 'id': np.arange(n, dtype=np.int64),
                 'value': rng.standard_normal(n),
@@ -199,7 +199,7 @@ class TestLargeDataFrameE2E(unittest.TestCase):
         artifact_id = load_body["output"]["path"]
         self.assertTrue(artifact_id, "no artifact id returned")
         self.assertEqual(load_body["output"]["dataType"], "dataframe")
-        # Generous upper bound: real measurements are ~10-15s for 1M rows.
+        # Generous upper bound: real measurements are ~30-120s for 50M rows.
         # The new SANDBOX_EXEC_TIMEOUT is 600s so anything under that is
         # acceptable; we cap the assert at 300s to catch a regression where
         # something becomes pathologically slow.
@@ -218,7 +218,7 @@ class TestLargeDataFrameE2E(unittest.TestCase):
         self.assertEqual(preview_resp.status_code, 200, preview_resp.data)
         preview_body = preview_resp.get_json()
         self.assertEqual(preview_body["dataType"], "dataframe")
-        self.assertEqual(preview_body["totalRows"], 1_000_000)
+        self.assertEqual(preview_body["totalRows"], 50_000_000)
         self.assertEqual(preview_body["previewRows"], 100)
         self.assertTrue(preview_body.get("preview"))
         # Confirm the preview really truncated by checking row count of a column.
@@ -329,7 +329,7 @@ class TestLargeDataFrameE2E(unittest.TestCase):
             import pandas as pd
             import numpy as np
             rng = np.random.default_rng(7)
-            n = 200_000
+            n = 10_000_000
             df = pd.DataFrame({
                 'id': np.arange(n, dtype=np.int64),
                 'value': rng.standard_normal(n),
@@ -353,7 +353,7 @@ class TestLargeDataFrameE2E(unittest.TestCase):
         self.assertEqual(get_body["dataType"], "dataframe")
         # No truncation when maxRows isn't set — we get every row back.
         first_col = next(iter(get_body["data"].values()))
-        self.assertEqual(len(first_col), 200_000)
+        self.assertEqual(len(first_col), 10_000_000)
         # The new SANDBOX_GET_TIMEOUT is 300s; this should land well under
         # the OLD 60s limit too, but the test exists so a regression that
         # blows past 300s shows up clearly rather than as NetworkError.
