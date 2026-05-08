@@ -54,22 +54,6 @@ export const createAndRunMap = () => {
 
   // Serves data files to the map
   // Environment.setEnvironment({backend: process.env.REACT_APP_BACKEND_SERVICE_URL as string});
-  // const backendUrl = process.env.REACT_APP_BACKEND_SERVICE_URL || 'http://localhost:5002';
-  // Environment.setEnvironment({backend: backendUrl as string});
-  //
-  // const url = `${Environment.backend}/getGrammar`;
-  // const started = performance.now();
-  // console.log('[Curio] Data load: requesting grammar from', url);
-  // DataLoader.getJsonData(url)
-  //   .then(data => {
-  //     const durationMs = Math.round(performance.now() - started);
-  //     console.log('[Curio] Data load: received grammar payload in', durationMs, 'ms', data);
-  //     initializer.run(data);
-  //   })
-  //   .catch(err => {
-  //     const durationMs = Math.round(performance.now() - started);
-  //     console.error('[Curio] Data load: failed to load grammar from backend after', durationMs, 'ms', err);
-  //   });
   Environment.setEnvironment({backend: `http://localhost:5001` as string});
   const url = `${Environment.backend}/getGrammar`;
   DataLoader.getJsonData(url).then(data => {
