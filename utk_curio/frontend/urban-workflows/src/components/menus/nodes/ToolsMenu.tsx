@@ -51,7 +51,7 @@ const ToolsMenu = memo(function ToolsMenu() {
     const groups = groupPaletteTypes(paletteTypes);
     const { playAllNodes } = useFlowContext();
     return (
-        <div className={styles.wrapperStyle}>
+        <div id="tools-menu" className={styles.wrapperStyle}>
             <div className={styles.menuStyle}>
                 {groups.map((group, i) => (
                     <Fragment key={i}>

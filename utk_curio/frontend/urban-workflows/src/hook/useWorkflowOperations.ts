@@ -122,6 +122,24 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
 
         const fitOptions = { padding: 0.2 };
 
+        // fitView centers content in the full canvas, but the ToolsMenu is a
+        // fixed-position overlay on the left edge. Shift the viewport right by
+        // half the menu's right-edge so content is centered in the visible area.
+        const applyFitView = (): boolean => {
+            const fitApplied = reactFlow.fitView(fitOptions);
+            if (!fitApplied) return false;
+
+            const menuEl = document.getElementById("tools-menu");
+            if (menuEl) {
+                const xOffset = menuEl.getBoundingClientRect().right / 2;
+                if (xOffset > 0) {
+                    const vp = reactFlow.getViewport();
+                    reactFlow.setViewport({ ...vp, x: vp.x + xOffset });
+                }
+            }
+            return true;
+        };
+
         // React Flow skips fitView until every node has measured dimensions.
         // Loading a workflow can race that measurement, so retry until the
         // fit actually applies instead of clearing the flag after one attempt.
@@ -133,7 +151,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 return;
             }
 
-            const fitApplied = reactFlow.fitView(fitOptions);
+            const fitApplied = applyFitView();
 
             if (!fitApplied) {
                 attempts += 1;
@@ -151,7 +169,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             }
 
             timeoutId = window.setTimeout(() => {
-                reactFlow.fitView(fitOptions);
+                applyFitView();
                 setFitViewOnLoad(false);
             }, 75);
         };
