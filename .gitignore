@@ -23,7 +23,6 @@ wheels/
 flask_cache/
 
 .curio/
-simple_example
 
 logs/
 instance/

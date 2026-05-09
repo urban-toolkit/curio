@@ -82,6 +82,10 @@ Curio is a framework for collaborative urban visual analytics that uses a datafl
   </tr>
 </table>
 
+<p align="center">
+  <img src="https://github.com/urban-toolkit/curio/blob/main/docs/images/banner.jpg?raw=true" alt="Curio Use Cases" width="1000"/>
+</p>
+
 ## 🆕 What's new
 
 A lot has landed since v0.5. Highlights:
