@@ -152,8 +152,11 @@ export function LoggingProvider({
     setSessionId(newSid);
     sessionIdRef.current = newSid;
     buffer.setSessionIdGetter(() => newSid);
-    snapMgr.setSessionIdGetter(() => newSid);
-    snapMgr.setGraphStateGetter(getGraphState);
+
+    // Get the fresh singleton created after reset() and configure it
+    const newSnapMgr = SnapshotManager.getInstance();
+    newSnapMgr.setSessionIdGetter(() => newSid);
+    newSnapMgr.setGraphStateGetter(getGraphState);
 
     EventInterceptor.getInstance().capture({
       event_type: 'SESSION_STARTED',

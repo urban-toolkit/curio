@@ -31,6 +31,7 @@ export const ReplayPage: React.FC<ReplayPageProps> = ({
 }) => {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [sessionsErr, setSessionsErr] = useState<string | null>(null);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [engineState, setEngineState] = useState<ReplayEngineState>(EMPTY_STATE);
 
@@ -58,7 +59,9 @@ export const ReplayPage: React.FC<ReplayPageProps> = ({
     pythonInterpreter: NO_OP_PY,
   };
 
-  useEffect(() => {
+  const fetchSessions = useCallback(() => {
+    setSessionsLoading(true);
+    setSessionsErr(null);
     fetch(`${API_BASE}/api/log/sessions?limit=100`)
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -67,12 +70,16 @@ export const ReplayPage: React.FC<ReplayPageProps> = ({
       .then(data => {
         const list: SessionSummary[] = data.sessions ?? [];
         setSessions(list);
-
         if (list.length > 0 && selectedId === null) {
           setSelectedId(list[0].session_id);
         }
       })
-      .catch(err => setSessionsErr('Could not load sessions: ' + err.message));
+      .catch(err => setSessionsErr('Could not load sessions: ' + err.message))
+      .finally(() => setSessionsLoading(false));
+  }, [selectedId]);
+
+  useEffect(() => {
+    fetchSessions();
   }, []);
 
   const handleLoad = useCallback(() => {
@@ -144,6 +151,7 @@ export const ReplayPage: React.FC<ReplayPageProps> = ({
           <select
             value={selectedId ?? ''}
             onChange={e => setSelectedId(e.target.value ? parseInt(e.target.value, 10) : null)}
+            disabled={sessionsLoading}
             style={{
               padding: '7px 10px',
               borderRadius: '8px',
@@ -155,6 +163,7 @@ export const ReplayPage: React.FC<ReplayPageProps> = ({
               color: '#e5e7eb',
               fontFamily: 'monospace',
               flexShrink: 1,
+              opacity: sessionsLoading ? 0.6 : 1,
             }}
           >
             <option value="">— select a session —</option>
@@ -169,6 +178,23 @@ export const ReplayPage: React.FC<ReplayPageProps> = ({
             ))}
           </select>
         )}
+        <button
+          onClick={fetchSessions}
+          disabled={sessionsLoading}
+          title="Refresh session list"
+          style={{
+            padding: '8px 12px',
+            background: 'transparent',
+            color: sessionsLoading ? '#6b7280' : '#9ca3af',
+            border: `1px solid ${BORDER}`,
+            borderRadius: '8px',
+            cursor: sessionsLoading ? 'not-allowed' : 'pointer',
+            fontSize: '14px',
+            flexShrink: 0,
+          }}
+        >
+          {sessionsLoading ? '…' : '↻'}
+        </button>
 
         <button
           onClick={handleLoad}
