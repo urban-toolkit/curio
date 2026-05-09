@@ -650,10 +650,9 @@ def _wait_for_reactflow_ready(
 
     page.evaluate(
         """(padding) => {
-            const rf = window.__curio_reactFlow;
-            if (rf && typeof rf.fitView === 'function') {
-                //rf.setViewport({ x: 0, y: 0, zoom: 0.35 }, { duration: 0 })
-                rf.fitView({ padding, duration: 0, includeHiddenNodes: true });
+            const fit = window.__curio_fitViewWithMenuOffset;
+            if (typeof fit === 'function') {
+                fit({ padding, duration: 0, includeHiddenNodes: true });
             }
         }""",
         padding,

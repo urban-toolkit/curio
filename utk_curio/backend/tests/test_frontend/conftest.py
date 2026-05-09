@@ -12,17 +12,6 @@ from .fixtures import _clean_db
 #: Master list of workflow JSON filenames to test.
 #: Comment out / add entries here to control the full test matrix.
 WORKFLOW_FILES = [
-    # Curated examples shown in docs/README.md
-    "docs/examples/01-vega-lite-chained-transforms.json",
-    "docs/examples/02-vega-lite-spatial-density.json",
-    "docs/examples/03-vega-lite-linked-temporal-charts.json",
-    "docs/examples/04-vega-lite-multi-flow-dashboard.json",
-    "docs/examples/05-vega-lite-multi-view-drilldown.json",
-    "docs/examples/06-autark-what-if-picking.json",
-    "docs/examples/07-autark-gpu-shader.json",
-    "docs/examples/08-autark-spatial-join-regression.json",
-    "docs/examples/09-heterogeneous-data-linked-views.json",
-
     "docs/examples/dataflows/DefaultWorkflow.json",
 
     "docs/examples/dataflows/DataPool_Dataframe.json",
@@ -51,6 +40,17 @@ WORKFLOW_FILES = [
     "docs/examples/dataflows/AutkMap.json",
 
     "docs/examples/dataflows/Regression.json",
+
+    # Curated examples shown in docs/README.md
+    "docs/examples/01-vega-lite-chained-transforms.json",
+    "docs/examples/02-vega-lite-spatial-density.json",
+    "docs/examples/03-vega-lite-linked-temporal-charts.json",
+    "docs/examples/04-vega-lite-multi-flow-dashboard.json",
+    "docs/examples/05-vega-lite-multi-view-drilldown.json",
+    "docs/examples/06-autark-what-if-picking.json",
+    "docs/examples/07-autark-gpu-shader.json",
+    "docs/examples/08-autark-spatial-join-regression.json",
+    "docs/examples/09-heterogeneous-data-linked-views.json",
 ]
 
 

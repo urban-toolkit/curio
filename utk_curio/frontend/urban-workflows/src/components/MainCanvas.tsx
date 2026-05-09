@@ -7,9 +7,11 @@ import ReactFlow, {
     Controls,
     Edge,
     EdgeChange,
+    FitViewOptions,
     NodeChange,
     useReactFlow,
 } from "reactflow";
+import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
 
 import { useFlowContext } from "../providers/FlowProvider";
 import { useToastContext } from "../providers/ToastProvider";
@@ -110,15 +112,19 @@ export function MainCanvas() {
     const reactFlow = useReactFlow();
     const {getZoom, getViewport, setViewport, setCenter, screenToFlowPosition, fitView} = useReactFlow();
 
-    // Test hook: expose the ReactFlow instance so Playwright can force a
-    // deterministic viewport (e.g. fitView with duration: 0) before taking
-    // screenshots. Kept unconditional — read-only from the outside and
-    // cheap — so e2e tests don't need a separate build flag.
+    // Test hook: expose the ReactFlow instance and a menu-aware fitView so
+    // Playwright can force the same shifted viewport the in-app loader uses
+    // (see useWorkflowOperations.ts) before taking screenshots. Kept
+    // unconditional — read-only from the outside and cheap — so e2e tests
+    // don't need a separate build flag.
     useEffect(() => {
         (window as any).__curio_reactFlow = reactFlow;
+        (window as any).__curio_fitViewWithMenuOffset = (options?: FitViewOptions) =>
+            fitViewWithMenuOffset(reactFlow, options);
         return () => {
             if ((window as any).__curio_reactFlow === reactFlow) {
                 delete (window as any).__curio_reactFlow;
+                delete (window as any).__curio_fitViewWithMenuOffset;
             }
         };
     }, [reactFlow]);
