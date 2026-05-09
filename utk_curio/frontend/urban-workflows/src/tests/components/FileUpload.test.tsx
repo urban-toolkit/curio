@@ -4,6 +4,8 @@ import FileUpload from '../../components/menus/upload/FileUpload';
 
 // Mock process.env for backend URL
 process.env.BACKEND_URL = 'http://localhost:5002';
+// explicitly set pyodide as false for tests
+process.env.PYODIDE_ENABLED = 'false';
 
 // Mock fetch for file upload testing
 global.fetch = jest.fn();
