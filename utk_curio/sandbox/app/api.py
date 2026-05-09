@@ -1,4 +1,4 @@
-from flask import request, abort, jsonify
+from flask import request, abort, jsonify, Response
 import json
 import re
 import sys
@@ -13,7 +13,13 @@ from pathlib import Path
 from shapely import wkt
 
 from utk_curio.sandbox.app.worker import _worker_init, execute_code, execute_js_code
-from utk_curio.sandbox.util.parsers import load_from_duckdb, parseOutput
+from utk_curio.sandbox.util.parsers import (
+    load_from_duckdb,
+    load_tabular_arrow_from_duckdb,
+    parseOutput,
+)
+
+ARROW_IPC_MIME = "application/vnd.apache.arrow.stream"
 
 _VALID_PACKAGE_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9._\-]*(\[[\w,\s]+\])?(===?|~=|!=|>=?|<=?[a-zA-Z0-9._\-*]+)?$')
 
@@ -51,6 +57,10 @@ def get_artifact():
         abort(400, "fileName is required")
     session_id = request.args.get('sessionId') or None
     max_rows_param = request.args.get('maxRows')
+
+    if request.accept_mimetypes.best == ARROW_IPC_MIME:
+        return _get_artifact_arrow(art_id, session_id, max_rows_param)
+
     # Raster artifacts re-open via rasterio.open(relative_path); match
     # /exec's cwd handling so the path resolves against launch_dir.
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD')
@@ -88,6 +98,70 @@ def get_artifact():
         data['previewRows'] = min(max_rows, total_rows)
         data['totalRows'] = total_rows
     return jsonify(data)
+
+
+def _get_artifact_arrow(art_id, session_id, max_rows_param):
+    """Serve a tabular artifact as an Arrow IPC stream.
+
+    parquet blob -> pyarrow.Table via pyarrow.parquet.read_table (no pandas).
+    Non-tabular kinds -> 415 so clients can fall back to the JSON path.
+    """
+    import traceback as _tb
+    import pyarrow as pa
+    import pyarrow.ipc as ipc
+    try:
+        table, kind, frame_metadata, encoded_object_columns = (
+            load_tabular_arrow_from_duckdb(art_id, session_id=session_id)
+        )
+    except KeyError as e:
+        return jsonify({
+            'error': 'KeyError',
+            'message': str(e),
+            'fileName': art_id,
+            'sessionId': session_id,
+        }), 404
+    except ValueError as e:
+        return jsonify({
+            'error': 'not_acceptable',
+            'message': str(e) + '; re-request without the Arrow Accept header.',
+            'fileName': art_id,
+            'sessionId': session_id,
+        }), 415
+    except Exception as e:
+        return jsonify({
+            'error': type(e).__name__,
+            'message': str(e),
+            'fileName': art_id,
+            'sessionId': session_id,
+            'traceback': _tb.format_exc(),
+        }), 500
+
+    total_rows = None
+    if max_rows_param is not None:
+        max_rows = int(max_rows_param)
+        if table.num_rows > max_rows:
+            total_rows = table.num_rows
+            table = table.slice(0, max_rows)
+
+    sink = pa.BufferOutputStream()
+    with ipc.new_stream(sink, table.schema) as writer:
+        writer.write_table(table)
+    body = sink.getvalue().to_pybytes()
+
+    headers = {
+        'X-Curio-Kind': kind,
+        'X-Curio-Filename': art_id,
+    }
+    if total_rows is not None:
+        headers['X-Curio-Preview'] = 'true'
+        headers['X-Curio-Preview-Rows'] = str(min(int(max_rows_param), total_rows))
+        headers['X-Curio-Total-Rows'] = str(total_rows)
+    if encoded_object_columns:
+        headers['X-Curio-Encoded-Object-Columns'] = ','.join(encoded_object_columns)
+    if kind == 'geodataframe' and frame_metadata:
+        headers['X-Curio-Frame-Metadata'] = json.dumps(frame_metadata)
+
+    return Response(body, mimetype=ARROW_IPC_MIME, headers=headers)
 
 @app.route('/cwd')
 def cwd():

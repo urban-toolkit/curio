@@ -322,9 +322,17 @@ class TestLargeDataFrameE2E(unittest.TestCase):
                     pass
 
     def test_full_get_returns_complete_payload(self):
-        """The /get path serializes the *entire* DataFrame to JSON.
-        For a moderately large frame this is the request that used to drop
-        with NetworkError under the old 60s backend->sandbox timeout."""
+        """The /get path returns the *entire* DataFrame.
+
+        Exercises the Arrow IPC content negotiation: client requests
+        ``Accept: application/vnd.apache.arrow.stream`` and the sandbox reads
+        the parquet blob straight into a pyarrow.Table (no pandas
+        materialization), then writes an IPC stream. This both validates the
+        backend->sandbox timeout (regression of the old 60s NetworkError) and
+        the parquet-blob -> Arrow direct path."""
+        import io
+        import pyarrow.ipc as ipc
+
         code = """\
             import pandas as pd
             import numpy as np
@@ -344,16 +352,19 @@ class TestLargeDataFrameE2E(unittest.TestCase):
         t0 = time.perf_counter()
         get_resp = self.client.get(
             f"/get?fileName={artifact_id}",
-            headers=self._auth_headers(),
+            headers={
+                **self._auth_headers(),
+                "Accept": "application/vnd.apache.arrow.stream",
+            },
         )
         get_elapsed = time.perf_counter() - t0
 
         self.assertEqual(get_resp.status_code, 200, get_resp.data[:500])
-        get_body = get_resp.get_json()
-        self.assertEqual(get_body["dataType"], "dataframe")
-        # No truncation when maxRows isn't set — we get every row back.
-        first_col = next(iter(get_body["data"].values()))
-        self.assertEqual(len(first_col), 10_000_000)
+        self.assertEqual(get_resp.content_type, "application/vnd.apache.arrow.stream")
+        self.assertEqual(get_resp.headers.get("X-Curio-Kind"), "dataframe")
+        table = ipc.open_stream(io.BytesIO(get_resp.data)).read_all()
+        self.assertEqual(table.num_rows, 10_000_000)
+        self.assertEqual(set(table.column_names), {"id", "value"})
         # The new SANDBOX_GET_TIMEOUT is 300s; this should land well under
         # the OLD 60s limit too, but the test exists so a regression that
         # blows past 300s shows up clearly rather than as NetworkError.

@@ -672,6 +672,48 @@ def load_from_duckdb(art_id, session_id=None):
         except Exception:
             pass
 
+
+def load_tabular_arrow_from_duckdb(art_id, session_id=None):
+    """Load a tabular artifact as a pyarrow.Table read directly from its stored
+    parquet blob — no pandas materialization.
+
+    Supports kind in ('dataframe', 'geodataframe'). For GeoDataFrames the
+    geometry column is binary WKB (GeoParquet's standard encoding).
+
+    Returns:
+        (table, kind, frame_metadata, encoded_object_columns)
+
+    Raises:
+        KeyError: artifact does not exist or belongs to a different session.
+        ValueError: artifact kind is not tabular (caller should map to 415).
+    """
+    import pyarrow.parquet as pq
+    con = get_read_connection()
+    try:
+        row = con.execute(
+            "SELECT kind, value_json, blob, session_id "
+            "FROM artifacts WHERE id = ?",
+            [art_id],
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"No artifact with id {art_id}")
+        kind, v_json, blob, stored_sid = row
+        if session_id is not None and stored_sid is not None and stored_sid != session_id:
+            raise KeyError(f"No artifact with id {art_id}")
+        if kind not in ('dataframe', 'geodataframe'):
+            raise ValueError(
+                f"Arrow IPC only supports tabular kinds; got {kind!r}"
+            )
+        table = pq.read_table(io.BytesIO(blob))
+        frame_metadata, encoded_object_columns = _parse_parquet_meta(v_json)
+        return table, kind, frame_metadata, encoded_object_columns
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
+
+
 def detect_kind(obj):
     """Return the Curio 'kind' string for a Python object (no conversion)."""
     if obj is None: return 'null'

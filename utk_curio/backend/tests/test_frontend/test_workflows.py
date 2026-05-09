@@ -951,7 +951,7 @@ class TestWorkflowCanvas:
                     )
                     if artifact_id is not None:
                         actual = load_artifact_as_dict(artifact_id)
-                        expected_data = load_artifact_as_dict(expected_map[node.id])
+                        expected_data = expected_map[node.id]
                         if actual != expected_data:
                             diff_keys = [
                                 k for k in set(actual) | set(expected_data)
@@ -1098,9 +1098,7 @@ class TestWorkflowCanvas:
                                     None,
                                 )
                             if candidate and candidate in expected_map:
-                                upstream_data = load_artifact_as_dict(
-                                    expected_map[candidate]
-                                )
+                                upstream_data = expected_map[candidate]
                                 vega_values = dot_data_to_vega_values(upstream_data)
                                 break
 

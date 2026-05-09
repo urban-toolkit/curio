@@ -541,7 +541,7 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
     from .workflow_spec import JS_CODE_TYPES
 
     outputs: dict[str, dict] = {}   # node_id → {"path": artifact_id, "dataType": ...}
-    expected: dict[str, str] = {}   # node_id → duckdb artifact id
+    expected: dict[str, dict] = {}  # node_id → eager-loaded artifact dict (see fix below)
 
     for node in spec.topo_sorted_nodes():
         # Non-code nodes — and JS-code nodes whose source the Python sandbox
@@ -593,14 +593,25 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
         resp.raise_for_status()
         result = resp.json()
 
-        if result.get('stderr'):
+        # Treat the exec as failed only when the worker produced no output path.
+        # The worker's redirect_stderr captures Python warnings (e.g. geopandas
+        # UserWarning) on otherwise-successful runs, so a non-empty stderr
+        # alone is not a failure signal — but a real exception leaves
+        # result['output']['path'] empty (see worker.py).
+        out = result.get('output') or {}
+        if not out.get('path'):
             raise RuntimeError(
-                f"Node {node.id} ({node.type}) failed:\n{result['stderr']}"
+                f"Node {node.id} ({node.type}) failed:\n{result.get('stderr', '')}"
             )
 
-        out = result['output']
         outputs[node.id] = {"path": out['path'], "dataType": out['dataType']}
-        expected[node.id] = out['path']
+        # Load the artifact contents *now* and stash them — the artifact may be
+        # invisible later when the browser run uses a different session_id, or
+        # may have been overwritten/evicted from DuckDB by then. Only Python
+        # code nodes get inline data-content comparison in the test, so other
+        # kinds don't need eager loading.
+        if node.category == "code" and node.type not in JS_CODE_TYPES:
+            expected[node.id] = load_artifact_as_dict(out['path'])
 
     return expected
 

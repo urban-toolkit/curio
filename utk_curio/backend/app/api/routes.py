@@ -1,6 +1,8 @@
-from flask import request, abort, jsonify, g
+from flask import request, abort, jsonify, g, Response
 import requests
 import json
+
+ARROW_IPC_MIME = "application/vnd.apache.arrow.stream"
 
 _sandbox_session = requests.Session()
 
@@ -283,15 +285,42 @@ def get_file():
     if not file_name:
         return 'No artifact id specified', 400
 
+    wants_arrow = request.accept_mimetypes.best == ARROW_IPC_MIME
+    if wants_arrow and vega:
+        return jsonify({
+            'error': 'bad_request',
+            'message': "Arrow IPC and vega=true are mutually exclusive.",
+        }), 400
+
     session_id = get_current_token()
     t0 = time.perf_counter()
+    sandbox_kwargs = {
+        'params': {"fileName": file_name, "sessionId": session_id},
+    }
+    if wants_arrow:
+        sandbox_kwargs['headers'] = {"Accept": ARROW_IPC_MIME}
     resp = _sandbox_call(
         'get', '/get',
         label='/get', timeout=SANDBOX_GET_TIMEOUT,
-        params={"fileName": file_name, "sessionId": session_id},
+        **sandbox_kwargs,
     )
     if isinstance(resp, tuple):  # transport-level failure (timeout / unreachable)
         return resp
+
+    if wants_arrow:
+        forwarded_headers = {
+            k: v for k, v in resp.headers.items()
+            if k.startswith("X-Curio-")
+        }
+        print(f"[/get] arrow id={file_name} took={time.perf_counter()-t0:.4f}s "
+              f"bytes={len(resp.content)}", flush=True)
+        return Response(
+            resp.content,
+            status=resp.status_code,
+            mimetype=resp.headers.get("Content-Type", "application/octet-stream"),
+            headers=forwarded_headers,
+        )
+
     try:
         resp.raise_for_status()
         data = resp.json()
