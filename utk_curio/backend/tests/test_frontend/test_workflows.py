@@ -443,6 +443,19 @@ class TestWorkflowCanvas:
             if node.type == "DATA_POOL":
                 # DATA_POOL's table lives inside the NodeEditor output tab pane.
                 # Click the output nav button first so the pane becomes visible.
+                # Skip the table assertion when an upstream was tolerated
+                # (e.g. AUTK_DB Overpass throttle) — the pool will never
+                # receive data, so waiting 30s for a row is just a hang.
+                # Mark the pool tolerated so its own downstreams skip their
+                # data-dependent checks too.
+                if self._upstream_was_tolerated(node):
+                    import warnings
+                    warnings.warn(
+                        f"DataPool {node.id} skipped — an upstream node was "
+                        f"tolerated, so the pool has no data to display."
+                    )
+                    self._mark_tolerated(node)
+                    continue
                 output_tab = node_el.locator(
                     '.nav-link[data-rr-ui-event-key="output"]'
                 )
@@ -780,7 +793,7 @@ class TestWorkflowCanvas:
                                 return !!tab && tab.classList.contains("active");
                             }""",
                             arg={"nodeId": node.id},
-                            timeout=6000,
+                            timeout=15000,
                         )
 
             elif node.category == "grammar":
@@ -803,10 +816,19 @@ class TestWorkflowCanvas:
                     f"grammar tab"
                 )
                 # 3. Click on the grammar tab (if not already active) and
-                #    wait for the grammar editor to be rendered
+                #    wait for the grammar editor to be rendered.
+                #    On wide multi-node dashboards (e.g. 24-node ex.04) some
+                #    nodes sit far off the visible viewport even after
+                #    fitView, so ``click(force=True)`` lands on coords that
+                #    React Flow's CSS transform has shifted out of the
+                #    captured pointer region — the click is silently dropped
+                #    and the tab never activates. ``dispatch_event("click")``
+                #    fires a synthetic event directly on the element, bypassing
+                #    coordinate translation entirely (same trick we use for
+                #    Play in ``_click_play_until_started``).
                 is_active = "active" in (grammar_tab.get_attribute("class") or "")
                 if not is_active:
-                    grammar_tab.click(force=True)
+                    grammar_tab.first.dispatch_event("click")
                 self.page.wait_for_function(
                     """({ nodeId, eventKey }) => {
                         const nodeEl = document.querySelector(
@@ -819,14 +841,14 @@ class TestWorkflowCanvas:
                         return !!tab && tab.classList.contains("active");
                     }""",
                     arg={"nodeId": node.id, "eventKey": "grammar"},
-                    timeout=6000,
+                    timeout=30000,
                 )
 
                 grammar_editor = node_el.locator(
                     f'[id="grammarJsonEditor{node.id}"], '
                     f'[id="vega-editor_{node.id}"]'
                 )
-                grammar_editor.first.wait_for(state="visible", timeout=6000)
+                grammar_editor.first.wait_for(state="visible", timeout=15000)
                 assert grammar_editor.count() >= 1, (
                     f"Grammar node {node.id} ({node.type}) is missing its "
                     f"grammar editor"

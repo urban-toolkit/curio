@@ -20,7 +20,7 @@
         "type": "DATA_TRANSFORMATION",
         "x": 891.8521428018273,
         "y": 210.48976525940256,
-        "content": "import pandas as pd\n\ndf = arg\ndf.fillna(0, inplace=True)\n\nreturn df",
+        "content": "import pandas as pd\n\ndf = arg\n# Fill numeric NaN with 0; pandas 3.0 raises TypeError when filling string\n# columns with an int, so scope the fill to numeric dtypes and leave string\n# nulls untouched.\nnumeric_cols = df.select_dtypes(include='number').columns\ndf = df.copy()\ndf[numeric_cols] = df[numeric_cols].fillna(0)\n\nreturn df",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",

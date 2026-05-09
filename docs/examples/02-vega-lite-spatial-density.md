@@ -30,13 +30,15 @@ return df
 
 ## Step 2: Fill missing values (`DATA_TRANSFORMATION`)
 
-A trivial cleanup pass so the histogram in Step 3 is not skewed by `NaN` rows.
+A trivial cleanup pass so the histogram in Step 3 is not skewed by `NaN` rows. Pandas 3.0 raises `TypeError` when filling string columns with an integer, so the fill is scoped to numeric dtypes — string nulls are left untouched.
 
 ```python
 import pandas as pd
 
 df = arg
-df.fillna(0, inplace=True)
+numeric_cols = df.select_dtypes(include='number').columns
+df = df.copy()
+df[numeric_cols] = df[numeric_cols].fillna(0)
 return df
 ```
 

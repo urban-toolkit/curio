@@ -153,6 +153,8 @@ return gdf.loc[:, [gdf.geometry.name, "mean", "gt_65"]]
 
 Drop polygons with non-positive UTCI and reproject to EPSG:3395 so the `AUTK_MAP` downstream sees the CRS its tile pipeline expects. The `metadata.name` keeps the table referenceable as `census` throughout the rest of the dataflow.
 
+Note the assignment goes through ``__dict__['metadata']`` instead of plain attribute syntax: pandas emits a `UserWarning` when setting an unknown attribute on a sliced DataFrame, and curio's sandbox treats any non-empty stderr as a node failure during e2e. Curio reads `.metadata` back through `getattr`, so both write paths work — but only the dict path stays warning-free.
+
 ```python
 import geopandas as gpd
 
@@ -160,7 +162,7 @@ gdf = arg
 filtered_gdf = gdf.set_crs(32632)
 filtered_gdf = filtered_gdf.to_crs(3395)
 filtered_gdf = filtered_gdf[filtered_gdf['mean'] > 0]
-filtered_gdf.metadata = {'name': 'census'}
+filtered_gdf.__dict__['metadata'] = {'name': 'census'}
 return filtered_gdf
 ```
 

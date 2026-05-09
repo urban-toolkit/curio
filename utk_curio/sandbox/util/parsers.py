@@ -386,8 +386,14 @@ def fix_json_strings(gdf):
 
 # Output Functions
 def parseOutput(output):
+    import math
     json_output = {'data': '', 'dataType': ''}
-    if isinstance(output, (int, float, bool, str)):
+    if isinstance(output, float) and not math.isfinite(output):
+        # NaN / +Inf / -Inf are not valid JSON; emit null so simplejson-strict
+        # clients (the e2e test client) can parse the response.
+        json_output['data'] = None
+        json_output['dataType'] = 'float'
+    elif isinstance(output, (int, float, bool, str)):
         json_output['data'] = output
         json_output['dataType'] = type(output).__name__
     elif isinstance(output, list):

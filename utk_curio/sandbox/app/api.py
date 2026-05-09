@@ -51,6 +51,15 @@ def get_artifact():
         abort(400, "fileName is required")
     session_id = request.args.get('sessionId') or None
     max_rows_param = request.args.get('maxRows')
+    # Raster artifacts re-open via rasterio.open(relative_path); match
+    # /exec's cwd handling so the path resolves against launch_dir.
+    launch_dir = os.environ.get('CURIO_LAUNCH_CWD')
+    original_dir = os.getcwd()
+    if launch_dir:
+        try:
+            os.chdir(launch_dir)
+        except OSError:
+            launch_dir = None
     try:
         raw = load_from_duckdb(art_id, session_id=session_id)
         total_rows = None
@@ -70,6 +79,9 @@ def get_artifact():
             'sessionId': session_id,
             'traceback': _tb.format_exc(),
         }), 500
+    finally:
+        if launch_dir:
+            os.chdir(original_dir)
     data['filename'] = art_id
     if total_rows is not None:
         data['preview'] = True
