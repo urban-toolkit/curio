@@ -13,7 +13,6 @@ E2E — starts against an empty database, and the dev
 import os
 import shutil
 import sys
-import tempfile
 
 _REPO_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..")
@@ -23,41 +22,49 @@ _REPO_ROOT = os.path.abspath(
 # Phase 1: wire env vars BEFORE any backend import.
 # ---------------------------------------------------------------------------
 
-# Resolve the workspace that holds .curio/test/*.db. Three cases:
-#   1. CURIO_TEST_WORKSPACE=<path> — caller pins it (CI, debugging).
-#   2. CURIO_E2E_USE_EXISTING=1    — the backend is already running in a
-#      sibling terminal. We MUST point at the same workspace it sees
-#      (``CURIO_LAUNCH_CWD`` from that process, defaulting to the repo root,
-#      which matches what ``curio start`` sees in normal local/docker use)
-#      or the subprocess will read a different sqlite file and every
-#      query will fail with "no such table: user".
-#   3. Otherwise — a fresh temp dir, owned and cleaned up by this session.
+# Two separate concerns, one variable each — never re-couple them.
+#
+# _TEST_WORKSPACE: where the sandbox subprocess will chdir
+# (``CURIO_LAUNCH_CWD``). Workflows that read relative paths like
+# ``docs/examples/data/access_score.geojson`` need this to be the repo
+# root.
+#
+# _TEST_OWNED_DIR: the *only* directory the cleanup fixture is allowed to
+# rmtree. Must be a path we exclusively own and that is gitignored — never
+# the repo root itself. (A previous bug pointed the rmtree target at the
+# workspace and wiped the working tree when the workspace was the repo
+# root. That's why these are decoupled now.)
+#
+# CURIO_TEST_WORKSPACE / CURIO_E2E_USE_EXISTING let callers override the
+# workspace; in those cases the caller owns its lifecycle and we don't
+# clean anything up.
 _PERSISTENT_WS = os.environ.get("CURIO_TEST_WORKSPACE")
 _USE_EXISTING = os.environ.get("CURIO_E2E_USE_EXISTING")
 if _PERSISTENT_WS:
     os.makedirs(_PERSISTENT_WS, exist_ok=True)
     _TEST_WORKSPACE = os.path.abspath(_PERSISTENT_WS)
-    _OWNS_WORKSPACE = False
+    _TEST_OWNED_DIR = None
 elif _USE_EXISTING:
     _TEST_WORKSPACE = os.path.abspath(
         os.environ.get("CURIO_LAUNCH_CWD") or _REPO_ROOT
     )
-    _OWNS_WORKSPACE = False
+    _TEST_OWNED_DIR = None
 else:
-    _TEST_WORKSPACE = tempfile.mkdtemp(prefix="curio-test-ws-")
-    _OWNS_WORKSPACE = True
+    _TEST_WORKSPACE = _REPO_ROOT
+    # ``.curio/`` is gitignored and used only by curio for runtime artifacts
+    # (test sqlite, duckdb data). Safe to wipe at session end.
+    _TEST_OWNED_DIR = os.path.join(_REPO_ROOT, ".curio")
 
 _TEST_DB_DIR = os.path.join(_TEST_WORKSPACE, ".curio", "test")
 os.makedirs(_TEST_DB_DIR, exist_ok=True)
 
 _TEST_SQLA_DB = os.path.join(_TEST_DB_DIR, "urban_workflow_test.db")
 
-# Wipe stale files so the session always starts on an empty DB, matching the
-# isolation Django's test runner provides. We skip the wipe when attaching to
-# an already-running backend (CURIO_E2E_USE_EXISTING=1) or a caller-provided
-# workspace — those own the DB lifecycle and the running backend is holding
-# sqlite connections we shouldn't yank.
-if _OWNS_WORKSPACE:
+# Wipe stale files so the session always starts on an empty DB. Skip when
+# attaching to an already-running backend or a caller-provided workspace —
+# those own the DB lifecycle and the running backend is holding sqlite
+# connections we shouldn't yank.
+if _TEST_OWNED_DIR is not None:
     try:
         os.remove(_TEST_SQLA_DB)
     except FileNotFoundError:
@@ -103,6 +110,10 @@ def _bootstrap_schemas() -> None:
     bootstrap_app = create_app()
     with bootstrap_app.app_context():
         _db.create_all()
+        # Release the sqlite handle so curio's subprocess can os.remove the
+        # test DB on Windows (POSIX unlink-while-open silently works).
+        _db.session.remove()
+        _db.engine.dispose()
 
 
 _bootstrap_schemas()
@@ -262,16 +273,16 @@ def test_db_paths(test_workspace):
 
 @pytest.fixture(scope="session", autouse=True)
 def test_databases_cleanup(request):
-    """Tear down the temp workspace at the end of the session.
+    """Tear down test runtime artifacts at the end of the session.
 
-    The schemas are created at import time (see ``_bootstrap_schemas``),
-    so this fixture only owns the teardown side of the lifecycle — the
-    session has always booted against an empty DB by the time any test
-    runs.
+    Only ever rmtrees ``_TEST_OWNED_DIR`` — never ``_TEST_WORKSPACE``,
+    which can legitimately point at the repo root (see the workspace
+    setup at the top of this file). Skipped when no owned dir was
+    allocated (caller-provided workspace or existing-backend mode).
     """
     yield
-    if _OWNS_WORKSPACE:
-        shutil.rmtree(_TEST_WORKSPACE, ignore_errors=True)
+    if _TEST_OWNED_DIR is not None:
+        shutil.rmtree(_TEST_OWNED_DIR, ignore_errors=True)
 
 
 @pytest.fixture(scope="session")

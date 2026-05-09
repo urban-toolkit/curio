@@ -45,19 +45,31 @@ def version():
 @app.route('/get', methods=['GET'])
 def get_artifact():
     import pandas as _pd
+    import traceback as _tb
     art_id = request.args.get('fileName')
     if not art_id:
         abort(400, "fileName is required")
     session_id = request.args.get('sessionId') or None
     max_rows_param = request.args.get('maxRows')
-    raw = load_from_duckdb(art_id, session_id=session_id)
-    total_rows = None
-    if max_rows_param is not None:
-        max_rows = int(max_rows_param)
-        if isinstance(raw, _pd.DataFrame):
-            total_rows = len(raw)
-            raw = raw.head(max_rows)
-    data = parseOutput(raw)
+    try:
+        raw = load_from_duckdb(art_id, session_id=session_id)
+        total_rows = None
+        if max_rows_param is not None:
+            max_rows = int(max_rows_param)
+            if isinstance(raw, _pd.DataFrame):
+                total_rows = len(raw)
+                raw = raw.head(max_rows)
+        data = parseOutput(raw)
+    except Exception as e:
+        # Surface the underlying exception in the response body so callers
+        # see *why* the load failed instead of an empty 500 page.
+        return jsonify({
+            'error': type(e).__name__,
+            'message': str(e),
+            'fileName': art_id,
+            'sessionId': session_id,
+            'traceback': _tb.format_exc(),
+        }), 500
     data['filename'] = art_id
     if total_rows is not None:
         data['preview'] = True

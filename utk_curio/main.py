@@ -197,6 +197,32 @@ def check_install_build(dir, force_rebuild=False):
         clean_shutdown()
         return
 
+    if shutil.which("node") is None:
+        log_error("[Frontend] node not found in PATH. Install Node.js 25 from https://nodejs.org, or via conda ('conda install -c conda-forge nodejs=25'), and make sure 'node' is available in your terminal, then retry.")
+        clean_shutdown()
+        return
+    try:
+        node_version_raw = subprocess.check_output(
+            ["node", "--version"], text=True, shell=shell_required,
+        ).strip()
+    except Exception as e:
+        log_error(f"[Frontend] Could not determine Node.js version: {e}")
+        clean_shutdown()
+        return
+    node_major = 0
+    if node_version_raw.startswith("v"):
+        try:
+            node_major = int(node_version_raw[1:].split(".", 1)[0])
+        except ValueError:
+            pass
+    if node_major < 25:
+        log_error(
+            f"[Frontend] Node.js {node_version_raw} detected; requires Node.js 25 or newer. "
+            f"Upgrade with 'conda install -c conda-forge nodejs=25' or from https://nodejs.org, then retry."
+        )
+        clean_shutdown()
+        return
+
     # Check if node_modules exist, if not, run npm install
     if not os.path.exists("node_modules"):
         log_info(f"[Frontend] node_modules not found. Running npm install...", COLOR_FRONTEND, 0)
@@ -234,6 +260,8 @@ def force_rebuild_frontend():
 def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=False):
     log_info(f"Starting frontend on {host}:{port}...", COLOR_FRONTEND, 0)
 
+    _kill_port(int(port))
+
     # Only check if running dev mode
     original_dir = os.getcwd()
     if os.getenv("CURIO_DEV") == "1":
@@ -256,8 +284,11 @@ def start_frontend(host="localhost", port=8080, force_rebuild=False, no_server=F
 
         if os.environ.get("CURIO_DEV") == "1":
 
-            # Start the Node.js server (use CURIO_NO_OPEN=1 to prevent browser from opening)
-            start_cmd = ["npm", "run", "start", "--", "--no-open"] if os.environ.get("CURIO_NO_OPEN") else ["npm", "run", "start"]
+            # --port pins the requested port; otherwise webpack-dev-server
+            # auto-bumps to the next free port when ours is held.
+            start_cmd = ["npm", "run", "start", "--", "--port", str(port)]
+            if os.environ.get("CURIO_NO_OPEN"):
+                start_cmd.append("--no-open")
             process = subprocess.Popen(
                 start_cmd,
                 stdout=subprocess.PIPE,

@@ -83,7 +83,13 @@ def load_artifact_as_dict(artifact_id: str) -> dict:
         params={'fileName': artifact_id},
         timeout=30,
     )
-    resp.raise_for_status()
+    if not resp.ok:
+        # Surface the sandbox's structured error body (added in api.py /get)
+        # so pytest shows *why* the load failed.
+        raise AssertionError(
+            f"sandbox /get fileName={artifact_id} -> {resp.status_code}\n"
+            f"{resp.text[:2000]}"
+        )
     parsed = resp.json()
     result = json.loads(json.dumps(parsed, default=str))
     result.pop('filename', None)  # artifact ID varies per execution run

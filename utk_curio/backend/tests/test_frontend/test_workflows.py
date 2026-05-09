@@ -211,16 +211,19 @@ class TestWorkflowCanvas:
         self.__class__._webgpu_available_cache = available
         return available
 
-    def _read_autk_error_text(self, node_el) -> str | None:
-        """Return the autk error message text from the node's inline
-        output area. Returns ``None`` if it cannot be read.
+    def _read_code_node_error_text(self, node_el) -> str | None:
+        """Return the error message text from a code node's inline output
+        area. Returns ``None`` if it cannot be read.
 
-        autkLifecycleFactory's catch block calls
-        ``nodeState.setOutput({ code: 'error', content: err.message })``,
-        which CodeEditor renders inline under the Monaco editor — the
+        Works for both autk lifecycle nodes and Python/JS code nodes:
+        CodeEditor renders any output (success or error) into the same
         ``.nowheel.nodrag`` div with the ``[N]:`` counter (CodeEditor.tsx
-        ~200-219). It is NOT routed through OutputContent. We switch to
-        the code tab so that area is in the layout, then read it.
+        ~200-219). For autk, ``autkLifecycleFactory``'s catch block sets
+        ``output = { code: 'error', content: err.message }``; for
+        COMPUTATION_ANALYSIS / DATA_LOADING / DATA_TRANSFORMATION the
+        sandbox's stderr/exception traceback is routed there too. We
+        switch to the code tab so that area is in the layout, then read
+        it.
         """
         try:
             code_tab = node_el.locator(
@@ -248,7 +251,7 @@ class TestWorkflowCanvas:
         class so the post-test screenshot helper can include it in the
         browser log file.
         """
-        text = self._read_autk_error_text(node_el)
+        text = self._read_code_node_error_text(node_el)
         store = getattr(self.__class__, "_autk_error_texts", None)
         if store is None:
             store = {}
@@ -560,9 +563,17 @@ class TestWorkflowCanvas:
                 )
                 self._mark_tolerated(node)
                 continue
-            assert "Error" not in result_text, (
-                f"Node {node.id} ({node.type}) execution failed with Error"
-            )
+            if "Error" in result_text:
+                # Surface the inline output text so the failure message says
+                # *why* it errored.
+                detail = (
+                    self._read_code_node_error_text(node_el)
+                    if node.category == "code" else None
+                )
+                raise AssertionError(
+                    f"Node {node.id} ({node.type}) execution failed with Error"
+                    + (f"\n--- node error output ---\n{detail}" if detail else "")
+                )
 
             done_span = node_el.locator("span").filter(has_text=re.compile(r"^Done$"))
             assert done_span.count() >= 1, (

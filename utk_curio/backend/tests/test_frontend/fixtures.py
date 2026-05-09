@@ -135,6 +135,9 @@ def curio_servers(session_app, request):
     if env.get("CURIO_NO_PROJECT", "0") in ("1", "true", "yes", "on"):
         extra_args.append("--no-project")
 
+    # Discard child stdout/stderr: PIPE deadlocks the subprocess once the
+    # buffer fills, and a file in the repo trips webpack-dev-server's
+    # watcher. Full output is in $CURIO_LAUNCH_CWD/.curio/messages.log.
     process = subprocess.Popen(
         [
             "python", "curio.py", "start",
@@ -144,13 +147,15 @@ def curio_servers(session_app, request):
         ],
         cwd=REPO_ROOT,
         env=env,
-        stdout=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
         stderr=subprocess.STDOUT,
     )
 
-    wait_for_port(backend_port, timeout=40.0)
-    wait_for_port(sandbox_port, timeout=45.0)
-    wait_for_port(frontend_port, timeout=90.0)
+    # Cold-start budget: backend/sandbox imports + webpack compile can easily
+    # exceed the previous 40/45/90s timeouts on Windows.
+    wait_for_port(backend_port, timeout=90.0)
+    wait_for_port(sandbox_port, timeout=120.0)
+    wait_for_port(frontend_port, timeout=180.0)
 
     # Ensure backend and sandbox respond to /live before tests run
     host = "127.0.0.1"
