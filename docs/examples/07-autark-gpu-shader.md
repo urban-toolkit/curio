@@ -80,8 +80,7 @@ let lon_loc = -87.65;
 let dec_rad = -0.40928 * cos(2.0 * pi / 365.0 * (doy + 10.0));
 // ... project the building ring into shadow-aligned coords,
 //     form an OBB, and test each road segment against it.
-out[0] = accumulated;
-return out;
+return accumulated;
 `;
 
 const compute = new ComputeGpgpu();
