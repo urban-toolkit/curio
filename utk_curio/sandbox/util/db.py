@@ -28,12 +28,28 @@ _connection: '_NonClosingConn | None' = None
 _initialized: bool = False
 
 
-def get_db_path() -> str:
+def _ensure_data_dir() -> Path:
+    """
+    Resolve the data directory and ensure it exists on disk.
+
+    If the directory was missing — e.g., wiped by a parallel pytest teardown
+    or ``scripts/clean.sh`` — any cached connection is now pointing at a
+    vanished path, so close it before recreating the directory. The next
+    ``get_connection()`` will reopen against a fresh file.
+    """
+    global _connection
     launch_dir = Path(os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())).resolve()
     shared_data = os.environ.get("CURIO_SHARED_DATA", "./.curio/data/")
     db_dir = (launch_dir / shared_data).resolve()
-    os.makedirs(db_dir, exist_ok=True)
-    return str(db_dir / "curio_data.duckdb")
+    if not db_dir.exists():
+        if _connection is not None:
+            release_connection()
+        os.makedirs(db_dir, exist_ok=True)
+    return db_dir
+
+
+def get_db_path() -> str:
+    return str(_ensure_data_dir() / "curio_data.duckdb")
 
 
 def get_connection() -> '_NonClosingConn':
@@ -81,6 +97,10 @@ def init_db() -> None:
     Runs the DDL only once per process; subsequent calls are instant no-ops.
     """
     global _initialized
+    # Re-assert the data dir on every call. _ensure_data_dir resets the
+    # cache via release_connection() if the dir was wiped, so a stale
+    # _initialized=True after a teardown will fall through to re-DDL.
+    _ensure_data_dir()
     if _initialized:
         return
     con = get_connection()

@@ -31,9 +31,9 @@ _REPO_ROOT = os.path.abspath(
 #
 # _TEST_OWNED_DIR: the *only* directory the cleanup fixture is allowed to
 # rmtree. Must be a path we exclusively own and that is gitignored — never
-# the repo root itself. (A previous bug pointed the rmtree target at the
-# workspace and wiped the working tree when the workspace was the repo
-# root. That's why these are decoupled now.)
+# the repo root, and never ``.curio/`` itself (which the dev ``curio start``
+# process also writes into). Scope it to ``.curio/test/`` so test teardown
+# leaves dev DuckDB / project storage / log files alone.
 #
 # CURIO_TEST_WORKSPACE / CURIO_E2E_USE_EXISTING let callers override the
 # workspace; in those cases the caller owns its lifecycle and we don't
@@ -51,9 +51,13 @@ elif _USE_EXISTING:
     _TEST_OWNED_DIR = None
 else:
     _TEST_WORKSPACE = _REPO_ROOT
-    # ``.curio/`` is gitignored and used only by curio for runtime artifacts
-    # (test sqlite, duckdb data). Safe to wipe at session end.
-    _TEST_OWNED_DIR = os.path.join(_REPO_ROOT, ".curio")
+    # Wipe only the test subtree at session end. ``.curio/`` is shared with
+    # the dev ``curio start`` process — it holds the dev DuckDB at
+    # ``.curio/data/curio_data.duckdb``, the dev project storage under
+    # ``.curio/users/``, and the live ``messages.log``. A blanket rmtree of
+    # ``.curio/`` would yank the dev DuckDB out from under any concurrently
+    # running dev sandbox and break its cached connection.
+    _TEST_OWNED_DIR = os.path.join(_REPO_ROOT, ".curio", "test")
 
 _TEST_DB_DIR = os.path.join(_TEST_WORKSPACE, ".curio", "test")
 os.makedirs(_TEST_DB_DIR, exist_ok=True)
@@ -72,8 +76,11 @@ if _TEST_OWNED_DIR is not None:
 
 os.environ["CURIO_TESTING"] = "1"
 os.environ["CURIO_LAUNCH_CWD"] = _TEST_WORKSPACE
+# Tests get their own DuckDB under .curio/test/data/, parallel to the
+# SQLite test DB in .curio/test/. The dev sandbox keeps using
+# .curio/data/, so a pytest run never clobbers dev artifacts.
 os.environ.setdefault("CURIO_SHARED_DATA", os.path.join(
-    _TEST_WORKSPACE, ".curio", "data",
+    _TEST_WORKSPACE, ".curio", "test", "data",
 ))
 os.makedirs(os.environ["CURIO_SHARED_DATA"], exist_ok=True)
 
