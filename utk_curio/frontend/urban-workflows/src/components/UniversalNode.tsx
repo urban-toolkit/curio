@@ -47,7 +47,7 @@ const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }:
 
   useEffect(() => {
     outputCodeRef.current = output?.code;
-    if (output?.code === "error") {
+    if (output?.code === "error" || output?.code === "success") {
       signalNodeExecDone(data.nodeId);
     }
   }, [output?.code]);
