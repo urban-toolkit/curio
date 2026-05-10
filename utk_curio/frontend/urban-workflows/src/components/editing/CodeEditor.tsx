@@ -42,6 +42,7 @@ function CodeEditor({
 
     const replacedCodeDirtyBypass = useRef(false);
     const defaultValueBypass = useRef(false);
+    const outputRef = useRef<HTMLDivElement>(null);
 
     // @ts-ignore
     const handleCodeChange = (value, event) => {
@@ -137,6 +138,68 @@ function CodeEditor({
         );
     }, [replacedCodeDirty]);
 
+    // Confine drag-selections that start in the output box to the box itself.
+    // We drive the selection manually on every mousemove (anchor at the initial
+    // click, focus at the cursor clamped to the box's bounding rect), which
+    // overrides the browser's native selection extension so the range never
+    // bleeds into other nodes.
+    useEffect(() => {
+        const el = outputRef.current;
+        if (!el) return;
+
+        const caretFromPoint = (x: number, y: number): { node: Node; offset: number } | null => {
+            const doc: any = document;
+            if (typeof doc.caretRangeFromPoint === "function") {
+                const r: Range | null = doc.caretRangeFromPoint(x, y);
+                return r ? { node: r.startContainer, offset: r.startOffset } : null;
+            }
+            if (typeof doc.caretPositionFromPoint === "function") {
+                const p = doc.caretPositionFromPoint(x, y);
+                return p ? { node: p.offsetNode, offset: p.offset } : null;
+            }
+            return null;
+        };
+
+        const onMouseDown = (e: MouseEvent) => {
+            if (e.button !== 0) return;
+            if (!(e.target instanceof Node) || !el.contains(e.target)) return;
+
+            const anchor = caretFromPoint(e.clientX, e.clientY);
+            if (!anchor || !el.contains(anchor.node)) return;
+
+            // Stop the browser from starting its own drag-select; we drive
+            // the selection manually so it can't extend outside the box.
+            e.preventDefault();
+
+            const sel = window.getSelection();
+            sel?.removeAllRanges();
+            sel?.setBaseAndExtent(anchor.node, anchor.offset, anchor.node, anchor.offset);
+
+            const onMouseMove = (ev: MouseEvent) => {
+                ev.preventDefault();
+                const rect = el.getBoundingClientRect();
+                const cx = Math.max(rect.left + 1, Math.min(rect.right - 1, ev.clientX));
+                const cy = Math.max(rect.top + 1, Math.min(rect.bottom - 1, ev.clientY));
+                const focus = caretFromPoint(cx, cy);
+                if (!focus || !el.contains(focus.node)) return;
+                window.getSelection()?.setBaseAndExtent(anchor.node, anchor.offset, focus.node, focus.offset);
+            };
+
+            const onMouseUp = () => {
+                document.removeEventListener("mousemove", onMouseMove, true);
+                document.removeEventListener("mouseup", onMouseUp, true);
+            };
+
+            document.addEventListener("mousemove", onMouseMove, true);
+            document.addEventListener("mouseup", onMouseUp, true);
+        };
+
+        el.addEventListener("mousedown", onMouseDown);
+        return () => {
+            el.removeEventListener("mousedown", onMouseDown);
+        };
+    }, []);
+
     useEffect(() => {
         // Save a reference to the original ResizeObserver
         const OriginalResizeObserver = window.ResizeObserver;
@@ -176,7 +239,7 @@ function CodeEditor({
             : "No output yet";
 
     return (
-        <div className="nowheel nodrag" style={{ height: "100%", display: "flex", flexDirection: "column", backgroundColor: "#fff" }}>
+        <div className="nowheel nodrag" style={{ height: "100%", display: "flex", flexDirection: "column", backgroundColor: "#fff", userSelect: "none" }}>
             <div style={{ flex: 2, minHeight: 0 }}>
                 <Editor
                     height="100%"
@@ -198,6 +261,7 @@ function CodeEditor({
                 />
             </div>
             <div
+                ref={outputRef}
                 className="nowheel nodrag"
                 style={{
                     flex: 1,
