@@ -47,7 +47,7 @@ WORKFLOW_FILES = [
     "docs/examples/03-vega-lite-linked-temporal-charts.json",
     "docs/examples/04-vega-lite-multi-flow-dashboard.json",
     "docs/examples/05-vega-lite-multi-view-drilldown.json",
-    "docs/examples/06-autark-what-if-picking.json",
+    "docs/examples/06-autark-what-if-shadow-study.json",
     "docs/examples/07-autark-gpu-shader.json",
     "docs/examples/08-autark-spatial-join-regression.json",
     "docs/examples/09-heterogeneous-data-linked-views.json",

@@ -1,0 +1,98 @@
+{
+  "dataflow": {
+    "description": "Criterion-driven what-if shadow study: tall buildings (footprint > 800 m²) in Boston's Back Bay are raised by a fixed multiplier; baseline and modified maps fan out directly from the autk compute chain for visual comparison.",
+    "nodes": [
+      {
+        "id": "58ded8d4-4db6-40ff-bfef-a195997b9865",
+        "type": "AUTK_DB",
+        "x": 200,
+        "y": 350,
+        "content": "// Step 1 — load Boston's Back Bay OSM buildings (plus surface and parks for context).\nimport { AutkSpatialDb } from '@urban-toolkit/autk-db';\n\nconst db = new AutkSpatialDb();\nawait db.init();\n\nawait db.loadOsm({\n    queryArea: { geocodeArea: 'Boston', areas: ['Back Bay'] },\n    outputTableName: 'table_osm',\n    autoLoadLayers: {\n        coordinateFormat: 'EPSG:3395',\n        layers: ['buildings', 'surface', 'parks'],\n        dropOsmTable: true,\n    },\n});\n\nconst layers = [];\nfor (const layer of db.getLayerTables()) {\n    layers.push({\n        name: layer.name,\n        type: layer.type,\n        geojson: await db.getLayer(layer.name),\n    });\n}\nreturn layers;",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load OSM buildings, surface, and parks for Boston's Back Bay neighborhood via the Autark spatial database.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "c152be2d-20c5-4a0b-a05e-275e0d12d317",
+        "type": "AUTK_COMPUTE",
+        "x": 750,
+        "y": 350,
+        "content": "// Step 2 — annotate every building feature with footprint area (m²), parsed\n// height (m), and a 'tall' flag (area > 200 m²) used by the what-if multiplier.\n// The original height is preserved as 'baselineHeight' so later steps can\n// derive a modified scenario without losing the reference value.\n// IMPORTANT: many OSM buildings are multi-part GeometryCollections —\n// autk-map's TriangulatorBuildings reads each part's own 'height' (not the\n// feature root's height). We mirror baselineHeight onto every part so all\n// parts render and the multiplier downstream can scale them visibly.\nconst ringArea = (ring) => {\n    if (!ring || ring.length < 3) return 0;\n    const ox = ring[0][0], oy = ring[0][1];\n    let s = 0;\n    for (let i = 0; i < ring.length; i++) {\n        const j = (i + 1) % ring.length;\n        const x1 = ring[i][0] - ox, y1 = ring[i][1] - oy;\n        const x2 = ring[j][0] - ox, y2 = ring[j][1] - oy;\n        s += x1 * y2 - x2 * y1;\n    }\n    return Math.abs(s) / 2;\n};\nconst featureArea = (geom) => {\n    if (!geom) return null;\n    if (geom.type === 'Polygon') return ringArea(geom.coordinates[0]);\n    if (geom.type === 'MultiPolygon') return geom.coordinates.reduce((s, p) => s + ringArea(p[0]), 0);\n    if (geom.type === 'GeometryCollection') return (geom.geometries || []).reduce((s, g) => s + (featureArea(g) || 0), 0);\n    return null;\n};\nconst parseHeight = (h) => {\n    if (h == null) return null;\n    if (typeof h === 'number') return Number.isFinite(h) ? h : null;\n    const m = String(h).match(/-?\\d+(?:\\.\\d+)?/);\n    return m ? parseFloat(m[0]) : null;\n};\nconst TALL_AREA_THRESHOLD = 200;\n\nreturn arg.map(layer => {\n    if (layer.name !== 'table_osm_buildings') return layer;\n    const features = layer.geojson.features.map(f => {\n        const baseline = parseHeight(f.properties?.height) ?? 10;\n        const a = featureArea(f.geometry);\n        const partsAnnotated = Array.isArray(f.properties?.parts)\n            ? f.properties.parts.map(p => {\n                if (parseHeight(p?.height) != null) return { ...p };\n                const { min_height, min_level, 'building:min_level': _bml, ...rest } = p ?? {};\n                return { ...rest, height: baseline };\n            })\n            : f.properties?.parts;\n        return {\n            ...f,\n            properties: {\n                ...f.properties,\n                area: a,\n                baselineHeight: baseline,\n                height: baseline,\n                tall: a != null && a > TALL_AREA_THRESHOLD,\n                ...(partsAnnotated !== undefined ? { parts: partsAnnotated } : {}),\n            },\n        };\n    });\n    return { ...layer, geojson: { ...layer.geojson, features } };\n});",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Annotate buildings with footprint area, baselineHeight, and a 'tall' flag (area > 800 m²) marking the what-if subset.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "03e0e49a-f493-4af1-95e8-9f004af838e0",
+        "type": "AUTK_MAP",
+        "x": 1300,
+        "y": 50,
+        "content": "// Step 3 — Baseline view. Render all layers and color buildings by their\n// original 'baselineHeight'. This is the reference for comparison against\n// the modified and delta maps.\nconst map = new AutkMap(container);\nawait map.init();\n\nfor (const layer of arg) {\n    map.loadCollection(layer.name, { collection: layer.geojson, type: layer.type });\n}\n\nconst buildings = arg.find(l => l.name === 'table_osm_buildings').geojson;\nmap.updateRenderInfo('table_osm_buildings', { isColorMap: true });\nmap.updateThematic('table_osm_buildings', { collection: buildings, property: 'properties.baselineHeight' });\nmap.draw();\nreturn map;",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Baseline view colored by original building height.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "7f3cc834-2879-4bc3-bc58-839602f4b3e7",
+        "type": "AUTK_COMPUTE",
+        "x": 1300,
+        "y": 700,
+        "content": "// Step 4 — Apply the height multiplier to every building flagged as\n// 'tall' (area > 200 m² from Step 2). Other buildings keep their\n// baselineHeight. The multiplier is hard-coded here — tweak the constant\n// and re-run to explore different what-if intensities.\n// Multi-part buildings: each part's height is scaled too, otherwise\n// autk-map's TriangulatorBuildings would render the modified map with the\n// original part heights and the change would be invisible.\nconst MULTIPLIER = 3.0;\n\nconst out = arg.map(layer => {\n    if (layer.name !== 'table_osm_buildings') return layer;\n    const features = layer.geojson.features.map(f => {\n        const baseline = f.properties?.baselineHeight ?? 10;\n        const isTall = f.properties?.tall === true;\n        const M = isTall ? MULTIPLIER : 1.0;\n        const newHeight = baseline * M;\n        const partsScaled = Array.isArray(f.properties?.parts)\n            ? f.properties.parts.map(p => {\n                const ph = (typeof p?.height === 'number') ? p.height : (parseFloat(String(p?.height)) || 0);\n                return { ...p, height: ph * M };\n            })\n            : f.properties?.parts;\n        return {\n            ...f,\n            properties: {\n                ...f.properties,\n                height: newHeight,\n                heightDelta: newHeight - baseline,\n                ...(partsScaled !== undefined ? { parts: partsScaled } : {}),\n            },\n        };\n    });\n    return { ...layer, geojson: { ...layer.geojson, features } };\n});\n\nreturn out;",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Recompute building heights for the 'tall' subset using a fixed multiplier (1.6×).",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "9075a191-c09b-440b-ae42-5e618261506e",
+        "type": "AUTK_MAP",
+        "x": 1850,
+        "y": 400,
+        "content": "// Step 5 — Modified scenario. Same buildings, recolored by the new\n// 'height' value produced by Step 4 (baselineHeight × multiplier for tall\n// buildings, baseline otherwise).\nconst map = new AutkMap(container);\nawait map.init();\n\nfor (const layer of arg) {\n    map.loadCollection(layer.name, { collection: layer.geojson, type: layer.type });\n}\n\nconst buildings = arg.find(l => l.name === 'table_osm_buildings').geojson;\nmap.updateRenderInfo('table_osm_buildings', { isColorMap: true });\nmap.updateThematic('table_osm_buildings', { collection: buildings, property: 'properties.height' });\nmap.draw();\nreturn map;",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Visualize the modified scenario with tall buildings raised by the multiplier.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge-db-to-annotate",
+        "source": "58ded8d4-4db6-40ff-bfef-a195997b9865",
+        "target": "c152be2d-20c5-4a0b-a05e-275e0d12d317"
+      },
+      {
+        "id": "edge-annotate-to-baseline",
+        "source": "c152be2d-20c5-4a0b-a05e-275e0d12d317",
+        "target": "03e0e49a-f493-4af1-95e8-9f004af838e0"
+      },
+      {
+        "id": "edge-annotate-to-multiplier",
+        "source": "c152be2d-20c5-4a0b-a05e-275e0d12d317",
+        "target": "7f3cc834-2879-4bc3-bc58-839602f4b3e7"
+      },
+      {
+        "id": "edge-multiplier-to-modified",
+        "source": "7f3cc834-2879-4bc3-bc58-839602f4b3e7",
+        "target": "9075a191-c09b-440b-ae42-5e618261506e"
+      }
+    ],
+    "name": "Autark what-if shadow study",
+    "task": "",
+    "timestamp": 1775089298775,
+    "provenance_id": "DefaultWorkflow"
+  }
+}
