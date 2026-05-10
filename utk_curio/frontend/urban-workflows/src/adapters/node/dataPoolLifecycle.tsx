@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { NodeLifecycleHook } from '../../registry/types';
 import useTableData from '../../hook/useTableData';
 import { ICodeData, ICodeDataContent } from '../../types';
@@ -20,15 +20,49 @@ export const useDataPoolLifecycle: NodeLifecycleHook = (data, nodeState) => {
     tabData,
   } = useTableData({ data });
 
+  // Tracks the most recent in-flight processDataAsync so Play All can wait for
+  // it. Without this, UniversalNode sees no `sendCode` for the pool and calls
+  // signalNodeExecDone immediately — the next topological level then runs
+  // before the pool's async fetch has propagated output to its children, and
+  // downstream code nodes crash on `arg=None`.
+  const inflightRef = useRef<Promise<any> | null>(null);
+
   useEffect(() => {
     let cancelled = false;
-    const loadData = async () => {
-      const result = await processDataAsync();
-      if (!cancelled) setOutput(result as ICodeData);
-    };
-    loadData();
+    const p = processDataAsync();
+    inflightRef.current = p;
+    (async () => {
+      try {
+        const result = await p;
+        if (!cancelled) setOutput(result as ICodeData);
+      } finally {
+        if (inflightRef.current === p) inflightRef.current = null;
+      }
+    })();
     return () => { cancelled = true; };
   }, [data.input, data.newPropagation]);
+
+  // Play All path. UniversalNode wires this as `sendCode` so it skips the
+  // immediate signalNodeExecDone and shows the "exec" indicator on the pool.
+  // signalNodeExecDone for the pool then fires from FlowProvider.applyNewOutput
+  // *after* processDataAsync has propagated downstream — so the next level
+  // only triggers once children's data.input is set. In the common Play All
+  // path, the data-input effect above has already published a promise on
+  // inflightRef before this callback runs (effects fire in declaration order
+  // and the lifecycle hook is registered before UniversalNode's triggerExec
+  // effect), so we just await it. Falls through to a fresh fetch when
+  // triggered without a data-input change (e.g. a second Play All click).
+  const sendCodeOverride = useCallback(async () => {
+    if (inflightRef.current) return inflightRef.current;
+    const p = processDataAsync();
+    inflightRef.current = p;
+    try {
+      const result = await p;
+      setOutput(result as ICodeData);
+    } finally {
+      if (inflightRef.current === p) inflightRef.current = null;
+    }
+  }, [processDataAsync]);
 
   useEffect(() => {
     if (output.content != "" && data.interactions != undefined) {
@@ -384,6 +418,7 @@ export const useDataPoolLifecycle: NodeLifecycleHook = (data, nodeState) => {
   return {
     contentComponent,
     customWidgetsCallback,
+    sendCodeOverride,
     setOutputCallbackOverride: setOutput,
     outputOverride: output,
     setSendCodeCallbackOverride: () => {},

@@ -248,6 +248,9 @@ describe('Lifecycle hooks — NodeLifecycleHook contract conformance', () => {
       expect(typeof result.current.customWidgetsCallback).toBe('function');
       expect(typeof result.current.setOutputCallbackOverride).toBe('function');
       expect(typeof result.current.setSendCodeCallbackOverride).toBe('function');
+      // sendCodeOverride lets Play All wait for processDataAsync to propagate
+      // before the next topological level fires.
+      expect(typeof result.current.sendCodeOverride).toBe('function');
     });
   });
 

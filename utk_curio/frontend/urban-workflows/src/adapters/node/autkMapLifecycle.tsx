@@ -105,7 +105,7 @@ export const useAutkMapLifecycle = createAutkLifecycle({
         }
         if (typeof map?.draw === 'function') map.draw();
     },
-    bindInteractions: (map, emit) => {
+    bindInteractions: (map, emit, getCurrentInstance) => {
         if (map?.events?.on) {
             map.events.on('picking', ({ selection, layerId }: any) => {
                 // Two payloads at once:
@@ -128,55 +128,90 @@ export const useAutkMapLifecycle = createAutkLifecycle({
 
         // Compensate for React Flow's viewport CSS transform.
         // autk-map reads click coords from getBoundingClientRect (visual px,
-        // post-transform) but normalizes against canvas.offsetWidth (layout
-        // px). At any react-flow zoom != 1 the two disagree, so picks land
-        // off-target.
+        // post-transform) and forwards them as if they were canvas-local CSS
+        // pixels — at any react-flow zoom != 1 the two disagree, so picks
+        // land off-target.
         //
-        // Approach: remove autk-map's own dblclick / wheel listeners and
-        // replace them with versions that scale visual click coords up to
-        // layout coords before handing off to the same map APIs.
+        // Approach: install one capture-phase listener per canvas, lazily
+        // (on first call only). The handler resolves the *live* map via the
+        // `getCurrentInstance` getter the lifecycle factory provides, so it
+        // stays correct after pool propagations rebuild the map. The flag
+        // is also stored on the canvas so the listener survives even if
+        // bindInteractions runs again on a later full rebuild — we just
+        // refresh the getter via a closure-cell on the canvas.
+        // We deliberately DO NOT use event.offsetX/Y — Chrome/Edge measure
+        // offsetX against the target's *post-transform* box (i.e. visual
+        // pixels) under CSS transforms, which would defeat the rescale.
         const canvas: HTMLCanvasElement | undefined = map?.canvas;
         const me = map?._mouseEvents;
         if (canvas && me) {
-            // Remove autk-map's stock handlers so they don't pick at wrong coords.
             if (me._onDblClick) canvas.removeEventListener('dblclick', me._onDblClick, false);
             if (me._onWheel) canvas.removeEventListener('wheel', me._onWheel);
 
-            const prevDbl = (canvas as any).__autkScaledDbl;
-            if (prevDbl) canvas.removeEventListener('dblclick', prevDbl, false);
-            const dblHandler = (e: MouseEvent) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const rect = canvas.getBoundingClientRect();
-                const sx = rect.width > 0 ? canvas.offsetWidth / rect.width : 1;
-                const sy = rect.height > 0 ? canvas.offsetHeight / rect.height : 1;
-                const x = (e.clientX - rect.left) * sx;
-                const y = (e.clientY - rect.top) * sy;
-                const layer = map.activePickingLayer;
-                if (!layer?.layerRenderInfo?.isPick) return;
-                layer.layerRenderInfo.pickedComps = [x, y];
-            };
-            canvas.addEventListener('dblclick', dblHandler, false);
-            (canvas as any).__autkScaledDbl = dblHandler;
+            // Closure cell that always returns the live instance. Replaced
+            // on each bindInteractions so listeners installed in earlier
+            // rebuilds pick up the latest getter without being re-attached.
+            (canvas as any).__autkCurrentGetter = getCurrentInstance;
 
-            const prevWheel = (canvas as any).__autkScaledWheel;
-            if (prevWheel) canvas.removeEventListener('wheel', prevWheel);
-            const wheelHandler = (e: WheelEvent) => {
-                if (!map?.camera || !map?.renderer) return;
-                e.preventDefault();
-                e.stopPropagation();
-                const rect = canvas.getBoundingClientRect();
-                const sx = rect.width > 0 ? canvas.offsetWidth / rect.width : 1;
-                const sy = rect.height > 0 ? canvas.offsetHeight / rect.height : 1;
-                const x = (e.clientX - rect.left) * sx;
-                const y = (e.clientY - rect.top) * sy;
-                const cw = map.renderer.cssWidth;
-                const ch = map.renderer.cssHeight;
-                if (cw <= 0 || ch <= 0) return;
-                map.camera.zoom(e.deltaY * 0.01, x / cw, 1 - y / ch);
+            const resolveCurrent = (): any => {
+                const getter = (canvas as any).__autkCurrentGetter;
+                return typeof getter === 'function' ? getter() : null;
             };
-            canvas.addEventListener('wheel', wheelHandler, { passive: false });
-            (canvas as any).__autkScaledWheel = wheelHandler;
+
+            const localCoords = (e: MouseEvent | WheelEvent): [number, number] => {
+                const cur = resolveCurrent();
+                const cw = cur?.renderer?.cssWidth || canvas.offsetWidth;
+                const ch = cur?.renderer?.cssHeight || canvas.offsetHeight;
+                const rect = canvas.getBoundingClientRect();
+                const sx = rect.width > 0 ? cw / rect.width : 1;
+                const sy = rect.height > 0 ? ch / rect.height : 1;
+                return [(e.clientX - rect.left) * sx, (e.clientY - rect.top) * sy];
+            };
+
+            // Install capture-phase listeners exactly once per canvas, so
+            // they fire before autk-map's stock dblclick/wheel even if its
+            // listeners survive our removal attempts.
+            if (!('__autkPersistentDblHandler' in canvas)) {
+                const persistentDbl = (e: MouseEvent) => {
+                    const cur = resolveCurrent();
+                    const layer = cur?.activePickingLayer;
+                    if (!layer?.layerRenderInfo?.isPick) return;
+                    const [x, y] = localCoords(e);
+                    if (typeof window !== 'undefined' && (window as any).__curioAutkDebug) {
+                        const rect = canvas.getBoundingClientRect();
+                        // eslint-disable-next-line no-console
+                        console.debug('[autk pick]', {
+                            client: [e.clientX, e.clientY],
+                            rectLeftTop: [rect.left, rect.top],
+                            rectWH: [rect.width, rect.height],
+                            cssWH: [cur?.renderer?.cssWidth, cur?.renderer?.cssHeight],
+                            offsetWH: [canvas.offsetWidth, canvas.offsetHeight],
+                            computed: [x, y],
+                            layerId: layer?.layerInfo?.id,
+                            dpr: window.devicePixelRatio,
+                        });
+                    }
+                    layer.layerRenderInfo.pickedComps = [x, y];
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                };
+                canvas.addEventListener('dblclick', persistentDbl, true);
+                (canvas as any).__autkPersistentDblHandler = persistentDbl;
+
+                const persistentWheel = (e: WheelEvent) => {
+                    const cur = resolveCurrent();
+                    if (!cur?.camera || !cur?.renderer) return;
+                    const cw = cur.renderer.cssWidth;
+                    const ch = cur.renderer.cssHeight;
+                    if (cw <= 0 || ch <= 0) return;
+                    const [x, y] = localCoords(e);
+                    cur.camera.zoom(e.deltaY * 0.01, x / cw, 1 - y / ch);
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                };
+                canvas.addEventListener('wheel', persistentWheel, { passive: false, capture: true });
+                (canvas as any).__autkPersistentWheelHandler = persistentWheel;
+            }
         }
     },
     applyInteractions: (map, interactions) => {

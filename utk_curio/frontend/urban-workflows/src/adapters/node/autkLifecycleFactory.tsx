@@ -41,8 +41,17 @@ export interface AutkLifecycleConfig {
      * Subscribe the autk instance to selection events and forward them via
      * the supplied `emit` callback. Called once after the user's code returns
      * the instance.
+     *
+     * `getCurrentInstance` always returns the live instance ref (the most
+     * recent rebuild's autk map). Use it inside long-lived listeners so they
+     * stay correct after pool propagations rebuild the map and our closure
+     * `instance` would otherwise be stale.
      */
-    bindInteractions?: (instance: any, emit: (interactions: any) => void) => void;
+    bindInteractions?: (
+        instance: any,
+        emit: (interactions: any) => void,
+        getCurrentInstance: () => any,
+    ) => void;
     /**
      * Apply incoming propagation/interaction state to the autk instance.
      * Called whenever `data.newPropagation` changes.
@@ -279,14 +288,36 @@ export function createAutkLifecycle(config: AutkLifecycleConfig): NodeLifecycleH
 
                     if (config.bidirectional && returnValue) {
                         instanceRef.current = returnValue;
-                        if (config.bindInteractions && !interactionsBoundRef.current) {
+                        if (config.bindInteractions) {
+                            // Always re-bind: each rebuild creates a new map
+                            // with its own _mapEvents, and we need our
+                            // 'picking' listener on the *current* map's
+                            // events. The previous gate (interactionsBoundRef)
+                            // could leave the listener bound to a stale map
+                            // when concurrent runCode calls finish out of
+                            // order — picks happen on the live map but emit
+                            // on its events found no subscribers, so
+                            // AutkMap → Pool → Vega propagation stalled.
+                            // bindInteractions is idempotent for canvas-level
+                            // listeners (gated on canvas-stored flag) and
+                            // each new map can only have one map-events
+                            // listener at most, so re-running is safe.
                             const emit = (interactions: any) => {
+                                if (typeof window !== 'undefined' && (window as any).__curioAutkDebug) {
+                                    // eslint-disable-next-line no-console
+                                    console.debug('[autk emit]', {
+                                        nodeId: data.nodeId,
+                                        hasCallback: typeof data.interactionsCallback === 'function',
+                                        interactions,
+                                    });
+                                }
                                 if (data.interactionsCallback) {
                                     data.interactionsCallback(interactions, data.nodeId);
                                 }
                             };
+                            const getCurrentInstance = () => instanceRef.current;
                             try {
-                                config.bindInteractions(returnValue, emit);
+                                config.bindInteractions(returnValue, emit, getCurrentInstance);
                                 interactionsBoundRef.current = true;
                             } catch (e) {
                                 console.warn('Autark bindInteractions failed:', e);

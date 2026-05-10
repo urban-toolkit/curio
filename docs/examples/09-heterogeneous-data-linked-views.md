@@ -174,16 +174,16 @@ The pool keeps the joined `census` table in shared memory so the next three view
 
 The map node loads the census polygons coloured by `properties.mean` and turns picking on so the linked scatterplot can highlight selected tracts.
 
-```javascript
-const collection = arg?.features ? arg : (Array.isArray(arg) ? (arg[0]?.geojson ?? arg[0]) : arg);
-const LAYER = 'census';
+`arg` arrives as the auto-wrapped layer array `[{ name, type, geojson }]` (the `AUTK_MAP` lifecycle wraps any single GeoDataFrame routed through a Data Pool into this shape). Iterate it and use `layer.name` as the loaded layer id — the wrapper's `name` is what the lifecycle's selection fast-path looks up when a linked view brushes selection back through the pool, so passing a custom id like `'census'` would silently break that path. `type: null` lets autk-map infer the layer type from the feature geometries (`'polygons'`); the literal `'polygon'` is not in autk-map's accepted set (`'polygons' / 'roads' / 'polylines' / 'points' / 'buildings' / 'surface' / 'water' / 'parks' / 'raster'`) and would be silently rejected, leaving the map blank.
 
+```javascript
 const map = new AutkMap(container);
 await map.init();
-
-map.loadCollection(LAYER, { collection, type: 'polygon' });
-map.updateRenderInfo(LAYER, { isPick: true, isColorMap: true });
-map.updateThematic(LAYER, { collection, property: 'properties.mean' });
+for (const layer of arg) {
+    map.loadCollection(layer.name, { collection: layer.geojson, type: null });
+    map.updateRenderInfo(layer.name, { renderInfo: { isPick: true, isColorMap: true } });
+    map.updateThematic(layer.name, { collection: layer.geojson, property: 'properties.mean' });
+}
 map.draw();
 return map;
 ```
@@ -232,7 +232,12 @@ return gdf.loc[:, ["gt_65"]]
 
 ## Step 12: Wire the linked interaction (Interaction edges)
 
-Connect `AUTK_MAP` ↔ `VIS_VEGA` (scatter) ↔ `VIS_VEGA` (boxplot) with edges of `type: "Interaction"`. Brushing in any one view propagates an `interacted` flag through the shared census table; the other views re-style by reading that column. This is the cross-grammar piece — the same Interaction wiring works between Vega-Lite and Autark views without either side knowing about the other.
+Connect `AUTK_MAP`, `VIS_VEGA` (scatter), and `VIS_VEGA` (boxplot) to the shared `DATA_POOL` with edges of `type: "Interaction"`. Brushing in any one view propagates an `interacted` flag through the census table the pool holds; the other views re-style by reading that column on the next propagation cycle. This is the cross-grammar piece — the same Interaction wiring works between Vega-Lite and Autark views without either side knowing about the other.
+
+This example wires two pool-anchored Interaction edges:
+
+- `DATA_POOL ↔ AUTK_MAP` — double-clicking a polygon in the map flips its row's `interacted` flag in the pool, which the Vega scatter and boxplot consume.
+- `VIS_VEGA` (scatter) `↔ DATA_POOL` — brushing a region of the scatter writes the matching rows' `interacted` flag in the pool, which the AutkMap consumes through the lifecycle's selection fast-path (this is why Step 9 uses `layer.name` rather than a custom id).
 
 ## Final result
 

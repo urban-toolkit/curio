@@ -40,7 +40,7 @@ EXAMPLE_INVARIANTS = [
      {"AUTK_COMPUTE": 1, "AUTK_MAP": 1, "AUTK_PLOT": 1}, True),
     ("08-autark-spatial-join-regression.json", 7, 7,
      {"AUTK_DB": 1, "AUTK_COMPUTE": 1}, True),
-    ("09-heterogeneous-data-linked-views.json", 13, 14,
+    ("09-heterogeneous-data-linked-views.json", 13, 15,
      {"AUTK_MAP": 1, "VIS_VEGA": 2}, True),
 ]
 
