@@ -117,12 +117,15 @@ class TestWorkflowCanvas:
     # request after the throttle clears typically succeeds.
     _EXTERNAL_SERVICE_RETRIES = 5
 
-    # Seconds to wait between retry attempts on
-    # ``_tolerate_external_service_error`` nodes. Hammering Overpass 5×
-    # in rapid succession burns through the per-IP rate-limit window 5×
-    # faster than waiting. A short backoff lets the window clear before
-    # the next attempt.
+    # Base + cap for exponential backoff between retries on
+    # ``_tolerate_external_service_error`` nodes. Schedule is
+    # ``base * 2^(attempt-2)`` clamped to ``cap`` — i.e. for 5 attempts:
+    # 15s, 30s, 60s, 60s. Overpass throttle windows sometimes run a minute+,
+    # so a fixed short backoff hammers the rate-limit while a runaway
+    # exponential would let a fully-down service stall the suite for many
+    # minutes. The cap keeps the worst case bounded.
     _EXTERNAL_SERVICE_RETRY_BACKOFF_S = 15
+    _EXTERNAL_SERVICE_RETRY_BACKOFF_CAP_S = 60
 
     def _webgpu_diagnostics(self) -> dict:
         """Return a verbose dump of the browser's WebGPU state — adapter
@@ -501,16 +504,21 @@ class TestWorkflowCanvas:
             result_text = ""
             for attempt in range(1, max_attempts + 1):
                 if attempt > 1:
+                    backoff_s = min(
+                        self._EXTERNAL_SERVICE_RETRY_BACKOFF_S
+                        * (2 ** (attempt - 2)),
+                        self._EXTERNAL_SERVICE_RETRY_BACKOFF_CAP_S,
+                    )
                     import warnings
                     warnings.warn(
                         f"Node {node.id} ({node.type}) attempt "
                         f"{attempt}/{max_attempts} after transient "
                         f"external-service failure; sleeping "
-                        f"{self._EXTERNAL_SERVICE_RETRY_BACKOFF_S}s "
+                        f"{backoff_s}s "
                         f"to let the rate-limit window clear, then "
                         f"clicking Play again."
                     )
-                    time.sleep(self._EXTERNAL_SERVICE_RETRY_BACKOFF_S)
+                    time.sleep(backoff_s)
                 self._click_play_until_started(node, node_el)
 
                 # Wait until either "Done" or "Error" is visible
