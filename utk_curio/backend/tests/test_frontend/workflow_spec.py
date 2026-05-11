@@ -161,6 +161,14 @@ class WorkflowSpec:
         adj: dict[str, list[str]] = {n.id: [] for n in self.nodes}
 
         for edge in self.edges:
+            # Skip Interaction edges to match upstream_nodes(): they carry
+            # selection state, not data, and may form cycles with the
+            # data-flow edges (e.g. example 09's VIS_VEGA↔DATA_POOL pair).
+            # Including them here makes Kahn's algorithm unable to drain the
+            # queue and forces a nodes-list-order fallback that can visit a
+            # downstream code node before its data upstream is in outputs.
+            if edge.get("type") == "Interaction":
+                continue
             src, tgt = edge["source"], edge["target"]
             if src in adj and tgt in in_degree:
                 adj[src].append(tgt)

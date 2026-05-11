@@ -12,7 +12,7 @@ from pathlib import Path
 
 from shapely import wkt
 
-from utk_curio.sandbox.app.worker import _worker_init, execute_code, execute_js_code
+from utk_curio.sandbox.app.worker import _worker_init, execute_code, execute_js_code, chdir_locked
 from utk_curio.sandbox.util.parsers import (
     load_from_duckdb,
     load_tabular_arrow_from_duckdb,
@@ -63,22 +63,19 @@ def get_artifact():
 
     # Raster artifacts re-open via rasterio.open(relative_path); match
     # /exec's cwd handling so the path resolves against launch_dir.
+    # chdir_locked serializes against execute_code() so a concurrent /exec
+    # can't restore cwd out from under us (or vice versa).
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD')
-    original_dir = os.getcwd()
-    if launch_dir:
-        try:
-            os.chdir(launch_dir)
-        except OSError:
-            launch_dir = None
     try:
-        raw = load_from_duckdb(art_id, session_id=session_id)
-        total_rows = None
-        if max_rows_param is not None:
-            max_rows = int(max_rows_param)
-            if isinstance(raw, _pd.DataFrame):
-                total_rows = len(raw)
-                raw = raw.head(max_rows)
-        data = parseOutput(raw)
+        with chdir_locked(launch_dir):
+            raw = load_from_duckdb(art_id, session_id=session_id)
+            total_rows = None
+            if max_rows_param is not None:
+                max_rows = int(max_rows_param)
+                if isinstance(raw, _pd.DataFrame):
+                    total_rows = len(raw)
+                    raw = raw.head(max_rows)
+            data = parseOutput(raw)
     except Exception as e:
         # Surface the underlying exception in the response body so callers
         # see *why* the load failed instead of an empty 500 page.
@@ -89,9 +86,6 @@ def get_artifact():
             'sessionId': session_id,
             'traceback': _tb.format_exc(),
         }), 500
-    finally:
-        if launch_dir:
-            os.chdir(original_dir)
     data['filename'] = art_id
     if total_rows is not None:
         data['preview'] = True

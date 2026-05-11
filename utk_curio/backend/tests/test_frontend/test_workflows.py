@@ -389,7 +389,7 @@ class TestWorkflowCanvas:
                 play_btn.dispatch_event("click")
                 try:
                     self.page.wait_for_function(
-                        """(nodeId) => {
+                        r"""(nodeId) => {
                             const el = document.querySelector(`.react-flow__node[data-id="${nodeId}"]`);
                             if (!el) return false;
                             if (el.querySelector('.spinner-border')) return true;

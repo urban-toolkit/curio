@@ -13,10 +13,42 @@ execute_js_code() runs JavaScript via a Node.js subprocess. No lock is needed
 because each call is fully isolated in a child process.
 """
 
+import contextlib
+import os
 import threading
 
 _globals_cache: dict = {}
 _exec_lock = threading.Lock()
+
+
+@contextlib.contextmanager
+def chdir_locked(launch_dir):
+    """Process-wide ``os.chdir`` guarded by ``_exec_lock``.
+
+    Flask runs with ``threaded=True`` and ``os.chdir`` is process-wide, so
+    without serialization the /get handler's save/chdir/restore can
+    interleave with /exec's and leave cwd pointing at the wrong directory
+    mid-execution. ``execute_code`` already takes ``_exec_lock``; callers
+    that need cwd to point at ``launch_dir`` (e.g. /get re-opening a
+    raster artifact via a relative path) must take the same lock.
+
+    Falls back to a no-op when ``launch_dir`` is falsy or no longer exists,
+    matching the prior /get behaviour.
+    """
+    if not launch_dir:
+        yield
+        return
+    with _exec_lock:
+        original = os.getcwd()
+        try:
+            os.chdir(launch_dir)
+        except OSError:
+            yield
+            return
+        try:
+            yield
+        finally:
+            os.chdir(original)
 
 
 def _worker_init():

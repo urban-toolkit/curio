@@ -784,6 +784,7 @@ def save_workflow_test_screenshot(
     Returns the path to the expected screenshot file.
     """
     from PIL import Image, ImageChops, ImageEnhance
+    import numpy as np
 
     stem = os.path.splitext(os.path.basename(workflow_filepath))[0]
     os.makedirs(WORKFLOW_SCREENSHOT_EXPECTED_DIR, exist_ok=True)
@@ -807,12 +808,9 @@ def save_workflow_test_screenshot(
     expected_cmp = expected_img.resize((target_w, target_h), Image.LANCZOS)
 
     diff = ImageChops.difference(actual_cmp, expected_cmp)
-    pixels = list(diff.getdata())
-    total = len(pixels)
-    mismatched = sum(
-        1 for r, g, b in pixels
-        if r > pixel_threshold or g > pixel_threshold or b > pixel_threshold
-    )
+    arr = np.asarray(diff)
+    total = int(arr.shape[0] * arr.shape[1])
+    mismatched = int((arr > pixel_threshold).any(axis=2).sum())
     ratio = mismatched / total if total else 0.0
 
     if ratio > max_diff_ratio:

@@ -41,6 +41,59 @@ _SQLA_MUTABLE_TABLES = (
 )
 
 
+def _free_port(port: int, *, raise_on_failure: bool, total_timeout: float = 10.0) -> None:
+    """Free *port* via ``npx kill-port``, polling until it actually releases.
+
+    Replaces a fire-and-forget ``subprocess.run`` that swallowed exit codes
+    and didn't re-check the port. Without this:
+
+    - A failed ``npx`` (no network on first run, kill-port not installed,
+      owning process not killable by this user) silently moved on, so the
+      next ``wait_for_port`` just sat at its timeout with no clue why.
+    - On Windows the OS handle release can lag a few hundred ms after
+      ``kill-port`` returns; jumping straight to ``Popen`` made
+      ``curio start`` occasionally crash with EADDRINUSE.
+
+    ``raise_on_failure=True`` for setup (we need the port free or the run
+    can't start). ``False`` for teardown (best-effort cleanup; the next
+    setup pass will retry).
+    """
+    if not is_port_in_use(port):
+        return
+
+    if sys.platform == "win32":
+        cmd: list = [f"npx kill-port {port}"]
+        shell = True
+    else:
+        cmd = ["npx", "kill-port", str(port)]
+        shell = False
+
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=30, shell=shell,
+        )
+    except subprocess.TimeoutExpired as e:
+        if raise_on_failure:
+            raise RuntimeError(
+                f"npx kill-port {port} timed out after 30s: {e}"
+            )
+        return
+
+    deadline = time.time() + total_timeout
+    while time.time() < deadline:
+        if not is_port_in_use(port):
+            return
+        time.sleep(0.25)
+
+    if raise_on_failure:
+        raise RuntimeError(
+            f"Port {port} still in use {total_timeout}s after "
+            f"npx kill-port (exit={result.returncode}). "
+            f"stdout={result.stdout.strip()[:500]!r} "
+            f"stderr={result.stderr.strip()[:500]!r}"
+        )
+
+
 def _truncate_sqlite(db_path: str, tables: tuple) -> None:
     """Delete all rows from *tables* in the sqlite file at *db_path*.
 
@@ -92,16 +145,20 @@ def curio_servers(session_app, request):
     frontend_port = int(session_app.config["FRONTEND_PORT"])
 
     for port in (backend_port, sandbox_port, frontend_port):
-        if is_port_in_use(port):
-            if sys.platform == "win32":
-                subprocess.run([f"npx kill-port {port}"], capture_output=True, shell=True)
-            else:
-                subprocess.run(["npx", "kill-port", str(port)], capture_output=True)
+        _free_port(port, raise_on_failure=True)
 
     env = os.environ.copy()
     env["FLASK_ENV"] = "testing"
     env["SECRET_KEY"] = "mysecretkey"
     env["CURIO_DEV"] = "1"
+    # Disable Werkzeug's auto-reloader for the test session. Its watchdog
+    # winapi threads pair badly with GDAL/rasterio/zip C extensions on
+    # Windows and eventually corrupt the sandbox's GIL state mid-/exec
+    # (Fatal Python error: PyEval_SaveThread ... GIL is released). The
+    # reloader is also responsible for the spurious ~15 mid-test restarts
+    # visible in .curio/messages.log. Dev workflow (`python curio.py start`)
+    # leaves this unset, so hot-reload still applies there.
+    env["FLASK_USE_RELOADER"] = "0"
     env["PORT"] = str(frontend_port)
     env["BACKEND_URL"] = f"http://127.0.0.1:{backend_port}"
     env["DONT_REWRITE_URLS"] = "false"
@@ -173,11 +230,7 @@ def curio_servers(session_app, request):
         except subprocess.TimeoutExpired:
             process.kill()
         for port in (backend_port, sandbox_port, frontend_port):
-            if is_port_in_use(port):
-                if sys.platform == "win32":
-                    subprocess.run([f"npx kill-port {port}"], capture_output=True, shell=True)
-                else:
-                    subprocess.run(["npx", "kill-port", str(port)], capture_output=True)
+            _free_port(port, raise_on_failure=False)
 
     request.addfinalizer(shutdown)
     yield {
