@@ -25,13 +25,13 @@
 
   <p>
     <a href="https://github.com/urban-toolkit/curio/actions/workflows/docker-compose.yml"><img alt="Full stack build" src="https://github.com/urban-toolkit/curio/actions/workflows/docker-compose.yml/badge.svg"/></a>
-    <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/Python-3.11%20%7C%203.12-3776AB?logo=python&logoColor=white"/></a>
+    <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white"/></a>
     <a href="https://github.com/urban-toolkit/curio/graphs/contributors"><img alt="Contributors" src="https://img.shields.io/github/contributors/urban-toolkit/curio"/></a>
     <a href="https://github.com/urban-toolkit/curio/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"/></a>
   </p>
 </div>
 
-> 🌐 **Hosted instances** — Try Curio in your browser without installing anything. Stable at [**curio.urbantk.org**](https://curio.urbantk.org), and the latest `main` build at [**curio-dev.urbantk.org**](https://curio-dev.urbantk.org). Sign in with Google to save dataflows; guests can browse shared examples read-only. To run your own server, see the [deployment guide](docs/DEPLOYMENT.md). For local deployment, see [installation and usage guide](docs/USAGE.md). Local installs require **Python 3.11 or 3.12**.
+> 🌐 **Hosted instances** — Try Curio in your browser without installing anything. Stable at [**curio.urbantk.org**](https://curio.urbantk.org), and the latest `main` build at [**curio-dev.urbantk.org**](https://curio-dev.urbantk.org). Sign in with Google to save dataflows; guests can browse shared examples read-only. To run your own server, see the [deployment guide](docs/DEPLOYMENT.md). For local deployment, see [installation and usage guide](docs/USAGE.md). Local installs require **Python 3.12**.
 
 Curio is a framework for collaborative urban visual analytics that uses a dataflow model with multiple abstraction levels (code, grammar, GUI elements) to facilitate collaboration across the design and implementation of visual analytics components. The framework allows experts to intertwine preprocessing, managing, and visualization stages while tracking provenance of code and visualizations.
 

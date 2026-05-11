@@ -1,7 +1,7 @@
 # -----------------------------------------------------------------------------
 # Stage 1: Unified Python service (no Node required)
 # -----------------------------------------------------------------------------
-FROM python:3.11-slim AS runtime_base
+FROM python:3.12-slim AS runtime_base
 
 ENV PYTHONUNBUFFERED=1 LOG_TO_STDOUT=true
 WORKDIR /app

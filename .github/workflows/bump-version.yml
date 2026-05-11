@@ -38,17 +38,28 @@ jobs:
             exit 0
           fi
 
-          RESPONSE=$(curl -fsS https://models.github.ai/inference/chat/completions \
+          PROMPT="Curio is a dataflow visual analytics tool. Given these commits, decide: MINOR (new user-visible feature or capability) or PATCH (bugfix, refactor, deps, docs, tests, CI). Reply with exactly one word: minor or patch.
+
+          Commits:
+          $COMMITS"
+
+          PAYLOAD=$(jq -n \
+            --arg prompt "$PROMPT" \
+            '{model: "openai/gpt-4o-mini", max_tokens: 10, messages: [{role: "user", content: $prompt}]}')
+
+          HTTP_CODE=$(curl -sS -o /tmp/models_response.json -w "%{http_code}" \
+            https://models.github.ai/inference/chat/completions \
             -H "Authorization: Bearer ${{ github.token }}" \
             -H "Content-Type: application/json" \
-            -d "{
-              \"model\": \"openai/gpt-4o-mini\",
-              \"max_tokens\": 10,
-              \"messages\": [{
-                \"role\": \"user\",
-                \"content\": \"Curio is a dataflow visual analytics tool. Given these commits, decide: MINOR (new user-visible feature or capability) or PATCH (bugfix, refactor, deps, docs, tests, CI). Reply with exactly one word: minor or patch.\n\nCommits:\n$COMMITS\"
-              }]
-            }")
+            -d "$PAYLOAD")
+
+          if [[ "$HTTP_CODE" != "200" ]]; then
+            echo "::error::GitHub Models API returned HTTP $HTTP_CODE"
+            echo "Response body:"
+            cat /tmp/models_response.json
+            exit 1
+          fi
+          RESPONSE=$(cat /tmp/models_response.json)
 
           DECISION=$(echo "$RESPONSE" | python3 -c \
             "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'].strip().lower())")
