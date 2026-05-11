@@ -38,14 +38,27 @@ jobs:
             exit 0
           fi
 
-          PROMPT="Curio is a dataflow visual analytics tool. Given these commits, decide: MINOR (new user-visible feature or capability) or PATCH (bugfix, refactor, deps, docs, tests, CI). Reply with exactly one word: minor or patch.
+          PROMPT="Curio is a dataflow visual analytics tool with example workflows under docs/examples/. Classify these commits as MINOR or PATCH.
+
+          MINOR signals:
+          - A new user-visible feature, node type, widget, or capability
+          - New example workflows, templates, or datasets added (especially when multiple are added in one push)
+
+          PATCH signals:
+          - Bugfixes, refactors that don't change behavior
+          - Dependency bumps
+          - Documentation typos or wording fixes
+          - Tests, CI, build config
+          - Regenerating fixtures or test baselines for existing examples
+
+          Reply with a JSON object of shape {\"decision\": \"minor\" or \"patch\", \"reason\": \"<one short sentence>\"}.
 
           Commits:
           $COMMITS"
 
           PAYLOAD=$(jq -n \
             --arg prompt "$PROMPT" \
-            '{model: "openai/gpt-4o-mini", max_tokens: 10, messages: [{role: "user", content: $prompt}]}')
+            '{model: "openai/gpt-4o-mini", max_tokens: 120, response_format: {type: "json_object"}, messages: [{role: "user", content: $prompt}]}')
 
           HTTP_CODE=$(curl -sS -o /tmp/models_response.json -w "%{http_code}" \
             https://models.github.ai/inference/chat/completions \
@@ -61,8 +74,12 @@ jobs:
           fi
           RESPONSE=$(cat /tmp/models_response.json)
 
-          DECISION=$(echo "$RESPONSE" | python3 -c \
-            "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'].strip().lower())")
+          CONTENT=$(echo "$RESPONSE" | jq -r '.choices[0].message.content')
+          DECISION=$(echo "$CONTENT" | jq -r '.decision // empty' | tr '[:upper:]' '[:lower:]')
+          REASON=$(echo "$CONTENT" | jq -r '.reason // ""')
+
+          echo "Model decision: '$DECISION'"
+          echo "Model reason: $REASON"
 
           if [[ "$DECISION" == "minor" ]]; then
             BUMP="minor"
@@ -70,11 +87,12 @@ jobs:
             BUMP="patch"
           else
             echo "::error::GitHub Models returned unexpected decision: '$DECISION'"
+            echo "Raw content: $CONTENT"
             echo "Raw response: $RESPONSE"
             exit 1
           fi
           echo "BUMP=$BUMP" >> $GITHUB_ENV
-          echo "GitHub Models decided: $BUMP"
+          echo "GitHub Models decided: $BUMP ($REASON)"
 
       - name: Bump version
         if: env.SKIP != 'true'
