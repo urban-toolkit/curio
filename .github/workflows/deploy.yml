@@ -57,7 +57,7 @@ jobs:
       cancel-in-progress: false
     environment: dev
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Connect to tailnet
         uses: tailscale/github-action@v3
@@ -106,7 +106,7 @@ jobs:
       cancel-in-progress: false
     environment: stable
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Connect to tailnet
         uses: tailscale/github-action@v3

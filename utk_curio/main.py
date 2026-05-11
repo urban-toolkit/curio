@@ -193,12 +193,12 @@ def check_install_build(dir, force_rebuild=False):
             subprocess.run(["rm", "-rf", "build"], check=True)
     
     if shutil.which("npm") is None:
-        log_error("[Frontend] npm not found in PATH. Install Node.js 25 from https://nodejs.org, or via conda ('conda install -c conda-forge nodejs=25'), and make sure 'npm' is available in your terminal, then retry.")
+        log_error("[Frontend] npm not found in PATH. Install Node.js 24 from https://nodejs.org, or via conda ('conda install -c conda-forge nodejs=24'), and make sure 'npm' is available in your terminal, then retry.")
         clean_shutdown()
         return
 
     if shutil.which("node") is None:
-        log_error("[Frontend] node not found in PATH. Install Node.js 25 from https://nodejs.org, or via conda ('conda install -c conda-forge nodejs=25'), and make sure 'node' is available in your terminal, then retry.")
+        log_error("[Frontend] node not found in PATH. Install Node.js 24 from https://nodejs.org, or via conda ('conda install -c conda-forge nodejs=24'), and make sure 'node' is available in your terminal, then retry.")
         clean_shutdown()
         return
     try:
@@ -215,10 +215,10 @@ def check_install_build(dir, force_rebuild=False):
             node_major = int(node_version_raw[1:].split(".", 1)[0])
         except ValueError:
             pass
-    if node_major < 25:
+    if node_major < 24:
         log_error(
-            f"[Frontend] Node.js {node_version_raw} detected; requires Node.js 25 or newer. "
-            f"Upgrade with 'conda install -c conda-forge nodejs=25' or from https://nodejs.org, then retry."
+            f"[Frontend] Node.js {node_version_raw} detected; requires Node.js 24 or newer. "
+            f"Upgrade with 'conda install -c conda-forge nodejs=24' or from https://nodejs.org, then retry."
         )
         clean_shutdown()
         return

@@ -22,7 +22,7 @@ RUN pip install --upgrade pip setuptools wheel && \
 # -----------------------------------------------------------------------------
 # Stage 2: Build frontends with Node (avoids NodeSource on slim in CI)
 # -----------------------------------------------------------------------------
-FROM node:20-bookworm-slim AS frontend_builder
+FROM node:24-bookworm-slim AS frontend_builder
 WORKDIR /src
 COPY utk_curio/frontend/ /src/utk_curio/frontend/
 
