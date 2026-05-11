@@ -38,23 +38,30 @@ jobs:
             exit 0
           fi
 
-          RESPONSE=$(curl -sf https://models.inference.ai.azure.com/chat/completions \
+          RESPONSE=$(curl -fsS https://models.github.ai/inference/chat/completions \
             -H "Authorization: Bearer ${{ github.token }}" \
             -H "Content-Type: application/json" \
             -d "{
-              \"model\": \"gpt-4o-mini\",
+              \"model\": \"openai/gpt-4o-mini\",
               \"max_tokens\": 10,
               \"messages\": [{
                 \"role\": \"user\",
                 \"content\": \"Curio is a dataflow visual analytics tool. Given these commits, decide: MINOR (new user-visible feature or capability) or PATCH (bugfix, refactor, deps, docs, tests, CI). Reply with exactly one word: minor or patch.\n\nCommits:\n$COMMITS\"
               }]
-            }" || true)
+            }")
 
           DECISION=$(echo "$RESPONSE" | python3 -c \
-            "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'].strip().lower())" \
-            2>/dev/null || echo "patch")
+            "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'].strip().lower())")
 
-          [[ "$DECISION" == "minor" ]] && BUMP="minor" || BUMP="patch"
+          if [[ "$DECISION" == "minor" ]]; then
+            BUMP="minor"
+          elif [[ "$DECISION" == "patch" ]]; then
+            BUMP="patch"
+          else
+            echo "::error::GitHub Models returned unexpected decision: '$DECISION'"
+            echo "Raw response: $RESPONSE"
+            exit 1
+          fi
           echo "BUMP=$BUMP" >> $GITHUB_ENV
           echo "GitHub Models decided: $BUMP"
 
