@@ -8,6 +8,8 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl gdal-bin libsm6 libxext6 ffmpeg \
+    && curl -fsSL https://deb.nodesource.com/setup_25.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt curio.py ./
@@ -22,7 +24,7 @@ RUN pip install --upgrade pip setuptools wheel && \
 # -----------------------------------------------------------------------------
 # Stage 2: Build frontends with Node (avoids NodeSource on slim in CI)
 # -----------------------------------------------------------------------------
-FROM node:24-bookworm-slim AS frontend_builder
+FROM node:25-bookworm-slim AS frontend_builder
 WORKDIR /src
 COPY utk_curio/frontend/ /src/utk_curio/frontend/
 
@@ -46,7 +48,7 @@ RUN npm install && npm run build
 # -----------------------------------------------------------------------------
 FROM runtime_base AS runtime
 
-# Production mode: serve built frontend with Python http.server on 8080 (no Node/npm in image)
+# Production mode: serve built frontend with Python http.server on 8080
 ENV CURIO_DEV=0
 
 # Adjust these COPY paths if your build outputs to "build/" instead of "dist/"

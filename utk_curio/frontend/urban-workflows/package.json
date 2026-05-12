@@ -15,7 +15,7 @@
     "format-check": "npx prettier . --check"
   },
   "engines": {
-    "node": "^24"
+    "node": "^25"
   },
   "keywords": [],
   "author": "",
