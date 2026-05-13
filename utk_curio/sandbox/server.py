@@ -126,6 +126,7 @@ if __name__ == '__main__':
         threaded=True,
         debug=False,
         use_reloader=os.getenv('FLASK_USE_RELOADER', '1') != '0',
-        exclude_patterns=['*.duckdb', '*.duckdb.wal', '*.duckdb-shm', '*.duckdb-wal'],
+        # `*templates*`: see backend/server.py — avoids Windows atime-bump reload storms.
+        exclude_patterns=['*.duckdb', '*.duckdb.wal', '*.duckdb-shm', '*.duckdb-wal', '*templates*'],
     )
 
