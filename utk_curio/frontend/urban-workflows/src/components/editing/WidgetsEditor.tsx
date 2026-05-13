@@ -334,7 +334,7 @@ except Exception as e:
 
         let errorReplacing = false;
 
-        const replacedCode = userCode.replace(regex, (match, content) => {
+        const replacedCode = (userCode ?? "").replace(regex, (match, content) => {
             const param = computeMark(content, currentWidgetsValues);
             const atribs = Object.keys(param);
 

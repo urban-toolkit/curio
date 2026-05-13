@@ -5,6 +5,8 @@ export { useSimpleVisLifecycle } from './simpleVisLifecycle';
 export { useFlowSwitchLifecycle } from './flowSwitchLifecycle';
 export { useMergeFlowLifecycle } from './mergeFlowLifecycle';
 export { useDataPoolLifecycle } from './dataPoolLifecycle';
+export { useStreetVisionLifecycle } from './streetVisionLifecycle';
+export { useCvAnalysisLifecycle } from './cvAnalysisLifecycle';
 export { useDataSummaryLifecycle } from './dataSummaryLifecycle';
 export { useAutkMapLifecycle } from './autkMapLifecycle';
 export { useAutkPlotLifecycle } from './autkPlotLifecycle';

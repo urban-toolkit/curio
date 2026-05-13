@@ -38,6 +38,23 @@ import {
   },
 };
 
+// Suppress the benign "ResizeObserver loop completed with undelivered
+// notifications" error that webpack-dev-server's overlay catches when
+// Vega-Lite resizes its container during render. The chart renders fine;
+// the popup is purely dev-mode noise that obscures the canvas.
+const RESIZE_OBSERVER_RE = /ResizeObserver loop completed with undelivered notifications/;
+window.addEventListener("error", (e) => {
+  if (RESIZE_OBSERVER_RE.test(e.message)) {
+    e.stopImmediatePropagation();
+    e.preventDefault();
+  }
+});
+window.addEventListener("unhandledrejection", (e) => {
+  if (e.reason && RESIZE_OBSERVER_RE.test(String(e.reason.message ?? e.reason))) {
+    e.preventDefault();
+  }
+});
+
 loader.config({ monaco });
 (window as unknown as { monaco: typeof monaco }).monaco = monaco;
 

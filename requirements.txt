@@ -1,4 +1,5 @@
 requests==2.33.1
+httpx>=0.27.0  # Street Vision: Flask proxy to FastAPI backend
 pyarrow==24.0.0
 pillow==12.2.0
 rasterio==1.5.0

@@ -15,6 +15,8 @@ import {
   faChartLine,
   faChartColumn,
   faCopy,
+  faStreetView,
+  faEye,
   faRectangleList,
   faMap,
   faMapLocationDot,
@@ -36,6 +38,8 @@ import {
   useFlowSwitchLifecycle,
   useMergeFlowLifecycle,
   useDataPoolLifecycle,
+  useStreetVisionLifecycle,
+  useCvAnalysisLifecycle,
   useDataSummaryLifecycle,
   useAutkMapLifecycle,
   useAutkPlotLifecycle,
@@ -441,7 +445,8 @@ registerNode({
   inputPorts: [{ types: ALL_TYPES, cardinality: '2' }],
   outputPorts: [{ types: ALL_TYPES, cardinality: '1' }],
   editor: 'none',
-  inPalette: false,
+  inPalette: true,
+  paletteOrder: 12,
   description: 'The Flow Switch box is responsible for choosing which incoming data flow will be passed forward to the next box',
   hasCode: false,
   hasWidgets: true,
@@ -518,5 +523,58 @@ registerNode({
     container: {},
     showTemplateModal: false,
     useLifecycle: () => ({}),
+  },
+});
+
+// ── Street Vision (data acquisition & inference node) ──────────────
+
+registerNode({
+  id: NodeType.STREET_VISION,
+  category: 'computation',
+  label: 'Street Vision',
+  icon: faStreetView,
+  inputPorts: [],
+  outputPorts: [{ types: [SupportedType.JSON], cardinality: '1' }],
+  editor: 'none',
+  inPalette: true,
+  paletteOrder: 13,
+  description: 'Place selection and street-level image acquisition. Configures CV models (SegFormer, YOLO), fetches imagery, runs inference, and pushes results downstream.',
+  hasCode: false,
+  hasWidgets: false,
+  hasGrammar: false,
+  adapter: {
+    handles: outputOnly(),
+    editor: { code: false, grammar: false, widgets: false },
+    container: { handleType: 'out', boxWidth: 280 },
+    outputIconType: '1',
+    showTemplateModal: false,
+    useLifecycle: useStreetVisionLifecycle,
+  },
+});
+
+// ── CV Analysis (results visualization node) ───────────────────────
+
+registerNode({
+  id: NodeType.CV_ANALYSIS,
+  category: 'computation',
+  label: 'CV Analysis',
+  icon: faEye,
+  inputPorts: [{ types: [SupportedType.JSON], cardinality: '1' }],
+  outputPorts: [{ types: [SupportedType.GEODATAFRAME, SupportedType.DATAFRAME], cardinality: '1' }],
+  editor: 'none',
+  inPalette: true,
+  paletteOrder: 14,
+  description: 'Computer vision results visualization. Displays image gallery, segmentation overlays, class breakdowns, and aggregate statistics. Pushes structured data to Vega-Lite and UTK nodes.',
+  hasCode: false,
+  hasWidgets: false,
+  hasGrammar: false,
+  adapter: {
+    handles: standardInOut(),
+    editor: { code: false, grammar: false, widgets: false },
+    container: { handleType: 'in/out', boxWidth: 300 },
+    inputIconType: '1',
+    outputIconType: '1',
+    showTemplateModal: false,
+    useLifecycle: useCvAnalysisLifecycle,
   },
 });

@@ -1,12 +1,17 @@
-from flask import Flask, request, current_app, make_response, jsonify
+from flask import Flask, request, current_app, make_response, jsonify, Response
 import os
 import logging
 import traceback
 from logging.handlers import RotatingFileHandler
 
+import httpx
+
 from utk_curio.backend.config import Config as config_class
 from utk_curio.backend.config import _is_dev
 from utk_curio.backend.extensions import db, migrate
+
+# Street Vision FastAPI backend (internal, not user-facing)
+CV_BACKEND = "http://localhost:8001"
 
 
 CORS_HEADERS = {
@@ -57,6 +62,30 @@ def create_app(config_class=config_class):
     if _is_dev():
         from utk_curio.backend.app.testing.routes import testing_bp
         app.register_blueprint(testing_bp)
+
+    # ---- Street Vision proxy ----
+    # Forwards /api/streetvision/* to the FastAPI backend so the browser
+    # talks to a single server (port 5002) instead of two.
+    @app.route('/api/streetvision/<path:subpath>', methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
+    def streetvision_proxy(subpath):
+        if request.method == 'OPTIONS':
+            return _apply_cors(make_response("", 204))
+
+        url = f"{CV_BACKEND}/api/{subpath}"
+        resp = httpx.request(
+            method=request.method,
+            url=url,
+            headers={k: v for k, v in request.headers if k.lower() != 'host'},
+            content=request.get_data(),
+            params=dict(request.args),
+            timeout=120.0,
+        )
+        flask_resp = Response(
+            resp.content,
+            status=resp.status_code,
+            content_type=resp.headers.get('content-type', 'application/json'),
+        )
+        return _apply_cors(flask_resp)
 
     @app.before_request
     def short_circuit_preflight():
