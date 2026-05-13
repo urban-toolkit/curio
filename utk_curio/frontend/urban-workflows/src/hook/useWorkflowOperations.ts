@@ -591,6 +591,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setProjectName(detail.name);
         setProjectSavedAt(new Date());
         setProjectDirty(false);
+        setViewerMode("owner");
         return detail;
     }, [workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves]);
 
