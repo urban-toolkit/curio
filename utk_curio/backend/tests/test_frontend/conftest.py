@@ -1,9 +1,33 @@
 import os
 
 import pytest
+from playwright.sync_api import Browser, BrowserType
 
 from .utils import REPO_ROOT
 from .fixtures import _clean_db
+
+
+# ------------------------------------------------------------------ #
+# Class-scoped browser override
+# ------------------------------------------------------------------ #
+#
+# pytest-playwright ships a session-scoped ``browser`` fixture, so one
+# Chromium process handles the whole run.  Over the ~25 parametrized
+# workflow classes in this suite, Chromium's V8/GPU/renderer heaps don't
+# fully reclaim across closed contexts; on a 16 GiB GH-hosted runner the
+# host has leaked >7 GiB by the heavy linked-view workflow (#09), pushing
+# the runner into OOM and "lost communication with the server" failures.
+# Re-launching Chromium between workflow classes drops it back to baseline
+# at the cost of ~5 s × workflow_count of startup overhead.
+
+@pytest.fixture(scope="class")
+def browser(
+    browser_type: "BrowserType",
+    browser_type_launch_args: dict,
+) -> "Browser":
+    launched = browser_type.launch(**browser_type_launch_args)
+    yield launched
+    launched.close()
 
 # ------------------------------------------------------------------ #
 # Workflow scenario discovery
