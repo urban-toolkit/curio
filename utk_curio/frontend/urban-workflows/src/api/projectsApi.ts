@@ -86,6 +86,10 @@ export const projectsApi = {
     return apiFetch<LoadResponse>(`/api/projects/${id}`);
   },
 
+  getShared(id: string): Promise<LoadResponse> {
+    return apiFetch<LoadResponse>(`/api/projects/${id}/shared`);
+  },
+
   create(body: SaveBody): Promise<ProjectDetail> {
     return apiFetch<ProjectDetail>("/api/projects", {
       method: "POST",

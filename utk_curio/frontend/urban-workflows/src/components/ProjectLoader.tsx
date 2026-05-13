@@ -29,6 +29,7 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
   const loaded = useRef<string | null>(null);
   const {
     loadProject,
+    loadSharedProject,
     setOutputs,
     loadParsedTrill,
     projectId,
@@ -46,40 +47,58 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
 
     loaded.current = id;
 
+    const applyResult = (result: { spec: unknown; outputs?: Array<{ node_id: string; filename: string }> }) => {
+      const { spec, outputs } = result;
+
+      if (spec) {
+        if (!hasLoadableDataflow(spec)) {
+          throw new Error(
+            "Project spec is missing a valid dataflow payload. It may have been saved incorrectly."
+          );
+        }
+        loadTrill(spec);
+      }
+
+      if (outputs && outputs.length > 0) {
+        const newOutputs: IOutput[] = outputs.map((o) => ({
+          nodeId: o.node_id,
+          output: o.filename,
+        }));
+        setOutputs((prev: IOutput[]) => {
+          const existing = new Set(prev.map((p) => p.nodeId));
+          const merged = [...prev];
+          for (const o of newOutputs) {
+            if (existing.has(o.nodeId)) {
+              const idx = merged.findIndex((m) => m.nodeId === o.nodeId);
+              if (idx >= 0) merged[idx] = o;
+            } else {
+              merged.push(o);
+            }
+          }
+          return merged;
+        });
+      }
+    };
+
     (async () => {
       try {
         const result = await loadProject(id);
-        const { spec, outputs } = result;
-
-        if (spec) {
-          if (!hasLoadableDataflow(spec)) {
-            throw new Error(
-              "Project spec is missing a valid dataflow payload. It may have been saved incorrectly."
-            );
-          }
-          loadTrill(spec);
-        }
-
-        if (outputs && outputs.length > 0) {
-          const newOutputs: IOutput[] = outputs.map((o: { node_id: string; filename: string }) => ({
-            nodeId: o.node_id,
-            output: o.filename,
-          }));
-          setOutputs((prev: IOutput[]) => {
-            const existing = new Set(prev.map((p) => p.nodeId));
-            const merged = [...prev];
-            for (const o of newOutputs) {
-              if (existing.has(o.nodeId)) {
-                const idx = merged.findIndex((m) => m.nodeId === o.nodeId);
-                if (idx >= 0) merged[idx] = o;
-              } else {
-                merged.push(o);
-              }
-            }
-            return merged;
-          });
-        }
+        applyResult(result);
       } catch (err) {
+        // 404 from the owner-scoped endpoint means either the project doesn't
+        // exist or the current user isn't its owner. Try the shared (link-based)
+        // endpoint before giving up — it's how share URLs work for visitors.
+        const status = (err as { status?: number })?.status;
+        if (status === 404) {
+          try {
+            const result = await loadSharedProject(id);
+            applyResult(result);
+            return;
+          } catch (sharedErr) {
+            console.error("Failed to load shared project:", sharedErr);
+            return;
+          }
+        }
         console.error("Failed to load project:", err);
       }
     })();

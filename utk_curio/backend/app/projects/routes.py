@@ -121,6 +121,25 @@ def get_project(project_id: str):
 
 
 # ---------------------------------------------------------------------------
+# GET /api/projects/:id/shared — link-based public read (no auth)
+# ---------------------------------------------------------------------------
+@projects_bp.route("/<project_id>/shared", methods=["GET"])
+def get_shared_project(project_id: str):
+    try:
+        result = services.load_shared_project(project_id)
+    except NotFoundError:
+        return _error("Project not found", 404)
+    except ProjectError as exc:
+        return _error(str(exc), exc.status)
+
+    return jsonify({
+        "project": asdict(result["project"]),
+        "spec": result["spec"],
+        "outputs": result["outputs"],
+    }), 200
+
+
+# ---------------------------------------------------------------------------
 # DELETE /api/projects/:id
 # ---------------------------------------------------------------------------
 @projects_bp.route("/<project_id>", methods=["DELETE"])

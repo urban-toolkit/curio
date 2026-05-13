@@ -63,15 +63,21 @@ export default function UpMenu({
     const { skipProjectPage } = useUserContext();
     const {
         workflowNameRef,
+        projectId,
+        projectName,
         projectDirty,
         projectSavedAt,
         cleanCanvas,
         saveCurrentProject,
+        saveAsNewProject,
         discardProject,
+        viewerMode,
         packages,
         nodes,
         edges,
     } = useFlowContext();
+
+    const isSharedView = viewerMode === "shared";
     const {
         workflowName,
         setWorkflowName,
@@ -153,8 +159,15 @@ export default function UpMenu({
 
     const handleSave = async () => {
         setSaving(true);
+        const wasNew = !projectId;
         try {
-            await saveCurrentProject();
+            const detail = await saveCurrentProject();
+            // First save of a brand-new dataflow: promote the placeholder
+            // ``/dataflow/new`` URL to the canonical, shareable one. We use
+            // replace so the user's back button still works as expected.
+            if (wasNew && detail?.id) {
+                navigate(`/dataflow/${detail.id}`, { replace: true });
+            }
         } catch (err: any) {
             console.error("Save failed:", err);
             showToast(err?.message || "Save failed", "error");
@@ -163,6 +176,22 @@ export default function UpMenu({
         }
         setSaving(false);
         setActiveMenu(null);
+    };
+
+    const handleSaveCopy = async () => {
+        const sourceName = projectName || workflowNameRef.current || "Untitled";
+        setSaving(true);
+        try {
+            const detail = await saveAsNewProject(`${sourceName} (copy)`);
+            showToast("Saved a copy to your workspace", "info");
+            navigate(`/dataflow/${detail.id}`);
+        } catch (err: any) {
+            console.error("Save a copy failed:", err);
+            showToast(err?.message || "Save a copy failed", "error");
+        } finally {
+            setSaving(false);
+            setActiveMenu(null);
+        }
     };
 
     const handleSaveAs = () => {
@@ -369,8 +398,16 @@ export default function UpMenu({
                                 <FontAwesomeIcon className={styles.dropDownIcon} icon={faFileImport} />
                                 <button className={styles.noStyleButton}>Load dataflow</button>
                             </div>
-                            {!skipProjectPage && (
+                            {!skipProjectPage && !isSharedView && (
                                 <div className={styles.dropDownRow} onClick={handleSave}>
+                                    <FontAwesomeIcon className={styles.dropDownIcon} icon={faFloppyDisk} />
+                                    <button className={styles.noStyleButton} disabled={saving}>
+                                        {saving ? "Saving..." : "Save dataflow"}
+                                    </button>
+                                </div>
+                            )}
+                            {isSharedView && (
+                                <div className={styles.dropDownRow} onClick={handleSaveCopy}>
                                     <FontAwesomeIcon className={styles.dropDownIcon} icon={faFloppyDisk} />
                                     <button className={styles.noStyleButton} disabled={saving}>
                                         {saving ? "Saving..." : "Save dataflow"}
@@ -542,7 +579,7 @@ export default function UpMenu({
 
             {/* Editable Workflow Name */}
             <div className={styles.workflowNameContainer}>
-                {isEditing ? (
+                {isEditing && !isSharedView ? (
                     <input
                         type="text"
                         value={workflowName}
@@ -555,12 +592,35 @@ export default function UpMenu({
                 ) : (
                     <h1
                         className={styles.workflowNameStyle}
-                        onClick={() => setIsEditing(true)}
+                        onClick={() => { if (!isSharedView) setIsEditing(true); }}
                     >
                         {workflowName}
                     </h1>
                 )}
             </div>
+
+            {isSharedView && (
+                <div
+                    style={{
+                        position: "absolute",
+                        top: 60,
+                        left: "50%",
+                        transform: "translateX(-50%)",
+                        background: "#FFF4D6",
+                        color: "#7A5A00",
+                        border: "1px solid #E6CD7A",
+                        borderRadius: 6,
+                        padding: "6px 14px",
+                        fontSize: 12,
+                        fontWeight: 500,
+                        zIndex: 1000,
+                        boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+                    }}
+                    data-testid="shared-view-banner"
+                >
+                    Viewing a shared dataflow (read-only). Use File → Save dataflow or File → Save dataflow as to make it yours.
+                </div>
+            )}
 
             <TrillProvenanceWindow
                 open={trillProvenanceOpen}

@@ -139,7 +139,10 @@ export function MainCanvas() {
         dashboardOn,
         dashboardLocked,
         dashboardPins,
+        viewerMode,
     } = useFlowContext();
+
+    const isSharedView = viewerMode === "shared";
 
     // Refs used inside callbacks so the callbacks don't need to list them as deps
     const selectedEdgeIdRef = useRef<string>("");
@@ -446,15 +449,15 @@ export function MainCanvas() {
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
-                onDragOver={!dashboardOn ? handleDragOver : undefined}
-                onDrop={!dashboardOn ? handleDrop : undefined}
+                onDragOver={!dashboardOn && !isSharedView ? handleDragOver : undefined}
+                onDrop={!dashboardOn && !isSharedView ? handleDrop : undefined}
                 onNodesChange={handleNodesChange}
                 onNodeDragStop={handleNodeDragStop}
                 onEdgesChange={handleEdgesChange}
                 onEdgesDelete={handleEdgesDelete}
                 selectionKeyCode={dashboardOn ? null : "Shift"}
                 onSelectionChange={handleSelectionChange}
-                onConnect={!dashboardOn ? onConnect : undefined}
+                onConnect={!dashboardOn && !isSharedView ? onConnect : undefined}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
                 isValidConnection={isValidConnection}
@@ -466,9 +469,11 @@ export function MainCanvas() {
                 zoomOnScroll={!dashboardOn || !dashboardLocked}
                 zoomOnPinch={!dashboardOn || !dashboardLocked}
                 zoomOnDoubleClick={!dashboardOn || !dashboardLocked}
-                nodesDraggable={!dashboardOn || !dashboardLocked}
+                nodesDraggable={!isSharedView && (!dashboardOn || !dashboardLocked)}
                 elementsSelectable={true}
-                nodesConnectable={!dashboardOn}
+                nodesConnectable={!isSharedView && !dashboardOn}
+                edgesUpdatable={!isSharedView}
+                deleteKeyCode={isSharedView ? null : undefined}
                 style={dashboardOn ? { backgroundColor: "#ffffff" } : undefined}
             >
                 {!dashboardOn && <Background color="#a0a0a0" variant={BackgroundVariant.Dots} gap={20} size={2} />}

@@ -92,6 +92,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     const [projectDirty, setProjectDirty] = useState<boolean>(false);
     const [projectSavedAt, setProjectSavedAt] = useState<Date | null>(null);
     const [nodeExecStatus, setNodeExecStatus] = useState<Record<string, "stale" | "executed">>({});
+    const [viewerMode, setViewerMode] = useState<"owner" | "shared">("owner");
 
     const markDirty = useCallback(() => {
         setProjectDirty(true);
@@ -517,6 +518,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             .filter((r: OutputRef | null): r is OutputRef => r !== null);
 
     const saveCurrentProject = useCallback(async (nameOverride?: string) => {
+        if (viewerMode === "shared") {
+            throw new Error("Shared dataflows are read-only; use Save a copy");
+        }
         if (blockGuestSaves) {
             throw new Error("Guest users cannot save projects");
         }
@@ -551,11 +555,11 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             setProjectDirty(false);
             return detail;
         }
-    }, [projectId, projectName, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves]);
+    }, [projectId, projectName, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode]);
 
     // Auto-save every 30 seconds when a project has been explicitly saved at least once
     useEffect(() => {
-        if (!projectId || !projectDirty || blockGuestSaves) return;
+        if (!projectId || !projectDirty || blockGuestSaves || viewerMode === "shared") return;
         const id = window.setInterval(async () => {
             try {
                 await saveCurrentProject();
@@ -564,7 +568,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             }
         }, 30_000);
         return () => window.clearInterval(id);
-    }, [projectId, projectDirty, saveCurrentProject, blockGuestSaves]);
+    }, [projectId, projectDirty, saveCurrentProject, blockGuestSaves, viewerMode]);
 
     const saveAsNewProject = useCallback(async (name: string) => {
         if (blockGuestSaves) {
@@ -598,6 +602,29 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setProjectName(project.name);
         setProjectDirty(false);
         setProjectSavedAt(project.updated_at ? new Date(project.updated_at) : null);
+        setViewerMode("owner");
+
+        const execStatus: Record<string, "stale" | "executed"> = {};
+        for (const o of outputs) {
+            execStatus[o.node_id] = "executed";
+        }
+        setNodeExecStatus(execStatus);
+
+        return result;
+    }, []);
+
+    const loadSharedProject = useCallback(async (id: string) => {
+        const result = await projectsApi.getShared(id);
+        const { project, outputs } = result;
+
+        // Deliberately leave projectId=null: this dataflow is not "open for
+        // editing" in the visitor's workspace. Save-a-copy goes through
+        // saveAsNewProject, which creates a fresh project owned by them.
+        setProjectId(null);
+        setProjectName(project.name);
+        setProjectDirty(false);
+        setProjectSavedAt(null);
+        setViewerMode("shared");
 
         const execStatus: Record<string, "stale" | "executed"> = {};
         for (const o of outputs) {
@@ -614,6 +641,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setProjectDirty(false);
         setProjectSavedAt(null);
         setNodeExecStatus({});
+        setViewerMode("owner");
     }, []);
 
     const markNodeExecuted = useCallback((nodeId: string) => {
@@ -648,6 +676,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         projectDirty,
         projectSavedAt,
         nodeExecStatus,
+        viewerMode,
 
         // Operations
         updateDataNode,
@@ -666,6 +695,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         saveCurrentProject,
         saveAsNewProject,
         loadProject,
+        loadSharedProject,
         discardProject,
         markDirty,
         markNodeExecuted,

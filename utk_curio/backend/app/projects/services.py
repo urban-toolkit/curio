@@ -38,6 +38,16 @@ def _user_dir_key(user) -> str:
     return storage._GUEST_KEY if _is_shared_guest(user) else str(user.id)
 
 
+def _owner_user_dir_key(project) -> str:
+    """Resolve the on-disk user key for a project's owner."""
+    from utk_curio.backend.app.users.models import User as UserModel
+
+    owner = db.session.get(UserModel, project.user_id)
+    if owner and owner.is_guest and owner.username == CURIO_SHARED_GUEST_USERNAME:
+        return storage._GUEST_KEY
+    return str(project.user_id)
+
+
 def _assert_guest_can_save(user) -> None:
     if user.is_guest and not _is_shared_guest(user):
         raise ProjectError("Guest users cannot save projects", 403)
@@ -206,6 +216,49 @@ def load_project(user, project_id: str) -> dict:
     db.session.commit()
     return {
         "project": _to_detail(project, spec=spec, outputs=hydrated),
+        "spec": spec,
+        "outputs": [{"node_id": r.node_id, "filename": r.filename} for r in hydrated],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Shared (public-by-URL) load — no ownership check
+# ---------------------------------------------------------------------------
+
+def load_shared_project(project_id: str) -> dict:
+    """Hydrate a project for any caller, regardless of ownership.
+
+    Used by the unauthenticated ``GET /api/projects/<id>/shared`` route to
+    power link-based sharing. Archived projects are treated as missing so a
+    deleted/archived link 404s instead of leaking a stale spec.
+    """
+    from utk_curio.backend.app.projects.models import Project
+
+    project = db.session.get(Project, project_id)
+    if project is None or project.archived_at is not None:
+        raise repo.NotFoundError(f"Project {project_id} not found")
+
+    ukey = _owner_user_dir_key(project)
+    spec = storage.read_spec(ukey, project_id)
+    if spec is None:
+        raise repo.NotFoundError(f"Project {project_id} not found")
+
+    manifest = storage.read_manifest(ukey, project_id)
+    output_refs: List[OutputRef] = []
+    if manifest and "outputs" in manifest:
+        output_refs = [
+            OutputRef(node_id=o["node_id"], filename=o["filename"])
+            for o in manifest["outputs"]
+        ]
+
+    hydrated = storage.hydrate_outputs(ukey, project_id, output_refs)
+
+    detail = _to_detail(project, spec=spec, outputs=hydrated)
+    # Don't leak server filesystem layout to shared-link visitors.
+    detail.folder_path = ""
+
+    return {
+        "project": detail,
         "spec": spec,
         "outputs": [{"node_id": r.node_id, "filename": r.filename} for r in hydrated],
     }

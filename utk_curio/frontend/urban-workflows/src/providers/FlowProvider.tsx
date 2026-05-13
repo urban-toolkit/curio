@@ -116,11 +116,13 @@ interface FlowContextProps {
     projectDirty: boolean;
     projectSavedAt: Date | null;
     nodeExecStatus: Record<string, "stale" | "executed">;
+    viewerMode: "owner" | "shared";
 
     // Project operations
     saveCurrentProject: (nameOverride?: string) => Promise<any>;
     saveAsNewProject: (name: string) => Promise<any>;
     loadProject: (id: string) => Promise<any>;
+    loadSharedProject: (id: string) => Promise<any>;
     discardProject: () => void;
     markDirty: () => void;
     markNodeExecuted: (nodeId: string) => void;
@@ -225,9 +227,11 @@ export const FlowContext = createContext<FlowContextProps>({
     projectDirty: false,
     projectSavedAt: null,
     nodeExecStatus: {},
+    viewerMode: "owner",
     saveCurrentProject: async () => {},
     saveAsNewProject: async () => {},
     loadProject: async () => {},
+    loadSharedProject: async () => {},
     discardProject: () => {},
     markDirty: () => {},
     markNodeExecuted: () => {},

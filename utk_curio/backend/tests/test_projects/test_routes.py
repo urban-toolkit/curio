@@ -167,3 +167,67 @@ def test_ownership_isolation(client, user_and_token, db, tmp_curio):
 
     resp = client.get(f"/api/projects/{pid}", headers=_auth("bob-token"))
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# /shared — link-based public read
+# ---------------------------------------------------------------------------
+
+def test_get_shared_project_no_auth(client, user_and_token, tmp_curio):
+    _, token = user_and_token
+    create = client.post(
+        "/api/projects",
+        data=json.dumps({"name": "Shared", "spec": _spec()}),
+        headers=_auth(token),
+    )
+    pid = create.get_json()["id"]
+
+    resp = client.get(f"/api/projects/{pid}/shared")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["project"]["name"] == "Shared"
+    assert body["spec"] == _spec()
+    # folder_path is internal — don't leak FS layout to anonymous visitors.
+    assert body["project"].get("folder_path") == ""
+
+
+def test_get_shared_project_from_other_user(client, user_and_token, db, tmp_curio):
+    _, alice_token = user_and_token
+    create = client.post(
+        "/api/projects",
+        data=json.dumps({"name": "Alice's", "spec": _spec()}),
+        headers=_auth(alice_token),
+    )
+    pid = create.get_json()["id"]
+
+    from utk_curio.backend.app.users.models import User, UserSession
+    bob = User(username="bob", name="Bob")
+    db.session.add(bob)
+    db.session.flush()
+    db.session.add(UserSession(user_id=bob.id, token="bob-token"))
+    db.session.commit()
+
+    resp = client.get(f"/api/projects/{pid}/shared", headers=_auth("bob-token"))
+    assert resp.status_code == 200
+    assert resp.get_json()["project"]["name"] == "Alice's"
+
+
+def test_get_shared_project_missing(client, tmp_curio):
+    resp = client.get("/api/projects/00000000-0000-0000-0000-000000000000/shared")
+    assert resp.status_code == 404
+
+
+def test_get_shared_project_archived(client, user_and_token, tmp_curio):
+    _, token = user_and_token
+    create = client.post(
+        "/api/projects",
+        data=json.dumps({"name": "Soon Archived", "spec": _spec()}),
+        headers=_auth(token),
+    )
+    pid = create.get_json()["id"]
+
+    archived = client.delete(f"/api/projects/{pid}", headers=_auth(token))
+    assert archived.status_code == 204
+
+    resp = client.get(f"/api/projects/{pid}/shared")
+    assert resp.status_code == 404

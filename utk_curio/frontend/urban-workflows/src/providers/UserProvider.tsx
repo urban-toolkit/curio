@@ -21,6 +21,7 @@ interface UserProviderProps {
   enableUserAuth: boolean;
   skipProjectPage: boolean;
   allowGuest: boolean;
+  sharedGuestUsername: string;
   googleClientId: string;
   signup: (data: {
     name: string;
@@ -55,6 +56,7 @@ export const UserContext = createContext<UserProviderProps>({
   enableUserAuth: true,
   skipProjectPage: false,
   allowGuest: false,
+  sharedGuestUsername: "guest_shared",
   googleClientId: process.env.VITE_GOOGLE_OAUTH_CLIENT_ID || "",
   signup: async () => null,
   signin: async () => null,
@@ -74,6 +76,8 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
   const [enableUserAuth, setEnableUserAuth] = useState<boolean>(true);
   const [skipProjectPage, setSkipProjectPage] = useState<boolean>(false);
   const [allowGuest, setAllowGuest] = useState<boolean>(false);
+  const [sharedGuestUsername, setSharedGuestUsername] =
+    useState<string>("guest_shared");
   const [googleClientId, setGoogleClientId] = useState<string>(
     process.env.VITE_GOOGLE_OAUTH_CLIENT_ID || ""
   );
@@ -120,6 +124,7 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
         setEnableUserAuth(authEnabled);
         setSkipProjectPage(projectPageSkipped);
         setAllowGuest(Boolean(authEnabled && cfg?.allow_guest_login));
+        setSharedGuestUsername(sharedGuestUsername);
         if (cfg?.google_client_id) {
           setGoogleClientId(cfg.google_client_id);
         }
@@ -151,6 +156,23 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
         }
 
         if (!token) {
+          // Share-link bootstrap: when an unauthenticated visitor lands on a
+          // /dataflow/<uuid> URL and guest login is allowed, sign them in as
+          // the shared guest so they can view the linked dataflow without
+          // facing a login form.
+          const onShareUrl =
+            /\/dataflow\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(
+              window.location.pathname
+            );
+          if (onShareUrl && cfg?.allow_guest_login) {
+            try {
+              const res = await authApi.signinGuest();
+              if (!cancelled) handleAuth(res);
+            } catch {
+              if (!cancelled) setUser(null);
+            }
+            return;
+          }
           if (!cancelled) setUser(null);
           return;
         }
@@ -293,6 +315,7 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
         enableUserAuth,
         skipProjectPage,
         allowGuest,
+        sharedGuestUsername,
         googleClientId,
         signup,
         signin,
