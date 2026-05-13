@@ -38,22 +38,17 @@ jobs:
             exit 0
           fi
 
-          PROMPT="Curio is a dataflow visual analytics tool with example workflows under docs/examples/. Classify these commits as MINOR or PATCH.
+          PROMPT="Curio is a dataflow visual analytics tool with example workflows under docs/examples/. The commit list below represents ONE upcoming release. Classify the release as a whole — not each commit individually — as MINOR or PATCH.
 
-          MINOR signals:
+          MINOR if ANY commit introduces:
           - A new user-visible feature, node type, widget, or capability
-          - New example workflows, templates, or datasets added (especially when multiple are added in one push)
+          - New example workflows, templates, or datasets
 
-          PATCH signals:
-          - Bugfixes, refactors that don't change behavior
-          - Dependency bumps
-          - Documentation typos or wording fixes
-          - Tests, CI, build config
-          - Regenerating fixtures or test baselines for existing examples
+          PATCH otherwise (bugfixes, refactors, dep bumps, docs, tests, CI, regenerated fixtures).
 
-          Reply with a JSON object of shape {\"decision\": \"minor\" or \"patch\", \"reason\": \"<one short sentence>\"}.
+          Reply with EXACTLY ONE JSON object — never a list — of shape {\"decision\": \"minor\" or \"patch\", \"reason\": \"<one short sentence summarising the release>\"}.
 
-          Commits:
+          Commits in this release:
           $COMMITS"
 
           PAYLOAD=$(jq -n \
