@@ -6,6 +6,7 @@ on:
     paths:
       - 'utk_curio/**'
       - 'docs/**'
+  workflow_dispatch:
 
 permissions:
   contents: write
