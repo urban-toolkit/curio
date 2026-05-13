@@ -31,8 +31,19 @@ jobs:
       - name: Classify bump type via GitHub Models
         if: env.SKIP != 'true'
         run: |
-          LAST_TAG=$(git describe --tags --match "v*" --abbrev=0 2>/dev/null || echo "v0.0.0")
-          COMMITS=$(git log "${LAST_TAG}..HEAD" --format="- %s" | grep -v "^- chore: bump version" || true)
+          # Use the previous bump commit as the boundary instead of a git
+          # tag — bump-version doesn't (and shouldn't) create tags, so an
+          # ancient v* tag would otherwise drag old commits into every run's
+          # classification window.
+          LAST_BUMP=$(git log --author="github-actions\[bot\]" \
+                              --grep="^chore: bump version to " \
+                              -n 1 --format="%H")
+          if [ -z "$LAST_BUMP" ]; then
+            RANGE="HEAD"
+          else
+            RANGE="${LAST_BUMP}..HEAD"
+          fi
+          COMMITS=$(git log $RANGE --format="- %s" | grep -v "^- chore: bump version" || true)
 
           if [ -z "$COMMITS" ]; then
             echo "BUMP=patch" >> $GITHUB_ENV
