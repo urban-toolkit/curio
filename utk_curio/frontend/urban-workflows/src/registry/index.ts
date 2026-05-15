@@ -4,9 +4,13 @@ import '../adapters/vegaLiteAdapter';
 export {
   registerNode,
   getNodeDescriptor,
+  tryGetNodeDescriptor,
   getAllNodeTypes,
   getPaletteNodeTypes,
+  subscribeToRegistry,
 } from './nodeRegistry';
+
+export type { NodeKindId, NodeSource, NodePackMeta } from './types';
 
 export {
   registerGrammarAdapter,

@@ -12,6 +12,7 @@ import {
   setToken,
   UserData,
 } from "../utils/authApi";
+import { refreshPackRegistry } from "../registry/packRegistryBootstrap";
 import { Loading } from "../components/login/Loading";
 
 interface UserProviderProps {
@@ -84,6 +85,10 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
 
   const applyUser = useCallback((nextUser: UserData) => {
     setUser(nextUser);
+    // The per-user node-pack store only responds once we carry a Bearer token.
+    // Sync immediately so palette + `/node-types` match Nodes hub — do not rely
+    // solely on ``window.curio`` indirection which can silently no-op.
+    void refreshPackRegistry();
     return nextUser;
   }, []);
 

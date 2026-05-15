@@ -1,4 +1,5 @@
 import { NodeType } from "./constants";
+import { NodeKindId } from "./registry/types";
 import { formatDate, mapTypes } from "./utils/formatters";
 import { getToken } from "./utils/authApi";
 
@@ -9,7 +10,7 @@ export class JavaScriptInterpreter {
         input: string,
         inputTypes: string[],
         callback: any,
-        nodeType: NodeType,
+        nodeType: NodeKindId,
         nodeId: string,
         workflow_name: string,
         nodeExecProv: any

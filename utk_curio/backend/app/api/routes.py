@@ -1,4 +1,4 @@
-from flask import request, abort, jsonify, g, Response
+from flask import request, abort, jsonify, g, Response, current_app
 import requests
 import json
 
@@ -558,7 +558,26 @@ def list_datasets():
 
 @bp.route("/templates", methods=["GET"])
 def get_templates():
-    return jsonify(generate_templates())
+    """Return built-in templates plus, if authenticated, the caller's pack templates.
+
+    Built-in templates are loaded from ``<CURIO_LAUNCH_CWD>/templates/<node_type_lower>/``
+    and keyed on the upper-snake ``NodeType``. Pack templates are loaded from
+    ``.curio/users/<u>/packs/<packId>@<major>/<templateDir>/`` (per
+    ``docs/nodesfactory@docs/manifest_spec.md``) and keyed on the canonical pack id
+    ``<packId>/<kindId>@<major>``. The two namespaces never collide.
+    """
+    from utk_curio.backend.app.packs import generate_pack_templates  # local import → no cycle
+    from utk_curio.backend.app.projects.services import _user_dir_key
+    from utk_curio.backend.app.users.dependencies import get_current_user
+
+    templates = generate_templates()
+    user = get_current_user()
+    if user is not None:
+        try:
+            templates = templates + generate_pack_templates(_user_dir_key(user))
+        except Exception:  # noqa: BLE001 — never fail /templates over a bad pack
+            current_app.logger.exception("Pack-template loader failed; returning built-ins only")
+    return jsonify(templates)
 
 @bp.route('/addTemplate', methods=['POST'])
 def add_template():

@@ -6,6 +6,7 @@ import CodeEditor from "./CodeEditor";
 import GrammarEditor from "./GrammarEditor";
 import WidgetsEditor from "./WidgetsEditor";
 import { NodeType } from "../../constants";
+import { NodeKindId } from "../../registry/types";
 import NodeProvenance from "./NodeProvenance";
 import Col from "react-bootstrap/Col";
 import Nav from "react-bootstrap/Nav";
@@ -40,7 +41,7 @@ type NodeEditorProps = {
     setOutputCallback: any;
     data: any;
     output: { code: string; content: string } | ICodeData;
-    nodeType: NodeType;
+    nodeType: NodeKindId;
     applyGrammar?: any;
     schema?: any;
     readOnly: boolean;

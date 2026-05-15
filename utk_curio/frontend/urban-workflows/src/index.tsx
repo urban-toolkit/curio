@@ -42,33 +42,39 @@ loader.config({ monaco });
 (window as unknown as { monaco: typeof monaco }).monaco = monaco;
 
 import "./registry";
-import { getAllNodeTypes } from "./registry";
+import {
+  refreshPackRegistry,
+  syncNodeTypeRegistry,
+} from "./registry/packRegistryBootstrap";
 
-(() => {
-  const nodeTypes: Record<
-    string,
-    { inputTypes: string[]; outputTypes: string[] }
-  > = {};
-  for (const desc of getAllNodeTypes()) {
-    nodeTypes[desc.id] = {
-      inputTypes: desc.inputPorts.flatMap((p) => p.types),
-      outputTypes: desc.outputPorts.flatMap((p) => p.types),
-    };
-  }
-  fetch(process.env.BACKEND_URL + "/node-types", {
-    method: "POST",
-    headers: { "Content-type": "application/json; charset=UTF-8" },
-    body: JSON.stringify({ nodeTypes }),
-  }).catch(() => {});
-})();
+/** Re-export for embedders / tooling that imports the app entry-point. */
+export { refreshPackRegistry };
+
+(window as unknown as { curio?: Record<string, unknown> }).curio = {
+  ...((window as unknown as { curio?: Record<string, unknown> }).curio ?? {}),
+  refreshPackRegistry,
+};
+
+// Boot sequence:
+//   1. Push the built-in port table immediately (so the backend can
+//      validate ports even before sign-in).
+//   2. Try to pull installed packs; if the user is already authenticated
+//      (e.g. via a persisted token), register pack descriptors and
+//      re-push the merged port table. Anonymous boots are a no-op until
+//      sign-in calls refreshPackRegistry() explicitly.
+syncNodeTypeRegistry().then(() => {
+  void refreshPackRegistry();
+});
 
 import FlowProvider from "./providers/FlowProvider";
 import TemplateProvider from "./providers/TemplateProvider";
 import UserProvider, { useUserContext } from "./providers/UserProvider";
 import DialogProvider from "./providers/DialogProvider";
 import { ToastProvider } from "./providers/ToastProvider";
+import { NodeFactoryModalProvider } from "./providers/NodeFactoryModalProvider";
 import { BackendHealthBanner } from "./providers/BackendHealthBanner";
 import { MainCanvas } from "./components/MainCanvas";
+import { PackPaletteProvider } from "./providers/PackPaletteContext";
 import { ReactFlowProvider } from "reactflow";
 import ProvenanceProvider from "./providers/ProvenanceProvider";
 import LLMProvider from "./providers/LLMProvider";
@@ -77,6 +83,8 @@ import { RequireAuth } from "./components/RequireAuth";
 import SignIn from "./pages/auth/SignIn";
 import SignUp from "./pages/auth/SignUp";
 import ProjectsList from "./pages/projects/ProjectsList";
+import NodesHub from "./pages/nodes/NodesHub";
+import NodeFactory from "./pages/nodes/NodeFactory";
 import { ProjectLoader } from "./components/ProjectLoader";
 
 const MainCanvasRoute: React.FC = () => (
@@ -84,7 +92,9 @@ const MainCanvasRoute: React.FC = () => (
     <FlowProvider>
       <TemplateProvider>
         <ProjectLoader>
-          <MainCanvas />
+          <PackPaletteProvider>
+            <MainCanvas />
+          </PackPaletteProvider>
         </ProjectLoader>
       </TemplateProvider>
     </FlowProvider>
@@ -116,11 +126,12 @@ const App: React.FC = () => {
     <BrowserRouter basename={(process.env.PUBLIC_PATH || "/").replace(/\/$/, "") || undefined}>
       <BackendHealthBanner>
         <ToastProvider>
-          <ReactFlowProvider>
-            <LLMProvider>
-              <ProvenanceProvider>
-                <UserProvider>
-                  <Routes>
+          <NodeFactoryModalProvider>
+            <ReactFlowProvider>
+              <LLMProvider>
+                <ProvenanceProvider>
+                  <UserProvider>
+                    <Routes>
                     <Route path="/auth/signin" element={<SignIn />} />
                     <Route path="/auth/signup" element={<SignUp />} />
                     <Route
@@ -140,6 +151,22 @@ const App: React.FC = () => {
                       }
                     />
                     <Route
+                      path="/nodes"
+                      element={
+                        <RequireAuth>
+                          <NodesHub />
+                        </RequireAuth>
+                      }
+                    />
+                    <Route
+                      path="/nodes/factory"
+                      element={
+                        <RequireAuth>
+                          <NodeFactory />
+                        </RequireAuth>
+                      }
+                    />
+                    <Route
                       path="/workflow/:id?"
                       element={<LegacyWorkflowRedirect />}
                     />
@@ -151,11 +178,12 @@ const App: React.FC = () => {
                         </RequireAuth>
                       }
                     />
-                  </Routes>
-                </UserProvider>
-              </ProvenanceProvider>
-            </LLMProvider>
-          </ReactFlowProvider>
+                    </Routes>
+                  </UserProvider>
+                </ProvenanceProvider>
+              </LLMProvider>
+            </ReactFlowProvider>
+          </NodeFactoryModalProvider>
         </ToastProvider>
       </BackendHealthBanner>
     </BrowserRouter>

@@ -164,6 +164,24 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                         checkIOType(synthetic, node_type)
                         incomingInput = input_data
 
+                # Tripwire: if the user code references `arg` but no input was
+                # delivered, the historical behaviour was to bubble up a
+                # confusing `'NoneType' object is not subscriptable` from the
+                # first `arg[…]`. Fail fast here with a message that points the
+                # user at the actual cause (unwired/unrun upstream, or a stale
+                # `data.input` because the merge-flow output effect hadn't
+                # propagated yet). Cheap substring check — false positives
+                # are harmless because we only act when arg is truly None.
+                if incomingInput is None and 'arg' in code:
+                    raise RuntimeError(
+                        "This node received no input but its code references `arg`. "
+                        "Make sure every upstream node has produced output (state "
+                        "'Done') and is wired to this node's input handle before "
+                        "running. If the inputs come through a Merge Flow node, "
+                        "give it a moment after the last upstream finishes so the "
+                        "merged tuple can propagate, then click Run again."
+                    )
+
                 # Run user code.
                 output = ns['userCode'](incomingInput)
                 t_code = time.perf_counter()

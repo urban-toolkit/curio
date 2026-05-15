@@ -1,3 +1,6 @@
+/** Every canvas node maps to UniversalNode via this RF ``node.type``; real kind is ``data.nodeType``. */
+export const CURIO_UNIVERSAL_NODE_TYPE = "__curioUniversalNode" as const;
+
 export enum NodeType {
   DATA_LOADING = "DATA_LOADING",
   DATA_EXPORT = "DATA_EXPORT",

@@ -8,7 +8,7 @@ import { PythonInterpreter } from "../PythonInterpreter";
 import { JavaScriptInterpreter } from "../JavaScriptInterpreter";
 import { TrillGenerator } from "../TrillGenerator";
 import { usePosition } from "./usePosition";
-import { AccessLevelType, NodeType, EdgeType } from "../constants";
+import { AccessLevelType, EdgeType, CURIO_UNIVERSAL_NODE_TYPE } from "../constants";
 
 const pythonInterpreter = new PythonInterpreter();
 const jsInterpreter = new JavaScriptInterpreter();
@@ -238,7 +238,7 @@ export function useCode(): IUseCode {
 
         const node: Node = {
             id: nodeId,
-            type: nodeType,
+            type: CURIO_UNIVERSAL_NODE_TYPE,
             position,
             data: {
                 nodeId: nodeId,

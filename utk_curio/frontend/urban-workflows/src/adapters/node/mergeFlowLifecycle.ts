@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useStoreApi, Edge, Position } from 'reactflow';
+import { useEdges, Edge, Position } from 'reactflow';
 import { NodeLifecycleHook, HandleDef } from '../../registry/types';
 import { NodeType } from '../../constants';
 import { Template, useTemplateContext } from '../../providers/TemplateProvider';
@@ -7,16 +7,17 @@ import { Template, useTemplateContext } from '../../providers/TemplateProvider';
 const MERGE_SLOT_COUNT = 5;
 
 export const useMergeFlowLifecycle: NodeLifecycleHook = (data, _nodeState) => {
-  const store = useStoreApi();
-  const [edges, setEdges] = useState<Edge[]>([]);
+  // Read live edges from React Flow's store. This was previously done via a
+  // manual `useStoreApi().subscribe`, but `store.subscribe` only fires on
+  // *future* state changes — not the current state. So on first mount the
+  // local `edges` state stayed `[]`, `connectedCount` stayed `0`, and the
+  // output effect below never satisfied its `connectedCount > 0` guard, so
+  // `outputCallback` was never called. Downstream nodes (e.g. a pack code
+  // node wired through this merge) then saw `data.input === ""` and ran
+  // their user code with `arg = None`. `useEdges()` is the canonical React
+  // Flow hook for this and gives a value on the very first render.
+  const edges = useEdges();
   const [inputValues, setInputValues] = useState<any[]>(Array(MERGE_SLOT_COUNT).fill(undefined));
-
-  useEffect(() => {
-    const unsubscribe = store.subscribe(({ edges: ef }) => {
-      setEdges(ef ?? []);
-    });
-    return () => unsubscribe();
-  }, [store]);
 
   const connectedCount = useMemo(
     () => edges.filter(e => e.target === data.nodeId && e.targetHandle?.startsWith('in_')).length,

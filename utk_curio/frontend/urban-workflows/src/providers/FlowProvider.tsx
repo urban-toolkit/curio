@@ -24,6 +24,7 @@ import {
 } from "reactflow";
 import { ConnectionValidator } from "../ConnectionValidator";
 import { NodeType, EdgeType } from "../constants";
+import { getFlowNodeCanonicalType } from "../utils/flowNodeCanonicalType";
 import { TrillGenerator } from "../TrillGenerator";
 import { applyDashboardLayout } from "../utils/dashboardLayout";
 import { ensureMergeArrays, parseHandleIndex, setMergeSlot, clearMergeSlot } from "../utils/mergeFlowUtils";
@@ -517,7 +518,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                         nds.map((node: any) => {
                             if (node.id !== resetInput) return node;
 
-                            if (targetNode.type === NodeType.MERGE_FLOW) {
+                            if (getFlowNodeCanonicalType(targetNode) === NodeType.MERGE_FLOW) {
                                 const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
                                 const handleIndex = parseHandleIndex(connection.targetHandle);
                                 if (handleIndex >= 0) {
@@ -635,11 +636,11 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
                 for (const elem of nodes) {
                     if (elem.id == connection.source) {
-                        outNodeType = elem.type as NodeType;
+                        outNodeType = getFlowNodeCanonicalType(elem) as NodeType;
                     }
 
                     if (elem.id == connection.target) {
-                        inNodeType = elem.type as NodeType;
+                        inNodeType = getFlowNodeCanonicalType(elem) as NodeType;
                     }
                 }
 
@@ -860,7 +861,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             nds.map((node: any) => {
                 if (!nodesAffected.includes(node.id)) return node;
 
-                if (node.type == NodeType.MERGE_FLOW) {
+                if (getFlowNodeCanonicalType(node) == NodeType.MERGE_FLOW) {
                     const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
                     const sourceIndex = sourceList.findIndex((s: any) => s === newOutput.nodeId);
                     if (sourceIndex >= 0) {
@@ -917,7 +918,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         }
 
         for (let i = 0; i < nodes.length; i++) {
-            if (nodes[i].type == NodeType.DATA_POOL) {
+            if (getFlowNodeCanonicalType(nodes[i]) == NodeType.DATA_POOL) {
                 poolsIds.push(nodes[i].id);
             }
         }
@@ -926,14 +927,14 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             let targetNode = reactFlow.getNode(edges[i].target) as Node;
             let sourceNode = reactFlow.getNode(edges[i].source) as Node;
 
-            if (
-                edges[i].sourceHandle == "in/out" &&
-                edges[i].targetHandle == "in/out" &&
-                !(
-                    targetNode.type == NodeType.DATA_POOL &&
-                    sourceNode.type == NodeType.DATA_POOL
-                )
-            ) {
+                if (
+                    edges[i].sourceHandle == "in/out" &&
+                    edges[i].targetHandle == "in/out" &&
+                    !(
+                        getFlowNodeCanonicalType(targetNode) == NodeType.DATA_POOL &&
+                        getFlowNodeCanonicalType(sourceNode) == NodeType.DATA_POOL
+                    )
+                ) {
                 const sourcePool = poolsIds.includes(edges[i].source);
                 const targetPool = poolsIds.includes(edges[i].target);
                 const sourceInteracted = interactedIds.includes(edges[i].source);
@@ -1019,8 +1020,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 if (
                     edge.sourceHandle == "in/out" &&
                     edge.targetHandle == "in/out" &&
-                    targetNode.type == NodeType.DATA_POOL &&
-                    sourceNode.type == NodeType.DATA_POOL
+                    getFlowNodeCanonicalType(targetNode) == NodeType.DATA_POOL &&
+                    getFlowNodeCanonicalType(sourceNode) == NodeType.DATA_POOL
                 ) {
                     if (edge.target != propagationObj.nodeId) {
                         sendTo.push(edge.target);

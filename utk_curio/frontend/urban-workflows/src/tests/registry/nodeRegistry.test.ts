@@ -4,6 +4,7 @@ import {
   getNodeDescriptor,
   getAllNodeTypes,
   getPaletteNodeTypes,
+  clearPackNodes,
 } from '../../registry/nodeRegistry';
 import { NodeDescriptor, NodeLifecycleHook } from '../../registry/types';
 import { faCircle } from '@fortawesome/free-solid-svg-icons';
@@ -48,10 +49,26 @@ describe('nodeRegistry', () => {
       expect(result.label).toBe('Test Node');
     });
 
-    test('throws for unregistered NodeType', () => {
+    test('throws for unregistered NodeKindId', () => {
       expect(() => getNodeDescriptor('NONEXISTENT' as NodeType)).toThrow(
-        /No descriptor registered for NodeType/,
+        /No descriptor registered for NodeKindId/,
       );
+    });
+
+    test('registers and retrieves a descriptor by canonical pack id', () => {
+      const canonical = 'ai.urbanlab.uhvi/uhvi-load@1';
+      const desc = makeDescriptor({
+        id: canonical,
+        source: 'pack',
+        pack: { packId: 'ai.urbanlab.uhvi', major: 1, version: '1.0.0' },
+        label: 'UHVI Loader',
+      });
+      registerNode(desc);
+
+      const result = getNodeDescriptor(canonical);
+      expect(result).toBe(desc);
+      expect(result.source).toBe('pack');
+      expect(result.pack?.packId).toBe('ai.urbanlab.uhvi');
     });
 
     test('overwrites duplicate registration with warning', () => {
@@ -69,6 +86,33 @@ describe('nodeRegistry', () => {
       expect(getNodeDescriptor(NodeType.CONSTANTS).label).toBe('Second');
 
       warnSpy.mockRestore();
+    });
+  });
+
+  describe('clearPackNodes', () => {
+    test('removes every source===pack descriptor and keeps built-ins', () => {
+      const packId = 'zz.test.clear-pack/k1@1';
+      registerNode(
+        makeDescriptor({
+          id: packId,
+          source: 'pack',
+          pack: {
+            packId: 'zz.test.clear-pack',
+            major: 1,
+            version: '1.0.0',
+          },
+          label: 'Ephemeral pack kind',
+        }),
+      );
+
+      expect(getNodeDescriptor(packId).source).toBe('pack');
+      expect(getAllNodeTypes().filter((d) => d.source === 'pack').length).toBeGreaterThanOrEqual(1);
+
+      clearPackNodes();
+
+      expect(getAllNodeTypes().filter((d) => d.source === 'pack')).toEqual([]);
+      expect(() => getNodeDescriptor(packId)).toThrow();
+      expect(getNodeDescriptor(NodeType.DATA_LOADING)).toBeDefined();
     });
   });
 

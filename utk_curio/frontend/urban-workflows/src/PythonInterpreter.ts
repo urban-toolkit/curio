@@ -1,4 +1,5 @@
 import { NodeType } from "./constants";
+import { NodeKindId } from "./registry/types";
 import { formatDate, mapTypes } from "./utils/formatters";
 import { getToken } from "./utils/authApi";
 // import { pythonCode } from "./pythonWrapper";
@@ -17,7 +18,7 @@ export class PythonInterpreter {
         input: string,
         inputTypes: string[],
         callback: any,
-        nodeType: NodeType,
+        nodeType: NodeKindId,
         nodeId: string,
         workflow_name: string,
         nodeExecProv: any
@@ -40,6 +41,20 @@ export class PythonInterpreter {
         let startTime = formatDate(new Date());
 
         console.log("unifiedLines", unifiedLines);
+
+        // Diagnostic: surface what the frontend is actually sending as the
+        // node's input. Useful when chasing "arg is None" bugs in pack /
+        // merge-flow scenarios — the most common cause is `data.input`
+        // never being updated by `applyNewOutput` before Run fires.
+        // Strip large blobs so the console stays readable.
+        try {
+            const preview = JSON.stringify(input, (_k, v) =>
+                typeof v === 'string' && v.length > 200 ? `${v.slice(0, 200)}…[${v.length} chars]` : v,
+            );
+            console.log(`[PythonInterpreter] node=${nodeType} id=${nodeId} input=${preview}`);
+        } catch {
+            console.log(`[PythonInterpreter] node=${nodeType} id=${nodeId} input=<unserializable>`);
+        }
 
         const _token = getToken();
         const url = process.env.BACKEND_URL + "/processPythonCode";

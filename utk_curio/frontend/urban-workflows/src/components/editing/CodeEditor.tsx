@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 
 import "bootstrap/dist/css/bootstrap.min.css";
 import { NodeType } from "../../constants";
+import { NodeKindId } from "../../registry/types";
 
 // Editor
 import Editor from "@monaco-editor/react";
@@ -13,7 +14,7 @@ type CodeEditorProps = {
     setOutputCallback: any;
     data: any;
     output: ICodeData;
-    nodeType: NodeType;
+    nodeType: NodeKindId;
     replacedCode: string; // code with all marks resolved
     sendCodeToWidgets: any;
     replacedCodeDirty: boolean;

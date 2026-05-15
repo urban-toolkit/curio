@@ -1,0 +1,329 @@
+/* Styling for the Node Factory wizard.
+ *
+ * Maps figma_mockups/04..08 onto a 5-step stepper with a left detail
+ * column and a right "live manifest preview" column. The aesthetic
+ * mirrors NodesHub.module.css.
+ */
+
+.shell {
+    min-height: 100vh;
+    background: #fbfcf6;
+    color: #1e1f23;
+    font-family: Rubik, system-ui, sans-serif;
+    display: flex;
+    flex-direction: column;
+}
+
+.topBar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 28px;
+    background: #ffffff;
+    border-bottom: 1px solid #eceadf;
+}
+
+.title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0;
+    flex: 1;
+}
+
+.linkButton {
+    color: #1e1f23;
+    text-decoration: none;
+    font-weight: 500;
+    padding: 6px 10px;
+    border-radius: 6px;
+}
+
+.linkButton:hover {
+    background: #f3f1e6;
+}
+
+.actionButton {
+    background: #fbaa69;
+    color: #1e1f23;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.actionButton:hover {
+    background: #fb9a4f;
+}
+
+.actionButton:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.ghostButton {
+    composes: actionButton;
+    background: #ffffff;
+    border: 1px solid #d8d4c2;
+}
+
+.ghostButton:hover {
+    background: #f3f1e6;
+}
+
+.stepper {
+    background: #ffffff;
+    border-bottom: 1px solid #eceadf;
+    padding: 12px 28px;
+    display: flex;
+    gap: 16px;
+    overflow-x: auto;
+}
+
+.step {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #7a786d;
+    font-size: 0.875rem;
+    padding: 4px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    flex-shrink: 0;
+}
+
+.stepActive {
+    composes: step;
+    background: #fbaa69;
+    color: #1e1f23;
+    font-weight: 500;
+}
+
+.stepDone {
+    composes: step;
+    color: #2f8f4a;
+}
+
+.stepNumber {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #eceadf;
+    color: #1e1f23;
+    text-align: center;
+    line-height: 22px;
+    font-size: 0.75rem;
+}
+
+.stepActive .stepNumber {
+    background: #1e1f23;
+    color: #fbaa69;
+}
+
+.body {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 360px;
+    gap: 24px;
+    padding: 24px 28px;
+    min-height: 0;
+}
+
+.panel {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 24px;
+    border: 1px solid #eceadf;
+    align-self: start;
+}
+
+.panelTitle {
+    margin: 0 0 4px;
+    font-size: 1.125rem;
+    font-weight: 600;
+}
+
+.panelSubtitle {
+    margin: 0 0 20px;
+    color: #7a786d;
+    font-size: 0.875rem;
+}
+
+.lineageCaption {
+    margin: -12px 0 20px;
+    color: #7a786d;
+    font-size: 0.8125rem;
+    line-height: 1.45;
+}
+
+.lineageCaption code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.75rem;
+    color: #43423b;
+}
+
+.field {
+    margin-bottom: 14px;
+}
+
+.fieldLabel {
+    display: block;
+    font-size: 0.8125rem;
+    color: #43423b;
+    margin-bottom: 4px;
+    font-weight: 500;
+}
+
+.fieldHint {
+    display: block;
+    font-size: 0.75rem;
+    color: #7a786d;
+    margin-top: 4px;
+}
+
+.input,
+.textarea,
+.select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #d8d4c2;
+    border-radius: 6px;
+    background: #ffffff;
+    font: inherit;
+    box-sizing: border-box;
+}
+
+.textarea {
+    min-height: 80px;
+    resize: vertical;
+}
+
+.codeArea {
+    composes: textarea;
+    font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
+    font-size: 0.8125rem;
+    min-height: 240px;
+}
+
+.row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.rowTriple {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr auto;
+    gap: 8px;
+    align-items: end;
+    margin-bottom: 8px;
+}
+
+.smallButton {
+    background: #ffffff;
+    border: 1px solid #d8d4c2;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.8125rem;
+}
+
+.smallButton:hover {
+    background: #f3f1e6;
+}
+
+.errorBox {
+    border: 1px solid #b3261e;
+    background: #fce8e7;
+    padding: 12px;
+    border-radius: 8px;
+    color: #b3261e;
+    margin-bottom: 16px;
+    font-size: 0.875rem;
+}
+
+.footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 24px;
+    border-top: 1px solid #eceadf;
+    padding-top: 16px;
+}
+
+.kindList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.kindEntry {
+    border: 1px solid #eceadf;
+    border-radius: 8px;
+    padding: 12px;
+}
+
+.kindHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.kindTitle {
+    margin: 0;
+    font-size: 0.9375rem;
+    font-weight: 500;
+}
+
+.removeBtn {
+    background: transparent;
+    border: none;
+    color: #b3261e;
+    cursor: pointer;
+    font-size: 0.8125rem;
+}
+
+.removeBtn:hover {
+    text-decoration: underline;
+}
+
+.preview {
+    background: #1e1f23;
+    color: #fbfcf6;
+    border-radius: 12px;
+    padding: 16px;
+    font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
+    font-size: 0.75rem;
+    max-height: calc(100vh - 220px);
+    overflow: auto;
+    line-height: 1.5;
+}
+
+.previewTitle {
+    color: #fbaa69;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: 0 0 8px;
+}
+
+.checkRow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.successBox {
+    background: #e7f5ec;
+    border: 1px solid #2f8f4a;
+    color: #1e1f23;
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    font-size: 0.875rem;
+}

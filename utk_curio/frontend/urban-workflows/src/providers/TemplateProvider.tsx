@@ -26,12 +26,17 @@ import {
     EdgeType,
     VisInteractionType,
 } from "../constants";
+import { NodeKindId } from "../registry/types";
 import useTemplates from "./templates";
 import { v4 as uuid } from "uuid";
 
 export interface Template {
     id: string;
-    type: NodeType;
+    /**
+     * Dispatch key — either a built-in `NodeType` enum value or a pack canonical
+     * id `<packId>/<kindId>@<major>` (e.g. `"ai.urbanlab.uhvi/uhvi-load@1"`).
+     */
+    type: NodeKindId;
     name: string;
     description: string;
     accessLevel: AccessLevelType;
@@ -40,9 +45,9 @@ export interface Template {
 }
 
 interface TemplateContextProps {
-    getTemplates: (type: NodeType, custom: boolean) => Template[];
+    getTemplates: (type: NodeKindId, custom: boolean) => Template[];
     createUserTemplate: (
-        type: NodeType,
+        type: NodeKindId,
         name: string,
         description: string,
         accessLevel: AccessLevelType,
@@ -66,19 +71,31 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
         useState<Template[]>([]);
     const [userTemplates, setUserTemplates] = useState<Template[]>([]);
 
-    const fetchTemplates = async () => {
-        const templates = await useTemplates();
-        console.log("Templates:", templates);
-        setDefaultTemplates(templates);
-
-    }
-
-    useEffect(() => {
-        fetchTemplates()
+    const fetchTemplates = useCallback(async () => {
+        try {
+            const templates = await useTemplates();
+            setDefaultTemplates(templates);
+        } catch {
+            /* keep previous default templates */
+        }
     }, []);
 
+    useEffect(() => {
+        void fetchTemplates();
+    }, [fetchTemplates]);
+
+    // ``refreshPackRegistry`` calls this after pack install/load so new pack
+    // template bodies merge into GET /templates before palette nodes inject code.
+    useEffect(() => {
+        const w = (window as unknown as { curio?: Record<string, unknown> }).curio ?? {};
+        (window as unknown as { curio: Record<string, unknown> }).curio = {
+            ...w,
+            fetchTemplates,
+        };
+    }, [fetchTemplates]);
+
     const createUserTemplate = (
-        type: NodeType,
+        type: NodeKindId,
         name: string,
         description: string,
         accessLevel: AccessLevelType,
@@ -131,7 +148,7 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
         setUserTemplates(newTemplates);
     };
 
-    const getTemplates = (type: NodeType, custom: boolean) => {
+    const getTemplates = (type: NodeKindId, custom: boolean) => {
         let returnedTemplates = [];
         let templates = [];
 

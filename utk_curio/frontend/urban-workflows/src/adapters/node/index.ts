@@ -1,4 +1,5 @@
 export { useCodeNodeLifecycle } from './codeNodeLifecycle';
+export { usePackNodeLifecycle } from './packNodeLifecycle';
 export { useDataExportLifecycle } from './dataExportLifecycle';
 export { useVegaLifecycle } from './vegaLifecycle';
 export { useSimpleVisLifecycle } from './simpleVisLifecycle';

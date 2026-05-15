@@ -307,13 +307,15 @@ def _decode_object_cell_from_parquet(val):
 
 
 def _prepare_frame_for_parquet(frame, geometry_col=None):
-    prepared = frame.copy()
+    prepared = frame
     encoded_object_columns = []
 
     for col in prepared.columns:
         if geometry_col is not None and col == geometry_col:
             continue
-        if prepared[col].dtype == object:
+        if prepared[col].dtype == object and _object_column_needs_json_encoding(prepared[col]):
+            if prepared is frame:
+                prepared = frame.copy(deep=False)
             prepared[col] = prepared[col].apply(_encode_object_cell_for_parquet)
             encoded_object_columns.append(col)
 
@@ -434,6 +436,88 @@ def _make_id():
     return f"{timestamp}_{random_part}"
 
 
+def _shared_data_dir() -> Path:
+    launch_dir = Path(os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())).resolve()
+    shared_data = os.environ.get("CURIO_SHARED_DATA", "./.curio/data/")
+    data_dir = (launch_dir / shared_data).resolve()
+    data_dir.mkdir(parents=True, exist_ok=True)
+    return data_dir
+
+
+def _stored_artifact_rel_path(art_id, suffix=".parquet"):
+    return f"artifacts/{art_id}{suffix}"
+
+
+def _resolve_stored_artifact_path(rel_path, *, create_parent=False) -> Path:
+    data_dir = _shared_data_dir()
+    full_path = (data_dir / rel_path).resolve()
+    try:
+        full_path.relative_to(data_dir)
+    except ValueError:
+        raise PermissionError(f"Access to artifact path '{full_path}' is not allowed.")
+    if create_parent:
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+    return full_path
+
+
+def _parquet_source(value_str, blob):
+    if value_str:
+        return _resolve_stored_artifact_path(value_str)
+    if blob is None:
+        raise ValueError("Artifact has no parquet payload")
+    return io.BytesIO(blob)
+
+
+def _json_artifact_rel_path(art_id):
+    return f"artifacts/{art_id}.json.zlib"
+
+
+def _write_json_artifact(art_id, value):
+    payload = json.dumps(value, ensure_ascii=False).encode("utf-8")
+    rel_path = _json_artifact_rel_path(art_id)
+    full_path = _resolve_stored_artifact_path(rel_path, create_parent=True)
+    full_path.write_bytes(zlib.compress(payload))
+    return rel_path
+
+
+def _read_json_artifact(rel_path):
+    payload = _resolve_stored_artifact_path(rel_path).read_bytes()
+    return json.loads(zlib.decompress(payload).decode("utf-8"))
+
+
+def _object_column_needs_json_encoding(series):
+    inferred = pd.api.types.infer_dtype(series, skipna=True)
+    return inferred not in {
+        "empty",
+        "string",
+        "unicode",
+        "bytes",
+        "integer",
+        "floating",
+        "boolean",
+        "date",
+        "datetime",
+        "datetime64",
+        "timedelta",
+        "timedelta64",
+        "decimal",
+    }
+
+
+def _write_dataframe_parquet(frame, parquet_path):
+    writer = duckdb.connect(database=":memory:")
+    try:
+        writer.register("curio_frame", frame)
+        escaped_path = str(parquet_path).replace("'", "''")
+        writer.execute(f"COPY curio_frame TO '{escaped_path}' (FORMAT PARQUET)")
+    finally:
+        try:
+            writer.unregister("curio_frame")
+        except Exception:
+            pass
+        writer.close()
+
+
 def save_to_duckdb(value, node_id=None, session_id=None):
     """
     Save a Python value to the artifacts table.
@@ -495,10 +579,10 @@ def save_to_duckdb(value, node_id=None, session_id=None):
         elif isinstance(value, list):
             try:
                 # fast path: list of JSON-native values (ints, strs, simple nested lists/dicts)
-                payload = json.dumps(value)
+                rel_path = _write_json_artifact(art_id, value)
                 con.execute(
-                    "INSERT INTO artifacts (id, node_id, kind, value_json) VALUES (?, ?, ?, ?)",
-                    [art_id, node_id, 'list', payload]
+                    "INSERT INTO artifacts (id, node_id, kind, value_str) VALUES (?, ?, ?, ?)",
+                    [art_id, node_id, 'list', rel_path]
                 )
             except TypeError:
                 # fallback: list contains DataFrames/GeoDataFrames/etc.
@@ -511,10 +595,10 @@ def save_to_duckdb(value, node_id=None, session_id=None):
 
         elif isinstance(value, dict):
             try:
-                payload = json.dumps(value)
+                rel_path = _write_json_artifact(art_id, value)
                 con.execute(
-                    "INSERT INTO artifacts (id, node_id, kind, value_json) VALUES (?, ?, ?, ?)",
-                    [art_id, node_id, 'dict', payload]
+                    "INSERT INTO artifacts (id, node_id, kind, value_str) VALUES (?, ?, ?, ?)",
+                    [art_id, node_id, 'dict', rel_path]
                 )
             except TypeError:
                 # fallback: dict values contain DataFrames/GeoDataFrames/etc.
@@ -526,12 +610,13 @@ def save_to_duckdb(value, node_id=None, session_id=None):
 
         # --- GeoDataFrame MUST come before DataFrame (gpd.GeoDataFrame subclasses pd.DataFrame) ---
         elif isinstance(value, gpd.GeoDataFrame):
-            buf = io.BytesIO()
             prepared, encoded_object_columns = _prepare_frame_for_parquet(
                 value,
                 geometry_col=value.geometry.name,
             )
-            prepared.to_parquet(buf)  # GeoParquet — CRS preserved automatically
+            rel_path = _stored_artifact_rel_path(art_id)
+            parquet_path = _resolve_stored_artifact_path(rel_path, create_parent=True)
+            prepared.to_parquet(parquet_path)  # GeoParquet — CRS preserved automatically
             # parquet drops Python-side attributes like ``gdf.metadata`` (set by
             # parse_geodataframe when upstream JSON carried a metadata.name).
             # Grammar visualizers historically depended on this name, so stash it
@@ -542,20 +627,21 @@ def save_to_duckdb(value, node_id=None, session_id=None):
                 encoded_object_columns=encoded_object_columns,
             )
             con.execute(
-                "INSERT INTO artifacts (id, node_id, kind, blob, value_json) VALUES (?, ?, ?, ?, ?)",
-                [art_id, node_id, 'geodataframe', buf.getvalue(), meta_json]
+                "INSERT INTO artifacts (id, node_id, kind, value_str, value_json) VALUES (?, ?, ?, ?, ?)",
+                [art_id, node_id, 'geodataframe', rel_path, meta_json]
             )
 
         elif isinstance(value, pd.DataFrame):
-            buf = io.BytesIO()
             prepared, encoded_object_columns = _prepare_frame_for_parquet(value)
-            prepared.to_parquet(buf, engine='pyarrow', index=False)
+            rel_path = _stored_artifact_rel_path(art_id)
+            parquet_path = _resolve_stored_artifact_path(rel_path, create_parent=True)
+            _write_dataframe_parquet(prepared, parquet_path)
             meta_json = _serialize_parquet_meta(
                 encoded_object_columns=encoded_object_columns,
             )
             con.execute(
-                "INSERT INTO artifacts (id, node_id, kind, blob, value_json) VALUES (?, ?, ?, ?, ?)",
-                [art_id, node_id, 'dataframe', buf.getvalue(), meta_json]
+                "INSERT INTO artifacts (id, node_id, kind, value_str, value_json) VALUES (?, ?, ?, ?, ?)",
+                [art_id, node_id, 'dataframe', rel_path, meta_json]
             )
 
         elif isinstance(value, rasterio.io.DatasetReader):
@@ -624,19 +710,19 @@ def load_from_duckdb(art_id, session_id=None):
         elif kind == 'str':
             result = v_str
         elif kind == 'list':
-            result = json.loads(v_json)
+            result = _read_json_artifact(v_str) if v_str else json.loads(v_json)
         elif kind == 'dict':
-            result = json.loads(v_json)
+            result = _read_json_artifact(v_str) if v_str else json.loads(v_json)
         # elif kind == 'dataframe':
         #     result = pd.read_parquet(io.BytesIO(blob))
         # elif kind == 'geodataframe':
         #     result = gpd.read_parquet(io.BytesIO(blob))
         elif kind == 'dataframe':
-            result = pd.read_parquet(io.BytesIO(blob))
+            result = pd.read_parquet(_parquet_source(v_str, blob))
             _, encoded_object_columns = _parse_parquet_meta(v_json)
             result = _restore_frame_from_parquet(result, encoded_object_columns)
         elif kind == 'geodataframe':
-            result = gpd.read_parquet(io.BytesIO(blob))
+            result = gpd.read_parquet(_parquet_source(v_str, blob))
             frame_meta, encoded_object_columns = _parse_parquet_meta(v_json)
             result = _restore_frame_from_parquet(
                 result,
@@ -675,7 +761,7 @@ def load_from_duckdb(art_id, session_id=None):
 
 def load_tabular_arrow_from_duckdb(art_id, session_id=None):
     """Load a tabular artifact as a pyarrow.Table read directly from its stored
-    parquet blob — no pandas materialization.
+    parquet payload — no pandas materialization.
 
     Supports kind in ('dataframe', 'geodataframe'). For GeoDataFrames the
     geometry column is binary WKB (GeoParquet's standard encoding).
@@ -691,22 +777,65 @@ def load_tabular_arrow_from_duckdb(art_id, session_id=None):
     con = get_read_connection()
     try:
         row = con.execute(
-            "SELECT kind, value_json, blob, session_id "
+            "SELECT kind, value_json, blob, value_str, session_id "
             "FROM artifacts WHERE id = ?",
             [art_id],
         ).fetchone()
         if row is None:
             raise KeyError(f"No artifact with id {art_id}")
-        kind, v_json, blob, stored_sid = row
+        kind, v_json, blob, v_str, stored_sid = row
         if session_id is not None and stored_sid is not None and stored_sid != session_id:
             raise KeyError(f"No artifact with id {art_id}")
         if kind not in ('dataframe', 'geodataframe'):
             raise ValueError(
                 f"Arrow IPC only supports tabular kinds; got {kind!r}"
             )
-        table = pq.read_table(io.BytesIO(blob))
+        table = pq.read_table(_parquet_source(v_str, blob))
         frame_metadata, encoded_object_columns = _parse_parquet_meta(v_json)
         return table, kind, frame_metadata, encoded_object_columns
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
+
+
+def load_tabular_preview_from_duckdb(art_id, max_rows, session_id=None):
+    """Load only the first rows of a DataFrame artifact from parquet.
+
+    Returns ``(preview_df, total_rows)`` for DataFrame artifacts, ``None`` for
+    non-DataFrame artifacts so callers can fall back to the full loader.
+    """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    con = get_read_connection()
+    try:
+        row = con.execute(
+            "SELECT kind, value_json, blob, value_str, session_id "
+            "FROM artifacts WHERE id = ?",
+            [art_id],
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"No artifact with id {art_id}")
+        kind, v_json, blob, v_str, stored_sid = row
+        if session_id is not None and stored_sid is not None and stored_sid != session_id:
+            raise KeyError(f"No artifact with id {art_id}")
+        if kind != 'dataframe':
+            return None
+
+        parquet_file = pq.ParquetFile(_parquet_source(v_str, blob))
+        total_rows = parquet_file.metadata.num_rows
+        batches = []
+        if max_rows > 0 and total_rows > 0:
+            for batch in parquet_file.iter_batches(batch_size=max_rows):
+                batches.append(batch)
+                break
+        table = pa.Table.from_batches(batches, schema=parquet_file.schema_arrow)
+        preview = table.to_pandas()
+        _, encoded_object_columns = _parse_parquet_meta(v_json)
+        preview = _restore_frame_from_parquet(preview, encoded_object_columns)
+        return preview, total_rows
     finally:
         try:
             con.close()
