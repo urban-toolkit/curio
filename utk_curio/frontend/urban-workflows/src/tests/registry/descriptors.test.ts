@@ -107,8 +107,11 @@ describe('Registered descriptors', () => {
   });
 
   test('handles contain at least one entry for non-special box types', () => {
-    const excluded = new Set([NodeType.MERGE_FLOW, NodeType.COMMENTS]);
-    const descriptors = getAllNodeTypes().filter((d) => !excluded.has(d.id));
+    // descriptor.id is widened to NodeKindId (NodeType | string) so the set
+    // is typed accordingly — pack kinds are excluded by this test (they live
+    // in a separate test suite once the spike fixture lands).
+    const excluded = new Set<string>([NodeType.MERGE_FLOW, NodeType.COMMENTS]);
+    const descriptors = getAllNodeTypes().filter((d) => !excluded.has(d.id as string));
     for (const desc of descriptors) {
       expect(desc.adapter.handles.length).toBeGreaterThan(0);
     }

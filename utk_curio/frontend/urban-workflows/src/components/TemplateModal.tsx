@@ -3,13 +3,14 @@ import ModalShell from "./ModalShell";
 import content from "./modal-content.module.css";
 import { Template, useTemplateContext } from "../providers/TemplateProvider";
 import { AccessLevelType, NodeType } from "../constants";
+import { NodeKindId } from "../registry/types";
 
 type TemplateModalProps = {
     templateId?: string;
     callBack: any;
     show: boolean;
     handleClose: any;
-    nodeType: NodeType;
+    nodeType: NodeKindId;
     code: string;
     newTemplateFlag: boolean;
 };

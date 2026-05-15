@@ -120,13 +120,21 @@ for _sig_name in ('SIGINT', 'SIGTERM', 'SIGBREAK', 'SIGHUP'):
 
 
 if __name__ == '__main__':
+    # Reuse the backend's exclude list and default **stat** reloader so
+    # Watchdog's pathlib-based ignores cannot miss deep ``.curio/`` paths
+    # (same ``ERR_EMPTY_RESPONSE`` mid-install failure as the backend).
+    from utk_curio.backend.server import (
+        DEFAULT_RELOADER_TYPE,
+        RELOADER_EXCLUDE_PATTERNS,
+    )
+
     app.run(
         host=os.getenv('FLASK_SANDBOX_HOST', '127.0.0.1'),
         port=int(os.getenv('FLASK_SANDBOX_PORT', 2000)),
         threaded=True,
         debug=False,
         use_reloader=os.getenv('FLASK_USE_RELOADER', '1') != '0',
-        # `*templates*`: see backend/server.py — avoids Windows atime-bump reload storms.
-        exclude_patterns=['*.duckdb', '*.duckdb.wal', '*.duckdb-shm', '*.duckdb-wal', '*templates*'],
+        exclude_patterns=RELOADER_EXCLUDE_PATTERNS,
+        reloader_type=DEFAULT_RELOADER_TYPE,
     )
 

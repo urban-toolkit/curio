@@ -52,11 +52,22 @@ def create_app(config_class=config_class):
     from utk_curio.backend.app.notebooks import notebooks_bp
     app.register_blueprint(notebooks_bp)
 
+    from utk_curio.backend.app.packs import packs_bp, seed_dev_packs
+    app.register_blueprint(packs_bp)
+
     # Non-prod DB stub endpoints for Playwright E2E tests.
     # Lets Playwright seed users / projects directly without the signup form.
     if _is_dev():
         from utk_curio.backend.app.testing.routes import testing_bp
         app.register_blueprint(testing_bp)
+        # Copy fixture node packs into the guest user's pack store on first
+        # startup. See utk_curio/backend/app/packs/seed.py for the policy.
+        try:
+            seeded = seed_dev_packs(user_key="guest")
+            if seeded:
+                app.logger.info("Seeded dev node packs: %s", ", ".join(seeded))
+        except Exception:  # noqa: BLE001 — never block startup on seeding
+            app.logger.exception("Pack seeding failed; continuing startup")
 
     @app.before_request
     def short_circuit_preflight():

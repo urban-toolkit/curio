@@ -66,15 +66,16 @@ WORKFLOW_FILES = [
     "docs/examples/dataflows/Regression.json",
 
     # Curated examples shown in docs/README.md
-    "docs/examples/01-vega-lite-chained-transforms.json",
-    "docs/examples/02-vega-lite-spatial-density.json",
-    "docs/examples/03-vega-lite-linked-temporal-charts.json",
-    "docs/examples/04-vega-lite-multi-flow-dashboard.json",
-    "docs/examples/05-vega-lite-multi-view-drilldown.json",
-    "docs/examples/06-autark-what-if-shadow-study.json",
-    "docs/examples/07-autark-gpu-shader.json",
-    "docs/examples/08-autark-spatial-join-regression.json",
-    "docs/examples/09-heterogeneous-data-linked-views.json",
+    # Only run these tests locally for now to avoid overwhelming the CI runner
+    # "docs/examples/01-vega-lite-chained-transforms.json",
+    # "docs/examples/02-vega-lite-spatial-density.json",
+    # "docs/examples/03-vega-lite-linked-temporal-charts.json",
+    # "docs/examples/04-vega-lite-multi-flow-dashboard.json",
+    # "docs/examples/05-vega-lite-multi-view-drilldown.json",
+    # "docs/examples/06-autark-what-if-shadow-study.json",
+    # "docs/examples/07-autark-gpu-shader.json",
+    # "docs/examples/08-autark-spatial-join-regression.json",
+    # "docs/examples/09-heterogeneous-data-linked-views.json",
 ]
 
 

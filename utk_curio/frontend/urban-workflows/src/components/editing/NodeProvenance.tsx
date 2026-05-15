@@ -15,12 +15,13 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { NodeType } from "../../constants";
+import { NodeKindId } from "../../registry/types";
 import { useProvenanceContext, NodeExecRecord } from "../../providers/ProvenanceProvider";
 import { getLayoutedElements } from "../../utils/provenanceLayout";
 
 type NodeProvenanceProps = {
     data: any;
-    nodeType: NodeType;
+    nodeType: NodeKindId;
     setCode: any;
     active?: boolean;
 };

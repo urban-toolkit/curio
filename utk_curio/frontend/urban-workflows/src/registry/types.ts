@@ -5,6 +5,52 @@ import React from 'react';
 import { INodeData, ICodeData } from '../types';
 import { IPropagation } from '../providers/FlowProvider';
 
+/**
+ * Identifier used as the dispatch key for a node kind.
+ *
+ * - **Built-ins** keep using `NodeType` enum members (e.g. `NodeType.DATA_LOADING`)
+ *   so existing call sites continue to type-check unchanged.
+ * - **Pack kinds** use a canonical string of the form `<packId>/<kindId>@<major>`
+ *   (e.g. `"ai.urbanlab.uhvi/uhvi-load@1"`). This is the string the frontend
+ *   registry, backend `_node_type_registry`, saved Trill graphs, and
+ *   `/processPythonCode` all dispatch on.
+ *
+ * See ``docs/nodesfactory@docs/manifest_spec.md`` (canonical id shape),
+ * ``docs/nodesfactory@docs/overview.md`` (canonical node kind id) and
+ * ``docs/nodesfactory@docs/frontend.md`` (palette + registry).
+ */
+export type NodeKindId = NodeType | string;
+
+/**
+ * Where a registered descriptor came from. Drives palette sectioning and any
+ * future "remove pack" affordance — built-ins must never be removed at runtime.
+ */
+export type NodeSource = 'core' | 'pack';
+
+/** Fork provenance when `source === 'pack'` (from manifest `lineage`). */
+export interface NodePackLineageCoord {
+  packId: string;
+  major: number;
+}
+
+export interface NodePackLineage {
+  forkedFrom: NodePackLineageCoord;
+  root: NodePackLineageCoord;
+}
+
+/** Pack-provenance metadata attached to descriptors whose `source === 'pack'`. */
+export interface NodePackMeta {
+  packId: string;
+  major: number;
+  version: string;
+  publisher?: string;
+  /** Pack-relative path to the default template `.py` (when provided by the manifest). */
+  defaultTemplate?: string;
+  lineage?: NodePackLineage;
+  /** When true, omit this coordinate from the Packs dock palette (manifest `curio.paletteDock`). */
+  hiddenFromForkPaletteDock?: boolean;
+}
+
 export interface PortDef {
   types: SupportedType[];
   cardinality?: '0' | '1' | 'n' | '[0,1]' | '[1,n]' | '[1,2]' | '2';
@@ -138,7 +184,11 @@ export interface NodeAdapter {
 /* ── Descriptor ────────────────────────────────────────────────────── */
 
 export interface NodeDescriptor {
-  id: NodeType;
+  /**
+   * Dispatch key. Either a built-in `NodeType` enum value (default) or a
+   * pack canonical id `<packId>/<kindId>@<major>` for pack-registered kinds.
+   */
+  id: NodeKindId;
   category: NodeCategory;
   label: string;
   icon: IconDefinition;
@@ -157,4 +207,11 @@ export interface NodeDescriptor {
   hasProvenance?: boolean;
   adapter: NodeAdapter;
   tutorialId?: string;
+  /**
+   * Origin of the descriptor. Omitted = `'core'` for backwards compatibility
+   * with the built-in registrations in `registry/descriptors.ts`.
+   */
+  source?: NodeSource;
+  /** Set when `source === 'pack'`; metadata threaded through from the pack manifest. */
+  pack?: NodePackMeta;
 }

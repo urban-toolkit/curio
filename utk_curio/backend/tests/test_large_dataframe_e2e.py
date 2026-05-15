@@ -99,6 +99,7 @@ class TestLargeDataFrameE2E(unittest.TestCase):
         # `curio start` instance writing to the same path.
         env["CURIO_SHARED_DATA"] = ".curio/test-large-df-data/"
         env["PYTHONUNBUFFERED"] = "1"
+        env["FLASK_USE_RELOADER"] = "0"
 
         try:
             cls.sandbox_proc = subprocess.Popen(
@@ -326,10 +327,10 @@ class TestLargeDataFrameE2E(unittest.TestCase):
 
         Exercises the Arrow IPC content negotiation: client requests
         ``Accept: application/vnd.apache.arrow.stream`` and the sandbox reads
-        the parquet blob straight into a pyarrow.Table (no pandas
+        the parquet artifact straight into a pyarrow.Table (no pandas
         materialization), then writes an IPC stream. This both validates the
         backend->sandbox timeout (regression of the old 60s NetworkError) and
-        the parquet-blob -> Arrow direct path."""
+        the parquet -> Arrow direct path."""
         import io
         import pyarrow.ipc as ipc
 

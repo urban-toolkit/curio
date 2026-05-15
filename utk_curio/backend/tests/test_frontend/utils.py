@@ -24,6 +24,9 @@ WORKFLOW_SCREENSHOT_EXPECTED_DIR = os.path.join(
     REPO_ROOT, "docs", "examples", "dataflows", "expected_outputs"
 )
 
+SANDBOX_CONNECT_TIMEOUT_S = 30
+SANDBOX_GET_TIMEOUT_S = int(os.environ.get("CURIO_E2E_SANDBOX_GET_TIMEOUT", "300"))
+
 
 
 def get_shared_data_dir() -> str:
@@ -81,7 +84,7 @@ def load_artifact_as_dict(artifact_id: str) -> dict:
     resp = _req.get(
         f'http://{sandbox_host}:{sandbox_port}/get',
         params={'fileName': artifact_id},
-        timeout=30,
+        timeout=(SANDBOX_CONNECT_TIMEOUT_S, SANDBOX_GET_TIMEOUT_S),
     )
     if not resp.ok:
         # Surface the sandbox's structured error body (added in api.py /get)

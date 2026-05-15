@@ -1,0 +1,164 @@
+{
+  "$schema": "https://curio.dev/schemas/node-pack.v1.json",
+  "id": "it.urbanlab.milan-heat",
+  "version": "1.0.0",
+  "name": "Milan Heat Vulnerability",
+  "publisher": "Urban Analytics Lab",
+  "description": "Python pipeline that reproduces the Curio example 'Heterogeneous data + cross-grammar linked views' (docs/examples/09-heterogeneous-data-linked-views.md). Loads a Milan thermal raster + ERA5 weather + census polygons, computes per-pixel UTCI, aggregates it onto polygons, and projects the result for downstream AUTK_MAP / VIS_VEGA views.",
+  "license": "MIT",
+  "compatibility": {
+    "curioRuntime": ">=0.5.0",
+    "major": 1
+  },
+  "permissions": [
+    "filesystem.read"
+  ],
+  "dependencies": {
+    "packs": {},
+    "python": {
+      "rasterio": "^1.3",
+      "pandas": "^2.0",
+      "geopandas": "^0.14",
+      "numpy": "^1.26",
+      "pythermalcomfort": "^2.10",
+      "rasterstats": "^0.20"
+    },
+    "js": {}
+  },
+  "kinds": [
+    {
+      "id": "mrt-load",
+      "label": "Milan MRT Loader",
+      "category": "data",
+      "engine": "python",
+      "description": "Open the bundled 2022 Milan mean radiant temperature GeoTIFF and return the rasterio dataset for downstream zonal stats / UTCI computation.",
+      "icon": null,
+      "editor": "code",
+      "hasCode": true,
+      "hasWidgets": false,
+      "hasGrammar": false,
+      "inputPorts": [],
+      "outputPorts": [
+        { "types": ["RASTER"], "cardinality": "1" }
+      ],
+      "templateDir": "templates/mrt-load",
+      "defaultTemplate": "templates/mrt-load/Milan_MRT_GeoTIFF.py"
+    },
+    {
+      "id": "weather-load",
+      "label": "ERA5 Milan Weather",
+      "category": "data",
+      "engine": "python",
+      "description": "Load the hourly ERA5 meteorological CSV (Td / Wind / RH per hour 'it') so a downstream UTCI step can pick the matching timestamp.",
+      "icon": null,
+      "editor": "code",
+      "hasCode": true,
+      "hasWidgets": false,
+      "hasGrammar": false,
+      "inputPorts": [],
+      "outputPorts": [
+        { "types": ["DATAFRAME"], "cardinality": "1" }
+      ],
+      "templateDir": "templates/weather-load",
+      "defaultTemplate": "templates/weather-load/ERA5_Milan_CSV.py"
+    },
+    {
+      "id": "census-load",
+      "label": "Milan Census Polygons",
+      "category": "data",
+      "engine": "python",
+      "description": "Load the Milan census GeoJSON (trimmed to the gt_65 column) as a GeoDataFrame so it can be reprojected and merged with UTCI.",
+      "icon": null,
+      "editor": "code",
+      "hasCode": true,
+      "hasWidgets": false,
+      "hasGrammar": false,
+      "inputPorts": [],
+      "outputPorts": [
+        { "types": ["GEODATAFRAME"], "cardinality": "1" }
+      ],
+      "templateDir": "templates/census-load",
+      "defaultTemplate": "templates/census-load/Milan_Census_GeoJSON.py"
+    },
+    {
+      "id": "utci-compute",
+      "label": "UTCI from raster + weather",
+      "category": "computation",
+      "engine": "python",
+      "description": "Compute the Universal Thermal Climate Index per raster pixel using pythermalcomfort. Reads raster + weather DataFrame via the Curio MERGE_FLOW pattern (arg[0] / arg[1]) and returns the UTCI grid + shape so the zonal-stats step can rebuild it.",
+      "icon": null,
+      "editor": "code",
+      "hasCode": true,
+      "hasWidgets": false,
+      "hasGrammar": false,
+      "inputPorts": [
+        { "types": ["RASTER", "DATAFRAME"], "cardinality": "[1,2]" }
+      ],
+      "outputPorts": [
+        { "types": ["JSON"], "cardinality": "1" }
+      ],
+      "templateDir": "templates/utci-compute",
+      "defaultTemplate": "templates/utci-compute/UTCI_From_Raster_And_Weather.py"
+    },
+    {
+      "id": "utci-zonal",
+      "label": "UTCI Zonal Mean",
+      "category": "computation",
+      "engine": "python",
+      "description": "Spatially join the UTCI grid into census polygons via rasterstats.zonal_stats, returning a GeoDataFrame keyed on geometry with mean UTCI + gt_65 columns. Inputs arrive in order (raster, UTCI tuple, polygons).",
+      "icon": null,
+      "editor": "code",
+      "hasCode": true,
+      "hasWidgets": false,
+      "hasGrammar": false,
+      "inputPorts": [
+        { "types": ["RASTER", "JSON", "GEODATAFRAME"], "cardinality": "[1,n]" }
+      ],
+      "outputPorts": [
+        { "types": ["GEODATAFRAME"], "cardinality": "1" }
+      ],
+      "templateDir": "templates/utci-zonal",
+      "defaultTemplate": "templates/utci-zonal/UTCI_Zonal_Mean.py"
+    },
+    {
+      "id": "census-reproject",
+      "label": "Reproject census to EPSG:3395",
+      "category": "computation",
+      "engine": "python",
+      "description": "Reproject the merged census GeoDataFrame from UTM 32632 to EPSG:3395 (the projection AUTK_MAP's tile pipeline expects), drop polygons with non-positive UTCI, and tag the table with metadata.name='census' so downstream views can reference it by name.",
+      "icon": null,
+      "editor": "code",
+      "hasCode": true,
+      "hasWidgets": false,
+      "hasGrammar": false,
+      "inputPorts": [
+        { "types": ["GEODATAFRAME"], "cardinality": "1" }
+      ],
+      "outputPorts": [
+        { "types": ["GEODATAFRAME"], "cardinality": "1" }
+      ],
+      "templateDir": "templates/census-reproject",
+      "defaultTemplate": "templates/census-reproject/Reproject_3395_Filter_Positive.py"
+    },
+    {
+      "id": "gt65-projection",
+      "label": "Project gt_65 column",
+      "category": "computation",
+      "engine": "python",
+      "description": "Project the (Geo)DataFrame down to just the gt_65 column — used to feed a boxplot view that summarises the older-adult-population distribution independently of UTCI.",
+      "icon": null,
+      "editor": "code",
+      "hasCode": true,
+      "hasWidgets": false,
+      "hasGrammar": false,
+      "inputPorts": [
+        { "types": ["GEODATAFRAME"], "cardinality": "1" }
+      ],
+      "outputPorts": [
+        { "types": ["DATAFRAME"], "cardinality": "1" }
+      ],
+      "templateDir": "templates/gt65-projection",
+      "defaultTemplate": "templates/gt65-projection/Gt65_Only.py"
+    }
+  ]
+}

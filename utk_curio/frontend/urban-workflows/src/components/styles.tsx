@@ -16,7 +16,10 @@ import {
 import { useUserContext } from "../providers/UserProvider";
 import { useLLMContext } from "../providers/LLMProvider";
 import { useToastContext } from "../providers/ToastProvider";
+import { usePackPalette } from "../providers/PackPaletteContext";
+import { formatForkOfSubtitle } from "../utils/forkPackLineage";
 import { ConnectionValidator } from "../ConnectionValidator";
+import { PACK_STAGING_MIME } from "../constants/packPaletteStaging";
 import Col from "react-bootstrap/Col";
 import Nav from "react-bootstrap/Nav";
 import Row from "react-bootstrap/Row";
@@ -32,6 +35,7 @@ import {
     faMagnifyingGlassChart,
     faSquareRootVariable,
     faBroom,
+    faGripVertical,
     faDownload,
     faUpload,
     faServer,
@@ -49,7 +53,8 @@ import {
     faAnglesUp
 } from "@fortawesome/free-solid-svg-icons";
 import { AccessLevelType, NodeType, SupportedType } from "../constants";
-import { getNodeDescriptor } from "../registry";
+import { getNodeDescriptor, tryGetNodeDescriptor } from "../registry";
+import { NodeKindId, NodeCategory } from "../registry/types";
 import "./styles.css";
 import { Template, useTemplateContext } from "../providers/TemplateProvider";
 import { useCode } from "../hook/useCode";
@@ -58,6 +63,14 @@ import { ICodeData } from "types";
 
 const MIN_NODE_WIDTH = 200;
 const MIN_NODE_HEIGHT = 150;
+
+const PACK_HEADER_CATEGORY: Record<NodeCategory, string> = {
+    data: "Data",
+    computation: "Compute",
+    vis_grammar: "Viz",
+    vis_simple: "Chart",
+    flow: "Flow",
+};
 
 // Node Container
 export const NodeContainer = ({
@@ -124,6 +137,7 @@ export const NodeContainer = ({
         dashboardOn,
         dashboardLocked,
     } = useFlowContext();
+    const { packsPaletteEditMode } = usePackPalette();
     const { getNodes, getEdges } = useReactFlow();
     const { getTemplates, deleteTemplate, fetchTemplates } = useTemplateContext();
     const { createCodeNode, loadTrill } = useCode();
@@ -477,15 +491,120 @@ export const NodeContainer = ({
         generateContentNode(getNodes(), getEdges(), workflowNameRef, goal, workflowGoal);
     }
 
-    const nodeIconTranslation = (nodeType: NodeType) => {
+    const nodeIconTranslation = (nodeType: NodeKindId) => {
         try { return getNodeDescriptor(nodeType).icon; }
         catch { return faCopy; }
     };
 
-    const nodeNameTranslation = (nodeType: NodeType) => {
+    const nodeNameTranslation = (nodeType: NodeKindId) => {
         try { return getNodeDescriptor(nodeType).label; }
         catch { return nodeType; }
     };
+
+    const packDescriptor = tryGetNodeDescriptor(data.nodeType as NodeKindId);
+    const packForkSubtitle =
+        packDescriptor?.source === "pack" && packDescriptor.pack?.lineage != null
+            ? formatForkOfSubtitle(packDescriptor.pack.lineage)
+            : null;
+    const packMetaHeader =
+        packDescriptor?.source === "pack" && packDescriptor.pack ? (
+            <div
+                style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    gap: "2px",
+                    padding: "6px 8px 0",
+                    boxSizing: "border-box",
+                    width: "100%",
+                    ...((data.suggestionType != "none" && data.suggestionType != undefined) ? { pointerEvents: "none" } : {}),
+                }}
+            >
+                <div
+                    style={{
+                        display: "flex",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        gap: "8px",
+                        flexWrap: "wrap",
+                        width: "100%",
+                    }}
+                >
+                    <span
+                        style={{
+                            fontSize: "9px",
+                            fontWeight: 700,
+                            letterSpacing: "0.06em",
+                            textTransform: "uppercase",
+                            color: "#fbaa69",
+                            backgroundColor: "rgba(251, 170, 105, 0.14)",
+                            padding: "3px 8px",
+                            borderRadius: "10px",
+                            lineHeight: 1.2,
+                        }}
+                    >
+                        {PACK_HEADER_CATEGORY[packDescriptor.category]}
+                    </span>
+                    <span
+                        style={{
+                            fontSize: "10px",
+                            color: "rgba(136, 135, 135, 0.95)",
+                            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                            maxWidth: "100%",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                        }}
+                        title={`${packDescriptor.pack.packId}@${packDescriptor.pack.major}`}
+                    >
+                        {packDescriptor.pack.packId}@{packDescriptor.pack.major}
+                    </span>
+                </div>
+                {packForkSubtitle ? (
+                    <span
+                        style={{
+                            fontSize: "8px",
+                            color: "rgba(136, 135, 135, 0.88)",
+                            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                            maxWidth: "100%",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            lineHeight: 1.2,
+                            textAlign: "center",
+                            paddingTop: "1px",
+                        }}
+                        title={packForkSubtitle.title}
+                    >
+                        {packForkSubtitle.text}
+                    </span>
+                ) : null}
+            </div>
+        ) : null;
+
+    const packStagingDragGrip =
+        packsPaletteEditMode && !dashboardOn ? (
+            <div
+                className={"nodrag nowheel"}
+                draggable
+                title="Drag onto a dashed drop zone in the Packs panel (Edit mode)."
+                aria-label="Drag onto a dashed drop zone in the Packs panel when editing packs"
+                role="presentation"
+                onDragStart={(e) => {
+                    e.stopPropagation();
+                    e.dataTransfer.setData(PACK_STAGING_MIME, JSON.stringify({ nodeId }));
+                    e.dataTransfer.effectAllowed = "copyMove";
+                }}
+                style={{
+                    cursor: "grab",
+                    ...headerIconStyle,
+                    ...(data.keywordHighlighted ? { color: "rgb(251, 252, 246)" } : {}),
+                }}
+            >
+                <FontAwesomeIcon icon={faGripVertical} />
+            </div>
+        ) : null;
 
     return (
         <>
@@ -630,7 +749,9 @@ export const NodeContainer = ({
                 }}
             >
                 {!noContent && !dashboardOn ? (
-                    <div style={{
+                    <>
+                        {packMetaHeader}
+                        <div style={{
                         display: "flex",
                         alignItems: "center",
                         height: "30px",
@@ -642,7 +763,8 @@ export const NodeContainer = ({
                         boxSizing: "border-box",
                         width: "100%",
                         ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
-                    }}>
+                        }}>
+                        {packStagingDragGrip}
                         {/* Minimize toggle */}
                         <FontAwesomeIcon
                             icon={faMinus}
@@ -718,9 +840,10 @@ export const NodeContainer = ({
                             />
                         ) : null}
                     </div>
+                    </>
                 ) : null}
 
-                <div style={{height: dashboardOn ? "100%" : "calc(100% - 35px)", width: "calc(100% - 30px)", marginLeft: "auto", marginRight: "auto"}}>
+                <div style={{height: dashboardOn ? "100%" : (packMetaHeader ? "calc(100% - 68px)" : "calc(100% - 35px)"), width: "calc(100% - 30px)", marginLeft: "auto", marginRight: "auto"}}>
                     {children}
                 </div>
 

@@ -16,6 +16,7 @@ from utk_curio.sandbox.app.worker import _worker_init, execute_code, execute_js_
 from utk_curio.sandbox.util.parsers import (
     load_from_duckdb,
     load_tabular_arrow_from_duckdb,
+    load_tabular_preview_from_duckdb,
     parseOutput,
 )
 
@@ -68,13 +69,24 @@ def get_artifact():
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD')
     try:
         with chdir_locked(launch_dir):
-            raw = load_from_duckdb(art_id, session_id=session_id)
             total_rows = None
+            raw = None
             if max_rows_param is not None:
                 max_rows = int(max_rows_param)
-                if isinstance(raw, _pd.DataFrame):
-                    total_rows = len(raw)
-                    raw = raw.head(max_rows)
+                preview = load_tabular_preview_from_duckdb(
+                    art_id,
+                    max_rows,
+                    session_id=session_id,
+                )
+                if preview is not None:
+                    raw, total_rows = preview
+            if raw is None:
+                raw = load_from_duckdb(art_id, session_id=session_id)
+                if max_rows_param is not None:
+                    max_rows = int(max_rows_param)
+                    if isinstance(raw, _pd.DataFrame):
+                        total_rows = len(raw)
+                        raw = raw.head(max_rows)
             data = parseOutput(raw)
     except Exception as e:
         # Surface the underlying exception in the response body so callers
@@ -291,5 +303,4 @@ def exec_js():
 
     print(f"[sandbox /execJs] finished  total={time.perf_counter()-t0:.3f}s  node={node_type}", file=sys.stderr, flush=True)
     return jsonify(result)
-
 

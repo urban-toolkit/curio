@@ -14,9 +14,11 @@ import ReactFlow, {
 import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
 
 import { useFlowContext } from "../providers/FlowProvider";
+import { usePackPalette } from "../providers/PackPaletteContext";
 import { useToastContext } from "../providers/ToastProvider";
-import { NodeType, EdgeType } from "../constants";
-import { getAllNodeTypes } from "../registry";
+import { packKeyFromCanonicalNodeType } from "../registry/packKeys";
+import { NodeType, EdgeType, CURIO_UNIVERSAL_NODE_TYPE } from "../constants";
+import { getFlowNodeCanonicalType } from "../utils/flowNodeCanonicalType";
 import UniversalNode from "./UniversalNode";
 import BiDirectionalEdge from "./edges/BiDirectionalEdge";
 import { useCode } from "../hook/useCode";
@@ -40,6 +42,7 @@ const CANVAS_EXTENT: [[number, number], [number, number]] = [[-2000, -2000], [60
 
 export function MainCanvas() {
     const { showToast } = useToastContext();
+    const { setActivePackKey } = usePackPalette();
     const {
         nodes,
         edges,
@@ -94,15 +97,11 @@ export function MainCanvas() {
     const { createCodeNode } = useCode();
     const { llmRequest, AIModeRef, setAIMode } = useLLMContext();
 
-    const nodeTypes = useMemo(() => {
-        const types: Record<string, any> = {};
-        for (const desc of getAllNodeTypes()) {
-            if (desc.adapter) {
-                types[desc.id] = UniversalNode;
-            }
-        }
-        return types;
-    }, []);
+    // One stable RF type avoids remounting editors when ``loadInstalledPacks`` re-registers manifests.
+    const nodeTypes = useMemo(
+        () => ({ [CURIO_UNIVERSAL_NODE_TYPE]: UniversalNode }),
+        [],
+    );
 
     const edgeTypes = useMemo(() => ({
         [EdgeType.BIDIRECTIONAL_EDGE]: BiDirectionalEdge,
@@ -366,7 +365,11 @@ export function MainCanvas() {
     const handleSelectionChange = useCallback((selection: { nodes: any[]; edges: any[] }) => {
         setSelectedComponents(selection);
         setIsComponentsSelected(selection.nodes.length + selection.edges.length > 1);
-    }, []);
+        const packKey = selection.nodes
+            .map((n) => packKeyFromCanonicalNodeType(getFlowNodeCanonicalType(n)))
+            .find((k): k is string => k != null);
+        setActivePackKey(packKey ?? null);
+    }, [setActivePackKey]);
 
     // const handleWheel = (e: React.WheelEvent) => {
 

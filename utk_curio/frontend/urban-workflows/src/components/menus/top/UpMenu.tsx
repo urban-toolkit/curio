@@ -505,6 +505,16 @@ export default function UpMenu({
                                 <FontAwesomeIcon className={styles.dropDownIcon} icon={faDatabase} />
                                 <button className={styles.noStyleButton}>Datasets</button>
                             </div>
+                            <div
+                                className={styles.dropDownRow}
+                                onClick={() => {
+                                    setActiveMenu(null);
+                                    navigate("/nodes");
+                                }}
+                            >
+                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faCubes} />
+                                <button className={styles.noStyleButton}>Nodes warehouse</button>
+                            </div>
                         </div>
                     )}
                 </div>

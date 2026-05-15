@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { NodeType } from '../constants';
+import { NodeKindId } from '../registry/types';
 import { ICodeDataContent } from '../types';
 import { Template, useTemplateContext } from '../providers/TemplateProvider';
 import { useUserContext } from '../providers/UserProvider';
@@ -10,7 +11,7 @@ export interface NodeOutput {
   outputType?: string;
 }
 
-export function useNodeState(data: any, nodeType: NodeType) {
+export function useNodeState(data: any, nodeType: NodeKindId) {
   const [output, setOutput] = useState<NodeOutput>(data.output ?? { code: '', content: '', outputType: '' });
   const [code, setCode] = useState<string>(data.code ?? '');
   const [sendCode, setSendCode] = useState<any>();

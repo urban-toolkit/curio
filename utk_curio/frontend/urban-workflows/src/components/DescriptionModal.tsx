@@ -4,10 +4,11 @@ import content from "./modal-content.module.css";
 import { AccessLevelType, NodeType } from "../constants";
 import { ConnectionValidator } from "../ConnectionValidator";
 import { getNodeDescriptor } from "../registry";
+import { NodeKindId } from "../registry/types";
 
 type DescriptionModalProps = {
     nodeId: string;
-    nodeType: NodeType;
+    nodeType: NodeKindId;
     name?: string;
     description?: any;
     accessLevel?: AccessLevelType;
@@ -28,7 +29,7 @@ function DescriptionModal({
 }: DescriptionModalProps) {
     if (!show) return null;
 
-    const getTypeDescription = (nodeType: NodeType) => {
+    const getTypeDescription = (nodeType: NodeKindId) => {
         const descriptor = getNodeDescriptor(nodeType);
         let linesText: string[] = [];
 
