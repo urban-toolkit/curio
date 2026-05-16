@@ -637,14 +637,15 @@ const NodesHub: React.FC = () => {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          {filtered.length === 0 ? (
-            <div className={styles.empty}>
-              No packs match the current filter.
-            </div>
-          ) : (
-            <div className={styles.grid}>
-              {filtered.map((pack) => (
-                <article key={pack.dirName} className={styles.card}>
+          <div className={styles.catalogScroll}>
+            {filtered.length === 0 ? (
+              <div className={styles.empty}>
+                No packs match the current filter.
+              </div>
+            ) : (
+              <div className={styles.grid}>
+                {filtered.map((pack) => (
+                  <article key={pack.dirName} className={styles.card}>
                   <div className={styles.cardHeader}>
                     <div>
                       <h3 className={styles.packName}>{pack.name}</h3>
@@ -707,8 +708,9 @@ const NodesHub: React.FC = () => {
                   </div>
                 </article>
               ))}
-            </div>
-          )}
+              </div>
+            )}
+          </div>
         </main>
 
         <aside className={styles.myPacks} aria-label="Your installed packs">
