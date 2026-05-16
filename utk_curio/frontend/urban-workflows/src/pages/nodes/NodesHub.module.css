@@ -82,6 +82,7 @@
     flex: 1;
     display: grid;
     grid-template-columns: minmax(0, 200px) minmax(0, 1fr) minmax(0, 320px);
+    grid-template-rows: minmax(0, 1fr);
     gap: 24px;
     padding: 24px 28px;
     min-height: 0;
@@ -128,12 +129,47 @@
 
 .main {
     min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .searchRow {
+    flex-shrink: 0;
     display: flex;
     gap: 12px;
     margin-bottom: 16px;
+}
+
+/* Catalog cards only — search row stays pinned above */
+.catalogScroll {
+    flex: 1;
+    min-height: 0;
+    max-height: calc(100vh - 160px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-right: 4px;
+    margin-right: -2px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(30, 31, 35, 0.28) transparent;
+}
+
+.catalogScroll::-webkit-scrollbar {
+    width: 3px;
+}
+
+.catalogScroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.catalogScroll::-webkit-scrollbar-thumb {
+    background: rgba(30, 31, 35, 0.22);
+    border-radius: 999px;
+}
+
+.catalogScroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(30, 31, 35, 0.38);
 }
 
 .search {
