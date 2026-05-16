@@ -570,26 +570,6 @@
     color: rgba(255, 255, 255, 0.5);
 }
 
-.packForkFamilySelect {
-    display: block;
-    width: calc(100% - 16px);
-    margin: 0 8px 8px;
-    box-sizing: border-box;
-    font-size: 10px;
-    font-weight: 600;
-    padding: 6px 8px;
-    border-radius: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    background: rgba(0, 0, 0, 0.35);
-    color: #fbfcf6;
-}
-
-.packForkFamilySelect:focus {
-    outline: none;
-    border-color: rgba(251, 170, 105, 0.75);
-    box-shadow: 0 0 0 2px rgba(251, 170, 105, 0.2);
-}
-
 .packForkFamily > .packDetails {
     margin-bottom: 0;
     border-top-left-radius: 0;

@@ -514,6 +514,8 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     margin: 0;
     color: #7a786d;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 
 .hubForkFamilySelectLabel {
@@ -525,23 +527,6 @@
     letter-spacing: 0.06em;
     color: #7a786d;
     margin-bottom: 8px;
-}
-
-.hubForkFamilySelect {
-    font-size: 0.8125rem;
-    padding: 8px 10px;
-    border-radius: 8px;
-    border: 1px solid #d8d4c2;
-    background: #ffffff;
-    color: #1e1f23;
-    width: 100%;
-    box-sizing: border-box;
-}
-
-.hubForkFamilySelect:focus {
-    outline: none;
-    border-color: #fbaa69;
-    box-shadow: 0 0 0 2px rgba(251, 170, 105, 0.25);
 }
 
 .myPackRowHighlight {
