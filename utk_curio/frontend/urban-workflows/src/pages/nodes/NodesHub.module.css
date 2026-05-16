@@ -190,6 +190,8 @@
     margin: 0;
     font-size: 1rem;
     font-weight: 600;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 
 .publisher {
@@ -419,6 +421,8 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     color: #5c5a53;
     margin: 0 0 8px;
+    overflow-wrap: break-word;
+    word-break: break-word;
 }
 
 .hubForkFamily {
