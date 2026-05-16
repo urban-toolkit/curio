@@ -19,6 +19,7 @@ import { useToastContext } from "../providers/ToastProvider";
 import { usePackPalette } from "../providers/PackPaletteContext";
 import { formatForkOfSubtitle } from "../utils/forkPackLineage";
 import { ConnectionValidator } from "../ConnectionValidator";
+import { NODE_CATEGORY_SHORT_LABEL } from "../constants/nodeCategoryShortLabels";
 import { PACK_STAGING_MIME } from "../constants/packPaletteStaging";
 import Col from "react-bootstrap/Col";
 import Nav from "react-bootstrap/Nav";
@@ -54,7 +55,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import { AccessLevelType, NodeType, SupportedType } from "../constants";
 import { getNodeDescriptor, tryGetNodeDescriptor } from "../registry";
-import { NodeKindId, NodeCategory } from "../registry/types";
+import { NodeKindId } from "../registry/types";
 import "./styles.css";
 import { Template, useTemplateContext } from "../providers/TemplateProvider";
 import { useCode } from "../hook/useCode";
@@ -63,14 +64,6 @@ import { ICodeData } from "types";
 
 const MIN_NODE_WIDTH = 200;
 const MIN_NODE_HEIGHT = 150;
-
-const PACK_HEADER_CATEGORY: Record<NodeCategory, string> = {
-    data: "Data",
-    computation: "Compute",
-    vis_grammar: "Viz",
-    vis_simple: "Chart",
-    flow: "Flow",
-};
 
 // Node Container
 export const NodeContainer = ({
@@ -544,7 +537,7 @@ export const NodeContainer = ({
                             lineHeight: 1.2,
                         }}
                     >
-                        {PACK_HEADER_CATEGORY[packDescriptor.category]}
+                        {NODE_CATEGORY_SHORT_LABEL[packDescriptor.category]}
                     </span>
                     <span
                         style={{
