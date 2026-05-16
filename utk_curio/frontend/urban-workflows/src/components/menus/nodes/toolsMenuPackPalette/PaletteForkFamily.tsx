@@ -3,6 +3,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faPenToSquare } from "@fortawesome/free-solid-svg-icons";
 import type { PackStagedRow } from "../../../../providers/PackPaletteContext";
 import { CatalogPublishPill } from "../../../packs/CatalogPublishPill";
+import { ForkFamilyPicker } from "../../../packs/ForkFamilyPicker";
 import { FORK_SELECTION_SESSION_PREFIX, resolveForkFamilySelectionKey } from "../../../../utils/forkPackLineage";
 import { formatPackSectionLabel, type PackPaletteGroup } from "./model";
 import { InstalledPackAccordion } from "./InstalledPackAccordion";
@@ -68,9 +69,8 @@ export const PaletteForkFamily = memo(function PaletteForkFamily({
     const canOpenForkFf = packsPaletteEditMode && stagedInstalledRows.length === 0;
     const canOpenFactoryFf = canOpenStagedFf || canOpenForkFf;
 
-    const onForkSelectChange = useCallback(
-        (e: React.ChangeEvent<HTMLSelectElement>) => {
-            const next = e.target.value;
+    const onForkPickedFromPalette = useCallback(
+        (next: string) => {
             setForkManualPickByRoot((prev) => ({ ...prev, [rootKey]: next }));
             setActivePackKey(next);
             try {
@@ -80,6 +80,11 @@ export const PaletteForkFamily = memo(function PaletteForkFamily({
             }
         },
         [rootKey, setActivePackKey, setForkManualPickByRoot],
+    );
+
+    const forkPickerOptions = useMemo(
+        () => members.map((m) => ({ key: m.key, label: m.label })),
+        [members],
     );
 
     return (
@@ -148,18 +153,13 @@ export const PaletteForkFamily = memo(function PaletteForkFamily({
                 </div>
                 <span className={packStyles.packSummaryCount}>{members.length}</span>
             </div>
-            <select
-                className={packStyles.packForkFamilySelect}
+            <ForkFamilyPicker
+                variant="dock"
+                rootKey={rootKey}
+                options={forkPickerOptions}
                 value={resolved}
-                aria-label={`Select installed fork (${rootKey})`}
-                onChange={onForkSelectChange}
-            >
-                {members.map((m) => (
-                    <option key={m.key} value={m.key}>
-                        {m.label}
-                    </option>
-                ))}
-            </select>
+                onChange={onForkPickedFromPalette}
+            />
             <InstalledPackAccordion
                 group={selectedGroup}
                 activePackKey={activePackKey}

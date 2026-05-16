@@ -9,6 +9,7 @@ import {
     refreshPackRegistry,
 } from "../../api/packsApi";
 import { CatalogPublishPill } from "../../components/packs/CatalogPublishPill";
+import { ForkFamilyPicker } from "../../components/packs/ForkFamilyPicker";
 import { toApiPayload } from "./factoryDraftModel";
 import { useNodeFactoryModal } from "../../providers/NodeFactoryModalProvider";
 import { draftForkFromInstalledPackPayload, draftFromInstalledPackPayload } from "../../utils/palettePackFactoryDraft";
@@ -165,9 +166,17 @@ const HubInstalledForkRailGroup = React.memo(function HubInstalledForkRailGroup(
         [family.members, resolvedDir],
     );
 
-    const onForkSelectChange = useCallback(
-        (e: React.ChangeEvent<HTMLSelectElement>) => {
-            const next = e.target.value;
+    const forkPickerOptions = useMemo(
+        () =>
+            family.members.map((m) => ({
+                key: m.dirName,
+                label: `${m.name} (${m.packId} · v${m.version})`,
+            })),
+        [family.members],
+    );
+
+    const onForkPicked = useCallback(
+        (next: string) => {
             setManualForkDirByRoot((prev) => ({ ...prev, [family.rootKey]: next }));
             try {
                 sessionStorage.setItem(FORK_SELECTION_SESSION_PREFIX + family.rootKey, next);
@@ -209,18 +218,13 @@ const HubInstalledForkRailGroup = React.memo(function HubInstalledForkRailGroup(
             </div>
             <label className={styles.hubForkFamilySelectLabel}>
                 Fork
-                <select
-                    className={styles.hubForkFamilySelect}
+                <ForkFamilyPicker
+                    variant="hub"
+                    rootKey={family.rootKey}
+                    options={forkPickerOptions}
                     value={resolvedDir}
-                    aria-label={`Select fork for family ${family.rootKey}`}
-                    onChange={onForkSelectChange}
-                >
-                    {family.members.map((m) => (
-                        <option key={m.dirName} value={m.dirName}>
-                            {m.name} ({m.packId} · v{m.version})
-                        </option>
-                    ))}
-                </select>
+                    onChange={onForkPicked}
+                />
             </label>
             <div role="list">
                 {family.members.map((pack) => (
@@ -461,17 +465,17 @@ const NodesHub: React.FC = () => {
   const onTogglePackPaletteDock = useCallback(
     async (pack: PackPayload) => {
       const hiddenNow = pack.paletteDock?.hiddenFromForkPaletteDock === true;
-      const visibleInDock = !hiddenNow;
+      const nextHiddenInDock = !hiddenNow;
       setPaletteDockDirBusy(pack.dirName);
       try {
-        await packsApi.packPaletteDockVisible(pack.dirName, visibleInDock);
+        await packsApi.packPaletteDockVisible(pack.dirName, !nextHiddenInDock);
         await refreshPackRegistry();
         await reload();
         setToast({
           kind: "ok",
-          msg: visibleInDock
-            ? `"${pack.name}" is shown in the Nodes palette dock.`
-            : `"${pack.name}" is hidden from the Nodes palette dock.`,
+          msg: nextHiddenInDock
+            ? `"${pack.name}" is hidden from the Nodes palette dock.`
+            : `"${pack.name}" is shown in the Nodes palette dock.`,
         });
       } catch (err) {
         setToast({ kind: "err", msg: (err as Error).message });
