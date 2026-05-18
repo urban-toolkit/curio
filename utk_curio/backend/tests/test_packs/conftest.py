@@ -81,6 +81,7 @@ def _manifest_dict(
     pack_deps: dict[str, str] | None = None,
     lineage: dict | None = None,
     distribution: dict | None = None,
+    created_at: str | None = "2026-06-01T12:00:00Z",
 ) -> dict:
     d = {
         "id": pack_id,
@@ -117,6 +118,8 @@ def _manifest_dict(
         d["lineage"] = lineage
     if distribution is not None:
         d["distribution"] = distribution
+    if created_at:
+        d["createdAt"] = created_at
     return d
 
 

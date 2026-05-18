@@ -16,7 +16,9 @@ import { draftForkFromInstalledPackPayload, draftFromInstalledPackPayload } from
 import {
     FORK_SELECTION_SESSION_PREFIX,
     areForkPaletteParentsRevealedInDock,
+    forkFamilyLatestCreatedAtMs,
     formatForkOfSubtitle,
+    packCreatedAtMs,
     partitionPacksByForkFamily,
     referencedForkParentCoordinates,
     resolveForkFamilySelectionKey,
@@ -384,13 +386,27 @@ const NodesHub: React.FC = () => {
     reload,
   ]);
 
-  const railSingletonsSorted = useMemo(
-    () =>
-      [...installedPartition.singletons].sort((a, b) =>
-        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
-      ),
-    [installedPartition.singletons],
-  );
+  const hubRailInstalledOrdered = useMemo(() => {
+    type Entry =
+      | { kind: "singleton"; pack: PackPayload }
+      | { kind: "family"; family: ForkFamilyGroup<PackPayload> };
+    const entries: Entry[] = [
+      ...installedPartition.singletons.map((pack) => ({ kind: "singleton" as const, pack })),
+      ...installedPartition.families.map((family) => ({ kind: "family" as const, family })),
+    ];
+    entries.sort((a, b) => {
+      const ta =
+        a.kind === "singleton" ? packCreatedAtMs(a.pack) : forkFamilyLatestCreatedAtMs(a.family);
+      const tb =
+        b.kind === "singleton" ? packCreatedAtMs(b.pack) : forkFamilyLatestCreatedAtMs(b.family);
+      const c = tb - ta;
+      if (c !== 0) return c;
+      const keyA = a.kind === "singleton" ? a.pack.dirName : a.family.rootKey;
+      const keyB = b.kind === "singleton" ? b.pack.dirName : b.family.rootKey;
+      return keyA.localeCompare(keyB, undefined, { sensitivity: "base" });
+    });
+    return entries;
+  }, [installedPartition]);
 
   const onOpenForkInFactory = useCallback(
     (pack: PackPayload) => {
@@ -751,8 +767,9 @@ const NodesHub: React.FC = () => {
             <div className={styles.empty}>You haven't installed any packs yet.</div>
           ) : (
             <>
-              {railSingletonsSorted.map((pack) => (
-                <div key={pack.dirName} className={styles.myPackRow}>
+              {hubRailInstalledOrdered.map((entry) =>
+                entry.kind === "singleton" ? (
+                <div key={entry.pack.dirName} className={styles.myPackRow}>
                   <div>
                     <div className={styles.myPackTitleBlock}>
                       <div className={styles.myPackNameRow}>
@@ -760,39 +777,39 @@ const NodesHub: React.FC = () => {
                           type="button"
                           className={styles.myPackFactoryNameBtn}
                           title="Fork in Node Factory (new install; source unchanged)"
-                          onClick={() => onOpenForkInFactory(pack)}
+                          onClick={() => onOpenForkInFactory(entry.pack)}
                         >
-                          {pack.name}
+                          {entry.pack.name}
                         </button>
                         <button
                           type="button"
                           className={styles.myPackIconBtn}
                           title="Fork in Node Factory"
-                          aria-label={`Fork ${pack.name} in Node Factory`}
+                          aria-label={`Fork ${entry.pack.name} in Node Factory`}
                           disabled={busy}
-                          onClick={() => onOpenForkInFactory(pack)}
+                          onClick={() => onOpenForkInFactory(entry.pack)}
                         >
                           <FontAwesomeIcon icon={faPenToSquare} />
                         </button>
                       </div>
                       <CatalogPublishPill
                         variant="hub"
-                        dirName={pack.dirName}
-                        published={catalogPublishedDirs.has(pack.dirName)}
+                        dirName={entry.pack.dirName}
+                        published={catalogPublishedDirs.has(entry.pack.dirName)}
                         allowPublish={catalogPublishAllowed}
-                        busy={publishingPackKey === pack.dirName}
+                        busy={publishingPackKey === entry.pack.dirName}
                         onPublish={onPublishToCatalog}
                       />
                     </div>
                     <span className={styles.myPackVersion}>
-                      {pack.packId} · v{pack.version}
+                      {entry.pack.packId} · v{entry.pack.version}
                     </span>
-                    {pack.lineage ? (
-                      <p className={styles.hubForkOfLine}>{formatForkOfSubtitle(pack.lineage).text}</p>
+                    {entry.pack.lineage ? (
+                      <p className={styles.hubForkOfLine}>{formatForkOfSubtitle(entry.pack.lineage).text}</p>
                     ) : null}
                   </div>
                   <MyPackIconActions
-                      pack={pack}
+                      pack={entry.pack}
                       busy={busy}
                       paletteDockBusy={paletteDockDirBusy}
                       onExport={onExport}
@@ -800,11 +817,10 @@ const NodesHub: React.FC = () => {
                       onPaletteDockToggle={onTogglePackPaletteDock}
                   />
                 </div>
-              ))}
-              {installedPartition.families.map((family) => (
+              ) : (
                 <HubInstalledForkRailGroup
-                  key={family.rootKey}
-                  family={family}
+                  key={entry.family.rootKey}
+                  family={entry.family}
                   manualForkDirByRoot={hubForkManualByRoot}
                   setManualForkDirByRoot={setHubForkManualByRoot}
                   busy={busy}
@@ -818,7 +834,8 @@ const NodesHub: React.FC = () => {
                   onPublishToCatalog={onPublishToCatalog}
                   onOpenForkInFactory={onOpenForkInFactory}
                 />
-              ))}
+              ),
+              )}
             </>
           )}
         </aside>

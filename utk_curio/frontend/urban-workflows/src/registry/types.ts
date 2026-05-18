@@ -49,6 +49,12 @@ export interface NodePackMeta {
   lineage?: NodePackLineage;
   /** When true, omit this coordinate from the Packs dock palette (manifest `curio.paletteDock`). */
   hiddenFromForkPaletteDock?: boolean;
+  /** Canonical creation instant from manifest `createdAt`. */
+  createdAt?: string;
+  /** Parsed ``createdAt`` for ordering (palette + Nodes Hub). */
+  createdAtMs?: number;
+  /** From API: filesystem mtime of ``manifest.json`` (informational only). */
+  installUpdatedAtMs?: number;
 }
 
 export interface PortDef {

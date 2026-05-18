@@ -162,6 +162,7 @@ export function NodeFactoryModalProvider({ children }: { children: React.ReactNo
       <div
         className={modalStyles.overlayRoot}
         role="presentation"
+        data-curio-node-factory-overlay="true"
         onMouseDown={(e) => {
           if (e.target === e.currentTarget) closeNodeFactory(false);
         }}

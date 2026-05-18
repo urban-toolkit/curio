@@ -4,7 +4,34 @@
 import type { PackPayload } from "../api/packsApi";
 import type { NodePackMeta } from "../registry/types";
 
-/** sessionStorage prefix for remembering fork branch in the dock palette. */
+/** Epoch ms derived from canonical ``manifest.createdAt`` (`createdAtMs` from API). */
+export function packCreatedAtMs(
+  meta: Partial<Pick<NodePackMeta, "createdAtMs">> | null | undefined,
+): number {
+  const n = meta?.createdAtMs;
+  if (typeof n === "number" && Number.isFinite(n)) return n;
+  if (typeof n === "string") {
+    const parsed = Number(n);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+/** Strongest ``createdAtMs`` signal among palette kinds sharing a pack coordinate. */
+export function paletteGroupCreatedAtMs(group: {
+  descriptors: ReadonlyArray<{
+    pack?: Partial<Pick<NodePackMeta, "createdAtMs">> | null | undefined;
+  }>;
+}): number {
+  let m = 0;
+  for (const d of group.descriptors) {
+    m = Math.max(m, packCreatedAtMs(d.pack));
+  }
+  return m;
+}
+
+
+
 export const FORK_SELECTION_SESSION_PREFIX = "curio.forkFamilySelection.v1:";
 
 export type LineageCoordLike = Readonly<{ packId: string; major: number }>;
@@ -89,6 +116,13 @@ export interface ForkFamilyGroup<T> {
   members: T[];
 }
 
+export function forkFamilyLatestCreatedAtMs<T extends Partial<Pick<PackPayload, "createdAtMs">>>(
+  family: ForkFamilyGroup<T>,
+): number {
+  let m = 0;
+  for (const p of family.members) m = Math.max(m, packCreatedAtMs(p));
+  return m;
+}
 /**
  * Partition installed catalog rows / payloads: lineage-free → singletons;
  * same `root` with 2+ packs → families; orphaned lineage (solo fork) → singletons.
@@ -120,16 +154,22 @@ export function partitionPacksByForkFamily<T extends Pick<PackPayload, "dirName"
       });
     }
   }
-  families.sort((a, b) => a.rootKey.localeCompare(b.rootKey, undefined, { sensitivity: "base" }));
+  families.sort((a, b) => {
+    const c = forkFamilyLatestCreatedAtMs(b) - forkFamilyLatestCreatedAtMs(a);
+    if (c !== 0) return c;
+    return a.rootKey.localeCompare(b.rootKey, undefined, { sensitivity: "base" });
+  });
   return { singletons, families };
 }
 
-export function sortPackPayloadMembersDescending<T extends Pick<PackPayload, "lineage" | "version" | "dirName">>(
-  members: T[],
-): T[] {
+export function sortPackPayloadMembersDescending<
+  T extends Pick<PackPayload, "lineage" | "version" | "dirName" | "createdAtMs">,
+>(members: T[]): T[] {
   return [...members].sort((a, b) => {
-    const c = comparePackVersionDescending(a.version, b.version);
+    const c = packCreatedAtMs(b) - packCreatedAtMs(a);
     if (c !== 0) return c;
+    const vc = comparePackVersionDescending(a.version, b.version);
+    if (vc !== 0) return vc;
     return a.dirName.localeCompare(b.dirName, undefined, { sensitivity: "base" });
   });
 }
@@ -151,7 +191,7 @@ export type PalettePackRow<G extends PalettePackGroupLike = PalettePackGroupLike
   | { kind: "family"; rootKey: string; members: G[] };
 
 /**
- * Build dock palette rows. Input `groups` is already sorted (e.g. by label).
+ * Build dock palette rows. Input `groups` is sorted (typically newest `createdAtMs` first).
  * Fork families appear at the first pack’s position among sorted groups.
  */
 export function partitionPalettePackGroups<G extends PalettePackGroupLike>(groups: readonly G[]): PalettePackRow<G>[] {
@@ -194,6 +234,9 @@ export function sortPaletteForkGroupsDescending<G extends PalettePackGroupLike>(
   members: readonly G[],
 ): G[] {
   return [...members].sort((a, b) => {
+    const ta = paletteGroupCreatedAtMs(a);
+    const tb = paletteGroupCreatedAtMs(b);
+    if (tb !== ta) return tb - ta;
     const va = a.descriptors[0]?.pack?.version ?? "";
     const vb = b.descriptors[0]?.pack?.version ?? "";
     const c = comparePackVersionDescending(va, vb);

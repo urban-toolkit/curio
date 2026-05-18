@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 from utk_curio.backend.app.packs.pack_channel import normalize_distribution_channel
@@ -20,6 +21,48 @@ from utk_curio.backend.app.packs.storage import KIND_ID_RE, PACK_DIR_RE, PackId
 
 class ManifestError(ValueError):
     """Raised when a pack manifest is malformed or violates the supported schema."""
+
+
+def _parse_created_at_from_manifest(raw: object, *, where: str) -> tuple[str | None, int]:
+    """Parse optional top-level ``createdAt`` ISO 8601 instant.
+
+    Returns ``(canonical_iso_with_Z, epoch_ms)`` or ``(None, 0)`` when omitted/blank.
+    Naive timestamps are interpreted as UTC.
+    """
+    if raw is None:
+        return None, 0
+    if isinstance(raw, (int, float, bool)):
+        raise ManifestError(
+            f"{where}.createdAt must be an ISO 8601 instant string when present "
+            f"(got {type(raw).__name__})"
+        )
+    if not isinstance(raw, str):
+        raise ManifestError(f"{where}.createdAt must be a string ISO 8601 instant")
+    s = raw.strip()
+    if not s:
+        return None, 0
+
+    iso_in = s
+    try:
+        if iso_in.endswith("Z") or iso_in.endswith("z"):
+            base = iso_in[:-1]
+            dt = datetime.fromisoformat(base).replace(tzinfo=timezone.utc)
+        else:
+            dt = datetime.fromisoformat(iso_in)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            else:
+                dt = dt.astimezone(timezone.utc)
+    except ValueError as exc:
+        raise ManifestError(f"{where}.createdAt is not valid ISO 8601: {s!r}") from exc
+
+    utc = dt
+    frac = utc.microsecond
+    canon_body = utc.strftime("%Y-%m-%dT%H:%M:%S")
+    if frac:
+        canon_body += "." + f"{frac:06d}".rstrip("0")
+    canon = canon_body + "Z"
+    return canon, int(utc.timestamp() * 1000)
 
 
 @dataclass(frozen=True)
@@ -203,6 +246,8 @@ class PackManifest:
     lineage: PackLineage | None = None
     channel: str = "stable"  # ``distribution.channel``; default stable — on catalog payloads
     hidden_from_fork_palette_dock: bool = False
+    created_at_iso: str | None = None
+    created_at_ms: int = 0
 
     @property
     def dir_name(self) -> str:
@@ -290,6 +335,10 @@ def load_pack_manifest(pack_dir_path: Path) -> PackManifest:
         raise ManifestError(f"{manifest_path}.distribution must be an object")
     channel = normalize_distribution_channel(distribution.get("channel"))
 
+    created_at_iso, created_at_ms = _parse_created_at_from_manifest(
+        raw.get("createdAt"), where=f"{manifest_path}"
+    )
+
     return PackManifest(
         pack_id=pack_id,
         major=major,
@@ -306,4 +355,41 @@ def load_pack_manifest(pack_dir_path: Path) -> PackManifest:
         lineage=lineage,
         channel=channel,
         hidden_from_fork_palette_dock=hidden_from_fork,
+        created_at_iso=created_at_iso,
+        created_at_ms=created_at_ms,
     )
+
+
+def merge_missing_manifest_created_at(pack_root: Path) -> bool:
+    """Persist ``manifest.json`` ``createdAt`` (UTC ISO) when absent or unparsable as zero-ms.
+
+    Returns ``True`` if the manifest file was rewritten. Intended for installers
+    so older archives without canonical ordering timestamps still serialize a
+    stable ``createdAt`` on disk once.
+    """
+    manifest_path = pack_root / "manifest.json"
+    if not manifest_path.is_file():
+        return False
+    try:
+        raw = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(raw, dict):
+        return False
+    _, existing_ms = _parse_created_at_from_manifest(
+        raw.get("createdAt"), where=str(manifest_path)
+    )
+    if existing_ms > 0:
+        return False
+    raw["createdAt"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    manifest_path.write_text(
+        json.dumps(raw, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    _, check = _parse_created_at_from_manifest(
+        json.loads(manifest_path.read_text(encoding="utf-8")).get("createdAt"),
+        where=str(manifest_path),
+    )
+    if check <= 0:
+        raise ManifestError(f"{manifest_path}: failed to stamp canonical createdAt")
+    return True

@@ -38,9 +38,11 @@ import hashlib
 import io
 import json
 import logging
+import os
 import re
 import shutil
 import tempfile
+import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -54,6 +56,7 @@ from utk_curio.backend.app.packs.manifest import (
     ManifestError,
     PackManifest,
     load_pack_manifest,
+    merge_missing_manifest_created_at,
 )
 from utk_curio.backend.app.packs.storage import (
     PACK_DIR_RE,
@@ -231,6 +234,19 @@ def _build_integrity(pack_root: Path) -> dict[str, str]:
     return integrity
 
 
+def _touch_manifest_for_install_recency(pack_root: Path, *, mtime: float | None = None) -> None:
+    """Bump ``manifest.json`` mtime so clients can expose ``installUpdatedAtMs`` (diagnostic).
+
+    Pack ordering uses manifest ``createdAt`` / ``createdAtMs`` — not filesystem mtime.
+    """
+
+    mp = pack_root / "manifest.json"
+    if not mp.is_file():
+        return
+    t = time.time() if mtime is None else mtime
+    os.utime(mp, (t, t))
+
+
 def refresh_pack_integrity(pack_root: Path) -> dict[str, str]:
     """Rewrite ``integrity.json`` after ``manifest.json`` (or asset) mutation on disk."""
     integrity = _build_integrity(pack_root)
@@ -345,6 +361,8 @@ def publish_pack_archive_to_catalog_dir(
                 raise InstallerError(
                     f"refusing to publish outside catalog root ({final_dest})"
                 )
+
+            merge_missing_manifest_created_at(staging_root)
 
             integrity = _build_integrity(staging_root)
             (staging_root / "integrity.json").write_text(
@@ -488,12 +506,15 @@ def install_pack_from_archive(
                 shutil.rmtree(final_dest)
                 replaced = True
 
+            merge_missing_manifest_created_at(staging_root)
             integrity = _build_integrity(staging_root)
             (staging_root / "integrity.json").write_text(
                 json.dumps({"sha256": integrity}, indent=2, sort_keys=True),
                 encoding="utf-8",
             )
             staging_root.replace(final_dest)
+            _touch_manifest_for_install_recency(final_dest)
+            merged_manifest = load_pack_manifest(final_dest)
             # An explicit (re)install supersedes any prior uninstall
             # tombstone the dev seeder might otherwise honour — the user
             # just asked for this pack to be present, so its seed-state
@@ -520,7 +541,7 @@ def install_pack_from_archive(
                 )
 
             return InstallResult(
-                manifest=manifest,
+                manifest=merged_manifest,
                 integrity=integrity,
                 replaced_existing=replaced,
             )

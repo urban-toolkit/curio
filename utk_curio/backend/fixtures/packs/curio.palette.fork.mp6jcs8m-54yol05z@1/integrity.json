@@ -1,8 +1,0 @@
-{
-  "sha256": {
-    "manifest.json": "c8164877e480fb57a55d6df850ce891a56a2a2429d0bacb52a3ab9674958a65a",
-    "templates/computation-analysis-k-j4qorh2y0computation-analysis/Default.py": "d287bb7f9d15abdc5b6e98536263815744b6ef21c8f3c839fc434ca70d8efe99",
-    "templates/computation-analysis/Default.py": "d287bb7f9d15abdc5b6e98536263815744b6ef21c8f3c839fc434ca70d8efe99",
-    "templates/data-loading/Default.py": "b6f73c3943215996fbbe468b405b968f357ada267bc159cb3d40201e32d6d7b1"
-  }
-}

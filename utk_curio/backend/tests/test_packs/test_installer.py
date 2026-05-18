@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import zipfile
 
 import pytest
@@ -54,6 +55,19 @@ def test_install_replace_overwrites(tmp_curio, make_archive, manifest_dict):
     target = pack_dir("guest", "ai.test.demo@1")
     body = (target / "templates" / "demo-kind" / "Default.py").read_text()
     assert "'v': 2" in body
+
+
+def test_install_refreshes_manifest_mtime_for_api_recency(tmp_curio, make_archive, manifest_dict):
+    """Reinstall must bump manifest mtime even when bundled zip entries carry stale timestamps."""
+    install_pack_from_archive("guest", make_archive())
+    target = pack_dir("guest", "ai.test.demo@1")
+    mp = target / "manifest.json"
+    stale = 1_000_000.0
+    os.utime(mp, (stale, stale))
+
+    reinstall = make_archive(manifest=manifest_dict(version="1.0.1"))
+    install_pack_from_archive("guest", reinstall, replace=True)
+    assert mp.stat().st_mtime > stale
 
 
 @pytest.mark.parametrize(
