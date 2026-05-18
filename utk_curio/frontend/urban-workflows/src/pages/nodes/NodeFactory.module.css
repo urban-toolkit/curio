@@ -273,10 +273,21 @@
     margin-bottom: 8px;
 }
 
+.kindTitleBlock {
+    margin-bottom: 10px;
+}
+
 .kindTitle {
     margin: 0;
     font-size: 0.9375rem;
     font-weight: 500;
+}
+
+.kindTitleSub {
+    margin-top: 4px;
+    font-size: 0.75rem;
+    color: #7a786d;
+    font-weight: 400;
 }
 
 .removeBtn {
