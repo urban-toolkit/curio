@@ -694,9 +694,26 @@ const Step3Template: React.FC<{
     </p>
     {draft.kinds.map((kind, i) => (
       <div key={i} className={styles.kindEntry}>
-        <h3 className={styles.kindTitle}>
-          {kind.id} ({kind.engine})
-        </h3>
+        <div className={styles.kindTitleBlock}>
+          <h3 className={styles.kindTitle}>
+            {kind.label.trim() || kind.id}
+          </h3>
+          <div className={styles.kindTitleSub}>
+            {kind.id} · {kind.engine}
+          </div>
+        </div>
+        <div className={styles.field}>
+          <label className={styles.fieldLabel}>Node title</label>
+          <input
+            className={styles.input}
+            value={kind.label}
+            onChange={(e) => updateKind(i, { label: e.target.value })}
+          />
+          <span className={styles.fieldHint}>
+            Shown in the packs palette and the node header (manifest{" "}
+            <code>label</code>).
+          </span>
+        </div>
         <div className={styles.row}>
           <div className={styles.field}>
             <label className={styles.fieldLabel}>Editor</label>
