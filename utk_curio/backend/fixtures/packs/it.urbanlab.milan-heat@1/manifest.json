@@ -39,7 +39,12 @@
       "hasGrammar": false,
       "inputPorts": [],
       "outputPorts": [
-        { "types": ["RASTER"], "cardinality": "1" }
+        {
+          "types": [
+            "RASTER"
+          ],
+          "cardinality": "1"
+        }
       ],
       "templateDir": "templates/mrt-load",
       "defaultTemplate": "templates/mrt-load/Milan_MRT_GeoTIFF.py"
@@ -57,7 +62,12 @@
       "hasGrammar": false,
       "inputPorts": [],
       "outputPorts": [
-        { "types": ["DATAFRAME"], "cardinality": "1" }
+        {
+          "types": [
+            "DATAFRAME"
+          ],
+          "cardinality": "1"
+        }
       ],
       "templateDir": "templates/weather-load",
       "defaultTemplate": "templates/weather-load/ERA5_Milan_CSV.py"
@@ -75,7 +85,12 @@
       "hasGrammar": false,
       "inputPorts": [],
       "outputPorts": [
-        { "types": ["GEODATAFRAME"], "cardinality": "1" }
+        {
+          "types": [
+            "GEODATAFRAME"
+          ],
+          "cardinality": "1"
+        }
       ],
       "templateDir": "templates/census-load",
       "defaultTemplate": "templates/census-load/Milan_Census_GeoJSON.py"
@@ -92,10 +107,21 @@
       "hasWidgets": false,
       "hasGrammar": false,
       "inputPorts": [
-        { "types": ["RASTER", "DATAFRAME"], "cardinality": "[1,2]" }
+        {
+          "types": [
+            "RASTER",
+            "DATAFRAME"
+          ],
+          "cardinality": "[1,2]"
+        }
       ],
       "outputPorts": [
-        { "types": ["JSON"], "cardinality": "1" }
+        {
+          "types": [
+            "JSON"
+          ],
+          "cardinality": "1"
+        }
       ],
       "templateDir": "templates/utci-compute",
       "defaultTemplate": "templates/utci-compute/UTCI_From_Raster_And_Weather.py"
@@ -112,10 +138,22 @@
       "hasWidgets": false,
       "hasGrammar": false,
       "inputPorts": [
-        { "types": ["RASTER", "JSON", "GEODATAFRAME"], "cardinality": "[1,n]" }
+        {
+          "types": [
+            "RASTER",
+            "JSON",
+            "GEODATAFRAME"
+          ],
+          "cardinality": "[1,n]"
+        }
       ],
       "outputPorts": [
-        { "types": ["GEODATAFRAME"], "cardinality": "1" }
+        {
+          "types": [
+            "GEODATAFRAME"
+          ],
+          "cardinality": "1"
+        }
       ],
       "templateDir": "templates/utci-zonal",
       "defaultTemplate": "templates/utci-zonal/UTCI_Zonal_Mean.py"
@@ -132,10 +170,20 @@
       "hasWidgets": false,
       "hasGrammar": false,
       "inputPorts": [
-        { "types": ["GEODATAFRAME"], "cardinality": "1" }
+        {
+          "types": [
+            "GEODATAFRAME"
+          ],
+          "cardinality": "1"
+        }
       ],
       "outputPorts": [
-        { "types": ["GEODATAFRAME"], "cardinality": "1" }
+        {
+          "types": [
+            "GEODATAFRAME"
+          ],
+          "cardinality": "1"
+        }
       ],
       "templateDir": "templates/census-reproject",
       "defaultTemplate": "templates/census-reproject/Reproject_3395_Filter_Positive.py"
@@ -152,13 +200,24 @@
       "hasWidgets": false,
       "hasGrammar": false,
       "inputPorts": [
-        { "types": ["GEODATAFRAME"], "cardinality": "1" }
+        {
+          "types": [
+            "GEODATAFRAME"
+          ],
+          "cardinality": "1"
+        }
       ],
       "outputPorts": [
-        { "types": ["DATAFRAME"], "cardinality": "1" }
+        {
+          "types": [
+            "DATAFRAME"
+          ],
+          "cardinality": "1"
+        }
       ],
       "templateDir": "templates/gt65-projection",
       "defaultTemplate": "templates/gt65-projection/Gt65_Only.py"
     }
-  ]
+  ],
+  "createdAt": "2026-02-01T12:00:00Z"
 }

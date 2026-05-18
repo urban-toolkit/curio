@@ -104,7 +104,19 @@ def _lineage_to_payload(manifest: PackManifest) -> dict | None:
     }
 
 
-def _manifest_to_payload(manifest: PackManifest) -> dict:
+def _manifest_json_mtime_ms(pack_path: Path) -> int:
+    """Epoch milliseconds of ``manifest.json`` mtime (0 if missing/unreadable).
+
+    Exposed as ``installUpdatedAtMs`` for diagnostics (last write on disk).
+    Canonical pack ordering uses ``createdAtMs`` from the manifest.
+    """
+    try:
+        return int((pack_path / "manifest.json").stat().st_mtime * 1000)
+    except OSError:
+        return 0
+
+
+def _manifest_to_payload(manifest: PackManifest, *, pack_mtime_path: Path | None = None) -> dict:
     kinds = []
     for kind in manifest.kinds:
         kinds.append(
@@ -126,7 +138,7 @@ def _manifest_to_payload(manifest: PackManifest) -> dict:
                 "defaultTemplate": kind.default_template,
             }
         )
-    return {
+    payload = {
         "packId": manifest.pack_id,
         "major": manifest.major,
         "version": manifest.version,
@@ -150,7 +162,13 @@ def _manifest_to_payload(manifest: PackManifest) -> dict:
             if manifest.hidden_from_fork_palette_dock
             else {}
         ),
+        "createdAtMs": manifest.created_at_ms,
     }
+    if manifest.created_at_iso:
+        payload["createdAt"] = manifest.created_at_iso
+    if pack_mtime_path is not None:
+        payload["installUpdatedAtMs"] = _manifest_json_mtime_ms(pack_mtime_path)
+    return payload
 
 
 def _fixtures_root() -> Path:
@@ -230,7 +248,11 @@ def list_installed_packs():
         except ManifestError as exc:
             log.warning("Skipping malformed pack %s: %s", pack_path.name, exc)
             continue
-        out.append(_manifest_to_payload(manifest))
+        out.append(_manifest_to_payload(manifest, pack_mtime_path=pack_path))
+    # Newest ``manifest.createdAt`` first — canonical authoring time / ordering.
+    out.sort(
+        key=lambda p: (-int(p.get("createdAtMs") or 0), p.get("dirName") or ""),
+    )
     return jsonify({"packs": out}), 200
 
 
@@ -313,9 +335,13 @@ def list_catalog_packs():
         except ManifestError as exc:
             log.warning("Skipping malformed fixture %s: %s", entry.name, exc)
             continue
-        payload = _manifest_to_payload(manifest)
+        payload = _manifest_to_payload(manifest, pack_mtime_path=entry)
         payload["installed"] = manifest.dir_name in installed_coords
         out.append(payload)
+
+    out.sort(
+        key=lambda p: (-int(p.get("createdAtMs") or 0), p.get("dirName") or ""),
+    )
 
     triples: list[tuple[str, CatalogReleaseTriple]] = []
     for p in out:
@@ -368,8 +394,9 @@ def upload_pack():
         return _error(str(exc))
     except PackIdError as exc:
         return _error(str(exc))
+    user_pack = pack_dir(user_key, result.manifest.dir_name)
     return jsonify({
-        "pack": _manifest_to_payload(result.manifest),
+        "pack": _manifest_to_payload(result.manifest, pack_mtime_path=user_pack),
         "integrity": result.integrity,
         "replacedExisting": result.replaced_existing,
     }), 201
@@ -405,8 +432,9 @@ def install_from_catalog():
         result = install_pack_from_directory(user_key, src, replace=replace)
     except InstallerError as exc:
         return _error(str(exc))
+    user_pack = pack_dir(user_key, result.manifest.dir_name)
     return jsonify({
-        "pack": _manifest_to_payload(result.manifest),
+        "pack": _manifest_to_payload(result.manifest, pack_mtime_path=user_pack),
         "integrity": result.integrity,
         "replacedExisting": result.replaced_existing,
     }), 201
@@ -504,7 +532,7 @@ def factory_publish_catalog():
         return _error(str(exc))
     catalog_path = fixtures / result.manifest.dir_name
     return jsonify({
-        "pack": _manifest_to_payload(result.manifest),
+        "pack": _manifest_to_payload(result.manifest, pack_mtime_path=catalog_path),
         "integrity": result.integrity,
         "replacedExisting": result.replaced_existing,
         "filename": built.filename,
@@ -555,8 +583,9 @@ def factory_install():
         return _error(str(exc))
     except InstallerError as exc:
         return _error(str(exc))
+    user_pack = pack_dir(user_key, result.manifest.dir_name)
     return jsonify({
-        "pack": _manifest_to_payload(result.manifest),
+        "pack": _manifest_to_payload(result.manifest, pack_mtime_path=user_pack),
         "integrity": result.integrity,
         "replacedExisting": result.replaced_existing,
         "filename": built.filename,

@@ -8,7 +8,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import { useReactFlow } from "reactflow";
 import { packsApi, refreshPackRegistry } from "../../../../api/packsApi";
-import type { PackPayload } from "../../../../api/packsApi";
+import type { InstallResponse, PackPayload } from "../../../../api/packsApi";
 import { subscribeToRegistry } from "../../../../registry";
 import { draftPackSectionKey, usePackPalette } from "../../../../providers/PackPaletteContext";
 import { useNodeFactoryModal } from "../../../../providers/NodeFactoryModalProvider";
@@ -27,18 +27,20 @@ import {
 } from "../../../../utils/forkPackLineage";
 import { InstalledPackAccordion } from "./InstalledPackAccordion";
 import { PaletteForkFamily } from "./PaletteForkFamily";
-import {
-    visiblePaletteTriggerKindsCount,
-    type PackPaletteGroup,
-} from "./model";
+import { visiblePaletteTriggerKindsCount, type PackPaletteGroup } from "./model";
 import { PackCanvasDropSlot, PackStagedCanvasRow } from "./PackPaletteRows";
 import { paletteDescriptorBootstrapKey } from "./registryBootstrap";
 import packStyles from "./ToolsMenuPackPalette.module.css";
+
+function escapeCssAttrToken(coord: string): string {
+    return typeof CSS !== "undefined" && typeof CSS.escape === "function" ? CSS.escape(coord) : coord;
+}
 
 export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups }: { groups: PackPaletteGroup[] }) {
     const [open, setOpen] = useState(false);
     const [savingDraft, setSavingDraft] = useState(false);
     const rootRef = useRef<HTMLDivElement>(null);
+    const packPaletteScrollRef = useRef<HTMLDivElement>(null);
     const { openNodeFactory } = useNodeFactoryModal();
     const { showToast } = useToastContext();
     const { getTemplates } = useTemplateContext();
@@ -48,10 +50,28 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
         setActivePackKey,
         packsPaletteEditMode,
         setPacksPaletteEditMode,
+        paletteDockRevealCoord,
+        setPaletteDockRevealCoord,
         draftPackSectionIds,
         registerDraftPackSection,
         stagedRowsByPackKey,
     } = usePackPalette();
+
+    const onPackInstalledFocusDock = useCallback(
+        (pack: Pick<PackPayload, "packId" | "major">) => {
+            const coord = `${pack.packId}@${pack.major}`;
+            setPaletteDockRevealCoord(coord);
+            setActivePackKey(coord);
+        },
+        [setActivePackKey, setPaletteDockRevealCoord],
+    );
+
+    const onFactoryModalInstallSuccess = useCallback(
+        (result: InstallResponse) => {
+            onPackInstalledFocusDock(result.pack);
+        },
+        [onPackInstalledFocusDock],
+    );
 
     const [forkManualPickByRoot, setForkManualPickByRoot] = useState<Record<string, string>>({});
     const [paletteCatalogSnapshot, setPaletteCatalogSnapshot] = useState<{
@@ -68,6 +88,14 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
     );
 
     const close = useCallback(() => setOpen(false), []);
+
+    const prevPaletteOpenRef = useRef(false);
+    useEffect(() => {
+        if (prevPaletteOpenRef.current && !open) {
+            setPaletteDockRevealCoord(null);
+        }
+        prevPaletteOpenRef.current = open;
+    }, [open, setPaletteDockRevealCoord]);
     const toggle = useCallback(() => setOpen((v) => !v), []);
 
     const packRegistryBootstrapKey = useSyncExternalStore(
@@ -92,6 +120,8 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
         if (!open || packsPaletteEditMode) return;
         const onDocMouseDown = (ev: MouseEvent) => {
             if (rootRef.current?.contains(ev.target as Node)) return;
+            const t = ev.target;
+            if (t instanceof Element && t.closest('[data-curio-node-factory-overlay="true"]')) return;
             close();
         };
         document.addEventListener("mousedown", onDocMouseDown, true);
@@ -129,6 +159,44 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
         };
     }, [open, showToast, packRegistryBootstrapKey]);
 
+    useEffect(() => {
+        const coord = paletteDockRevealCoord?.trim();
+        if (!open || !coord) return undefined;
+
+        const scrollEl = packPaletteScrollRef.current;
+        let cancelled = false;
+        let attempts = 0;
+        const maxAttempts = 48;
+
+        const tryReveal = (): void => {
+            if (cancelled || !scrollEl) return;
+            const sel = `:scope > [data-pack-palette-coords~="${escapeCssAttrToken(coord)}"]`;
+            const anchor = scrollEl.querySelector<HTMLElement>(sel);
+            attempts++;
+            if (!anchor?.isConnected || !scrollEl.contains(anchor)) {
+                if (attempts < maxAttempts) requestAnimationFrame(tryReveal);
+                else setPaletteDockRevealCoord(null);
+                return;
+            }
+            anchor.scrollIntoView({ behavior: "smooth", block: "start", inline: "nearest" });
+            const details = anchor.querySelector("details");
+            if (details) details.open = true;
+            setPaletteDockRevealCoord(null);
+        };
+
+        const id = window.requestAnimationFrame(tryReveal);
+        return () => {
+            cancelled = true;
+            window.cancelAnimationFrame(id);
+        };
+    }, [
+        open,
+        packRegistryBootstrapKey,
+        paletteDockRevealCoord,
+        paletteRows,
+        setPaletteDockRevealCoord,
+    ]);
+
     const openWizardForPaletteSection = useCallback(
         (sectionKey: string, opts: { group?: PackPaletteGroup; draftUuid?: string }) => {
             const stagedRows = [...(stagedRowsByPackKey[sectionKey] ?? [])];
@@ -139,6 +207,7 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
                     openNodeFactory({
                         draft: draftForkFromInstalledPackPayload(row, getTemplates),
                         forkInstallNotice: true,
+                        onInstallSuccess: onFactoryModalInstallSuccess,
                     });
                     return;
                 }
@@ -165,6 +234,7 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
                         openNodeFactory({
                             draft: draftForkFromInstalledPackPayload(found, getTemplates),
                             forkInstallNotice: true,
+                            onInstallSuccess: onFactoryModalInstallSuccess,
                         });
                     } catch (e) {
                         showToast(
@@ -207,12 +277,13 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
                 showToast("Could not derive a factory draft from the staged nodes.", "error");
                 return;
             }
-            openNodeFactory({ draft });
+            openNodeFactory({ draft, onInstallSuccess: onFactoryModalInstallSuccess });
         },
         [
             getNodes,
             getTemplates,
             groups,
+            onFactoryModalInstallSuccess,
             openNodeFactory,
             packsPaletteEditMode,
             showToast,
@@ -257,6 +328,7 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
             const nodes = getNodes();
             let installs = 0;
             let skippedSections = 0;
+            let lastInstalledCoord: string | null = null;
 
             for (const draftId of draftPackSectionIds) {
                 const sectionKey = draftPackSectionKey(draftId);
@@ -281,6 +353,7 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
                 const coord = `${draft.packId}@${draft.major}`;
                 const overwriteInstalledPackPalette = groups.some((g) => g.key === coord);
                 await packsApi.factoryInstall(buildFactoryInstallEnvelope(draft, overwriteInstalledPackPalette));
+                lastInstalledCoord = coord;
                 installs++;
             }
 
@@ -299,7 +372,9 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
                     skippedSections++;
                     continue;
                 }
+                const coordAfter = `${draft.packId}@${draft.major}`;
                 await packsApi.factoryInstall(buildFactoryInstallEnvelope(draft, false));
+                lastInstalledCoord = coordAfter;
                 installs++;
             }
 
@@ -309,6 +384,11 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
             }
 
             await refreshPackRegistry();
+
+            if (lastInstalledCoord != null) {
+                setPaletteDockRevealCoord(lastInstalledCoord);
+                setActivePackKey(lastInstalledCoord);
+            }
 
             showToast(
                 skippedSections > 0
@@ -328,7 +408,9 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
         getTemplates,
         groups,
         savingDraft,
+        setActivePackKey,
         setPacksPaletteEditMode,
+        setPaletteDockRevealCoord,
         showToast,
         stagedRowsByPackKey,
     ]);
@@ -405,7 +487,7 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
                         )}
                     </div>
                     <div className={packStyles.packPalettePanelTitle}>Nodes by pack</div>
-                    <div className={packStyles.packPaletteScroll}>
+                    <div ref={packPaletteScrollRef} className={packStyles.packPaletteScroll}>
                         {packsPaletteEditMode ? (
                             <button
                                 type="button"
@@ -468,40 +550,50 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
                             : null}
                         {paletteRows.map((row) =>
                             row.kind === "singleton" ? (
-                                <InstalledPackAccordion
+                                <div
                                     key={row.group.key}
-                                    group={row.group}
-                                    activePackKey={activePackKey}
-                                    setActivePackKey={setActivePackKey}
-                                    packsPaletteEditMode={packsPaletteEditMode}
-                                    stagedInstalledRows={stagedRowsByPackKey[row.group.key] ?? []}
-                                    openWizardForPaletteSection={openWizardForPaletteSection}
-                                    catalogMetadataLoaded={paletteCatalogSnapshot !== null}
-                                    catalogPublishAllowed={paletteCatalogSnapshot?.publishAllowed ?? true}
-                                    isCatalogPublished={
-                                        paletteCatalogSnapshot?.publishedDirNames.has(row.group.key) ?? false
-                                    }
-                                    publishingPackKey={publishingPackKey}
-                                    onPublishToCatalog={onPublishToCatalog}
-                                />
+                                    className={packStyles.packPaletteRowAnchor}
+                                    data-pack-palette-coords={row.group.key}
+                                >
+                                    <InstalledPackAccordion
+                                        group={row.group}
+                                        activePackKey={activePackKey}
+                                        setActivePackKey={setActivePackKey}
+                                        packsPaletteEditMode={packsPaletteEditMode}
+                                        stagedInstalledRows={stagedRowsByPackKey[row.group.key] ?? []}
+                                        openWizardForPaletteSection={openWizardForPaletteSection}
+                                        catalogMetadataLoaded={paletteCatalogSnapshot !== null}
+                                        catalogPublishAllowed={paletteCatalogSnapshot?.publishAllowed ?? true}
+                                        isCatalogPublished={
+                                            paletteCatalogSnapshot?.publishedDirNames.has(row.group.key) ?? false
+                                        }
+                                        publishingPackKey={publishingPackKey}
+                                        onPublishToCatalog={onPublishToCatalog}
+                                    />
+                                </div>
                             ) : (
-                                <PaletteForkFamily
+                                <div
                                     key={`fork-family:${row.rootKey}`}
-                                    rootKey={row.rootKey}
-                                    members={row.members}
-                                    activePackKey={activePackKey}
-                                    setActivePackKey={setActivePackKey}
-                                    packsPaletteEditMode={packsPaletteEditMode}
-                                    stagedRowsByPackKey={stagedRowsByPackKey}
-                                    forkManualPickByRoot={forkManualPickByRoot}
-                                    setForkManualPickByRoot={setForkManualPickByRoot}
-                                    openWizardForPaletteSection={openWizardForPaletteSection}
-                                    catalogMetadataLoaded={paletteCatalogSnapshot !== null}
-                                    catalogPublishAllowed={paletteCatalogSnapshot?.publishAllowed ?? true}
-                                    publishingPackKey={publishingPackKey}
-                                    catalogPublishedDirNames={paletteCatalogSnapshot?.publishedDirNames ?? null}
-                                    onPublishToCatalog={onPublishToCatalog}
-                                />
+                                    className={packStyles.packPaletteRowAnchor}
+                                    data-pack-palette-coords={row.members.map((m) => m.key).join(" ")}
+                                >
+                                    <PaletteForkFamily
+                                        rootKey={row.rootKey}
+                                        members={row.members}
+                                        activePackKey={activePackKey}
+                                        setActivePackKey={setActivePackKey}
+                                        packsPaletteEditMode={packsPaletteEditMode}
+                                        stagedRowsByPackKey={stagedRowsByPackKey}
+                                        forkManualPickByRoot={forkManualPickByRoot}
+                                        setForkManualPickByRoot={setForkManualPickByRoot}
+                                        openWizardForPaletteSection={openWizardForPaletteSection}
+                                        catalogMetadataLoaded={paletteCatalogSnapshot !== null}
+                                        catalogPublishAllowed={paletteCatalogSnapshot?.publishAllowed ?? true}
+                                        publishingPackKey={publishingPackKey}
+                                        catalogPublishedDirNames={paletteCatalogSnapshot?.publishedDirNames ?? null}
+                                        onPublishToCatalog={onPublishToCatalog}
+                                    />
+                                </div>
                             ),
                         )}
                     </div>

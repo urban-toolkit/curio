@@ -61,6 +61,8 @@ export interface Draft {
   kinds: KindDraft[];
   /** Fork provenance when saving from the palette editor against an installed pack. */
   lineage: PackLineageDraft | null;
+  /** Manifest ``createdAt`` (ISO instant). Omit to let backend stamp UTC on build/install. */
+  createdAt?: string;
   readme: string;
   licenseText: string;
 }
@@ -179,6 +181,10 @@ export function toApiPayload(d: Draft): {
       defaultTemplate: k.defaultTemplate,
     })),
   };
+
+  if (typeof d.createdAt === "string" && d.createdAt.trim()) {
+    manifest.createdAt = d.createdAt.trim();
+  }
 
   if (d.lineage) {
     manifest.lineage = {

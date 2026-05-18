@@ -37,7 +37,13 @@
       "hasGrammar": false,
       "inputPorts": [],
       "outputPorts": [
-        { "types": ["RASTER", "DATAFRAME"], "cardinality": "[1,n]" }
+        {
+          "types": [
+            "RASTER",
+            "DATAFRAME"
+          ],
+          "cardinality": "[1,n]"
+        }
       ],
       "templateDir": "templates/uhvi-load",
       "defaultTemplate": "templates/uhvi-load/UHVI_Load_Basic.py"
@@ -55,7 +61,12 @@
       "hasGrammar": false,
       "inputPorts": [],
       "outputPorts": [
-        { "types": ["GEODATAFRAME"], "cardinality": "1" }
+        {
+          "types": [
+            "GEODATAFRAME"
+          ],
+          "cardinality": "1"
+        }
       ],
       "templateDir": "templates/uhvi-zones",
       "defaultTemplate": "templates/uhvi-zones/UHVI_Zones_Shapefile.py"
@@ -72,13 +83,25 @@
       "hasWidgets": true,
       "hasGrammar": false,
       "inputPorts": [
-        { "types": ["RASTER", "GEODATAFRAME"], "cardinality": "[1,2]" }
+        {
+          "types": [
+            "RASTER",
+            "GEODATAFRAME"
+          ],
+          "cardinality": "[1,2]"
+        }
       ],
       "outputPorts": [
-        { "types": ["GEODATAFRAME"], "cardinality": "1" }
+        {
+          "types": [
+            "GEODATAFRAME"
+          ],
+          "cardinality": "1"
+        }
       ],
       "templateDir": "templates/uhvi-zonal",
       "defaultTemplate": "templates/uhvi-zonal/UHVI_Zonal_Mean.py"
     }
-  ]
+  ],
+  "createdAt": "2024-01-01T10:00:00Z"
 }

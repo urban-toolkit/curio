@@ -464,6 +464,9 @@ export function draftFromInstalledPackPayload(
       }
     : null;
   d.kinds = pack.kinds.map((k) => packKindPayloadToKindDraft(k, getTemplates));
+  if (typeof pack.createdAt === "string" && pack.createdAt.trim()) {
+    d.createdAt = pack.createdAt.trim();
+  }
   return d;
 }
 
@@ -496,5 +499,6 @@ export function draftForkFromInstalledPackPayload(
     ? { packId: anchor.packId, major: anchor.major }
     : forkedFrom;
   d.lineage = { forkedFrom, root };
+  delete d.createdAt;
   return d;
 }

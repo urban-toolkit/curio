@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -171,4 +172,19 @@ def test_hidden_flag_must_be_boolean(tmp_path: Path, bad_hidden: object) -> None
         curio={"paletteDock": {"hiddenFromForkPaletteDock": bad_hidden}},
     )
     with pytest.raises(ManifestError, match="hiddenFromForkPaletteDock"):
+        load_pack_manifest(d)
+
+
+def test_load_optional_created_at_parses_iso_z(tmp_path: Path) -> None:
+    d = _write_pack_dir(tmp_path, "ai.test.created", 1, createdAt="2024-05-20T08:09:11Z")
+    m = load_pack_manifest(d)
+    assert m.created_at_iso is not None and m.created_at_iso.endswith("Z")
+    assert m.created_at_ms == int(
+        datetime(2024, 5, 20, 8, 9, 11, tzinfo=timezone.utc).timestamp() * 1000
+    )
+
+
+def test_created_at_invalid_raises(tmp_path: Path) -> None:
+    d = _write_pack_dir(tmp_path, "ai.test.bad.created", 1, createdAt="not-a-datetime")
+    with pytest.raises(ManifestError, match="createdAt"):
         load_pack_manifest(d)

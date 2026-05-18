@@ -83,6 +83,19 @@ export interface PackPayload {
    * Omitted unless `hiddenFromForkPaletteDock` is true.
    */
   paletteDock?: { hiddenFromForkPaletteDock?: boolean };
+  /**
+   * ISO 8601 instant from manifest ``createdAt``. Omitted only for malformed legacy rows.
+   */
+  createdAt?: string;
+  /**
+   * Epoch milliseconds for ``manifest.createdAt`` (canonical pack creation / authoring time).
+   * Zero when absent; API lists sort newest-first primarily by this field.
+   */
+  createdAtMs?: number;
+  /**
+   * Epoch ms of ``manifest.json`` filesystem mtime (diagnostic — not used for canonical ordering).
+   */
+  installUpdatedAtMs?: number;
 }
 
 export interface CatalogFamilyPayload {

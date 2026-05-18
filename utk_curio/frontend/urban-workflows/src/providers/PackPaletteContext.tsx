@@ -1,4 +1,11 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 
 const DRAFT_PREFIX = '__draft__:';
 
@@ -34,6 +41,10 @@ export type PackPaletteContextValue = {
   packsPaletteEditMode: boolean;
   setPacksPaletteEditMode: (on: boolean) => void;
 
+  /** `packId@major` targeted for reveal (scroll/expand); consumed after handling; cleared when that panel closes. */
+  paletteDockRevealCoord: string | null;
+  setPaletteDockRevealCoord: (coord: string | null) => void;
+
   draftPackSectionIds: readonly string[];
   registerDraftPackSection: () => void;
 
@@ -46,6 +57,7 @@ const PackPaletteContext = createContext<PackPaletteContextValue | null>(null);
 
 export function PackPaletteProvider({ children }: { children: React.ReactNode }) {
   const [activePackKey, setActivePackKey] = useState<string | null>(null);
+  const [paletteDockRevealCoord, setPaletteDockRevealCoord] = useState<string | null>(null);
   const [packsPaletteEditMode, setPacksPaletteEditMode] = useState(false);
   const [draftPackSectionIds, setDraftPackSectionIds] = useState<string[]>([]);
   const [stagedRowsByPackKey, setStagedRowsByPackKey] = useState<Record<string, PackStagedRow[]>>({});
@@ -95,6 +107,8 @@ export function PackPaletteProvider({ children }: { children: React.ReactNode })
       setActivePackKey,
       packsPaletteEditMode,
       setPacksPaletteEditMode,
+      paletteDockRevealCoord,
+      setPaletteDockRevealCoord,
       draftPackSectionIds,
       registerDraftPackSection,
       stagedRowsByPackKey,
@@ -104,6 +118,7 @@ export function PackPaletteProvider({ children }: { children: React.ReactNode })
     [
       activePackKey,
       packsPaletteEditMode,
+      paletteDockRevealCoord,
       draftPackSectionIds,
       registerDraftPackSection,
       stagedRowsByPackKey,

@@ -88,6 +88,11 @@
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+.packPaletteRowAnchor {
+    margin: 0;
+    padding: 0;
+}
+
 .packPaletteScroll {
     overflow-y: auto;
     padding: 6px 8px 10px;

@@ -23,6 +23,7 @@ def _draft():
         "manifest": {
             "id": "ai.test.factory",
             "version": "1.0.0",
+            "createdAt": "2000-01-01T00:00:00Z",
             "name": "Factory test",
             "publisher": "Tests",
             "description": "Built by the wizard",
@@ -68,6 +69,8 @@ def test_catalog_lists_committed_fixtures(client, user_and_token, tmp_curio):
     assert item["dirName"] == "ai.urbanlab.uhvi@1"
     assert item["lineage"] is None
     assert item["familyKey"] == "ai.urbanlab.uhvi@1"
+    assert isinstance(item["installUpdatedAtMs"], int)
+    assert isinstance(item["createdAtMs"], int)
     assert item["channel"] == "stable"
     body = resp.get_json()
     assert "families" in body and isinstance(body["families"], list)
@@ -94,7 +97,36 @@ def test_list_installed_serializes_lineage(
     pack = next(p for p in resp.get_json()["packs"] if p["packId"] == "curio.test.lineage.pack")
     assert pack["lineage"] == lineage
     assert pack["familyKey"] == "ai.upstream.catalog@1"
+    assert isinstance(pack["installUpdatedAtMs"], int)
+    assert isinstance(pack["createdAtMs"], int)
 
+
+def test_list_installed_orders_by_created_at_ms_newest_first(
+    client, user_and_token, tmp_curio, install_pack, manifest_dict,
+):
+    """``GET /api/packs`` lists packs sorted by canonical ``manifest.createdAt``."""
+
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user, token = user_and_token
+    uk = _user_dir_key(user)
+    install_pack(
+        uk,
+        manifest=manifest_dict(
+            pack_id="ai.sort.older",
+            created_at="2020-01-01T00:00:00Z",
+        ),
+    )
+    install_pack(
+        uk,
+        manifest=manifest_dict(
+            pack_id="ai.sort.newer",
+            created_at="2030-01-01T00:00:00Z",
+        ),
+    )
+    packs = client.get("/api/packs", headers=_auth(token)).get_json()["packs"]
+    ours = [p for p in packs if p["packId"] in ("ai.sort.older", "ai.sort.newer")]
+    assert [p["packId"] for p in ours] == ["ai.sort.newer", "ai.sort.older"]
 
 def test_fork_install_sets_parent_palette_dock_hidden_and_toggle_round_trip(client, user_and_token, tmp_curio, install_pack, manifest_dict):
     from utk_curio.backend.app.projects.services import _user_dir_key

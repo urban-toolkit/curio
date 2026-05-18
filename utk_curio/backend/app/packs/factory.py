@@ -62,6 +62,7 @@ import json
 import re
 import zipfile
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from utk_curio.backend.app.packs.manifest import (
@@ -155,6 +156,17 @@ def _validate_sources(
     return out
 
 
+def _stamp_manifest_created_at_when_absent(raw: dict[str, Any]) -> dict[str, Any]:
+    """Shallow-copy *raw* and set ``createdAt`` to UTC ISO if missing / blank."""
+
+    merged = dict(raw)
+    cv = merged.get("createdAt")
+    if isinstance(cv, str) and cv.strip():
+        return merged
+    merged["createdAt"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return merged
+
+
 def _validate_manifest_dict(raw: dict[str, Any]) -> PackManifest:
     """Round-trip the manifest dict through the on-disk validator.
 
@@ -212,17 +224,16 @@ def build_pack_archive(draft: dict[str, Any]) -> BuildResult:
     readme = draft.get("readme")
     license_text = draft.get("license_text") or draft.get("licenseText")
 
-    manifest = _validate_manifest_dict(manifest_raw)
+    manifest_authoring = _stamp_manifest_created_at_when_absent(dict(manifest_raw))
+    manifest = _validate_manifest_dict(manifest_authoring)
     validated_sources = _validate_sources(manifest, sources)
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, mode="w") as zf:
-        # 1. manifest.json — re-serialised through the validator's view,
-        # not the caller's raw bytes, so optional / defaulted fields are
-        # normalised consistently.
+        # 1. manifest.json — canonical ``createdAt`` may be stamped here if absent.
         _add_entry(
             zf, "manifest.json",
-            json.dumps(manifest_raw, indent=2, sort_keys=True).encode("utf-8"),
+            json.dumps(manifest_authoring, indent=2, sort_keys=True).encode("utf-8"),
         )
 
         # 2. templates/<kindId>/<file>.py — deterministic ordering.

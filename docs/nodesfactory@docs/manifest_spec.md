@@ -83,6 +83,7 @@ After install, the archive is extracted verbatim into the per-user pack store (l
 | `signing` | object | no | See §2.5. Optional in v1; required for partner / verified packs. |
 | `integrity` | object | no | Auto-filled by the installer at extract time (`sha256` over manifest + asset tree). Must be omitted by the author. |
 | `lineage` | object | no | Fork provenance; see §2.4. **Implemented** in [`utk_curio/backend/app/packs/manifest.py`](../../utk_curio/backend/app/packs/manifest.py). Omit for catalog originals. |
+| `createdAt` | string | no | **Implemented:** ISO 8601 instant (`…Z` or offset). Canonical pack authoring / creation timestamp. ``GET /api/packs`` returns ``createdAt`` (when present) and parsed ``createdAtMs`` for ordering (newest-first). Factories stamp UTC when the field is missing; installers persist ``createdAt`` on first unpack if absent. Missing or unset timestamps sort as epoch `0`. |
 
 ### 2.1 `compatibility`
 

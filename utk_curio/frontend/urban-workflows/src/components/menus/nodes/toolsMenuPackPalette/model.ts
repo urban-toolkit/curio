@@ -2,6 +2,7 @@ import { PACK_STAGING_MIME } from "../../../../constants/packPaletteStaging";
 import { draftPackSectionKey, type PackStagedRow } from "../../../../providers/PackPaletteContext";
 import { NodeDescriptor, NodePackMeta } from "../../../../registry/types";
 import {
+    paletteGroupCreatedAtMs,
     resolveForkFamilySelectionKey,
     type PalettePackRow,
 } from "../../../../utils/forkPackLineage";
@@ -31,7 +32,10 @@ export function formatPackSectionLabel(meta: NodePackMeta): string {
     return coord;
 }
 
-/** One group per installed pack coordinate (`packId@major`). */
+/**
+ * One group per installed pack coordinate (`packId@major`).
+ * Rows are **newest-first** by canonical `createdAtMs` from `manifest.createdAt`.
+ */
 export function groupPalettePacks(packTypes: NodeDescriptor[]): PackPaletteGroup[] {
     const byKey = new Map<string, NodeDescriptor[]>();
     for (const d of packTypes) {
@@ -48,7 +52,11 @@ export function groupPalettePacks(packTypes: NodeDescriptor[]): PackPaletteGroup
             const label = formatPackSectionLabel(sorted[0].pack!);
             return { key, label, descriptors: sorted };
         })
-        .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
+        .sort((a, b) => {
+            const c = paletteGroupCreatedAtMs(b) - paletteGroupCreatedAtMs(a);
+            if (c !== 0) return c;
+            return a.key.localeCompare(b.key, undefined, { sensitivity: "base" });
+        });
 }
 
 /**

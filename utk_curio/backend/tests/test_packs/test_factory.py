@@ -24,6 +24,7 @@ def _draft(**overrides):
         "description": "Test pack",
         "license": "MIT",
         "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
+        "createdAt": "2000-01-01T00:00:00Z",
         "permissions": [],
         "dependencies": {"packs": {}, "python": {}, "js": {}},
         "kinds": [

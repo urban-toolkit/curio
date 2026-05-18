@@ -83,6 +83,10 @@ interface RawPack {
     root: { packId: string; major: number };
   } | null;
   paletteDock?: { hiddenFromForkPaletteDock?: boolean };
+  createdAt?: string;
+  createdAtMs?: number | string;
+  /** Epoch ms when the pack manifest was last written on disk (API diagnostic). */
+  installUpdatedAtMs?: number | string;
 }
 
 const KNOWN_CATEGORIES: ReadonlySet<NodeCategory> = new Set([
@@ -117,9 +121,33 @@ function asPortDef(p: { types: string[]; cardinality?: string }): PortDef {
   };
 }
 
+/** Coerces API numeric-ish fields where JSON may stringify large ints in edge proxies. */
+function normalizedEpochMs(raw: unknown): number {
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  if (typeof raw === 'string') {
+    const n = Number(raw);
+    if (Number.isFinite(n)) return n;
+  }
+  return 0;
+}
+
+function normalizedInstallUpdatedAtMs(raw: RawPack['installUpdatedAtMs']): number | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  if (typeof raw === 'string') {
+    const s = raw.trim();
+    if (!s) return undefined;
+    const n = Number(s);
+    if (Number.isFinite(n)) return n;
+  }
+  return undefined;
+}
+
 function buildDescriptor(pack: RawPack, kind: RawPackKind, order: number): NodeDescriptor {
   const inputPorts = kind.inputPorts.map(asPortDef);
   const outputPorts = kind.outputPorts.map(asPortDef);
+
+  const installMsMaybe = normalizedInstallUpdatedAtMs(pack.installUpdatedAtMs);
 
   let handles;
   if (inputPorts.length === 0) handles = outputOnly();
@@ -146,6 +174,11 @@ function buildDescriptor(pack: RawPack, kind: RawPackKind, order: number): NodeD
       ...(pack.paletteDock?.hiddenFromForkPaletteDock === true
         ? { hiddenFromForkPaletteDock: true }
         : {}),
+      ...(typeof pack.createdAt === 'string' && pack.createdAt.trim()
+        ? { createdAt: pack.createdAt.trim() }
+        : {}),
+      createdAtMs: normalizedEpochMs(pack.createdAtMs),
+      ...(installMsMaybe !== undefined ? { installUpdatedAtMs: installMsMaybe } : {}),
     },
     category: asCategory(kind.category),
     label: kind.label,
