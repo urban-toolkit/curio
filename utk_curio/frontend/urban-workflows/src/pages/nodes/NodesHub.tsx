@@ -9,6 +9,7 @@ import {
     refreshPackRegistry,
 } from "../../api/packsApi";
 import { CatalogPublishPill } from "../../components/packs/CatalogPublishPill";
+import { InstallPermissionsDialog } from "../../components/packs/InstallPermissionsDialog";
 import { ForkFamilyPicker } from "../../components/packs/ForkFamilyPicker";
 import { toApiPayload } from "./factoryDraftModel";
 import { useNodeFactoryModal } from "../../providers/NodeFactoryModalProvider";
@@ -842,7 +843,7 @@ const NodesHub: React.FC = () => {
       </div>
 
       {installCandidate && (
-        <InstallDialog
+        <InstallPermissionsDialog
           pack={installCandidate}
           conflicts={conflictReport ?? []}
           busy={busy}
@@ -859,106 +860,6 @@ const NodesHub: React.FC = () => {
           {toast.msg}
         </div>
       )}
-    </div>
-  );
-};
-
-/* -------------------------------------------------------------------- */
-/* Install permissions modal (figma_mockups/02_install_permissions.svg)  */
-/* -------------------------------------------------------------------- */
-
-interface InstallDialogProps {
-  pack: PackPayload;
-  conflicts: ResolveConflict[];
-  busy: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}
-
-const InstallDialog: React.FC<InstallDialogProps> = ({
-  pack, conflicts, busy, onCancel, onConfirm,
-}) => {
-  const hasConflicts = conflicts.length > 0;
-  const pythonDeps = Object.entries(pack.dependencies.python);
-  const jsDeps = Object.entries(pack.dependencies.js);
-  return (
-    <div className={styles.modalBackdrop} role="dialog" aria-modal="true">
-      <div className={styles.modal}>
-        <h2 className={styles.modalTitle}>Install "{pack.name}"</h2>
-        <p className={styles.modalSubtitle}>
-          {pack.publisher} · v{pack.version}
-        </p>
-
-        {pack.permissions.length > 0 && (
-          <>
-            <p className={styles.depsTitle}>Permissions requested</p>
-            <ul className={styles.permList}>
-              {pack.permissions.map((perm) => (
-                <li key={perm} className={styles.permItem}>
-                  <span className={styles.permIcon}>●</span>
-                  {perm}
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-
-        {(pythonDeps.length > 0 || jsDeps.length > 0) && (
-          <div className={styles.depsBox}>
-            <p className={styles.depsTitle}>Dependencies</p>
-            {pythonDeps.map(([pkg, range]) => (
-              <div key={`py:${pkg}`} className={styles.depRow}>
-                <code>python · {pkg}</code>
-                <code>{range}</code>
-              </div>
-            ))}
-            {jsDeps.map(([pkg, range]) => (
-              <div key={`js:${pkg}`} className={styles.depRow}>
-                <code>js · {pkg}</code>
-                <code>{range}</code>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {hasConflicts && (
-          <div className={styles.conflictsBox}>
-            <p className={styles.conflictTitle}>
-              Dependency conflicts with installed packs
-            </p>
-            {conflicts.map((c) => (
-              <div key={c.package}>
-                <p>
-                  <strong>{c.package}</strong>
-                </p>
-                <ul style={{ margin: "4px 0", paddingLeft: 18 }}>
-                  {c.ranges.map((r) => (
-                    <li key={r.packDir}>
-                      <code>{r.packDir}</code>: <code>{r.range}</code>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-            <p style={{ fontSize: "0.8125rem", marginTop: 8 }}>
-              Uninstall one of the conflicting packs before installing this one.
-            </p>
-          </div>
-        )}
-
-        <div className={styles.modalFooter}>
-          <button className={styles.ghostButton} onClick={onCancel} disabled={busy}>
-            Cancel
-          </button>
-          <button
-            className={styles.actionButton}
-            onClick={onConfirm}
-            disabled={busy || hasConflicts}
-          >
-            {busy ? "Installing…" : "Install"}
-          </button>
-        </div>
-      </div>
     </div>
   );
 };

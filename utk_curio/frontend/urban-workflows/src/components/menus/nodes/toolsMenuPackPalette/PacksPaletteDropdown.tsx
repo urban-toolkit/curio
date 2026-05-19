@@ -12,6 +12,7 @@ import type { InstallResponse, PackPayload } from "../../../../api/packsApi";
 import { subscribeToRegistry } from "../../../../registry";
 import { draftPackSectionKey, usePackPalette } from "../../../../providers/PackPaletteContext";
 import { useNodeFactoryModal } from "../../../../providers/NodeFactoryModalProvider";
+import { useNodeWarehouseDrawer } from "../../../../providers/NodeWarehouseDrawerProvider";
 import { useToastContext } from "../../../../providers/ToastProvider";
 import { useTemplateContext } from "../../../../providers/TemplateProvider";
 import {
@@ -42,6 +43,7 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
     const rootRef = useRef<HTMLDivElement>(null);
     const packPaletteScrollRef = useRef<HTMLDivElement>(null);
     const { openNodeFactory } = useNodeFactoryModal();
+    const { openNodeWarehouseDrawer } = useNodeWarehouseDrawer();
     const { showToast } = useToastContext();
     const { getTemplates } = useTemplateContext();
     const { getNodes } = useReactFlow();
@@ -122,6 +124,7 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
             if (rootRef.current?.contains(ev.target as Node)) return;
             const t = ev.target;
             if (t instanceof Element && t.closest('[data-curio-node-factory-overlay="true"]')) return;
+            if (t instanceof Element && t.closest('[data-curio-node-warehouse-drawer="true"]')) return;
             close();
         };
         document.addEventListener("mousedown", onDocMouseDown, true);
@@ -441,19 +444,35 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
 
     return (
         <div id="packs-palette" className={packStyles.packPaletteRoot} ref={rootRef}>
-            <button
-                type="button"
-                className={`${packStyles.packPaletteTrigger} ${open ? packStyles.packPaletteTriggerOpen : ""}`}
-                onClick={toggle}
-                aria-expanded={open}
-                aria-haspopup="true"
-                title={open ? "Close pack nodes" : "Open pack nodes"}
-            >
-                <FontAwesomeIcon icon={faCube} className={packStyles.packPaletteTriggerIcon} />
-                <span className={packStyles.packPaletteTriggerLabel}>Packs</span>
-                <span className={packStyles.packPaletteTriggerCount}>{totalKindsDisplayed}</span>
-                <FontAwesomeIcon icon={open ? faChevronUp : faChevronDown} className={packStyles.packPaletteTriggerChevron} />
-            </button>
+            <div className={packStyles.packPaletteColumn}>
+                <button
+                    type="button"
+                    className={`${packStyles.packPaletteTrigger} ${open ? packStyles.packPaletteTriggerOpen : ""}`}
+                    onClick={toggle}
+                    aria-expanded={open}
+                    aria-haspopup="true"
+                    title={open ? "Close pack nodes" : "Open pack nodes"}
+                >
+                    <FontAwesomeIcon icon={faCube} className={packStyles.packPaletteTriggerIcon} />
+                    <span className={packStyles.packPaletteTriggerLabel}>Packs</span>
+                    <span className={packStyles.packPaletteTriggerCount}>{totalKindsDisplayed}</span>
+                    <FontAwesomeIcon icon={open ? faChevronUp : faChevronDown} className={packStyles.packPaletteTriggerChevron} />
+                </button>
+                {!packsPaletteEditMode && paletteRows.length === 0 ? (
+                    <p className={packStyles.packPaletteEmptyHint}>No packs yet</p>
+                ) : null}
+                <button
+                    type="button"
+                    className={packStyles.packGetPacksBtn}
+                    title="Browse and install node packs"
+                    aria-label="Get packs — open node warehouse drawer"
+                    onClick={() => {
+                        openNodeWarehouseDrawer();
+                    }}
+                >
+                    Get packs +
+                </button>
+            </div>
             {open && (
                 <div className={packStyles.packPalettePanel} role="region" aria-label="Pack node kinds">
                     <div className={packStyles.packPaletteToolbar}>
