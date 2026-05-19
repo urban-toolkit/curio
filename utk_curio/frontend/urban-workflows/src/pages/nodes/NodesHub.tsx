@@ -220,7 +220,7 @@ const HubInstalledForkRailGroup = React.memo(function HubInstalledForkRailGroup(
                 </div>
             </div>
             <label className={styles.hubForkFamilySelectLabel}>
-                Fork
+                Fork Family
                 <ForkFamilyPicker
                     variant="hub"
                     rootKey={family.rootKey}
