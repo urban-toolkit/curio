@@ -1,0 +1,149 @@
+.backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(30, 31, 35, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10060;
+}
+
+.modal {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 24px;
+    width: 480px;
+    max-width: 90vw;
+    max-height: 90vh;
+    overflow-y: auto;
+    font-family: Rubik, system-ui, sans-serif;
+    color: #1e1f23;
+}
+
+.title {
+    margin: 0 0 4px;
+    font-size: 1.125rem;
+}
+
+.subtitle {
+    color: #7a786d;
+    font-size: 0.875rem;
+    margin: 0 0 16px;
+}
+
+.permList {
+    list-style: none;
+    margin: 0 0 12px;
+    padding: 0;
+    border: 1px solid #eceadf;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.permItem {
+    padding: 10px 14px;
+    border-bottom: 1px solid #eceadf;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.875rem;
+}
+
+.permItem:last-child {
+    border-bottom: none;
+}
+
+.permIcon {
+    font-size: 0.875rem;
+    color: #fbaa69;
+}
+
+.depsBox {
+    border: 1px solid #eceadf;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 16px;
+    font-size: 0.8125rem;
+}
+
+.depsTitle {
+    margin: 0 0 6px;
+    font-weight: 500;
+    font-size: 0.8125rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #7a786d;
+}
+
+.depRow {
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 0;
+}
+
+.conflictsBox {
+    border: 1px solid #b3261e;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 16px;
+    font-size: 0.8125rem;
+    background: #fce8e7;
+}
+
+.conflictTitle {
+    color: #b3261e;
+    margin: 0 0 6px;
+    font-weight: 500;
+}
+
+.conflictHint {
+    font-size: 0.8125rem;
+    margin-top: 8px;
+}
+
+.footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.actionButton {
+    background: #fbaa69;
+    color: #1e1f23;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-weight: 500;
+    cursor: pointer;
+    font: inherit;
+}
+
+.actionButton:hover {
+    background: #fb9a4f;
+}
+
+.actionButton:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.ghostButton {
+    background: #ffffff;
+    border: 1px solid #d8d4c2;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-weight: 500;
+    cursor: pointer;
+    font: inherit;
+    color: #1e1f23;
+}
+
+.ghostButton:hover {
+    background: #f3f1e6;
+}
+
+.ghostButton:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}

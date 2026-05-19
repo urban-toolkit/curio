@@ -72,6 +72,7 @@ import UserProvider, { useUserContext } from "./providers/UserProvider";
 import DialogProvider from "./providers/DialogProvider";
 import { ToastProvider } from "./providers/ToastProvider";
 import { NodeFactoryModalProvider } from "./providers/NodeFactoryModalProvider";
+import { NodeWarehouseDrawerProvider } from "./providers/NodeWarehouseDrawerProvider";
 import { BackendHealthBanner } from "./providers/BackendHealthBanner";
 import { MainCanvas } from "./components/MainCanvas";
 import { PackPaletteProvider } from "./providers/PackPaletteContext";
@@ -126,7 +127,8 @@ const App: React.FC = () => {
     <BrowserRouter basename={(process.env.PUBLIC_PATH || "/").replace(/\/$/, "") || undefined}>
       <BackendHealthBanner>
         <ToastProvider>
-          <NodeFactoryModalProvider>
+          <NodeWarehouseDrawerProvider>
+            <NodeFactoryModalProvider>
             <ReactFlowProvider>
               <LLMProvider>
                 <ProvenanceProvider>
@@ -183,7 +185,8 @@ const App: React.FC = () => {
                 </ProvenanceProvider>
               </LLMProvider>
             </ReactFlowProvider>
-          </NodeFactoryModalProvider>
+            </NodeFactoryModalProvider>
+          </NodeWarehouseDrawerProvider>
         </ToastProvider>
       </BackendHealthBanner>
     </BrowserRouter>
