@@ -1,0 +1,53 @@
+/* ── Drawer footer ─────────────────────────────────────────────────────── */
+
+.footer {
+    flex-shrink: 0;
+    display: flex;
+    gap: 12px;
+    padding: 8px 16px;
+    border-top: 1px solid #e5e5e5;
+    background: #ffffff;
+}
+
+.footerGhost {
+    flex: 0 0 auto;
+    height: 32px;
+    padding: 0 14px;
+    border: 1px solid #cccccc;
+    border-radius: 4px;
+    background: #ffffff;
+    color: #1e1f23;
+    font: inherit;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.footerGhost:hover:not(:disabled) {
+    background: #fafafa;
+}
+
+.footerGhost:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.footerPrimary {
+    flex: 1;
+    height: 32px;
+    padding: 0 14px;
+    border: none;
+    border-radius: 4px;
+    background: #1e1f23;
+    color: #ffffff;
+    font: inherit;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.footerPrimary:hover {
+    background: #2c2d32;
+}
+

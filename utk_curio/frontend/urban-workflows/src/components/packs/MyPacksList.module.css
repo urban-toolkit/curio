@@ -1,0 +1,50 @@
+/* ── Your packs (installed compact list) ───────────────────────────────── */
+
+.sectionLabel {
+    margin: 0 0 10px;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #999999;
+}
+
+.installedList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.installedRow {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 8px;
+    align-items: center;
+    padding: 10px 12px;
+    border: 1px solid #eeeeee;
+    border-radius: 4px;
+    background: #fafafa;
+    font-size: 0.75rem;
+}
+
+.installedDot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #2ba677;
+    flex-shrink: 0;
+}
+
+.installedName {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.installedMeta {
+    color: #666666;
+    white-space: nowrap;
+}
+
