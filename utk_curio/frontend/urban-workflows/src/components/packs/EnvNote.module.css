@@ -1,0 +1,42 @@
+/* ── Environment info banner ────────────────────────────────────────────── */
+
+.envNote {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid #fbaa69;
+    border-radius: 6px;
+    background: #fff8ee;
+    margin-bottom: 8px;
+}
+
+.envIcon {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fbaa69;
+    color: #1e1f23;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.envTitle {
+    margin: 0 0 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #7a4a12;
+}
+
+.envText {
+    margin: 0;
+    font-size: 0.6875rem;
+    color: #7a4a12;
+    line-height: 1.45;
+}
+

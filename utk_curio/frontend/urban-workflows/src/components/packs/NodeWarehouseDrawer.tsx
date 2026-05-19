@@ -1,6 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faMagnifyingGlass, faThumbtack, faXmark } from "@fortawesome/free-solid-svg-icons";
 import { useNavigate } from "react-router-dom";
 import {
   PackPayload,
@@ -9,58 +7,17 @@ import {
   refreshPackRegistry,
 } from "../../api/packsApi";
 import { InstallPermissionsDialog } from "./InstallPermissionsDialog";
+import { DrawerHeader } from "./DrawerHeader";
+import { DrawerTabs } from "./DrawerTabs";
+import { PackSearchRow } from "./PackSearchRow";
+import { PackCard } from "./PackCard";
+import { MyPacksList } from "./MyPacksList";
+import { EnvNote } from "./EnvNote";
+import { DrawerFooter } from "./DrawerFooter";
+import { DrawerTab, SortMode } from "./packTypes";
+import { sortPacks, matchesSearch } from "./packUtils";
 import styles from "./NodeWarehouseDrawer.module.css";
 
-type DrawerTab = "featured" | "browse" | "installed" | "updates";
-type SortMode = "new" | "name";
-
-const CARD_ICON_VARIANTS = [styles.cardIconWarm, styles.cardIconCool, styles.cardIconViolet] as const;
-
-function packInitial(name: string): string {
-  const trimmed = name.trim();
-  if (!trimmed) return "?";
-  const words = trimmed.split(/\s+/);
-  if (words.length >= 2) return (words[0]![0]! + words[1]![0]!).toUpperCase();
-  return trimmed.slice(0, 2).toUpperCase();
-}
-
-function iconVariantForPack(dirName: string): string {
-  let hash = 0;
-  for (let i = 0; i < dirName.length; i++) hash = (hash + dirName.charCodeAt(i)) % CARD_ICON_VARIANTS.length;
-  return CARD_ICON_VARIANTS[hash]!;
-}
-
-function primaryCategory(pack: PackPayload): string {
-  const cat = pack.kinds[0]?.category;
-  if (!cat) return "pack";
-  if (cat.startsWith("vis")) return "vis";
-  return cat;
-}
-
-function sortPacks(packs: PackPayload[], mode: SortMode): PackPayload[] {
-  const next = [...packs];
-  if (mode === "name") {
-    next.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
-    return next;
-  }
-  next.sort((a, b) => {
-    const c = (b.createdAtMs ?? 0) - (a.createdAtMs ?? 0);
-    if (c !== 0) return c;
-    return a.dirName.localeCompare(b.dirName, undefined, { sensitivity: "base" });
-  });
-  return next;
-}
-
-function matchesSearch(pack: PackPayload, query: string): boolean {
-  if (!query.trim()) return true;
-  const q = query.trim().toLowerCase();
-  return (
-    pack.name.toLowerCase().includes(q) ||
-    pack.publisher.toLowerCase().includes(q) ||
-    pack.description.toLowerCase().includes(q) ||
-    pack.packId.toLowerCase().includes(q)
-  );
-}
 
 export interface NodeWarehouseDrawerProps {
   /** When true, scrim fades in and the panel slides in from the right. */
@@ -77,7 +34,6 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
 }) => {
   const navigate = useNavigate();
   const drawerRef = useRef<HTMLElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [catalog, setCatalog] = useState<PackPayload[]>([]);
   const [installed, setInstalled] = useState<PackPayload[]>([]);
@@ -204,61 +160,11 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
     [reload],
   );
 
-  const renderPackCard = (pack: PackPayload) => {
-    const isInstalled = installedDirs.has(pack.dirName);
-    const catalogRow = catalogByDir.get(pack.dirName);
-    const hasUpdate = isInstalled && catalogRow != null && catalogRow.version !== pack.version;
-
-    return (
-      <article key={pack.dirName} className={styles.card}>
-        <div className={`${styles.cardIcon} ${iconVariantForPack(pack.dirName)}`}>
-          {packInitial(pack.name)}
-        </div>
-        <div className={styles.cardBody}>
-          <h3 className={styles.cardTitle}>{pack.name}</h3>
-          <p className={styles.cardMeta}>
-            {pack.publisher || pack.packId} · v{pack.version}
-            {pack.license ? ` · ${pack.license}` : ""}
-          </p>
-          <div className={styles.tagRow}>
-            <span className={styles.tag}>
-              {pack.kinds.length} node{pack.kinds.length === 1 ? "" : "s"}
-            </span>
-            <span className={styles.tag}>{primaryCategory(pack)}</span>
-            {hasUpdate && catalogRow ? (
-              <span className={`${styles.tag} ${styles.tagUpdate}`}>
-                Update to {catalogRow.version}
-              </span>
-            ) : null}
-          </div>
-        </div>
-        <div className={styles.cardAction}>
-          {isInstalled ? (
-            hasUpdate ? (
-              <button
-                type="button"
-                className={`${styles.btnInstall} ${styles.btnInstallAccent}`}
-                disabled={busy}
-                onClick={() => void onInstallFromCatalog(catalogRow ?? pack)}
-              >
-                Update
-              </button>
-            ) : (
-              <span className={styles.btnInstalled}>Installed</span>
-            )
-          ) : (
-            <button
-              type="button"
-              className={styles.btnInstall}
-              disabled={busy}
-              onClick={() => void onInstallFromCatalog(pack)}
-            >
-              Install
-            </button>
-          )}
-        </div>
-      </article>
-    );
+  const tabLabel: Record<DrawerTab, string> = {
+    featured: "Featured",
+    browse: "Browse all",
+    installed: "Installed",
+    updates: "Updates",
   };
 
   return (
@@ -284,187 +190,68 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
           tabIndex={-1}
           onTransitionEnd={handleDrawerTransitionEnd}
         >
-          <header className={styles.topBar}>
-            <button
-              type="button"
-              className={`${styles.iconBtn} ${pinned ? styles.iconBtnActive : ""}`}
-              aria-label={pinned ? "Unpin drawer" : "Pin drawer open"}
-              aria-pressed={pinned}
-              title={pinned ? "Unpin drawer" : "Pin drawer (scrim won't close)"}
-              onClick={() => setPinned((v) => !v)}
-            >
-              <FontAwesomeIcon icon={faThumbtack} aria-hidden />
-            </button>
-            <h2 id="node-warehouse-drawer-title" className={styles.drawerTitle}>
-              Node warehouse
-            </h2>
-            <button
-              type="button"
-              className={styles.iconBtn}
-              aria-label="Close node warehouse drawer"
-              onClick={onRequestClose}
-            >
-              <FontAwesomeIcon icon={faXmark} aria-hidden />
-            </button>
-          </header>
+          <DrawerHeader
+            pinned={pinned}
+            onPinToggle={() => setPinned((v) => !v)}
+            onClose={onRequestClose}
+          />
 
-          <div className={styles.subtitleBlock}>
-            <p className={styles.subtitle}>Discover and install nodes that extend Curio.</p>
-            <span className={styles.compatPill}>
-              <span className={styles.compatDot} aria-hidden />
-              Compatible with this Curio workspace
-            </span>
-          </div>
+          <PackSearchRow
+            search={search}
+            sort={sort}
+            onSearchChange={setSearch}
+            onSortChange={setSort}
+          />
 
-          <div className={styles.searchRow}>
-            <div className={styles.searchWrap}>
-              <FontAwesomeIcon icon={faMagnifyingGlass} className={styles.searchIcon} aria-hidden />
-              <input
-                className={styles.searchInput}
-                type="search"
-                placeholder="Search packs, authors, keywords..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-            <select
-              className={styles.sortSelect}
-              value={sort}
-              aria-label="Sort packs"
-              onChange={(e) => setSort(e.target.value as SortMode)}
-            >
-              <option value="new">Sort: New</option>
-              <option value="name">Sort: Name</option>
-            </select>
-          </div>
-
-          <nav className={styles.tabs} aria-label="Warehouse sections">
-            <button
-              type="button"
-              className={`${styles.tab} ${tab === "featured" ? styles.tabActive : ""}`}
-              onClick={() => setTab("featured")}
-            >
-              Featured
-            </button>
-            <button
-              type="button"
-              className={`${styles.tab} ${tab === "browse" ? styles.tabActive : ""}`}
-              onClick={() => setTab("browse")}
-            >
-              Browse all
-            </button>
-            <button
-              type="button"
-              className={`${styles.tab} ${tab === "installed" ? styles.tabActive : ""}`}
-              onClick={() => setTab("installed")}
-            >
-              Installed
-              {installed.length > 0 ? (
-                <span className={`${styles.tabBadge} ${styles.tabBadgeDark}`}>{installed.length}</span>
-              ) : null}
-            </button>
-            <button
-              type="button"
-              className={`${styles.tab} ${tab === "updates" ? styles.tabActive : ""} ${
-                updateCandidates.length === 0 ? styles.tabMuted : ""
-              }`}
-              onClick={() => setTab("updates")}
-            >
-              Updates
-              {updateCandidates.length > 0 ? (
-                <span className={`${styles.tabBadge} ${styles.tabBadgeAccent}`}>
-                  {updateCandidates.length}
-                </span>
-              ) : null}
-            </button>
-          </nav>
+          <DrawerTabs
+            tab={tab}
+            installedCount={installed.length}
+            updateCount={updateCandidates.length}
+            onChange={setTab}
+          />
 
           <div className={styles.scrollBody}>
-            {tab === "featured" ? (
-              <p className={styles.sectionLabel}>Featured</p>
-            ) : tab === "browse" ? (
-              <p className={styles.sectionLabel}>Browse all</p>
-            ) : tab === "installed" ? (
-              <p className={styles.sectionLabel}>Installed</p>
-            ) : (
-              <p className={styles.sectionLabel}>Updates</p>
-            )}
+            <p className={styles.sectionLabel}>{tabLabel[tab]}</p>
 
             {displayPacks.length === 0 ? (
               <div className={styles.empty}>No packs match the current filter.</div>
             ) : (
-              <div className={styles.cardList}>{displayPacks.map(renderPackCard)}</div>
+              <div className={styles.cardList}>
+                {displayPacks.map((pack) => {
+                  const isInstalled = installedDirs.has(pack.dirName);
+                  const catalogRow = catalogByDir.get(pack.dirName);
+                  const hasUpdate =
+                    isInstalled && catalogRow != null && catalogRow.version !== pack.version;
+                  return (
+                    <PackCard
+                      key={pack.dirName}
+                      pack={pack}
+                      isInstalled={isInstalled}
+                      hasUpdate={hasUpdate}
+                      catalogRow={catalogRow}
+                      busy={busy}
+                      onInstall={(p) => void onInstallFromCatalog(p)}
+                    />
+                  );
+                })}
+              </div>
             )}
 
-            {tab === "featured" && installed.length > 0 ? (
-              <>
-                <p className={styles.sectionLabel}>
-                  Your packs · {installed.length} installed
-                </p>
-                <div className={styles.installedList}>
-                  {installed.map((pack) => {
-                    const catRow = catalogByDir.get(pack.dirName);
-                    const hasUpdate = catRow != null && catRow.version !== pack.version;
-                    return (
-                      <div key={pack.dirName} className={styles.installedRow}>
-                        <span className={styles.installedDot} aria-hidden />
-                        <span className={styles.installedName}>{pack.name}</span>
-                        <span className={styles.installedMeta}>
-                          v{pack.version}
-                          {hasUpdate ? " · update available" : ` · ${pack.kinds.length} nodes`}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            ) : null}
+            {tab === "featured" && (
+              <MyPacksList installed={installed} catalogByDir={catalogByDir} />
+            )}
 
-            <div className={styles.envNote}>
-              <span className={styles.envIcon} aria-hidden>
-                i
-              </span>
-              <div>
-                <p className={styles.envTitle}>Shared project environment</p>
-                <p className={styles.envText}>
-                  Pack python deps install into this project&apos;s sandbox interpreter;
-                  conflicting versions fail at install.
-                </p>
-              </div>
-            </div>
+            <EnvNote />
           </div>
 
-          <footer className={styles.footer}>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".curio-nodepack,application/zip"
-              hidden
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void onPickArchive(file);
-                if (fileInputRef.current) fileInputRef.current.value = "";
-              }}
-            />
-            <button
-              type="button"
-              className={styles.footerGhost}
-              disabled={busy}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              Sideload .curio-nodepack
-            </button>
-            <button
-              type="button"
-              className={styles.footerPrimary}
-              onClick={() => {
-                onRequestClose();
-                navigate("/nodes");
-              }}
-            >
-              Open full warehouse
-            </button>
-          </footer>
+          <DrawerFooter
+            busy={busy}
+            onSideload={(file) => void onPickArchive(file)}
+            onOpenWarehouse={() => {
+              onRequestClose();
+              navigate("/nodes");
+            }}
+          />
         </aside>
       </div>
 

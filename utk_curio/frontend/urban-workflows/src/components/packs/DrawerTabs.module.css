@@ -1,0 +1,71 @@
+/* ── Tab strip ─────────────────────────────────────────────────────────── */
+
+.tabs {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 0 16px;
+    border-bottom: 1px solid #eeeeee;
+}
+
+.tab {
+    position: relative;
+    background: none;
+    border: none;
+    padding: 8px 0 10px;
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #666666;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.tab:hover {
+    color: #1e1f23;
+}
+
+.tabActive {
+    color: #1e1f23;
+}
+
+.tabActive::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    background: #fbaa69;
+}
+
+.tabBadge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 14px;
+    padding: 0 5px;
+    border-radius: 7px;
+    font-size: 0.5625rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.tabBadgeDark {
+    background: #1e1f23;
+    color: #fbfcf6;
+}
+
+.tabBadgeAccent {
+    background: #fbaa69;
+    color: #1e1f23;
+}
+
+.tabMuted {
+    color: #999999;
+}
+

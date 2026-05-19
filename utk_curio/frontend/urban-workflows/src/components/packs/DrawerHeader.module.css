@@ -1,0 +1,79 @@
+/* ── Drawer header & subtitle block ────────────────────────────────────── */
+
+.topBar {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid #eeeeee;
+}
+
+.iconBtn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid #e5e5e5;
+    border-radius: 4px;
+    background: #ffffff;
+    color: #1e1f23;
+    cursor: pointer;
+}
+
+.iconBtn:hover {
+    background: #fafafa;
+}
+
+.iconBtnActive {
+    border-color: #fbaa69;
+    background: #fff8ee;
+    color: #7a4a12;
+}
+
+.drawerTitle {
+    flex: 1;
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+/* Subtitle row */
+
+.subtitleBlock {
+    flex-shrink: 0;
+    padding: 0 16px 12px;
+}
+
+.subtitle {
+    margin: 0 0 10px;
+    font-size: 0.75rem;
+    color: #666666;
+    line-height: 1.4;
+}
+
+.compatPill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px 4px 10px;
+    border-radius: 11px;
+    border: 1px solid #fbaa69;
+    background: #fff8ee;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: #1e1f23;
+}
+
+.compatDot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #fbaa69;
+    flex-shrink: 0;
+}
+
