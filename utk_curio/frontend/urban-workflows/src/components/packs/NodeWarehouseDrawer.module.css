@@ -1,6 +1,9 @@
 /*
  * Canvas slide-over warehouse drawer — tokens from figma_mockups/09_nodes_hub_drawer.svg
  * and composites/canvas_with_nodeshub_drawer.svg.
+ *
+ * Motion: panel slides in from the right; scrim fades in parallel. Exit is
+ * slightly faster than enter (Material / iOS sheet convention).
  */
 
 .overlayRoot {
@@ -19,6 +22,8 @@
     border: none;
     padding: 0;
     cursor: pointer;
+    opacity: 0;
+    transition: opacity 240ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .drawer {
@@ -34,6 +39,24 @@
     font-family: Rubik, system-ui, sans-serif;
     color: #1e1f23;
     outline: none;
+    transform: translate3d(100%, 0, 0);
+    transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
+    will-change: transform;
+}
+
+.overlayRootPresented .scrim {
+    opacity: 1;
+}
+
+.overlayRootPresented .drawer {
+    transform: translate3d(0, 0, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .scrim,
+    .drawer {
+        transition-duration: 0.01ms;
+    }
 }
 
 .topBar {

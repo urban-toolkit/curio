@@ -63,10 +63,18 @@ function matchesSearch(pack: PackPayload, query: string): boolean {
 }
 
 export interface NodeWarehouseDrawerProps {
+  /** When true, scrim fades in and the panel slides in from the right. */
+  presented: boolean;
   onRequestClose: () => void;
+  /** Called once the exit transition finishes (or immediately when motion is reduced). */
+  onExitComplete: () => void;
 }
 
-export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({ onRequestClose }) => {
+export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
+  presented,
+  onRequestClose,
+  onExitComplete,
+}) => {
   const navigate = useNavigate();
   const drawerRef = useRef<HTMLElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -98,8 +106,19 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({ onRequ
   }, [reload]);
 
   useEffect(() => {
+    if (!presented) return;
     drawerRef.current?.focus();
-  }, []);
+  }, [presented]);
+
+  const handleDrawerTransitionEnd = useCallback(
+    (e: React.TransitionEvent<HTMLElement>) => {
+      if (e.target !== drawerRef.current) return;
+      if (e.propertyName !== "transform") return;
+      if (presented) return;
+      onExitComplete();
+    },
+    [onExitComplete, presented],
+  );
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
@@ -244,7 +263,10 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({ onRequ
 
   return (
     <>
-      <div className={styles.overlayRoot} data-curio-node-warehouse-drawer="true">
+      <div
+        className={`${styles.overlayRoot} ${presented ? styles.overlayRootPresented : ""}`}
+        data-curio-node-warehouse-drawer="true"
+      >
         <button
           type="button"
           className={styles.scrim}
@@ -260,6 +282,7 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({ onRequ
           aria-modal="true"
           aria-labelledby="node-warehouse-drawer-title"
           tabIndex={-1}
+          onTransitionEnd={handleDrawerTransitionEnd}
         >
           <header className={styles.topBar}>
             <button
@@ -379,7 +402,7 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({ onRequ
                   Your packs · {installed.length} installed
                 </p>
                 <div className={styles.installedList}>
-                  {installed.slice(0, 4).map((pack) => {
+                  {installed.map((pack) => {
                     const catRow = catalogByDir.get(pack.dirName);
                     const hasUpdate = catRow != null && catRow.version !== pack.version;
                     return (
