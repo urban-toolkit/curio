@@ -7,8 +7,6 @@ import io
 import json
 import zipfile
 
-import pytest
-
 
 def _auth(token):
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
