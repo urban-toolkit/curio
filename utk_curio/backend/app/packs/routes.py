@@ -16,6 +16,7 @@ derives from ``app.projects.services._user_dir_key`` just like
 | ``POST /api/packs/factory/install``       | factory-impl (this commit)     |
 | ``GET /api/packs/factory/capabilities``  | wizard — publish gated flags   |
 | ``POST /api/packs/factory/publish-catalog`` | dev catalog fixture write (on by default; env to disable) |
+| ``DELETE /api/packs/catalog/<dir>``       | dev catalog fixture remove (same env gate as publish) |
 | ``POST /api/packs/resolve``               | dep-resolver (this commit)     |
 | ``POST /api/packs/palette-dock/fork-parents`` | fork-parent dock hide/reveal |
 | ``POST /api/packs/<dir>/palette-dock-visible`` | per-pack palette dock toggle |
@@ -49,6 +50,7 @@ from utk_curio.backend.app.packs.installer import (
     install_pack_from_archive,
     install_pack_from_directory,
     publish_pack_archive_to_catalog_dir,
+    remove_pack_from_catalog_dir,
     uninstall_pack,
 )
 from utk_curio.backend.app.packs.catalog_family import (
@@ -438,6 +440,43 @@ def install_from_catalog():
         "integrity": result.integrity,
         "replacedExisting": result.replaced_existing,
     }), 201
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/packs/catalog/<dir_name> — remove fixture from dev catalog
+# ---------------------------------------------------------------------------
+
+
+@packs_bp.route("/catalog/<dir_name>", methods=["DELETE"])
+@require_auth
+def unpublish_from_catalog(dir_name: str):
+    """Remove a pack directory from ``fixtures/packs`` (developer catalog only).
+
+    Does **not** uninstall from the user's pack store — use
+    ``DELETE /api/packs/<dir_name>`` for that. Gated by the same env flag as
+    ``factory/publish-catalog``.
+    """
+    if not factory_catalog_publish_allowed():
+        return jsonify(
+            {
+                "error": (
+                    "Catalog fixture publish is disabled on this server. "
+                    "Unset CURIO_ALLOW_FACTORY_CATALOG_PUBLISH or set it to 1, "
+                    "true, yes, or on to enable; restart the backend after changes."
+                ),
+            },
+        ), 403
+
+    if not PACK_DIR_RE.match(dir_name):
+        return _error("dir_name must match <packId>@<major>")
+
+    try:
+        removed = remove_pack_from_catalog_dir(_fixtures_root(), dir_name)
+    except InstallerError as exc:
+        return _error(str(exc))
+    if not removed:
+        return _error(f"catalog has no pack {dir_name}", 404)
+    return "", 204
 
 
 # ---------------------------------------------------------------------------

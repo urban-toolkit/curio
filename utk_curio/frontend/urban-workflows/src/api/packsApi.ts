@@ -327,6 +327,17 @@ export const packsApi = {
   },
 
   /**
+   * Remove a pack from the fixture catalog (`fixtures/packs/<dirName>/`).
+   * Gated by the same env flag as `factoryPublishCatalog`; does not uninstall
+   * from the user's pack store.
+   */
+  unpublishFromCatalog(dirName: string): Promise<void> {
+    return apiFetch(`/api/packs/catalog/${encodeURIComponent(dirName)}`, {
+      method: "DELETE",
+    });
+  },
+
+  /**
    * Resolve a set of pack ``dirName``s into a lockfile (200) or
    * conflict report (409). The ``apiFetch`` helper raises on non-2xx;
    * the wizard / install dialog wraps the call so it can render the
