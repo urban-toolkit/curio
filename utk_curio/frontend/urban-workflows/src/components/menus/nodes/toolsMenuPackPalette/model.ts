@@ -6,8 +6,8 @@ import { NodeDescriptor, NodeKindId, NodePackMeta } from "../../../../registry/t
 import { canvasKindLabelFromNode, normalizeKindLabel } from "../../../../utils/palettePackFactoryDraft";
 import { getFlowNodeCanonicalType } from "../../../../utils/flowNodeCanonicalType";
 import {
+    findForkFamilyRootPaletteGroup,
     paletteGroupCreatedAtMs,
-    resolveForkFamilySelectionKey,
     type PalettePackRow,
 } from "../../../../utils/forkPackLineage";
 
@@ -117,57 +117,28 @@ export function groupPalettePacks(packTypes: NodeDescriptor[]): PackPaletteGroup
         });
 }
 
+/** Display name for a fork-family toolbar row — always the root pack's title. */
+export function forkFamilyRootDisplayName(
+    rootKey: string,
+    members: readonly PackPaletteGroup[],
+): string {
+    const root = findForkFamilyRootPaletteGroup(rootKey, members);
+    if (root) return root.name;
+    return members[0]?.name ?? rootKey;
+}
+
 /**
- * Mirrors what the PACKS dropdown lists: filtered groups only; fork-family rows count the
- * **selected** fork's kinds (+ staged canvas rows when edit mode is on).
+ * Pack count for the PACKS palette trigger badge: one per dock row (singleton or
+ * fork family), plus draft sections while edit mode is on.
  */
-export function visiblePaletteTriggerKindsCount(opts: {
+export function visiblePaletteTriggerPacksCount(opts: {
     paletteRows: PalettePackRow<PackPaletteGroup>[];
     packsPaletteEditMode: boolean;
-    stagedRowsByPackKey: Readonly<Record<string, readonly PackStagedRow[]>>;
-    removedKindIdsByPackKey: Readonly<Record<string, readonly string[]>>;
     draftPackSectionIds: readonly string[];
-    activePackKey: string | null;
-    forkManualPickByRoot: Record<string, string>;
 }): number {
-    const {
-        paletteRows,
-        packsPaletteEditMode,
-        stagedRowsByPackKey,
-        removedKindIdsByPackKey,
-        draftPackSectionIds,
-        activePackKey,
-        forkManualPickByRoot,
-    } = opts;
-
-    let n = 0;
-    if (packsPaletteEditMode) {
-        for (const draftId of draftPackSectionIds) {
-            const sectionKey = draftPackSectionKey(draftId);
-            n += (stagedRowsByPackKey[sectionKey] ?? []).length;
-        }
-    }
-    const activeKey = activePackKey ?? "";
-    for (const row of paletteRows) {
-        if (row.kind === "singleton") {
-            const staged = stagedRowsByPackKey[row.group.key] ?? [];
-            const removed = new Set(removedKindIdsByPackKey[row.group.key] ?? []);
-            const visibleKinds = row.group.descriptors.filter((d) => !removed.has(d.id)).length;
-            n += visibleKinds + (packsPaletteEditMode ? staged.length : 0);
-            continue;
-        }
-        const resolverMembers = row.members.map((m) => ({ key: m.key }));
-        const resolvedDir = resolveForkFamilySelectionKey(
-            row.rootKey,
-            resolverMembers,
-            activeKey,
-            forkManualPickByRoot[row.rootKey],
-        );
-        const g = row.members.find((m) => m.key === resolvedDir) ?? row.members[0]!;
-        const staged = stagedRowsByPackKey[g.key] ?? [];
-        const removed = new Set(removedKindIdsByPackKey[g.key] ?? []);
-        const visibleKinds = g.descriptors.filter((d) => !removed.has(d.id)).length;
-        n += visibleKinds + (packsPaletteEditMode ? staged.length : 0);
+    let n = opts.paletteRows.length;
+    if (opts.packsPaletteEditMode) {
+        n += opts.draftPackSectionIds.length;
     }
     return n;
 }

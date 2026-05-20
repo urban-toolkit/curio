@@ -28,6 +28,8 @@ export interface InstalledPackAccordionProps {
     onPublishToCatalog: (dirName: string) => void;
     /** When false, omit the chip next to the summary title (e.g. fork toolbar already shows it). */
     showCatalogPublishInSummary?: boolean;
+    /** Override `group.name` in the summary (e.g. fork families use the root pack title). */
+    summaryTitle?: string;
 }
 
 export const InstalledPackAccordion = memo(function InstalledPackAccordion({
@@ -43,7 +45,9 @@ export const InstalledPackAccordion = memo(function InstalledPackAccordion({
     publishingPackKey,
     onPublishToCatalog,
     showCatalogPublishInSummary = true,
+    summaryTitle,
 }: InstalledPackAccordionProps) {
+    const rowTitle = summaryTitle ?? group.name;
     const { getNodes } = useReactFlow();
     const { removedKindIdsByPackKey } = usePackPalette();
     const removedKindIds = removedKindIdsByPackKey[group.key] ?? [];
@@ -80,25 +84,25 @@ export const InstalledPackAccordion = memo(function InstalledPackAccordion({
                             className={packStyles.packSummaryTitle}
                             role={canOpenFactory ? "button" : undefined}
                             title={
-                                group.label !== group.name
-                                    ? group.label
+                                group.label !== rowTitle
+                                    ? `${rowTitle} — ${group.label}`
                                     : canOpenStaged
                                       ? "Open Node Factory with this pack and staged edits"
                                       : canOpenFork
                                         ? "Fork this pack in Node Factory (new install; source unchanged)"
-                                        : undefined
+                                        : rowTitle
                             }
-                            onClick={(e) => {
-                                if (!canOpenFactory) return;
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setActivePackKey(group.key);
-                                openWizardForPaletteSection(group.key, { group });
-                            }}
+                            // onClick={(e) => {
+                            //     if (!canOpenFactory) return;
+                            //     e.preventDefault();
+                            //     e.stopPropagation();
+                            //     setActivePackKey(group.key);
+                            //     openWizardForPaletteSection(group.key, { group });
+                            // }}
                         >
-                            {group.name}
+                            {rowTitle}
                         </span>
-                        {canOpenFactory ? (
+                        {/* {canOpenFactory ? (
                             <button
                                 type="button"
                                 className={packStyles.packSummaryFactoryPen}
@@ -113,7 +117,7 @@ export const InstalledPackAccordion = memo(function InstalledPackAccordion({
                             >
                                 <FontAwesomeIcon icon={faPenToSquare} />
                             </button>
-                        ) : null}
+                        ) : null} */}
                         {catalogMetadataLoaded && showCatalogPublishInSummary ? (
                             <CatalogPublishPill
                                 variant="dock"

@@ -3,6 +3,7 @@ import {
   comparePackVersionDescending,
   filterForkParentHiddenPalettePackGroups,
   findForkFamilyRootPack,
+  findForkFamilyRootPaletteGroup,
   forkFamilyKeyFromPaletteGroup,
   formatForkOfSubtitle,
   lineageCoordKey,
@@ -109,6 +110,29 @@ describe("forkPackLineage", () => {
     expect(famRow!.members).toHaveLength(2);
     expect(rows[0]!.kind).toBe("family");
     expect(rows.find((r) => r.kind === "singleton")?.kind).toBe("singleton");
+  });
+
+  test("findForkFamilyRootPaletteGroup prefers lineage-free root coordinate", () => {
+    const root = {
+      key: "root@1",
+      label: "Root · root@1",
+      descriptors: [{ pack: { packId: "root", major: 1, version: "1.0.0" } satisfies NodePackMeta }],
+    };
+    const fork = {
+      key: "fork@1",
+      label: "Fork · fork@1",
+      descriptors: [
+        {
+          pack: {
+            packId: "fork",
+            major: 1,
+            version: "2.0.0",
+            lineage: lin({ packId: "root", major: 1 }, { packId: "root", major: 1 }),
+          } satisfies NodePackMeta,
+        },
+      ],
+    };
+    expect(findForkFamilyRootPaletteGroup("root@1", [fork, root])?.key).toBe("root@1");
   });
 
   test("referencedForkParentCoordinates aggregates forkedFrom coords", () => {
