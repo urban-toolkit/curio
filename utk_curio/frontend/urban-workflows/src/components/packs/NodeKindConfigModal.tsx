@@ -100,39 +100,7 @@ export function NodeKindConfigModal({
             onChange={(e) => patch({ label: e.target.value })}
           />
         </div>
-        <div className={styles.row}>
-          <div className={styles.field}>
-            <label className={styles.fieldLabel} htmlFor="kind-config-category">
-              Category
-            </label>
-            <select
-              id="kind-config-category"
-              className={styles.select}
-              value={config.category}
-              onChange={(e) => patch({ category: e.target.value as Category })}
-            >
-              <option value="data">data</option>
-              <option value="computation">computation</option>
-              <option value="vis_grammar">vis_grammar</option>
-              <option value="vis_simple">vis_simple</option>
-              <option value="flow">flow</option>
-            </select>
-          </div>
-          <div className={styles.field}>
-            <label className={styles.fieldLabel} htmlFor="kind-config-engine">
-              Engine
-            </label>
-            <select
-              id="kind-config-engine"
-              className={styles.select}
-              value={config.engine}
-              onChange={(e) => patch({ engine: e.target.value as Engine })}
-            >
-              <option value="python">python</option>
-              <option value="javascript">javascript</option>
-            </select>
-          </div>
-        </div>
+
         <div className={styles.field}>
           <label className={styles.fieldLabel} htmlFor="kind-config-description">
             Description
@@ -162,6 +130,21 @@ export function NodeKindConfigModal({
               <option value="widgets">widgets</option>
               <option value="grammar">grammar</option>
               <option value="none">none</option>
+            </select>
+          </div>
+
+          <div className={styles.field}>
+            <label className={styles.fieldLabel} htmlFor="kind-config-engine">
+              Engine
+            </label>
+            <select
+              id="kind-config-engine"
+              className={styles.select}
+              value={config.engine}
+              onChange={(e) => patch({ engine: e.target.value as Engine })}
+            >
+              <option value="python">python</option>
+              <option value="javascript">javascript</option>
             </select>
           </div>
         </div>

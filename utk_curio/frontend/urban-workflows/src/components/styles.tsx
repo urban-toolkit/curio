@@ -916,179 +916,179 @@ export const NodeContainer = ({
                                 </Col>
                             ) : null}
                             {/* <Col md={3}> */}
-                            {promptModal != undefined ? (
-                                <Col md={5} style={{padding: 0}}>
-                                    <Dropdown>
-                                        <Dropdown.Toggle
-                                            variant="primary"
-                                            style={{ 
-                                                fontSize: "8.5px",
-                                                padding: "6px 2px",
-                                                backgroundColor: "rgb(251, 170, 105)",
-                                                border: "none",
-                                                width: "100%"
-                                             }}
-                                             onMouseEnter={() => {fetchTemplates()}}
-                                        >
-                                            Templates
-                                        </Dropdown.Toggle>
+                            {/*{promptModal != undefined ? (*/}
+                            {/*    <Col md={5} style={{padding: 0}}>*/}
+                            {/*        <Dropdown>*/}
+                            {/*            <Dropdown.Toggle*/}
+                            {/*                variant="primary"*/}
+                            {/*                style={{ */}
+                            {/*                    fontSize: "8.5px",*/}
+                            {/*                    padding: "6px 2px",*/}
+                            {/*                    backgroundColor: "rgb(251, 170, 105)",*/}
+                            {/*                    border: "none",*/}
+                            {/*                    width: "100%"*/}
+                            {/*                 }}*/}
+                            {/*                 onMouseEnter={() => {fetchTemplates()}}*/}
+                            {/*            >*/}
+                            {/*                Templates*/}
+                            {/*            </Dropdown.Toggle>*/}
 
-                                        <Dropdown.Menu
-                                            style={{
-                                                padding: "5px",
-                                                fontSize: "9px",
-                                                overflowY: "auto",
-                                                maxHeight: "200px",
-                                            }}
-                                        >
-                                            <Dropdown.Item
-                                                style={{ padding: 0 }}
-                                                onClick={() => {
-                                                    promptModal(true);
-                                                }}
-                                            >
-                                                + New Template
-                                            </Dropdown.Item>
+                            {/*            <Dropdown.Menu*/}
+                            {/*                style={{*/}
+                            {/*                    padding: "5px",*/}
+                            {/*                    fontSize: "9px",*/}
+                            {/*                    overflowY: "auto",*/}
+                            {/*                    maxHeight: "200px",*/}
+                            {/*                }}*/}
+                            {/*            >*/}
+                            {/*                <Dropdown.Item*/}
+                            {/*                    style={{ padding: 0 }}*/}
+                            {/*                    onClick={() => {*/}
+                            {/*                        promptModal(true);*/}
+                            {/*                    }}*/}
+                            {/*                >*/}
+                            {/*                    + New Template*/}
+                            {/*                </Dropdown.Item>*/}
 
-                                            {getTemplates(
-                                                data.nodeType as NodeType,
-                                                false
-                                            ).length > 0 ? (
-                                                <>
-                                                    <Dropdown.Divider
-                                                        style={{ padding: 0 }}
-                                                    />
-                                                    <Dropdown.ItemText
-                                                        style={{
-                                                            padding: 0,
-                                                            fontWeight: "bold",
-                                                        }}
-                                                    >
-                                                        Default Templates
-                                                    </Dropdown.ItemText>
-                                                    {getTemplates(
-                                                        data.nodeType as NodeType,
-                                                        false
-                                                    ).map(
-                                                        (
-                                                            template: Template,
-                                                            index: number
-                                                        ) => {
-                                                            return (
-                                                                <Dropdown.Item
-                                                                    key={
-                                                                        "templates_modal_content_default_" +
-                                                                        data.nodeType +
-                                                                        index +
-                                                                        nodeId
-                                                                    }
-                                                                    style={
-                                                                        template.accessLevel ==
-                                                                        AccessLevelType.PROGRAMMER
-                                                                            ? buttonStyleProgrammer
-                                                                            : template.accessLevel ==
-                                                                                AccessLevelType.EXPERT
-                                                                                ? buttonStyleExpert
-                                                                                : buttonStyleAny
-                                                                    }
-                                                                    onClick={() => {
-                                                                        setTemplateConfig(
-                                                                            template
-                                                                        );
-                                                                    }}
-                                                                >
-                                                                    {
-                                                                        template.name
-                                                                    }
-                                                                </Dropdown.Item>
-                                                            );
-                                                        }
-                                                    )}
-                                                </>
-                                            ) : null}
+                            {/*                {getTemplates(*/}
+                            {/*                    data.nodeType as NodeType,*/}
+                            {/*                    false*/}
+                            {/*                ).length > 0 ? (*/}
+                            {/*                    <>*/}
+                            {/*                        <Dropdown.Divider*/}
+                            {/*                            style={{ padding: 0 }}*/}
+                            {/*                        />*/}
+                            {/*                        <Dropdown.ItemText*/}
+                            {/*                            style={{*/}
+                            {/*                                padding: 0,*/}
+                            {/*                                fontWeight: "bold",*/}
+                            {/*                            }}*/}
+                            {/*                        >*/}
+                            {/*                            Default Templates*/}
+                            {/*                        </Dropdown.ItemText>*/}
+                            {/*                        {getTemplates(*/}
+                            {/*                            data.nodeType as NodeType,*/}
+                            {/*                            false*/}
+                            {/*                        ).map(*/}
+                            {/*                            (*/}
+                            {/*                                template: Template,*/}
+                            {/*                                index: number*/}
+                            {/*                            ) => {*/}
+                            {/*                                return (*/}
+                            {/*                                    <Dropdown.Item*/}
+                            {/*                                        key={*/}
+                            {/*                                            "templates_modal_content_default_" +*/}
+                            {/*                                            data.nodeType +*/}
+                            {/*                                            index +*/}
+                            {/*                                            nodeId*/}
+                            {/*                                        }*/}
+                            {/*                                        style={*/}
+                            {/*                                            template.accessLevel ==*/}
+                            {/*                                            AccessLevelType.PROGRAMMER*/}
+                            {/*                                                ? buttonStyleProgrammer*/}
+                            {/*                                                : template.accessLevel ==*/}
+                            {/*                                                    AccessLevelType.EXPERT*/}
+                            {/*                                                    ? buttonStyleExpert*/}
+                            {/*                                                    : buttonStyleAny*/}
+                            {/*                                        }*/}
+                            {/*                                        onClick={() => {*/}
+                            {/*                                            setTemplateConfig(*/}
+                            {/*                                                template*/}
+                            {/*                                            );*/}
+                            {/*                                        }}*/}
+                            {/*                                    >*/}
+                            {/*                                        {*/}
+                            {/*                                            template.name*/}
+                            {/*                                        }*/}
+                            {/*                                    </Dropdown.Item>*/}
+                            {/*                                );*/}
+                            {/*                            }*/}
+                            {/*                        )}*/}
+                            {/*                    </>*/}
+                            {/*                ) : null}*/}
 
-                                            {getTemplates(
-                                                data.nodeType as NodeType,
-                                                true
-                                            ).length > 0 ? (
-                                                <>
-                                                    <Dropdown.Divider
-                                                        style={{ padding: 0 }}
-                                                    />
-                                                    <Dropdown.ItemText
-                                                        style={{
-                                                            padding: 0,
-                                                            fontWeight: "bold",
-                                                        }}
-                                                    >
-                                                        Custom Templates
-                                                    </Dropdown.ItemText>
-                                                    {getTemplates(
-                                                        data.nodeType as NodeType,
-                                                        true
-                                                    ).map(
-                                                        (
-                                                            template: Template,
-                                                            index: number
-                                                        ) => {
-                                                            return (
-                                                                <Dropdown.Item
-                                                                    style={{
-                                                                        padding: 0,
-                                                                    }}
-                                                                    key={
-                                                                        "templates_modal_content_custom_" +
-                                                                        data.nodeType +
-                                                                        index +
-                                                                        nodeId
-                                                                    }
-                                                                    onClick={() => {
-                                                                        setTemplateConfig(
-                                                                            template
-                                                                        );
-                                                                    }}
-                                                                >
-                                                                    <span
-                                                                        style={
-                                                                            template.accessLevel ==
-                                                                            AccessLevelType.PROGRAMMER
-                                                                                ? buttonStyleProgrammer
-                                                                                : template.accessLevel ==
-                                                                                    AccessLevelType.EXPERT
-                                                                                    ? buttonStyleExpert
-                                                                                    : buttonStyleAny
-                                                                        }
-                                                                    >
-                                                                        {
-                                                                            template.name
-                                                                        }
-                                                                    </span>
-                                                                    <FontAwesomeIcon
-                                                                        onClick={() => {
-                                                                            deleteTemplate(
-                                                                                template.id
-                                                                            );
-                                                                        }}
-                                                                        icon={
-                                                                            faSquareMinus
-                                                                        }
-                                                                        style={{
-                                                                            color: "#888787",
-                                                                            padding: 0,
-                                                                            marginLeft:
-                                                                                "5px",
-                                                                        }}
-                                                                    />
-                                                                </Dropdown.Item>
-                                                            );
-                                                        }
-                                                    )}
-                                                </>
-                                            ) : null}
-                                        </Dropdown.Menu>
-                                    </Dropdown>
-                                </Col>
-                            ) : null}
+                            {/*                {getTemplates(*/}
+                            {/*                    data.nodeType as NodeType,*/}
+                            {/*                    true*/}
+                            {/*                ).length > 0 ? (*/}
+                            {/*                    <>*/}
+                            {/*                        <Dropdown.Divider*/}
+                            {/*                            style={{ padding: 0 }}*/}
+                            {/*                        />*/}
+                            {/*                        <Dropdown.ItemText*/}
+                            {/*                            style={{*/}
+                            {/*                                padding: 0,*/}
+                            {/*                                fontWeight: "bold",*/}
+                            {/*                            }}*/}
+                            {/*                        >*/}
+                            {/*                            Custom Templates*/}
+                            {/*                        </Dropdown.ItemText>*/}
+                            {/*                        {getTemplates(*/}
+                            {/*                            data.nodeType as NodeType,*/}
+                            {/*                            true*/}
+                            {/*                        ).map(*/}
+                            {/*                            (*/}
+                            {/*                                template: Template,*/}
+                            {/*                                index: number*/}
+                            {/*                            ) => {*/}
+                            {/*                                return (*/}
+                            {/*                                    <Dropdown.Item*/}
+                            {/*                                        style={{*/}
+                            {/*                                            padding: 0,*/}
+                            {/*                                        }}*/}
+                            {/*                                        key={*/}
+                            {/*                                            "templates_modal_content_custom_" +*/}
+                            {/*                                            data.nodeType +*/}
+                            {/*                                            index +*/}
+                            {/*                                            nodeId*/}
+                            {/*                                        }*/}
+                            {/*                                        onClick={() => {*/}
+                            {/*                                            setTemplateConfig(*/}
+                            {/*                                                template*/}
+                            {/*                                            );*/}
+                            {/*                                        }}*/}
+                            {/*                                    >*/}
+                            {/*                                        <span*/}
+                            {/*                                            style={*/}
+                            {/*                                                template.accessLevel ==*/}
+                            {/*                                                AccessLevelType.PROGRAMMER*/}
+                            {/*                                                    ? buttonStyleProgrammer*/}
+                            {/*                                                    : template.accessLevel ==*/}
+                            {/*                                                        AccessLevelType.EXPERT*/}
+                            {/*                                                        ? buttonStyleExpert*/}
+                            {/*                                                        : buttonStyleAny*/}
+                            {/*                                            }*/}
+                            {/*                                        >*/}
+                            {/*                                            {*/}
+                            {/*                                                template.name*/}
+                            {/*                                            }*/}
+                            {/*                                        </span>*/}
+                            {/*                                        <FontAwesomeIcon*/}
+                            {/*                                            onClick={() => {*/}
+                            {/*                                                deleteTemplate(*/}
+                            {/*                                                    template.id*/}
+                            {/*                                                );*/}
+                            {/*                                            }}*/}
+                            {/*                                            icon={*/}
+                            {/*                                                faSquareMinus*/}
+                            {/*                                            }*/}
+                            {/*                                            style={{*/}
+                            {/*                                                color: "#888787",*/}
+                            {/*                                                padding: 0,*/}
+                            {/*                                                marginLeft:*/}
+                            {/*                                                    "5px",*/}
+                            {/*                                            }}*/}
+                            {/*                                        />*/}
+                            {/*                                    </Dropdown.Item>*/}
+                            {/*                                );*/}
+                            {/*                            }*/}
+                            {/*                        )}*/}
+                            {/*                    </>*/}
+                            {/*                ) : null}*/}
+                            {/*            </Dropdown.Menu>*/}
+                            {/*        </Dropdown>*/}
+                            {/*    </Col>*/}
+                            {/*) : null}*/}
                             {/* </Col> */}
                         </Row>
                     ) : null}
