@@ -5,9 +5,9 @@ import {
   ResolveConflict,
   packsApi,
   refreshPackRegistry,
-} from "../../api/packsApi";
-import { draftFromInstalledPackPayload } from "../../utils/palettePackFactoryDraft";
-import { toApiPayload } from "../../pages/nodes/factoryDraftModel";
+} from "../../../api/packsApi";
+import { draftFromInstalledPackPayload } from "../../../utils/palettePackFactoryDraft";
+import { toApiPayload } from "../../../pages/nodes/factoryDraftModel";
 import { InstallPermissionsDialog } from "./InstallPermissionsDialog";
 import { DrawerHeader } from "./DrawerHeader";
 import { DrawerTabs } from "./DrawerTabs";

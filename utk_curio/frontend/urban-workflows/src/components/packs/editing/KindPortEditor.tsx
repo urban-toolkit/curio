@@ -1,7 +1,7 @@
 import React from "react";
-import type { PortDraft } from "../../pages/nodes/factoryDraftModel";
-import { factoryUiMakeId } from "../../pages/nodes/factoryDraftModel";
-import { SupportedType } from "../../constants";
+import type { PortDraft } from "../../../pages/nodes/factoryDraftModel";
+import { factoryUiMakeId } from "../../../pages/nodes/factoryDraftModel";
+import { SupportedType } from "../../../constants";
 import styles from "./NodeKindConfigModal.module.css";
 
 const SUPPORTED_TYPE_OPTIONS = Object.values(SupportedType);
@@ -58,3 +58,4 @@ export function KindPortEditor({
     </div>
   );
 }
+

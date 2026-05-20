@@ -1,5 +1,5 @@
 import React from "react";
-import { PackPayload } from "../../api/packsApi";
+import { PackPayload } from "../../../api/packsApi";
 import { packInitial, primaryCategory } from "./packUtils";
 import styles from "./PackCard.module.css";
 

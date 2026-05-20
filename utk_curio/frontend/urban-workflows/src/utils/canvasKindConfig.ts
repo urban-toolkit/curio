@@ -43,8 +43,8 @@ function defaultTemplateFilename(desc: NodeDescriptor): string {
 
 export function canvasKindConfigFromDescriptor(
   desc: NodeDescriptor,
-  node: RFNode<any>,
-  templateCode = "",
+  node: { id: string; data: object },
+  templateCode = ""
 ): CanvasKindConfig {
   const stored = readCanvasKindConfig(node);
   const label = canvasKindLabelFromNode(node, desc);

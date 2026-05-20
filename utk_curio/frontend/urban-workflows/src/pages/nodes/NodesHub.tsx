@@ -5,7 +5,7 @@ import {
     packsApi,
     refreshPackRegistry,
 } from "../../api/packsApi";
-import { InstallPermissionsDialog } from "../../components/packs/InstallPermissionsDialog";
+import { InstallPermissionsDialog } from "../../components/packs/publishing";
 import { toApiPayload } from "./factoryDraftModel";
 import { useNodeFactoryModal } from "../../providers/NodeFactoryModalProvider";
 import {

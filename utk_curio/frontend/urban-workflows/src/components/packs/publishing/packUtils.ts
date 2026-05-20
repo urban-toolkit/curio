@@ -1,4 +1,4 @@
-import { PackPayload } from "../../api/packsApi";
+import { PackPayload } from "../../../api/packsApi";
 import { SortMode } from "./packTypes";
 
 /**

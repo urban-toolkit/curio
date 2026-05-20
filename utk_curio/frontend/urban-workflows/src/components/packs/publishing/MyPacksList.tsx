@@ -1,12 +1,12 @@
 import React, { useMemo } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faDownload, faEye, faEyeSlash, faTrashCan } from "@fortawesome/free-solid-svg-icons";
-import { PackPayload } from "../../api/packsApi";
+import { PackPayload } from "../../../api/packsApi";
 import {
   formatForkOfSubtitle,
   partitionInstalledPacksForWarehouseList,
-} from "../../utils/forkPackLineage";
-import { CatalogPublishPill } from "./CatalogPublishPill";
+} from "../../../utils/forkPackLineage";
+import { CatalogPublishPill } from "../CatalogPublishPill";
 import styles from "./MyPacksList.module.css";
 
 export interface MyPacksListProps {
