@@ -48,6 +48,7 @@ type NodeEditorProps = {
     defaultValue: any;
     floatCode?: any;
     provenance?: boolean;
+    explanation?: boolean;
     customWidgetsCallback?: any;
     contentComponent?: any;
     disableWidgets?: boolean; // Added prop to freeze widget buttons
@@ -69,6 +70,7 @@ function NodeEditor({
     defaultValue,
     floatCode,
     provenance,
+    explanation,
     customWidgetsCallback,
     contentComponent,
     disableWidgets,
@@ -255,7 +257,7 @@ function NodeEditor({
                                     </Tab.Pane>
                                 ) : null}
 
-                                {code || grammar ? (
+                                {(explanation ?? (code || grammar)) ? (
                                     <Tab.Pane eventKey="explanation" style={{ height: "100%" }}>
                                         <NodeExplanation
                                             node_type={nodeType}
@@ -384,7 +386,7 @@ function NodeEditor({
                                 </Col>
                             ) : null}
 
-                            {code || grammar ? (
+                            {(explanation ?? (code || grammar)) ? (
                                 <Col>
                                     <OverlayTrigger
                                         placement="right"

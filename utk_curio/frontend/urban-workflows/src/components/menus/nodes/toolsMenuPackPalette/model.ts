@@ -1,6 +1,10 @@
+import { Node as RFNode } from "reactflow";
 import { PACK_STAGING_MIME } from "../../../../constants/packPaletteStaging";
 import { draftPackSectionKey, type PackStagedRow } from "../../../../providers/PackPaletteContext";
-import { NodeDescriptor, NodePackMeta } from "../../../../registry/types";
+import { tryGetNodeDescriptor } from "../../../../registry";
+import { NodeDescriptor, NodeKindId, NodePackMeta } from "../../../../registry/types";
+import { canvasKindLabelFromNode, normalizeKindLabel } from "../../../../utils/palettePackFactoryDraft";
+import { getFlowNodeCanonicalType } from "../../../../utils/flowNodeCanonicalType";
 import {
     paletteGroupCreatedAtMs,
     resolveForkFamilySelectionKey,
@@ -22,6 +26,49 @@ export function parseStagingPayload(dataTransfer: DataTransfer): string | null {
     } catch {
         return null;
     }
+}
+
+export function canvasKindLabelForNodeId(
+    nodeId: string,
+    rfNodes: readonly RFNode[],
+): string | undefined {
+    const n = rfNodes.find((x) => x.id === nodeId);
+    if (!n) return undefined;
+    const nt = getFlowNodeCanonicalType(n);
+    if (!nt) return undefined;
+    const desc = tryGetNodeDescriptor(nt as NodeKindId);
+    if (!desc) return undefined;
+    return canvasKindLabelFromNode(n, desc);
+}
+
+export function normalizedStagedReplacementLabels(
+    stagedRows: readonly PackStagedRow[],
+    labelForNodeId: (id: string) => string | undefined,
+): Set<string> {
+    const out = new Set<string>();
+    for (const row of stagedRows) {
+        const label = labelForNodeId(row.canvasNodeId);
+        if (label?.trim()) out.add(normalizeKindLabel(label));
+    }
+    return out;
+}
+
+export function packDescriptorsAfterStagedReplacements(
+    descriptors: readonly NodeDescriptor[],
+    replacementLabelNorms: ReadonlySet<string>,
+): NodeDescriptor[] {
+    if (!replacementLabelNorms.size) return [...descriptors];
+    return descriptors.filter((d) => !replacementLabelNorms.has(normalizeKindLabel(d.label)));
+}
+
+export function packDescriptorsAfterPaletteEdits(
+    descriptors: readonly NodeDescriptor[],
+    removedKindIds: readonly string[],
+    replacementLabelNorms: ReadonlySet<string>,
+): NodeDescriptor[] {
+    const removed = new Set(removedKindIds);
+    const withoutRemoved = descriptors.filter((d) => !removed.has(d.id));
+    return packDescriptorsAfterStagedReplacements(withoutRemoved, replacementLabelNorms);
 }
 
 export function formatPackSectionLabel(meta: NodePackMeta): string {
@@ -67,6 +114,7 @@ export function visiblePaletteTriggerKindsCount(opts: {
     paletteRows: PalettePackRow<PackPaletteGroup>[];
     packsPaletteEditMode: boolean;
     stagedRowsByPackKey: Readonly<Record<string, readonly PackStagedRow[]>>;
+    removedKindIdsByPackKey: Readonly<Record<string, readonly string[]>>;
     draftPackSectionIds: readonly string[];
     activePackKey: string | null;
     forkManualPickByRoot: Record<string, string>;
@@ -75,6 +123,7 @@ export function visiblePaletteTriggerKindsCount(opts: {
         paletteRows,
         packsPaletteEditMode,
         stagedRowsByPackKey,
+        removedKindIdsByPackKey,
         draftPackSectionIds,
         activePackKey,
         forkManualPickByRoot,
@@ -91,7 +140,9 @@ export function visiblePaletteTriggerKindsCount(opts: {
     for (const row of paletteRows) {
         if (row.kind === "singleton") {
             const staged = stagedRowsByPackKey[row.group.key] ?? [];
-            n += row.group.descriptors.length + (packsPaletteEditMode ? staged.length : 0);
+            const removed = new Set(removedKindIdsByPackKey[row.group.key] ?? []);
+            const visibleKinds = row.group.descriptors.filter((d) => !removed.has(d.id)).length;
+            n += visibleKinds + (packsPaletteEditMode ? staged.length : 0);
             continue;
         }
         const resolverMembers = row.members.map((m) => ({ key: m.key }));
@@ -103,7 +154,9 @@ export function visiblePaletteTriggerKindsCount(opts: {
         );
         const g = row.members.find((m) => m.key === resolvedDir) ?? row.members[0]!;
         const staged = stagedRowsByPackKey[g.key] ?? [];
-        n += g.descriptors.length + (packsPaletteEditMode ? staged.length : 0);
+        const removed = new Set(removedKindIdsByPackKey[g.key] ?? []);
+        const visibleKinds = g.descriptors.filter((d) => !removed.has(d.id)).length;
+        n += visibleKinds + (packsPaletteEditMode ? staged.length : 0);
     }
     return n;
 }

@@ -8,6 +8,7 @@ import TemplateModal from './TemplateModal';
 import { OutputIcon } from './edges/OutputIcon';
 import { InputIcon } from './edges/InputIcon';
 import { getNodeDescriptor } from '../registry/nodeRegistry';
+import { readCanvasKindConfig, resolveEditorTabFlags } from '../utils/canvasKindConfig';
 import { useNodeState } from '../hook/useNodeState';
 import { HandleDef, TIconCardinality } from '../registry/types';
 import { useFlowContext } from '../providers/FlowProvider';
@@ -67,6 +68,8 @@ const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }:
     nodeState.templateData.custom != undefined && nodeState.templateData.custom === false;
 
   const allHandles = [...adapter.handles, ...(lifecycle.dynamicHandles ?? [])];
+  const kindConfig = readCanvasKindConfig({ id: data.nodeId, data } as { id: string; data: typeof data });
+  const editorTabs = resolveEditorTabFlags(descriptor, kindConfig);
 
   return (
     <>
@@ -138,10 +141,11 @@ const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }:
           <NodeEditor
             outputId={adapter.editor.outputId?.(data.nodeId)}
             setSendCodeCallback={setSendCodeCallback}
-            code={adapter.editor.code}
-            grammar={adapter.editor.grammar}
-            widgets={adapter.editor.widgets}
-            provenance={adapter.editor.provenance}
+            code={editorTabs.code}
+            grammar={editorTabs.grammar}
+            widgets={editorTabs.widgets}
+            provenance={editorTabs.provenance}
+            explanation={editorTabs.explanation}
             disableWidgets={adapter.editor.disableWidgets}
             setOutputCallback={setOutputCallback}
             data={data}

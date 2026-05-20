@@ -1,0 +1,150 @@
+.content {
+    padding: 24px 28px 20px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    font-family: Rubik, system-ui, sans-serif;
+    color: #1e1f23;
+}
+
+.title {
+    margin: 0 32px 6px 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+}
+
+.subtitle {
+    margin: 0 0 16px;
+    font-size: 0.8125rem;
+    color: #7a786d;
+    line-height: 1.4;
+}
+
+.sectionTitle {
+    margin: 18px 0 8px;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #7a786d;
+}
+
+.sectionTitle:first-of-type {
+    margin-top: 0;
+}
+
+.field {
+    margin-bottom: 12px;
+}
+
+.fieldLabel {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #43423b;
+    margin-bottom: 4px;
+}
+
+.row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.input,
+.textarea,
+.select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid #d8d4c2;
+    border-radius: 6px;
+    background: #ffffff;
+    font: inherit;
+    font-size: 0.8125rem;
+}
+
+.textarea {
+    min-height: 160px;
+    resize: vertical;
+    font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
+    font-size: 0.75rem;
+    line-height: 1.45;
+}
+
+.checkGrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 12px;
+}
+
+.checkRow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8125rem;
+    color: #43423b;
+}
+
+.portRow {
+    display: grid;
+    grid-template-columns: 2fr 1fr auto;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.smallBtn {
+    background: #ffffff;
+    border: 1px solid #d8d4c2;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.75rem;
+}
+
+.smallBtn:hover {
+    background: #f3f1e6;
+}
+
+.footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid #eceadf;
+}
+
+.ghostBtn {
+    padding: 8px 14px;
+    border: 1px solid #d8d4c2;
+    border-radius: 6px;
+    background: #ffffff;
+    font: inherit;
+    font-size: 0.875rem;
+    cursor: pointer;
+}
+
+.ghostBtn:hover {
+    background: #f3f1e6;
+}
+
+.primaryBtn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    background: #fbaa69;
+    color: #1e1f23;
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.primaryBtn:hover {
+    background: #fb9a4f;
+}

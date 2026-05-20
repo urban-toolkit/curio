@@ -16,6 +16,7 @@ export interface PaletteForkFamilyProps {
     setActivePackKey: (k: string | null) => void;
     packsPaletteEditMode: boolean;
     stagedRowsByPackKey: Readonly<Record<string, readonly PackStagedRow[]>>;
+    removedKindIdsByPackKey: Readonly<Record<string, readonly string[]>>;
     forkManualPickByRoot: Record<string, string>;
     setForkManualPickByRoot: React.Dispatch<React.SetStateAction<Record<string, string>>>;
     openWizardForPaletteSection: (sectionKey: string, opts: { group?: PackPaletteGroup }) => void;
@@ -33,6 +34,7 @@ export const PaletteForkFamily = memo(function PaletteForkFamily({
     setActivePackKey,
     packsPaletteEditMode,
     stagedRowsByPackKey,
+    removedKindIdsByPackKey,
     forkManualPickByRoot,
     setForkManualPickByRoot,
     openWizardForPaletteSection,
@@ -62,11 +64,13 @@ export const PaletteForkFamily = memo(function PaletteForkFamily({
     );
 
     const stagedInstalledRows = stagedRowsByPackKey[selectedGroup.key] ?? [];
+    const removedKindIds = removedKindIdsByPackKey[selectedGroup.key] ?? [];
     const forkPublished =
         catalogPublishedDirNames != null && catalogPublishedDirNames.has(selectedGroup.key);
 
-    const canOpenStagedFf = packsPaletteEditMode && stagedInstalledRows.length > 0;
-    const canOpenForkFf = packsPaletteEditMode && stagedInstalledRows.length === 0;
+    const hasPendingEdits = stagedInstalledRows.length > 0 || removedKindIds.length > 0;
+    const canOpenStagedFf = packsPaletteEditMode && hasPendingEdits;
+    const canOpenForkFf = packsPaletteEditMode && !hasPendingEdits;
     const canOpenFactoryFf = canOpenStagedFf || canOpenForkFf;
 
     const onForkPickedFromPalette = useCallback(

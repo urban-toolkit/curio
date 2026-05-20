@@ -1,0 +1,121 @@
+.labelWrap {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.labelText {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+    font-size: 12px;
+    font-weight: bold;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #888787;
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    font-family: inherit;
+    cursor: default;
+}
+
+.labelTextEditable {
+    cursor: text;
+    border-radius: 3px;
+}
+
+.labelTextEditable:hover {
+    background: rgba(251, 170, 105, 0.12);
+}
+
+.labelTextHighlighted {
+    color: rgb(251, 252, 246);
+}
+
+.labelInput {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+    font-size: 12px;
+    font-weight: bold;
+    color: #1e1f23;
+    border: 1px solid rgba(251, 170, 105, 0.75);
+    border-radius: 3px;
+    padding: 2px 6px;
+    background: #fbfcf6;
+    font-family: inherit;
+    box-sizing: border-box;
+}
+
+.labelInputHighlighted {
+    color: rgb(251, 252, 246);
+    background: rgba(30, 31, 35, 0.85);
+    border-color: rgba(251, 170, 105, 0.9);
+}
+
+.execMark {
+    color: #2f8f4a;
+    margin-right: 2px;
+    font-size: 10px;
+    flex-shrink: 0;
+}
+
+.saveAsBtn {
+    flex-shrink: 0;
+    border: 1px solid rgba(251, 170, 105, 0.55);
+    border-radius: 4px;
+    background: rgba(251, 170, 105, 0.14);
+    color: #7a4a12;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    cursor: pointer;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.saveAsBtn:hover {
+    background: rgba(251, 170, 105, 0.28);
+}
+
+.saveAsBtnHighlighted {
+    color: #fbaa69;
+    border-color: rgba(251, 170, 105, 0.75);
+    background: rgba(251, 170, 105, 0.18);
+}
+
+.configBtn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid rgba(136, 135, 135, 0.45);
+    border-radius: 4px;
+    background: transparent;
+    color: #888787;
+    cursor: pointer;
+    font-size: 11px;
+    line-height: 1;
+}
+
+.configBtn:hover {
+    border-color: rgba(251, 170, 105, 0.75);
+    color: #fbaa69;
+    background: rgba(251, 170, 105, 0.1);
+}
+
+.configBtnHighlighted {
+    border-color: rgba(251, 170, 105, 0.65);
+    color: #fbaa69;
+}

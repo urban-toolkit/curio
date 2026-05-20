@@ -5,6 +5,10 @@ import { NodeDescriptor } from "../registry/types";
 import { NodeKindId } from "../registry/types";
 import { tryGetNodeDescriptor } from "../registry/nodeRegistry";
 import { getFlowNodeCanonicalType } from "./flowNodeCanonicalType";
+import {
+  applyCanvasKindConfigToKindDraft,
+  readCanvasKindConfig,
+} from "./canvasKindConfig";
 import type { PackStagedRow } from "../providers/PackPaletteContext";
 import {
   Draft,
@@ -206,7 +210,12 @@ function forkKindSlugAwayFrom(baseSlug: string, occupied: ReadonlyMap<string, un
     : fallback;
 }
 
-export function descriptorToKindDraft(desc: NodeDescriptor, code: string, kindIdOverride?: string): KindDraft {
+export function descriptorToKindDraft(
+  desc: NodeDescriptor,
+  code: string,
+  kindIdOverride?: string,
+  labelOverride?: string,
+): KindDraft {
   const kindId = kindIdOverride ?? canonicalKindSlugForDescriptor(desc);
   const fname = inferDefaultFilename(desc.pack?.defaultTemplate);
 
@@ -216,7 +225,7 @@ export function descriptorToKindDraft(desc: NodeDescriptor, code: string, kindId
 
   return {
     id: kindId,
-    label: desc.label || kindId,
+    label: labelOverride?.trim() || desc.label || kindId,
     category: desc.category as Category,
     engine: deriveEngine(desc),
     editor: desc.editor,
@@ -237,6 +246,46 @@ function nodesById(nodes: RFNode<any>[]): Map<string, RFNode<any>> {
   const map = new Map<string, RFNode<any>>();
   for (const n of nodes) map.set(String(n.id), n);
   return map;
+}
+
+export function normalizeKindLabel(label: string): string {
+  return label.trim().toLowerCase();
+}
+
+/** Canvas-local kind title; falls back to registry descriptor label. */
+export function canvasKindLabelFromNode(node: RFNode<any>, desc: NodeDescriptor): string {
+  const raw = (node.data as { packKindLabel?: unknown })?.packKindLabel;
+  if (typeof raw === "string" && raw.trim()) return raw.trim();
+  return desc.label || canonicalKindSlugForDescriptor(desc);
+}
+
+/** True when the user set a canvas title that differs from the registry descriptor label. */
+export function hasCustomCanvasKindLabel(node: RFNode<any>, desc: NodeDescriptor): boolean {
+  const raw = (node.data as { packKindLabel?: unknown })?.packKindLabel;
+  if (typeof raw !== "string" || !raw.trim()) return false;
+  const registryLabel = desc.label || canonicalKindSlugForDescriptor(desc);
+  return normalizeKindLabel(raw) !== normalizeKindLabel(registryLabel);
+}
+
+function kindDraftFromCanvasNode(
+  node: RFNode<any>,
+  desc: NodeDescriptor,
+  body: string,
+  kindIdOverride?: string,
+): KindDraft {
+  const label = canvasKindLabelFromNode(node, desc);
+  const base = descriptorToKindDraft(desc, body, kindIdOverride, label);
+  const config = readCanvasKindConfig(node);
+  return applyCanvasKindConfigToKindDraft(base, config, label);
+}
+
+function findKindIdByLabel(kindsById: ReadonlyMap<string, KindDraft>, label: string): string | undefined {
+  const norm = normalizeKindLabel(label);
+  if (!norm) return undefined;
+  for (const [id, kind] of kindsById) {
+    if (normalizeKindLabel(kind.label) === norm) return id;
+  }
+  return undefined;
 }
 
 /**
@@ -268,26 +317,39 @@ export function mergeKindsForPaletteSave(
     const slugBase = canonicalKindSlugForDescriptor(desc);
     const body = runtimeCodeFromRfNode(node);
     const codeNorm = normalizeTemplateCode(body);
+    const label = canvasKindLabelFromNode(node, desc);
+
+    const labelMatchId = findKindIdByLabel(kindsById, label);
+    if (labelMatchId) {
+      kindsById.set(labelMatchId, kindDraftFromCanvasNode(node, desc, body, labelMatchId));
+      continue;
+    }
+
+    if (hasCustomCanvasKindLabel(node, desc)) {
+      const forkId = forkKindSlugAwayFrom(slugBase, kindsById);
+      kindsById.set(forkId, kindDraftFromCanvasNode(node, desc, body, forkId));
+      continue;
+    }
 
     if (!kindsById.has(slugBase)) {
-      kindsById.set(slugBase, descriptorToKindDraft(desc, body));
+      kindsById.set(slugBase, kindDraftFromCanvasNode(node, desc, body, slugBase));
       continue;
     }
 
     const prev = kindsById.get(slugBase)!;
     if (normalizeTemplateCode(prev.defaultTemplateCode) === codeNorm) {
       const forkId = forkKindSlugAwayFrom(slugBase, kindsById);
-      kindsById.set(forkId, descriptorToKindDraft(desc, body, forkId));
+      kindsById.set(forkId, kindDraftFromCanvasNode(node, desc, body, forkId));
       continue;
     }
 
     if (seededSlugs.has(slugBase)) {
-      kindsById.set(slugBase, descriptorToKindDraft(desc, body));
+      kindsById.set(slugBase, kindDraftFromCanvasNode(node, desc, body, slugBase));
       continue;
     }
 
     const forkId = forkKindSlugAwayFrom(slugBase, kindsById);
-    kindsById.set(forkId, descriptorToKindDraft(desc, body, forkId));
+    kindsById.set(forkId, kindDraftFromCanvasNode(node, desc, body, forkId));
   }
 
   if (!kindsById.size) return null;
@@ -326,14 +388,27 @@ export function buildDraftForPaletteSection(opts: {
   /** Known installed pack palette rows (`key` is `packId@major`). Used to merge seeded kinds into canvas-draft saves. */
   palettePackGroups?: readonly PalettePackGroupLite[];
   getTemplates?: TemplatesLookup;
+  /** Kind ids to omit from the seeded pack when building the fork/draft. */
+  removedKindIds?: readonly string[];
 }): Draft | null {
-  const { sectionKey, stagedRows, rfNodes, standaloneDraft, standalonePackLeaf, group, palettePackGroups, getTemplates } = opts;
+  const {
+    sectionKey,
+    stagedRows,
+    rfNodes,
+    standaloneDraft,
+    standalonePackLeaf,
+    group,
+    palettePackGroups,
+    getTemplates,
+    removedKindIds,
+  } = opts;
+  const removed = new Set((removedKindIds ?? []).map((id) => id.trim()).filter(Boolean));
   const byId = nodesById([...rfNodes]);
   const orderedStagedNodes = stagedRows
     .map((r) => byId.get(String(r.canvasNodeId)))
     .filter(Boolean) as RFNode<any>[];
 
-  if (!orderedStagedNodes.length) return null;
+  if (!orderedStagedNodes.length && removed.size === 0) return null;
 
   const draft = makeDraft();
 
@@ -363,9 +438,11 @@ export function buildDraftForPaletteSection(opts: {
   }
 
   const coord = `${draft.packId}@${draft.major}`;
-  const seededDescriptors: readonly NodeDescriptor[] = group?.descriptors
-    ? group.descriptors
-    : palettePackGroups?.find((g) => g.key === coord)?.descriptors ?? [];
+  const seededDescriptors: readonly NodeDescriptor[] = (
+    group?.descriptors
+      ? group.descriptors
+      : palettePackGroups?.find((g) => g.key === coord)?.descriptors ?? []
+  ).filter((d) => !removed.has(d.id));
 
   const mergedKinds = mergeKindsForPaletteSave(seededDescriptors, orderedStagedNodes, getTemplates);
   if (!mergedKinds?.length) return null;
@@ -468,6 +545,60 @@ export function draftFromInstalledPackPayload(
     d.createdAt = pack.createdAt.trim();
   }
   return d;
+}
+
+export const SAVE_AS_NEW_PACK = "__save_as_new__";
+
+/** True when Save As into `pack` would overwrite an existing kind with the same label. */
+export function saveAsWouldReplaceByLabel(pack: PackPayload, nodeLabel: string): boolean {
+  const norm = normalizeKindLabel(nodeLabel);
+  if (!norm) return false;
+  return pack.kinds.some((k) => normalizeKindLabel(k.label) === norm);
+}
+
+/** Build a factory install draft when saving a single canvas node into a pack (Save As). */
+export function buildSaveAsInstallDraft(opts: {
+  canvasNode: RFNode<any>;
+  target:
+    | { kind: "new"; packDisplayName?: string }
+    | { kind: "installed"; pack: PackPayload };
+  getTemplates?: TemplatesLookup;
+}): Draft | null {
+  const nt = getFlowNodeCanonicalType(opts.canvasNode as RFNode);
+  if (!nt) return null;
+  const desc = tryGetNodeDescriptor(nt as NodeKindId);
+  if (!desc) return null;
+
+  const label = canvasKindLabelFromNode(opts.canvasNode, desc);
+  const body = runtimeCodeFromRfNode(opts.canvasNode);
+  const slugBase = canonicalKindSlugForDescriptor(desc);
+
+  if (opts.target.kind === "new") {
+    const leaf = normalizePackIdLeaf(factoryUiMakeId());
+    const draft = makeDraft();
+    draft.packId = `curio.canvas.draft.${leaf}`;
+    draft.name = opts.target.packDisplayName?.trim() || `${label} pack`;
+    draft.publisher = "Local palette";
+    draft.description = "Created from canvas Save As.";
+    draft.kinds = [kindDraftFromCanvasNode(opts.canvasNode, desc, body, slugBase)];
+    return draft;
+  }
+
+  const draft = draftFromInstalledPackPayload(opts.target.pack, opts.getTemplates);
+
+  const labelMatchIdx = draft.kinds.findIndex(
+    (k) => normalizeKindLabel(k.label) === normalizeKindLabel(label),
+  );
+  if (labelMatchIdx >= 0) {
+    const existingId = draft.kinds[labelMatchIdx]!.id;
+    draft.kinds[labelMatchIdx] = kindDraftFromCanvasNode(opts.canvasNode, desc, body, existingId);
+    return draft;
+  }
+
+  const kindsMap = new Map(draft.kinds.map((k) => [k.id, k]));
+  const kindId = kindsMap.has(slugBase) ? forkKindSlugAwayFrom(slugBase, kindsMap) : slugBase;
+  draft.kinds.push(kindDraftFromCanvasNode(opts.canvasNode, desc, body, kindId));
+  return draft;
 }
 
 /** True when the draft was opened as a fork-from-installed flow (new coord + lineage). */

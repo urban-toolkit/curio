@@ -17,6 +17,12 @@ import { useUserContext } from "../providers/UserProvider";
 import { useLLMContext } from "../providers/LLMProvider";
 import { useToastContext } from "../providers/ToastProvider";
 import { usePackPalette } from "../providers/PackPaletteContext";
+import { EditableNodeHeaderLabel } from "./packs/EditableNodeHeaderLabel";
+import { NodeSaveAsModal } from "./packs/NodeSaveAsModal";
+import { NodeKindConfigModal } from "./packs/NodeKindConfigModal";
+import { canvasKindLabelFromNode } from "../utils/palettePackFactoryDraft";
+import type { CanvasKindConfig } from "../utils/canvasKindConfig";
+import { readCanvasKindConfig } from "../utils/canvasKindConfig";
 import { formatForkOfSubtitle } from "../utils/forkPackLineage";
 import { ConnectionValidator } from "../ConnectionValidator";
 import { NODE_CATEGORY_SHORT_LABEL } from "../constants/nodeCategoryShortLabels";
@@ -87,7 +93,7 @@ export const NodeContainer = ({
     handleType,
     styles = {},
     disablePlay = false,
-    isLoading = false
+    isLoading = false,
 }: {
     data: any;
     children: ReactNode;
@@ -107,9 +113,9 @@ export const NodeContainer = ({
     setTemplateConfig?: any;
     disableComments?: boolean;
     styles?: CSS.Properties;
+    handleType?: string;
     disablePlay?: boolean;
     isLoading?: boolean;
-    handleType?: string;
 }) => {
     const { showToast } = useToastContext();
     const {
@@ -135,6 +141,8 @@ export const NodeContainer = ({
     const { getTemplates, deleteTemplate, fetchTemplates } = useTemplateContext();
     const { createCodeNode, loadTrill } = useCode();
     const [showComments, setShowComments] = useState(false);
+    const [saveAsOpen, setSaveAsOpen] = useState(false);
+    const [configOpen, setConfigOpen] = useState(false);
     const [comments, setComments] = useState<IComment[]>([]);
     const [goal, setGoal] = useState(data.goal);
     const [pinnedToDashboard, setPinnedToDashboard] = useState<boolean>(!!dashboardPins[nodeId]);
@@ -495,6 +503,10 @@ export const NodeContainer = ({
     };
 
     const packDescriptor = tryGetNodeDescriptor(data.nodeType as NodeKindId);
+    const headerKindLabel = packDescriptor
+        ? canvasKindLabelFromNode({ id: nodeId, data } as { id: string; data: typeof data }, packDescriptor)
+        : nodeNameTranslation(data.nodeType);
+    const canEditPackHeader = packsPaletteEditMode && !dashboardOn;
     const packForkSubtitle =
         packDescriptor?.source === "pack" && packDescriptor.pack?.lineage != null
             ? formatForkOfSubtitle(packDescriptor.pack.lineage)
@@ -766,33 +778,20 @@ export const NodeContainer = ({
                             onClick={() => setMinimized(true)}
                         />
 
-                        {/* Node name — fills remaining space */}
-                        <span style={{
-                            flex: 1,
-                            textAlign: "center",
-                            fontSize: "12px",
-                            fontWeight: "bold",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                            minWidth: 0,
-                            color: data.keywordHighlighted ? "rgb(251, 252, 246)" : "#888787",
-                        }}>
-                            {nodeExecStatus[nodeId] === "executed" ? (
-                                <span
-                                    style={{
-                                        color: "#2F8F4A",
-                                        marginRight: "4px",
-                                        fontSize: "10px",
-                                    }}
-                                    title="Executed"
-                                >
-                                    &#10003;
-                                </span>
-                            ) : null}
-                            {nodeNameTranslation(data.nodeType)}
-                            {templateData.name != undefined ? " · " + templateData.name : null}
-                        </span>
+                        {/* Node title — editable in pack palette edit mode */}
+                        <EditableNodeHeaderLabel
+                            displayLabel={headerKindLabel}
+                            editable={canEditPackHeader}
+                            showSaveAs={canEditPackHeader}
+                            showConfig={canEditPackHeader}
+                            executed={nodeExecStatus[nodeId] === "executed"}
+                            keywordHighlighted={!!data.keywordHighlighted}
+                            onLabelCommit={(label) => {
+                                updateDataNode(nodeId, { ...data, packKindLabel: label });
+                            }}
+                            onSaveAs={() => setSaveAsOpen(true)}
+                            onConfigure={() => setConfigOpen(true)}
+                        />
 
                         {/* Right-side action icons */}
                         {promptModal != undefined && templateData.id != undefined && templateData.custom ? (
@@ -1164,6 +1163,25 @@ export const NodeContainer = ({
                     onClick={() => setMinimized(false)}
                 />
             ) : null}
+
+            <NodeSaveAsModal show={saveAsOpen} nodeId={nodeId} onClose={() => setSaveAsOpen(false)} />
+            <NodeKindConfigModal
+                show={configOpen}
+                nodeId={nodeId}
+                nodeType={data.nodeType}
+                storedConfig={readCanvasKindConfig({ id: nodeId, data } as { id: string; data: typeof data })}
+                storedLabel={data.packKindLabel}
+                templateCode={code ?? data.defaultCode ?? ""}
+                onClose={() => setConfigOpen(false)}
+                onSave={(config: CanvasKindConfig) => {
+                    updateDataNode(nodeId, {
+                        ...data,
+                        packKindLabel: config.label.trim(),
+                        packKindConfig: config,
+                    });
+                    setConfigOpen(false);
+                }}
+            />
         </>
     );
 };

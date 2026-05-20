@@ -23,10 +23,18 @@
 }
 
 .large {
-  width: 50%;
-  height: 70%;
+  width: min(720px, 50vw);
+  height: min(720px, 70vh);
   max-width: none;
   max-height: none;
+}
+
+.backdropOverlay {
+  z-index: 10054;
+}
+
+.modalOverlay {
+  z-index: 10055;
 }
 
 .closeX {
