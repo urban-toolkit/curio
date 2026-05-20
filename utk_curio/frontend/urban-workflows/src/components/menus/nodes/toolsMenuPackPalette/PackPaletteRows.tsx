@@ -88,7 +88,7 @@ export const PackKindRow = memo(function PackKindRow({
                     type="button"
                     className={packStyles.packKindRowMeta}
                     onClick={selectOnCanvas}
-                    title="Select nodes of this kind on the canvas"
+                    // title="Select nodes of this kind on the canvas"
                 >
                     <span className={packStyles.packKindRowLabel}>{desc.label}</span>
                     <span className={packStyles.packKindCategoryChip}>{NODE_CATEGORY_SHORT_LABEL[desc.category]}</span>

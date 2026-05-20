@@ -3,6 +3,7 @@ import type { NodeCategory, NodePackMeta } from "../../../registry/types";
 import { NODE_CATEGORY_SHORT_LABEL } from "../../../constants/nodeCategoryShortLabels";
 import { formatForkOfSubtitle } from "../../../utils/forkPackLineage";
 import { usePackPalette } from "../../../providers/PackPaletteContext";
+import { useHeaderIconDragClick } from "../../../utils/headerIconDragClick";
 import styles from "./PackMetaHeader.module.css";
 
 export interface PackMetaHeaderProps {
@@ -36,6 +37,8 @@ export function PackMetaHeader({ pack, category, suggestionActive }: PackMetaHea
     setPaletteDockRevealCoord(coord);
   }, [coord, setActivePackKey, setPaletteDockRevealCoord, suggestionActive]);
 
+  const packBadgeClick = useHeaderIconDragClick(focusPackInPalette);
+
   return (
     <div
       className={styles.pills}
@@ -49,7 +52,7 @@ export function PackMetaHeader({ pack, category, suggestionActive }: PackMetaHea
         className={styles.packBadge}
         title={packTooltip}
         aria-label={`Open pack ${coord} in Packs palette`}
-        onClick={focusPackInPalette}
+        {...packBadgeClick}
       >
         PACK
       </button>

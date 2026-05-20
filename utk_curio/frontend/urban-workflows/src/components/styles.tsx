@@ -21,6 +21,7 @@ import { canvasKindLabelFromNode } from "../utils/palettePackFactoryDraft";
 import type { CanvasKindConfig } from "../utils/canvasKindConfig";
 import { readCanvasKindConfig } from "../utils/canvasKindConfig";
 import { ConnectionValidator } from "../ConnectionValidator";
+import { HeaderIconButton } from "./HeaderIconButton";
 import {
     EditableNodeHeaderLabel,
     NodeSaveAsModal,
@@ -674,11 +675,11 @@ export const NodeContainer = ({
                             />
                         ) : null}
                         {/* Minimize toggle */}
-                        <FontAwesomeIcon
+                        <HeaderIconButton
                             icon={faMinus}
                             style={{ ...headerIconStyle, flexShrink: 0, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
                             title="Minimize"
-                            onClick={() => setMinimized(true)}
+                            onActivate={() => setMinimized(true)}
                         />
 
                         {/* Node title — editable in pack palette edit mode */}
@@ -706,40 +707,40 @@ export const NodeContainer = ({
 
                         {/* Right-side action icons */}
                         {promptModal != undefined && templateData.id != undefined && templateData.custom ? (
-                            <FontAwesomeIcon
+                            <HeaderIconButton
                                 icon={faGear}
                                 style={{ ...headerIconStyle, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
                                 title="Settings"
-                                onClick={() => promptModal()}
+                                onActivate={() => promptModal()}
                             />
                         ) : null}
-                        <FontAwesomeIcon
+                        <HeaderIconButton
                             icon={pinnedToDashboard ? faCircleDot : faCircle}
                             style={{
                                 ...headerIconStyle,
                                 color: pinnedToDashboard ? "red" : (data.keywordHighlighted ? "rgb(251, 252, 246)" : "#888787"),
                             }}
                             title={pinnedToDashboard ? "Unpin from dashboard" : "Pin to dashboard"}
-                            onClick={() => updatePin(nodeId, pinnedToDashboard)}
+                            onActivate={() => updatePin(nodeId, pinnedToDashboard)}
                         />
-                        <FontAwesomeIcon
+                        <HeaderIconButton
                             icon={faComments}
                             style={{ ...headerIconStyle, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
                             title="Comments"
-                            onClick={() => setShowComments(!showComments)}
+                            onActivate={() => setShowComments(!showComments)}
                         />
-                        <FontAwesomeIcon
+                        <HeaderIconButton
                             icon={faXmark}
                             style={{ ...headerIconStyle, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
                             title="Delete node"
-                            onClick={onDelete}
+                            onActivate={onDelete}
                         />
                         {updateTemplate != undefined && code != undefined && templateData.id != undefined && templateData.custom && code != templateData.code ? (
-                            <FontAwesomeIcon
+                            <HeaderIconButton
                                 icon={faFloppyDisk}
                                 style={{ ...headerIconStyle, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
                                 title="Save template"
-                                onClick={() => updateTemplate({ ...templateData, code: code })}
+                                onActivate={() => updateTemplate({ ...templateData, code: code })}
                             />
                         ) : null}
                     </div>
