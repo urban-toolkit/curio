@@ -16,7 +16,6 @@ import {
   Engine,
   KindDraft,
   PortDraft,
-  STARTER_CODE,
   factoryUiMakeId,
   makeDraft,
   makeKind,
