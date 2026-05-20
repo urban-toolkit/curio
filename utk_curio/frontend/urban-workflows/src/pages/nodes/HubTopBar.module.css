@@ -1,0 +1,62 @@
+/* ── Top navigation bar ────────────────────────────────────────────────── */
+
+.topBar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 28px;
+    background: #ffffff;
+    border-bottom: 1px solid #eceadf;
+}
+
+.title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0;
+    flex: 1;
+}
+
+.backLink {
+    color: #1e1f23;
+    text-decoration: none;
+    font-weight: 500;
+    padding: 6px 10px;
+    border-radius: 6px;
+}
+
+.backLink:hover {
+    background: #f3f1e6;
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────────── */
+
+.actionButton {
+    background: #fbaa69;
+    color: #1e1f23;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-weight: 500;
+    cursor: pointer;
+    font: inherit;
+}
+
+.actionButton:hover {
+    background: #fb9a4f;
+}
+
+.actionButton:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.ghostButton {
+    composes: actionButton;
+    background: #ffffff;
+    border: 1px solid #d8d4c2;
+}
+
+.ghostButton:hover {
+    background: #f3f1e6;
+}
+
