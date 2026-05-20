@@ -10,6 +10,7 @@ import styles from "./MyPacks.module.css";
 
 export interface MyPackSingletonRowProps extends MyPacksCallbacks {
   pack: PackPayload;
+  nested?: boolean;
   busy: boolean;
   paletteDockBusy: string | null;
   catalogPublishedDirs: ReadonlySet<string>;
@@ -24,6 +25,7 @@ export interface MyPackSingletonRowProps extends MyPacksCallbacks {
  */
 export const MyPackSingletonRow: React.FC<MyPackSingletonRowProps> = ({
   pack,
+  nested = false,
   busy,
   paletteDockBusy,
   catalogPublishedDirs,
@@ -35,7 +37,7 @@ export const MyPackSingletonRow: React.FC<MyPackSingletonRowProps> = ({
   onPublishToCatalog,
   onOpenForkInFactory,
 }) => (
-  <div className={styles.myPackRow}>
+  <div className={`${styles.myPackRow}${nested ? ` ${styles.myPackRowNested}` : ""}`}>
     <div>
       <div className={styles.myPackTitleBlock}>
         <div className={styles.myPackNameRow}>

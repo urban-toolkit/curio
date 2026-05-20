@@ -95,3 +95,69 @@
     opacity: 0.4;
     cursor: not-allowed;
 }
+
+.installedForkOf {
+    color: #888888;
+    font-size: 0.625rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ── Fork-family accordion ─────────────────────────────────────────────── */
+
+.familyDetails {
+    border: 1px solid #eeeeee;
+    border-radius: 4px;
+    background: #fafafa;
+    overflow: hidden;
+}
+
+.familySummary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    list-style: none;
+    cursor: pointer;
+    font-size: 0.75rem;
+}
+
+.familySummary::-webkit-details-marker {
+    display: none;
+}
+
+.familySummaryMain {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.familyMemberList {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 0 8px 8px;
+    border-top: 1px solid #eeeeee;
+}
+
+.installedRowNested {
+    background: #ffffff;
+    border-color: #e8e8e8;
+}
+
+.familyCountBadge {
+    flex-shrink: 0;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    background: #e8e8e8;
+    color: #555555;
+    font-size: 0.625rem;
+    font-weight: 700;
+    line-height: 18px;
+    text-align: center;
+}

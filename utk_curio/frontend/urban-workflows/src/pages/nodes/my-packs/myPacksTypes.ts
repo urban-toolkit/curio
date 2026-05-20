@@ -1,13 +1,8 @@
 import { PackPayload } from "../../../api/packsApi";
-import { ForkFamilyGroup } from "../../../utils/forkPackLineage";
+import { InstalledPackWarehouseRow } from "../../../utils/forkPackLineage";
 
-/**
- * A single entry in the ordered installed-packs rail.
- * Either a standalone pack or a fork-family group.
- */
-export type InstalledHubEntry =
-  | { kind: "singleton"; pack: PackPayload }
-  | { kind: "family"; family: ForkFamilyGroup<PackPayload> };
+/** Ordered installed-packs rail row (singleton or fork-family accordion). */
+export type InstalledHubEntry = InstalledPackWarehouseRow<PackPayload>;
 
 /** Shared callback shapes used by all My Packs sub-components. */
 export interface MyPacksCallbacks {
@@ -17,4 +12,3 @@ export interface MyPacksCallbacks {
   onPublishToCatalog: (dirName: string) => void | Promise<void>;
   onOpenForkInFactory: (pack: PackPayload) => void;
 }
-

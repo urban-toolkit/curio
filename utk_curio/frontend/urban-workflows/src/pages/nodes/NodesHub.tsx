@@ -14,9 +14,7 @@ import {
 } from "../../utils/palettePackFactoryDraft";
 import {
     areForkPaletteParentsRevealedInDock,
-    forkFamilyLatestCreatedAtMs,
-    packCreatedAtMs,
-    partitionPacksByForkFamily,
+    partitionInstalledPacksForWarehouseList,
     referencedForkParentCoordinates,
 } from "../../utils/forkPackLineage";
 import { HubTopBar } from "./HubTopBar";
@@ -46,7 +44,6 @@ const NodesHub: React.FC = () => {
   const [paletteDockDirBusy, setPaletteDockDirBusy] = useState<string | null>(null);
   const [catalogPublishAllowed, setCatalogPublishAllowed] = useState(true);
   const [publishingPackKey, setPublishingPackKey] = useState<string | null>(null);
-  const [hubForkManualByRoot, setHubForkManualByRoot] = useState<Record<string, string>>({});
   const installedByDirRef = useRef<Map<string, PackPayload>>(new Map());
   const { openNodeFactory } = useNodeFactoryModal();
 
@@ -95,7 +92,10 @@ const NodesHub: React.FC = () => {
 
   // ── My Packs derived state ────────────────────────────────────────────────
 
-  const installedPartition = useMemo(() => partitionPacksByForkFamily(installed), [installed]);
+  const hubRailInstalledOrdered = useMemo(
+    () => partitionInstalledPacksForWarehouseList(installed),
+    [installed],
+  );
 
   const installedForkParentCoords = useMemo(
     () => referencedForkParentCoordinates(installed),
@@ -106,25 +106,6 @@ const NodesHub: React.FC = () => {
     () => areForkPaletteParentsRevealedInDock(installed),
     [installed],
   );
-
-  const hubRailInstalledOrdered = useMemo(() => {
-    const entries = [
-      ...installedPartition.singletons.map((pack) => ({ kind: "singleton" as const, pack })),
-      ...installedPartition.families.map((family) => ({ kind: "family" as const, family })),
-    ];
-    console.log("singletons: ", installedPartition.singletons.length, installedPartition.singletons,
-      "families: ", installedPartition.families.length, installedPartition.families);
-    entries.sort((a, b) => {
-      const ta = a.kind === "singleton" ? packCreatedAtMs(a.pack) : forkFamilyLatestCreatedAtMs(a.family);
-      const tb = b.kind === "singleton" ? packCreatedAtMs(b.pack) : forkFamilyLatestCreatedAtMs(b.family);
-      const c = tb - ta;
-      if (c !== 0) return c;
-      const keyA = a.kind === "singleton" ? a.pack.dirName : a.family.rootKey;
-      const keyB = b.kind === "singleton" ? b.pack.dirName : b.family.rootKey;
-      return keyA.localeCompare(keyB, undefined, { sensitivity: "base" });
-    });
-    return entries;
-  }, [installedPartition]);
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
@@ -330,8 +311,6 @@ const NodesHub: React.FC = () => {
           catalogPublishedDirs={catalogPublishedDirs}
           catalogPublishAllowed={catalogPublishAllowed}
           publishingPackKey={publishingPackKey}
-          hubForkManualByRoot={hubForkManualByRoot}
-          setHubForkManualByRoot={setHubForkManualByRoot}
           onToggleForkSourcesInDockPalette={() => void onToggleForkSourcesInDockPalette()}
           onExport={onExport}
           onUninstall={onUninstall}
