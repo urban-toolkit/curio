@@ -24,7 +24,6 @@ import {
   faChartLine,
   faCodeMerge,
   faCube,
-  faDatabase,
   faUpload,
   faTable,
 } from '@fortawesome/free-solid-svg-icons';
