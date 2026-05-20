@@ -5,7 +5,7 @@ import type { PackStagedRow } from "../../../../providers/PackPaletteContext";
 import { CatalogPublishPill } from "../../../packs/CatalogPublishPill";
 import { ForkFamilyPicker } from "../../../packs/ForkFamilyPicker";
 import { FORK_SELECTION_SESSION_PREFIX, resolveForkFamilySelectionKey } from "../../../../utils/forkPackLineage";
-import { formatPackSectionLabel, type PackPaletteGroup } from "./model";
+import { type PackPaletteGroup } from "./model";
 import { InstalledPackAccordion } from "./InstalledPackAccordion";
 import packStyles from "./ToolsMenuPackPalette.module.css";
 
@@ -87,7 +87,7 @@ export const PaletteForkFamily = memo(function PaletteForkFamily({
     );
 
     const forkPickerOptions = useMemo(
-        () => members.map((m) => ({ key: m.key, label: m.label })),
+        () => members.map((m) => ({ key: m.key, label: m.name })),
         [members],
     );
 
@@ -105,11 +105,13 @@ export const PaletteForkFamily = memo(function PaletteForkFamily({
                             role={canOpenFactoryFf ? "button" : undefined}
                             tabIndex={canOpenFactoryFf ? 0 : undefined}
                             title={
-                                canOpenStagedFf
-                                    ? "Open Node Factory with staged edits"
-                                    : canOpenForkFf
-                                      ? "Fork this pack in Node Factory"
-                                      : undefined
+                                selectedGroup.label !== selectedGroup.name
+                                    ? selectedGroup.label
+                                    : canOpenStagedFf
+                                      ? "Open Node Factory with staged edits"
+                                      : canOpenForkFf
+                                        ? "Fork this pack in Node Factory"
+                                        : undefined
                             }
                             onClick={(ev) => {
                                 if (!canOpenFactoryFf) return;
@@ -124,14 +126,14 @@ export const PaletteForkFamily = memo(function PaletteForkFamily({
                                 }
                             }}
                         >
-                            {formatPackSectionLabel(selectedGroup.descriptors[0].pack!)}
+                            {selectedGroup.name}
                         </span>
                         {canOpenFactoryFf ? (
                             <button
                                 type="button"
                                 className={packStyles.packForkFamilyFactoryPen}
                                 title={canOpenStagedFf ? "Open Node Factory with staged edits" : "Fork in Node Factory"}
-                                aria-label={`Node Factory — ${selectedGroup.label}`}
+                                aria-label={`Node Factory — ${selectedGroup.name}`}
                                 onClick={(ev) => {
                                     ev.preventDefault();
                                     openWizardForPaletteSection(selectedGroup.key, { group: selectedGroup });

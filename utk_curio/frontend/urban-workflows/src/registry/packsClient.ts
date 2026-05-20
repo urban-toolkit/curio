@@ -161,6 +161,7 @@ function buildDescriptor(pack: RawPack, kind: RawPackKind, order: number): NodeD
       packId: pack.packId,
       major: pack.major,
       version: pack.version,
+      name: pack.name,
       publisher: pack.publisher,
       defaultTemplate: kind.defaultTemplate ?? undefined,
       ...(pack.lineage

@@ -80,11 +80,13 @@ export const InstalledPackAccordion = memo(function InstalledPackAccordion({
                             className={packStyles.packSummaryTitle}
                             role={canOpenFactory ? "button" : undefined}
                             title={
-                                canOpenStaged
-                                    ? "Open Node Factory with this pack and staged edits"
-                                    : canOpenFork
-                                      ? "Fork this pack in Node Factory (new install; source unchanged)"
-                                      : undefined
+                                group.label !== group.name
+                                    ? group.label
+                                    : canOpenStaged
+                                      ? "Open Node Factory with this pack and staged edits"
+                                      : canOpenFork
+                                        ? "Fork this pack in Node Factory (new install; source unchanged)"
+                                        : undefined
                             }
                             onClick={(e) => {
                                 if (!canOpenFactory) return;
@@ -94,14 +96,14 @@ export const InstalledPackAccordion = memo(function InstalledPackAccordion({
                                 openWizardForPaletteSection(group.key, { group });
                             }}
                         >
-                            {group.label}
+                            {group.name}
                         </span>
                         {canOpenFactory ? (
                             <button
                                 type="button"
                                 className={packStyles.packSummaryFactoryPen}
                                 title={canOpenStaged ? "Open Node Factory with staged edits" : "Fork in Node Factory"}
-                                aria-label={`Node Factory — ${group.label}`}
+                                aria-label={`Node Factory — ${group.name}`}
                                 onClick={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();

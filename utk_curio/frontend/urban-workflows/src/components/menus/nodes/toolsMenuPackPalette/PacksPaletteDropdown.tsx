@@ -492,6 +492,7 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
             {open && (
                 <div className={packStyles.packPalettePanel} role="region" aria-label="Pack node kinds">
                     <div className={packStyles.packPaletteToolbar}>
+                        <div className={packStyles.packPalettePanelTitle}>NODE PACKAGES</div>
                         {!packsPaletteEditMode ? (
                             <button
                                 type="button"
@@ -521,7 +522,6 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
                             </>
                         )}
                     </div>
-                    <div className={packStyles.packPalettePanelTitle}>Nodes by pack</div>
                     <div ref={packPaletteScrollRef} className={packStyles.packPaletteScroll}>
                         {packsPaletteEditMode ? (
                             <button
