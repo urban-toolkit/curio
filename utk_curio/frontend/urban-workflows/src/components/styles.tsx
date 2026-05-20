@@ -508,6 +508,7 @@ export const NodeContainer = ({
     const canEditPackHeader = packsPaletteEditMode && !dashboardOn;
     const hasPackMetaHeader = packDescriptor?.source === "pack" && !!packDescriptor.pack;
     const suggestionActive = data.suggestionType != "none" && data.suggestionType != undefined;
+    const nodeHeaderBandPx = 28;
 
     return (
         <>
@@ -653,24 +654,17 @@ export const NodeContainer = ({
             >
                 {!noContent && !dashboardOn ? (
                     <>
-                        {hasPackMetaHeader && packDescriptor?.pack ? (
-                            <PackMetaHeader
-                                pack={packDescriptor.pack}
-                                category={packDescriptor.category}
-                                suggestionActive={suggestionActive}
-                            />
-                        ) : null}
                         <div style={{
                         display: "flex",
                         alignItems: "center",
-                        height: "30px",
-                        marginBottom: "2px",
-                        paddingBottom: "2px",
+                        height: `${nodeHeaderBandPx}px`,
+                        marginBottom: "1px",
                         borderBottom: "1px solid rgba(107, 107, 107, 0.3)",
-                        gap: "6px",
-                        padding: "0 4px 2px 4px",
+                        gap: "4px",
+                        padding: "0 4px",
                         boxSizing: "border-box",
                         width: "100%",
+                        flexShrink: 0,
                         ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
                         }}>
                         {canEditPackHeader ? (
@@ -701,6 +695,14 @@ export const NodeContainer = ({
                             onSaveAs={() => setSaveAsOpen(true)}
                             onConfigure={() => setConfigOpen(true)}
                         />
+
+                        {hasPackMetaHeader && packDescriptor?.pack ? (
+                            <PackMetaHeader
+                                pack={packDescriptor.pack}
+                                category={packDescriptor.category}
+                                suggestionActive={suggestionActive}
+                            />
+                        ) : null}
 
                         {/* Right-side action icons */}
                         {promptModal != undefined && templateData.id != undefined && templateData.custom ? (
@@ -744,7 +746,7 @@ export const NodeContainer = ({
                     </>
                 ) : null}
 
-                <div style={{height: dashboardOn ? "100%" : (hasPackMetaHeader ? "calc(100% - 68px)" : "calc(100% - 35px)"), width: "calc(100% - 30px)", marginLeft: "auto", marginRight: "auto"}}>
+                <div style={{height: dashboardOn ? "100%" : `calc(100% - ${nodeHeaderBandPx}px)`, width: "calc(100% - 30px)", marginLeft: "auto", marginRight: "auto"}}>
                     {children}
                 </div>
 

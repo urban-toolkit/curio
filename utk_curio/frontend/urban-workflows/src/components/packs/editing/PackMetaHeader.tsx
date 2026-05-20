@@ -1,54 +1,58 @@
-import React from "react";
+import React, { useCallback, useMemo } from "react";
 import type { NodeCategory, NodePackMeta } from "../../../registry/types";
 import { NODE_CATEGORY_SHORT_LABEL } from "../../../constants/nodeCategoryShortLabels";
 import { formatForkOfSubtitle } from "../../../utils/forkPackLineage";
+import { usePackPalette } from "../../../providers/PackPaletteContext";
 import styles from "./PackMetaHeader.module.css";
 
 export interface PackMetaHeaderProps {
-  /** Pack-level metadata from the node descriptor. */
   pack: NodePackMeta;
-  /** Category of the node kind (used for the badge label). */
   category: NodeCategory;
-  /**
-   * When `true` (a suggestion node is active), pointer events are suppressed
-   * so the header cannot be interacted with.
-   */
   suggestionActive: boolean;
 }
 
 /**
- * Renders the pack provenance strip shown at the top of a canvas node whose
- * descriptor originates from an installed pack.
- *
- * Displays a category badge, the `packId@major` monospace tag, and — when the
- * pack declares a fork lineage — a small "fork of …" subtitle.
+ * Category + PACK pills for the canvas node title bar (right of the kind label).
+ * PACK shows `packId@major` in a tooltip and focuses that pack in the left palette.
  */
 export function PackMetaHeader({ pack, category, suggestionActive }: PackMetaHeaderProps) {
-  const forkSubtitle = pack.lineage != null ? formatForkOfSubtitle(pack.lineage) : null;
+  const { setActivePackKey, setPaletteDockRevealCoord } = usePackPalette();
+  const coord = `${pack.packId}@${pack.major}`;
+
+  const packTooltip = useMemo(() => {
+    const lines = [coord];
+    if (pack.lineage != null) {
+      const fork = formatForkOfSubtitle(pack.lineage);
+      lines.push(fork.text);
+      if (fork.title) lines.push(fork.title);
+    }
+    lines.push("Click to open this pack in the Packs palette");
+    return lines.join("\n");
+  }, [coord, pack.lineage]);
+
+  const focusPackInPalette = useCallback(() => {
+    if (suggestionActive) return;
+    setActivePackKey(coord);
+    setPaletteDockRevealCoord(coord);
+  }, [coord, setActivePackKey, setPaletteDockRevealCoord, suggestionActive]);
 
   return (
     <div
-      className={styles.root}
+      className={styles.pills}
       style={suggestionActive ? { pointerEvents: "none" } : undefined}
     >
-      <div className={styles.row}>
-        <span className={styles.categoryBadge}>
-          {NODE_CATEGORY_SHORT_LABEL[category]}
-        </span>
-        <span
-          className={styles.packId}
-          title={`${pack.packId}@${pack.major}`}
-        >
-          {pack.packId}@{pack.major}
-        </span>
-      </div>
-
-      {forkSubtitle ? (
-        <span className={styles.forkSubtitle} title={forkSubtitle.title}>
-          {forkSubtitle.text}
-        </span>
-      ) : null}
+      <span className={styles.categoryBadge} title={NODE_CATEGORY_SHORT_LABEL[category]}>
+        {NODE_CATEGORY_SHORT_LABEL[category]}
+      </span>
+      <button
+        type="button"
+        className={styles.packBadge}
+        title={packTooltip}
+        aria-label={`Open pack ${coord} in Packs palette`}
+        onClick={focusPackInPalette}
+      >
+        PACK
+      </button>
     </div>
   );
 }
-
