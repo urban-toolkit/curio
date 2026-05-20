@@ -260,6 +260,21 @@ export function findForkFamilyRootPack<
   );
 }
 
+/** Palette dock group for the lineage-free root pack in a fork family. */
+export function findForkFamilyRootPaletteGroup<G extends PalettePackGroupLike>(
+  rootKey: string,
+  members: readonly G[],
+): G | undefined {
+  return (
+    members.find((m) => {
+      const meta = m.descriptors[0]?.pack;
+      if (!meta || meta.lineage != null) return false;
+      return m.key === rootKey || packCoordinateKey(meta) === rootKey;
+    }) ??
+    members.find((m) => m.key === rootKey)
+  );
+}
+
 export type InstalledPackWarehouseRow<T extends PackPayload = PackPayload> =
   | { kind: "singleton"; pack: T }
   | { kind: "family"; rootKey: string; rootPack: T | null; members: T[] };

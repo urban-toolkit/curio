@@ -28,7 +28,7 @@ import {
 } from "../../../../utils/forkPackLineage";
 import { InstalledPackAccordion } from "./InstalledPackAccordion";
 import { PaletteForkFamily } from "./PaletteForkFamily";
-import { visiblePaletteTriggerKindsCount, type PackPaletteGroup } from "./model";
+import { visiblePaletteTriggerPacksCount, type PackPaletteGroup } from "./model";
 import { PackCanvasDropSlot, PackStagedCanvasRow } from "./PackPaletteRows";
 import { paletteDescriptorBootstrapKey } from "./registryBootstrap";
 import packStyles from "./ToolsMenuPackPalette.module.css";
@@ -440,26 +440,14 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
         setPacksPaletteEditMode(false);
     }, [setPacksPaletteEditMode]);
 
-    const totalKindsDisplayed = useMemo(
+    const totalPacksDisplayed = useMemo(
         () =>
-            visiblePaletteTriggerKindsCount({
+            visiblePaletteTriggerPacksCount({
                 paletteRows,
                 packsPaletteEditMode,
-                stagedRowsByPackKey,
-                removedKindIdsByPackKey,
                 draftPackSectionIds,
-                activePackKey,
-                forkManualPickByRoot,
             }),
-        [
-            paletteRows,
-            packsPaletteEditMode,
-            stagedRowsByPackKey,
-            removedKindIdsByPackKey,
-            draftPackSectionIds,
-            activePackKey,
-            forkManualPickByRoot,
-        ],
+        [paletteRows, packsPaletteEditMode, draftPackSectionIds],
     );
 
     return (
@@ -475,7 +463,7 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
                 >
                     <FontAwesomeIcon icon={faCube} className={packStyles.packPaletteTriggerIcon} />
                     <span className={packStyles.packPaletteTriggerLabel}>Packs</span>
-                    <span className={packStyles.packPaletteTriggerCount}>{totalKindsDisplayed}</span>
+                    <span className={packStyles.packPaletteTriggerCount}>{totalPacksDisplayed}</span>
                     <FontAwesomeIcon icon={open ? faChevronUp : faChevronDown} className={packStyles.packPaletteTriggerChevron} />
                 </button>
                 {!packsPaletteEditMode && paletteRows.length === 0 ? (
