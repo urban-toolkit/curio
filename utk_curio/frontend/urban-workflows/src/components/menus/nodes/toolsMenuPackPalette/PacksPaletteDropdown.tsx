@@ -164,6 +164,10 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
     }, [open, showToast, packRegistryBootstrapKey]);
 
     useEffect(() => {
+        if (paletteDockRevealCoord?.trim()) setOpen(true);
+    }, [paletteDockRevealCoord]);
+
+    useEffect(() => {
         const coord = paletteDockRevealCoord?.trim();
         if (!open || !coord) return undefined;
 
