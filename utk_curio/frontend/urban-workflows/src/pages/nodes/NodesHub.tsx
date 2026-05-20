@@ -1,303 +1,38 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faDownload, faEye, faEyeSlash, faPenToSquare, faTrashCan } from "@fortawesome/free-solid-svg-icons";
-import { Link } from "react-router-dom";
 import {
     PackPayload,
     ResolveConflict,
     packsApi,
     refreshPackRegistry,
 } from "../../api/packsApi";
-import { CatalogPublishPill } from "../../components/packs/CatalogPublishPill";
 import { InstallPermissionsDialog } from "../../components/packs/InstallPermissionsDialog";
-import { ForkFamilyPicker } from "../../components/packs/ForkFamilyPicker";
 import { toApiPayload } from "./factoryDraftModel";
 import { useNodeFactoryModal } from "../../providers/NodeFactoryModalProvider";
-import { draftForkFromInstalledPackPayload, draftFromInstalledPackPayload } from "../../utils/palettePackFactoryDraft";
 import {
-    FORK_SELECTION_SESSION_PREFIX,
+    draftForkFromInstalledPackPayload,
+    draftFromInstalledPackPayload,
+} from "../../utils/palettePackFactoryDraft";
+import {
     areForkPaletteParentsRevealedInDock,
     forkFamilyLatestCreatedAtMs,
-    formatForkOfSubtitle,
     packCreatedAtMs,
     partitionPacksByForkFamily,
     referencedForkParentCoordinates,
-    resolveForkFamilySelectionKey,
-    type ForkFamilyGroup,
 } from "../../utils/forkPackLineage";
+import { HubTopBar } from "./HubTopBar";
+import { CatalogRail } from "./catalog/CatalogRail";
+import { CatalogGrid } from "./catalog/CatalogGrid";
+import { matchesTab, Tab } from "./catalog/catalogTypes";
+import { MyPacksSidebar } from "./my-packs/MyPacksSidebar";
 import styles from "./NodesHub.module.css";
 
 /**
- * Nodes hub — warehouse browse, my packs, and install flow (see
- * ``docs/nodesfactory@docs/frontend.md`` — Nodes Hub).
+ * Nodes hub — warehouse browse, my packs, and install flow.
  *
- * **Catalog** is fixture-backed (``GET /api/packs/catalog``) and returns
- * pack rows plus ``families`` / ``catalogCollisions``. Install from a
- * catalog card calls ``POST /api/packs/catalog/install`` (same validation as
- * sideload, copying committed fixtures server-side). A separate remote
- * pack-registry service is not implemented yet.
- *
- * "My packs" mirrors the warehouse browse layout and lets users
- * uninstall or re-export installed packs.
+ * Sub-component directories:
+ *   ./catalog/   — CatalogRail, CatalogGrid, CatalogCard, catalogTypes
+ *   ./my-packs/  — MyPacksSidebar and its sub-components
  */
-
-type Tab = "all" | "data" | "computation" | "vis" | "installed";
-
-const CATEGORY_LABELS: Record<Tab, string> = {
-  all: "All packs",
-  data: "Data",
-  computation: "Computation",
-  vis: "Visualisation",
-  installed: "Installed",
-};
-
-const VIS_CATEGORIES = new Set(["vis_grammar", "vis_simple"]);
-
-const MyPackIconActions = React.memo(function MyPackIconActions({
-    pack,
-    busy,
-    paletteDockBusy,
-    onExport,
-    onUninstall,
-    onPaletteDockToggle,
-}: {
-    pack: PackPayload;
-    busy: boolean;
-    /** When this matches ``pack.dirName``, only the dock eye disables (per-row toggle). */
-    paletteDockBusy: string | null;
-    onExport: (pack: PackPayload) => void | Promise<void>;
-    onUninstall: (pack: PackPayload) => void | Promise<void>;
-    onPaletteDockToggle: (pack: PackPayload) => void | Promise<void>;
-}) {
-    const hiddenInDock = pack.paletteDock?.hiddenFromForkPaletteDock === true;
-    const dockAwait = paletteDockBusy === pack.dirName;
-    return (
-        <div className={styles.myPackRowAside}>
-            <button
-                type="button"
-                className={styles.myPackIconBtn}
-                onClick={() => void onPaletteDockToggle(pack)}
-                title={
-                    hiddenInDock
-                        ? "Show this pack in the Nodes palette dock"
-                        : "Hide this pack from the Nodes palette dock"
-                }
-                aria-label={
-                    hiddenInDock
-                        ? `Show ${pack.name} in Nodes palette dock`
-                        : `Hide ${pack.name} from Nodes palette dock`
-                }
-                aria-pressed={!hiddenInDock}
-                disabled={busy || dockAwait}
-            >
-                <FontAwesomeIcon icon={hiddenInDock ? faEye : faEyeSlash} aria-hidden />
-            </button>
-            <button
-                type="button"
-                className={styles.myPackIconBtn}
-                onClick={() => void onExport(pack)}
-                title="Export pack archive"
-                aria-label={`Export ${pack.name}`}
-                disabled={busy}
-            >
-                <FontAwesomeIcon icon={faDownload} />
-            </button>
-            <button
-                type="button"
-                className={styles.myPackIconBtn}
-                onClick={() => void onUninstall(pack)}
-                title="Remove pack"
-                aria-label={`Remove ${pack.name}`}
-                disabled={busy}
-            >
-                <FontAwesomeIcon icon={faTrashCan} />
-            </button>
-        </div>
-    );
-});
-
-const HubInstalledForkRailGroup = React.memo(function HubInstalledForkRailGroup({
-    family,
-    manualForkDirByRoot,
-    setManualForkDirByRoot,
-    busy,
-    paletteDockBusy,
-    onExport,
-    onUninstall,
-    onPaletteDockToggle,
-    catalogPublishedDirs,
-    catalogPublishAllowed,
-    publishingPackKey,
-    onPublishToCatalog,
-    onOpenForkInFactory,
-}: {
-    family: ForkFamilyGroup<PackPayload>;
-    manualForkDirByRoot: Record<string, string>;
-    setManualForkDirByRoot: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-    busy: boolean;
-    paletteDockBusy: string | null;
-    onExport: (pack: PackPayload) => void | Promise<void>;
-    onUninstall: (pack: PackPayload) => void | Promise<void>;
-    onPaletteDockToggle: (pack: PackPayload) => void | Promise<void>;
-    catalogPublishedDirs: ReadonlySet<string>;
-    catalogPublishAllowed: boolean;
-    publishingPackKey: string | null;
-    onPublishToCatalog: (dirName: string) => void;
-    onOpenForkInFactory: (pack: PackPayload) => void;
-}) {
-    const manualPick = manualForkDirByRoot[family.rootKey];
-    const resolverMembers = useMemo(
-        () => family.members.map((m) => ({ key: m.dirName })),
-        [family.members],
-    );
-
-    const resolvedDir = useMemo(
-        () => resolveForkFamilySelectionKey(family.rootKey, resolverMembers, "", manualPick),
-        [family.rootKey, resolverMembers, manualPick],
-    );
-
-    useEffect(() => {
-        try {
-            sessionStorage.setItem(FORK_SELECTION_SESSION_PREFIX + family.rootKey, resolvedDir);
-        } catch {
-            /* noop */
-        }
-    }, [family.rootKey, resolvedDir]);
-
-    const selectedPack = useMemo(
-        () => family.members.find((p) => p.dirName === resolvedDir) ?? family.members[0]!,
-        [family.members, resolvedDir],
-    );
-
-    const forkPickerOptions = useMemo(
-        () =>
-            family.members.map((m) => ({
-                key: m.dirName,
-                label: `${m.name} (${m.packId} · v${m.version})`,
-            })),
-        [family.members],
-    );
-
-    const onForkPicked = useCallback(
-        (next: string) => {
-            setManualForkDirByRoot((prev) => ({ ...prev, [family.rootKey]: next }));
-            try {
-                sessionStorage.setItem(FORK_SELECTION_SESSION_PREFIX + family.rootKey, next);
-            } catch {
-                /* noop */
-            }
-        },
-        [family.rootKey, setManualForkDirByRoot],
-    );
-
-    return (
-        <section className={styles.hubForkFamily} aria-labelledby={`fork-rail-head-${family.rootKey}`}>
-            <div className={styles.hubForkFamilyToolbar}>
-                <div>
-                    <div id={`fork-rail-head-${family.rootKey}`} className={styles.hubForkRailTitleRow}>
-                        <button
-                            type="button"
-                            className={styles.hubPackFactoryTitleBtn}
-                            title="Fork in Node Factory (new install; source unchanged)"
-                            onClick={() => onOpenForkInFactory(selectedPack)}
-                        >
-                            {selectedPack.name}
-                        </button>
-                        <button
-                            type="button"
-                            className={styles.myPackIconBtn}
-                            title="Fork in Node Factory"
-                            aria-label={`Fork ${selectedPack.name} in Node Factory`}
-                            disabled={busy}
-                            onClick={() => onOpenForkInFactory(selectedPack)}
-                        >
-                            <FontAwesomeIcon icon={faPenToSquare} />
-                        </button>
-                    </div>
-                    <p className={styles.hubForkFamilyRailMeta}>
-                        Family root {family.rootKey} · {family.members.length} forks
-                    </p>
-                </div>
-            </div>
-            <label className={styles.hubForkFamilySelectLabel}>
-                Fork Family
-                <ForkFamilyPicker
-                    variant="hub"
-                    rootKey={family.rootKey}
-                    options={forkPickerOptions}
-                    value={resolvedDir}
-                    onChange={onForkPicked}
-                />
-            </label>
-            <div role="list">
-                {family.members.map((pack) => (
-                    <div
-                        key={pack.dirName}
-                        role="listitem"
-                        className={`${styles.myPackRow} ${
-                            pack.dirName === resolvedDir ? styles.myPackRowHighlight : ""
-                        }`}
-                    >
-                        <div>
-                            <div className={styles.myPackTitleBlock}>
-                                <div className={styles.myPackNameRow}>
-                                    <button
-                                        type="button"
-                                        className={styles.myPackFactoryNameBtn}
-                                        title="Fork in Node Factory (new install; source unchanged)"
-                                        onClick={() => onOpenForkInFactory(pack)}
-                                    >
-                                        {pack.name}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className={styles.myPackIconBtn}
-                                        title="Fork in Node Factory"
-                                        aria-label={`Fork ${pack.name} in Node Factory`}
-                                        disabled={busy}
-                                        onClick={() => onOpenForkInFactory(pack)}
-                                    >
-                                        <FontAwesomeIcon icon={faPenToSquare} />
-                                    </button>
-                                </div>
-                                <CatalogPublishPill
-                                    variant="hub"
-                                    dirName={pack.dirName}
-                                    published={catalogPublishedDirs.has(pack.dirName)}
-                                    allowPublish={catalogPublishAllowed}
-                                    busy={publishingPackKey === pack.dirName}
-                                    onPublish={onPublishToCatalog}
-                                />
-                            </div>
-                            <span className={styles.myPackVersion}>
-                                {pack.packId} · v{pack.version}
-                            </span>
-                            {pack.lineage?.forkedFrom ? (
-                                <p className={styles.hubForkOfLine}>{formatForkOfSubtitle(pack.lineage).text}</p>
-                            ) : null}
-                        </div>
-                        <MyPackIconActions
-                                pack={pack}
-                                busy={busy}
-                                paletteDockBusy={paletteDockBusy}
-                                onExport={onExport}
-                                onUninstall={onUninstall}
-                                onPaletteDockToggle={onPaletteDockToggle}
-                            />
-                    </div>
-                ))}
-            </div>
-        </section>
-    );
-});
-
-function matchesTab(pack: PackPayload, tab: Tab): boolean {
-  if (tab === "all") return true;
-  if (tab === "installed") return !!pack.installed;
-  if (tab === "vis") return pack.kinds.some((k) => VIS_CATEGORIES.has(k.category));
-  return pack.kinds.some((k) => k.category === tab);
-}
-
 const NodesHub: React.FC = () => {
   const [catalog, setCatalog] = useState<PackPayload[]>([]);
   const [installed, setInstalled] = useState<PackPayload[]>([]);
@@ -311,9 +46,11 @@ const NodesHub: React.FC = () => {
   const [paletteDockDirBusy, setPaletteDockDirBusy] = useState<string | null>(null);
   const [catalogPublishAllowed, setCatalogPublishAllowed] = useState(true);
   const [publishingPackKey, setPublishingPackKey] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [hubForkManualByRoot, setHubForkManualByRoot] = useState<Record<string, string>>({});
   const installedByDirRef = useRef<Map<string, PackPayload>>(new Map());
   const { openNodeFactory } = useNodeFactoryModal();
+
+  // ── Derived sets ─────────────────────────────────────────────────────────
 
   const installedDirs = useMemo(
     () => new Set(installed.map((p) => p.dirName)),
@@ -325,7 +62,7 @@ const NodesHub: React.FC = () => {
     [catalog],
   );
 
-  const [hubForkManualByRoot, setHubForkManualByRoot] = useState<Record<string, string>>({});
+  // ── Data loading ─────────────────────────────────────────────────────────
 
   const reload = useCallback(async () => {
     try {
@@ -334,13 +71,10 @@ const NodesHub: React.FC = () => {
         packsApi.listInstalled(),
         packsApi.factoryCapabilities(),
       ]);
-      // Merge the live "installed" flag in case catalog and installed
-      // listings drift (e.g., a sideloaded pack that's not in the
-      // catalog fixture set).
+      // Merge the live "installed" flag in case catalog and installed listings
+      // drift (e.g. a sideloaded pack not present in the catalog fixture set).
       const installedSet = new Set(mine.packs.map((p) => p.dirName));
-      setCatalog(
-        cat.packs.map((p) => ({ ...p, installed: installedSet.has(p.dirName) })),
-      );
+      setCatalog(cat.packs.map((p) => ({ ...p, installed: installedSet.has(p.dirName) })));
       setInstalled(mine.packs);
       installedByDirRef.current = new Map(mine.packs.map((p) => [p.dirName, p]));
       setCatalogPublishAllowed(cap.catalogPublish);
@@ -349,6 +83,17 @@ const NodesHub: React.FC = () => {
       setToast({ kind: "err", msg: `Failed to load packs: ${(err as Error).message}` });
     }
   }, []);
+
+  useEffect(() => { void reload(); }, [reload]);
+
+  // Auto-dismiss toast after 4 s
+  useEffect(() => {
+    if (!toast) return;
+    const id = window.setTimeout(() => setToast(null), 4000);
+    return () => window.clearTimeout(id);
+  }, [toast]);
+
+  // ── My Packs derived state ────────────────────────────────────────────────
 
   const installedPartition = useMemo(() => partitionPacksByForkFamily(installed), [installed]);
 
@@ -362,44 +107,16 @@ const NodesHub: React.FC = () => {
     [installed],
   );
 
-  const onToggleForkSourcesInDockPalette = useCallback(async () => {
-    if (!installedForkParentCoords.size) return;
-    const nextVisible = !forkParentsRevealedInDockPalette;
-    setForkParentsPaletteBusy(true);
-    try {
-      await packsApi.forkParentsPaletteDockVisibility(nextVisible);
-      await refreshPackRegistry();
-      await reload();
-      setToast({
-        kind: "ok",
-        msg: nextVisible
-          ? "Fork source packs are shown in the Nodes palette again."
-          : "Fork source packs are hidden from the Nodes palette.",
-      });
-    } catch (err) {
-      setToast({ kind: "err", msg: (err as Error).message });
-    } finally {
-      setForkParentsPaletteBusy(false);
-    }
-  }, [
-    installedForkParentCoords.size,
-    forkParentsRevealedInDockPalette,
-    reload,
-  ]);
-
   const hubRailInstalledOrdered = useMemo(() => {
-    type Entry =
-      | { kind: "singleton"; pack: PackPayload }
-      | { kind: "family"; family: ForkFamilyGroup<PackPayload> };
-    const entries: Entry[] = [
+    const entries = [
       ...installedPartition.singletons.map((pack) => ({ kind: "singleton" as const, pack })),
       ...installedPartition.families.map((family) => ({ kind: "family" as const, family })),
     ];
+    console.log("singletons: ", installedPartition.singletons.length, installedPartition.singletons,
+      "families: ", installedPartition.families.length, installedPartition.families);
     entries.sort((a, b) => {
-      const ta =
-        a.kind === "singleton" ? packCreatedAtMs(a.pack) : forkFamilyLatestCreatedAtMs(a.family);
-      const tb =
-        b.kind === "singleton" ? packCreatedAtMs(b.pack) : forkFamilyLatestCreatedAtMs(b.family);
+      const ta = a.kind === "singleton" ? packCreatedAtMs(a.pack) : forkFamilyLatestCreatedAtMs(a.family);
+      const tb = b.kind === "singleton" ? packCreatedAtMs(b.pack) : forkFamilyLatestCreatedAtMs(b.family);
       const c = tb - ta;
       if (c !== 0) return c;
       const keyA = a.kind === "singleton" ? a.pack.dirName : a.family.rootKey;
@@ -409,28 +126,7 @@ const NodesHub: React.FC = () => {
     return entries;
   }, [installedPartition]);
 
-  const onOpenForkInFactory = useCallback(
-    (pack: PackPayload) => {
-      openNodeFactory({
-        draft: draftForkFromInstalledPackPayload(pack),
-        forkInstallNotice: true,
-        onInstallSuccess: () => {
-          void reload();
-        },
-      });
-    },
-    [openNodeFactory, reload],
-  );
-
-  useEffect(() => {
-    void reload();
-  }, [reload]);
-
-  useEffect(() => {
-    if (!toast) return;
-    const id = window.setTimeout(() => setToast(null), 4000);
-    return () => window.clearTimeout(id);
-  }, [toast]);
+  // ── Actions ───────────────────────────────────────────────────────────────
 
   const onPickArchive = useCallback(async (file: File) => {
     setBusy(true);
@@ -453,11 +149,7 @@ const NodesHub: React.FC = () => {
       try {
         await packsApi.uninstall(pack.dirName);
       } catch (err) {
-        // The backend returns 404 when the pack has already been
-        // removed (race with another tab, a previous Werkzeug reload
-        // mid-request, etc.). The user's intent — "this pack should be
-        // gone" — is already satisfied, so swallow the 404 and let the
-        // reload below confirm the state. Any other error is real.
+        // Swallow 404 — pack already gone (race condition / HMR reload).
         const status = (err as { status?: number }).status;
         if (status !== 404) throw err;
       }
@@ -479,90 +171,86 @@ const NodesHub: React.FC = () => {
     }
   }, []);
 
-  const onTogglePackPaletteDock = useCallback(
-    async (pack: PackPayload) => {
-      const hiddenNow = pack.paletteDock?.hiddenFromForkPaletteDock === true;
-      const nextHiddenInDock = !hiddenNow;
-      setPaletteDockDirBusy(pack.dirName);
-      try {
-        await packsApi.packPaletteDockVisible(pack.dirName, !nextHiddenInDock);
-        await refreshPackRegistry();
-        await reload();
-        setToast({
-          kind: "ok",
-          msg: nextHiddenInDock
-            ? `"${pack.name}" is hidden from the Nodes palette dock.`
-            : `"${pack.name}" is shown in the Nodes palette dock.`,
-        });
-      } catch (err) {
-        setToast({ kind: "err", msg: (err as Error).message });
-      } finally {
-        setPaletteDockDirBusy(null);
-      }
-    },
-    [reload],
-  );
+  const onTogglePackPaletteDock = useCallback(async (pack: PackPayload) => {
+    const hiddenNow = pack.paletteDock?.hiddenFromForkPaletteDock === true;
+    const nextHiddenInDock = !hiddenNow;
+    setPaletteDockDirBusy(pack.dirName);
+    try {
+      await packsApi.packPaletteDockVisible(pack.dirName, !nextHiddenInDock);
+      await refreshPackRegistry();
+      await reload();
+      setToast({
+        kind: "ok",
+        msg: nextHiddenInDock
+          ? `"${pack.name}" is hidden from the Nodes palette dock.`
+          : `"${pack.name}" is shown in the Nodes palette dock.`,
+      });
+    } catch (err) {
+      setToast({ kind: "err", msg: (err as Error).message });
+    } finally {
+      setPaletteDockDirBusy(null);
+    }
+  }, [reload]);
 
-  const onPublishToCatalog = useCallback(
-    async (dirName: string) => {
-      const row = installedByDirRef.current.get(dirName);
-      if (!row) {
-        setToast({ kind: "err", msg: "Pack metadata not available." });
-        return;
-      }
-      setPublishingPackKey(dirName);
-      try {
-        const draft = draftFromInstalledPackPayload(row);
-        await packsApi.factoryPublishCatalog({
-          ...(toApiPayload(draft) as Record<string, unknown>),
-          replace: true,
-        });
-        await reload();
-        setToast({
-          kind: "ok",
-          msg: `Published ${dirName} to dev catalog fixtures.`,
-        });
-      } catch (err) {
-        setToast({ kind: "err", msg: (err as Error).message });
-      } finally {
-        setPublishingPackKey(null);
-      }
-    },
-    [reload],
-  );
+  const onPublishToCatalog = useCallback(async (dirName: string) => {
+    const row = installedByDirRef.current.get(dirName);
+    if (!row) {
+      setToast({ kind: "err", msg: "Pack metadata not available." });
+      return;
+    }
+    setPublishingPackKey(dirName);
+    try {
+      const draft = draftFromInstalledPackPayload(row);
+      await packsApi.factoryPublishCatalog({
+        ...(toApiPayload(draft) as Record<string, unknown>),
+        replace: true,
+      });
+      await reload();
+      setToast({ kind: "ok", msg: `Published ${dirName} to dev catalog fixtures.` });
+    } catch (err) {
+      setToast({ kind: "err", msg: (err as Error).message });
+    } finally {
+      setPublishingPackKey(null);
+    }
+  }, [reload]);
 
-  /**
-   * Run ``POST /api/packs/resolve`` with the candidate so the install
-   * dialog can show Python/JS dependency conflicts before install.
-   * Actual install uses ``packsApi.installFromCatalog(dirName)``.
-   */
+  const onToggleForkSourcesInDockPalette = useCallback(async () => {
+    if (!installedForkParentCoords.size) return;
+    const nextVisible = !forkParentsRevealedInDockPalette;
+    setForkParentsPaletteBusy(true);
+    try {
+      await packsApi.forkParentsPaletteDockVisibility(nextVisible);
+      await refreshPackRegistry();
+      await reload();
+      setToast({
+        kind: "ok",
+        msg: nextVisible
+          ? "Fork source packs are shown in the Nodes palette again."
+          : "Fork source packs are hidden from the Nodes palette.",
+      });
+    } catch (err) {
+      setToast({ kind: "err", msg: (err as Error).message });
+    } finally {
+      setForkParentsPaletteBusy(false);
+    }
+  }, [installedForkParentCoords.size, forkParentsRevealedInDockPalette, reload]);
+
+  /** Opens the install-permissions dialog after resolving dep conflicts. */
   const onInstallFromCatalog = useCallback(async (pack: PackPayload) => {
-    // Resolve permissions/deps first so the user sees the install
-    // dialog with the same conflict surface the warehouse-api-ui
-    // mockup shows.
     setInstallCandidate(pack);
     try {
-      // Resolve against the user's currently-installed packs +
-      // the candidate. We don't actually persist the lockfile here —
-      // that happens when the user clicks "Install".
       const probe = await packsApi.resolve([
         ...installed.map((p) => p.dirName),
         pack.dirName,
       ]);
       setConflictReport(probe.conflicts);
     } catch (err) {
-      // 409 -> conflicts in the body; we already surface conflicts
-      // via the response shape, so a thrown error here means a
-      // server-side problem we should report verbatim.
       const status = (err as { status?: number }).status;
       if (status === 409) {
         const body = (err as { body?: { conflicts: ResolveConflict[] } }).body;
         setConflictReport(body?.conflicts ?? []);
       } else {
-        setToast({
-          kind: "err",
-          msg: `Resolve failed: ${(err as Error).message}`,
-        });
+        setToast({ kind: "err", msg: `Resolve failed: ${(err as Error).message}` });
         setInstallCandidate(null);
       }
     }
@@ -575,10 +263,7 @@ const NodesHub: React.FC = () => {
       await packsApi.installFromCatalog(installCandidate.dirName);
       await refreshPackRegistry();
       await reload();
-      setToast({
-        kind: "ok",
-        msg: `Installed ${installCandidate.name} ${installCandidate.version}`,
-      });
+      setToast({ kind: "ok", msg: `Installed ${installCandidate.name} ${installCandidate.version}` });
       setInstallCandidate(null);
       setConflictReport(null);
     } catch (err) {
@@ -588,258 +273,72 @@ const NodesHub: React.FC = () => {
     }
   }, [installCandidate, reload]);
 
-  const filtered = catalog.filter((p) => {
-    if (!matchesTab(p, tab)) return false;
-    if (!search.trim()) return true;
+  const onOpenForkInFactory = useCallback((pack: PackPayload) => {
+    openNodeFactory({
+      draft: draftForkFromInstalledPackPayload(pack),
+      forkInstallNotice: true,
+      onInstallSuccess: () => { void reload(); },
+    });
+  }, [openNodeFactory, reload]);
+
+  // ── Filtered catalog list ────────────────────────────────────────────────
+
+  const filteredPacks = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return (
-      p.name.toLowerCase().includes(q) ||
-      p.publisher.toLowerCase().includes(q) ||
-      p.description.toLowerCase().includes(q)
-    );
-  });
+    return catalog.filter((p) => {
+      if (!matchesTab(p, tab)) return false;
+      if (!q) return true;
+      return (
+        p.name.toLowerCase().includes(q) ||
+        p.publisher.toLowerCase().includes(q) ||
+        p.description.toLowerCase().includes(q)
+      );
+    });
+  }, [catalog, tab, search]);
+
+  // ── Render ───────────────────────────────────────────────────────────────
 
   return (
     <div className={styles.shell}>
-      <div className={styles.topBar}>
-        <Link to="/projects" className={styles.backLink}>
-          ← Projects
-        </Link>
-        <h1 className={styles.title}>Nodes warehouse</h1>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".curio-nodepack,application/zip"
-          style={{ display: "none" }}
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) void onPickArchive(file);
-            if (fileInputRef.current) fileInputRef.current.value = "";
-          }}
-        />
-        <button
-          className={styles.ghostButton}
-          onClick={() => fileInputRef.current?.click()}
-          disabled={busy}
-        >
-          Sideload .curio-nodepack
-        </button>
-        <button
-          className={styles.actionButton}
-          type="button"
-          onClick={() => openNodeFactory({ blank: true })}
-        >
-          Create new pack
-        </button>
-      </div>
+      <HubTopBar
+        busy={busy}
+        onSideload={(file) => void onPickArchive(file)}
+        onCreateNew={() => openNodeFactory({ blank: true })}
+      />
 
       <div className={styles.body}>
-        <aside className={styles.rail} aria-label="Category filter">
-          <h2 className={styles.railTitle}>Browse</h2>
-          {(Object.keys(CATEGORY_LABELS) as Tab[]).map((t) => (
-            <button
-              key={t}
-              className={
-                t === tab ? styles.railItemActive : styles.railItem
-              }
-              onClick={() => setTab(t)}
-            >
-              {CATEGORY_LABELS[t]}
-            </button>
-          ))}
-        </aside>
+        <CatalogRail tab={tab} onChange={setTab} />
 
-        <main className={styles.main}>
-          <div className={styles.searchRow}>
-            <input
-              className={styles.search}
-              placeholder="Search packs by name, publisher, or description"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-          <div className={styles.catalogScroll}>
-            {filtered.length === 0 ? (
-              <div className={styles.empty}>
-                No packs match the current filter.
-              </div>
-            ) : (
-              <div className={styles.grid}>
-                {filtered.map((pack) => (
-                  <article key={pack.dirName} className={styles.card}>
-                  <div className={styles.cardHeader}>
-                    <div>
-                      <h3 className={styles.packName}>{pack.name}</h3>
-                      <span className={styles.publisher}>
-                        {pack.publisher || pack.packId}
-                      </span>
-                    </div>
-                    <div className={styles.cardHeaderAside}>
-                      {installedDirs.has(pack.dirName) ? (
-                        <span className={styles.installedTag}>Installed</span>
-                      ) : (
-                        <span className={styles.tag}>v{pack.version}</span>
-                      )}
-                      {(pack.channel ?? "stable") !== "stable" ? (
-                        <span
-                          className={styles.channelChip}
-                          title={`Release channel: ${pack.channel}`}
-                        >
-                          {pack.channel}
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                  <p className={styles.description}>
-                    {pack.description || "No description."}
-                  </p>
-                  {pack.lineage ? (
-                    <p className={styles.catalogForkLine} title={formatForkOfSubtitle(pack.lineage).title}>
-                      {formatForkOfSubtitle(pack.lineage).text}
-                    </p>
-                  ) : null}
-                  <div className={styles.kinds}>
-                    {pack.kinds.slice(0, 4).map((k) => (
-                      <span key={k.kindId} className={styles.kindChip}>
-                        {k.label}
-                      </span>
-                    ))}
-                  </div>
-                  <div className={styles.versionRow}>
-                    <span className={styles.publisher}>
-                      {pack.kinds.length} node{pack.kinds.length === 1 ? "" : "s"}
-                    </span>
-                    {installedDirs.has(pack.dirName) ? (
-                      <button
-                        className={styles.ghostButton}
-                        onClick={() => onUninstall(pack)}
-                        disabled={busy}
-                      >
-                        Uninstall
-                      </button>
-                    ) : (
-                      <button
-                        className={styles.actionButton}
-                        onClick={() => onInstallFromCatalog(pack)}
-                        disabled={busy}
-                      >
-                        Install
-                      </button>
-                    )}
-                  </div>
-                </article>
-              ))}
-              </div>
-            )}
-          </div>
-        </main>
+        <CatalogGrid
+          packs={filteredPacks}
+          search={search}
+          onSearchChange={setSearch}
+          installedDirs={installedDirs}
+          busy={busy}
+          onInstall={(p) => void onInstallFromCatalog(p)}
+          onUninstall={onUninstall}
+        />
 
-        <aside className={styles.myPacks} aria-label="Your installed packs">
-          <div className={styles.myPacksHeaderRow}>
-            <h2 id="hub-my-packs-heading" className={styles.myPacksTitle}>
-              My packs
-            </h2>
-            {installed.length > 0 && installedForkParentCoords.size > 0 ? (
-              <button
-                type="button"
-                className={styles.myPacksDockToggleBtn}
-                onClick={() => void onToggleForkSourcesInDockPalette()}
-                disabled={busy || forkParentsPaletteBusy || paletteDockDirBusy != null}
-                title={
-                  forkParentsRevealedInDockPalette
-                    ? "Hide fork source packs from the Nodes palette dock"
-                    : "Show fork source packs in the Nodes palette dock"
-                }
-                aria-label={
-                  forkParentsRevealedInDockPalette
-                    ? "Hide fork source packs from Nodes palette dock"
-                    : "Show fork source packs in Nodes palette dock"
-                }
-                aria-pressed={forkParentsRevealedInDockPalette}
-              >
-                <FontAwesomeIcon
-                  icon={forkParentsRevealedInDockPalette ? faEyeSlash : faEye}
-                  aria-hidden
-                />
-              </button>
-            ) : null}
-          </div>
-          {installed.length === 0 ? (
-            <div className={styles.empty}>You haven't installed any packs yet.</div>
-          ) : (
-            <>
-              {hubRailInstalledOrdered.map((entry) =>
-                entry.kind === "singleton" ? (
-                <div key={entry.pack.dirName} className={styles.myPackRow}>
-                  <div>
-                    <div className={styles.myPackTitleBlock}>
-                      <div className={styles.myPackNameRow}>
-                        <button
-                          type="button"
-                          className={styles.myPackFactoryNameBtn}
-                          title="Fork in Node Factory (new install; source unchanged)"
-                          onClick={() => onOpenForkInFactory(entry.pack)}
-                        >
-                          {entry.pack.name}
-                        </button>
-                        <button
-                          type="button"
-                          className={styles.myPackIconBtn}
-                          title="Fork in Node Factory"
-                          aria-label={`Fork ${entry.pack.name} in Node Factory`}
-                          disabled={busy}
-                          onClick={() => onOpenForkInFactory(entry.pack)}
-                        >
-                          <FontAwesomeIcon icon={faPenToSquare} />
-                        </button>
-                      </div>
-                      <CatalogPublishPill
-                        variant="hub"
-                        dirName={entry.pack.dirName}
-                        published={catalogPublishedDirs.has(entry.pack.dirName)}
-                        allowPublish={catalogPublishAllowed}
-                        busy={publishingPackKey === entry.pack.dirName}
-                        onPublish={onPublishToCatalog}
-                      />
-                    </div>
-                    <span className={styles.myPackVersion}>
-                      {entry.pack.packId} · v{entry.pack.version}
-                    </span>
-                    {entry.pack.lineage ? (
-                      <p className={styles.hubForkOfLine}>{formatForkOfSubtitle(entry.pack.lineage).text}</p>
-                    ) : null}
-                  </div>
-                  <MyPackIconActions
-                      pack={entry.pack}
-                      busy={busy}
-                      paletteDockBusy={paletteDockDirBusy}
-                      onExport={onExport}
-                      onUninstall={onUninstall}
-                      onPaletteDockToggle={onTogglePackPaletteDock}
-                  />
-                </div>
-              ) : (
-                <HubInstalledForkRailGroup
-                  key={entry.family.rootKey}
-                  family={entry.family}
-                  manualForkDirByRoot={hubForkManualByRoot}
-                  setManualForkDirByRoot={setHubForkManualByRoot}
-                  busy={busy}
-                  paletteDockBusy={paletteDockDirBusy}
-                  onExport={onExport}
-                  onUninstall={onUninstall}
-                  onPaletteDockToggle={onTogglePackPaletteDock}
-                  catalogPublishedDirs={catalogPublishedDirs}
-                  catalogPublishAllowed={catalogPublishAllowed}
-                  publishingPackKey={publishingPackKey}
-                  onPublishToCatalog={onPublishToCatalog}
-                  onOpenForkInFactory={onOpenForkInFactory}
-                />
-              ),
-              )}
-            </>
-          )}
-        </aside>
+        <MyPacksSidebar
+          installed={installed}
+          hubRailInstalledOrdered={hubRailInstalledOrdered}
+          busy={busy}
+          forkParentsPaletteBusy={forkParentsPaletteBusy}
+          paletteDockDirBusy={paletteDockDirBusy}
+          installedForkParentCoordsSize={installedForkParentCoords.size}
+          forkParentsRevealedInDockPalette={forkParentsRevealedInDockPalette}
+          catalogPublishedDirs={catalogPublishedDirs}
+          catalogPublishAllowed={catalogPublishAllowed}
+          publishingPackKey={publishingPackKey}
+          hubForkManualByRoot={hubForkManualByRoot}
+          setHubForkManualByRoot={setHubForkManualByRoot}
+          onToggleForkSourcesInDockPalette={() => void onToggleForkSourcesInDockPalette()}
+          onExport={onExport}
+          onUninstall={onUninstall}
+          onPaletteDockToggle={onTogglePackPaletteDock}
+          onPublishToCatalog={onPublishToCatalog}
+          onOpenForkInFactory={onOpenForkInFactory}
+        />
       </div>
 
       {installCandidate && (
@@ -847,10 +346,7 @@ const NodesHub: React.FC = () => {
           pack={installCandidate}
           conflicts={conflictReport ?? []}
           busy={busy}
-          onCancel={() => {
-            setInstallCandidate(null);
-            setConflictReport(null);
-          }}
+          onCancel={() => { setInstallCandidate(null); setConflictReport(null); }}
           onConfirm={confirmCatalogInstall}
         />
       )}

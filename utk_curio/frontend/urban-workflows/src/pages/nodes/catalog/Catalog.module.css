@@ -1,0 +1,260 @@
+/*
+ * Shared CSS module for the catalog browse area.
+ *
+ * Used by:
+ *   CatalogRail.tsx
+ *   CatalogCard.tsx
+ *   CatalogGrid.tsx
+ */
+
+/* ── Shared buttons (also used by HubTopBar via HubTopBar.module.css) ─── */
+
+.actionButton {
+    background: #fbaa69;
+    color: #1e1f23;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-weight: 500;
+    cursor: pointer;
+    font: inherit;
+}
+
+.actionButton:hover {
+    background: #fb9a4f;
+}
+
+.actionButton:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.ghostButton {
+    composes: actionButton;
+    background: #ffffff;
+    border: 1px solid #d8d4c2;
+}
+
+.ghostButton:hover {
+    background: #f3f1e6;
+}
+
+/* ── Category filter rail ──────────────────────────────────────────────── */
+
+.rail {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 12px;
+    border: 1px solid #eceadf;
+    align-self: start;
+    min-width: 0;
+}
+
+.railTitle {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #7a786d;
+    margin: 8px 8px 12px;
+}
+
+.railItem {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    padding: 8px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: #1e1f23;
+    font: inherit;
+}
+
+.railItem:hover {
+    background: #f6f2e3;
+}
+
+.railItemActive {
+    composes: railItem;
+    background: #fbaa69;
+    color: #1e1f23;
+    font-weight: 500;
+}
+
+/* ── Catalog main area ─────────────────────────────────────────────────── */
+
+.main {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.searchRow {
+    flex-shrink: 0;
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.search {
+    flex: 1;
+    padding: 10px 14px;
+    border: 1px solid #d8d4c2;
+    border-radius: 8px;
+    background: #ffffff;
+    font: inherit;
+}
+
+/* Catalog cards only — search row stays pinned above */
+.catalogScroll {
+    flex: 1;
+    min-height: 0;
+    max-height: calc(100vh - 160px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-right: 4px;
+    margin-right: -2px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(30, 31, 35, 0.28) transparent;
+}
+
+.catalogScroll::-webkit-scrollbar {
+    width: 3px;
+}
+
+.catalogScroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.catalogScroll::-webkit-scrollbar-thumb {
+    background: rgba(30, 31, 35, 0.22);
+    border-radius: 999px;
+}
+
+.catalogScroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(30, 31, 35, 0.38);
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+}
+
+.empty {
+    color: #7a786d;
+    text-align: center;
+    padding: 32px 16px;
+    font-size: 0.875rem;
+}
+
+/* ── Pack card ─────────────────────────────────────────────────────────── */
+
+.card {
+    background: #ffffff;
+    border: 1px solid #eceadf;
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.cardHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.cardHeaderAside {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+}
+
+.packName {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
+
+.publisher {
+    color: #7a786d;
+    font-size: 0.8rem;
+}
+
+.description {
+    font-size: 0.875rem;
+    color: #43423b;
+    margin: 4px 0 8px;
+    line-height: 1.35;
+}
+
+.catalogForkLine {
+    font-size: 0.72rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    color: #5c5a53;
+    margin: 0 0 8px;
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
+
+.kinds {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 4px 0;
+}
+
+.kindChip {
+    background: #f3f1e6;
+    color: #43423b;
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-size: 0.75rem;
+}
+
+.versionRow {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-top: auto;
+    padding-top: 8px;
+    border-top: 1px solid #f0ecdc;
+}
+
+.tag {
+    font-size: 0.7rem;
+    background: #1e1f23;
+    color: #fbaa69;
+    padding: 2px 6px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.installedTag {
+    composes: tag;
+    background: #2f8f4a;
+    color: #ffffff;
+}
+
+.channelChip {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+    color: #b85c29;
+    background: rgba(251, 170, 105, 0.2);
+    border-radius: 6px;
+    padding: 2px 6px;
+}
+
