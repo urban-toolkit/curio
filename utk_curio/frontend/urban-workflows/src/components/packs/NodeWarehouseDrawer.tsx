@@ -119,6 +119,11 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
     return base;
   }, [catalog, search, sort, tab, installedDirs, updateCandidates]);
 
+  const filteredInstalled = useMemo(
+    () => installed.filter((p) => matchesSearch(p, search)),
+    [installed, search],
+  );
+
   const featuredPacks = useMemo(
     () => sortPacks(catalog, "new").slice(0, 3),
     [catalog],
@@ -223,6 +228,20 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
     }
   }, [reload]);
 
+  const myPacksListProps = {
+    installed: tab === "installed" ? filteredInstalled : installed,
+    catalogByDir,
+    catalogPublishedDirs,
+    catalogPublishAllowed,
+    publishingPackKey,
+    paletteDockDirBusy,
+    busy,
+    onUninstall: (p: PackPayload) => void onUninstall(p),
+    onExport: (p: PackPayload) => void onExport(p),
+    onPaletteDockToggle: (p: PackPayload) => void onTogglePaletteDock(p),
+    onPublishToCatalog: (d: string) => void onPublishToCatalog(d),
+  };
+
   const tabLabel: Record<DrawerTab, string> = {
     featured: "Featured",
     browse: "Browse all",
@@ -274,46 +293,42 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
           />
 
           <div className={styles.scrollBody}>
-            <p className={styles.sectionLabel}>{tabLabel[tab]}</p>
-
-            {displayPacks.length === 0 ? (
-              <div className={styles.empty}>No packs match the current filter.</div>
+            {tab === "installed" ? (
+              filteredInstalled.length === 0 ? (
+                <div className={styles.empty}>No packs match the current filter.</div>
+              ) : (
+                <MyPacksList {...myPacksListProps} />
+              )
             ) : (
-              <div className={styles.cardList}>
-                {displayPacks.map((pack) => {
-                  const isInstalled = installedDirs.has(pack.dirName);
-                  const catalogRow = catalogByDir.get(pack.dirName);
-                  const hasUpdate =
-                    isInstalled && catalogRow != null && catalogRow.version !== pack.version;
-                  return (
-                    <PackCard
-                      key={pack.dirName}
-                      pack={pack}
-                      isInstalled={isInstalled}
-                      hasUpdate={hasUpdate}
-                      catalogRow={catalogRow}
-                      busy={busy}
-                      onInstall={(p) => void onInstallFromCatalog(p)}
-                    />
-                  );
-                })}
-              </div>
-            )}
+              <>
+                <p className={styles.sectionLabel}>{tabLabel[tab]}</p>
 
-            {tab === "featured" && (
-              <MyPacksList
-                installed={installed}
-                catalogByDir={catalogByDir}
-                catalogPublishedDirs={catalogPublishedDirs}
-                catalogPublishAllowed={catalogPublishAllowed}
-                publishingPackKey={publishingPackKey}
-                paletteDockDirBusy={paletteDockDirBusy}
-                busy={busy}
-                onUninstall={(p) => void onUninstall(p)}
-                onExport={(p) => void onExport(p)}
-                onPaletteDockToggle={(p) => void onTogglePaletteDock(p)}
-                onPublishToCatalog={(d) => void onPublishToCatalog(d)}
-              />
+                {displayPacks.length === 0 ? (
+                  <div className={styles.empty}>No packs match the current filter.</div>
+                ) : (
+                  <div className={styles.cardList}>
+                    {displayPacks.map((pack) => {
+                      const isInstalled = installedDirs.has(pack.dirName);
+                      const catalogRow = catalogByDir.get(pack.dirName);
+                      const hasUpdate =
+                        isInstalled && catalogRow != null && catalogRow.version !== pack.version;
+                      return (
+                        <PackCard
+                          key={pack.dirName}
+                          pack={pack}
+                          isInstalled={isInstalled}
+                          hasUpdate={hasUpdate}
+                          catalogRow={catalogRow}
+                          busy={busy}
+                          onInstall={(p) => void onInstallFromCatalog(p)}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+
+                {tab === "featured" ? <MyPacksList {...myPacksListProps} /> : null}
+              </>
             )}
 
             <EnvNote />

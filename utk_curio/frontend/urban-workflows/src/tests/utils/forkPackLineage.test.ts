@@ -2,9 +2,12 @@ import {
   areForkPaletteParentsRevealedInDock,
   comparePackVersionDescending,
   filterForkParentHiddenPalettePackGroups,
+  findForkFamilyRootPack,
   forkFamilyKeyFromPaletteGroup,
   formatForkOfSubtitle,
   lineageCoordKey,
+  packCoordinateKey,
+  partitionInstalledPacksForWarehouseList,
   partitionPalettePackGroups,
   partitionPacksByForkFamily,
   referencedForkParentCoordinates,
@@ -145,6 +148,78 @@ describe("forkPackLineage", () => {
     const kept = filterForkParentHiddenPalettePackGroups(groups as any);
     expect(kept).toHaveLength(1);
     expect(kept[0]!.key).toBe("b@1");
+  });
+
+  test("packCoordinateKey", () => {
+    expect(packCoordinateKey({ packId: "curio.palette.fork", major: 1 })).toBe("curio.palette.fork@1");
+  });
+
+  test("findForkFamilyRootPack matches dirName or packId@major", () => {
+    const root = {
+      dirName: "root@1",
+      packId: "root",
+      major: 1,
+      lineage: null,
+    } as PackPayload;
+    const fork = {
+      dirName: "fork@1",
+      packId: "fork",
+      major: 1,
+      lineage: lin({ packId: "root", major: 1 }, { packId: "root", major: 1 }),
+    } as PackPayload;
+    expect(findForkFamilyRootPack("root@1", [root, fork])).toBe(root);
+    expect(findForkFamilyRootPack("root@1", [fork])).toBeUndefined();
+  });
+
+  test("partitionInstalledPacksForWarehouseList groups forks under root header", () => {
+    const root = {
+      dirName: "root@1",
+      packId: "root",
+      major: 1,
+      name: "Root pack",
+      version: "1.0.0",
+      lineage: null,
+      kinds: [{ id: "a" }],
+    } as PackPayload;
+    const forkA = {
+      dirName: "fork.a@1",
+      packId: "fork.a",
+      major: 1,
+      name: "Fork A",
+      version: "1.0.0",
+      lineage: lin({ packId: "root", major: 1 }, { packId: "root", major: 1 }),
+      kinds: [{ id: "b" }],
+    } as PackPayload;
+    const forkB = {
+      dirName: "fork.b@1",
+      packId: "fork.b",
+      major: 1,
+      name: "Fork B",
+      version: "1.0.0",
+      lineage: lin({ packId: "fork.a", major: 1 }, { packId: "root", major: 1 }),
+      kinds: [{ id: "c" }],
+    } as PackPayload;
+    const solo = {
+      dirName: "solo@1",
+      packId: "solo",
+      major: 1,
+      name: "Solo",
+      version: "1.0.0",
+      lineage: null,
+      kinds: [{ id: "d" }],
+    } as PackPayload;
+
+    const rows = partitionInstalledPacksForWarehouseList([root, forkA, forkB, solo]);
+
+    expect(rows.filter((r) => r.kind === "singleton")).toHaveLength(1);
+    expect(rows.find((r) => r.kind === "singleton")?.pack.dirName).toBe("solo@1");
+
+    const family = rows.find((r) => r.kind === "family");
+    expect(family).toBeTruthy();
+    if (family?.kind !== "family") throw new Error("expected family row");
+    expect(family.rootKey).toBe("root@1");
+    expect(family.rootPack?.dirName).toBe("root@1");
+    expect(family.members.map((m) => m.dirName).sort()).toEqual(["fork.a@1", "fork.b@1"].sort());
   });
 });
 

@@ -245,6 +245,76 @@ export function sortPaletteForkGroupsDescending<G extends PalettePackGroupLike>(
   });
 }
 
+export function packCoordinateKey(pack: Pick<PackPayload, "packId" | "major">): string {
+  return `${pack.packId}@${pack.major}`;
+}
+
+/** Installed pack with `lineage == null` that anchors a fork family (`rootKey`). */
+export function findForkFamilyRootPack<
+  T extends Pick<PackPayload, "dirName" | "packId" | "major" | "lineage">,
+>(rootKey: string, packs: readonly T[]): T | undefined {
+  return packs.find(
+    (p) =>
+      p.lineage == null &&
+      (p.dirName === rootKey || packCoordinateKey(p) === rootKey),
+  );
+}
+
+export type InstalledPackWarehouseRow<T extends PackPayload = PackPayload> =
+  | { kind: "singleton"; pack: T }
+  | { kind: "family"; rootKey: string; rootPack: T | null; members: T[] };
+
+/** Singleton rows + fork-family accordions (root pack omitted from singleton list). */
+export function partitionInstalledPacksForWarehouseList<T extends PackPayload>(
+  packs: readonly T[],
+): InstalledPackWarehouseRow<T>[] {
+  const list = [...packs];
+  const { singletons, families } = partitionPacksByForkFamily(list);
+  const rootPackDirsUsed = new Set<string>();
+  const rows: InstalledPackWarehouseRow<T>[] = [];
+
+  for (const family of families) {
+    const rootPack = findForkFamilyRootPack(family.rootKey, list) ?? null;
+    if (rootPack) rootPackDirsUsed.add(rootPack.dirName);
+    rows.push({
+      kind: "family",
+      rootKey: family.rootKey,
+      rootPack,
+      members: family.members,
+    });
+  }
+
+  for (const pack of singletons) {
+    if (!rootPackDirsUsed.has(pack.dirName)) {
+      rows.push({ kind: "singleton", pack });
+    }
+  }
+
+  rows.sort((a, b) => {
+    const ta =
+      a.kind === "singleton"
+        ? packCreatedAtMs(a.pack)
+        : Math.max(
+            packCreatedAtMs(a.rootPack),
+            forkFamilyLatestCreatedAtMs({ rootKey: a.rootKey, members: a.members }),
+          );
+    const tb =
+      b.kind === "singleton"
+        ? packCreatedAtMs(b.pack)
+        : Math.max(
+            packCreatedAtMs(b.rootPack),
+            forkFamilyLatestCreatedAtMs({ rootKey: b.rootKey, members: b.members }),
+          );
+    const c = tb - ta;
+    if (c !== 0) return c;
+    const keyA = a.kind === "singleton" ? a.pack.dirName : a.rootKey;
+    const keyB = b.kind === "singleton" ? b.pack.dirName : b.rootKey;
+    return keyA.localeCompare(keyB, undefined, { sensitivity: "base" });
+  });
+
+  return rows;
+}
+
 /** `dirName`-style coordinates referenced as `lineage.forkedFrom` by any pack in `packs`. */
 export function referencedForkParentCoordinates<T extends Pick<PackPayload, "lineage">>(
   packs: Iterable<T>,

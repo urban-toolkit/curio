@@ -9,7 +9,7 @@ import styles from "./MyPacks.module.css";
 
 export interface MyPacksSidebarProps extends MyPacksCallbacks {
   installed: PackPayload[];
-  /** Pre-sorted list of singleton and fork-family entries for the rail. */
+  /** Pre-sorted singleton + fork-family accordion rows. */
   hubRailInstalledOrdered: InstalledHubEntry[];
   busy: boolean;
   forkParentsPaletteBusy: boolean;
@@ -20,8 +20,6 @@ export interface MyPacksSidebarProps extends MyPacksCallbacks {
   catalogPublishedDirs: ReadonlySet<string>;
   catalogPublishAllowed: boolean;
   publishingPackKey: string | null;
-  hubForkManualByRoot: Record<string, string>;
-  setHubForkManualByRoot: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   onToggleForkSourcesInDockPalette: () => void;
 }
 
@@ -30,7 +28,7 @@ export interface MyPacksSidebarProps extends MyPacksCallbacks {
  *
  * Renders a header with an optional fork-source palette-dock toggle,
  * then a list of installed packs as either singleton rows or fork-family
- * groups, sorted newest-first.
+ * accordions, sorted newest-first.
  */
 export const MyPacksSidebar: React.FC<MyPacksSidebarProps> = ({
   installed,
@@ -43,8 +41,6 @@ export const MyPacksSidebar: React.FC<MyPacksSidebarProps> = ({
   catalogPublishedDirs,
   catalogPublishAllowed,
   publishingPackKey,
-  hubForkManualByRoot,
-  setHubForkManualByRoot,
   onToggleForkSourcesInDockPalette,
   onExport,
   onUninstall,
@@ -87,7 +83,7 @@ export const MyPacksSidebar: React.FC<MyPacksSidebarProps> = ({
     {installed.length === 0 ? (
       <div className={styles.empty}>You haven&apos;t installed any packs yet.</div>
     ) : (
-      <>
+      <div className={styles.installedList}>
         {hubRailInstalledOrdered.map((entry) =>
           entry.kind === "singleton" ? (
             <MyPackSingletonRow
@@ -106,10 +102,10 @@ export const MyPacksSidebar: React.FC<MyPacksSidebarProps> = ({
             />
           ) : (
             <HubInstalledForkRailGroup
-              key={entry.family.rootKey}
-              family={entry.family}
-              manualForkDirByRoot={hubForkManualByRoot}
-              setManualForkDirByRoot={setHubForkManualByRoot}
+              key={entry.rootKey}
+              rootKey={entry.rootKey}
+              rootPack={entry.rootPack}
+              members={entry.members}
               busy={busy}
               paletteDockBusy={paletteDockDirBusy}
               catalogPublishedDirs={catalogPublishedDirs}
@@ -123,9 +119,7 @@ export const MyPacksSidebar: React.FC<MyPacksSidebarProps> = ({
             />
           ),
         )}
-      </>
+      </div>
     )}
   </aside>
 );
-
-

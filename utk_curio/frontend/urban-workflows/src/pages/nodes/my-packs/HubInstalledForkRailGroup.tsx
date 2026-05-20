@@ -1,23 +1,17 @@
-import React, { useCallback, useEffect, useMemo } from "react";
+import React from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faPenToSquare } from "@fortawesome/free-solid-svg-icons";
 import { PackPayload } from "../../../api/packsApi";
 import { CatalogPublishPill } from "../../../components/packs/CatalogPublishPill";
-import { ForkFamilyPicker } from "../../../components/packs/ForkFamilyPicker";
-import {
-  FORK_SELECTION_SESSION_PREFIX,
-  ForkFamilyGroup,
-  formatForkOfSubtitle,
-  resolveForkFamilySelectionKey,
-} from "../../../utils/forkPackLineage";
 import { MyPackIconActions } from "./MyPackIconActions";
+import { MyPackSingletonRow } from "./MyPackSingletonRow";
 import { MyPacksCallbacks } from "./myPacksTypes";
 import styles from "./MyPacks.module.css";
 
 export interface HubInstalledForkRailGroupProps extends MyPacksCallbacks {
-  family: ForkFamilyGroup<PackPayload>;
-  manualForkDirByRoot: Record<string, string>;
-  setManualForkDirByRoot: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  rootKey: string;
+  rootPack: PackPayload | null;
+  members: PackPayload[];
   busy: boolean;
   paletteDockBusy: string | null;
   catalogPublishedDirs: ReadonlySet<string>;
@@ -26,14 +20,13 @@ export interface HubInstalledForkRailGroupProps extends MyPacksCallbacks {
 }
 
 /**
- * Renders a fork-family group in the My Packs sidebar.
- * Shows a family title, a ForkFamilyPicker select, and a list-item row
- * for each fork member — the selected member is highlighted.
+ * Fork-family accordion in the My Packs sidebar.
+ * The lineage-free root pack is fixed in the header; fork members expand below.
  */
 export const HubInstalledForkRailGroup = React.memo(function HubInstalledForkRailGroup({
-  family,
-  manualForkDirByRoot,
-  setManualForkDirByRoot,
+  rootKey,
+  rootPack,
+  members,
   busy,
   paletteDockBusy,
   catalogPublishedDirs,
@@ -45,151 +38,74 @@ export const HubInstalledForkRailGroup = React.memo(function HubInstalledForkRai
   onPublishToCatalog,
   onOpenForkInFactory,
 }: HubInstalledForkRailGroupProps) {
-  const manualPick = manualForkDirByRoot[family.rootKey];
-
-  const resolverMembers = useMemo(
-    () => family.members.map((m) => ({ key: m.dirName })),
-    [family.members],
-  );
-
-  const resolvedDir = useMemo(
-    () => resolveForkFamilySelectionKey(family.rootKey, resolverMembers, "", manualPick),
-    [family.rootKey, resolverMembers, manualPick],
-  );
-
-  useEffect(() => {
-    try {
-      sessionStorage.setItem(FORK_SELECTION_SESSION_PREFIX + family.rootKey, resolvedDir);
-    } catch {
-      /* noop */
-    }
-  }, [family.rootKey, resolvedDir]);
-
-  const selectedPack = useMemo(
-    () => family.members.find((p) => p.dirName === resolvedDir) ?? family.members[0]!,
-    [family.members, resolvedDir],
-  );
-
-  const forkPickerOptions = useMemo(
-    () =>
-      family.members.map((m) => ({
-        key: m.dirName,
-        label: `${m.name} (${m.packId} · v${m.version})`,
-      })),
-    [family.members],
-  );
-
-  const onForkPicked = useCallback(
-    (next: string) => {
-      setManualForkDirByRoot((prev) => ({ ...prev, [family.rootKey]: next }));
-      try {
-        sessionStorage.setItem(FORK_SELECTION_SESSION_PREFIX + family.rootKey, next);
-      } catch {
-        /* noop */
-      }
-    },
-    [family.rootKey, setManualForkDirByRoot],
-  );
+  const headerName = rootPack?.name ?? rootKey;
+  const headerMeta = rootPack
+    ? `${rootPack.packId} · v${rootPack.version} · ${rootPack.kinds.length} nodes`
+    : `${members.length} fork${members.length === 1 ? "" : "s"}`;
 
   return (
-    <section
-      className={styles.hubForkFamily}
-      aria-labelledby={`fork-rail-head-${family.rootKey}`}
-    >
-      <div className={styles.hubForkFamilyToolbar}>
-        <div>
-          <div
-            id={`fork-rail-head-${family.rootKey}`}
-            className={styles.hubForkRailTitleRow}
-          >
-            <button
-              type="button"
-              className={styles.hubPackFactoryTitleBtn}
-              title="Fork in Node Factory (new install; source unchanged)"
-              onClick={() => onOpenForkInFactory(selectedPack)}
-            >
-              {selectedPack.name}
-            </button>
-            <button
-              type="button"
-              className={styles.myPackIconBtn}
-              title="Fork in Node Factory"
-              aria-label={`Fork ${selectedPack.name} in Node Factory`}
-              disabled={busy}
-              onClick={() => onOpenForkInFactory(selectedPack)}
-            >
-              <FontAwesomeIcon icon={faPenToSquare} />
-            </button>
-          </div>
-          <p className={styles.hubForkFamilyRailMeta}>
-            Family root {family.rootKey} · {family.members.length} forks
-          </p>
-        </div>
-      </div>
-
-      <label className={styles.hubForkFamilySelectLabel}>
-        Fork Family
-        <ForkFamilyPicker
-          variant="hub"
-          rootKey={family.rootKey}
-          options={forkPickerOptions}
-          value={resolvedDir}
-          onChange={onForkPicked}
-        />
-      </label>
-
-      <div role="list">
-        {family.members.map((pack) => (
-          <div
-            key={pack.dirName}
-            role="listitem"
-            className={`${styles.myPackRow} ${
-              pack.dirName === resolvedDir ? styles.myPackRowHighlight : ""
-            }`}
-          >
-            <div>
-              <div className={styles.myPackTitleBlock}>
-                <div className={styles.myPackNameRow}>
-                  <button
-                    type="button"
-                    className={styles.myPackFactoryNameBtn}
-                    title="Fork in Node Factory (new install; source unchanged)"
-                    onClick={() => onOpenForkInFactory(pack)}
-                  >
-                    {pack.name}
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.myPackIconBtn}
-                    title="Fork in Node Factory"
-                    aria-label={`Fork ${pack.name} in Node Factory`}
-                    disabled={busy}
-                    onClick={() => onOpenForkInFactory(pack)}
-                  >
-                    <FontAwesomeIcon icon={faPenToSquare} />
-                  </button>
+    <details className={styles.familyDetails}>
+      <summary className={styles.familySummary}>
+        <div className={styles.familySummaryMain}>
+          <span className={styles.familyDot} aria-hidden />
+          <div className={styles.familySummaryBody}>
+            {rootPack ? (
+              <>
+                <div className={styles.myPackTitleBlock}>
+                  <div className={styles.myPackNameRow}>
+                    <button
+                      type="button"
+                      className={styles.myPackFactoryNameBtn}
+                      title="Fork in Node Factory (new install; source unchanged)"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenForkInFactory(rootPack);
+                      }}
+                    >
+                      {headerName}
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.myPackIconBtn}
+                      title="Fork in Node Factory"
+                      aria-label={`Fork ${rootPack.name} in Node Factory`}
+                      disabled={busy}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenForkInFactory(rootPack);
+                      }}
+                    >
+                      <FontAwesomeIcon icon={faPenToSquare} />
+                    </button>
+                  </div>
+                  <CatalogPublishPill
+                    variant="hub"
+                    dirName={rootPack.dirName}
+                    published={catalogPublishedDirs.has(rootPack.dirName)}
+                    allowPublish={catalogPublishAllowed}
+                    busy={publishingPackKey === rootPack.dirName}
+                    onPublish={onPublishToCatalog}
+                  />
                 </div>
-                <CatalogPublishPill
-                  variant="hub"
-                  dirName={pack.dirName}
-                  published={catalogPublishedDirs.has(pack.dirName)}
-                  allowPublish={catalogPublishAllowed}
-                  busy={publishingPackKey === pack.dirName}
-                  onPublish={onPublishToCatalog}
-                />
-              </div>
-              <span className={styles.myPackVersion}>
-                {pack.packId} · v{pack.version}
-              </span>
-              {pack.lineage?.forkedFrom ? (
-                <p className={styles.hubForkOfLine}>
-                  {formatForkOfSubtitle(pack.lineage).text}
-                </p>
-              ) : null}
-            </div>
+                <span className={styles.myPackVersion}>{headerMeta}</span>
+              </>
+            ) : (
+              <>
+                <span className={styles.familySummaryName}>{headerName}</span>
+                <span className={styles.myPackVersion}>{headerMeta}</span>
+              </>
+            )}
+          </div>
+        </div>
 
+        {rootPack ? (
+          <div
+            className={styles.familySummaryActions}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
             <MyPackIconActions
-              pack={pack}
+              pack={rootPack}
               busy={busy}
               paletteDockBusy={paletteDockBusy}
               onExport={onExport}
@@ -197,10 +113,30 @@ export const HubInstalledForkRailGroup = React.memo(function HubInstalledForkRai
               onPaletteDockToggle={onPaletteDockToggle}
             />
           </div>
+        ) : (
+          <span className={styles.familyCountBadge}>{members.length}</span>
+        )}
+      </summary>
+
+      <div className={styles.familyMemberList}>
+        {members.map((pack) => (
+          <MyPackSingletonRow
+            key={pack.dirName}
+            pack={pack}
+            nested
+            busy={busy}
+            paletteDockBusy={paletteDockBusy}
+            catalogPublishedDirs={catalogPublishedDirs}
+            catalogPublishAllowed={catalogPublishAllowed}
+            publishingPackKey={publishingPackKey}
+            onExport={onExport}
+            onUninstall={onUninstall}
+            onPaletteDockToggle={onPaletteDockToggle}
+            onPublishToCatalog={onPublishToCatalog}
+            onOpenForkInFactory={onOpenForkInFactory}
+          />
         ))}
       </div>
-    </section>
+    </details>
   );
 });
-
-
