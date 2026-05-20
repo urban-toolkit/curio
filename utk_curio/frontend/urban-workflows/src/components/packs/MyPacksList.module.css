@@ -17,11 +17,10 @@
 }
 
 .installedRow {
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    gap: 8px;
+    display: flex;
     align-items: center;
-    padding: 10px 12px;
+    gap: 8px;
+    padding: 8px 10px;
     border: 1px solid #eeeeee;
     border-radius: 4px;
     background: #fafafa;
@@ -36,6 +35,14 @@
     flex-shrink: 0;
 }
 
+.installedBody {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
 .installedName {
     font-weight: 600;
     overflow: hidden;
@@ -46,5 +53,45 @@
 .installedMeta {
     color: #666666;
     white-space: nowrap;
+    font-size: 0.6875rem;
 }
 
+/* ── Per-row action buttons ─────────────────────────────────────────────── */
+
+.installedActions {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    flex-shrink: 0;
+}
+
+.rowActionBtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: #7a786d;
+    cursor: pointer;
+    font-size: 0.6875rem;
+    line-height: 1;
+}
+
+.rowActionBtn:hover:not(:disabled) {
+    background: #eeeeee;
+    color: #1e1f23;
+}
+
+.rowActionBtn:focus-visible {
+    outline: 2px solid rgba(251, 170, 105, 0.85);
+    outline-offset: 1px;
+}
+
+.rowActionBtn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}

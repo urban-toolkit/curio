@@ -6,6 +6,8 @@ import {
   packsApi,
   refreshPackRegistry,
 } from "../../api/packsApi";
+import { draftFromInstalledPackPayload } from "../../utils/palettePackFactoryDraft";
+import { toApiPayload } from "../../pages/nodes/factoryDraftModel";
 import { InstallPermissionsDialog } from "./InstallPermissionsDialog";
 import { DrawerHeader } from "./DrawerHeader";
 import { DrawerTabs } from "./DrawerTabs";
@@ -42,17 +44,28 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
   const [sort, setSort] = useState<SortMode>("new");
   const [pinned, setPinned] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [paletteDockDirBusy, setPaletteDockDirBusy] = useState<string | null>(null);
+  const [catalogPublishAllowed, setCatalogPublishAllowed] = useState(false);
+  const [publishingPackKey, setPublishingPackKey] = useState<string | null>(null);
   const [installCandidate, setInstallCandidate] = useState<PackPayload | null>(null);
   const [conflictReport, setConflictReport] = useState<ResolveConflict[] | null>(null);
+  const installedByDirRef = useRef<Map<string, PackPayload>>(new Map());
 
   const installedDirs = useMemo(() => new Set(installed.map((p) => p.dirName)), [installed]);
   const catalogByDir = useMemo(() => new Map(catalog.map((p) => [p.dirName, p])), [catalog]);
+  const catalogPublishedDirs = useMemo(() => new Set(catalog.map((p) => p.dirName)), [catalog]);
 
   const reload = useCallback(async () => {
-    const [cat, mine] = await Promise.all([packsApi.catalog(), packsApi.listInstalled()]);
+    const [cat, mine, cap] = await Promise.all([
+      packsApi.catalog(),
+      packsApi.listInstalled(),
+      packsApi.factoryCapabilities(),
+    ]);
     const installedSet = new Set(mine.packs.map((p) => p.dirName));
     setCatalog(cat.packs.map((p) => ({ ...p, installed: installedSet.has(p.dirName) })));
     setInstalled(mine.packs);
+    installedByDirRef.current = new Map(mine.packs.map((p) => [p.dirName, p]));
+    setCatalogPublishAllowed(cap.catalogPublish);
   }, []);
 
   useEffect(() => {
@@ -160,6 +173,56 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
     [reload],
   );
 
+  const onUninstall = useCallback(async (pack: PackPayload) => {
+    if (!window.confirm(`Uninstall ${pack.name} (${pack.dirName})?`)) return;
+    setBusy(true);
+    try {
+      try {
+        await packsApi.uninstall(pack.dirName);
+      } catch (err) {
+        // Swallow 404 — pack already gone (race condition).
+        const status = (err as { status?: number }).status;
+        if (status !== 404) throw err;
+      }
+      await refreshPackRegistry();
+      await reload();
+    } finally {
+      setBusy(false);
+    }
+  }, [reload]);
+
+  const onExport = useCallback(async (pack: PackPayload) => {
+    await packsApi.download(pack.dirName);
+  }, []);
+
+  const onTogglePaletteDock = useCallback(async (pack: PackPayload) => {
+    const nextHidden = !(pack.paletteDock?.hiddenFromForkPaletteDock === true);
+    setPaletteDockDirBusy(pack.dirName);
+    try {
+      await packsApi.packPaletteDockVisible(pack.dirName, !nextHidden);
+      await refreshPackRegistry();
+      await reload();
+    } finally {
+      setPaletteDockDirBusy(null);
+    }
+  }, [reload]);
+
+  const onPublishToCatalog = useCallback(async (dirName: string) => {
+    const row = installedByDirRef.current.get(dirName);
+    if (!row) return;
+    setPublishingPackKey(dirName);
+    try {
+      const draft = draftFromInstalledPackPayload(row);
+      await packsApi.factoryPublishCatalog({
+        ...(toApiPayload(draft) as Record<string, unknown>),
+        replace: true,
+      });
+      await reload();
+    } finally {
+      setPublishingPackKey(null);
+    }
+  }, [reload]);
+
   const tabLabel: Record<DrawerTab, string> = {
     featured: "Featured",
     browse: "Browse all",
@@ -238,7 +301,19 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
             )}
 
             {tab === "featured" && (
-              <MyPacksList installed={installed} catalogByDir={catalogByDir} />
+              <MyPacksList
+                installed={installed}
+                catalogByDir={catalogByDir}
+                catalogPublishedDirs={catalogPublishedDirs}
+                catalogPublishAllowed={catalogPublishAllowed}
+                publishingPackKey={publishingPackKey}
+                paletteDockDirBusy={paletteDockDirBusy}
+                busy={busy}
+                onUninstall={(p) => void onUninstall(p)}
+                onExport={(p) => void onExport(p)}
+                onPaletteDockToggle={(p) => void onTogglePaletteDock(p)}
+                onPublishToCatalog={(d) => void onPublishToCatalog(d)}
+              />
             )}
 
             <EnvNote />
