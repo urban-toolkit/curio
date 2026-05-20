@@ -400,6 +400,25 @@ def publish_pack_archive_to_catalog_dir(
             shutil.rmtree(staging_alive, ignore_errors=True)
 
 
+def remove_pack_from_catalog_dir(catalog_parent: Path, dir_name: str) -> bool:
+    """Remove a committed catalog fixture directory under *catalog_parent*.
+
+    Returns ``True`` when a directory was removed, ``False`` when absent.
+    """
+    if not PACK_DIR_RE.match(dir_name):
+        raise InstallerError(f"malformed pack dir name {dir_name!r}")
+
+    catalog_root = catalog_parent.resolve(strict=False)
+    final_dest = (catalog_root / dir_name).resolve()
+    if not is_within(final_dest, catalog_root):
+        raise InstallerError(f"refusing to remove outside catalog root ({final_dest})")
+    if not final_dest.is_dir():
+        return False
+    shutil.rmtree(final_dest)
+    log.info("Removed pack fixture %s from catalog dir %s", dir_name, final_dest)
+    return True
+
+
 def install_pack_from_archive(
     user_key: str,
     archive: bytes | IO[bytes],

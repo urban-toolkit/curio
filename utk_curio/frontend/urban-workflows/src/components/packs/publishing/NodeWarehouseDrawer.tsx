@@ -47,6 +47,7 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
   const [paletteDockDirBusy, setPaletteDockDirBusy] = useState<string | null>(null);
   const [catalogPublishAllowed, setCatalogPublishAllowed] = useState(false);
   const [publishingPackKey, setPublishingPackKey] = useState<string | null>(null);
+  const [cardActionDir, setCardActionDir] = useState<string | null>(null);
   const [installCandidate, setInstallCandidate] = useState<PackPayload | null>(null);
   const [conflictReport, setConflictReport] = useState<ResolveConflict[] | null>(null);
   const installedByDirRef = useRef<Map<string, PackPayload>>(new Map());
@@ -179,22 +180,41 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
   );
 
   const onUninstall = useCallback(async (pack: PackPayload) => {
-    if (!window.confirm(`Uninstall ${pack.name} (${pack.dirName})?`)) return;
-    setBusy(true);
+    if (!window.confirm(`Uninstall ${pack.name} (${pack.dirName}) from this workspace?`)) return;
+    setCardActionDir(pack.dirName);
     try {
       try {
         await packsApi.uninstall(pack.dirName);
       } catch (err) {
-        // Swallow 404 — pack already gone (race condition).
         const status = (err as { status?: number }).status;
         if (status !== 404) throw err;
       }
       await refreshPackRegistry();
       await reload();
     } finally {
-      setBusy(false);
+      setCardActionDir(null);
     }
   }, [reload]);
+
+  const onUnpublishFromCatalog = useCallback(
+    async (pack: PackPayload) => {
+      if (
+        !window.confirm(
+          `Unpublish ${pack.name} (${pack.dirName}) from the dev catalog?\n\nThis removes the fixture under fixtures/packs. Installed copies in workspaces are not removed.`,
+        )
+      ) {
+        return;
+      }
+      setCardActionDir(pack.dirName);
+      try {
+        await packsApi.unpublishFromCatalog(pack.dirName);
+        await reload();
+      } finally {
+        setCardActionDir(null);
+      }
+    },
+    [reload],
+  );
 
   const onExport = useCallback(async (pack: PackPayload) => {
     await packsApi.download(pack.dirName);
@@ -320,7 +340,11 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
                           hasUpdate={hasUpdate}
                           catalogRow={catalogRow}
                           busy={busy}
+                          cardActionDir={cardActionDir}
+                          catalogPublishAllowed={catalogPublishAllowed}
                           onInstall={(p) => void onInstallFromCatalog(p)}
+                          onUninstall={(p) => void onUninstall(p)}
+                          onUnpublish={(p) => void onUnpublishFromCatalog(p)}
                         />
                       );
                     })}
@@ -334,14 +358,14 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
             <EnvNote />
           </div>
 
-          <DrawerFooter
+          {/* <DrawerFooter
             busy={busy}
             onSideload={(file) => void onPickArchive(file)}
             onOpenWarehouse={() => {
               onRequestClose();
               navigate("/nodes");
             }}
-          />
+          /> */}
         </aside>
       </div>
 
