@@ -12,6 +12,12 @@ jest.mock('../../providers/DialogProvider', () => ({
   }),
 }));
 
+function modalBackdrop(): HTMLElement {
+  const el = document.body.querySelector('[class*="backdrop"]');
+  if (!el) throw new Error('Modal backdrop not found (ModalShell uses a portal)');
+  return el as HTMLElement;
+}
+
 describe('GenericDialog', () => {
   beforeEach(() => {
     mockUnsetDialog.mockClear();
@@ -29,11 +35,9 @@ describe('GenericDialog', () => {
   test('creates a semi-transparent backdrop for modal effect', () => {
     const dialogContent = <div>Content</div>;
 
-    const { container } = render(<GenericDialog dialog={dialogContent} />);
-    const backdrop = container.firstChild as HTMLElement;
+    render(<GenericDialog dialog={dialogContent} />);
 
-    // Backdrop is the first child (a div rendered by ModalShell)
-    expect(backdrop).toBeInTheDocument();
+    expect(modalBackdrop()).toBeInTheDocument();
   });
 
   test('centers dialog content using flexbox', () => {
@@ -48,11 +52,8 @@ describe('GenericDialog', () => {
   test('closes dialog when backdrop is clicked (key interaction)', () => {
     const dialogContent = <div data-testid="inner-content">Click outside to close</div>;
 
-    const { container } = render(<GenericDialog dialog={dialogContent} />);
-    const backdrop = container.firstChild as HTMLElement;
-
-    // Click on the backdrop (first child, which is ModalShell's backdrop div)
-    fireEvent.click(backdrop);
+    render(<GenericDialog dialog={dialogContent} />);
+    fireEvent.click(modalBackdrop());
 
     expect(mockUnsetDialog).toHaveBeenCalledTimes(1);
   });

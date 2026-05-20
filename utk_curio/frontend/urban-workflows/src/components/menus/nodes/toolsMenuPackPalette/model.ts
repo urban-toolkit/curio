@@ -1,7 +1,7 @@
 import { Node as RFNode } from "reactflow";
 import { PACK_STAGING_MIME } from "../../../../constants/packPaletteStaging";
 import { draftPackSectionKey, type PackStagedRow } from "../../../../providers/PackPaletteContext";
-import { tryGetNodeDescriptor } from "../../../../registry";
+import { tryGetNodeDescriptor } from "../../../../registry/nodeRegistry";
 import { NodeDescriptor, NodeKindId, NodePackMeta } from "../../../../registry/types";
 import { canvasKindLabelFromNode, normalizeKindLabel } from "../../../../utils/palettePackFactoryDraft";
 import { getFlowNodeCanonicalType } from "../../../../utils/flowNodeCanonicalType";
