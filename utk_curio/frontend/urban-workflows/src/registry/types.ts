@@ -43,6 +43,8 @@ export interface NodePackMeta {
   packId: string;
   major: number;
   version: string;
+  /** From manifest `name` — human-readable pack title for palette / hub UI. */
+  name?: string;
   publisher?: string;
   /** Pack-relative path to the default template `.py` (when provided by the manifest). */
   defaultTemplate?: string;

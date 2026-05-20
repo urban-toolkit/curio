@@ -129,7 +129,6 @@
     text-transform: uppercase;
     text-align: center;
     padding: 10px 8px 6px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .packPaletteRowAnchor {
@@ -267,7 +266,7 @@
     padding: 8px 10px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     align-items: center;
-    justify-content: flex-end;
+    justify-content: space-between;
 }
 
 .packEditToggle {

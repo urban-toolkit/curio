@@ -13,8 +13,25 @@ import {
 
 export interface PackPaletteGroup {
     key: string;
+    /** Human-readable pack name (manifest `name`). */
+    name: string;
+    /** Secondary line: publisher · packId@major (tooltips / fork chrome). */
     label: string;
     descriptors: NodeDescriptor[];
+}
+
+export function packDisplayName(meta: NodePackMeta): string {
+    if (meta.name?.trim()) return meta.name.trim();
+    if (meta.publisher?.trim()) return meta.publisher.trim();
+    return `${meta.packId}@${meta.major}`;
+}
+
+export function formatPackSectionLabel(meta: NodePackMeta): string {
+    const coord = `${meta.packId}@${meta.major}`;
+    if (meta.publisher?.trim()) {
+        return `${meta.publisher} · ${coord}`;
+    }
+    return coord;
 }
 
 export function parseStagingPayload(dataTransfer: DataTransfer): string | null {
@@ -71,14 +88,6 @@ export function packDescriptorsAfterPaletteEdits(
     return packDescriptorsAfterStagedReplacements(withoutRemoved, replacementLabelNorms);
 }
 
-export function formatPackSectionLabel(meta: NodePackMeta): string {
-    const coord = `${meta.packId}@${meta.major}`;
-    if (meta.publisher?.trim()) {
-        return `${meta.publisher} · ${coord}`;
-    }
-    return coord;
-}
-
 /**
  * One group per installed pack coordinate (`packId@major`).
  * Rows are **newest-first** by canonical `createdAtMs` from `manifest.createdAt`.
@@ -96,8 +105,10 @@ export function groupPalettePacks(packTypes: NodeDescriptor[]): PackPaletteGroup
             const sorted = [...descriptors].sort(
                 (a, b) => (a.paletteOrder ?? 999) - (b.paletteOrder ?? 999),
             );
-            const label = formatPackSectionLabel(sorted[0].pack!);
-            return { key, label, descriptors: sorted };
+            const packMeta = sorted[0].pack!;
+            const name = packDisplayName(packMeta);
+            const label = formatPackSectionLabel(packMeta);
+            return { key, name, label, descriptors: sorted };
         })
         .sort((a, b) => {
             const c = paletteGroupCreatedAtMs(b) - paletteGroupCreatedAtMs(a);
