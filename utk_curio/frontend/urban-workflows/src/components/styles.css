@@ -5,6 +5,7 @@
     resize: both;
     overflow: auto;
     position: relative;
+    cursor: pointer;
 }
 
 .resizer {

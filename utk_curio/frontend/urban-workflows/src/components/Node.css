@@ -1,3 +1,12 @@
+/* Draggable workflow nodes: hand pointer instead of the default arrow. */
+.react-flow__node.draggable {
+  cursor: pointer;
+}
+
+.react-flow__node.draggable.dragging {
+  cursor: grabbing;
+}
+
 .nav-tabs {
   font-size: 12px;
 }

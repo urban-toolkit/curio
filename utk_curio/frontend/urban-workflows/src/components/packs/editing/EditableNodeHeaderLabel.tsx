@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faGear } from "@fortawesome/free-solid-svg-icons";
+import { useHeaderIconDragClick } from "../../../utils/headerIconDragClick";
 import styles from "./EditableNodeHeaderLabel.module.css";
 
 export function EditableNodeHeaderLabel({
@@ -51,6 +52,15 @@ export function EditableNodeHeaderLabel({
     [commit, displayLabel],
   );
 
+  const startEdit = useCallback(() => {
+    setDraft(displayLabel);
+    setEditing(true);
+  }, [displayLabel]);
+
+  const labelEditClick = useHeaderIconDragClick(startEdit);
+  const configClick = useHeaderIconDragClick(onConfigure);
+  const saveAsClick = useHeaderIconDragClick(onSaveAs);
+
   return (
     <div className={styles.labelWrap}>
       {executed ? (
@@ -60,7 +70,7 @@ export function EditableNodeHeaderLabel({
       ) : null}
       {editing ? (
         <input
-          className={`${styles.labelInput} ${keywordHighlighted ? styles.labelInputHighlighted : ""}`}
+          className={`nodrag nowheel ${styles.labelInput} ${keywordHighlighted ? styles.labelInputHighlighted : ""}`}
           value={draft}
           aria-label="Node title"
           autoFocus
@@ -68,22 +78,25 @@ export function EditableNodeHeaderLabel({
           onBlur={commit}
           onKeyDown={onKeyDown}
         />
-      ) : (
+      ) : editable ? (
         <button
           type="button"
-          className={`${styles.labelText} ${editable ? styles.labelTextEditable : ""} ${
+          className={`${styles.labelText} ${styles.labelTextEditable} ${
             keywordHighlighted ? styles.labelTextHighlighted : ""
           }`}
-          title={editable ? "Click to edit node title" : displayLabel}
-          disabled={!editable}
-          onClick={() => {
-            if (!editable) return;
-            setDraft(displayLabel);
-            setEditing(true);
-          }}
+          title="Click to edit node title"
+          aria-label={`Edit node title: ${displayLabel}`}
+          {...labelEditClick}
         >
           {displayLabel}
         </button>
+      ) : (
+        <span
+          className={`${styles.labelText} ${keywordHighlighted ? styles.labelTextHighlighted : ""}`}
+          title={displayLabel}
+        >
+          {displayLabel}
+        </span>
       )}
       {showConfig ? (
         <button
@@ -91,7 +104,7 @@ export function EditableNodeHeaderLabel({
           className={`${styles.configBtn} ${keywordHighlighted ? styles.configBtnHighlighted : ""}`}
           title="Configure node kind"
           aria-label={`Configure ${displayLabel}`}
-          onClick={onConfigure}
+          {...configClick}
         >
           <FontAwesomeIcon icon={faGear} aria-hidden />
         </button>
@@ -102,7 +115,7 @@ export function EditableNodeHeaderLabel({
           className={`${styles.saveAsBtn} ${keywordHighlighted ? styles.saveAsBtnHighlighted : ""}`}
           title="Save this node into a pack"
           aria-label={`Save as pack node for ${displayLabel}`}
-          onClick={onSaveAs}
+          {...saveAsClick}
         >
           Save As
         </button>
