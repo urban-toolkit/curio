@@ -57,6 +57,7 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
         draftPackSectionIds,
         registerDraftPackSection,
         stagedRowsByPackKey,
+        removedKindIdsByPackKey,
     } = usePackPalette();
 
     const onPackInstalledFocusDock = useCallback(
@@ -203,8 +204,10 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
     const openWizardForPaletteSection = useCallback(
         (sectionKey: string, opts: { group?: PackPaletteGroup; draftUuid?: string }) => {
             const stagedRows = [...(stagedRowsByPackKey[sectionKey] ?? [])];
+            const removedKindIds = [...(removedKindIdsByPackKey[sectionKey] ?? [])];
+            const hasPendingEdits = stagedRows.length > 0 || removedKindIds.length > 0;
 
-            if (!stagedRows.length && opts.group && packsPaletteEditMode) {
+            if (!hasPendingEdits && opts.group && packsPaletteEditMode) {
                 const row = paletteCatalogRef.current?.installedByDir.get(sectionKey);
                 if (row) {
                     openNodeFactory({
@@ -249,9 +252,9 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
                 return;
             }
 
-            if (!stagedRows.length) {
+            if (!hasPendingEdits) {
                 showToast(
-                    "Stage at least one canvas node first (drag the grip onto the dashed drop zone).",
+                    "Stage a canvas node or remove a pack kind first (edit mode).",
                     "warning",
                 );
                 return;
@@ -266,6 +269,7 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
                           group: opts.group,
                           palettePackGroups: groups,
                           getTemplates,
+                          removedKindIds,
                       })
                     : buildDraftForPaletteSection({
                           sectionKey,
@@ -275,6 +279,7 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
                           standalonePackLeaf: opts.draftUuid ?? sectionKey.replace(/^__draft__:/, ""),
                           palettePackGroups: groups,
                           getTemplates,
+                          removedKindIds,
                       });
             if (!draft) {
                 showToast("Could not derive a factory draft from the staged nodes.", "error");
@@ -289,6 +294,7 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
             onFactoryModalInstallSuccess,
             openNodeFactory,
             packsPaletteEditMode,
+            removedKindIdsByPackKey,
             showToast,
             stagedRowsByPackKey,
         ],
@@ -336,7 +342,8 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
             for (const draftId of draftPackSectionIds) {
                 const sectionKey = draftPackSectionKey(draftId);
                 const stagedRows = [...(stagedRowsByPackKey[sectionKey] ?? [])];
-                if (!stagedRows.length) {
+                const removedKindIds = [...(removedKindIdsByPackKey[sectionKey] ?? [])];
+                if (!stagedRows.length && !removedKindIds.length) {
                     skippedSections++;
                     continue;
                 }
@@ -348,6 +355,7 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
                     standalonePackLeaf: draftId,
                     palettePackGroups: groups,
                     getTemplates,
+                    removedKindIds,
                 });
                 if (!draft) {
                     skippedSections++;
@@ -362,7 +370,8 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
 
             for (const group of groups) {
                 const stagedRows = [...(stagedRowsByPackKey[group.key] ?? [])];
-                if (!stagedRows.length) continue;
+                const removedKindIds = [...(removedKindIdsByPackKey[group.key] ?? [])];
+                if (!stagedRows.length && !removedKindIds.length) continue;
                 const draft = buildDraftForPaletteSection({
                     sectionKey: group.key,
                     stagedRows,
@@ -370,6 +379,7 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
                     group,
                     palettePackGroups: groups,
                     getTemplates,
+                    removedKindIds,
                 });
                 if (!draft) {
                     skippedSections++;
@@ -382,7 +392,10 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
             }
 
             if (!installs) {
-                showToast("Nothing new to save — stage canvas nodes onto a draft or pack section first.", "info");
+                showToast(
+                    "Nothing new to save — stage canvas nodes, remove pack kinds, or both.",
+                    "info",
+                );
                 return;
             }
 
@@ -415,6 +428,7 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
         setPacksPaletteEditMode,
         setPaletteDockRevealCoord,
         showToast,
+        removedKindIdsByPackKey,
         stagedRowsByPackKey,
     ]);
 
@@ -428,6 +442,7 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
                 paletteRows,
                 packsPaletteEditMode,
                 stagedRowsByPackKey,
+                removedKindIdsByPackKey,
                 draftPackSectionIds,
                 activePackKey,
                 forkManualPickByRoot,
@@ -436,6 +451,7 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
             paletteRows,
             packsPaletteEditMode,
             stagedRowsByPackKey,
+            removedKindIdsByPackKey,
             draftPackSectionIds,
             activePackKey,
             forkManualPickByRoot,
@@ -603,6 +619,7 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
                                         setActivePackKey={setActivePackKey}
                                         packsPaletteEditMode={packsPaletteEditMode}
                                         stagedRowsByPackKey={stagedRowsByPackKey}
+                                        removedKindIdsByPackKey={removedKindIdsByPackKey}
                                         forkManualPickByRoot={forkManualPickByRoot}
                                         setForkManualPickByRoot={setForkManualPickByRoot}
                                         openWizardForPaletteSection={openWizardForPaletteSection}

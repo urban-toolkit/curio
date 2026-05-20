@@ -1,0 +1,138 @@
+.content {
+    padding: 24px 28px 20px;
+    font-family: Rubik, system-ui, sans-serif;
+    color: #1e1f23;
+}
+
+.title {
+    margin: 0 32px 6px 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+}
+
+.subtitle {
+    margin: 0 0 16px;
+    font-size: 0.8125rem;
+    color: #7a786d;
+    line-height: 1.4;
+}
+
+.fieldLabel {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #7a786d;
+    margin-bottom: 6px;
+}
+
+.selectWrap {
+    position: relative;
+    margin-bottom: 12px;
+}
+
+.select {
+    width: 100%;
+    box-sizing: border-box;
+    appearance: none;
+    padding: 10px 36px 10px 12px;
+    border: 1px solid #d8d4c2;
+    border-radius: 8px;
+    background: #ffffff;
+    font: inherit;
+    font-size: 0.875rem;
+    color: #1e1f23;
+    cursor: pointer;
+}
+
+.select:focus {
+    outline: 2px solid rgba(251, 170, 105, 0.65);
+    outline-offset: 1px;
+}
+
+.selectChevron {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
+    font-size: 0.65rem;
+    color: #7a786d;
+}
+
+.warning {
+    margin: 0 0 16px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid #fbaa69;
+    background: #fff8ee;
+    font-size: 0.75rem;
+    color: #7a4a12;
+    line-height: 1.45;
+}
+
+.hint {
+    margin: 0 0 16px;
+    font-size: 0.75rem;
+    color: #7a786d;
+    line-height: 1.45;
+}
+
+.newPackField {
+    margin-bottom: 16px;
+}
+
+.input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border: 1px solid #d8d4c2;
+    border-radius: 8px;
+    background: #ffffff;
+    font: inherit;
+    font-size: 0.875rem;
+}
+
+.footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.ghostBtn {
+    padding: 8px 14px;
+    border: 1px solid #d8d4c2;
+    border-radius: 6px;
+    background: #ffffff;
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.ghostBtn:hover:not(:disabled) {
+    background: #f3f1e6;
+}
+
+.primaryBtn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    background: #fbaa69;
+    color: #1e1f23;
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.primaryBtn:hover:not(:disabled) {
+    background: #fb9a4f;
+}
+
+.primaryBtn:disabled,
+.ghostBtn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}

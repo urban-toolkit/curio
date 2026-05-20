@@ -1,6 +1,6 @@
 import React, { memo, useCallback, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faXmark } from "@fortawesome/free-solid-svg-icons";
+import { faCircleMinus, faXmark } from "@fortawesome/free-solid-svg-icons";
 import { Tooltip, OverlayTrigger } from "react-bootstrap";
 import { useReactFlow, useStore } from "reactflow";
 import { NODE_CATEGORY_SHORT_LABEL } from "../../../../constants/nodeCategoryShortLabels";
@@ -9,18 +9,25 @@ import { tryGetNodeDescriptor } from "../../../../registry";
 import { NodeDescriptor, NodeKindId } from "../../../../registry/types";
 import { usePackPalette } from "../../../../providers/PackPaletteContext";
 import { getFlowNodeCanonicalType } from "../../../../utils/flowNodeCanonicalType";
-import { parseStagingPayload } from "./model";
+import { canvasKindLabelFromNode } from "../../../../utils/palettePackFactoryDraft";
+import { canvasKindLabelForNodeId, parseStagingPayload } from "./model";
 import packStyles from "./ToolsMenuPackPalette.module.css";
 import { OVERLAY_TRIGGER_DELAY_PROPS, type ToolsMenuTooltipSide } from "./uiConstants";
 
 export const PackKindRow = memo(function PackKindRow({
     desc,
+    packSectionKey,
+    packsPaletteEditMode = false,
     tooltipPlacement = "right",
 }: {
     desc: NodeDescriptor;
+    packSectionKey?: string;
+    packsPaletteEditMode?: boolean;
     tooltipPlacement?: ToolsMenuTooltipSide;
 }) {
     const { setNodes } = useReactFlow();
+    const { removeKindFromPackSection } = usePackPalette();
+    const showDelete = packsPaletteEditMode && !!packSectionKey;
 
     const selectOnCanvas = useCallback(
         (e: React.MouseEvent) => {
@@ -49,13 +56,29 @@ export const PackKindRow = memo(function PackKindRow({
         >
             <div className={packStyles.packKindRow}>
                 <div
-                    className={packStyles.packKindRowDrag}
+                    className={`${packStyles.packKindRowDrag}${showDelete ? ` ${packStyles.packKindRowDragEdit}` : ""}`}
                     draggable
                     onDragStart={(event) => {
                         event.dataTransfer.setData("application/reactflow", String(desc.id));
                         event.dataTransfer.effectAllowed = "move";
                     }}
                 >
+                    {showDelete ? (
+                        <button
+                            type="button"
+                            className={packStyles.packKindDeleteBtn}
+                            aria-label={`Remove ${desc.label} from pack`}
+                            title={`Remove ${desc.label} from pack`}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                removeKindFromPackSection(packSectionKey!, desc.id);
+                            }}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onPointerDown={(e) => e.stopPropagation()}
+                        >
+                            <FontAwesomeIcon icon={faCircleMinus} aria-hidden />
+                        </button>
+                    ) : null}
                     <FontAwesomeIcon icon={desc.icon} className={packStyles.packKindDragIcon} />
                     {desc.badge ? (
                         <span className={packStyles.packKindDragBadge}>{desc.badge}</span>
@@ -83,6 +106,12 @@ export const PackCanvasDropSlot = memo(function PackCanvasDropSlot({
 }) {
     const [hover, setHover] = useState(false);
     const { stageCanvasNodeOnPackSection } = usePackPalette();
+    const { getNodes } = useReactFlow();
+
+    const labelForNodeId = useCallback(
+        (nodeId: string) => canvasKindLabelForNodeId(nodeId, getNodes()),
+        [getNodes],
+    );
 
     const allowsMime = useCallback((dt: DataTransfer) => {
         return Array.from(dt.types).includes(PACK_STAGING_MIME);
@@ -106,9 +135,13 @@ export const PackCanvasDropSlot = memo(function PackCanvasDropSlot({
 
             const canvasNodeId = parseStagingPayload(event.dataTransfer);
             if (!canvasNodeId) return;
-            stageCanvasNodeOnPackSection(packSectionKey, canvasNodeId);
+            const dropLabel = labelForNodeId(canvasNodeId);
+            stageCanvasNodeOnPackSection(packSectionKey, canvasNodeId, {
+                dedupeByLabel: dropLabel,
+                labelForNodeId,
+            });
         },
-        [packSectionKey, stageCanvasNodeOnPackSection],
+        [labelForNodeId, packSectionKey, stageCanvasNodeOnPackSection],
     );
 
     const onDragEnter = useCallback(
@@ -153,11 +186,13 @@ export const PackStagedCanvasRow = memo(function PackStagedCanvasRow({
         useCallback((s: any) => {
             const n = s.nodeInternals?.get(canvasNodeId);
             if (!n?.data) return "Node";
-            const d = n.data as { templateName?: string; nodeType?: string };
-            const tmpl = typeof d.templateName === "string" ? d.templateName.trim() : "";
-            if (tmpl) return tmpl;
-            const t = String(d.nodeType ?? n.type ?? "");
-            return tryGetNodeDescriptor(t as NodeKindId)?.label ?? t ?? canvasNodeId;
+            const t = String((n.data as { nodeType?: string }).nodeType ?? n.type ?? "");
+            const desc = tryGetNodeDescriptor(t as NodeKindId);
+            if (desc) return canvasKindLabelFromNode(n, desc);
+            const tmpl = typeof (n.data as { templateName?: string }).templateName === "string"
+                ? (n.data as { templateName?: string }).templateName!.trim()
+                : "";
+            return tmpl || t || canvasNodeId;
         }, [canvasNodeId]),
     );
 

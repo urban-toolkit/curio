@@ -1,9 +1,16 @@
-import React, { memo } from "react";
+import React, { memo, useCallback, useMemo } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faPenToSquare } from "@fortawesome/free-solid-svg-icons";
+import { useReactFlow } from "reactflow";
 import type { PackStagedRow } from "../../../../providers/PackPaletteContext";
+import { usePackPalette } from "../../../../providers/PackPaletteContext";
 import { CatalogPublishPill } from "../../../packs/CatalogPublishPill";
 import type { PackPaletteGroup } from "./model";
+import {
+    canvasKindLabelForNodeId,
+    normalizedStagedReplacementLabels,
+    packDescriptorsAfterPaletteEdits,
+} from "./model";
 import { PackCanvasDropSlot, PackKindRow, PackStagedCanvasRow } from "./PackPaletteRows";
 import packStyles from "./ToolsMenuPackPalette.module.css";
 
@@ -37,9 +44,30 @@ export const InstalledPackAccordion = memo(function InstalledPackAccordion({
     onPublishToCatalog,
     showCatalogPublishInSummary = true,
 }: InstalledPackAccordionProps) {
-    const countBadge = packsPaletteEditMode ? group.descriptors.length + stagedInstalledRows.length : group.descriptors.length;
-    const canOpenStaged = packsPaletteEditMode && stagedInstalledRows.length > 0;
-    const canOpenFork = packsPaletteEditMode && stagedInstalledRows.length === 0;
+    const { getNodes } = useReactFlow();
+    const { removedKindIdsByPackKey } = usePackPalette();
+    const removedKindIds = removedKindIdsByPackKey[group.key] ?? [];
+    const labelForNodeId = useCallback(
+        (nodeId: string) => canvasKindLabelForNodeId(nodeId, getNodes()),
+        [getNodes],
+    );
+    const replacementLabels = useMemo(
+        () => normalizedStagedReplacementLabels(stagedInstalledRows, labelForNodeId),
+        [labelForNodeId, stagedInstalledRows],
+    );
+    const visibleDescriptors = useMemo(
+        () =>
+            packsPaletteEditMode
+                ? packDescriptorsAfterPaletteEdits(group.descriptors, removedKindIds, replacementLabels)
+                : group.descriptors,
+        [group.descriptors, packsPaletteEditMode, removedKindIds, replacementLabels],
+    );
+    const countBadge = packsPaletteEditMode
+        ? visibleDescriptors.length + stagedInstalledRows.length
+        : group.descriptors.length;
+    const hasPendingEdits = stagedInstalledRows.length > 0 || removedKindIds.length > 0;
+    const canOpenStaged = packsPaletteEditMode && hasPendingEdits;
+    const canOpenFork = packsPaletteEditMode && !hasPendingEdits;
     const canOpenFactory = canOpenStaged || canOpenFork;
     return (
         <details
@@ -98,9 +126,15 @@ export const InstalledPackAccordion = memo(function InstalledPackAccordion({
                     <span className={packStyles.packSummaryCount}>{countBadge}</span>
                 </div>
             </summary>
-            <div className={packStyles.packKindGrid}>
-                {group.descriptors.map((desc) => (
-                    <PackKindRow key={desc.id} desc={desc} tooltipPlacement="right" />
+            <div className={`${packStyles.packKindGrid}${packsPaletteEditMode ? ` ${packStyles.packKindGridEdit}` : ""}`}>
+                {visibleDescriptors.map((desc) => (
+                    <PackKindRow
+                        key={desc.id}
+                        desc={desc}
+                        packSectionKey={group.key}
+                        packsPaletteEditMode={packsPaletteEditMode}
+                        tooltipPlacement="right"
+                    />
                 ))}
                 {packsPaletteEditMode
                     ? stagedInstalledRows.map((row) => (

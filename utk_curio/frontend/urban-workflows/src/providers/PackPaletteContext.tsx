@@ -49,11 +49,27 @@ export type PackPaletteContextValue = {
   registerDraftPackSection: () => void;
 
   stagedRowsByPackKey: Readonly<Record<string, readonly PackStagedRow[]>>;
-  stageCanvasNodeOnPackSection: (packSectionKey: string, canvasNodeId: string) => void;
+  stageCanvasNodeOnPackSection: (
+    packSectionKey: string,
+    canvasNodeId: string,
+    options?: {
+      /** Remove other staged rows whose canvas nodes share this label (case-insensitive). */
+      dedupeByLabel?: string;
+      labelForNodeId?: (nodeId: string) => string | undefined;
+    },
+  ) => void;
   removeStagedRowFromSection: (packSectionKey: string, rowId: string) => void;
+
+  /** Kind ids marked for removal while editing a pack section (cleared when edit mode exits). */
+  removedKindIdsByPackKey: Readonly<Record<string, readonly string[]>>;
+  removeKindFromPackSection: (packSectionKey: string, kindId: string) => void;
 };
 
 const PackPaletteContext = createContext<PackPaletteContextValue | null>(null);
+
+function normalizeKindLabel(label: string): string {
+  return label.trim().toLowerCase();
+}
 
 export function PackPaletteProvider({ children }: { children: React.ReactNode }) {
   const [activePackKey, setActivePackKey] = useState<string | null>(null);
@@ -61,11 +77,13 @@ export function PackPaletteProvider({ children }: { children: React.ReactNode })
   const [packsPaletteEditMode, setPacksPaletteEditMode] = useState(false);
   const [draftPackSectionIds, setDraftPackSectionIds] = useState<string[]>([]);
   const [stagedRowsByPackKey, setStagedRowsByPackKey] = useState<Record<string, PackStagedRow[]>>({});
+  const [removedKindIdsByPackKey, setRemovedKindIdsByPackKey] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     if (!packsPaletteEditMode) {
       setDraftPackSectionIds([]);
       setStagedRowsByPackKey({});
+      setRemovedKindIdsByPackKey({});
     }
   }, [packsPaletteEditMode]);
 
@@ -78,15 +96,34 @@ export function PackPaletteProvider({ children }: { children: React.ReactNode })
     setActivePackKey(draftPackSectionKey(id));
   }, []);
 
-  const stageCanvasNodeOnPackSection = useCallback((packSectionKey: string, canvasNodeId: string) => {
-    const trimmed = canvasNodeId.trim();
-    if (!trimmed) return;
-    const row: PackStagedRow = { rowId: makeStagedRowId(), canvasNodeId: trimmed };
-    setStagedRowsByPackKey((prev) => ({
-      ...prev,
-      [packSectionKey]: [...(prev[packSectionKey] ?? []), row],
-    }));
-  }, []);
+  const stageCanvasNodeOnPackSection = useCallback(
+    (
+      packSectionKey: string,
+      canvasNodeId: string,
+      options?: {
+        dedupeByLabel?: string;
+        labelForNodeId?: (nodeId: string) => string | undefined;
+      },
+    ) => {
+      const trimmed = canvasNodeId.trim();
+      if (!trimmed) return;
+      const row: PackStagedRow = { rowId: makeStagedRowId(), canvasNodeId: trimmed };
+      setStagedRowsByPackKey((prev) => {
+        let list = prev[packSectionKey] ?? [];
+        const dedupe = options?.dedupeByLabel?.trim();
+        if (dedupe && options?.labelForNodeId) {
+          const norm = normalizeKindLabel(dedupe);
+          list = list.filter((r) => {
+            if (r.canvasNodeId === trimmed) return false;
+            const otherLabel = options.labelForNodeId!(r.canvasNodeId);
+            return normalizeKindLabel(otherLabel ?? "") !== norm;
+          });
+        }
+        return { ...prev, [packSectionKey]: [...list, row] };
+      });
+    },
+    [],
+  );
 
   const removeStagedRowFromSection = useCallback((packSectionKey: string, rowId: string) => {
     setStagedRowsByPackKey((prev) => {
@@ -98,6 +135,16 @@ export function PackPaletteProvider({ children }: { children: React.ReactNode })
         return rest;
       }
       return { ...prev, [packSectionKey]: nextList };
+    });
+  }, []);
+
+  const removeKindFromPackSection = useCallback((packSectionKey: string, kindId: string) => {
+    const trimmed = kindId.trim();
+    if (!trimmed) return;
+    setRemovedKindIdsByPackKey((prev) => {
+      const existing = prev[packSectionKey] ?? [];
+      if (existing.includes(trimmed)) return prev;
+      return { ...prev, [packSectionKey]: [...existing, trimmed] };
     });
   }, []);
 
@@ -114,6 +161,8 @@ export function PackPaletteProvider({ children }: { children: React.ReactNode })
       stagedRowsByPackKey,
       stageCanvasNodeOnPackSection,
       removeStagedRowFromSection,
+      removedKindIdsByPackKey,
+      removeKindFromPackSection,
     }),
     [
       activePackKey,
@@ -124,6 +173,8 @@ export function PackPaletteProvider({ children }: { children: React.ReactNode })
       stagedRowsByPackKey,
       stageCanvasNodeOnPackSection,
       removeStagedRowFromSection,
+      removedKindIdsByPackKey,
+      removeKindFromPackSection,
     ],
   );
 
