@@ -1,0 +1,14 @@
+.grip {
+  cursor: grab;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.icon {
+  color: #888787;
+}
+
+.iconHighlighted {
+  color: rgb(251, 252, 246);
+}
+

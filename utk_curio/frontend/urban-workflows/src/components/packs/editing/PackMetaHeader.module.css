@@ -1,0 +1,55 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px 0;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.categoryBadge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #fbaa69;
+  background-color: rgba(251, 170, 105, 0.14);
+  padding: 3px 8px;
+  border-radius: 10px;
+  line-height: 1.2;
+}
+
+.packId {
+  font-size: 10px;
+  color: rgba(136, 135, 135, 0.95);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.forkSubtitle {
+  font-size: 8px;
+  color: rgba(136, 135, 135, 0.88);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
+  text-align: center;
+  padding-top: 1px;
+}
+

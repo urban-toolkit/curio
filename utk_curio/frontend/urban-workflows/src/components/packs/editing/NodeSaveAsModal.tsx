@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useReactFlow } from "reactflow";
-import ModalShell from "../ModalShell";
-import { packsApi, refreshPackRegistry } from "../../api/packsApi";
-import { getPaletteNodeTypes, subscribeToRegistry } from "../../registry";
-import { groupPalettePacks } from "../menus/nodes/toolsMenuPackPalette/model";
-import { useTemplateContext } from "../../providers/TemplateProvider";
-import { useToastContext } from "../../providers/ToastProvider";
+import ModalShell from "../../ModalShell";
+import { packsApi, refreshPackRegistry } from "../../../api/packsApi";
+import { getPaletteNodeTypes, subscribeToRegistry } from "../../../registry";
+import { groupPalettePacks } from "../../menus/nodes/toolsMenuPackPalette/model";
+import { useTemplateContext } from "../../../providers/TemplateProvider";
+import { useToastContext } from "../../../providers/ToastProvider";
 import {
   SAVE_AS_NEW_PACK,
   buildFactoryInstallEnvelope,
@@ -13,10 +13,10 @@ import {
   canvasKindLabelFromNode,
   normalizeKindLabel,
   saveAsWouldReplaceByLabel,
-} from "../../utils/palettePackFactoryDraft";
-import { getFlowNodeCanonicalType } from "../../utils/flowNodeCanonicalType";
-import { tryGetNodeDescriptor } from "../../registry/nodeRegistry";
-import { NodeKindId } from "../../registry/types";
+} from "../../../utils/palettePackFactoryDraft";
+import { getFlowNodeCanonicalType } from "../../../utils/flowNodeCanonicalType";
+import { tryGetNodeDescriptor } from "../../../registry/nodeRegistry";
+import { NodeKindId } from "../../../registry/types";
 import styles from "./NodeSaveAsModal.module.css";
 
 const NOOP = () => () => {};
@@ -219,3 +219,4 @@ export function NodeSaveAsModal({
     </ModalShell>
   );
 }
+

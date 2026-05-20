@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import ModalShell from "../ModalShell";
-import type { Category, Editor, Engine } from "../../pages/nodes/factoryDraftModel";
-import type { CanvasKindConfig } from "../../utils/canvasKindConfig";
-import { canvasKindConfigFromDescriptor } from "../../utils/canvasKindConfig";
-import { tryGetNodeDescriptor } from "../../registry/nodeRegistry";
-import { NodeKindId } from "../../registry/types";
+import ModalShell from "../../ModalShell";
+import type { Category, Editor, Engine } from "../../../pages/nodes/factoryDraftModel";
+import type { CanvasKindConfig } from "../../../utils/canvasKindConfig";
+import { canvasKindConfigFromDescriptor } from "../../../utils/canvasKindConfig";
+import { tryGetNodeDescriptor } from "../../../registry/nodeRegistry";
+import { NodeKindId } from "../../../registry/types";
 import { KindPortEditor } from "./KindPortEditor";
 import styles from "./NodeKindConfigModal.module.css";
 
@@ -221,3 +221,4 @@ export function NodeKindConfigModal({
     </ModalShell>
   );
 }
+

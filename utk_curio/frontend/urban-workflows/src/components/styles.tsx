@@ -17,16 +17,17 @@ import { useUserContext } from "../providers/UserProvider";
 import { useLLMContext } from "../providers/LLMProvider";
 import { useToastContext } from "../providers/ToastProvider";
 import { usePackPalette } from "../providers/PackPaletteContext";
-import { EditableNodeHeaderLabel } from "./packs/EditableNodeHeaderLabel";
-import { NodeSaveAsModal } from "./packs/NodeSaveAsModal";
-import { NodeKindConfigModal } from "./packs/NodeKindConfigModal";
 import { canvasKindLabelFromNode } from "../utils/palettePackFactoryDraft";
 import type { CanvasKindConfig } from "../utils/canvasKindConfig";
 import { readCanvasKindConfig } from "../utils/canvasKindConfig";
-import { formatForkOfSubtitle } from "../utils/forkPackLineage";
 import { ConnectionValidator } from "../ConnectionValidator";
-import { NODE_CATEGORY_SHORT_LABEL } from "../constants/nodeCategoryShortLabels";
-import { PACK_STAGING_MIME } from "../constants/packPaletteStaging";
+import {
+    EditableNodeHeaderLabel,
+    NodeSaveAsModal,
+    NodeKindConfigModal,
+    PackMetaHeader,
+    PackStagingDragGrip,
+} from "./packs/editing";
 import Col from "react-bootstrap/Col";
 import Nav from "react-bootstrap/Nav";
 import Row from "react-bootstrap/Row";
@@ -42,14 +43,12 @@ import {
     faMagnifyingGlassChart,
     faSquareRootVariable,
     faBroom,
-    faGripVertical,
     faDownload,
     faUpload,
     faServer,
     faDatabase,
     faRepeat,
     faCodeMerge,
-    faImage,
     faTable,
     faCirclePlus,
     faFont,
@@ -507,109 +506,8 @@ export const NodeContainer = ({
         ? canvasKindLabelFromNode({ id: nodeId, data } as { id: string; data: typeof data }, packDescriptor)
         : nodeNameTranslation(data.nodeType);
     const canEditPackHeader = packsPaletteEditMode && !dashboardOn;
-    const packForkSubtitle =
-        packDescriptor?.source === "pack" && packDescriptor.pack?.lineage != null
-            ? formatForkOfSubtitle(packDescriptor.pack.lineage)
-            : null;
-    const packMetaHeader =
-        packDescriptor?.source === "pack" && packDescriptor.pack ? (
-            <div
-                style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "center",
-                    alignItems: "center",
-                    gap: "2px",
-                    padding: "6px 8px 0",
-                    boxSizing: "border-box",
-                    width: "100%",
-                    ...((data.suggestionType != "none" && data.suggestionType != undefined) ? { pointerEvents: "none" } : {}),
-                }}
-            >
-                <div
-                    style={{
-                        display: "flex",
-                        justifyContent: "center",
-                        alignItems: "center",
-                        gap: "8px",
-                        flexWrap: "wrap",
-                        width: "100%",
-                    }}
-                >
-                    <span
-                        style={{
-                            fontSize: "9px",
-                            fontWeight: 700,
-                            letterSpacing: "0.06em",
-                            textTransform: "uppercase",
-                            color: "#fbaa69",
-                            backgroundColor: "rgba(251, 170, 105, 0.14)",
-                            padding: "3px 8px",
-                            borderRadius: "10px",
-                            lineHeight: 1.2,
-                        }}
-                    >
-                        {NODE_CATEGORY_SHORT_LABEL[packDescriptor.category]}
-                    </span>
-                    <span
-                        style={{
-                            fontSize: "10px",
-                            color: "rgba(136, 135, 135, 0.95)",
-                            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                            maxWidth: "100%",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                        }}
-                        title={`${packDescriptor.pack.packId}@${packDescriptor.pack.major}`}
-                    >
-                        {packDescriptor.pack.packId}@{packDescriptor.pack.major}
-                    </span>
-                </div>
-                {packForkSubtitle ? (
-                    <span
-                        style={{
-                            fontSize: "8px",
-                            color: "rgba(136, 135, 135, 0.88)",
-                            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                            maxWidth: "100%",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                            lineHeight: 1.2,
-                            textAlign: "center",
-                            paddingTop: "1px",
-                        }}
-                        title={packForkSubtitle.title}
-                    >
-                        {packForkSubtitle.text}
-                    </span>
-                ) : null}
-            </div>
-        ) : null;
-
-    const packStagingDragGrip =
-        packsPaletteEditMode && !dashboardOn ? (
-            <div
-                className={"nodrag nowheel"}
-                draggable
-                title="Drag onto a dashed drop zone in the Packs panel (Edit mode)."
-                aria-label="Drag onto a dashed drop zone in the Packs panel when editing packs"
-                role="presentation"
-                onDragStart={(e) => {
-                    e.stopPropagation();
-                    e.dataTransfer.setData(PACK_STAGING_MIME, JSON.stringify({ nodeId }));
-                    e.dataTransfer.effectAllowed = "copyMove";
-                }}
-                style={{
-                    cursor: "grab",
-                    ...headerIconStyle,
-                    ...(data.keywordHighlighted ? { color: "rgb(251, 252, 246)" } : {}),
-                }}
-            >
-                <FontAwesomeIcon icon={faGripVertical} />
-            </div>
-        ) : null;
+    const hasPackMetaHeader = packDescriptor?.source === "pack" && !!packDescriptor.pack;
+    const suggestionActive = data.suggestionType != "none" && data.suggestionType != undefined;
 
     return (
         <>
@@ -755,7 +653,13 @@ export const NodeContainer = ({
             >
                 {!noContent && !dashboardOn ? (
                     <>
-                        {packMetaHeader}
+                        {hasPackMetaHeader && packDescriptor?.pack ? (
+                            <PackMetaHeader
+                                pack={packDescriptor.pack}
+                                category={packDescriptor.category}
+                                suggestionActive={suggestionActive}
+                            />
+                        ) : null}
                         <div style={{
                         display: "flex",
                         alignItems: "center",
@@ -769,7 +673,12 @@ export const NodeContainer = ({
                         width: "100%",
                         ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
                         }}>
-                        {packStagingDragGrip}
+                        {canEditPackHeader ? (
+                            <PackStagingDragGrip
+                                nodeId={nodeId}
+                                keywordHighlighted={!!data.keywordHighlighted}
+                            />
+                        ) : null}
                         {/* Minimize toggle */}
                         <FontAwesomeIcon
                             icon={faMinus}
@@ -835,7 +744,7 @@ export const NodeContainer = ({
                     </>
                 ) : null}
 
-                <div style={{height: dashboardOn ? "100%" : (packMetaHeader ? "calc(100% - 68px)" : "calc(100% - 35px)"), width: "calc(100% - 30px)", marginLeft: "auto", marginRight: "auto"}}>
+                <div style={{height: dashboardOn ? "100%" : (hasPackMetaHeader ? "calc(100% - 68px)" : "calc(100% - 35px)"), width: "calc(100% - 30px)", marginLeft: "auto", marginRight: "auto"}}>
                     {children}
                 </div>
 

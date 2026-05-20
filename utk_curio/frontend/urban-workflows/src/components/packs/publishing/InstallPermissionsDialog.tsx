@@ -1,5 +1,5 @@
 import React from "react";
-import type { PackPayload, ResolveConflict } from "../../api/packsApi";
+import type { PackPayload, ResolveConflict } from "../../../api/packsApi";
 import styles from "./InstallPermissionsDialog.module.css";
 
 export interface InstallPermissionsDialogProps {
