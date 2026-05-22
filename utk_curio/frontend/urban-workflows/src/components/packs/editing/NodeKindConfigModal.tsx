@@ -80,7 +80,7 @@ export function NodeKindConfigModal({
   if (!show || !desc || !config) return null;
 
   return (
-    <ModalShell onClose={onClose} size="large" layer="overlay">
+    <ModalShell preservePackPaletteOpen onClose={onClose} size="large" layer="overlay">
       <div className={styles.content}>
         <h2 className={styles.title}>Node configuration</h2>
         <p className={styles.subtitle}>

@@ -506,8 +506,9 @@ export const NodeContainer = ({
     const headerKindLabel = packDescriptor
         ? canvasKindLabelFromNode({ data }, packDescriptor)
         : nodeNameTranslation(data.nodeType);
-    const canEditPackHeader = packsPaletteEditMode && !dashboardOn;
     const hasPackMetaHeader = packDescriptor?.source === "pack" && !!packDescriptor.pack;
+    const showPackNodeActions = hasPackMetaHeader && !dashboardOn;
+    const canEditPackHeader = packsPaletteEditMode && !dashboardOn;
     const suggestionActive = data.suggestionType != "none" && data.suggestionType != undefined;
     const nodeHeaderBandPx = 28;
 
@@ -682,12 +683,12 @@ export const NodeContainer = ({
                             onActivate={() => setMinimized(true)}
                         />
 
-                        {/* Node title — editable in pack palette edit mode */}
+                        {/* Node title — editable on pack nodes (same visibility as PACK pills) */}
                         <EditableNodeHeaderLabel
                             displayLabel={headerKindLabel}
-                            editable={canEditPackHeader}
-                            showSaveAs={canEditPackHeader}
-                            showConfig={canEditPackHeader}
+                            editable={showPackNodeActions}
+                            showSaveAs={showPackNodeActions}
+                            showConfig={showPackNodeActions}
                             executed={nodeExecStatus[nodeId] === "executed"}
                             keywordHighlighted={!!data.keywordHighlighted}
                             onLabelCommit={(label) => {

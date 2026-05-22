@@ -37,6 +37,15 @@ function escapeCssAttrToken(coord: string): string {
     return typeof CSS !== "undefined" && typeof CSS.escape === "function" ? CSS.escape(coord) : coord;
 }
 
+/** Clicks on pack node header actions should not collapse the open palette panel. */
+function isPackPaletteDismissOutsideClick(target: EventTarget | null): boolean {
+    if (!(target instanceof Element)) return true;
+    if (target.closest('[data-curio-node-factory-overlay="true"]')) return false;
+    if (target.closest('[data-curio-node-warehouse-drawer="true"]')) return false;
+    if (target.closest('[data-curio-pack-palette-node-action="true"]')) return false;
+    return true;
+}
+
 export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups }: { groups: PackPaletteGroup[] }) {
     const [open, setOpen] = useState(false);
     const [savingDraft, setSavingDraft] = useState(false);
@@ -123,9 +132,7 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
         if (!open || packsPaletteEditMode) return;
         const onDocMouseDown = (ev: MouseEvent) => {
             if (rootRef.current?.contains(ev.target as Node)) return;
-            const t = ev.target;
-            if (t instanceof Element && t.closest('[data-curio-node-factory-overlay="true"]')) return;
-            if (t instanceof Element && t.closest('[data-curio-node-warehouse-drawer="true"]')) return;
+            if (!isPackPaletteDismissOutsideClick(ev.target)) return;
             close();
         };
         document.addEventListener("mousedown", onDocMouseDown, true);

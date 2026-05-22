@@ -154,7 +154,7 @@ export function NodeSaveAsModal({
   if (!show) return null;
 
   return (
-    <ModalShell onClose={busy ? () => {} : onClose}>
+    <ModalShell preservePackPaletteOpen onClose={busy ? () => {} : onClose}>
       <div className={styles.content}>
         <h2 className={styles.title}>Save As pack node</h2>
         <p className={styles.subtitle}>
