@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - 'utk_curio/**'
-      - 'docs/**'
+      - 'docs/examples/**'
   workflow_dispatch:
 
 permissions:
@@ -43,7 +43,7 @@ jobs:
           else
             RANGE="${LAST_BUMP}..HEAD"
           fi
-          COMMITS=$(git log $RANGE --format="- %s" | grep -v "^- chore: bump version" || true)
+          COMMITS=$(git log $RANGE --format="- %s" -- utk_curio docs/examples | grep -v "^- chore: bump version" || true)
 
           if [ -z "$COMMITS" ]; then
             echo "BUMP=patch" >> $GITHUB_ENV
