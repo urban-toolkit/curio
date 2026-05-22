@@ -26,6 +26,7 @@
   <p>
     <a href="https://github.com/urban-toolkit/curio/actions/workflows/docker-compose.yml"><img alt="Full stack build" src="https://github.com/urban-toolkit/curio/actions/workflows/docker-compose.yml/badge.svg"/></a>
     <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white"/></a>
+    <a href="https://nodejs.org/"><img alt="Node.js" src="https://img.shields.io/badge/Node.js-24-339933?logo=nodedotjs&logoColor=white"/></a>
     <a href="https://github.com/urban-toolkit/curio/graphs/contributors"><img alt="Contributors" src="https://img.shields.io/github/contributors/urban-toolkit/curio"/></a>
     <a href="https://github.com/urban-toolkit/curio/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-blue.svg"/></a>
   </p>

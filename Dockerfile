@@ -8,7 +8,7 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl gdal-bin libsm6 libxext6 ffmpeg \
-    && curl -fsSL https://deb.nodesource.com/setup_25.x | bash - \
+    && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
@@ -24,7 +24,7 @@ RUN pip install --upgrade pip setuptools wheel && \
 # -----------------------------------------------------------------------------
 # Stage 2: Build frontends with Node (avoids NodeSource on slim in CI)
 # -----------------------------------------------------------------------------
-FROM node:25-bookworm-slim AS frontend_builder
+FROM node:24-bookworm-slim AS frontend_builder
 WORKDIR /src
 COPY utk_curio/frontend/ /src/utk_curio/frontend/
 
