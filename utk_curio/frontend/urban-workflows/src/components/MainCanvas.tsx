@@ -459,6 +459,7 @@ export function MainCanvas() {
                 onEdgesChange={handleEdgesChange}
                 onEdgesDelete={handleEdgesDelete}
                 selectionKeyCode={dashboardOn ? null : "Shift"}
+                panActivationKeyCode={null}
                 onSelectionChange={handleSelectionChange}
                 onConnect={!dashboardOn && !isSharedView ? onConnect : undefined}
                 nodeTypes={nodeTypes}
