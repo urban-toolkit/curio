@@ -12,7 +12,7 @@
 
   <p>
     <a href="docs/README.md"><img alt="Documentation" src="https://img.shields.io/badge/Documentation-0366d6?style=for-the-badge&logo=readthedocs&logoColor=white"/></a>
-    <a href="docs/QUICK-START.md"><img alt="Usage" src="https://img.shields.io/badge/Installation-f59e0b?style=for-the-badge&logo=lightning&logoColor=white"/></a>
+    <a href="docs/USAGE.md"><img alt="Usage" src="https://img.shields.io/badge/Installation-f59e0b?style=for-the-badge&logo=lightning&logoColor=white"/></a>
     <a href="https://discord.gg/ajT6wF8TmN"><img alt="Discord" src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white"/></a>
   </p>
 
