@@ -1,4 +1,3 @@
-import type { Node as RFNode } from "reactflow";
 import { SupportedType } from "../constants";
 import type { PortDraft, Category, Engine, Editor, KindDraft } from "../pages/nodes/factoryDraftModel";
 import { factoryUiMakeId } from "../pages/nodes/factoryDraftModel";
@@ -79,7 +78,7 @@ export function canvasKindConfigFromDescriptor(
   };
 }
 
-export function readCanvasKindConfig(node: RFNode<any>): Partial<CanvasKindConfig> | null {
+export function readCanvasKindConfig(node: { data: object }): Partial<CanvasKindConfig> | null {
   const raw = (node.data as { packKindConfig?: unknown })?.packKindConfig;
   if (!raw || typeof raw !== "object") return null;
   return raw as Partial<CanvasKindConfig>;

@@ -68,7 +68,7 @@ const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }:
     nodeState.templateData.custom != undefined && nodeState.templateData.custom === false;
 
   const allHandles = [...adapter.handles, ...(lifecycle.dynamicHandles ?? [])];
-  const kindConfig = readCanvasKindConfig({ id: data.nodeId, data } as { id: string; data: typeof data });
+  const kindConfig = readCanvasKindConfig({ data });
   const editorTabs = resolveEditorTabFlags(descriptor, kindConfig);
 
   return (

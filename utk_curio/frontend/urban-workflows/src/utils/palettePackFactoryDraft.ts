@@ -253,14 +253,14 @@ export function normalizeKindLabel(label: string): string {
 }
 
 /** Canvas-local kind title; falls back to registry descriptor label. */
-export function canvasKindLabelFromNode(node: RFNode<any>, desc: NodeDescriptor): string {
+export function canvasKindLabelFromNode(node: { data: object }, desc: NodeDescriptor): string {
   const raw = (node.data as { packKindLabel?: unknown })?.packKindLabel;
   if (typeof raw === "string" && raw.trim()) return raw.trim();
   return desc.label || canonicalKindSlugForDescriptor(desc);
 }
 
 /** True when the user set a canvas title that differs from the registry descriptor label. */
-export function hasCustomCanvasKindLabel(node: RFNode<any>, desc: NodeDescriptor): boolean {
+export function hasCustomCanvasKindLabel(node: { data: object }, desc: NodeDescriptor): boolean {
   const raw = (node.data as { packKindLabel?: unknown })?.packKindLabel;
   if (typeof raw !== "string" || !raw.trim()) return false;
   const registryLabel = desc.label || canonicalKindSlugForDescriptor(desc);

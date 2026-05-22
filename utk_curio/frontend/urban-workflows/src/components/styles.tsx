@@ -504,7 +504,7 @@ export const NodeContainer = ({
 
     const packDescriptor = tryGetNodeDescriptor(data.nodeType as NodeKindId);
     const headerKindLabel = packDescriptor
-        ? canvasKindLabelFromNode({ id: nodeId, data } as { id: string; data: typeof data }, packDescriptor)
+        ? canvasKindLabelFromNode({ data }, packDescriptor)
         : nodeNameTranslation(data.nodeType);
     const canEditPackHeader = packsPaletteEditMode && !dashboardOn;
     const hasPackMetaHeader = packDescriptor?.source === "pack" && !!packDescriptor.pack;
@@ -1081,7 +1081,7 @@ export const NodeContainer = ({
                 show={configOpen}
                 nodeId={nodeId}
                 nodeType={data.nodeType}
-                storedConfig={readCanvasKindConfig({ id: nodeId, data } as { id: string; data: typeof data })}
+                storedConfig={readCanvasKindConfig({ data })}
                 storedLabel={data.packKindLabel}
                 templateCode={code ?? data.defaultCode ?? ""}
                 onClose={() => setConfigOpen(false)}

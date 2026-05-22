@@ -127,7 +127,9 @@ export function forkFamilyLatestCreatedAtMs<T extends Partial<Pick<PackPayload, 
  * Partition installed catalog rows / payloads: lineage-free → singletons;
  * same `root` with 2+ packs → families; orphaned lineage (solo fork) → singletons.
  */
-export function partitionPacksByForkFamily<T extends Pick<PackPayload, "dirName" | "lineage">>(
+export function partitionPacksByForkFamily<
+  T extends Pick<PackPayload, "dirName" | "lineage" | "version" | "createdAtMs">,
+>(
   rows: T[],
 ): { singletons: T[]; families: ForkFamilyGroup<T>[] } {
   const noLineage: T[] = [];

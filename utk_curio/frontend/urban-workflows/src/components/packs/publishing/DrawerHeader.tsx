@@ -44,10 +44,10 @@ export const DrawerHeader: React.FC<DrawerHeaderProps> = ({ pinned, onPinToggle,
 
     <div className={styles.subtitleBlock}>
       <p className={styles.subtitle}>Discover and install nodes that extend Curio.</p>
-      <span className={styles.compatPill}>
+      {/* <span className={styles.compatPill}>
         <span className={styles.compatDot} aria-hidden />
         Compatible with this Curio workspace
-      </span>
+      </span> */}
     </div>
   </>
 );
