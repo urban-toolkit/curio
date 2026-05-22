@@ -10,6 +10,7 @@ import {
   faCodeMerge,
   faTable,
   faCube,
+  faAreaChart,
   faCubes,
   faCity,
   faChartLine,
@@ -32,6 +33,7 @@ import {
   useCodeNodeLifecycle,
   useDataExportLifecycle,
   useVegaLifecycle,
+  useGrammarLifecycle,
   useSimpleVisLifecycle,
   useFlowSwitchLifecycle,
   useMergeFlowLifecycle,
@@ -295,9 +297,43 @@ registerNode({
     inputIconType: '1',
     outputIconType: '1',
     showTemplateModal: true,
-    useLifecycle: useVegaLifecycle,
+    useLifecycle: useGrammarLifecycle,
   },
 });
+
+registerNode({
+  id: NodeType.VIS_D3,
+  category: 'vis_grammar',
+  label: 'D3',
+  icon: faAreaChart,
+  inputPorts: [{ types: [SupportedType.DATAFRAME], cardinality: '1' }],
+  outputPorts: [{ types: [SupportedType.DATAFRAME], cardinality: '1' }],
+  editor: 'grammar',
+  grammarId: 'd3',
+  inPalette: true,
+  paletteOrder: 8,
+  description: 'The D3 box is responsible for custom JavaScript-based visualizations.',
+  hasCode: false,
+  hasWidgets: true,
+  hasGrammar: true,
+  hasProvenance: true,
+  tutorialId: 'step-d3',
+  adapter: {
+    handles: withBidirectional(standardInOut()),
+    editor: {
+      code: false,
+      grammar: true,
+      widgets: true,
+      outputId: (nodeId) => 'd3' + nodeId,
+    },
+    container: { handleType: 'in/out' },
+    inputIconType: '1',
+    outputIconType: '1',
+    showTemplateModal: false,
+    useLifecycle: useGrammarLifecycle,
+  },
+});
+
 
 // ── Simple visualization nodes ──────────────────────────────────────────
 

@@ -1,0 +1,168 @@
+# Curio — Visualisation Grammar Integration Refactor
+
+> **Contribution by Simran Mishra & Yukta Salvi · 2026**
+> Forked from [urban-toolkit/curio](https://github.com/urban-toolkit/curio)
+
+---
+
+## What This Fork Does
+
+This fork refactors Curio's visualisation grammar execution into a **shared, extensible, adapter-based pipeline**. Instead of each grammar (Vega-Lite, UTK) owning a bespoke lifecycle hook, all grammars now flow through a single `GrammarExecutionLayer` that selects the right adapter at runtime.
+
+The changes reduce maintenance cost, improve consistency across grammars, and make adding future grammars a matter of writing one adapter — not a whole new lifecycle.
+
+---
+
+## Problem: The Old Architecture
+
+Before this refactor, every grammar had its own isolated lifecycle hook:
+
+```
+[ Node ]
+    └── [ UniversalBox ]
+            └── [ Descriptor ] (getNodeDescriptor(nodeType))
+                    ├── useVegaLifecycle  →  useVega  →  [Visualization]
+                    └── useUtkLifecycle   →  useUtk   →  [Visualization]
+```
+
+**Pain points:**
+
+- `useUTK` performed heavy preprocessing on every render: GeoJSON conversion, camera positioning, DOM setup, and custom `GrammarInterpreter` calls.
+- Adding a new grammar meant writing a new lifecycle entirely from scratch.
+- High maintenance surface — a bug in shared logic required fixes across multiple files.
+- No shared validation layer meant inconsistent error messages between grammars.
+
+---
+
+## Solution: Adapter-Based Pipeline
+
+The new architecture routes all grammars through a unified `GrammarExecutionLayer`:
+
+```
+[ Node ]
+    └── [ UniversalBox ]
+            └── [ Descriptor ] (getNodeDescriptor(nodeType))
+                    └── useGrammarLifecycle
+                            └── GrammarExecutionLayer.execute(IR)
+                                    └── Adapter.render()
+                                            └── [Visualization]
+```
+
+### Key Components
+
+| Component | Role |
+|---|---|
+| `useGrammarLifecycle` | Single shared lifecycle hook used by all grammar node types |
+| `GrammarExecutionLayer` | Receives an Intermediate Representation (IR) and dispatches to the correct adapter |
+| `GrammarAdapterRegistry` | Maps grammar identifiers (e.g. `vega-lite`, `utk`, `d3`) to their adapter implementations |
+| `Adapter.render()` | Grammar-specific rendering logic, cleanly isolated per grammar |
+
+---
+
+## Changes at a Glance
+
+### Structural (Old → New)
+
+| Before | After |
+|---|---|
+| `useVegaLifecycle` + `useUtkLifecycle` (separate) | `useGrammarLifecycle` (unified) |
+| Custom preprocessing in each lifecycle | Preprocessing moved into each grammar's adapter |
+| No shared validation | Shared Grammar Validation Layer |
+| New grammar = new lifecycle file | New grammar = new adapter registration |
+
+### Shared Grammar Validation Layer
+
+A new validation layer was added before execution to provide consistent error feedback across grammars. Findings from testing:
+
+| Scenario | Vega-Lite (before) | UTK (before) | After |
+|---|---|---|---|
+| Empty grammar `{}` | Clear invalid spec popup | Blank output, no message | Consistent error state |
+| Invalid JSON | Detailed parse error | Generic error only | Unified parse error |
+| Wrong data type (DataFrame vs GeoDataFrame) | Works | Rejects silently | Clear type-mismatch message |
+
+---
+
+## Test-Driven Development
+
+Changes were validated using a TDD workflow:
+
+1. Write a failing test (`adapterRenderPath.test.ts` — FAIL)
+2. Implement the adapter dispatch logic
+3. Verify the test passes (`adapterRenderPath.test.ts` — PASS)
+
+Tests live in [`tests/adapter-tests-for-integration-layer/`](./tests/adapter-tests-for-integration-layer/).
+
+To run:
+```bash
+npx jest tests/adapter-tests-for-integration-layer
+```
+
+---
+
+## Extensibility Proof: D3.js Grammar
+
+To prove the architecture works for any grammar, a mock D3 grammar (`VIS_D3`) was implemented end-to-end without touching any existing lifecycle code:
+
+| Step | What Happened |
+|---|---|
+| 1 | Defined a `VIS_D3` node type following the same pattern as `vega-lite` and `utk` |
+| 2 | Wrote a descriptor mapping `d3` → `useGrammarLifecycle` (no custom lifecycle needed) |
+| 3 | Registered a `d3` adapter in the `GrammarAdapterRegistry` |
+| 4 | Called `executeVisualization` — correct adapter selected automatically |
+| 5 | Real DOM output rendered with no manual lifecycle invocation |
+
+This confirms that adding future grammars (e.g. Observable Plot, Deck.gl) requires only steps 2–3 above.
+
+---
+
+## File Structure (Changed / Added)
+
+```
+utk_curio/
+└── src/
+    ├── GrammarExecutionLayer.ts        # New: central dispatch layer
+    ├── GrammarAdapterRegistry.ts       # New: adapter registry
+    ├── adapters/
+    │   ├── VegaLiteAdapter.ts          # Extracted from useVegaLifecycle
+    │   ├── UtkAdapter.ts               # Extracted from useUtkLifecycle
+    │   └── D3Adapter.ts               # New: proof-of-concept D3 adapter
+    └── hooks/
+        └── useGrammarLifecycle.ts      # New: unified lifecycle hook
+
+tests/
+└── adapter-tests-for-integration-layer/
+    └── adapterRenderPath.test.ts       # TDD tests for dispatch logic
+```
+
+---
+
+## How to Run Locally
+
+Follow the standard [Curio usage guide](./docs/USAGE.md). No additional setup is required for the adapter pipeline — it is activated automatically for all grammar node types.
+
+```bash
+# Install dependencies
+pip install utk-curio
+
+# Or run via Docker
+docker compose up
+```
+
+---
+
+## Authors
+
+| Name | GitHub |
+|---|---|
+| Yukta Salvi | [@YuktaSalvi2000](https://github.com/YuktaSalvi2000) |
+| Simran Mishra | [@smishra291](https://github.com/smishra291)
+
+---
+
+## Base Project
+
+This fork is built on top of **Curio**, a dataflow-based framework for collaborative urban visual analytics, developed by the [Urban Toolkit](https://urbantk.org) team.
+
+> Moreira et al., *Curio: A Dataflow-Based Framework for Collaborative Urban Visual Analytics*, IEEE TVCG, 2025. [DOI](https://doi.org/10.1109/TVCG.2024.3456353)
+
+See the [upstream README](https://github.com/urban-toolkit/curio) for full project documentation, installation, and contribution guidelines.

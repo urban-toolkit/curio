@@ -1,0 +1,116 @@
+{
+  "dataflow": {
+    "description": "Simple chart visualizations of urban neighborhood data — bar, horizontal bar, scatter, line, and pie — all from a single data source.",
+    "nodes": [
+      {
+        "id": "c3d4e5f6-0001-4000-8000-000000000001",
+        "type": "DATA_LOADING",
+        "x": 38.0,
+        "y": 300.0,
+        "content": "import pandas as pd\n\ndf = pd.DataFrame({\n    \"neighborhood\": [\"Downtown\", \"Midtown\", \"Uptown\", \"Eastside\", \"Westside\", \"Southbank\"],\n    \"avg_temp_c\":   [28.4, 27.1, 25.8, 26.3, 24.9, 27.8],\n    \"green_cover\":  [12, 23, 41, 18, 55, 9],\n    \"population\":   [42000, 31000, 18000, 27000, 14000, 22000],\n    \"aqi\":          [87, 72, 45, 68, 38, 91],\n})\n\nreturn df",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "c3d4e5f6-0002-4000-8000-000000000002",
+        "type": "VIS_D3",
+        "x": 600.0,
+        "y": 0.0,
+        "content": "{\n  \"chartType\": \"bar\",\n  \"title\": \"Average Temperature by Neighborhood (\u00b0C)\",\n  \"xField\": \"neighborhood\",\n  \"yField\": \"avg_temp_c\",\n  \"colorScheme\": \"tableau10\",\n  \"width\": 560,\n  \"height\": 320\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "c3d4e5f6-0003-4000-8000-000000000003",
+        "type": "VIS_D3",
+        "x": 600.0,
+        "y": 160.0,
+        "content": "{\n  \"chartType\": \"barH\",\n  \"title\": \"Green Cover % by Neighborhood\",\n  \"xField\": \"green_cover\",\n  \"yField\": \"neighborhood\",\n  \"colorScheme\": \"set2\",\n  \"width\": 500,\n  \"height\": 280\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "c3d4e5f6-0004-4000-8000-000000000004",
+        "type": "VIS_D3",
+        "x": 600.0,
+        "y": 320.0,
+        "content": "{\n  \"chartType\": \"scatter\",\n  \"title\": \"Air Quality Index vs Green Cover %\",\n  \"xField\": \"green_cover\",\n  \"yField\": \"aqi\",\n  \"labelField\": \"neighborhood\",\n  \"colorScheme\": \"dark2\",\n  \"radius\": 7,\n  \"width\": 540,\n  \"height\": 320\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "c3d4e5f6-0005-4000-8000-000000000005",
+        "type": "VIS_D3",
+        "x": 600.0,
+        "y": 480.0,
+        "content": "{\n  \"chartType\": \"line\",\n  \"title\": \"Temperature Profile Across Neighborhoods\",\n  \"xField\": \"neighborhood\",\n  \"yField\": \"avg_temp_c\",\n  \"width\": 560,\n  \"height\": 300\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "c3d4e5f6-0006-4000-8000-000000000006",
+        "type": "VIS_D3",
+        "x": 600.0,
+        "y": 640.0,
+        "content": "{\n  \"chartType\": \"pie\",\n  \"title\": \"Population Distribution\",\n  \"nameField\": \"neighborhood\",\n  \"valueField\": \"population\",\n  \"colorScheme\": \"pastel1\",\n  \"width\": 420,\n  \"height\": 420\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-c3d4e5f6-0001-4000-8000-000000000001out-c3d4e5f6-0002-4000-8000-000000000002in",
+        "source": "c3d4e5f6-0001-4000-8000-000000000001",
+        "target": "c3d4e5f6-0002-4000-8000-000000000002"
+      },
+      {
+        "id": "reactflow__edge-c3d4e5f6-0001-4000-8000-000000000001out-c3d4e5f6-0003-4000-8000-000000000003in",
+        "source": "c3d4e5f6-0001-4000-8000-000000000001",
+        "target": "c3d4e5f6-0003-4000-8000-000000000003"
+      },
+      {
+        "id": "reactflow__edge-c3d4e5f6-0001-4000-8000-000000000001out-c3d4e5f6-0004-4000-8000-000000000004in",
+        "source": "c3d4e5f6-0001-4000-8000-000000000001",
+        "target": "c3d4e5f6-0004-4000-8000-000000000004"
+      },
+      {
+        "id": "reactflow__edge-c3d4e5f6-0001-4000-8000-000000000001out-c3d4e5f6-0005-4000-8000-000000000005in",
+        "source": "c3d4e5f6-0001-4000-8000-000000000001",
+        "target": "c3d4e5f6-0005-4000-8000-000000000005"
+      },
+      {
+        "id": "reactflow__edge-c3d4e5f6-0001-4000-8000-000000000001out-c3d4e5f6-0006-4000-8000-000000000006in",
+        "source": "c3d4e5f6-0001-4000-8000-000000000001",
+        "target": "c3d4e5f6-0006-4000-8000-000000000006"
+      }
+    ],
+    "name": "SimpleDiagramsWorkflow",
+    "task": "",
+    "timestamp": 1746410000000,
+    "provenance_id": "SimpleDiagramsWorkflow"
+  }
+}
