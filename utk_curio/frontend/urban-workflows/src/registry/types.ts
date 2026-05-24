@@ -156,6 +156,13 @@ export interface LifecycleResult {
   dynamicHandles?: HandleDef[];
   /** When `true`, the play button is disabled. */
   disablePlay?: boolean;
+  /**
+   * DOM id for the editor's output container, computed at lifecycle time.
+   * Replaces the static `adapter.editor.outputId(nodeId)` form so a manifest
+   * can declare a grammar-mode kind without carrying executable JS — the
+   * lifecycle hook owns the convention (e.g. Vega uses `"vega" + nodeId`).
+   */
+  outputIdOverride?: string;
 }
 
 /**

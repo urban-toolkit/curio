@@ -123,7 +123,7 @@ const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }:
 
         {adapter.editor && (
           <NodeEditor
-            outputId={adapter.editor.outputId?.(data.nodeId)}
+            outputId={lifecycle.outputIdOverride ?? adapter.editor.outputId?.(data.nodeId)}
             setSendCodeCallback={setSendCodeCallback}
             code={editorTabs.code}
             grammar={editorTabs.grammar}

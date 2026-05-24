@@ -16,5 +16,9 @@ export const useVegaLifecycle: NodeLifecycleHook = (data, nodeState) => {
     }
   };
 
-  return { applyGrammar };
+  // The DOM id useVega renders the compiled view into — pre-Phase-B this was
+  // declared in `adapter.editor.outputId`, but the manifest can't carry a
+  // function. We own the `"vega" + nodeId` convention here so UniversalNode
+  // can mount the matching `<div id={outputIdOverride}>` container.
+  return { applyGrammar, outputIdOverride: 'vega' + data.nodeId };
 }
