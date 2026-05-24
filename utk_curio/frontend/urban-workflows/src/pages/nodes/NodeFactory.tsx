@@ -9,7 +9,7 @@ import type { Draft } from "./factoryDraftModel";
 
 /**
  * Deep-link target for ``/nodes/factory``. Opens the modal wizard and
- * replaces the URL with ``/nodes`` so the factory is not a standalone page.
+ * sends the user back to the canvas — there is no standalone factory page.
  */
 const NodeFactoryRouteBridge: React.FC = () => {
   const navigate = useNavigate();
@@ -31,7 +31,7 @@ const NodeFactoryRouteBridge: React.FC = () => {
     } else {
       openNodeFactory({ blank: true });
     }
-    navigate("/nodes", { replace: true });
+    navigate("/", { replace: true });
   }, [location.key, location.state, navigate, openNodeFactory]);
 
   return null;

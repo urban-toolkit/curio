@@ -350,8 +350,8 @@ export const NodeFactoryWizard: React.FC<NodeFactoryWizardProps> = ({
   return (
     <div className={styles.shell}>
       <div className={styles.topBar}>
-        <Link to="/nodes" className={styles.linkButton}>
-          ← Nodes warehouse
+        <Link to="/" className={styles.linkButton}>
+          ← Back to canvas
         </Link>
         <h1 className={styles.title}>Node factory</h1>
         <span style={{ fontSize: "0.875rem", color: "#7a786d" }}>

@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import {
   PackPayload,
   ResolveConflict,
@@ -8,6 +7,7 @@ import {
 } from "../../../api/packsApi";
 import { draftFromInstalledPackPayload } from "../../../utils/palettePackFactoryDraft";
 import { toApiPayload } from "../../../pages/nodes/factoryDraftModel";
+import { useNodeFactoryModal } from "../../../providers/NodeFactoryModalProvider";
 import { InstallPermissionsDialog } from "./InstallPermissionsDialog";
 import { DrawerHeader } from "./DrawerHeader";
 import { DrawerTabs } from "./DrawerTabs";
@@ -34,7 +34,7 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
   onRequestClose,
   onExitComplete,
 }) => {
-  const navigate = useNavigate();
+  const { openNodeFactory } = useNodeFactoryModal();
   const drawerRef = useRef<HTMLElement>(null);
 
   const [catalog, setCatalog] = useState<PackPayload[]>([]);
@@ -358,14 +358,13 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
             <EnvNote />
           </div>
 
-          {/* <DrawerFooter
+          <DrawerFooter
             busy={busy}
             onSideload={(file) => void onPickArchive(file)}
-            onOpenWarehouse={() => {
-              onRequestClose();
-              navigate("/nodes");
+            onCreatePack={() => {
+              openNodeFactory({ blank: true });
             }}
-          /> */}
+          />
         </aside>
       </div>
 

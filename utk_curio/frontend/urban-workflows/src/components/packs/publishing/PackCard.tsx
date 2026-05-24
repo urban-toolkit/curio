@@ -67,6 +67,11 @@ export const PackCard: React.FC<PackCardProps> = ({
             {pack.kinds.length} node{pack.kinds.length === 1 ? "" : "s"}
           </span>
           <span className={styles.tag}>{primaryCategory(pack)}</span>
+          {(pack.channel ?? "stable") !== "stable" ? (
+            <span className={`${styles.tag} ${styles.tagChannel}`} title={`Release channel: ${pack.channel}`}>
+              {pack.channel}
+            </span>
+          ) : null}
           {hasUpdate && catalogRow ? (
             <span className={`${styles.tag} ${styles.tagUpdate}`}>
               Update to {catalogRow.version}

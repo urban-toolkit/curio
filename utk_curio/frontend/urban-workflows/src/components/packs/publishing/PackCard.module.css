@@ -84,6 +84,15 @@
     font-weight: 700;
 }
 
+.tagChannel {
+    background: #eef3ff;
+    border: 1px solid #a6c8ff;
+    color: #2a4a8d;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
 /* Action column */
 
 .cardAction {

@@ -84,7 +84,6 @@ import { RequireAuth } from "./components/RequireAuth";
 import SignIn from "./pages/auth/SignIn";
 import SignUp from "./pages/auth/SignUp";
 import ProjectsList from "./pages/projects/ProjectsList";
-import NodesHub from "./pages/nodes/NodesHub";
 import NodeFactory from "./pages/nodes/NodeFactory";
 import { ProjectLoader } from "./components/ProjectLoader";
 
@@ -149,14 +148,6 @@ const App: React.FC = () => {
                       element={
                         <RequireAuth>
                           <MainCanvasRoute />
-                        </RequireAuth>
-                      }
-                    />
-                    <Route
-                      path="/nodes"
-                      element={
-                        <RequireAuth>
-                          <NodesHub />
                         </RequireAuth>
                       }
                     />
