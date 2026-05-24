@@ -73,7 +73,7 @@ curio/
 └── requirements.txt                # Backend and sandbox dependencies
 ```
 
-For a step-by-step walkthrough of adding a new node type, including a worked example (`DATA_SUMMARY`), see [ADDING-NODES.md](ADDING-NODES.md). For a deep dive into how the system is structured (nodes, data flow, execution pipeline, provenance) see [ARCHITECTURE.md](ARCHITECTURE.md).
+For how nodes are added — most users via the Node Factory wizard, advanced users via a hand-authored `manifest.json` or a new lifecycle hook — see [WAREHOUSE.md](WAREHOUSE.md). For a deep dive into how the system is structured (nodes, data flow, execution pipeline, provenance) see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Installation Options
 

@@ -1,6 +1,6 @@
 # Curio Architecture
 
-This document describes the internal architecture of Curio for contributors who need to understand how the system is structured and how data moves through it. For setup instructions see [USAGE.md](USAGE.md), for contributing guidelines see [CONTRIBUTING.md](CONTRIBUTING.md), and for a step-by-step guide on adding new node types see [ADDING-NODES.md](ADDING-NODES.md).
+This document describes the internal architecture of Curio for contributors who need to understand how the system is structured and how data moves through it. For setup instructions see [USAGE.md](USAGE.md), for contributing guidelines see [CONTRIBUTING.md](CONTRIBUTING.md), and for how nodes and packs work — including how to add a new lifecycle hook or icon — see [WAREHOUSE.md](WAREHOUSE.md).
 
 ## Table of Contents
 

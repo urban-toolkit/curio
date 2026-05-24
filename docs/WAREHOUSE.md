@@ -138,6 +138,38 @@ The installer extracts into a tmp directory, validates the manifest, computes in
 
 ---
 
+---
+
+## Appendix: adding a new lifecycle or icon (developer-only)
+
+Authoring a pack via the wizard or by hand-editing a `manifest.json` covers ~90% of "I want a new node" — the manifest schema already exposes every knob the runtime understands. The remaining 10% is when a kind needs **runtime behavior** that none of the built-in lifecycles provides (e.g. a new visualization library, a node that talks to a custom data source). These are code changes, not pack changes.
+
+### Adding a new lifecycle hook
+
+The lifecycles a manifest can reference live in [`src/registry/lifecycleRegistry.ts`](../utk_curio/frontend/urban-workflows/src/registry/lifecycleRegistry.ts); the 11 built-ins are registered in [`src/registry/builtinLifecycles.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinLifecycles.ts). To add a new one:
+
+1. Implement the hook under [`src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/) — it must conform to the `NodeLifecycleHook` type in [`src/registry/types.ts`](../utk_curio/frontend/urban-workflows/src/registry/types.ts). Look at `useCodeNodeLifecycle` and `useVegaLifecycle` as references.
+2. Register it in `builtinLifecycles.ts`: `registerLifecycle("my-key", useMyHook);`
+3. Reference it from a pack manifest: `"lifecycle": "my-key"` on each kind that wants the new behavior.
+
+Third-party packs can use any key registered at startup. There's no per-pack lifecycle code today — manifests can't carry JS.
+
+### Adding a new icon
+
+[`src/registry/iconRegistry.ts`](../utk_curio/frontend/urban-workflows/src/registry/iconRegistry.ts) maps `iconRef` strings (e.g. `"fa-solid:upload"`) to FontAwesome `IconDefinition` constants. To expose a new icon to manifests:
+
+1. Import the icon constant at the top of `iconRegistry.ts`.
+2. Add a `registerIcon("fa-solid:my-icon", faMyIcon);` line.
+3. Reference it in your manifest: `"iconRef": "fa-solid:my-icon"`.
+
+Unknown refs fall back to `faCube`, so missing-icon mistakes are visible but non-fatal.
+
+### Adding a new grammar adapter
+
+Same pattern, [`src/registry/grammarAdapter.ts`](../utk_curio/frontend/urban-workflows/src/registry/grammarAdapter.ts). The Vega-Lite adapter in [`src/adapters/vegaLiteAdapter.ts`](../utk_curio/frontend/urban-workflows/src/adapters/vegaLiteAdapter.ts) is the only one shipped today and is the canonical example.
+
+---
+
 ## See also
 
 - [`docs/USAGE.md`](USAGE.md) — installation and operating Curio.
