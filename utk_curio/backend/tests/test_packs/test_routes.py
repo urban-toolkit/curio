@@ -439,7 +439,7 @@ def test_factory_publish_catalog_writes_to_stub_root(client, user_and_token, mon
     monkeypatch.delenv("CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", raising=False)
     fake_root = tmp_path / "fixture_packs"
     fake_root.mkdir()
-    monkeypatch.setattr(packs_routes, "_fixtures_root", lambda: fake_root)
+    monkeypatch.setattr(packs_routes, "_catalog_root", lambda: fake_root)
 
     draft = _draft()
     draft["manifest"]["id"] = "ai.test.catalog.pub"
@@ -486,7 +486,7 @@ def test_unpublish_from_catalog_removes_fixture(client, user_and_token, monkeypa
     monkeypatch.delenv("CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", raising=False)
     fake_root = tmp_path / "fixture_packs"
     fake_root.mkdir()
-    monkeypatch.setattr(packs_routes, "_fixtures_root", lambda: fake_root)
+    monkeypatch.setattr(packs_routes, "_catalog_root", lambda: fake_root)
 
     draft = _draft()
     draft["manifest"]["id"] = "ai.test.catalog.unpub"

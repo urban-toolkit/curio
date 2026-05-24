@@ -1033,8 +1033,8 @@ const Step5Publish: React.FC<{
 
       <div className={styles.field}>
         <p className={styles.panelSubtitle} style={{ marginTop: "1.25rem" }}>
-          <strong>Catalog fixture</strong> — write this pack into the fixture tree under{" "}
-          <code>fixtures/packs/</code> for local development (commit when ready).
+          <strong>Catalog entry</strong> — write this pack into the catalog tree under{" "}
+          <code>packs/</code> for local development (commit when ready).
         </p>
         <label className={styles.checkRow}>
           <input

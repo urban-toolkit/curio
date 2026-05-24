@@ -1,7 +1,7 @@
 """Per-user marker file that records the dev seeder's intent.
 
-The dev seeder copies committed fixture packs from
-``utk_curio/backend/fixtures/packs/`` into ``<user>/packs/`` on every
+The dev seeder copies committed catalog packs from
+``<repo_root>/packs/`` into ``<user>/packs/`` on every
 backend startup. Without a marker, a user-driven uninstall is
 indistinguishable from "never seeded yet" the next time the backend
 hot-reloads — Werkzeug's reloader fires on any imported-module edit,

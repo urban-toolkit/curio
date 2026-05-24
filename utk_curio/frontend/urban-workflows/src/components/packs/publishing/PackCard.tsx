@@ -118,7 +118,7 @@ export const PackCard: React.FC<PackCardProps> = ({
                 type="button"
                 className={styles.btnSecondaryDanger}
                 disabled={cardBusy}
-                title={`Remove ${pack.dirName} from the dev catalog (fixtures/packs)`}
+                title={`Remove ${pack.dirName} from the dev catalog (packs/)`}
                 onClick={() => onUnpublish(pack)}
               >
                 Unpublish

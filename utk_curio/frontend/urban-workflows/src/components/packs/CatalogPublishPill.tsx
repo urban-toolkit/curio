@@ -23,7 +23,7 @@ export const CatalogPublishPill = memo(function CatalogPublishPill({
 
     if (published) {
         return (
-            <span className={badgeCls} title="Listed in the fixture catalog (fixtures/packs)">
+            <span className={badgeCls} title="Listed in the pack catalog (packs/)">
                 Published
             </span>
         );
@@ -35,8 +35,8 @@ export const CatalogPublishPill = memo(function CatalogPublishPill({
             disabled={!allowPublish || busy}
             title={
                 allowPublish
-                    ? "Write this installed pack into fixtures/packs for the dev catalog"
-                    : "Catalog fixture publish is disabled on this server"
+                    ? "Write this installed pack into packs/ for the dev catalog"
+                    : "Catalog publish is disabled on this server"
             }
             onClick={(e) => {
                 e.preventDefault();

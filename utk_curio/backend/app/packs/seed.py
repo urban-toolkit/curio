@@ -1,8 +1,8 @@
-"""Dev-only seeder that copies fixture packs into the guest user's pack store.
+"""Dev-only seeder that copies catalog packs into the guest user's pack store.
 
 The runtime ``.curio/users/<u>/packs/`` tree is gitignored, so committing a
-fixture there is not an option. Instead we keep the source-of-truth fixture
-at ``utk_curio/backend/fixtures/packs/<dirname>/`` and copy it into the
+pack there is not an option. Instead we keep the source-of-truth pack
+at ``<repo_root>/packs/<dirname>/`` and copy it into the
 guest user's pack store at backend startup.
 
 Each seed/uninstall decision is recorded in
@@ -37,9 +37,9 @@ from utk_curio.backend.app.packs.storage import (
 log = logging.getLogger(__name__)
 
 
-def _fixtures_root() -> Path:
-    # utk_curio/backend/app/packs/seed.py  ->  utk_curio/backend/fixtures/packs/
-    return Path(__file__).resolve().parents[2] / "fixtures" / "packs"
+def _catalog_root() -> Path:
+    # utk_curio/backend/app/packs/seed.py  ->  <repo_root>/packs/
+    return Path(__file__).resolve().parents[4] / "packs"
 
 
 def _max_mtime(root: Path) -> float:
@@ -63,7 +63,7 @@ def seed_dev_packs(*, user_key: str = "guest") -> list[str]:
     the per-user state file in :mod:`.seed_state` makes the decision
     idempotent and respects explicit user uninstalls.
     """
-    src_root = _fixtures_root()
+    src_root = _catalog_root()
     if not src_root.is_dir():
         return []
 

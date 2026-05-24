@@ -4,10 +4,8 @@
  * Built-in code nodes use the no-op `useCodeNodeLifecycle`: the user is
  * expected to pick a preset from the Templates dropdown before running.
  *
- * Pack nodes ship a `defaultTemplate` field in the manifest (see
- * ``docs/nodesfactory@docs/manifest_spec.md`` (editor / template fields) and
- * ``docs/nodesfactory@docs/backend.md``. Reference fixture:
- * ``utk_curio/backend/fixtures/packs/ai.urbanlab.uhvi@1/manifest.json``).
+ * Pack nodes ship a `defaultTemplate` field in the manifest. Reference pack:
+ * ``<repo_root>/packs/ai.urbanlab.uhvi@1/manifest.json``.
  *
  * Semantic — "inject once, at instantiation only":
  *

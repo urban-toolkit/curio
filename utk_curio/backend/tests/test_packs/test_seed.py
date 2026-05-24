@@ -33,9 +33,7 @@ from utk_curio.backend.app.packs.seed import seed_dev_packs
 from utk_curio.backend.app.packs.storage import user_packs_dir
 
 
-REAL_FIXTURES = (
-    Path(__file__).resolve().parents[2] / "app" / "packs"
-).parent.parent / "fixtures" / "packs"
+REAL_CATALOG = Path(__file__).resolve().parents[4] / "packs"
 
 
 def _installed_names(user_key: str = "guest") -> list[str]:
@@ -51,16 +49,16 @@ def _state(user_key: str = "guest") -> dict[str, dict]:
 
 @pytest.fixture()
 def real_fixtures_root() -> Path:
-    """Pin the seeder to the committed fixtures under ``backend/fixtures/packs``.
+    """Pin the seeder to the committed catalog under ``<repo_root>/packs``.
 
     All the production seeding paths read from there; we don't bother
-    re-pointing :func:`seed._fixtures_root` because it already returns
-    that path. The fixture simply asserts the source exists so a
-    structural regression in the fixture tree fails this file rather
+    re-pointing :func:`seed._catalog_root` because it already returns
+    that path. The pytest fixture simply asserts the source exists so a
+    structural regression in the catalog tree fails this file rather
     than the dozens of tests that depend on the seeder shape.
     """
-    assert REAL_FIXTURES.is_dir(), f"missing fixtures root {REAL_FIXTURES}"
-    return REAL_FIXTURES
+    assert REAL_CATALOG.is_dir(), f"missing catalog root {REAL_CATALOG}"
+    return REAL_CATALOG
 
 
 # ---------------------------------------------------------------------------

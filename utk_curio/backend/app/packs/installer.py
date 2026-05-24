@@ -5,10 +5,10 @@ This module materialises validated ``.curio-nodepack`` extracts into:
 * **Per-user store:** ``<CURIO_LAUNCH_CWD>/.curio/users/<u>/packs/<packId>@<major>/``
   (everyday install paths).
 Sideload (multipart zip upload) is the primary way users install arbitrary packs.
-Catalog install copies committed fixtures from :func:`publish_pack_archive_to_catalog_dir`
+Catalog install copies committed packs from :func:`publish_pack_archive_to_catalog_dir`
 when publishing from the factory.
 A **hosted remote pack registry** (separate download service) is not implemented yet;
-today the catalog is fixture-backed on the app host.
+today the catalog lives on disk at ``<repo_root>/packs/``.
 
 Hard rules enforced here (self-contained packs and archive safety):
 
@@ -308,7 +308,7 @@ def publish_pack_archive_to_catalog_dir(
 ) -> InstallResult:
     """Extract and validate an archive directly under *catalog_parent*.
 
-    Typical *catalog_parent* is ``backend/fixtures/packs/`` — the committed
+    Typical *catalog_parent* is ``<repo_root>/packs/`` — the committed
     catalog source used by ``GET /api/packs/catalog``. This must stay **off**
     unless the Flask route confirms an administrator opt-in env flag; writing
     there can trigger backend reload watchers in development.
@@ -652,10 +652,10 @@ def install_pack_from_directory(
     *,
     replace: bool = False,
 ) -> InstallResult:
-    """Install a pack from a directory on disk (committed catalog fixture).
+    """Install a pack from a directory on disk (committed catalog entry).
 
     ``POST /api/packs/catalog/install`` copies from
-    ``utk_curio/backend/fixtures/packs/<packId>@<major>/`` into the user's pack
+    ``<repo_root>/packs/<packId>@<major>/`` into the user's pack
     store by re-zipping and reusing :func:`install_pack_from_archive` — same
     validation and integrity hashing as sideload. No separate download
     service is required until a hosted registry exists.

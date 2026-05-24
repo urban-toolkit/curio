@@ -1,6 +1,7 @@
 include README.md
 include pyproject.toml
 include LICENSE
+recursive-include packs *
 recursive-include templates *
 recursive-include tests *
 

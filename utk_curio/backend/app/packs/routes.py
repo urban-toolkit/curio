@@ -22,10 +22,9 @@ derives from ``app.projects.services._user_dir_key`` just like
 | ``POST /api/packs/<dir>/palette-dock-visible`` | per-pack palette dock toggle |
 +-------------------------------------------+--------------------------------+
 
-``GET /api/packs/catalog`` is **fixture-backed**: it scans committed packs
-under ``utk_curio/backend/fixtures/packs/`` and returns pack rows plus a
-family index and collision report (see ``docs/nodesfactory@docs/warehouse_v2.md``).
-A **separate remote pack-registry** service is still future work.
+``GET /api/packs/catalog`` is **catalog-backed**: it scans committed packs
+under ``<repo_root>/packs/`` and returns pack rows plus a family index and
+collision report. A **separate remote pack-registry** service is still future work.
 """
 
 from __future__ import annotations
@@ -173,10 +172,16 @@ def _manifest_to_payload(manifest: PackManifest, *, pack_mtime_path: Path | None
     return payload
 
 
-def _fixtures_root() -> Path:
-    """``utk_curio/backend/fixtures/packs/`` — committed catalog fixtures root."""
-    # routes.py -> packs/ -> app/ -> backend/ -> fixtures/packs/
-    return Path(__file__).resolve().parents[2] / "fixtures" / "packs"
+def _catalog_root() -> Path:
+    """``<repo_root>/packs/`` — committed pack catalog root.
+
+    Resolved relative to this file's location so the seeder finds the
+    catalog regardless of the launch CWD. This is the dev catalog
+    source — production deployments rely on user installs via the
+    warehouse drawer (and the future remote registry).
+    """
+    # routes.py -> packs/ -> app/ -> backend/ -> utk_curio/ -> repo_root/packs/
+    return Path(__file__).resolve().parents[4] / "packs"
 
 
 _FALSEY_PUBLISH_ENV = frozenset({"0", "false", "no", "off"})
@@ -204,7 +209,7 @@ def _resolver_overrides_for(user_key: str, packs: list[str]) -> dict[str, Path]:
     candidate's ``dirName`` alongside the already-installed packs so it
     can show the InstallDialog with a precise conflict report. The
     candidate is by definition *not yet installed* — its manifest lives
-    in the committed catalog at ``backend/fixtures/packs/<dirName>/``,
+    in the committed catalog at ``<repo_root>/packs/<dirName>/``,
     not in ``<user>/packs/<dirName>/``. Without an override, the
     resolver would raise ``pack <name> is malformed: missing
     manifest.json`` and the user could never get past the dialog.
@@ -214,7 +219,7 @@ def _resolver_overrides_for(user_key: str, packs: list[str]) -> dict[str, Path]:
     present there. Unknown packs are left alone so the resolver still
     surfaces a precise "not installed" error.
     """
-    catalog_root = _fixtures_root()
+    catalog_root = _catalog_root()
     if not catalog_root.is_dir():
         return {}
     out: dict[str, Path] = {}
@@ -314,17 +319,16 @@ def pack_palette_dock_visibility(dir_name: str):
 @packs_bp.route("/catalog", methods=["GET"])
 @require_auth
 def list_catalog_packs():
-    """Return the fixture-backed catalog scan from ``utk_curio/backend/fixtures/packs/``.
+    """Return the catalog scan from ``<repo_root>/packs/``.
 
     Items share the same shape as ``list_installed_packs`` (the warehouse UI
     can render either feed identically), plus an ``installed`` flag. The
-    JSON body also includes ``families`` and ``catalogCollisions`` (see
-    ``warehouse_v2.md``).
+    JSON body also includes ``families`` and ``catalogCollisions``.
     """
     user_key = _user_dir_key(g.user)
     installed_coords = {p.name for p in list_user_packs(user_key)}
 
-    root = _fixtures_root()
+    root = _catalog_root()
     if not root.is_dir():
         return jsonify({"packs": [], "families": [], "catalogCollisions": []}), 200
 
@@ -411,13 +415,12 @@ def upload_pack():
 @packs_bp.route("/catalog/install", methods=["POST"])
 @require_auth
 def install_from_catalog():
-    """Install a catalog pack by its on-fixture directory name.
+    """Install a catalog pack by its on-disk directory name.
 
     The body is ``{"dirName": "<packId>@<major>", "replace": false}``;
     the route copies the catalog directory into the user's pack store
     via :func:`install_pack_from_directory`. The catalog set is the
-    committed fixtures shipped in
-    ``utk_curio/backend/fixtures/packs/`` — same data the
+    committed packs shipped in ``<repo_root>/packs/`` — same data the
     ``GET /api/packs/catalog`` route advertises.
     """
     user_key = _user_dir_key(g.user)
@@ -427,7 +430,7 @@ def install_from_catalog():
         return _error("body must include a valid 'dirName' (<packId>@<major>)")
     replace = bool(body.get("replace", False))
 
-    src = _fixtures_root() / dir_name
+    src = _catalog_root() / dir_name
     if not src.is_dir():
         return _error(f"catalog has no pack {dir_name}", 404)
     try:
@@ -450,7 +453,7 @@ def install_from_catalog():
 @packs_bp.route("/catalog/<dir_name>", methods=["DELETE"])
 @require_auth
 def unpublish_from_catalog(dir_name: str):
-    """Remove a pack directory from ``fixtures/packs`` (developer catalog only).
+    """Remove a pack directory from ``<repo_root>/packs/`` (developer catalog only).
 
     Does **not** uninstall from the user's pack store — use
     ``DELETE /api/packs/<dir_name>`` for that. Gated by the same env flag as
@@ -471,7 +474,7 @@ def unpublish_from_catalog(dir_name: str):
         return _error("dir_name must match <packId>@<major>")
 
     try:
-        removed = remove_pack_from_catalog_dir(_fixtures_root(), dir_name)
+        removed = remove_pack_from_catalog_dir(_catalog_root(), dir_name)
     except InstallerError as exc:
         return _error(str(exc))
     if not removed:
@@ -536,13 +539,13 @@ def factory_capabilities():
 @packs_bp.route("/factory/publish-catalog", methods=["POST"])
 @require_auth
 def factory_publish_catalog():
-    """Build draft and publish into ``fixtures/packs`` — **developers only**.
+    """Build draft and publish into ``<repo_root>/packs/`` — **developers only**.
 
     Allowed by default; set ``CURIO_ALLOW_FACTORY_CATALOG_PUBLISH`` to ``0``,
     ``false``, ``no``, or ``off`` to disable.
 
     Writes the same directory layout Sideload installs use; may trigger hot
-    reload of the Flask process when watchers observe ``fixtures``.
+    reload of the Flask process when watchers observe the catalog.
     """
     if not factory_catalog_publish_allowed():
         return jsonify(
@@ -557,19 +560,19 @@ def factory_publish_catalog():
 
     body = dict(request.get_json(silent=True) or {})
     replace = bool(body.pop("replace", False))
-    fixtures = _fixtures_root()
+    catalog = _catalog_root()
     try:
         built = build_pack_archive(body)
         result = publish_pack_archive_to_catalog_dir(
             built.archive,
-            fixtures,
+            catalog,
             replace=replace,
         )
     except FactoryError as exc:
         return _error(str(exc))
     except InstallerError as exc:
         return _error(str(exc))
-    catalog_path = fixtures / result.manifest.dir_name
+    catalog_path = catalog / result.manifest.dir_name
     return jsonify({
         "pack": _manifest_to_payload(result.manifest, pack_mtime_path=catalog_path),
         "integrity": result.integrity,

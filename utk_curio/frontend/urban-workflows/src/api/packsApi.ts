@@ -311,11 +311,11 @@ export const packsApi = {
   },
 
   /**
-   * Publish the wizard draft into the backend fixture catalog (``fixtures/packs``).
+   * Publish the wizard draft into the backend catalog (``<repo_root>/packs/``).
    * Can be disabled with ``CURIO_ALLOW_FACTORY_CATALOG_PUBLISH`` = ``0`` / ``false`` / ``no`` / ``off``.
    *
    * *draft* is the usual ``toApiPayload`` object; optional ``replace`` overwrites an
-   * existing fixture directory for the same coordinate.
+   * existing catalog directory for the same coordinate.
    */
   factoryPublishCatalog(
     draft: Record<string, unknown>,
@@ -327,7 +327,7 @@ export const packsApi = {
   },
 
   /**
-   * Remove a pack from the fixture catalog (`fixtures/packs/<dirName>/`).
+   * Remove a pack from the catalog (`<repo_root>/packs/<dirName>/`).
    * Gated by the same env flag as `factoryPublishCatalog`; does not uninstall
    * from the user's pack store.
    */

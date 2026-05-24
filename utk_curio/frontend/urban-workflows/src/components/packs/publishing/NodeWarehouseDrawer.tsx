@@ -200,7 +200,7 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
     async (pack: PackPayload) => {
       if (
         !window.confirm(
-          `Unpublish ${pack.name} (${pack.dirName}) from the dev catalog?\n\nThis removes the fixture under fixtures/packs. Installed copies in workspaces are not removed.`,
+          `Unpublish ${pack.name} (${pack.dirName}) from the dev catalog?\n\nThis removes the entry under packs/. Installed copies in workspaces are not removed.`,
         )
       ) {
         return;
