@@ -14,7 +14,17 @@ import { useFlowContext } from '../providers/FlowProvider';
 import './Node.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
+// When the canvas node's `data.nodeType` changes (e.g. after Save-As rebinds
+// the node to a new pack kind), the descriptor's `useLifecycle` hook function
+// can change. Calling a *different* hook at the same call site violates
+// React's rules of hooks and corrupts the state slots ("baseQueue is undefined").
+// Keying the inner body by `data.nodeType` forces an unmount/remount so the
+// new hook chain starts fresh.
 const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }: { data: any; isConnectable: boolean }) {
+  return <UniversalNodeBody key={data.nodeType} data={data} isConnectable={isConnectable} />;
+});
+
+const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnectable }: { data: any; isConnectable: boolean }) {
   const descriptor = getNodeDescriptor(data.nodeType);
   const { adapter } = descriptor;
 
