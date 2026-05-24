@@ -9,25 +9,29 @@
 }
 
 .modal {
-    background: #ffffff;
-    border-radius: 12px;
+    background: var(--curio-card-bg);
+    border: 1px solid var(--curio-border);
+    border-radius: var(--curio-radius-lg);
+    box-shadow: var(--curio-shadow-modal);
     padding: 24px;
     width: 480px;
     max-width: 90vw;
     max-height: 90vh;
     overflow-y: auto;
-    font-family: Rubik, system-ui, sans-serif;
-    color: #1e1f23;
+    font-family: var(--curio-font-family);
+    color: var(--curio-text-primary);
 }
 
 .title {
     margin: 0 0 4px;
     font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--curio-text-primary);
 }
 
 .subtitle {
-    color: #7a786d;
-    font-size: 0.875rem;
+    color: var(--curio-text-secondary);
+    font-size: var(--curio-font-size-md);
     margin: 0 0 16px;
 }
 
@@ -35,18 +39,20 @@
     list-style: none;
     margin: 0 0 12px;
     padding: 0;
-    border: 1px solid #eceadf;
-    border-radius: 8px;
+    border: 1px solid var(--curio-border);
+    border-radius: var(--curio-radius-md);
     overflow: hidden;
 }
 
 .permItem {
     padding: 10px 14px;
-    border-bottom: 1px solid #eceadf;
+    border-bottom: 1px solid var(--curio-border);
     display: flex;
     align-items: center;
     gap: 10px;
-    font-size: 0.875rem;
+    font-size: var(--curio-font-size-md);
+    color: var(--curio-text-primary);
+    background: var(--curio-card-bg);
 }
 
 .permItem:last-child {
@@ -54,50 +60,53 @@
 }
 
 .permIcon {
-    font-size: 0.875rem;
-    color: #fbaa69;
+    font-size: var(--curio-font-size-md);
+    color: var(--curio-accent-peach-fg);
 }
 
 .depsBox {
-    border: 1px solid #eceadf;
-    border-radius: 8px;
+    border: 1px solid var(--curio-border);
+    border-radius: var(--curio-radius-md);
     padding: 12px;
     margin-bottom: 16px;
-    font-size: 0.8125rem;
+    font-size: var(--curio-font-size-md);
+    background: var(--curio-page-bg);
 }
 
 .depsTitle {
     margin: 0 0 6px;
-    font-weight: 500;
-    font-size: 0.8125rem;
+    font-weight: 600;
+    font-size: var(--curio-font-size-xs);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #7a786d;
+    letter-spacing: 0.08em;
+    color: var(--curio-text-muted);
 }
 
 .depRow {
     display: flex;
     justify-content: space-between;
     padding: 2px 0;
+    color: var(--curio-text-primary);
 }
 
 .conflictsBox {
-    border: 1px solid #b3261e;
-    border-radius: 8px;
+    border: 1px solid var(--curio-danger);
+    border-radius: var(--curio-radius-md);
     padding: 12px;
     margin-bottom: 16px;
-    font-size: 0.8125rem;
-    background: #fce8e7;
+    font-size: var(--curio-font-size-md);
+    background: rgba(255, 107, 107, 0.08);
+    color: var(--curio-danger-strong);
 }
 
 .conflictTitle {
-    color: #b3261e;
+    color: var(--curio-danger-strong);
     margin: 0 0 6px;
-    font-weight: 500;
+    font-weight: 600;
 }
 
 .conflictHint {
-    font-size: 0.8125rem;
+    font-size: var(--curio-font-size-md);
     margin-top: 8px;
 }
 
@@ -105,22 +114,24 @@
     display: flex;
     justify-content: flex-end;
     gap: 8px;
-    margin-top: 12px;
+    margin-top: 16px;
 }
 
 .actionButton {
-    background: #fbaa69;
-    color: #1e1f23;
+    background: var(--curio-top-bar-bg);
+    color: var(--curio-text-on-dark);
     border: none;
-    padding: 8px 16px;
-    border-radius: 6px;
-    font-weight: 500;
+    padding: 0 20px;
+    height: var(--curio-input-height);
+    border-radius: var(--curio-radius-md);
+    font-weight: 600;
     cursor: pointer;
     font: inherit;
+    font-size: var(--curio-font-size-lg);
 }
 
-.actionButton:hover {
-    background: #fb9a4f;
+.actionButton:hover:not(:disabled) {
+    background: #2c2d32;
 }
 
 .actionButton:disabled {
@@ -129,18 +140,20 @@
 }
 
 .ghostButton {
-    background: #ffffff;
-    border: 1px solid #d8d4c2;
-    padding: 8px 16px;
-    border-radius: 6px;
+    background: var(--curio-card-bg);
+    border: 1px solid var(--curio-border-strong);
+    padding: 0 20px;
+    height: var(--curio-input-height);
+    border-radius: var(--curio-radius-md);
     font-weight: 500;
     cursor: pointer;
     font: inherit;
-    color: #1e1f23;
+    font-size: var(--curio-font-size-lg);
+    color: var(--curio-text-primary);
 }
 
-.ghostButton:hover {
-    background: #f3f1e6;
+.ghostButton:hover:not(:disabled) {
+    background: var(--curio-page-bg);
 }
 
 .ghostButton:disabled {

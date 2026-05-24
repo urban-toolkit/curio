@@ -1,15 +1,10 @@
-/* Styling for the Node Factory wizard.
- *
- * Maps figma_mockups/04..08 onto a 5-step stepper with a left detail
- * column and a right "live manifest preview" column. The aesthetic
- * mirrors NodesHub.module.css.
- */
+/* Styling for the Node Factory wizard (page + modal variants). */
 
 .shell {
     min-height: 100vh;
-    background: #fbfcf6;
-    color: #1e1f23;
-    font-family: Rubik, system-ui, sans-serif;
+    background: var(--curio-page-bg);
+    color: var(--curio-text-primary);
+    font-family: var(--curio-font-family);
     display: flex;
     flex-direction: column;
 }
@@ -18,42 +13,50 @@
     display: flex;
     align-items: center;
     gap: 16px;
-    padding: 16px 28px;
-    background: #ffffff;
-    border-bottom: 1px solid #eceadf;
+    height: var(--curio-top-bar-height);
+    padding: 10px 20px;
+    background: var(--curio-top-bar-bg);
+    color: var(--curio-text-on-dark);
+    border-bottom: 1px solid var(--curio-top-bar-border);
 }
 
 .title {
-    font-size: 1.25rem;
+    font-size: var(--curio-font-size-lg);
     font-weight: 600;
     margin: 0;
     flex: 1;
+    color: var(--curio-text-on-dark);
 }
 
 .linkButton {
-    color: #1e1f23;
+    color: var(--curio-text-on-dark-muted);
     text-decoration: none;
+    font-size: var(--curio-font-size-md);
     font-weight: 500;
     padding: 6px 10px;
-    border-radius: 6px;
+    border: 1px solid #444;
+    border-radius: var(--curio-radius-md);
 }
 
 .linkButton:hover {
-    background: #f3f1e6;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--curio-text-on-dark);
 }
 
 .actionButton {
-    background: #fbaa69;
-    color: #1e1f23;
+    background: var(--curio-top-bar-bg);
+    color: var(--curio-text-on-dark);
     border: none;
-    padding: 8px 16px;
-    border-radius: 6px;
-    font-weight: 500;
+    padding: 0 20px;
+    height: var(--curio-input-height);
+    border-radius: var(--curio-radius-md);
+    font-weight: 600;
+    font-size: var(--curio-font-size-lg);
     cursor: pointer;
 }
 
-.actionButton:hover {
-    background: #fb9a4f;
+.actionButton:hover:not(:disabled) {
+    background: #2c2d32;
 }
 
 .actionButton:disabled {
@@ -63,20 +66,20 @@
 
 .ghostButton {
     composes: actionButton;
-    background: #ffffff;
-    border: 1px solid #d8d4c2;
+    background: var(--curio-card-bg);
+    color: var(--curio-text-primary);
+    border: 1px solid var(--curio-border-strong);
 }
 
-.ghostButton:hover {
-    background: #f3f1e6;
+.ghostButton:hover:not(:disabled) {
+    background: var(--curio-page-bg);
 }
 
 .stepper {
-    background: #ffffff;
-    border-bottom: 1px solid #eceadf;
-    padding: 12px 28px;
+    background: transparent;
+    padding: 0;
     display: flex;
-    gap: 16px;
+    gap: 4px;
     overflow-x: auto;
 }
 
@@ -84,42 +87,58 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    color: #7a786d;
-    font-size: 0.875rem;
-    padding: 4px 12px;
-    border-radius: 6px;
+    color: var(--curio-text-secondary);
+    font-size: var(--curio-font-size-md);
+    font-weight: 500;
+    padding: 6px 14px;
+    border-radius: var(--curio-radius-sm);
     cursor: pointer;
     background: transparent;
     border: none;
     flex-shrink: 0;
 }
 
+.step:hover {
+    background: rgba(30, 31, 35, 0.04);
+    color: var(--curio-text-primary);
+}
+
 .stepActive {
     composes: step;
-    background: #fbaa69;
-    color: #1e1f23;
-    font-weight: 500;
+    background: var(--curio-top-bar-bg);
+    color: var(--curio-text-on-dark);
+}
+
+.stepActive:hover {
+    background: var(--curio-top-bar-bg);
+    color: var(--curio-text-on-dark);
 }
 
 .stepDone {
     composes: step;
-    color: #2f8f4a;
+    color: var(--curio-accent-mint-fg);
 }
 
 .stepNumber {
-    width: 22px;
-    height: 22px;
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
-    background: #eceadf;
-    color: #1e1f23;
+    background: rgba(30, 31, 35, 0.1);
+    color: var(--curio-text-primary);
     text-align: center;
-    line-height: 22px;
-    font-size: 0.75rem;
+    line-height: 20px;
+    font-size: var(--curio-font-size-xs);
+    font-weight: 700;
 }
 
 .stepActive .stepNumber {
-    background: #1e1f23;
-    color: #fbaa69;
+    background: rgba(255, 255, 255, 0.18);
+    color: var(--curio-text-on-dark);
+}
+
+.stepDone .stepNumber {
+    background: var(--curio-accent-mint-bg);
+    color: var(--curio-accent-mint-fg);
 }
 
 .body {
@@ -127,15 +146,16 @@
     display: grid;
     grid-template-columns: 1fr 360px;
     gap: 24px;
-    padding: 24px 28px;
+    padding: 24px;
     min-height: 0;
 }
 
 .panel {
-    background: #ffffff;
-    border-radius: 12px;
+    background: var(--curio-card-bg);
+    border-radius: var(--curio-radius-lg);
     padding: 24px;
-    border: 1px solid #eceadf;
+    border: 1px solid var(--curio-border);
+    box-shadow: var(--curio-shadow-card);
     align-self: start;
 }
 
@@ -143,25 +163,26 @@
     margin: 0 0 4px;
     font-size: 1.125rem;
     font-weight: 600;
+    color: var(--curio-text-primary);
 }
 
 .panelSubtitle {
     margin: 0 0 20px;
-    color: #7a786d;
-    font-size: 0.875rem;
+    color: var(--curio-text-secondary);
+    font-size: var(--curio-font-size-md);
 }
 
 .lineageCaption {
     margin: -12px 0 20px;
-    color: #7a786d;
-    font-size: 0.8125rem;
+    color: var(--curio-text-secondary);
+    font-size: var(--curio-font-size-md);
     line-height: 1.45;
 }
 
 .lineageCaption code {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.75rem;
-    color: #43423b;
+    font-size: var(--curio-font-size-sm);
+    color: var(--curio-text-primary);
 }
 
 .field {
@@ -170,16 +191,16 @@
 
 .fieldLabel {
     display: block;
-    font-size: 0.8125rem;
-    color: #43423b;
+    font-size: var(--curio-font-size-md);
+    color: var(--curio-text-primary);
     margin-bottom: 4px;
     font-weight: 500;
 }
 
 .fieldHint {
     display: block;
-    font-size: 0.75rem;
-    color: #7a786d;
+    font-size: var(--curio-font-size-sm);
+    color: var(--curio-text-muted);
     margin-top: 4px;
 }
 
@@ -188,11 +209,20 @@
 .select {
     width: 100%;
     padding: 8px 12px;
-    border: 1px solid #d8d4c2;
-    border-radius: 6px;
-    background: #ffffff;
+    border: 1px solid var(--curio-border-strong);
+    border-radius: var(--curio-radius-md);
+    background: var(--curio-card-bg);
+    color: var(--curio-text-primary);
     font: inherit;
+    font-size: var(--curio-font-size-md);
     box-sizing: border-box;
+}
+
+.input:focus,
+.textarea:focus,
+.select:focus {
+    outline: none;
+    border-color: var(--curio-top-bar-bg);
 }
 
 .textarea {
@@ -203,7 +233,7 @@
 .codeArea {
     composes: textarea;
     font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
-    font-size: 0.8125rem;
+    font-size: var(--curio-font-size-md);
     min-height: 240px;
 }
 
@@ -222,26 +252,27 @@
 }
 
 .smallButton {
-    background: #ffffff;
-    border: 1px solid #d8d4c2;
-    padding: 6px 10px;
-    border-radius: 6px;
+    background: var(--curio-card-bg);
+    border: 1px solid var(--curio-border-strong);
+    padding: 6px 12px;
+    border-radius: var(--curio-radius-md);
     cursor: pointer;
-    font-size: 0.8125rem;
+    font-size: var(--curio-font-size-md);
+    color: var(--curio-text-primary);
 }
 
 .smallButton:hover {
-    background: #f3f1e6;
+    background: var(--curio-page-bg);
 }
 
 .errorBox {
-    border: 1px solid #b3261e;
-    background: #fce8e7;
+    border: 1px solid var(--curio-danger);
+    background: rgba(255, 107, 107, 0.08);
     padding: 12px;
-    border-radius: 8px;
-    color: #b3261e;
+    border-radius: var(--curio-radius-md);
+    color: var(--curio-danger-strong);
     margin-bottom: 16px;
-    font-size: 0.875rem;
+    font-size: var(--curio-font-size-md);
 }
 
 .footer {
@@ -249,7 +280,7 @@
     justify-content: space-between;
     align-items: center;
     margin-top: 24px;
-    border-top: 1px solid #eceadf;
+    border-top: 1px solid var(--curio-border);
     padding-top: 16px;
 }
 
@@ -261,9 +292,10 @@
 }
 
 .kindEntry {
-    border: 1px solid #eceadf;
-    border-radius: 8px;
+    border: 1px solid var(--curio-border);
+    border-radius: var(--curio-radius-md);
     padding: 12px;
+    background: var(--curio-card-bg);
 }
 
 .kindHeader {
@@ -279,44 +311,47 @@
 
 .kindTitle {
     margin: 0;
-    font-size: 0.9375rem;
-    font-weight: 500;
+    font-size: var(--curio-font-size-lg);
+    font-weight: 600;
+    color: var(--curio-text-primary);
 }
 
 .kindTitleSub {
     margin-top: 4px;
-    font-size: 0.75rem;
-    color: #7a786d;
+    font-size: var(--curio-font-size-sm);
+    color: var(--curio-text-muted);
     font-weight: 400;
 }
 
 .removeBtn {
     background: transparent;
     border: none;
-    color: #b3261e;
+    color: var(--curio-danger-strong);
     cursor: pointer;
-    font-size: 0.8125rem;
+    font-size: var(--curio-font-size-md);
+    font-weight: 500;
 }
 
 .removeBtn:hover {
     text-decoration: underline;
+    color: var(--curio-danger);
 }
 
 .preview {
-    background: #1e1f23;
-    color: #fbfcf6;
-    border-radius: 12px;
+    background: var(--curio-top-bar-bg);
+    color: var(--curio-text-on-dark);
+    border-radius: var(--curio-radius-lg);
     padding: 16px;
     font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
-    font-size: 0.75rem;
+    font-size: var(--curio-font-size-sm);
     max-height: calc(100vh - 220px);
     overflow: auto;
     line-height: 1.5;
 }
 
 .previewTitle {
-    color: #fbaa69;
-    font-size: 0.75rem;
+    color: var(--curio-accent-sky-bg);
+    font-size: var(--curio-font-size-sm);
     text-transform: uppercase;
     letter-spacing: 0.08em;
     margin: 0 0 8px;
@@ -327,14 +362,16 @@
     align-items: center;
     gap: 8px;
     margin-bottom: 8px;
+    font-size: var(--curio-font-size-md);
+    color: var(--curio-text-primary);
 }
 
 .successBox {
-    background: #e7f5ec;
-    border: 1px solid #2f8f4a;
-    color: #1e1f23;
+    background: var(--curio-accent-mint-bg);
+    border: 1px solid var(--curio-accent-mint-fg);
+    color: var(--curio-text-primary);
     padding: 12px;
-    border-radius: 8px;
+    border-radius: var(--curio-radius-md);
     margin-bottom: 16px;
-    font-size: 0.875rem;
+    font-size: var(--curio-font-size-md);
 }

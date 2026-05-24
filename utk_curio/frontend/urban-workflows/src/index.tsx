@@ -1,3 +1,4 @@
+import "./styles/curioTokens.css";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import * as monaco from "monaco-editor";

@@ -8,8 +8,7 @@
     align-items: flex-start;
     justify-content: center;
     padding: 24px 16px;
-    /* Single scroll rail: overlay stays fixed — only `.modalScroll` scrolls inside the card.
-       Avoid `backdrop-filter` here; it composites the entire canvas on every scroll frame. */
+    /* Single scroll rail: overlay stays fixed — only `.modalScroll` scrolls inside the card. */
     overflow: hidden;
     background: rgba(30, 31, 35, 0.52);
 }
@@ -17,22 +16,20 @@
 .modalSurface {
     position: relative;
     width: min(980px, 100%);
-    /* Fit within viewport padding so outer overlay never needs to scroll */
     max-height: min(92vh, calc(100vh - 48px), 900px);
     flex-shrink: 0;
     margin: auto 0;
-    /* Own compositing layer keeps inner scroll repaint off the fullscreen overlay */
     transform: translateZ(0);
     display: flex;
     flex-direction: column;
-    background: #fbfcf6;
-    color: #1e1f23;
-    border-radius: 12px;
-    box-shadow:
-        0 24px 48px rgba(30, 31, 35, 0.18),
-        0 0 0 1px rgba(0, 0, 0, 0.06);
-    font-family: Rubik, system-ui, sans-serif;
+    background: var(--curio-page-bg);
+    color: var(--curio-text-primary);
+    border: 1px solid var(--curio-border);
+    border-radius: var(--curio-radius-lg);
+    box-shadow: var(--curio-shadow-modal);
+    font-family: var(--curio-font-family);
     outline: none;
+    overflow: hidden;
 }
 
 .modalShell {
@@ -55,47 +52,51 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 14px 20px;
+    height: var(--curio-top-bar-height);
+    padding: 10px 20px;
     flex-shrink: 0;
-    background: #ffffff;
-    border-radius: 12px 12px 0 0;
-    border-bottom: 1px solid #eceadf;
+    background: var(--curio-top-bar-bg);
+    color: var(--curio-text-on-dark);
+    border-bottom: 1px solid var(--curio-top-bar-border);
 }
 
 .modalTitle {
-    font-size: 1.125rem;
+    font-size: var(--curio-font-size-lg);
     font-weight: 600;
     margin: 0;
     flex: 1;
+    color: var(--curio-text-on-dark);
 }
 
 .closeBtn {
     background: transparent;
-    border: 1px solid #d8d4c2;
-    border-radius: 8px;
+    border: 1px solid #444;
+    border-radius: var(--curio-radius-md);
     padding: 6px 12px;
-    font-size: 0.875rem;
+    height: 30px;
+    font-size: var(--curio-font-size-md);
     font-weight: 500;
     cursor: pointer;
-    color: #1e1f23;
+    color: var(--curio-text-on-dark-muted);
 }
 
 .closeBtn:hover {
-    background: #f3f1e6;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--curio-text-on-dark);
 }
 
 .forkBanner {
-    margin: 0 20px;
+    margin: 16px 20px 0;
     padding: 10px 14px;
-    background: #fff8ee;
-    border: 1px solid #ecd8bf;
-    border-radius: 8px;
-    font-size: 0.875rem;
-    color: #4a4638;
+    background: var(--curio-accent-peach-bg);
+    border: 1px solid rgba(232, 106, 60, 0.4);
+    border-radius: var(--curio-radius-md);
+    font-size: var(--curio-font-size-md);
+    color: var(--curio-accent-peach-fg);
 }
 
 .forkBanner strong {
-    color: #1e1f23;
+    color: var(--curio-text-primary);
 }
 
 .modalBodyOuter {
@@ -103,12 +104,14 @@
 }
 
 .modalStepperRow {
-    padding: 10px 16px 0;
-    background: #fbfcf6;
+    padding: 12px 16px;
+    background: var(--curio-card-bg);
+    border-bottom: 1px solid var(--curio-border);
     flex-shrink: 0;
 }
 
 .bodyOneCol {
     grid-template-columns: 1fr;
-    padding: 16px 20px;
+    padding: 20px;
+    background: var(--curio-page-bg);
 }

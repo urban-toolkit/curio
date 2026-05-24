@@ -5,19 +5,20 @@
     grid-template-columns: auto 1fr;
     gap: 12px;
     padding: 12px 14px;
-    border: 1px solid #fbaa69;
-    border-radius: 6px;
-    background: #fff8ee;
+    border: 1px solid var(--curio-border);
+    border-radius: var(--curio-radius-md);
+    background: var(--curio-card-bg);
     margin-bottom: 8px;
+    font-family: var(--curio-font-family);
 }
 
 .envIcon {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     border-radius: 50%;
-    background: #fbaa69;
-    color: #1e1f23;
-    font-size: 0.6875rem;
+    background: var(--curio-accent-sky-fg);
+    color: var(--curio-text-on-dark);
+    font-size: var(--curio-font-size-xs);
     font-weight: 700;
     display: flex;
     align-items: center;
@@ -28,15 +29,14 @@
 
 .envTitle {
     margin: 0 0 4px;
-    font-size: 0.75rem;
+    font-size: var(--curio-font-size-md);
     font-weight: 600;
-    color: #7a4a12;
+    color: var(--curio-text-primary);
 }
 
 .envText {
     margin: 0;
-    font-size: 0.6875rem;
-    color: #7a4a12;
+    font-size: var(--curio-font-size-sm);
+    color: var(--curio-text-secondary);
     line-height: 1.45;
 }
-

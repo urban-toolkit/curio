@@ -5,18 +5,19 @@
     align-items: center;
     justify-content: center;
     gap: 4px;
+    font-family: var(--curio-font-family);
 }
 
 .labelText {
     flex: 1;
     min-width: 0;
     text-align: center;
-    font-size: 11px;
-    font-weight: bold;
+    font-size: var(--curio-font-size-xs);
+    font-weight: 700;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: #888787;
+    color: var(--curio-text-secondary);
     background: none;
     border: none;
     padding: 0;
@@ -27,40 +28,45 @@
 
 .labelTextEditable {
     cursor: pointer;
-    border-radius: 3px;
+    border-radius: var(--curio-radius-sm);
 }
 
 .labelTextEditable:hover {
-    background: rgba(251, 170, 105, 0.12);
+    background: rgba(30, 31, 35, 0.06);
+    color: var(--curio-text-primary);
 }
 
 .labelTextHighlighted {
-    color: rgb(251, 252, 246);
+    color: var(--curio-text-on-dark);
 }
 
 .labelInput {
     flex: 1;
     min-width: 0;
     text-align: center;
-    font-size: 12px;
-    font-weight: bold;
-    color: #1e1f23;
-    border: 1px solid rgba(251, 170, 105, 0.75);
-    border-radius: 3px;
+    font-size: var(--curio-font-size-sm);
+    font-weight: 700;
+    color: var(--curio-text-primary);
+    border: 1px solid var(--curio-top-bar-bg);
+    border-radius: var(--curio-radius-sm);
     padding: 2px 6px;
-    background: #fbfcf6;
+    background: var(--curio-card-bg);
     font-family: inherit;
     box-sizing: border-box;
 }
 
+.labelInput:focus {
+    outline: none;
+}
+
 .labelInputHighlighted {
-    color: rgb(251, 252, 246);
+    color: var(--curio-text-on-dark);
     background: rgba(30, 31, 35, 0.85);
-    border-color: rgba(251, 170, 105, 0.9);
+    border-color: var(--curio-text-on-dark);
 }
 
 .execMark {
-    color: #2f8f4a;
+    color: var(--curio-accent-mint-fg);
     margin-right: 2px;
     font-size: 10px;
     flex-shrink: 0;
@@ -68,12 +74,12 @@
 
 .saveAsBtn {
     flex-shrink: 0;
-    border: 1px solid rgba(251, 170, 105, 0.55);
-    border-radius: 4px;
-    background: rgba(251, 170, 105, 0.14);
-    color: #7a4a12;
-    font-size: 9px;
-    font-weight: 700;
+    border: 1px solid var(--curio-border-strong);
+    border-radius: var(--curio-radius-sm);
+    background: var(--curio-card-bg);
+    color: var(--curio-text-primary);
+    font-size: 10px;
+    font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
     padding: 2px 6px;
@@ -83,13 +89,13 @@
 }
 
 .saveAsBtn:hover {
-    background: rgba(251, 170, 105, 0.28);
+    background: var(--curio-page-bg);
 }
 
 .saveAsBtnHighlighted {
-    color: #fbaa69;
-    border-color: rgba(251, 170, 105, 0.75);
-    background: rgba(251, 170, 105, 0.18);
+    color: var(--curio-text-on-dark);
+    border-color: rgba(255, 255, 255, 0.35);
+    background: rgba(255, 255, 255, 0.1);
 }
 
 .configBtn {
@@ -100,22 +106,22 @@
     width: 22px;
     height: 22px;
     padding: 0;
-    border: 1px solid rgba(136, 135, 135, 0.45);
-    border-radius: 4px;
+    border: 1px solid var(--curio-border-strong);
+    border-radius: var(--curio-radius-sm);
     background: transparent;
-    color: #888787;
+    color: var(--curio-text-secondary);
     cursor: pointer;
-    font-size: 11px;
+    font-size: var(--curio-font-size-xs);
     line-height: 1;
 }
 
 .configBtn:hover {
-    border-color: rgba(251, 170, 105, 0.75);
-    color: #fbaa69;
-    background: rgba(251, 170, 105, 0.1);
+    border-color: var(--curio-text-primary);
+    color: var(--curio-text-primary);
+    background: rgba(30, 31, 35, 0.04);
 }
 
 .configBtnHighlighted {
-    border-color: rgba(251, 170, 105, 0.65);
-    color: #fbaa69;
+    border-color: rgba(255, 255, 255, 0.35);
+    color: var(--curio-text-on-dark);
 }

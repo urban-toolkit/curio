@@ -4,42 +4,38 @@
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    gap: 20px;
-    padding: 0 16px;
-    border-bottom: 1px solid #eeeeee;
+    gap: 4px;
+    padding: 10px 16px;
+    background: var(--curio-card-bg);
+    border-bottom: 1px solid var(--curio-border);
+    font-family: var(--curio-font-family);
 }
 
 .tab {
     position: relative;
     background: none;
     border: none;
-    padding: 8px 0 10px;
+    padding: 6px 14px;
     font: inherit;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: #666666;
+    font-size: var(--curio-font-size-md);
+    font-weight: 500;
+    color: var(--curio-text-secondary);
     cursor: pointer;
+    border-radius: var(--curio-radius-sm);
     display: inline-flex;
     align-items: center;
     gap: 6px;
 }
 
 .tab:hover {
-    color: #1e1f23;
+    color: var(--curio-text-primary);
+    background: rgba(30, 31, 35, 0.04);
 }
 
-.tabActive {
-    color: #1e1f23;
-}
-
-.tabActive::after {
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: 2px;
-    background: #fbaa69;
+.tabActive,
+.tabActive:hover {
+    background: var(--curio-top-bar-bg);
+    color: var(--curio-text-on-dark);
 }
 
 .tabBadge {
@@ -47,25 +43,29 @@
     align-items: center;
     justify-content: center;
     min-width: 18px;
-    height: 14px;
-    padding: 0 5px;
-    border-radius: 7px;
-    font-size: 0.5625rem;
+    height: 16px;
+    padding: 0 6px;
+    border-radius: var(--curio-radius-pill);
+    font-size: 10px;
     font-weight: 700;
     line-height: 1;
 }
 
 .tabBadgeDark {
-    background: #1e1f23;
-    color: #fbfcf6;
+    background: rgba(30, 31, 35, 0.1);
+    color: var(--curio-text-primary);
+}
+
+.tabActive .tabBadgeDark {
+    background: rgba(255, 255, 255, 0.18);
+    color: var(--curio-text-on-dark);
 }
 
 .tabBadgeAccent {
-    background: #fbaa69;
-    color: #1e1f23;
+    background: var(--curio-accent-peach-bg);
+    color: var(--curio-accent-peach-fg);
 }
 
 .tabMuted {
-    color: #999999;
+    color: var(--curio-text-muted);
 }
-

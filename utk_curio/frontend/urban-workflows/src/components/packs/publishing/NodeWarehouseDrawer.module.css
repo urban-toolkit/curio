@@ -41,15 +41,15 @@
 .drawer {
     position: relative;
     z-index: 1;
-    width: min(480px, 100vw);
+    width: min(520px, 100vw);
     height: 100%;
-    background: #ffffff;
-    border-left: 1px solid #e5e5e5;
-    box-shadow: -12px 0 36px rgba(0, 0, 0, 0.18);
+    background: var(--curio-page-bg);
+    border-left: 1px solid var(--curio-border);
+    box-shadow: var(--curio-shadow-modal);
     display: flex;
     flex-direction: column;
-    font-family: Rubik, system-ui, sans-serif;
-    color: #1e1f23;
+    font-family: var(--curio-font-family);
+    color: var(--curio-text-primary);
     outline: none;
     transform: translate3d(100%, 0, 0);
     transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
@@ -80,27 +80,28 @@
     min-height: 0;
     overflow-y: auto;
     padding: 16px;
+    background: var(--curio-page-bg);
 }
 
 .sectionLabel {
-    margin: 0 0 10px;
-    font-size: 0.6875rem;
+    margin: 4px 0 12px;
+    font-size: var(--curio-font-size-xs);
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: #999999;
+    color: var(--curio-text-muted);
 }
 
 .cardList {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    margin-bottom: 20px;
+    margin-bottom: 24px;
 }
 
 .empty {
-    color: #7a786d;
+    color: var(--curio-text-muted);
     text-align: center;
-    padding: 24px 12px;
-    font-size: 0.8125rem;
+    padding: 32px 12px;
+    font-size: var(--curio-font-size-md);
 }

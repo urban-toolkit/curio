@@ -1,22 +1,23 @@
 /* Dock palette (dark panel) */
 .pillDock {
     flex-shrink: 0;
-    font-size: 9px;
+    font-family: var(--curio-font-family);
+    font-size: 10px;
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: rgba(251, 170, 105, 0.95);
-    background: rgba(251, 170, 105, 0.12);
-    border: 1px solid rgba(251, 170, 105, 0.38);
-    border-radius: 999px;
+    color: var(--curio-accent-sky-bg);
+    background: rgba(53, 103, 199, 0.18);
+    border: 1px solid rgba(53, 103, 199, 0.5);
+    border-radius: var(--curio-radius-pill);
     padding: 3px 9px;
     cursor: pointer;
     line-height: 1.15;
 }
 
 .pillDock:hover:not(:disabled) {
-    background: rgba(251, 170, 105, 0.22);
-    border-color: rgba(251, 170, 105, 0.55);
+    background: rgba(53, 103, 199, 0.28);
+    border-color: var(--curio-accent-sky-fg);
 }
 
 .pillDock:disabled {
@@ -26,14 +27,15 @@
 
 .badgeDock {
     flex-shrink: 0;
-    font-size: 9px;
+    font-family: var(--curio-font-family);
+    font-size: 10px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: rgba(255, 255, 255, 0.42);
+    color: rgba(255, 255, 255, 0.5);
     background: rgba(255, 255, 255, 0.06);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 999px;
+    border-radius: var(--curio-radius-pill);
     padding: 3px 9px;
     line-height: 1.15;
     cursor: default;
@@ -43,22 +45,23 @@
 /* Nodes hub rail (light) */
 .pillHub {
     flex-shrink: 0;
-    font-size: 9px;
+    font-family: var(--curio-font-family);
+    font-size: 10px;
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: #b8560f;
-    background: rgba(251, 170, 105, 0.18);
-    border: 1px solid rgba(251, 170, 105, 0.42);
-    border-radius: 999px;
+    color: var(--curio-accent-sky-fg);
+    background: var(--curio-accent-sky-bg);
+    border: 1px solid rgba(53, 103, 199, 0.4);
+    border-radius: var(--curio-radius-pill);
     padding: 3px 9px;
     cursor: pointer;
     line-height: 1.15;
 }
 
 .pillHub:hover:not(:disabled) {
-    background: rgba(251, 170, 105, 0.28);
-    border-color: rgba(200, 120, 50, 0.55);
+    background: rgba(53, 103, 199, 0.25);
+    border-color: var(--curio-accent-sky-fg);
 }
 
 .pillHub:disabled {
@@ -68,14 +71,15 @@
 
 .badgeHub {
     flex-shrink: 0;
-    font-size: 9px;
+    font-family: var(--curio-font-family);
+    font-size: 10px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: #7a786d;
-    background: #f3f1e6;
-    border: 1px solid #eceadf;
-    border-radius: 999px;
+    color: var(--curio-text-muted);
+    background: var(--curio-page-bg);
+    border: 1px solid var(--curio-border);
+    border-radius: var(--curio-radius-pill);
     padding: 3px 9px;
     line-height: 1.15;
     cursor: default;

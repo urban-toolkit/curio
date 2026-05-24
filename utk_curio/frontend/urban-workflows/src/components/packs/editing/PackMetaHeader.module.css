@@ -3,31 +3,32 @@
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+  font-family: var(--curio-font-family);
 }
 
 .categoryBadge {
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #fbaa69;
-  background-color: rgba(251, 170, 105, 0.14);
-  padding: 2px 6px;
-  border-radius: 8px;
+  color: var(--curio-accent-peach-fg);
+  background-color: var(--curio-accent-peach-bg);
+  padding: 2px 8px;
+  border-radius: var(--curio-radius-pill);
   line-height: 1.15;
   white-space: nowrap;
 }
 
 .packBadge {
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #628ef4;
-  background-color: rgba(98, 142, 244, 0.16);
-  border: 1px solid rgba(98, 142, 244, 0.45);
-  border-radius: 8px;
-  padding: 2px 6px;
+  color: var(--curio-accent-sky-fg);
+  background-color: var(--curio-accent-sky-bg);
+  border: 1px solid rgba(53, 103, 199, 0.4);
+  border-radius: var(--curio-radius-pill);
+  padding: 2px 8px;
   line-height: 1.15;
   white-space: nowrap;
   cursor: pointer;
@@ -35,11 +36,11 @@
 }
 
 .packBadge:hover {
-  background-color: rgba(98, 142, 244, 0.28);
-  border-color: rgba(98, 142, 244, 0.75);
+  background-color: rgba(53, 103, 199, 0.25);
+  border-color: var(--curio-accent-sky-fg);
 }
 
 .packBadge:focus-visible {
-  outline: 2px solid rgba(98, 142, 244, 0.65);
+  outline: 2px solid var(--curio-accent-sky-fg);
   outline-offset: 1px;
 }

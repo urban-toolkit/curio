@@ -4,7 +4,10 @@
     flex-shrink: 0;
     display: flex;
     gap: 10px;
-    padding: 0 16px 12px;
+    padding: 12px 16px;
+    background: var(--curio-card-bg);
+    border-bottom: 1px solid var(--curio-border);
+    font-family: var(--curio-font-family);
 }
 
 .searchWrap {
@@ -19,39 +22,45 @@
     transform: translateY(-50%);
     width: 14px;
     height: 14px;
-    color: #999999;
+    color: var(--curio-text-muted);
     pointer-events: none;
 }
 
 .searchInput {
     width: 100%;
     box-sizing: border-box;
-    height: 40px;
+    height: var(--curio-input-height);
     padding: 0 12px 0 36px;
-    border: 1px solid #e5e5e5;
-    border-radius: 4px;
-    background: #fafafa;
+    border: 1px solid var(--curio-border-strong);
+    border-radius: var(--curio-radius-md);
+    background: var(--curio-card-bg);
+    color: var(--curio-text-primary);
     font: inherit;
-    font-size: 0.8125rem;
+    font-size: var(--curio-font-size-md);
+    outline: none;
 }
 
 .searchInput::placeholder {
-    color: #999999;
+    color: var(--curio-text-muted);
+}
+
+.searchInput:focus {
+    border-color: var(--curio-top-bar-bg);
 }
 
 .sortSelect {
     flex-shrink: 0;
-    width: 100px;
-    height: 40px;
+    width: 120px;
+    height: var(--curio-input-height);
     padding: 0 28px 0 12px;
-    border: 1px solid #cccccc;
-    border-radius: 4px;
-    background: #ffffff;
+    border: 1px solid var(--curio-border-strong);
+    border-radius: var(--curio-radius-md);
+    background: var(--curio-card-bg);
+    color: var(--curio-text-primary);
     font: inherit;
-    font-size: 0.75rem;
+    font-size: var(--curio-font-size-md);
     appearance: none;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath fill='%231E1F23' d='M0 0l4 5 4-5z'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 10px center;
 }
-

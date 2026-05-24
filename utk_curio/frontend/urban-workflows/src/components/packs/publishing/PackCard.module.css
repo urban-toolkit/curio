@@ -3,20 +3,27 @@
 .card {
     display: grid;
     grid-template-columns: 72px 1fr auto;
-    gap: 12px;
+    gap: 16px;
     align-items: center;
-    padding: 12px;
-    border: 1px solid #e5e5e5;
-    border-radius: 6px;
-    background: #ffffff;
+    padding: 14px;
+    border: 1px solid var(--curio-border);
+    border-radius: var(--curio-radius-lg);
+    background: var(--curio-card-bg);
+    box-shadow: var(--curio-shadow-card);
+    font-family: var(--curio-font-family);
+    transition: box-shadow 0.15s, border-color 0.15s;
 }
 
-/* Icon tile */
+.card:hover {
+    border-color: var(--curio-border-strong);
+}
+
+/* Icon tile — accent palette mirrors the project list thumbnails */
 
 .cardIcon {
     width: 72px;
     height: 72px;
-    border-radius: 4px;
+    border-radius: var(--curio-radius-md);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -26,21 +33,18 @@
 }
 
 .cardIconWarm {
-    background: #fff8ee;
-    border: 1px solid #fbaa69;
-    color: #fbaa69;
+    background: var(--curio-accent-peach-bg);
+    color: var(--curio-accent-peach-fg);
 }
 
 .cardIconCool {
-    background: #eff6ff;
-    border: 1px solid #a6c8ff;
-    color: #3e6ab2;
+    background: var(--curio-accent-sky-bg);
+    color: var(--curio-accent-sky-fg);
 }
 
 .cardIconViolet {
-    background: #f0f4ff;
-    border: 1px solid #3e6ab2;
-    color: #3e6ab2;
+    background: var(--curio-accent-lilac-bg);
+    color: var(--curio-accent-lilac-fg);
 }
 
 /* Body */
@@ -51,15 +55,16 @@
 
 .cardTitle {
     margin: 0 0 4px;
-    font-size: 0.875rem;
-    font-weight: 700;
+    font-size: var(--curio-font-size-lg);
+    font-weight: 600;
+    color: var(--curio-text-primary);
     overflow-wrap: anywhere;
 }
 
 .cardMeta {
     margin: 0 0 8px;
-    font-size: 0.75rem;
-    color: #666666;
+    font-size: var(--curio-font-size-sm);
+    color: var(--curio-text-muted);
 }
 
 .tagRow {
@@ -71,23 +76,21 @@
 .tag {
     display: inline-block;
     padding: 2px 8px;
-    border-radius: 3px;
-    background: #f0f0f0;
-    font-size: 0.625rem;
-    color: #666666;
+    border-radius: var(--curio-radius-sm);
+    background: var(--curio-page-bg);
+    font-size: var(--curio-font-size-xs);
+    color: var(--curio-text-secondary);
 }
 
 .tagUpdate {
-    background: #fff8ee;
-    border: 1px solid #fbaa69;
-    color: #7a4a12;
+    background: var(--curio-accent-peach-bg);
+    color: var(--curio-accent-peach-fg);
     font-weight: 700;
 }
 
 .tagChannel {
-    background: #eef3ff;
-    border: 1px solid #a6c8ff;
-    color: #2a4a8d;
+    background: var(--curio-accent-sky-bg);
+    color: var(--curio-accent-sky-fg);
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -101,7 +104,7 @@
     flex-direction: column;
     align-items: stretch;
     gap: 6px;
-    min-width: 88px;
+    min-width: 96px;
 }
 
 .cardSecondaryActions {
@@ -111,16 +114,16 @@
 }
 
 .btnInstall {
-    min-width: 88px;
-    height: 32px;
-    padding: 0 12px;
+    min-width: 96px;
+    height: var(--curio-input-height);
+    padding: 0 16px;
     border: none;
-    border-radius: 4px;
-    background: #1e1f23;
-    color: #ffffff;
+    border-radius: var(--curio-radius-md);
+    background: var(--curio-top-bar-bg);
+    color: var(--curio-text-on-dark);
     font: inherit;
-    font-size: 0.8125rem;
-    font-weight: 700;
+    font-size: var(--curio-font-size-lg);
+    font-weight: 600;
     cursor: pointer;
 }
 
@@ -129,12 +132,12 @@
 }
 
 .btnInstallAccent {
-    background: #fbaa69;
-    color: #1e1f23;
+    background: var(--curio-accent-peach-fg);
+    color: var(--curio-card-bg);
 }
 
 .btnInstallAccent:hover:not(:disabled) {
-    background: #fb9a4f;
+    background: #d05a30;
 }
 
 .btnInstall:disabled,
@@ -144,16 +147,16 @@
 }
 
 .btnInstalled {
-    min-width: 104px;
-    height: 32px;
-    padding: 0 12px 0 28px;
-    border: 1px solid #1e1f23;
-    border-radius: 4px;
-    background: #ffffff;
-    color: #1e1f23;
+    min-width: 110px;
+    height: var(--curio-input-height);
+    padding: 0 14px 0 28px;
+    border: 1px solid var(--curio-border-strong);
+    border-radius: var(--curio-radius-md);
+    background: var(--curio-card-bg);
+    color: var(--curio-text-primary);
     font: inherit;
-    font-size: 0.8125rem;
-    font-weight: 700;
+    font-size: var(--curio-font-size-lg);
+    font-weight: 600;
     cursor: default;
     position: relative;
 }
@@ -161,31 +164,31 @@
 .btnInstalled::before {
     content: "";
     position: absolute;
-    left: 12px;
+    left: 14px;
     top: 50%;
     transform: translateY(-50%);
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: #2ba677;
+    background: var(--curio-accent-mint-fg);
 }
 
 .btnSecondary,
 .btnSecondaryDanger {
-    min-width: 88px;
-    height: 28px;
-    padding: 0 10px;
-    border-radius: 4px;
-    background: #ffffff;
+    min-width: 96px;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: var(--curio-radius-md);
+    background: var(--curio-card-bg);
     font: inherit;
-    font-size: 0.75rem;
-    font-weight: 700;
+    font-size: var(--curio-font-size-sm);
+    font-weight: 500;
     cursor: pointer;
 }
 
 .btnSecondary {
-    border: 1px solid #c8c8c8;
-    color: #1e1f23;
+    border: 1px solid var(--curio-border-strong);
+    color: var(--curio-text-primary);
 }
 
 .btnSecondary:hover:not(:disabled) {
@@ -194,13 +197,13 @@
 }
 
 .btnSecondaryDanger {
-    border: 1px solid rgba(180, 60, 50, 0.45);
-    color: #8b2e26;
+    border: 1px solid rgba(255, 107, 107, 0.5);
+    color: var(--curio-danger-strong);
 }
 
 .btnSecondaryDanger:hover:not(:disabled) {
-    border-color: rgba(180, 60, 50, 0.75);
-    background: rgba(180, 60, 50, 0.08);
+    border-color: var(--curio-danger);
+    background: rgba(255, 107, 107, 0.08);
 }
 
 .btnSecondary:disabled,
@@ -208,4 +211,3 @@
     opacity: 0.5;
     cursor: not-allowed;
 }
-

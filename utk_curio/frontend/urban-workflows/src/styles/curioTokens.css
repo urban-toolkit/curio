@@ -1,0 +1,66 @@
+/*
+ * Curio design tokens.
+ *
+ * Single source of truth for the colors / typography / spacing used by
+ * the warehouse drawer, the Node Factory wizard, and the supporting
+ * modals (NodeKindConfig, NodeSaveAs, ConfirmDestructive, etc.).
+ *
+ * Lifted from the canonical user-facing surface: the project list at
+ * `src/pages/projects/ProjectsList.tsx`. Keep these two in sync — if a
+ * token here changes, the project list should change with it.
+ */
+
+:root {
+  /* ── Surfaces ───────────────────────────────────────────────────────── */
+  --curio-page-bg: #f0f0f0;
+  --curio-card-bg: #ffffff;
+  --curio-top-bar-bg: #1E1F23;
+  --curio-top-bar-border: rgba(255, 255, 255, 0.08);
+
+  /* ── Text ──────────────────────────────────────────────────────────── */
+  --curio-text-primary: #1E1F23;
+  --curio-text-secondary: #6B6B76;
+  --curio-text-muted: #9E9E9E;
+  --curio-text-on-dark: #fbfcf6;
+  --curio-text-on-dark-muted: #ddd;
+
+  /* ── Strokes ───────────────────────────────────────────────────────── */
+  --curio-border: #E5E5E7;
+  --curio-border-strong: #D0D0D5;
+  --curio-border-on-dark: rgba(255, 255, 255, 0.08);
+  --curio-border-context-menu: #333;
+
+  /* ── Status ────────────────────────────────────────────────────────── */
+  --curio-danger: #ff6b6b;
+  --curio-danger-strong: #8b2e26;
+
+  /* ── Typography ────────────────────────────────────────────────────── */
+  --curio-font-family: Rubik, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --curio-font-size-xs: 11px;
+  --curio-font-size-sm: 12px;
+  --curio-font-size-md: 13px;
+  --curio-font-size-lg: 14px;
+
+  /* ── Geometry ──────────────────────────────────────────────────────── */
+  --curio-radius-sm: 4px;
+  --curio-radius-md: 6px;
+  --curio-radius-lg: 8px;
+  --curio-radius-pill: 9999px;
+  --curio-top-bar-height: 65px;
+  --curio-input-height: 38px;
+
+  /* ── Effects ───────────────────────────────────────────────────────── */
+  --curio-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --curio-shadow-modal: 0 12px 32px rgba(0, 0, 0, 0.18);
+  --curio-shadow-context-menu: 0 4px 12px rgba(0, 0, 0, 0.3);
+
+  /* ── Accent palette (Project list thumbnail accents) ───────────────── */
+  --curio-accent-peach-bg: #FFE3DA;
+  --curio-accent-peach-fg: #E86A3C;
+  --curio-accent-sky-bg:   #DCE8FF;
+  --curio-accent-sky-fg:   #3567C7;
+  --curio-accent-mint-bg:  #DFF2E1;
+  --curio-accent-mint-fg:  #2F8F4A;
+  --curio-accent-lilac-bg: #EADCFB;
+  --curio-accent-lilac-fg: #7A4BD1;
+}

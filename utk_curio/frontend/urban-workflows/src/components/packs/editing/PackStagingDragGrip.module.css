@@ -1,14 +1,13 @@
 .grip {
   cursor: grab;
-  font-size: 11px;
+  font-size: var(--curio-font-size-xs);
   flex-shrink: 0;
 }
 
 .icon {
-  color: #888787;
+  color: var(--curio-text-muted);
 }
 
 .iconHighlighted {
-  color: rgb(251, 252, 246);
+  color: var(--curio-text-on-dark);
 }
-
