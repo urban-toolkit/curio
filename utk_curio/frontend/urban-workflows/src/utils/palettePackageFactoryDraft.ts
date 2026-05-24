@@ -508,7 +508,7 @@ function packageKindPayloadToKindDraft(kind: PackageKindPayload, getTemplates?: 
 
 /** Factory draft from ``GET /api/packages`` row — used for palette “publish to catalog”. */
 export function draftFromInstalledPackagePayload(
-  package: PackagePayload,
+  pkg: PackagePayload,
   getTemplates?: TemplatesLookup,
 ): Draft {
   const d = makeDraft();
@@ -519,7 +519,7 @@ export function draftFromInstalledPackagePayload(
   d.publisher = pkg.publisher;
   d.description = pkg.description;
   d.license = pkg.license ?? "MIT";
-  d.permissions = [...package.permissions];
+  d.permissions = [...pkg.permissions];
   d.pythonDeps = depsRows(pkg.dependencies.python ?? {});
   d.jsDeps = depsRows(pkg.dependencies.js ?? {});
   d.packageDeps = depsRows(pkg.dependencies.packages ?? {});
@@ -610,7 +610,7 @@ export function isForkFromInstalledDraft(draft: Draft): boolean {
  * so factory install never overwrites the source directory.
  */
 export function draftForkFromInstalledPackagePayload(
-  package: PackagePayload,
+  pkg: PackagePayload,
   getTemplates?: TemplatesLookup,
 ): Draft {
   const d = draftFromInstalledPackagePayload(pkg, getTemplates);

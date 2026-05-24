@@ -210,8 +210,8 @@ function buildDescriptor(pkg: RawPackage, kind: RawPackageKind, order: number): 
       ...(pkg.lineage
         ? {
             lineage: {
-              forkedFrom: { ...package.lineage.forkedFrom },
-              root: { ...package.lineage.root },
+              forkedFrom: { ...pkg.lineage.forkedFrom },
+              root: { ...pkg.lineage.root },
             },
           }
         : {}),
