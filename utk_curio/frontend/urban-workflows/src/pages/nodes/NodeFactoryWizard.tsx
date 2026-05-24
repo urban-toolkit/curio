@@ -1031,7 +1031,7 @@ const Step5Publish: React.FC<{
 
       <div className={styles.footer}>
         <button className={styles.ghostButton} onClick={onBuild} disabled={busy}>
-          {busy ? "Working…" : "Export .curio-package"}
+          {busy ? "Working…" : "Export .curio.zip"}
         </button>
         <button
           className={styles.actionButton}

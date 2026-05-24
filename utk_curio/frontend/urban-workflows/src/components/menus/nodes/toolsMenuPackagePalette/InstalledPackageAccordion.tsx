@@ -141,7 +141,7 @@ export const InstalledPackageAccordion = memo(function InstalledPackageAccordion
                             type="button"
                             className={packageStyles.packageSummaryExportBtn}
                             title="Export package"
-                            aria-label={`Export ${group.name} as a .curio-package archive`}
+                            aria-label={`Export ${group.name} as a .curio.zip archive`}
                             data-curio-package-palette-node-action="true"
                             onMouseDown={(e) => {
                                 e.stopPropagation();

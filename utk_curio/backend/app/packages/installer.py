@@ -1,6 +1,6 @@
-"""Sideload installer for ``.curio-package`` archives.
+"""Sideload installer for ``.curio.zip`` archives.
 
-This module materialises validated ``.curio-package`` extracts into:
+This module materialises validated ``.curio.zip`` extracts into:
 
 * **Per-user store:** ``<CURIO_LAUNCH_CWD>/.curio/users/<u>/packages/<packageId>@<major>/``
   (everyday install paths).
@@ -425,7 +425,7 @@ def install_packageage_from_archive(
     *,
     replace: bool = False,
 ) -> InstallResult:
-    """Install (or replace) a ``.curio-package`` archive for *user_key*.
+    """Install (or replace) a ``.curio.zip`` archive for *user_key*.
 
     Steps:
 
@@ -654,7 +654,7 @@ def install_packageage_from_directory(
 
 
 def export_packageage_archive(user_key: str, dir_name: str) -> bytes:
-    """Repackage an installed package back into a deterministic ``.curio-package`` zip.
+    """Repackage an installed package back into a deterministic ``.curio.zip`` zip.
 
     Useful for the factory ("Export package" button) and for migrating an
     installed package from one user to another. The archive layout matches

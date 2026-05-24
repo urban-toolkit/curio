@@ -55,7 +55,7 @@ def _draft(**overrides):
 
 def test_build_produces_installable_archive(tmp_curio):
     result = build_packageage_archive(_draft())
-    assert result.filename == "ai.test.demo@1-1.2.3.curio-package"
+    assert result.filename == "ai.test.demo@1-1.2.3.curio.zip"
     install_result = install_packageage_from_archive("guest", result.archive)
     assert install_result.manifest.package_id == "ai.test.demo"
     assert install_result.manifest.version == "1.2.3"

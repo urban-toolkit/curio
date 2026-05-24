@@ -1,4 +1,4 @@
-"""Node-factory builder: turn a wizard draft into a ``.curio-package`` archive.
+"""Node-factory builder: turn a wizard draft into a ``.curio.zip`` archive.
 
 The Node Factory wizard posts a single JSON draft to the backend. This
 module materialises that draft into a self-contained zip whose layout
@@ -197,10 +197,10 @@ def _add_entry(zf: zipfile.ZipFile, name: str, body: bytes) -> None:
 
 
 def build_packageage_archive(draft: dict[str, Any]) -> BuildResult:
-    """Build a deterministic ``.curio-package`` zip from *draft*.
+    """Build a deterministic ``.curio.zip`` zip from *draft*.
 
     Returns the manifest, the raw zip bytes, and a suggested filename
-    of the form ``<packageId>@<major>-<version>.curio-package``.
+    of the form ``<packageId>@<major>-<version>.curio.zip``.
 
     The function never touches the filesystem outside a temporary
     directory used by the manifest validator.
@@ -240,5 +240,5 @@ def build_packageage_archive(draft: dict[str, Any]) -> BuildResult:
         if isinstance(license_text, str) and license_text.strip():
             _add_entry(zf, "LICENSE", license_text.encode("utf-8"))
 
-    filename = f"{manifest.dir_name}-{manifest.version}.curio-package"
+    filename = f"{manifest.dir_name}-{manifest.version}.curio.zip"
     return BuildResult(manifest=manifest, archive=buf.getvalue(), filename=filename)

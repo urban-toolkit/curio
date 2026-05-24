@@ -11,7 +11,7 @@ export interface DrawerFooterProps {
 
 /**
  * Sticky footer rendered at the bottom of the Node Warehouse drawer.
- * Provides a hidden file input for sideloading ``.curio-package`` archives
+ * Provides a hidden file input for sideloading ``.curio.zip`` archives
  * and a primary CTA that opens the Node Factory wizard modal for authoring
  * a new package from scratch.
  */
@@ -23,7 +23,7 @@ export const DrawerFooter: React.FC<DrawerFooterProps> = ({ busy, onSideload, on
       <input
         ref={fileInputRef}
         type="file"
-        accept=".curio-package,application/zip"
+        accept=".curio.zip,.zip,application/zip"
         hidden
         onChange={(e) => {
           const file = e.target.files?.[0];

@@ -204,7 +204,7 @@ async function uploadArchive(
 }
 
 /**
- * Trigger a browser download of an installed package as a ``.curio-package``
+ * Trigger a browser download of an installed package as a ``.curio.zip``
  * archive. The blob never lives in JS memory longer than the click
  * handler — we hand it straight to ``URL.createObjectURL``.
  */
@@ -221,7 +221,7 @@ async function downloadArchive(dirName: string): Promise<void> {
   const objUrl = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = objUrl;
-  a.download = `${dirName}.curio-package`;
+  a.download = `${dirName}.curio.zip`;
   a.click();
   URL.revokeObjectURL(objUrl);
 }
@@ -246,7 +246,7 @@ async function factoryBuild(draft: unknown): Promise<{ blob: Blob; filename: str
   }
   const dispo = res.headers.get("Content-Disposition") || "";
   const match = /filename="?([^";]+)"?/.exec(dispo);
-  const filename = match?.[1] ?? "package.curio-package";
+  const filename = match?.[1] ?? "package.curio.zip";
   return { blob: await res.blob(), filename };
 }
 
@@ -265,7 +265,7 @@ export const packagesApi = {
     return apiFetch("/api/packages/catalog");
   },
 
-  /** Sideload a ``.curio-package`` archive (multipart). */
+  /** Sideload a ``.curio.zip`` archive (multipart). */
   uploadArchive(file: Blob, filename: string, opts: { replace?: boolean } = {}): Promise<InstallResponse> {
     return uploadArchive(file, filename, !!opts.replace);
   },

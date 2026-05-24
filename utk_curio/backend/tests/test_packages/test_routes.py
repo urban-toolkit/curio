@@ -171,7 +171,7 @@ def test_upload_then_list_then_delete(client, user_and_token, tmp_curio):
     archive = _archive_from_draft(_draft())
     resp = client.post(
         "/api/packages/upload",
-        data={"file": (io.BytesIO(archive), "factory.curio-package")},
+        data={"file": (io.BytesIO(archive), "factory.curio.zip")},
         headers=_multipart_auth(token),
         content_type="multipart/form-data",
     )
@@ -195,13 +195,13 @@ def test_upload_duplicate_without_replace_is_rejected(client, user_and_token, tm
     archive = _archive_from_draft(_draft())
     client.post(
         "/api/packages/upload",
-        data={"file": (io.BytesIO(archive), "x.curio-package")},
+        data={"file": (io.BytesIO(archive), "x.curio.zip")},
         headers=_multipart_auth(token),
         content_type="multipart/form-data",
     )
     resp = client.post(
         "/api/packages/upload",
-        data={"file": (io.BytesIO(archive), "x.curio-package")},
+        data={"file": (io.BytesIO(archive), "x.curio.zip")},
         headers=_multipart_auth(token),
         content_type="multipart/form-data",
     )
@@ -214,7 +214,7 @@ def test_upload_replace(client, user_and_token, tmp_curio):
     archive = _archive_from_draft(_draft())
     client.post(
         "/api/packages/upload",
-        data={"file": (io.BytesIO(archive), "x.curio-package")},
+        data={"file": (io.BytesIO(archive), "x.curio.zip")},
         headers=_multipart_auth(token),
         content_type="multipart/form-data",
     )
@@ -223,7 +223,7 @@ def test_upload_replace(client, user_and_token, tmp_curio):
     archive2 = _archive_from_draft(bumped)
     resp = client.post(
         "/api/packages/upload?replace=true",
-        data={"file": (io.BytesIO(archive2), "x.curio-package")},
+        data={"file": (io.BytesIO(archive2), "x.curio.zip")},
         headers=_multipart_auth(token),
         content_type="multipart/form-data",
     )
@@ -246,7 +246,7 @@ def test_export_after_install(client, user_and_token, tmp_curio):
     archive = _archive_from_draft(_draft())
     client.post(
         "/api/packages/upload",
-        data={"file": (io.BytesIO(archive), "x.curio-package")},
+        data={"file": (io.BytesIO(archive), "x.curio.zip")},
         headers=_multipart_auth(token),
         content_type="multipart/form-data",
     )

@@ -1,7 +1,7 @@
 """Shared fixtures for package tests.
 
 Mirrors ``test_projects/conftest.py`` so the same auth/DB fixtures work
-here, plus helpers for building in-memory ``.curio-package`` zips and
+here, plus helpers for building in-memory ``.curio.zip`` zips and
 for materialising synthetic packages in the user's package store.
 """
 from __future__ import annotations
@@ -125,7 +125,7 @@ def _manifest_dict(
 
 @pytest.fixture()
 def make_archive():
-    """Factory: build a ``.curio-package`` zip from a manifest + sources map."""
+    """Factory: build a ``.curio.zip`` zip from a manifest + sources map."""
     def _build(
         manifest: dict | None = None,
         sources: dict[str, dict[str, str]] | None = None,

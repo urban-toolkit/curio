@@ -78,7 +78,7 @@ Curio is a framework for collaborative urban visual analytics that uses a datafl
     </td>
     <td align="center" width="33%">
       <strong>Reproducible & shareable</strong><br/>
-      <sub>Versioned, forkable <code>.curio-package</code> archives pin a workflow's exact node set</sub>
+      <sub>Versioned, forkable <code>.curio.zip</code> archives pin a workflow's exact node set</sub>
     </td>
   </tr>
 </table>
@@ -92,7 +92,7 @@ Curio is a framework for collaborative urban visual analytics that uses a datafl
 A lot has landed since v0.5. Highlights:
 
 - 🌐 **Hosted instances** — Public deployments at [curio.urbantk.org](https://curio.urbantk.org) (stable) and [curio-dev.urbantk.org](https://curio-dev.urbantk.org) (dev), plus a [deployment guide](docs/DEPLOYMENT.md) for self-hosting behind HTTPS.
-- 📦 **Node Warehouse** — Every node now lives in a manifest-driven package, and you can freely mix built-ins, community packages, and your own in a single dataflow. Install ready-made packages from the catalog with one click, author new ones via the Node Factory without leaving the canvas, import `.curio-package` archives shared by collaborators, or fork an existing package to extend it. Packages are **versioned and pinnable**, so a workflow can declare the exact node set it depends on — reproducibility for shared research artefacts. See the [Node Warehouse guide](docs/WAREHOUSE.md).
+- 📦 **Node Warehouse** — Every node now lives in a manifest-driven package, and you can freely mix built-ins, community packages, and your own in a single dataflow. Install ready-made packages from the catalog with one click, author new ones via the Node Factory without leaving the canvas, import `.curio.zip` archives shared by collaborators, or fork an existing package to extend it. Packages are **versioned and pinnable**, so a workflow can declare the exact node set it depends on — reproducibility for shared research artefacts. See the [Node Warehouse guide](docs/WAREHOUSE.md).
 - 🤖 **Per-user LLM configuration** — Connect Curio to OpenAI, Anthropic, Gemini, or a custom endpoint, configurable per user.
 - 🗺️ **Autark integration** — New `AutkMap` and `AutkPlot` node types, with JS Computation I/O routed through Python DuckDB.
 - ⚡ **JavaScript Computation node** — Run Node.js code in a sandbox subprocess alongside Python nodes.

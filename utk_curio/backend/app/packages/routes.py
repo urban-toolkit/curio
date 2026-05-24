@@ -323,13 +323,13 @@ def list_catalog_packageages():
 
 
 # ---------------------------------------------------------------------------
-# POST /api/packages/upload — sideload a .curio-package
+# POST /api/packages/upload — sideload a .curio.zip
 # ---------------------------------------------------------------------------
 
 @packages_bp.route("/upload", methods=["POST"])
 @require_auth
 def upload_packageage():
-    """Sideload a ``.curio-package`` zip for the current user.
+    """Sideload a ``.curio.zip`` zip for the current user.
 
     The archive is read into memory once (capped by the installer at
     128 MiB total uncompressed). Multipart form field name is ``file``
@@ -337,7 +337,7 @@ def upload_packageage():
     """
     user_key = _user_dir_key(g.user)
     if "file" not in request.files:
-        return _error("missing 'file' form field with a .curio-package archive")
+        return _error("missing 'file' form field with a .curio.zip archive")
     upload = request.files["file"]
     if not upload.filename:
         return _error("uploaded file is empty (no filename)")
@@ -465,7 +465,7 @@ def download_packageage_archive(dir_name: str):
         return _error(str(exc), 404)
     response = Response(body, mimetype="application/zip")
     response.headers["Content-Disposition"] = (
-        f'attachment; filename="{dir_name}.curio-package"'
+        f'attachment; filename="{dir_name}.curio.zip"'
     )
     return response
 
@@ -537,7 +537,7 @@ def factory_publish_catalog():
 @packages_bp.route("/factory/build", methods=["POST"])
 @require_auth
 def factory_build():
-    """Validate a draft and return the produced ``.curio-package`` bytes."""
+    """Validate a draft and return the produced ``.curio.zip`` bytes."""
     draft = request.get_json(silent=True) or {}
     try:
         result = build_packageage_archive(draft)
