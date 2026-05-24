@@ -50,7 +50,18 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
   const [cardActionDir, setCardActionDir] = useState<string | null>(null);
   const [installCandidate, setInstallCandidate] = useState<PackPayload | null>(null);
   const [conflictReport, setConflictReport] = useState<ResolveConflict[] | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const installedByDirRef = useRef<Map<string, PackPayload>>(new Map());
+
+  /** Pulls the friendliest message off an unknown error and surfaces it as a banner. */
+  const reportActionError = useCallback((label: string, err: unknown) => {
+    const status = (err as { status?: number } | null)?.status;
+    const body = (err as { body?: { error?: string } } | null)?.body;
+    const message = (err as { message?: string } | null)?.message;
+    const detail = body?.error ?? message ?? (status ? `HTTP ${status}` : "unknown error");
+    setActionError(`${label}: ${detail}`);
+    console.warn(`[NodeWarehouseDrawer] ${label}:`, err);
+  }, []);
 
   const installedDirs = useMemo(() => new Set(installed.map((p) => p.dirName)), [installed]);
   const catalogByDir = useMemo(() => new Map(catalog.map((p) => [p.dirName, p])), [catalog]);
@@ -70,10 +81,10 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
   }, []);
 
   useEffect(() => {
-    void reload().catch(() => {
-      /* drawer stays usable with empty lists */
+    void reload().catch((err) => {
+      reportActionError("Couldn't load catalog", err);
     });
-  }, [reload]);
+  }, [reload, reportActionError]);
 
   useEffect(() => {
     if (!presented) return;
@@ -154,34 +165,41 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
   const confirmCatalogInstall = useCallback(async () => {
     if (!installCandidate) return;
     setBusy(true);
+    setActionError(null);
     try {
       await packsApi.installFromCatalog(installCandidate.dirName);
       await refreshPackRegistry();
       await reload();
       setInstallCandidate(null);
       setConflictReport(null);
+    } catch (err) {
+      reportActionError(`Couldn't install ${installCandidate.name}`, err);
     } finally {
       setBusy(false);
     }
-  }, [installCandidate, reload]);
+  }, [installCandidate, reload, reportActionError]);
 
   const onPickArchive = useCallback(
     async (file: File) => {
       setBusy(true);
+      setActionError(null);
       try {
         await packsApi.uploadArchive(file, file.name);
         await refreshPackRegistry();
         await reload();
+      } catch (err) {
+        reportActionError(`Couldn't sideload ${file.name}`, err);
       } finally {
         setBusy(false);
       }
     },
-    [reload],
+    [reload, reportActionError],
   );
 
   const onUninstall = useCallback(async (pack: PackPayload) => {
     if (!window.confirm(`Uninstall ${pack.name} (${pack.dirName}) from this workspace?`)) return;
     setCardActionDir(pack.dirName);
+    setActionError(null);
     try {
       try {
         await packsApi.uninstall(pack.dirName);
@@ -191,10 +209,12 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
       }
       await refreshPackRegistry();
       await reload();
+    } catch (err) {
+      reportActionError(`Couldn't uninstall ${pack.name}`, err);
     } finally {
       setCardActionDir(null);
     }
-  }, [reload]);
+  }, [reload, reportActionError]);
 
   const onUnpublishFromCatalog = useCallback(
     async (pack: PackPayload) => {
@@ -206,36 +226,47 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
         return;
       }
       setCardActionDir(pack.dirName);
+      setActionError(null);
       try {
         await packsApi.unpublishFromCatalog(pack.dirName);
         await reload();
+      } catch (err) {
+        reportActionError(`Couldn't unpublish ${pack.name}`, err);
       } finally {
         setCardActionDir(null);
       }
     },
-    [reload],
+    [reload, reportActionError],
   );
 
   const onExport = useCallback(async (pack: PackPayload) => {
-    await packsApi.download(pack.dirName);
-  }, []);
+    try {
+      await packsApi.download(pack.dirName);
+    } catch (err) {
+      reportActionError(`Couldn't export ${pack.name}`, err);
+    }
+  }, [reportActionError]);
 
   const onTogglePaletteDock = useCallback(async (pack: PackPayload) => {
     const nextHidden = !(pack.paletteDock?.hiddenFromForkPaletteDock === true);
     setPaletteDockDirBusy(pack.dirName);
+    setActionError(null);
     try {
       await packsApi.packPaletteDockVisible(pack.dirName, !nextHidden);
       await refreshPackRegistry();
       await reload();
+    } catch (err) {
+      reportActionError(`Couldn't update palette dock visibility for ${pack.name}`, err);
     } finally {
       setPaletteDockDirBusy(null);
     }
-  }, [reload]);
+  }, [reload, reportActionError]);
 
   const onPublishToCatalog = useCallback(async (dirName: string) => {
     const row = installedByDirRef.current.get(dirName);
     if (!row) return;
     setPublishingPackKey(dirName);
+    setActionError(null);
     try {
       const draft = draftFromInstalledPackPayload(row);
       await packsApi.factoryPublishCatalog({
@@ -243,10 +274,12 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
         replace: true,
       });
       await reload();
+    } catch (err) {
+      reportActionError(`Couldn't publish ${row.name}`, err);
     } finally {
       setPublishingPackKey(null);
     }
-  }, [reload]);
+  }, [reload, reportActionError]);
 
   const myPacksListProps = {
     installed: tab === "installed" ? filteredInstalled : installed,
@@ -313,6 +346,19 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
           />
 
           <div className={styles.scrollBody}>
+            {actionError ? (
+              <div className={styles.errorBanner} role="alert">
+                <span className={styles.errorBannerText}>{actionError}</span>
+                <button
+                  type="button"
+                  className={styles.errorBannerDismiss}
+                  aria-label="Dismiss error"
+                  onClick={() => setActionError(null)}
+                >
+                  ×
+                </button>
+              </div>
+            ) : null}
             {tab === "installed" ? (
               filteredInstalled.length === 0 ? (
                 <div className={styles.empty}>No packs match the current filter.</div>

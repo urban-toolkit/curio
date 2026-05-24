@@ -105,3 +105,41 @@
     padding: 32px 12px;
     font-size: var(--curio-font-size-md);
 }
+
+/* ── Action error banner ───────────────────────────────────────────────── */
+
+.errorBanner {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    margin: 0 0 16px;
+    background: rgba(255, 107, 107, 0.1);
+    border: 1px solid var(--curio-danger);
+    border-radius: var(--curio-radius-md);
+    color: var(--curio-danger-strong);
+    font-size: var(--curio-font-size-md);
+    font-family: var(--curio-font-family);
+}
+
+.errorBannerText {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.errorBannerDismiss {
+    flex-shrink: 0;
+    background: transparent;
+    border: none;
+    color: var(--curio-danger-strong);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+    margin: -2px -2px 0 0;
+}
+
+.errorBannerDismiss:hover {
+    color: var(--curio-danger);
+}
