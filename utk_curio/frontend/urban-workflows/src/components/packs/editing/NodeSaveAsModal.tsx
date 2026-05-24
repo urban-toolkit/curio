@@ -46,7 +46,7 @@ export function NodeSaveAsModal({
   nodeId: string;
   onClose: () => void;
 }) {
-  const { getNodes } = useReactFlow();
+  const { getNodes, setNodes } = useReactFlow();
   const { getTemplates } = useTemplateContext();
   const { showToast } = useToastContext();
   const [targetKey, setTargetKey] = useState<string>(SAVE_AS_NEW_PACK);
@@ -62,10 +62,12 @@ export function NodeSaveAsModal({
 
   const packOptions = useMemo(() => {
     const packTypes = getPaletteNodeTypes().filter((d) => d.source === "pack");
-    return filterForkParentHiddenPalettePackGroups(groupPalettePacks(packTypes)).map((g) => ({
-      sectionKey: g.key,
-      displayName: g.descriptors[0]?.pack?.name?.trim() || g.label,
-    }));
+    return filterForkParentHiddenPalettePackGroups(groupPalettePacks(packTypes))
+      .filter((g) => g.descriptors[0]?.pack?.readOnly !== true)
+      .map((g) => ({
+        sectionKey: g.key,
+        displayName: g.descriptors[0]?.pack?.name?.trim() || g.label,
+      }));
   }, [registryKey]);
 
   const canvasNode = useMemo(() => {
@@ -135,8 +137,22 @@ export function NodeSaveAsModal({
         return;
       }
 
-      await packsApi.factoryInstall(buildFactoryInstallEnvelope(draft, replace));
+      const result = await packsApi.factoryInstall(buildFactoryInstallEnvelope(draft, replace));
       await refreshPackRegistry();
+      // Rebind the canvas node to the new/updated kind so re-opening Settings
+      // resolves to the new descriptor (e.g. its readOnly flag), not the
+      // source built-in. Match by label — Save-As preserves it.
+      const matchNorm = normalizeKindLabel(nodeLabel);
+      const newKind = result.pack.kinds.find((k) => normalizeKindLabel(k.label) === matchNorm);
+      if (newKind) {
+        setNodes((nodes) =>
+          nodes.map((n) =>
+            String(n.id) === nodeId
+              ? { ...n, data: { ...n.data, nodeType: newKind.id } }
+              : n,
+          ),
+        );
+      }
       showToast(
         replacedExistingKind
           ? `Replaced "${nodeLabel}" in the pack.`
@@ -149,7 +165,7 @@ export function NodeSaveAsModal({
     } finally {
       setBusy(false);
     }
-  }, [busy, canvasNode, getTemplates, newPackName, nodeLabel, onClose, showToast, targetKey]);
+  }, [busy, canvasNode, getTemplates, newPackName, nodeId, nodeLabel, onClose, setNodes, showToast, targetKey]);
 
   if (!show) return null;
 

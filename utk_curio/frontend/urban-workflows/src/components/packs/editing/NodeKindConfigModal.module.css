@@ -18,6 +18,26 @@
     color: var(--curio-text-primary);
 }
 
+.titleRow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.readOnlyBadge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--curio-surface-muted, rgba(255, 255, 255, 0.08));
+    color: var(--curio-text-secondary);
+    font-size: var(--curio-font-size-xs);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
 .subtitle {
     margin: 0 0 16px;
     font-size: var(--curio-font-size-md);

@@ -79,13 +79,19 @@ export function NodeKindConfigModal({
 
   if (!show || !desc || !config) return null;
 
+  const isReadOnly = desc.pack?.readOnly === true;
+
   return (
     <ModalShell preservePackPaletteOpen onClose={onClose} size="large" layer="overlay">
       <div className={styles.content}>
-        <h2 className={styles.title}>Node configuration</h2>
+        <div className={styles.titleRow}>
+          <h2 className={styles.title}>Node settings</h2>
+          {isReadOnly && <span className={styles.readOnlyBadge}>Read-only</span>}
+        </div>
         <p className={styles.subtitle}>
-          Edit kind metadata, ports, and editor tabs for this canvas node. Changes apply when you
-          Save As or Save draft in the packs palette.
+          {isReadOnly
+            ? "This node belongs to a read-only pack. Save your changes as a new pack."
+            : "Edit kind metadata, ports, and editor tabs. Saving opens the Save As flow to commit the changes into a pack."}
         </p>
 
         <p className={styles.sectionTitle}>Identity</p>
@@ -214,7 +220,7 @@ export function NodeKindConfigModal({
             Cancel
           </button>
           <button type="button" className={styles.primaryBtn} onClick={() => onSave(config)}>
-            Save configuration
+            Save as pack node…
           </button>
         </div>
       </div>

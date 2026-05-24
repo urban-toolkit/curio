@@ -72,32 +72,6 @@
     flex-shrink: 0;
 }
 
-.saveAsBtn {
-    flex-shrink: 0;
-    border: 1px solid var(--curio-border-strong);
-    border-radius: var(--curio-radius-sm);
-    background: var(--curio-card-bg);
-    color: var(--curio-text-primary);
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    padding: 2px 6px;
-    cursor: pointer;
-    line-height: 1.2;
-    white-space: nowrap;
-}
-
-.saveAsBtn:hover {
-    background: var(--curio-page-bg);
-}
-
-.saveAsBtnHighlighted {
-    color: var(--curio-text-on-dark);
-    border-color: rgba(255, 255, 255, 0.35);
-    background: rgba(255, 255, 255, 0.1);
-}
-
 .configBtn {
     flex-shrink: 0;
     display: inline-flex;

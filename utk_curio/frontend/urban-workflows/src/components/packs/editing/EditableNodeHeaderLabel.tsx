@@ -7,22 +7,18 @@ import styles from "./EditableNodeHeaderLabel.module.css";
 export function EditableNodeHeaderLabel({
   displayLabel,
   editable,
-  showSaveAs,
   showConfig,
   executed,
   keywordHighlighted,
   onLabelCommit,
-  onSaveAs,
   onConfigure,
 }: {
   displayLabel: string;
   editable: boolean;
-  showSaveAs: boolean;
   showConfig: boolean;
   executed: boolean;
   keywordHighlighted: boolean;
   onLabelCommit: (label: string) => void;
-  onSaveAs: () => void;
   onConfigure: () => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -59,7 +55,6 @@ export function EditableNodeHeaderLabel({
 
   const labelEditClick = useHeaderIconDragClick(startEdit);
   const configClick = useHeaderIconDragClick(onConfigure);
-  const saveAsClick = useHeaderIconDragClick(onSaveAs);
 
   return (
     <div className={styles.labelWrap}>
@@ -105,23 +100,11 @@ export function EditableNodeHeaderLabel({
           type="button"
           className={`${styles.configBtn} ${keywordHighlighted ? styles.configBtnHighlighted : ""}`}
           data-curio-pack-palette-node-action="true"
-          title="Configure node kind"
-          aria-label={`Configure ${displayLabel}`}
+          title="Node settings"
+          aria-label={`Node settings for ${displayLabel}`}
           {...configClick}
         >
           <FontAwesomeIcon icon={faGear} aria-hidden />
-        </button>
-      ) : null}
-      {showSaveAs ? (
-        <button
-          type="button"
-          className={`${styles.saveAsBtn} ${keywordHighlighted ? styles.saveAsBtnHighlighted : ""}`}
-          data-curio-pack-palette-node-action="true"
-          title="Save this node into a pack"
-          aria-label={`Save as pack node for ${displayLabel}`}
-          {...saveAsClick}
-        >
-          Save As
         </button>
       ) : null}
     </div>

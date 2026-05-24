@@ -687,14 +687,12 @@ export const NodeContainer = ({
                         <EditableNodeHeaderLabel
                             displayLabel={headerKindLabel}
                             editable={showPackNodeActions}
-                            showSaveAs={showPackNodeActions}
                             showConfig={showPackNodeActions}
                             executed={nodeExecStatus[nodeId] === "executed"}
                             keywordHighlighted={!!data.keywordHighlighted}
                             onLabelCommit={(label) => {
                                 updateDataNode(nodeId, { ...data, packKindLabel: label });
                             }}
-                            onSaveAs={() => setSaveAsOpen(true)}
                             onConfigure={() => setConfigOpen(true)}
                         />
 
@@ -707,14 +705,6 @@ export const NodeContainer = ({
                         ) : null}
 
                         {/* Right-side action icons */}
-                        {promptModal != undefined && templateData.id != undefined && templateData.custom ? (
-                            <HeaderIconButton
-                                icon={faGear}
-                                style={{ ...headerIconStyle, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
-                                title="Settings"
-                                onActivate={() => promptModal()}
-                            />
-                        ) : null}
                         <HeaderIconButton
                             icon={pinnedToDashboard ? faCircleDot : faCircle}
                             style={{
@@ -1093,6 +1083,7 @@ export const NodeContainer = ({
                         packKindConfig: config,
                     });
                     setConfigOpen(false);
+                    setSaveAsOpen(true);
                 }}
             />
         </>
