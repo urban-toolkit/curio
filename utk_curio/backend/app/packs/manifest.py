@@ -271,6 +271,7 @@ class PackManifest:
     lineage: PackLineage | None = None
     channel: str = "stable"  # ``distribution.channel``; default stable — on catalog payloads
     hidden_from_fork_palette_dock: bool = False
+    read_only: bool = False
     created_at_iso: str | None = None
     created_at_ms: int = 0
 
@@ -355,6 +356,11 @@ def load_pack_manifest(pack_dir_path: Path) -> PackManifest:
 
     hidden_from_fork = _parse_curio_palette_dock_hidden(raw, where=str(manifest_path))
 
+    read_only_raw = raw.get("readOnly")
+    if read_only_raw is not None and not isinstance(read_only_raw, bool):
+        raise ManifestError(f"{manifest_path}.readOnly must be a boolean")
+    read_only = bool(read_only_raw)
+
     distribution = raw.get("distribution") or {}
     if not isinstance(distribution, dict):
         raise ManifestError(f"{manifest_path}.distribution must be an object")
@@ -380,6 +386,7 @@ def load_pack_manifest(pack_dir_path: Path) -> PackManifest:
         lineage=lineage,
         channel=channel,
         hidden_from_fork_palette_dock=hidden_from_fork,
+        read_only=read_only,
         created_at_iso=created_at_iso,
         created_at_ms=created_at_ms,
     )

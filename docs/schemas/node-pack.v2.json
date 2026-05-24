@@ -26,6 +26,11 @@
     "publisher": { "type": "string", "description": "Human-readable publisher name shown alongside the pack." },
     "description": { "type": "string", "description": "Short description shown in catalog cards." },
     "license": { "type": ["string", "null"], "description": "SPDX-style license identifier (e.g. 'MIT'); null for unspecified." },
+    "readOnly": {
+      "type": "boolean",
+      "default": false,
+      "description": "When true, this pack cannot be overwritten via factory-install / Save-As. The pack is omitted from the Save-As destination dropdown. Used by the built-in pack and by curated organisation packs."
+    },
     "compatibility": {
       "type": "object",
       "required": ["major"],

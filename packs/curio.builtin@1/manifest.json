@@ -6,6 +6,7 @@
   "publisher": "Curio",
   "description": "The default set of nodes that ships with Curio. Auto-installed for every user; provides Data Loading/Export/Transformation, Computation, Visualization, AUTK integrations, and flow control.",
   "license": "MIT",
+  "readOnly": true,
   "compatibility": {
     "curioRuntime": ">=0.5.0",
     "major": 1

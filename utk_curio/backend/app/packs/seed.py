@@ -42,7 +42,7 @@ def _catalog_root() -> Path:
     return Path(__file__).resolve().parents[4] / "packs"
 
 
-_BUILTIN_PACK_ID = "curio.builtin"
+BUILTIN_PACK_ID = "curio.builtin"
 
 
 def _latest_builtin_dir(catalog_root: Path) -> Path | None:
@@ -54,7 +54,7 @@ def _latest_builtin_dir(catalog_root: Path) -> Path | None:
     candidates: list[tuple[int, Path]] = []
     if not catalog_root.is_dir():
         return None
-    prefix = f"{_BUILTIN_PACK_ID}@"
+    prefix = f"{BUILTIN_PACK_ID}@"
     for entry in catalog_root.iterdir():
         if not entry.is_dir() or not entry.name.startswith(prefix):
             continue
@@ -119,7 +119,7 @@ def seed_dev_packs(*, user_key: str = "guest") -> list[str]:
     builtin_dir = _latest_builtin_dir(src_root)
     keep_builtin_name = builtin_dir.name if builtin_dir is not None else None
     if keep_builtin_name:
-        prefix = f"{_BUILTIN_PACK_ID}@"
+        prefix = f"{BUILTIN_PACK_ID}@"
         for old in dest_base.iterdir():
             if not old.is_dir() or not old.name.startswith(prefix):
                 continue
@@ -140,7 +140,7 @@ def seed_dev_packs(*, user_key: str = "guest") -> list[str]:
         # For curio.builtin, only consider the latest major; older versions
         # in the catalog are ignored (and any older runtime copies are pruned
         # below before seeding the current one).
-        if src.name.startswith(f"{_BUILTIN_PACK_ID}@") and src.name != keep_builtin_name:
+        if src.name.startswith(f"{BUILTIN_PACK_ID}@") and src.name != keep_builtin_name:
             continue
         dest = dest_base / src.name
         fixture_mtime = _max_mtime(src)

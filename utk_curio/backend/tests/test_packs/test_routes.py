@@ -394,6 +394,28 @@ def test_factory_rejects_malformed_draft(client, user_and_token, tmp_curio):
     assert resp.status_code == 400
 
 
+def test_factory_install_rejects_read_only_pack(client, user_and_token, tmp_curio):
+    """Read-only packs (built-in or curated) refuse factory-install writes."""
+    _, token = user_and_token
+    draft = _draft()
+    draft["manifest"]["readOnly"] = True
+    resp = client.post(
+        "/api/packs/factory/install",
+        data=json.dumps(draft),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 400
+    assert "read-only" in resp.get_json()["error"]
+
+
+def test_remove_pack_rejects_curio_builtin(client, user_and_token, tmp_curio):
+    """DELETE on a curio.builtin@<major> dir must be rejected before touching disk."""
+    _, token = user_and_token
+    resp = client.delete("/api/packs/curio.builtin@1", headers=_auth(token))
+    assert resp.status_code == 400
+    assert "built-in" in resp.get_json()["error"]
+
+
 # ---------------------------------------------------------------------------
 # GET /api/packs/factory/capabilities + POST publish-catalog
 # ---------------------------------------------------------------------------

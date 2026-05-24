@@ -71,6 +71,7 @@ from utk_curio.backend.app.packs.resolver import (
     ResolverError,
     resolve_for_project,
 )
+from utk_curio.backend.app.packs.seed import BUILTIN_PACK_ID
 from utk_curio.backend.app.packs.storage import (
     PackIdError,
     list_user_packs,
@@ -171,6 +172,7 @@ def _manifest_to_payload(manifest: PackManifest, *, pack_mtime_path: Path | None
             if manifest.hidden_from_fork_palette_dock
             else {}
         ),
+        **({"readOnly": True} if manifest.read_only else {}),
         "createdAtMs": manifest.created_at_ms,
     }
     if manifest.created_at_iso:
@@ -497,6 +499,8 @@ def unpublish_from_catalog(dir_name: str):
 @packs_bp.route("/<dir_name>", methods=["DELETE"])
 @require_auth
 def remove_pack(dir_name: str):
+    if dir_name.startswith(f"{BUILTIN_PACK_ID}@"):
+        return _error(f"{BUILTIN_PACK_ID} is built-in and cannot be uninstalled", 400)
     user_key = _user_dir_key(g.user)
     try:
         removed = uninstall_pack(user_key, dir_name)
@@ -623,6 +627,26 @@ def factory_install():
     """
     user_key = _user_dir_key(g.user)
     draft = request.get_json(silent=True) or {}
+    manifest_raw = draft.get("manifest")
+    if isinstance(manifest_raw, dict):
+        if manifest_raw.get("readOnly") is True:
+            return _error("this pack is read-only — save changes as a new pack")
+        # Defense-in-depth: a forged draft can omit readOnly, so also check the
+        # installed pack at the target coord. Catches any attempt to overwrite a
+        # read-only pack that's already installed (e.g. curio.builtin).
+        pack_id_raw = manifest_raw.get("id")
+        major_raw = (manifest_raw.get("compatibility") or {}).get("major")
+        if isinstance(pack_id_raw, str) and isinstance(major_raw, int):
+            try:
+                installed_dir = pack_dir(user_key, f"{pack_id_raw}@{major_raw}")
+            except PackIdError:
+                installed_dir = None
+            if installed_dir is not None and installed_dir.is_dir():
+                try:
+                    if load_pack_manifest(installed_dir).read_only:
+                        return _error("this pack is read-only — save changes as a new pack")
+                except ManifestError:
+                    pass  # Let the install path surface a more specific error.
     replace = bool(draft.get("replace", False))
     try:
         built = build_pack_archive(draft)

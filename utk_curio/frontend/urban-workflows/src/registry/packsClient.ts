@@ -93,6 +93,7 @@ interface RawPack {
     root: { packId: string; major: number };
   } | null;
   paletteDock?: { hiddenFromForkPaletteDock?: boolean };
+  readOnly?: boolean;
   createdAt?: string;
   createdAtMs?: number | string;
   /** Epoch ms when the pack manifest was last written on disk (API diagnostic). */
@@ -217,6 +218,7 @@ function buildDescriptor(pack: RawPack, kind: RawPackKind, order: number): NodeD
       ...(pack.paletteDock?.hiddenFromForkPaletteDock === true
         ? { hiddenFromForkPaletteDock: true }
         : {}),
+      ...(pack.readOnly === true ? { readOnly: true } : {}),
       ...(typeof pack.createdAt === 'string' && pack.createdAt.trim()
         ? { createdAt: pack.createdAt.trim() }
         : {}),

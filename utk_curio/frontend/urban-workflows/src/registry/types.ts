@@ -50,6 +50,8 @@ export interface NodePackMeta {
   lineage?: NodePackLineage;
   /** When true, omit this coordinate from the Packs dock palette (manifest `curio.paletteDock`). */
   hiddenFromForkPaletteDock?: boolean;
+  /** When true, the pack rejects factory-install / Save-As writes (manifest `readOnly`). */
+  readOnly?: boolean;
   /** Canonical creation instant from manifest `createdAt`. */
   createdAt?: string;
   /** Parsed ``createdAt`` for ordering (palette + Nodes Hub). */
