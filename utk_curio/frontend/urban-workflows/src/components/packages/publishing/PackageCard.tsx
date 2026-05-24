@@ -112,7 +112,7 @@ export const PackageCard: React.FC<PackageCardProps> = ({
                 type="button"
                 className={styles.btnSecondary}
                 disabled={cardBusy}
-                title={`Remove ${pkg.name} from this workspace`}
+                title={`Remove ${pkg.name} from this dataflow`}
                 onClick={() => onUninstall(pkg)}
               >
                 Uninstall

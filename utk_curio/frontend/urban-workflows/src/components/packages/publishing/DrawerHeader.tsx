@@ -12,7 +12,7 @@ export interface DrawerHeaderProps {
 /**
  * Top bar + subtitle block for the Node Warehouse drawer.
  * Renders the pin/close controls, the drawer title, a one-line subtitle,
- * and the "compatible with this workspace" pill.
+ * and the "compatible with this dataflow" pill.
  */
 export const DrawerHeader: React.FC<DrawerHeaderProps> = ({ pinned, onPinToggle, onClose }) => (
   <>
@@ -46,7 +46,7 @@ export const DrawerHeader: React.FC<DrawerHeaderProps> = ({ pinned, onPinToggle,
       <p className={styles.subtitle}>Discover and install nodes that extend Curio.</p>
       {/* <span className={styles.compatPill}>
         <span className={styles.compatDot} aria-hidden />
-        Compatible with this Curio workspace
+        Compatible with this Curio dataflow
       </span> */}
     </div>
   </>

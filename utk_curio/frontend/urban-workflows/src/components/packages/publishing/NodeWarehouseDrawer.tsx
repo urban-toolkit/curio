@@ -196,7 +196,7 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
   );
 
   const onUninstall = useCallback(async (pkg: PackagePayload) => {
-    if (!window.confirm(`Uninstall ${pkg.name} (${pkg.dirName}) from this workspace?`)) return;
+    if (!window.confirm(`Uninstall ${pkg.name} (${pkg.dirName}) from this dataflow?`)) return;
     setCardActionDir(pkg.dirName);
     setActionError(null);
     try {
@@ -219,7 +219,7 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
     async (pkg: PackagePayload) => {
       if (
         !window.confirm(
-          `Unpublish ${pkg.name} (${pkg.dirName}) from the dev catalog?\n\nThis removes the entry under packages/. Installed copies in workspaces are not removed.`,
+          `Unpublish ${pkg.name} (${pkg.dirName}) from the dev catalog?\n\nThis removes the entry under packages/. Installed copies in dataflows are not removed.`,
         )
       ) {
         return;

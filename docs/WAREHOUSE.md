@@ -40,7 +40,7 @@ The drawer slides in from the right with four tabs:
 
 - **Featured** — the three newest packages in the catalog.
 - **Browse all** — every package the catalog advertises.
-- **Installed** — what you have in your workspace, grouped by fork family.
+- **Installed** — what you have in this dataflow, grouped by fork family.
 - **Updates** — only the installed packages that have a newer version available.
 
 Each catalog card has an **Install** button on the right. Clicking it opens the **Install "&lt;package name&gt;"** dialog showing the package's declared permissions and Python / JS / package dependencies (plus a red conflict box if any of those clash with what you already have). Click **Install** again to confirm, or **Cancel** to back out. The package's nodes appear in the canvas palette within a second or two.
@@ -80,8 +80,8 @@ The stepper across the top of the modal shows the same titles in order:
 3. **Source** — for each kind, an optional single starter file. The wizard exposes two fields per kind: a **Source filename** (e.g. `uhvi-load.py`, `chart.vl.json`) and a **Source** text area. The factory writes the file to `sources/<filename>` inside the package archive. Leave the source empty to publish a structural kind with no starter — the editor opens blank when a user drops the node.
 4. **Dependencies and permissions** — pip packages, JS packages, and other Curio packages your kinds need. Pip packages install into the shared sandbox at install time via `/installPackages`. You also declare permissions here (e.g. `filesystem.read`); they're surfaced verbatim in the install dialog the consumer sees.
 5. **Validate and publish** — two buttons:
-   - **Save and install** — runs the same backend validator that gates the install endpoint, then installs the package into your workspace and refreshes the palette.
-   - **Export .curio-package** — runs the validator, then downloads the archive as a zip so you can share it.
+   - **Save and install** — runs the same backend validator that gates the install endpoint, then installs the package into your dataflow and refreshes the palette.
+   - **Export .curio.zip** — runs the validator, then downloads the archive as a zip so you can share it.
 
 A **Live manifest** panel on the right shows the JSON that will be written, updating as you edit.
 
@@ -123,7 +123,7 @@ A package is portable: you can export it, send it, and the recipient can drop it
 
 ### Exporting
 
-In the warehouse drawer, find your installed package under the **Installed** tab. Each row has a download icon — click it to save the package as `<packageId>@<major>.curio-package` (a deterministic ZIP). You can also export from the Node Factory wizard at step 5.
+In the warehouse drawer, find your installed package under the **Installed** tab. Each row has a download icon — click it to save the package as `<packageId>@<major>.curio.zip` (a deterministic ZIP). You can also export from the Node Factory wizard at step 5.
 
 The archive contains exactly what's on disk: `manifest.json`, the `sources/` directory, `README.md` and `LICENSE` if present. `integrity.json` is **not** shipped — the installer regenerates it on the recipient's machine.
 

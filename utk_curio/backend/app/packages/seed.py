@@ -137,10 +137,10 @@ def seed_dev_packageages(*, user_key: str = "guest") -> list[str]:
             continue
         if not PACKAGE_DIR_RE.match(src.name):
             continue
-        # For curio.builtin, only consider the latest major; older versions
-        # in the catalog are ignored (and any older runtime copies are pruned
-        # below before seeding the current one).
-        if src.name.startswith(f"{BUILTIN_PACKAGE_ID}@") and src.name != keep_builtin_name:
+        # Only auto-install the built-in package. Third-party catalog packages
+        # remain in <repo_root>/packages/ but the user must install them
+        # explicitly via the warehouse drawer.
+        if src.name != keep_builtin_name:
             continue
         dest = dest_base / src.name
         fixture_mtime = _max_mtime(src)
