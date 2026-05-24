@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faDownload, faEye, faEyeSlash, faTrashCan } from "@fortawesome/free-solid-svg-icons";
+import { faDownload, faTrashCan } from "@fortawesome/free-solid-svg-icons";
 import { PackagePayload } from "../../../api/packagesApi";
 import {
   formatForkOfSubtitle,
@@ -17,11 +17,9 @@ export interface MyPackagesListProps {
   catalogPublishedDirs?: ReadonlySet<string>;
   catalogPublishAllowed?: boolean;
   publishingPackageKey?: string | null;
-  paletteDockDirBusy?: string | null;
   busy?: boolean;
   onUninstall?: (pkg: PackagePayload) => void;
   onExport?: (pkg: PackagePayload) => void;
-  onPaletteDockToggle?: (pkg: PackagePayload) => void;
   onPublishToCatalog?: (dirName: string) => void;
 }
 
@@ -30,11 +28,9 @@ type RowActionProps = {
   catalogPublishedDirs?: ReadonlySet<string>;
   catalogPublishAllowed: boolean;
   publishingPackageKey: string | null;
-  paletteDockDirBusy: string | null;
   busy: boolean;
   onUninstall?: (pkg: PackagePayload) => void;
   onExport?: (pkg: PackagePayload) => void;
-  onPaletteDockToggle?: (pkg: PackagePayload) => void;
   onPublishToCatalog?: (dirName: string) => void;
 };
 
@@ -43,16 +39,11 @@ function PackageRowActions({
   catalogPublishedDirs,
   catalogPublishAllowed,
   publishingPackageKey,
-  paletteDockDirBusy,
   busy,
   onUninstall,
   onExport,
-  onPaletteDockToggle,
   onPublishToCatalog,
 }: RowActionProps) {
-  const hiddenInDock = pkg.paletteDock?.hiddenFromForkPaletteDock === true;
-  const dockAwait = paletteDockDirBusy === pkg.dirName;
-
   return (
     <>
       {catalogPublishedDirs != null && onPublishToCatalog != null ? (
@@ -64,24 +55,6 @@ function PackageRowActions({
           busy={publishingPackageKey === pkg.dirName}
           onPublish={onPublishToCatalog}
         />
-      ) : null}
-
-      {onPaletteDockToggle != null ? (
-        <button
-          type="button"
-          className={styles.rowActionBtn}
-          title={hiddenInDock ? "Show in Nodes palette dock" : "Hide from Nodes palette dock"}
-          aria-label={
-            hiddenInDock
-              ? `Show ${pkg.name} in Nodes palette dock`
-              : `Hide ${pkg.name} from Nodes palette dock`
-          }
-          aria-pressed={!hiddenInDock}
-          disabled={busy || dockAwait}
-          onClick={() => onPaletteDockToggle(pkg)}
-        >
-          <FontAwesomeIcon icon={hiddenInDock ? faEye : faEyeSlash} aria-hidden />
-        </button>
       ) : null}
 
       {onExport != null ? (
@@ -119,12 +92,10 @@ function InstalledPackageRow({
   catalogPublishedDirs,
   catalogPublishAllowed,
   publishingPackageKey,
-  paletteDockDirBusy,
   busy,
   hasActions,
   onUninstall,
   onExport,
-  onPaletteDockToggle,
   onPublishToCatalog,
   nested = false,
 }: {
@@ -133,12 +104,10 @@ function InstalledPackageRow({
   catalogPublishedDirs?: ReadonlySet<string>;
   catalogPublishAllowed: boolean;
   publishingPackageKey: string | null;
-  paletteDockDirBusy: string | null;
   busy: boolean;
   hasActions: boolean;
   onUninstall?: (pkg: PackagePayload) => void;
   onExport?: (pkg: PackagePayload) => void;
-  onPaletteDockToggle?: (pkg: PackagePayload) => void;
   onPublishToCatalog?: (dirName: string) => void;
   nested?: boolean;
 }) {
@@ -150,11 +119,9 @@ function InstalledPackageRow({
     catalogPublishedDirs,
     catalogPublishAllowed,
     publishingPackageKey,
-    paletteDockDirBusy,
     busy,
     onUninstall,
     onExport,
-    onPaletteDockToggle,
     onPublishToCatalog,
   };
 
@@ -194,11 +161,9 @@ export const MyPackagesList: React.FC<MyPackagesListProps> = ({
   catalogPublishedDirs,
   catalogPublishAllowed = false,
   publishingPackageKey = null,
-  paletteDockDirBusy = null,
   busy = false,
   onUninstall,
   onExport,
-  onPaletteDockToggle,
   onPublishToCatalog,
 }) => {
   const rows = useMemo(() => partitionInstalledPackagesForWarehouseList(installed), [installed]);
@@ -208,7 +173,6 @@ export const MyPackagesList: React.FC<MyPackagesListProps> = ({
   const hasActions =
     onUninstall != null ||
     onExport != null ||
-    onPaletteDockToggle != null ||
     onPublishToCatalog != null;
 
   const rowProps = {
@@ -216,12 +180,10 @@ export const MyPackagesList: React.FC<MyPackagesListProps> = ({
     catalogPublishedDirs,
     catalogPublishAllowed,
     publishingPackageKey,
-    paletteDockDirBusy,
     busy,
     hasActions,
     onUninstall,
     onExport,
-    onPaletteDockToggle,
     onPublishToCatalog,
   };
 
@@ -246,11 +208,9 @@ export const MyPackagesList: React.FC<MyPackagesListProps> = ({
                 catalogPublishedDirs,
                 catalogPublishAllowed,
                 publishingPackageKey,
-                paletteDockDirBusy,
                 busy,
                 onUninstall,
                 onExport,
-                onPaletteDockToggle,
                 onPublishToCatalog,
               }
             : null;

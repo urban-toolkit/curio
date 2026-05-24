@@ -16,7 +16,6 @@ import {
   saveAsWouldReplaceByLabel,
 } from "../../../utils/palettePackageFactoryDraft";
 import { getFlowNodeCanonicalType } from "../../../utils/flowNodeCanonicalType";
-import { filterForkParentHiddenPalettePackageGroups } from "../../../utils/forkPackageLineage";
 import { tryGetNodeDescriptor } from "../../../registry/nodeRegistry";
 import { NodeKindId } from "../../../registry/types";
 import styles from "./NodeSaveAsModal.module.css";
@@ -63,7 +62,7 @@ export function NodeSaveAsModal({
 
   const packageOptions = useMemo(() => {
     const packageTypes = getPaletteNodeTypes().filter((d) => d.source === "package");
-    return filterForkParentHiddenPalettePackageGroups(groupPalettePackages(packageTypes))
+    return groupPalettePackages(packageTypes)
       .filter((g) => g.descriptors[0]?.package?.readOnly !== true)
       .map((g) => ({
         sectionKey: g.key,

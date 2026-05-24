@@ -18,8 +18,6 @@ derives from ``app.projects.services._user_dir_key`` just like
 | ``POST /api/packages/factory/publish-catalog`` | dev catalog fixture write (on by default; env to disable) |
 | ``DELETE /api/packages/catalog/<dir>``       | dev catalog fixture remove (same env gate as publish) |
 | ``POST /api/packages/resolve``               | dep-resolver (this commit)     |
-| ``POST /api/packages/palette-dock/fork-parents`` | fork-parent dock hide/reveal |
-| ``POST /api/packages/<dir>/palette-dock-visible`` | per-package palette dock toggle |
 +-------------------------------------------+--------------------------------+
 
 ``GET /api/packages/catalog`` is **catalog-backed**: it scans committed packages
@@ -62,10 +60,6 @@ from utk_curio.backend.app.packages.manifest import (
     ManifestError,
     PackageManifest,
     load_packageage_manifest,
-)
-from utk_curio.backend.app.packages.palette_dock_manifest import (
-    merge_manifest_palette_dock_fork_hidden,
-    set_all_fork_parents_palette_visibility,
 )
 from utk_curio.backend.app.packages.resolver import (
     ResolverError,
@@ -167,11 +161,6 @@ def _manifest_to_payload(manifest: PackageManifest, *, package_mtime_path: Path 
         "lineage": _lineage_to_payload(manifest),
         "familyKey": family_key_for_manifest(manifest),
         "channel": manifest.channel,
-        **(
-            {"paletteDock": {"hiddenFromForkPaletteDock": True}}
-            if manifest.hidden_from_fork_palette_dock
-            else {}
-        ),
         **({"readOnly": True} if manifest.read_only else {}),
         "createdAtMs": manifest.created_at_ms,
     }
@@ -271,55 +260,6 @@ def list_installed_packageages():
         key=lambda p: (-int(p.get("createdAtMs") or 0), p.get("dirName") or ""),
     )
     return jsonify({"packages": out}), 200
-
-
-# ---------------------------------------------------------------------------
-# POST /api/packages/palette-dock/fork-parents — batch reveal/suppress dock entries
-# ---------------------------------------------------------------------------
-
-@packages_bp.route("/palette-dock/fork-parents", methods=["POST"])
-@require_auth
-def fork_parents_palette_dock_visibility():
-    """Reveal or suppress installed fork-source packages in the nodes palette dock.
-
-    Mutates ``curio.paletteDock.hiddenFromForkPaletteDock`` in each installed parent
-    manifest referenced by ``lineage.forkedFrom`` from another installed fork.
-    """
-    user_key = _user_dir_key(g.user)
-    body = request.get_json(silent=True) or {}
-    visible_raw = body.get("visible")
-    if visible_raw is not True and visible_raw is not False:
-        return _error("body must include boolean 'visible'")
-    set_all_fork_parents_palette_visibility(user_key, visible=visible_raw)
-    return "", 204
-
-
-# ---------------------------------------------------------------------------
-# POST /api/packages/<dir_name>/palette-dock-visible — one install's dock section
-# ---------------------------------------------------------------------------
-
-@packages_bp.route("/<dir_name>/palette-dock-visible", methods=["POST"])
-@require_auth
-def package_palette_dock_visibility(dir_name: str):
-    """Set ``curio.paletteDock.hiddenFromForkPaletteDock`` for one installed coordinate."""
-    user_key = _user_dir_key(g.user)
-    if not PACKAGE_DIR_RE.match(dir_name):
-        return _error("invalid package directory name", 404)
-    body = request.get_json(silent=True) or {}
-    visible_raw = body.get("visible")
-    if visible_raw is not True and visible_raw is not False:
-        return _error("body must include boolean 'visible'")
-    try:
-        root = package_dir(user_key, dir_name)
-    except PackageIdError as exc:
-        return _error(str(exc))
-    if not (root / "manifest.json").is_file():
-        return _error("package not installed", 404)
-    try:
-        merge_manifest_palette_dock_fork_hidden(root, hidden=not visible_raw)
-    except ManifestError as exc:
-        return _error(str(exc))
-    return "", 204
 
 
 # ---------------------------------------------------------------------------

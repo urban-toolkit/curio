@@ -92,7 +92,6 @@ interface RawPackage {
     forkedFrom: { packageId: string; major: number };
     root: { packageId: string; major: number };
   } | null;
-  paletteDock?: { hiddenFromForkPaletteDock?: boolean };
   readOnly?: boolean;
   createdAt?: string;
   createdAtMs?: number | string;
@@ -214,9 +213,6 @@ function buildDescriptor(pkg: RawPackage, kind: RawPackageKind, order: number): 
               root: { ...pkg.lineage.root },
             },
           }
-        : {}),
-      ...(pkg.paletteDock?.hiddenFromForkPaletteDock === true
-        ? { hiddenFromForkPaletteDock: true }
         : {}),
       ...(pkg.readOnly === true ? { readOnly: true } : {}),
       ...(typeof pkg.createdAt === 'string' && pkg.createdAt.trim()

@@ -44,7 +44,6 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
   const [sort, setSort] = useState<SortMode>("new");
   const [pinned, setPinned] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [paletteDockDirBusy, setPaletteDockDirBusy] = useState<string | null>(null);
   const [catalogPublishAllowed, setCatalogPublishAllowed] = useState(false);
   const [publishingPackageKey, setPublishingPackageKey] = useState<string | null>(null);
   const [cardActionDir, setCardActionDir] = useState<string | null>(null);
@@ -188,7 +187,7 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
         await refreshPackageRegistry();
         await reload();
       } catch (err) {
-        reportActionError(`Couldn't sideload ${file.name}`, err);
+        reportActionError(`Couldn't import ${file.name}`, err);
       } finally {
         setBusy(false);
       }
@@ -247,21 +246,6 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
     }
   }, [reportActionError]);
 
-  const onTogglePaletteDock = useCallback(async (pkg: PackagePayload) => {
-    const nextHidden = !(pkg.paletteDock?.hiddenFromForkPaletteDock === true);
-    setPaletteDockDirBusy(pkg.dirName);
-    setActionError(null);
-    try {
-      await packagesApi.packagePaletteDockVisible(pkg.dirName, !nextHidden);
-      await refreshPackageRegistry();
-      await reload();
-    } catch (err) {
-      reportActionError(`Couldn't update palette dock visibility for ${pkg.name}`, err);
-    } finally {
-      setPaletteDockDirBusy(null);
-    }
-  }, [reload, reportActionError]);
-
   const onPublishToCatalog = useCallback(async (dirName: string) => {
     const row = installedByDirRef.current.get(dirName);
     if (!row) return;
@@ -287,11 +271,9 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
     catalogPublishedDirs,
     catalogPublishAllowed,
     publishingPackageKey,
-    paletteDockDirBusy,
     busy,
     onUninstall: (p: PackagePayload) => void onUninstall(p),
     onExport: (p: PackagePayload) => void onExport(p),
-    onPaletteDockToggle: (p: PackagePayload) => void onTogglePaletteDock(p),
     onPublishToCatalog: (d: string) => void onPublishToCatalog(d),
   };
 

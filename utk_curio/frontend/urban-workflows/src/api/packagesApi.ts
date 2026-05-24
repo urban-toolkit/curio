@@ -102,11 +102,6 @@ export interface PackagePayload {
   /** Catalog endpoint only — true when the user already has this coord installed. */
   installed?: boolean;
   /**
-   * Optional vendor extension surfaced from on-disk manifest `curio.paletteDock`.
-   * Omitted unless `hiddenFromForkPaletteDock` is true.
-   */
-  paletteDock?: { hiddenFromForkPaletteDock?: boolean };
-  /**
    * ISO 8601 instant from manifest ``createdAt``. Omitted only for malformed legacy rows.
    */
   createdAt?: string;
@@ -259,25 +254,6 @@ export const packagesApi = {
   /** Installed packages for the current user. */
   listInstalled(): Promise<{ packages: PackagePayload[] }> {
     return apiFetch("/api/packages");
-  },
-
-  /** Batch reveal/suppress fork-source coordinates in the Packages dock (manifest-backed). */
-  forkParentsPaletteDockVisibility(visible: boolean): Promise<void> {
-    return apiFetch("/api/packages/palette-dock/fork-parents", {
-      method: "POST",
-      body: JSON.stringify({ visible }),
-    });
-  },
-
-  /**
-   * Show or hide one installed pkg's section in the Nodes palette dock
-   * (manifest ``curio.paletteDock.hiddenFromForkPaletteDock``).
-   */
-  packagePaletteDockVisible(dirName: string, visible: boolean): Promise<void> {
-    return apiFetch(`/api/packages/${dirName}/palette-dock-visible`, {
-      method: "POST",
-      body: JSON.stringify({ visible }),
-    });
   },
 
   /** Fixture-backed catalog: package rows plus family index and collision report. */

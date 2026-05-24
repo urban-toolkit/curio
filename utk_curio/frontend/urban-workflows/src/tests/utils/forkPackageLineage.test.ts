@@ -1,7 +1,5 @@
 import {
-  areForkPaletteParentsRevealedInDock,
   comparePackageVersionDescending,
-  filterForkParentHiddenPalettePackageGroups,
   findForkFamilyRootPackage,
   findForkFamilyRootPaletteGroup,
   forkFamilyKeyFromPaletteGroup,
@@ -142,36 +140,6 @@ describe("forkPackageLineage", () => {
       { dirName: "solo@1" },
     ] as unknown as PackagePayload[];
     expect([...referencedForkParentCoordinates(packages)].sort()).toEqual(["parent.a@1", "parent.b@2"]);
-  });
-
-  test("areForkPaletteParentsRevealedInDock when parent hidden in payload", () => {
-    const packages = [
-      {
-        dirName: "parent@1",
-        paletteDock: { hiddenFromForkPaletteDock: true },
-      },
-      {
-        dirName: "fork@1",
-        lineage: lin({ packageId: "parent", major: 1 }, { packageId: "parent", major: 1 }),
-      },
-    ] as PackagePayload[];
-    expect(areForkPaletteParentsRevealedInDock(packages)).toBe(false);
-    expect(
-      areForkPaletteParentsRevealedInDock([
-        { dirName: "parent@1" },
-        packages[1]!,
-      ] as PackagePayload[]),
-    ).toBe(true);
-  });
-
-  test("filterForkParentHiddenPalettePackageGroups removes hidden sections", () => {
-    const groups = [
-      { key: "a@1", label: "A", descriptors: [{ package: { hiddenFromForkPaletteDock: true } }] },
-      { key: "b@1", label: "B", descriptors: [{}] },
-    ];
-    const kept = filterForkParentHiddenPalettePackageGroups(groups as any);
-    expect(kept).toHaveLength(1);
-    expect(kept[0]!.key).toBe("b@1");
   });
 
   test("packageCoordinateKey", () => {

@@ -345,25 +345,3 @@ export function referencedForkParentCoordinates<T extends Pick<PackagePayload, "
   return out;
 }
 
-/**
- * Whether every installed package that acts as someone's fork parent is shown in the
- * Packages dock (not `hiddenFromForkPaletteDock`). True when nothing is fork-installed.
- */
-export function areForkPaletteParentsRevealedInDock(packages: PackagePayload[]): boolean {
-  const parents = referencedForkParentCoordinates(packages);
-  if (!parents.size) return true;
-  const byDir = new Map(packages.map((p) => [p.dirName, p]));
-  for (const dir of parents) {
-    const row = byDir.get(dir);
-    if (!row) continue;
-    if (row.paletteDock?.hiddenFromForkPaletteDock) return false;
-  }
-  return true;
-}
-
-/** Omit groups whose package metadata says the dock should hide fork-source sections. */
-export function filterForkParentHiddenPalettePackageGroups<G extends PalettePackageGroupLike>(
-  groups: readonly G[],
-): G[] {
-  return groups.filter((g) => !(g.descriptors[0]?.package?.hiddenFromForkPaletteDock === true));
-}

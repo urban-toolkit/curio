@@ -22,10 +22,7 @@ import {
     draftFromInstalledPackagePayload,
 } from "../../../../utils/palettePackageFactoryDraft";
 import { toApiPayload } from "../../../../pages/nodes/factoryDraftModel";
-import {
-    filterForkParentHiddenPalettePackageGroups,
-    partitionPalettePackageGroups,
-} from "../../../../utils/forkPackageLineage";
+import { partitionPalettePackageGroups } from "../../../../utils/forkPackageLineage";
 import { InstalledPackageAccordion } from "./InstalledPackageAccordion";
 import { PaletteForkFamily } from "./PaletteForkFamily";
 import { visiblePaletteTriggerPackagesCount, type PackagePaletteGroup } from "./model";
@@ -95,7 +92,7 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
     const paletteCatalogRef = useRef(paletteCatalogSnapshot);
     paletteCatalogRef.current = paletteCatalogSnapshot;
     const paletteRows = useMemo(
-        () => partitionPalettePackageGroups(filterForkParentHiddenPalettePackageGroups(groups)),
+        () => partitionPalettePackageGroups(groups),
         [groups],
     );
 

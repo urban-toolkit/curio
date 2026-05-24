@@ -546,19 +546,6 @@ def install_packageage_from_archive(
             except Exception:  # noqa: BLE001 — bookkeeping is best-effort
                 log.exception("Failed to clear uninstall tombstone for %s/%s", user_key, dir_name)
 
-            try:
-                from utk_curio.backend.app.packages.palette_dock_manifest import (
-                    resync_fork_palette_parent_flags,
-                )
-
-                resync_fork_palette_parent_flags(user_key)
-            except Exception:  # noqa: BLE001
-                log.exception(
-                    "Failed to sync fork-parent palette dock flags after install %s/%s",
-                    user_key,
-                    dir_name,
-                )
-
             return InstallResult(
                 manifest=merged_manifest,
                 integrity=integrity,
@@ -631,18 +618,6 @@ def uninstall_packageage(user_key: str, dir_name: str) -> bool:
         seed_state.mark_uninstalled(user_key, dir_name)
     except Exception:  # noqa: BLE001 — never block uninstall on bookkeeping
         log.exception("Failed to record uninstall tombstone for %s/%s", user_key, dir_name)
-    try:
-        from utk_curio.backend.app.packages.palette_dock_manifest import (
-            resync_fork_palette_parent_flags,
-        )
-
-        resync_fork_palette_parent_flags(user_key)
-    except Exception:  # noqa: BLE001
-        log.exception(
-            "Failed to sync fork-parent palette dock flags after uninstall %s/%s",
-            user_key,
-            dir_name,
-        )
     return True
 
 

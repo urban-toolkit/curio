@@ -48,8 +48,6 @@ export interface NodePackageMeta {
   /** Package-relative path to the optional starter source file (any extension). */
   source?: string;
   lineage?: NodePackageLineage;
-  /** When true, omit this coordinate from the Packages dock palette (manifest `curio.paletteDock`). */
-  hiddenFromForkPaletteDock?: boolean;
   /** When true, the package rejects factory-install / Save-As writes (manifest `readOnly`). */
   readOnly?: boolean;
   /** Canonical creation instant from manifest `createdAt`. */

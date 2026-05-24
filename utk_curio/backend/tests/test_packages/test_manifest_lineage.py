@@ -131,50 +131,6 @@ def test_root_equals_self_rejected(tmp_path: Path) -> None:
         load_packageage_manifest(d)
 
 
-def test_curio_palette_dock_fork_hidden_round_trip(tmp_path: Path) -> None:
-    d = _write_packageage_dir(
-        tmp_path,
-        "ai.curio.dock.hidden",
-        1,
-        curio={"paletteDock": {"hiddenFromForkPaletteDock": True}},
-    )
-    assert load_packageage_manifest(d).hidden_from_fork_palette_dock is True
-
-
-def test_curio_palette_dock_fork_hidden_explicit_false(tmp_path: Path) -> None:
-    d = _write_packageage_dir(
-        tmp_path,
-        "ai.curio.dock.visible",
-        1,
-        curio={"paletteDock": {"hiddenFromForkPaletteDock": False}},
-    )
-    assert load_packageage_manifest(d).hidden_from_fork_palette_dock is False
-
-
-def test_curio_must_be_object(tmp_path: Path) -> None:
-    d = _write_packageage_dir(tmp_path, "ai.bad.curio", 1, curio="oops")
-    with pytest.raises(ManifestError, match="curio"):
-        load_packageage_manifest(d)
-
-
-def test_palette_dock_must_be_object(tmp_path: Path) -> None:
-    d = _write_packageage_dir(tmp_path, "ai.bad.palettedock", 1, curio={"paletteDock": "x"})
-    with pytest.raises(ManifestError, match="paletteDock"):
-        load_packageage_manifest(d)
-
-
-@pytest.mark.parametrize("bad_hidden", ["yes", 1])
-def test_hidden_flag_must_be_boolean(tmp_path: Path, bad_hidden: object) -> None:
-    d = _write_packageage_dir(
-        tmp_path,
-        "ai.bad.hidden.type",
-        1,
-        curio={"paletteDock": {"hiddenFromForkPaletteDock": bad_hidden}},
-    )
-    with pytest.raises(ManifestError, match="hiddenFromForkPaletteDock"):
-        load_packageage_manifest(d)
-
-
 def test_load_optional_created_at_parses_iso_z(tmp_path: Path) -> None:
     d = _write_packageage_dir(tmp_path, "ai.test.created", 1, createdAt="2024-05-20T08:09:11Z")
     m = load_packageage_manifest(d)

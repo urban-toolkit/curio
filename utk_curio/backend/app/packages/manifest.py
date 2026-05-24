@@ -128,26 +128,6 @@ def _parse_lineage(
     return PackageLineage(forked_from=forked_from, root=root)
 
 
-def _parse_curio_palette_dock_hidden(raw: dict, *, where: str) -> bool:
-    """Return whether ``curio.paletteDock.hiddenFromForkPaletteDock`` is true."""
-    raw_curio = raw.get("curio")
-    if raw_curio is None:
-        return False
-    if not isinstance(raw_curio, dict):
-        raise ManifestError(f"{where}: curio must be an object")
-    dock = raw_curio.get("paletteDock")
-    if dock is None:
-        return False
-    if not isinstance(dock, dict):
-        raise ManifestError(f"{where}: curio.paletteDock must be an object")
-    hid = dock.get("hiddenFromForkPaletteDock")
-    if hid is None:
-        return False
-    if hid is not True and hid is not False:
-        raise ManifestError(f"{where}: curio.paletteDock.hiddenFromForkPaletteDock must be a boolean")
-    return hid is True
-
-
 @dataclass(frozen=True)
 class PortDef:
     types: list[str]
@@ -270,7 +250,6 @@ class PackageManifest:
     package_deps: dict[str, str] = field(default_factory=dict)
     lineage: PackageLineage | None = None
     channel: str = "stable"  # ``distribution.channel``; default stable — on catalog payloads
-    hidden_from_fork_palette_dock: bool = False
     read_only: bool = False
     created_at_iso: str | None = None
     created_at_ms: int = 0
@@ -354,8 +333,6 @@ def load_packageage_manifest(package_dir_path: Path) -> PackageManifest:
         self_major=major,
     )
 
-    hidden_from_fork = _parse_curio_palette_dock_hidden(raw, where=str(manifest_path))
-
     read_only_raw = raw.get("readOnly")
     if read_only_raw is not None and not isinstance(read_only_raw, bool):
         raise ManifestError(f"{manifest_path}.readOnly must be a boolean")
@@ -385,7 +362,6 @@ def load_packageage_manifest(package_dir_path: Path) -> PackageManifest:
         package_deps=dict(package_deps),
         lineage=lineage,
         channel=channel,
-        hidden_from_fork_palette_dock=hidden_from_fork,
         read_only=read_only,
         created_at_iso=created_at_iso,
         created_at_ms=created_at_ms,
