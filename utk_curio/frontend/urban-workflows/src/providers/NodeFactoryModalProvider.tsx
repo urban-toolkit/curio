@@ -8,7 +8,7 @@ import React, {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import type { InstallResponse } from "../api/packsApi";
+import type { InstallResponse } from "../api/packagesApi";
 import { useToastContext } from "./ToastProvider";
 import type { Draft } from "../pages/nodes/factoryDraftModel";
 import { NodeFactoryWizard } from "../pages/nodes/NodeFactoryWizard";
@@ -18,7 +18,7 @@ export type OpenNodeFactoryOptions = {
   blank?: boolean;
   draft?: Draft | null;
   forkInstallNotice?: boolean;
-  /** Fired after install succeeds and the pack registry refresh has run inside the wizard. */
+  /** Fired after install succeeds and the package registry refresh has run inside the wizard. */
   onInstallSuccess?: (result: InstallResponse) => void;
 };
 
@@ -145,7 +145,7 @@ export function NodeFactoryModalProvider({ children }: { children: React.ReactNo
 
   const onInstallSuccess = useCallback(
     (result: InstallResponse) => {
-      showToast(`Installed ${result.pack.name} (${result.pack.version}).`, "success");
+      showToast(`Installed ${result.package.name} (${result.package.version}).`, "success");
       onInstallSuccessExtraRef.current?.(result);
       closeNodeFactory(true);
     },

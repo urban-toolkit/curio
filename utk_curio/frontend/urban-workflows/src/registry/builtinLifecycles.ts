@@ -1,7 +1,7 @@
 /**
  * Registers the 11 built-in lifecycle hooks at app startup.
  *
- * The pre-installed `curio.builtin@1` pack and any third-party pack
+ * The pre-installed `curio.builtin@1` package and any third-party package
  * authored against the same lifecycle keys (e.g. `"code"`, `"vega"`)
  * resolve their `manifest.lifecycle` field through `getLifecycle`.
  *

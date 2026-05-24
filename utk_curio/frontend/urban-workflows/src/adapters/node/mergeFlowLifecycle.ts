@@ -12,7 +12,7 @@ export const useMergeFlowLifecycle: NodeLifecycleHook = (data, _nodeState) => {
   // *future* state changes — not the current state. So on first mount the
   // local `edges` state stayed `[]`, `connectedCount` stayed `0`, and the
   // output effect below never satisfied its `connectedCount > 0` guard, so
-  // `outputCallback` was never called. Downstream nodes (e.g. a pack code
+  // `outputCallback` was never called. Downstream nodes (e.g. a package code
   // node wired through this merge) then saw `data.input === ""` and ran
   // their user code with `arg = None`. `useEdges()` is the canonical React
   // Flow hook for this and gives a value on the very first render.

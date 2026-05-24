@@ -1,0 +1,165 @@
+/* ── Your packages (installed compact list) ───────────────────────────────── */
+
+.sectionLabel {
+    margin: 16px 0 12px;
+    font-size: var(--curio-font-size-xs);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--curio-text-muted);
+}
+
+.installedList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+    font-family: var(--curio-font-family);
+}
+
+.installedRow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--curio-border);
+    border-radius: var(--curio-radius-md);
+    background: var(--curio-card-bg);
+    font-size: var(--curio-font-size-md);
+}
+
+.installedDot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--curio-accent-mint-fg);
+    flex-shrink: 0;
+}
+
+.installedBody {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.installedName {
+    font-weight: 600;
+    color: var(--curio-text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.installedMeta {
+    color: var(--curio-text-muted);
+    white-space: nowrap;
+    font-size: var(--curio-font-size-sm);
+}
+
+/* ── Per-row action buttons ─────────────────────────────────────────────── */
+
+.installedActions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+.rowActionBtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: var(--curio-radius-sm);
+    background: transparent;
+    color: var(--curio-text-secondary);
+    cursor: pointer;
+    font-size: var(--curio-font-size-sm);
+    line-height: 1;
+}
+
+.rowActionBtn:hover:not(:disabled) {
+    background: var(--curio-page-bg);
+    color: var(--curio-text-primary);
+}
+
+.rowActionBtn:focus-visible {
+    outline: 2px solid var(--curio-accent-sky-fg);
+    outline-offset: 1px;
+}
+
+.rowActionBtn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.installedForkOf {
+    color: var(--curio-text-muted);
+    font-size: var(--curio-font-size-xs);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ── Fork-family accordion ─────────────────────────────────────────────── */
+
+.familyDetails {
+    border: 1px solid var(--curio-border);
+    border-radius: var(--curio-radius-md);
+    background: var(--curio-card-bg);
+    overflow: hidden;
+}
+
+.familySummary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    list-style: none;
+    cursor: pointer;
+    font-size: var(--curio-font-size-md);
+}
+
+.familySummary::-webkit-details-marker {
+    display: none;
+}
+
+.familySummaryMain {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.familyMemberList {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    border-top: 1px solid var(--curio-border);
+    background: var(--curio-page-bg);
+}
+
+.installedRowNested {
+    background: var(--curio-card-bg);
+}
+
+.familyCountBadge {
+    flex-shrink: 0;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: var(--curio-radius-pill);
+    background: rgba(30, 31, 35, 0.08);
+    color: var(--curio-text-secondary);
+    font-size: var(--curio-font-size-xs);
+    font-weight: 700;
+    line-height: 20px;
+    text-align: center;
+}

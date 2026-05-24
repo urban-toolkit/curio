@@ -10,8 +10,8 @@ interface ModalShellProps {
   size?: "default" | "large";
   /** Stack above canvas dock / warehouse overlays (z-index ~10055). */
   layer?: "default" | "overlay";
-  /** Keep the packs palette dock open while this modal is interacted with. */
-  preservePackPaletteOpen?: boolean;
+  /** Keep the packages palette dock open while this modal is interacted with. */
+  preservePackagePaletteOpen?: boolean;
 }
 
 export default function ModalShell({
@@ -19,10 +19,10 @@ export default function ModalShell({
   children,
   size = "default",
   layer = "default",
-  preservePackPaletteOpen = false,
+  preservePackagePaletteOpen = false,
 }: ModalShellProps) {
-  const packPaletteActionAttr = preservePackPaletteOpen
-    ? ({ "data-curio-pack-palette-node-action": "true" } as const)
+  const packagePaletteActionAttr = preservePackagePaletteOpen
+    ? ({ "data-curio-package-palette-node-action": "true" } as const)
     : {};
   const shell = (
     <>
@@ -31,13 +31,13 @@ export default function ModalShell({
           layer === "overlay" ? ` ${styles.backdropOverlay}` : ""
         }`}
         onClick={onClose}
-        {...packPaletteActionAttr}
+        {...packagePaletteActionAttr}
       />
       <div
         className={`${styles.modal} nowheel nodrag nopan${
           size === "large" ? ` ${styles.large}` : ""
         }${layer === "overlay" ? ` ${styles.modalOverlay}` : ""}`}
-        {...packPaletteActionAttr}
+        {...packagePaletteActionAttr}
       >
         <button className={styles.closeX} onClick={onClose} aria-label="Close">
           <FontAwesomeIcon icon={faXmark} />

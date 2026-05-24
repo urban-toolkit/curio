@@ -1,5 +1,5 @@
 import { NodeKindId, NodeDescriptor } from './types';
-import { splitCanonicalNodeType } from './packKeys';
+import { splitCanonicalNodeType } from './packageKeys';
 
 /**
  * The node-kind registry.
@@ -7,13 +7,13 @@ import { splitCanonicalNodeType } from './packKeys';
  * Keyed by canonical type string. Versioned ids like
  * `"ai.urbanlab.uhvi/uhvi-load@1"` are stored as-is. A secondary
  * **unversioned index** tracks the installed majors per
- * `<packId>/<kindId>` so a lookup by the unversioned form resolves to
+ * `<packageId>/<kindId>` so a lookup by the unversioned form resolves to
  * the latest installed major — the default referencing convention for
  * trill files.
  */
 const registry = new Map<NodeKindId, NodeDescriptor>();
 
-/** unversioned `<packId>/<kindId>` → installed majors, sorted descending. */
+/** unversioned `<packageId>/<kindId>` → installed majors, sorted descending. */
 const unversionedMajors = new Map<string, number[]>();
 
 function rememberMajor(canonicalId: string): void {
@@ -48,7 +48,7 @@ function resolveUnversioned(unversioned: string): NodeDescriptor | undefined {
 
 const listeners = new Set<() => void>();
 
-/** When >0, {@link pulseRegistryListeners} is a no-op (used during pack reload bursts). */
+/** When >0, {@link pulseRegistryListeners} is a no-op (used during package reload bursts). */
 let registryNotifyDepth = 0;
 
 function flushRegistryListeners(): void {
@@ -71,7 +71,7 @@ function pulseRegistryListeners(): void {
  * then emit **once** after `fn` completes (if not nested inside another suspend).
  *
  * Keeps listeners (e.g. React Flow `nodeTypes`) from seeing a transient registry
- * with **zero** pack kinds between `clearPackNodes` + re-registration.
+ * with **zero** package kinds between `clearPackageNodes` + re-registration.
  */
 export function withSuspendedRegistryNotifications<T>(fn: () => T): T {
   registryNotifyDepth += 1;
@@ -92,7 +92,7 @@ export function withSuspendedRegistryNotifications<T>(fn: () => T): T {
  * Subscribe to registry mutations. Returns an unsubscribe function.
  *
  * Used by `ToolsMenu` (via `useSyncExternalStore`) so that
- * asynchronously-registered pack descriptors appear in the palette
+ * asynchronously-registered package descriptors appear in the palette
  * without remounting the component.
  */
 export function subscribeToRegistry(listener: () => void): () => void {
@@ -110,16 +110,16 @@ export function registerNode(descriptor: NodeDescriptor): void {
 }
 
 /**
- * Drop every descriptor whose {@link NodeDescriptor.source} is `'pack'`.
+ * Drop every descriptor whose {@link NodeDescriptor.source} is `'package'`.
  *
- * Called before re-registering from `GET /api/packs` so uninstalled packs
+ * Called before re-registering from `GET /api/packages` so uninstalled packages
  * disappear from the palette; built-ins omit `source` (or use `'core'`) and
  * are kept.
  */
-export function clearPackNodes(): void {
+export function clearPackageNodes(): void {
   let removed = false;
   for (const [id, d] of registry) {
-    if (d.source === 'pack') {
+    if (d.source === 'package') {
       registry.delete(id);
       forgetMajor(id);
       removed = true;
@@ -134,8 +134,8 @@ export function clearPackNodes(): void {
  * Resolve a node type to its descriptor.
  *
  * Resolution order:
- *   1. Exact match (versioned canonical id `<packId>/<kindId>@<major>`).
- *   2. Unversioned-latest: input matches `<packId>/<kindId>` → use the
+ *   1. Exact match (versioned canonical id `<packageId>/<kindId>@<major>`).
+ *   2. Unversioned-latest: input matches `<packageId>/<kindId>` → use the
  *      highest installed major for that family.
  */
 function lookupDescriptor(nodeType: NodeKindId): NodeDescriptor | undefined {

@@ -16,8 +16,8 @@ import {
 import { useUserContext } from "../providers/UserProvider";
 import { useLLMContext } from "../providers/LLMProvider";
 import { useToastContext } from "../providers/ToastProvider";
-import { usePackPalette } from "../providers/PackPaletteContext";
-import { canvasKindLabelFromNode } from "../utils/palettePackFactoryDraft";
+import { usePackagePalette } from "../providers/PackagePaletteContext";
+import { canvasKindLabelFromNode } from "../utils/palettePackageFactoryDraft";
 import type { CanvasKindConfig } from "../utils/canvasKindConfig";
 import { readCanvasKindConfig } from "../utils/canvasKindConfig";
 import { ConnectionValidator } from "../ConnectionValidator";
@@ -26,9 +26,9 @@ import {
     EditableNodeHeaderLabel,
     NodeSaveAsModal,
     NodeKindConfigModal,
-    PackMetaHeader,
-    PackStagingDragGrip,
-} from "./packs/editing";
+    PackageMetaHeader,
+    PackageStagingDragGrip,
+} from "./packages/editing";
 import Col from "react-bootstrap/Col";
 import Nav from "react-bootstrap/Nav";
 import Row from "react-bootstrap/Row";
@@ -136,7 +136,7 @@ export const NodeContainer = ({
         dashboardOn,
         dashboardLocked,
     } = useFlowContext();
-    const { packsPaletteEditMode } = usePackPalette();
+    const { packagesPaletteEditMode } = usePackagePalette();
     const { getNodes, getEdges } = useReactFlow();
     const { getTemplates, deleteTemplate, fetchTemplates } = useTemplateContext();
     const { createCodeNode, loadTrill } = useCode();
@@ -502,13 +502,13 @@ export const NodeContainer = ({
         catch { return nodeType; }
     };
 
-    const packDescriptor = tryGetNodeDescriptor(data.nodeType as NodeKindId);
-    const headerKindLabel = packDescriptor
-        ? canvasKindLabelFromNode({ data }, packDescriptor)
+    const packageDescriptor = tryGetNodeDescriptor(data.nodeType as NodeKindId);
+    const headerKindLabel = packageDescriptor
+        ? canvasKindLabelFromNode({ data }, packageDescriptor)
         : nodeNameTranslation(data.nodeType);
-    const hasPackMetaHeader = packDescriptor?.source === "pack" && !!packDescriptor.pack;
-    const showPackNodeActions = hasPackMetaHeader && !dashboardOn;
-    const canEditPackHeader = packsPaletteEditMode && !dashboardOn;
+    const hasPackageMetaHeader = packageDescriptor?.source === "package" && !!packageDescriptor.package;
+    const showPackageNodeActions = hasPackageMetaHeader && !dashboardOn;
+    const canEditPackageHeader = packagesPaletteEditMode && !dashboardOn;
     const suggestionActive = data.suggestionType != "none" && data.suggestionType != undefined;
     const nodeHeaderBandPx = 28;
 
@@ -669,8 +669,8 @@ export const NodeContainer = ({
                         flexShrink: 0,
                         ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
                         }}>
-                        {canEditPackHeader ? (
-                            <PackStagingDragGrip
+                        {canEditPackageHeader ? (
+                            <PackageStagingDragGrip
                                 nodeId={nodeId}
                                 keywordHighlighted={!!data.keywordHighlighted}
                             />
@@ -683,23 +683,23 @@ export const NodeContainer = ({
                             onActivate={() => setMinimized(true)}
                         />
 
-                        {/* Node title — editable on pack nodes (same visibility as PACK pills) */}
+                        {/* Node title — editable on package nodes (same visibility as PACKAGE pills) */}
                         <EditableNodeHeaderLabel
                             displayLabel={headerKindLabel}
-                            editable={showPackNodeActions}
-                            showConfig={showPackNodeActions}
+                            editable={showPackageNodeActions}
+                            showConfig={showPackageNodeActions}
                             executed={nodeExecStatus[nodeId] === "executed"}
                             keywordHighlighted={!!data.keywordHighlighted}
                             onLabelCommit={(label) => {
-                                updateDataNode(nodeId, { ...data, packKindLabel: label });
+                                updateDataNode(nodeId, { ...data, packageKindLabel: label });
                             }}
                             onConfigure={() => setConfigOpen(true)}
                         />
 
-                        {hasPackMetaHeader && packDescriptor?.pack ? (
-                            <PackMetaHeader
-                                pack={packDescriptor.pack}
-                                category={packDescriptor.category}
+                        {hasPackageMetaHeader && packageDescriptor?.package ? (
+                            <PackageMetaHeader
+                                package={packageDescriptor.package}
+                                category={packageDescriptor.category}
                                 suggestionActive={suggestionActive}
                             />
                         ) : null}
@@ -1073,14 +1073,14 @@ export const NodeContainer = ({
                 nodeId={nodeId}
                 nodeType={data.nodeType}
                 storedConfig={readCanvasKindConfig({ data })}
-                storedLabel={data.packKindLabel}
+                storedLabel={data.packageKindLabel}
                 templateCode={code ?? data.defaultCode ?? ""}
                 onClose={() => setConfigOpen(false)}
                 onSave={(config: CanvasKindConfig) => {
                     updateDataNode(nodeId, {
                         ...data,
-                        packKindLabel: config.label.trim(),
-                        packKindConfig: config,
+                        packageKindLabel: config.label.trim(),
+                        packageKindConfig: config,
                     });
                     setConfigOpen(false);
                     setSaveAsOpen(true);

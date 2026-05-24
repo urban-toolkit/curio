@@ -10,47 +10,47 @@ import { IPropagation } from '../providers/FlowProvider';
  *
  * - **Built-ins** keep using `NodeType` enum members (e.g. `NodeType.DATA_LOADING`)
  *   so existing call sites continue to type-check unchanged.
- * - **Pack kinds** use a canonical string of the form `<packId>/<kindId>@<major>`
+ * - **Package kinds** use a canonical string of the form `<packageId>/<kindId>@<major>`
  *   (e.g. `"ai.urbanlab.uhvi/uhvi-load@1"`). This is the string the frontend
  *   registry, backend `_node_type_registry`, saved Trill graphs, and
  *   `/processPythonCode` all dispatch on.
  *
  * See ``docs/WAREHOUSE.md`` for the user-facing overview and
- * ``docs/schemas/node-pack.v2.json`` for the manifest schema.
+ * ``docs/schemas/node-package.v3.json`` for the manifest schema.
  */
 export type NodeKindId = NodeType | string;
 
 /**
  * Where a registered descriptor came from. Drives palette sectioning and any
- * future "remove pack" affordance — built-ins must never be removed at runtime.
+ * future "remove package" affordance — built-ins must never be removed at runtime.
  */
-export type NodeSource = 'core' | 'pack';
+export type NodeSource = 'core' | 'package';
 
-/** Fork provenance when `source === 'pack'` (from manifest `lineage`). */
-export interface NodePackLineageCoord {
-  packId: string;
+/** Fork provenance when `source === 'package'` (from manifest `lineage`). */
+export interface NodePackageLineageCoord {
+  packageId: string;
   major: number;
 }
 
-export interface NodePackLineage {
-  forkedFrom: NodePackLineageCoord;
-  root: NodePackLineageCoord;
+export interface NodePackageLineage {
+  forkedFrom: NodePackageLineageCoord;
+  root: NodePackageLineageCoord;
 }
 
-/** Pack-provenance metadata attached to descriptors whose `source === 'pack'`. */
-export interface NodePackMeta {
-  packId: string;
+/** Package-provenance metadata attached to descriptors whose `source === 'package'`. */
+export interface NodePackageMeta {
+  packageId: string;
   major: number;
   version: string;
-  /** From manifest `name` — human-readable pack title for palette / hub UI. */
+  /** From manifest `name` — human-readable package title for palette / hub UI. */
   name?: string;
   publisher?: string;
-  /** Pack-relative path to the optional starter source file (any extension). */
+  /** Package-relative path to the optional starter source file (any extension). */
   source?: string;
-  lineage?: NodePackLineage;
-  /** When true, omit this coordinate from the Packs dock palette (manifest `curio.paletteDock`). */
+  lineage?: NodePackageLineage;
+  /** When true, omit this coordinate from the Packages dock palette (manifest `curio.paletteDock`). */
   hiddenFromForkPaletteDock?: boolean;
-  /** When true, the pack rejects factory-install / Save-As writes (manifest `readOnly`). */
+  /** When true, the package rejects factory-install / Save-As writes (manifest `readOnly`). */
   readOnly?: boolean;
   /** Canonical creation instant from manifest `createdAt`. */
   createdAt?: string;
@@ -201,7 +201,7 @@ export interface NodeAdapter {
 export interface NodeDescriptor {
   /**
    * Dispatch key. Either a built-in `NodeType` enum value (default) or a
-   * pack canonical id `<packId>/<kindId>@<major>` for pack-registered kinds.
+   * package canonical id `<packageId>/<kindId>@<major>` for package-registered kinds.
    */
   id: NodeKindId;
   category: NodeCategory;
@@ -227,6 +227,6 @@ export interface NodeDescriptor {
    * with the built-in registrations in `registry/descriptors.ts`.
    */
   source?: NodeSource;
-  /** Set when `source === 'pack'`; metadata threaded through from the pack manifest. */
-  pack?: NodePackMeta;
+  /** Set when `source === 'package'`; metadata threaded through from the package manifest. */
+  package?: NodePackageMeta;
 }

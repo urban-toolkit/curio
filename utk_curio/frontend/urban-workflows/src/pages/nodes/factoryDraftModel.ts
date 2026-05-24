@@ -16,15 +16,15 @@ export interface PortDraft {
   cardinality: string;
 }
 
-/** Mirrors manifest ``lineage`` (backend ``PackLineage``). */
-export interface PackLineageCoordDraft {
-  packId: string;
+/** Mirrors manifest ``lineage`` (backend ``PackageLineage``). */
+export interface PackageLineageCoordDraft {
+  packageId: string;
   major: number;
 }
 
-export interface PackLineageDraft {
-  forkedFrom: PackLineageCoordDraft;
-  root: PackLineageCoordDraft;
+export interface PackageLineageDraft {
+  forkedFrom: PackageLineageCoordDraft;
+  root: PackageLineageCoordDraft;
 }
 
 export interface KindDraft {
@@ -43,14 +43,14 @@ export interface KindDraft {
   lifecycle?: string;
   iconRef?: string;
   paletteOrder?: number;
-  /** Pack-relative source filename, e.g. "uhvi-load.py" or "chart.vl.json". Empty when the kind ships no starter. */
+  /** Package-relative source filename, e.g. "uhvi-load.py" or "chart.vl.json". Empty when the kind ships no starter. */
   sourceFilename: string;
   /** Full source body, written to `sources/<sourceFilename>` on build. */
   sourceCode: string;
 }
 
 export interface Draft {
-  packId: string;
+  packageId: string;
   major: number;
   version: string;
   name: string;
@@ -61,10 +61,10 @@ export interface Draft {
   permissions: string[];
   pythonDeps: { id: string; pkg: string; range: string }[];
   jsDeps: { id: string; pkg: string; range: string }[];
-  packDeps: { id: string; pkg: string; range: string }[];
+  packageDeps: { id: string; pkg: string; range: string }[];
   kinds: KindDraft[];
-  /** Fork provenance when saving from the palette editor against an installed pack. */
-  lineage: PackLineageDraft | null;
+  /** Fork provenance when saving from the palette editor against an installed package. */
+  lineage: PackageLineageDraft | null;
   /** Manifest ``createdAt`` (ISO instant). Omit to let backend stamp UTC on build/install. */
   createdAt?: string;
   readme: string;
@@ -74,7 +74,7 @@ export interface Draft {
 
 
 export const STARTER_CODE =
-  "# Pack source — runs in the shared sandbox interpreter.\n" +
+  "# Package source — runs in the shared sandbox interpreter.\n" +
   "# Replace this body with your implementation.\n\n" +
   "def run(input):\n" +
   '    return {"hello": "from the node factory"}\n';
@@ -104,7 +104,7 @@ export function makeKind(kindId: string = "demo-kind"): KindDraft {
 
 export function makeDraft(): Draft {
   return {
-    packId: "",
+    packageId: "",
     major: 1,
     version: "0.1.0",
     name: "",
@@ -115,7 +115,7 @@ export function makeDraft(): Draft {
     permissions: [],
     pythonDeps: [],
     jsDeps: [],
-    packDeps: [],
+    packageDeps: [],
     kinds: [makeKind()],
     lineage: null,
     readme: "",
@@ -146,7 +146,7 @@ export function toApiPayload(d: Draft): {
   license_text: string;
 } {
   const manifest: Record<string, unknown> = {
-    id: d.packId,
+    id: d.packageId,
     version: d.version,
     name: d.name,
     publisher: d.publisher,
@@ -158,7 +158,7 @@ export function toApiPayload(d: Draft): {
     },
     permissions: d.permissions,
     dependencies: {
-      packs: depsToMap(d.packDeps),
+      packages: depsToMap(d.packageDeps),
       python: depsToMap(d.pythonDeps),
       js: depsToMap(d.jsDeps),
     },
@@ -197,11 +197,11 @@ export function toApiPayload(d: Draft): {
   if (d.lineage) {
     manifest.lineage = {
       forkedFrom: {
-        packId: d.lineage.forkedFrom.packId,
+        packageId: d.lineage.forkedFrom.packageId,
         major: d.lineage.forkedFrom.major,
       },
       root: {
-        packId: d.lineage.root.packId,
+        packageId: d.lineage.root.packageId,
         major: d.lineage.root.major,
       },
     };

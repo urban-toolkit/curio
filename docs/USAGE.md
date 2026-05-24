@@ -246,16 +246,16 @@ If `GUEST_LLM_API_KEY` is not set, the LLM Assistant will return an error for gu
 
 ## Node Warehouse
 
-Curio's nodes ship as **packs** — small, self-contained folders with a `manifest.json` declaring the node kinds inside. The built-in nodes (Data Loading, Vega-Lite, AutkMap, etc.) live in a pre-installed pack called `curio.builtin@1`; you can install more via the **Node Warehouse** drawer.
+Curio's nodes ship as **packages** — small, self-contained folders with a `manifest.json` declaring the node kinds inside. The built-in nodes (Data Loading, Vega-Lite, AutkMap, etc.) live in a pre-installed package called `curio.builtin@1`; you can install more via the **Node Warehouse** drawer.
 
-To open the drawer: in the **Tools panel** on the left edge of the canvas, find the **Packs** dropdown (cube icon) and click the **Get packs +** button directly underneath it. From there you can:
+To open the drawer: in the **Tools panel** on the left edge of the canvas, find the **Packages** dropdown (cube icon) and click the **Get packages +** button directly underneath it. From there you can:
 
-- Browse the catalog and install new packs.
-- See your installed packs grouped by fork family in the **Installed** tab.
-- Sideload a `.curio-nodepack` archive from the footer.
-- Click **Create new pack** to open the Node Factory wizard and author your own.
+- Browse the catalog and install new packages.
+- See your installed packages grouped by fork family in the **Installed** tab.
+- Sideload a `.curio-package` archive from the footer.
+- Click **Create new package** to open the Node Factory wizard and author your own.
 
-The full walkthrough — concepts, the wizard, exporting / sideloading, versioning, and fork lineage — is in [docs/WAREHOUSE.md](WAREHOUSE.md). The manifest format is specified in [docs/schemas/node-pack.v2.json](schemas/node-pack.v2.json), and the committed pack catalog lives at `<repo_root>/packs/`.
+The full walkthrough — concepts, the wizard, exporting / sideloading, versioning, and fork lineage — is in [docs/WAREHOUSE.md](WAREHOUSE.md). The manifest format is specified in [docs/schemas/node-package.v3.json](schemas/node-package.v3.json), and the committed package catalog lives at `<repo_root>/packages/`.
 
 ## Quick start
 

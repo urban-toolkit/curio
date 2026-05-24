@@ -1,10 +1,10 @@
 /**
- * IconRegistry: resolves `iconRef` strings from pack manifests into
+ * IconRegistry: resolves `iconRef` strings from package manifests into
  * FontAwesome icon definitions used by node descriptors.
  *
  * Manifests can't import JS icon constants, so they reference icons by
  * a string key like `"fa-solid:upload"`. The frontend bootstraps the
- * registry with the icons it actually uses (built-ins + common pack
+ * registry with the icons it actually uses (built-ins + common package
  * icons); unknown refs fall back to `faCube`.
  */
 
@@ -49,7 +49,7 @@ export function resolveIconRef(ref: string | null | undefined): IconDefinition {
   return faCube;
 }
 
-// Bootstrap the icons used by the curio.builtin@1 pack and common third-party packs.
+// Bootstrap the icons used by the curio.builtin@1 package and common third-party packages.
 registerIcon('fa-solid:upload', faUpload);
 registerIcon('fa-solid:download', faDownload);
 registerIcon('fa-solid:database', faDatabase);

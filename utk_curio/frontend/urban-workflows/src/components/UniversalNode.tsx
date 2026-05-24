@@ -15,7 +15,7 @@ import './Node.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 // When the canvas node's `data.nodeType` changes (e.g. after Save-As rebinds
-// the node to a new pack kind), the descriptor's `useLifecycle` hook function
+// the node to a new package kind), the descriptor's `useLifecycle` hook function
 // can change. Calling a *different* hook at the same call site violates
 // React's rules of hooks and corrupts the state slots ("baseQueue is undefined").
 // Keying the inner body by `data.nodeType` forces an unmount/remount so the

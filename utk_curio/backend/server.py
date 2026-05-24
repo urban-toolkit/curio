@@ -7,14 +7,14 @@ app = create_app()
 # fnmatch patterns the dev-server stat reloader must NEVER treat as
 # reload triggers (see :func:`werkzeug._reloader._find_stat_paths`).
 #
-# ``.curio/`` is user **runtime** data — pack stores, staging dirs,
+# ``.curio/`` is user **runtime** data — package stores, staging dirs,
 # lockfiles, the SQLite DB — and must not restart the backend when
-# templates are written during a pack install.
+# templates are written during a package install.
 #
 # **Important:** Werkzeug's default ``reloader_type="auto"`` prefers
 # Watchdog, which applies ``exclude_patterns`` via ``pathlib.Path.match``
 # — that API does **not** reliably exclude deep paths under ``.curio/``
-# (e.g. ``…/.curio/users/…/packs/…/templates/foo.py``), so installs still
+# (e.g. ``…/.curio/users/…/packages/…/templates/foo.py``), so installs still
 # killed the worker with ``ERR_EMPTY_RESPONSE``. Curio therefore defaults
 # ``FLASK_RELOADER_TYPE`` to ``"stat"``, where excludes use :mod:`fnmatch`
 # on full paths and work for arbitrary depth. Set ``FLASK_RELOADER_TYPE=watchdog``

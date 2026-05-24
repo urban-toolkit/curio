@@ -9,7 +9,7 @@ import React, {
   useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
-import { NodeWarehouseDrawer } from "../components/packs/publishing";
+import { NodeWarehouseDrawer } from "../components/packages/publishing";
 
 /** Panel slide duration — keep in sync with `.drawer` in NodeWarehouseDrawer.module.css */
 const DRAWER_MOTION_MS = 300;

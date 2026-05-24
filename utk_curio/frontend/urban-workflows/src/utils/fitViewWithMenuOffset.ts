@@ -1,7 +1,7 @@
 import type { ReactFlowInstance, FitViewOptions } from "reactflow";
 
 // fitView centers content in the full canvas, but the palette dock (`#tools-palette-dock`)
-// is a fixed overlay on the left (built-in tools + packs control). Shift the viewport
+// is a fixed overlay on the left (built-in tools + packages control). Shift the viewport
 // right by half the dock's width so content is centered in the visible area.
 
 export function fitViewWithMenuOffset(

@@ -3,10 +3,10 @@ import { getToken } from "../utils/authApi";
 
 export default async function useTemplates() {
     try{
-        // /templates folds in per-user pack templates when the request is
+        // /templates folds in per-user package templates when the request is
         // authenticated (see utk_curio/backend/app/api/routes.py → get_templates).
         // Without the Bearer token we'd only ever see the built-in presets,
-        // and a freshly-dropped pack node would have nothing in its
+        // and a freshly-dropped package node would have nothing in its
         // Templates dropdown.
         const token = getToken();
         const response = await fetch(process.env.BACKEND_URL + '/templates', {

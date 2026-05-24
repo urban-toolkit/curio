@@ -33,8 +33,8 @@ import { v4 as uuid } from "uuid";
 export interface Template {
     id: string;
     /**
-     * Dispatch key — either a built-in `NodeType` enum value or a pack canonical
-     * id `<packId>/<kindId>@<major>` (e.g. `"ai.urbanlab.uhvi/uhvi-load@1"`).
+     * Dispatch key — either a built-in `NodeType` enum value or a package canonical
+     * id `<packageId>/<kindId>@<major>` (e.g. `"ai.urbanlab.uhvi/uhvi-load@1"`).
      */
     type: NodeKindId;
     name: string;
@@ -84,7 +84,7 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
         void fetchTemplates();
     }, [fetchTemplates]);
 
-    // ``refreshPackRegistry`` calls this after pack install/load so new pack
+    // ``refreshPackageRegistry`` calls this after package install/load so new package
     // template bodies merge into GET /templates before palette nodes inject code.
     useEffect(() => {
         const w = (window as unknown as { curio?: Record<string, unknown> }).curio ?? {};
@@ -127,8 +127,8 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
     const editUserTemplate = (templateNew: Template) => {
         // No-op since Phase B: user-custom templates were saved to the legacy
         // ``<CURIO_LAUNCH_CWD>/templates/`` directory which no longer exists.
-        // Pack-source files are now the only source of starter code; users
-        // wanting to ship their own should publish a pack.
+        // Package-source files are now the only source of starter code; users
+        // wanting to ship their own should publish a package.
         let newTemplates: Template[] = [];
 
         for (const template of userTemplates) {

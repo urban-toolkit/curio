@@ -10,7 +10,7 @@ import { useParams } from "react-router-dom";
 import { useFlowContext, IOutput } from "../providers/FlowProvider";
 import { useCode } from "../hook/useCode";
 import { TrillGenerator } from "../TrillGenerator";
-import { refreshPackRegistry } from "../registry/packRegistryBootstrap";
+import { refreshPackageRegistry } from "../registry/packageRegistryBootstrap";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -82,13 +82,13 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     (async () => {
-      // Pack descriptors register asynchronously at boot. If a user deep-links
+      // Package descriptors register asynchronously at boot. If a user deep-links
       // straight into /dataflow/<id>, ProjectLoader can mount before
-      // `refreshPackRegistry()` resolves, leaving `getNodeDescriptor()` calls in
-      // loadTrill with no built-in descriptors to find. Await pack discovery
+      // `refreshPackageRegistry()` resolves, leaving `getNodeDescriptor()` calls in
+      // loadTrill with no built-in descriptors to find. Await package discovery
       // before applying the spec so every node has a registered kind.
       try {
-        await refreshPackRegistry();
+        await refreshPackageRegistry();
       } catch {
         /* loader continues; descriptor-miss surfaces per-node, not as a hard stop */
       }

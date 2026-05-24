@@ -4,7 +4,7 @@ import {
   getNodeDescriptor,
   getAllNodeTypes,
   getPaletteNodeTypes,
-  clearPackNodes,
+  clearPackageNodes,
 } from '../../registry/nodeRegistry';
 import { NodeDescriptor, NodeLifecycleHook } from '../../registry/types';
 import { faCircle } from '@fortawesome/free-solid-svg-icons';
@@ -55,20 +55,20 @@ describe('nodeRegistry', () => {
       );
     });
 
-    test('registers and retrieves a descriptor by canonical pack id', () => {
+    test('registers and retrieves a descriptor by canonical package id', () => {
       const canonical = 'ai.urbanlab.uhvi/uhvi-load@1';
       const desc = makeDescriptor({
         id: canonical,
-        source: 'pack',
-        pack: { packId: 'ai.urbanlab.uhvi', major: 1, version: '1.0.0' },
+        source: 'package',
+        package: { packageId: 'ai.urbanlab.uhvi', major: 1, version: '1.0.0' },
         label: 'UHVI Loader',
       });
       registerNode(desc);
 
       const result = getNodeDescriptor(canonical);
       expect(result).toBe(desc);
-      expect(result.source).toBe('pack');
-      expect(result.pack?.packId).toBe('ai.urbanlab.uhvi');
+      expect(result.source).toBe('package');
+      expect(result.package?.packageId).toBe('ai.urbanlab.uhvi');
     });
 
     test('overwrites duplicate registration with warning', () => {
@@ -89,29 +89,29 @@ describe('nodeRegistry', () => {
     });
   });
 
-  describe('clearPackNodes', () => {
-    test('removes every source===pack descriptor and keeps built-ins', () => {
-      const packId = 'zz.test.clear-pack/k1@1';
+  describe('clearPackageNodes', () => {
+    test('removes every source===package descriptor and keeps built-ins', () => {
+      const packageId = 'zz.test.clear-package/k1@1';
       registerNode(
         makeDescriptor({
-          id: packId,
-          source: 'pack',
-          pack: {
-            packId: 'zz.test.clear-pack',
+          id: packageId,
+          source: 'package',
+          package: {
+            packageId: 'zz.test.clear-package',
             major: 1,
             version: '1.0.0',
           },
-          label: 'Ephemeral pack kind',
+          label: 'Ephemeral package kind',
         }),
       );
 
-      expect(getNodeDescriptor(packId).source).toBe('pack');
-      expect(getAllNodeTypes().filter((d) => d.source === 'pack').length).toBeGreaterThanOrEqual(1);
+      expect(getNodeDescriptor(packageId).source).toBe('package');
+      expect(getAllNodeTypes().filter((d) => d.source === 'package').length).toBeGreaterThanOrEqual(1);
 
-      clearPackNodes();
+      clearPackageNodes();
 
-      expect(getAllNodeTypes().filter((d) => d.source === 'pack')).toEqual([]);
-      expect(() => getNodeDescriptor(packId)).toThrow();
+      expect(getAllNodeTypes().filter((d) => d.source === 'package')).toEqual([]);
+      expect(() => getNodeDescriptor(packageId)).toThrow();
       expect(getNodeDescriptor(NodeType.DATA_LOADING)).toBeDefined();
     });
   });

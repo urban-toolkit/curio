@@ -43,7 +43,7 @@ export class PythonInterpreter {
         console.log("unifiedLines", unifiedLines);
 
         // Diagnostic: surface what the frontend is actually sending as the
-        // node's input. Useful when chasing "arg is None" bugs in pack /
+        // node's input. Useful when chasing "arg is None" bugs in package /
         // merge-flow scenarios — the most common cause is `data.input`
         // never being updated by `applyNewOutput` before Run fires.
         // Strip large blobs so the console stays readable.

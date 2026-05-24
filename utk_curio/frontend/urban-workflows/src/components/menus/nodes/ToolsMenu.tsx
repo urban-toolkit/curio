@@ -2,19 +2,19 @@ import React, { Fragment, memo, useEffect, useSyncExternalStore } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faForwardStep } from "@fortawesome/free-solid-svg-icons";
 import { Tooltip, OverlayTrigger } from "react-bootstrap";
-import { refreshPackRegistry } from "../../../api/packsApi";
+import { refreshPackageRegistry } from "../../../api/packagesApi";
 import { getPaletteNodeTypes, subscribeToRegistry } from "../../../registry";
-import { BUILTIN_PACK_ID } from "../../../registry/packsClient";
+import { BUILTIN_PACKAGE_ID } from "../../../registry/packagesClient";
 import { NodeCategory, NodeDescriptor, NodeKindId } from "../../../registry/types";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { useUserContext } from "../../../providers/UserProvider";
 import {
     OVERLAY_TRIGGER_DELAY_PROPS,
-    PacksPaletteDropdown,
-    groupPalettePacks,
+    PackagesPaletteDropdown,
+    groupPalettePackages,
     paletteDescriptorBootstrapKey,
     type ToolsMenuTooltipSide,
-} from "./toolsMenuPackPalette";
+} from "./toolsMenuPackagePalette";
 import styles from "./ToolsMenu.module.css";
 
 const DraggableTool = memo(function DraggableTool({
@@ -89,8 +89,8 @@ function renderGroup(group: NodeDescriptor[], key: string, tooltipPlacement: Too
 const NOOP = () => () => {};
 
 const ToolsMenu = memo(function ToolsMenu() {
-    // Re-render whenever the registry mutates (e.g. when pack descriptors
-    // land asynchronously via packsClient.ts).
+    // Re-render whenever the registry mutates (e.g. when package descriptors
+    // land asynchronously via packagesClient.ts).
     const paletteVersion = useSyncExternalStore(
         typeof window !== "undefined" ? subscribeToRegistry : NOOP,
         paletteDescriptorBootstrapKey,
@@ -102,18 +102,18 @@ const ToolsMenu = memo(function ToolsMenu() {
     useEffect(() => {
         const uid = user?.id;
         if (uid == null) return;
-        void refreshPackRegistry();
+        void refreshPackageRegistry();
     }, [user?.id]);
 
     const paletteTypes = getPaletteNodeTypes();
-    // The curio.builtin pack is manifest-driven like any other, but the UI
-    // anchors it in the left-side "Built-in" rail. Only third-party packs land
-    // in the right-side Packs dropdown.
-    const isBuiltin = (d: NodeDescriptor) => d.pack?.packId === BUILTIN_PACK_ID;
+    // The curio.builtin package is manifest-driven like any other, but the UI
+    // anchors it in the left-side "Built-in" rail. Only third-party packages land
+    // in the right-side Packages dropdown.
+    const isBuiltin = (d: NodeDescriptor) => d.package?.packageId === BUILTIN_PACKAGE_ID;
     const coreTypes = paletteTypes.filter(isBuiltin);
-    const packTypes = paletteTypes.filter((d) => !isBuiltin(d));
+    const packageTypes = paletteTypes.filter((d) => !isBuiltin(d));
     const coreGroups = groupPaletteTypes(coreTypes);
-    const packGroups = groupPalettePacks(packTypes);
+    const packageGroups = groupPalettePackages(packageTypes);
     const { playAllNodes } = useFlowContext();
     return (
         <div id="tools-palette-dock" className={styles.paletteDock}>
@@ -131,7 +131,7 @@ const ToolsMenu = memo(function ToolsMenu() {
                     <FontAwesomeIcon icon={faForwardStep} />
                 </button>
             </div>
-            <PacksPaletteDropdown groups={packGroups} />
+            <PackagesPaletteDropdown groups={packageGroups} />
         </div>
     );
 });

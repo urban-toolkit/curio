@@ -1,0 +1,512 @@
+{
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v3.json",
+  "id": "curio.builtin",
+  "version": "1.0.0",
+  "name": "Curio Built-in Nodes",
+  "publisher": "Curio",
+  "description": "The default set of nodes that ships with Curio. Auto-installed for every user; provides Data Loading/Export/Transformation, Computation, Visualization, AUTK integrations, and flow control.",
+  "license": "MIT",
+  "readOnly": true,
+  "compatibility": {
+    "curioRuntime": ">=0.5.0",
+    "major": 1
+  },
+  "permissions": [],
+  "dependencies": {
+    "packages": {},
+    "python": {},
+    "js": {}
+  },
+  "kinds": [
+    {
+      "id": "data-loading",
+      "label": "Data Loading",
+      "category": "data",
+      "engine": "python",
+      "lifecycle": "code",
+      "iconRef": "fa-solid:upload",
+      "paletteOrder": 0,
+      "description": "The Data Loading box is responsible for getting data from the outside world into the dataflow.",
+      "editor": "code",
+      "hasCode": true,
+      "hasWidgets": true,
+      "hasGrammar": false,
+      "inputPorts": [],
+      "outputPorts": [
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "RASTER"
+          ],
+          "cardinality": "[1,n]"
+        }
+      ],
+      "tutorialId": "step-loading"
+    },
+    {
+      "id": "data-export",
+      "label": "Data Export",
+      "category": "data",
+      "engine": "python",
+      "lifecycle": "data-export",
+      "iconRef": "fa-solid:download",
+      "paletteOrder": 1,
+      "description": "The Export box is responsible for getting data from the dataflow to the outside world.",
+      "editor": "code",
+      "hasCode": true,
+      "hasWidgets": true,
+      "hasGrammar": false,
+      "inputPorts": [
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "RASTER"
+          ],
+          "cardinality": "1"
+        }
+      ],
+      "outputPorts": []
+    },
+    {
+      "id": "data-transformation",
+      "label": "Data Transformation",
+      "category": "data",
+      "engine": "python",
+      "lifecycle": "code",
+      "iconRef": "fa-solid:database",
+      "paletteOrder": 3,
+      "description": "The Data Transformation box is responsible for performing any kinds of transformations to the data.",
+      "editor": "code",
+      "hasCode": true,
+      "hasWidgets": true,
+      "hasGrammar": false,
+      "inputPorts": [
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "RASTER"
+          ],
+          "cardinality": "[1,2]"
+        }
+      ],
+      "outputPorts": [
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "RASTER"
+          ],
+          "cardinality": "[1,2]"
+        }
+      ],
+      "tutorialId": "step-transformation"
+    },
+    {
+      "id": "data-pool",
+      "label": "Data Pool",
+      "category": "data",
+      "engine": "python",
+      "lifecycle": "data-pool",
+      "iconRef": "fa-solid:server",
+      "paletteOrder": 13,
+      "description": "The Data Pool is responsible for storing data that can be interacted by all connected visualizations. Interactions can also be propagated to other Data Pools.",
+      "editor": "none",
+      "hasCode": false,
+      "hasWidgets": false,
+      "hasGrammar": false,
+      "inputPorts": [
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME"
+          ],
+          "cardinality": "1"
+        }
+      ],
+      "outputPorts": [
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME"
+          ],
+          "cardinality": "1"
+        }
+      ],
+      "bidirectional": true,
+      "tutorialId": "step-pool"
+    },
+    {
+      "id": "computation-analysis",
+      "label": "Python Computation",
+      "category": "computation",
+      "engine": "python",
+      "lifecycle": "code",
+      "iconRef": "fa-brands:python",
+      "paletteOrder": 2,
+      "description": "The Computation Analysis box is the generic box responsible for performing any kinds of computations.",
+      "editor": "code",
+      "hasCode": true,
+      "hasWidgets": true,
+      "hasGrammar": false,
+      "inputPorts": [
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "VALUE",
+            "LIST",
+            "JSON",
+            "RASTER"
+          ],
+          "cardinality": "[1,n]"
+        }
+      ],
+      "outputPorts": [
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "VALUE",
+            "LIST",
+            "JSON",
+            "RASTER"
+          ],
+          "cardinality": "[1,n]"
+        }
+      ],
+      "tutorialId": "step-analysis"
+    },
+    {
+      "id": "data-summary",
+      "label": "Data Summary",
+      "category": "computation",
+      "engine": "python",
+      "lifecycle": "data-summary",
+      "iconRef": "fa-solid:rectangle-list",
+      "paletteOrder": 10,
+      "description": "The Data Summary node computes descriptive statistics and schema information (shape, dtypes, missing values, describe) for a DataFrame.",
+      "editor": "code",
+      "hasCode": true,
+      "hasWidgets": false,
+      "hasGrammar": false,
+      "inputPorts": [
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME"
+          ],
+          "cardinality": "1"
+        }
+      ],
+      "outputPorts": [
+        {
+          "types": [
+            "JSON"
+          ],
+          "cardinality": "1"
+        }
+      ]
+    },
+    {
+      "id": "js-computation",
+      "label": "JS Computation",
+      "category": "computation",
+      "engine": "javascript",
+      "lifecycle": "code",
+      "iconRef": "fa-brands:js",
+      "paletteOrder": 11,
+      "description": "Run JavaScript via Node.js. Input from the previous node is available as `arg`. Use `return` to pass output downstream.",
+      "editor": "code",
+      "hasCode": true,
+      "hasWidgets": false,
+      "hasGrammar": false,
+      "inputPorts": [
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "VALUE",
+            "LIST",
+            "JSON",
+            "RASTER"
+          ],
+          "cardinality": "[0,1]"
+        }
+      ],
+      "outputPorts": [
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "VALUE",
+            "LIST",
+            "JSON",
+            "RASTER"
+          ],
+          "cardinality": "[0,1]"
+        }
+      ]
+    },
+    {
+      "id": "vis-vega",
+      "label": "Vega-Lite",
+      "category": "vis_grammar",
+      "engine": "python",
+      "lifecycle": "vega",
+      "iconRef": "fa-solid:chart-line",
+      "paletteOrder": 7,
+      "badge": "VEGA",
+      "description": "The Vega box is responsible for visualizing 2D plots.",
+      "editor": "grammar",
+      "grammarId": "vega-lite",
+      "hasCode": false,
+      "hasWidgets": true,
+      "hasGrammar": true,
+      "inputPorts": [
+        {
+          "types": [
+            "DATAFRAME"
+          ],
+          "cardinality": "1"
+        }
+      ],
+      "outputPorts": [
+        {
+          "types": [
+            "DATAFRAME"
+          ],
+          "cardinality": "1"
+        }
+      ],
+      "bidirectional": true,
+      "hasProvenance": true,
+      "tutorialId": "step-vega"
+    },
+    {
+      "id": "vis-simple",
+      "label": "Simple View",
+      "category": "vis_simple",
+      "engine": "python",
+      "lifecycle": "simple-vis",
+      "iconRef": "fa-solid:table",
+      "paletteOrder": 8,
+      "description": "Displays incoming data: renders a table for DataFrames, an image grid for image DataFrames, or passes through other values.",
+      "editor": "none",
+      "hasCode": false,
+      "hasWidgets": false,
+      "hasGrammar": false,
+      "inputPorts": [
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "VALUE",
+            "LIST",
+            "JSON",
+            "RASTER"
+          ],
+          "cardinality": "1"
+        }
+      ],
+      "outputPorts": [
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "VALUE",
+            "LIST",
+            "JSON",
+            "RASTER"
+          ],
+          "cardinality": "1"
+        }
+      ],
+      "bidirectional": true,
+      "hasProvenance": true,
+      "tutorialId": "step-image"
+    },
+    {
+      "id": "autk-plot",
+      "label": "AutkPlot",
+      "category": "vis_simple",
+      "engine": "javascript",
+      "lifecycle": "autk-plot",
+      "iconRef": "fa-solid:chart-column",
+      "paletteOrder": 10,
+      "badge": "AUTK",
+      "description": "Renders charts using autk-plot. Supports scatterplot, barchart, linechart, heatmatrix, parallel-coordinates, and table. Bidirectional brushing with AutkMap when linked.",
+      "editor": "code",
+      "hasCode": true,
+      "hasWidgets": false,
+      "hasGrammar": false,
+      "inputPorts": [
+        {
+          "types": [
+            "LIST",
+            "JSON",
+            "GEODATAFRAME",
+            "DATAFRAME"
+          ],
+          "cardinality": "1"
+        }
+      ],
+      "outputPorts": [
+        {
+          "types": [
+            "LIST",
+            "JSON",
+            "GEODATAFRAME",
+            "DATAFRAME"
+          ],
+          "cardinality": "[0,1]"
+        }
+      ],
+      "bidirectional": true
+    },
+    {
+      "id": "autk-map",
+      "label": "AutkMap",
+      "category": "vis_simple",
+      "engine": "javascript",
+      "lifecycle": "autk-map",
+      "iconRef": "fa-solid:city",
+      "paletteOrder": 9,
+      "badge": "AUTK",
+      "description": "Renders urban 3D map layers using autk-map. Accepts an Autark layer array, a FeatureCollection, or a GeoDataFrame. Bidirectional brushing with AutkPlot when linked.",
+      "editor": "code",
+      "hasCode": true,
+      "hasWidgets": false,
+      "hasGrammar": false,
+      "inputPorts": [
+        {
+          "types": [
+            "LIST",
+            "JSON",
+            "GEODATAFRAME"
+          ],
+          "cardinality": "1"
+        }
+      ],
+      "outputPorts": [
+        {
+          "types": [
+            "LIST",
+            "JSON",
+            "GEODATAFRAME"
+          ],
+          "cardinality": "[0,1]"
+        }
+      ],
+      "bidirectional": true
+    },
+    {
+      "id": "autk-compute",
+      "label": "AutkCompute",
+      "category": "computation",
+      "engine": "javascript",
+      "lifecycle": "autk-compute",
+      "iconRef": "fa-solid:cubes",
+      "paletteOrder": 12,
+      "badge": "AUTK",
+      "description": "GPU compute on urban layers via autk-compute. Receives a layer array, returns a transformed layer array. Runs on a hidden offscreen canvas.",
+      "editor": "code",
+      "hasCode": true,
+      "hasWidgets": false,
+      "hasGrammar": false,
+      "inputPorts": [
+        {
+          "types": [
+            "LIST",
+            "JSON",
+            "GEODATAFRAME"
+          ],
+          "cardinality": "1"
+        }
+      ],
+      "outputPorts": [
+        {
+          "types": [
+            "LIST",
+            "JSON",
+            "GEODATAFRAME"
+          ],
+          "cardinality": "1"
+        }
+      ]
+    },
+    {
+      "id": "autk-db",
+      "label": "AutkDB",
+      "category": "data",
+      "engine": "javascript",
+      "lifecycle": "autk-db",
+      "iconRef": "fa-solid:map-location-dot",
+      "paletteOrder": 5,
+      "badge": "AUTK",
+      "description": "Server-side spatial database via autk-db. Loads OSM data through Overpass and emits a layer array downstream.",
+      "editor": "code",
+      "hasCode": true,
+      "hasWidgets": false,
+      "hasGrammar": false,
+      "inputPorts": [],
+      "outputPorts": [
+        {
+          "types": [
+            "LIST"
+          ],
+          "cardinality": "1"
+        }
+      ]
+    },
+    {
+      "id": "merge-flow",
+      "label": "Merge Flow",
+      "category": "flow",
+      "engine": "python",
+      "lifecycle": "merge-flow",
+      "iconRef": "fa-solid:code-merge",
+      "paletteOrder": 9,
+      "description": "The Merge Flow box merges multiple incoming data flows into one.",
+      "editor": "none",
+      "hasCode": false,
+      "hasWidgets": false,
+      "hasGrammar": false,
+      "inputPorts": [
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "VALUE",
+            "LIST",
+            "JSON",
+            "RASTER"
+          ],
+          "cardinality": "[1,n]"
+        }
+      ],
+      "outputPorts": [
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "VALUE",
+            "LIST",
+            "JSON",
+            "RASTER"
+          ],
+          "cardinality": "1"
+        }
+      ],
+      "tutorialId": "step-merge",
+      "containerStyle": {
+        "nodeWidth": 50,
+        "nodeHeight": 180,
+        "noContent": true
+      }
+    }
+  ],
+  "createdAt": "2026-05-23T00:00:00Z"
+}

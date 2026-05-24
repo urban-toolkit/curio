@@ -3,7 +3,7 @@
  *
  * Manifests can't carry JS code, so each kind references a lifecycle by
  * string key (e.g. `"code"`, `"vega"`). Built-in lifecycles are
- * registered at app startup via `builtinLifecycles.ts`; third-party packs
+ * registered at app startup via `builtinLifecycles.ts`; third-party packages
  * pick from the same set when authoring their manifest's `lifecycle` field.
  */
 

@@ -3,8 +3,8 @@ import { GraphPreview } from "../api/projectsApi";
 
 // Keyed by the canonical unversioned node-type string written into trill
 // `graph_preview.nodes[].type` post-Phase-B. The thumbnail runs without the
-// node registry loaded (it renders on the projects list, before pack discovery),
-// so this map is intentionally a static mirror of the built-in pack.
+// node registry loaded (it renders on the projects list, before package discovery),
+// so this map is intentionally a static mirror of the built-in package.
 const NODE_COLORS: Record<string, string> = {
   "curio.builtin/data-loading": "#3498db",
   "curio.builtin/data-export": "#3498db",

@@ -4,7 +4,7 @@ import { useNodeFactoryModal } from "../../providers/NodeFactoryModalProvider";
 import {
   clearStoredWizardHydrationDraft,
   readStoredWizardHydrationDraft,
-} from "../../utils/palettePackFactoryDraft";
+} from "../../utils/palettePackageFactoryDraft";
 import type { Draft } from "./factoryDraftModel";
 
 /**

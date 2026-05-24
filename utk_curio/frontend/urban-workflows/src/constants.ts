@@ -4,7 +4,7 @@ export const CURIO_UNIVERSAL_NODE_TYPE = "__curioUniversalNode" as const;
 /**
  * Canonical unversioned node-type identifiers.
  *
- * Each value is the canonical pack-kind id (`<packId>/<kindId>`) that
+ * Each value is the canonical package-kind id (`<packageId>/<kindId>`) that
  * resolves through the registry's unversioned-latest-major lookup. The
  * enum keys keep the legacy names so existing dispatch code in
  * `NotebookConvertor` / `useNodeState` etc. keeps compiling unchanged —

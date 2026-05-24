@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  packsApi,
-  refreshPackRegistry,
+  packagesApi,
+  refreshPackageRegistry,
   type FactoryCapabilities,
   type InstallResponse,
-} from "../../api/packsApi";
+} from "../../api/packagesApi";
 import { SupportedType } from "../../constants";
 import modalStyles from "./NodeFactoryModal.module.css";
 import styles from "./NodeFactory.module.css";
@@ -20,20 +20,20 @@ import {
   makeKind,
   toApiPayload,
 } from "./factoryDraftModel";
-import { lineageCoordKey } from "../../utils/forkPackLineage";
+import { lineageCoordKey } from "../../utils/forkPackageLineage";
 
 /**
  * Node Factory wizard — five-step authoring flow.
  *
  * The wizard maintains a single draft state object whose shape matches
- * the request body of ``POST /api/packs/factory/build`` and
- * ``POST /api/packs/factory/install``. Step 5 calls the backend to
+ * the request body of ``POST /api/packages/factory/build`` and
+ * ``POST /api/packages/factory/install``. Step 5 calls the backend to
  * validate, then either downloads the archive ("Export") or installs
- * it into the user's pack store ("Save and install").
+ * it into the user's package store ("Save and install").
  *
  * Validation is intentionally deferred to the backend: the manifest
- * schema lives in ``utk_curio/backend/app/packs/manifest.py`` and
- * ``docs/schemas/node-pack.v2.json``. Re-implementing it client-side
+ * schema lives in ``utk_curio/backend/app/packages/manifest.py`` and
+ * ``docs/schemas/node-package.v3.json``. Re-implementing it client-side
  * would put us on the path to drift. Local validation here is limited
  * to "is the form fully filled in" checks so the "Next" buttons can
  * guide the user; semantic errors come back from the API and are
@@ -60,7 +60,7 @@ const STEPS = [
   { id: 5, title: "Validate and publish" },
 ] as const;
 
-// Mirror of backend's _SOURCE_FILENAME_RE in utk_curio/backend/app/packs/factory.py
+// Mirror of backend's _SOURCE_FILENAME_RE in utk_curio/backend/app/packages/factory.py
 // so the wizard surfaces invalid filenames as the user types instead of waiting
 // for the validate-and-publish round-trip.
 const SOURCE_FILENAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,254}\.[A-Za-z0-9]+$/;
@@ -157,7 +157,7 @@ export const NodeFactoryWizard: React.FC<NodeFactoryWizardProps> = ({
     switch (step) {
       case 1:
         return (
-          /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/.test(draft.packId) &&
+          /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/.test(draft.packageId) &&
           draft.name.trim().length > 0 &&
           draft.version.trim().length > 0 &&
           draft.major >= 0
@@ -189,11 +189,11 @@ export const NodeFactoryWizard: React.FC<NodeFactoryWizardProps> = ({
       try {
         const payload = toApiPayload(draft);
         if (mode === "install") {
-          const result = await packsApi.factoryInstall(payload);
-          await refreshPackRegistry();
+          const result = await packagesApi.factoryInstall(payload);
+          await refreshPackageRegistry();
           onInstallSuccess?.(result);
         } else {
-          const { blob, filename } = await packsApi.factoryBuild(payload);
+          const { blob, filename } = await packagesApi.factoryBuild(payload);
           const url = URL.createObjectURL(blob);
           const a = document.createElement("a");
           a.href = url;
@@ -216,12 +216,12 @@ export const NodeFactoryWizard: React.FC<NodeFactoryWizardProps> = ({
     setSuccessInfo(null);
     setBusy(true);
     try {
-      const res = await packsApi.factoryPublishCatalog({
+      const res = await packagesApi.factoryPublishCatalog({
         ...(toApiPayload(draft) as Record<string, unknown>),
         replace: fixtureReplace,
       });
       setSuccessInfo(
-        `Published catalog fixture for ${res.pack.dirName}. Written to ${res.catalogDir}. ` +
+        `Published catalog fixture for ${res.package.dirName}. Written to ${res.catalogDir}. ` +
           "The dev server may reload; commit when ready.",
       );
     } catch (err) {
@@ -241,8 +241,8 @@ export const NodeFactoryWizard: React.FC<NodeFactoryWizardProps> = ({
         <div>
           {forkInstallNotice ? (
             <p className={modalStyles.forkBanner} role="note">
-              <strong>Fork:</strong> “Save and install” adds a <strong>new</strong> pack at the coordinate
-              you define here. The source pack you copied from stays installed unchanged.
+              <strong>Fork:</strong> “Save and install” adds a <strong>new</strong> package at the coordinate
+              you define here. The source package you copied from stays installed unchanged.
             </p>
           ) : null}
           {step === 1 && <Step1Metadata draft={draft} update={updateDraft} />}
@@ -337,9 +337,9 @@ const Step1Metadata: React.FC<{
   <div className={styles.panel}>
     <h2 className={styles.panelTitle}>Metadata</h2>
     <p className={styles.panelSubtitle}>
-      Identity that downstream users see in the warehouse. The pack id is the
+      Identity that downstream users see in the warehouse. The package id is the
       reverse-DNS namespace the wizard uses to derive every canonical kind id
-      (<code>&lt;packId&gt;/&lt;kindId&gt;@&lt;major&gt;</code>).
+      (<code>&lt;packageId&gt;/&lt;kindId&gt;@&lt;major&gt;</code>).
     </p>
     {draft.lineage ? (
       <p className={styles.lineageCaption}>
@@ -349,15 +349,15 @@ const Step1Metadata: React.FC<{
     ) : null}
     <div className={styles.row}>
       <div className={styles.field}>
-        <label className={styles.fieldLabel} htmlFor="packId">
-          Pack id (reverse-DNS)
+        <label className={styles.fieldLabel} htmlFor="packageId">
+          Package id (reverse-DNS)
         </label>
         <input
-          id="packId"
+          id="packageId"
           className={styles.input}
-          value={draft.packId}
+          value={draft.packageId}
           placeholder="ai.urbanlab.uhvi"
-          onChange={(e) => update({ packId: e.target.value })}
+          onChange={(e) => update({ packageId: e.target.value })}
         />
         <span className={styles.fieldHint}>
           lowercase, dot-separated, two or more segments.
@@ -483,7 +483,7 @@ const Step2Ports: React.FC<{
     <div className={styles.panel}>
       <h2 className={styles.panelTitle}>Kinds and ports</h2>
       <p className={styles.panelSubtitle}>
-        Define each node kind this pack ships. Port types use the
+        Define each node kind this package ships. Port types use the
         Curio <code>SupportedType</code> enum (DATAFRAME, GEODATAFRAME,
         RASTER, …); the resolver and execution dispatch read both from
         the manifest you assemble here.
@@ -650,7 +650,7 @@ const Step3Template: React.FC<{
     <h2 className={styles.panelTitle}>Source per kind</h2>
     <p className={styles.panelSubtitle}>
       Each kind may ship one optional starter file. The factory writes{" "}
-      <code>sources/&lt;filename&gt;</code> inside the pack archive
+      <code>sources/&lt;filename&gt;</code> inside the package archive
       (extension follows the kind's engine — <code>.py</code>,{" "}
       <code>.js</code>, <code>.vl.json</code>, …). Leave the source empty
       to publish a structural kind with no starter — the editor will
@@ -674,7 +674,7 @@ const Step3Template: React.FC<{
             onChange={(e) => updateKind(i, { label: e.target.value })}
           />
           <span className={styles.fieldHint}>
-            Shown in the packs palette and the node header (manifest{" "}
+            Shown in the packages palette and the node header (manifest{" "}
             <code>label</code>).
           </span>
         </div>
@@ -775,7 +775,7 @@ const Step4Dependencies: React.FC<{
       <h2 className={styles.panelTitle}>Dependencies and permissions</h2>
       <p className={styles.panelSubtitle}>
         Dependencies install into the shared sandbox interpreter via{" "}
-        <code>/installPackages</code>. Cross-pack range conflicts are
+        <code>/installPackages</code>. Cross-package range conflicts are
         rejected at install. Permissions are surfaced verbatim to the
         user in the install dialog (figma_mockups/02).
       </p>
@@ -799,14 +799,14 @@ const Step4Dependencies: React.FC<{
       </div>
 
       <div className={styles.field}>
-        <label className={styles.fieldLabel}>Pack dependencies</label>
+        <label className={styles.fieldLabel}>Package dependencies</label>
         <DepEditor
-          entries={draft.packDeps}
-          onChange={(e) => update({ packDeps: e })}
+          entries={draft.packageDeps}
+          onChange={(e) => update({ packageDeps: e })}
           placeholder={["ai.urbanlab.uhvi", "^1.0"]}
         />
         <span className={styles.fieldHint}>
-          Pack ids (no <code>@major</code>); the major lives in the range.
+          Package ids (no <code>@major</code>); the major lives in the range.
         </span>
       </div>
 
@@ -903,7 +903,7 @@ const Step5Publish: React.FC<{
   const [cap, setCap] = useState<FactoryCapabilities | null>(null);
   useEffect(() => {
     let cancelled = false;
-    packsApi
+    packagesApi
       .factoryCapabilities()
       .then((r) => {
         if (!cancelled) setCap(r);
@@ -920,8 +920,8 @@ const Step5Publish: React.FC<{
     const kinds = draft.kinds.map((k) => `${k.id} (${k.engine}, ${k.editor})`);
     const pyDeps = draft.pythonDeps.filter((d) => d.pkg.trim());
     const jsDeps = draft.jsDeps.filter((d) => d.pkg.trim());
-    const packDeps = draft.packDeps.filter((d) => d.pkg.trim());
-    return { kinds, pyDeps, jsDeps, packDeps };
+    const packageDeps = draft.packageDeps.filter((d) => d.pkg.trim());
+    return { kinds, pyDeps, jsDeps, packageDeps };
   }, [draft]);
 
   return (
@@ -934,14 +934,14 @@ const Step5Publish: React.FC<{
       </p>
       {forkInstallNotice ? (
         <p className={styles.panelSubtitle} role="note">
-          This session is a <strong>fork</strong> from an installed pack — “Save and install” creates a{" "}
-          <strong>new</strong> installed pack at the coordinate below. The pack you copied from is not modified.
+          This session is a <strong>fork</strong> from an installed package — “Save and install” creates a{" "}
+          <strong>new</strong> installed package at the coordinate below. The package you copied from is not modified.
         </p>
       ) : null}
 
       <div className={styles.field}>
         <p>
-          <strong>Pack id:</strong> {draft.packId}@{draft.major}
+          <strong>Package id:</strong> {draft.packageId}@{draft.major}
         </p>
         <p>
           <strong>Version:</strong> {draft.version}
@@ -968,10 +968,10 @@ const Step5Publish: React.FC<{
             {summary.jsDeps.map((d) => `${d.pkg}@${d.range}`).join(", ")}
           </p>
         )}
-        {summary.packDeps.length > 0 && (
+        {summary.packageDeps.length > 0 && (
           <p>
-            <strong>Pack deps:</strong>{" "}
-            {summary.packDeps.map((d) => `${d.pkg}@${d.range}`).join(", ")}
+            <strong>Package deps:</strong>{" "}
+            {summary.packageDeps.map((d) => `${d.pkg}@${d.range}`).join(", ")}
           </p>
         )}
         {draft.permissions.length > 0 && (
@@ -997,8 +997,8 @@ const Step5Publish: React.FC<{
 
       <div className={styles.field}>
         <p className={styles.panelSubtitle} style={{ marginTop: "1.25rem" }}>
-          <strong>Catalog entry</strong> — write this pack into the catalog tree under{" "}
-          <code>packs/</code> for local development (commit when ready).
+          <strong>Catalog entry</strong> — write this package into the catalog tree under{" "}
+          <code>packages/</code> for local development (commit when ready).
         </p>
         <label className={styles.checkRow}>
           <input
@@ -1007,7 +1007,7 @@ const Step5Publish: React.FC<{
             onChange={(e) => setFixtureReplace(e.target.checked)}
             disabled={busy}
           />
-          Replace existing fixture with the same pack coordinate
+          Replace existing fixture with the same package coordinate
         </label>
         {!cap?.catalogPublish && (
           <p className={styles.panelSubtitle} style={{ marginTop: "0.5rem" }}>
@@ -1031,7 +1031,7 @@ const Step5Publish: React.FC<{
 
       <div className={styles.footer}>
         <button className={styles.ghostButton} onClick={onBuild} disabled={busy}>
-          {busy ? "Working…" : "Export .curio-nodepack"}
+          {busy ? "Working…" : "Export .curio-package"}
         </button>
         <button
           className={styles.actionButton}

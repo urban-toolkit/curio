@@ -2,7 +2,7 @@ import { SupportedType } from "../constants";
 import type { PortDraft, Category, Engine, Editor, KindDraft } from "../pages/nodes/factoryDraftModel";
 import { factoryUiMakeId } from "../pages/nodes/factoryDraftModel";
 import type { NodeDescriptor } from "../registry/types";
-import { canvasKindLabelFromNode } from "./palettePackFactoryDraft";
+import { canvasKindLabelFromNode } from "./palettePackageFactoryDraft";
 
 /** Per-canvas-node kind configuration (palette edit / Save As). */
 export interface CanvasKindConfig {
@@ -34,7 +34,7 @@ function portDefToDraft(
 }
 
 function defaultSourceFilename(desc: NodeDescriptor): string {
-  const path = desc.pack?.source;
+  const path = desc.package?.source;
   if (!path) return "default.py";
   const last = path.split("/").pop() ?? "";
   return last || "default.py";
@@ -79,7 +79,7 @@ export function canvasKindConfigFromDescriptor(
 }
 
 export function readCanvasKindConfig(node: { data: object }): Partial<CanvasKindConfig> | null {
-  const raw = (node.data as { packKindConfig?: unknown })?.packKindConfig;
+  const raw = (node.data as { packageKindConfig?: unknown })?.packageKindConfig;
   if (!raw || typeof raw !== "object") return null;
   return raw as Partial<CanvasKindConfig>;
 }

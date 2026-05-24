@@ -511,15 +511,15 @@ def list_datasets():
 
 @bp.route("/templates", methods=["GET"])
 def get_templates():
-    """Return per-kind starter templates from every installed pack.
+    """Return per-kind starter templates from every installed package.
 
-    Templates are sourced from each installed pack's optional per-kind
-    ``source`` file and keyed on the canonical pack id
-    ``<packId>/<kindId>@<major>``. The pre-installed ``curio.builtin@1``
-    pack ships no sources, so dragging a built-in node onto the canvas
-    yields an empty editor; third-party packs may ship a starter per kind.
+    Templates are sourced from each installed package's optional per-kind
+    ``source`` file and keyed on the canonical package id
+    ``<packageId>/<kindId>@<major>``. The pre-installed ``curio.builtin@1``
+    package ships no sources, so dragging a built-in node onto the canvas
+    yields an empty editor; third-party packages may ship a starter per kind.
     """
-    from utk_curio.backend.app.packs import generate_pack_templates  # local import → no cycle
+    from utk_curio.backend.app.packages import generate_package_templates  # local import → no cycle
     from utk_curio.backend.app.projects.services import _user_dir_key
     from utk_curio.backend.app.users.dependencies import get_current_user
 
@@ -527,9 +527,9 @@ def get_templates():
     user = get_current_user()
     if user is not None:
         try:
-            templates = generate_pack_templates(_user_dir_key(user))
-        except Exception:  # noqa: BLE001 — never fail /templates over a bad pack
-            current_app.logger.exception("Pack-template loader failed; returning empty list")
+            templates = generate_package_templates(_user_dir_key(user))
+        except Exception:  # noqa: BLE001 — never fail /templates over a bad package
+            current_app.logger.exception("Package-template loader failed; returning empty list")
     return jsonify(templates)
 
 def get_loaded_files_metadata(folder_path):
