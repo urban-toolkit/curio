@@ -55,8 +55,8 @@ const KNOWN_PERMISSIONS = [
 
 const STEPS = [
   { id: 1, title: "Metadata" },
-  { id: 2, title: "Ports" },
-  { id: 3, title: "Template" },
+  { id: 2, title: "Kinds & ports" },
+  { id: 3, title: "Source" },
   { id: 4, title: "Dependencies" },
   { id: 5, title: "Validate & publish" },
 ] as const;
@@ -685,12 +685,14 @@ const Step3Template: React.FC<{
   updateKind: (i: number, patch: Partial<KindDraft>) => void;
 }> = ({ draft, updateKind }) => (
   <div className={styles.panel}>
-    <h2 className={styles.panelTitle}>Default template per kind</h2>
+    <h2 className={styles.panelTitle}>Source per kind</h2>
     <p className={styles.panelSubtitle}>
-      Every kind ships at least one Python (or JS) preset. The factory
-      writes <code>templates/&lt;kindId&gt;/&lt;filename&gt;.py</code>
-      inside the pack archive, and the runtime serves it through{" "}
-      <code>GET /templates</code> for built-in parity.
+      Each kind may ship one optional starter file. The factory writes{" "}
+      <code>sources/&lt;filename&gt;</code> inside the pack archive
+      (extension follows the kind's engine — <code>.py</code>,{" "}
+      <code>.js</code>, <code>.vl.json</code>, …). Leave the source empty
+      to publish a structural kind with no starter — the editor will
+      open blank when a user drops the node.
     </p>
     {draft.kinds.map((kind, i) => (
       <div key={i} className={styles.kindEntry}>

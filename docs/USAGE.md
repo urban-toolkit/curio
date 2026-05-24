@@ -248,7 +248,7 @@ If `GUEST_LLM_API_KEY` is not set, the LLM Assistant will return an error for gu
 
 Curio's nodes ship as **packs** — small, self-contained folders with a `manifest.json` declaring the node kinds inside. The built-in nodes (Data Loading, Vega-Lite, AutkMap, etc.) live in a pre-installed pack called `curio.builtin@1`; you can install more via the **Node Warehouse** drawer.
 
-To open the drawer: in the canvas toolbar, click **Packs** (puzzle-piece icon) → **Get packs**. From there you can:
+To open the drawer: in the **Tools panel** on the left edge of the canvas, find the **Packs** dropdown (cube icon) and click the **Get packs +** button directly underneath it. From there you can:
 
 - Browse the catalog and install new packs.
 - See your installed packs grouped by fork family in the **Installed** tab.
