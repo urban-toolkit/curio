@@ -556,7 +556,7 @@ export function buildSaveAsInstallDraft(opts: {
   canvasNode: RFNode<any>;
   target:
     | { kind: "new"; packageDisplayName?: string }
-    | { kind: "installed"; pkg: PackagePayload };
+    | { kind: "installed"; package: PackagePayload };
   getTemplates?: TemplatesLookup;
 }): Draft | null {
   const nt = getFlowNodeCanonicalType(opts.canvasNode as RFNode);

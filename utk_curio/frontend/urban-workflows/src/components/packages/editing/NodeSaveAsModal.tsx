@@ -127,7 +127,7 @@ export function NodeSaveAsModal({
         replacedExistingKind = saveAsWouldReplaceByLabel(pkg, nodeLabel);
         draft = buildSaveAsInstallDraft({
           canvasNode,
-          target: { kind: "installed", pkg },
+          target: { kind: "installed", package: pkg },
           getTemplates,
         });
         replace = true;

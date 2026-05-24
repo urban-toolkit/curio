@@ -2,7 +2,7 @@ import { groupPalettePackages } from "../../../components/menus/nodes/toolsMenuP
 import type { NodeDescriptor, NodePackageMeta } from "../../../registry/types";
 
 function stubPackageDesc(meta: NodePackageMeta): NodeDescriptor {
-  return { source: "package", pkg: meta } as unknown as NodeDescriptor;
+  return { source: "package", package: meta } as unknown as NodeDescriptor;
 }
 
 describe("groupPalettePackages ordering", () => {

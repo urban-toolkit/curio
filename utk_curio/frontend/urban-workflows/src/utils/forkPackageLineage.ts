@@ -278,7 +278,7 @@ export function findForkFamilyRootPaletteGroup<G extends PalettePackageGroupLike
 }
 
 export type InstalledPackageWarehouseRow<T extends PackagePayload = PackagePayload> =
-  | { kind: "singleton"; pkg: T }
+  | { kind: "singleton"; package: T }
   | { kind: "family"; rootKey: string; rootPack: T | null; members: T[] };
 
 /** Singleton rows + fork-family accordions (root package omitted from singleton list). */
@@ -303,7 +303,7 @@ export function partitionInstalledPackagesForWarehouseList<T extends PackagePayl
 
   for (const pkg of singletons) {
     if (!rootPackageDirsUsed.has(pkg.dirName)) {
-      rows.push({ kind: "singleton", pkg });
+      rows.push({ kind: "singleton", package: pkg });
     }
   }
 
