@@ -45,26 +45,12 @@ Curio is a framework for collaborative urban visual analytics that uses a datafl
       <sub>Track transformation and visualization steps</sub>
     </td>
     <td align="center" width="33%">
-      <strong>Modular & collaborative</strong><br/>
-      <sub>Multi-user sessions with shared dataflows</sub>
-    </td>
-    <td align="center" width="33%">
-      <strong>2D and 3D maps</strong><br/>
-      <sub>Built-in support for urban geospatial data</sub>
-    </td>
-  </tr>
-  <tr>
-    <td align="center" width="33%">
       <strong>Linked interactions</strong><br/>
       <sub>Data-driven cross-view filtering and brushing</sub>
     </td>
     <td align="center" width="33%">
       <strong>Autark + Vega-Lite</strong><br/>
-      <sub>First-class integration with both grammars</sub>
-    </td>
-    <td align="center" width="33%">
-      <strong><code>pip install utk-curio</code></strong><br/>
-      <sub>One command to get started locally</sub>
+      <sub>First-class 2D and 3D maps via Autark, plus Vega-Lite charts</sub>
     </td>
   </tr>
   <tr>
@@ -78,7 +64,21 @@ Curio is a framework for collaborative urban visual analytics that uses a datafl
     </td>
     <td align="center" width="33%">
       <strong>Scenario-oriented analyses</strong><br/>
-      <sub>What-if exploration with branching dataflows</sub>
+      <sub>Multi-user what-if exploration with branching dataflows</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="33%">
+      <strong>One-click Node Warehouse</strong><br/>
+      <sub>Install packaged nodes from a catalog, or author your own from the canvas</sub>
+    </td>
+    <td align="center" width="33%">
+      <strong>Composable node packages</strong><br/>
+      <sub>Mix built-ins, community packages, and your own in a single dataflow</sub>
+    </td>
+    <td align="center" width="33%">
+      <strong>Reproducible & shareable</strong><br/>
+      <sub>Versioned, forkable <code>.curio-package</code> archives pin a workflow's exact node set</sub>
     </td>
   </tr>
 </table>
@@ -92,6 +92,7 @@ Curio is a framework for collaborative urban visual analytics that uses a datafl
 A lot has landed since v0.5. Highlights:
 
 - 🌐 **Hosted instances** — Public deployments at [curio.urbantk.org](https://curio.urbantk.org) (stable) and [curio-dev.urbantk.org](https://curio-dev.urbantk.org) (dev), plus a [deployment guide](docs/DEPLOYMENT.md) for self-hosting behind HTTPS.
+- 📦 **Node Warehouse** — Every node now lives in a manifest-driven package, and you can freely mix built-ins, community packages, and your own in a single dataflow. Install ready-made packages from the catalog with one click, author new ones via the Node Factory without leaving the canvas, sideload `.curio-package` archives shared by collaborators, or fork an existing package to extend it. Packages are **versioned and pinnable**, so a workflow can declare the exact node set it depends on — reproducibility for shared research artefacts. See the [Node Warehouse guide](docs/WAREHOUSE.md).
 - 🤖 **Per-user LLM configuration** — Connect Curio to OpenAI, Anthropic, Gemini, or a custom endpoint, configurable per user.
 - 🗺️ **Autark integration** — New `AutkMap` and `AutkPlot` node types, with JS Computation I/O routed through Python DuckDB.
 - ⚡ **JavaScript Computation node** — Run Node.js code in a sandbox subprocess alongside Python nodes.

@@ -27,14 +27,14 @@ Two kinds of packages ship with Curio:
 
 | Package | What it provides |
 |---|---|
-| `curio.builtin@1` | The default 14 node kinds (Data Loading, Python/JS Computation, Vega-Lite, AutkMap, etc.). Auto-installed for every user; you can't uninstall it. |
+| `curio.builtin@1` | The default 14 node kinds (Data Loading, Python/JS Computation, Vega-Lite, AutkMap, etc.). Auto-installed for every user; **read-only** (you can save edits as a new package but can't overwrite the originals) and can't be uninstalled. |
 | `ai.urbanlab.uhvi@1`, `it.urbanlab.milan-heat@1` | Example third-party packages you can install from the catalog to see the package workflow end-to-end. |
 
 You can install any number of additional packages — your own creations or archives shared by others.
 
 ### Where to find it
 
-Open Curio. The **Tools panel** sits on the left edge of the canvas. Inside it, look for the **Packages** dropdown (cube icon, labelled "Packages" with a count of your installed kinds). Directly underneath the dropdown is a **Get packages +** button — click it to open the warehouse drawer.
+Open Curio. The **Tools panel** sits on the left edge of the canvas. Inside it, look for the **Packages** dropdown (cube icon, labelled "Packages" with a count of your installed kinds). Open the dropdown and click the **Get more packages +** button in its footer — this opens the warehouse drawer.
 
 The drawer slides in from the right with four tabs:
 
@@ -76,14 +76,26 @@ From the warehouse drawer footer, click **Create new package**. A modal slides i
 The stepper across the top of the modal shows the same titles in order:
 
 1. **Metadata** — reverse-domain `id` (e.g. `me.research.bridges`), human-readable `name`, `publisher`, short `description`, optional `license`, and the `version` string. The package's `major` version is part of its coordinate (`<id>@<major>`); patch / minor bumps stay inside `version`.
-2. **Kinds & ports** — add one or more node kinds. For each: kebab-case `id`, label, category (data / computation / vis_grammar / vis_simple / flow), engine (Python or JS), input/output ports (with `SupportedType` enum members and cardinality strings like `"1"` or `"[1,n]"`), and an editor mode. You also pick a **lifecycle key** — `"code"` for plain script nodes, `"vega"` for a Vega-Lite chart, etc. The full list is in [`packages/curio.builtin@1/manifest.json`](../packages/curio.builtin@1/manifest.json).
+2. **Kinds and ports** — add one or more node kinds. For each: kebab-case `id`, label, category (data / computation / vis_grammar / vis_simple / flow), engine (Python or JS), input/output ports (with `SupportedType` enum members and cardinality strings like `"1"` or `"[1,n]"`), and an editor mode. You also pick a **lifecycle key** — `"code"` for plain script nodes, `"vega"` for a Vega-Lite chart, etc. The full list is in [`packages/curio.builtin@1/manifest.json`](../packages/curio.builtin@1/manifest.json).
 3. **Source** — for each kind, an optional single starter file. The wizard exposes two fields per kind: a **Source filename** (e.g. `uhvi-load.py`, `chart.vl.json`) and a **Source** text area. The factory writes the file to `sources/<filename>` inside the package archive. Leave the source empty to publish a structural kind with no starter — the editor opens blank when a user drops the node.
-4. **Dependencies** — pip packages, JS packages, and other Curio packages your kinds need. Pip packages install into the shared sandbox at install time via `/installPackages`. You also declare permissions here (e.g. `filesystem.read`); they're surfaced verbatim in the install dialog the consumer sees.
+4. **Dependencies and permissions** — pip packages, JS packages, and other Curio packages your kinds need. Pip packages install into the shared sandbox at install time via `/installPackages`. You also declare permissions here (e.g. `filesystem.read`); they're surfaced verbatim in the install dialog the consumer sees.
 5. **Validate and publish** — two buttons:
    - **Save and install** — runs the same backend validator that gates the install endpoint, then installs the package into your workspace and refreshes the palette.
    - **Export .curio-package** — runs the validator, then downloads the archive as a zip so you can share it.
 
 A **Live manifest** panel on the right shows the JSON that will be written, updating as you edit.
+
+### From a canvas node
+
+The wizard isn't the only path. If you already have a working node on the canvas — built-in or installed pack — you can save it (and any code edits you've made in place) directly into a package without leaving the dataflow:
+
+1. Drop the node onto the canvas and edit its code as usual.
+2. Click the **cog** on the node header to open the **Node settings** modal. Tweak the label, ports, or editor mode if you want.
+3. Click **Save as pack node…**. A picker appears.
+4. Choose **New pack…** (creates a fresh package containing this kind) or an installed package as the target. Read-only packages — including `curio.builtin@1` — are filtered out of the picker; the only way to "modify" a read-only package is to fork into a new one.
+5. After save, the canvas node is rebound automatically to the new package's kind, so re-opening **Node settings** resolves to the new descriptor.
+
+This path uses the same backend factory endpoint as the wizard — there's no second code path to maintain.
 
 ### Where new packages land on disk
 
@@ -119,7 +131,7 @@ The archive contains exactly what's on disk: `manifest.json`, the `sources/` dir
 
 To install someone else's archive:
 
-1. Open the warehouse drawer (Tools panel → **Get packages +**).
+1. Open the warehouse drawer (Tools panel → **Packages** dropdown → **Get more packages +** in the footer).
 2. Click **Sideload .curio-package** in the footer.
 3. Pick the archive.
 
@@ -130,6 +142,16 @@ The installer extracts into a tmp directory, validates the manifest, computes in
 - **Versioning.** Bump the `version` string for patch / minor releases; bump `compatibility.major` (and the directory name suffix) for breaking changes. Two majors of the same package coexist as separate installed coordinates.
 - **Forks.** Save-As in the wizard creates a fork — the new package carries `lineage.forkedFrom` (the immediate parent) and `lineage.root` (the original ancestor). The warehouse drawer groups installed forks into accordions under their root, so it's easy to see a family at a glance.
 - **Family resolution.** The unversioned ref `<packageId>/<kindId>` resolves to whatever major is installed. If you want a workflow to pin against a specific fork, edit its trill to use the versioned form `<packageId>/<kindId>@<major>`.
+
+### Read-only packages
+
+Set `"readOnly": true` at the top level of a manifest to mark a package as read-only. The flag is honoured end-to-end:
+
+- The factory-install endpoint rejects any draft whose manifest declares `readOnly: true`, *and* it rejects drafts targeting an installed package coordinate whose on-disk manifest is read-only — so a forged draft that omits the flag can't sneak through.
+- The Save-As destination picker filters read-only packages out of the dropdown, so the in-canvas authoring flow naturally steers users to a new package.
+- The **Node settings** modal shows a **Read-only** badge when the underlying descriptor belongs to a read-only package, and its primary action stays **Save as pack node…**.
+
+The built-in `curio.builtin@1` ships with `readOnly: true`. The same flag is available for **org-curated packs** you want to distribute internally without letting downstream users overwrite kinds in place. Forking via the wizard or Save-As is unaffected; the new package starts unflagged.
 
 ### Caveats
 
