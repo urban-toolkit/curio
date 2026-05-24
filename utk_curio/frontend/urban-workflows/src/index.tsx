@@ -124,8 +124,8 @@ const App: React.FC = () => {
     <BrowserRouter basename={(process.env.PUBLIC_PATH || "/").replace(/\/$/, "") || undefined}>
       <BackendHealthBanner>
         <ToastProvider>
-          <NodeWarehouseDrawerProvider>
-            <NodeFactoryModalProvider>
+          <NodeFactoryModalProvider>
+            <NodeWarehouseDrawerProvider>
             <ReactFlowProvider>
               <LLMProvider>
                 <ProvenanceProvider>
@@ -174,8 +174,8 @@ const App: React.FC = () => {
                 </ProvenanceProvider>
               </LLMProvider>
             </ReactFlowProvider>
-            </NodeFactoryModalProvider>
-          </NodeWarehouseDrawerProvider>
+            </NodeWarehouseDrawerProvider>
+          </NodeFactoryModalProvider>
         </ToastProvider>
       </BackendHealthBanner>
     </BrowserRouter>
