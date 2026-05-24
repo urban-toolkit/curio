@@ -1,18 +1,51 @@
 import { NodeKindId, NodeDescriptor } from './types';
+import { legacyToCanonical } from './legacyAliases';
+import { splitCanonicalNodeType } from './packKeys';
 
 /**
  * The node-kind registry.
  *
- * Keyed by {@link NodeKindId}:
- *   - built-ins use `NodeType` enum members (e.g. `NodeType.DATA_LOADING`); and
- *   - pack kinds use canonical string ids `<packId>/<kindId>@<major>`
- *     (e.g. `"ai.urbanlab.uhvi/uhvi-load@1"`).
- *
- * The signature of {@link registerNode} is intentionally identical for both
- * sources — pack-registration in `registry/packsClient.ts` calls the same
- * function the built-in registrations in `registry/descriptors.ts` do.
+ * Keyed by canonical type string. Versioned ids like
+ * `"ai.urbanlab.uhvi/uhvi-load@1"` are stored as-is. A secondary
+ * **unversioned index** tracks the installed majors per
+ * `<packId>/<kindId>` so a lookup by the unversioned form resolves to
+ * the latest installed major — the default referencing convention for
+ * trill files.
  */
 const registry = new Map<NodeKindId, NodeDescriptor>();
+
+/** unversioned `<packId>/<kindId>` → installed majors, sorted descending. */
+const unversionedMajors = new Map<string, number[]>();
+
+function rememberMajor(canonicalId: string): void {
+  const split = splitCanonicalNodeType(canonicalId);
+  if (!split) return;
+  const list = unversionedMajors.get(split.unversioned) ?? [];
+  if (!list.includes(split.major)) {
+    list.push(split.major);
+    list.sort((a, b) => b - a);
+    unversionedMajors.set(split.unversioned, list);
+  }
+}
+
+function forgetMajor(canonicalId: string): void {
+  const split = splitCanonicalNodeType(canonicalId);
+  if (!split) return;
+  const list = unversionedMajors.get(split.unversioned);
+  if (!list) return;
+  const filtered = list.filter((m) => m !== split.major);
+  if (filtered.length === 0) {
+    unversionedMajors.delete(split.unversioned);
+  } else {
+    unversionedMajors.set(split.unversioned, filtered);
+  }
+}
+
+function resolveUnversioned(unversioned: string): NodeDescriptor | undefined {
+  const majors = unversionedMajors.get(unversioned);
+  if (!majors || majors.length === 0) return undefined;
+  return registry.get(`${unversioned}@${majors[0]}`);
+}
 
 const listeners = new Set<() => void>();
 
@@ -73,6 +106,7 @@ export function registerNode(descriptor: NodeDescriptor): void {
     console.warn(`NodeDescriptor for ${descriptor.id} is being overwritten`);
   }
   registry.set(descriptor.id, descriptor);
+  rememberMajor(descriptor.id);
   pulseRegistryListeners();
 }
 
@@ -88,6 +122,7 @@ export function clearPackNodes(): void {
   for (const [id, d] of registry) {
     if (d.source === 'pack') {
       registry.delete(id);
+      forgetMajor(id);
       removed = true;
     }
   }
@@ -96,14 +131,40 @@ export function clearPackNodes(): void {
   }
 }
 
+/**
+ * Resolve a node type to its descriptor.
+ *
+ * Resolution order:
+ *   1. Exact match (versioned canonical id, or non-canonical legacy enum).
+ *   2. Unversioned-latest: input matches `<packId>/<kindId>` → use the
+ *      highest installed major for that family.
+ *   3. Legacy alias: input is a pre-warehouse enum string ("DATA_LOADING")
+ *      → look up canonical unversioned target and retry (2).
+ */
+function lookupDescriptor(nodeType: NodeKindId): NodeDescriptor | undefined {
+  const exact = registry.get(nodeType);
+  if (exact) return exact;
+  if (typeof nodeType === 'string') {
+    if (nodeType.includes('/') && !nodeType.includes('@')) {
+      const unversioned = resolveUnversioned(nodeType);
+      if (unversioned) return unversioned;
+    }
+    const aliased = legacyToCanonical(nodeType);
+    if (aliased) {
+      return resolveUnversioned(aliased) ?? registry.get(aliased);
+    }
+  }
+  return undefined;
+}
+
 export function getNodeDescriptor(nodeType: NodeKindId): NodeDescriptor {
-  const desc = registry.get(nodeType);
+  const desc = lookupDescriptor(nodeType);
   if (!desc) throw new Error(`No descriptor registered for NodeKindId: ${nodeType}`);
   return desc;
 }
 
 export function tryGetNodeDescriptor(nodeType: NodeKindId): NodeDescriptor | undefined {
-  return registry.get(nodeType);
+  return lookupDescriptor(nodeType);
 }
 
 export function getAllNodeTypes(): NodeDescriptor[] {

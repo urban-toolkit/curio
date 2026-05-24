@@ -1,21 +1,34 @@
 /** Every canvas node maps to UniversalNode via this RF ``node.type``; real kind is ``data.nodeType``. */
 export const CURIO_UNIVERSAL_NODE_TYPE = "__curioUniversalNode" as const;
 
+/**
+ * Canonical unversioned node-type identifiers.
+ *
+ * Each value is the canonical pack-kind id (`<packId>/<kindId>`) that
+ * resolves through the registry's unversioned-latest-major lookup. The
+ * enum keys keep the legacy names so existing dispatch code in
+ * `NotebookConvertor` / `useNodeState` etc. keeps compiling unchanged —
+ * but at runtime they emit canonical strings.
+ *
+ * Legacy trill files that still use the old enum string ("DATA_LOADING")
+ * are normalized at load time by `aliasNormalize(trill)` (see
+ * `TrillGenerator`).
+ */
 export enum NodeType {
-  DATA_LOADING = "DATA_LOADING",
-  DATA_EXPORT = "DATA_EXPORT",
-  DATA_TRANSFORMATION = "DATA_TRANSFORMATION",
-  COMPUTATION_ANALYSIS = "COMPUTATION_ANALYSIS",
-  DATA_SUMMARY = "DATA_SUMMARY",
-  VIS_VEGA = "VIS_VEGA",
-  VIS_SIMPLE = "VIS_SIMPLE",
-  DATA_POOL = "DATA_POOL",
-  MERGE_FLOW = "MERGE_FLOW",
-  JS_COMPUTATION = "JS_COMPUTATION",
-  AUTK_MAP = "AUTK_MAP",
-  AUTK_PLOT = "AUTK_PLOT",
-  AUTK_COMPUTE = "AUTK_COMPUTE",
-  AUTK_DB = "AUTK_DB",
+  DATA_LOADING = "curio.builtin/data-loading",
+  DATA_EXPORT = "curio.builtin/data-export",
+  DATA_TRANSFORMATION = "curio.builtin/data-transformation",
+  COMPUTATION_ANALYSIS = "curio.builtin/computation-analysis",
+  DATA_SUMMARY = "curio.builtin/data-summary",
+  VIS_VEGA = "curio.builtin/vis-vega",
+  VIS_SIMPLE = "curio.builtin/vis-simple",
+  DATA_POOL = "curio.builtin/data-pool",
+  MERGE_FLOW = "curio.builtin/merge-flow",
+  JS_COMPUTATION = "curio.builtin/js-computation",
+  AUTK_MAP = "curio.builtin/autk-map",
+  AUTK_PLOT = "curio.builtin/autk-plot",
+  AUTK_COMPUTE = "curio.builtin/autk-compute",
+  AUTK_DB = "curio.builtin/autk-db",
 }
 
 export enum EdgeType {

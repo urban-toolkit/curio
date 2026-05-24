@@ -18,8 +18,8 @@ export interface CanvasKindConfig {
   hasExplanation: boolean;
   inputPorts: PortDraft[];
   outputPorts: PortDraft[];
-  defaultTemplateName: string;
-  defaultTemplateCode: string;
+  sourceFilename: string;
+  sourceCode: string;
 }
 
 function portDefToDraft(
@@ -33,11 +33,11 @@ function portDefToDraft(
   }));
 }
 
-function defaultTemplateFilename(desc: NodeDescriptor): string {
-  const path = desc.pack?.defaultTemplate;
-  if (!path) return "Default.py";
+function defaultSourceFilename(desc: NodeDescriptor): string {
+  const path = desc.pack?.source;
+  if (!path) return "default.py";
   const last = path.split("/").pop() ?? "";
-  return last.endsWith(".py") || last.endsWith(".js") ? last : "Default.py";
+  return last || "default.py";
 }
 
 export function canvasKindConfigFromDescriptor(
@@ -65,8 +65,8 @@ export function canvasKindConfigFromDescriptor(
       desc.outputPorts.length > 0
         ? portDefToDraft(desc.outputPorts)
         : [{ id: factoryUiMakeId(), types: SupportedType.JSON, cardinality: "1" }],
-    defaultTemplateName: defaultTemplateFilename(desc),
-    defaultTemplateCode: templateCode,
+    sourceFilename: defaultSourceFilename(desc),
+    sourceCode: templateCode,
   };
   if (!stored) return base;
   return {
@@ -93,9 +93,7 @@ export function applyCanvasKindConfigToKindDraft(
     if (labelOverride?.trim()) return { ...draft, label: labelOverride.trim() };
     return draft;
   }
-  const kindId = draft.id;
-  const templateDir = `templates/${kindId}`;
-  const templateName = config.defaultTemplateName?.trim() || draft.defaultTemplateName;
+  const sourceFilename = config.sourceFilename?.trim() || draft.sourceFilename;
   return {
     ...draft,
     label: labelOverride?.trim() || config.label?.trim() || draft.label,
@@ -108,13 +106,11 @@ export function applyCanvasKindConfigToKindDraft(
     hasGrammar: config.hasGrammar ?? draft.hasGrammar,
     inputPorts: config.inputPorts?.length ? config.inputPorts : draft.inputPorts,
     outputPorts: config.outputPorts?.length ? config.outputPorts : draft.outputPorts,
-    templateDir,
-    defaultTemplateName: templateName,
-    defaultTemplate: `${templateDir}/${templateName}`,
-    defaultTemplateCode:
-      typeof config.defaultTemplateCode === "string" && config.defaultTemplateCode.trim()
-        ? config.defaultTemplateCode
-        : draft.defaultTemplateCode,
+    sourceFilename,
+    sourceCode:
+      typeof config.sourceCode === "string" && config.sourceCode.trim()
+        ? config.sourceCode
+        : draft.sourceCode,
   };
 }
 

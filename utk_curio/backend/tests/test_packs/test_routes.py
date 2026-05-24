@@ -41,12 +41,11 @@ def _draft():
                     "hasGrammar": False,
                     "inputPorts": [],
                     "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
-                    "templateDir": "templates/demo",
-                    "defaultTemplate": "templates/demo/Default.py",
+                    "source": "sources/demo.py",
                 }
             ],
         },
-        "sources": {"demo": {"Default.py": "def run():\n    return {}\n"}},
+        "sources": {"demo": {"filename": "demo.py", "code": "def run():\n    return {}\n"}},
     }
 
 
@@ -352,7 +351,7 @@ def test_export_after_install(client, user_and_token, tmp_curio):
     with zipfile.ZipFile(io.BytesIO(resp.data), "r") as zf:
         names = set(zf.namelist())
     assert "manifest.json" in names
-    assert "templates/demo/Default.py" in names
+    assert "sources/demo.py" in names
 
 
 # ---------------------------------------------------------------------------

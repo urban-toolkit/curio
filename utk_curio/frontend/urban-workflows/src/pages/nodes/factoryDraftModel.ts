@@ -39,10 +39,14 @@ export interface KindDraft {
   hasGrammar: boolean;
   inputPorts: PortDraft[];
   outputPorts: PortDraft[];
-  templateDir: string;
-  defaultTemplate: string;
-  defaultTemplateName: string;
-  defaultTemplateCode: string;
+  /** Manifest fields surfaced from `curio.builtin@1` lifecycle/icon registries. Optional for new kinds. */
+  lifecycle?: string;
+  iconRef?: string;
+  paletteOrder?: number;
+  /** Pack-relative source filename, e.g. "uhvi-load.py" or "chart.vl.json". Empty when the kind ships no starter. */
+  sourceFilename: string;
+  /** Full source body, written to `sources/<sourceFilename>` on build. */
+  sourceCode: string;
 }
 
 export interface Draft {
@@ -70,7 +74,7 @@ export interface Draft {
 
 
 export const STARTER_CODE =
-  "# Pack template — runs in the shared sandbox interpreter.\n" +
+  "# Pack source — runs in the shared sandbox interpreter.\n" +
   "# Replace this body with your implementation.\n\n" +
   "def run(input):\n" +
   '    return {"hello": "from the node factory"}\n';
@@ -92,10 +96,9 @@ export function makeKind(kindId: string = "demo-kind"): KindDraft {
     hasGrammar: false,
     inputPorts: [],
     outputPorts: [{ id: factoryUiMakeId(), types: "JSON", cardinality: "1" }],
-    templateDir: `templates/${kindId}`,
-    defaultTemplate: `templates/${kindId}/Default.py`,
-    defaultTemplateName: "Default.py",
-    defaultTemplateCode: STARTER_CODE,
+    lifecycle: "code",
+    sourceFilename: `${kindId}.py`,
+    sourceCode: STARTER_CODE,
   };
 }
 
@@ -138,7 +141,7 @@ export function depsToMap(entries: { pkg: string; range: string }[]): Record<str
 
 export function toApiPayload(d: Draft): {
   manifest: Record<string, unknown>;
-  sources: Record<string, Record<string, string>>;
+  sources: Record<string, { filename: string; code: string }>;
   readme: string;
   license_text: string;
 } {
@@ -159,27 +162,32 @@ export function toApiPayload(d: Draft): {
       python: depsToMap(d.pythonDeps),
       js: depsToMap(d.jsDeps),
     },
-    kinds: d.kinds.map((k) => ({
-      id: k.id,
-      label: k.label,
-      category: k.category,
-      engine: k.engine,
-      editor: k.editor,
-      description: k.description,
-      hasCode: k.hasCode,
-      hasWidgets: k.hasWidgets,
-      hasGrammar: k.hasGrammar,
-      inputPorts: k.inputPorts.map((p) => ({
-        types: splitTypes(p.types),
-        cardinality: p.cardinality,
-      })),
-      outputPorts: k.outputPorts.map((p) => ({
-        types: splitTypes(p.types),
-        cardinality: p.cardinality,
-      })),
-      templateDir: k.templateDir,
-      defaultTemplate: k.defaultTemplate,
-    })),
+    kinds: d.kinds.map((k) => {
+      const entry: Record<string, unknown> = {
+        id: k.id,
+        label: k.label,
+        category: k.category,
+        engine: k.engine,
+        editor: k.editor,
+        description: k.description,
+        hasCode: k.hasCode,
+        hasWidgets: k.hasWidgets,
+        hasGrammar: k.hasGrammar,
+        inputPorts: k.inputPorts.map((p) => ({
+          types: splitTypes(p.types),
+          cardinality: p.cardinality,
+        })),
+        outputPorts: k.outputPorts.map((p) => ({
+          types: splitTypes(p.types),
+          cardinality: p.cardinality,
+        })),
+      };
+      if (k.lifecycle) entry.lifecycle = k.lifecycle;
+      if (k.iconRef) entry.iconRef = k.iconRef;
+      if (typeof k.paletteOrder === "number") entry.paletteOrder = k.paletteOrder;
+      if (k.sourceFilename) entry.source = `sources/${k.sourceFilename}`;
+      return entry;
+    }),
   };
 
   if (typeof d.createdAt === "string" && d.createdAt.trim()) {
@@ -199,9 +207,11 @@ export function toApiPayload(d: Draft): {
     };
   }
 
-  const sources: Record<string, Record<string, string>> = {};
+  const sources: Record<string, { filename: string; code: string }> = {};
   for (const k of d.kinds) {
-    sources[k.id] = { [k.defaultTemplateName]: k.defaultTemplateCode };
+    if (k.sourceFilename) {
+      sources[k.id] = { filename: k.sourceFilename, code: k.sourceCode };
+    }
   }
   return {
     manifest,

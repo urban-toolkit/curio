@@ -174,15 +174,19 @@ class NodeKindManifest:
     category: str
     engine: str  # 'python' | 'javascript'
     description: str
-    icon: str | None
+    icon: str | None  # legacy free-form icon string (rare; iconRef preferred)
+    icon_ref: str | None  # "<source>:<icon-id>" key for the frontend iconRegistry
+    lifecycle: str | None  # key into the frontend lifecycleRegistry (e.g. "code", "vega")
+    palette_order: int | None
     input_ports: list[PortDef]
     output_ports: list[PortDef]
     editor: str  # 'code' | 'widgets' | 'grammar' | 'none'
     has_code: bool
     has_widgets: bool
     has_grammar: bool
-    template_dir: str | None  # relative to pack root, e.g. 'templates/uhvi-load'
-    default_template: str | None  # path relative to pack root
+    grammar_id: str | None  # grammar adapter key (e.g. "vega-lite") when editor=="grammar"
+    badge: str | None  # palette card badge label (e.g. "VEGA", "AUTK", "PACK")
+    source: str | None  # pack-relative path to one optional starter file
     grammar_dir: str | None
     widget_dir: str | None
 
@@ -205,6 +209,12 @@ class NodeKindManifest:
         out_ports_raw = raw.get("outputPorts", [])
         if not isinstance(in_ports_raw, list) or not isinstance(out_ports_raw, list):
             raise ManifestError(f"{where}.inputPorts/outputPorts must be lists")
+        lifecycle_raw = raw.get("lifecycle")
+        if lifecycle_raw is not None and not (isinstance(lifecycle_raw, str) and lifecycle_raw):
+            raise ManifestError(f"{where}.lifecycle must be a non-empty string when present")
+        palette_order_raw = raw.get("paletteOrder")
+        if palette_order_raw is not None and not isinstance(palette_order_raw, int):
+            raise ManifestError(f"{where}.paletteOrder must be an integer when present")
         return cls(
             kind_id=kind_id,
             label=str(raw.get("label", kind_id)),
@@ -212,6 +222,9 @@ class NodeKindManifest:
             engine=engine,
             description=str(raw.get("description", "")),
             icon=raw.get("icon") if isinstance(raw.get("icon"), str) else None,
+            icon_ref=raw.get("iconRef") if isinstance(raw.get("iconRef"), str) else None,
+            lifecycle=lifecycle_raw,
+            palette_order=palette_order_raw,
             input_ports=[PortDef.from_json(p, where=f"{where}.inputPorts[{i}]")
                          for i, p in enumerate(in_ports_raw)],
             output_ports=[PortDef.from_json(p, where=f"{where}.outputPorts[{i}]")
@@ -220,10 +233,9 @@ class NodeKindManifest:
             has_code=bool(raw.get("hasCode", editor == "code")),
             has_widgets=bool(raw.get("hasWidgets", False)),
             has_grammar=bool(raw.get("hasGrammar", editor == "grammar")),
-            template_dir=raw.get("templateDir") if isinstance(raw.get("templateDir"), str) else None,
-            default_template=(
-                raw.get("defaultTemplate") if isinstance(raw.get("defaultTemplate"), str) else None
-            ),
+            grammar_id=raw.get("grammarId") if isinstance(raw.get("grammarId"), str) else None,
+            badge=raw.get("badge") if isinstance(raw.get("badge"), str) else None,
+            source=raw.get("source") if isinstance(raw.get("source"), str) else None,
             grammar_dir=raw.get("grammarDir") if isinstance(raw.get("grammarDir"), str) else None,
             widget_dir=raw.get("widgetDir") if isinstance(raw.get("widgetDir"), str) else None,
         )

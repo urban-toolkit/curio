@@ -168,7 +168,7 @@ export const NodeFactoryWizard: React.FC<NodeFactoryWizardProps> = ({
         );
       case 3:
         return draft.kinds.every(
-          (k) => k.defaultTemplateCode.trim().length > 0,
+          (k) => k.sourceCode.trim().length > 0,
         );
       case 4:
         return true;
@@ -547,10 +547,11 @@ const Step2Ports: React.FC<{
                   value={kind.id}
                   onChange={(e) => {
                     const newId = e.target.value;
+                    const extMatch = kind.sourceFilename.match(/\.[^.]+$/u);
+                    const ext = extMatch ? extMatch[0] : ".py";
                     updateKind(i, {
                       id: newId,
-                      templateDir: `templates/${newId}`,
-                      defaultTemplate: `templates/${newId}/${kind.defaultTemplateName}`,
+                      sourceFilename: `${newId}${ext}`,
                     });
                   }}
                 />
@@ -730,32 +731,28 @@ const Step3Template: React.FC<{
             </select>
           </div>
           <div className={styles.field}>
-            <label className={styles.fieldLabel}>Default template filename</label>
+            <label className={styles.fieldLabel}>Source filename</label>
             <input
               className={styles.input}
-              value={kind.defaultTemplateName}
-              onChange={(e) => {
-                const name = e.target.value;
-                updateKind(i, {
-                  defaultTemplateName: name,
-                  defaultTemplate: `templates/${kind.id}/${name}`,
-                });
-              }}
+              value={kind.sourceFilename}
+              onChange={(e) =>
+                updateKind(i, { sourceFilename: e.target.value })
+              }
             />
             <span className={styles.fieldHint}>
-              single safe filename ending in <code>.py</code>.
+              single safe filename — any extension (<code>.py</code>, <code>.js</code>, <code>.vl.json</code>, …).
             </span>
           </div>
         </div>
 
         <div className={styles.field}>
-          <label className={styles.fieldLabel}>Template source</label>
+          <label className={styles.fieldLabel}>Source</label>
           <textarea
             className={styles.codeArea}
-            value={kind.defaultTemplateCode}
+            value={kind.sourceCode}
             spellCheck={false}
             onChange={(e) =>
-              updateKind(i, { defaultTemplateCode: e.target.value })
+              updateKind(i, { sourceCode: e.target.value })
             }
           />
         </div>

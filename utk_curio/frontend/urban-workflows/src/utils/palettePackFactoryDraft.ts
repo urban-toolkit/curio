@@ -139,11 +139,11 @@ export function canonicalKindSlugForDescriptor(desc: NodeDescriptor): string {
   return id.toLowerCase().replace(/_/g, "-");
 }
 
-function inferDefaultFilename(packRelativePath?: string): string {
-  if (!packRelativePath) return "Default.py";
+function inferSourceFilename(packRelativePath?: string): string {
+  if (!packRelativePath) return "default.py";
   const parts = packRelativePath.split("/").filter(Boolean);
   const last = parts[parts.length - 1];
-  return last.endsWith(".py") ? last : "Default.py";
+  return last || "default.py";
 }
 
 function deriveEngine(desc: NodeDescriptor): Engine {
@@ -172,19 +172,19 @@ function ensurePorts(desc: NodeDescriptor): { inP: KindDraft["inputPorts"]; outP
 }
 
 /** Maps manifest default template paths to dropdown names (see `packNodeLifecycle.tsx`). */
-function defaultTemplateDisplayName(defaultTemplatePath: string | undefined): string | undefined {
-  if (!defaultTemplatePath) return undefined;
-  const basename = defaultTemplatePath.split("/").pop() ?? "";
+function sourceDisplayName(sourcePath: string | undefined): string | undefined {
+  if (!sourcePath) return undefined;
+  const basename = sourcePath.split("/").pop() ?? "";
   if (!basename) return undefined;
-  const stem = basename.replace(/\.py$/i, "").replace(/\.js$/i, "");
+  const stem = basename.replace(/\.[^.]+$/u, "");
   return stem.replace(/_/g, " ");
 }
 
-/** Default template Python/JS body for a palette kind, from the merged templates feed when available. */
+/** Default source body for a palette kind, from the merged templates feed when available. */
 export function packKindSeedCode(desc: NodeDescriptor, getTemplates?: TemplatesLookup): string {
   if (!getTemplates || desc.source !== "pack") return STARTER_CODE;
   const templates = [...getTemplates(desc.id, false)];
-  const wanted = defaultTemplateDisplayName(desc.pack?.defaultTemplate);
+  const wanted = sourceDisplayName(desc.pack?.source);
   const hit = wanted ? templates.find((t) => t.name === wanted) : templates[0];
   const body = typeof hit?.code === "string" ? hit.code : "";
   return body.trim().length ? body : STARTER_CODE;
@@ -217,11 +217,9 @@ export function descriptorToKindDraft(
   labelOverride?: string,
 ): KindDraft {
   const kindId = kindIdOverride ?? canonicalKindSlugForDescriptor(desc);
-  const fname = inferDefaultFilename(desc.pack?.defaultTemplate);
+  const sourceFilename = inferSourceFilename(desc.pack?.source);
 
   const { inP, outP } = ensurePorts(desc);
-  const templateDir = `templates/${kindId}`;
-  const defaultTemplate = `${templateDir}/${fname}`;
 
   return {
     id: kindId,
@@ -235,10 +233,8 @@ export function descriptorToKindDraft(
     hasGrammar: !!desc.hasGrammar,
     inputPorts: inP,
     outputPorts: outP,
-    templateDir,
-    defaultTemplate,
-    defaultTemplateName: fname,
-    defaultTemplateCode: code?.trim()?.length ? code : STARTER_CODE,
+    sourceFilename,
+    sourceCode: code?.trim()?.length ? code : STARTER_CODE,
   };
 }
 
@@ -337,7 +333,7 @@ export function mergeKindsForPaletteSave(
     }
 
     const prev = kindsById.get(slugBase)!;
-    if (normalizeTemplateCode(prev.defaultTemplateCode) === codeNorm) {
+    if (normalizeTemplateCode(prev.sourceCode) === codeNorm) {
       const forkId = forkKindSlugAwayFrom(slugBase, kindsById);
       kindsById.set(forkId, kindDraftFromCanvasNode(node, desc, body, forkId));
       continue;
@@ -466,17 +462,15 @@ function depsRows(record: Record<string, string>): { id: string; pkg: string; ra
 function seedCodeForPackKindPayload(kind: PackKindPayload, getTemplates?: TemplatesLookup): string {
   if (!getTemplates) return STARTER_CODE;
   const templates = [...getTemplates(kind.id as NodeKindId, false)];
-  const wanted = defaultTemplateDisplayName(kind.defaultTemplate ?? undefined);
+  const wanted = sourceDisplayName(kind.source ?? undefined);
   const hit = wanted ? templates.find((t) => t.name === wanted) : templates[0];
   const body = typeof hit?.code === "string" ? hit.code : "";
   return body.trim().length ? body : STARTER_CODE;
 }
 
 function packKindPayloadToKindDraft(kind: PackKindPayload, getTemplates?: TemplatesLookup): KindDraft {
-  const defaultTemplate =
-    kind.defaultTemplate?.trim() || `templates/${kind.kindId}/Default.py`;
-  const defaultTemplateName = defaultTemplate.split("/").pop() || "Default.py";
-  const templateDir = kind.templateDir?.trim() || `templates/${kind.kindId}`;
+  const sourceFilename =
+    kind.source?.split("/").pop()?.trim() || `${kind.kindId}.py`;
   const inputPorts =
     kind.inputPorts?.map((p) => ({
       id: factoryUiMakeId(),
@@ -504,10 +498,11 @@ function packKindPayloadToKindDraft(kind: PackKindPayload, getTemplates?: Templa
     hasGrammar: !!kind.hasGrammar,
     inputPorts,
     outputPorts: outputPortsRaw,
-    templateDir,
-    defaultTemplate,
-    defaultTemplateName,
-    defaultTemplateCode: seedCodeForPackKindPayload(kind, getTemplates),
+    lifecycle: kind.lifecycle ?? undefined,
+    iconRef: kind.iconRef ?? undefined,
+    paletteOrder: typeof kind.paletteOrder === "number" ? kind.paletteOrder : undefined,
+    sourceFilename,
+    sourceCode: seedCodeForPackKindPayload(kind, getTemplates),
   };
 }
 

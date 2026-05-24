@@ -19,7 +19,6 @@ const mockNodeState = {
   templateData: {},
   setTemplateData: jest.fn(),
   newTemplateFlag: false,
-  showTemplateModal: false,
   showDescriptionModal: false,
   user: undefined,
   setTemplateConfig: jest.fn(),

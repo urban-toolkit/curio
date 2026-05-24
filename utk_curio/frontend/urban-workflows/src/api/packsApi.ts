@@ -30,14 +30,24 @@ export interface PackKindPayload {
   engine: "python" | "javascript";
   description: string;
   icon: string | null;
+  /** "<source>:<icon-id>" key resolved through iconRegistry. */
+  iconRef: string | null;
+  /** String key into the lifecycleRegistry. */
+  lifecycle: string | null;
+  /** Sort order in the palette; null means built-in default ordering. */
+  paletteOrder: number | null;
   editor: "code" | "widgets" | "grammar" | "none";
   hasCode: boolean;
   hasWidgets: boolean;
   hasGrammar: boolean;
+  /** Grammar adapter key (e.g. "vega-lite") when editor === "grammar". */
+  grammarId: string | null;
+  /** Palette card badge label (e.g. "VEGA", "AUTK"). */
+  badge: string | null;
   inputPorts: PortPayload[];
   outputPorts: PortPayload[];
-  templateDir: string | null;
-  defaultTemplate: string | null;
+  /** Pack-relative path to the optional starter source file. */
+  source: string | null;
 }
 
 /** Pack-relative coordinate (`packId` + compatibility major). */

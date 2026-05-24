@@ -4,7 +4,7 @@
  * Built-in code nodes use the no-op `useCodeNodeLifecycle`: the user is
  * expected to pick a preset from the Templates dropdown before running.
  *
- * Pack nodes ship a `defaultTemplate` field in the manifest. Reference pack:
+ * Pack nodes optionally ship a `source` field in the manifest. Reference pack:
  * ``<repo_root>/packs/ai.urbanlab.uhvi@1/manifest.json``.
  *
  * Semantic — "inject once, at instantiation only":
@@ -38,14 +38,13 @@ import { useTemplateContext } from '../../providers/TemplateProvider';
 import { tryGetNodeDescriptor } from '../../registry/nodeRegistry';
 import type { NodeLifecycleHook } from '../../registry/types';
 
-function defaultTemplateName(defaultTemplatePath: string | undefined): string | undefined {
-  if (!defaultTemplatePath) return undefined;
-  const basename = defaultTemplatePath.split('/').pop() ?? '';
+function sourceDisplayName(sourcePath: string | undefined): string | undefined {
+  if (!sourcePath) return undefined;
+  const basename = sourcePath.split('/').pop() ?? '';
   if (!basename) return undefined;
-  const stem = basename.replace(/\.py$/i, '').replace(/\.js$/i, '');
-  // The backend template loader maps `<Name_With_Underscores>.py` → name
-  // `"Name With Underscores"` (see `_template_object` in
-  // `utk_curio/backend/app/packs/templates.py`). Mirror that here.
+  // Strip the final extension only (matches `Path.stem` used by the
+  // backend walker in `utk_curio/backend/app/packs/templates.py`).
+  const stem = basename.replace(/\.[^.]+$/u, '');
   return stem.replace(/_/g, ' ');
 }
 
@@ -76,7 +75,7 @@ export const usePackNodeLifecycle: NodeLifecycleHook = (data, nodeState) => {
       return;
     }
 
-    const wantedName = defaultTemplateName(descriptor.pack?.defaultTemplate);
+    const wantedName = sourceDisplayName(descriptor.pack?.source);
     if (!wantedName) {
       hasInjectedRef.current = true;
       return;

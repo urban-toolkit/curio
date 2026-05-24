@@ -1,12 +1,12 @@
 {
   "sha256": {
-    "manifest.json": "457ec0e1c051831b9cc647be0bdb7dfac459e9dc075a0d8236def23b1f9c33aa",
-    "templates/census-load/Milan_Census_GeoJSON.py": "68cd6921add6fd6aa61afa68ea2a37f300bdb136fd245c5adcac92a8d835fe91",
-    "templates/census-reproject/Reproject_3395_Filter_Positive.py": "64aed6794b29303e4d65fcd2f20518f14f1318522b6ece62d3dbc067d95b0fea",
-    "templates/gt65-projection/Gt65_Only.py": "447f2163209338169a0e52b814b2e26154476c2e748751e6c1b5eb063ef0aef9",
-    "templates/mrt-load/Milan_MRT_GeoTIFF.py": "d28c59ffacaee4063d796aee4faffe84e71742f33f93b0e066e4ca01e2526425",
-    "templates/utci-compute/UTCI_From_Raster_And_Weather.py": "fd5e5ebf0c9862b87ec4ac7c3c0068c314108b41c723c4f236ef02b1d2afd4ec",
-    "templates/utci-zonal/UTCI_Zonal_Mean.py": "dbe40afe3c6ba3aa76060c170889beab98eaa827bd02c59bb0465a56e1d8e55e",
-    "templates/weather-load/ERA5_Milan_CSV.py": "239d4487e245ee3277e7d681cee13041f3b66ed5802692710906b1cf0ba856c1"
+    "manifest.json": "4b8007e8cf501d416a343b912b7f7ae48a8aacb6bdd1f08529fc1885c31e011a",
+    "sources/census-load.py": "717c18b81d433b896c7d5488bc5ac2cab6921e282789007adc055d577d48f5ed",
+    "sources/census-reproject.py": "49eac77a6a3b408487308998bb4c7959e1cf1ad63ab0df21768f60db7508ec91",
+    "sources/gt65-projection.py": "6761c9dad8b10ab56980a9988a10055d34b71f80e8e025b003f2e2da53a3f2c5",
+    "sources/mrt-load.py": "2305937e3909c731c85b67f491299a6aa1517a6e2e12adc8ddaf77116fdd8d1a",
+    "sources/utci-compute.py": "ec4951b3a1a19db50848cc610d4a450d8d9fd4bf18606eef4148f6610aff0c33",
+    "sources/utci-zonal.py": "9697255e5a4d374620d5c549dde88cdb46a1f8e5541d84d97d392043e468e57e",
+    "sources/weather-load.py": "25d0b734e36fed590885db502adc7afa878c54cabb809a61f0729c3b8c89e371"
   }
 }

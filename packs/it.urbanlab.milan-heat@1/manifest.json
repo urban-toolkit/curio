@@ -1,5 +1,5 @@
 {
-  "$schema": "https://curio.dev/schemas/node-pack.v1.json",
+  "$schema": "https://curio.dev/schemas/node-pack.v2.json",
   "id": "it.urbanlab.milan-heat",
   "version": "1.0.0",
   "name": "Milan Heat Vulnerability",
@@ -46,8 +46,7 @@
           "cardinality": "1"
         }
       ],
-      "templateDir": "templates/mrt-load",
-      "defaultTemplate": "templates/mrt-load/Milan_MRT_GeoTIFF.py"
+      "source": "sources/mrt-load.py"
     },
     {
       "id": "weather-load",
@@ -69,8 +68,7 @@
           "cardinality": "1"
         }
       ],
-      "templateDir": "templates/weather-load",
-      "defaultTemplate": "templates/weather-load/ERA5_Milan_CSV.py"
+      "source": "sources/weather-load.py"
     },
     {
       "id": "census-load",
@@ -92,8 +90,7 @@
           "cardinality": "1"
         }
       ],
-      "templateDir": "templates/census-load",
-      "defaultTemplate": "templates/census-load/Milan_Census_GeoJSON.py"
+      "source": "sources/census-load.py"
     },
     {
       "id": "utci-compute",
@@ -123,8 +120,7 @@
           "cardinality": "1"
         }
       ],
-      "templateDir": "templates/utci-compute",
-      "defaultTemplate": "templates/utci-compute/UTCI_From_Raster_And_Weather.py"
+      "source": "sources/utci-compute.py"
     },
     {
       "id": "utci-zonal",
@@ -155,8 +151,7 @@
           "cardinality": "1"
         }
       ],
-      "templateDir": "templates/utci-zonal",
-      "defaultTemplate": "templates/utci-zonal/UTCI_Zonal_Mean.py"
+      "source": "sources/utci-zonal.py"
     },
     {
       "id": "census-reproject",
@@ -185,15 +180,14 @@
           "cardinality": "1"
         }
       ],
-      "templateDir": "templates/census-reproject",
-      "defaultTemplate": "templates/census-reproject/Reproject_3395_Filter_Positive.py"
+      "source": "sources/census-reproject.py"
     },
     {
       "id": "gt65-projection",
       "label": "Project gt_65 column",
       "category": "computation",
       "engine": "python",
-      "description": "Project the (Geo)DataFrame down to just the gt_65 column — used to feed a boxplot view that summarises the older-adult-population distribution independently of UTCI.",
+      "description": "Project the (Geo)DataFrame down to just the gt_65 column \u2014 used to feed a boxplot view that summarises the older-adult-population distribution independently of UTCI.",
       "icon": null,
       "editor": "code",
       "hasCode": true,
@@ -215,8 +209,7 @@
           "cardinality": "1"
         }
       ],
-      "templateDir": "templates/gt65-projection",
-      "defaultTemplate": "templates/gt65-projection/Gt65_Only.py"
+      "source": "sources/gt65-projection.py"
     }
   ],
   "createdAt": "2026-02-01T12:00:00Z"

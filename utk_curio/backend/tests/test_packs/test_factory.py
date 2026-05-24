@@ -39,14 +39,15 @@ def _draft(**overrides):
                 "hasGrammar": False,
                 "inputPorts": [],
                 "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
-                "templateDir": "templates/demo-kind",
-                "defaultTemplate": "templates/demo-kind/Default.py",
+                "source": "sources/demo-kind.py",
             }
         ],
     }
     draft = {
         "manifest": manifest,
-        "sources": {"demo-kind": {"Default.py": "def run():\n    return {}\n"}},
+        "sources": {
+            "demo-kind": {"filename": "demo-kind.py", "code": "def run():\n    return {}\n"},
+        },
     }
     draft.update(overrides)
     return draft
@@ -82,22 +83,22 @@ def test_build_is_deterministic(tmp_curio):
 
 def test_build_rejects_unknown_kind_in_sources():
     draft = _draft()
-    draft["sources"]["other-kind"] = {"X.py": "pass"}
+    draft["sources"]["other-kind"] = {"filename": "X.py", "code": "pass"}
     with pytest.raises(FactoryError, match="unknown kind id"):
         build_pack_archive(draft)
 
 
 def test_build_rejects_bad_filename():
     draft = _draft()
-    draft["sources"]["demo-kind"] = {"../escape.py": "pass"}
-    with pytest.raises(FactoryError, match="safe single-segment"):
+    draft["sources"]["demo-kind"] = {"filename": "../escape.py", "code": "pass"}
+    with pytest.raises(FactoryError, match="single safe"):
         build_pack_archive(draft)
 
 
-def test_build_rejects_missing_default_template():
+def test_build_rejects_missing_source():
     draft = _draft()
-    draft["sources"]["demo-kind"] = {"Different.py": "pass"}
-    with pytest.raises(FactoryError, match="defaultTemplate references"):
+    draft["sources"]["demo-kind"] = {"filename": "Different.py", "code": "pass"}
+    with pytest.raises(FactoryError, match="source references"):
         build_pack_archive(draft)
 
 

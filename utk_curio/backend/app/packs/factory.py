@@ -1,9 +1,8 @@
 """Node-factory builder: turn a wizard draft into a ``.curio-nodepack`` archive.
 
-The Node Factory wizard (see ``docs/nodesfactory@docs/frontend.md`` — Node Factory)
-posts a single JSON draft to the backend. This module materialises that
-draft into a self-contained zip whose layout matches what
-:mod:`utk_curio.backend.app.packs.installer` will accept.
+The Node Factory wizard posts a single JSON draft to the backend. This
+module materialises that draft into a self-contained zip whose layout
+matches what :mod:`utk_curio.backend.app.packs.installer` will accept.
 
 A draft looks like::
 
@@ -25,18 +24,17 @@ A draft looks like::
             "category": "data",
             "engine": "python",
             "editor": "code",
+            "lifecycle": "code",
+            "iconRef": "fa-solid:upload",
             "inputPorts": [],
             "outputPorts": [{"types": ["RASTER"], "cardinality": "1"}],
-            "templateDir": "templates/uhvi-load",
-            "defaultTemplate": "templates/uhvi-load/UHVI_Load_Basic.py",
+            "source": "sources/uhvi-load.py",
             ...
           }
         ]
       },
       "sources": {
-        "uhvi-load": {
-          "UHVI_Load_Basic.py": "import rasterio\n..."
-        }
+        "uhvi-load": { "filename": "uhvi-load.py", "code": "import rasterio\n..." }
       },
       "readme": "...",        # optional; goes to README.md
       "license_text": "..."   # optional; goes to LICENSE
@@ -47,10 +45,9 @@ The builder:
 * validates the manifest through :class:`PackManifest` (the same code
   path the installer uses) so the artifact can only be created if it
   would also install,
-* lays out template sources under ``templates/<kindId>/<filename>.py``
+* lays out each kind's optional starter under ``sources/<filename>``
   (POSIX paths, validated against the storage-layer safe-segment rules),
-* refuses any source filename that is not a safe single segment ending
-  in ``.py``, and
+* refuses any source filename that is not a single safe segment, and
 * writes a deterministic ZIP — entries sorted, stable mtime — so two
   identical drafts always produce byte-identical archives.
 """
@@ -72,11 +69,11 @@ from utk_curio.backend.app.packs.manifest import (
 from utk_curio.backend.app.packs.storage import KIND_ID_RE
 
 
-# Each ``sources`` filename must be a single safe segment ending in
-# ``.py``. We do not allow nested paths under a kind — the wizard
-# surfaces a flat list per kind, and refusing nesting keeps the
-# templateDir contract identical to the built-in templates layout.
-_TEMPLATE_FILENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}\.py$")
+# Each ``sources`` filename must be a single safe segment with an
+# extension (e.g. ``uhvi-load.py``, ``chart.vl.json``, ``hook.js``).
+# We do not allow nested paths — each kind ships at most one starter,
+# laid out at ``sources/<filename>`` in the archive.
+_SOURCE_FILENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}\.[A-Za-z0-9]+$")
 
 # Deterministic mtime for every zip entry. Pinned to 2024-01-01 UTC so
 # two byte-identical drafts produce byte-identical archives — useful for
@@ -98,23 +95,19 @@ class BuildResult:
 def _validate_sources(
     manifest: PackManifest, sources: dict[str, dict[str, str]]
 ) -> dict[str, dict[str, str]]:
-    """Ensure every kind's ``sources`` are well-formed and referenceable.
+    """Ensure every kind's ``sources`` entry is well-formed and referenceable.
 
-    Specifically:
-
-    * Every key in *sources* must be a known kind id from the manifest.
-    * Every filename must match ``_TEMPLATE_FILENAME_RE`` (single safe
-      segment, ``.py`` suffix).
-    * Every source body must be a string (UTF-8 encoded on write).
-    * If a kind declares ``defaultTemplate``, the referenced filename
-      must be present in *sources* under that kind.
+    Each entry is ``{"filename": "...", "code": "..."}`` — one starter
+    per kind. If a kind manifest declares ``source: "sources/<X>"``,
+    the entry under ``sources[kind_id]`` must provide a matching
+    ``filename``.
 
     Returns a copy with stable iteration order. Unknown kind ids fail
     fast.
     """
     valid_kinds = {k.kind_id for k in manifest.kinds}
     out: dict[str, dict[str, str]] = {}
-    for kind_id, files in sources.items():
+    for kind_id, entry in sources.items():
         if kind_id not in valid_kinds:
             raise FactoryError(
                 f"sources references unknown kind id {kind_id!r}; valid: "
@@ -122,36 +115,35 @@ def _validate_sources(
             )
         if not KIND_ID_RE.match(kind_id):
             raise FactoryError(f"sources key {kind_id!r} is not a valid kind id")
-        if not isinstance(files, dict):
+        if not isinstance(entry, dict):
             raise FactoryError(
-                f"sources[{kind_id!r}] must be an object of "
-                f"{{filename: code}}, got {type(files).__name__}"
+                f"sources[{kind_id!r}] must be an object "
+                f'{{"filename": "...", "code": "..."}}, got {type(entry).__name__}'
             )
-        per_kind: dict[str, str] = {}
-        for filename, body in files.items():
-            if not _TEMPLATE_FILENAME_RE.match(filename):
-                raise FactoryError(
-                    f"sources[{kind_id!r}].{filename!r} is not a safe "
-                    f"single-segment '.py' filename"
-                )
-            if not isinstance(body, str):
-                raise FactoryError(
-                    f"sources[{kind_id!r}].{filename!r} body must be a string"
-                )
-            per_kind[filename] = body
-        out[kind_id] = per_kind
-
-    # Cross-check defaultTemplate references.
-    for kind in manifest.kinds:
-        if not kind.default_template:
-            continue
-        expected = kind.default_template.rsplit("/", 1)[-1]
-        files = out.get(kind.kind_id, {})
-        if expected not in files:
+        filename = entry.get("filename")
+        code = entry.get("code")
+        if not isinstance(filename, str) or not _SOURCE_FILENAME_RE.match(filename):
             raise FactoryError(
-                f"kind {kind.kind_id!r} defaultTemplate references "
-                f"{kind.default_template!r} but sources[{kind.kind_id!r}] "
-                f"does not provide {expected!r}"
+                f"sources[{kind_id!r}].filename {filename!r} must be a single safe "
+                f"segment with an extension"
+            )
+        if not isinstance(code, str):
+            raise FactoryError(
+                f"sources[{kind_id!r}].code must be a string"
+            )
+        out[kind_id] = {"filename": filename, "code": code}
+
+    # Cross-check manifest `source` references.
+    for kind in manifest.kinds:
+        if not kind.source:
+            continue
+        expected = kind.source.rsplit("/", 1)[-1]
+        entry = out.get(kind.kind_id)
+        if entry is None or entry.get("filename") != expected:
+            raise FactoryError(
+                f"kind {kind.kind_id!r} source references "
+                f"{kind.source!r} but sources[{kind.kind_id!r}] "
+                f"does not provide filename {expected!r}"
             )
     return out
 
@@ -236,12 +228,11 @@ def build_pack_archive(draft: dict[str, Any]) -> BuildResult:
             json.dumps(manifest_authoring, indent=2, sort_keys=True).encode("utf-8"),
         )
 
-        # 2. templates/<kindId>/<file>.py — deterministic ordering.
+        # 2. sources/<filename> — one starter per kind, deterministic ordering.
         for kind_id in sorted(validated_sources):
-            files = validated_sources[kind_id]
-            for filename in sorted(files):
-                arcname = f"templates/{kind_id}/{filename}"
-                _add_entry(zf, arcname, files[filename].encode("utf-8"))
+            entry = validated_sources[kind_id]
+            arcname = f"sources/{entry['filename']}"
+            _add_entry(zf, arcname, entry["code"].encode("utf-8"))
 
         # 3. README.md / LICENSE — optional.
         if isinstance(readme, str) and readme.strip():

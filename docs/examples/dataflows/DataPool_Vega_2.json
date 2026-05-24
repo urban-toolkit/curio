@@ -3,7 +3,7 @@
     "nodes": [
       {
         "id": "a1abfa78-6517-4606-9660-c7eeeeb49851",
-        "type": "DATA_LOADING",
+        "type": "curio.builtin/data-loading",
         "x": 275,
         "y": 314.5,
         "content": "import geopandas as gpd\r\nimport pandas as pd\r\nfrom shapely.geometry import Point\r\n# Read the green roofs dataset\r\ngreen_roofs_df = pd.read_csv('./docs/examples/data/10-green_roofs.csv')\r\n\r\n# Create the dataset into geo dataframe using latitude and longitude columns\r\ngeometry = [Point(xy) for xy in zip(green_roofs_df['LONGITUDE'], green_roofs_df['LATITUDE'])]\r\ngreen_roofs_df = gpd.GeoDataFrame(green_roofs_df, geometry=geometry, crs=4326)\r\nchicago = gpd.read_file(\"./docs/examples/data/chicago.geojson\") \r\n\r\n# Joining the green roofs dataset with the chicago neighborhood geojson file\r\njoined = gpd.sjoin(green_roofs_df, chicago, predicate='within')\r\nreturn joined",
@@ -16,7 +16,7 @@
       },
       {
         "id": "5f658c2a-5124-4421-807f-9ce343d160ce",
-        "type": "DATA_POOL",
+        "type": "curio.builtin/data-pool",
         "x": 999.9310780008192,
         "y": 313.73933933162647,
         "out": "DEFAULT",
@@ -28,7 +28,7 @@
       },
       {
         "id": "f9e2b9af-23e6-4db3-9140-38bfecd6afc5",
-        "type": "DATA_TRANSFORMATION",
+        "type": "curio.builtin/data-transformation",
         "x": 1796.9237776095802,
         "y": 318.7250241808757,
         "content": "import geopandas as gpd\r\n\r\njoined = arg\r\n\r\n# filter out the top 10 zip codes from the joined dataframe on 'zip' by square feet\r\ntop_10_largest = joined.groupby('zip')['VEGETATED_SQFT'].sum().reset_index().sort_values(by='VEGETATED_SQFT', ascending=False).head(10)\r\n\r\nreturn top_10_largest",
@@ -41,7 +41,7 @@
       },
       {
         "id": "b601d363-50fd-4209-bee2-9997dcb050f3",
-        "type": "VIS_VEGA",
+        "type": "curio.builtin/vis-vega",
         "x": 2633.9071041709058,
         "y": 325.0633183059499,
         "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"description\": \"Top 10 largest zip codes by green roof area\",\n  \"width\": 400,\n  \"height\": 200,\n  \"selection\": {\n    \"zip_select\": {\n      \"type\": \"multi\",\n      \"fields\": [\"zip\"],\n      \"toggle\": \"event.shiftKey\"\n    }\n  },\n  \"mark\": {\"type\": \"bar\", \"stroke\": \"black\", \"color\": \"green\"},\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"VEGETATED_SQFT\",\n      \"type\": \"quantitative\",\n      \"axis\": {\n        \"title\": \"Total Vegetated Roof Size (sqft)\",\n        \"values\": [100000, 250000, 500000, 1000000],\n        \"format\": \",d\"\n      }\n    },\n    \"y\": {\n      \"field\": \"zip\",\n      \"type\": \"nominal\",\n      \"sort\": \"-x\",\n      \"axis\": {\"title\": \"Zip Code\"}\n    },\n    \"color\": {\n      \"field\": \"zip\",\n      \"type\": \"nominal\",\n      \"scale\": {\"scheme\": \"category20\"}\n    },\n    \"opacity\": {\n      \"condition\": {\"selection\": \"zip_select\", \"value\": 1},\n      \"value\": 0.3\n    },\n    \"tooltip\": [\n      {\"field\": \"zip\", \"type\": \"nominal\"},\n      {\"field\": \"VEGETATED_SQFT\", \"type\": \"quantitative\"}\n    ]\n  }\n}",

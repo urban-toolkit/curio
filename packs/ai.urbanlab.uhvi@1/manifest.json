@@ -1,5 +1,5 @@
 {
-  "$schema": "https://curio.dev/schemas/node-pack.v1.json",
+  "$schema": "https://curio.dev/schemas/node-pack.v2.json",
   "id": "ai.urbanlab.uhvi",
   "version": "1.0.0",
   "name": "Urban Heat Vulnerability Index",
@@ -45,8 +45,7 @@
           "cardinality": "[1,n]"
         }
       ],
-      "templateDir": "templates/uhvi-load",
-      "defaultTemplate": "templates/uhvi-load/UHVI_Load_Basic.py"
+      "source": "sources/uhvi-load.py"
     },
     {
       "id": "uhvi-zones",
@@ -68,8 +67,7 @@
           "cardinality": "1"
         }
       ],
-      "templateDir": "templates/uhvi-zones",
-      "defaultTemplate": "templates/uhvi-zones/UHVI_Zones_Shapefile.py"
+      "source": "sources/uhvi-zones.py"
     },
     {
       "id": "uhvi-zonal",
@@ -99,8 +97,7 @@
           "cardinality": "1"
         }
       ],
-      "templateDir": "templates/uhvi-zonal",
-      "defaultTemplate": "templates/uhvi-zonal/UHVI_Zonal_Mean.py"
+      "source": "sources/uhvi-zonal.py"
     }
   ],
   "createdAt": "2024-01-01T10:00:00Z"

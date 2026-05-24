@@ -3,7 +3,7 @@
     "nodes": [
       {
         "id": "8d428948-f5e4-485b-9812-51a4212678a7",
-        "type": "DATA_LOADING",
+        "type": "curio.builtin/data-loading",
         "x": 657,
         "y": 443,
         "content": "import geopandas as gpd\nfrom shapely.geometry import Polygon\n\n# Three city-block-sized squares (300 m) laid out around the Chicago Loop\n# in EPSG:3395 (World Mercator, metres). Realistic Mercator coords are\n# required so that AutkMap's auto-fit camera lands on something visible.\ncx, cy = -9752000, 5137000\nsize = 300\ngap = 600\nsquares = [\n    Polygon([(cx, cy), (cx + size, cy), (cx + size, cy + size), (cx, cy + size)]),\n    Polygon([(cx + gap, cy), (cx + gap + size, cy), (cx + gap + size, cy + size), (cx + gap, cy + size)]),\n    Polygon([(cx, cy + gap), (cx + size, cy + gap), (cx + size, cy + gap + size), (cx, cy + gap + size)]),\n]\ngdf = gpd.GeoDataFrame(\n    {'value': [10, 20, 30], 'geometry': squares},\n    crs='EPSG:3395',\n)\ngdf.metadata = {'name': 'demo'}\n\nreturn gdf",
@@ -16,7 +16,7 @@
       },
       {
         "id": "4d414f97-fad3-4ac7-9e1d-53725eb61f70",
-        "type": "AUTK_MAP",
+        "type": "curio.builtin/autk-map",
         "x": 1495.310854988554,
         "y": 441.3274150435921,
         "content": "// 'arg' is the layer array — the upstream GeoDataFrame is auto-wrapped\n// to [{ name: 'layer', type: 'POLYGONS_2D', geojson: <FeatureCollection> }]\n// by the AUTK_MAP lifecycle. autk-map's loadCollection rejects\n// 'POLYGONS_2D' (valid: 'polygons' / 'roads' / 'points' / 'buildings' /\n// 'surface' / 'water' / 'parks' / 'raster' — see autk-map api.d.ts), so\n// pass null to let the map infer the type from the feature geometries.\nconst map = new AutkMap(container);\nawait map.init();\nfor (const layer of arg) {\n    map.loadCollection(layer.name, { collection: layer.geojson, type: null });\n    map.updateRenderInfo(layer.name, { renderInfo: { isColorMap: true } });\n    map.updateThematic(layer.name, {\n        collection: layer.geojson,\n        property: 'properties.value',\n    });\n}\nmap.draw();\nreturn map;",

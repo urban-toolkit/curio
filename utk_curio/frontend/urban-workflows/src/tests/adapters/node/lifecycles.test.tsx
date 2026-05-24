@@ -101,7 +101,6 @@ function makeMockNodeState(overrides: Partial<UseNodeStateReturn> = {}): UseNode
     templateData: {},
     setTemplateData: jest.fn(),
     newTemplateFlag: false,
-    showTemplateModal: false,
     showDescriptionModal: false,
     user: undefined,
     setTemplateConfig: jest.fn(),

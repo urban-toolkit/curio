@@ -3,7 +3,7 @@
     "nodes": [
       {
         "id": "c80722e7-8960-4308-8f1d-90b121acf126",
-        "type": "DATA_LOADING",
+        "type": "curio.builtin/data-loading",
         "x": 44.225950241077555,
         "y": -88.23554143885666,
         "content": "import rasterio\nsrc = rasterio.open('docs/examples/data/09-milan_mrt.tif')\n\nreturn src",
@@ -16,7 +16,7 @@
       },
       {
         "id": "48a522cd-b1d7-4947-98c2-fb50e07f1d82",
-        "type": "DATA_LOADING",
+        "type": "curio.builtin/data-loading",
         "x": 33.682664855133396,
         "y": 377.73963760742413,
         "content": "import pandas as pd\nsensor = pd.read_csv('docs/examples/data/09-milan_weather.csv', delimiter=';')\nreturn sensor",
@@ -29,7 +29,7 @@
       },
       {
         "id": "289b82c8-734e-4c66-a01d-9b0097f2a7bf",
-        "type": "MERGE_FLOW",
+        "type": "curio.builtin/merge-flow",
         "x": 731.6594881952055,
         "y": 175.37013459436577,
         "content": "",
@@ -42,7 +42,7 @@
       },
       {
         "id": "ea821796-827b-47ac-8104-4bfb4dc5eb63",
-        "type": "COMPUTATION_ANALYSIS",
+        "type": "curio.builtin/computation-analysis",
         "x": 999.7112510818503,
         "y": 276.4050298362549,
         "content": "# Step 4 â€” Compute UTCI\n\nimport numpy as np\nfrom pythermalcomfort import models\nfrom rasterio.warp import Resampling\n\nsrc = arg[0]\nsensor = arg[1]\n\ntimestamp = 12\n\n# Bundled raster is already at the working resolution; no further downsample needed.\nupscale_factor = 1.0\ndataset = src\ndata = dataset.read(\n    out_shape=(\n        dataset.count,\n        int(dataset.height * upscale_factor),\n        int(dataset.width * upscale_factor),\n    ),\n    resampling=Resampling.nearest,\n    masked=True,\n)\ndata = data.astype(float).filled(np.nan)\n\nsensor_filtered = sensor[sensor[\"it\"] == timestamp]\ntdb = float(sensor_filtered[\"Td\"].values[0])\nv = float(sensor_filtered[\"Wind\"].values[0])\nrh = float(sensor_filtered[\"RH\"].values[0])\n\n# `limit_inputs=False` keeps UTCI valid for tr - tdb > 30 (common at noon in Milan).\nutci_result = models.utci(tdb=tdb, tr=data[0], v=v, rh=rh, units=\"SI\", limit_inputs=False)\nutci_grid = np.asarray(getattr(utci_result, \"utci\", utci_result), dtype=float)\n\nif utci_grid.ndim == 3 and utci_grid.shape[0] == 1:\n    utci_grid = utci_grid[0]\nif utci_grid.ndim != 2:\n    raise ValueError(f\"UTCI must be 2D, got shape={utci_grid.shape}, ndim={utci_grid.ndim}\")\n\nutci_list = utci_grid.tolist()\nutci_shape = [utci_grid.shape[1], utci_grid.shape[0]]\n\nreturn (utci_list, utci_shape)\n",
@@ -55,7 +55,7 @@
       },
       {
         "id": "4b7c2234-d107-4531-b890-5c582efbe444",
-        "type": "DATA_LOADING",
+        "type": "curio.builtin/data-loading",
         "x": 1024.2279540383229,
         "y": -363.35132428093857,
         "content": "import geopandas as gpd\ngdf = gpd.read_file('docs/examples/data/09-milan_census.geojson')\nreturn gdf",
@@ -68,7 +68,7 @@
       },
       {
         "id": "964b380b-559b-4fa3-a9f7-4dcb12878504",
-        "type": "MERGE_FLOW",
+        "type": "curio.builtin/merge-flow",
         "x": 1803.4073808341443,
         "y": 46.618319377579155,
         "content": "",
@@ -81,7 +81,7 @@
       },
       {
         "id": "cdb373b6-1b35-47db-bfd7-fe4ae1e9efdc",
-        "type": "COMPUTATION_ANALYSIS",
+        "type": "curio.builtin/computation-analysis",
         "x": 1991.353978193783,
         "y": 39.842547821528576,
         "content": "# Step 5 â€” Zonal Statistics\n\nfrom rasterstats import zonal_stats\nimport numpy as np\n\ndataset = arg[0]\nutci_list = arg[1][0]\nutci_shape = arg[1][1]\ngdf = arg[2]\n\nutci = np.asarray(utci_list, dtype=float)\nshape = utci_shape\n\nif utci.ndim != 2:\n    raise ValueError(f\"Expected 2D UTCI array, got shape={utci.shape}, ndim={utci.ndim}\")\n\ntransform = dataset.transform * dataset.transform.scale(\n    (dataset.width / shape[0]),\n    (dataset.height / shape[1]),\n)\n\n# Avoid nodata warning and make nodata explicit\nnodata_value = -999.0\nutci_for_stats = np.where(np.isnan(utci), nodata_value, utci)\n\njoined = zonal_stats(\n    gdf,\n    utci_for_stats,\n    stats=[\"min\", \"max\", \"mean\", \"median\"],\n    affine=transform,\n    nodata=nodata_value,\n)\n\ngdf[\"mean\"] = [d[\"mean\"] for d in joined]\nresult = gdf.loc[:, [gdf.geometry.name, \"mean\", \"gt_65\"]]\n\n\nreturn result",
@@ -94,7 +94,7 @@
       },
       {
         "id": "3cc268ee-ec4b-4921-ac69-6d0bb3691cb4",
-        "type": "DATA_TRANSFORMATION",
+        "type": "curio.builtin/data-transformation",
         "x": 2588.5119520005646,
         "y": 46.95875968813731,
         "content": "import geopandas as gpd\n\ngdf = arg\n\nfiltered_gdf = gdf.set_crs(32632)\nfiltered_gdf = filtered_gdf.to_crs(3395)\n\nfiltered_gdf = filtered_gdf[filtered_gdf['mean']>0]\n\n# Use __dict__ to bypass pandas' \"new attribute\" UserWarning on sliced\n# DataFrames; curio reads .metadata back via getattr (parsers.py).\nfiltered_gdf.__dict__['metadata'] = {\n   'name': 'census'\n}\n\nreturn filtered_gdf",
@@ -107,7 +107,7 @@
       },
       {
         "id": "35bd75ce-005e-40e1-9172-7caef9ccf046",
-        "type": "DATA_TRANSFORMATION",
+        "type": "curio.builtin/data-transformation",
         "x": 3865.412667873701,
         "y": 383.7512473885402,
         "content": "gdf = arg\nreturn gdf.loc[:, [\"gt_65\"]]",
@@ -120,7 +120,7 @@
       },
       {
         "id": "e1cf73df-4713-46e8-95d3-ec677378e125",
-        "type": "DATA_POOL",
+        "type": "curio.builtin/data-pool",
         "x": 3193.4172119706795,
         "y": 49.09443574823963,
         "content": "",
@@ -133,7 +133,7 @@
       },
       {
         "id": "6c4aa6a8-45eb-480e-bb3d-3fd54d13325b",
-        "type": "AUTK_MAP",
+        "type": "curio.builtin/autk-map",
         "x": 4009.1411683828164,
         "y": -38.90265429297569,
         "content": "// 'arg' is the layer array — the upstream GeoDataFrame routed through\n// the Data Pool is auto-wrapped to [{ name, type, geojson }] by the\n// AUTK_MAP lifecycle. Iterate it and use `layer.name` so the loaded\n// layer id matches the wrapper's id; this is what lets the lifecycle's\n// selection fast-path call setHighlightedIds(layer.name, …) on linked\n// brushing from the Vega scatter (a custom name like 'census' would\n// silently break that path because the wrapper still says 'layer').\n// type=null lets autk-map infer 'polygons' from the geometry.\nconst map = new AutkMap(container);\nawait map.init();\nfor (const layer of arg) {\n    map.loadCollection(layer.name, { collection: layer.geojson, type: null });\n    map.updateRenderInfo(layer.name, { renderInfo: { isPick: true, isColorMap: true } });\n    map.updateThematic(layer.name, { collection: layer.geojson, property: 'properties.mean' });\n}\nmap.draw();\nreturn map;",
@@ -146,7 +146,7 @@
       },
       {
         "id": "3334485c-50ad-4adf-9574-45f8a9704860",
-        "type": "VIS_VEGA",
+        "type": "curio.builtin/vis-vega",
         "x": 3808.4500731392422,
         "y": -469.9135838516325,
         "content": "{\n \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n \"params\": [\n   {\"name\": \"clickSelect\", \"select\": \"interval\"}\n ],\n \"mark\": {\n   \"type\": \"point\",\n   \"cursor\": \"pointer\"\n },\n \"encoding\": {\n   \"x\": {\"field\": \"gt_65\", \"type\": \"quantitative\"},\n   \"y\": {\"field\": \"mean\", \"type\": \"quantitative\", \"scale\": {\"domain\": [37, 42]}},\n   \"fillOpacity\": {\n     \"condition\": {\"param\": \"clickSelect\", \"value\": 1},\n     \"value\": 0.3\n   },\n   \"color\": {\n     \"field\": \"interacted\",\n     \"type\": \"nominal\",\n     \"condition\": {\"test\": \"datum.interacted === '1'\", \"value\": \"red\", \"else\": \"blue\"}\n   }\n },\n \"config\": {\n   \"scale\": {\n     \"bandPaddingInner\": 0.2\n   }\n }\n}",
@@ -159,7 +159,7 @@
       },
       {
         "id": "bcded943-0536-4d5b-adeb-e51dfc28afba",
-        "type": "VIS_VEGA",
+        "type": "curio.builtin/vis-vega",
         "x": 4505.485042192259,
         "y": 385.3685915518078,
         "content": "{\n \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n \"transform\": [\n   {\n     \"fold\": [\"gt_65\"],\n     \"as\": [\"Variable\", \"Value\"]\n   }\n ],\n \"mark\": {\n   \"type\": \"boxplot\",\n   \"size\": 60\n },\n \"encoding\": {\n   \"x\": {\"field\": \"Variable\", \"type\": \"nominal\", \"title\": \"Variable\"},\n   \"y\": {\"field\": \"Value\", \"type\": \"quantitative\", \"title\": \"Value\"}\n }\n}",

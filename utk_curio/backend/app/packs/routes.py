@@ -129,14 +129,18 @@ def _manifest_to_payload(manifest: PackManifest, *, pack_mtime_path: Path | None
                 "engine": kind.engine,
                 "description": kind.description,
                 "icon": kind.icon,
+                "iconRef": kind.icon_ref,
+                "lifecycle": kind.lifecycle,
+                "paletteOrder": kind.palette_order,
                 "editor": kind.editor,
                 "hasCode": kind.has_code,
                 "hasWidgets": kind.has_widgets,
                 "hasGrammar": kind.has_grammar,
+                "grammarId": kind.grammar_id,
+                "badge": kind.badge,
                 "inputPorts": [asdict(p) if is_dataclass(p) else p for p in kind.input_ports],
                 "outputPorts": [asdict(p) if is_dataclass(p) else p for p in kind.output_ports],
-                "templateDir": kind.template_dir,
-                "defaultTemplate": kind.default_template,
+                "source": kind.source,
             }
         )
     payload = {

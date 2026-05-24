@@ -3,7 +3,7 @@
     "nodes": [
       {
         "id": "cd3b6afc-900d-417c-8064-375ed01a912f",
-        "type": "DATA_LOADING",
+        "type": "curio.builtin/data-loading",
         "x": -184.49380725228323,
         "y": -192.0725504282294,
         "content": "import geopandas as gpd\n\ngdf = gpd.read_file('zip://docs/examples/data/04-labels.json.zip!04-labels.json')\n\ngdf.metadata = {\n    'name': 'accessibility_features'\n}\n\nreturn gdf\n",
@@ -16,7 +16,7 @@
       },
       {
         "id": "a0c5d21f-ce16-4318-95fe-598451859de1",
-        "type": "DATA_TRANSFORMATION",
+        "type": "curio.builtin/data-transformation",
         "x": 405.4182374660654,
         "y": -175.1194369195315,
         "content": "import pandas as pd\nimport geopandas as gpd\nimport numpy as np\n\ngdf = arg\n\nprocessed_gdf = gdf[['label_type', 'severity', 'neighborhood', 'geometry', 'agree_count', 'disagree_count']]\n\nprocessed_gdf['agreement_ratio'] = processed_gdf['agree_count'] / (processed_gdf['agree_count'] + processed_gdf['disagree_count'])\n\nseverity_bins = [0, 1, 2, 3, 5]\nseverity_labels = ['Low', 'Medium', 'High', 'Critical']\nprocessed_gdf['severity_level'] = pd.cut(\n    processed_gdf['severity'],\n    bins=severity_bins,\n    labels=severity_labels,\n    include_lowest=True\n)\n\nif processed_gdf.crs is None:\n    processed_gdf = processed_gdf.set_crs(\"EPSG:4326\")\nelse:\n    processed_gdf = processed_gdf.to_crs(\"EPSG:4326\")\n\nprocessed_gdf['thematic'] = processed_gdf['severity']\n\nprocessed_gdf.metadata = {\n    'name': 'accessibility_analysis'\n}\n\nreturn processed_gdf",
@@ -29,7 +29,7 @@
       },
       {
         "id": "6475234e-0288-49cd-b03f-19852717c980",
-        "type": "DATA_TRANSFORMATION",
+        "type": "curio.builtin/data-transformation",
         "x": 1078.8245128814092,
         "y": -172.35488802436373,
         "content": "import pandas as pd\nimport numpy as np\n\ngdf = arg\n\nfeature_stats = gdf.groupby('label_type').agg(\n    count=('label_type', 'count'),\n    avg_severity=('severity', 'mean'),\n    avg_agreement=('agreement_ratio', 'mean')\n).reset_index()\n\nfeature_stats = feature_stats.fillna(0)\n\nfor col in ['avg_severity', 'avg_agreement']:\n    feature_stats[col] = feature_stats[col].astype(float)\n\nfeature_stats.metadata = {\n    'name': 'feature_stats'\n}\n\nreturn feature_stats",
@@ -42,7 +42,7 @@
       },
       {
         "id": "44286732-11aa-4495-8706-cb4a9ba2e6a5",
-        "type": "DATA_TRANSFORMATION",
+        "type": "curio.builtin/data-transformation",
         "x": 1468.2074956317012,
         "y": 214.28715195539806,
         "content": "import pandas as pd\nimport numpy as np\n\ngdf = arg\n\nneighborhood_stats = gdf.groupby('neighborhood').agg(\n    count=('label_type', 'count'),\n    avg_severity=('severity', 'mean'),\n    avg_agreement=('agreement_ratio', 'mean')\n).reset_index()\n\nneighborhood_stats = neighborhood_stats.fillna(0)\n\nfor col in ['avg_severity', 'avg_agreement']:\n    neighborhood_stats[col] = neighborhood_stats[col].astype(float)\n\nneighborhood_stats.metadata = {\n    'name': 'neighborhood_stats'\n}\n\nreturn neighborhood_stats",
@@ -55,7 +55,7 @@
       },
       {
         "id": "90282349-bde0-4b34-a0ab-e9a32f48032a",
-        "type": "VIS_VEGA",
+        "type": "curio.builtin/vis-vega",
         "x": 1678.4350622030865,
         "y": -169.85573321703293,
         "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"data\": {\"name\": \"feature_stats\"},\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"x\": {\n      \"field\": \"label_type\",\n      \"type\": \"nominal\",\n      \"title\": \"Feature Type\"\n    },\n    \"y\": {\n      \"field\": \"count\",\n      \"type\": \"quantitative\",\n      \"title\": \"Number of Features\"\n    },\n    \"color\": {\n      \"field\": \"avg_severity\",\n      \"type\": \"quantitative\",\n      \"title\": \"Average Severity\",\n      \"scale\": {\n        \"scheme\": \"viridis\"\n      }\n    },\n    \"tooltip\": [\n      {\"field\": \"label_type\", \"type\": \"nominal\", \"title\": \"Feature Type\"},\n      {\"field\": \"count\", \"type\": \"quantitative\", \"title\": \"Count\"},\n      {\"field\": \"avg_severity\", \"type\": \"quantitative\", \"title\": \"Avg Severity\", \"format\": \".2f\"},\n      {\"field\": \"avg_agreement\", \"type\": \"quantitative\", \"title\": \"Avg Agreement\", \"format\": \".2f\"}\n    ]\n  }\n}",
@@ -68,7 +68,7 @@
       },
       {
         "id": "44609c8e-87dd-4373-ab6e-59839e8f9406",
-        "type": "VIS_VEGA",
+        "type": "curio.builtin/vis-vega",
         "x": 2269.251853391958,
         "y": -192.59930613857435,
         "width": 554,

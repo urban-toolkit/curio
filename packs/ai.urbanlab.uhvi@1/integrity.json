@@ -1,9 +1,9 @@
 {
   "sha256": {
-    "README.md": "33a917064971e9258a13d253ce8aeb489af29331a75c37033509d81a73700c4e",
-    "manifest.json": "e565d1d4477c7dadd8c21b1b397f41091cdef86807c2fda0c321ab037c2f68ba",
-    "templates/uhvi-load/UHVI_Load_Basic.py": "45d052e421a2a5452dfce2e0b79bb0cb6c11650a0df56bdf74a28d937a1a1117",
-    "templates/uhvi-zonal/UHVI_Zonal_Mean.py": "4e294fa3b85a582b07bbb59d3720adfed1f06a192947cd34b0e72ab37b535973",
-    "templates/uhvi-zones/UHVI_Zones_Shapefile.py": "81130d05e6bc2206e1cbe80ee6332a97e475769d9541689a93335f14ae2a092c"
+    "README.md": "ed7f0dad374b18d007184f6633c6b2edaaddeafc507d97aa389b324a661b5dbc",
+    "manifest.json": "b065ffab04fbdb316427822e6f3f400faa0b10c829ba99ec4c8ee85d5a203bd1",
+    "sources/uhvi-load.py": "0930ea0ea2904c389399a02af39a7e53846e570fb4867669e7f850c631bc4107",
+    "sources/uhvi-zonal.py": "c0cffef597368fe7cc5f6d932899b7faeaed4ef4068de8c28753a45d8ad89c51",
+    "sources/uhvi-zones.py": "b91b8e658317f01c84bfd559736c4f3b9d6b69016837a07bbb38692814967c2e"
   }
 }

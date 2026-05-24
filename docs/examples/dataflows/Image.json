@@ -3,7 +3,7 @@
     "nodes": [
       {
         "id": "931cc52a-c539-4a93-a376-f9f689c34e50",
-        "type": "DATA_LOADING",
+        "type": "curio.builtin/data-loading",
         "x": 442.45352285745105,
         "y": 376.648698354997,
         "content": "# -*- coding: utf-8 -*-\r\nimport base64\r\nimport io\r\nfrom pathlib import Path\r\n\r\nimport pandas as pd\r\nfrom PIL import Image\r\n\r\ndef image_to_base64(img: Image.Image) -> str:\r\n    \"\"\"Convert a PIL Image to a base64-encoded PNG string.\"\"\"\r\n    buffer = io.BytesIO()\r\n    img.save(buffer, format=\"PNG\")\r\n    return base64.b64encode(buffer.getvalue()).decode(\"utf-8\")\r\n\r\ndef find_image_folder() -> Path:\r\n    candidates = [Path.cwd() / \"docs\" / \"examples\" / \"data\" / \"ImageTest\"]\r\n    candidates.extend(\r\n        parent / \"docs\" / \"examples\" / \"data\" / \"ImageTest\"\r\n        for parent in Path.cwd().parents\r\n    )\r\n\r\n    for candidate in candidates:\r\n        if candidate.is_dir():\r\n            return candidate\r\n\r\n    raise FileNotFoundError(\r\n        \"Could not find docs/examples/data/ImageTest from the current working directory.\"\r\n    )\r\n\r\nimage_folder = find_image_folder()\r\nrows = []\r\nfor index, image_path in enumerate(sorted(image_folder.iterdir())):\r\n    if not image_path.is_file():\r\n        continue\r\n\r\n    with Image.open(image_path) as img:\r\n        rows.append({\r\n            \"image_id\": index,\r\n            \"image_content\": image_to_base64(img),\r\n        })\r\n\r\nreturn pd.DataFrame(rows)",
@@ -16,7 +16,7 @@
       },
       {
         "id": "7978e4d5-1e30-40a3-8f00-7814434b282e",
-        "type": "VIS_SIMPLE",
+        "type": "curio.builtin/vis-simple",
         "x": 1334.2818491146634,
         "y": 401.28251172275964,
         "out": "DEFAULT",

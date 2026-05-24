@@ -4,7 +4,6 @@ import { Handle, Edge, useEdges } from 'reactflow';
 import { NodeContainer } from './styles';
 import NodeEditor from './editing/NodeEditor';
 import DescriptionModal from './DescriptionModal';
-import TemplateModal from './TemplateModal';
 import { OutputIcon } from './edges/OutputIcon';
 import { InputIcon } from './edges/InputIcon';
 import { getNodeDescriptor } from '../registry/nodeRegistry';
@@ -107,9 +106,6 @@ const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }:
         user={nodeState.user}
         sendCodeToWidgets={sendCode}
         setOutputCallback={setOutputCallback}
-        promptModal={adapter.showTemplateModal ? nodeState.promptModal : undefined}
-        updateTemplate={adapter.showTemplateModal ? nodeState.updateTemplate : undefined}
-        setTemplateConfig={adapter.showTemplateModal ? nodeState.setTemplateConfig : undefined}
         promptDescription={nodeState.promptDescription}
       >
         {!dashboardOn && adapter.inputIconType && <InputIcon type={adapter.inputIconType as TIconCardinality} />}
@@ -124,18 +120,6 @@ const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }:
           handleClose={nodeState.closeDescription}
           custom={nodeState.templateData.custom}
         />
-
-        {adapter.showTemplateModal && (
-          <TemplateModal
-            newTemplateFlag={nodeState.newTemplateFlag}
-            templateId={nodeState.templateData.id}
-            callBack={nodeState.setTemplateConfig}
-            show={nodeState.showTemplateModal}
-            handleClose={nodeState.closeModal}
-            nodeType={descriptor.id}
-            code={nodeState.code}
-          />
-        )}
 
         {adapter.editor && (
           <NodeEditor

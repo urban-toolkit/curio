@@ -7,6 +7,7 @@ import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { PythonInterpreter } from "../PythonInterpreter";
 import { JavaScriptInterpreter } from "../JavaScriptInterpreter";
 import { TrillGenerator } from "../TrillGenerator";
+import { aliasNormalize } from "../utils/aliasNormalize";
 import { usePosition } from "./usePosition";
 import { AccessLevelType, EdgeType, CURIO_UNIVERSAL_NODE_TYPE } from "../constants";
 
@@ -77,6 +78,12 @@ export function useCode(): IUseCode {
 
     // suggestionType: "workflow" | "connection" | "none"
     const loadTrill = (trill: any, suggestionType?: string, fromProvenance?: boolean) => {
+
+        // Rewrite legacy ``NodeType`` enum strings (e.g. "DATA_LOADING") into
+        // their canonical unversioned form ("curio.builtin/data-loading") so
+        // every downstream consumer in this loop and the registry sees the
+        // post-Phase-B convention.
+        aliasNormalize(trill);
 
         let nodes = [];
         let edges = [];

@@ -3,7 +3,7 @@
     "nodes": [
       {
         "id": "js-node-1",
-        "type": "JS_COMPUTATION",
+        "type": "curio.builtin/js-computation",
         "x": 800,
         "y": 300,
         "content": "// arg is the input from the previous node (null if none)\nconst result = [1, 2, 3].map(x => x * 2);\nconsole.log('doubled:', result);\nreturn result;",
@@ -16,7 +16,7 @@
       },
       {
         "id": "simple-view-1",
-        "type": "VIS_SIMPLE",
+        "type": "curio.builtin/vis-simple",
         "x": 1430.6532668776103,
         "y": 289.66053283702365,
         "content": "",

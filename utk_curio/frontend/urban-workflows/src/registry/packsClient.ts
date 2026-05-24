@@ -7,37 +7,33 @@
  * Subscriber notifications are coalesced so the UI never observes an empty pack
  * registry between clear and register.
  *
- * Pack descriptors use the same registry slot as built-ins — see
- * ``docs/nodesfactory@docs/frontend.md`` (registry refresh and pack descriptors). The difference is:
+ * Pack descriptors use the same registry slot as built-ins:
  *
  *   - their `id` is the canonical string `<packId>/<kindId>@<major>`,
  *   - `source === 'pack'`, and
  *   - `pack` carries the pack-provenance metadata used by the palette to
  *     section Built-in vs PACKS.
- * 
- * A specific lifecycle hook is needed for pack nodes: `usePackNodeLifecycle`
- * which injects the default template code into the editor when the node is
- * first dropped onto the canvas.
+ *
+ * Each kind manifest's `lifecycle` string is resolved through
+ * {@link getLifecycle}; `iconRef` through {@link resolveIconRef}. The
+ * pre-installed `curio.builtin@1` pack rides these registries so its
+ * kinds behave identically to the legacy hard-coded descriptors.
  */
 
-import {
-  faChartLine,
-  faCodeMerge,
-  faCube,
-  faUpload,
-  faTable,
-} from '@fortawesome/free-solid-svg-icons';
-import { faPython } from '@fortawesome/free-brands-svg-icons';
+import { faCube } from '@fortawesome/free-solid-svg-icons';
 
 import { SupportedType } from '../constants';
 import {
   inputOnly,
   outputOnly,
   standardInOut,
+  useCodeNodeLifecycle,
   usePackNodeLifecycle,
 } from '../adapters/node';
 import { packsApi } from 'api/packsApi';
 
+import { getLifecycle } from './lifecycleRegistry';
+import { resolveIconRef } from './iconRegistry';
 import {
   clearPackNodes,
   registerNode,
@@ -57,14 +53,19 @@ interface RawPackKind {
   engine: 'python' | 'javascript';
   description: string;
   icon: string | null;
+  iconRef: string | null;
+  lifecycle: string | null;
+  paletteOrder: number | null;
   editor: 'code' | 'widgets' | 'grammar' | 'none';
   hasCode: boolean;
   hasWidgets: boolean;
   hasGrammar: boolean;
+  grammarId: string | null;
+  badge: string | null;
   inputPorts: Array<{ types: string[]; cardinality?: string }>;
   outputPorts: Array<{ types: string[]; cardinality?: string }>;
-  templateDir: string | null;
-  defaultTemplate: string | null;
+  /** Optional pack-relative path to a single starter source file. */
+  source: string | null;
 }
 
 interface RawPack {
@@ -100,13 +101,7 @@ function asCategory(raw: string): NodeCategory {
   return (KNOWN_CATEGORIES.has(raw as NodeCategory) ? raw : 'computation') as NodeCategory;
 }
 
-const PACK_CATEGORY_ICONS: Record<NodeCategory, typeof faCube> = {
-  data: faUpload,
-  computation: faPython,
-  vis_grammar: faChartLine,
-  vis_simple: faTable,
-  flow: faCodeMerge,
-};
+const BUILTIN_PACK_ID = 'curio.builtin';
 
 function asSupportedTypes(raw: string[]): SupportedType[] {
   const known = new Set(Object.values(SupportedType));
@@ -153,6 +148,15 @@ function buildDescriptor(pack: RawPack, kind: RawPackKind, order: number): NodeD
   else if (outputPorts.length === 0) handles = inputOnly();
   else handles = standardInOut();
 
+  const isBuiltin = pack.packId === BUILTIN_PACK_ID;
+  const lookedUpLifecycle = kind.lifecycle ? getLifecycle(kind.lifecycle) : undefined;
+  const lifecycle = lookedUpLifecycle
+    ?? (isBuiltin ? useCodeNodeLifecycle : usePackNodeLifecycle);
+  const icon = resolveIconRef(kind.iconRef) ?? faCube;
+  const paletteOrder = typeof kind.paletteOrder === 'number'
+    ? kind.paletteOrder
+    : 1000 + order; // third-party packs without explicit order sort after built-ins
+
   return {
     id: kind.id,
     source: 'pack',
@@ -162,7 +166,7 @@ function buildDescriptor(pack: RawPack, kind: RawPackKind, order: number): NodeD
       version: pack.version,
       name: pack.name,
       publisher: pack.publisher,
-      defaultTemplate: kind.defaultTemplate ?? undefined,
+      source: kind.source ?? undefined,
       ...(pack.lineage
         ? {
             lineage: {
@@ -182,17 +186,18 @@ function buildDescriptor(pack: RawPack, kind: RawPackKind, order: number): NodeD
     },
     category: asCategory(kind.category),
     label: kind.label,
-    icon: PACK_CATEGORY_ICONS[asCategory(kind.category)] ?? faCube,
+    icon,
     inputPorts,
     outputPorts,
     editor: kind.editor,
     inPalette: true,
-    paletteOrder: 1000 + order, // packs sort after built-ins
+    paletteOrder,
     description: kind.description,
     hasCode: kind.hasCode,
     hasWidgets: kind.hasWidgets,
     hasGrammar: kind.hasGrammar,
-    badge: 'PACK',
+    ...(kind.grammarId ? { grammarId: kind.grammarId } : {}),
+    ...(kind.badge ? { badge: kind.badge } : isBuiltin ? {} : { badge: 'PACK' as const }),
     adapter: {
       handles,
       editor: {
@@ -210,8 +215,7 @@ function buildDescriptor(pack: RawPack, kind: RawPackKind, order: number): NodeD
       },
       inputIconType: inputPorts.length > 0 ? (inputPorts.length > 1 ? '2' : '1') : undefined,
       outputIconType: outputPorts.length > 0 ? (outputPorts.length > 1 ? '2' : '1') : undefined,
-      showTemplateModal: !!kind.templateDir,
-      useLifecycle: usePackNodeLifecycle,
+      useLifecycle: lifecycle,
     },
   };
 }
@@ -239,7 +243,6 @@ export function registerPackKinds(packs: RawPack[]): NodeDescriptor[] {
  */
 export async function loadInstalledPacks(): Promise<NodeDescriptor[]> {
   try {
-    // Matches Nodes Hub (`packsApi.listInstalled`): same URL and auth wiring as `apiFetch`.
     const { packs } = await packsApi.listInstalled();
     // Replace pack-derived kinds wholesale — `registerNode` only adds/overwrites,
     // so without this pass, uninstalled packs would leave stale palette entries.

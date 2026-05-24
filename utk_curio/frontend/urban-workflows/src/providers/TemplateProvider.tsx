@@ -125,21 +125,15 @@ const TemplateProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const editUserTemplate = (templateNew: Template) => {
+        // No-op since Phase B: user-custom templates were saved to the legacy
+        // ``<CURIO_LAUNCH_CWD>/templates/`` directory which no longer exists.
+        // Pack-source files are now the only source of starter code; users
+        // wanting to ship their own should publish a pack.
         let newTemplates: Template[] = [];
 
         for (const template of userTemplates) {
             if (template.id == templateNew.id){
                 newTemplates.push({ ...templateNew });
-
-                if(Object.keys(template).length > 0){ // If there is a template
-                    fetch(process.env.BACKEND_URL + "/addTemplate", {
-                        method: "POST",
-                        body: JSON.stringify(templateNew),
-                        headers: {
-                            "Content-type": "application/json; charset=UTF-8",
-                        },
-                    });
-                }
             }else{
                 newTemplates.push({ ...template });
             }

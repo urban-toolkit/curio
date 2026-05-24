@@ -168,22 +168,6 @@ def get_input_types(node_type: str) -> list:
     entry = _node_type_registry.get(node_type)
     return entry["inputTypes"] if entry else []
 
-def get_folder_for_type(node_type: str) -> str:
-    return node_type.lower()
-
-def get_type_for_folder(folder: str) -> str:
-    return folder.upper()
-
-def get_template_folders() -> list:
-    """Return all folder names that may contain templates."""
-    folders = set()
-    for node_type in _node_type_registry:
-        folders.add(get_folder_for_type(node_type))
-    return sorted(folders)
-
-def get_templates_path():
-    launch_dir = os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())
-    return os.path.join(launch_dir, "templates")
 
 def _parse_input_ref(req_input: dict | None) -> dict:
     """Normalize the input reference field from execution requests."""
@@ -517,37 +501,6 @@ def check_db():
     db.session.execute(db.text('SELECT 1'))
     return "OK", 200
 
-def create_template_object(folder, filename, code):
-    return {
-        "id": str(uuid.uuid4()),
-        "type": get_type_for_folder(folder),
-        "name": filename.replace(".py", "").replace("_", " "),
-        "description": "",
-        "accessLevel": "ANY",
-        "code": code,
-        "custom": True
-    }
-
-def generate_templates():
-    templates = []
-
-    for folder in get_template_folders():
-        folder_path = os.path.join(get_templates_path(), folder)
-
-        if not os.path.isdir(folder_path):
-            continue
-
-        for file in os.listdir(folder_path):
-            if file.endswith(".py"):
-
-                with open(os.path.join(folder_path, file), "r", encoding="utf-8") as f:
-                    code = f.read()
-
-                template_obj = create_template_object(folder, file, code)
-                templates.append(template_obj)
-
-    return templates
-
 @bp.route('/datasets', methods=['GET'])
 def list_datasets():
     response = requests.get(api_address+":"+str(api_port)+"/datasets", timeout=30)
@@ -558,55 +511,26 @@ def list_datasets():
 
 @bp.route("/templates", methods=["GET"])
 def get_templates():
-    """Return built-in templates plus, if authenticated, the caller's pack templates.
+    """Return per-kind starter templates from every installed pack.
 
-    Built-in templates are loaded from ``<CURIO_LAUNCH_CWD>/templates/<node_type_lower>/``
-    and keyed on the upper-snake ``NodeType``. Pack templates are loaded from
-    ``.curio/users/<u>/packs/<packId>@<major>/<templateDir>/`` (per
-    ``docs/nodesfactory@docs/manifest_spec.md``) and keyed on the canonical pack id
-    ``<packId>/<kindId>@<major>``. The two namespaces never collide.
+    Templates are sourced from each installed pack's optional per-kind
+    ``source`` file and keyed on the canonical pack id
+    ``<packId>/<kindId>@<major>``. The pre-installed ``curio.builtin@1``
+    pack ships no sources, so dragging a built-in node onto the canvas
+    yields an empty editor; third-party packs may ship a starter per kind.
     """
     from utk_curio.backend.app.packs import generate_pack_templates  # local import → no cycle
     from utk_curio.backend.app.projects.services import _user_dir_key
     from utk_curio.backend.app.users.dependencies import get_current_user
 
-    templates = generate_templates()
+    templates: list[dict] = []
     user = get_current_user()
     if user is not None:
         try:
-            templates = templates + generate_pack_templates(_user_dir_key(user))
+            templates = generate_pack_templates(_user_dir_key(user))
         except Exception:  # noqa: BLE001 — never fail /templates over a bad pack
-            current_app.logger.exception("Pack-template loader failed; returning built-ins only")
+            current_app.logger.exception("Pack-template loader failed; returning empty list")
     return jsonify(templates)
-
-@bp.route('/addTemplate', methods=['POST'])
-def add_template():
-    data = request.get_json()
-
-    required_fields = ['id', 'type', 'name', 'description', 'accessLevel', 'code', 'custom']
-    if not all(field in data for field in required_fields):
-        return jsonify({'error': 'Missing one or more required fields'}), 400
-
-    template_type = data['type']
-    if template_type not in _node_type_registry:
-        return jsonify({'error': f"Unknown template type: {template_type}"}), 400
-
-    subfolder = get_folder_for_type(template_type)
-    folder_path = os.path.join(get_templates_path(), subfolder)
-    os.makedirs(folder_path, exist_ok=True)
-
-    replace_name = data['name'].replace(" ", "_")
-
-    filename = f"{replace_name}.py"
-    filepath = os.path.join(folder_path, filename)
-
-    try:
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(data['code'])
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-    return jsonify({'message': f"Template saved to {filepath}"}), 200
 
 def get_loaded_files_metadata(folder_path):
     metadata = ""

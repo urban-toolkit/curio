@@ -3,7 +3,7 @@
     "nodes": [
       {
         "id": "d1a20f3e-4b56-4789-a012-b3c4d5e6f701",
-        "type": "DATA_LOADING",
+        "type": "curio.builtin/data-loading",
         "x": 400,
         "y": 400,
         "content": "import pandas as pd\n\nreturn pd.DataFrame({\n    'city': ['Chicago', 'New York', 'Los Angeles'],\n    'population_M': [2.7, 8.3, 4.0],\n    'area_km2': [606.1, 783.8, 1302.0],\n})",
@@ -16,7 +16,7 @@
       },
       {
         "id": "e2b31f4a-5c67-4890-b123-c4d5e6f7a812",
-        "type": "VIS_SIMPLE",
+        "type": "curio.builtin/vis-simple",
         "x": 1200,
         "y": 400,
         "out": "DEFAULT",

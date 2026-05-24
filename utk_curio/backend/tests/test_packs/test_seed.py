@@ -78,7 +78,10 @@ def test_seeds_committed_fixtures_on_first_run(tmp_curio, real_fixtures_root):
 
 def test_second_run_is_a_no_op_when_nothing_changed(tmp_curio, real_fixtures_root):
     assert seed_dev_packs(user_key="guest")
-    assert seed_dev_packs(user_key="guest") == []
+    # Built-in is always reseeded (forced-builtin), but third-party packs
+    # tracked via tombstone state should be no-ops on the second run.
+    second = seed_dev_packs(user_key="guest")
+    assert all(name.startswith("curio.builtin@") for name in second)
     # And the runtime copy is still in place.
     assert "ai.urbanlab.uhvi@1" in _installed_names()
 

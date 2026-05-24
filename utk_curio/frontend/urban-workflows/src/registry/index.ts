@@ -1,4 +1,5 @@
-import './descriptors';
+import './builtinLifecycles';
+import './iconRegistry';
 import '../adapters/vegaLiteAdapter';
 
 export {
@@ -17,6 +18,12 @@ export {
   getGrammarAdapter,
   getAllGrammarAdapters,
 } from './grammarAdapter';
+
+export {
+  registerLifecycle,
+  getLifecycle,
+  getAllLifecycleNames,
+} from './lifecycleRegistry';
 
 export type {
   NodeDescriptor,

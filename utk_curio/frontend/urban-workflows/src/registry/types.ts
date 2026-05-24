@@ -46,8 +46,8 @@ export interface NodePackMeta {
   /** From manifest `name` — human-readable pack title for palette / hub UI. */
   name?: string;
   publisher?: string;
-  /** Pack-relative path to the default template `.py` (when provided by the manifest). */
-  defaultTemplate?: string;
+  /** Pack-relative path to the optional starter source file (any extension). */
+  source?: string;
   lineage?: NodePackLineage;
   /** When true, omit this coordinate from the Packs dock palette (manifest `curio.paletteDock`). */
   hiddenFromForkPaletteDock?: boolean;
@@ -185,7 +185,6 @@ export interface NodeAdapter {
   container: ContainerConfig;
   inputIconType?: string;
   outputIconType?: string;
-  showTemplateModal?: boolean;
   useLifecycle: NodeLifecycleHook;
 }
 
