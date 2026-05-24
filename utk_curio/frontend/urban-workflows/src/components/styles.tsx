@@ -597,9 +597,9 @@ export const NodeContainer = ({
             }
 
             {!minimized && isConnectionLeftOpen && (handleType == "in/out" || handleType == "in") && !(data.suggestionType != "none" && data.suggestionType != undefined) ?
-                <FontAwesomeIcon 
-                    style={newInConnectionStyle} 
-                    icon={faCirclePlus} 
+                <FontAwesomeIcon
+                    style={newInConnectionStyle as any}
+                    icon={faCirclePlus}
                     onClick={() => {
                         if(AIModeRef.current)
                             generateConnectionSuggestions(getNodes(), getEdges(), workflowNameRef, goal, "input")
@@ -626,7 +626,7 @@ export const NodeContainer = ({
             }
 
             {!minimized && isConnectionRightOpen && (handleType == "in/out" || handleType == "out") && !(data.suggestionType != "none" && data.suggestionType != undefined) ?
-                <FontAwesomeIcon style={newOutConnectionStyle} icon={faCirclePlus} onClick={() => {
+                <FontAwesomeIcon style={newOutConnectionStyle as any} icon={faCirclePlus} onClick={() => {
                     if(AIModeRef.current)
                         generateConnectionSuggestions(getNodes(), getEdges(), workflowNameRef, goal, "output")
                 }} /> : null
@@ -1118,13 +1118,10 @@ const nodeTypeBorderColor: Record<string, string> = {
     [NodeType.DATA_TRANSFORMATION]: "#3498db",
     [NodeType.DATA_SUMMARY]: "#3498db",
     [NodeType.COMPUTATION_ANALYSIS]: "#8e44ad",
-    [NodeType.FLOW_SWITCH]: "#8e44ad",
     [NodeType.MERGE_FLOW]: "#8e44ad",
     [NodeType.DATA_POOL]: "#8e44ad",
-    [NodeType.CONSTANTS]: "#8e44ad",
     [NodeType.VIS_VEGA]: "#1abc9c",
     [NodeType.VIS_SIMPLE]: "#1abc9c",
-    [NodeType.COMMENTS]: "#95a5a6",
 };
 
 const getNodeContainerStyles = (nodeType: string): CSS.Properties => ({

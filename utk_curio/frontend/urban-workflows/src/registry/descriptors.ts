@@ -1,12 +1,10 @@
 import { NodeType, SupportedType } from '../constants';
 import { Position } from 'reactflow';
 import {
-  faSquareRootVariable,
   faUpload,
   faDownload,
   faServer,
   faDatabase,
-  faRepeat,
   faCodeMerge,
   faTable,
   faCube,
@@ -14,7 +12,6 @@ import {
   faCity,
   faChartLine,
   faChartColumn,
-  faCopy,
   faRectangleList,
   faMap,
   faMapLocationDot,
@@ -28,12 +25,10 @@ import {
   outputOnly,
   inputOnly,
   withBidirectional,
-  flowSwitchHandles,
   useCodeNodeLifecycle,
   useDataExportLifecycle,
   useVegaLifecycle,
   useSimpleVisLifecycle,
-  useFlowSwitchLifecycle,
   useMergeFlowLifecycle,
   useDataPoolLifecycle,
   useDataSummaryLifecycle,
@@ -217,29 +212,6 @@ registerNode({
     outputIconType: '1',
     showTemplateModal: true,
     useLifecycle: useDataSummaryLifecycle,
-  },
-});
-
-registerNode({
-  id: NodeType.CONSTANTS,
-  category: 'computation',
-  label: 'Constants',
-  icon: faSquareRootVariable,
-  inputPorts: [],
-  outputPorts: [{ types: [SupportedType.VALUE], cardinality: '1' }],
-  editor: 'code',
-  inPalette: false,
-  description: 'The Constant box stores a constant.',
-  hasCode: false,
-  hasWidgets: true,
-  hasGrammar: false,
-  adapter: {
-    handles: standardInOut(),
-    editor: { code: false, grammar: false, widgets: true },
-    container: { handleType: 'in/out' },
-    outputIconType: '1',
-    showTemplateModal: true,
-    useLifecycle: useCodeNodeLifecycle,
   },
 });
 
@@ -434,30 +406,6 @@ registerNode({
 // ── Flow nodes ──────────────────────────────────────────────────────────
 
 registerNode({
-  id: NodeType.FLOW_SWITCH,
-  category: 'flow',
-  label: 'Flow Switch',
-  icon: faRepeat,
-  inputPorts: [{ types: ALL_TYPES, cardinality: '2' }],
-  outputPorts: [{ types: ALL_TYPES, cardinality: '1' }],
-  editor: 'none',
-  inPalette: false,
-  description: 'The Flow Switch box is responsible for choosing which incoming data flow will be passed forward to the next box',
-  hasCode: false,
-  hasWidgets: true,
-  hasGrammar: false,
-  adapter: {
-    handles: flowSwitchHandles(),
-    editor: { code: true, grammar: false, widgets: true },
-    container: { handleType: 'in' },
-    inputIconType: '2',
-    outputIconType: '1',
-    showTemplateModal: false,
-    useLifecycle: useFlowSwitchLifecycle,
-  },
-});
-
-registerNode({
   id: NodeType.MERGE_FLOW,
   category: 'flow',
   label: 'Merge Flow',
@@ -497,26 +445,3 @@ registerNode({
   },
 });
 
-// ── Special nodes ───────────────────────────────────────────────────────
-
-registerNode({
-  id: NodeType.COMMENTS,
-  category: 'flow',
-  label: 'Comments',
-  icon: faCopy,
-  inputPorts: [],
-  outputPorts: [],
-  editor: 'none',
-  inPalette: false,
-  description: 'A free-form comment box for annotations.',
-  hasCode: false,
-  hasWidgets: false,
-  hasGrammar: false,
-  adapter: {
-    handles: [],
-    editor: null,
-    container: {},
-    showTemplateModal: false,
-    useLifecycle: () => ({}),
-  },
-});

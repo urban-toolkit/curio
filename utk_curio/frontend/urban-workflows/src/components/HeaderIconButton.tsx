@@ -20,7 +20,7 @@ export function HeaderIconButton({
     <FontAwesomeIcon
       icon={icon}
       title={title}
-      style={style}
+      style={style as any}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {

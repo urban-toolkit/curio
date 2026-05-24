@@ -7,17 +7,14 @@ const NODE_COLORS: Record<string, string> = {
   DATA_TRANSFORMATION: "#3498db",
   DATA_SUMMARY: "#3498db",
   COMPUTATION_ANALYSIS: "#8e44ad",
-  FLOW_SWITCH: "#8e44ad",
   MERGE_FLOW: "#8e44ad",
   DATA_POOL: "#8e44ad",
-  CONSTANTS: "#8e44ad",
   VIS_VEGA: "#1abc9c",
   VIS_SIMPLE: "#1abc9c",
   AUTK_MAP: "#1abc9c",
   AUTK_PLOT: "#1abc9c",
   AUTK_COMPUTE: "#8e44ad",
   AUTK_DB: "#3498db",
-  COMMENTS: "#95a5a6",
 };
 
 const FALLBACK_COLOR = "#95a5a6";

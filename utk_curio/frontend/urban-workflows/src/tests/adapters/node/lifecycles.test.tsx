@@ -72,7 +72,6 @@ import { useCodeNodeLifecycle } from '../../../adapters/node/codeNodeLifecycle';
 import { useDataExportLifecycle } from '../../../adapters/node/dataExportLifecycle';
 import { useVegaLifecycle } from '../../../adapters/node/vegaLifecycle';
 import { useSimpleVisLifecycle } from '../../../adapters/node/simpleVisLifecycle';
-import { useFlowSwitchLifecycle } from '../../../adapters/node/flowSwitchLifecycle';
 import { useMergeFlowLifecycle } from '../../../adapters/node/mergeFlowLifecycle';
 import { useDataPoolLifecycle } from '../../../adapters/node/dataPoolLifecycle';
 import { useAutkMapLifecycle } from '../../../adapters/node/autkMapLifecycle';
@@ -208,14 +207,6 @@ describe('Lifecycle hooks — NodeLifecycleHook contract conformance', () => {
       assertValidLifecycleResult(result.current);
       expect(result.current.contentComponent).toBeUndefined();
       expect(typeof result.current.setSendCodeCallbackOverride).toBe('function');
-    });
-  });
-
-  describe('useFlowSwitchLifecycle', () => {
-    test('returns empty object (no-op)', async () => {
-      const result = await callLifecycle(useFlowSwitchLifecycle);
-      assertValidLifecycleResult(result.current);
-      expect(Object.keys(result.current)).toHaveLength(0);
     });
   });
 

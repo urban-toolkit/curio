@@ -74,16 +74,16 @@ describe('nodeRegistry', () => {
     test('overwrites duplicate registration with warning', () => {
       const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
 
-      const first = makeDescriptor({ id: NodeType.CONSTANTS, label: 'First' });
-      const second = makeDescriptor({ id: NodeType.CONSTANTS, label: 'Second' });
+      const first = makeDescriptor({ id: NodeType.DATA_POOL, label: 'First' });
+      const second = makeDescriptor({ id: NodeType.DATA_POOL, label: 'Second' });
 
       registerNode(first);
       registerNode(second);
 
       expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('CONSTANTS'),
+        expect.stringContaining('DATA_POOL'),
       );
-      expect(getNodeDescriptor(NodeType.CONSTANTS).label).toBe('Second');
+      expect(getNodeDescriptor(NodeType.DATA_POOL).label).toBe('Second');
 
       warnSpy.mockRestore();
     });

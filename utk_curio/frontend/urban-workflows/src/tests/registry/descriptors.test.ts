@@ -44,10 +44,10 @@ jest.mock('reactflow', () => ({
 import '../../registry/descriptors';
 import { getAllNodeTypes, getNodeDescriptor } from '../../registry/nodeRegistry';
 
-const ALL_BOX_TYPES = Object.values(NodeType).filter((v) => v !== NodeType.COMMENTS);
+const ALL_BOX_TYPES = Object.values(NodeType);
 
 describe('Registered descriptors', () => {
-  test('every NodeType (except COMMENTS) has a registered descriptor', () => {
+  test('every NodeType has a registered descriptor', () => {
     for (const bt of ALL_BOX_TYPES) {
       expect(() => getNodeDescriptor(bt)).not.toThrow();
     }
@@ -110,7 +110,7 @@ describe('Registered descriptors', () => {
     // descriptor.id is widened to NodeKindId (NodeType | string) so the set
     // is typed accordingly — pack kinds are excluded by this test (they live
     // in a separate test suite once the spike fixture lands).
-    const excluded = new Set<string>([NodeType.MERGE_FLOW, NodeType.COMMENTS]);
+    const excluded = new Set<string>([NodeType.MERGE_FLOW]);
     const descriptors = getAllNodeTypes().filter((d) => !excluded.has(d.id as string));
     for (const desc of descriptors) {
       expect(desc.adapter.handles.length).toBeGreaterThan(0);
@@ -122,8 +122,8 @@ describe('Registered descriptors', () => {
     expect(desc.id).toBe(NodeType.JS_COMPUTATION);
     expect(desc.label).toBe('JS Computation');
     expect(desc.category).toBe('computation');
-    expect(desc.adapter.editor.code).toBe(true);
-    expect(desc.adapter.editor.widgets).toBe(true);
+    expect(desc.adapter.editor!.code).toBe(true);
+    expect(desc.adapter.editor!.widgets).toBe(true);
     expect(desc.inPalette).toBe(true);
   });
 });

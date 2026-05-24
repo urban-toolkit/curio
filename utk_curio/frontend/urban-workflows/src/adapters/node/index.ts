@@ -3,7 +3,6 @@ export { usePackNodeLifecycle } from './packNodeLifecycle';
 export { useDataExportLifecycle } from './dataExportLifecycle';
 export { useVegaLifecycle } from './vegaLifecycle';
 export { useSimpleVisLifecycle } from './simpleVisLifecycle';
-export { useFlowSwitchLifecycle } from './flowSwitchLifecycle';
 export { useMergeFlowLifecycle } from './mergeFlowLifecycle';
 export { useDataPoolLifecycle } from './dataPoolLifecycle';
 export { useDataSummaryLifecycle } from './dataSummaryLifecycle';
@@ -13,6 +12,6 @@ export { useAutkComputeLifecycle } from './autkComputeLifecycle';
 export { useAutkDbLifecycle } from './autkDbLifecycle';
 export { createAutkLifecycle } from './autkLifecycleFactory';
 
-export { standardInOut, outputOnly, inputOnly, withBidirectional, flowSwitchHandles } from './handleHelpers';
+export { standardInOut, outputOnly, inputOnly, withBidirectional } from './handleHelpers';
 
 export { ContentTable, DataPoolContent, ImageGrid } from './components';

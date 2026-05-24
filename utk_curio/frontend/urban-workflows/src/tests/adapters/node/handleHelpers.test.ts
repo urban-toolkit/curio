@@ -4,7 +4,6 @@ import {
   outputOnly,
   inputOnly,
   withBidirectional,
-  flowSwitchHandles,
 } from '../../../adapters/node/handleHelpers';
 
 describe('handleHelpers', () => {
@@ -87,20 +86,6 @@ describe('handleHelpers', () => {
       const baseLengthBefore = base.length;
       withBidirectional(base);
       expect(base).toHaveLength(baseLengthBefore);
-    });
-  });
-
-  describe('flowSwitchHandles', () => {
-    const handles = flowSwitchHandles();
-
-    test('returns exactly 3 handles', () => {
-      expect(handles).toHaveLength(3);
-    });
-
-    test('has bottom target "in1", top target "in2", right source "out"', () => {
-      expect(handles[0]).toMatchObject({ id: 'in1', type: 'target', position: Position.Bottom });
-      expect(handles[1]).toMatchObject({ id: 'in2', type: 'target', position: Position.Top });
-      expect(handles[2]).toMatchObject({ id: 'out', type: 'source', position: Position.Right });
     });
   });
 

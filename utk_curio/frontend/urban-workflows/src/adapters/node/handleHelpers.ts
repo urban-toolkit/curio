@@ -34,11 +34,3 @@ export function withBidirectional(base: HandleDef[]): HandleDef[] {
   ];
 }
 
-/** FlowSwitch: bottom target + top target, right source rendered inside container. */
-export function flowSwitchHandles(): HandleDef[] {
-  return [
-    { id: 'in1', type: 'target', position: Position.Bottom, isConnectableOverride: suggestionGuard },
-    { id: 'in2', type: 'target', position: Position.Top, isConnectableOverride: suggestionGuard },
-    { id: 'out', type: 'source', position: Position.Right },
-  ];
-}

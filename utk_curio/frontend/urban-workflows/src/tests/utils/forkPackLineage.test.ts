@@ -140,7 +140,7 @@ describe("forkPackLineage", () => {
       { lineage: lin({ packId: "parent.a", major: 1 }, { packId: "root", major: 1 }) },
       { lineage: lin({ packId: "parent.b", major: 2 }, { packId: "root", major: 1 }) },
       { dirName: "solo@1" },
-    ] as PackPayload[];
+    ] as unknown as PackPayload[];
     expect([...referencedForkParentCoordinates(packs)].sort()).toEqual(["parent.a@1", "parent.b@2"]);
   });
 

@@ -149,7 +149,7 @@ export const CommentsList = ({
         style={{ width: "100%", display: "flex", justifyContent: "flex-end" }}
         onClick={onAddComment}
       >
-        <FontAwesomeIcon icon={faArrowRight} style={iconStyle} />
+        <FontAwesomeIcon icon={faArrowRight} style={iconStyle as any} />
       </div>
     </div>
   );

@@ -1,3 +1,11 @@
+declare const global: typeof globalThis;
+declare const process: { env: Record<string, string | undefined> };
+declare const require: (id: string) => any;
+
+declare module 'react-dom';
+declare module 'react-dom/client';
+declare module '*.css';
+
 declare module '*.module.css' {
     const classes: { [key: string]: string };
     export default classes;
