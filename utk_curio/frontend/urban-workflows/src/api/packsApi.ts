@@ -48,6 +48,19 @@ export interface PackKindPayload {
   outputPorts: PortPayload[];
   /** Pack-relative path to the optional starter source file. */
   source: string | null;
+  /** Adds a third `'in/out'` handle on top of the standard in/out pair (interaction-loop kinds). */
+  bidirectional: boolean;
+  /** Overrides for the canvas container layout (size, no-content, play-button gate). */
+  containerStyle: {
+    nodeWidth?: number;
+    nodeHeight?: number;
+    noContent?: boolean;
+    disablePlay?: boolean;
+  } | null;
+  /** When false, suppresses the provenance editor tab; null = client default (true). */
+  hasProvenance: boolean | null;
+  /** Anchor id for the in-app tutorial system. */
+  tutorialId: string | null;
 }
 
 /** Pack-relative coordinate (`packId` + compatibility major). */

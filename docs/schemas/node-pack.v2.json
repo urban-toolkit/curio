@@ -201,6 +201,29 @@
         "source": {
           "type": "string",
           "description": "Pack-relative path to a single optional starter source file (e.g. 'sources/uhvi-load.py', 'sources/chart.vl.json'). Omit for structural kinds (built-in nodes ship no starter)."
+        },
+        "bidirectional": {
+          "type": "boolean",
+          "description": "When true, the descriptor adds a third handle (`id: 'in/out'`, `position: top`) on top of the standard in/out pair so data can flow back through the node (used by visualization + pool kinds for interaction loops)."
+        },
+        "containerStyle": {
+          "type": "object",
+          "description": "Overrides for the canvas node container's static layout. Most kinds use defaults; the merge-flow kind uses this to render as a narrow vertical rail.",
+          "properties": {
+            "nodeWidth": { "type": "integer", "minimum": 1 },
+            "nodeHeight": { "type": "integer", "minimum": 1 },
+            "noContent": { "type": "boolean" },
+            "disablePlay": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "hasProvenance": {
+          "type": "boolean",
+          "description": "Whether the node exposes a provenance tab in its editor. Defaults to true; set to false to suppress (e.g. on display-only kinds)."
+        },
+        "tutorialId": {
+          "type": "string",
+          "description": "Anchor id this kind exposes to the in-app tutorial system (`step-loading`, `step-vega`, ...)."
         }
       },
       "additionalProperties": true

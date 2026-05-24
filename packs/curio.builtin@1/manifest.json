@@ -32,8 +32,16 @@
       "hasGrammar": false,
       "inputPorts": [],
       "outputPorts": [
-        { "types": ["DATAFRAME", "GEODATAFRAME", "RASTER"], "cardinality": "[1,n]" }
-      ]
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "RASTER"
+          ],
+          "cardinality": "[1,n]"
+        }
+      ],
+      "tutorialId": "step-loading"
     },
     {
       "id": "data-export",
@@ -49,7 +57,14 @@
       "hasWidgets": true,
       "hasGrammar": false,
       "inputPorts": [
-        { "types": ["DATAFRAME", "GEODATAFRAME", "RASTER"], "cardinality": "1" }
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "RASTER"
+          ],
+          "cardinality": "1"
+        }
       ],
       "outputPorts": []
     },
@@ -67,11 +82,26 @@
       "hasWidgets": true,
       "hasGrammar": false,
       "inputPorts": [
-        { "types": ["DATAFRAME", "GEODATAFRAME", "RASTER"], "cardinality": "[1,2]" }
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "RASTER"
+          ],
+          "cardinality": "[1,2]"
+        }
       ],
       "outputPorts": [
-        { "types": ["DATAFRAME", "GEODATAFRAME", "RASTER"], "cardinality": "[1,2]" }
-      ]
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "RASTER"
+          ],
+          "cardinality": "[1,2]"
+        }
+      ],
+      "tutorialId": "step-transformation"
     },
     {
       "id": "data-pool",
@@ -87,11 +117,25 @@
       "hasWidgets": false,
       "hasGrammar": false,
       "inputPorts": [
-        { "types": ["DATAFRAME", "GEODATAFRAME"], "cardinality": "1" }
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME"
+          ],
+          "cardinality": "1"
+        }
       ],
       "outputPorts": [
-        { "types": ["DATAFRAME", "GEODATAFRAME"], "cardinality": "1" }
-      ]
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME"
+          ],
+          "cardinality": "1"
+        }
+      ],
+      "bidirectional": true,
+      "tutorialId": "step-pool"
     },
     {
       "id": "computation-analysis",
@@ -107,11 +151,32 @@
       "hasWidgets": true,
       "hasGrammar": false,
       "inputPorts": [
-        { "types": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON", "RASTER"], "cardinality": "[1,n]" }
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "VALUE",
+            "LIST",
+            "JSON",
+            "RASTER"
+          ],
+          "cardinality": "[1,n]"
+        }
       ],
       "outputPorts": [
-        { "types": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON", "RASTER"], "cardinality": "[1,n]" }
-      ]
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "VALUE",
+            "LIST",
+            "JSON",
+            "RASTER"
+          ],
+          "cardinality": "[1,n]"
+        }
+      ],
+      "tutorialId": "step-analysis"
     },
     {
       "id": "data-summary",
@@ -127,10 +192,21 @@
       "hasWidgets": false,
       "hasGrammar": false,
       "inputPorts": [
-        { "types": ["DATAFRAME", "GEODATAFRAME"], "cardinality": "1" }
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME"
+          ],
+          "cardinality": "1"
+        }
       ],
       "outputPorts": [
-        { "types": ["JSON"], "cardinality": "1" }
+        {
+          "types": [
+            "JSON"
+          ],
+          "cardinality": "1"
+        }
       ]
     },
     {
@@ -147,10 +223,30 @@
       "hasWidgets": false,
       "hasGrammar": false,
       "inputPorts": [
-        { "types": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON", "RASTER"], "cardinality": "[0,1]" }
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "VALUE",
+            "LIST",
+            "JSON",
+            "RASTER"
+          ],
+          "cardinality": "[0,1]"
+        }
       ],
       "outputPorts": [
-        { "types": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON", "RASTER"], "cardinality": "[0,1]" }
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "VALUE",
+            "LIST",
+            "JSON",
+            "RASTER"
+          ],
+          "cardinality": "[0,1]"
+        }
       ]
     },
     {
@@ -169,11 +265,24 @@
       "hasWidgets": true,
       "hasGrammar": true,
       "inputPorts": [
-        { "types": ["DATAFRAME"], "cardinality": "1" }
+        {
+          "types": [
+            "DATAFRAME"
+          ],
+          "cardinality": "1"
+        }
       ],
       "outputPorts": [
-        { "types": ["DATAFRAME"], "cardinality": "1" }
-      ]
+        {
+          "types": [
+            "DATAFRAME"
+          ],
+          "cardinality": "1"
+        }
+      ],
+      "bidirectional": true,
+      "hasProvenance": true,
+      "tutorialId": "step-vega"
     },
     {
       "id": "vis-simple",
@@ -189,11 +298,34 @@
       "hasWidgets": false,
       "hasGrammar": false,
       "inputPorts": [
-        { "types": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON", "RASTER"], "cardinality": "1" }
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "VALUE",
+            "LIST",
+            "JSON",
+            "RASTER"
+          ],
+          "cardinality": "1"
+        }
       ],
       "outputPorts": [
-        { "types": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON", "RASTER"], "cardinality": "1" }
-      ]
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "VALUE",
+            "LIST",
+            "JSON",
+            "RASTER"
+          ],
+          "cardinality": "1"
+        }
+      ],
+      "bidirectional": true,
+      "hasProvenance": true,
+      "tutorialId": "step-image"
     },
     {
       "id": "autk-plot",
@@ -210,11 +342,28 @@
       "hasWidgets": false,
       "hasGrammar": false,
       "inputPorts": [
-        { "types": ["LIST", "JSON", "GEODATAFRAME", "DATAFRAME"], "cardinality": "1" }
+        {
+          "types": [
+            "LIST",
+            "JSON",
+            "GEODATAFRAME",
+            "DATAFRAME"
+          ],
+          "cardinality": "1"
+        }
       ],
       "outputPorts": [
-        { "types": ["LIST", "JSON", "GEODATAFRAME", "DATAFRAME"], "cardinality": "[0,1]" }
-      ]
+        {
+          "types": [
+            "LIST",
+            "JSON",
+            "GEODATAFRAME",
+            "DATAFRAME"
+          ],
+          "cardinality": "[0,1]"
+        }
+      ],
+      "bidirectional": true
     },
     {
       "id": "autk-map",
@@ -231,11 +380,26 @@
       "hasWidgets": false,
       "hasGrammar": false,
       "inputPorts": [
-        { "types": ["LIST", "JSON", "GEODATAFRAME"], "cardinality": "1" }
+        {
+          "types": [
+            "LIST",
+            "JSON",
+            "GEODATAFRAME"
+          ],
+          "cardinality": "1"
+        }
       ],
       "outputPorts": [
-        { "types": ["LIST", "JSON", "GEODATAFRAME"], "cardinality": "[0,1]" }
-      ]
+        {
+          "types": [
+            "LIST",
+            "JSON",
+            "GEODATAFRAME"
+          ],
+          "cardinality": "[0,1]"
+        }
+      ],
+      "bidirectional": true
     },
     {
       "id": "autk-compute",
@@ -252,10 +416,24 @@
       "hasWidgets": false,
       "hasGrammar": false,
       "inputPorts": [
-        { "types": ["LIST", "JSON", "GEODATAFRAME"], "cardinality": "1" }
+        {
+          "types": [
+            "LIST",
+            "JSON",
+            "GEODATAFRAME"
+          ],
+          "cardinality": "1"
+        }
       ],
       "outputPorts": [
-        { "types": ["LIST", "JSON", "GEODATAFRAME"], "cardinality": "1" }
+        {
+          "types": [
+            "LIST",
+            "JSON",
+            "GEODATAFRAME"
+          ],
+          "cardinality": "1"
+        }
       ]
     },
     {
@@ -274,7 +452,12 @@
       "hasGrammar": false,
       "inputPorts": [],
       "outputPorts": [
-        { "types": ["LIST"], "cardinality": "1" }
+        {
+          "types": [
+            "LIST"
+          ],
+          "cardinality": "1"
+        }
       ]
     },
     {
@@ -291,11 +474,37 @@
       "hasWidgets": false,
       "hasGrammar": false,
       "inputPorts": [
-        { "types": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON", "RASTER"], "cardinality": "[1,n]" }
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "VALUE",
+            "LIST",
+            "JSON",
+            "RASTER"
+          ],
+          "cardinality": "[1,n]"
+        }
       ],
       "outputPorts": [
-        { "types": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON", "RASTER"], "cardinality": "1" }
-      ]
+        {
+          "types": [
+            "DATAFRAME",
+            "GEODATAFRAME",
+            "VALUE",
+            "LIST",
+            "JSON",
+            "RASTER"
+          ],
+          "cardinality": "1"
+        }
+      ],
+      "tutorialId": "step-merge",
+      "containerStyle": {
+        "nodeWidth": 50,
+        "nodeHeight": 180,
+        "noContent": true
+      }
     }
   ],
   "createdAt": "2026-05-23T00:00:00Z"

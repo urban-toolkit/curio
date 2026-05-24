@@ -186,6 +186,10 @@ class NodeKindManifest:
     grammar_id: str | None  # grammar adapter key (e.g. "vega-lite") when editor=="grammar"
     badge: str | None  # palette card badge label (e.g. "VEGA", "AUTK", "PACK")
     source: str | None  # pack-relative path to one optional starter file
+    bidirectional: bool  # adds the third "in/out" handle for interaction-loop kinds
+    container_style: dict | None  # {"nodeWidth": int?, "nodeHeight": int?, "noContent": bool?, "disablePlay": bool?}
+    has_provenance: bool | None  # explicit override for the provenance editor tab (defaults to true client-side)
+    tutorial_id: str | None  # anchor id for the in-app tutorial system
     grammar_dir: str | None
     widget_dir: str | None
 
@@ -214,6 +218,12 @@ class NodeKindManifest:
         palette_order_raw = raw.get("paletteOrder")
         if palette_order_raw is not None and not isinstance(palette_order_raw, int):
             raise ManifestError(f"{where}.paletteOrder must be an integer when present")
+        container_style_raw = raw.get("containerStyle")
+        if container_style_raw is not None and not isinstance(container_style_raw, dict):
+            raise ManifestError(f"{where}.containerStyle must be an object when present")
+        has_provenance_raw = raw.get("hasProvenance")
+        if has_provenance_raw is not None and not isinstance(has_provenance_raw, bool):
+            raise ManifestError(f"{where}.hasProvenance must be a boolean when present")
         return cls(
             kind_id=kind_id,
             label=str(raw.get("label", kind_id)),
@@ -235,6 +245,10 @@ class NodeKindManifest:
             grammar_id=raw.get("grammarId") if isinstance(raw.get("grammarId"), str) else None,
             badge=raw.get("badge") if isinstance(raw.get("badge"), str) else None,
             source=raw.get("source") if isinstance(raw.get("source"), str) else None,
+            bidirectional=bool(raw.get("bidirectional", False)),
+            container_style=container_style_raw,
+            has_provenance=has_provenance_raw,
+            tutorial_id=raw.get("tutorialId") if isinstance(raw.get("tutorialId"), str) else None,
             grammar_dir=raw.get("grammarDir") if isinstance(raw.get("grammarDir"), str) else None,
             widget_dir=raw.get("widgetDir") if isinstance(raw.get("widgetDir"), str) else None,
         )

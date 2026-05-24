@@ -141,6 +141,10 @@ def _manifest_to_payload(manifest: PackManifest, *, pack_mtime_path: Path | None
                 "inputPorts": [asdict(p) if is_dataclass(p) else p for p in kind.input_ports],
                 "outputPorts": [asdict(p) if is_dataclass(p) else p for p in kind.output_ports],
                 "source": kind.source,
+                "bidirectional": kind.bidirectional,
+                "containerStyle": kind.container_style,
+                "hasProvenance": kind.has_provenance,
+                "tutorialId": kind.tutorial_id,
             }
         )
     payload = {

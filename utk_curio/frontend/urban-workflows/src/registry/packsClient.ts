@@ -29,6 +29,7 @@ import {
   standardInOut,
   useCodeNodeLifecycle,
   usePackNodeLifecycle,
+  withBidirectional,
 } from '../adapters/node';
 import { packsApi } from 'api/packsApi';
 
@@ -66,6 +67,15 @@ interface RawPackKind {
   outputPorts: Array<{ types: string[]; cardinality?: string }>;
   /** Optional pack-relative path to a single starter source file. */
   source: string | null;
+  bidirectional: boolean;
+  containerStyle: {
+    nodeWidth?: number;
+    nodeHeight?: number;
+    noContent?: boolean;
+    disablePlay?: boolean;
+  } | null;
+  hasProvenance: boolean | null;
+  tutorialId: string | null;
 }
 
 interface RawPack {
@@ -137,6 +147,15 @@ function normalizedInstallUpdatedAtMs(raw: RawPack['installUpdatedAtMs']): numbe
   return undefined;
 }
 
+function portCardinalityIconType(ports: PortDef[]): '1' | '2' | 'N' | undefined {
+  if (ports.length === 0) return undefined;
+  // 'N' wins if any port has unbounded-upper cardinality (e.g. "[1,n]", "[0,n]").
+  if (ports.some((p) => typeof p.cardinality === 'string' && /,\s*n\s*]/.test(p.cardinality))) {
+    return 'N';
+  }
+  return ports.length > 1 ? '2' : '1';
+}
+
 function buildDescriptor(pack: RawPack, kind: RawPackKind, order: number): NodeDescriptor {
   const inputPorts = kind.inputPorts.map(asPortDef);
   const outputPorts = kind.outputPorts.map(asPortDef);
@@ -147,6 +166,7 @@ function buildDescriptor(pack: RawPack, kind: RawPackKind, order: number): NodeD
   if (inputPorts.length === 0) handles = outputOnly();
   else if (outputPorts.length === 0) handles = inputOnly();
   else handles = standardInOut();
+  if (kind.bidirectional) handles = withBidirectional(handles);
 
   const isBuiltin = pack.packId === BUILTIN_PACK_ID;
   const lookedUpLifecycle = kind.lifecycle ? getLifecycle(kind.lifecycle) : undefined;
@@ -156,6 +176,25 @@ function buildDescriptor(pack: RawPack, kind: RawPackKind, order: number): NodeD
   const paletteOrder = typeof kind.paletteOrder === 'number'
     ? kind.paletteOrder
     : 1000 + order; // third-party packs without explicit order sort after built-ins
+
+  // F4: editor === 'none' means no editor surface at all; keeping a truthy
+  // config object would cause UniversalNode to mount NodeEditor anyway.
+  const adapterEditor = kind.editor === 'none'
+    ? null
+    : { code: kind.hasCode, grammar: kind.hasGrammar, widgets: kind.hasWidgets };
+
+  const container: NodeDescriptor['adapter']['container'] = {
+    handleType:
+      inputPorts.length === 0
+        ? 'out'
+        : outputPorts.length === 0
+          ? 'in'
+          : 'in/out',
+    ...(kind.containerStyle?.nodeWidth !== undefined ? { nodeWidth: kind.containerStyle.nodeWidth } : {}),
+    ...(kind.containerStyle?.nodeHeight !== undefined ? { nodeHeight: kind.containerStyle.nodeHeight } : {}),
+    ...(kind.containerStyle?.noContent !== undefined ? { noContent: kind.containerStyle.noContent } : {}),
+    ...(kind.containerStyle?.disablePlay !== undefined ? { disablePlay: kind.containerStyle.disablePlay } : {}),
+  };
 
   return {
     id: kind.id,
@@ -196,25 +235,16 @@ function buildDescriptor(pack: RawPack, kind: RawPackKind, order: number): NodeD
     hasCode: kind.hasCode,
     hasWidgets: kind.hasWidgets,
     hasGrammar: kind.hasGrammar,
+    ...(kind.hasProvenance !== null ? { hasProvenance: kind.hasProvenance } : {}),
+    ...(kind.tutorialId ? { tutorialId: kind.tutorialId } : {}),
     ...(kind.grammarId ? { grammarId: kind.grammarId } : {}),
     ...(kind.badge ? { badge: kind.badge } : isBuiltin ? {} : { badge: 'PACK' as const }),
     adapter: {
       handles,
-      editor: {
-        code: kind.hasCode,
-        grammar: kind.hasGrammar,
-        widgets: kind.hasWidgets,
-      },
-      container: {
-        handleType:
-          inputPorts.length === 0
-            ? 'out'
-            : outputPorts.length === 0
-              ? 'in'
-              : 'in/out',
-      },
-      inputIconType: inputPorts.length > 0 ? (inputPorts.length > 1 ? '2' : '1') : undefined,
-      outputIconType: outputPorts.length > 0 ? (outputPorts.length > 1 ? '2' : '1') : undefined,
+      editor: adapterEditor,
+      container,
+      inputIconType: portCardinalityIconType(inputPorts),
+      outputIconType: portCardinalityIconType(outputPorts),
       useLifecycle: lifecycle,
     },
   };
