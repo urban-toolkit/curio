@@ -70,8 +70,8 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
     } = usePackagePalette();
 
     const onPackageInstalledFocusDock = useCallback(
-        (package: Pick<PackagePayload, "packageId" | "major">) => {
-            const coord = `${package.packageId}@${package.major}`;
+        (pkg: Pick<PackagePayload, "packageId" | "major">) => {
+            const coord = `${pkg.packageId}@${pkg.major}`;
             setPaletteDockRevealCoord(coord);
             setActivePackageKey(coord);
         },
@@ -518,7 +518,7 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
                                 onClick={() => registerDraftPackageSection()}
                             >
                                 <FontAwesomeIcon icon={faCirclePlus} className={packageStyles.packageAddSectionIcon} aria-hidden />
-                                <span>Add new package</span>
+                                <span>Add new pkg</span>
                             </button>
                         ) : null}
                         {packagesPaletteEditMode
@@ -551,7 +551,7 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
                                                           openWizardForPaletteSection(sectionKey, { draftUuid: draftId });
                                                       }}
                                                   >
-                                                      New package (draft)
+                                                      New pkg (draft)
                                                   </span>
                                                   <span className={packageStyles.packageSummaryCount}>{stagedRows.length}</span>
                                               </div>
@@ -576,7 +576,7 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
                                 <div
                                     key={row.group.key}
                                     className={packageStyles.packagePaletteRowAnchor}
-                                    data-package-palette-coords={row.group.key}
+                                    data-pkg-palette-coords={row.group.key}
                                 >
                                     <InstalledPackageAccordion
                                         group={row.group}
@@ -598,7 +598,7 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
                                 <div
                                     key={`fork-family:${row.rootKey}`}
                                     className={packageStyles.packagePaletteRowAnchor}
-                                    data-package-palette-coords={row.members.map((m) => m.key).join(" ")}
+                                    data-pkg-palette-coords={row.members.map((m) => m.key).join(" ")}
                                 >
                                     <PaletteForkFamily
                                         rootKey={row.rootKey}

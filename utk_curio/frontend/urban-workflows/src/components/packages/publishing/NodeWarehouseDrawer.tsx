@@ -144,10 +144,10 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
   const displayPacks = tab === "featured" ? featuredPacks : filteredCatalog;
 
   const onInstallFromCatalog = useCallback(
-    async (package: PackagePayload) => {
-      setInstallCandidate(package);
+    async (pkg: PackagePayload) => {
+      setInstallCandidate(pkg);
       try {
-        const probe = await packagesApi.resolve([...installed.map((p) => p.dirName), package.dirName]);
+        const probe = await packagesApi.resolve([...installed.map((p) => p.dirName), pkg.dirName]);
         setConflictReport(probe.conflicts);
       } catch (err) {
         const status = (err as { status?: number }).status;
@@ -196,13 +196,13 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
     [reload, reportActionError],
   );
 
-  const onUninstall = useCallback(async (package: PackagePayload) => {
-    if (!window.confirm(`Uninstall ${package.name} (${package.dirName}) from this workspace?`)) return;
-    setCardActionDir(package.dirName);
+  const onUninstall = useCallback(async (pkg: PackagePayload) => {
+    if (!window.confirm(`Uninstall ${pkg.name} (${pkg.dirName}) from this workspace?`)) return;
+    setCardActionDir(pkg.dirName);
     setActionError(null);
     try {
       try {
-        await packagesApi.uninstall(package.dirName);
+        await packagesApi.uninstall(pkg.dirName);
       } catch (err) {
         const status = (err as { status?: number }).status;
         if (status !== 404) throw err;
@@ -210,28 +210,28 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
       await refreshPackageRegistry();
       await reload();
     } catch (err) {
-      reportActionError(`Couldn't uninstall ${package.name}`, err);
+      reportActionError(`Couldn't uninstall ${pkg.name}`, err);
     } finally {
       setCardActionDir(null);
     }
   }, [reload, reportActionError]);
 
   const onUnpublishFromCatalog = useCallback(
-    async (package: PackagePayload) => {
+    async (pkg: PackagePayload) => {
       if (
         !window.confirm(
-          `Unpublish ${package.name} (${package.dirName}) from the dev catalog?\n\nThis removes the entry under packages/. Installed copies in workspaces are not removed.`,
+          `Unpublish ${pkg.name} (${pkg.dirName}) from the dev catalog?\n\nThis removes the entry under packages/. Installed copies in workspaces are not removed.`,
         )
       ) {
         return;
       }
-      setCardActionDir(package.dirName);
+      setCardActionDir(pkg.dirName);
       setActionError(null);
       try {
-        await packagesApi.unpublishFromCatalog(package.dirName);
+        await packagesApi.unpublishFromCatalog(pkg.dirName);
         await reload();
       } catch (err) {
-        reportActionError(`Couldn't unpublish ${package.name}`, err);
+        reportActionError(`Couldn't unpublish ${pkg.name}`, err);
       } finally {
         setCardActionDir(null);
       }
@@ -239,24 +239,24 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
     [reload, reportActionError],
   );
 
-  const onExport = useCallback(async (package: PackagePayload) => {
+  const onExport = useCallback(async (pkg: PackagePayload) => {
     try {
-      await packagesApi.download(package.dirName);
+      await packagesApi.download(pkg.dirName);
     } catch (err) {
-      reportActionError(`Couldn't export ${package.name}`, err);
+      reportActionError(`Couldn't export ${pkg.name}`, err);
     }
   }, [reportActionError]);
 
-  const onTogglePaletteDock = useCallback(async (package: PackagePayload) => {
-    const nextHidden = !(package.paletteDock?.hiddenFromForkPaletteDock === true);
-    setPaletteDockDirBusy(package.dirName);
+  const onTogglePaletteDock = useCallback(async (pkg: PackagePayload) => {
+    const nextHidden = !(pkg.paletteDock?.hiddenFromForkPaletteDock === true);
+    setPaletteDockDirBusy(pkg.dirName);
     setActionError(null);
     try {
-      await packagesApi.packagePaletteDockVisible(package.dirName, !nextHidden);
+      await packagesApi.packagePaletteDockVisible(pkg.dirName, !nextHidden);
       await refreshPackageRegistry();
       await reload();
     } catch (err) {
-      reportActionError(`Couldn't update palette dock visibility for ${package.name}`, err);
+      reportActionError(`Couldn't update palette dock visibility for ${pkg.name}`, err);
     } finally {
       setPaletteDockDirBusy(null);
     }
@@ -373,15 +373,15 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
                   <div className={styles.empty}>No packages match the current filter.</div>
                 ) : (
                   <div className={styles.cardList}>
-                    {displayPacks.map((package) => {
-                      const isInstalled = installedDirs.has(package.dirName);
-                      const catalogRow = catalogByDir.get(package.dirName);
+                    {displayPacks.map((pkg) => {
+                      const isInstalled = installedDirs.has(pkg.dirName);
+                      const catalogRow = catalogByDir.get(pkg.dirName);
                       const hasUpdate =
-                        isInstalled && catalogRow != null && catalogRow.version !== package.version;
+                        isInstalled && catalogRow != null && catalogRow.version !== pkg.version;
                       return (
                         <PackageCard
-                          key={package.dirName}
-                          package={package}
+                          key={pkg.dirName}
+                          pkg={pkg}
                           isInstalled={isInstalled}
                           hasUpdate={hasUpdate}
                           catalogRow={catalogRow}
@@ -416,7 +416,7 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
 
       {installCandidate ? (
         <InstallPermissionsDialog
-          package={installCandidate}
+          pkg={installCandidate}
           conflicts={conflictReport ?? []}
           busy={busy}
           onCancel={() => {

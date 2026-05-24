@@ -16,20 +16,20 @@ export interface PackageMetaHeaderProps {
  * Category + PACKAGE pills for the canvas node title bar (right of the kind label).
  * PACKAGE shows `packageId@major` in a tooltip and focuses that package in the left palette.
  */
-export function PackageMetaHeader({ package, category, suggestionActive }: PackageMetaHeaderProps) {
+export function PackageMetaHeader({ pkg, category, suggestionActive }: PackageMetaHeaderProps) {
   const { setActivePackageKey, setPaletteDockRevealCoord } = usePackagePalette();
-  const coord = `${package.packageId}@${package.major}`;
+  const coord = `${pkg.packageId}@${pkg.major}`;
 
   const packageTooltip = useMemo(() => {
     const lines = [coord];
-    if (package.lineage != null) {
-      const fork = formatForkOfSubtitle(package.lineage);
+    if (pkg.lineage != null) {
+      const fork = formatForkOfSubtitle(pkg.lineage);
       lines.push(fork.text);
       if (fork.title) lines.push(fork.title);
     }
     lines.push("Click to open this package in the Packages palette");
     return lines.join("\n");
-  }, [coord, package.lineage]);
+  }, [coord, pkg.lineage]);
 
   const focusPackageInPalette = useCallback(() => {
     if (suggestionActive) return;

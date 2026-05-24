@@ -17,8 +17,8 @@ export function packageInitial(name: string): string {
  * Returns the primary human-readable category for a package.
  * Collapses all "vis*" categories to a single "vis" label.
  */
-export function primaryCategory(package: PackagePayload): string {
-  const cat = package.kinds[0]?.category;
+export function primaryCategory(pkg: PackagePayload): string {
+  const cat = pkg.kinds[0]?.category;
   if (!cat) return "package";
   if (cat.startsWith("vis")) return "vis";
   return cat;
@@ -47,14 +47,14 @@ export function sortPackages(packages: PackagePayload[], mode: SortMode): Packag
  * Returns true when the package matches a free-text search query
  * against its name, publisher, description and packageId fields.
  */
-export function matchesSearch(package: PackagePayload, query: string): boolean {
+export function matchesSearch(pkg: PackagePayload, query: string): boolean {
   if (!query.trim()) return true;
   const q = query.trim().toLowerCase();
   return (
-    package.name.toLowerCase().includes(q) ||
-    package.publisher.toLowerCase().includes(q) ||
-    package.description.toLowerCase().includes(q) ||
-    package.packageId.toLowerCase().includes(q)
+    pkg.name.toLowerCase().includes(q) ||
+    pkg.publisher.toLowerCase().includes(q) ||
+    pkg.description.toLowerCase().includes(q) ||
+    pkg.packageId.toLowerCase().includes(q)
   );
 }
 

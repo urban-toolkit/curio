@@ -11,29 +11,29 @@ export interface InstallPermissionsDialogProps {
 }
 
 export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> = ({
-  package,
+  pkg,
   conflicts,
   busy,
   onCancel,
   onConfirm,
 }) => {
   const hasConflicts = conflicts.length > 0;
-  const pythonDeps = Object.entries(package.dependencies.python);
-  const jsDeps = Object.entries(package.dependencies.js);
+  const pythonDeps = Object.entries(pkg.dependencies.python);
+  const jsDeps = Object.entries(pkg.dependencies.js);
 
   return (
     <div className={styles.backdrop} role="dialog" aria-modal="true">
       <div className={styles.modal}>
-        <h2 className={styles.title}>Install &quot;{package.name}&quot;</h2>
+        <h2 className={styles.title}>Install &quot;{pkg.name}&quot;</h2>
         <p className={styles.subtitle}>
-          {package.publisher} · v{package.version}
+          {pkg.publisher} · v{pkg.version}
         </p>
 
-        {package.permissions.length > 0 && (
+        {pkg.permissions.length > 0 && (
           <>
             <p className={styles.depsTitle}>Permissions requested</p>
             <ul className={styles.permList}>
-              {package.permissions.map((perm) => (
+              {pkg.permissions.map((perm) => (
                 <li key={perm} className={styles.permItem}>
                   <span className={styles.permIcon}>●</span>
                   {perm}

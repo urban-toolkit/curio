@@ -29,13 +29,13 @@ export interface PackageCardProps {
   cardActionDir?: string | null;
   /** Whether dev catalog fixture writes are allowed on this server. */
   catalogPublishAllowed: boolean;
-  onInstall: (package: PackagePayload) => void;
-  onUninstall?: (package: PackagePayload) => void;
-  onUnpublish?: (package: PackagePayload) => void;
+  onInstall: (pkg: PackagePayload) => void;
+  onUninstall?: (pkg: PackagePayload) => void;
+  onUnpublish?: (pkg: PackagePayload) => void;
 }
 
 export const PackageCard: React.FC<PackageCardProps> = ({
-  package,
+  pkg,
   isInstalled,
   hasUpdate,
   catalogRow,
@@ -46,30 +46,30 @@ export const PackageCard: React.FC<PackageCardProps> = ({
   onUninstall,
   onUnpublish,
 }) => {
-  const cardBusy = busy || cardActionDir === package.dirName;
+  const cardBusy = busy || cardActionDir === pkg.dirName;
   const showUninstall = isInstalled && onUninstall != null;
   const showUnpublish = catalogPublishAllowed && onUnpublish != null;
 
   return (
     <article className={styles.card}>
-      <div className={`${styles.cardIcon} ${iconVariantForPack(package.dirName)}`}>
-        {packageInitial(package.name)}
+      <div className={`${styles.cardIcon} ${iconVariantForPack(pkg.dirName)}`}>
+        {packageInitial(pkg.name)}
       </div>
 
       <div className={styles.cardBody}>
-        <h3 className={styles.cardTitle}>{package.name}</h3>
+        <h3 className={styles.cardTitle}>{pkg.name}</h3>
         <p className={styles.cardMeta}>
-          {package.publisher || package.packageId} · v{package.version}
-          {package.license ? ` · ${package.license}` : ""}
+          {pkg.publisher || pkg.packageId} · v{pkg.version}
+          {pkg.license ? ` · ${pkg.license}` : ""}
         </p>
         <div className={styles.tagRow}>
           <span className={styles.tag}>
-            {package.kinds.length} node{package.kinds.length === 1 ? "" : "s"}
+            {pkg.kinds.length} node{pkg.kinds.length === 1 ? "" : "s"}
           </span>
-          <span className={styles.tag}>{primaryCategory(package)}</span>
-          {(package.channel ?? "stable") !== "stable" ? (
-            <span className={`${styles.tag} ${styles.tagChannel}`} title={`Release channel: ${package.channel}`}>
-              {package.channel}
+          <span className={styles.tag}>{primaryCategory(pkg)}</span>
+          {(pkg.channel ?? "stable") !== "stable" ? (
+            <span className={`${styles.tag} ${styles.tagChannel}`} title={`Release channel: ${pkg.channel}`}>
+              {pkg.channel}
             </span>
           ) : null}
           {hasUpdate && catalogRow ? (
@@ -87,7 +87,7 @@ export const PackageCard: React.FC<PackageCardProps> = ({
               type="button"
               className={`${styles.btnInstall} ${styles.btnInstallAccent}`}
               disabled={cardBusy}
-              onClick={() => onInstall(catalogRow ?? package)}
+              onClick={() => onInstall(catalogRow ?? pkg)}
             >
               Update
             </button>
@@ -99,7 +99,7 @@ export const PackageCard: React.FC<PackageCardProps> = ({
             type="button"
             className={styles.btnInstall}
             disabled={cardBusy}
-            onClick={() => onInstall(package)}
+            onClick={() => onInstall(pkg)}
           >
             Install
           </button>
@@ -112,8 +112,8 @@ export const PackageCard: React.FC<PackageCardProps> = ({
                 type="button"
                 className={styles.btnSecondary}
                 disabled={cardBusy}
-                title={`Remove ${package.name} from this workspace`}
-                onClick={() => onUninstall(package)}
+                title={`Remove ${pkg.name} from this workspace`}
+                onClick={() => onUninstall(pkg)}
               >
                 Uninstall
               </button>
@@ -123,8 +123,8 @@ export const PackageCard: React.FC<PackageCardProps> = ({
                 type="button"
                 className={styles.btnSecondaryDanger}
                 disabled={cardBusy}
-                title={`Remove ${package.dirName} from the dev catalog (packages/)`}
-                onClick={() => onUnpublish(package)}
+                title={`Remove ${pkg.dirName} from the dev catalog (packages/)`}
+                onClick={() => onUnpublish(pkg)}
               >
                 Unpublish
               </button>

@@ -270,7 +270,7 @@ export const packagesApi = {
   },
 
   /**
-   * Show or hide one installed package's section in the Nodes palette dock
+   * Show or hide one installed pkg's section in the Nodes palette dock
    * (manifest ``curio.paletteDock.hiddenFromForkPaletteDock``).
    */
   packagePaletteDockVisible(dirName: string, visible: boolean): Promise<void> {
@@ -295,10 +295,10 @@ export const packagesApi = {
   },
 
   /**
-   * Install a catalog package by its ``dirName`` (``<packageId>@<major>``).
+   * Install a catalog pkg by its ``dirName`` (``<packageId>@<major>``).
    * The backend copies from the committed fixture set into the user's
-   * package store. Sideload via upload remains the path for arbitrary zips;
-   * a remote package-registry download service is future work.
+   * pkg store. Sideload via upload remains the path for arbitrary zips;
+   * a remote pkg-registry download service is future work.
    */
   installFromCatalog(dirName: string, opts: { replace?: boolean } = {}): Promise<InstallResponse> {
     return apiFetch("/api/packages/catalog/install", {
@@ -350,7 +350,7 @@ export const packagesApi = {
   },
 
   /**
-   * Remove a package from the catalog (`<repo_root>/packages/<dirName>/`).
+   * Remove a pkg from the catalog (`<repo_root>/packages/<dirName>/`).
    * Gated by the same env flag as `factoryPublishCatalog`; does not uninstall
    * from the user's package store.
    */
@@ -361,7 +361,7 @@ export const packagesApi = {
   },
 
   /**
-   * Resolve a set of package ``dirName``s into a lockfile (200) or
+   * Resolve a set of pkg ``dirName``s into a lockfile (200) or
    * conflict report (409). The ``apiFetch`` helper raises on non-2xx;
    * the wizard / install dialog wraps the call so it can render the
    * conflict UI on 409.

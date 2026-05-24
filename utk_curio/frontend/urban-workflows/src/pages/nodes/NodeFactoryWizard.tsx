@@ -241,8 +241,8 @@ export const NodeFactoryWizard: React.FC<NodeFactoryWizardProps> = ({
         <div>
           {forkInstallNotice ? (
             <p className={modalStyles.forkBanner} role="note">
-              <strong>Fork:</strong> “Save and install” adds a <strong>new</strong> package at the coordinate
-              you define here. The source package you copied from stays installed unchanged.
+              <strong>Fork:</strong> “Save and install” adds a <strong>new</strong> pkg at the coordinate
+              you define here. The source pkg you copied from stays installed unchanged.
             </p>
           ) : null}
           {step === 1 && <Step1Metadata draft={draft} update={updateDraft} />}
@@ -337,7 +337,7 @@ const Step1Metadata: React.FC<{
   <div className={styles.panel}>
     <h2 className={styles.panelTitle}>Metadata</h2>
     <p className={styles.panelSubtitle}>
-      Identity that downstream users see in the warehouse. The package id is the
+      Identity that downstream users see in the warehouse. The pkg id is the
       reverse-DNS namespace the wizard uses to derive every canonical kind id
       (<code>&lt;packageId&gt;/&lt;kindId&gt;@&lt;major&gt;</code>).
     </p>
@@ -483,7 +483,7 @@ const Step2Ports: React.FC<{
     <div className={styles.panel}>
       <h2 className={styles.panelTitle}>Kinds and ports</h2>
       <p className={styles.panelSubtitle}>
-        Define each node kind this package ships. Port types use the
+        Define each node kind this pkg ships. Port types use the
         Curio <code>SupportedType</code> enum (DATAFRAME, GEODATAFRAME,
         RASTER, …); the resolver and execution dispatch read both from
         the manifest you assemble here.
@@ -650,7 +650,7 @@ const Step3Template: React.FC<{
     <h2 className={styles.panelTitle}>Source per kind</h2>
     <p className={styles.panelSubtitle}>
       Each kind may ship one optional starter file. The factory writes{" "}
-      <code>sources/&lt;filename&gt;</code> inside the package archive
+      <code>sources/&lt;filename&gt;</code> inside the pkg archive
       (extension follows the kind's engine — <code>.py</code>,{" "}
       <code>.js</code>, <code>.vl.json</code>, …). Leave the source empty
       to publish a structural kind with no starter — the editor will
@@ -775,7 +775,7 @@ const Step4Dependencies: React.FC<{
       <h2 className={styles.panelTitle}>Dependencies and permissions</h2>
       <p className={styles.panelSubtitle}>
         Dependencies install into the shared sandbox interpreter via{" "}
-        <code>/installPackages</code>. Cross-package range conflicts are
+        <code>/installPackages</code>. Cross-pkg range conflicts are
         rejected at install. Permissions are surfaced verbatim to the
         user in the install dialog (figma_mockups/02).
       </p>
@@ -934,8 +934,8 @@ const Step5Publish: React.FC<{
       </p>
       {forkInstallNotice ? (
         <p className={styles.panelSubtitle} role="note">
-          This session is a <strong>fork</strong> from an installed package — “Save and install” creates a{" "}
-          <strong>new</strong> installed package at the coordinate below. The package you copied from is not modified.
+          This session is a <strong>fork</strong> from an installed pkg — “Save and install” creates a{" "}
+          <strong>new</strong> installed pkg at the coordinate below. The pkg you copied from is not modified.
         </p>
       ) : null}
 
@@ -997,7 +997,7 @@ const Step5Publish: React.FC<{
 
       <div className={styles.field}>
         <p className={styles.panelSubtitle} style={{ marginTop: "1.25rem" }}>
-          <strong>Catalog entry</strong> — write this package into the catalog tree under{" "}
+          <strong>Catalog entry</strong> — write this pkg into the catalog tree under{" "}
           <code>packages/</code> for local development (commit when ready).
         </p>
         <label className={styles.checkRow}>
@@ -1007,7 +1007,7 @@ const Step5Publish: React.FC<{
             onChange={(e) => setFixtureReplace(e.target.checked)}
             disabled={busy}
           />
-          Replace existing fixture with the same package coordinate
+          Replace existing fixture with the same pkg coordinate
         </label>
         {!cap?.catalogPublish && (
           <p className={styles.panelSubtitle} style={{ marginTop: "0.5rem" }}>

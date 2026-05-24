@@ -66,7 +66,7 @@ export function EditableNodeHeaderLabel({
       {editing ? (
         <input
           className={`nodrag nowheel ${styles.labelInput} ${keywordHighlighted ? styles.labelInputHighlighted : ""}`}
-          data-curio-package-palette-node-action="true"
+          data-curio-pkg-palette-node-action="true"
           value={draft}
           aria-label="Node title"
           autoFocus
@@ -80,7 +80,7 @@ export function EditableNodeHeaderLabel({
           className={`${styles.labelText} ${styles.labelTextEditable} ${
             keywordHighlighted ? styles.labelTextHighlighted : ""
           }`}
-          data-curio-package-palette-node-action="true"
+          data-curio-pkg-palette-node-action="true"
           title="Click to edit node title"
           aria-label={`Edit node title: ${displayLabel}`}
           {...labelEditClick}
@@ -99,7 +99,7 @@ export function EditableNodeHeaderLabel({
         <button
           type="button"
           className={`${styles.configBtn} ${keywordHighlighted ? styles.configBtnHighlighted : ""}`}
-          data-curio-package-palette-node-action="true"
+          data-curio-pkg-palette-node-action="true"
           title="Node settings"
           aria-label={`Node settings for ${displayLabel}`}
           {...configClick}

@@ -698,7 +698,7 @@ export const NodeContainer = ({
 
                         {hasPackageMetaHeader && packageDescriptor?.package ? (
                             <PackageMetaHeader
-                                package={packageDescriptor.package}
+                                pkg={packageDescriptor.package}
                                 category={packageDescriptor.category}
                                 suggestionActive={suggestionActive}
                             />

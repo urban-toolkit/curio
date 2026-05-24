@@ -220,7 +220,7 @@ export function NodeKindConfigModal({
             Cancel
           </button>
           <button type="button" className={styles.primaryBtn} onClick={() => onSave(config)}>
-            Save as package node…
+            Save as pkg node…
           </button>
         </div>
       </div>

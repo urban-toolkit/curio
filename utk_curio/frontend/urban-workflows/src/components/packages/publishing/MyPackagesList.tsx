@@ -19,9 +19,9 @@ export interface MyPackagesListProps {
   publishingPackageKey?: string | null;
   paletteDockDirBusy?: string | null;
   busy?: boolean;
-  onUninstall?: (package: PackagePayload) => void;
-  onExport?: (package: PackagePayload) => void;
-  onPaletteDockToggle?: (package: PackagePayload) => void;
+  onUninstall?: (pkg: PackagePayload) => void;
+  onExport?: (pkg: PackagePayload) => void;
+  onPaletteDockToggle?: (pkg: PackagePayload) => void;
   onPublishToCatalog?: (dirName: string) => void;
 }
 
@@ -32,14 +32,14 @@ type RowActionProps = {
   publishingPackageKey: string | null;
   paletteDockDirBusy: string | null;
   busy: boolean;
-  onUninstall?: (package: PackagePayload) => void;
-  onExport?: (package: PackagePayload) => void;
-  onPaletteDockToggle?: (package: PackagePayload) => void;
+  onUninstall?: (pkg: PackagePayload) => void;
+  onExport?: (pkg: PackagePayload) => void;
+  onPaletteDockToggle?: (pkg: PackagePayload) => void;
   onPublishToCatalog?: (dirName: string) => void;
 };
 
 function PackageRowActions({
-  package,
+  pkg,
   catalogPublishedDirs,
   catalogPublishAllowed,
   publishingPackageKey,
@@ -50,18 +50,18 @@ function PackageRowActions({
   onPaletteDockToggle,
   onPublishToCatalog,
 }: RowActionProps) {
-  const hiddenInDock = package.paletteDock?.hiddenFromForkPaletteDock === true;
-  const dockAwait = paletteDockDirBusy === package.dirName;
+  const hiddenInDock = pkg.paletteDock?.hiddenFromForkPaletteDock === true;
+  const dockAwait = paletteDockDirBusy === pkg.dirName;
 
   return (
     <>
       {catalogPublishedDirs != null && onPublishToCatalog != null ? (
         <CatalogPublishPill
           variant="dock"
-          dirName={package.dirName}
-          published={catalogPublishedDirs.has(package.dirName)}
+          dirName={pkg.dirName}
+          published={catalogPublishedDirs.has(pkg.dirName)}
           allowPublish={catalogPublishAllowed}
-          busy={publishingPackageKey === package.dirName}
+          busy={publishingPackageKey === pkg.dirName}
           onPublish={onPublishToCatalog}
         />
       ) : null}
@@ -73,12 +73,12 @@ function PackageRowActions({
           title={hiddenInDock ? "Show in Nodes palette dock" : "Hide from Nodes palette dock"}
           aria-label={
             hiddenInDock
-              ? `Show ${package.name} in Nodes palette dock`
-              : `Hide ${package.name} from Nodes palette dock`
+              ? `Show ${pkg.name} in Nodes palette dock`
+              : `Hide ${pkg.name} from Nodes palette dock`
           }
           aria-pressed={!hiddenInDock}
           disabled={busy || dockAwait}
-          onClick={() => onPaletteDockToggle(package)}
+          onClick={() => onPaletteDockToggle(pkg)}
         >
           <FontAwesomeIcon icon={hiddenInDock ? faEye : faEyeSlash} aria-hidden />
         </button>
@@ -89,9 +89,9 @@ function PackageRowActions({
           type="button"
           className={styles.rowActionBtn}
           title="Export package archive"
-          aria-label={`Export ${package.name}`}
+          aria-label={`Export ${pkg.name}`}
           disabled={busy}
-          onClick={() => onExport(package)}
+          onClick={() => onExport(pkg)}
         >
           <FontAwesomeIcon icon={faDownload} aria-hidden />
         </button>
@@ -102,9 +102,9 @@ function PackageRowActions({
           type="button"
           className={styles.rowActionBtn}
           title="Remove package"
-          aria-label={`Remove ${package.name}`}
+          aria-label={`Remove ${pkg.name}`}
           disabled={busy}
-          onClick={() => onUninstall(package)}
+          onClick={() => onUninstall(pkg)}
         >
           <FontAwesomeIcon icon={faTrashCan} aria-hidden />
         </button>
@@ -114,7 +114,7 @@ function PackageRowActions({
 }
 
 function InstalledPackageRow({
-  package,
+  pkg,
   catalogByDir,
   catalogPublishedDirs,
   catalogPublishAllowed,
@@ -136,17 +136,17 @@ function InstalledPackageRow({
   paletteDockDirBusy: string | null;
   busy: boolean;
   hasActions: boolean;
-  onUninstall?: (package: PackagePayload) => void;
-  onExport?: (package: PackagePayload) => void;
-  onPaletteDockToggle?: (package: PackagePayload) => void;
+  onUninstall?: (pkg: PackagePayload) => void;
+  onExport?: (pkg: PackagePayload) => void;
+  onPaletteDockToggle?: (pkg: PackagePayload) => void;
   onPublishToCatalog?: (dirName: string) => void;
   nested?: boolean;
 }) {
-  const catRow = catalogByDir.get(package.dirName);
-  const hasUpdate = catRow != null && catRow.version !== package.version;
+  const catRow = catalogByDir.get(pkg.dirName);
+  const hasUpdate = catRow != null && catRow.version !== pkg.version;
 
   const actionProps = {
-    package,
+    pkg,
     catalogPublishedDirs,
     catalogPublishAllowed,
     publishingPackageKey,
@@ -163,14 +163,14 @@ function InstalledPackageRow({
       <span className={styles.installedDot} aria-hidden />
 
       <div className={styles.installedBody}>
-        <span className={styles.installedName}>{package.name}</span>
+        <span className={styles.installedName}>{pkg.name}</span>
         <span className={styles.installedMeta}>
-          v{package.version}
-          {hasUpdate ? " · update available" : ` · ${package.kinds.length} nodes`}
+          v{pkg.version}
+          {hasUpdate ? " · update available" : ` · ${pkg.kinds.length} nodes`}
         </span>
-        {package.lineage ? (
-          <span className={styles.installedForkOf} title={formatForkOfSubtitle(package.lineage).title}>
-            {formatForkOfSubtitle(package.lineage).text}
+        {pkg.lineage ? (
+          <span className={styles.installedForkOf} title={formatForkOfSubtitle(pkg.lineage).title}>
+            {formatForkOfSubtitle(pkg.lineage).text}
           </span>
         ) : null}
       </div>
@@ -231,7 +231,7 @@ export const MyPackagesList: React.FC<MyPackagesListProps> = ({
       <div className={styles.installedList}>
         {rows.map((row) => {
           if (row.kind === "singleton") {
-            return <InstalledPackageRow key={row.package.dirName} package={row.package} {...rowProps} />;
+            return <InstalledPackageRow key={row.package.dirName} pkg={row.package} {...rowProps} />;
           }
 
           const headerPack = row.rootPack;
@@ -278,8 +278,8 @@ export const MyPackagesList: React.FC<MyPackagesListProps> = ({
                 )}
               </summary>
               <div className={styles.familyMemberList}>
-                {row.members.map((package) => (
-                  <InstalledPackageRow key={package.dirName} package={package} nested {...rowProps} />
+                {row.members.map((pkg) => (
+                  <InstalledPackageRow key={pkg.dirName} pkg={pkg} nested {...rowProps} />
                 ))}
               </div>
             </details>

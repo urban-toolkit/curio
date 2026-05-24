@@ -157,11 +157,11 @@ function portCardinalityIconType(ports: PortDef[]): '1' | '2' | 'N' | undefined 
   return ports.length > 1 ? '2' : '1';
 }
 
-function buildDescriptor(package: RawPackage, kind: RawPackageKind, order: number): NodeDescriptor {
+function buildDescriptor(pkg: RawPackage, kind: RawPackageKind, order: number): NodeDescriptor {
   const inputPorts = kind.inputPorts.map(asPortDef);
   const outputPorts = kind.outputPorts.map(asPortDef);
 
-  const installMsMaybe = normalizedInstallUpdatedAtMs(package.installUpdatedAtMs);
+  const installMsMaybe = normalizedInstallUpdatedAtMs(pkg.installUpdatedAtMs);
 
   let handles;
   if (inputPorts.length === 0) handles = outputOnly();
@@ -169,7 +169,7 @@ function buildDescriptor(package: RawPackage, kind: RawPackageKind, order: numbe
   else handles = standardInOut();
   if (kind.bidirectional) handles = withBidirectional(handles);
 
-  const isBuiltin = package.packageId === BUILTIN_PACKAGE_ID;
+  const isBuiltin = pkg.packageId === BUILTIN_PACKAGE_ID;
   const lookedUpLifecycle = kind.lifecycle ? getLifecycle(kind.lifecycle) : undefined;
   const lifecycle = lookedUpLifecycle
     ?? (isBuiltin ? useCodeNodeLifecycle : usePackageNodeLifecycle);
@@ -201,13 +201,13 @@ function buildDescriptor(package: RawPackage, kind: RawPackageKind, order: numbe
     id: kind.id,
     source: 'package',
     package: {
-      packageId: package.packageId,
-      major: package.major,
-      version: package.version,
-      name: package.name,
-      publisher: package.publisher,
+      packageId: pkg.packageId,
+      major: pkg.major,
+      version: pkg.version,
+      name: pkg.name,
+      publisher: pkg.publisher,
       source: kind.source ?? undefined,
-      ...(package.lineage
+      ...(pkg.lineage
         ? {
             lineage: {
               forkedFrom: { ...package.lineage.forkedFrom },
@@ -215,14 +215,14 @@ function buildDescriptor(package: RawPackage, kind: RawPackageKind, order: numbe
             },
           }
         : {}),
-      ...(package.paletteDock?.hiddenFromForkPaletteDock === true
+      ...(pkg.paletteDock?.hiddenFromForkPaletteDock === true
         ? { hiddenFromForkPaletteDock: true }
         : {}),
-      ...(package.readOnly === true ? { readOnly: true } : {}),
-      ...(typeof package.createdAt === 'string' && package.createdAt.trim()
-        ? { createdAt: package.createdAt.trim() }
+      ...(pkg.readOnly === true ? { readOnly: true } : {}),
+      ...(typeof pkg.createdAt === 'string' && pkg.createdAt.trim()
+        ? { createdAt: pkg.createdAt.trim() }
         : {}),
-      createdAtMs: normalizedEpochMs(package.createdAtMs),
+      createdAtMs: normalizedEpochMs(pkg.createdAtMs),
       ...(installMsMaybe !== undefined ? { installUpdatedAtMs: installMsMaybe } : {}),
     },
     category: asCategory(kind.category),
@@ -256,9 +256,9 @@ function buildDescriptor(package: RawPackage, kind: RawPackageKind, order: numbe
 export function registerPackageKinds(packages: RawPackage[]): NodeDescriptor[] {
   const registered: NodeDescriptor[] = [];
   let order = 0;
-  for (const package of packages) {
-    for (const kind of package.kinds ?? []) {
-      const descriptor = buildDescriptor(package, kind, order++);
+  for (const pkg of packages) {
+    for (const kind of pkg.kinds ?? []) {
+      const descriptor = buildDescriptor(pkg, kind, order++);
       registerNode(descriptor);
       registered.push(descriptor);
     }

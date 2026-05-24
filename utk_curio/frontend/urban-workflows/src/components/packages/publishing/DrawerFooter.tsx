@@ -37,7 +37,7 @@ export const DrawerFooter: React.FC<DrawerFooterProps> = ({ busy, onSideload, on
         disabled={busy}
         onClick={() => fileInputRef.current?.click()}
       >
-        Sideload .curio-package
+        Sideload .curio-pkg
       </button>
       <button
         type="button"
@@ -45,7 +45,7 @@ export const DrawerFooter: React.FC<DrawerFooterProps> = ({ busy, onSideload, on
         disabled={busy}
         onClick={onCreatePack}
       >
-        Create new package
+        Create new pkg
       </button>
     </footer>
   );

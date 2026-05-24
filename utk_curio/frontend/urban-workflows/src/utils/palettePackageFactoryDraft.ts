@@ -512,32 +512,32 @@ export function draftFromInstalledPackagePayload(
   getTemplates?: TemplatesLookup,
 ): Draft {
   const d = makeDraft();
-  d.packageId = package.packageId;
-  d.major = package.major;
-  d.version = package.version;
-  d.name = package.name;
-  d.publisher = package.publisher;
-  d.description = package.description;
-  d.license = package.license ?? "MIT";
+  d.packageId = pkg.packageId;
+  d.major = pkg.major;
+  d.version = pkg.version;
+  d.name = pkg.name;
+  d.publisher = pkg.publisher;
+  d.description = pkg.description;
+  d.license = pkg.license ?? "MIT";
   d.permissions = [...package.permissions];
-  d.pythonDeps = depsRows(package.dependencies.python ?? {});
-  d.jsDeps = depsRows(package.dependencies.js ?? {});
-  d.packageDeps = depsRows(package.dependencies.packages ?? {});
-  d.lineage = package.lineage
+  d.pythonDeps = depsRows(pkg.dependencies.python ?? {});
+  d.jsDeps = depsRows(pkg.dependencies.js ?? {});
+  d.packageDeps = depsRows(pkg.dependencies.packages ?? {});
+  d.lineage = pkg.lineage
     ? {
         forkedFrom: {
-          packageId: package.lineage.forkedFrom.packageId,
-          major: package.lineage.forkedFrom.major,
+          packageId: pkg.lineage.forkedFrom.packageId,
+          major: pkg.lineage.forkedFrom.major,
         },
         root: {
-          packageId: package.lineage.root.packageId,
-          major: package.lineage.root.major,
+          packageId: pkg.lineage.root.packageId,
+          major: pkg.lineage.root.major,
         },
       }
     : null;
-  d.kinds = package.kinds.map((k) => packageKindPayloadToKindDraft(k, getTemplates));
-  if (typeof package.createdAt === "string" && package.createdAt.trim()) {
-    d.createdAt = package.createdAt.trim();
+  d.kinds = pkg.kinds.map((k) => packageKindPayloadToKindDraft(k, getTemplates));
+  if (typeof pkg.createdAt === "string" && pkg.createdAt.trim()) {
+    d.createdAt = pkg.createdAt.trim();
   }
   return d;
 }
@@ -545,10 +545,10 @@ export function draftFromInstalledPackagePayload(
 export const SAVE_AS_NEW_PACK = "__save_as_new__";
 
 /** True when Save As into `package` would overwrite an existing kind with the same label. */
-export function saveAsWouldReplaceByLabel(package: PackagePayload, nodeLabel: string): boolean {
+export function saveAsWouldReplaceByLabel(pkg: PackagePayload, nodeLabel: string): boolean {
   const norm = normalizeKindLabel(nodeLabel);
   if (!norm) return false;
-  return package.kinds.some((k) => normalizeKindLabel(k.label) === norm);
+  return pkg.kinds.some((k) => normalizeKindLabel(k.label) === norm);
 }
 
 /** Build a factory install draft when saving a single canvas node into a package (Save As). */
@@ -556,7 +556,7 @@ export function buildSaveAsInstallDraft(opts: {
   canvasNode: RFNode<any>;
   target:
     | { kind: "new"; packageDisplayName?: string }
-    | { kind: "installed"; package: PackagePayload };
+    | { kind: "installed"; pkg: PackagePayload };
   getTemplates?: TemplatesLookup;
 }): Draft | null {
   const nt = getFlowNodeCanonicalType(opts.canvasNode as RFNode);
@@ -613,14 +613,14 @@ export function draftForkFromInstalledPackagePayload(
   package: PackagePayload,
   getTemplates?: TemplatesLookup,
 ): Draft {
-  const d = draftFromInstalledPackagePayload(package, getTemplates);
-  const idMeta = freshForkPackageIdentity(`${package.packageId}@${package.major}`);
+  const d = draftFromInstalledPackagePayload(pkg, getTemplates);
+  const idMeta = freshForkPackageIdentity(`${pkg.packageId}@${pkg.major}`);
   d.packageId = idMeta.packageId;
-  d.name = `Fork of ${package.name}`;
-  d.description = `Forked from ${package.packageId}@${package.major}. ${package.description ?? ""}`.trim();
-  d.major = package.major;
-  const forkedFrom = { packageId: package.packageId, major: package.major };
-  const anchor = package.lineage?.root;
+  d.name = `Fork of ${pkg.name}`;
+  d.description = `Forked from ${pkg.packageId}@${pkg.major}. ${pkg.description ?? ""}`.trim();
+  d.major = pkg.major;
+  const forkedFrom = { packageId: pkg.packageId, major: pkg.major };
+  const anchor = pkg.lineage?.root;
   const root = anchor
     ? { packageId: anchor.packageId, major: anchor.major }
     : forkedFrom;

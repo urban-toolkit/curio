@@ -48,8 +48,8 @@ export function forkFamilyKeyFromLineage(lineage: LineageLike | null | undefined
   return lineageCoordKey(lineage.root);
 }
 
-export function forkFamilyKeyFromPackagePayload(package: Pick<PackagePayload, "lineage">): string | null {
-  return forkFamilyKeyFromLineage(package.lineage ?? null);
+export function forkFamilyKeyFromPackagePayload(pkg: Pick<PackagePayload, "lineage">): string | null {
+  return forkFamilyKeyFromLineage(pkg.lineage ?? null);
 }
 
 /**
@@ -180,7 +180,7 @@ export function sortPackagePayloadMembersDescending<
 export type PalettePackageGroupLike = Readonly<{
   key: string;
   label: string;
-  descriptors: ReadonlyArray<{ package?: NodePackageMeta | undefined }>;
+  descriptors: ReadonlyArray<{ pkg?: NodePackageMeta | undefined }>;
 }>;
 
 export function forkFamilyKeyFromPaletteGroup(group: PalettePackageGroupLike): string | null {
@@ -247,8 +247,8 @@ export function sortPaletteForkGroupsDescending<G extends PalettePackageGroupLik
   });
 }
 
-export function packageCoordinateKey(package: Pick<PackagePayload, "packageId" | "major">): string {
-  return `${package.packageId}@${package.major}`;
+export function packageCoordinateKey(pkg: Pick<PackagePayload, "packageId" | "major">): string {
+  return `${pkg.packageId}@${pkg.major}`;
 }
 
 /** Installed package with `lineage == null` that anchors a fork family (`rootKey`). */
@@ -278,7 +278,7 @@ export function findForkFamilyRootPaletteGroup<G extends PalettePackageGroupLike
 }
 
 export type InstalledPackageWarehouseRow<T extends PackagePayload = PackagePayload> =
-  | { kind: "singleton"; package: T }
+  | { kind: "singleton"; pkg: T }
   | { kind: "family"; rootKey: string; rootPack: T | null; members: T[] };
 
 /** Singleton rows + fork-family accordions (root package omitted from singleton list). */
@@ -301,9 +301,9 @@ export function partitionInstalledPackagesForWarehouseList<T extends PackagePayl
     });
   }
 
-  for (const package of singletons) {
-    if (!rootPackageDirsUsed.has(package.dirName)) {
-      rows.push({ kind: "singleton", package });
+  for (const pkg of singletons) {
+    if (!rootPackageDirsUsed.has(pkg.dirName)) {
+      rows.push({ kind: "singleton", pkg });
     }
   }
 
