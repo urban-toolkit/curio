@@ -83,6 +83,25 @@ def test_builtin_pack_ships_no_sources(builtin_pack_dir: Path):
     )
 
 
+def test_every_catalog_pack_validates_against_schema():
+    """Every manifest in ``packs/`` must satisfy ``docs/schemas/node-pack.v2.json``."""
+    import json
+    from jsonschema import Draft202012Validator
+
+    schema_path = _catalog_root().parent / "docs" / "schemas" / "node-pack.v2.json"
+    assert schema_path.is_file(), f"schema not found at {schema_path}"
+    validator = Draft202012Validator(json.loads(schema_path.read_text()))
+
+    manifests = sorted(_catalog_root().glob("*/manifest.json"))
+    assert manifests, "expected at least one pack in the catalog"
+    for m in manifests:
+        errors = list(validator.iter_errors(json.loads(m.read_text())))
+        assert not errors, (
+            f"{m} fails schema:\n"
+            + "\n".join(f"  {list(e.absolute_path)}: {e.message}" for e in errors[:5])
+        )
+
+
 def test_builtin_pack_payload_passthrough(builtin_pack_dir: Path):
     """The wire payload exposes the new manifest fields per kind."""
     manifest = load_pack_manifest(builtin_pack_dir)

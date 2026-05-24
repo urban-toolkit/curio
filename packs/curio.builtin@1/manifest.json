@@ -1,5 +1,5 @@
 {
-  "$schema": "https://curio.dev/schemas/node-pack.v2.json",
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-pack.v2.json",
   "id": "curio.builtin",
   "version": "1.0.0",
   "name": "Curio Built-in Nodes",

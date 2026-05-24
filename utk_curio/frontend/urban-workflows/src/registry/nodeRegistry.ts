@@ -1,5 +1,4 @@
 import { NodeKindId, NodeDescriptor } from './types';
-import { legacyToCanonical } from './legacyAliases';
 import { splitCanonicalNodeType } from './packKeys';
 
 /**
@@ -135,24 +134,15 @@ export function clearPackNodes(): void {
  * Resolve a node type to its descriptor.
  *
  * Resolution order:
- *   1. Exact match (versioned canonical id, or non-canonical legacy enum).
+ *   1. Exact match (versioned canonical id `<packId>/<kindId>@<major>`).
  *   2. Unversioned-latest: input matches `<packId>/<kindId>` → use the
  *      highest installed major for that family.
- *   3. Legacy alias: input is a pre-warehouse enum string ("DATA_LOADING")
- *      → look up canonical unversioned target and retry (2).
  */
 function lookupDescriptor(nodeType: NodeKindId): NodeDescriptor | undefined {
   const exact = registry.get(nodeType);
   if (exact) return exact;
-  if (typeof nodeType === 'string') {
-    if (nodeType.includes('/') && !nodeType.includes('@')) {
-      const unversioned = resolveUnversioned(nodeType);
-      if (unversioned) return unversioned;
-    }
-    const aliased = legacyToCanonical(nodeType);
-    if (aliased) {
-      return resolveUnversioned(aliased) ?? registry.get(aliased);
-    }
+  if (typeof nodeType === 'string' && nodeType.includes('/') && !nodeType.includes('@')) {
+    return resolveUnversioned(nodeType);
   }
   return undefined;
 }

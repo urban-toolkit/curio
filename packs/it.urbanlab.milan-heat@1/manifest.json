@@ -1,5 +1,5 @@
 {
-  "$schema": "https://curio.dev/schemas/node-pack.v2.json",
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-pack.v2.json",
   "id": "it.urbanlab.milan-heat",
   "version": "1.0.0",
   "name": "Milan Heat Vulnerability",
@@ -46,7 +46,8 @@
           "cardinality": "1"
         }
       ],
-      "source": "sources/mrt-load.py"
+      "source": "sources/mrt-load.py",
+      "lifecycle": "code"
     },
     {
       "id": "weather-load",
@@ -68,7 +69,8 @@
           "cardinality": "1"
         }
       ],
-      "source": "sources/weather-load.py"
+      "source": "sources/weather-load.py",
+      "lifecycle": "code"
     },
     {
       "id": "census-load",
@@ -90,7 +92,8 @@
           "cardinality": "1"
         }
       ],
-      "source": "sources/census-load.py"
+      "source": "sources/census-load.py",
+      "lifecycle": "code"
     },
     {
       "id": "utci-compute",
@@ -120,7 +123,8 @@
           "cardinality": "1"
         }
       ],
-      "source": "sources/utci-compute.py"
+      "source": "sources/utci-compute.py",
+      "lifecycle": "code"
     },
     {
       "id": "utci-zonal",
@@ -151,7 +155,8 @@
           "cardinality": "1"
         }
       ],
-      "source": "sources/utci-zonal.py"
+      "source": "sources/utci-zonal.py",
+      "lifecycle": "code"
     },
     {
       "id": "census-reproject",
@@ -180,7 +185,8 @@
           "cardinality": "1"
         }
       ],
-      "source": "sources/census-reproject.py"
+      "source": "sources/census-reproject.py",
+      "lifecycle": "code"
     },
     {
       "id": "gt65-projection",
@@ -209,7 +215,8 @@
           "cardinality": "1"
         }
       ],
-      "source": "sources/gt65-projection.py"
+      "source": "sources/gt65-projection.py",
+      "lifecycle": "code"
     }
   ],
   "createdAt": "2026-02-01T12:00:00Z"

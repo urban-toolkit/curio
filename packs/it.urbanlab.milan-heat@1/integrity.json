@@ -1,6 +1,6 @@
 {
   "sha256": {
-    "manifest.json": "4b8007e8cf501d416a343b912b7f7ae48a8aacb6bdd1f08529fc1885c31e011a",
+    "manifest.json": "89ee2cb91f967b54815f3de5e9202cdfa062341c2003ddaba91ba65446d6ae22",
     "sources/census-load.py": "717c18b81d433b896c7d5488bc5ac2cab6921e282789007adc055d577d48f5ed",
     "sources/census-reproject.py": "49eac77a6a3b408487308998bb4c7959e1cf1ad63ab0df21768f60db7508ec91",
     "sources/gt65-projection.py": "6761c9dad8b10ab56980a9988a10055d34b71f80e8e025b003f2e2da53a3f2c5",
