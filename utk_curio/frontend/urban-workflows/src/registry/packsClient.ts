@@ -149,8 +149,8 @@ function normalizedInstallUpdatedAtMs(raw: RawPack['installUpdatedAtMs']): numbe
 
 function portCardinalityIconType(ports: PortDef[]): '1' | '2' | 'N' | undefined {
   if (ports.length === 0) return undefined;
-  // 'N' wins if any port has unbounded-upper cardinality (e.g. "[1,n]", "[0,n]").
-  if (ports.some((p) => typeof p.cardinality === 'string' && /,\s*n\s*]/.test(p.cardinality))) {
+  // 'N' wins if any port has unbounded-upper cardinality — range form ("[1,n]", "[0,n]") or bare "n".
+  if (ports.some((p) => typeof p.cardinality === 'string' && /^\s*n\s*$|,\s*n\s*]/i.test(p.cardinality))) {
     return 'N';
   }
   return ports.length > 1 ? '2' : '1';

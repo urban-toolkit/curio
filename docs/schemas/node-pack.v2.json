@@ -140,8 +140,8 @@
         },
         "cardinality": {
           "type": "string",
-          "description": "Connection cardinality: '1', '2', '[1,n]', '[0,1]', '[1,2]', etc.",
-          "pattern": "^(\\d+|\\[\\d+,(\\d+|n)\\])$"
+          "description": "Connection cardinality: '1', '2', 'n', '[1,n]', '[0,1]', '[1,2]', etc.",
+          "pattern": "^(\\d+|n|\\[\\d+,(\\d+|n)\\])$"
         }
       },
       "additionalProperties": false
