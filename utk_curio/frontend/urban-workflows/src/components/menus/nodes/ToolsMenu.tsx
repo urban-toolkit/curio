@@ -4,6 +4,7 @@ import { faForwardStep } from "@fortawesome/free-solid-svg-icons";
 import { Tooltip, OverlayTrigger } from "react-bootstrap";
 import { refreshPackRegistry } from "../../../api/packsApi";
 import { getPaletteNodeTypes, subscribeToRegistry } from "../../../registry";
+import { BUILTIN_PACK_ID } from "../../../registry/packsClient";
 import { NodeCategory, NodeDescriptor, NodeKindId } from "../../../registry/types";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { useUserContext } from "../../../providers/UserProvider";
@@ -105,8 +106,12 @@ const ToolsMenu = memo(function ToolsMenu() {
     }, [user?.id]);
 
     const paletteTypes = getPaletteNodeTypes();
-    const coreTypes = paletteTypes.filter((d) => d.source !== "pack");
-    const packTypes = paletteTypes.filter((d) => d.source === "pack");
+    // The curio.builtin pack is manifest-driven like any other, but the UI
+    // anchors it in the left-side "Built-in" rail. Only third-party packs land
+    // in the right-side Packs dropdown.
+    const isBuiltin = (d: NodeDescriptor) => d.pack?.packId === BUILTIN_PACK_ID;
+    const coreTypes = paletteTypes.filter(isBuiltin);
+    const packTypes = paletteTypes.filter((d) => !isBuiltin(d));
     const coreGroups = groupPaletteTypes(coreTypes);
     const packGroups = groupPalettePacks(packTypes);
     const { playAllNodes } = useFlowContext();

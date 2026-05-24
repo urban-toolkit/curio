@@ -111,7 +111,7 @@ function asCategory(raw: string): NodeCategory {
   return (KNOWN_CATEGORIES.has(raw as NodeCategory) ? raw : 'computation') as NodeCategory;
 }
 
-const BUILTIN_PACK_ID = 'curio.builtin';
+export const BUILTIN_PACK_ID = 'curio.builtin';
 
 function asSupportedTypes(raw: string[]): SupportedType[] {
   const known = new Set(Object.values(SupportedType));
