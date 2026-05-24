@@ -1,20 +1,25 @@
 import React, { useMemo } from "react";
 import { GraphPreview } from "../api/projectsApi";
 
+// Keyed by the canonical unversioned node-type string written into trill
+// `graph_preview.nodes[].type` post-Phase-B. The thumbnail runs without the
+// node registry loaded (it renders on the projects list, before pack discovery),
+// so this map is intentionally a static mirror of the built-in pack.
 const NODE_COLORS: Record<string, string> = {
-  DATA_LOADING: "#3498db",
-  DATA_EXPORT: "#3498db",
-  DATA_TRANSFORMATION: "#3498db",
-  DATA_SUMMARY: "#3498db",
-  COMPUTATION_ANALYSIS: "#8e44ad",
-  MERGE_FLOW: "#8e44ad",
-  DATA_POOL: "#8e44ad",
-  VIS_VEGA: "#1abc9c",
-  VIS_SIMPLE: "#1abc9c",
-  AUTK_MAP: "#1abc9c",
-  AUTK_PLOT: "#1abc9c",
-  AUTK_COMPUTE: "#8e44ad",
-  AUTK_DB: "#3498db",
+  "curio.builtin/data-loading": "#3498db",
+  "curio.builtin/data-export": "#3498db",
+  "curio.builtin/data-transformation": "#3498db",
+  "curio.builtin/data-summary": "#3498db",
+  "curio.builtin/computation-analysis": "#8e44ad",
+  "curio.builtin/merge-flow": "#8e44ad",
+  "curio.builtin/data-pool": "#8e44ad",
+  "curio.builtin/js-computation": "#8e44ad",
+  "curio.builtin/vis-vega": "#1abc9c",
+  "curio.builtin/vis-simple": "#1abc9c",
+  "curio.builtin/autk-map": "#1abc9c",
+  "curio.builtin/autk-plot": "#1abc9c",
+  "curio.builtin/autk-compute": "#8e44ad",
+  "curio.builtin/autk-db": "#3498db",
 };
 
 const FALLBACK_COLOR = "#95a5a6";

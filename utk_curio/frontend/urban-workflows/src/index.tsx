@@ -43,10 +43,7 @@ loader.config({ monaco });
 (window as unknown as { monaco: typeof monaco }).monaco = monaco;
 
 import "./registry";
-import {
-  refreshPackRegistry,
-  syncNodeTypeRegistry,
-} from "./registry/packRegistryBootstrap";
+import { refreshPackRegistry } from "./registry/packRegistryBootstrap";
 
 /** Re-export for embedders / tooling that imports the app entry-point. */
 export { refreshPackRegistry };
@@ -57,15 +54,15 @@ export { refreshPackRegistry };
 };
 
 // Boot sequence:
-//   1. Push the built-in port table immediately (so the backend can
-//      validate ports even before sign-in).
-//   2. Try to pull installed packs; if the user is already authenticated
-//      (e.g. via a persisted token), register pack descriptors and
-//      re-push the merged port table. Anonymous boots are a no-op until
-//      sign-in calls refreshPackRegistry() explicitly.
-syncNodeTypeRegistry().then(() => {
-  void refreshPackRegistry();
-});
+//   Fetch installed packs first — `refreshPackRegistry()` registers every
+//   pack-derived descriptor (including the auto-installed `curio.builtin@1`)
+//   and *then* pushes the merged port table to the backend. Calling
+//   `syncNodeTypeRegistry()` up-front would POST an empty `{nodeTypes: {}}`
+//   (the registry is empty at module-evaluation time post-Phase-B) and clear
+//   the backend's `_node_type_registry`, leaving a validation gap until the
+//   pack fetch resolves. Anonymous boots are no-ops until sign-in calls
+//   `refreshPackRegistry()` explicitly.
+void refreshPackRegistry();
 
 import FlowProvider from "./providers/FlowProvider";
 import TemplateProvider from "./providers/TemplateProvider";
