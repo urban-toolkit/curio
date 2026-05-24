@@ -476,17 +476,6 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
                 {!packsPaletteEditMode && paletteRows.length === 0 ? (
                     <p className={packStyles.packPaletteEmptyHint}>No packs yet</p>
                 ) : null}
-                <button
-                    type="button"
-                    className={packStyles.packGetPacksBtn}
-                    title="Browse and install node packs"
-                    aria-label="Get packs — open node warehouse drawer"
-                    onClick={() => {
-                        openNodeWarehouseDrawer();
-                    }}
-                >
-                    Get packs +
-                </button>
             </div>
             {open && (
                 <div className={packStyles.packPalettePanel} role="region" aria-label="Pack node kinds">
@@ -631,6 +620,19 @@ export const PacksPaletteDropdown = memo(function PacksPaletteDropdown({ groups 
                                 </div>
                             ),
                         )}
+                    </div>
+                    <div className={packStyles.packPaletteFooter}>
+                        <button
+                            type="button"
+                            className={packStyles.packGetPacksBtn}
+                            title="Browse and install node packs"
+                            aria-label="Get more packages — open node warehouse drawer"
+                            onClick={() => {
+                                openNodeWarehouseDrawer();
+                            }}
+                        >
+                            Get more packages +
+                        </button>
                     </div>
                 </div>
             )}
