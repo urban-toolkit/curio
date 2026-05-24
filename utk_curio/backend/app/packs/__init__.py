@@ -10,8 +10,8 @@ code MUST NOT reference ``<CURIO_LAUNCH_CWD>/templates/`` or any other path
 outside its own pack directory; that built-in folder is reserved for built-in
 ``NodeType`` presets.
 
-See ``docs/nodesfactory@docs/manifest_spec.md``, ``docs/nodesfactory@docs/overview.md``,
-and ``docs/nodesfactory@docs/backend.md`` for the pack manifest schema and validation rules.
+See ``docs/schemas/node-pack.v2.json`` for the pack manifest schema and
+``docs/WAREHOUSE.md`` for the user-facing overview.
 """
 
 from utk_curio.backend.app.packs.storage import (

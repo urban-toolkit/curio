@@ -1,11 +1,10 @@
-"""Minimal pack-manifest reader and validator.
+"""Pack-manifest reader and validator.
 
-Implements the supported subset described in ``docs/nodesfactory@docs/manifest_spec.md``
-(normative schema), ``docs/nodesfactory@docs/overview.md``, and
-``docs/nodesfactory@docs/backend.md`` (manifest loading), which is what the
-palette, installer, and resolver consume today. Validation is intentionally
-narrow — full ``$schema`` enforcement and richer semver stories are tracked in
-``docs/nodesfactory@docs/warehouse_v2.md``.
+Implements the supported subset of the v2 manifest schema (canonical
+spec: ``docs/schemas/node-pack.v2.json``). This is what the palette,
+installer, and resolver consume.
+
+User-facing overview: ``docs/WAREHOUSE.md``.
 """
 
 from __future__ import annotations

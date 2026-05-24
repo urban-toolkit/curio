@@ -24,8 +24,7 @@ import {
 import { lineageCoordKey } from "../../utils/forkPackLineage";
 
 /**
- * Node Factory wizard — five-step authoring flow (see
- * ``docs/nodesfactory@docs/frontend.md`` — Node Factory).
+ * Node Factory wizard — five-step authoring flow.
  *
  * The wizard maintains a single draft state object whose shape matches
  * the request body of ``POST /api/packs/factory/build`` and
@@ -34,13 +33,14 @@ import { lineageCoordKey } from "../../utils/forkPackLineage";
  * it into the user's pack store ("Save and install").
  *
  * Validation is intentionally deferred to the backend: the manifest
- * schema lives in ``utk_curio/backend/app/packs/manifest.py`` (see
- * ``docs/nodesfactory@docs/manifest_spec.md`` and ``docs/nodesfactory@docs/backend.md``
- * — Manifest loading). Re-implementing
- * it client-side would put us on the path to drift. Local validation
- * here is limited to "is the form fully filled in" checks so the
- * "Next" buttons can guide the user; semantic errors come back from
- * the API and are rendered in the Step 5 error box.
+ * schema lives in ``utk_curio/backend/app/packs/manifest.py`` and
+ * ``docs/schemas/node-pack.v2.json``. Re-implementing it client-side
+ * would put us on the path to drift. Local validation here is limited
+ * to "is the form fully filled in" checks so the "Next" buttons can
+ * guide the user; semantic errors come back from the API and are
+ * rendered in the Step 5 error box.
+ *
+ * User-facing overview: ``docs/WAREHOUSE.md``.
  */
 
 const SUPPORTED_TYPE_OPTIONS = Object.values(SupportedType);

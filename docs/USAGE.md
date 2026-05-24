@@ -8,7 +8,7 @@
 - [LLM configuration](#llm-configuration)
   - [Logged-in users](#logged-in-users)
   - [Guest users](#guest-users)
-- [Ray tracing](#ray-tracing)
+- [Node Warehouse](#node-warehouse)
 - [Quick start](#quick-start)
 
 > [!NOTE]
@@ -243,6 +243,19 @@ GUEST_LLM_MODEL=claude-haiku-4-5-20251001
 ```
 
 If `GUEST_LLM_API_KEY` is not set, the LLM Assistant will return an error for guest users rather than failing silently.
+
+## Node Warehouse
+
+Curio's nodes ship as **packs** — small, self-contained folders with a `manifest.json` declaring the node kinds inside. The built-in nodes (Data Loading, Vega-Lite, AutkMap, etc.) live in a pre-installed pack called `curio.builtin@1`; you can install more via the **Node Warehouse** drawer.
+
+To open the drawer: in the canvas toolbar, click **Packs** (puzzle-piece icon) → **Get packs**. From there you can:
+
+- Browse the catalog and install new packs.
+- See your installed packs grouped by fork family in the **Installed** tab.
+- Sideload a `.curio-nodepack` archive from the footer.
+- Click **Create new pack** to open the Node Factory wizard and author your own.
+
+The full walkthrough — concepts, the wizard, exporting / sideloading, versioning, and fork lineage — is in [docs/WAREHOUSE.md](WAREHOUSE.md). The manifest format is specified in [docs/schemas/node-pack.v2.json](schemas/node-pack.v2.json), and the committed pack catalog lives at `<repo_root>/packs/`.
 
 ## Quick start
 

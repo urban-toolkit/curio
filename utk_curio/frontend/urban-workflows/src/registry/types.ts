@@ -15,9 +15,8 @@ import { IPropagation } from '../providers/FlowProvider';
  *   registry, backend `_node_type_registry`, saved Trill graphs, and
  *   `/processPythonCode` all dispatch on.
  *
- * See ``docs/nodesfactory@docs/manifest_spec.md`` (canonical id shape),
- * ``docs/nodesfactory@docs/overview.md`` (canonical node kind id) and
- * ``docs/nodesfactory@docs/frontend.md`` (palette + registry).
+ * See ``docs/WAREHOUSE.md`` for the user-facing overview and
+ * ``docs/schemas/node-pack.v2.json`` for the manifest schema.
  */
 export type NodeKindId = NodeType | string;
 

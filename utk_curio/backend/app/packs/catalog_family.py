@@ -1,7 +1,7 @@
 """Catalog grouping keys and collision detection.
 
-``family_key_for_manifest`` aligns with manifest ``lineage.root`` —
-see ``docs/nodesfactory@docs/warehouse_v2.md``.
+``family_key_for_manifest`` aligns with manifest ``lineage.root``.
+See ``docs/WAREHOUSE.md`` (Sharing > Fork lineage).
 """
 
 from __future__ import annotations

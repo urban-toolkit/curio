@@ -96,7 +96,7 @@ def parse_version(raw: str) -> tuple[int, int, int]:
     Missing components default to 0 so ``"1"`` and ``"1.0.0"`` compare
     equal. Build / pre-release tails are accepted for parsing but ignored
     when ordering intersecting ranges — full prerelease precedence is not
-    implemented yet (see ``docs/nodesfactory@docs/warehouse_v2.md`` §6).
+    implemented yet.
     """
     if not isinstance(raw, str) or not raw:
         raise ResolverError(f"invalid version: {raw!r}")
