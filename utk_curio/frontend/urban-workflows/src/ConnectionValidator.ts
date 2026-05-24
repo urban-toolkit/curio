@@ -1,36 +1,32 @@
 import { NodeType, SupportedType } from "./constants";
-import { getAllNodeTypes } from "./registry";
+import { tryGetNodeDescriptor } from "./registry";
 
-let _inputCache: Record<string, SupportedType[]> | null = null;
-let _outputCache: Record<string, SupportedType[]> | null = null;
-
-function buildInputMap(): Record<string, SupportedType[]> {
-    if (_inputCache) return _inputCache;
-    const map: Record<string, SupportedType[]> = {};
-    for (const desc of getAllNodeTypes()) {
-        map[desc.id] = desc.inputPorts.flatMap(p => p.types);
-    }
-    _inputCache = map;
-    return map;
+// Looks up types via `tryGetNodeDescriptor` so both versioned
+// (`curio.builtin/data-loading@1`, palette) and unversioned
+// (`curio.builtin/data-loading`, NotebookConvertor / legacy trills) ids hit.
+function makePortsProxy(side: "inputPorts" | "outputPorts"): Record<string, SupportedType[]> {
+    return new Proxy({} as Record<string, SupportedType[]>, {
+        get(_target, key) {
+            if (typeof key !== "string") return undefined;
+            const desc = tryGetNodeDescriptor(key);
+            return desc ? desc[side].flatMap(p => p.types) : undefined;
+        },
+        has(_target, key) {
+            return typeof key === "string" && tryGetNodeDescriptor(key) !== undefined;
+        },
+    });
 }
 
-function buildOutputMap(): Record<string, SupportedType[]> {
-    if (_outputCache) return _outputCache;
-    const map: Record<string, SupportedType[]> = {};
-    for (const desc of getAllNodeTypes()) {
-        map[desc.id] = desc.outputPorts.flatMap(p => p.types);
-    }
-    _outputCache = map;
-    return map;
-}
+const _inputProxy = makePortsProxy("inputPorts");
+const _outputProxy = makePortsProxy("outputPorts");
 
 export class ConnectionValidator {
     static get _inputTypesSupported(): Record<string, SupportedType[]> {
-        return buildInputMap();
+        return _inputProxy;
     }
 
     static get _outputTypesSupported(): Record<string, SupportedType[]> {
-        return buildOutputMap();
+        return _outputProxy;
     }
 
     static checkBoxCompatibility(
@@ -39,14 +35,10 @@ export class ConnectionValidator {
     ) {
         if (outNodeType == undefined || inNodeType == undefined) return false;
 
-        let intersection = ConnectionValidator._inputTypesSupported[
-            inNodeType
-        ].filter((value: any) => {
-            return ConnectionValidator._outputTypesSupported[outNodeType].includes(
-                value
-            );
-        });
+        const inTypes = ConnectionValidator._inputTypesSupported[inNodeType];
+        const outTypes = ConnectionValidator._outputTypesSupported[outNodeType];
+        if (!inTypes || !outTypes) return false;
 
-        return intersection.length > 0;
+        return inTypes.some((value: any) => outTypes.includes(value));
     }
 }
