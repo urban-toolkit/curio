@@ -1,9 +1,11 @@
 import React, { memo, useCallback, useMemo } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faPenToSquare } from "@fortawesome/free-solid-svg-icons";
+import { faDownload, faPenToSquare } from "@fortawesome/free-solid-svg-icons";
 import { useReactFlow } from "reactflow";
+import { packagesApi } from "../../../../api/packagesApi";
 import type { PackageStagedRow } from "../../../../providers/PackagePaletteContext";
 import { usePackagePalette } from "../../../../providers/PackagePaletteContext";
+import { useToastContext } from "../../../../providers/ToastProvider";
 import { CatalogPublishPill } from "../../../packages/CatalogPublishPill";
 import type { PackagePaletteGroup } from "./model";
 import {
@@ -49,7 +51,24 @@ export const InstalledPackageAccordion = memo(function InstalledPackageAccordion
 }: InstalledPackageAccordionProps) {
     const rowTitle = summaryTitle ?? group.name;
     const { getNodes } = useReactFlow();
+    const { showToast } = useToastContext();
     const { removedKindIdsByPackageKey } = usePackagePalette();
+
+    const onExportClick = useCallback(
+        async (e: React.MouseEvent<HTMLButtonElement>) => {
+            e.preventDefault();
+            e.stopPropagation();
+            try {
+                await packagesApi.download(group.key);
+            } catch (err) {
+                showToast(
+                    `Couldn't export ${group.key}: ${(err as Error)?.message ?? "unknown error"}`,
+                    "error",
+                );
+            }
+        },
+        [group.key, showToast],
+    );
     const removedKindIds = removedKindIdsByPackageKey[group.key] ?? [];
     const labelForNodeId = useCallback(
         (nodeId: string) => canvasKindLabelForNodeId(nodeId, getNodes()),
@@ -118,6 +137,20 @@ export const InstalledPackageAccordion = memo(function InstalledPackageAccordion
                                 <FontAwesomeIcon icon={faPenToSquare} />
                             </button>
                         ) : null} */}
+                        <button
+                            type="button"
+                            className={packageStyles.packageSummaryExportBtn}
+                            title="Export package"
+                            aria-label={`Export ${group.name} as a .curio-package archive`}
+                            data-curio-package-palette-node-action="true"
+                            onMouseDown={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                            }}
+                            onClick={(e) => void onExportClick(e)}
+                        >
+                            <FontAwesomeIcon icon={faDownload} aria-hidden />
+                        </button>
                         {catalogMetadataLoaded && showCatalogPublishInSummary ? (
                             <CatalogPublishPill
                                 variant="dock"

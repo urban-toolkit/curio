@@ -6,7 +6,7 @@ This guide is in three parts:
 
 - [1. What is the Node Warehouse?](#1-what-is-the-node-warehouse) — the model and where to find the warehouse drawer.
 - [2. Creating a new package through the interface](#2-creating-a-new-package-through-the-interface) — the Node Factory wizard.
-- [3. Packaging and sharing](#3-packaging-and-sharing) — exporting an archive and sideloading one.
+- [3. Packaging and sharing](#3-packaging-and-sharing) — exporting an archive and importing one.
 
 ---
 
@@ -127,15 +127,15 @@ In the warehouse drawer, find your installed package under the **Installed** tab
 
 The archive contains exactly what's on disk: `manifest.json`, the `sources/` directory, `README.md` and `LICENSE` if present. `integrity.json` is **not** shipped — the installer regenerates it on the recipient's machine.
 
-### Sideloading
+### Importing
 
 To install someone else's archive:
 
 1. Open the warehouse drawer (Tools panel → **Packages** dropdown → **Get more packages +** in the footer).
-2. Click **Sideload .curio-package** in the footer.
+2. Click **Import package** in the footer.
 3. Pick the archive.
 
-The installer extracts into a tmp directory, validates the manifest, computes integrity hashes, then moves the result into your package store. If the package id collides with one you already have, the upload is rejected — uninstall the existing copy from the **Installed** tab first, then sideload again.
+The installer extracts into a tmp directory, validates the manifest, computes integrity hashes, then moves the result into your package store. If the package id collides with one you already have, the upload is rejected — uninstall the existing copy from the **Installed** tab first, then import again.
 
 ### Versioning, forks, and lineage
 

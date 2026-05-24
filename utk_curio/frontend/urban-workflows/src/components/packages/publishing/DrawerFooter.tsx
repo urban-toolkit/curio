@@ -37,7 +37,7 @@ export const DrawerFooter: React.FC<DrawerFooterProps> = ({ busy, onSideload, on
         disabled={busy}
         onClick={() => fileInputRef.current?.click()}
       >
-        Sideload .curio-pkg
+        Import package
       </button>
       <button
         type="button"

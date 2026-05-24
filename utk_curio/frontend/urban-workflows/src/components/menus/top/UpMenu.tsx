@@ -28,6 +28,7 @@ import {
     faDownLeftAndUpRightToCenter,
     faSitemap,
     faCircleQuestion,
+    faWarehouse,
 } from "@fortawesome/free-solid-svg-icons";
 import logo from "assets/curio-2.png";
 import { UserMenu } from "components/login/UserMenu";
@@ -36,6 +37,7 @@ import "intro.js/introjs.css";
 import { useNavigate } from "react-router-dom";
 import { useUserContext } from "../../../providers/UserProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
+import { useNodeWarehouseDrawer } from "../../../providers/NodeWarehouseDrawerProvider";
 
 export default function UpMenu({
     setDashBoardMode,
@@ -88,6 +90,7 @@ export default function UpMenu({
     } = useNodeActionsContext();
     const { loadTrill } = useCode();
     const { showToast } = useToastContext();
+    const { openNodeWarehouseDrawer } = useNodeWarehouseDrawer();
 
     const toggleMenu = (menu: string) => {
         setActiveMenu((prev) => (prev === menu ? null : menu));
@@ -491,6 +494,16 @@ export default function UpMenu({
                     </button>
                     {activeMenu === "data" && (
                         <div className={styles.dropDownMenu}>
+                            <div
+                                className={styles.dropDownRow}
+                                onClick={() => {
+                                    openNodeWarehouseDrawer();
+                                    setActiveMenu(null);
+                                }}
+                            >
+                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faWarehouse} />
+                                <button className={styles.noStyleButton}>Node Warehouse</button>
+                            </div>
                             <div
                                 className={styles.dropDownRow}
                                 onClick={() => {

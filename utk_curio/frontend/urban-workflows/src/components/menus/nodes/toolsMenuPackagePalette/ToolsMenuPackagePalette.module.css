@@ -216,6 +216,23 @@
     background: rgba(255, 255, 255, 0.08);
 }
 
+.packageSummaryExportBtn {
+    flex-shrink: 0;
+    align-self: flex-start;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 4px;
+    color: rgba(251, 252, 246, 0.92);
+    padding: 4px 7px;
+    cursor: pointer;
+    font-size: 11px;
+    line-height: 1;
+}
+
+.packageSummaryExportBtn:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
 .packageSummaryRow {
     display: flex;
     flex-direction: row;
