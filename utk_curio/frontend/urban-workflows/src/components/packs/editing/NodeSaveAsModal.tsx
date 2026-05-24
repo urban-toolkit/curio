@@ -12,6 +12,7 @@ import {
   buildSaveAsInstallDraft,
   canvasKindLabelFromNode,
   normalizeKindLabel,
+  runtimeCodeFromRfNode,
   saveAsWouldReplaceByLabel,
 } from "../../../utils/palettePackFactoryDraft";
 import { getFlowNodeCanonicalType } from "../../../utils/flowNodeCanonicalType";
@@ -141,14 +142,26 @@ export function NodeSaveAsModal({
       await refreshPackRegistry();
       // Rebind the canvas node to the new/updated kind so re-opening Settings
       // resolves to the new descriptor (e.g. its readOnly flag), not the
-      // source built-in. Match by label — Save-As preserves it.
+      // source built-in. Match by label — Save-As preserves it. Also re-seed
+      // `data.code` / `data.defaultCode` with the body we just persisted, so the
+      // editor remount picks them up instead of clobbering them with the old
+      // source descriptor's starter (or an empty initial state).
       const matchNorm = normalizeKindLabel(nodeLabel);
       const newKind = result.pack.kinds.find((k) => normalizeKindLabel(k.label) === matchNorm);
       if (newKind) {
+        const savedBody = runtimeCodeFromRfNode(canvasNode);
         setNodes((nodes) =>
           nodes.map((n) =>
             String(n.id) === nodeId
-              ? { ...n, data: { ...n.data, nodeType: newKind.id } }
+              ? {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    nodeType: newKind.id,
+                    code: savedBody,
+                    defaultCode: savedBody,
+                  },
+                }
               : n,
           ),
         );
