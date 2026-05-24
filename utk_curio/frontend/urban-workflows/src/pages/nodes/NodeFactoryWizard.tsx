@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import {
   packsApi,
   refreshPackRegistry,
@@ -55,11 +54,16 @@ const KNOWN_PERMISSIONS = [
 
 const STEPS = [
   { id: 1, title: "Metadata" },
-  { id: 2, title: "Kinds & ports" },
+  { id: 2, title: "Kinds and ports" },
   { id: 3, title: "Source" },
-  { id: 4, title: "Dependencies" },
-  { id: 5, title: "Validate & publish" },
+  { id: 4, title: "Dependencies and permissions" },
+  { id: 5, title: "Validate and publish" },
 ] as const;
+
+// Mirror of backend's _SOURCE_FILENAME_RE in utk_curio/backend/app/packs/factory.py
+// so the wizard surfaces invalid filenames as the user types instead of waiting
+// for the validate-and-publish round-trip.
+const SOURCE_FILENAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,254}\.[A-Za-z0-9]+$/;
 
 function mergeInitialDraft(initial: Draft | null | undefined): Draft {
   if (!initial?.kinds?.length) return makeDraft();
@@ -85,7 +89,6 @@ function draftFingerprint(d: Draft): string {
 }
 
 export type NodeFactoryWizardProps = {
-  variant: "page" | "modal";
   /** New session whenever the modal opens with new data. */
   resetKey: number;
   /** Initial draft for this session (cloned on resetKey change). */
@@ -97,7 +100,6 @@ export type NodeFactoryWizardProps = {
 };
 
 export const NodeFactoryWizard: React.FC<NodeFactoryWizardProps> = ({
-  variant,
   resetKey,
   initialDraft,
   forkInstallNotice,
@@ -168,7 +170,9 @@ export const NodeFactoryWizard: React.FC<NodeFactoryWizardProps> = ({
         );
       case 3:
         return draft.kinds.every(
-          (k) => k.sourceCode.trim().length > 0,
+          (k) =>
+            k.sourceCode.trim().length > 0 &&
+            SOURCE_FILENAME_RE.test(k.sourceFilename),
         );
       case 4:
         return true;
@@ -188,12 +192,6 @@ export const NodeFactoryWizard: React.FC<NodeFactoryWizardProps> = ({
           const result = await packsApi.factoryInstall(payload);
           await refreshPackRegistry();
           onInstallSuccess?.(result);
-          if (variant === "page") {
-            setSuccessInfo(
-              `Installed ${result.pack.name} ${result.pack.version}. ` +
-                `Pack id: ${result.pack.dirName}.`,
-            );
-          }
         } else {
           const { blob, filename } = await packsApi.factoryBuild(payload);
           const url = URL.createObjectURL(blob);
@@ -210,7 +208,7 @@ export const NodeFactoryWizard: React.FC<NodeFactoryWizardProps> = ({
         setBusy(false);
       }
     },
-    [draft, onInstallSuccess, variant],
+    [draft, onInstallSuccess],
   );
 
   const onPublishToCatalog = useCallback(async () => {
@@ -238,12 +236,8 @@ export const NodeFactoryWizard: React.FC<NodeFactoryWizardProps> = ({
   }, [onRequestClose]);
 
   const mainColumn = (
-    <div className={variant === "modal" ? modalStyles.modalBodyOuter : undefined}>
-      <div
-        className={
-          variant === "modal" ? `${styles.body} ${modalStyles.bodyOneCol}` : styles.body
-        }
-      >
+    <div className={modalStyles.modalBodyOuter}>
+      <div className={`${styles.body} ${modalStyles.bodyOneCol}`}>
         <div>
           {forkInstallNotice ? (
             <p className={modalStyles.forkBanner} role="note">
@@ -271,7 +265,6 @@ export const NodeFactoryWizard: React.FC<NodeFactoryWizardProps> = ({
               onInstall={() => onBuildOrInstall("install")}
               onPublishToCatalog={onPublishToCatalog}
               onGoToHub={handleGoHubOrClose}
-              variant={variant}
               forkInstallNotice={!!forkInstallNotice}
             />
           )}
@@ -297,21 +290,12 @@ export const NodeFactoryWizard: React.FC<NodeFactoryWizardProps> = ({
             </div>
           ) : null}
         </div>
-
-        {variant === "page" ? (
-          <aside className={styles.preview}>
-            <p className={styles.previewTitle}>Live manifest</p>
-            <pre style={{ margin: 0 }}>
-              {JSON.stringify(apiPayload.manifest, null, 2)}
-            </pre>
-          </aside>
-        ) : null}
       </div>
     </div>
   );
 
   const stepperEl = (
-    <div className={variant === "modal" ? modalStyles.modalStepperRow : undefined}>
+    <div className={modalStyles.modalStepperRow}>
       <div className={styles.stepper}>
         {STEPS.map((s) => (
           <button
@@ -330,38 +314,16 @@ export const NodeFactoryWizard: React.FC<NodeFactoryWizardProps> = ({
           </button>
         ))}
       </div>
-      {variant === "modal" ? (
-        <p style={{ margin: "8px 12px 4px", fontSize: "0.8rem", color: "#7a786d" }}>
-          Step {step} of {STEPS.length}
-        </p>
-      ) : null}
+      <p style={{ margin: "8px 12px 4px", fontSize: "0.8rem", color: "var(--curio-text-muted)" }}>
+        Step {step} of {STEPS.length}
+      </p>
     </div>
   );
 
-  if (variant === "modal") {
-    return (
-      <div className={modalStyles.modalShell}>
-        {stepperEl}
-        <div className={modalStyles.modalScroll}>{mainColumn}</div>
-      </div>
-    );
-  }
-
   return (
-    <div className={styles.shell}>
-      <div className={styles.topBar}>
-        <Link to="/" className={styles.linkButton}>
-          ← Back to canvas
-        </Link>
-        <h1 className={styles.title}>Node factory</h1>
-        <span style={{ fontSize: "0.875rem", color: "#7a786d" }}>
-          Step {step} of {STEPS.length}
-        </span>
-      </div>
-
+    <div className={modalStyles.modalShell}>
       {stepperEl}
-
-      {mainColumn}
+      <div className={modalStyles.modalScroll}>{mainColumn}</div>
     </div>
   );
 };
@@ -744,6 +706,11 @@ const Step3Template: React.FC<{
             <span className={styles.fieldHint}>
               single safe filename — any extension (<code>.py</code>, <code>.js</code>, <code>.vl.json</code>, …).
             </span>
+            {kind.sourceFilename && !SOURCE_FILENAME_RE.test(kind.sourceFilename) ? (
+              <span className={styles.fieldHint} style={{ color: "var(--curio-danger-strong)" }}>
+                Must match {SOURCE_FILENAME_RE.source} — no nested paths, no leading dot, must include an extension.
+              </span>
+            ) : null}
           </div>
         </div>
 
@@ -805,7 +772,7 @@ const Step4Dependencies: React.FC<{
 
   return (
     <div className={styles.panel}>
-      <h2 className={styles.panelTitle}>Dependencies & permissions</h2>
+      <h2 className={styles.panelTitle}>Dependencies and permissions</h2>
       <p className={styles.panelSubtitle}>
         Dependencies install into the shared sandbox interpreter via{" "}
         <code>/installPackages</code>. Cross-pack range conflicts are
@@ -919,7 +886,6 @@ const Step5Publish: React.FC<{
   onInstall: () => void;
   onPublishToCatalog: () => void;
   onGoToHub: () => void;
-  variant: "page" | "modal";
   forkInstallNotice: boolean;
 }> = ({
   draft,
@@ -932,7 +898,6 @@ const Step5Publish: React.FC<{
   onInstall,
   onPublishToCatalog,
   onGoToHub,
-  variant,
   forkInstallNotice,
 }) => {
   const [cap, setCap] = useState<FactoryCapabilities | null>(null);
@@ -961,7 +926,7 @@ const Step5Publish: React.FC<{
 
   return (
     <div className={styles.panel}>
-      <h2 className={styles.panelTitle}>Validate & publish</h2>
+      <h2 className={styles.panelTitle}>Validate and publish</h2>
       <p className={styles.panelSubtitle}>
         Submit the draft to the backend. The same validator that gates
         the install endpoint runs here, so any errors below also block
@@ -1025,7 +990,7 @@ const Step5Publish: React.FC<{
         <div className={styles.successBox}>
           {successInfo}{" "}
           <button className={styles.linkButton} onClick={onGoToHub}>
-            {variant === "modal" ? "Close" : "Back to warehouse"}
+            Close
           </button>
         </div>
       )}

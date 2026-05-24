@@ -79,7 +79,7 @@ The stepper across the top of the modal shows the same titles in order:
 2. **Kinds & ports** — add one or more node kinds. For each: kebab-case `id`, label, category (data / computation / vis_grammar / vis_simple / flow), engine (Python or JS), input/output ports (with `SupportedType` enum members and cardinality strings like `"1"` or `"[1,n]"`), and an editor mode. You also pick a **lifecycle key** — `"code"` for plain script nodes, `"vega"` for a Vega-Lite chart, etc. The full list is in [`packs/curio.builtin@1/manifest.json`](../packs/curio.builtin@1/manifest.json).
 3. **Source** — for each kind, an optional single starter file. The wizard exposes two fields per kind: a **Source filename** (e.g. `uhvi-load.py`, `chart.vl.json`) and a **Source** text area. The factory writes the file to `sources/<filename>` inside the pack archive. Leave the source empty to publish a structural kind with no starter — the editor opens blank when a user drops the node.
 4. **Dependencies** — pip packages, JS packages, and other Curio packs your kinds need. Pip packages install into the shared sandbox at install time via `/installPackages`. You also declare permissions here (e.g. `filesystem.read`); they're surfaced verbatim in the install dialog the consumer sees.
-5. **Validate & publish** — two buttons:
+5. **Validate and publish** — two buttons:
    - **Save and install** — runs the same backend validator that gates the install endpoint, then installs the pack into your workspace and refreshes the palette.
    - **Export .curio-nodepack** — runs the validator, then downloads the archive as a zip so you can share it.
 

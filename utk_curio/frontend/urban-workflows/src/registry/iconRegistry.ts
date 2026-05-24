@@ -33,9 +33,20 @@ export function registerIcon(ref: string, icon: IconDefinition): void {
   iconRegistry.set(ref, icon);
 }
 
+const warnedMisses = new Set<string>();
+
 export function resolveIconRef(ref: string | null | undefined): IconDefinition {
   if (!ref) return faCube;
-  return iconRegistry.get(ref) ?? faCube;
+  const hit = iconRegistry.get(ref);
+  if (hit) return hit;
+  if (!warnedMisses.has(ref)) {
+    warnedMisses.add(ref);
+    console.warn(
+      `[iconRegistry] no icon registered for "${ref}"; falling back to faCube. ` +
+      `Register it via registerIcon() in src/registry/iconRegistry.ts.`,
+    );
+  }
+  return faCube;
 }
 
 // Bootstrap the icons used by the curio.builtin@1 pack and common third-party packs.

@@ -188,7 +188,6 @@ export function NodeFactoryModalProvider({ children }: { children: React.ReactNo
             </button>
           </div>
           <NodeFactoryWizard
-            variant="modal"
             resetKey={resetKey}
             initialDraft={initialDraft ?? undefined}
             forkInstallNotice={forkInstallNotice}
