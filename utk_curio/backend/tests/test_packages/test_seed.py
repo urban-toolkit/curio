@@ -18,7 +18,6 @@ The matrix exercised here:
 from __future__ import annotations
 
 import json
-import os
 import shutil
 from pathlib import Path
 
@@ -134,9 +133,11 @@ def test_corrupt_state_file_does_not_block_startup(tmp_curio, real_fixtures_root
     # well-formed marker on disk, proving the corrupt file is recoverable
     # without manual intervention.
     uninstall_packageage("guest", "ai.urbanlab.uhvi@1")
-    os.environ["CURIO_RESEED_PACKAGES"] = "1"
+    from utk_curio.backend.app.packages import seed as packages_seed
+    original = packages_seed.CURIO_RESEED_PACKAGES
+    packages_seed.CURIO_RESEED_PACKAGES = True
     try:
         seed_dev_packageages(user_key="guest")
     finally:
-        os.environ.pop("CURIO_RESEED_PACKAGES", None)
+        packages_seed.CURIO_RESEED_PACKAGES = original
     assert json.loads(state_path.read_text(encoding="utf-8"))["version"] == 1

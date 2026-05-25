@@ -28,7 +28,6 @@ collision report. A **separate remote package-registry** service is still future
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 
@@ -75,6 +74,7 @@ from utk_curio.backend.app.packages.storage import (
 )
 from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.app.users.dependencies import require_auth
+from utk_curio.backend.config import CURIO_ALLOW_FACTORY_CATALOG_PUBLISH
 
 log = logging.getLogger(__name__)
 
@@ -193,24 +193,6 @@ def _catalog_root() -> Path:
     """
     # routes.py -> packages/ -> app/ -> backend/ -> utk_curio/ -> repo_root/packages/
     return Path(__file__).resolve().parents[4] / "packages"
-
-
-_FALSEY_PUBLISH_ENV = frozenset({"0", "false", "no", "off"})
-
-
-def factory_catalog_publish_allowed() -> bool:
-    """When true, wizard may POST ``factory/publish-catalog`` (writes fixtures).
-
-    **Default:** allowed (unset or empty). Set ``CURIO_ALLOW_FACTORY_CATALOG_PUBLISH``
-    to ``0``, ``false``, ``no``, or ``off`` to disable in locked-down deployments.
-    """
-    raw = os.environ.get("CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", "")
-    stripped = raw.strip().lower()
-    if stripped == "":
-        return True
-    if stripped in _FALSEY_PUBLISH_ENV:
-        return False
-    return stripped in {"1", "true", "yes", "on"}
 
 
 def _resolver_overrides_for(user_key: str, packages: list[str]) -> dict[str, Path]:
@@ -421,7 +403,7 @@ def unpublish_from_catalog(dir_name: str):
     ``DELETE /api/packages/<dir_name>`` for that. Gated by the same env flag as
     ``factory/publish-catalog``.
     """
-    if not factory_catalog_publish_allowed():
+    if not CURIO_ALLOW_FACTORY_CATALOG_PUBLISH:
         return jsonify(
             {
                 "error": (
@@ -612,7 +594,7 @@ def download_packageage_archive(dir_name: str):
 @require_auth
 def factory_capabilities():
     """Return which factory features are usable (controlled by deployment env)."""
-    return jsonify({"catalogPublish": factory_catalog_publish_allowed()}), 200
+    return jsonify({"catalogPublish": CURIO_ALLOW_FACTORY_CATALOG_PUBLISH}), 200
 
 
 # ---------------------------------------------------------------------------
@@ -631,7 +613,7 @@ def factory_publish_catalog():
     Writes the same directory layout Sideload installs use; may trigger hot
     reload of the Flask process when watchers observe the catalog.
     """
-    if not factory_catalog_publish_allowed():
+    if not CURIO_ALLOW_FACTORY_CATALOG_PUBLISH:
         return jsonify(
             {
                 "error": (

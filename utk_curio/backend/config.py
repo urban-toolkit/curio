@@ -43,6 +43,18 @@ CURIO_SHARED_GUEST_NAME = os.environ.get(
 
 CURIO_PROJECT_EXEC_CACHE = _env_flag("CURIO_PROJECT_EXEC_CACHE", False)
 
+# Warehouse author actions (publish/unpublish into <repo_root>/packages/).
+# Default ON so dev installs keep working without extra config; operators
+# locking down a deployment can disable with =0/false/no/off.
+CURIO_ALLOW_FACTORY_CATALOG_PUBLISH = _env_flag(
+    "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", True
+)
+# Force re-seeding catalog packages into the guest user's package store at
+# startup, even when the per-user seed-state marker would normally skip them.
+CURIO_RESEED_PACKAGES = _env_flag("CURIO_RESEED_PACKAGES", False)
+# Seed example projects from docs/examples/ on startup.
+CURIO_SEED_EXAMPLES = _env_flag("CURIO_SEED_EXAMPLES", False)
+
 GUEST_LLM_API_TYPE = os.environ.get("GUEST_LLM_API_TYPE", "openai_compatible")
 GUEST_LLM_BASE_URL = os.environ.get("GUEST_LLM_BASE_URL", "")
 GUEST_LLM_API_KEY = os.environ.get("GUEST_LLM_API_KEY", "")

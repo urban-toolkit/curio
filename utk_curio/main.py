@@ -93,13 +93,15 @@ def stream_output(process, name, color):
         if process.stderr:
             process.stderr.close()
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, auth=False, no_project=False, deploy=False, with_examples=False):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, auth=False, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
     os.environ["FLASK_SANDBOX_HOST"] = sandbox_host
     os.environ["FLASK_SANDBOX_PORT"] = str(sandbox_port)
     os.environ["CURIO_SEED_EXAMPLES"] = "1" if (with_examples or deploy) else "0"
+    os.environ["CURIO_RESEED_PACKAGES"] = "1" if reseed else "0"
+    os.environ["CURIO_ALLOW_FACTORY_CATALOG_PUBLISH"] = "1" if allow_publish else "0"
     # Respect an already-set CURIO_LAUNCH_CWD / CURIO_SHARED_DATA so the test
     # harness can point the backend at a dedicated workspace (see
     # utk_curio/backend/tests/conftest.py). Only fall back to cwd otherwise.
@@ -129,6 +131,8 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     log_always(f"CURIO_NO_AUTH={os.environ['CURIO_NO_AUTH']}")
     log_always(f"CURIO_NO_PROJECT={os.environ['CURIO_NO_PROJECT']}")
     log_always(f"CURIO_SEED_EXAMPLES={os.environ['CURIO_SEED_EXAMPLES']}")
+    log_always(f"CURIO_RESEED_PACKAGES={os.environ['CURIO_RESEED_PACKAGES']}")
+    log_always(f"CURIO_ALLOW_FACTORY_CATALOG_PUBLISH={os.environ['CURIO_ALLOW_FACTORY_CATALOG_PUBLISH']}")
 
 def logger():
     """
@@ -654,6 +658,21 @@ def main():
         "--with-examples", action="store_true", default=False,
         help="Seed example projects from docs/examples/ on startup (sets CURIO_SEED_EXAMPLES=1)"
     )
+    parser.add_argument(
+        "--reseed", action="store_true", default=False,
+        help=(
+            "Force re-seeding of catalog packages into the guest user's package "
+            "store on startup (sets CURIO_RESEED_PACKAGES=1)"
+        ),
+    )
+    parser.add_argument(
+        "--allow-publish", action=argparse.BooleanOptionalAction, default=True,
+        help=(
+            "Allow the warehouse Publish/Unpublish actions (sets "
+            "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH=1, the previous default). "
+            "Pass --no-allow-publish to lock these author actions down."
+        ),
+    )
     if os.getenv("CURIO_DEV") == "1":
         parser.add_argument(
             "--force-rebuild", action="store_true",
@@ -683,6 +702,8 @@ def main():
         no_project=args.no_project,
         deploy=args.deploy,
         with_examples=args.with_examples,
+        reseed=args.reseed,
+        allow_publish=args.allow_publish,
     )
 
     # if os.getenv("CURIO_DEV") != "1":

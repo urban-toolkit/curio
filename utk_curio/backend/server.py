@@ -1,5 +1,6 @@
 import os
 from utk_curio.backend.app import create_app
+from utk_curio.backend.config import CURIO_SEED_EXAMPLES
 
 app = create_app()
 
@@ -36,7 +37,7 @@ with app.app_context():
         n = reconcile_guest_projects(guest)
         if n:
             app.logger.info("Reconciled %d guest project(s) from filesystem", n)
-        if os.environ.get("CURIO_SEED_EXAMPLES", "").lower() in ("1", "true", "yes"):
+        if CURIO_SEED_EXAMPLES:
             from utk_curio.backend.app.projects.seed import seed_example_projects
             s = seed_example_projects(guest)
             app.logger.info("Seeded %d example project(s)", s)

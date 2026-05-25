@@ -24,7 +24,6 @@ want a tombstoned package back.
 from __future__ import annotations
 
 import logging
-import os
 import shutil
 from pathlib import Path
 
@@ -33,6 +32,7 @@ from utk_curio.backend.app.packages.storage import (
     PACKAGE_DIR_RE,
     user_packageages_dir,
 )
+from utk_curio.backend.config import CURIO_RESEED_PACKAGES
 
 log = logging.getLogger(__name__)
 
@@ -109,7 +109,7 @@ def seed_dev_packageages(*, user_key: str = "guest") -> list[str]:
     except Exception:  # noqa: BLE001 — cleanup must never crash startup
         log.warning("Stale-staging sweep failed", exc_info=True)
 
-    force = os.environ.get("CURIO_RESEED_PACKAGES", "").strip().lower() in {"1", "true", "yes"}
+    force = CURIO_RESEED_PACKAGES
     records = seed_state.load(user_key)
 
     # The built-in package ships with every Curio install. We seed exactly the

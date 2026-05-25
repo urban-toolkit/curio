@@ -454,25 +454,29 @@ def test_patch_package_metadata_404_for_missing(client, user_and_token, tmp_curi
 
 
 def test_factory_capabilities_reflect_publish_env_switch(client, user_and_token, monkeypatch):
+    from utk_curio.backend.app.packages import routes as packages_routes
+
     _, token = user_and_token
-    monkeypatch.delenv("CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", raising=False)
+    # Default — preserve prior behavior: publish is allowed.
     r1 = client.get("/api/packages/factory/capabilities", headers=_auth(token))
     assert r1.status_code == 200
     assert r1.get_json()["catalogPublish"] is True
 
-    monkeypatch.setenv("CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", "0")
+    monkeypatch.setattr(packages_routes, "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", False)
     r_off = client.get("/api/packages/factory/capabilities", headers=_auth(token))
     assert r_off.status_code == 200
     assert r_off.get_json()["catalogPublish"] is False
 
-    monkeypatch.setenv("CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", "yes")
+    monkeypatch.setattr(packages_routes, "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", True)
     r2 = client.get("/api/packages/factory/capabilities", headers=_auth(token))
     assert r2.status_code == 200
     assert r2.get_json()["catalogPublish"] is True
 
 
 def test_factory_publish_catalog_forbidden_when_env_off(client, user_and_token, monkeypatch):
-    monkeypatch.setenv("CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", "false")
+    from utk_curio.backend.app.packages import routes as packages_routes
+
+    monkeypatch.setattr(packages_routes, "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", False)
     _, token = user_and_token
     resp = client.post(
         "/api/packages/factory/publish-catalog",
@@ -489,7 +493,6 @@ def test_factory_publish_catalog_writes_to_stub_root(client, user_and_token, mon
     """Publish redirects catalog root to ``tmp_path`` so we don't touch committed fixtures."""
     from utk_curio.backend.app.packages import routes as packages_routes
 
-    monkeypatch.delenv("CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", raising=False)
     fake_root = tmp_path / "fixture_packageages"
     fake_root.mkdir()
     monkeypatch.setattr(packages_routes, "_catalog_root", lambda: fake_root)
@@ -536,7 +539,6 @@ def test_factory_publish_catalog_writes_to_stub_root(client, user_and_token, mon
 def test_unpublish_from_catalog_removes_fixture(client, user_and_token, monkeypatch, tmp_path):
     from utk_curio.backend.app.packages import routes as packages_routes
 
-    monkeypatch.delenv("CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", raising=False)
     fake_root = tmp_path / "fixture_packageages"
     fake_root.mkdir()
     monkeypatch.setattr(packages_routes, "_catalog_root", lambda: fake_root)
@@ -569,7 +571,9 @@ def test_unpublish_from_catalog_removes_fixture(client, user_and_token, monkeypa
 
 
 def test_unpublish_from_catalog_forbidden_when_env_off(client, user_and_token, monkeypatch):
-    monkeypatch.setenv("CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", "off")
+    from utk_curio.backend.app.packages import routes as packages_routes
+
+    monkeypatch.setattr(packages_routes, "CURIO_ALLOW_FACTORY_CATALOG_PUBLISH", False)
     _, token = user_and_token
     resp = client.delete(
         "/api/packages/catalog/ai.test.catalog.unpub@1",
