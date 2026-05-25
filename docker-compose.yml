@@ -21,7 +21,7 @@ services:
       - "${CURIO_PORT_5002:-5002}:5002"
       - "${CURIO_PORT_8080:-8080}:8080"
     volumes:
-      - ./templates:/app/templates
+      - ./packages:/app/packages
       # Share sandbox .data files with the host so Playwright (runs on host in CI) can read them
       - ./.curio:/app/.curio
       # Persist the Flask SQLite DB (users, projects, sessions) across container recreates
