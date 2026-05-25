@@ -146,49 +146,18 @@
     cursor: not-allowed;
 }
 
-.btnInstalled {
-    min-width: 110px;
-    height: var(--curio-input-height);
-    padding: 0 14px 0 28px;
+.btnSecondary {
+    min-width: 96px;
+    height: 30px;
+    padding: 0 12px;
     border: 1px solid var(--curio-border-strong);
     border-radius: var(--curio-radius-md);
     background: var(--curio-card-bg);
     color: var(--curio-text-primary);
-    font: inherit;
-    font-size: var(--curio-font-size-lg);
-    font-weight: 600;
-    cursor: default;
-    position: relative;
-}
-
-.btnInstalled::before {
-    content: "";
-    position: absolute;
-    left: 14px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--curio-accent-mint-fg);
-}
-
-.btnSecondary,
-.btnSecondaryDanger {
-    min-width: 96px;
-    height: 30px;
-    padding: 0 12px;
-    border-radius: var(--curio-radius-md);
-    background: var(--curio-card-bg);
     font: inherit;
     font-size: var(--curio-font-size-sm);
     font-weight: 500;
     cursor: pointer;
-}
-
-.btnSecondary {
-    border: 1px solid var(--curio-border-strong);
-    color: var(--curio-text-primary);
 }
 
 .btnSecondary:hover:not(:disabled) {
@@ -196,18 +165,7 @@
     background: #f5f5f5;
 }
 
-.btnSecondaryDanger {
-    border: 1px solid rgba(255, 107, 107, 0.5);
-    color: var(--curio-danger-strong);
-}
-
-.btnSecondaryDanger:hover:not(:disabled) {
-    border-color: var(--curio-danger);
-    background: rgba(255, 107, 107, 0.08);
-}
-
-.btnSecondary:disabled,
-.btnSecondaryDanger:disabled {
+.btnSecondary:disabled {
     opacity: 0.5;
     cursor: not-allowed;
 }

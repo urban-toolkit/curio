@@ -81,20 +81,7 @@ export const PackageCard: React.FC<PackageCardProps> = ({
       </div>
 
       <div className={styles.cardAction}>
-        {isInstalled ? (
-          hasUpdate ? (
-            <button
-              type="button"
-              className={`${styles.btnInstall} ${styles.btnInstallAccent}`}
-              disabled={cardBusy}
-              onClick={() => onInstall(catalogRow ?? pkg)}
-            >
-              Update
-            </button>
-          ) : (
-            <span className={styles.btnInstalled}>Installed</span>
-          )
-        ) : (
+        {!isInstalled ? (
           <button
             type="button"
             className={styles.btnInstall}
@@ -103,7 +90,16 @@ export const PackageCard: React.FC<PackageCardProps> = ({
           >
             Install
           </button>
-        )}
+        ) : hasUpdate ? (
+          <button
+            type="button"
+            className={`${styles.btnInstall} ${styles.btnInstallAccent}`}
+            disabled={cardBusy}
+            onClick={() => onInstall(catalogRow ?? pkg)}
+          >
+            Update
+          </button>
+        ) : null}
 
         {(showUninstall || showUnpublish) && (
           <div className={styles.cardSecondaryActions}>
@@ -121,7 +117,7 @@ export const PackageCard: React.FC<PackageCardProps> = ({
             {showUnpublish ? (
               <button
                 type="button"
-                className={styles.btnSecondaryDanger}
+                className={styles.btnSecondary}
                 disabled={cardBusy}
                 title={`Remove ${pkg.dirName} from the dev catalog (packages/)`}
                 onClick={() => onUnpublish(pkg)}

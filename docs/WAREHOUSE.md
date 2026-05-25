@@ -2,11 +2,12 @@
 
 The Node Warehouse is where Curio's nodes live. Every node you can drop on the canvas — the built-ins that ship with the app and any extras you install — comes from a **package**: a small, self-contained folder with a `manifest.json` describing the nodes inside it.
 
-This guide is in three parts:
+This guide is in three parts, plus a developer appendix:
 
 - [1. What is the Node Warehouse?](#1-what-is-the-node-warehouse) — the model and where to find the warehouse drawer.
 - [2. Creating a new package from a canvas node](#2-creating-a-new-package-from-a-canvas-node) — the **Save as pack node** flow plus the per-package metadata editor.
 - [3. Packaging and sharing](#3-packaging-and-sharing) — exporting an archive and importing one.
+- [Appendix: adding a new lifecycle or icon (developer-only)](#appendix-adding-a-new-lifecycle-or-icon-developer-only) — code-level extensions when a new node needs runtime behavior the built-in lifecycles don't cover.
 
 ---
 
