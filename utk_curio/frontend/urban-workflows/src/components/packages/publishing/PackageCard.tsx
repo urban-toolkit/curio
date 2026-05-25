@@ -1,5 +1,6 @@
 import React from "react";
 import { PackagePayload } from "../../../api/packagesApi";
+import { CatalogPublishPill } from "../CatalogPublishPill";
 import { packageInitial, primaryCategory } from "./packageUtils";
 import styles from "./PackageCard.module.css";
 
@@ -29,9 +30,15 @@ export interface PackageCardProps {
   cardActionDir?: string | null;
   /** Whether dev catalog fixture writes are allowed on this server. */
   catalogPublishAllowed: boolean;
+  /** True when the package exists in the shared catalog (drives the Published badge). */
+  isPublished?: boolean;
+  /** When set, this card's Publish pill shows a busy state. */
+  publishingDir?: string | null;
   onInstall: (pkg: PackagePayload) => void;
   onUninstall?: (pkg: PackagePayload) => void;
   onUnpublish?: (pkg: PackagePayload) => void;
+  /** Supplied on the /catalog page surface; when omitted, the Publish pill is hidden. */
+  onPublish?: (dirName: string) => void;
 }
 
 export const PackageCard: React.FC<PackageCardProps> = ({
@@ -42,13 +49,28 @@ export const PackageCard: React.FC<PackageCardProps> = ({
   busy,
   cardActionDir,
   catalogPublishAllowed,
+  isPublished,
+  publishingDir,
   onInstall,
   onUninstall,
   onUnpublish,
+  onPublish,
 }) => {
   const cardBusy = busy || cardActionDir === pkg.dirName;
-  const showUninstall = isInstalled && onUninstall != null;
-  const showUnpublish = catalogPublishAllowed && onUnpublish != null;
+  // Author actions are suppressed on read-only packages (e.g. ``curio.builtin``)
+  // — the backend rejects publish/uninstall there anyway, so don't tempt
+  // users with buttons that 4xx. The Published BADGE still renders (it's
+  // informational, not destructive).
+  const isAuthorable = pkg.readOnly !== true;
+  const showUninstall = isInstalled && onUninstall != null && isAuthorable;
+  const showUnpublish = catalogPublishAllowed && onUnpublish != null && isAuthorable;
+  const showPublishButton = onPublish != null && catalogPublishAllowed && isAuthorable;
+  // The pill renders for two distinct cases:
+  //   - The package is already published — show the "Published" badge (purely
+  //     informational; no click handler needed, so onPublish may be omitted).
+  //   - The user has a local copy AND the operator allows publish AND the
+  //     package isn't read-only — show the "Publish" button.
+  const showPublishPill = isPublished === true || showPublishButton;
 
   return (
     <article className={styles.card}>
@@ -101,14 +123,14 @@ export const PackageCard: React.FC<PackageCardProps> = ({
           </button>
         ) : null}
 
-        {(showUninstall || showUnpublish) && (
+        {(showUninstall || showUnpublish || showPublishPill) && (
           <div className={styles.cardSecondaryActions}>
             {showUninstall ? (
               <button
                 type="button"
                 className={styles.btnSecondary}
                 disabled={cardBusy}
-                title={`Remove ${pkg.name} from this dataflow`}
+                title={`Remove ${pkg.name} from this project`}
                 onClick={() => onUninstall(pkg)}
               >
                 Uninstall
@@ -124,6 +146,18 @@ export const PackageCard: React.FC<PackageCardProps> = ({
               >
                 Unpublish
               </button>
+            ) : null}
+            {showPublishPill ? (
+              <CatalogPublishPill
+                variant="hub"
+                dirName={pkg.dirName}
+                published={!!isPublished}
+                allowPublish={catalogPublishAllowed}
+                busy={publishingDir === pkg.dirName}
+                // Badge case (published=true) ignores onPublish; supply a no-op
+                // so the published-but-not-locally-installed path still renders.
+                onPublish={onPublish ?? (() => {})}
+              />
             ) : null}
           </div>
         )}

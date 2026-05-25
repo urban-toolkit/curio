@@ -394,7 +394,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
                       // for the per-project surface.
                       const isInstalled = projectInstalledDirs.has(pkg.dirName);
                       const catalogRow = catalogByDir.get(pkg.dirName);
-                      const userStoreRow = isInstalled
+                      const userStoreRow = userStoreDirs.has(pkg.dirName)
                         ? installed.find((r) => r.dirName === pkg.dirName)
                         : undefined;
                       const hasUpdate =
@@ -402,6 +402,11 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
                         && userStoreRow != null
                         && catalogRow != null
                         && catalogRow.version !== userStoreRow.version;
+                      // Author actions (Publish / Unpublish) only make sense
+                      // when the user has a local copy — symmetric with the
+                      // /catalog page's Publish gating, and avoids inviting
+                      // unpublish of someone else's package you don't own.
+                      const hasLocalCopy = userStoreRow != null;
                       return (
                         <PackageCard
                           key={pkg.dirName}
@@ -412,9 +417,10 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
                           busy={busy}
                           cardActionDir={cardActionDir}
                           catalogPublishAllowed={catalogPublishAllowed}
+                          isPublished={catalogPublishedDirs.has(pkg.dirName)}
                           onInstall={(p) => void onInstall(p)}
                           onUninstall={projectId ? (p) => void onUninstall(p) : undefined}
-                          onUnpublish={(p) => void onUnpublishFromCatalog(p)}
+                          onUnpublish={hasLocalCopy ? (p) => void onUnpublishFromCatalog(p) : undefined}
                         />
                       );
                     })}

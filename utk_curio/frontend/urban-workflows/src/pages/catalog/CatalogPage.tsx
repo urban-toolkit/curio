@@ -22,7 +22,6 @@ import {
   packagesApi,
   refreshPackageRegistry,
 } from "../../api/packagesApi";
-import { CatalogPublishPill } from "../../components/packages/CatalogPublishPill";
 import { InstallPermissionsDialog } from "../../components/packages/publishing/InstallPermissionsDialog";
 import { PackageCard } from "../../components/packages/publishing/PackageCard";
 import { PackageSearchRow } from "../../components/packages/publishing/PackageSearchRow";
@@ -105,15 +104,29 @@ export const CatalogPage: React.FC = () => {
     [updateCandidates],
   );
 
+  /**
+   * Union of catalog + user-store rows, de-duped by dirName with the catalog
+   * row winning when both exist. The merge lets the page surface
+   * sideloaded-but-not-yet-published packages so the user can hit Publish on
+   * them; without it the page would only show packages the catalog already knows
+   * about, which would never have anything to publish.
+   */
+  const mergedRows = useMemo(() => {
+    const out = new Map<string, PackagePayload>();
+    for (const row of installed) out.set(row.dirName, row);
+    for (const row of catalog) out.set(row.dirName, row);
+    return Array.from(out.values());
+  }, [catalog, installed]);
+
   const filtered = useMemo(() => {
-    let base = catalog.filter((p) => matchesSearch(p, search));
+    let base = mergedRows.filter((p) => matchesSearch(p, search));
     if (filter === "installed") {
       base = base.filter((p) => defaults.has(p.dirName));
     } else if (filter === "updates") {
       base = base.filter((p) => updateCandidateDirs.has(p.dirName));
     }
     return sortPackages(base, sort);
-  }, [catalog, search, sort, filter, defaults, updateCandidateDirs]);
+  }, [mergedRows, search, sort, filter, defaults, updateCandidateDirs]);
 
   const onInstall = useCallback(async (pkg: PackagePayload) => {
     setInstallCandidate(pkg);
@@ -221,8 +234,8 @@ export const CatalogPage: React.FC = () => {
         <div style={pageHeaderStyle}>
           <h1 style={pageTitleStyle}>Node catalog</h1>
           <p style={pageSubtitleStyle}>
-            Install packages for <strong>all your projects</strong> — present and future.
-            Removing a package from a single project happens in that project's drawer.
+            Install packages for <strong>all your projects</strong>, present and future.
+            Removing a package from a single project can be done in that project's node catalog.
           </p>
         </div>
 
@@ -286,36 +299,32 @@ export const CatalogPage: React.FC = () => {
             {filtered.map((pkg) => {
               const userStoreRow = installedByDir.get(pkg.dirName);
               const isInstalledGlobally = defaults.has(pkg.dirName);
+              const catalogRow = catalogByDir.get(pkg.dirName);
               const hasUpdate =
                 isInstalledGlobally
                 && userStoreRow != null
-                && pkg.version !== userStoreRow.version;
+                && catalogRow != null
+                && catalogRow.version !== userStoreRow.version;
+              const isPublished = catalogPublishedDirs.has(pkg.dirName);
+              // Publish action only makes sense when the user has a local copy
+              // (you can't publish something you don't have on disk).
+              const showPublish = userStoreRow != null;
               return (
-                <div key={pkg.dirName} style={cardWrapStyle}>
-                  <PackageCard
-                    pkg={pkg}
-                    isInstalled={isInstalledGlobally}
-                    hasUpdate={hasUpdate}
-                    catalogRow={pkg}
-                    busy={busy}
-                    cardActionDir={null}
-                    catalogPublishAllowed={catalogPublishAllowed}
-                    onInstall={(p) => void onInstall(p)}
-                    /* No per-card uninstall on this page — see docs/CATALOG.md */
-                  />
-                  {userStoreRow ? (
-                    <div style={cardPublishRowStyle}>
-                      <CatalogPublishPill
-                        dirName={pkg.dirName}
-                        published={catalogPublishedDirs.has(pkg.dirName)}
-                        allowPublish={catalogPublishAllowed}
-                        busy={publishingPackageKey === pkg.dirName}
-                        onPublish={onPublish}
-                        variant="hub"
-                      />
-                    </div>
-                  ) : null}
-                </div>
+                <PackageCard
+                  key={pkg.dirName}
+                  pkg={pkg}
+                  isInstalled={isInstalledGlobally}
+                  hasUpdate={hasUpdate}
+                  catalogRow={catalogRow}
+                  busy={busy}
+                  cardActionDir={null}
+                  catalogPublishAllowed={catalogPublishAllowed}
+                  isPublished={isPublished}
+                  publishingDir={publishingPackageKey}
+                  onInstall={(p) => void onInstall(p)}
+                  onPublish={showPublish ? onPublish : undefined}
+                  /* No per-card uninstall on this page — see docs/CATALOG.md */
+                />
               );
             })}
           </div>
@@ -485,18 +494,6 @@ const cardGridStyle: CSS.Properties = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))",
   gap: "16px",
-};
-
-const cardWrapStyle: CSS.Properties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: "4px",
-};
-
-const cardPublishRowStyle: CSS.Properties = {
-  display: "flex",
-  justifyContent: "flex-end",
-  paddingRight: "4px",
 };
 
 const emptyStyle: CSS.Properties = {

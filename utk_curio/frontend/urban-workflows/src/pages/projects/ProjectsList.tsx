@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import CSS from "csstype";
 import { useNavigate, Link } from "react-router-dom";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faStore } from "@fortawesome/free-solid-svg-icons";
 import { useUserContext } from "../../providers/UserProvider";
 import { projectsApi, ProjectSummary } from "../../api/projectsApi";
 import { notebookToTrill } from "../../NotebookConvertor";
@@ -141,6 +143,7 @@ const ProjectsList: React.FC = () => {
         </Link>
         <div style={topBarRightStyle}>
           <button style={llmSettingsBtnStyle} onClick={() => navigate("/catalog")}>
+            <FontAwesomeIcon icon={faStore} style={{ marginRight: 6, fontSize: 11 }} />
             Catalog
           </button>
           <button style={llmSettingsBtnStyle} onClick={() => setLlmSettingsOpen(true)}>
