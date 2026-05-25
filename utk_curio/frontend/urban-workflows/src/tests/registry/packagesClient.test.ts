@@ -20,6 +20,12 @@ import {
   faUpload,
 } from '@fortawesome/free-solid-svg-icons';
 
+// vega and vega-lite ship ESM that Jest's default transform skips. Stubbing
+// them here is safe: this suite only exercises manifest → descriptor wiring,
+// never the Vega-Lite compile path that vegaLiteAdapter pulls in.
+jest.mock('vega', () => ({}), { virtual: true });
+jest.mock('vega-lite', () => ({}), { virtual: true });
+
 import '../../registry/builtinLifecycles'; // side-effect: registers the 11 built-in lifecycles
 import '../../registry/iconRegistry'; // side-effect: registers FA icons used by the fixture
 import { registerPackageTemplates } from '../../registry/packagesClient';

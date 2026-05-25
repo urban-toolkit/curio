@@ -81,7 +81,7 @@ describe('nodeRegistry', () => {
       registerNode(second);
 
       expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('DATA_POOL'),
+        expect.stringContaining(NodeType.DATA_POOL),
       );
       expect(getNodeDescriptor(NodeType.DATA_POOL).label).toBe('Second');
 
