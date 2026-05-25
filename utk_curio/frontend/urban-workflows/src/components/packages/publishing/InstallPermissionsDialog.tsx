@@ -3,7 +3,7 @@ import type { PackagePayload, ResolveConflict } from "../../../api/packagesApi";
 import styles from "./InstallPermissionsDialog.module.css";
 
 export interface InstallPermissionsDialogProps {
-  package: PackagePayload;
+  pkg: PackagePayload;
   conflicts: ResolveConflict[];
   busy: boolean;
   onCancel: () => void;

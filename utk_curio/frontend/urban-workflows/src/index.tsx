@@ -81,6 +81,7 @@ import { RequireAuth } from "./components/RequireAuth";
 import SignIn from "./pages/auth/SignIn";
 import SignUp from "./pages/auth/SignUp";
 import ProjectsList from "./pages/projects/ProjectsList";
+import CatalogPage from "./pages/catalog/CatalogPage";
 import { ProjectLoader } from "./components/ProjectLoader";
 
 const MainCanvasRoute: React.FC = () => (
@@ -143,6 +144,14 @@ const App: React.FC = () => {
                       element={
                         <RequireAuth>
                           <MainCanvasRoute />
+                        </RequireAuth>
+                      }
+                    />
+                    <Route
+                      path="/catalog"
+                      element={
+                        <RequireAuth>
+                          <CatalogPage />
                         </RequireAuth>
                       }
                     />

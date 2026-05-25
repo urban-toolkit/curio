@@ -7,6 +7,7 @@
 
 import { getAllNodeTypes } from './nodeRegistry';
 import { loadInstalledPackages } from './packagesClient';
+import { getCurrentProjectPackages } from './projectPackagesStore';
 
 /** POST merged descriptor port shapes — idempotent on the backend. */
 export function syncNodeTypeRegistry(): Promise<void> {
@@ -42,9 +43,13 @@ function notifyTemplatesAfterPackageRefresh(): void {
  * Fetch installed packages, register descriptors, push merged port shapes, then
  * reload ``/starters`` so package default bodies appear in ``StarterProvider``
  * (required for {@link usePackageNodeLifecycle} injection on new kinds).
+ *
+ * The palette is intersected with the current project's lockfile (via
+ * ``projectPackagesStore``) when a project is loaded; on the projects-list /
+ * catalog routes the store is empty and every installed package shows.
  */
 export function refreshPackageRegistry(): Promise<void> {
-  return loadInstalledPackages()
+  return loadInstalledPackages(getCurrentProjectPackages())
     .then(() => syncNodeTypeRegistry())
     .then(() => {
       notifyTemplatesAfterPackageRefresh();

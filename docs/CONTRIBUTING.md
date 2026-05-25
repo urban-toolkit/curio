@@ -229,6 +229,8 @@ npm test -- --watchAll=false
 
 Tests live under `src/tests/` and mirror the structure of `src/components/`. See [utk_curio/frontend/urban-workflows/src/tests/README.md](../utk_curio/frontend/urban-workflows/src/tests/README.md) for guidelines on writing and organizing tests.
 
+Jest requires **Node ≥ 24** (transitive dep `html-encoding-sniffer@6` uses `require()`-of-ESM). Older Node fails every suite with `ERR_REQUIRE_ESM`. The `curio` conda env ships Node 24 — `conda activate curio` before `npm test`, or use a system install of Node 24+.
+
 ### Frontend E2E Tests
 
 The frontend tests use Playwright to upload workflow JSON files into the Curio UI and verify the ReactFlow canvas renders correctly.

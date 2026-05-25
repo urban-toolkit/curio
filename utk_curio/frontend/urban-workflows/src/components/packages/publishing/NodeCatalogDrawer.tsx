@@ -5,6 +5,8 @@ import {
   packagesApi,
   refreshPackageRegistry,
 } from "../../../api/packagesApi";
+import { useFlowContext } from "../../../providers/FlowProvider";
+import { setCurrentProjectPackages } from "../../../registry/projectPackagesStore";
 import { draftFromInstalledPackagePayload } from "../../../utils/palettePackageFactoryDraft";
 import { toApiPayload } from "../../../pages/nodes/factoryDraftModel";
 import { InstallPermissionsDialog } from "./InstallPermissionsDialog";
@@ -35,9 +37,15 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
 }) => {
   const drawerRef = useRef<HTMLElement>(null);
 
+  // The drawer is *per-project*: Install/Uninstall write to the current
+  // project's lockfile (see docs/CATALOG.md). When projectId is null
+  // (user landed on /dataflow/new and hasn't saved yet), the install
+  // affordances are disabled — see `unsavedBanner` below.
+  const { projectId, packages: projectPackages } = useFlowContext();
+
   const [catalog, setCatalog] = useState<PackagePayload[]>([]);
   const [installed, setInstalled] = useState<PackagePayload[]>([]);
-  const [tab, setTab] = useState<DrawerTab>("featured");
+  const [tab, setTab] = useState<DrawerTab>("browse");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortMode>("new");
   const [pinned, setPinned] = useState(false);
@@ -60,7 +68,19 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     console.warn(`[NodeCatalogDrawer] ${label}:`, err);
   }, []);
 
-  const installedDirs = useMemo(() => new Set(installed.map((p) => p.dirName)), [installed]);
+  /** dirNames the current project has declared in its lockfile. Drives the
+   * Install vs Uninstall affordance per card. */
+  const projectInstalledDirs = useMemo(
+    () => new Set(projectPackages),
+    [projectPackages],
+  );
+
+  /** dirNames in the user store (for the "Installed" tab listing + update detection). */
+  const userStoreDirs = useMemo(
+    () => new Set(installed.map((p) => p.dirName)),
+    [installed],
+  );
+
   const catalogByDir = useMemo(() => new Map(catalog.map((p) => [p.dirName, p])), [catalog]);
   const catalogPublishedDirs = useMemo(() => new Set(catalog.map((p) => p.dirName)), [catalog]);
 
@@ -70,11 +90,12 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
       packagesApi.listInstalled(),
       packagesApi.factoryCapabilities(),
     ]);
-    const installedSet = new Set(mine.packages.map((p) => p.dirName));
-    setCatalog(cat.packages.map((p) => ({ ...p, installed: installedSet.has(p.dirName) })));
+    setCatalog(cat.packages.map((p) => ({ ...p, installed: userStoreDirs.has(p.dirName) })));
     setInstalled(mine.packages);
     installedByDirRef.current = new Map(mine.packages.map((p) => [p.dirName, p]));
     setCatalogPublishAllowed(cap.catalogPublish);
+  // userStoreDirs intentionally omitted — it's derived from `installed` which we set here.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -106,45 +127,45 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     return () => window.removeEventListener("keydown", onKey);
   }, [onRequestClose]);
 
+  // Update candidates: project packages with a newer version available in the catalog.
   const updateCandidates = useMemo(() => {
     return installed.filter((row) => {
+      if (!projectInstalledDirs.has(row.dirName)) return false;
       const catRow = catalogByDir.get(row.dirName);
       return catRow != null && catRow.version !== row.version;
     });
-  }, [installed, catalogByDir]);
+  }, [installed, catalogByDir, projectInstalledDirs]);
 
   const filteredCatalog = useMemo(() => {
-    const base = sortPackages(
+    return sortPackages(
       catalog.filter((p) => matchesSearch(p, search)),
       sort,
     );
-    if (tab === "installed") {
-      return base.filter((p) => installedDirs.has(p.dirName));
-    }
-    if (tab === "updates") {
-      const updateDirs = new Set(updateCandidates.map((p) => p.dirName));
-      return base.filter((p) => updateDirs.has(p.dirName));
-    }
-    return base;
-  }, [catalog, search, sort, tab, installedDirs, updateCandidates]);
+  }, [catalog, search, sort]);
 
   const filteredInstalled = useMemo(
-    () => installed.filter((p) => matchesSearch(p, search)),
-    [installed, search],
+    // "Installed" in the drawer = installed in THIS project, not in the user store.
+    () => installed.filter(
+      (p) => projectInstalledDirs.has(p.dirName) && matchesSearch(p, search),
+    ),
+    [installed, projectInstalledDirs, search],
   );
 
-  const featuredPacks = useMemo(
-    () => sortPackages(catalog, "new").slice(0, 3),
-    [catalog],
-  );
-
-  const displayPacks = tab === "featured" ? featuredPacks : filteredCatalog;
-
-  const onInstallFromCatalog = useCallback(
+  const onInstall = useCallback(
     async (pkg: PackagePayload) => {
+      if (!projectId) {
+        reportActionError(
+          "Save the dataflow first",
+          new Error("install requires a saved project"),
+        );
+        return;
+      }
       setInstallCandidate(pkg);
       try {
-        const probe = await packagesApi.resolve([...installed.map((p) => p.dirName), pkg.dirName]);
+        const probe = await packagesApi.resolve([
+          ...installed.map((p) => p.dirName),
+          pkg.dirName,
+        ]);
         setConflictReport(probe.conflicts);
       } catch (err) {
         const status = (err as { status?: number }).status;
@@ -156,15 +177,19 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
         }
       }
     },
-    [installed],
+    [installed, projectId, reportActionError],
   );
 
   const confirmCatalogInstall = useCallback(async () => {
-    if (!installCandidate) return;
+    if (!installCandidate || !projectId) return;
     setBusy(true);
     setActionError(null);
     try {
-      await packagesApi.installFromCatalog(installCandidate.dirName);
+      const result = await packagesApi.installToProject(
+        projectId, installCandidate.dirName,
+      );
+      // Keep the lockfile store in sync — palette filter reads this.
+      setCurrentProjectPackages(result.packages);
       await refreshPackageRegistry();
       await reload();
       setInstallCandidate(null);
@@ -174,14 +199,23 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     } finally {
       setBusy(false);
     }
-  }, [installCandidate, reload, reportActionError]);
+  }, [installCandidate, projectId, reload, reportActionError]);
 
   const onPickArchive = useCallback(
     async (file: File) => {
       setBusy(true);
       setActionError(null);
       try {
-        await packagesApi.uploadArchive(file, file.name);
+        // Sideload still goes through the user-store install path; if a
+        // project is open, drop the new package into its lockfile too so
+        // the palette picks it up.
+        const result = await packagesApi.uploadArchive(file, file.name);
+        if (projectId) {
+          const projResult = await packagesApi.installToProject(
+            projectId, result.package.dirName,
+          );
+          setCurrentProjectPackages(projResult.packages);
+        }
         await refreshPackageRegistry();
         await reload();
       } catch (err) {
@@ -190,20 +224,17 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
         setBusy(false);
       }
     },
-    [reload, reportActionError],
+    [projectId, reload, reportActionError],
   );
 
   const onUninstall = useCallback(async (pkg: PackagePayload) => {
-    if (!window.confirm(`Uninstall ${pkg.name} (${pkg.dirName}) from this dataflow?`)) return;
+    if (!projectId) return;
+    if (!window.confirm(`Remove ${pkg.name} (${pkg.dirName}) from this project?`)) return;
     setCardActionDir(pkg.dirName);
     setActionError(null);
     try {
-      try {
-        await packagesApi.uninstall(pkg.dirName);
-      } catch (err) {
-        const status = (err as { status?: number }).status;
-        if (status !== 404) throw err;
-      }
+      const result = await packagesApi.uninstallFromProject(projectId, pkg.dirName);
+      setCurrentProjectPackages(result.packages);
       await refreshPackageRegistry();
       await reload();
     } catch (err) {
@@ -211,13 +242,13 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     } finally {
       setCardActionDir(null);
     }
-  }, [reload, reportActionError]);
+  }, [projectId, reload, reportActionError]);
 
   const onUnpublishFromCatalog = useCallback(
     async (pkg: PackagePayload) => {
       if (
         !window.confirm(
-          `Unpublish ${pkg.name} (${pkg.dirName}) from the dev catalog?\n\nThis removes the entry under packages/. Installed copies in dataflows are not removed.`,
+          `Unpublish ${pkg.name} (${pkg.dirName}) from the dev catalog?\n\nThis removes the entry under packages/. Installed copies in projects are not removed.`,
         )
       ) {
         return;
@@ -235,14 +266,6 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
     },
     [reload, reportActionError],
   );
-
-  const onExport = useCallback(async (pkg: PackagePayload) => {
-    try {
-      await packagesApi.download(pkg.dirName);
-    } catch (err) {
-      reportActionError(`Couldn't export ${pkg.name}`, err);
-    }
-  }, [reportActionError]);
 
   const onPublishToCatalog = useCallback(async (dirName: string) => {
     const row = installedByDirRef.current.get(dirName);
@@ -264,23 +287,30 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   }, [reload, reportActionError]);
 
   const myPackagesListProps = {
-    installed: tab === "installed" ? filteredInstalled : installed,
+    installed: filteredInstalled,
     catalogByDir,
     catalogPublishedDirs,
     catalogPublishAllowed,
     publishingPackageKey,
     busy,
     onUninstall: (p: PackagePayload) => void onUninstall(p),
-    onExport: (p: PackagePayload) => void onExport(p),
     onPublishToCatalog: (d: string) => void onPublishToCatalog(d),
   };
 
   const tabLabel: Record<DrawerTab, string> = {
-    featured: "Featured",
-    browse: "Browse all",
+    featured: "Browse",  // legacy: collapsed Featured into Browse
+    browse: "Browse",
     installed: "Installed",
-    updates: "Updates",
+    updates: "Installed",  // legacy: Updates badge shows on Installed
   };
+
+  const unsavedBanner = !projectId ? (
+    <div className={styles.errorBanner} role="status">
+      <span className={styles.errorBannerText}>
+        Save this dataflow first to install packages into it.
+      </span>
+    </div>
+  ) : null;
 
   return (
     <>
@@ -319,13 +349,14 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
           />
 
           <DrawerTabs
-            tab={tab}
-            installedCount={installed.length}
+            tab={tab === "featured" || tab === "updates" ? "browse" : tab}
+            installedCount={projectInstalledDirs.size}
             updateCount={updateCandidates.length}
             onChange={setTab}
           />
 
           <div className={styles.scrollBody}>
+            {unsavedBanner}
             {actionError ? (
               <div className={styles.errorBanner} role="alert">
                 <span className={styles.errorBannerText}>{actionError}</span>
@@ -341,7 +372,11 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
             ) : null}
             {tab === "installed" ? (
               filteredInstalled.length === 0 ? (
-                <div className={styles.empty}>No packages match the current filter.</div>
+                <div className={styles.empty}>
+                  {projectInstalledDirs.size === 0
+                    ? "No packages installed in this project yet."
+                    : "No packages match the current filter."}
+                </div>
               ) : (
                 <MyPackagesList {...myPackagesListProps} />
               )
@@ -349,15 +384,24 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
               <>
                 <p className={styles.sectionLabel}>{tabLabel[tab]}</p>
 
-                {displayPacks.length === 0 ? (
+                {filteredCatalog.length === 0 ? (
                   <div className={styles.empty}>No packages match the current filter.</div>
                 ) : (
                   <div className={styles.cardList}>
-                    {displayPacks.map((pkg) => {
-                      const isInstalled = installedDirs.has(pkg.dirName);
+                    {filteredCatalog.map((pkg) => {
+                      // "Installed" in the drawer means "in this project's
+                      // lockfile" — the user-store presence is irrelevant
+                      // for the per-project surface.
+                      const isInstalled = projectInstalledDirs.has(pkg.dirName);
                       const catalogRow = catalogByDir.get(pkg.dirName);
+                      const userStoreRow = isInstalled
+                        ? installed.find((r) => r.dirName === pkg.dirName)
+                        : undefined;
                       const hasUpdate =
-                        isInstalled && catalogRow != null && catalogRow.version !== pkg.version;
+                        isInstalled
+                        && userStoreRow != null
+                        && catalogRow != null
+                        && catalogRow.version !== userStoreRow.version;
                       return (
                         <PackageCard
                           key={pkg.dirName}
@@ -368,16 +412,14 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
                           busy={busy}
                           cardActionDir={cardActionDir}
                           catalogPublishAllowed={catalogPublishAllowed}
-                          onInstall={(p) => void onInstallFromCatalog(p)}
-                          onUninstall={(p) => void onUninstall(p)}
+                          onInstall={(p) => void onInstall(p)}
+                          onUninstall={projectId ? (p) => void onUninstall(p) : undefined}
                           onUnpublish={(p) => void onUnpublishFromCatalog(p)}
                         />
                       );
                     })}
                   </div>
                 )}
-
-                {tab === "featured" ? <MyPackagesList {...myPackagesListProps} /> : null}
               </>
             )}
 

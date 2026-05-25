@@ -19,7 +19,7 @@ function iconVariantForPack(dirName: string): string {
 }
 
 export interface PackageCardProps {
-  package: PackagePayload;
+  pkg: PackagePayload;
   isInstalled: boolean;
   hasUpdate: boolean;
   /** The catalog entry for this package, used to show the target update version. */

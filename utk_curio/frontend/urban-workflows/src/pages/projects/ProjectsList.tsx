@@ -140,6 +140,9 @@ const ProjectsList: React.FC = () => {
           <img src={logo} alt="Curio" style={logoImgStyle} />
         </Link>
         <div style={topBarRightStyle}>
+          <button style={llmSettingsBtnStyle} onClick={() => navigate("/catalog")}>
+            Catalog
+          </button>
           <button style={llmSettingsBtnStyle} onClick={() => setLlmSettingsOpen(true)}>
             LLM Settings
           </button>

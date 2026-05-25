@@ -72,6 +72,8 @@ from utk_curio.backend.app.packages.storage import (
     package_dir,
     PACKAGE_DIR_RE,
 )
+from utk_curio.backend.app.packages import services as packages_services
+from utk_curio.backend.app.projects import repositories as projects_repo
 from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.app.users.dependencies import require_auth
 from utk_curio.backend.config import CURIO_ALLOW_FACTORY_CATALOG_PUBLISH
@@ -908,3 +910,95 @@ def resolve_deps():
         ],
     }
     return jsonify(payload), (409 if result.conflicts else 200)
+
+
+# ---------------------------------------------------------------------------
+# Per-project lockfile + per-user defaults
+# ---------------------------------------------------------------------------
+#
+# These five endpoints implement the project-scoped install/uninstall and the
+# per-user defaults list from [docs/CATALOG.md]. The drawer in the canvas
+# uses the `/projects/<id>/...` endpoints; the `/catalog` page uses
+# `/defaults`. There is deliberately no `DELETE /defaults/<dir>` — the only
+# way a package leaves the defaults list is via `prune_unreferenced_packages`,
+# which fires when the last project drops a dep.
+
+def _packages_error(exc: packages_services.PackageServiceError):
+    return jsonify({"error": str(exc)}), exc.status
+
+
+@packages_bp.route("/projects/<project_id>", methods=["GET"])
+@require_auth
+def get_project_packages(project_id: str):
+    """Return ``{"packages": [...dirNames]}`` for the project's lockfile."""
+    user_key = _user_dir_key(g.user)
+    try:
+        # Ownership check happens via the repo (raises NotFoundError → 404).
+        projects_repo.get_for_user(project_id, g.user.id)
+        dirs = packages_services.get_project_lockfile(user_key, project_id)
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except packages_services.PackageServiceError as exc:
+        return _packages_error(exc)
+    return jsonify({"packages": sorted(dirs)}), 200
+
+
+@packages_bp.route("/projects/<project_id>/install", methods=["POST"])
+@require_auth
+def install_to_project_route(project_id: str):
+    """Install a catalog package into one project's lockfile."""
+    user_key = _user_dir_key(g.user)
+    body = request.get_json(silent=True) or {}
+    dir_name = body.get("dirName")
+    if not isinstance(dir_name, str):
+        return _error("body must include 'dirName'")
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        payload = packages_services.install_to_project(user_key, project_id, dir_name)
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except packages_services.PackageServiceError as exc:
+        return _packages_error(exc)
+    return jsonify(payload), 201
+
+
+@packages_bp.route("/projects/<project_id>/<dir_name>", methods=["DELETE"])
+@require_auth
+def uninstall_from_project_route(project_id: str, dir_name: str):
+    """Drop a package from one project's lockfile; auto-prune the user store."""
+    user_key = _user_dir_key(g.user)
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        payload = packages_services.uninstall_from_project(
+            user_key, project_id, dir_name,
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except packages_services.PackageServiceError as exc:
+        return _packages_error(exc)
+    return jsonify(payload), 200
+
+
+@packages_bp.route("/defaults", methods=["GET"])
+@require_auth
+def get_defaults_route():
+    """Return ``{"packages": [...dirNames]}`` for the user's defaults list."""
+    from utk_curio.backend.app.packages import defaults as defaults_io
+
+    user_key = _user_dir_key(g.user)
+    return jsonify({"packages": sorted(defaults_io.load_defaults(user_key))}), 200
+
+
+@packages_bp.route("/defaults", methods=["POST"])
+@require_auth
+def install_to_defaults_route():
+    """Install a catalog package for every existing project + future ones."""
+    body = request.get_json(silent=True) or {}
+    dir_name = body.get("dirName")
+    if not isinstance(dir_name, str):
+        return _error("body must include 'dirName'")
+    try:
+        payload = packages_services.install_to_defaults(g.user, dir_name)
+    except packages_services.PackageServiceError as exc:
+        return _packages_error(exc)
+    return jsonify(payload), 201

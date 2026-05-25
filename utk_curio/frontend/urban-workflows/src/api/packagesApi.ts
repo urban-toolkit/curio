@@ -194,6 +194,33 @@ export interface InstallDepsResponse {
   pipRequirements?: string[];
 }
 
+/** Response from project-scoped install / uninstall and `GET /projects/<id>`. */
+export interface ProjectPackagesResponse {
+  /** Sorted dirNames in the project's lockfile (`spec.dataflow.packages`). */
+  packages: string[];
+  /** Set on install responses: did this install also copy into the user store? */
+  addedToUserStore?: boolean;
+  /** Set on uninstall responses: user-store copies the prune sweep removed. */
+  pruned?: string[];
+  /** Set on uninstall responses: defaults entries the prune sweep removed. */
+  removedFromDefaults?: string[];
+}
+
+/** Per-project result row in a global (defaults) install response. */
+export interface DefaultsInstallProjectResult {
+  id: string;
+  ok: boolean;
+  alreadyPresent?: boolean;
+  error?: string;
+}
+
+export interface DefaultsInstallResponse {
+  /** New user-defaults list after the install. */
+  packages: string[];
+  /** Per-project apply results so the UI can surface partial failures. */
+  projects: DefaultsInstallProjectResult[];
+}
+
 /**
  * Multipart upload helper — bypasses ``apiFetch`` because the latter
  * always sets ``Content-Type: application/json``. The Bearer header is
@@ -394,6 +421,48 @@ export const packagesApi = {
     return apiFetch("/api/packages/install-deps", {
       method: "POST",
       body: JSON.stringify({ packages }),
+    });
+  },
+
+  // --------------------------------------------------------------
+  // Per-project lockfile + per-user defaults (see docs/CATALOG.md)
+  // --------------------------------------------------------------
+
+  /** Read the project's current lockfile (sorted dirNames). */
+  getProjectPackages(projectId: string): Promise<ProjectPackagesResponse> {
+    return apiFetch(`/api/packages/projects/${encodeURIComponent(projectId)}`);
+  },
+
+  /** Add a package to ONE project's lockfile (drawer install). */
+  installToProject(
+    projectId: string, dirName: string,
+  ): Promise<ProjectPackagesResponse> {
+    return apiFetch(
+      `/api/packages/projects/${encodeURIComponent(projectId)}/install`,
+      { method: "POST", body: JSON.stringify({ dirName }) },
+    );
+  },
+
+  /** Drop a package from ONE project's lockfile (drawer uninstall). */
+  uninstallFromProject(
+    projectId: string, dirName: string,
+  ): Promise<ProjectPackagesResponse> {
+    return apiFetch(
+      `/api/packages/projects/${encodeURIComponent(projectId)}/${dirName}`,
+      { method: "DELETE" },
+    );
+  },
+
+  /** Read the per-user default-packages list. */
+  getDefaults(): Promise<{ packages: string[] }> {
+    return apiFetch("/api/packages/defaults");
+  },
+
+  /** Install for every existing project + auto-seed into new ones. */
+  installToDefaults(dirName: string): Promise<DefaultsInstallResponse> {
+    return apiFetch("/api/packages/defaults", {
+      method: "POST",
+      body: JSON.stringify({ dirName }),
     });
   },
 };

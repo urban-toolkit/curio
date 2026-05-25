@@ -129,6 +129,8 @@ def _output_refs_from_manifest(manifest: Optional[dict]) -> List[OutputRef]:
 # ---------------------------------------------------------------------------
 
 def save_project(user, data: ProjectCreate) -> ProjectDetail:
+    from utk_curio.backend.app.packages.services import seed_spec_with_defaults
+
     _assert_guest_can_save(user)
 
     project_id = str(uuid4())
@@ -143,6 +145,11 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
         thumbnail_accent=data.thumbnail_accent,
     )
     project_id = project.id
+
+    # New project: merge per-user defaults into the spec's lockfile so the
+    # package palette starts populated. Caller can override by passing a
+    # spec that already declares packages.
+    data.spec = seed_spec_with_defaults(ukey, data.spec)
 
     storage.write_spec(ukey, project_id, data.spec)
     copied = storage.copy_outputs(ukey, project_id, data.outputs)

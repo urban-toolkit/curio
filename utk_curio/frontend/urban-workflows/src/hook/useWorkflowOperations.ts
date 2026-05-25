@@ -24,6 +24,11 @@ import { updateNodeData, updateNodesByMap, updateEdgesByMap, extractNodeFieldMap
 import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
 import { TrillGenerator } from "../TrillGenerator";
 import { projectsApi, OutputRef } from "../api/projectsApi";
+import {
+    getCurrentProjectPackagesList,
+    setCurrentProjectPackages,
+    subscribe as subscribeProjectPackages,
+} from "../registry/projectPackagesStore";
 
 export interface WorkflowOperationsDeps {
     nodes: Node[];
@@ -76,14 +81,29 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     const [expandStatus, setExpandStatus] = useState<'expanded' | 'minimized'>('expanded');
     const [suggestionsLeft, setSuggestionsLeft] = useState<number>(0); // Number of suggestions left
     const [workflowGoal, setWorkflowGoal] = useState("");
-    const [packages, setPackages] = useState<string[]>([]);
+    // ``packages`` is the current project's lockfile (``spec.dataflow.packages``).
+    // The authoritative copy lives in ``projectPackagesStore`` so non-React
+    // code (palette filter, registry bootstrap) can read it without context.
+    // This component subscribes so save callers see fresh state.
+    const [packages, setPackagesState] = useState<string[]>(getCurrentProjectPackagesList());
+    useEffect(() => subscribeProjectPackages(() => {
+        setPackagesState(getCurrentProjectPackagesList());
+    }), []);
+
+    const setPackages = useCallback((pkgs: string[]) => {
+        setCurrentProjectPackages(pkgs);
+    }, []);
 
     const addPackage = useCallback((pkg: string) => {
-        setPackages((prev) => prev.includes(pkg) ? prev : [...prev, pkg]);
+        const current = getCurrentProjectPackagesList();
+        if (!current.includes(pkg)) {
+            setCurrentProjectPackages([...current, pkg]);
+        }
     }, []);
 
     const removePackage = useCallback((pkg: string) => {
-        setPackages((prev) => prev.filter((p) => p !== pkg));
+        const current = getCurrentProjectPackagesList();
+        setCurrentProjectPackages(current.filter((p) => p !== pkg));
     }, []);
 
     // Project state
@@ -526,7 +546,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         }
         const currentNodes = reactFlow.getNodes();
         const currentEdges = reactFlow.getEdges();
-        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", [], workflowDescriptionRef.current);
+        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", packages, workflowDescriptionRef.current);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
 
@@ -555,7 +575,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             setProjectDirty(false);
             return detail;
         }
-    }, [projectId, projectName, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode]);
+    }, [projectId, projectName, packages, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode]);
 
     // Auto-save every 30 seconds when a project has been explicitly saved at least once
     useEffect(() => {
@@ -576,7 +596,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         }
         const currentNodes = reactFlow.getNodes();
         const currentEdges = reactFlow.getEdges();
-        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", [], workflowDescriptionRef.current);
+        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", packages, workflowDescriptionRef.current);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
 
@@ -593,7 +613,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setProjectDirty(false);
         setViewerMode("owner");
         return detail;
-    }, [workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves]);
+    }, [packages, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves]);
 
     const loadProject = useCallback(async (id: string) => {
         const result = await projectsApi.get(id);

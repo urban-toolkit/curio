@@ -2,11 +2,13 @@
 
 The Node Catalog is where Curio's nodes live. Every node you can drop on the canvas — the built-ins that ship with the app and any extras you install — comes from a **package**: a small, self-contained folder with a `manifest.json` describing the nodes inside it.
 
-This guide is in three parts, plus a developer appendix:
+This guide is in four parts, plus a developer appendix:
 
-- [1. What is the Node Catalog?](#1-what-is-the-node-catalog) — the model and where to find the catalog drawer.
-- [2. Creating a new package from a canvas node](#2-creating-a-new-package-from-a-canvas-node) — the **Save as pack node** flow plus the per-package metadata editor.
-- [3. Packaging and sharing](#3-packaging-and-sharing) — exporting an archive and importing one.
+- [1. What is the Node Catalog?](#1-what-is-the-node-catalog) — the four storage layers and where each kind of action writes.
+- [2. Surfaces and workflows](#2-surfaces-and-workflows) — the two places you manage packages (the canvas drawer and the `/catalog` page), the action matrix between them, and step-by-step walkthroughs.
+- [3. Creating a new package from a canvas node](#3-creating-a-new-package-from-a-canvas-node) — the **Save as pack node** flow plus the per-package metadata editor.
+- [4. Packaging and sharing](#4-packaging-and-sharing) — exporting an archive and importing one.
+- [Operator notes](#operator-notes) — env vars and CLI flags that gate Publish.
 - [Appendix: adding a new lifecycle or icon (developer-only)](#appendix-adding-a-new-lifecycle-or-icon-developer-only) — code-level extensions when a new node needs runtime behavior the built-in lifecycles don't cover.
 
 ---
@@ -33,18 +35,18 @@ Two kinds of packages ship with Curio:
 
 You can install any number of additional packages — your own creations or archives shared by others.
 
-### Where to find it
+### The four storage layers
 
-Open Curio. The **Tools panel** sits on the left edge of the canvas. Inside it, look for the **Packages** dropdown (cube icon, labelled "Packages" with a count of your installed kinds). Open the dropdown and click the **Get more packages +** button in its footer — this opens the catalog drawer.
+Package state in Curio lives in four places. Knowing which one each user action writes to is the key to predicting what happens after an Install or Uninstall:
 
-The drawer slides in from the right with four tabs:
+| Layer | On disk | Who writes |
+|---|---|---|
+| **Shared catalog** — the source every user browses from | `<repo_root>/packages/<packageId>@<major>/` | **Publish** (gated by `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH`; see *Operator notes*). Otherwise read-only. |
+| **Per-user package store** — implementations on disk | `.curio/users/<user-key>/packages/<packageId>@<major>/` | Managed implicitly. Install copies in; uninstall (via the drawer) prunes when no project still references the package. No direct UI action writes or deletes here. |
+| **Per-user defaults** — what auto-seeds into new projects | `.curio/users/<user-key>/default-packages.json` | The `/catalog` page's **Install** adds an entry; the auto-prune sweep removes it when the last project drops the dep. |
+| **Per-project lockfile** — the source of truth for what a project needs | `spec.trill.json` → `dataflow.packages: string[]` (inside each project's `spec.trill.json`) | The canvas drawer's **Install** adds an entry for the open project; **Uninstall** removes it. The `/catalog` page's **Install** also walks every existing project and patches its lockfile. |
 
-- **Featured** — the three newest packages in the catalog.
-- **Browse all** — every package the catalog advertises.
-- **Installed** — what you have in this dataflow, grouped by fork family.
-- **Updates** — only the installed packages that have a newer version available.
-
-Each catalog card has an **Install** button on the right. Clicking it opens the **Install "&lt;package name&gt;"** dialog showing the package's declared permissions and Python / JS / package dependencies (plus a red conflict box if any of those clash with what you already have). Click **Install** again to confirm, or **Cancel** to back out. The package's nodes appear in the canvas palette within a second or two.
+The canvas palette reads from the per-project lockfile (intersected with the user store), so two projects open in different tabs see different palettes even though they share one user store.
 
 ### How a node ref looks in your saved workflow
 
@@ -64,7 +66,41 @@ ai.urbanlab.uhvi/uhvi-load@1
 
 ---
 
-## 2. Creating a new package from a canvas node
+## 2. Surfaces and workflows
+
+There are exactly two places you manage packages:
+
+- **The drawer** (inside the canvas): per-project. Open it from the **Packages** dropdown in the left-edge Tools panel → **Get more packages +**. Installs and uninstalls here affect *only* the open project's lockfile (plus the user-store copy when needed).
+- **The `/catalog` page** (linked from the **Catalog** button in the top nav of `/projects`): global. Installs here apply to every existing project of yours AND auto-seed into any new project. There is no Uninstall affordance — see the workflows below for why.
+
+The drawer has just two tabs — **Browse** and **Installed** — with an *Update available* badge surfacing on cards that have a newer catalog version. The `/catalog` page is a single list with **All / Installed / Updates** filter chips.
+
+### Action matrix
+
+| Action | Where | Endpoint | Layers it writes | What you see |
+|---|---|---|---|---|
+| **Install (one project)** | Drawer | `POST /api/packages/projects/<id>/install` | per-project lockfile (+ user store if missing) | Package shows in this project's palette only. |
+| **Install (all your projects)** | `/catalog` page | `POST /api/packages/defaults` | per-user defaults + every project's lockfile (+ user store if missing) | Package appears in every project's palette; future new projects auto-get it too. |
+| **Uninstall** | Drawer only | `DELETE /api/packages/projects/<id>/<dirName>` | per-project lockfile; auto-prune may also delete from user store and defaults | Package leaves this project's palette. If no other project still references it, the user-store copy is deleted and the defaults entry (if any) is removed too. |
+| **Publish** | Drawer or `/catalog` page | `POST /api/packages/factory/publish-catalog` | shared catalog | Package becomes browseable by every user on this install. Button is hidden entirely when the env gate is off (see *Operator notes*). |
+
+### Workflows
+
+**I want to add a package to one project.** Open the project, click **Packages → Get more packages +** to open the drawer, find the package, click **Install**. The package's nodes appear in this project's palette only. Other projects you have are unaffected.
+
+**I want a package available across all my projects (present and future).** Go to `/projects`, click **Catalog** in the top nav, find the package, click **Install**. Curio adds it to your per-user defaults list AND walks every existing project to patch its lockfile, so the package appears in every project's palette immediately. New projects you create from then on auto-include it too.
+
+**I want to remove a package.** There is *no* global Uninstall on the `/catalog` page — that's deliberate. Open the project (or each project, if it's installed in several) and use the drawer's **Uninstall** button. When you uninstall from the last project that references the package, Curio also deletes the user-store copy AND removes the package from your defaults list so it stops auto-seeding into new projects. (This is the most non-obvious rule in the catalog model — there's no "remove from defaults" button because that fall-through is the only mechanism that ever touches defaults.)
+
+**I want a package I just built to be installable by other users on this Curio install.** Build it via **Save as pack node** (next section), then open the drawer or `/catalog` page and click **Publish** on the package. It writes into the shared catalog at `<repo_root>/packages/`. Note: the Publish button is hidden when the operator disabled catalog writes (see *Operator notes* below).
+
+**I want to make a package a default for new projects without installing it everywhere first.** Just install it once from the `/catalog` page. That's exactly what `/catalog` install does — adds to defaults. The drawer's per-project install does NOT add to defaults; it stays scoped to that one project.
+
+**I want to stop a package from auto-seeding into new projects.** Uninstall it from every project that currently references it. After the last uninstall, Curio's auto-prune sweep removes the package from defaults. There's no separate "remove from defaults" action — by design, the system never leaves a "seed for new projects" entry that no current project actually uses.
+
+---
+
+## 3. Creating a new package from a canvas node
 
 Curio no longer ships the multi-step Node Factory wizard. The single supported flow is **Save as pack node**: build the node on the canvas, then save it into a (new or existing) package. Metadata that used to live in the wizard's steps is now editable per-package from the catalog drawer.
 
@@ -119,7 +155,7 @@ Every manifest is validated against [`docs/schemas/node-package.v3.json`](schema
 
 ---
 
-## 3. Packaging and sharing
+## 4. Packaging and sharing
 
 A package is portable: you can export it, send it, and the recipient can drop it back in.
 
@@ -161,6 +197,21 @@ The built-in `curio.builtin@1` ships with `readOnly: true`. The same flag is ava
 - The legacy `NodeType` enum strings (`"DATA_LOADING"`, `"VIS_VEGA"`, etc.) used by Curio before the package refactor are no longer recognized. Trill files saved with those strings won't render correctly until the type fields are rewritten to canonical refs (`"curio.builtin/data-loading"`, `"curio.builtin/vis-vega"`, etc.). The example trills in `docs/examples/` are already migrated; legacy user projects need a one-time JSON rewrite.
 
 ---
+
+## Operator notes
+
+### Disabling Publish
+
+The Publish / Unpublish actions write into `<repo_root>/packages/`. On a hosted deployment that directory may not be writable, or you may want to lock authoring down for non-dev installs. The env var `CURIO_ALLOW_FACTORY_CATALOG_PUBLISH` gates both the API and the UI:
+
+- **Unset / `1` / `true` / `yes` / `on`** → publishing allowed (the default).
+- **`0` / `false` / `no` / `off`** → publishing is forbidden. The backend returns `403` on both `POST /api/packages/factory/publish-catalog` and `DELETE /api/packages/catalog/<dirName>`, and the Publish / Unpublish buttons are **hidden entirely** in the drawer and on the `/catalog` page (not just disabled).
+
+The Curio launcher (`python curio.py start`) exposes the same flag as `--allow-publish` (default on) with the inverse `--no-allow-publish` opt-out. See [`docs/USAGE.md`](USAGE.md) for the full launcher reference and the env-var inventory in [`utk_curio/backend/config.py`](../utk_curio/backend/config.py).
+
+### Backwards compatibility for projects saved before the per-project lockfile
+
+Projects saved before the lockfile became load-bearing have an empty `dataflow.packages` field. On first read, the backend backfills the lockfile by scanning each node's `type` for canonical refs (`<packageId>/<templateId>@<major>`) and the highest installed major of each package id. The reconstructed list is written back to disk the next time the project saves. No migration script is required, and projects can be edited normally while still on the old shape.
 
 ---
 

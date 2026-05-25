@@ -265,19 +265,36 @@ export function registerPackageTemplates(packages: RawPackage[]): NodeDescriptor
 /**
  * Fetch installed packages from the backend and register a descriptor per kind.
  *
+ * When ``projectFilter`` is provided (a set of dirNames from the current
+ * project's lockfile), only packages whose dirName is in the filter — plus
+ * the always-on ``curio.builtin`` — are registered. This is how the palette
+ * stays project-scoped despite the user-store being shared across projects.
+ *
+ * When the filter is ``null`` (no project loaded, /catalog page, bootstrap),
+ * every installed package is registered.
+ *
  * Returns the list of registered descriptors (empty if the user has no
  * packages installed, or if the request fails). Failure is logged and
  * swallowed so app boot never blocks on package discovery.
  */
-export async function loadInstalledPackages(): Promise<NodeDescriptor[]> {
+export async function loadInstalledPackages(
+  projectFilter: ReadonlySet<string> | null = null,
+): Promise<NodeDescriptor[]> {
   try {
     const { packages } = await packagesApi.listInstalled();
+    const filtered = projectFilter
+      ? (packages ?? []).filter(
+          (p) =>
+            p.packageId === BUILTIN_PACKAGE_ID ||
+            projectFilter.has(`${p.packageId}@${p.major}`),
+        )
+      : (packages ?? []);
     // Replace package-derived kinds wholesale — `registerNode` only adds/overwrites,
     // so without this pass, uninstalled packages would leave stale palette entries.
     // Notify subscribers only after clear + register so React Flow keeps package node types wired.
     return withSuspendedRegistryNotifications(() => {
       clearPackageNodes();
-      return registerPackageTemplates(packages ?? []);
+      return registerPackageTemplates(filtered);
     });
   } catch (error) {
     const status = (error as { status?: number }).status;

@@ -28,16 +28,16 @@ export const CatalogPublishPill = memo(function CatalogPublishPill({
             </span>
         );
     }
+    // When the operator disabled publish (env var CURIO_ALLOW_FACTORY_CATALOG_PUBLISH=0
+    // or `--no-allow-publish` on the launcher), the button is hidden entirely
+    // rather than disabled — see docs/CATALOG.md § Operator notes.
+    if (!allowPublish) return null;
     return (
         <button
             type="button"
             className={pillCls}
-            disabled={!allowPublish || busy}
-            title={
-                allowPublish
-                    ? "Write this installed package into packages/ for the dev catalog"
-                    : "Catalog publish is disabled on this server"
-            }
+            disabled={busy}
+            title="Write this installed package into packages/ for the dev catalog"
             onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();

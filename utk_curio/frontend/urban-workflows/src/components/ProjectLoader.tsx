@@ -11,6 +11,10 @@ import { useFlowContext, IOutput } from "../providers/FlowProvider";
 import { useCode } from "../hook/useCode";
 import { TrillGenerator } from "../TrillGenerator";
 import { refreshPackageRegistry } from "../registry/packageRegistryBootstrap";
+import {
+  clearCurrentProject,
+  setCurrentProject,
+} from "../registry/projectPackagesStore";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -40,6 +44,9 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     if (id === "new") {
       TrillGenerator.reset();
+      // No project loaded — palette shows every installed package. The new
+      // project's lockfile will be seeded from per-user defaults on first save.
+      clearCurrentProject();
       return;
     }
     if (!id || !UUID_RE.test(id)) return;
@@ -47,6 +54,11 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
     if (projectId === id) return;
 
     loaded.current = id;
+
+    // Pin the project id immediately with an empty lockfile so the palette
+    // filter knows we're in a project; loadProject below will replace the
+    // package set via setPackages → projectPackagesStore.
+    setCurrentProject(id, []);
 
     const applyResult = (result: { spec: unknown; outputs?: Array<{ node_id: string; filename: string }> }) => {
       const { spec, outputs } = result;
@@ -85,8 +97,10 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
       // Package descriptors register asynchronously at boot. If a user deep-links
       // straight into /dataflow/<id>, ProjectLoader can mount before
       // `refreshPackageRegistry()` resolves, leaving `getNodeDescriptor()` calls in
-      // loadTrill with no built-in descriptors to find. Await package discovery
-      // before applying the spec so every node has a registered kind.
+      // loadTrill with no built-in descriptors to find. We do a two-pass register:
+      // first refresh while the lockfile is empty (palette = builtin only), then
+      // loadProject populates the lockfile via the store, and refresh runs again
+      // so the palette ends up filtered to this project's packages.
       try {
         await refreshPackageRegistry();
       } catch {
@@ -104,13 +118,20 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
           try {
             const result = await loadSharedProject(id);
             applyResult(result);
-            return;
           } catch (sharedErr) {
             console.error("Failed to load shared project:", sharedErr);
-            return;
           }
+        } else {
+          console.error("Failed to load project:", err);
         }
-        console.error("Failed to load project:", err);
+      }
+      // Spec applied (or load failed); the store now reflects the project's
+      // lockfile (or stays empty on failure). Re-refresh so the palette
+      // intersects with the lockfile the store learned from loadParsedTrill.
+      try {
+        await refreshPackageRegistry();
+      } catch {
+        /* ditto: descriptor-miss surfaces per-node */
       }
     })();
   }, [id]);
