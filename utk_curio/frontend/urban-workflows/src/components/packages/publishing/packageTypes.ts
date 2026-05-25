@@ -1,4 +1,4 @@
-/** Tab identifiers for the Node Warehouse Drawer. */
+/** Tab identifiers for the Node Catalog Drawer. */
 export type DrawerTab = "featured" | "browse" | "installed" | "updates";
 
 /** Sort modes available for the package list. */

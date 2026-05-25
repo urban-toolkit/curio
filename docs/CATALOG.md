@@ -1,17 +1,17 @@
-# Node Warehouse
+# Node Catalog
 
-The Node Warehouse is where Curio's nodes live. Every node you can drop on the canvas — the built-ins that ship with the app and any extras you install — comes from a **package**: a small, self-contained folder with a `manifest.json` describing the nodes inside it.
+The Node Catalog is where Curio's nodes live. Every node you can drop on the canvas — the built-ins that ship with the app and any extras you install — comes from a **package**: a small, self-contained folder with a `manifest.json` describing the nodes inside it.
 
 This guide is in three parts, plus a developer appendix:
 
-- [1. What is the Node Warehouse?](#1-what-is-the-node-warehouse) — the model and where to find the warehouse drawer.
+- [1. What is the Node Catalog?](#1-what-is-the-node-catalog) — the model and where to find the catalog drawer.
 - [2. Creating a new package from a canvas node](#2-creating-a-new-package-from-a-canvas-node) — the **Save as pack node** flow plus the per-package metadata editor.
 - [3. Packaging and sharing](#3-packaging-and-sharing) — exporting an archive and importing one.
 - [Appendix: adding a new lifecycle or icon (developer-only)](#appendix-adding-a-new-lifecycle-or-icon-developer-only) — code-level extensions when a new node needs runtime behavior the built-in lifecycles don't cover.
 
 ---
 
-## 1. What is the Node Warehouse?
+## 1. What is the Node Catalog?
 
 ### Concept
 
@@ -29,13 +29,13 @@ Two kinds of packages ship with Curio:
 | Package | What it provides |
 |---|---|
 | `curio.builtin@1` | The default 14 node kinds (Data Loading, Python/JS Computation, Vega-Lite, AutkMap, etc.). Auto-installed for every user; **read-only** (you can save edits as a new package but can't overwrite the originals) and can't be uninstalled. |
-| `ai.urbanlab.uhvi@1`, `it.urbanlab.milan-heat@1` | Example third-party packages you can install from the catalog to see the package workflow end-to-end. |
+| `ai.urbanlab.uhvi@1`, `it.urbanlab.milan-heat@1` | Example third-party packages you can install from the catalog drawer to see the package workflow end-to-end. |
 
 You can install any number of additional packages — your own creations or archives shared by others.
 
 ### Where to find it
 
-Open Curio. The **Tools panel** sits on the left edge of the canvas. Inside it, look for the **Packages** dropdown (cube icon, labelled "Packages" with a count of your installed kinds). Open the dropdown and click the **Get more packages +** button in its footer — this opens the warehouse drawer.
+Open Curio. The **Tools panel** sits on the left edge of the canvas. Inside it, look for the **Packages** dropdown (cube icon, labelled "Packages" with a count of your installed kinds). Open the dropdown and click the **Get more packages +** button in its footer — this opens the catalog drawer.
 
 The drawer slides in from the right with four tabs:
 
@@ -66,7 +66,7 @@ ai.urbanlab.uhvi/uhvi-load@1
 
 ## 2. Creating a new package from a canvas node
 
-Curio no longer ships the multi-step Node Factory wizard. The single supported flow is **Save as pack node**: build the node on the canvas, then save it into a (new or existing) package. Metadata that used to live in the wizard's steps is now editable per-package from the warehouse drawer.
+Curio no longer ships the multi-step Node Factory wizard. The single supported flow is **Save as pack node**: build the node on the canvas, then save it into a (new or existing) package. Metadata that used to live in the wizard's steps is now editable per-package from the catalog drawer.
 
 ### Save as pack node
 
@@ -125,7 +125,7 @@ A package is portable: you can export it, send it, and the recipient can drop it
 
 ### Exporting
 
-In the warehouse drawer, find your installed package under the **Installed** tab. Each row has a download icon — click it to save the package as `<packageId>@<major>.curio.zip` (a deterministic ZIP).
+In the catalog drawer, find your installed package under the **Installed** tab. Each row has a download icon — click it to save the package as `<packageId>@<major>.curio.zip` (a deterministic ZIP).
 
 The archive contains exactly what's on disk: `manifest.json`, the `sources/` directory, `README.md` and `LICENSE` if present. `integrity.json` is **not** shipped — the installer regenerates it on the recipient's machine.
 
@@ -133,7 +133,7 @@ The archive contains exactly what's on disk: `manifest.json`, the `sources/` dir
 
 To install someone else's archive:
 
-1. Open the warehouse drawer (Tools panel → **Packages** dropdown → **Get more packages +** in the footer).
+1. Open the catalog drawer (Tools panel → **Packages** dropdown → **Get more packages +** in the footer).
 2. Click **Import package** in the footer.
 3. Pick the archive.
 
@@ -142,7 +142,7 @@ The installer extracts into a tmp directory, validates the manifest, computes in
 ### Versioning, forks, and lineage
 
 - **Versioning.** Bump the `version` string for patch / minor releases; bump `compatibility.major` (and the directory name suffix) for breaking changes. Two majors of the same package coexist as separate installed coordinates.
-- **Forks.** Saving an installed-package node into a fresh package via **Save as pack node** → **New pack…** creates a fork — the new package carries `lineage.forkedFrom` (the immediate parent) and `lineage.root` (the original ancestor). The warehouse drawer groups installed forks into accordions under their root, so it's easy to see a family at a glance.
+- **Forks.** Saving an installed-package node into a fresh package via **Save as pack node** → **New pack…** creates a fork — the new package carries `lineage.forkedFrom` (the immediate parent) and `lineage.root` (the original ancestor). The catalog drawer groups installed forks into accordions under their root, so it's easy to see a family at a glance.
 - **Family resolution.** The unversioned ref `<packageId>/<kindId>` resolves to whatever major is installed. If you want a workflow to pin against a specific fork, edit its trill to use the versioned form `<packageId>/<kindId>@<major>`.
 
 ### Read-only packages

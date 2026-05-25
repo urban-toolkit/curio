@@ -124,7 +124,7 @@ export function forkFamilyLatestCreatedAtMs<T extends Partial<Pick<PackagePayloa
   return m;
 }
 /**
- * Partition installed catalog rows / payloads: lineage-free → singletons;
+ * Partition installed package rows / payloads: lineage-free → singletons;
  * same `root` with 2+ packages → families; orphaned lineage (solo fork) → singletons.
  */
 export function partitionPackagesByForkFamily<
@@ -277,18 +277,18 @@ export function findForkFamilyRootPaletteGroup<G extends PalettePackageGroupLike
   );
 }
 
-export type InstalledPackageWarehouseRow<T extends PackagePayload = PackagePayload> =
+export type InstalledPackageCatalogRow<T extends PackagePayload = PackagePayload> =
   | { kind: "singleton"; package: T }
   | { kind: "family"; rootKey: string; rootPack: T | null; members: T[] };
 
 /** Singleton rows + fork-family accordions (root package omitted from singleton list). */
-export function partitionInstalledPackagesForWarehouseList<T extends PackagePayload>(
+export function partitionInstalledPackagesForCatalogList<T extends PackagePayload>(
   packages: readonly T[],
-): InstalledPackageWarehouseRow<T>[] {
+): InstalledPackageCatalogRow<T>[] {
   const list = [...packages];
   const { singletons, families } = partitionPackagesByForkFamily(list);
   const rootPackageDirsUsed = new Set<string>();
-  const rows: InstalledPackageWarehouseRow<T>[] = [];
+  const rows: InstalledPackageCatalogRow<T>[] = [];
 
   for (const family of families) {
     const rootPack = findForkFamilyRootPackage(family.rootKey, list) ?? null;

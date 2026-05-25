@@ -9,18 +9,18 @@ import React, {
   useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
-import { NodeWarehouseDrawer } from "../components/packages/publishing";
+import { NodeCatalogDrawer } from "../components/packages/publishing";
 
-/** Panel slide duration — keep in sync with `.drawer` in NodeWarehouseDrawer.module.css */
+/** Panel slide duration — keep in sync with `.drawer` in NodeCatalogDrawer.module.css */
 const DRAWER_MOTION_MS = 300;
 
-type NodeWarehouseDrawerContextValue = {
-  openNodeWarehouseDrawer: () => void;
-  closeNodeWarehouseDrawer: () => void;
-  isNodeWarehouseDrawerOpen: boolean;
+type NodeCatalogDrawerContextValue = {
+  openNodeCatalogDrawer: () => void;
+  closeNodeCatalogDrawer: () => void;
+  isNodeCatalogDrawerOpen: boolean;
 };
 
-const NodeWarehouseDrawerContext = createContext<NodeWarehouseDrawerContextValue | null>(null);
+const NodeCatalogDrawerContext = createContext<NodeCatalogDrawerContextValue | null>(null);
 
 function subscribeReducedMotion(onStoreChange: () => void): () => void {
   const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -32,7 +32,7 @@ function getReducedMotionSnapshot(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-export function NodeWarehouseDrawerProvider({ children }: { children: React.ReactNode }) {
+export function NodeCatalogDrawerProvider({ children }: { children: React.ReactNode }) {
   const prefersReducedMotion = useSyncExternalStore(
     subscribeReducedMotion,
     getReducedMotionSnapshot,
@@ -63,7 +63,7 @@ export function NodeWarehouseDrawerProvider({ children }: { children: React.Reac
     queueMicrotask(() => el?.focus?.());
   }, [clearExitTimer]);
 
-  const closeNodeWarehouseDrawer = useCallback(() => {
+  const closeNodeCatalogDrawer = useCallback(() => {
     clearExitTimer();
     setPresented(false);
     exitTimerRef.current = window.setTimeout(
@@ -72,7 +72,7 @@ export function NodeWarehouseDrawerProvider({ children }: { children: React.Reac
     );
   }, [clearExitTimer, finishClose, prefersReducedMotion]);
 
-  const openNodeWarehouseDrawer = useCallback(() => {
+  const openNodeCatalogDrawer = useCallback(() => {
     clearExitTimer();
     exitSettledRef.current = false;
     preOpenFocusRef.current = document.activeElement as HTMLElement | null;
@@ -100,18 +100,18 @@ export function NodeWarehouseDrawerProvider({ children }: { children: React.Reac
 
   const ctx = useMemo(
     () => ({
-      openNodeWarehouseDrawer,
-      closeNodeWarehouseDrawer,
-      isNodeWarehouseDrawerOpen: mounted,
+      openNodeCatalogDrawer,
+      closeNodeCatalogDrawer,
+      isNodeCatalogDrawerOpen: mounted,
     }),
-    [closeNodeWarehouseDrawer, mounted, openNodeWarehouseDrawer],
+    [closeNodeCatalogDrawer, mounted, openNodeCatalogDrawer],
   );
 
   const drawer = mounted
     ? createPortal(
-        <NodeWarehouseDrawer
+        <NodeCatalogDrawer
           presented={presented}
-          onRequestClose={closeNodeWarehouseDrawer}
+          onRequestClose={closeNodeCatalogDrawer}
           onExitComplete={finishClose}
         />,
         document.body,
@@ -119,17 +119,17 @@ export function NodeWarehouseDrawerProvider({ children }: { children: React.Reac
     : null;
 
   return (
-    <NodeWarehouseDrawerContext.Provider value={ctx}>
+    <NodeCatalogDrawerContext.Provider value={ctx}>
       {children}
       {drawer}
-    </NodeWarehouseDrawerContext.Provider>
+    </NodeCatalogDrawerContext.Provider>
   );
 }
 
-export function useNodeWarehouseDrawer(): NodeWarehouseDrawerContextValue {
-  const v = useContext(NodeWarehouseDrawerContext);
+export function useNodeCatalogDrawer(): NodeCatalogDrawerContextValue {
+  const v = useContext(NodeCatalogDrawerContext);
   if (!v) {
-    throw new Error("useNodeWarehouseDrawer must be used within NodeWarehouseDrawerProvider");
+    throw new Error("useNodeCatalogDrawer must be used within NodeCatalogDrawerProvider");
   }
   return v;
 }

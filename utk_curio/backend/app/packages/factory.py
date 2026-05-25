@@ -119,7 +119,7 @@ def preserve_unedited_sources(
 
     Without this preservation step, the rebuild would write placeholders over
     every unedited template, silently destroying real code (issue tracked in
-    docs/WAREHOUSE.md). This helper consults
+    docs/CATALOG.md). This helper consults
     ``<existing_package_dir>/sources/<filename>`` for each draft template
     whose body is empty or matches the sentinel, substitutes the on-disk
     body, and returns a shallow-copied draft suitable for the builder.

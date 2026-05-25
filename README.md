@@ -69,7 +69,7 @@ Curio is a framework for collaborative urban visual analytics that uses a datafl
   </tr>
   <tr>
     <td align="center" width="33%">
-      <strong>One-click Node Warehouse</strong><br/>
+      <strong>One-click Node Catalog</strong><br/>
       <sub>Install packaged nodes from a catalog, or author your own from the canvas</sub>
     </td>
     <td align="center" width="33%">
@@ -92,7 +92,7 @@ Curio is a framework for collaborative urban visual analytics that uses a datafl
 A lot has landed since v0.5. Highlights:
 
 - 🌐 **Hosted instances** — Public deployments at [curio.urbantk.org](https://curio.urbantk.org) (stable) and [curio-dev.urbantk.org](https://curio-dev.urbantk.org) (dev), plus a [deployment guide](docs/DEPLOYMENT.md) for self-hosting behind HTTPS.
-- 📦 **Node Warehouse** — Every node now lives in a manifest-driven package, and you can freely mix built-ins, community packages, and your own in a single dataflow. Install ready-made packages from the catalog with one click, save a canvas node directly into a (new or existing) package via **Save as pack node**, import `.curio.zip` archives shared by collaborators, or fork an existing package to extend it. Per-package metadata (description, license, README, permissions) is editable from the warehouse drawer; Python / JS dependencies are detected automatically from each template's source. Packages are **versioned and pinnable**, so a workflow can declare the exact node set it depends on — reproducibility for shared research artefacts. See the [Node Warehouse guide](docs/WAREHOUSE.md).
+- 📦 **Node Catalog** — Every node now lives in a manifest-driven package, and you can freely mix built-ins, community packages, and your own in a single dataflow. Install ready-made packages from the catalog with one click, save a canvas node directly into a (new or existing) package via **Save as pack node**, import `.curio.zip` archives shared by collaborators, or fork an existing package to extend it. Per-package metadata (description, license, README, permissions) is editable from the catalog drawer; Python / JS dependencies are detected automatically from each template's source. Packages are **versioned and pinnable**, so a workflow can declare the exact node set it depends on — reproducibility for shared research artefacts. See the [Node Catalog guide](docs/CATALOG.md).
 - 🤖 **Per-user LLM configuration** — Connect Curio to OpenAI, Anthropic, Gemini, or a custom endpoint, configurable per user.
 - 🗺️ **Autark integration** — New `AutkMap` and `AutkPlot` node types, with JS Computation I/O routed through Python DuckDB.
 - ⚡ **JavaScript Computation node** — Run Node.js code in a sandbox subprocess alongside Python nodes.
@@ -120,7 +120,7 @@ This project is part of the [Urban Toolkit ecosystem](https://urbantk.org), whic
 
 ## Usage and contributions
 
-For detailed instructions on how to use the project, please see the [usage](docs/USAGE.md) document. To install, fork, or publish node packages, see the [node warehouse guide](docs/WAREHOUSE.md). A set of examples can be found [here](https://github.com/urban-toolkit/curio/tree/main/docs).
+For detailed instructions on how to use the project, please see the [usage](docs/USAGE.md) document. To install, fork, or publish node packages, see the [node catalog guide](docs/CATALOG.md). A set of examples can be found [here](https://github.com/urban-toolkit/curio/tree/main/docs).
 
 🐳 Curio supports a Docker-based setup for easier installation and orchestration of all components. See the [usage guide](docs/USAGE.md) for instructions on running Curio with Docker.
 

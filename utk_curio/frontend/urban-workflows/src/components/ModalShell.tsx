@@ -8,7 +8,7 @@ interface ModalShellProps {
   onClose: () => void;
   children: React.ReactNode;
   size?: "default" | "large";
-  /** Stack above canvas dock / warehouse overlays (z-index ~10055). */
+  /** Stack above canvas dock / catalog overlays (z-index ~10055). */
   layer?: "default" | "overlay";
   /** Keep the packages palette dock open while this modal is interacted with. */
   preservePackagePaletteOpen?: boolean;

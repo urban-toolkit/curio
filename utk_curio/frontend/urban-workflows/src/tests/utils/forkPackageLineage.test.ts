@@ -6,7 +6,7 @@ import {
   formatForkOfSubtitle,
   lineageCoordKey,
   packageCoordinateKey,
-  partitionInstalledPackagesForWarehouseList,
+  partitionInstalledPackagesForCatalogList,
   partitionPalettePackageGroups,
   partitionPackagesByForkFamily,
   referencedForkParentCoordinates,
@@ -163,7 +163,7 @@ describe("forkPackageLineage", () => {
     expect(findForkFamilyRootPackage("root@1", [fork])).toBeUndefined();
   });
 
-  test("partitionInstalledPackagesForWarehouseList groups forks under root header", () => {
+  test("partitionInstalledPackagesForCatalogList groups forks under root header", () => {
     const root = {
       dirName: "root@1",
       packageId: "root",
@@ -201,7 +201,7 @@ describe("forkPackageLineage", () => {
       templates: [{ id: "d" }],
     } as PackagePayload;
 
-    const rows = partitionInstalledPackagesForWarehouseList([root, forkA, forkB, solo]);
+    const rows = partitionInstalledPackagesForCatalogList([root, forkA, forkB, solo]);
 
     expect(rows.filter((r) => r.kind === "singleton")).toHaveLength(1);
     expect(rows.find((r) => r.kind === "singleton")?.package.dirName).toBe("solo@1");

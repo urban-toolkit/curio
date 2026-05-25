@@ -43,7 +43,7 @@ CURIO_SHARED_GUEST_NAME = os.environ.get(
 
 CURIO_PROJECT_EXEC_CACHE = _env_flag("CURIO_PROJECT_EXEC_CACHE", False)
 
-# Warehouse author actions (publish/unpublish into <repo_root>/packages/).
+# Catalog author actions (publish/unpublish into <repo_root>/packages/).
 # Default ON so dev installs keep working without extra config; operators
 # locking down a deployment can disable with =0/false/no/off.
 CURIO_ALLOW_FACTORY_CATALOG_PUBLISH = _env_flag(

@@ -8,10 +8,10 @@ derives from ``app.projects.services._user_dir_key`` just like
 | Endpoint                                  | Plan todo                      |
 +===========================================+================================+
 | ``GET /api/packages``                        | spike (already shipped)        |
-| ``POST /api/packages/upload``                | warehouse-api-ui (this commit) |
-| ``DELETE /api/packages/<dir>``               | warehouse-api-ui (this commit) |
-| ``GET /api/packages/<dir>/archive``          | warehouse-api-ui (this commit) |
-| ``GET /api/packages/catalog``                | warehouse-api-ui (this commit) |
+| ``POST /api/packages/upload``                | catalog-api-ui (this commit)   |
+| ``DELETE /api/packages/<dir>``               | catalog-api-ui (this commit)   |
+| ``GET /api/packages/<dir>/archive``          | catalog-api-ui (this commit)   |
+| ``GET /api/packages/catalog``                | catalog-api-ui (this commit)   |
 | ``POST /api/packages/factory/build``         | factory-impl (this commit)     |
 | ``POST /api/packages/factory/install``       | factory-impl (this commit)     |
 | ``GET /api/packages/factory/capabilities``  | wizard — publish gated flags   |
@@ -189,7 +189,7 @@ def _catalog_root() -> Path:
     Resolved relative to this file's location so the seeder finds the
     catalog regardless of the launch CWD. This is the dev catalog
     source — production deployments rely on user installs via the
-    warehouse drawer (and the future remote registry).
+    catalog drawer (and the future remote registry).
     """
     # routes.py -> packages/ -> app/ -> backend/ -> utk_curio/ -> repo_root/packages/
     return Path(__file__).resolve().parents[4] / "packages"
@@ -198,7 +198,7 @@ def _catalog_root() -> Path:
 def _resolver_overrides_for(user_key: str, packages: list[str]) -> dict[str, Path]:
     """Build the ``overrides`` map for :func:`resolve_for_project`.
 
-    The pre-install conflict probe in the warehouse UI passes the
+    The pre-install conflict probe in the catalog UI passes the
     candidate's ``dirName`` alongside the already-installed packages so it
     can show the InstallDialog with a precise conflict report. The
     candidate is by definition *not yet installed* — its manifest lives
@@ -265,7 +265,7 @@ def list_installed_packageages():
 def list_catalog_packageages():
     """Return the catalog scan from ``<repo_root>/packages/``.
 
-    Items share the same shape as ``list_installed_packageages`` (the warehouse UI
+    Items share the same shape as ``list_installed_packageages`` (the catalog UI
     can render either feed identically), plus an ``installed`` flag. The
     JSON body also includes ``families`` and ``catalogCollisions``.
     """

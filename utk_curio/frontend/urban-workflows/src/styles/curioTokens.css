@@ -2,7 +2,7 @@
  * Curio design tokens.
  *
  * Single source of truth for the colors / typography / spacing used by
- * the warehouse drawer, the Node Factory wizard, and the supporting
+ * the catalog drawer, the Node Factory wizard, and the supporting
  * modals (NodeKindConfig, NodeSaveAs, ConfirmDestructive, etc.).
  *
  * Lifted from the canonical user-facing surface: the project list at

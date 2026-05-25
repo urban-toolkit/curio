@@ -9,7 +9,7 @@ import { packagesApi } from "../../../../api/packagesApi";
 import type { PackagePayload } from "../../../../api/packagesApi";
 import { subscribeToRegistry } from "../../../../registry";
 import { usePackagePalette } from "../../../../providers/PackagePaletteContext";
-import { useNodeWarehouseDrawer } from "../../../../providers/NodeWarehouseDrawerProvider";
+import { useNodeCatalogDrawer } from "../../../../providers/NodeCatalogDrawerProvider";
 import { useToastContext } from "../../../../providers/ToastProvider";
 import { useStarterContext } from "../../../../providers/StarterProvider";
 import { draftFromInstalledPackagePayload } from "../../../../utils/palettePackageFactoryDraft";
@@ -28,7 +28,7 @@ function escapeCssAttrToken(coord: string): string {
 /** Clicks on package node header actions should not collapse the open palette panel. */
 function isPackagePaletteDismissOutsideClick(target: EventTarget | null): boolean {
     if (!(target instanceof Element)) return true;
-    if (target.closest('[data-curio-node-warehouse-drawer="true"]')) return false;
+    if (target.closest('[data-curio-node-catalog-drawer="true"]')) return false;
     if (target.closest('[data-curio-package-palette-node-action="true"]')) return false;
     return true;
 }
@@ -37,7 +37,7 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
     const [open, setOpen] = useState(false);
     const rootRef = useRef<HTMLDivElement>(null);
     const packagePaletteScrollRef = useRef<HTMLDivElement>(null);
-    const { openNodeWarehouseDrawer } = useNodeWarehouseDrawer();
+    const { openNodeCatalogDrawer } = useNodeCatalogDrawer();
     const { showToast } = useToastContext();
     const { getStarters } = useStarterContext();
     const {
@@ -280,9 +280,9 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
                             type="button"
                             className={packageStyles.packageGetPackagesBtn}
                             title="Browse and install node packages"
-                            aria-label="Get more packages — open node warehouse drawer"
+                            aria-label="Get more packages — open node catalog drawer"
                             onClick={() => {
-                                openNodeWarehouseDrawer();
+                                openNodeCatalogDrawer();
                             }}
                         >
                             Get more packages +

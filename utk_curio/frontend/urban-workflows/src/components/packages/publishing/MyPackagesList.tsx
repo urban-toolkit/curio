@@ -4,7 +4,7 @@ import { faDownload, faTrashCan } from "@fortawesome/free-solid-svg-icons";
 import { PackagePayload } from "../../../api/packagesApi";
 import {
   formatForkOfSubtitle,
-  partitionInstalledPackagesForWarehouseList,
+  partitionInstalledPackagesForCatalogList,
 } from "../../../utils/forkPackageLineage";
 import { CatalogPublishPill } from "../CatalogPublishPill";
 import styles from "./MyPackagesList.module.css";
@@ -152,7 +152,7 @@ function InstalledPackageRow({
 }
 
 /**
- * "Your packages" section in the Node Warehouse Drawer.
+ * "Your packages" section in the Node Catalog Drawer.
  * Fork families render as accordions with the lineage-free root package fixed in the header.
  */
 export const MyPackagesList: React.FC<MyPackagesListProps> = ({
@@ -166,7 +166,7 @@ export const MyPackagesList: React.FC<MyPackagesListProps> = ({
   onExport,
   onPublishToCatalog,
 }) => {
-  const rows = useMemo(() => partitionInstalledPackagesForWarehouseList(installed), [installed]);
+  const rows = useMemo(() => partitionInstalledPackagesForCatalogList(installed), [installed]);
 
   if (installed.length === 0) return null;
 

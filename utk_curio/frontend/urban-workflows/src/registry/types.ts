@@ -15,7 +15,7 @@ import { IPropagation } from '../providers/FlowProvider';
  *   registry, backend `_node_type_registry`, saved Trill graphs, and
  *   `/processPythonCode` all dispatch on.
  *
- * See ``docs/WAREHOUSE.md`` for the user-facing overview and
+ * See ``docs/CATALOG.md`` for the user-facing overview and
  * ``docs/schemas/node-package.v3.json`` for the manifest schema.
  */
 export type NodeTemplateId = NodeType | string;

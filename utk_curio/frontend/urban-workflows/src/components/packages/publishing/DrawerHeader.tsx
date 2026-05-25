@@ -10,7 +10,7 @@ export interface DrawerHeaderProps {
 }
 
 /**
- * Top bar + subtitle block for the Node Warehouse drawer.
+ * Top bar + subtitle block for the Node Catalog drawer.
  * Renders the pin/close controls, the drawer title, a one-line subtitle,
  * and the "compatible with this dataflow" pill.
  */
@@ -28,14 +28,14 @@ export const DrawerHeader: React.FC<DrawerHeaderProps> = ({ pinned, onPinToggle,
         <FontAwesomeIcon icon={faThumbtack} aria-hidden />
       </button>
 
-      <h2 id="node-warehouse-drawer-title" className={styles.drawerTitle}>
-        Node warehouse
+      <h2 id="node-catalog-drawer-title" className={styles.drawerTitle}>
+        Node catalog
       </h2>
 
       <button
         type="button"
         className={styles.iconBtn}
-        aria-label="Close node warehouse drawer"
+        aria-label="Close node catalog drawer"
         onClick={onClose}
       >
         <FontAwesomeIcon icon={faXmark} aria-hidden />

@@ -17,10 +17,10 @@ import { EnvNote } from "./EnvNote";
 import { DrawerFooter } from "./DrawerFooter";
 import { DrawerTab, SortMode } from "./packageTypes";
 import { sortPackages, matchesSearch } from "./packageUtils";
-import styles from "./NodeWarehouseDrawer.module.css";
+import styles from "./NodeCatalogDrawer.module.css";
 
 
-export interface NodeWarehouseDrawerProps {
+export interface NodeCatalogDrawerProps {
   /** When true, scrim fades in and the panel slides in from the right. */
   presented: boolean;
   onRequestClose: () => void;
@@ -28,7 +28,7 @@ export interface NodeWarehouseDrawerProps {
   onExitComplete: () => void;
 }
 
-export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
+export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   presented,
   onRequestClose,
   onExitComplete,
@@ -57,7 +57,7 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
     const message = (err as { message?: string } | null)?.message;
     const detail = body?.error ?? message ?? (status ? `HTTP ${status}` : "unknown error");
     setActionError(`${label}: ${detail}`);
-    console.warn(`[NodeWarehouseDrawer] ${label}:`, err);
+    console.warn(`[NodeCatalogDrawer] ${label}:`, err);
   }, []);
 
   const installedDirs = useMemo(() => new Set(installed.map((p) => p.dirName)), [installed]);
@@ -286,12 +286,12 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
     <>
       <div
         className={`${styles.overlayRoot} ${presented ? styles.overlayRootPresented : ""}`}
-        data-curio-node-warehouse-drawer="true"
+        data-curio-node-catalog-drawer="true"
       >
         <button
           type="button"
           className={styles.scrim}
-          aria-label="Close node warehouse drawer"
+          aria-label="Close node catalog drawer"
           onClick={() => {
             if (!pinned) onRequestClose();
           }}
@@ -301,7 +301,7 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
           className={styles.drawer}
           role="dialog"
           aria-modal="true"
-          aria-labelledby="node-warehouse-drawer-title"
+          aria-labelledby="node-catalog-drawer-title"
           tabIndex={-1}
           onTransitionEnd={handleDrawerTransitionEnd}
         >

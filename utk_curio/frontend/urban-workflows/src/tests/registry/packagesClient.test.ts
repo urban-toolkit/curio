@@ -1,6 +1,6 @@
 /**
  * Regression guard for `registerPackageTemplates` (the conversion path from manifest
- * payload → `NodeDescriptor`). The 9-commit warehouse refactor moved every
+ * payload → `NodeDescriptor`). The 9-commit catalog refactor moved every
  * built-in node through this function; without this test, descriptor capabilities
  * that the old `descriptors.ts` carried can be silently dropped from the
  * manifest schema and not caught until a user hits the missing behaviour.

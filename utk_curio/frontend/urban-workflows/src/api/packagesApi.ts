@@ -1,7 +1,7 @@
 import { apiFetch, getToken } from "../utils/authApi";
 
 /**
- * REST client for ``/api/packages`` — warehouse catalog, factory, and resolver APIs.
+ * REST client for ``/api/packages`` — catalog, factory, and resolver APIs.
  *
  * Two design rules:
  *

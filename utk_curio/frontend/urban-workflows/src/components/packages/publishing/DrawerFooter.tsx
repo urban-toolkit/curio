@@ -8,7 +8,7 @@ export interface DrawerFooterProps {
 }
 
 /**
- * Sticky footer rendered at the bottom of the Node Warehouse drawer.
+ * Sticky footer rendered at the bottom of the Node Catalog drawer.
  * Provides a hidden file input for sideloading ``.curio.zip`` archives.
  */
 export const DrawerFooter: React.FC<DrawerFooterProps> = ({ busy, onSideload }) => {

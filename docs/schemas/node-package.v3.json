@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v3.json",
   "title": "Curio Node Package Manifest (v3)",
-  "description": "Schema for a Curio node-package manifest.json. A package ships in a directory named '<packageId>@<major>' containing this manifest, an optional README.md / LICENSE, an optional sources/ directory with one starter file per kind, and (after install) an integrity.json with SHA-256 hashes of every shipped file. The pre-installed 'curio.builtin' package ships with the app and provides the default 14 node kinds; third-party packages install via the warehouse drawer or by importing a `.curio.zip` archive.",
+  "description": "Schema for a Curio node-package manifest.json. A package ships in a directory named '<packageId>@<major>' containing this manifest, an optional README.md / LICENSE, an optional sources/ directory with one starter file per kind, and (after install) an integrity.json with SHA-256 hashes of every shipped file. The pre-installed 'curio.builtin' package ships with the app and provides the default 14 node kinds; third-party packages install via the catalog drawer or by importing a `.curio.zip` archive.",
   "type": "object",
   "required": ["id", "version", "name", "publisher", "compatibility", "templates"],
   "additionalProperties": true,
@@ -22,7 +22,7 @@
       "pattern": "^\\d+\\.\\d+\\.\\d+(?:[-+][A-Za-z0-9.-]+)?$",
       "description": "Semver-style version. Pre-release / build metadata accepted."
     },
-    "name": { "type": "string", "minLength": 1, "description": "Human-readable package name shown in the warehouse drawer." },
+    "name": { "type": "string", "minLength": 1, "description": "Human-readable package name shown in the catalog drawer." },
     "publisher": { "type": "string", "description": "Human-readable publisher name shown alongside the package." },
     "description": { "type": "string", "description": "Short description shown in catalog cards." },
     "license": { "type": ["string", "null"], "description": "SPDX-style license identifier (e.g. 'MIT'); null for unspecified." },

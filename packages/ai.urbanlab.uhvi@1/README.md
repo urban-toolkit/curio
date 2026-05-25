@@ -1,6 +1,6 @@
 # `ai.urbanlab.uhvi@1` — fixture package
 
-A minimal package used to exercise the Curio node-warehouse integration end-to-end
+A minimal package used to exercise the Curio node-catalog integration end-to-end
 (see `docs/nodesfactory@docs/manifest_spec.md`, `docs/nodesfactory@docs/frontend.md`, and `docs/nodesfactory@docs/overview.md`).
 
 It registers three kinds that together form a complete UHVI workflow:

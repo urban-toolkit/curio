@@ -1,4 +1,4 @@
-"""Normalised package release channel (warehouse / catalog).
+"""Normalised package release channel (catalog).
 
 Kept separate from :mod:`utk_curio.backend.app.packages.manifest` helpers that
 need :class:`PackageManifest` to avoid import cycles with :mod:`catalog_family`.

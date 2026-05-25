@@ -16,7 +16,7 @@ export const DrawerTabs: React.FC<DrawerTabsProps> = ({
   updateCount,
   onChange,
 }) => (
-  <nav className={styles.tabs} aria-label="Warehouse sections">
+  <nav className={styles.tabs} aria-label="Catalog sections">
     <button
       type="button"
       className={`${styles.tab} ${tab === "featured" ? styles.tabActive : ""}`}

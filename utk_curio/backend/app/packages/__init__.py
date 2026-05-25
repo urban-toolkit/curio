@@ -11,7 +11,7 @@ outside its own package directory; that built-in folder is reserved for built-in
 ``NodeType`` presets.
 
 See ``docs/schemas/node-package.v3.json`` for the package manifest schema and
-``docs/WAREHOUSE.md`` for the user-facing overview.
+``docs/CATALOG.md`` for the user-facing overview.
 """
 
 from utk_curio.backend.app.packages.storage import (

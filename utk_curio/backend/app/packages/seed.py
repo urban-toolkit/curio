@@ -139,7 +139,7 @@ def seed_dev_packageages(*, user_key: str = "guest") -> list[str]:
             continue
         # Only auto-install the built-in package. Third-party catalog packages
         # remain in <repo_root>/packages/ but the user must install them
-        # explicitly via the warehouse drawer.
+        # explicitly via the catalog drawer.
         if src.name != keep_builtin_name:
             continue
         dest = dest_base / src.name

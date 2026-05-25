@@ -1,5 +1,5 @@
-export { NodeWarehouseDrawer } from "./NodeWarehouseDrawer";
-export type { NodeWarehouseDrawerProps } from "./NodeWarehouseDrawer";
+export { NodeCatalogDrawer } from "./NodeCatalogDrawer";
+export type { NodeCatalogDrawerProps } from "./NodeCatalogDrawer";
 
 export { InstallPermissionsDialog } from "./InstallPermissionsDialog";
 export type { InstallPermissionsDialogProps } from "./InstallPermissionsDialog";
