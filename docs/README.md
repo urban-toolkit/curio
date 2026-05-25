@@ -4,6 +4,7 @@
 
 - [Installation and usage](USAGE.md)
 - [Quick start](QUICK-START.md)
+- [Node warehouse](WAREHOUSE.md)
 - [Deployment](DEPLOYMENT.md)
 
 ## Making contributions

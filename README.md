@@ -120,7 +120,7 @@ This project is part of the [Urban Toolkit ecosystem](https://urbantk.org), whic
 
 ## Usage and contributions
 
-For detailed instructions on how to use the project, please see the [usage](docs/USAGE.md) document. A set of examples can be found [here](https://github.com/urban-toolkit/curio/tree/main/docs).
+For detailed instructions on how to use the project, please see the [usage](docs/USAGE.md) document. To install, fork, or publish node packages, see the [node warehouse guide](docs/WAREHOUSE.md). A set of examples can be found [here](https://github.com/urban-toolkit/curio/tree/main/docs).
 
 🐳 Curio supports a Docker-based setup for easier installation and orchestration of all components. See the [usage guide](docs/USAGE.md) for instructions on running Curio with Docker.
 
