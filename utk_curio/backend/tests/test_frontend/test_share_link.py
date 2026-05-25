@@ -32,7 +32,7 @@ def _shared_demo_spec() -> dict:
             "nodes": [
                 {
                     "id": "node-1",
-                    "type": "DATA_LOADING",
+                    "type": "curio.builtin/data-loading",
                     "x": 0,
                     "y": 0,
                     "content": "",

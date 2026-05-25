@@ -25,23 +25,23 @@ def _example_json_paths() -> list[str]:
 # (basename, expected_nodes, expected_edges, min_type_counts, requires_interaction_edge)
 EXAMPLE_INVARIANTS = [
     ("01-vega-lite-chained-transforms.json", 6, 5,
-     {"DATA_LOADING": 1, "DATA_TRANSFORMATION": 3, "VIS_VEGA": 2}, False),
+     {"curio.builtin/data-loading": 1, "curio.builtin/data-transformation": 3, "curio.builtin/vis-vega": 2}, False),
     ("02-vega-lite-spatial-density.json", 8, 6,
-     {"DATA_POOL": 1, "VIS_VEGA": 2}, False),
+     {"curio.builtin/data-pool": 1, "curio.builtin/vis-vega": 2}, False),
     ("03-vega-lite-linked-temporal-charts.json", 4, 3,
-     {"VIS_VEGA": 2}, False),
+     {"curio.builtin/vis-vega": 2}, False),
     ("04-vega-lite-multi-flow-dashboard.json", 24, 26,
-     {"MERGE_FLOW": 1, "VIS_VEGA": 2}, False),
+     {"curio.builtin/merge-flow": 1, "curio.builtin/vis-vega": 2}, False),
     ("05-vega-lite-multi-view-drilldown.json", 27, 22,
-     {"DATA_LOADING": 5, "VIS_VEGA": 2}, False),
+     {"curio.builtin/data-loading": 5, "curio.builtin/vis-vega": 2}, False),
     ("06-autark-what-if-shadow-study.json", 5, 4,
-     {"AUTK_DB": 1, "AUTK_COMPUTE": 2, "AUTK_MAP": 2}, False),
+     {"curio.builtin/autk-db": 1, "curio.builtin/autk-compute": 2, "curio.builtin/autk-map": 2}, False),
     ("07-autark-gpu-shader.json", 5, 5,
-     {"AUTK_COMPUTE": 1, "AUTK_MAP": 1, "AUTK_PLOT": 1}, True),
+     {"curio.builtin/autk-compute": 1, "curio.builtin/autk-map": 1, "curio.builtin/autk-plot": 1}, True),
     ("08-autark-spatial-join-regression.json", 7, 7,
-     {"AUTK_DB": 1, "AUTK_COMPUTE": 1}, True),
+     {"curio.builtin/autk-db": 1, "curio.builtin/autk-compute": 1}, True),
     ("09-heterogeneous-data-linked-views.json", 13, 15,
-     {"AUTK_MAP": 1, "VIS_VEGA": 2}, True),
+     {"curio.builtin/autk-map": 1, "curio.builtin/vis-vega": 2}, True),
 ]
 
 
@@ -152,12 +152,12 @@ def test_example_07_drives_compute_gpgpu():
         wf = json.load(f)
     matches = [
         n for n in wf["dataflow"]["nodes"]
-        if n["type"] == "AUTK_COMPUTE"
+        if n["type"] == "curio.builtin/autk-compute"
         and "ComputeGpgpu" in n.get("content", "")
         and "wgslBody" in n.get("content", "")
     ]
     assert matches, (
-        "07-autark-gpu-shader.json no longer has an AUTK_COMPUTE node that "
-        "drives ComputeGpgpu with a wgslBody — the example's headline "
-        "functionality is gone."
+        "07-autark-gpu-shader.json no longer has a curio.builtin/autk-compute "
+        "node that drives ComputeGpgpu with a wgslBody — the example's "
+        "headline functionality is gone."
     )
