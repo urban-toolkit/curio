@@ -5,17 +5,13 @@ export interface DrawerFooterProps {
   busy: boolean;
   /** Called with the selected File when the user picks a sideload archive. */
   onSideload: (file: File) => void;
-  /** Opens the Node Factory wizard modal so the user can author a new package. */
-  onCreatePack: () => void;
 }
 
 /**
  * Sticky footer rendered at the bottom of the Node Warehouse drawer.
- * Provides a hidden file input for sideloading ``.curio.zip`` archives
- * and a primary CTA that opens the Node Factory wizard modal for authoring
- * a new package from scratch.
+ * Provides a hidden file input for sideloading ``.curio.zip`` archives.
  */
-export const DrawerFooter: React.FC<DrawerFooterProps> = ({ busy, onSideload, onCreatePack }) => {
+export const DrawerFooter: React.FC<DrawerFooterProps> = ({ busy, onSideload }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   return (
@@ -33,21 +29,12 @@ export const DrawerFooter: React.FC<DrawerFooterProps> = ({ busy, onSideload, on
       />
       <button
         type="button"
-        className={styles.footerGhost}
+        className={styles.footerPrimary}
         disabled={busy}
         onClick={() => fileInputRef.current?.click()}
       >
         Import package
       </button>
-      <button
-        type="button"
-        className={styles.footerPrimary}
-        disabled={busy}
-        onClick={onCreatePack}
-      >
-        Create new pkg
-      </button>
     </footer>
   );
 };
-

@@ -73,7 +73,7 @@ def test_manifest_distribution_wrong_type(tmp_path):
         "compatibility": {"major": 1},
         "permissions": [],
         "dependencies": {"packages": {}, "python": {}, "js": {}},
-        "kinds": [{
+        "templates": [{
             "id": "k",
             "label": "K",
             "category": "computation",
@@ -84,8 +84,8 @@ def test_manifest_distribution_wrong_type(tmp_path):
             "hasGrammar": False,
             "inputPorts": [],
             "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
-            "templateDir": "templates/k",
-            "defaultTemplate": "templates/k/Default.py",
+            "templateDir": "starters/k",
+            "defaultTemplate": "starters/k/Default.py",
         }],
         "distribution": "oops",
     }

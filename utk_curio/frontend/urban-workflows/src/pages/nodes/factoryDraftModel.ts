@@ -27,7 +27,7 @@ export interface PackageLineageDraft {
   root: PackageLineageCoordDraft;
 }
 
-export interface KindDraft {
+export interface TemplateDraft {
   id: string;
   label: string;
   category: Category;
@@ -62,7 +62,7 @@ export interface Draft {
   pythonDeps: { id: string; pkg: string; range: string }[];
   jsDeps: { id: string; pkg: string; range: string }[];
   packageDeps: { id: string; pkg: string; range: string }[];
-  kinds: KindDraft[];
+  templates: TemplateDraft[];
   /** Fork provenance when saving from the palette editor against an installed package. */
   lineage: PackageLineageDraft | null;
   /** Manifest ``createdAt`` (ISO instant). Omit to let backend stamp UTC on build/install. */
@@ -83,10 +83,10 @@ export function factoryUiMakeId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
-export function makeKind(kindId: string = "demo-kind"): KindDraft {
+export function makeTemplate(templateId: string = "demo-template"): TemplateDraft {
   return {
-    id: kindId,
-    label: "New kind",
+    id: templateId,
+    label: "New template",
     category: "computation",
     engine: "python",
     editor: "code",
@@ -97,7 +97,7 @@ export function makeKind(kindId: string = "demo-kind"): KindDraft {
     inputPorts: [],
     outputPorts: [{ id: factoryUiMakeId(), types: "JSON", cardinality: "1" }],
     lifecycle: "code",
-    sourceFilename: `${kindId}.py`,
+    sourceFilename: `${templateId}.py`,
     sourceCode: STARTER_CODE,
   };
 }
@@ -116,7 +116,7 @@ export function makeDraft(): Draft {
     pythonDeps: [],
     jsDeps: [],
     packageDeps: [],
-    kinds: [makeKind()],
+    templates: [makeTemplate()],
     lineage: null,
     readme: "",
     licenseText: "",
@@ -162,7 +162,9 @@ export function toApiPayload(d: Draft): {
       python: depsToMap(d.pythonDeps),
       js: depsToMap(d.jsDeps),
     },
-    kinds: d.kinds.map((k) => {
+    // Wire format: emit ``templates`` (the renamed manifest field). The backend
+    // loader still accepts the legacy ``kinds`` key for older third-party drafts.
+    templates: d.templates.map((k) => {
       const entry: Record<string, unknown> = {
         id: k.id,
         label: k.label,
@@ -208,7 +210,7 @@ export function toApiPayload(d: Draft): {
   }
 
   const sources: Record<string, { filename: string; code: string }> = {};
-  for (const k of d.kinds) {
+  for (const k of d.templates) {
     if (k.sourceFilename) {
       sources[k.id] = { filename: k.sourceFilename, code: k.sourceCode };
     }

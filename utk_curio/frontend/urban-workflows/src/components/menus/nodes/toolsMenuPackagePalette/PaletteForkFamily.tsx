@@ -1,7 +1,4 @@
 import React, { memo, useCallback, useEffect, useMemo } from "react";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faPenToSquare } from "@fortawesome/free-solid-svg-icons";
-import type { PackageStagedRow } from "../../../../providers/PackagePaletteContext";
 import { CatalogPublishPill } from "../../../packages/CatalogPublishPill";
 import { ForkFamilyPicker } from "../../../packages/ForkFamilyPicker";
 import { FORK_SELECTION_SESSION_PREFIX, resolveForkFamilySelectionKey } from "../../../../utils/forkPackageLineage";
@@ -14,12 +11,8 @@ export interface PaletteForkFamilyProps {
     members: PackagePaletteGroup[];
     activePackageKey: string | null;
     setActivePackageKey: (k: string | null) => void;
-    packagesPaletteEditMode: boolean;
-    stagedRowsByPackageKey: Readonly<Record<string, readonly PackageStagedRow[]>>;
-    removedKindIdsByPackageKey: Readonly<Record<string, readonly string[]>>;
     forkManualPickByRoot: Record<string, string>;
     setForkManualPickByRoot: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-    openWizardForPaletteSection: (sectionKey: string, opts: { group?: PackagePaletteGroup }) => void;
     catalogMetadataLoaded: boolean;
     catalogPublishAllowed: boolean;
     publishingPackageKey: string | null;
@@ -32,12 +25,8 @@ export const PaletteForkFamily = memo(function PaletteForkFamily({
     members,
     activePackageKey,
     setActivePackageKey,
-    packagesPaletteEditMode,
-    stagedRowsByPackageKey,
-    removedKindIdsByPackageKey,
     forkManualPickByRoot,
     setForkManualPickByRoot,
-    openWizardForPaletteSection,
     catalogMetadataLoaded,
     catalogPublishAllowed,
     publishingPackageKey,
@@ -63,15 +52,8 @@ export const PaletteForkFamily = memo(function PaletteForkFamily({
         [members, resolved],
     );
 
-    const stagedInstalledRows = stagedRowsByPackageKey[selectedGroup.key] ?? [];
-    const removedKindIds = removedKindIdsByPackageKey[selectedGroup.key] ?? [];
     const forkPublished =
         catalogPublishedDirNames != null && catalogPublishedDirNames.has(selectedGroup.key);
-
-    const hasPendingEdits = stagedInstalledRows.length > 0 || removedKindIds.length > 0;
-    const canOpenStagedFf = packagesPaletteEditMode && hasPendingEdits;
-    const canOpenForkFf = packagesPaletteEditMode && !hasPendingEdits;
-    const canOpenFactoryFf = canOpenStagedFf || canOpenForkFf;
 
     const onForkPickedFromPalette = useCallback(
         (next: string) => {
@@ -102,51 +84,15 @@ export const PaletteForkFamily = memo(function PaletteForkFamily({
                 <div className={packageStyles.packageForkFamilyToolbarText}>
                     <div className={packageStyles.packageForkFamilyTitleRow}>
                         <span
-                            className={
-                                canOpenFactoryFf
-                                    ? `${packageStyles.packageForkFamilyTitle} ${packageStyles.packageForkFactoryTitleInteractive}`
-                                    : packageStyles.packageForkFamilyTitle
-                            }
-                            role={canOpenFactoryFf ? "button" : undefined}
-                            tabIndex={canOpenFactoryFf ? 0 : undefined}
+                            className={packageStyles.packageForkFamilyTitle}
                             title={
                                 selectedGroup.label !== familyTitle
                                     ? `${familyTitle} — ${selectedGroup.label}`
-                                    : canOpenStagedFf
-                                      ? "Open Node Factory with staged edits"
-                                      : canOpenForkFf
-                                        ? "Fork this package in Node Factory"
-                                        : familyTitle
+                                    : familyTitle
                             }
-                            onClick={(ev) => {
-                                if (!canOpenFactoryFf) return;
-                                ev.preventDefault();
-                                openWizardForPaletteSection(selectedGroup.key, { group: selectedGroup });
-                            }}
-                            onKeyDown={(ev) => {
-                                if (!canOpenFactoryFf) return;
-                                if (ev.key === "Enter" || ev.key === " ") {
-                                    ev.preventDefault();
-                                    openWizardForPaletteSection(selectedGroup.key, { group: selectedGroup });
-                                }
-                            }}
                         >
                             {familyTitle}
                         </span>
-                        {canOpenFactoryFf ? (
-                            <button
-                                type="button"
-                                className={packageStyles.packageForkFamilyFactoryPen}
-                                title={canOpenStagedFf ? "Open Node Factory with staged edits" : "Fork in Node Factory"}
-                                aria-label={`Node Factory — ${familyTitle}`}
-                                onClick={(ev) => {
-                                    ev.preventDefault();
-                                    openWizardForPaletteSection(selectedGroup.key, { group: selectedGroup });
-                                }}
-                            >
-                                <FontAwesomeIcon icon={faPenToSquare} />
-                            </button>
-                        ) : null}
                         {catalogMetadataLoaded ? (
                             <CatalogPublishPill
                                 variant="dock"
@@ -176,9 +122,6 @@ export const PaletteForkFamily = memo(function PaletteForkFamily({
                 summaryTitle={familyTitle}
                 activePackageKey={activePackageKey}
                 setActivePackageKey={setActivePackageKey}
-                packagesPaletteEditMode={packagesPaletteEditMode}
-                stagedInstalledRows={stagedInstalledRows}
-                openWizardForPaletteSection={openWizardForPaletteSection}
                 catalogMetadataLoaded={catalogMetadataLoaded}
                 catalogPublishAllowed={catalogPublishAllowed}
                 isCatalogPublished={forkPublished}

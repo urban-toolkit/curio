@@ -34,7 +34,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { useTemplateContext } from '../../providers/TemplateProvider';
+import { useStarterContext } from '../../providers/StarterProvider';
 import { tryGetNodeDescriptor } from '../../registry/nodeRegistry';
 import type { NodeLifecycleHook } from '../../registry/types';
 
@@ -49,7 +49,7 @@ function sourceDisplayName(sourcePath: string | undefined): string | undefined {
 }
 
 export const usePackageNodeLifecycle: NodeLifecycleHook = (data, nodeState) => {
-  const { getTemplates } = useTemplateContext();
+  const { getStarters } = useStarterContext();
   const descriptor = tryGetNodeDescriptor(data.nodeType);
 
   // `data.code` is a runtime mutation that `useNodeState` performs (see
@@ -87,14 +87,14 @@ export const usePackageNodeLifecycle: NodeLifecycleHook = (data, nodeState) => {
       return;
     }
 
-    const templates = getTemplates(data.nodeType, false);
+    const templates = getStarters(data.nodeType, false);
     const hit = templates.find((t) => t.name === wantedName);
     if (hit?.code) {
       hasInjectedRef.current = true;
       setOverride(hit.code);
     }
     // else: templates not loaded yet — wait for the next effect run.
-  }, [descriptor, data.nodeType, getTemplates, nodeState.code]);
+  }, [descriptor, data.nodeType, getStarters, nodeState.code]);
 
   // After CodeEditor consumes the override (its `defaultValueBypass`
   // effect copies the value into the Monaco buffer + nodeState), drop

@@ -1,11 +1,12 @@
-"""Walker that produces ``Template`` objects for every installed package kind.
+"""Walker that produces ``Starter`` objects for every installed package template.
 
-Each kind manifest may carry an optional ``source`` field — a package-relative
-path to a single starter file (any extension: ``.py``, ``.js``,
-``.vl.json``, etc.). When present, the file content becomes one
-``Template`` entry keyed on the package's canonical kind id
-``<packageId>/<kindId>@<major>``. Kinds without ``source`` (e.g. structural
-built-ins) contribute no template, and the editor opens empty.
+A starter is the optional starter source-code body associated with a package
+template (the renamed-from-``kind`` concept). Each template manifest may carry
+an optional ``source`` field — a package-relative path to a single starter
+file (any extension: ``.py``, ``.js``, ``.vl.json``, etc.). When present, the
+file content becomes one ``Starter`` entry keyed on the package's canonical
+template id ``<packageId>/<templateId>@<major>``. Templates without ``source``
+(e.g. structural built-ins) contribute no starter, and the editor opens empty.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from utk_curio.backend.app.packages.storage import list_user_packageages, packag
 log = logging.getLogger(__name__)
 
 
-def _template_object(canonical_id: str, name: str, code: str) -> dict:
+def _starter_object(canonical_id: str, name: str, code: str) -> dict:
     return {
         "id": str(uuid.uuid4()),
         "type": canonical_id,
@@ -31,10 +32,10 @@ def _template_object(canonical_id: str, name: str, code: str) -> dict:
     }
 
 
-def generate_packageage_templates(user_key: str) -> list[dict]:
-    """Return ``Template`` objects for every installed package of *user_key*.
+def generate_packageage_starters(user_key: str) -> list[dict]:
+    """Return ``Starter`` objects for every installed package of *user_key*.
 
-    At most one template per kind: the kind's optional ``source`` file.
+    At most one starter per template: the template's optional ``source`` file.
     """
     out: list[dict] = []
     for package_path in list_user_packageages(user_key):
@@ -44,18 +45,18 @@ def generate_packageage_templates(user_key: str) -> list[dict]:
             log.warning("Skipping malformed package %s: %s", package_path.name, exc)
             continue
 
-        for kind in manifest.kinds:
-            if not kind.source:
+        for template in manifest.templates:
+            if not template.source:
                 continue
-            parts = [p for p in kind.source.replace("\\", "/").split("/") if p]
+            parts = [p for p in template.source.replace("\\", "/").split("/") if p]
             try:
                 entry = package_asset_path(
                     user_key, package_path.name, *parts, field="source"
                 )
             except (ValueError, PermissionError) as exc:
                 log.warning(
-                    "Package %s kind %s has unsafe source %r: %s",
-                    package_path.name, kind.kind_id, kind.source, exc,
+                    "Package %s template %s has unsafe source %r: %s",
+                    package_path.name, template.template_id, template.source, exc,
                 )
                 continue
 
@@ -67,7 +68,7 @@ def generate_packageage_templates(user_key: str) -> list[dict]:
                 log.warning("Cannot read %s: %s", entry, exc)
                 continue
 
-            canonical = manifest.canonical_for(kind.kind_id)
+            canonical = manifest.canonical_for(template.template_id)
             name = entry.stem.replace("_", " ")
-            out.append(_template_object(canonical, name, code))
+            out.append(_starter_object(canonical, name, code))
     return out

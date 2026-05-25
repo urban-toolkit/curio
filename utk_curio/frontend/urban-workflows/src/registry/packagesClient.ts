@@ -9,7 +9,7 @@
  *
  * Package descriptors use the same registry slot as built-ins:
  *
- *   - their `id` is the canonical string `<packageId>/<kindId>@<major>`,
+ *   - their `id` is the canonical string `<packageId>/<templateId>@<major>`,
  *   - `source === 'package'`, and
  *   - `package` carries the package-provenance metadata used by the palette to
  *     section Built-in vs PACKAGES.
@@ -46,9 +46,9 @@ import type {
   PortDef,
 } from './types';
 
-interface RawPackageKind {
-  id: string; // canonical "<packageId>/<kindId>@<major>"
-  kindId: string;
+interface RawPackageTemplate {
+  id: string; // canonical "<packageId>/<templateId>@<major>"
+  templateId: string;
   label: string;
   category: string;
   engine: 'python' | 'javascript';
@@ -87,7 +87,7 @@ interface RawPackage {
   description: string;
   license: string | null;
   permissions: string[];
-  kinds: RawPackageKind[];
+  templates: RawPackageTemplate[];
   lineage: {
     forkedFrom: { packageId: string; major: number };
     root: { packageId: string; major: number };
@@ -156,9 +156,9 @@ function portCardinalityIconType(ports: PortDef[]): '1' | '2' | 'N' | undefined 
   return ports.length > 1 ? '2' : '1';
 }
 
-function buildDescriptor(pkg: RawPackage, kind: RawPackageKind, order: number): NodeDescriptor {
-  const inputPorts = kind.inputPorts.map(asPortDef);
-  const outputPorts = kind.outputPorts.map(asPortDef);
+function buildDescriptor(pkg: RawPackage, template: RawPackageTemplate, order: number): NodeDescriptor {
+  const inputPorts = template.inputPorts.map(asPortDef);
+  const outputPorts = template.outputPorts.map(asPortDef);
 
   const installMsMaybe = normalizedInstallUpdatedAtMs(pkg.installUpdatedAtMs);
 
@@ -166,22 +166,22 @@ function buildDescriptor(pkg: RawPackage, kind: RawPackageKind, order: number): 
   if (inputPorts.length === 0) handles = outputOnly();
   else if (outputPorts.length === 0) handles = inputOnly();
   else handles = standardInOut();
-  if (kind.bidirectional) handles = withBidirectional(handles);
+  if (template.bidirectional) handles = withBidirectional(handles);
 
   const isBuiltin = pkg.packageId === BUILTIN_PACKAGE_ID;
-  const lookedUpLifecycle = kind.lifecycle ? getLifecycle(kind.lifecycle) : undefined;
+  const lookedUpLifecycle = template.lifecycle ? getLifecycle(template.lifecycle) : undefined;
   const lifecycle = lookedUpLifecycle
     ?? (isBuiltin ? useCodeNodeLifecycle : usePackageNodeLifecycle);
-  const icon = resolveIconRef(kind.iconRef) ?? faCube;
-  const paletteOrder = typeof kind.paletteOrder === 'number'
-    ? kind.paletteOrder
+  const icon = resolveIconRef(template.iconRef) ?? faCube;
+  const paletteOrder = typeof template.paletteOrder === 'number'
+    ? template.paletteOrder
     : 1000 + order; // third-party packages without explicit order sort after built-ins
 
   // F4: editor === 'none' means no editor surface at all; keeping a truthy
   // config object would cause UniversalNode to mount NodeEditor anyway.
-  const adapterEditor = kind.editor === 'none'
+  const adapterEditor = template.editor === 'none'
     ? null
-    : { code: kind.hasCode, grammar: kind.hasGrammar, widgets: kind.hasWidgets };
+    : { code: template.hasCode, grammar: template.hasGrammar, widgets: template.hasWidgets };
 
   const container: NodeDescriptor['adapter']['container'] = {
     handleType:
@@ -190,14 +190,14 @@ function buildDescriptor(pkg: RawPackage, kind: RawPackageKind, order: number): 
         : outputPorts.length === 0
           ? 'in'
           : 'in/out',
-    ...(kind.containerStyle?.nodeWidth !== undefined ? { nodeWidth: kind.containerStyle.nodeWidth } : {}),
-    ...(kind.containerStyle?.nodeHeight !== undefined ? { nodeHeight: kind.containerStyle.nodeHeight } : {}),
-    ...(kind.containerStyle?.noContent !== undefined ? { noContent: kind.containerStyle.noContent } : {}),
-    ...(kind.containerStyle?.disablePlay !== undefined ? { disablePlay: kind.containerStyle.disablePlay } : {}),
+    ...(template.containerStyle?.nodeWidth !== undefined ? { nodeWidth: template.containerStyle.nodeWidth } : {}),
+    ...(template.containerStyle?.nodeHeight !== undefined ? { nodeHeight: template.containerStyle.nodeHeight } : {}),
+    ...(template.containerStyle?.noContent !== undefined ? { noContent: template.containerStyle.noContent } : {}),
+    ...(template.containerStyle?.disablePlay !== undefined ? { disablePlay: template.containerStyle.disablePlay } : {}),
   };
 
   return {
-    id: kind.id,
+    id: template.id,
     source: 'package',
     package: {
       packageId: pkg.packageId,
@@ -205,7 +205,7 @@ function buildDescriptor(pkg: RawPackage, kind: RawPackageKind, order: number): 
       version: pkg.version,
       name: pkg.name,
       publisher: pkg.publisher,
-      source: kind.source ?? undefined,
+      source: template.source ?? undefined,
       ...(pkg.lineage
         ? {
             lineage: {
@@ -221,22 +221,22 @@ function buildDescriptor(pkg: RawPackage, kind: RawPackageKind, order: number): 
       createdAtMs: normalizedEpochMs(pkg.createdAtMs),
       ...(installMsMaybe !== undefined ? { installUpdatedAtMs: installMsMaybe } : {}),
     },
-    category: asCategory(kind.category),
-    label: kind.label,
+    category: asCategory(template.category),
+    label: template.label,
     icon,
     inputPorts,
     outputPorts,
-    editor: kind.editor,
+    editor: template.editor,
     inPalette: true,
     paletteOrder,
-    description: kind.description,
-    hasCode: kind.hasCode,
-    hasWidgets: kind.hasWidgets,
-    hasGrammar: kind.hasGrammar,
-    ...(kind.hasProvenance !== null ? { hasProvenance: kind.hasProvenance } : {}),
-    ...(kind.tutorialId ? { tutorialId: kind.tutorialId } : {}),
-    ...(kind.grammarId ? { grammarId: kind.grammarId } : {}),
-    ...(kind.badge ? { badge: kind.badge } : isBuiltin ? {} : { badge: 'PACKAGE' as const }),
+    description: template.description,
+    hasCode: template.hasCode,
+    hasWidgets: template.hasWidgets,
+    hasGrammar: template.hasGrammar,
+    ...(template.hasProvenance !== null ? { hasProvenance: template.hasProvenance } : {}),
+    ...(template.tutorialId ? { tutorialId: template.tutorialId } : {}),
+    ...(template.grammarId ? { grammarId: template.grammarId } : {}),
+    ...(template.badge ? { badge: template.badge } : isBuiltin ? {} : { badge: 'PACKAGE' as const }),
     adapter: {
       handles,
       editor: adapterEditor,
@@ -249,12 +249,12 @@ function buildDescriptor(pkg: RawPackage, kind: RawPackageKind, order: number): 
 }
 
 /** Internal helper exposed for unit tests. */
-export function registerPackageKinds(packages: RawPackage[]): NodeDescriptor[] {
+export function registerPackageTemplates(packages: RawPackage[]): NodeDescriptor[] {
   const registered: NodeDescriptor[] = [];
   let order = 0;
   for (const pkg of packages) {
-    for (const kind of pkg.kinds ?? []) {
-      const descriptor = buildDescriptor(pkg, kind, order++);
+    for (const template of pkg.templates) {
+      const descriptor = buildDescriptor(pkg, template, order++);
       registerNode(descriptor);
       registered.push(descriptor);
     }
@@ -277,7 +277,7 @@ export async function loadInstalledPackages(): Promise<NodeDescriptor[]> {
     // Notify subscribers only after clear + register so React Flow keeps package node types wired.
     return withSuspendedRegistryNotifications(() => {
       clearPackageNodes();
-      return registerPackageKinds(packages ?? []);
+      return registerPackageTemplates(packages ?? []);
     });
   } catch (error) {
     const status = (error as { status?: number }).status;

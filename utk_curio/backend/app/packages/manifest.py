@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from utk_curio.backend.app.packages.package_channel import normalize_distribution_channel
-from utk_curio.backend.app.packages.storage import KIND_ID_RE, PACKAGE_DIR_RE, PackageId
+from utk_curio.backend.app.packages.storage import TEMPLATE_ID_RE, PACKAGE_DIR_RE, PackageId
 
 
 class ManifestError(ValueError):
@@ -147,8 +147,8 @@ class PortDef:
 
 
 @dataclass(frozen=True)
-class NodeKindManifest:
-    kind_id: str
+class TemplateManifest:
+    template_id: str
     label: str
     category: str
     engine: str  # 'python' | 'javascript'
@@ -166,7 +166,7 @@ class NodeKindManifest:
     grammar_id: str | None  # grammar adapter key (e.g. "vega-lite") when editor=="grammar"
     badge: str | None  # palette card badge label (e.g. "VEGA", "AUTK", "PACKAGE")
     source: str | None  # package-relative path to one optional starter file
-    bidirectional: bool  # adds the third "in/out" handle for interaction-loop kinds
+    bidirectional: bool  # adds the third "in/out" handle for interaction-loop templates
     container_style: dict | None  # {"nodeWidth": int?, "nodeHeight": int?, "noContent": bool?, "disablePlay": bool?}
     has_provenance: bool | None  # explicit override for the provenance editor tab (defaults to true client-side)
     tutorial_id: str | None  # anchor id for the in-app tutorial system
@@ -174,13 +174,13 @@ class NodeKindManifest:
     widget_dir: str | None
 
     @classmethod
-    def from_json(cls, raw: object, *, where: str) -> "NodeKindManifest":
+    def from_json(cls, raw: object, *, where: str) -> "TemplateManifest":
         if not isinstance(raw, dict):
             raise ManifestError(f"{where}: expected object")
-        kind_id = raw.get("id")
-        if not isinstance(kind_id, str) or not KIND_ID_RE.match(kind_id):
+        template_id = raw.get("id")
+        if not isinstance(template_id, str) or not TEMPLATE_ID_RE.match(template_id):
             raise ManifestError(
-                f"{where}.id must match {KIND_ID_RE.pattern}, got {kind_id!r}"
+                f"{where}.id must match {TEMPLATE_ID_RE.pattern}, got {template_id!r}"
             )
         engine = raw.get("engine", "python")
         if engine not in ("python", "javascript"):
@@ -205,8 +205,8 @@ class NodeKindManifest:
         if has_provenance_raw is not None and not isinstance(has_provenance_raw, bool):
             raise ManifestError(f"{where}.hasProvenance must be a boolean when present")
         return cls(
-            kind_id=kind_id,
-            label=str(raw.get("label", kind_id)),
+            template_id=template_id,
+            label=str(raw.get("label", template_id)),
             category=str(raw.get("category", "computation")),
             engine=engine,
             description=str(raw.get("description", "")),
@@ -243,7 +243,7 @@ class PackageManifest:
     publisher: str
     description: str
     license: str | None
-    kinds: list[NodeKindManifest] = field(default_factory=list)
+    templates: list[TemplateManifest] = field(default_factory=list)
     permissions: list[str] = field(default_factory=list)
     python_deps: dict[str, str] = field(default_factory=dict)
     js_deps: dict[str, str] = field(default_factory=dict)
@@ -258,8 +258,8 @@ class PackageManifest:
     def dir_name(self) -> str:
         return f"{self.package_id}@{self.major}"
 
-    def canonical_for(self, kind_id: str) -> str:
-        return f"{self.package_id}/{kind_id}@{self.major}"
+    def canonical_for(self, template_id: str) -> str:
+        return f"{self.package_id}/{template_id}@{self.major}"
 
 
 def load_packageage_manifest(package_dir_path: Path) -> PackageManifest:
@@ -304,12 +304,12 @@ def load_packageage_manifest(package_dir_path: Path) -> PackageManifest:
     if not isinstance(version, str) or not version:
         raise ManifestError(f"{manifest_path}.version must be a non-empty string")
 
-    kinds_raw = raw.get("kinds") or []
-    if not isinstance(kinds_raw, list) or not kinds_raw:
-        raise ManifestError(f"{manifest_path}.kinds must be a non-empty list")
-    kinds = [
-        NodeKindManifest.from_json(k, where=f"{manifest_path}.kinds[{i}]")
-        for i, k in enumerate(kinds_raw)
+    templates_raw = raw.get("templates") or []
+    if not isinstance(templates_raw, list) or not templates_raw:
+        raise ManifestError(f"{manifest_path}.templates must be a non-empty list")
+    templates = [
+        TemplateManifest.from_json(t, where=f"{manifest_path}.templates[{i}]")
+        for i, t in enumerate(templates_raw)
     ]
 
     deps = raw.get("dependencies") or {}
@@ -355,7 +355,7 @@ def load_packageage_manifest(package_dir_path: Path) -> PackageManifest:
         publisher=str(raw.get("publisher", "")),
         description=str(raw.get("description", "")),
         license=raw.get("license") if isinstance(raw.get("license"), str) else None,
-        kinds=kinds,
+        templates=templates,
         permissions=list(perms),
         python_deps=dict(python_deps),
         js_deps=dict(js_deps),

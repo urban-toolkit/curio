@@ -171,7 +171,7 @@ describe("forkPackageLineage", () => {
       name: "Root package",
       version: "1.0.0",
       lineage: null,
-      kinds: [{ id: "a" }],
+      templates: [{ id: "a" }],
     } as PackagePayload;
     const forkA = {
       dirName: "fork.a@1",
@@ -180,7 +180,7 @@ describe("forkPackageLineage", () => {
       name: "Fork A",
       version: "1.0.0",
       lineage: lin({ packageId: "root", major: 1 }, { packageId: "root", major: 1 }),
-      kinds: [{ id: "b" }],
+      templates: [{ id: "b" }],
     } as PackagePayload;
     const forkB = {
       dirName: "fork.b@1",
@@ -189,7 +189,7 @@ describe("forkPackageLineage", () => {
       name: "Fork B",
       version: "1.0.0",
       lineage: lin({ packageId: "fork.a", major: 1 }, { packageId: "root", major: 1 }),
-      kinds: [{ id: "c" }],
+      templates: [{ id: "c" }],
     } as PackagePayload;
     const solo = {
       dirName: "solo@1",
@@ -198,7 +198,7 @@ describe("forkPackageLineage", () => {
       name: "Solo",
       version: "1.0.0",
       lineage: null,
-      kinds: [{ id: "d" }],
+      templates: [{ id: "d" }],
     } as PackagePayload;
 
     const rows = partitionInstalledPackagesForWarehouseList([root, forkA, forkB, solo]);

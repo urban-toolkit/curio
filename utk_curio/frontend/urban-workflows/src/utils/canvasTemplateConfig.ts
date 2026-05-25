@@ -1,11 +1,11 @@
 import { SupportedType } from "../constants";
-import type { PortDraft, Category, Engine, Editor, KindDraft } from "../pages/nodes/factoryDraftModel";
+import type { PortDraft, Category, Engine, Editor, TemplateDraft } from "../pages/nodes/factoryDraftModel";
 import { factoryUiMakeId } from "../pages/nodes/factoryDraftModel";
 import type { NodeDescriptor } from "../registry/types";
-import { canvasKindLabelFromNode } from "./palettePackageFactoryDraft";
+import { canvasTemplateLabelFromNode } from "./palettePackageFactoryDraft";
 
 /** Per-canvas-node kind configuration (palette edit / Save As). */
-export interface CanvasKindConfig {
+export interface CanvasTemplateConfig {
   label: string;
   category: Category;
   engine: Engine;
@@ -40,16 +40,16 @@ function defaultSourceFilename(desc: NodeDescriptor): string {
   return last || "default.py";
 }
 
-export function canvasKindConfigFromDescriptor(
+export function canvasTemplateConfigFromDescriptor(
   desc: NodeDescriptor,
   node: { id: string; data: object },
   templateCode = ""
-): CanvasKindConfig {
-  const stored = readCanvasKindConfig(node);
-  const label = canvasKindLabelFromNode(node, desc);
+): CanvasTemplateConfig {
+  const stored = readCanvasTemplateConfig(node);
+  const label = canvasTemplateLabelFromNode(node, desc);
   const hasCode = desc.hasCode;
   const hasGrammar = desc.hasGrammar;
-  const base: CanvasKindConfig = {
+  const base: CanvasTemplateConfig = {
     label,
     category: desc.category as Category,
     engine: desc.editor === "grammar" ? "javascript" : "python",
@@ -78,17 +78,17 @@ export function canvasKindConfigFromDescriptor(
   };
 }
 
-export function readCanvasKindConfig(node: { data: object }): Partial<CanvasKindConfig> | null {
-  const raw = (node.data as { packageKindConfig?: unknown })?.packageKindConfig;
+export function readCanvasTemplateConfig(node: { data: object }): Partial<CanvasTemplateConfig> | null {
+  const raw = (node.data as { packageTemplateConfig?: unknown })?.packageTemplateConfig;
   if (!raw || typeof raw !== "object") return null;
-  return raw as Partial<CanvasKindConfig>;
+  return raw as Partial<CanvasTemplateConfig>;
 }
 
-export function applyCanvasKindConfigToKindDraft(
-  draft: KindDraft,
-  config: CanvasKindConfig | Partial<CanvasKindConfig> | null,
+export function applyCanvasTemplateConfigToTemplateDraft(
+  draft: TemplateDraft,
+  config: CanvasTemplateConfig | Partial<CanvasTemplateConfig> | null,
   labelOverride?: string,
-): KindDraft {
+): TemplateDraft {
   if (!config) {
     if (labelOverride?.trim()) return { ...draft, label: labelOverride.trim() };
     return draft;
@@ -116,7 +116,7 @@ export function applyCanvasKindConfigToKindDraft(
 
 export function resolveEditorTabFlags(
   desc: NodeDescriptor,
-  config: Partial<CanvasKindConfig> | null | undefined,
+  config: Partial<CanvasTemplateConfig> | null | undefined,
 ): {
   code: boolean;
   grammar: boolean;

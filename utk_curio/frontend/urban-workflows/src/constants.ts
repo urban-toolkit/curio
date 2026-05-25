@@ -1,10 +1,10 @@
-/** Every canvas node maps to UniversalNode via this RF ``node.type``; real kind is ``data.nodeType``. */
+/** Every canvas node maps to UniversalNode via this RF ``node.type``; real template id is ``data.nodeType``. */
 export const CURIO_UNIVERSAL_NODE_TYPE = "__curioUniversalNode" as const;
 
 /**
  * Canonical unversioned node-type identifiers.
  *
- * Each value is the canonical package-kind id (`<packageId>/<kindId>`) that
+ * Each value is the canonical package-template id (`<packageId>/<templateId>`) that
  * resolves through the registry's unversioned-latest-major lookup. The
  * enum keys keep the legacy names so existing dispatch code in
  * `NotebookConvertor` / `useNodeState` etc. keeps compiling unchanged —

@@ -3,30 +3,21 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
     faChevronDown,
     faChevronUp,
-    faCirclePlus,
     faCube,
 } from "@fortawesome/free-solid-svg-icons";
-import { useReactFlow } from "reactflow";
-import { packagesApi, refreshPackageRegistry } from "../../../../api/packagesApi";
-import type { InstallResponse, PackagePayload } from "../../../../api/packagesApi";
+import { packagesApi } from "../../../../api/packagesApi";
+import type { PackagePayload } from "../../../../api/packagesApi";
 import { subscribeToRegistry } from "../../../../registry";
-import { draftPackageSectionKey, usePackagePalette } from "../../../../providers/PackagePaletteContext";
-import { useNodeFactoryModal } from "../../../../providers/NodeFactoryModalProvider";
+import { usePackagePalette } from "../../../../providers/PackagePaletteContext";
 import { useNodeWarehouseDrawer } from "../../../../providers/NodeWarehouseDrawerProvider";
 import { useToastContext } from "../../../../providers/ToastProvider";
-import { useTemplateContext } from "../../../../providers/TemplateProvider";
-import {
-    buildDraftForPaletteSection,
-    buildFactoryInstallEnvelope,
-    draftForkFromInstalledPackagePayload,
-    draftFromInstalledPackagePayload,
-} from "../../../../utils/palettePackageFactoryDraft";
+import { useStarterContext } from "../../../../providers/StarterProvider";
+import { draftFromInstalledPackagePayload } from "../../../../utils/palettePackageFactoryDraft";
 import { toApiPayload } from "../../../../pages/nodes/factoryDraftModel";
 import { partitionPalettePackageGroups } from "../../../../utils/forkPackageLineage";
 import { InstalledPackageAccordion } from "./InstalledPackageAccordion";
 import { PaletteForkFamily } from "./PaletteForkFamily";
 import { visiblePaletteTriggerPackagesCount, type PackagePaletteGroup } from "./model";
-import { PackageCanvasDropSlot, PackageStagedCanvasRow } from "./PackagePaletteRows";
 import { paletteDescriptorBootstrapKey } from "./registryBootstrap";
 import packageStyles from "./ToolsMenuPackagePalette.module.css";
 
@@ -37,7 +28,6 @@ function escapeCssAttrToken(coord: string): string {
 /** Clicks on package node header actions should not collapse the open palette panel. */
 function isPackagePaletteDismissOutsideClick(target: EventTarget | null): boolean {
     if (!(target instanceof Element)) return true;
-    if (target.closest('[data-curio-node-factory-overlay="true"]')) return false;
     if (target.closest('[data-curio-node-warehouse-drawer="true"]')) return false;
     if (target.closest('[data-curio-package-palette-node-action="true"]')) return false;
     return true;
@@ -45,42 +35,17 @@ function isPackagePaletteDismissOutsideClick(target: EventTarget | null): boolea
 
 export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ groups }: { groups: PackagePaletteGroup[] }) {
     const [open, setOpen] = useState(false);
-    const [savingDraft, setSavingDraft] = useState(false);
     const rootRef = useRef<HTMLDivElement>(null);
     const packagePaletteScrollRef = useRef<HTMLDivElement>(null);
-    const { openNodeFactory } = useNodeFactoryModal();
     const { openNodeWarehouseDrawer } = useNodeWarehouseDrawer();
     const { showToast } = useToastContext();
-    const { getTemplates } = useTemplateContext();
-    const { getNodes } = useReactFlow();
+    const { getStarters } = useStarterContext();
     const {
         activePackageKey,
         setActivePackageKey,
-        packagesPaletteEditMode,
-        setPackagesPaletteEditMode,
         paletteDockRevealCoord,
         setPaletteDockRevealCoord,
-        draftPackageSectionIds,
-        registerDraftPackageSection,
-        stagedRowsByPackageKey,
-        removedKindIdsByPackageKey,
     } = usePackagePalette();
-
-    const onPackageInstalledFocusDock = useCallback(
-        (pkg: Pick<PackagePayload, "packageId" | "major">) => {
-            const coord = `${pkg.packageId}@${pkg.major}`;
-            setPaletteDockRevealCoord(coord);
-            setActivePackageKey(coord);
-        },
-        [setActivePackageKey, setPaletteDockRevealCoord],
-    );
-
-    const onFactoryModalInstallSuccess = useCallback(
-        (result: InstallResponse) => {
-            onPackageInstalledFocusDock(result.package);
-        },
-        [onPackageInstalledFocusDock],
-    );
 
     const [forkManualPickByRoot, setForkManualPickByRoot] = useState<Record<string, string>>({});
     const [paletteCatalogSnapshot, setPaletteCatalogSnapshot] = useState<{
@@ -116,17 +81,14 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
     useEffect(() => {
         if (!open) return;
         const onKey = (ev: KeyboardEvent) => {
-            if (ev.key === "Escape") {
-                if (packagesPaletteEditMode) setPackagesPaletteEditMode(false);
-                else close();
-            }
+            if (ev.key === "Escape") close();
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-    }, [open, close, packagesPaletteEditMode, setPackagesPaletteEditMode]);
+    }, [open, close]);
 
     useEffect(() => {
-        if (!open || packagesPaletteEditMode) return;
+        if (!open) return;
         const onDocMouseDown = (ev: MouseEvent) => {
             if (rootRef.current?.contains(ev.target as Node)) return;
             if (!isPackagePaletteDismissOutsideClick(ev.target)) return;
@@ -134,7 +96,7 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
         };
         document.addEventListener("mousedown", onDocMouseDown, true);
         return () => document.removeEventListener("mousedown", onDocMouseDown, true);
-    }, [open, close, packagesPaletteEditMode]);
+    }, [open, close]);
 
     useEffect(() => {
         if (!open) return;
@@ -209,105 +171,6 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
         setPaletteDockRevealCoord,
     ]);
 
-    const openWizardForPaletteSection = useCallback(
-        (sectionKey: string, opts: { group?: PackagePaletteGroup; draftUuid?: string }) => {
-            const stagedRows = [...(stagedRowsByPackageKey[sectionKey] ?? [])];
-            const removedKindIds = [...(removedKindIdsByPackageKey[sectionKey] ?? [])];
-            const hasPendingEdits = stagedRows.length > 0 || removedKindIds.length > 0;
-
-            if (!hasPendingEdits && opts.group && packagesPaletteEditMode) {
-                const row = paletteCatalogRef.current?.installedByDir.get(sectionKey);
-                if (row) {
-                    openNodeFactory({
-                        draft: draftForkFromInstalledPackagePayload(row, getTemplates),
-                        forkInstallNotice: true,
-                        onInstallSuccess: onFactoryModalInstallSuccess,
-                    });
-                    return;
-                }
-                void (async () => {
-                    try {
-                        const { packages } = await packagesApi.listInstalled();
-                        const found = packages.find((p) => p.dirName === sectionKey);
-                        if (!found) {
-                            showToast(
-                                "Could not load metadata for this package. Check that it is installed, then try again.",
-                                "warning",
-                            );
-                            return;
-                        }
-                        setPaletteCatalogSnapshot((prev) => {
-                            const installedByDir = new Map(prev?.installedByDir ?? []);
-                            installedByDir.set(sectionKey, found);
-                            return {
-                                publishedDirNames: prev?.publishedDirNames ?? new Set(),
-                                publishAllowed: prev?.publishAllowed ?? true,
-                                installedByDir,
-                            };
-                        });
-                        openNodeFactory({
-                            draft: draftForkFromInstalledPackagePayload(found, getTemplates),
-                            forkInstallNotice: true,
-                            onInstallSuccess: onFactoryModalInstallSuccess,
-                        });
-                    } catch (e) {
-                        showToast(
-                            (e as Error)?.message ?? "Could not load installed package metadata.",
-                            "warning",
-                        );
-                    }
-                })();
-                return;
-            }
-
-            if (!hasPendingEdits) {
-                showToast(
-                    "Stage a canvas node or remove a package kind first (edit mode).",
-                    "warning",
-                );
-                return;
-            }
-            const nodes = getNodes();
-            const draft =
-                opts.group != null
-                    ? buildDraftForPaletteSection({
-                          sectionKey,
-                          stagedRows,
-                          rfNodes: nodes,
-                          group: opts.group,
-                          palettePackageGroups: groups,
-                          getTemplates,
-                          removedKindIds,
-                      })
-                    : buildDraftForPaletteSection({
-                          sectionKey,
-                          stagedRows,
-                          rfNodes: nodes,
-                          standaloneDraft: true,
-                          standalonePackageLeaf: opts.draftUuid ?? sectionKey.replace(/^__draft__:/, ""),
-                          palettePackageGroups: groups,
-                          getTemplates,
-                          removedKindIds,
-                      });
-            if (!draft) {
-                showToast("Could not derive a factory draft from the staged nodes.", "error");
-                return;
-            }
-            openNodeFactory({ draft, onInstallSuccess: onFactoryModalInstallSuccess });
-        },
-        [
-            getNodes,
-            getTemplates,
-            groups,
-            onFactoryModalInstallSuccess,
-            openNodeFactory,
-            packagesPaletteEditMode,
-            removedKindIdsByPackageKey,
-            showToast,
-            stagedRowsByPackageKey,
-        ],
-    );
-
     const onPublishToCatalog = useCallback(
         async (dirName: string) => {
             const row = paletteCatalogRef.current?.installedByDir.get(dirName);
@@ -317,7 +180,7 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
             }
             setPublishingPackageKey(dirName);
             try {
-                const draft = draftFromInstalledPackagePayload(row, getTemplates);
+                const draft = draftFromInstalledPackagePayload(row, getStarters);
                 await packagesApi.factoryPublishCatalog({
                     ...(toApiPayload(draft) as Record<string, unknown>),
                     replace: true,
@@ -335,123 +198,12 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
                 setPublishingPackageKey(null);
             }
         },
-        [getTemplates, showToast],
+        [getStarters, showToast],
     );
 
-    const onConfirmSaveDrafts = useCallback(async () => {
-        if (savingDraft) return;
-        setSavingDraft(true);
-        try {
-            const nodes = getNodes();
-            let installs = 0;
-            let skippedSections = 0;
-            let lastInstalledCoord: string | null = null;
-
-            for (const draftId of draftPackageSectionIds) {
-                const sectionKey = draftPackageSectionKey(draftId);
-                const stagedRows = [...(stagedRowsByPackageKey[sectionKey] ?? [])];
-                const removedKindIds = [...(removedKindIdsByPackageKey[sectionKey] ?? [])];
-                if (!stagedRows.length && !removedKindIds.length) {
-                    skippedSections++;
-                    continue;
-                }
-                const draft = buildDraftForPaletteSection({
-                    sectionKey,
-                    stagedRows,
-                    rfNodes: nodes,
-                    standaloneDraft: true,
-                    standalonePackageLeaf: draftId,
-                    palettePackageGroups: groups,
-                    getTemplates,
-                    removedKindIds,
-                });
-                if (!draft) {
-                    skippedSections++;
-                    continue;
-                }
-                const coord = `${draft.packageId}@${draft.major}`;
-                const overwriteInstalledPackagePalette = groups.some((g) => g.key === coord);
-                await packagesApi.factoryInstall(buildFactoryInstallEnvelope(draft, overwriteInstalledPackagePalette));
-                lastInstalledCoord = coord;
-                installs++;
-            }
-
-            for (const group of groups) {
-                const stagedRows = [...(stagedRowsByPackageKey[group.key] ?? [])];
-                const removedKindIds = [...(removedKindIdsByPackageKey[group.key] ?? [])];
-                if (!stagedRows.length && !removedKindIds.length) continue;
-                const draft = buildDraftForPaletteSection({
-                    sectionKey: group.key,
-                    stagedRows,
-                    rfNodes: nodes,
-                    group,
-                    palettePackageGroups: groups,
-                    getTemplates,
-                    removedKindIds,
-                });
-                if (!draft) {
-                    skippedSections++;
-                    continue;
-                }
-                const coordAfter = `${draft.packageId}@${draft.major}`;
-                await packagesApi.factoryInstall(buildFactoryInstallEnvelope(draft, false));
-                lastInstalledCoord = coordAfter;
-                installs++;
-            }
-
-            if (!installs) {
-                showToast(
-                    "Nothing new to save — stage canvas nodes, remove package kinds, or both.",
-                    "info",
-                );
-                return;
-            }
-
-            await refreshPackageRegistry();
-
-            if (lastInstalledCoord != null) {
-                setPaletteDockRevealCoord(lastInstalledCoord);
-                setActivePackageKey(lastInstalledCoord);
-            }
-
-            showToast(
-                skippedSections > 0
-                    ? `Installed ${installs} palette package(s); some sections had nothing staged.`
-                    : `Installed ${installs} palette package(s).`,
-                "success",
-            );
-            setPackagesPaletteEditMode(false);
-        } catch (e) {
-            showToast((e as Error)?.message ?? "Saving palette packages failed.", "error");
-        } finally {
-            setSavingDraft(false);
-        }
-    }, [
-        draftPackageSectionIds,
-        getNodes,
-        getTemplates,
-        groups,
-        savingDraft,
-        setActivePackageKey,
-        setPackagesPaletteEditMode,
-        setPaletteDockRevealCoord,
-        showToast,
-        removedKindIdsByPackageKey,
-        stagedRowsByPackageKey,
-    ]);
-
-    const onCancelEdit = useCallback(() => {
-        setPackagesPaletteEditMode(false);
-    }, [setPackagesPaletteEditMode]);
-
     const totalPackagesDisplayed = useMemo(
-        () =>
-            visiblePaletteTriggerPackagesCount({
-                paletteRows,
-                packagesPaletteEditMode,
-                draftPackageSectionIds,
-            }),
-        [paletteRows, packagesPaletteEditMode, draftPackageSectionIds],
+        () => visiblePaletteTriggerPackagesCount({ paletteRows }),
+        [paletteRows],
     );
 
     return (
@@ -470,104 +222,16 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
                     <span className={packageStyles.packagePaletteTriggerCount}>{totalPackagesDisplayed}</span>
                     <FontAwesomeIcon icon={open ? faChevronUp : faChevronDown} className={packageStyles.packagePaletteTriggerChevron} />
                 </button>
-                {!packagesPaletteEditMode && paletteRows.length === 0 ? (
+                {paletteRows.length === 0 ? (
                     <p className={packageStyles.packagePaletteEmptyHint}>No packages yet</p>
                 ) : null}
             </div>
             {open && (
-                <div className={packageStyles.packagePalettePanel} role="region" aria-label="Package node kinds">
+                <div className={packageStyles.packagePalettePanel} role="region" aria-label="Package templates">
                     <div className={packageStyles.packagePaletteToolbar}>
                         <div className={packageStyles.packagePalettePanelTitle}>NODE PACKAGES</div>
-                        {!packagesPaletteEditMode ? (
-                            <button
-                                type="button"
-                                className={packageStyles.packageEditToggle}
-                                onClick={() => setPackagesPaletteEditMode(true)}
-                            >
-                                Edit
-                            </button>
-                        ) : (
-                            <>
-                                <button
-                                    type="button"
-                                    className={packageStyles.packageToolbarBtnPrimary}
-                                    disabled={savingDraft}
-                                    title={
-                                        savingDraft
-                                            ? undefined
-                                            : "Writes merged kinds into installed packages under Packages palette. Existing nodes on the canvas are left unchanged."
-                                    }
-                                    onClick={() => void onConfirmSaveDrafts()}
-                                >
-                                    {savingDraft ? "Saving…" : "Save draft"}
-                                </button>
-                                <button type="button" className={packageStyles.packageToolbarBtn} onClick={onCancelEdit}>
-                                    Cancel
-                                </button>
-                            </>
-                        )}
                     </div>
                     <div ref={packagePaletteScrollRef} className={packageStyles.packagePaletteScroll}>
-                        {packagesPaletteEditMode ? (
-                            <button
-                                type="button"
-                                className={packageStyles.packageAddSectionRow}
-                                onClick={() => registerDraftPackageSection()}
-                            >
-                                <FontAwesomeIcon icon={faCirclePlus} className={packageStyles.packageAddSectionIcon} aria-hidden />
-                                <span>Add new pkg</span>
-                            </button>
-                        ) : null}
-                        {packagesPaletteEditMode
-                            ? draftPackageSectionIds.map((draftId) => {
-                                  const sectionKey = draftPackageSectionKey(draftId);
-                                  const stagedRows = stagedRowsByPackageKey[sectionKey] ?? [];
-                                  return (
-                                      <details
-                                          key={sectionKey}
-                                          className={`${packageStyles.packageDetails} ${sectionKey === activePackageKey ? packageStyles.packageDetailsSelected : ""}`}
-                                      >
-                                          <summary
-                                              className={packageStyles.packageSummary}
-                                              onClick={() => setActivePackageKey(sectionKey)}
-                                          >
-                                              <div className={packageStyles.packageSummaryRow}>
-                                                  <span
-                                                      className={packageStyles.packageSummaryTitle}
-                                                      role={packagesPaletteEditMode && stagedRows.length > 0 ? "button" : undefined}
-                                                      title={
-                                                          packagesPaletteEditMode && stagedRows.length > 0
-                                                              ? "Open Node Factory with this draft"
-                                                              : undefined
-                                                      }
-                                                      onClick={(e) => {
-                                                          if (!(packagesPaletteEditMode && stagedRows.length > 0)) return;
-                                                          e.preventDefault();
-                                                          e.stopPropagation();
-                                                          setActivePackageKey(sectionKey);
-                                                          openWizardForPaletteSection(sectionKey, { draftUuid: draftId });
-                                                      }}
-                                                  >
-                                                      New pkg (draft)
-                                                  </span>
-                                                  <span className={packageStyles.packageSummaryCount}>{stagedRows.length}</span>
-                                              </div>
-                                          </summary>
-                                          <div className={packageStyles.packageKindGrid}>
-                                              {stagedRows.map((row) => (
-                                                  <PackageStagedCanvasRow
-                                                      key={row.rowId}
-                                                      packageSectionKey={sectionKey}
-                                                      rowId={row.rowId}
-                                                      canvasNodeId={row.canvasNodeId}
-                                                  />
-                                              ))}
-                                              <PackageCanvasDropSlot packageSectionKey={sectionKey} />
-                                          </div>
-                                      </details>
-                                  );
-                              })
-                            : null}
                         {paletteRows.map((row) =>
                             row.kind === "singleton" ? (
                                 <div
@@ -579,9 +243,6 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
                                         group={row.group}
                                         activePackageKey={activePackageKey}
                                         setActivePackageKey={setActivePackageKey}
-                                        packagesPaletteEditMode={packagesPaletteEditMode}
-                                        stagedInstalledRows={stagedRowsByPackageKey[row.group.key] ?? []}
-                                        openWizardForPaletteSection={openWizardForPaletteSection}
                                         catalogMetadataLoaded={paletteCatalogSnapshot !== null}
                                         catalogPublishAllowed={paletteCatalogSnapshot?.publishAllowed ?? true}
                                         isCatalogPublished={
@@ -602,12 +263,8 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
                                         members={row.members}
                                         activePackageKey={activePackageKey}
                                         setActivePackageKey={setActivePackageKey}
-                                        packagesPaletteEditMode={packagesPaletteEditMode}
-                                        stagedRowsByPackageKey={stagedRowsByPackageKey}
-                                        removedKindIdsByPackageKey={removedKindIdsByPackageKey}
                                         forkManualPickByRoot={forkManualPickByRoot}
                                         setForkManualPickByRoot={setForkManualPickByRoot}
-                                        openWizardForPaletteSection={openWizardForPaletteSection}
                                         catalogMetadataLoaded={paletteCatalogSnapshot !== null}
                                         catalogPublishAllowed={paletteCatalogSnapshot?.publishAllowed ?? true}
                                         publishingPackageKey={publishingPackageKey}

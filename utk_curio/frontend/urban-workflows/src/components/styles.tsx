@@ -16,18 +16,16 @@ import {
 import { useUserContext } from "../providers/UserProvider";
 import { useLLMContext } from "../providers/LLMProvider";
 import { useToastContext } from "../providers/ToastProvider";
-import { usePackagePalette } from "../providers/PackagePaletteContext";
-import { canvasKindLabelFromNode } from "../utils/palettePackageFactoryDraft";
-import type { CanvasKindConfig } from "../utils/canvasKindConfig";
-import { readCanvasKindConfig } from "../utils/canvasKindConfig";
+import { canvasTemplateLabelFromNode } from "../utils/palettePackageFactoryDraft";
+import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
+import { readCanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { ConnectionValidator } from "../ConnectionValidator";
 import { HeaderIconButton } from "./HeaderIconButton";
 import {
     EditableNodeHeaderLabel,
     NodeSaveAsModal,
-    NodeKindConfigModal,
+    NodeTemplateConfigModal,
     PackageMetaHeader,
-    PackageStagingDragGrip,
 } from "./packages/editing";
 import Col from "react-bootstrap/Col";
 import Nav from "react-bootstrap/Nav";
@@ -61,9 +59,9 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import { AccessLevelType, NodeType, SupportedType } from "../constants";
 import { getNodeDescriptor, tryGetNodeDescriptor } from "../registry";
-import { NodeKindId } from "../registry/types";
+import { NodeTemplateId } from "../registry/types";
 import "./styles.css";
-import { Template, useTemplateContext } from "../providers/TemplateProvider";
+import { useStarterContext } from "../providers/StarterProvider";
 import { useCode } from "../hook/useCode";
 import { TrillGenerator } from "TrillGenerator";
 import { ICodeData } from "types";
@@ -136,9 +134,8 @@ export const NodeContainer = ({
         dashboardOn,
         dashboardLocked,
     } = useFlowContext();
-    const { packagesPaletteEditMode } = usePackagePalette();
     const { getNodes, getEdges } = useReactFlow();
-    const { getTemplates, deleteTemplate, fetchTemplates } = useTemplateContext();
+    const { getStarters, deleteStarter, fetchStarters } = useStarterContext();
     const { createCodeNode, loadTrill } = useCode();
     const [showComments, setShowComments] = useState(false);
     const [saveAsOpen, setSaveAsOpen] = useState(false);
@@ -492,23 +489,22 @@ export const NodeContainer = ({
         generateContentNode(getNodes(), getEdges(), workflowNameRef, goal, workflowGoal);
     }
 
-    const nodeIconTranslation = (nodeType: NodeKindId) => {
+    const nodeIconTranslation = (nodeType: NodeTemplateId) => {
         try { return getNodeDescriptor(nodeType).icon; }
         catch { return faCopy; }
     };
 
-    const nodeNameTranslation = (nodeType: NodeKindId) => {
+    const nodeNameTranslation = (nodeType: NodeTemplateId) => {
         try { return getNodeDescriptor(nodeType).label; }
         catch { return nodeType; }
     };
 
-    const packageDescriptor = tryGetNodeDescriptor(data.nodeType as NodeKindId);
+    const packageDescriptor = tryGetNodeDescriptor(data.nodeType as NodeTemplateId);
     const headerKindLabel = packageDescriptor
-        ? canvasKindLabelFromNode({ data }, packageDescriptor)
+        ? canvasTemplateLabelFromNode({ data }, packageDescriptor)
         : nodeNameTranslation(data.nodeType);
     const hasPackageMetaHeader = packageDescriptor?.source === "package" && !!packageDescriptor.package;
     const showPackageNodeActions = hasPackageMetaHeader && !dashboardOn;
-    const canEditPackageHeader = packagesPaletteEditMode && !dashboardOn;
     const suggestionActive = data.suggestionType != "none" && data.suggestionType != undefined;
     const nodeHeaderBandPx = 28;
 
@@ -669,12 +665,6 @@ export const NodeContainer = ({
                         flexShrink: 0,
                         ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
                         }}>
-                        {canEditPackageHeader ? (
-                            <PackageStagingDragGrip
-                                nodeId={nodeId}
-                                keywordHighlighted={!!data.keywordHighlighted}
-                            />
-                        ) : null}
                         {/* Minimize toggle */}
                         <HeaderIconButton
                             icon={faMinus}
@@ -691,7 +681,7 @@ export const NodeContainer = ({
                             executed={nodeExecStatus[nodeId] === "executed"}
                             keywordHighlighted={!!data.keywordHighlighted}
                             onLabelCommit={(label) => {
-                                updateDataNode(nodeId, { ...data, packageKindLabel: label });
+                                updateDataNode(nodeId, { ...data, packageTemplateLabel: label });
                             }}
                             onConfigure={() => setConfigOpen(true)}
                         />
@@ -831,7 +821,7 @@ export const NodeContainer = ({
                             {/*                    border: "none",*/}
                             {/*                    width: "100%"*/}
                             {/*                 }}*/}
-                            {/*                 onMouseEnter={() => {fetchTemplates()}}*/}
+                            {/*                 onMouseEnter={() => {fetchStarters()}}*/}
                             {/*            >*/}
                             {/*                Templates*/}
                             {/*            </Dropdown.Toggle>*/}
@@ -853,7 +843,7 @@ export const NodeContainer = ({
                             {/*                    + New Template*/}
                             {/*                </Dropdown.Item>*/}
 
-                            {/*                {getTemplates(*/}
+                            {/*                {getStarters(*/}
                             {/*                    data.nodeType as NodeType,*/}
                             {/*                    false*/}
                             {/*                ).length > 0 ? (*/}
@@ -869,7 +859,7 @@ export const NodeContainer = ({
                             {/*                        >*/}
                             {/*                            Default Templates*/}
                             {/*                        </Dropdown.ItemText>*/}
-                            {/*                        {getTemplates(*/}
+                            {/*                        {getStarters(*/}
                             {/*                            data.nodeType as NodeType,*/}
                             {/*                            false*/}
                             {/*                        ).map(*/}
@@ -910,7 +900,7 @@ export const NodeContainer = ({
                             {/*                    </>*/}
                             {/*                ) : null}*/}
 
-                            {/*                {getTemplates(*/}
+                            {/*                {getStarters(*/}
                             {/*                    data.nodeType as NodeType,*/}
                             {/*                    true*/}
                             {/*                ).length > 0 ? (*/}
@@ -926,7 +916,7 @@ export const NodeContainer = ({
                             {/*                        >*/}
                             {/*                            Custom Templates*/}
                             {/*                        </Dropdown.ItemText>*/}
-                            {/*                        {getTemplates(*/}
+                            {/*                        {getStarters(*/}
                             {/*                            data.nodeType as NodeType,*/}
                             {/*                            true*/}
                             {/*                        ).map(*/}
@@ -968,7 +958,7 @@ export const NodeContainer = ({
                             {/*                                        </span>*/}
                             {/*                                        <FontAwesomeIcon*/}
                             {/*                                            onClick={() => {*/}
-                            {/*                                                deleteTemplate(*/}
+                            {/*                                                deleteStarter(*/}
                             {/*                                                    template.id*/}
                             {/*                                                );*/}
                             {/*                                            }}*/}
@@ -1068,19 +1058,19 @@ export const NodeContainer = ({
             ) : null}
 
             <NodeSaveAsModal show={saveAsOpen} nodeId={nodeId} onClose={() => setSaveAsOpen(false)} />
-            <NodeKindConfigModal
+            <NodeTemplateConfigModal
                 show={configOpen}
                 nodeId={nodeId}
                 nodeType={data.nodeType}
-                storedConfig={readCanvasKindConfig({ data })}
-                storedLabel={data.packageKindLabel}
+                storedConfig={readCanvasTemplateConfig({ data })}
+                storedLabel={data.packageTemplateLabel}
                 templateCode={code ?? data.defaultCode ?? ""}
                 onClose={() => setConfigOpen(false)}
-                onSave={(config: CanvasKindConfig) => {
+                onSave={(config: CanvasTemplateConfig) => {
                     updateDataNode(nodeId, {
                         ...data,
-                        packageKindLabel: config.label.trim(),
-                        packageKindConfig: config,
+                        packageTemplateLabel: config.label.trim(),
+                        packageTemplateConfig: config,
                     });
                     setConfigOpen(false);
                     setSaveAsOpen(true);

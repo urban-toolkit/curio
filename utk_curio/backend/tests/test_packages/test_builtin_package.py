@@ -55,28 +55,28 @@ def test_builtin_packageage_manifest_loads(builtin_packageage_dir: Path):
     manifest = load_packageage_manifest(builtin_packageage_dir)
     assert manifest.package_id == "curio.builtin"
     assert manifest.major == 1
-    kind_ids = {k.kind_id for k in manifest.kinds}
+    kind_ids = {k.template_id for k in manifest.templates}
     assert kind_ids == EXPECTED_KIND_IDS
 
 
 def test_builtin_packageage_every_kind_has_lifecycle_and_icon(builtin_packageage_dir: Path):
     manifest = load_packageage_manifest(builtin_packageage_dir)
-    for kind in manifest.kinds:
+    for kind in manifest.templates:
         assert kind.lifecycle in EXPECTED_LIFECYCLES, (
-            f"kind {kind.kind_id} declares unknown lifecycle {kind.lifecycle!r}"
+            f"kind {kind.template_id} declares unknown lifecycle {kind.lifecycle!r}"
         )
-        assert kind.icon_ref, f"kind {kind.kind_id} is missing iconRef"
+        assert kind.icon_ref, f"kind {kind.template_id} is missing iconRef"
         assert kind.palette_order is not None, (
-            f"kind {kind.kind_id} must declare paletteOrder"
+            f"kind {kind.template_id} must declare paletteOrder"
         )
 
 
 def test_builtin_packageage_ships_no_sources(builtin_packageage_dir: Path):
     """Built-in kinds are structural shells — no starter code files."""
     manifest = load_packageage_manifest(builtin_packageage_dir)
-    for kind in manifest.kinds:
+    for kind in manifest.templates:
         assert kind.source is None, (
-            f"built-in kind {kind.kind_id} must not declare a source"
+            f"built-in kind {kind.template_id} must not declare a source"
         )
     assert not (builtin_packageage_dir / "sources").exists(), (
         "built-in package must not ship a sources/ directory"
@@ -106,7 +106,7 @@ def test_builtin_packageage_payload_passthrough(builtin_packageage_dir: Path):
     """The wire payload exposes the new manifest fields per kind."""
     manifest = load_packageage_manifest(builtin_packageage_dir)
     payload = _manifest_to_payload(manifest)
-    kinds_by_id = {k["kindId"]: k for k in payload["kinds"]}
+    kinds_by_id = {k["templateId"]: k for k in payload["templates"]}
     vega = kinds_by_id["vis-vega"]
     assert vega["lifecycle"] == "vega"
     assert vega["iconRef"] == "fa-solid:chart-line"

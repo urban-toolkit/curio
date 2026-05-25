@@ -5,7 +5,7 @@ import { Tooltip, OverlayTrigger } from "react-bootstrap";
 import { refreshPackageRegistry } from "../../../api/packagesApi";
 import { getPaletteNodeTypes, subscribeToRegistry } from "../../../registry";
 import { BUILTIN_PACKAGE_ID } from "../../../registry/packagesClient";
-import { NodeCategory, NodeDescriptor, NodeKindId } from "../../../registry/types";
+import { NodeCategory, NodeDescriptor, NodeTemplateId } from "../../../registry/types";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { useUserContext } from "../../../providers/UserProvider";
 import {
@@ -25,7 +25,7 @@ const DraggableTool = memo(function DraggableTool({
     badge,
     tooltipPlacement = "right",
 }: {
-    nodeType: NodeKindId;
+    nodeType: NodeTemplateId;
     icon: any;
     tooltip: string;
     tutorialID?: string;

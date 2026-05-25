@@ -18,7 +18,7 @@ export function packageInitial(name: string): string {
  * Collapses all "vis*" categories to a single "vis" label.
  */
 export function primaryCategory(pkg: PackagePayload): string {
-  const cat = pkg.kinds[0]?.category;
+  const cat = pkg.templates[0]?.category;
   if (!cat) return "package";
   if (cat.startsWith("vis")) return "vis";
   return cat;

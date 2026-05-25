@@ -4,7 +4,7 @@
   "title": "Curio Node Package Manifest (v3)",
   "description": "Schema for a Curio node-package manifest.json. A package ships in a directory named '<packageId>@<major>' containing this manifest, an optional README.md / LICENSE, an optional sources/ directory with one starter file per kind, and (after install) an integrity.json with SHA-256 hashes of every shipped file. The pre-installed 'curio.builtin' package ships with the app and provides the default 14 node kinds; third-party packages install via the warehouse drawer or by importing a `.curio.zip` archive.",
   "type": "object",
-  "required": ["id", "version", "name", "publisher", "compatibility", "kinds"],
+  "required": ["id", "version", "name", "publisher", "compatibility", "templates"],
   "additionalProperties": true,
   "properties": {
     "$schema": {
@@ -97,11 +97,11 @@
       },
       "additionalProperties": false
     },
-    "kinds": {
+    "templates": {
       "type": "array",
-      "description": "Node kinds this package defines. Each entry becomes a draggable node in the canvas palette.",
+      "description": "Node templates this package defines. Each entry becomes a draggable node in the canvas palette.",
       "minItems": 1,
-      "items": { "$ref": "#/$defs/kind" }
+      "items": { "$ref": "#/$defs/template" }
     }
   },
   "$defs": {
@@ -134,14 +134,14 @@
       },
       "additionalProperties": false
     },
-    "kind": {
+    "template": {
       "type": "object",
       "required": ["id", "label", "category", "engine", "editor", "inputPorts", "outputPorts"],
       "properties": {
         "id": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]{0,62}$",
-          "description": "Kebab-case kind id. Canonical type at runtime is '<packageId>/<kindId>' (unversioned) or '<packageId>/<kindId>@<major>' (versioned)."
+          "description": "Kebab-case template id. Canonical type at runtime is '<packageId>/<templateId>' (unversioned) or '<packageId>/<templateId>@<major>' (versioned)."
         },
         "label": { "type": "string", "description": "Display name in the palette / canvas." },
         "category": {

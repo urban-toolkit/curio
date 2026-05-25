@@ -137,7 +137,7 @@ export class TrillGenerator {
             let trill_node: any = {};
 
             trill_node.id = node.data.nodeId;
-            // Persist dispatcher id (`data.nodeType`); RF `type` stays a sentinel for all UniversalNode-backed kinds.
+            // Persist dispatcher id (`data.nodeType`); RF `type` stays a sentinel for all UniversalNode-backed templates.
             trill_node.type = node.data?.nodeType ?? node.type;
 
             // Use workflow position so saving in dashboard mode doesn't corrupt the layout

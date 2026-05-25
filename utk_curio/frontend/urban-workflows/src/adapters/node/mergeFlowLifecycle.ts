@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useEdges, Edge, Position } from 'reactflow';
 import { NodeLifecycleHook, HandleDef } from '../../registry/types';
 import { NodeType } from '../../constants';
-import { Template, useTemplateContext } from '../../providers/TemplateProvider';
+import { Starter, useStarterContext } from '../../providers/StarterProvider';
 
 const MERGE_SLOT_COUNT = 5;
 

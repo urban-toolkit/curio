@@ -7,7 +7,6 @@ import {
 } from "../../../api/packagesApi";
 import { draftFromInstalledPackagePayload } from "../../../utils/palettePackageFactoryDraft";
 import { toApiPayload } from "../../../pages/nodes/factoryDraftModel";
-import { useNodeFactoryModal } from "../../../providers/NodeFactoryModalProvider";
 import { InstallPermissionsDialog } from "./InstallPermissionsDialog";
 import { DrawerHeader } from "./DrawerHeader";
 import { DrawerTabs } from "./DrawerTabs";
@@ -34,7 +33,6 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
   onRequestClose,
   onExitComplete,
 }) => {
-  const { openNodeFactory } = useNodeFactoryModal();
   const drawerRef = useRef<HTMLElement>(null);
 
   const [catalog, setCatalog] = useState<PackagePayload[]>([]);
@@ -389,9 +387,6 @@ export const NodeWarehouseDrawer: React.FC<NodeWarehouseDrawerProps> = ({
           <DrawerFooter
             busy={busy}
             onSideload={(file) => void onPickArchive(file)}
-            onCreatePack={() => {
-              openNodeFactory({ blank: true });
-            }}
           />
         </aside>
       </div>

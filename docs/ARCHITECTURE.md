@@ -91,7 +91,7 @@ ReactFlowProvider
   UserProvider         — Auth / user profile
   DialogProvider       — Modal dialogs
   FlowProvider         — Nodes, edges, outputs, interactions  ← primary state
-    TemplateProvider   — Node code templates
+    StarterProvider    — Per-template starter source snippets (formerly TemplateProvider)
 ```
 
 Each provider exposes its context via a custom hook (e.g., `useFlow()`, `useProvenance()`). Components call these hooks rather than reaching into global variables.

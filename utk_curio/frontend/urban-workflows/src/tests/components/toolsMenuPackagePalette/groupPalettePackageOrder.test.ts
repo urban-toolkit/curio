@@ -30,7 +30,7 @@ describe("groupPalettePackages ordering", () => {
     expect(groups.map((g) => g.key)).toEqual(["package.new@1", "package.old@1", "package.nots@1"]);
   });
 
-  test("uses strongest createdAtMs across kinds in one package coordinate", () => {
+  test("uses strongest createdAtMs across templates in one package coordinate", () => {
     const base: Omit<NodePackageMeta, "createdAtMs"> = {
       packageId: "package.multi",
       major: 1,

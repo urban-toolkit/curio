@@ -117,13 +117,13 @@ _ALLOWED_TOP_FILES: frozenset[str] = frozenset({
     "manifest.json", "README.md", "LICENSE", "LICENSE.md", "LICENSE.txt",
 })
 _ALLOWED_TOP_DIRS: frozenset[str] = frozenset({
-    "sources", "templates", "grammars", "widgets", "icons",
+    "sources", "starters", "grammars", "widgets", "icons",
 })
 
 # A safe path segment matches the existing safe-paths charset, with the
 # addition of ``@`` so the (only) package-root directory name can pass the
 # guard. ``@`` is forbidden inside *interior* segments — kind ids are
-# strictly ``[a-z][a-z0-9-]{0,62}`` (cf. ``storage.KIND_ID_RE``).
+# strictly ``[a-z][a-z0-9-]{0,62}`` (cf. ``storage.TEMPLATE_ID_RE``).
 _SAFE_SEGMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$")
 
 # Cap an extracted file at 32 MiB. Packages are template-and-asset-oriented;

@@ -1,4 +1,4 @@
-import { NodeKindId, NodeDescriptor } from './types';
+import { NodeTemplateId, NodeDescriptor } from './types';
 import { splitCanonicalNodeType } from './packageKeys';
 
 /**
@@ -7,13 +7,13 @@ import { splitCanonicalNodeType } from './packageKeys';
  * Keyed by canonical type string. Versioned ids like
  * `"ai.urbanlab.uhvi/uhvi-load@1"` are stored as-is. A secondary
  * **unversioned index** tracks the installed majors per
- * `<packageId>/<kindId>` so a lookup by the unversioned form resolves to
+ * `<packageId>/<templateId>` so a lookup by the unversioned form resolves to
  * the latest installed major — the default referencing convention for
  * trill files.
  */
-const registry = new Map<NodeKindId, NodeDescriptor>();
+const registry = new Map<NodeTemplateId, NodeDescriptor>();
 
-/** unversioned `<packageId>/<kindId>` → installed majors, sorted descending. */
+/** unversioned `<packageId>/<templateId>` → installed majors, sorted descending. */
 const unversionedMajors = new Map<string, number[]>();
 
 function rememberMajor(canonicalId: string): void {
@@ -134,11 +134,11 @@ export function clearPackageNodes(): void {
  * Resolve a node type to its descriptor.
  *
  * Resolution order:
- *   1. Exact match (versioned canonical id `<packageId>/<kindId>@<major>`).
- *   2. Unversioned-latest: input matches `<packageId>/<kindId>` → use the
+ *   1. Exact match (versioned canonical id `<packageId>/<templateId>@<major>`).
+ *   2. Unversioned-latest: input matches `<packageId>/<templateId>` → use the
  *      highest installed major for that family.
  */
-function lookupDescriptor(nodeType: NodeKindId): NodeDescriptor | undefined {
+function lookupDescriptor(nodeType: NodeTemplateId): NodeDescriptor | undefined {
   const exact = registry.get(nodeType);
   if (exact) return exact;
   if (typeof nodeType === 'string' && nodeType.includes('/') && !nodeType.includes('@')) {
@@ -147,13 +147,13 @@ function lookupDescriptor(nodeType: NodeKindId): NodeDescriptor | undefined {
   return undefined;
 }
 
-export function getNodeDescriptor(nodeType: NodeKindId): NodeDescriptor {
+export function getNodeDescriptor(nodeType: NodeTemplateId): NodeDescriptor {
   const desc = lookupDescriptor(nodeType);
-  if (!desc) throw new Error(`No descriptor registered for NodeKindId: ${nodeType}`);
+  if (!desc) throw new Error(`No descriptor registered for NodeTemplateId: ${nodeType}`);
   return desc;
 }
 
-export function tryGetNodeDescriptor(nodeType: NodeKindId): NodeDescriptor | undefined {
+export function tryGetNodeDescriptor(nodeType: NodeTemplateId): NodeDescriptor | undefined {
   return lookupDescriptor(nodeType);
 }
 

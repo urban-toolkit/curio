@@ -11,7 +11,7 @@ export {
   subscribeToRegistry,
 } from './nodeRegistry';
 
-export type { NodeKindId, NodeSource, NodePackageMeta } from './types';
+export type { NodeTemplateId, NodeSource, NodePackageMeta } from './types';
 
 export {
   registerGrammarAdapter,

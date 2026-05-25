@@ -31,8 +31,8 @@ export function syncNodeTypeRegistry(): Promise<void> {
 }
 
 function notifyTemplatesAfterPackageRefresh(): void {
-  const w = window as unknown as { curio?: { fetchTemplates?: () => void | Promise<void> } };
-  const fn = w.curio?.fetchTemplates;
+  const w = window as unknown as { curio?: { fetchStarters?: () => void | Promise<void> } };
+  const fn = w.curio?.fetchStarters;
   if (typeof fn === 'function') {
     void Promise.resolve(fn()).catch(() => {});
   }
@@ -40,7 +40,7 @@ function notifyTemplatesAfterPackageRefresh(): void {
 
 /**
  * Fetch installed packages, register descriptors, push merged port shapes, then
- * reload ``/templates`` so package default bodies appear in ``TemplateProvider``
+ * reload ``/starters`` so package default bodies appear in ``StarterProvider``
  * (required for {@link usePackageNodeLifecycle} injection on new kinds).
  */
 export function refreshPackageRegistry(): Promise<void> {

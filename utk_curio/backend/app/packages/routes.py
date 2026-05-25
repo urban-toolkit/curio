@@ -40,6 +40,7 @@ from flask import Blueprint, Response, g, jsonify, request
 from utk_curio.backend.app.packages.factory import (
     FactoryError,
     build_packageage_archive,
+    preserve_unedited_sources,
 )
 from utk_curio.backend.app.packages.installer import (
     InstallerError,
@@ -113,33 +114,33 @@ def _manifest_json_mtime_ms(package_path: Path) -> int:
 
 
 def _manifest_to_payload(manifest: PackageManifest, *, package_mtime_path: Path | None = None) -> dict:
-    kinds = []
-    for kind in manifest.kinds:
-        kinds.append(
+    templates = []
+    for tpl in manifest.templates:
+        templates.append(
             {
-                "id": manifest.canonical_for(kind.kind_id),
-                "kindId": kind.kind_id,
-                "label": kind.label,
-                "category": kind.category,
-                "engine": kind.engine,
-                "description": kind.description,
-                "icon": kind.icon,
-                "iconRef": kind.icon_ref,
-                "lifecycle": kind.lifecycle,
-                "paletteOrder": kind.palette_order,
-                "editor": kind.editor,
-                "hasCode": kind.has_code,
-                "hasWidgets": kind.has_widgets,
-                "hasGrammar": kind.has_grammar,
-                "grammarId": kind.grammar_id,
-                "badge": kind.badge,
-                "inputPorts": [asdict(p) if is_dataclass(p) else p for p in kind.input_ports],
-                "outputPorts": [asdict(p) if is_dataclass(p) else p for p in kind.output_ports],
-                "source": kind.source,
-                "bidirectional": kind.bidirectional,
-                "containerStyle": kind.container_style,
-                "hasProvenance": kind.has_provenance,
-                "tutorialId": kind.tutorial_id,
+                "id": manifest.canonical_for(tpl.template_id),
+                "templateId": tpl.template_id,
+                "label": tpl.label,
+                "category": tpl.category,
+                "engine": tpl.engine,
+                "description": tpl.description,
+                "icon": tpl.icon,
+                "iconRef": tpl.icon_ref,
+                "lifecycle": tpl.lifecycle,
+                "paletteOrder": tpl.palette_order,
+                "editor": tpl.editor,
+                "hasCode": tpl.has_code,
+                "hasWidgets": tpl.has_widgets,
+                "hasGrammar": tpl.has_grammar,
+                "grammarId": tpl.grammar_id,
+                "badge": tpl.badge,
+                "inputPorts": [asdict(p) if is_dataclass(p) else p for p in tpl.input_ports],
+                "outputPorts": [asdict(p) if is_dataclass(p) else p for p in tpl.output_ports],
+                "source": tpl.source,
+                "bidirectional": tpl.bidirectional,
+                "containerStyle": tpl.container_style,
+                "hasProvenance": tpl.has_provenance,
+                "tutorialId": tpl.tutorial_id,
             }
         )
     payload = {
@@ -156,7 +157,7 @@ def _manifest_to_payload(manifest: PackageManifest, *, package_mtime_path: Path 
             "python": dict(manifest.python_deps),
             "js": dict(manifest.js_deps),
         },
-        "kinds": kinds,
+        "templates": templates,
         "dirName": manifest.dir_name,
         "lineage": _lineage_to_payload(manifest),
         "familyKey": family_key_for_manifest(manifest),
@@ -168,7 +169,18 @@ def _manifest_to_payload(manifest: PackageManifest, *, package_mtime_path: Path 
         payload["createdAt"] = manifest.created_at_iso
     if package_mtime_path is not None:
         payload["installUpdatedAtMs"] = _manifest_json_mtime_ms(package_mtime_path)
+        # Surface README contents (capped) so the metadata editor can pre-populate.
+        readme_path = package_mtime_path / "README.md"
+        if readme_path.is_file():
+            try:
+                raw = readme_path.read_text(encoding="utf-8")
+                payload["readme"] = raw[:_README_MAX_BYTES]
+            except OSError:
+                pass
     return payload
+
+
+_README_MAX_BYTES = 64 * 1024  # 64 KiB cap on README content surfaced via payload.
 
 
 def _catalog_root() -> Path:
@@ -452,6 +464,126 @@ def remove_packageage(dir_name: str):
 
 
 # ---------------------------------------------------------------------------
+# PATCH /api/packages/<dir_name> — partial metadata edit
+# ---------------------------------------------------------------------------
+
+_PATCH_ALLOWED_TOP_KEYS: frozenset[str] = frozenset({
+    "name", "description", "publisher", "license", "permissions",
+})
+_PATCH_ALLOWED_COMPAT_KEYS: frozenset[str] = frozenset({"curioRuntime"})
+
+
+@packages_bp.route("/<dir_name>", methods=["PATCH"])
+@require_auth
+def patch_package_metadata(dir_name: str):
+    """Partial-update human-authored package metadata.
+
+    Replaces the Node Factory wizard's metadata fields for installed packages.
+    Read-only packages (``curio.builtin@1`` and similar) reject with ``403``.
+    Identity-bearing keys (``id``, ``version``, ``major``, ``kinds``,
+    ``lineage``, ``readOnly``, ``createdAt``, ``distribution``,
+    ``dependencies``) cannot be mutated through this endpoint — ``dependencies``
+    in particular comes from source-scan now.
+    """
+    user_key = _user_dir_key(g.user)
+    try:
+        pkg_path = package_dir(user_key, dir_name)
+    except PackageIdError as exc:
+        return _error(str(exc))
+    if not pkg_path.is_dir():
+        return _error("package not installed", 404)
+
+    manifest_path = pkg_path / "manifest.json"
+    if not manifest_path.is_file():
+        return _error("manifest.json missing", 404)
+
+    try:
+        original_bytes = manifest_path.read_bytes()
+        raw = _json.loads(original_bytes.decode("utf-8"))
+    except (OSError, _json.JSONDecodeError) as exc:
+        return _error(f"cannot read manifest: {exc}")
+    if not isinstance(raw, dict):
+        return _error("manifest.json root must be an object")
+
+    if raw.get("readOnly") is True:
+        return _error("this package is read-only", 403)
+
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return _error("request body must be a JSON object")
+
+    # Validate the allowlist before touching disk.
+    readme_update = body.get("readme") if "readme" in body else None
+    readme_supplied = "readme" in body
+    compat_update = body.get("compatibility")
+    if compat_update is not None and not isinstance(compat_update, dict):
+        return _error("compatibility must be an object")
+    if compat_update:
+        bad = set(compat_update) - _PATCH_ALLOWED_COMPAT_KEYS
+        if bad:
+            return _error(
+                f"compatibility keys not editable here: {sorted(bad)}; "
+                f"allowed: {sorted(_PATCH_ALLOWED_COMPAT_KEYS)}",
+            )
+
+    rejected = (set(body) - _PATCH_ALLOWED_TOP_KEYS) - {"compatibility", "readme"}
+    if rejected:
+        return _error(
+            f"fields not editable through PATCH: {sorted(rejected)}; "
+            f"allowed: {sorted(_PATCH_ALLOWED_TOP_KEYS | {'compatibility', 'readme'})}",
+        )
+
+    # Apply top-level allowlisted keys.
+    for key in _PATCH_ALLOWED_TOP_KEYS:
+        if key in body:
+            raw[key] = body[key]
+
+    # Merge compatibility shallowly so untouched sibling keys (e.g. `major`) survive.
+    if compat_update:
+        existing_compat = dict(raw.get("compatibility") or {})
+        existing_compat.update(compat_update)
+        raw["compatibility"] = existing_compat
+
+    # Atomic manifest write, then re-validate; restore originals on validation failure.
+    serialized = (_json.dumps(raw, indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode("utf-8")
+    tmp_path = manifest_path.with_name("manifest.json.tmp")
+    try:
+        tmp_path.write_bytes(serialized)
+        tmp_path.replace(manifest_path)
+    except OSError as exc:
+        return _error(f"cannot write manifest: {exc}")
+
+    try:
+        manifest = load_packageage_manifest(pkg_path)
+    except ManifestError as exc:
+        manifest_path.write_bytes(original_bytes)
+        return _error(f"patch rejected by validator: {exc}")
+
+    # README is a sibling file; write/unlink it atomically only after the manifest
+    # validates so a bad metadata patch doesn't half-mutate the package.
+    readme_path = pkg_path / "README.md"
+    if readme_supplied:
+        if isinstance(readme_update, str) and readme_update.strip():
+            try:
+                tmp_readme = readme_path.with_name("README.md.tmp")
+                tmp_readme.write_text(readme_update, encoding="utf-8")
+                tmp_readme.replace(readme_path)
+            except OSError as exc:
+                return _error(f"cannot write README: {exc}")
+        elif readme_update is None or readme_update == "":
+            try:
+                readme_path.unlink(missing_ok=True)
+            except OSError as exc:
+                return _error(f"cannot remove README: {exc}")
+        else:
+            return _error("readme must be a string or null")
+
+    return jsonify({
+        "package": _manifest_to_payload(manifest, package_mtime_path=pkg_path),
+    }), 200
+
+
+# ---------------------------------------------------------------------------
 # GET /api/packages/<dir_name>/archive — re-export
 # ---------------------------------------------------------------------------
 
@@ -513,6 +645,25 @@ def factory_publish_catalog():
     body = dict(request.get_json(silent=True) or {})
     replace = bool(body.pop("replace", False))
     catalog = _catalog_root()
+    # Same trap as /factory/install: a draft built from
+    # ``draftFromInstalledPackagePayload`` only carries real source for the
+    # template the user actively edited; every other template ships the
+    # STARTER_CODE placeholder. Read the user's installed sources from disk
+    # before the rebuild so we don't publish placeholders to the catalog.
+    user_key = _user_dir_key(g.user)
+    existing_dir: Path | None = None
+    manifest_raw = body.get("manifest")
+    if isinstance(manifest_raw, dict):
+        package_id_raw = manifest_raw.get("id")
+        major_raw = (manifest_raw.get("compatibility") or {}).get("major")
+        if isinstance(package_id_raw, str) and isinstance(major_raw, int):
+            try:
+                candidate = package_dir(user_key, f"{package_id_raw}@{major_raw}")
+            except PackageIdError:
+                candidate = None
+            if candidate is not None and candidate.is_dir():
+                existing_dir = candidate
+    body = preserve_unedited_sources(body, existing_dir)
     try:
         built = build_packageage_archive(body)
         result = publish_packageage_archive_to_catalog_dir(
@@ -588,6 +739,22 @@ def factory_install():
                 except ManifestError:
                     pass  # Let the install path surface a more specific error.
     replace = bool(draft.get("replace", False))
+    # Save-As over an existing package only carries real source bytes for the
+    # template the user actively edited; every other template comes through
+    # with the STARTER_CODE placeholder. Read the unedited templates' real
+    # source from disk before the rebuild so we don't clobber them.
+    existing_dir: Path | None = None
+    if isinstance(manifest_raw, dict):
+        package_id_raw = manifest_raw.get("id")
+        major_raw = (manifest_raw.get("compatibility") or {}).get("major")
+        if isinstance(package_id_raw, str) and isinstance(major_raw, int):
+            try:
+                candidate = package_dir(user_key, f"{package_id_raw}@{major_raw}")
+            except PackageIdError:
+                candidate = None
+            if candidate is not None and candidate.is_dir():
+                existing_dir = candidate
+    draft = preserve_unedited_sources(draft, existing_dir)
     try:
         built = build_packageage_archive(draft)
         result = install_packageage_from_archive(

@@ -8,10 +8,11 @@ Layout (anchored on ``CURIO_LAUNCH_CWD``)::
           packages/
             <packageId>@<major>/
               manifest.json
-              templates/<kindId>/*.py
-              grammars/<kindId>/*.json
-              widgets/<kindId>/*.json
-              icons/<kindId>.svg
+              sources/<templateId>.{py,js,...}
+              starters/<templateId>/*.py
+              grammars/<templateId>/*.json
+              widgets/<templateId>/*.json
+              icons/<templateId>.svg
               README.md
               LICENSE
 
@@ -49,9 +50,9 @@ PACKAGE_DIR_RE = re.compile(
     r"^[a-z][a-z0-9-]{0,62}(?:\.[a-z][a-z0-9-]{0,62}){1,5}@(?:0|[1-9][0-9]{0,3})$"
 )
 
-# A kind id (used as a *sub*-directory under ``templates/`` etc.) is more
+# A template id (used as a *sub*-directory under ``starters/`` etc.) is more
 # restrictive than the package id segment: lower-case, dash-separated.
-KIND_ID_RE = re.compile(r"^[a-z][a-z0-9-]{0,62}$")
+TEMPLATE_ID_RE = re.compile(r"^[a-z][a-z0-9-]{0,62}$")
 
 
 class PackageIdError(ValueError):
@@ -62,14 +63,14 @@ class PackageIdError(ValueError):
 class PackageId:
     """A parsed package canonical identifier.
 
-    Canonical form is ``<packageId>/<kindId>@<major>`` (e.g.
+    Canonical form is ``<packageId>/<templateId>@<major>`` (e.g.
     ``ai.urbanlab.uhvi/uhvi-load@2``). The on-disk package directory uses just
     ``<packageId>@<major>``.
     """
 
     package_id: str
     major: int
-    kind_id: str | None = None
+    template_id: str | None = None
 
     @classmethod
     def parse_dir(cls, dir_name: str) -> "PackageId":
@@ -84,34 +85,34 @@ class PackageId:
 
     @classmethod
     def parse_canonical(cls, canonical: str) -> "PackageId":
-        """Parse ``<packageId>/<kindId>@<major>``."""
+        """Parse ``<packageId>/<templateId>@<major>``."""
         if not isinstance(canonical, str) or "/" not in canonical or "@" not in canonical:
             raise PackageIdError(
                 f"invalid canonical package id: {canonical!r}; expected "
-                f"'<packageId>/<kindId>@<major>'"
+                f"'<packageId>/<templateId>@<major>'"
             )
         head, major_str = canonical.rsplit("@", 1)
         if "/" not in head:
             raise PackageIdError(f"missing '/' in canonical id: {canonical!r}")
-        package_id, kind_id = head.split("/", 1)
+        package_id, template_id = head.split("/", 1)
         if not PACKAGE_DIR_RE.match(f"{package_id}@0"):
             raise PackageIdError(f"invalid package id segment: {package_id!r}")
-        if not KIND_ID_RE.match(kind_id):
-            raise PackageIdError(f"invalid kind id segment: {kind_id!r}")
+        if not TEMPLATE_ID_RE.match(template_id):
+            raise PackageIdError(f"invalid template id segment: {template_id!r}")
         try:
             major = int(major_str)
         except ValueError as exc:
             raise PackageIdError(f"invalid major version: {major_str!r}") from exc
-        return cls(package_id=package_id, major=major, kind_id=kind_id)
+        return cls(package_id=package_id, major=major, template_id=template_id)
 
     @property
     def dir_name(self) -> str:
         return f"{self.package_id}@{self.major}"
 
-    def canonical(self, kind_id: str | None = None) -> str:
-        k = kind_id or self.kind_id
+    def canonical(self, template_id: str | None = None) -> str:
+        k = template_id or self.template_id
         if not k:
-            raise PackageIdError("canonical() requires a kind_id")
+            raise PackageIdError("canonical() requires a template_id")
         return f"{self.package_id}/{k}@{self.major}"
 
 

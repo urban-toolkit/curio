@@ -1,28 +1,18 @@
-import React, { memo, useCallback, useMemo } from "react";
+import React, { memo, useCallback, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faDownload, faPenToSquare } from "@fortawesome/free-solid-svg-icons";
-import { useReactFlow } from "reactflow";
 import { packagesApi } from "../../../../api/packagesApi";
-import type { PackageStagedRow } from "../../../../providers/PackagePaletteContext";
-import { usePackagePalette } from "../../../../providers/PackagePaletteContext";
 import { useToastContext } from "../../../../providers/ToastProvider";
 import { CatalogPublishPill } from "../../../packages/CatalogPublishPill";
+import { PackageMetadataModal } from "../../../packages/editing";
 import type { PackagePaletteGroup } from "./model";
-import {
-    canvasKindLabelForNodeId,
-    normalizedStagedReplacementLabels,
-    packageDescriptorsAfterPaletteEdits,
-} from "./model";
-import { PackageCanvasDropSlot, PackageKindRow, PackageStagedCanvasRow } from "./PackagePaletteRows";
+import { PackageTemplateRow } from "./PackagePaletteRows";
 import packageStyles from "./ToolsMenuPackagePalette.module.css";
 
 export interface InstalledPackageAccordionProps {
     group: PackagePaletteGroup;
     activePackageKey: string | null;
     setActivePackageKey: (k: string | null) => void;
-    packagesPaletteEditMode: boolean;
-    stagedInstalledRows: readonly PackageStagedRow[];
-    openWizardForPaletteSection: (sectionKey: string, opts: { group?: PackagePaletteGroup }) => void;
     catalogMetadataLoaded: boolean;
     catalogPublishAllowed: boolean;
     isCatalogPublished: boolean;
@@ -38,9 +28,6 @@ export const InstalledPackageAccordion = memo(function InstalledPackageAccordion
     group,
     activePackageKey,
     setActivePackageKey,
-    packagesPaletteEditMode,
-    stagedInstalledRows,
-    openWizardForPaletteSection,
     catalogMetadataLoaded,
     catalogPublishAllowed,
     isCatalogPublished,
@@ -50,9 +37,9 @@ export const InstalledPackageAccordion = memo(function InstalledPackageAccordion
     summaryTitle,
 }: InstalledPackageAccordionProps) {
     const rowTitle = summaryTitle ?? group.name;
-    const { getNodes } = useReactFlow();
     const { showToast } = useToastContext();
-    const { removedKindIdsByPackageKey } = usePackagePalette();
+    const [metadataOpen, setMetadataOpen] = useState(false);
+    const isReadOnly = !!group.descriptors[0]?.package?.readOnly;
 
     const onExportClick = useCallback(
         async (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -69,29 +56,6 @@ export const InstalledPackageAccordion = memo(function InstalledPackageAccordion
         },
         [group.key, showToast],
     );
-    const removedKindIds = removedKindIdsByPackageKey[group.key] ?? [];
-    const labelForNodeId = useCallback(
-        (nodeId: string) => canvasKindLabelForNodeId(nodeId, getNodes()),
-        [getNodes],
-    );
-    const replacementLabels = useMemo(
-        () => normalizedStagedReplacementLabels(stagedInstalledRows, labelForNodeId),
-        [labelForNodeId, stagedInstalledRows],
-    );
-    const visibleDescriptors = useMemo(
-        () =>
-            packagesPaletteEditMode
-                ? packageDescriptorsAfterPaletteEdits(group.descriptors, removedKindIds, replacementLabels)
-                : group.descriptors,
-        [group.descriptors, packagesPaletteEditMode, removedKindIds, replacementLabels],
-    );
-    const countBadge = packagesPaletteEditMode
-        ? visibleDescriptors.length + stagedInstalledRows.length
-        : group.descriptors.length;
-    const hasPendingEdits = stagedInstalledRows.length > 0 || removedKindIds.length > 0;
-    const canOpenStaged = packagesPaletteEditMode && hasPendingEdits;
-    const canOpenFork = packagesPaletteEditMode && !hasPendingEdits;
-    const canOpenFactory = canOpenStaged || canOpenFork;
     return (
         <details
             className={`${packageStyles.packageDetails} ${group.key === activePackageKey ? packageStyles.packageDetailsSelected : ""}`}
@@ -101,42 +65,10 @@ export const InstalledPackageAccordion = memo(function InstalledPackageAccordion
                     <div className={packageStyles.packageSummaryTitleCluster}>
                         <span
                             className={packageStyles.packageSummaryTitle}
-                            role={canOpenFactory ? "button" : undefined}
-                            title={
-                                group.label !== rowTitle
-                                    ? `${rowTitle} — ${group.label}`
-                                    : canOpenStaged
-                                      ? "Open Node Factory with this package and staged edits"
-                                      : canOpenFork
-                                        ? "Fork this package in Node Factory (new install; source unchanged)"
-                                        : rowTitle
-                            }
-                            // onClick={(e) => {
-                            //     if (!canOpenFactory) return;
-                            //     e.preventDefault();
-                            //     e.stopPropagation();
-                            //     setActivePackageKey(group.key);
-                            //     openWizardForPaletteSection(group.key, { group });
-                            // }}
+                            title={group.label !== rowTitle ? `${rowTitle} — ${group.label}` : rowTitle}
                         >
                             {rowTitle}
                         </span>
-                        {/* {canOpenFactory ? (
-                            <button
-                                type="button"
-                                className={packageStyles.packageSummaryFactoryPen}
-                                title={canOpenStaged ? "Open Node Factory with staged edits" : "Fork in Node Factory"}
-                                aria-label={`Node Factory — ${group.name}`}
-                                onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    setActivePackageKey(group.key);
-                                    openWizardForPaletteSection(group.key, { group });
-                                }}
-                            >
-                                <FontAwesomeIcon icon={faPenToSquare} />
-                            </button>
-                        ) : null} */}
                         <button
                             type="button"
                             className={packageStyles.packageSummaryExportBtn}
@@ -151,6 +83,26 @@ export const InstalledPackageAccordion = memo(function InstalledPackageAccordion
                         >
                             <FontAwesomeIcon icon={faDownload} aria-hidden />
                         </button>
+                        {!isReadOnly ? (
+                            <button
+                                type="button"
+                                className={packageStyles.packageSummaryExportBtn}
+                                title="Edit package metadata"
+                                aria-label={`Edit metadata for ${group.name}`}
+                                data-curio-package-palette-node-action="true"
+                                onMouseDown={(e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                }}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    setMetadataOpen(true);
+                                }}
+                            >
+                                <FontAwesomeIcon icon={faPenToSquare} aria-hidden />
+                            </button>
+                        ) : null}
                         {catalogMetadataLoaded && showCatalogPublishInSummary ? (
                             <CatalogPublishPill
                                 variant="dock"
@@ -162,31 +114,24 @@ export const InstalledPackageAccordion = memo(function InstalledPackageAccordion
                             />
                         ) : null}
                     </div>
-                    <span className={packageStyles.packageSummaryCount}>{countBadge}</span>
+                    <span className={packageStyles.packageSummaryCount}>{group.descriptors.length}</span>
                 </div>
             </summary>
-            <div className={`${packageStyles.packageKindGrid}${packagesPaletteEditMode ? ` ${packageStyles.packageKindGridEdit}` : ""}`}>
-                {visibleDescriptors.map((desc) => (
-                    <PackageKindRow
+            <div className={packageStyles.packageKindGrid}>
+                {group.descriptors.map((desc) => (
+                    <PackageTemplateRow
                         key={desc.id}
                         desc={desc}
-                        packageSectionKey={group.key}
-                        packagesPaletteEditMode={packagesPaletteEditMode}
                         tooltipPlacement="right"
                     />
                 ))}
-                {packagesPaletteEditMode
-                    ? stagedInstalledRows.map((row) => (
-                          <PackageStagedCanvasRow
-                              key={row.rowId}
-                              packageSectionKey={group.key}
-                              rowId={row.rowId}
-                              canvasNodeId={row.canvasNodeId}
-                          />
-                      ))
-                    : null}
-                {packagesPaletteEditMode ? <PackageCanvasDropSlot packageSectionKey={group.key} /> : null}
             </div>
+            {metadataOpen ? (
+                <PackageMetadataModal
+                    dirName={group.key}
+                    onClose={() => setMetadataOpen(false)}
+                />
+            ) : null}
         </details>
     );
 });

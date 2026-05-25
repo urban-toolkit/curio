@@ -31,10 +31,10 @@ def test_install_happy_path(tmp_curio, make_archive):
     assert result.replaced_existing is False
     target = package_dir("guest", "ai.test.demo@1")
     assert (target / "manifest.json").is_file()
-    assert (target / "templates" / "demo-kind" / "Default.py").is_file()
+    assert (target / "starters" / "demo-kind" / "Default.py").is_file()
     integrity = json.loads((target / "integrity.json").read_text())
     assert "manifest.json" in integrity["sha256"]
-    assert "templates/demo-kind/Default.py" in integrity["sha256"]
+    assert "starters/demo-kind/Default.py" in integrity["sha256"]
 
 
 def test_install_rejects_duplicate_without_replace(tmp_curio, make_archive):
@@ -53,7 +53,7 @@ def test_install_replace_overwrites(tmp_curio, make_archive, manifest_dict):
     assert result.replaced_existing is True
     assert result.manifest.version == "2.0.0"
     target = package_dir("guest", "ai.test.demo@1")
-    body = (target / "templates" / "demo-kind" / "Default.py").read_text()
+    body = (target / "starters" / "demo-kind" / "Default.py").read_text()
     assert "'v': 2" in body
 
 
@@ -74,10 +74,10 @@ def test_install_refreshes_manifest_mtime_for_api_recency(tmp_curio, make_archiv
     "bad_member",
     [
         "../etc/passwd",                       # classic traversal
-        "templates/../escape.py",               # interior traversal
+        "starters/../escape.py",               # interior traversal
         "/abs/path",                            # absolute
-        "templates/demo-kind/..\\evil",        # backslash separator
-        "templates/demo-kind/with space.py",   # space outside charset
+        "starters/demo-kind/..\\evil",        # backslash separator
+        "starters/demo-kind/with space.py",   # space outside charset
     ],
 )
 def test_install_blocks_unsafe_member(tmp_curio, make_archive, bad_member):
@@ -98,7 +98,7 @@ def test_install_rejects_disallowed_top_level(tmp_curio, manifest_dict):
 def test_install_rejects_missing_manifest(tmp_curio):
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, mode="w") as zf:
-        zf.writestr("templates/demo-kind/Default.py", "")
+        zf.writestr("starters/demo-kind/Default.py", "")
     with pytest.raises(InstallerError, match="manifest"):
         install_packageage_from_archive("guest", buf.getvalue())
 
@@ -166,7 +166,7 @@ def test_install_packageage_from_directory_uses_committed_fixture(tmp_curio):
     result = install_packageage_from_directory("guest", fixture)
     assert result.manifest.package_id == "ai.urbanlab.uhvi"
     target = package_dir("guest", "ai.urbanlab.uhvi@1")
-    assert (target / "templates" / "uhvi-load").is_dir()
+    assert (target / "starters" / "uhvi-load").is_dir()
 
 
 # ---------------------------------------------------------------------------

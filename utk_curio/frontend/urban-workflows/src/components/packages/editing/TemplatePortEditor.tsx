@@ -2,12 +2,12 @@ import React from "react";
 import type { PortDraft } from "../../../pages/nodes/factoryDraftModel";
 import { factoryUiMakeId } from "../../../pages/nodes/factoryDraftModel";
 import { SupportedType } from "../../../constants";
-import styles from "./NodeKindConfigModal.module.css";
+import styles from "./NodeTemplateConfigModal.module.css";
 
 const SUPPORTED_TYPE_OPTIONS = Object.values(SupportedType);
 const CARDINALITY_OPTIONS = ["1", "n", "[0,1]", "[1,n]", "[1,2]", "2"];
 
-export function KindPortEditor({
+export function TemplatePortEditor({
   title,
   ports,
   onChange,

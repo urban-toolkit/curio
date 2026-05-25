@@ -1,10 +1,4 @@
-import { Node as RFNode } from "reactflow";
-import { PACKAGE_STAGING_MIME } from "../../../../constants/packagePaletteStaging";
-import { draftPackageSectionKey, type PackageStagedRow } from "../../../../providers/PackagePaletteContext";
-import { tryGetNodeDescriptor } from "../../../../registry/nodeRegistry";
-import { NodeDescriptor, NodeKindId, NodePackageMeta } from "../../../../registry/types";
-import { canvasKindLabelFromNode, normalizeKindLabel } from "../../../../utils/palettePackageFactoryDraft";
-import { getFlowNodeCanonicalType } from "../../../../utils/flowNodeCanonicalType";
+import { NodeDescriptor, NodePackageMeta } from "../../../../registry/types";
 import {
     findForkFamilyRootPaletteGroup,
     paletteGroupCreatedAtMs,
@@ -32,60 +26,6 @@ export function formatPackageSectionLabel(meta: NodePackageMeta): string {
         return `${meta.publisher} · ${coord}`;
     }
     return coord;
-}
-
-export function parseStagingPayload(dataTransfer: DataTransfer): string | null {
-    const raw = dataTransfer.getData(PACKAGE_STAGING_MIME).trim();
-    if (!raw) return null;
-    try {
-        const parsed = JSON.parse(raw) as { nodeId?: string };
-        return typeof parsed.nodeId === "string" ? parsed.nodeId : null;
-    } catch {
-        return null;
-    }
-}
-
-export function canvasKindLabelForNodeId(
-    nodeId: string,
-    rfNodes: readonly RFNode[],
-): string | undefined {
-    const n = rfNodes.find((x) => x.id === nodeId);
-    if (!n) return undefined;
-    const nt = getFlowNodeCanonicalType(n);
-    if (!nt) return undefined;
-    const desc = tryGetNodeDescriptor(nt as NodeKindId);
-    if (!desc) return undefined;
-    return canvasKindLabelFromNode(n, desc);
-}
-
-export function normalizedStagedReplacementLabels(
-    stagedRows: readonly PackageStagedRow[],
-    labelForNodeId: (id: string) => string | undefined,
-): Set<string> {
-    const out = new Set<string>();
-    for (const row of stagedRows) {
-        const label = labelForNodeId(row.canvasNodeId);
-        if (label?.trim()) out.add(normalizeKindLabel(label));
-    }
-    return out;
-}
-
-export function packageDescriptorsAfterStagedReplacements(
-    descriptors: readonly NodeDescriptor[],
-    replacementLabelNorms: ReadonlySet<string>,
-): NodeDescriptor[] {
-    if (!replacementLabelNorms.size) return [...descriptors];
-    return descriptors.filter((d) => !replacementLabelNorms.has(normalizeKindLabel(d.label)));
-}
-
-export function packageDescriptorsAfterPaletteEdits(
-    descriptors: readonly NodeDescriptor[],
-    removedKindIds: readonly string[],
-    replacementLabelNorms: ReadonlySet<string>,
-): NodeDescriptor[] {
-    const removed = new Set(removedKindIds);
-    const withoutRemoved = descriptors.filter((d) => !removed.has(d.id));
-    return packageDescriptorsAfterStagedReplacements(withoutRemoved, replacementLabelNorms);
 }
 
 /**
@@ -127,18 +67,9 @@ export function forkFamilyRootDisplayName(
     return members[0]?.name ?? rootKey;
 }
 
-/**
- * Package count for the PACKAGES palette trigger badge: one per dock row (singleton or
- * fork family), plus draft sections while edit mode is on.
- */
+/** Package count for the PACKAGES palette trigger badge: one per dock row (singleton or fork family). */
 export function visiblePaletteTriggerPackagesCount(opts: {
     paletteRows: PalettePackageRow<PackagePaletteGroup>[];
-    packagesPaletteEditMode: boolean;
-    draftPackageSectionIds: readonly string[];
 }): number {
-    let n = opts.paletteRows.length;
-    if (opts.packagesPaletteEditMode) {
-        n += opts.draftPackageSectionIds.length;
-    }
-    return n;
+    return opts.paletteRows.length;
 }

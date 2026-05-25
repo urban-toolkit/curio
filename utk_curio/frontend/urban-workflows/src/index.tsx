@@ -65,11 +65,10 @@ export { refreshPackageRegistry };
 void refreshPackageRegistry();
 
 import FlowProvider from "./providers/FlowProvider";
-import TemplateProvider from "./providers/TemplateProvider";
+import StarterProvider from "./providers/StarterProvider";
 import UserProvider, { useUserContext } from "./providers/UserProvider";
 import DialogProvider from "./providers/DialogProvider";
 import { ToastProvider } from "./providers/ToastProvider";
-import { NodeFactoryModalProvider } from "./providers/NodeFactoryModalProvider";
 import { NodeWarehouseDrawerProvider } from "./providers/NodeWarehouseDrawerProvider";
 import { BackendHealthBanner } from "./providers/BackendHealthBanner";
 import { MainCanvas } from "./components/MainCanvas";
@@ -82,19 +81,18 @@ import { RequireAuth } from "./components/RequireAuth";
 import SignIn from "./pages/auth/SignIn";
 import SignUp from "./pages/auth/SignUp";
 import ProjectsList from "./pages/projects/ProjectsList";
-import NodeFactory from "./pages/nodes/NodeFactory";
 import { ProjectLoader } from "./components/ProjectLoader";
 
 const MainCanvasRoute: React.FC = () => (
   <DialogProvider>
     <FlowProvider>
-      <TemplateProvider>
+      <StarterProvider>
         <ProjectLoader>
           <PackagePaletteProvider>
             <MainCanvas />
           </PackagePaletteProvider>
         </ProjectLoader>
-      </TemplateProvider>
+      </StarterProvider>
     </FlowProvider>
   </DialogProvider>
 );
@@ -124,7 +122,6 @@ const App: React.FC = () => {
     <BrowserRouter basename={(process.env.PUBLIC_PATH || "/").replace(/\/$/, "") || undefined}>
       <BackendHealthBanner>
         <ToastProvider>
-          <NodeFactoryModalProvider>
             <NodeWarehouseDrawerProvider>
             <ReactFlowProvider>
               <LLMProvider>
@@ -150,14 +147,6 @@ const App: React.FC = () => {
                       }
                     />
                     <Route
-                      path="/nodes/factory"
-                      element={
-                        <RequireAuth>
-                          <NodeFactory />
-                        </RequireAuth>
-                      }
-                    />
-                    <Route
                       path="/workflow/:id?"
                       element={<LegacyWorkflowRedirect />}
                     />
@@ -175,7 +164,6 @@ const App: React.FC = () => {
               </LLMProvider>
             </ReactFlowProvider>
             </NodeWarehouseDrawerProvider>
-          </NodeFactoryModalProvider>
         </ToastProvider>
       </BackendHealthBanner>
     </BrowserRouter>

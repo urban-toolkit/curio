@@ -46,8 +46,8 @@ jest.mock('reactflow', () => ({
   useEdges: () => [],
 }));
 
-jest.mock('../../../providers/TemplateProvider', () => ({
-  useTemplateContext: () => ({ templates: [] }),
+jest.mock('../../../providers/StarterProvider', () => ({
+  useStarterContext: () => ({ templates: [] }),
 }));
 
 jest.mock('../../../utils/parsing', () => ({

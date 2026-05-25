@@ -124,10 +124,10 @@ def test_merge_python_deps_disjoint_packageages():
 # Package DAG + project-level resolve
 # ---------------------------------------------------------------------------
 
-def _kind(kind_id: str = "k") -> dict:
+def _kind(template_id: str = "k") -> dict:
     return {
-        "id": kind_id,
-        "label": kind_id.title(),
+        "id": template_id,
+        "label": template_id.title(),
         "category": "computation",
         "engine": "python",
         "editor": "code",
@@ -136,8 +136,8 @@ def _kind(kind_id: str = "k") -> dict:
         "hasGrammar": False,
         "inputPorts": [],
         "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
-        "templateDir": f"templates/{kind_id}",
-        "defaultTemplate": f"templates/{kind_id}/Default.py",
+        "templateDir": f"starters/{template_id}",
+        "defaultTemplate": f"starters/{template_id}/Default.py",
     }
 
 

@@ -509,28 +509,28 @@ def list_datasets():
     return jsonify(files)
 
 
-@bp.route("/templates", methods=["GET"])
-def get_templates():
-    """Return per-kind starter templates from every installed package.
+@bp.route("/starters", methods=["GET"])
+def get_starters():
+    """Return per-template starter source bodies from every installed package.
 
-    Templates are sourced from each installed package's optional per-kind
+    Starters are sourced from each installed package's optional per-template
     ``source`` file and keyed on the canonical package id
-    ``<packageId>/<kindId>@<major>``. The pre-installed ``curio.builtin@1``
+    ``<packageId>/<templateId>@<major>``. The pre-installed ``curio.builtin@1``
     package ships no sources, so dragging a built-in node onto the canvas
-    yields an empty editor; third-party packages may ship a starter per kind.
+    yields an empty editor; third-party packages may ship a starter per template.
     """
-    from utk_curio.backend.app.packages import generate_package_templates  # local import → no cycle
+    from utk_curio.backend.app.packages import generate_packageage_starters  # local import → no cycle
     from utk_curio.backend.app.projects.services import _user_dir_key
     from utk_curio.backend.app.users.dependencies import get_current_user
 
-    templates: list[dict] = []
+    starters: list[dict] = []
     user = get_current_user()
     if user is not None:
         try:
-            templates = generate_package_templates(_user_dir_key(user))
-        except Exception:  # noqa: BLE001 — never fail /templates over a bad package
-            current_app.logger.exception("Package-template loader failed; returning empty list")
-    return jsonify(templates)
+            starters = generate_packageage_starters(_user_dir_key(user))
+        except Exception:  # noqa: BLE001 — never fail /starters over a bad package
+            current_app.logger.exception("Package-starter loader failed; returning empty list")
+    return jsonify(starters)
 
 def get_loaded_files_metadata(folder_path):
     metadata = ""

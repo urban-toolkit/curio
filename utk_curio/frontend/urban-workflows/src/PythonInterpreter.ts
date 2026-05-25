@@ -1,5 +1,5 @@
 import { NodeType } from "./constants";
-import { NodeKindId } from "./registry/types";
+import { NodeTemplateId } from "./registry/types";
 import { formatDate, mapTypes } from "./utils/formatters";
 import { getToken } from "./utils/authApi";
 // import { pythonCode } from "./pythonWrapper";
@@ -18,7 +18,7 @@ export class PythonInterpreter {
         input: string,
         inputTypes: string[],
         callback: any,
-        nodeType: NodeKindId,
+        nodeType: NodeTemplateId,
         nodeId: string,
         workflow_name: string,
         nodeExecProv: any

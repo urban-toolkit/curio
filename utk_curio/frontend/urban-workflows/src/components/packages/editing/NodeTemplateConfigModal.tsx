@@ -1,14 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import ModalShell from "../../ModalShell";
 import type { Category, Editor, Engine } from "../../../pages/nodes/factoryDraftModel";
-import type { CanvasKindConfig } from "../../../utils/canvasKindConfig";
-import { canvasKindConfigFromDescriptor } from "../../../utils/canvasKindConfig";
+import type { CanvasTemplateConfig } from "../../../utils/canvasTemplateConfig";
+import { canvasTemplateConfigFromDescriptor } from "../../../utils/canvasTemplateConfig";
 import { tryGetNodeDescriptor } from "../../../registry/nodeRegistry";
-import { NodeKindId } from "../../../registry/types";
-import { KindPortEditor } from "./KindPortEditor";
-import styles from "./NodeKindConfigModal.module.css";
+import { NodeTemplateId } from "../../../registry/types";
+import { TemplatePortEditor } from "./TemplatePortEditor";
+import styles from "./NodeTemplateConfigModal.module.css";
 
-export function NodeKindConfigModal({
+export function NodeTemplateConfigModal({
   show,
   nodeId,
   nodeType,
@@ -20,25 +20,25 @@ export function NodeKindConfigModal({
 }: {
   show: boolean;
   nodeId: string;
-  nodeType: NodeKindId;
-  storedConfig: Partial<CanvasKindConfig> | null;
+  nodeType: NodeTemplateId;
+  storedConfig: Partial<CanvasTemplateConfig> | null;
   storedLabel?: string;
   /** Runtime editor body used to seed stored template fields (not edited in this modal). */
   templateCode: string;
   onClose: () => void;
-  onSave: (config: CanvasKindConfig) => void;
+  onSave: (config: CanvasTemplateConfig) => void;
 }) {
   const desc = useMemo(() => tryGetNodeDescriptor(nodeType), [nodeType]);
-  const [config, setConfig] = useState<CanvasKindConfig | null>(null);
+  const [config, setConfig] = useState<CanvasTemplateConfig | null>(null);
 
   useEffect(() => {
     if (!show || !desc) return;
     const nodeData = {
-      packageKindConfig: storedConfig ?? undefined,
-      packageKindLabel: storedLabel,
+      packageTemplateConfig: storedConfig ?? undefined,
+      packageTemplateLabel: storedLabel,
     };
     setConfig(
-      canvasKindConfigFromDescriptor(
+      canvasTemplateConfigFromDescriptor(
         desc,
         { id: nodeId, data: nodeData } as { id: string; data: object },
         templateCode,
@@ -46,7 +46,7 @@ export function NodeKindConfigModal({
     );
   }, [show, desc, nodeId, storedConfig, storedLabel, templateCode]);
 
-  const patch = useCallback((p: Partial<CanvasKindConfig>) => {
+  const patch = useCallback((p: Partial<CanvasTemplateConfig>) => {
     setConfig((prev) => (prev ? { ...prev, ...p } : prev));
   }, []);
 
@@ -204,12 +204,12 @@ export function NodeKindConfigModal({
         </div>
 
         <p className={styles.sectionTitle}>Ports</p>
-        <KindPortEditor
+        <TemplatePortEditor
           title="Input ports"
           ports={config.inputPorts}
           onChange={(inputPorts) => patch({ inputPorts })}
         />
-        <KindPortEditor
+        <TemplatePortEditor
           title="Output ports"
           ports={config.outputPorts}
           onChange={(outputPorts) => patch({ outputPorts })}

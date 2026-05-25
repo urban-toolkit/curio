@@ -97,7 +97,7 @@ def _manifest_dict(
             "python": python_deps or {},
             "js": {},
         },
-        "kinds": kinds or [
+        "templates": kinds or [
             {
                 "id": "demo-kind",
                 "label": "Demo",
@@ -109,8 +109,8 @@ def _manifest_dict(
                 "hasGrammar": False,
                 "inputPorts": [],
                 "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
-                "templateDir": "templates/demo-kind",
-                "defaultTemplate": "templates/demo-kind/Default.py",
+                "templateDir": "starters/demo-kind",
+                "defaultTemplate": "starters/demo-kind/Default.py",
             }
         ],
     }
@@ -137,9 +137,9 @@ def make_archive():
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("manifest.json", json.dumps(manifest, indent=2))
-            for kind_id, files in sources.items():
+            for template_id, files in sources.items():
                 for name, body in files.items():
-                    zf.writestr(f"templates/{kind_id}/{name}", body)
+                    zf.writestr(f"starters/{template_id}/{name}", body)
             for path, body in (extra_files or {}).items():
                 zf.writestr(path, body)
         return buf.getvalue()

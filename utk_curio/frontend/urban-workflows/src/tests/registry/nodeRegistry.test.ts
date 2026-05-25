@@ -49,9 +49,9 @@ describe('nodeRegistry', () => {
       expect(result.label).toBe('Test Node');
     });
 
-    test('throws for unregistered NodeKindId', () => {
+    test('throws for unregistered NodeTemplateId', () => {
       expect(() => getNodeDescriptor('NONEXISTENT' as NodeType)).toThrow(
-        /No descriptor registered for NodeKindId/,
+        /No descriptor registered for NodeTemplateId/,
       );
     });
 
@@ -101,7 +101,7 @@ describe('nodeRegistry', () => {
             major: 1,
             version: '1.0.0',
           },
-          label: 'Ephemeral package kind',
+          label: 'Ephemeral package template',
         }),
       );
 

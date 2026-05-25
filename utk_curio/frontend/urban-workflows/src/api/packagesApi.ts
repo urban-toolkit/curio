@@ -22,9 +22,9 @@ export interface PortPayload {
   cardinality?: string;
 }
 
-export interface PackageKindPayload {
-  id: string; // canonical "<packageId>/<kindId>@<major>"
-  kindId: string;
+export interface PackageTemplatePayload {
+  id: string; // canonical "<packageId>/<templateId>@<major>"
+  templateId: string;
   label: string;
   category: string;
   engine: "python" | "javascript";
@@ -48,7 +48,7 @@ export interface PackageKindPayload {
   outputPorts: PortPayload[];
   /** Package-relative path to the optional starter source file. */
   source: string | null;
-  /** Adds a third `'in/out'` handle on top of the standard in/out pair (interaction-loop kinds). */
+  /** Adds a third `'in/out'` handle on top of the standard in/out pair (interaction-loop templates). */
   bidirectional: boolean;
   /** Overrides for the canvas container layout (size, no-content, play-button gate). */
   containerStyle: {
@@ -91,7 +91,7 @@ export interface PackagePayload {
   license: string | null;
   permissions: string[];
   dependencies: PackageDependencies;
-  kinds: PackageKindPayload[];
+  templates: PackageTemplatePayload[];
   dirName: string;
   /** Fork provenance when declared in manifest; otherwise null from API. */
   lineage: PackageLineagePayload | null;
@@ -114,6 +114,25 @@ export interface PackagePayload {
    * Epoch ms of ``manifest.json`` filesystem mtime (diagnostic — not used for canonical ordering).
    */
   installUpdatedAtMs?: number;
+  /**
+   * README body, capped to 64 KiB by the backend. Surfaced by ``_manifest_to_payload``
+   * for installed packages only (catalog rows omit it). Used by ``PackageMetadataModal``
+   * to pre-populate the README field.
+   */
+  readme?: string;
+  /** When the manifest's package is read-only (e.g. ``curio.builtin@1``). */
+  readOnly?: boolean;
+}
+
+/** Partial-update body for `PATCH /api/packages/<dirName>` (metadata editor). */
+export interface PackageMetadataUpdate {
+  name?: string;
+  description?: string;
+  publisher?: string;
+  license?: string | null;
+  permissions?: string[];
+  readme?: string;
+  compatibility?: { curioRuntime?: string };
 }
 
 export interface CatalogFamilyPayload {
@@ -285,6 +304,22 @@ export const packagesApi = {
 
   uninstall(dirName: string): Promise<void> {
     return apiFetch(`/api/packages/${dirName}`, { method: "DELETE" });
+  },
+
+  /**
+   * Partial-update editable package metadata (name, description, publisher,
+   * license, permissions, README, ``compatibility.curioRuntime``). Identity
+   * fields and ``dependencies`` are rejected by the backend allowlist —
+   * dependencies are source-derived now.
+   */
+  updatePackageMetadata(
+    dirName: string,
+    updates: PackageMetadataUpdate,
+  ): Promise<{ package: PackagePayload }> {
+    return apiFetch(`/api/packages/${encodeURIComponent(dirName)}`, {
+      method: "PATCH",
+      body: JSON.stringify(updates),
+    });
   },
 
   download(dirName: string): Promise<void> {

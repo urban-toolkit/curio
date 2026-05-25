@@ -23,7 +23,7 @@ from utk_curio.backend.app.packages.storage import (
 )
 from utk_curio.backend.app.packages.manifest import (
     PackageManifest,
-    NodeKindManifest,
+    TemplateManifest,
     PackageLineage,
     PackageLineageCoord,
     load_packageage_manifest,
@@ -54,7 +54,7 @@ from utk_curio.backend.app.packages.resolver import (
 )
 from utk_curio.backend.app.packages.routes import packages_bp
 from utk_curio.backend.app.packages.seed import seed_dev_packageages
-from utk_curio.backend.app.packages.templates import generate_packageage_templates
+from utk_curio.backend.app.packages.starters import generate_packageage_starters
 
 __all__ = [
     # storage
@@ -65,7 +65,7 @@ __all__ = [
     "list_user_packageages",
     # manifest
     "PackageManifest",
-    "NodeKindManifest",
+    "TemplateManifest",
     "PackageLineage",
     "PackageLineageCoord",
     "ManifestError",
@@ -90,8 +90,8 @@ __all__ = [
     "parse_range",
     "parse_version",
     "resolve_for_project",
-    # routes + templates + seed
+    # routes + starters + seed
     "packages_bp",
-    "generate_packageage_templates",
+    "generate_packageage_starters",
     "seed_dev_packageages",
 ]

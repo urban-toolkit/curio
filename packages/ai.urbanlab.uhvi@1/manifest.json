@@ -1,107 +1,107 @@
 {
   "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v3.json",
-  "id": "ai.urbanlab.uhvi",
-  "version": "1.0.0",
-  "name": "Urban Heat Vulnerability Index",
-  "publisher": "Urban Analytics Lab",
-  "description": "Loads and aggregates Urban Heat Vulnerability Index (UHVI) raster data and reduces it to per-feature attributes.",
-  "license": "MIT",
   "compatibility": {
     "curioRuntime": ">=0.5.0",
     "major": 1
   },
+  "createdAt": "2024-01-01T10:00:00Z",
+  "dependencies": {
+    "js": {},
+    "packages": {},
+    "python": {
+      "geopandas": "^0.14",
+      "numpy": "^1.26",
+      "rasterio": "^1.3"
+    }
+  },
+  "description": "Loads and aggregates Urban Heat Vulnerability Index (UHVI) raster data and reduces it to per-feature attributes.",
+  "id": "ai.urbanlab.uhvi",
+  "license": "MIT",
+  "name": "Urban Heat Vulnerability Index",
   "permissions": [
     "filesystem.read",
     "network.fetch"
   ],
-  "dependencies": {
-    "packages": {},
-    "python": {
-      "rasterio": "^1.3",
-      "numpy": "^1.26",
-      "geopandas": "^0.14"
-    },
-    "js": {}
-  },
-  "kinds": [
+  "publisher": "Urban Analytics Lab",
+  "templates": [
     {
-      "id": "uhvi-load",
-      "label": "UHVI Loader",
       "category": "data",
-      "engine": "python",
       "description": "Load a UHVI raster from a path or URL into a Curio-compatible Raster dataset.",
-      "icon": null,
       "editor": "code",
+      "engine": "python",
       "hasCode": true,
-      "hasWidgets": true,
       "hasGrammar": false,
+      "hasWidgets": true,
+      "icon": null,
+      "id": "uhvi-load",
       "inputPorts": [],
+      "label": "UHVI Loader",
+      "lifecycle": "code",
       "outputPorts": [
         {
+          "cardinality": "[1,n]",
           "types": [
             "RASTER",
             "DATAFRAME"
-          ],
-          "cardinality": "[1,n]"
+          ]
         }
       ],
-      "source": "sources/uhvi-load.py",
-      "lifecycle": "code"
+      "source": "sources/uhvi-load.py"
     },
     {
-      "id": "uhvi-zones",
-      "label": "UHVI Zones",
       "category": "data",
-      "engine": "python",
       "description": "Load a polygon GeoDataFrame (e.g., census tracts) to use as the zonal-aggregation footprint.",
-      "icon": null,
       "editor": "code",
+      "engine": "python",
       "hasCode": true,
-      "hasWidgets": true,
       "hasGrammar": false,
+      "hasWidgets": true,
+      "icon": null,
+      "id": "uhvi-zones",
       "inputPorts": [],
+      "label": "UHVI Zones",
+      "lifecycle": "code",
       "outputPorts": [
         {
+          "cardinality": "1",
           "types": [
             "GEODATAFRAME"
-          ],
-          "cardinality": "1"
+          ]
         }
       ],
-      "source": "sources/uhvi-zones.py",
-      "lifecycle": "code"
+      "source": "sources/uhvi-zones.py"
     },
     {
-      "id": "uhvi-zonal",
-      "label": "UHVI Zonal Stats",
       "category": "computation",
-      "engine": "python",
       "description": "Compute zonal statistics of a UHVI raster over a polygon GeoDataFrame.",
-      "icon": null,
       "editor": "code",
+      "engine": "python",
       "hasCode": true,
-      "hasWidgets": true,
       "hasGrammar": false,
+      "hasWidgets": true,
+      "icon": null,
+      "id": "uhvi-zonal",
       "inputPorts": [
         {
+          "cardinality": "[1,2]",
           "types": [
             "RASTER",
             "GEODATAFRAME"
-          ],
-          "cardinality": "[1,2]"
+          ]
         }
       ],
+      "label": "UHVI Zonal Stats",
+      "lifecycle": "code",
       "outputPorts": [
         {
+          "cardinality": "1",
           "types": [
             "GEODATAFRAME"
-          ],
-          "cardinality": "1"
+          ]
         }
       ],
-      "source": "sources/uhvi-zonal.py",
-      "lifecycle": "code"
+      "source": "sources/uhvi-zonal.py"
     }
   ],
-  "createdAt": "2024-01-01T10:00:00Z"
+  "version": "1.0.0"
 }

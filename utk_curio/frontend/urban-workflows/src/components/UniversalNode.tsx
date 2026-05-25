@@ -7,7 +7,7 @@ import DescriptionModal from './DescriptionModal';
 import { OutputIcon } from './edges/OutputIcon';
 import { InputIcon } from './edges/InputIcon';
 import { getNodeDescriptor } from '../registry/nodeRegistry';
-import { readCanvasKindConfig, resolveEditorTabFlags } from '../utils/canvasKindConfig';
+import { readCanvasTemplateConfig, resolveEditorTabFlags } from '../utils/canvasTemplateConfig';
 import { useNodeState } from '../hook/useNodeState';
 import { HandleDef, TIconCardinality } from '../registry/types';
 import { useFlowContext } from '../providers/FlowProvider';
@@ -77,7 +77,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     nodeState.templateData.custom != undefined && nodeState.templateData.custom === false;
 
   const allHandles = [...adapter.handles, ...(lifecycle.dynamicHandles ?? [])];
-  const kindConfig = readCanvasKindConfig({ data });
+  const kindConfig = readCanvasTemplateConfig({ data });
   const editorTabs = resolveEditorTabFlags(descriptor, kindConfig);
 
   return (

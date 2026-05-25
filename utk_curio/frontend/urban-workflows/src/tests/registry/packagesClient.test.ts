@@ -1,5 +1,5 @@
 /**
- * Regression guard for `registerPackageKinds` (the conversion path from manifest
+ * Regression guard for `registerPackageTemplates` (the conversion path from manifest
  * payload → `NodeDescriptor`). The 9-commit warehouse refactor moved every
  * built-in node through this function; without this test, descriptor capabilities
  * that the old `descriptors.ts` carried can be silently dropped from the
@@ -22,7 +22,7 @@ import {
 
 import '../../registry/builtinLifecycles'; // side-effect: registers the 11 built-in lifecycles
 import '../../registry/iconRegistry'; // side-effect: registers FA icons used by the fixture
-import { registerPackageKinds } from '../../registry/packagesClient';
+import { registerPackageTemplates } from '../../registry/packagesClient';
 import { clearPackageNodes } from '../../registry/nodeRegistry';
 
 const FIXTURE_PACK = {
@@ -35,10 +35,10 @@ const FIXTURE_PACK = {
   license: 'MIT',
   permissions: [],
   lineage: null,
-  kinds: [
+  templates: [
     {
       id: 'curio.builtin/data-loading@1',
-      kindId: 'data-loading',
+      templateId: 'data-loading',
       label: 'Data Loading',
       category: 'data',
       engine: 'python' as const,
@@ -63,7 +63,7 @@ const FIXTURE_PACK = {
     },
     {
       id: 'curio.builtin/vis-vega@1',
-      kindId: 'vis-vega',
+      templateId: 'vis-vega',
       label: 'Vega-Lite',
       category: 'vis_grammar',
       engine: 'python' as const,
@@ -88,7 +88,7 @@ const FIXTURE_PACK = {
     },
     {
       id: 'curio.builtin/merge-flow@1',
-      kindId: 'merge-flow',
+      templateId: 'merge-flow',
       label: 'Merge Flow',
       category: 'flow',
       engine: 'python' as const,
@@ -114,11 +114,11 @@ const FIXTURE_PACK = {
   ],
 };
 
-describe('registerPackageKinds → NodeDescriptor', () => {
+describe('registerPackageTemplates → NodeDescriptor', () => {
   beforeEach(() => clearPackageNodes());
 
   test('data-loading: code editor, upload icon, N output cardinality, no badge for built-in', () => {
-    const [dl] = registerPackageKinds([FIXTURE_PACK]);
+    const [dl] = registerPackageTemplates([FIXTURE_PACK]);
     expect(dl.id).toBe('curio.builtin/data-loading@1');
     expect(dl.icon).toBe(faUpload);
     expect(dl.badge).toBeUndefined();
@@ -128,7 +128,7 @@ describe('registerPackageKinds → NodeDescriptor', () => {
   });
 
   test('vis-vega: bidirectional handle, badge="VEGA", grammarId="vega-lite", hasProvenance=true', () => {
-    const [, vega] = registerPackageKinds([FIXTURE_PACK]);
+    const [, vega] = registerPackageTemplates([FIXTURE_PACK]);
     expect(vega.id).toBe('curio.builtin/vis-vega@1');
     expect(vega.icon).toBe(faChartLine);
     expect(vega.badge).toBe('VEGA');
@@ -139,7 +139,7 @@ describe('registerPackageKinds → NodeDescriptor', () => {
   });
 
   test('merge-flow: editor=null (none), 50x180 container, custom icon', () => {
-    const [, , merge] = registerPackageKinds([FIXTURE_PACK]);
+    const [, , merge] = registerPackageTemplates([FIXTURE_PACK]);
     expect(merge.id).toBe('curio.builtin/merge-flow@1');
     expect(merge.icon).toBe(faCodeMerge);
     expect(merge.adapter.editor).toBeNull();

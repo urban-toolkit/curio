@@ -64,7 +64,7 @@ export const PackageCard: React.FC<PackageCardProps> = ({
         </p>
         <div className={styles.tagRow}>
           <span className={styles.tag}>
-            {pkg.kinds.length} node{pkg.kinds.length === 1 ? "" : "s"}
+            {pkg.templates.length} node{pkg.templates.length === 1 ? "" : "s"}
           </span>
           <span className={styles.tag}>{primaryCategory(pkg)}</span>
           {(pkg.channel ?? "stable") !== "stable" ? (

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { NodeType } from '../constants';
-import { NodeKindId } from '../registry/types';
+import { NodeTemplateId } from '../registry/types';
 import { ICodeDataContent } from '../types';
-import { Template, useTemplateContext } from '../providers/TemplateProvider';
+import { Starter, useStarterContext } from '../providers/StarterProvider';
 import { useUserContext } from '../providers/UserProvider';
 
 export interface NodeOutput {
@@ -11,16 +11,16 @@ export interface NodeOutput {
   outputType?: string;
 }
 
-export function useNodeState(data: any, nodeType: NodeKindId) {
+export function useNodeState(data: any, nodeType: NodeTemplateId) {
   const [output, setOutput] = useState<NodeOutput>(data.output ?? { code: '', content: '', outputType: '' });
   const [code, setCode] = useState<string>(data.code ?? '');
   const [sendCode, setSendCode] = useState<any>();
-  const [templateData, setTemplateData] = useState<Template | any>({});
+  const [templateData, setTemplateData] = useState<Starter | any>({});
   const [newTemplateFlag, setNewTemplateFlag] = useState(false);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [showDescriptionModal, setShowDescriptionModal] = useState(false);
 
-  const { editUserTemplate } = useTemplateContext();
+  const { editUserStarter } = useStarterContext();
   const { user } = useUserContext();
 
   useEffect(() => { data.code = code; }, [code]);
@@ -41,7 +41,7 @@ export function useNodeState(data: any, nodeType: NodeKindId) {
     }
   }, [data.templateId]);
 
-  const setTemplateConfig = (template: Template) => setTemplateData({ ...template });
+  const setTemplateConfig = (template: Starter) => setTemplateData({ ...template });
 
   const promptModal = (newTemplate: boolean = false) => {
     setNewTemplateFlag(newTemplate);
@@ -52,9 +52,9 @@ export function useNodeState(data: any, nodeType: NodeKindId) {
   const promptDescription = () => setShowDescriptionModal(true);
   const closeDescription = () => setShowDescriptionModal(false);
 
-  const updateTemplate = (template: Template) => {
+  const updateTemplate = (template: Starter) => {
     setTemplateConfig(template);
-    editUserTemplate(template);
+    editUserStarter(template);
   };
 
   const setSendCodeCallback = (_sendCode: any) => setSendCode(() => _sendCode);

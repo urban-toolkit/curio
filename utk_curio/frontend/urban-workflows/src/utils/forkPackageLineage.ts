@@ -17,7 +17,7 @@ export function packageCreatedAtMs(
   return 0;
 }
 
-/** Strongest ``createdAtMs`` signal among palette kinds sharing a package coordinate. */
+/** Strongest ``createdAtMs`` signal among palette templates sharing a package coordinate. */
 export function paletteGroupCreatedAtMs(group: {
   descriptors: ReadonlyArray<{
     package?: Partial<Pick<NodePackageMeta, "createdAtMs">> | null | undefined;

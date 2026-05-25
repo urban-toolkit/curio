@@ -47,7 +47,7 @@ def _write_packageage_dir(base: Path, package_id: str, major: int, **extra_top: 
         "compatibility": {"curioRuntime": ">=0.5.0", "major": major},
         "permissions": [],
         "dependencies": {"packages": {}, "python": {}, "js": {}},
-        "kinds": _minimal_kinds(),
+        "templates": _minimal_kinds(),
     }
     manifest.update(extra_top)
     (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")

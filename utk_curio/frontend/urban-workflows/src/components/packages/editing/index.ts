@@ -1,13 +1,13 @@
 export { EditableNodeHeaderLabel } from "./EditableNodeHeaderLabel";
 
-export { KindPortEditor } from "./KindPortEditor";
+export { TemplatePortEditor } from "./TemplatePortEditor";
 
-export { NodeKindConfigModal } from "./NodeKindConfigModal";
+export { NodeTemplateConfigModal } from "./NodeTemplateConfigModal";
 
 export { NodeSaveAsModal } from "./NodeSaveAsModal";
 
 export { PackageMetaHeader } from "./PackageMetaHeader";
 export type { PackageMetaHeaderProps } from "./PackageMetaHeader";
 
-export { PackageStagingDragGrip } from "./PackageStagingDragGrip";
-export type { PackageStagingDragGripProps } from "./PackageStagingDragGrip";
+export { PackageMetadataModal } from "./PackageMetadataModal";
+export type { PackageMetadataModalProps } from "./PackageMetadataModal";

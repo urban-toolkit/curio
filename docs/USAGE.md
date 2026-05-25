@@ -253,9 +253,9 @@ To open the drawer: in the **Tools panel** on the left edge of the canvas, find 
 - Browse the catalog and install new packages.
 - See your installed packages grouped by fork family in the **Installed** tab.
 - Import a `.curio.zip` archive from the footer.
-- Click **Create new package** to open the Node Factory wizard and author your own.
+- Author your own package directly from the canvas: build the node, click the cog on its header, then **Save as pack node…**. Edit per-package metadata later via the pencil button next to the export icon in the **Packages** dropdown.
 
-The full walkthrough — concepts, the wizard, exporting / importing, versioning, and fork lineage — is in [docs/WAREHOUSE.md](WAREHOUSE.md). The manifest format is specified in [docs/schemas/node-package.v3.json](schemas/node-package.v3.json), and the committed package catalog lives at `<repo_root>/packages/`.
+The full walkthrough — concepts, the Save-As flow, the per-package metadata editor, exporting / importing, versioning, and fork lineage — is in [docs/WAREHOUSE.md](WAREHOUSE.md). The manifest format is specified in [docs/schemas/node-package.v3.json](schemas/node-package.v3.json), and the committed package catalog lives at `<repo_root>/packages/`.
 
 ## Quick start
 

@@ -133,7 +133,7 @@ function InstalledPackageRow({
         <span className={styles.installedName}>{pkg.name}</span>
         <span className={styles.installedMeta}>
           v{pkg.version}
-          {hasUpdate ? " · update available" : ` · ${pkg.kinds.length} nodes`}
+          {hasUpdate ? " · update available" : ` · ${pkg.templates.length} nodes`}
         </span>
         {pkg.lineage ? (
           <span className={styles.installedForkOf} title={formatForkOfSubtitle(pkg.lineage).title}>
@@ -199,7 +199,7 @@ export const MyPackagesList: React.FC<MyPackagesListProps> = ({
           const headerPack = row.rootPack;
           const headerName = headerPack?.name ?? row.rootKey;
           const headerMeta = headerPack
-            ? `v${headerPack.version} · ${headerPack.kinds.length} nodes`
+            ? `v${headerPack.version} · ${headerPack.templates.length} nodes`
             : `${row.members.length} fork${row.members.length === 1 ? "" : "s"}`;
 
           const headerActionProps = headerPack

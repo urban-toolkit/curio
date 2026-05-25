@@ -4,20 +4,20 @@ import ModalShell from "../../ModalShell";
 import { packagesApi, refreshPackageRegistry } from "../../../api/packagesApi";
 import { getPaletteNodeTypes, subscribeToRegistry } from "../../../registry";
 import { groupPalettePackages } from "../../menus/nodes/toolsMenuPackagePalette/model";
-import { useTemplateContext } from "../../../providers/TemplateProvider";
+import { useStarterContext } from "../../../providers/StarterProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
 import {
   SAVE_AS_NEW_PACK,
   buildFactoryInstallEnvelope,
   buildSaveAsInstallDraft,
-  canvasKindLabelFromNode,
-  normalizeKindLabel,
+  canvasTemplateLabelFromNode,
+  normalizeTemplateLabel,
   runtimeCodeFromRfNode,
   saveAsWouldReplaceByLabel,
 } from "../../../utils/palettePackageFactoryDraft";
 import { getFlowNodeCanonicalType } from "../../../utils/flowNodeCanonicalType";
 import { tryGetNodeDescriptor } from "../../../registry/nodeRegistry";
-import { NodeKindId } from "../../../registry/types";
+import { NodeTemplateId } from "../../../registry/types";
 import styles from "./NodeSaveAsModal.module.css";
 
 const NOOP = () => () => {};
@@ -47,7 +47,7 @@ export function NodeSaveAsModal({
   onClose: () => void;
 }) {
   const { getNodes, setNodes } = useReactFlow();
-  const { getTemplates } = useTemplateContext();
+  const { getStarters } = useStarterContext();
   const { showToast } = useToastContext();
   const [targetKey, setTargetKey] = useState<string>(SAVE_AS_NEW_PACK);
   const [newPackageName, setNewPackageName] = useState("");
@@ -79,9 +79,9 @@ export function NodeSaveAsModal({
     if (!canvasNode) return "Node";
     const nt = getFlowNodeCanonicalType(canvasNode);
     if (!nt) return "Node";
-    const desc = tryGetNodeDescriptor(nt as NodeKindId);
+    const desc = tryGetNodeDescriptor(nt as NodeTemplateId);
     if (!desc) return "Node";
-    return canvasKindLabelFromNode(canvasNode, desc);
+    return canvasTemplateLabelFromNode(canvasNode, desc);
   }, [canvasNode]);
 
   useEffect(() => {
@@ -93,8 +93,8 @@ export function NodeSaveAsModal({
   const willReplace = useMemo(() => {
     if (targetKey === SAVE_AS_NEW_PACK) return false;
     const labels = packageLabelsForSectionKey(targetKey);
-    const norm = normalizeKindLabel(nodeLabel);
-    return labels.some((l) => normalizeKindLabel(l) === norm);
+    const norm = normalizeTemplateLabel(nodeLabel);
+    return labels.some((l) => normalizeTemplateLabel(l) === norm);
   }, [targetKey, nodeLabel, registryKey]);
 
   const targetPackageName = useMemo(
@@ -114,7 +114,7 @@ export function NodeSaveAsModal({
         draft = buildSaveAsInstallDraft({
           canvasNode,
           target: { kind: "new", packageDisplayName: newPackageName.trim() || undefined },
-          getTemplates,
+          getStarters,
         });
       } else {
         const { packages } = await packagesApi.listInstalled();
@@ -127,7 +127,7 @@ export function NodeSaveAsModal({
         draft = buildSaveAsInstallDraft({
           canvasNode,
           target: { kind: "installed", package: pkg },
-          getTemplates,
+          getStarters,
         });
         replace = true;
       }
@@ -145,8 +145,8 @@ export function NodeSaveAsModal({
       // `data.code` / `data.defaultCode` with the body we just persisted, so the
       // editor remount picks them up instead of clobbering them with the old
       // source descriptor's starter (or an empty initial state).
-      const matchNorm = normalizeKindLabel(nodeLabel);
-      const newKind = result.package.kinds.find((k) => normalizeKindLabel(k.label) === matchNorm);
+      const matchNorm = normalizeTemplateLabel(nodeLabel);
+      const newKind = result.package.templates.find((k) => normalizeTemplateLabel(k.label) === matchNorm);
       if (newKind) {
         const savedBody = runtimeCodeFromRfNode(canvasNode);
         setNodes((nodes) =>
@@ -177,7 +177,7 @@ export function NodeSaveAsModal({
     } finally {
       setBusy(false);
     }
-  }, [busy, canvasNode, getTemplates, newPackageName, nodeId, nodeLabel, onClose, setNodes, showToast, targetKey]);
+  }, [busy, canvasNode, getStarters, newPackageName, nodeId, nodeLabel, onClose, setNodes, showToast, targetKey]);
 
   if (!show) return null;
 

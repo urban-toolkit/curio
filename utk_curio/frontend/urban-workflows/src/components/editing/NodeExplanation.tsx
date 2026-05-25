@@ -2,11 +2,11 @@ import React, { useState } from "react";
 import CSS from "csstype";
 import { useLLMContext } from "../../providers/LLMProvider";
 import { NodeType } from "../../constants";
-import { NodeKindId } from "../../registry/types";
+import { NodeTemplateId } from "../../registry/types";
 import ReactMarkdown from "react-markdown";
 
 type NodeExplanationProps = {
-    node_type: NodeKindId,
+    node_type: NodeTemplateId,
     code: string | undefined,
     current_input: string,
     current_output: string
@@ -23,7 +23,7 @@ export default function NodeExplanation({
     const [explanationText, setExplanationText] = useState('');
     const { llmRequest } = useLLMContext();
 
-    const generateExplanation = (node_type: NodeKindId, code: string | undefined, current_input: string, current_output: string) => {
+    const generateExplanation = (node_type: NodeTemplateId, code: string | undefined, current_input: string, current_output: string) => {
         
         let node = {
             "id": "node1",

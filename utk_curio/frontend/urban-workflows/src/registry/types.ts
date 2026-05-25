@@ -10,7 +10,7 @@ import { IPropagation } from '../providers/FlowProvider';
  *
  * - **Built-ins** keep using `NodeType` enum members (e.g. `NodeType.DATA_LOADING`)
  *   so existing call sites continue to type-check unchanged.
- * - **Package kinds** use a canonical string of the form `<packageId>/<kindId>@<major>`
+ * - **Package kinds** use a canonical string of the form `<packageId>/<templateId>@<major>`
  *   (e.g. `"ai.urbanlab.uhvi/uhvi-load@1"`). This is the string the frontend
  *   registry, backend `_node_type_registry`, saved Trill graphs, and
  *   `/processPythonCode` all dispatch on.
@@ -18,7 +18,7 @@ import { IPropagation } from '../providers/FlowProvider';
  * See ``docs/WAREHOUSE.md`` for the user-facing overview and
  * ``docs/schemas/node-package.v3.json`` for the manifest schema.
  */
-export type NodeKindId = NodeType | string;
+export type NodeTemplateId = NodeType | string;
 
 /**
  * Where a registered descriptor came from. Drives palette sectioning and any
@@ -199,9 +199,9 @@ export interface NodeAdapter {
 export interface NodeDescriptor {
   /**
    * Dispatch key. Either a built-in `NodeType` enum value (default) or a
-   * package canonical id `<packageId>/<kindId>@<major>` for package-registered kinds.
+   * package canonical id `<packageId>/<templateId>@<major>` for package-registered kinds.
    */
-  id: NodeKindId;
+  id: NodeTemplateId;
   category: NodeCategory;
   label: string;
   icon: IconDefinition;
