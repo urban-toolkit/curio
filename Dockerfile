@@ -16,6 +16,7 @@ COPY requirements.txt curio.py ./
 COPY scripts/ scripts/
 COPY packages/ packages/
 COPY docs/examples/ docs/examples/
+COPY docs/schemas/ docs/schemas/
 COPY utk_curio/ utk_curio/
 
 RUN pip install --upgrade pip setuptools wheel && \
