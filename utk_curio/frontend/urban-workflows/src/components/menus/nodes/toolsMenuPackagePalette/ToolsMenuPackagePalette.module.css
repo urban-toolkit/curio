@@ -117,8 +117,8 @@
 }
 
 .packagePalettePanel {
-    width: min(280px, calc(100vw - 120px));
-    max-height: min(520px, 72vh);
+    width: min(380px, calc(100vw - 120px));
+    max-height: min(720px, 86vh);
     background-color: #1E1F23;
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 5px;
