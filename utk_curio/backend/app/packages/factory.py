@@ -90,10 +90,9 @@ _SOURCE_FILENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}\.[A-Za-z0-9
 # install route swaps it back to the real on-disk source so the rebuild does
 # not clobber unedited templates.
 _STARTER_CODE_SENTINEL = (
-    "# Package source — runs in the shared sandbox interpreter.\n"
-    "# Replace this body with your implementation.\n\n"
-    "def run(input):\n"
-    '    return {"hello": "from the node factory"}\n'
+    "# `arg` holds the upstream input (a single value, or a list when\n"
+    "# multiple input ports are wired). Return the value to send downstream.\n"
+    "return arg\n"
 )
 
 

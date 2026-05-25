@@ -73,11 +73,13 @@ export interface Draft {
 
 
 
+// Keep byte-identical to `_STARTER_CODE_SENTINEL` in
+// `utk_curio/backend/app/packages/factory.py` — the backend matches this exact
+// string to detect "user did not edit this template, keep on-disk source."
 export const STARTER_CODE =
-  "# Package source — runs in the shared sandbox interpreter.\n" +
-  "# Replace this body with your implementation.\n\n" +
-  "def run(input):\n" +
-  '    return {"hello": "from the node factory"}\n';
+  "# `arg` holds the upstream input (a single value, or a list when\n" +
+  "# multiple input ports are wired). Return the value to send downstream.\n" +
+  "return arg\n";
 
 export function factoryUiMakeId(): string {
   return Math.random().toString(36).slice(2, 10);
