@@ -100,6 +100,7 @@
       "\\.(css|less|scss|sass)$": "identity-obj-proxy",
       "\\.(jpg|jpeg|png|gif|svg)$": "identity-obj-proxy",
       "^uuid$": "<rootDir>/src/jestMocks/uuid.ts",
+      "^api/(.*)$": "<rootDir>/src/api/$1",
       "^components/(.*)$": "<rootDir>/src/components/$1",
       "^assets/(.*)$": "<rootDir>/assets/$1"
     },
