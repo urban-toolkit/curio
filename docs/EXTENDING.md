@@ -2,7 +2,7 @@
 
 Curio nodes are defined by **packages**, not by code. A package is a directory under [`packages/`](../packages/) that ships a `manifest.json` declaring one or more node *templates*. Each template references a **lifecycle key** that resolves to a React hook implementing the node's behaviour. Optionally, a package can ship a backend Flask blueprint for endpoints the lifecycle hook calls.
 
-This guide walks through adding a new node package end-to-end, using the recent [`curio.streetvision@1`](../packages/curio.streetvision@1/) package — which adds three CV nodes plus a generic Spatial Join — as the worked example. The merge that introduced it is a fairly involved case: it spans the manifest, four lifecycle hooks, a Flask blueprint with eight endpoints, optional dependency extras, and a user-facing docs example. Easier packages can skip several of the steps below.
+This guide walks through adding a new node package end-to-end, using the recent [`curio.streetvision@1`](../packages/curio.streetvision@1/) package — which adds three CV nodes plus a generic Spatial Join — as the worked example. The merge that introduced it is a fairly involved case: it spans the manifest, four lifecycle hooks, a Flask blueprint with eight endpoints, per-package Python dependencies declared in `manifest.dependencies.python`, and a user-facing docs example. Easier packages can skip several of the steps below.
 
 ## 1. Anatomy of a package
 
@@ -287,7 +287,9 @@ When you install a package that ships its own custom node UIs, Curio needs to fi
 
 1. **The package directory contains both the manifest *and* a pre-built `scripts/lifecycles.js`.** For first-party packages (in-repo), `npm run build` produces that JS via [`webpack.packages.config.js`](../utk_curio/frontend/urban-workflows/webpack.packages.config.js). Third-party authors compile their own. The bundle lives under `scripts/` because that subdirectory is one of the archive validator's allowed top-level dirs (see [`installer.py::_ALLOWED_TOP_DIRS`](../utk_curio/backend/app/packages/installer.py)), so the bundle survives the catalog install round-trip.
 2. **The manifest declares the bundle via `lifecycleScript: "scripts/lifecycles.js"`** (a top-level field, not per-template). The path is relative to the package directory; any allowed-subdirectory location works.
-3. **At app boot, the frontend's `loadInstalledPackages` injects a `<script src="/api/packages/<dirName>/file/scripts/lifecycles.js">` BEFORE building descriptors**. The bundle's top-level side-effect calls `window.curio.registerLifecycle(...)` for each lifecycle hook it ships. By the time `buildDescriptor` looks up `getLifecycle('street-view-fetcher')`, the key is registered.
+3. **At app boot, the frontend's `loadInstalledPackages` fetches `/api/packages/<dirName>/file/scripts/lifecycles.js` with the user's Bearer token and injects the response body as an inline `<script>` BEFORE building descriptors**. (A plain `<script src>` can't carry an `Authorization` header, so Firefox's OpaqueResponseBlocking would reject the `require_auth` 401 response — the inline-injection path bypasses that.) The bundle's top-level side-effect calls `window.curio.registerLifecycle(...)` for each lifecycle hook it ships. By the time `buildDescriptor` looks up `getLifecycle('street-view-fetcher')`, the key is registered.
+
+   The bundle reads its backend URL at runtime from `window.curio.backendUrl` (exposed by Curio's main bundle in [`src/registry/index.ts`](../utk_curio/frontend/urban-workflows/src/registry/index.ts)) instead of relying on a build-time `process.env.BACKEND_URL`. This keeps catalog-published bundles portable across deployments — the published bundle doesn't bake in the build host's URL.
 4. **The lifecycle bundle externalises React, ReactDOM, ReactFlow, and `registerLifecycle`** so it shares Curio's instances at runtime. Curio's main bundle exposes them as `window.React`, `window.ReactDOM`, `window.ReactFlow`, `window.curio.registerLifecycle` ([`src/registry/index.ts`](../utk_curio/frontend/urban-workflows/src/registry/index.ts)). Without this, distinct React copies would break rules-of-hooks.
 5. **If the bundle fails to load** (network error, hash mismatch, parse error), the package's templates fall back to `usePackageNodeLifecycle` (a generic code-editor). The palette still renders; the user just gets the default UI instead of the package's custom UI.
 
@@ -429,7 +431,7 @@ The smallest possible package adds one template plus its lifecycle hook. Use thi
      ...
    }
    ```
-   `lifecycleScript` is a path relative to the package directory. The archive validator only accepts a small set of top-level dirs (see [`installer.py::_ALLOWED_TOP_DIRS`](../utk_curio/backend/app/packages/installer.py): `sources`, `starters`, `grammars`, `widgets`, `icons`, `scripts`); the bundle goes under `scripts/` so it survives the catalog round-trip. Curio's package registry bootstrap injects a `<script src="/api/packages/<dirName>/file/scripts/lifecycles.js">` BEFORE building descriptors, so the lifecycle keys are registered by the time `getLifecycle('my-node')` looks them up.
+   `lifecycleScript` is a path relative to the package directory. The archive validator only accepts a small set of top-level dirs (see [`installer.py::_ALLOWED_TOP_DIRS`](../utk_curio/backend/app/packages/installer.py): `sources`, `starters`, `grammars`, `widgets`, `icons`, `scripts`); the bundle goes under `scripts/` so it survives the catalog round-trip. Curio's package registry bootstrap fetches the file with the user's Bearer token and injects the response body as an inline `<script>` BEFORE building descriptors, so the lifecycle keys are registered by the time `getLifecycle('my-node')` looks them up.
 
 6. **Wire up the build for first-party packages.** Add an entry to [`utk_curio/frontend/urban-workflows/webpack.packages.config.js`](../utk_curio/frontend/urban-workflows/webpack.packages.config.js)'s `PACKAGE_ENTRIES` list:
    ```js
@@ -463,7 +465,7 @@ The smallest possible package adds one template plus its lifecycle hook. Use thi
    ```
    Forget this step and the package fails to load with a hash-mismatch error.
 
-9. **Write `README.md`** in the package directory — the catalog UI shows it inline when users browse for packages to install. Cover install steps (pip extras), env vars (API keys), costs (paid APIs), and limitations.
+9. **Write `README.md`** in the package directory — the catalog UI shows it inline when users browse for packages to install. Cover Python deps the catalog install will auto-fetch from `manifest.dependencies.python` (size, GPU recommendation, etc.), any env vars / API keys the node UI needs at runtime, costs (paid APIs), and limitations.
 
 10. **Validate end-to-end** by booting Curio and checking that:
    - The package shows up in `/catalog` for installation.

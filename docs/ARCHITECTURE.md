@@ -10,7 +10,7 @@ This document describes the internal architecture of Curio for contributors who 
   * [Provider Hierarchy](#provider-hierarchy)
   * [FlowProvider: Central Workflow State](#flowprovider-central-workflow-state)
 * [Nodes: Types and Structure](#nodes-types-and-structure)
-  * [Node Type Registry](#node-type-registry)
+  * [Node Packages and Manifests](#node-packages-and-manifests)
   * [NodeDescriptor: Static Metadata](#nodedescriptor-static-metadata)
   * [NodeAdapter: Runtime Wiring](#nodeadapter-runtime-wiring)
   * [Lifecycle Hooks](#lifecycle-hooks)
@@ -25,6 +25,7 @@ This document describes the internal architecture of Curio for contributors who 
   * [Sandbox Isolation](#sandbox-isolation)
 * [Interactions and Propagation](#interactions-and-propagation)
 * [Provenance Tracking](#provenance-tracking)
+* [Python Dependencies](#python-dependencies)
 * [Backend API Reference](#backend-api-reference)
 * [Key Files at a Glance](#key-files-at-a-glance)
 
@@ -114,19 +115,49 @@ When a node produces output, it calls `outputCallback(nodeId, output)`, which up
 
 ## Nodes: Types and Structure
 
-### Node Type Registry
+### Node Packages and Manifests
 
-All node types are enumerated in `src/constants.ts` as the `NodeType` enum. There are currently these types across five categories:
+Node types are no longer hardcoded into a TypeScript enum. They live in **node packages** under [`packages/<packageId>@<major>/`](../packages/) — each directory ships a `manifest.json` that declares one or more **templates**, the manifest's name for what becomes a `NodeDescriptor` at runtime.
 
-| Category | Node Types |
+```
+packages/
+  curio.builtin@1/        # always-on baseline (data, computation, autk, vis, flow nodes)
+    manifest.json
+    sources/              # per-template Python starter code (data-loading, …)
+    integrity.json        # SHA-256 of every file (verified on install)
+  curio.streetvision@1/   # optional package, install from /catalog
+    manifest.json
+    sources/*.tsx         # custom lifecycle hooks (Street View Fetcher, …)
+    scripts/lifecycles.js # pre-built bundle that registers those hooks at boot
+    integrity.json
+```
+
+A manifest's `templates[*]` entry maps cleanly to a `NodeDescriptor`:
+
+```json
+{
+  "id": "data-loading",
+  "category": "data",
+  "lifecycle": "code",
+  "engine": "python",
+  "editor": "code",
+  "inputPorts": [],
+  "outputPorts": [{ "cardinality": "1", "types": ["DATAFRAME", "GEODATAFRAME", "RASTER"] }]
+}
+```
+
+[`packagesClient.ts::buildDescriptor`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) reads each installed manifest and constructs the corresponding `NodeDescriptor` at boot — there is no longer a static enum or a hand-written descriptors file. The frontend `nodeRegistry` is populated entirely from these manifests.
+
+Built-in templates (in `curio.builtin@1/manifest.json`) currently cover:
+
+| Category | Templates |
 |---|---|
-| Data | `DATA_LOADING`, `DATA_TRANSFORMATION`, `DATA_SUMMARY`, `DATA_EXPORT`, `DATA_POOL`, `AUTK_DB` |
-| Computation | `COMPUTATION_ANALYSIS`, `JS_COMPUTATION`, `MERGE_FLOW`, `FLOW_SWITCH`, `CONSTANTS`, `AUTK_COMPUTE` |
-| Map visualization | `AUTK_MAP` |
-| Chart/table visualization | `VIS_VEGA`, `VIS_SIMPLE`, `AUTK_PLOT` |
-| Annotation | `COMMENTS` |
+| Data | `data-loading`, `data-transformation`, `data-summary`, `data-export`, `data-pool`, `autk-db` |
+| Computation | `computation-analysis`, `js-computation`, `merge-flow`, `autk-compute`, `spatial-join` |
+| Map visualization | `autk-map` |
+| Chart/table visualization | `vis-vega`, `vis-simple`, `autk-plot` |
 
-Each type is registered in `src/registry/descriptors.ts` with a `NodeDescriptor` and in the backend route file with its allowed input/output data types.
+Third-party packages (or first-party optional ones, like `curio.streetvision@1`) install via the **catalog drawer** in the canvas, which copies the package directory into the user's store at `.curio/users/<user>/packages/`.
 
 ### NodeDescriptor: Static Metadata
 
@@ -165,7 +196,7 @@ interface NodeAdapter {
 
 ### Lifecycle Hooks
 
-The `useLifecycle` field is a React custom hook with this signature:
+Every template in a manifest references a **lifecycle key** (the `lifecycle` field — `"code"`, `"vega"`, `"data-pool"`, `"street-view-fetcher"`, …). A lifecycle is a React custom hook that runs inside `UniversalNode` and controls the node's behaviour:
 
 ```typescript
 type NodeLifecycleHook = (
@@ -174,28 +205,30 @@ type NodeLifecycleHook = (
 ) => LifecycleResult;
 ```
 
-The hook runs inside `UniversalNode` and can return:
+The hook can return:
 
 | Return field | Purpose |
 |---|---|
-| `contentComponent` | Custom JSX to render inside the node's output area |
+| `contentComponent` | Custom JSX to render inside the node's body (used when `editor: "none"`) |
 | `sendCodeOverride` | Replace the default HTTP execution with custom logic |
 | `defaultValueOverride` | Override the initial code shown in the editor |
-| `dynamicHandles` | Generate connection handles at runtime (used by `MERGE_FLOW`) |
+| `dynamicHandles` / `handlesOverride` | Add or replace connection handles at runtime |
 
-Lifecycle hooks live in `src/adapters/node/`. Current implementations:
+Lifecycles register against a single global registry — [`lifecycleRegistry.ts::registerLifecycle(name, hook)`](../utk_curio/frontend/urban-workflows/src/registry/lifecycleRegistry.ts) — and the manifest's `lifecycle` key looks them up by name. Two distribution channels:
 
-| Hook | Used by |
-|---|---|
-| `useCodeNodeLifecycle` | Most data and computation nodes |
-| `useVegaLifecycle` | `VIS_VEGA` |
-| `useAutkMapLifecycle` | `AUTK_MAP` (built via `createAutkLifecycle`) |
-| `useAutkPlotLifecycle` | `AUTK_PLOT` (built via `createAutkLifecycle`) |
-| `useAutkComputeLifecycle` | `AUTK_COMPUTE` (built via `createAutkLifecycle`) |
-| `useAutkDbLifecycle` | `AUTK_DB` (server-side, default code template) |
-| `useDataPoolLifecycle` | `DATA_POOL` |
-| `useMergeFlowLifecycle` | `MERGE_FLOW` |
-| `useFlowSwitchLifecycle` | `FLOW_SWITCH` |
+**1. Built-in (ships with Curio's main bundle).** [`builtinLifecycles.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinLifecycles.ts) calls `registerLifecycle(...)` at import time for the hooks every install needs — `useCodeNodeLifecycle`, `useVegaLifecycle`, the AUTK family, `useDataPoolLifecycle`, `useMergeFlowLifecycle`, `useSpatialJoinLifecycle`, etc. These power `curio.builtin@1`'s templates.
+
+**2. Per-package (dynamic, loaded at boot).** A package whose templates need custom UI can declare `"lifecycleScript": "scripts/lifecycles.js"` in its manifest and ship a pre-built JS bundle alongside the manifest. At boot, [`packagesClient.ts::loadPackageLifecycleScripts`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) fetches each installed package's bundle with the user's Bearer token and injects the response body as an inline `<script>` *before* descriptors are built. The bundle's top-level side-effect calls `window.curio.registerLifecycle(...)` for each hook it ships.
+
+**Worked example — `curio.streetvision@1`** ships three custom lifecycles:
+
+| Lifecycle key | Hook | Purpose |
+|---|---|---|
+| `street-view-fetcher` | `useStreetViewFetcherLifecycle` | Place geocoding, bbox preview, Google Street View image batch fetch |
+| `hf-cv-inference` | `useHfCvInferenceLifecycle` | HuggingFace model picker + segmentation/detection job polling |
+| `cv-gallery` | `useCvGalleryLifecycle` | Per-image gallery + overlay inspection UI |
+
+Each sits in `packages/curio.streetvision@1/sources/*.tsx`, webpack-bundles them into `scripts/lifecycles.js` (UMD + React/ReactFlow externalized to share Curio's instances at runtime), and the manifest's `lifecycle` field maps each template to one. The catalog install copies the package directory; boot loads the bundle; the user gets three custom-rendered nodes without rebuilding Curio. See [EXTENDING.md §4](EXTENDING.md) for the recipe.
 
 ### UniversalNode: One Component for All Types
 
@@ -387,6 +420,51 @@ Curio records a per-node execution history (start/end time, source code, input/o
 
 ---
 
+## Python Dependencies
+
+Curio's Python deps live in two places:
+
+**1. Framework deps** ([`requirements.txt`](../requirements.txt), mirrored in [`pyproject.toml::dependencies`](../pyproject.toml)) — only what the backend + sandbox Flask apps need at module load (Flask, Flask-SQLAlchemy, Flask-Migrate, Flask-Caching, `requests`, `python-dotenv`, the LLM SDKs, `altair`, `tqdm`, `pygments`) plus test/dev tools. No data-ops libraries.
+
+**2. Per-package deps** — every node package declares the libraries its templates need in its manifest's `dependencies.python`:
+
+```json
+// packages/curio.builtin@1/manifest.json
+"dependencies": {
+  "python": {
+    "pandas": "==3.0.2", "geopandas": "==1.1.3", "shapely": ">=2.0",
+    "numpy": "", "pyarrow": "==24.0.0", "rasterio": "==1.5.0",
+    "duckdb": ">=1.5.0", "fiona": "==1.10.1", "pillow": "==12.2.0"
+  }
+}
+
+// packages/curio.streetvision@1/manifest.json
+"dependencies": {
+  "python": {
+    "torch": ">=2.0", "transformers": ">=4.30",
+    "ultralytics": ">=8.0", "huggingface_hub": ">=0.20"
+  }
+}
+```
+
+Spec syntax accepts PEP 440 comparators (`>=2.0`, `~=4.30`, `==1.5.0`), bare versions (`1.2.3` → treated as `==1.2.3`), npm-style carets (`^0.14` → rewritten to `~=0.14`), and empty string for "latest".
+
+### Install paths
+
+- **At `curio start`** — the launcher ([`main.py::install_manifest_dependencies`](../utk_curio/main.py)) walks every installed manifest (`packages/curio.builtin@*` from the catalog source + every user store under `.curio/users/<u>/packages/`), unions their `dependencies.python` via [`resolver.merge_python_deps`](../utk_curio/backend/app/packages/resolver.py) (which surfaces range conflicts as warnings instead of silently last-write-wins), and pip-installs the merged map via [`pip_runner.install_python_deps`](../utk_curio/backend/app/packages/pip_runner.py). Already-satisfied deps are skipped via `importlib.metadata.version` — the steady-state cost is ~1 s with no network.
+
+- **At catalog install time** (`/api/packages/projects/<id>/install`) — when the user installs a package from the drawer, [`services._ensure_user_store_install`](../utk_curio/backend/app/packages/services.py) copies the files, then calls `pip_runner.install_python_deps` on the freshly-installed manifest. The Install button stays busy until pip finishes; heavy installs (`torch`, ~3 GB) can take minutes.
+
+- **At catalog uninstall time** — `prune_unreferenced_packages` walks every other still-installed package's manifest, finds the deps the pruned package declared that no other surviving package still requires, and pip-uninstalls only those (ref-counted shared deps survive).
+
+### Why this split
+
+The framework needs to boot before any manifests can be walked — so `pip install -r requirements.txt` (or `pip install utk-curio`) seeds enough of an env that the launcher can read `manifest.dependencies.python` and continue. Heavy ML/data libraries are intentionally NOT in the framework requirements: a fresh `pip install utk-curio` is small + fast; the multi-GB pulls happen lazily when the user actually installs the matching package (Street Vision pulls `torch` only after they click Install in the catalog).
+
+Standalone libraries the user adds via the [Installed Libraries modal](EXTENDING.md) (canvas → File → Installed libraries) sit in a third bucket — per-user JSON at `.curio/users/<u>/installed-libraries.json` — and pip-install through the same `pip_runner`, with ref-counted uninstall against every installed package's manifest.
+
+---
+
 ## Backend API Reference
 
 The backend is a Flask application in `utk_curio/backend/`. All routes are defined in `backend/app/api/routes.py`.
@@ -402,8 +480,21 @@ The backend is a Flask application in `utk_curio/backend/`. All routes are defin
 | `/get` | GET | Download a data file by name |
 | `/get-preview` | GET | Download first 100 rows of a data file |
 | `/toLayers` | POST | Convert GeoJSON to map layers |
-| `/installPackages` | POST | Install Python packages in sandbox |
+| `/installPackages` | POST | Install Python packages in the sandbox (legacy; per-project pip libs) |
 | `/node-types` | GET/POST | Get or register node type metadata |
+
+### Package Routes
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/packages` | GET | List the user's installed packages |
+| `/api/packages/catalog` | GET | List packages available in the catalog source |
+| `/api/packages/projects/<id>` | GET | Read a project's per-project lockfile |
+| `/api/packages/projects/<id>/install` | POST | Install a package into a project (copies files, pip-installs `manifest.dependencies.python`) |
+| `/api/packages/projects/<id>/<dirName>` | DELETE | Uninstall a package from a project (ref-counted prune + pip uninstall of unique deps) |
+| `/api/packages/<dirName>/file/<path>` | GET | Serve a static file from the user's installed copy (lifecycle bundles, icons, …) |
+| `/api/packages/defaults` | GET/POST | Per-user "always installed" set (drives the catalog page's Installed badge) |
+| `/api/packages/libraries` | GET/POST/DELETE | Per-user "Installed libraries" surface — list / add / remove standalone pip libs alongside manifest-derived ones |
 
 ### Template Routes
 
@@ -430,19 +521,33 @@ The backend is a Flask application in `utk_curio/backend/`. All routes are defin
 | `src/providers/FlowProvider.tsx` | Canonical workflow state (nodes, edges, outputs, interactions) |
 | `src/providers/ProvenanceProvider.tsx` | In-memory per-node execution history (saved with the workflow JSON) |
 | `src/components/UniversalNode.tsx` | Single React component that renders all node types |
-| `src/registry/descriptors.ts` | Node descriptor registrations for all 17 types |
-| `src/registry/types.ts` | TypeScript interfaces for descriptors and adapters |
-| `src/constants.ts` | `NodeType`, `SupportedType`, `EdgeType` enums |
-| `src/adapters/node/` | Lifecycle hook implementations per node type |
+| `src/registry/packagesClient.ts` | Fetch installed manifests → build `NodeDescriptor`s → register against `nodeRegistry` |
+| `src/registry/builtinLifecycles.ts` | `registerLifecycle()` calls for the built-in lifecycle hooks |
+| `src/registry/lifecycleRegistry.ts` | `lifecycle` key → hook lookup (built-in + package-shipped) |
+| `src/registry/nodeRegistry.ts` | Singleton store of all `NodeDescriptor`s; subscribed by the palette + canvas |
+| `src/registry/packageRegistryBootstrap.ts` | Boot-time orchestration: load installed packages, inject lifecycle bundles, build descriptors |
+| `src/registry/index.ts` | Exposes `window.curio.registerLifecycle` + `window.curio.backendUrl` for package bundles |
+| `src/registry/types.ts` | TypeScript interfaces for descriptors, adapters, lifecycle hooks |
+| `src/constants.ts` | `SupportedType`, `EdgeType` enums (node types live in manifests now) |
+| `src/adapters/node/` | Built-in lifecycle hook implementations (code, vega, autk family, …) |
 | `src/utils/ConnectionValidator.ts` | Edge validation logic |
-| `src/services/` | API call wrappers for frontend → backend communication |
+| `src/api/` | API client wrappers (`packagesApi`, `projectsApi`, `authApi`) |
+| `src/components/packages/publishing/NodeCatalogDrawer.tsx` | The canvas drawer that installs node packages from the catalog |
+| `src/components/menus/packages/PackageManagerWindow.tsx` | "Installed Libraries" modal (per-user pip libs, manifest-derived libs) |
 
 ### Backend
 
 | File | Purpose |
 |---|---|
-| `backend/server.py` | Flask app factory |
-| `backend/app/api/routes.py` | All REST endpoints |
+| `backend/server.py` | Flask app factory; Werkzeug reloader exclude patterns |
+| `backend/app/api/routes.py` | Legacy REST endpoints (sandbox proxies, node-types) |
+| `backend/app/packages/manifest.py` | Parse `manifest.json` into typed `PackageManifest` dataclass |
+| `backend/app/packages/installer.py` | Catalog-source-dir → archive → user-store copy + integrity hashing |
+| `backend/app/packages/pip_runner.py` | `install_python_deps` / `uninstall_python_deps`; PEP 440 + caret support, idempotent skip |
+| `backend/app/packages/resolver.py` | `merge_python_deps` (conflict-aware union across packages) |
+| `backend/app/packages/services.py` | Catalog install/uninstall orchestration; calls `pip_runner` on file-copy + prune |
+| `backend/app/packages/routes.py` | `/api/packages/*` endpoints (list, catalog, install, libraries, defaults) |
+| `backend/app/packages/libraries.py` | Per-user `.curio/users/<u>/installed-libraries.json` storage + aggregator |
 | `backend/app/users/models.py` | `User` and `UserSession` SQLAlchemy models |
 | `backend/extensions.py` | SQLAlchemy and Flask-Migrate initialization |
 
