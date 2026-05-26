@@ -11,6 +11,10 @@ export { useAutkPlotLifecycle } from './autkPlotLifecycle';
 export { useAutkComputeLifecycle } from './autkComputeLifecycle';
 export { useAutkDbLifecycle } from './autkDbLifecycle';
 export { createAutkLifecycle } from './autkLifecycleFactory';
+export { useSpatialJoinLifecycle } from './spatialJoinLifecycle';
+export { useStreetViewFetcherLifecycle } from './streetViewFetcherLifecycle';
+export { useHfCvInferenceLifecycle } from './hfCvInferenceLifecycle';
+export { useCvGalleryLifecycle } from './cvGalleryLifecycle';
 
 export { standardInOut, outputOnly, inputOnly, withBidirectional } from './handleHelpers';
 
