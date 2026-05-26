@@ -160,3 +160,39 @@
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+/* Striped indeterminate progress bar shown while the install POST is
+ * blocked on the backend's pip step. Pip gives us no real % so the
+ * stripe just slides — same pattern as the Installed-libraries modal. */
+.installProgress {
+  margin: 10px 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.installProgressBar {
+  width: 100%;
+  height: 8px;
+  background: #e0e7ff;
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+.installProgressStripe {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 35%;
+  background: linear-gradient(90deg, #6366f1, #4338ca);
+  border-radius: 4px;
+  animation: installProgressSlide 1.1s ease-in-out infinite;
+}
+@keyframes installProgressSlide {
+  0%   { left: -35%; }
+  100% { left: 100%; }
+}
+.installProgressHint {
+  font-size: 12px;
+  color: #475569;
+  line-height: 1.4;
+}

@@ -465,6 +465,41 @@ export const packagesApi = {
       body: JSON.stringify({ dirName }),
     });
   },
+
+  // --------------------------------------------------------------
+  // Per-user "Installed libraries" (Python + JS)
+  // --------------------------------------------------------------
+
+  /** Standalone + package-derived libraries in one payload. */
+  listLibraries(): Promise<{
+    standalone: { python: string[]; js: string[] };
+    fromPackages: Array<{ name: string; spec: string; kind: "python" | "js"; source: string }>;
+  }> {
+    return apiFetch("/api/packages/libraries");
+  },
+
+  /** Add a standalone library; backend pip-installs and persists.
+   *  ``installed`` lists what pip actually fetched; ``skipped`` lists
+   *  deps that were already importable (no work done — the UI uses
+   *  this to distinguish "Installed" from "Already installed"). */
+  addLibrary(kind: "python" | "js", spec: string): Promise<{
+    standalone: { python: string[]; js: string[] };
+    installed: string[];
+    skipped: string[];
+  }> {
+    return apiFetch("/api/packages/libraries", {
+      method: "POST",
+      body: JSON.stringify({ kind, spec }),
+    });
+  },
+
+  /** Drop a standalone library; backend pip-uninstalls only if no
+   *  package still declares it. */
+  removeLibrary(kind: "python" | "js", spec: string): Promise<{ standalone: { python: string[]; js: string[] } }> {
+    return apiFetch(`/api/packages/libraries/${kind}/${encodeURIComponent(spec)}`, {
+      method: "DELETE",
+    });
+  },
 };
 
 export { refreshPackageRegistry } from "../registry/packageRegistryBootstrap";

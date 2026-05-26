@@ -38,6 +38,7 @@ from utk_curio.backend.app.packages.spec_packages import (
 )
 from utk_curio.backend.app.packages.storage import (
     PACKAGE_DIR_RE,
+    list_user_packageages,
     package_dir,
     user_packageages_dir,
 )
@@ -105,7 +106,15 @@ def _installed_majors_by_pkg(user_key: str) -> dict[str, list[int]]:
 
 
 def _ensure_user_store_install(user_key: str, dir_name: str) -> None:
-    """No-op if installed; otherwise copy from the shared catalog."""
+    """No-op if installed; otherwise copy from the shared catalog AND
+    pip-install any Python deps the manifest declares.
+
+    The pip step runs synchronously inside the request — heavy installs
+    like ``torch`` can take many minutes (see :mod:`.pip_runner`). The
+    Install button stays in its busy state for the whole duration. If
+    pip fails the catalog copy is rolled back so a retry can re-attempt
+    cleanly.
+    """
     if _is_installed_in_user_store(user_key, dir_name):
         return
     src = catalog_root() / dir_name
@@ -114,9 +123,31 @@ def _ensure_user_store_install(user_key: str, dir_name: str) -> None:
             f"catalog has no package {dir_name}", 404,
         )
     try:
-        install_packageage_from_directory(user_key, src, replace=False)
+        result = install_packageage_from_directory(user_key, src, replace=False)
     except InstallerError as exc:
         raise PackageServiceError(str(exc)) from exc
+
+    py_deps = dict(result.manifest.python_deps or {})
+    if not py_deps:
+        return
+    try:
+        from utk_curio.backend.app.packages.pip_runner import (
+            PipInstallError, install_python_deps,
+        )
+        install_python_deps(py_deps)
+    except PipInstallError as exc:
+        # Roll the just-installed files back so the user-store doesn't
+        # show a package that's unusable. Best-effort: log + continue on
+        # cleanup failure (the original pip error is the one we surface).
+        try:
+            import shutil
+            from utk_curio.backend.app.packages.storage import package_dir
+            shutil.rmtree(package_dir(user_key, dir_name), ignore_errors=True)
+        except Exception:  # noqa: BLE001
+            log.warning("Failed to roll back %s after pip failure", dir_name, exc_info=True)
+        raise PackageServiceError(
+            f"package files installed but pip install failed: {exc}",
+        ) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -295,7 +326,14 @@ def prune_unreferenced_packages(
     removed_from_defaults: set[str] = set()
     current_defaults = defaults_io.load_defaults(user_key)
     new_defaults = set(current_defaults)
+    # Track each pruned package's manifest.python_deps BEFORE deletion so
+    # we can ref-count and pip-uninstall after the files are gone.
+    pruned_python_deps: dict[str, dict[str, str]] = {}
     for dn in unreferenced:
+        try:
+            pruned_python_deps[dn] = _read_python_deps(user_key, dn)
+        except Exception:  # noqa: BLE001 — keep prune resilient
+            pruned_python_deps[dn] = {}
         try:
             if uninstall_packageage(user_key, dn):
                 pruned.add(dn)
@@ -307,7 +345,70 @@ def prune_unreferenced_packages(
             removed_from_defaults.add(dn)
     if removed_from_defaults:
         defaults_io.save_defaults(user_key, new_defaults)
+
+    # Pip-uninstall every Python dep that *was* declared by a pruned
+    # package and is no longer declared by anything still installed.
+    # Walking the surviving manifests by hand is safer than trying to
+    # diff before/after — it gives a single authoritative reference set.
+    deps_to_remove = _python_deps_unique_to_pruned(user_key, pruned_python_deps, pruned)
+    if deps_to_remove:
+        try:
+            from utk_curio.backend.app.packages.pip_runner import (
+                PipInstallError, uninstall_python_deps,
+            )
+            uninstall_python_deps(deps_to_remove)
+        except PipInstallError as exc:
+            # Don't fail the whole prune over a pip uninstall hiccup;
+            # the user can clean up manually if needed.
+            log.warning("prune: pip uninstall failed: %s", exc)
     return {"pruned": pruned, "removedFromDefaults": removed_from_defaults}
+
+
+def _read_python_deps(user_key: str, dir_name: str) -> dict[str, str]:
+    """Read the installed package's ``manifest.dependencies.python`` map."""
+    from utk_curio.backend.app.packages.manifest import (
+        ManifestError,
+        load_packageage_manifest,
+    )
+    from utk_curio.backend.app.packages.storage import package_dir
+
+    try:
+        m = load_packageage_manifest(package_dir(user_key, dir_name))
+    except (ManifestError, OSError):
+        return {}
+    return dict(m.python_deps or {})
+
+
+def _python_deps_unique_to_pruned(
+    user_key: str,
+    pruned_deps: dict[str, dict[str, str]],
+    pruned_names: set[str],
+) -> list[str]:
+    """Return the dep names that were declared by a pruned package and
+    are NOT declared by any other package still in the user store.
+
+    Walks every surviving package's manifest once so cost stays linear
+    in the user's installed-package count.
+    """
+    candidate_dep_names: set[str] = set()
+    for dn in pruned_names:
+        candidate_dep_names.update(pruned_deps.get(dn, {}).keys())
+    if not candidate_dep_names:
+        return []
+    still_needed: set[str] = set()
+    for package_path in list_user_packageages(user_key):
+        if package_path.name in pruned_names:
+            continue  # this one was just removed
+        from utk_curio.backend.app.packages.manifest import (
+            ManifestError,
+            load_packageage_manifest,
+        )
+        try:
+            m = load_packageage_manifest(package_path)
+        except ManifestError:
+            continue
+        still_needed.update(dict(m.python_deps or {}).keys())
+    return sorted(candidate_dep_names - still_needed)
 
 
 # ---------------------------------------------------------------------------

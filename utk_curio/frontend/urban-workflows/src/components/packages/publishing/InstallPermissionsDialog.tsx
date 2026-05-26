@@ -84,6 +84,19 @@ export const InstallPermissionsDialog: React.FC<InstallPermissionsDialogProps> =
           </div>
         )}
 
+        {busy && (
+          <div className={styles.installProgress}>
+            <div className={styles.installProgressBar}>
+              <div className={styles.installProgressStripe} />
+            </div>
+            <div className={styles.installProgressHint}>
+              Installing package + pip-installing its Python deps. Heavy
+              ML packages (torch, transformers) can take several minutes
+              on a cold env — keep this window open.
+            </div>
+          </div>
+        )}
+
         <div className={styles.footer}>
           <button type="button" className={styles.ghostButton} onClick={onCancel} disabled={busy}>
             Cancel

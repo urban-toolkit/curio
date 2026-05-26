@@ -1123,3 +1123,144 @@ def install_to_defaults_route():
     except packages_services.PackageServiceError as exc:
         return _packages_error(exc)
     return jsonify(payload), 201
+
+
+# ---------------------------------------------------------------------------
+# /api/libraries — per-user "Installed libraries" surface (Python + JS)
+# ---------------------------------------------------------------------------
+
+@packages_bp.route("/libraries", methods=["GET"])
+@require_auth
+def list_libraries_route():
+    """Return the user's standalone library list plus every library a
+    currently-installed node package declares in its manifest.
+
+    The frontend's "Installed libraries" modal renders the union as a
+    single flat list with a ``Source`` column (``"standalone"`` or
+    ``"<package>@<major>"``).
+    """
+    from utk_curio.backend.app.packages import libraries as libs
+
+    user_key = _user_dir_key(g.user)
+    _ensure_user_seeded(user_key)
+    agg = libs.aggregate(user_key)
+    return jsonify({
+        "standalone": agg.standalone,
+        "fromPackages": [
+            {"name": e.name, "spec": e.spec, "kind": e.kind, "source": e.source}
+            for e in agg.from_packages
+        ],
+    }), 200
+
+
+@packages_bp.route("/libraries", methods=["POST"])
+@require_auth
+def add_library_route():
+    """Append a standalone library to the user's list and pip-install it.
+
+    Body: ``{"kind": "python"|"js", "spec": "<name><version>"}`` where
+    ``spec`` is a pip-install / npm-install argv entry (``numpy``,
+    ``scikit-learn==1.4.0``, ``lodash@^4.17``).
+    """
+    from utk_curio.backend.app.packages import libraries as libs
+    from utk_curio.backend.app.packages.pip_runner import (
+        PipInstallError, install_python_deps,
+    )
+
+    body = request.get_json(silent=True) or {}
+    kind = body.get("kind")
+    spec = body.get("spec")
+    if not isinstance(spec, str) or not spec.strip():
+        return _error("body must include non-empty 'spec'")
+    if kind not in ("python", "js"):
+        return _error("kind must be 'python' or 'js'")
+    if kind == "js":
+        # No JS install runner yet — the modal will still accept the
+        # entry as a declaration, but won't actually `npm install`. This
+        # keeps the data path consistent for a future js_runner module.
+        return _error("JS library install is not yet supported; declare in a node package's manifest instead", 501)
+
+    user_key = _user_dir_key(g.user)
+    # Spec parsing: split "<name><version>" → {name: version}. We let the
+    # pip_runner re-canonicalize the version spec.
+    name, version = _split_lib_spec(spec)
+    try:
+        report = install_python_deps({name: version})
+    except PipInstallError as exc:
+        return _error(f"pip install failed: {exc}", 502)
+    libs.add_library(user_key, kind, spec)
+    return jsonify({
+        "standalone": libs.list_standalone(user_key),
+        # ``skipped`` is non-empty when the lib was already importable —
+        # the frontend reads this to show "Already installed" instead of
+        # "Installed" so the user knows nothing was actually downloaded.
+        "installed": list(report.installed),
+        "skipped": list(report.skipped),
+    }), 201
+
+
+@packages_bp.route("/libraries/<kind>/<path:spec>", methods=["DELETE"])
+@require_auth
+def remove_library_route(kind: str, spec: str):
+    """Drop a standalone library and pip-uninstall it.
+
+    Package-derived libs aren't removable here — the package itself has
+    to be uninstalled, which triggers the ref-counted prune in
+    ``prune_unreferenced_packages``.
+    """
+    from utk_curio.backend.app.packages import libraries as libs
+    from utk_curio.backend.app.packages.pip_runner import (
+        PipInstallError, uninstall_python_deps,
+    )
+
+    if kind not in ("python", "js"):
+        return _error("kind must be 'python' or 'js'")
+    if kind == "js":
+        return _error("JS library uninstall is not yet supported", 501)
+
+    user_key = _user_dir_key(g.user)
+    name, _ = _split_lib_spec(spec)
+    # Only uninstall via pip if no installed package still declares this
+    # library — same ref-counting contract as the package prune path.
+    if not _any_package_declares(user_key, name, "python"):
+        try:
+            uninstall_python_deps([name])
+        except PipInstallError as exc:
+            log.warning("library remove: pip uninstall %s failed: %s", name, exc)
+    libs.remove_library(user_key, kind, spec)
+    return jsonify({"standalone": libs.list_standalone(user_key)}), 200
+
+
+def _split_lib_spec(spec: str) -> tuple[str, str]:
+    """Split ``"name<spec>"`` into ``(name, "<spec>")``. The version part
+    may be empty for bare names. Recognises PEP 440 comparators + the
+    npm-ish ``@version`` separator (kept verbatim so the user's exact
+    string round-trips through storage)."""
+    s = spec.strip()
+    for sep_start, _ in [(i, c) for i, c in enumerate(s) if c in "=<>~!"]:
+        return s[:sep_start], s[sep_start:]
+    if "@" in s and not s.startswith("@"):
+        i = s.index("@")
+        return s[:i], s[i + 1:]
+    return s, ""
+
+
+def _any_package_declares(user_key: str, lib_name: str, kind: str) -> bool:
+    """True if any installed package's manifest declares *lib_name* under
+    ``dependencies.<kind>``. Used to gate pip uninstall on standalone
+    remove — if a package needs the lib, we keep it on disk."""
+    from utk_curio.backend.app.packages.manifest import (
+        ManifestError,
+        load_packageage_manifest,
+    )
+    from utk_curio.backend.app.packages.storage import list_user_packageages
+
+    for package_path in list_user_packageages(user_key):
+        try:
+            m = load_packageage_manifest(package_path)
+        except ManifestError:
+            continue
+        deps = (m.python_deps if kind == "python" else m.js_deps) or {}
+        if lib_name in deps:
+            return True
+    return False
