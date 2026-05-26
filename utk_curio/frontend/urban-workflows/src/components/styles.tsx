@@ -155,9 +155,10 @@ export const NodeContainer = ({
     const [currentNodeHeight, setCurrentNodeHeight] = useState<
         number | undefined
     >(nodeHeight);
-    const [minimized, setMinimized] = useState(
-        data.nodeType == NodeType.MERGE_FLOW
-    );
+    // Icon-only nodes (manifest `containerStyle.noContent: true` — merge-flow,
+    // spatial-join, etc.) start minimized: they have no body to expand and the
+    // 50×180 footprint is their default render.
+    const [minimized, setMinimized] = useState(!!noContent);
     const { llmRequest, setCurrentEventPipeline, AIModeRef } = useLLMContext();
 
     useEffect(() => {
@@ -211,7 +212,7 @@ export const NodeContainer = ({
     }, [data.output, data.input])
 
     useEffect(() => {
-        if(data.nodeType != NodeType.MERGE_FLOW){
+        if (!noContent) {
             if(allMinimized > 0){
                 setMinimized(true);
             }else{
@@ -221,7 +222,7 @@ export const NodeContainer = ({
     }, [allMinimized])
 
     useEffect(() => {
-        if (data.nodeType != NodeType.MERGE_FLOW) {
+        if (!noContent) {
             if (minimized) {
                 setCurrentNodeWidth(70);
                 setCurrentNodeHeight(40);
@@ -246,7 +247,7 @@ export const NodeContainer = ({
     }, [minimized]);
 
     useEffect(() => {
-        if (data.nodeType == NodeType.MERGE_FLOW) return;
+        if (noContent) return;
 
         if (nodeWidth == undefined || nodeWidth < MIN_NODE_WIDTH) {
             setCurrentNodeWidth(525);
@@ -258,7 +259,7 @@ export const NodeContainer = ({
     }, []);
 
     useEffect(() => {
-        if (data.nodeType == NodeType.MERGE_FLOW) return;
+        if (noContent) return;
 
         const resizer = document.getElementById(
             nodeId + "resizer"
@@ -628,7 +629,7 @@ export const NodeContainer = ({
                 }} /> : null
             }
 
-            {(!dashboardOn || !dashboardLocked) && data.nodeType != NodeType.MERGE_FLOW && <div
+            {(!dashboardOn || !dashboardLocked) && !noContent && <div
                 id={nodeId + "resizer"}
                 className={"resizer nowheel nodrag"}
                 style={{
@@ -1015,7 +1016,7 @@ export const NodeContainer = ({
                         ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
                     }}
                     onClick={() => {
-                        if (data.nodeType != NodeType.MERGE_FLOW) {
+                        if (!noContent) {
                             if (nodeWidth == undefined) {
                                 setCurrentNodeWidth(525);
                             } else {
@@ -1043,19 +1044,10 @@ export const NodeContainer = ({
                 </div>
             ) : null}
 
-            {noContent && data.nodeType != NodeType.MERGE_FLOW ? (
-                <FontAwesomeIcon
-                    icon={faUpRightAndDownLeftFromCenter}
-                    style={{
-                        ...headerIconStyle,
-                        position: "fixed",
-                        top: "5px",
-                        left: "5px",
-                        zIndex: 8,
-                    }}
-                    onClick={() => setMinimized(false)}
-                />
-            ) : null}
+            {/* Maximize button removed: noContent nodes (merge-flow,
+                spatial-join, …) have no body to expand to, so the previous
+                `noContent && nodeType != MERGE_FLOW` dead-code branch is
+                gone. */}
 
             <NodeSaveAsModal show={saveAsOpen} nodeId={nodeId} onClose={() => setSaveAsOpen(false)} />
             <NodeTemplateConfigModal
