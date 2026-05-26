@@ -9,7 +9,7 @@
   - [Logged-in users](#logged-in-users)
   - [Guest users](#guest-users)
 - [Node Catalog](#node-catalog)
-- [Real-time collaboration (experimental)](#real-time-collaboration-experimental)
+- [Real-time collaboration](#real-time-collaboration)
 - [Quick start](#quick-start)
 
 > [!NOTE]
@@ -44,7 +44,7 @@ Usage:
   curio start --auth                # Require login before reaching the project page
   curio start --no-project          # Skip login and project page; open the canvas directly
   curio start --deploy              # Same as --auth; use for production deployments
-  curio start --collab              # Enable real-time multi-user collaboration (experimental, LAN-only)
+  curio start --collab              # Enable real-time multi-user collaboration
   curio start --verbose 2           # Verbosity level (0=silent, 1=normal, 2=debug)
   curio start --force-rebuild       # Re-build the frontend and start all servers
   curio start --force-db-init       # Re-initialize the backend database and start all servers
@@ -57,7 +57,7 @@ The three startup modes control which pages are shown when a user first opens Cu
 | *(default)* | No — auto sign-in as shared guest | Yes | Local single-user development |
 | `--auth` / `--deploy` | Yes | Yes | Multi-user or production deployment |
 | `--no-project` | No — auto sign-in as shared guest | No — opens canvas directly | Demos or embedding Curio in a kiosk |
-| `--collab` | Stackable with other modes (pairs naturally with `--auth`) | — | Real-time multi-user editing on a LAN. See [COLLABORATION.md](COLLABORATION.md). |
+| `--collab` | Stackable with other modes (pairs naturally with `--auth`) | — | Real-time multi-user editing. See [COLLABORATION.md](COLLABORATION.md). |
 
 > [!NOTE]
 > When reading files from inside Curio's dataflow nodes, paths are resolved relative to the directory where you started Curio. If you see a "No such file or directory" error while loading a file, double-check the folder you're running Curio from, because the file path you provide is interpreted relative to that location.
@@ -260,9 +260,9 @@ To open the drawer: in the **Tools panel** on the left edge of the canvas, find 
 
 The full walkthrough — concepts, the Save-As flow, the per-package metadata editor, exporting / importing, versioning, and fork lineage — is in [docs/CATALOG.md](CATALOG.md). The manifest format is specified in [docs/schemas/node-package.v3.json](schemas/node-package.v3.json), and the committed package catalog lives at `<repo_root>/packages/`.
 
-## Real-time collaboration (experimental)
+## Real-time collaboration
 
-`curio start --collab` opens an opt-in Socket.IO channel that lets multiple signed-in users on the same LAN edit the same project simultaneously: presence indicators, per-node soft locks, code-change proposals with peer approval, and shared execution output. The feature is disabled by default — passing `--collab` flips an env flag that the frontend reads at runtime, so no rebuild is needed.
+`curio start --collab` opens an opt-in Socket.IO channel that lets multiple signed-in users edit the same project simultaneously: presence indicators, per-node soft locks, code-change proposals with peer approval, and shared execution output. The feature is disabled by default — passing `--collab` flips an env flag that the frontend reads at runtime, so no rebuild is needed.
 
 See [COLLABORATION.md](COLLABORATION.md) for the full architecture, security model, setup instructions, and current limitations.
 

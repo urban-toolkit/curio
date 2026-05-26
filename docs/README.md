@@ -5,7 +5,7 @@
 - [Installation and usage](USAGE.md)
 - [Quick start](QUICK-START.md)
 - [Node catalog](CATALOG.md)
-- [Real-time collaboration (experimental)](COLLABORATION.md)
+- [Real-time collaboration](COLLABORATION.md)
 - [Deployment](DEPLOYMENT.md)
 
 ## Making contributions
