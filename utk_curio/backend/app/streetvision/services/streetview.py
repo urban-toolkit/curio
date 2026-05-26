@@ -190,10 +190,21 @@ def estimate_coverage(bbox: List[float], api_key: str, sample_count: int = 16) -
             }
             try:
                 r = requests.get(METADATA_BASE, params=params, timeout=10)
-                if r.json().get("status") == "OK":
-                    hits += 1
+                payload = r.json()
             except requests.RequestException:
                 continue
+            status = payload.get("status")
+            if status == "OK":
+                hits += 1
+                continue
+            if status == "ZERO_RESULTS":
+                continue  # legitimate "no pano here" — just keep sampling
+            # Anything else — REQUEST_DENIED, OVER_QUERY_LIMIT, INVALID_REQUEST,
+            # UNKNOWN_ERROR — is an auth/quota/config failure that would make
+            # *every* sample return 0. Bubble it up as a RuntimeError so the
+            # route can surface "0 panoramas" vs "your key is bad" distinctly.
+            error = payload.get("error_message") or status or "unknown error"
+            raise RuntimeError(f"Google Street View metadata API: {error}")
     if total == 0:
         return 0
     # Extrapolate to a denser practical grid (5× per axis).

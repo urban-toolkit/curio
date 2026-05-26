@@ -10,9 +10,9 @@ Three frontend nodes share this blueprint:
   ``/inference/overlay/<image_id>`` for the inspect view; no extra endpoints.
 
 All heavy ML dependencies (``torch``, ``transformers``, ``ultralytics``)
-are lazy-imported deep in the call stack so route handlers only fail with
-``503 streetvision extras not installed`` when the user actually triggers
-inference — searching models or fetching imagery works on a base install.
+are part of Curio's base install but lazy-imported deep in the call stack
+so a corrupt install fails per-request with a 503 instead of crashing the
+backend on boot.
 """
 
 import os
@@ -25,9 +25,8 @@ from .services import cache, streetview
 
 def _missing_extras_response(err: ImportError):
     return jsonify({
-        "error": "streetvision extras not installed",
-        "hint": "pip install curio[streetvision]",
-        "detail": str(err),
+        "error": f"streetvision dependency unavailable: {err}",
+        "hint": "Reinstall Curio — torch/transformers/huggingface_hub ship in the base dependencies",
     }), 503
 
 
@@ -35,14 +34,11 @@ def _missing_extras_response(err: ImportError):
 
 @bp.get("/health")
 def health():
-    """Lightweight liveness check. Reports whether the Google Maps API key
-    is configured so the frontend can show a "key required" banner without
-    waiting for the first failed request."""
-    has_key = bool(os.environ.get("GOOGLE_MAPS_API_KEY"))
+    """Lightweight liveness check. The Google Maps API key is supplied
+    per-request by the Street View Fetcher node, not from the backend
+    environment, so it isn't reported here."""
     return jsonify({
         "status": "healthy",
-        "demo_mode": not has_key,
-        "has_google_api_key": has_key,
         "has_huggingface_token": bool(os.environ.get("HUGGINGFACE_TOKEN")),
     })
 
@@ -62,6 +58,11 @@ def models_search():
     try:
         results = hf.search_models(task, query)
         return jsonify({"models": results})
+    except ImportError as e:
+        # ``search_models`` defers the ``huggingface_hub`` import until
+        # called. A missing dep here means the user's Curio install is
+        # incomplete — surface the same hint.
+        return _missing_extras_response(e)
     except Exception as e:
         return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
 
@@ -86,16 +87,17 @@ def streetview_search_place():
 @bp.post("/data/streetview/coverage")
 def streetview_coverage():
     """Estimate Street View coverage inside a bbox using the metadata API
-    (which does not consume image quota)."""
+    (which does not consume image quota). The Google Maps API key is
+    supplied per-request from the Street View Fetcher node's UI."""
     body = request.get_json(silent=True) or {}
     bbox = body.get("bbox")
     if not isinstance(bbox, list) or len(bbox) != 4:
-        return jsonify({"error": "body must be { bbox: [west, south, east, north] }"}), 400
-    api_key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+        return jsonify({"error": "body must be { bbox: [west, south, east, north], api_key }"}), 400
+    api_key = (body.get("api_key") or "").strip()
     if not api_key:
         return jsonify({
             "error": "Google Maps API key required",
-            "hint": "Set GOOGLE_MAPS_API_KEY in your environment",
+            "hint": "Enter your Google Maps API key in the Street View Fetcher node",
         }), 400
     try:
         estimated = streetview.estimate_coverage(bbox=bbox, api_key=api_key)
@@ -111,18 +113,19 @@ def streetview_fetch():
     Returns a GeoJSON-flavored payload the Street View Fetcher node feeds
     to the downstream Inference node: a FeatureCollection of point features
     keyed by ``pano_id`` with ``image_url`` + ``latitude`` + ``longitude``
-    in each feature's properties.
+    in each feature's properties. The Google Maps API key is supplied
+    per-request from the Street View Fetcher node's UI.
     """
     body = request.get_json(silent=True) or {}
     bbox = body.get("bbox")
     limit = int(body.get("limit") or 20)
     if not isinstance(bbox, list) or len(bbox) != 4:
-        return jsonify({"error": "body must be { bbox: [west, south, east, north], limit? }"}), 400
-    api_key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+        return jsonify({"error": "body must be { bbox: [west, south, east, north], api_key, limit? }"}), 400
+    api_key = (body.get("api_key") or "").strip()
     if not api_key:
         return jsonify({
             "error": "Google Maps API key required",
-            "hint": "Set GOOGLE_MAPS_API_KEY in your environment",
+            "hint": "Enter your Google Maps API key in the Street View Fetcher node",
         }), 400
     try:
         images = streetview.fetch_images_in_bbox(bbox=bbox, limit=limit, api_key=api_key)
@@ -212,6 +215,11 @@ def inference_run():
     # Cap the batch at 200 to keep memory + Google API costs bounded.
     images = images[:200]
 
+    # Optional: only needed if a Street View image URL needs to be re-fetched
+    # through the cache-aware downloader (the URLs minted by /data/streetview/
+    # fetch already embed the key, so the generic HTTP path works without it).
+    api_key = (body.get("api_key") or "").strip() or None
+
     job_id = jobs.create_job(total_images=len(images))
     jobs.start_inference(
         job_id=job_id,
@@ -219,7 +227,7 @@ def inference_run():
         model_id=model_id,
         model_type=model_type,
         classes=classes,
-        api_key=os.environ.get("GOOGLE_MAPS_API_KEY", ""),
+        api_key=api_key,
     )
     return jsonify({"job_id": job_id, "status": "queued", "total_images": len(images)})
 

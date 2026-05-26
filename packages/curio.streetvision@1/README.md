@@ -18,33 +18,19 @@ See [`docs/examples/10-street-vision-cv-analysis.md`](../../docs/examples/10-str
 
 ## Setup
 
-1. **Install the package**: open `/catalog` in Curio and install Street Vision. *(Not auto-installed — the ML stack is heavy.)*
+1. **Install the package**: open `/catalog` in Curio and install Street Vision. The first install pip-installs the package's Python deps (`torch`, `transformers`, `ultralytics`, `huggingface_hub`) declared in `manifest.dependencies.python` — about 3 GB on a cold conda env, possibly minutes on a slow connection. The Install button stays in its busy state until pip finishes. Re-installs of the same package are near-instant because the deps are already satisfied.
 
-2. **Install the Python extras** in your Curio Python environment:
-
-   ```bash
-   pip install "utk-curio[streetvision]"
-   ```
-
-   This pulls in `torch`, `transformers`, `ultralytics`, and `huggingface_hub`. About 3 GB of disk; a GPU is *not* required but speeds inference up roughly 10×.
-
-3. **Set a Google Maps API key** before starting the backend, so the Fetcher can pull Street View imagery:
-
-   ```bash
-   export GOOGLE_MAPS_API_KEY=your-key-here
-   ```
+2. **Have a Google Maps API key handy.** You paste it directly into the Street View Fetcher node — it lives in the node's UI for the current session, never written to the backend env or saved with the dataflow, so a shared dataflow won't leak your key.
 
    The Street View Static API is paid past Google's free tier — the Fetcher node defaults to a 20-image limit per run; raise it with care.
 
-4. **(Optional) HuggingFace token** — only needed for gated models:
+3. **(Optional) HuggingFace token** — only needed for gated models:
 
    ```bash
    export HUGGINGFACE_TOKEN=hf_...
    ```
 
-## How dependencies are resolved
-
-Endpoints in `utk_curio/backend/app/streetvision/` lazy-import the ML libraries at call time. With the base install (no `[streetvision]` extras), the Fetcher node still works (it only needs the lightweight Google API client) but the Inference node returns HTTP 503 with a `pip install curio[streetvision]` hint. The frontend shows that hint inline so the user knows what to do.
+A GPU is *not* required, but with one you'll see roughly 10× faster inference.
 
 ## Limitations
 

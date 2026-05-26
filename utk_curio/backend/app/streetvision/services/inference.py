@@ -6,9 +6,10 @@ or YOLO detector, and yields per-image result dicts. The caller (a worker
 thread in ``jobs.py``) writes each yielded dict into the in-memory job store.
 
 All heavy ML imports (``torch``, ``transformers``, ``ultralytics``,
-``PIL.Image``, ``numpy``) are lazy at function entry so this module can be
-imported on a Curio install without the streetvision extras — only callers
-that actually invoke ``run_segmentation`` / ``run_detection`` need them.
+``PIL.Image``, ``numpy``) are lazy at function entry so a broken install
+fails on first inference call (with a 503 surfaced by the routes layer)
+rather than crashing the backend at startup. The libraries themselves
+ship in Curio's base ``pyproject.toml`` ``dependencies``.
 """
 
 import os

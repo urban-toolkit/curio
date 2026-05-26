@@ -19,7 +19,8 @@ import { NodeLifecycleHook } from '../../../utk_curio/frontend/urban-workflows/s
  * live in the user-facing docs example.
  */
 
-const API_BASE = `${process.env.BACKEND_URL || ''}/api/streetvision`;
+// See streetViewFetcherLifecycle for the rationale on runtime URL resolution.
+const API_BASE = `${(typeof window !== 'undefined' && (window as any).curio?.backendUrl) || ''}/api/streetvision`;
 
 interface ResultItem {
   image_id: string;

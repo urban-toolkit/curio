@@ -17,7 +17,8 @@ import { NodeLifecycleHook } from '../../../utk_curio/frontend/urban-workflows/s
  * in ManeeshJupalle/curio (feat/street-vision-cv-analysis, #120).
  */
 
-const API_BASE = `${process.env.BACKEND_URL || ''}/api/streetvision`;
+// See streetViewFetcherLifecycle for the rationale on runtime URL resolution.
+const API_BASE = `${(typeof window !== 'undefined' && (window as any).curio?.backendUrl) || ''}/api/streetvision`;
 
 type ModelType = 'segmentation' | 'detection';
 
@@ -155,6 +156,7 @@ export const useHfCvInferenceLifecycle: NodeLifecycleHook = (data, nodeState) =>
   const [query, setQuery] = useState('cityscapes');
   const [models, setModels] = useState<ModelSearchResult[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<ModelInfo | null>(null);
   const [autoPick, setAutoPick] = useState(true);
   const userPickedRef = useRef(false);
@@ -163,8 +165,17 @@ export const useHfCvInferenceLifecycle: NodeLifecycleHook = (data, nodeState) =>
     if (query.length < 2) return;
     const t = setTimeout(() => {
       setModelsLoading(true);
+      setModelsError(null);
       fetch(`${API_BASE}/models/search?task=${task}&query=${encodeURIComponent(query)}`)
-        .then(r => r.json())
+        .then(async r => {
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            // 503 = extras not installed (shows the pip-install hint);
+            // 5xx = generic backend error; bubble both up to the UI.
+            throw new Error(d.hint ? `${d.error}: ${d.hint}` : d.error || `HTTP ${r.status}`);
+          }
+          return d;
+        })
         .then(d => {
           const list = d.models ?? [];
           setModels(list);
@@ -173,7 +184,10 @@ export const useHfCvInferenceLifecycle: NodeLifecycleHook = (data, nodeState) =>
             setSelectedModel({ model_id: top.model_id, model_type: task, name: top.name, description: '' });
           }
         })
-        .catch(() => setModels([]))
+        .catch(e => {
+          setModels([]);
+          setModelsError(e?.message || String(e));
+        })
         .finally(() => setModelsLoading(false));
     }, 400);
     return () => clearTimeout(t);
@@ -226,6 +240,7 @@ export const useHfCvInferenceLifecycle: NodeLifecycleHook = (data, nodeState) =>
   const [jobId, setJobId] = useState<string | null>(null);
   const [processed, setProcessed] = useState(0);
   const [totalImages, setTotalImages] = useState(0);
+  const [stageMessage, setStageMessage] = useState<string | null>(null);
   const [jobError, setJobError] = useState<string | null>(null);
   const [results, setResults] = useState<ResultItem[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval>>();
@@ -272,6 +287,7 @@ export const useHfCvInferenceLifecycle: NodeLifecycleHook = (data, nodeState) =>
             .then(s => {
               setProcessed(s.processed);
               setTotalImages(s.total_images);
+              setStageMessage(s.stage_message ?? null);
               if (s.results?.length) setResults(s.results);
               if (s.status === 'completed' || s.status === 'failed') {
                 stopPolling();
@@ -382,7 +398,10 @@ export const useHfCvInferenceLifecycle: NodeLifecycleHook = (data, nodeState) =>
             </label>
             <div style={{ maxHeight: 130, overflowY: 'auto', marginTop: 6 }}>
               {modelsLoading && <div style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center', padding: 6 }}>Searching…</div>}
-              {!modelsLoading && models.length === 0 && query.length >= 2 && (
+              {!modelsLoading && modelsError && (
+                <div style={{ ...S.warn, padding: '6px 8px', fontSize: 11 }}>{modelsError}</div>
+              )}
+              {!modelsLoading && !modelsError && models.length === 0 && query.length >= 2 && (
                 <div style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center', padding: 6 }}>No models found</div>
               )}
               {models.map(m => {
@@ -470,7 +489,11 @@ export const useHfCvInferenceLifecycle: NodeLifecycleHook = (data, nodeState) =>
       {view === 'running' && (
         <div style={S.card}>
           <div style={{ fontWeight: 600, color: '#1a1a2e', marginBottom: 8 }}>Inference in progress</div>
-          <div style={{ color: '#64748b', marginBottom: 6 }}>{processed}/{totalImages} images…</div>
+          {stageMessage ? (
+            <div style={{ color: '#64748b', marginBottom: 6, fontStyle: 'italic' }}>{stageMessage}</div>
+          ) : (
+            <div style={{ color: '#64748b', marginBottom: 6 }}>{processed}/{totalImages} images…</div>
+          )}
           <div style={S.progressOuter}>
             <div style={{ ...S.progressFill, width: `${pct}%` }} />
           </div>

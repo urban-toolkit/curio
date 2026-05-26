@@ -26,7 +26,16 @@ if (typeof window !== 'undefined') {
   const w = window as any;
   w.React = ReactNS;
   w.ReactFlow = ReactFlowNS;
-  w.curio = { ...(w.curio ?? {}), registerLifecycle };
+  // ``backendUrl`` is the runtime resolution of the host's ``BACKEND_URL``
+  // env var. Packages should read this instead of inlining
+  // ``process.env.BACKEND_URL`` at their own build time — that path bakes
+  // the URL into the published catalog bundle and breaks for any
+  // deployment that doesn't match the build host.
+  w.curio = {
+    ...(w.curio ?? {}),
+    registerLifecycle,
+    backendUrl: process.env.BACKEND_URL ?? '',
+  };
   const pending: Array<(c: { registerLifecycle: typeof registerLifecycle }) => void> =
     Array.isArray(w.__curioPendingPackages__) ? w.__curioPendingPackages__ : [];
   for (const fn of pending) {

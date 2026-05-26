@@ -8,9 +8,14 @@
   "dependencies": {
     "js": {},
     "packages": {},
-    "python": {}
+    "python": {
+      "torch": ">=2.0",
+      "transformers": ">=4.30",
+      "ultralytics": ">=8.0",
+      "huggingface_hub": ">=0.20"
+    }
   },
-  "description": "Street-level computer vision nodes: fetch Google Street View imagery, run HuggingFace segmentation/detection models on the panoramas, and inspect the results in a rich gallery. Requires the streetvision pip extras (torch, transformers, ultralytics) and a GOOGLE_MAPS_API_KEY in the backend environment.",
+  "description": "Street-level computer vision nodes: fetch Google Street View imagery, run HuggingFace segmentation/detection models on the panoramas, and inspect the results in a rich gallery. The catalog install will pip-install torch/transformers/ultralytics on first install. Users paste their Google Maps API key directly into the Street View Fetcher node.",
   "id": "curio.streetvision",
   "license": "MIT",
   "lifecycleScript": "scripts/lifecycles.js",
@@ -93,5 +98,5 @@
       "paletteOrder": 2
     }
   ],
-  "version": "1.0.0"
+  "version": "1.0.1"
 }

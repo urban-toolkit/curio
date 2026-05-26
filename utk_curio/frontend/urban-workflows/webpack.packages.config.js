@@ -18,7 +18,6 @@
  */
 
 const path = require("path");
-const webpack = require("webpack");
 
 // One entry per first-party package with a `sources/index.tsx`. To add a new
 // one, drop a directory at `packages/<id>@<major>/sources/` and add a row
@@ -94,17 +93,6 @@ module.exports = PACKAGE_ENTRIES.map(({ id, entry, outputDir }) => ({
       },
     ],
   },
-  plugins: [
-    // Package sources commonly read ``process.env.BACKEND_URL`` (mirroring
-    // the main app's convention). The browser has no ``process`` global, so
-    // without this DefinePlugin the bundle throws ``process is not defined``
-    // the moment the lifecycle script evaluates. We bake in only what
-    // packages legitimately need — BACKEND_URL — rather than the whole
-    // ``process.env`` object.
-    new webpack.DefinePlugin({
-      "process.env.BACKEND_URL": JSON.stringify(process.env.BACKEND_URL || ""),
-    }),
-  ],
   mode: process.env.NODE_ENV === "production" ? "production" : "development",
   devtool: "source-map",
 }));

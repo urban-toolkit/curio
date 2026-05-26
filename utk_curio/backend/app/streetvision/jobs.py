@@ -38,6 +38,11 @@ def create_job(total_images: int) -> str:
             "processed": 0,
             "results": [],
             "error": None,
+            # ``stage_message`` lets the worker tell the UI what slow thing
+            # it's currently waiting on (image downloads, HF model fetch,
+            # …) so the frontend can show "Downloading model — first run
+            # takes a few minutes" instead of a static 0/N progress bar.
+            "stage_message": None,
         }
     return job_id
 
@@ -85,10 +90,10 @@ def start_inference(
             from .services import cache as cache_svc
         except ImportError as e:
             _update(job_id, status="failed",
-                    error=f"streetvision extras not installed: {e}")
+                    error=f"streetvision dependency unavailable: {e}")
             return
 
-        _update(job_id, status="running")
+        _update(job_id, status="running", stage_message="Downloading source images…")
 
         # First pass: materialize every image to a local path. For Street View
         # URLs we need to download; for already-local paths we trust the caller.
@@ -100,13 +105,21 @@ def start_inference(
             try:
                 if local_path and os.path.exists(local_path):
                     pass  # caller pre-staged it
-                elif url_or_path.startswith(("http://", "https://")) and "googleapis.com" in url_or_path:
-                    # Street View URL — use the pano_id-aware downloader so
-                    # we reuse the existing cache layout.
+                elif (
+                    url_or_path.startswith(("http://", "https://"))
+                    and "googleapis.com" in url_or_path
+                    and api_key
+                ):
+                    # Street View URL with a key supplied by the caller —
+                    # use the pano_id-aware downloader so we reuse the
+                    # existing cache layout. Without a key we fall through
+                    # to the generic HTTP path: the URL itself embeds the
+                    # key, so a plain GET still works (just with a
+                    # different on-disk cache key).
                     pano_id = img.get("pano_id") or img.get("image_id") or ""
                     local_path = streetview_svc.download_image(
                         pano_id=pano_id,
-                        api_key=api_key or "",
+                        api_key=api_key,
                         cache_dir=download_dir,
                         lat=img.get("latitude"),
                         lon=img.get("longitude"),
@@ -136,20 +149,30 @@ def start_inference(
             prepared.append({**img, "local_path": local_path})
 
         # Update total_images to the count we actually prepared.
-        _update(job_id, total_images=len(prepared))
+        # Switch the stage to "model loading" — the next thing run_batch
+        # does is fetch the HF model (potentially hundreds of MB on a
+        # cold cache). The first ``progress_cb`` call clears this once
+        # actual inference starts.
+        _update(
+            job_id,
+            total_images=len(prepared),
+            stage_message="Loading model — first run can take a few minutes for HuggingFace download…",
+        )
 
         def _progress(processed: int, _total: int) -> None:
-            _update(job_id, processed=processed)
+            # First progress tick means model load is done; clear the
+            # stage banner so the UI shows the per-image counter.
+            _update(job_id, processed=processed, stage_message=None)
 
         try:
             for result in inference_svc.run_batch(
                 prepared, model_id, model_type, classes, progress_cb=_progress,
             ):
                 _update_results_append(job_id, result)
-            _update(job_id, status="completed")
+            _update(job_id, status="completed", stage_message=None)
         except Exception as e:
             traceback.print_exc()  # Surface to backend logs for debugging.
-            _update(job_id, status="failed",
+            _update(job_id, status="failed", stage_message=None,
                     error=f"{type(e).__name__}: {e}")
 
     t = threading.Thread(target=_worker, name=f"streetvision-{job_id[:8]}", daemon=True)

@@ -110,37 +110,51 @@
       {
         "id": "reactflow__edge-5988175e-84aa-4964-84de-aba7d55cf122out-4067fb98-3ed5-497a-97a5-41a98ce1085bin",
         "source": "5988175e-84aa-4964-84de-aba7d55cf122",
-        "target": "4067fb98-3ed5-497a-97a5-41a98ce1085b"
+        "sourceHandle": "out",
+        "target": "4067fb98-3ed5-497a-97a5-41a98ce1085b",
+        "targetHandle": "in"
       },
       {
         "id": "reactflow__edge-4067fb98-3ed5-497a-97a5-41a98ce1085bout-5d2ac264-58a5-431d-83cd-d6785c6fd176in",
         "source": "4067fb98-3ed5-497a-97a5-41a98ce1085b",
-        "target": "5d2ac264-58a5-431d-83cd-d6785c6fd176"
+        "sourceHandle": "out",
+        "target": "5d2ac264-58a5-431d-83cd-d6785c6fd176",
+        "targetHandle": "in"
       },
       {
         "id": "reactflow__edge-5d2ac264-58a5-431d-83cd-d6785c6fd176out-7541416c-a960-4d64-b7f8-175b8978c563in_points",
         "source": "5d2ac264-58a5-431d-83cd-d6785c6fd176",
-        "target": "7541416c-a960-4d64-b7f8-175b8978c563"
+        "sourceHandle": "out",
+        "target": "7541416c-a960-4d64-b7f8-175b8978c563",
+        "targetHandle": "in_points"
       },
       {
         "id": "reactflow__edge-408e6f23-7b85-4470-9c91-f0c58c5769ddout-1cbd2725-458f-4617-86cd-2fd9d190f908in",
         "source": "408e6f23-7b85-4470-9c91-f0c58c5769dd",
-        "target": "1cbd2725-458f-4617-86cd-2fd9d190f908"
+        "sourceHandle": "out",
+        "target": "1cbd2725-458f-4617-86cd-2fd9d190f908",
+        "targetHandle": "in"
       },
       {
         "id": "reactflow__edge-1cbd2725-458f-4617-86cd-2fd9d190f908out-7541416c-a960-4d64-b7f8-175b8978c563in_polygons",
         "source": "1cbd2725-458f-4617-86cd-2fd9d190f908",
-        "target": "7541416c-a960-4d64-b7f8-175b8978c563"
+        "sourceHandle": "out",
+        "target": "7541416c-a960-4d64-b7f8-175b8978c563",
+        "targetHandle": "in_polygons"
       },
       {
         "id": "reactflow__edge-7541416c-a960-4d64-b7f8-175b8978c563out-8aaff248-9894-4ca8-b9a3-3b79216ce592in",
         "source": "7541416c-a960-4d64-b7f8-175b8978c563",
-        "target": "8aaff248-9894-4ca8-b9a3-3b79216ce592"
+        "sourceHandle": "out",
+        "target": "8aaff248-9894-4ca8-b9a3-3b79216ce592",
+        "targetHandle": "in"
       },
       {
         "id": "reactflow__edge-7541416c-a960-4d64-b7f8-175b8978c563out-1aa27f1a-5ed7-4872-a413-ce6fd1eb2c6bin",
         "source": "7541416c-a960-4d64-b7f8-175b8978c563",
-        "target": "1aa27f1a-5ed7-4872-a413-ce6fd1eb2c6b"
+        "sourceHandle": "out",
+        "target": "1aa27f1a-5ed7-4872-a413-ce6fd1eb2c6b",
+        "targetHandle": "in"
       }
     ],
     "name": "Street-level computer vision",

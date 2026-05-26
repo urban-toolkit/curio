@@ -15,7 +15,12 @@ import { NodeLifecycleHook } from '../../../utk_curio/frontend/urban-workflows/s
  * in ManeeshJupalle/curio (feat/street-vision-cv-analysis, #120).
  */
 
-const API_BASE = `${process.env.BACKEND_URL || ''}/api/streetvision`;
+// Read the host's BACKEND_URL at runtime (set by Curio's main bundle on
+// ``window.curio.backendUrl``) instead of inlining ``process.env.BACKEND_URL``
+// at the package's build time — the latter bakes a build-host-specific URL
+// into the catalog-published bundle and breaks for any deployment that
+// doesn't match.
+const API_BASE = `${(typeof window !== 'undefined' && (window as any).curio?.backendUrl) || ''}/api/streetvision`;
 
 const S: Record<string, React.CSSProperties> = {
   root: {
@@ -53,7 +58,11 @@ const S: Record<string, React.CSSProperties> = {
 
 export const useStreetViewFetcherLifecycle: NodeLifecycleHook = (data, nodeState) => {
   const [backendUp, setBackendUp] = useState(false);
-  const [hasGoogleKey, setHasGoogleKey] = useState(false);
+
+  // Per-session API key. Held in React state only — not persisted to the
+  // dataflow spec (would leak when shared) nor to localStorage. User
+  // re-enters on reload.
+  const [apiKey, setApiKey] = useState('');
 
   // Configuration
   const [query, setQuery] = useState('');
@@ -67,12 +76,12 @@ export const useStreetViewFetcherLifecycle: NodeLifecycleHook = (data, nodeState
   const [resultCount, setResultCount] = useState<number | null>(null);
 
   // Poll the backend health endpoint periodically so the user sees connection
-  // status + whether the Google API key is set without having to click Run.
+  // status. The API key is supplied per-request from this node's UI, so the
+  // backend doesn't need to advertise its key state anymore.
   useEffect(() => {
     const check = () => {
       fetch(`${API_BASE}/health`)
-        .then(r => r.json())
-        .then(d => { setBackendUp(true); setHasGoogleKey(!!d.has_google_api_key); })
+        .then(r => { setBackendUp(r.ok); })
         .catch(() => setBackendUp(false));
     };
     check();
@@ -81,7 +90,7 @@ export const useStreetViewFetcherLifecycle: NodeLifecycleHook = (data, nodeState
   }, []);
 
   const verifyCoverage = useCallback(() => {
-    if (!query.trim()) return;
+    if (!query.trim() || !apiKey.trim()) return;
     setErr(null);
     setCoverage(null);
     setBbox(null);
@@ -103,23 +112,23 @@ export const useStreetViewFetcherLifecycle: NodeLifecycleHook = (data, nodeState
         return fetch(`${API_BASE}/data/streetview/coverage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bbox: bb }),
+          body: JSON.stringify({ bbox: bb, api_key: apiKey }),
         });
       })
       .then(async r => { if (!r.ok) throw new Error((await r.json())?.error || `HTTP ${r.status}`); return r.json(); })
       .then(d => setCoverage(d.estimated_count))
       .catch(e => setErr(e.message || String(e)));
-  }, [query]);
+  }, [query, apiKey]);
 
   const runFetch = useCallback(() => {
-    if (!bbox) return;
+    if (!bbox || !apiKey.trim()) return;
     setBusy(true);
     setErr(null);
     setResultCount(null);
     fetch(`${API_BASE}/data/streetview/fetch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bbox, limit }),
+      body: JSON.stringify({ bbox, limit, api_key: apiKey }),
     })
       .then(async r => { if (!r.ok) throw new Error((await r.json())?.error || `HTTP ${r.status}`); return r.json(); })
       .then(fc => {
@@ -129,9 +138,10 @@ export const useStreetViewFetcherLifecycle: NodeLifecycleHook = (data, nodeState
       })
       .catch(e => setErr(e.message || String(e)))
       .finally(() => setBusy(false));
-  }, [bbox, limit, data, nodeState]);
+  }, [bbox, limit, apiKey, data, nodeState]);
 
-  const ready = backendUp && hasGoogleKey && !!bbox && limit > 0 && !busy;
+  const hasKey = apiKey.trim().length > 0;
+  const ready = backendUp && hasKey && !!bbox && limit > 0 && !busy;
   const statusColor = backendUp ? '#22c55e' : '#ef4444';
   const statusText = backendUp ? 'Backend connected' : 'Backend offline';
 
@@ -150,11 +160,21 @@ export const useStreetViewFetcherLifecycle: NodeLifecycleHook = (data, nodeState
         {statusText}
       </div>
 
-      {backendUp && !hasGoogleKey && (
-        <div style={{ ...S.card, ...S.warn }}>
-          Google Maps API key required. Set <code>GOOGLE_MAPS_API_KEY</code> in your backend environment.
+      <div>
+        <div style={S.label}>Google Maps API Key</div>
+        <input
+          style={S.input}
+          type="password"
+          value={apiKey}
+          onChange={e => setApiKey(e.target.value)}
+          placeholder="Paste your Google Maps API key"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>
+          Held in memory for this session only — never saved to the dataflow.
         </div>
-      )}
+      </div>
 
       <div>
         <div style={S.label}>Place</div>
@@ -164,7 +184,7 @@ export const useStreetViewFetcherLifecycle: NodeLifecycleHook = (data, nodeState
           onChange={e => setQuery(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') verifyCoverage(); }}
           placeholder="e.g. Lincoln Park, Chicago"
-          disabled={!hasGoogleKey}
+          disabled={!hasKey}
         />
       </div>
 
@@ -185,7 +205,7 @@ export const useStreetViewFetcherLifecycle: NodeLifecycleHook = (data, nodeState
         <button
           style={{ ...S.btn, width: 'auto', flex: 1, background: '#f1f5f9', color: '#334155', border: '1px solid #e2e8f0' }}
           onClick={verifyCoverage}
-          disabled={!hasGoogleKey || !query.trim()}
+          disabled={!hasKey || !query.trim()}
         >
           Verify Coverage
         </button>

@@ -25,6 +25,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! react */ "react");
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
 function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) { return typeof o; } : function (o) { return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o; }, _typeof(o); }
+var _curio;
 function _toConsumableArray(r) { return _arrayWithoutHoles(r) || _iterableToArray(r) || _unsupportedIterableToArray(r) || _nonIterableSpread(); }
 function _nonIterableSpread() { throw new TypeError("Invalid attempt to spread non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
 function _iterableToArray(r) { if ("undefined" != typeof Symbol && null != r[Symbol.iterator] || null != r["@@iterator"]) return Array.from(r); }
@@ -59,7 +60,8 @@ function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
  * live in the user-facing docs example.
  */
 
-var API_BASE = "".concat( false || '', "/api/streetvision");
+// See streetViewFetcherLifecycle for the rationale on runtime URL resolution.
+var API_BASE = "".concat(typeof window !== 'undefined' && ((_curio = window.curio) === null || _curio === void 0 ? void 0 : _curio.backendUrl) || '', "/api/streetvision");
 // Cityscapes-flavored palette; kept in sync with the inference service's
 // overlay PNG palette so colors in the gallery match colors in the overlays.
 var CLASS_COLORS = {
@@ -975,20 +977,21 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! react */ "react");
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
+var _curio;
 function ownKeys(e, r) { var t = Object.keys(e); if (Object.getOwnPropertySymbols) { var o = Object.getOwnPropertySymbols(e); r && (o = o.filter(function (r) { return Object.getOwnPropertyDescriptor(e, r).enumerable; })), t.push.apply(t, o); } return t; }
 function _objectSpread(e) { for (var r = 1; r < arguments.length; r++) { var t = null != arguments[r] ? arguments[r] : {}; r % 2 ? ownKeys(Object(t), !0).forEach(function (r) { _defineProperty(e, r, t[r]); }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : ownKeys(Object(t)).forEach(function (r) { Object.defineProperty(e, r, Object.getOwnPropertyDescriptor(t, r)); }); } return e; }
 function _defineProperty(e, r, t) { return (r = _toPropertyKey(r)) in e ? Object.defineProperty(e, r, { value: t, enumerable: !0, configurable: !0, writable: !0 }) : e[r] = t, e; }
 function _toPropertyKey(t) { var i = _toPrimitive(t, "string"); return "symbol" == _typeof(i) ? i : i + ""; }
 function _toPrimitive(t, r) { if ("object" != _typeof(t) || !t) return t; var e = t[Symbol.toPrimitive]; if (void 0 !== e) { var i = e.call(t, r || "default"); if ("object" != _typeof(i)) return i; throw new TypeError("@@toPrimitive must return a primitive value."); } return ("string" === r ? String : Number)(t); }
-function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i["return"]) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
-function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
-function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
-function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
 function _createForOfIteratorHelper(r, e) { var t = "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (!t) { if (Array.isArray(r) || (t = _unsupportedIterableToArray(r)) || e && r && "number" == typeof r.length) { t && (r = t); var _n = 0, F = function F() {}; return { s: F, n: function n() { return _n >= r.length ? { done: !0 } : { done: !1, value: r[_n++] }; }, e: function e(r) { throw r; }, f: F }; } throw new TypeError("Invalid attempt to iterate non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); } var o, a = !0, u = !1; return { s: function s() { t = t.call(r); }, n: function n() { var r = t.next(); return a = r.done, r; }, e: function e(r) { u = !0, o = r; }, f: function f() { try { a || null == t["return"] || t["return"](); } finally { if (u) throw o; } } }; }
 function _toConsumableArray(r) { return _arrayWithoutHoles(r) || _iterableToArray(r) || _unsupportedIterableToArray(r) || _nonIterableSpread(); }
 function _nonIterableSpread() { throw new TypeError("Invalid attempt to spread non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
 function _iterableToArray(r) { if ("undefined" != typeof Symbol && null != r[Symbol.iterator] || null != r["@@iterator"]) return Array.from(r); }
 function _arrayWithoutHoles(r) { if (Array.isArray(r)) return _arrayLikeToArray(r); }
+function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i["return"]) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
 function _slicedToArray(r, e) { return _arrayWithHoles(r) || _iterableToArrayLimit(r, e) || _unsupportedIterableToArray(r, e) || _nonIterableRest(); }
 function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
 function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) return _arrayLikeToArray(r, a); var t = {}.toString.call(r).slice(8, -1); return "Object" === t && r.constructor && (t = r.constructor.name), "Map" === t || "Set" === t ? Array.from(r) : "Arguments" === t || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t) ? _arrayLikeToArray(r, a) : void 0; } }
@@ -1013,7 +1016,8 @@ function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == 
  * in ManeeshJupalle/curio (feat/street-vision-cv-analysis, #120).
  */
 
-var API_BASE = "".concat( false || '', "/api/streetvision");
+// See streetViewFetcherLifecycle for the rationale on runtime URL resolution.
+var API_BASE = "".concat(typeof window !== 'undefined' && ((_curio = window.curio) === null || _curio === void 0 ? void 0 : _curio.backendUrl) || '', "/api/streetvision");
 var CLASS_SUGGESTIONS = ['building', 'road', 'sidewalk', 'vegetation', 'pole', 'fence', 'wall', 'traffic sign'];
 var S = {
   root: {
@@ -1249,20 +1253,48 @@ var useHfCvInferenceLifecycle = function useHfCvInferenceLifecycle(data, nodeSta
     setModelsLoading = _useState10[1];
   var _useState11 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null),
     _useState12 = _slicedToArray(_useState11, 2),
-    selectedModel = _useState12[0],
-    setSelectedModel = _useState12[1];
-  var _useState13 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(true),
+    modelsError = _useState12[0],
+    setModelsError = _useState12[1];
+  var _useState13 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null),
     _useState14 = _slicedToArray(_useState13, 2),
-    autoPick = _useState14[0],
-    setAutoPick = _useState14[1];
+    selectedModel = _useState14[0],
+    setSelectedModel = _useState14[1];
+  var _useState15 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(true),
+    _useState16 = _slicedToArray(_useState15, 2),
+    autoPick = _useState16[0],
+    setAutoPick = _useState16[1];
   var userPickedRef = (0,react__WEBPACK_IMPORTED_MODULE_0__.useRef)(false);
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(function () {
     if (query.length < 2) return;
     var t = setTimeout(function () {
       setModelsLoading(true);
-      fetch("".concat(API_BASE, "/models/search?task=").concat(task, "&query=").concat(encodeURIComponent(query))).then(function (r) {
-        return r.json();
-      }).then(function (d) {
+      setModelsError(null);
+      fetch("".concat(API_BASE, "/models/search?task=").concat(task, "&query=").concat(encodeURIComponent(query))).then(/*#__PURE__*/function () {
+        var _ref = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee(r) {
+          var d;
+          return _regenerator().w(function (_context) {
+            while (1) switch (_context.n) {
+              case 0:
+                _context.n = 1;
+                return r.json()["catch"](function () {
+                  return {};
+                });
+              case 1:
+                d = _context.v;
+                if (r.ok) {
+                  _context.n = 2;
+                  break;
+                }
+                throw new Error(d.hint ? "".concat(d.error, ": ").concat(d.hint) : d.error || "HTTP ".concat(r.status));
+              case 2:
+                return _context.a(2, d);
+            }
+          }, _callee);
+        }));
+        return function (_x) {
+          return _ref.apply(this, arguments);
+        };
+      }()).then(function (d) {
         var _d$models;
         var list = (_d$models = d.models) !== null && _d$models !== void 0 ? _d$models : [];
         setModels(list);
@@ -1275,8 +1307,9 @@ var useHfCvInferenceLifecycle = function useHfCvInferenceLifecycle(data, nodeSta
             description: ''
           });
         }
-      })["catch"](function () {
-        return setModels([]);
+      })["catch"](function (e) {
+        setModels([]);
+        setModelsError((e === null || e === void 0 ? void 0 : e.message) || String(e));
       })["finally"](function () {
         return setModelsLoading(false);
       });
@@ -1290,10 +1323,10 @@ var useHfCvInferenceLifecycle = function useHfCvInferenceLifecycle(data, nodeSta
   }, [task]);
 
   // ── Target classes ─────────────────────────────────────────────────
-  var _useState15 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)([]),
-    _useState16 = _slicedToArray(_useState15, 2),
-    selectedClasses = _useState16[0],
-    setSelectedClasses = _useState16[1];
+  var _useState17 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)([]),
+    _useState18 = _slicedToArray(_useState17, 2),
+    selectedClasses = _useState18[0],
+    setSelectedClasses = _useState18[1];
   var toggleClass = function toggleClass(cls) {
     setSelectedClasses(function (prev) {
       return prev.includes(cls) ? prev.filter(function (c) {
@@ -1302,10 +1335,10 @@ var useHfCvInferenceLifecycle = function useHfCvInferenceLifecycle(data, nodeSta
     });
   };
   var csvInputRef = (0,react__WEBPACK_IMPORTED_MODULE_0__.useRef)(null);
-  var _useState17 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null),
-    _useState18 = _slicedToArray(_useState17, 2),
-    csvStatus = _useState18[0],
-    setCsvStatus = _useState18[1];
+  var _useState19 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null),
+    _useState20 = _slicedToArray(_useState19, 2),
+    csvStatus = _useState20[0],
+    setCsvStatus = _useState20[1];
   var handleCsvImport = function handleCsvImport(file) {
     setCsvStatus(null);
     var reader = new FileReader();
@@ -1381,30 +1414,34 @@ var useHfCvInferenceLifecycle = function useHfCvInferenceLifecycle(data, nodeSta
   };
 
   // ── Job lifecycle ──────────────────────────────────────────────────
-  var _useState19 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)('config'),
-    _useState20 = _slicedToArray(_useState19, 2),
-    view = _useState20[0],
-    setView = _useState20[1];
-  var _useState21 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null),
+  var _useState21 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)('config'),
     _useState22 = _slicedToArray(_useState21, 2),
-    jobId = _useState22[0],
-    setJobId = _useState22[1];
-  var _useState23 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(0),
+    view = _useState22[0],
+    setView = _useState22[1];
+  var _useState23 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null),
     _useState24 = _slicedToArray(_useState23, 2),
-    processed = _useState24[0],
-    setProcessed = _useState24[1];
+    jobId = _useState24[0],
+    setJobId = _useState24[1];
   var _useState25 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(0),
     _useState26 = _slicedToArray(_useState25, 2),
-    totalImages = _useState26[0],
-    setTotalImages = _useState26[1];
-  var _useState27 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null),
+    processed = _useState26[0],
+    setProcessed = _useState26[1];
+  var _useState27 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(0),
     _useState28 = _slicedToArray(_useState27, 2),
-    jobError = _useState28[0],
-    setJobError = _useState28[1];
-  var _useState29 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)([]),
+    totalImages = _useState28[0],
+    setTotalImages = _useState28[1];
+  var _useState29 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null),
     _useState30 = _slicedToArray(_useState29, 2),
-    results = _useState30[0],
-    setResults = _useState30[1];
+    stageMessage = _useState30[0],
+    setStageMessage = _useState30[1];
+  var _useState31 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null),
+    _useState32 = _slicedToArray(_useState31, 2),
+    jobError = _useState32[0],
+    setJobError = _useState32[1];
+  var _useState33 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)([]),
+    _useState34 = _slicedToArray(_useState33, 2),
+    results = _useState34[0],
+    setResults = _useState34[1];
   var pollRef = (0,react__WEBPACK_IMPORTED_MODULE_0__.useRef)();
   var stopPolling = (0,react__WEBPACK_IMPORTED_MODULE_0__.useCallback)(function () {
     if (pollRef.current) {
@@ -1447,60 +1484,60 @@ var useHfCvInferenceLifecycle = function useHfCvInferenceLifecycle(data, nodeSta
         }
       })
     }).then(/*#__PURE__*/function () {
-      var _ref = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee(r) {
+      var _ref2 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2(r) {
         var _yield$r$json, _yield$r$json2;
         var _t, _t2, _t3, _t4, _t5, _t6, _t7, _t8, _t9, _t0;
-        return _regenerator().w(function (_context) {
-          while (1) switch (_context.n) {
+        return _regenerator().w(function (_context2) {
+          while (1) switch (_context2.n) {
             case 0:
               if (r.ok) {
-                _context.n = 11;
+                _context2.n = 11;
                 break;
               }
               _t = Error;
-              _context.n = 1;
+              _context2.n = 1;
               return r.json();
             case 1:
-              _t5 = _yield$r$json = _context.v;
+              _t5 = _yield$r$json = _context2.v;
               _t4 = _t5 === null;
               if (_t4) {
-                _context.n = 2;
+                _context2.n = 2;
                 break;
               }
               _t4 = _yield$r$json === void 0;
             case 2:
               if (!_t4) {
-                _context.n = 3;
+                _context2.n = 3;
                 break;
               }
               _t6 = void 0;
-              _context.n = 4;
+              _context2.n = 4;
               break;
             case 3:
               _t6 = _yield$r$json.hint;
             case 4:
               _t3 = _t6;
               if (_t3) {
-                _context.n = 9;
+                _context2.n = 9;
                 break;
               }
-              _context.n = 5;
+              _context2.n = 5;
               return r.json();
             case 5:
-              _t8 = _yield$r$json2 = _context.v;
+              _t8 = _yield$r$json2 = _context2.v;
               _t7 = _t8 === null;
               if (_t7) {
-                _context.n = 6;
+                _context2.n = 6;
                 break;
               }
               _t7 = _yield$r$json2 === void 0;
             case 6:
               if (!_t7) {
-                _context.n = 7;
+                _context2.n = 7;
                 break;
               }
               _t9 = void 0;
-              _context.n = 8;
+              _context2.n = 8;
               break;
             case 7:
               _t9 = _yield$r$json2.error;
@@ -1509,7 +1546,7 @@ var useHfCvInferenceLifecycle = function useHfCvInferenceLifecycle(data, nodeSta
             case 9:
               _t2 = _t3;
               if (_t2) {
-                _context.n = 10;
+                _context2.n = 10;
                 break;
               }
               _t2 = "HTTP ".concat(r.status);
@@ -1517,12 +1554,12 @@ var useHfCvInferenceLifecycle = function useHfCvInferenceLifecycle(data, nodeSta
               _t0 = _t2;
               throw new _t(_t0);
             case 11:
-              return _context.a(2, r.json());
+              return _context2.a(2, r.json());
           }
-        }, _callee);
+        }, _callee2);
       }));
-      return function (_x) {
-        return _ref.apply(this, arguments);
+      return function (_x2) {
+        return _ref2.apply(this, arguments);
       };
     }()).then(function (d) {
       setJobId(d.job_id);
@@ -1530,9 +1567,10 @@ var useHfCvInferenceLifecycle = function useHfCvInferenceLifecycle(data, nodeSta
         fetch("".concat(API_BASE, "/inference/results/").concat(d.job_id)).then(function (r) {
           return r.json();
         }).then(function (s) {
-          var _s$results;
+          var _s$stage_message, _s$results;
           setProcessed(s.processed);
           setTotalImages(s.total_images);
+          setStageMessage((_s$stage_message = s.stage_message) !== null && _s$stage_message !== void 0 ? _s$stage_message : null);
           if ((_s$results = s.results) !== null && _s$results !== void 0 && _s$results.length) setResults(s.results);
           if (s.status === 'completed' || s.status === 'failed') {
             stopPolling();
@@ -1700,7 +1738,12 @@ var useHfCvInferenceLifecycle = function useHfCvInferenceLifecycle(data, nodeSta
       textAlign: 'center',
       padding: 6
     }
-  }, "Searching\u2026"), !modelsLoading && models.length === 0 && query.length >= 2 && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+  }, "Searching\u2026"), !modelsLoading && modelsError && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    style: _objectSpread(_objectSpread({}, S.warn), {}, {
+      padding: '6px 8px',
+      fontSize: 11
+    })
+  }, modelsError), !modelsLoading && !modelsError && models.length === 0 && query.length >= 2 && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     style: {
       fontSize: 11,
       color: '#94a3b8',
@@ -1825,7 +1868,13 @@ var useHfCvInferenceLifecycle = function useHfCvInferenceLifecycle(data, nodeSta
       color: '#1a1a2e',
       marginBottom: 8
     }
-  }, "Inference in progress"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+  }, "Inference in progress"), stageMessage ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    style: {
+      color: '#64748b',
+      marginBottom: 6,
+      fontStyle: 'italic'
+    }
+  }, stageMessage) : /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     style: {
       color: '#64748b',
       marginBottom: 6
@@ -1913,6 +1962,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! react */ "react");
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
 function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) { return typeof o; } : function (o) { return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o; }, _typeof(o); }
+var _curio;
 function ownKeys(e, r) { var t = Object.keys(e); if (Object.getOwnPropertySymbols) { var o = Object.getOwnPropertySymbols(e); r && (o = o.filter(function (r) { return Object.getOwnPropertyDescriptor(e, r).enumerable; })), t.push.apply(t, o); } return t; }
 function _objectSpread(e) { for (var r = 1; r < arguments.length; r++) { var t = null != arguments[r] ? arguments[r] : {}; r % 2 ? ownKeys(Object(t), !0).forEach(function (r) { _defineProperty(e, r, t[r]); }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : ownKeys(Object(t)).forEach(function (r) { Object.defineProperty(e, r, Object.getOwnPropertyDescriptor(t, r)); }); } return e; }
 function _defineProperty(e, r, t) { return (r = _toPropertyKey(r)) in e ? Object.defineProperty(e, r, { value: t, enumerable: !0, configurable: !0, writable: !0 }) : e[r] = t, e; }
@@ -1943,7 +1993,12 @@ function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
  * in ManeeshJupalle/curio (feat/street-vision-cv-analysis, #120).
  */
 
-var API_BASE = "".concat( false || '', "/api/streetvision");
+// Read the host's BACKEND_URL at runtime (set by Curio's main bundle on
+// ``window.curio.backendUrl``) instead of inlining ``process.env.BACKEND_URL``
+// at the package's build time — the latter bakes a build-host-specific URL
+// into the catalog-published bundle and breaks for any deployment that
+// doesn't match.
+var API_BASE = "".concat(typeof window !== 'undefined' && ((_curio = window.curio) === null || _curio === void 0 ? void 0 : _curio.backendUrl) || '', "/api/streetvision");
 var S = {
   root: {
     padding: '12px 14px',
@@ -2065,10 +2120,14 @@ var useStreetViewFetcherLifecycle = function useStreetViewFetcherLifecycle(data,
     _useState2 = _slicedToArray(_useState, 2),
     backendUp = _useState2[0],
     setBackendUp = _useState2[1];
-  var _useState3 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false),
+
+  // Per-session API key. Held in React state only — not persisted to the
+  // dataflow spec (would leak when shared) nor to localStorage. User
+  // re-enters on reload.
+  var _useState3 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(''),
     _useState4 = _slicedToArray(_useState3, 2),
-    hasGoogleKey = _useState4[0],
-    setHasGoogleKey = _useState4[1];
+    apiKey = _useState4[0],
+    setApiKey = _useState4[1];
 
   // Configuration
   var _useState5 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(''),
@@ -2103,14 +2162,12 @@ var useStreetViewFetcherLifecycle = function useStreetViewFetcherLifecycle(data,
     setResultCount = _useState16[1];
 
   // Poll the backend health endpoint periodically so the user sees connection
-  // status + whether the Google API key is set without having to click Run.
+  // status. The API key is supplied per-request from this node's UI, so the
+  // backend doesn't need to advertise its key state anymore.
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(function () {
     var check = function check() {
       fetch("".concat(API_BASE, "/health")).then(function (r) {
-        return r.json();
-      }).then(function (d) {
-        setBackendUp(true);
-        setHasGoogleKey(!!d.has_google_api_key);
+        setBackendUp(r.ok);
       })["catch"](function () {
         return setBackendUp(false);
       });
@@ -2122,7 +2179,7 @@ var useStreetViewFetcherLifecycle = function useStreetViewFetcherLifecycle(data,
     };
   }, []);
   var verifyCoverage = (0,react__WEBPACK_IMPORTED_MODULE_0__.useCallback)(function () {
-    if (!query.trim()) return;
+    if (!query.trim() || !apiKey.trim()) return;
     setErr(null);
     setCoverage(null);
     setBbox(null);
@@ -2200,7 +2257,8 @@ var useStreetViewFetcherLifecycle = function useStreetViewFetcherLifecycle(data,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          bbox: bb
+          bbox: bb,
+          api_key: apiKey
         })
       });
     }).then(/*#__PURE__*/function () {
@@ -2258,9 +2316,9 @@ var useStreetViewFetcherLifecycle = function useStreetViewFetcherLifecycle(data,
     })["catch"](function (e) {
       return setErr(e.message || String(e));
     });
-  }, [query]);
+  }, [query, apiKey]);
   var runFetch = (0,react__WEBPACK_IMPORTED_MODULE_0__.useCallback)(function () {
-    if (!bbox) return;
+    if (!bbox || !apiKey.trim()) return;
     setBusy(true);
     setErr(null);
     setResultCount(null);
@@ -2271,7 +2329,8 @@ var useStreetViewFetcherLifecycle = function useStreetViewFetcherLifecycle(data,
       },
       body: JSON.stringify({
         bbox: bbox,
-        limit: limit
+        limit: limit,
+        api_key: apiKey
       })
     }).then(/*#__PURE__*/function () {
       var _ref3 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3(r) {
@@ -2338,8 +2397,9 @@ var useStreetViewFetcherLifecycle = function useStreetViewFetcherLifecycle(data,
     })["finally"](function () {
       return setBusy(false);
     });
-  }, [bbox, limit, data, nodeState]);
-  var ready = backendUp && hasGoogleKey && !!bbox && limit > 0 && !busy;
+  }, [bbox, limit, apiKey, data, nodeState]);
+  var hasKey = apiKey.trim().length > 0;
+  var ready = backendUp && hasKey && !!bbox && limit > 0 && !busy;
   var statusColor = backendUp ? '#22c55e' : '#ef4444';
   var statusText = backendUp ? 'Backend connected' : 'Backend offline';
   var contentComponent = /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
@@ -2358,9 +2418,25 @@ var useStreetViewFetcherLifecycle = function useStreetViewFetcherLifecycle(data,
     style: _objectSpread(_objectSpread({}, S.dot), {}, {
       background: statusColor
     })
-  }), statusText), backendUp && !hasGoogleKey && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-    style: _objectSpread(_objectSpread({}, S.card), S.warn)
-  }, "Google Maps API key required. Set ", /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("code", null, "GOOGLE_MAPS_API_KEY"), " in your backend environment."), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+  }), statusText), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    style: S.label
+  }, "Google Maps API Key"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("input", {
+    style: S.input,
+    type: "password",
+    value: apiKey,
+    onChange: function onChange(e) {
+      return setApiKey(e.target.value);
+    },
+    placeholder: "Paste your Google Maps API key",
+    autoComplete: "off",
+    spellCheck: false
+  }), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    style: {
+      fontSize: 11,
+      color: '#64748b',
+      marginTop: 4
+    }
+  }, "Held in memory for this session only \u2014 never saved to the dataflow.")), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     style: S.label
   }, "Place"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("input", {
     style: S.input,
@@ -2372,7 +2448,7 @@ var useStreetViewFetcherLifecycle = function useStreetViewFetcherLifecycle(data,
       if (e.key === 'Enter') verifyCoverage();
     },
     placeholder: "e.g. Lincoln Park, Chicago",
-    disabled: !hasGoogleKey
+    disabled: !hasKey
   })), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     style: {
       display: 'flex',
@@ -2408,7 +2484,7 @@ var useStreetViewFetcherLifecycle = function useStreetViewFetcherLifecycle(data,
       border: '1px solid #e2e8f0'
     }),
     onClick: verifyCoverage,
-    disabled: !hasGoogleKey || !query.trim()
+    disabled: !hasKey || !query.trim()
   }, "Verify Coverage")), coverage !== null && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     style: _objectSpread(_objectSpread({}, S.card), {}, {
       display: 'flex',
