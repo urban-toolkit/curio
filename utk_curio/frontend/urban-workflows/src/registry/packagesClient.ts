@@ -88,6 +88,13 @@ interface RawPackage {
   license: string | null;
   permissions: string[];
   templates: RawPackageTemplate[];
+  /** Path (relative to package dir) of a pre-built JS bundle to load before
+   *  descriptor build. Registers this package's lifecycle hooks via
+   *  `window.curio.registerLifecycle`. See docs/EXTENDING.md §5. */
+  lifecycleScript?: string;
+  /** Server-side dirname (`<packageId>@<major>`). Used for static-asset
+   *  URLs like `/api/packages/<dirName>/file/<...>`. */
+  dirName?: string;
   lineage: {
     forkedFrom: { packageId: string; major: number };
     root: { packageId: string; major: number };
@@ -277,6 +284,46 @@ export function registerPackageTemplates(packages: RawPackage[]): NodeDescriptor
  * packages installed, or if the request fails). Failure is logged and
  * swallowed so app boot never blocks on package discovery.
  */
+/**
+ * Loads a package's pre-built `lifecycleScript` bundle by injecting a
+ * <script> tag pointed at `/api/packages/<dirName>/file/<script>`. The
+ * bundle's top-level side-effect calls `window.curio.registerLifecycle`
+ * for each lifecycle hook it ships, so by the time the returned Promise
+ * resolves the lifecycle keys declared in the package's templates are
+ * registered and `buildDescriptor`'s lookup will succeed.
+ *
+ * Errors are swallowed (and logged) — one broken package's bundle
+ * shouldn't take the whole canvas down. The descriptors for its
+ * templates will fall back to `usePackageNodeLifecycle` (generic code
+ * editor) so the palette still renders.
+ */
+function loadPackageLifecycleScripts(packages: RawPackage[]): Promise<void> {
+  const base = process.env.BACKEND_URL ?? '';
+  const targets = packages.filter((p) => p.lifecycleScript && p.dirName);
+  if (targets.length === 0) return Promise.resolve();
+  return Promise.all(
+    targets.map((p) => {
+      const url = `${base}/api/packages/${encodeURIComponent(p.dirName!)}/file/${p.lifecycleScript}`;
+      // De-dupe across re-renders: the same bundle should only load once
+      // even if refreshPackageRegistry runs again.
+      const existing = document.querySelector(`script[data-curio-package="${p.packageId}@${p.major}"]`);
+      if (existing) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        const s = document.createElement('script');
+        s.src = url;
+        s.async = false; // preserve load order across multiple packages
+        s.dataset.curioPackage = `${p.packageId}@${p.major}`;
+        s.onload = () => resolve();
+        s.onerror = (err) => {
+          console.warn(`[curio] failed to load lifecycle script for ${p.packageId}@${p.major}:`, err);
+          resolve(); // never reject — descriptor build still proceeds (with code-editor fallback)
+        };
+        document.head.appendChild(s);
+      });
+    }),
+  ).then(() => undefined);
+}
+
 export async function loadInstalledPackages(
   projectFilter: ReadonlySet<string> | null = null,
 ): Promise<NodeDescriptor[]> {
@@ -289,6 +336,12 @@ export async function loadInstalledPackages(
             projectFilter.has(`${p.packageId}@${p.major}`),
         )
       : (packages ?? []);
+    // Inject and await any `lifecycleScript` bundles BEFORE descriptor
+    // build so the lifecycle keys referenced in the templates are
+    // actually registered against the global lifecycle registry. Without
+    // this step, `getLifecycle()` returns undefined and packages with
+    // custom lifecycles soft-fail to the package code editor.
+    await loadPackageLifecycleScripts(filtered);
     // Replace package-derived kinds wholesale — `registerNode` only adds/overwrites,
     // so without this pass, uninstalled packages would leave stale palette entries.
     // Notify subscribers only after clear + register so React Flow keeps package node types wired.
