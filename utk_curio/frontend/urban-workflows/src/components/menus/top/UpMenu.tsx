@@ -9,6 +9,7 @@ import {
     useNodeActionsContext,
 } from "../../../providers/FlowProvider";
 import { useCode } from "../../../hook/useCode";
+import { useCollab } from "../../../providers/CollaborationProvider";
 import { TrillGenerator } from "../../../TrillGenerator";
 import { trillToNotebook, serializeNotebook } from "../../../NotebookConvertor";
 import styles from "./UpMenu.module.css";
@@ -79,7 +80,12 @@ export default function UpMenu({
         edges,
     } = useFlowContext();
 
-    const isSharedView = viewerMode === "shared";
+    const collab = useCollab();
+    // Mirror the ``isSharedView`` gate in MainCanvas: when collab is on,
+    // peers loaded via the shared endpoint are full editors (their edits
+    // sync over the socket to the owner), so the read-only banner /
+    // gating must stand down.
+    const isSharedView = viewerMode === "shared" && !collab.enabled;
     const {
         workflowName,
         setWorkflowName,

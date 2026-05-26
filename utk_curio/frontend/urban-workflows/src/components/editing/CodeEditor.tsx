@@ -5,9 +5,10 @@ import { NodeType } from "../../constants";
 import { NodeTemplateId } from "../../registry/types";
 
 // Editor
-import Editor from "@monaco-editor/react";
+import Editor, { Monaco } from "@monaco-editor/react";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { useProvenanceContext } from "../../providers/ProvenanceProvider";
+import { useCollab, CodeProposal } from "../../providers/CollaborationProvider";
 import { ICodeData } from "../../types";
 
 type CodeEditorProps = {
@@ -40,10 +41,21 @@ function CodeEditor({
 
     const { workflowNameRef, markNodeExecuted, markNodeStale, signalNodeExecDone } = useFlowContext();
     const { nodeExecProv } = useProvenanceContext();
+    const collab = useCollab();
 
     const replacedCodeDirtyBypass = useRef(false);
     const defaultValueBypass = useRef(false);
     const outputRef = useRef<HTMLDivElement>(null);
+
+    // Track the canonical "as-loaded" code so blur can diff against it
+    // when deciding whether to propose a change to peers.
+    const baselineCodeRef = useRef<string>("");
+    const codeRef = useRef<string>("");
+    const collabRef = useRef(collab);
+    collabRef.current = collab;
+    useEffect(() => {
+        codeRef.current = code;
+    }, [code]);
 
     // @ts-ignore
     const handleCodeChange = (value, event) => {
@@ -51,10 +63,55 @@ function CodeEditor({
         markNodeStale(data.nodeId);
     };
 
+    // ------------------------------------------------------------------
+    // Collaboration: code-change proposals + receiving applied changes
+    // ------------------------------------------------------------------
+
+    const proposeOnBlur = () => {
+        const c = collabRef.current;
+        if (!c.enabled || !c.connected) return;
+        if (c.users.length <= 1) return; // No peers — nothing to propose to.
+        const local = codeRef.current;
+        const baseline = baselineCodeRef.current;
+        if (local === baseline) return;
+        c.requestCodeChange(data.nodeId, baseline, local, "code");
+    };
+
+    const handleEditorMount = (editor: any, _monaco: Monaco) => {
+        editor.onDidBlurEditorText(proposeOnBlur);
+    };
+
+    // Apply remote-approved code changes to this node's editor.
+    useEffect(() => {
+        if (!collab.enabled) return;
+        const unsub = collab.onRemote("code_change_applied", (payload) => {
+            const prop = payload as CodeProposal;
+            if (!prop || prop.nodeId !== data.nodeId || prop.kind !== "code") return;
+            // Skip if WE were the proposer — our local code already matches.
+            if (collab.currentUserId != null &&
+                prop.proposed_by?.user_id === collab.currentUserId) {
+                baselineCodeRef.current = prop.newValue;
+                return;
+            }
+            setCode(prop.newValue);
+            baselineCodeRef.current = prop.newValue;
+        });
+        return unsub;
+    }, [collab.enabled, collab.onRemote, collab.currentUserId, data.nodeId]);
+
+    const pendingProposal = collab.proposals.find(
+        (p) => p.nodeId === data.nodeId && p.kind === "code",
+    );
+    const proposalIsMine = Boolean(
+        pendingProposal && collab.currentUserId != null &&
+        pendingProposal.proposed_by?.user_id === collab.currentUserId,
+    );
+
     useEffect(() => {
         if (defaultValue != undefined && defaultValueBypass.current) {
             setCode(defaultValue);
             sendCodeToWidgets(defaultValue); // will resolve markers for templated boxes
+            baselineCodeRef.current = defaultValue;
         }
 
         defaultValueBypass.current = true;
@@ -241,6 +298,43 @@ function CodeEditor({
 
     return (
         <div className="nowheel nodrag" style={{ height: "100%", display: "flex", flexDirection: "column", backgroundColor: "#fff", userSelect: "none" }}>
+            {pendingProposal && (
+                <div
+                    style={{
+                        padding: "4px 8px",
+                        background: proposalIsMine ? "#fff8e1" : "#e3f2fd",
+                        borderBottom: "1px solid #ccc",
+                        fontSize: 11,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                    }}
+                >
+                    <span style={{ flex: 1 }}>
+                        {proposalIsMine
+                            ? `Awaiting approval from peers (${pendingProposal.approvals.length} so far).`
+                            : `${pendingProposal.proposed_by?.username || "Peer"} proposed a code change.`}
+                    </span>
+                    {!proposalIsMine && (
+                        <>
+                            <button
+                                type="button"
+                                onClick={() => collab.approveCodeChange(pendingProposal.id)}
+                                style={{ padding: "1px 8px", fontSize: 11 }}
+                            >
+                                Approve
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => collab.rejectCodeChange(pendingProposal.id)}
+                                style={{ padding: "1px 8px", fontSize: 11 }}
+                            >
+                                Reject
+                            </button>
+                        </>
+                    )}
+                </div>
+            )}
             <div style={{ flex: 2, minHeight: 0 }}>
                 <Editor
                     height="100%"
@@ -248,6 +342,7 @@ function CodeEditor({
                     theme="vs"
                     value={code}
                     onChange={handleCodeChange}
+                    onMount={handleEditorMount}
                     options={{
                         // @ts-ignore
                         inlineSuggest: true,

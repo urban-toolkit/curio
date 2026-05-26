@@ -104,6 +104,7 @@ A lot has landed since v0.5. Highlights:
 - 📊 **Dashboard mode toggle** — Switches mode while preserving node state, edges, and positions.
 - 🦆 **DuckDB-native artifact I/O** — Faster, type-safe data exchange between sandbox and backend.
 - 🖼️ **Project thumbnails** in the project list, plus the `--with-examples` flag to seed example projects on startup, and toast notifications replacing browser alerts.
+- 👥 **Real-time collaboration (experimental)** — Opt-in via `curio start --collab`. Multiple signed-in users on the same LAN can edit a project simultaneously, with presence indicators, per-node soft locks, code-change proposals, and shared execution output. Based on the design proposed in [#112](https://github.com/urban-toolkit/curio/pull/112) by [@kirtanpatel2003](https://github.com/kirtanpatel2003). See [docs/COLLABORATION.md](docs/COLLABORATION.md).
 
 See the full [release notes](https://github.com/urban-toolkit/curio/releases) for more. To get started, follow the [usage guide](docs/USAGE.md) or jump into the [quick start tutorial](docs/QUICK-START.md). If you'd like to contribute, read the [contribution guide](docs/CONTRIBUTING.md).
 

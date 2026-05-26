@@ -65,6 +65,7 @@ export { refreshPackageRegistry };
 void refreshPackageRegistry();
 
 import FlowProvider from "./providers/FlowProvider";
+import { CollaborationProvider } from "./providers/CollaborationProvider";
 import StarterProvider from "./providers/StarterProvider";
 import UserProvider, { useUserContext } from "./providers/UserProvider";
 import DialogProvider from "./providers/DialogProvider";
@@ -85,16 +86,23 @@ import CatalogPage from "./pages/catalog/CatalogPage";
 import { ProjectLoader } from "./components/ProjectLoader";
 
 const MainCanvasRoute: React.FC = () => (
+  // CollaborationProvider must wrap FlowProvider: FlowProvider's mutation
+  // handlers call ``useCollab()`` to broadcast graph changes, and a
+  // context only reaches *descendants*. Putting it on the inside would
+  // hand FlowProvider the no-op default value and silently drop every
+  // broadcast.
   <DialogProvider>
-    <FlowProvider>
-      <StarterProvider>
-        <ProjectLoader>
-          <PackagePaletteProvider>
-            <MainCanvas />
-          </PackagePaletteProvider>
-        </ProjectLoader>
-      </StarterProvider>
-    </FlowProvider>
+    <CollaborationProvider>
+      <FlowProvider>
+        <StarterProvider>
+          <ProjectLoader>
+            <PackagePaletteProvider>
+              <MainCanvas />
+            </PackagePaletteProvider>
+          </ProjectLoader>
+        </StarterProvider>
+      </FlowProvider>
+    </CollaborationProvider>
   </DialogProvider>
 );
 

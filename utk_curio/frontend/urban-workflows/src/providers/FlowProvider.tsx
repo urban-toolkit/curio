@@ -30,6 +30,8 @@ import { applyDashboardLayout } from "../utils/dashboardLayout";
 import { ensureMergeArrays, parseHandleIndex, setMergeSlot, clearMergeSlot } from "../utils/mergeFlowUtils";
 import { useWorkflowOperations } from "../hook/useWorkflowOperations";
 import { useToastContext } from "./ToastProvider";
+import { useCollab } from "./CollaborationProvider";
+import { pythonInterpreter, jsInterpreter } from "../hook/useCode";
 
 
 export interface IOutput {
@@ -297,6 +299,16 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const markNodeStaleRef = useRef<(nodeId: string) => void>(() => {});
     const markDirtyRef = useRef<() => void>(() => {});
 
+    // Collaboration broadcasters. The provider may be a no-op (when
+    // --collab is off or no project is loaded), in which case every
+    // broadcast call is a noop too. We hold the latest value in a ref
+    // so the mutation callbacks below don't have to list `collab` in
+    // their dependency arrays and risk re-creating themselves on every
+    // presence change.
+    const collab = useCollab();
+    const collabRef = useRef(collab);
+    collabRef.current = collab;
+
     const setOutputs = useCallback((fnOrValue: ((prev: IOutput[]) => IOutput[]) | IOutput[]) => {
         _setOutputs((prev) => {
             const next = typeof fnOrValue === "function" ? fnOrValue(prev) : fnOrValue;
@@ -443,6 +455,27 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                     workflowNameRef.current, "", "Node added"
                 );
             }
+
+            // socket.io-client serialises the payload as JSON, which silently
+            // drops the runtime callbacks on ``data`` (outputCallback,
+            // interpreters, …). That's intentional — the receiver re-attaches
+            // its own local callbacks in the remote-graph handler. Position
+            // and other ReactFlow-required fields MUST be included though;
+            // omitting ``position`` makes the receiver throw inside
+            // ``createNodeInternals`` when it walks the nodes array.
+            collabRef.current.broadcastNodeAdded({
+                nodeId: node.id,
+                node: {
+                    id: node.id,
+                    type: node.type,
+                    position: node.position,
+                    sourcePosition: node.sourcePosition,
+                    targetPosition: node.targetPosition,
+                    width: node.width,
+                    height: node.height,
+                    data: node.data,
+                },
+            });
         },
         [setNodes]
     );
@@ -493,6 +526,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const onEdgesDelete = useCallback(
         (connections: Edge[]) => {
             for (const connection of connections) {
+                collabRef.current.broadcastEdgeRemoved(connection.id);
                 const resetInput = connection.target;
                 const targetNode = reactFlow.getNode(connection.target) as Node;
                 markNodeStaleRef.current(connection.target);
@@ -562,6 +596,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                             workflowNameRef.current, "", "Node deleted"
                         );
                     }
+                    collabRef.current.broadcastNodeRemoved(change.id);
                 }
             }
         },
@@ -731,6 +766,11 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                                 );
                             }
                         }
+
+                        collabRef.current.broadcastEdgeAdded({
+                            edgeId: customConnection.id,
+                            edge: customConnection,
+                        });
 
                         return addEdge(customConnection, eds);
                     });
@@ -1057,6 +1097,125 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     useEffect(() => {
         applyNewInteractions();
     }, [interactions]);
+
+    // -----------------------------------------------------------------
+    // Collaboration: receive-side graph synchronization.
+    //
+    // Remote ``node_added`` / ``node_removed`` / ``edge_added`` /
+    // ``edge_removed`` events are applied via ``setNodes`` / ``setEdges``
+    // *directly* — not through the local ``addNode`` / ``onConnect`` /
+    // ``onEdgesDelete`` / ``onNodesDelete`` handlers — so the apply path
+    // doesn't re-broadcast and bounce the same change around the room.
+    //
+    // Non-serializable callbacks on ``node.data`` (outputCallback,
+    // interactionsCallback, propagationCallback, interpreters) are
+    // re-attached on the receive side because socket.io strips functions
+    // during JSON serialisation. Without this, downstream lifecycle
+    // adapters would call ``data.outputCallback(...)`` against undefined
+    // (caught now by the defensive ``typeof`` guards in
+    // ``adapters/node/*``, but never producing visible output).
+    // -----------------------------------------------------------------
+    useEffect(() => {
+        if (!collab.enabled) return;
+        const localOutputCallback = (nodeId: string, output: any) => {
+            applyNewOutput({ nodeId, output });
+        };
+        const localInteractionsCallback = (newInteractions: any, nodeId: string) => {
+            setInteractions((prev: IInteraction[]) => {
+                const next = prev.filter((i) => i.nodeId !== nodeId);
+                next.push({ nodeId, details: newInteractions, priority: 0 });
+                return next;
+            });
+        };
+        const rebuildNodeData = (data: any) => ({
+            ...data,
+            outputCallback: localOutputCallback,
+            interactionsCallback: localInteractionsCallback,
+            propagationCallback: applyNewPropagation,
+            pythonInterpreter,
+            jsInterpreter,
+        });
+
+        const unsubs: Array<() => void> = [];
+
+        unsubs.push(collab.onRemote("node_added", (payload: any) => {
+            const remote = payload?.node;
+            if (!remote || !remote.id) return;
+            // ReactFlow throws inside ``createNodeInternals`` if a node
+            // lands in its store without ``position``. Refuse the payload
+            // rather than crash the whole canvas; log so the gap is
+            // visible in the network panel.
+            const pos = remote.position;
+            if (!pos || typeof pos.x !== "number" || typeof pos.y !== "number") {
+                console.warn(
+                    "[collab] node_added rejected: missing/invalid position",
+                    remote,
+                );
+                return;
+            }
+            setNodes((nds) => {
+                if (nds.some((n) => n.id === remote.id)) return nds;
+                return nds.concat({
+                    ...remote,
+                    data: rebuildNodeData(remote.data || {}),
+                });
+            });
+        }));
+
+        unsubs.push(collab.onRemote("node_removed", (payload: any) => {
+            const id = payload?.nodeId;
+            if (!id) return;
+            setNodes((nds) => nds.filter((n) => n.id !== id));
+            // Cascade-remove incident edges so the receiver matches the
+            // sender's view (ReactFlow auto-cascades these on the sender
+            // side via its internal node-delete flow).
+            setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
+        }));
+
+        unsubs.push(collab.onRemote("edge_added", (payload: any) => {
+            const remote = payload?.edge;
+            if (!remote || !remote.id) return;
+            setEdges((eds) => {
+                if (eds.some((e) => e.id === remote.id)) return eds;
+                return eds.concat(remote);
+            });
+        }));
+
+        unsubs.push(collab.onRemote("edge_removed", (payload: any) => {
+            const id = payload?.edgeId;
+            if (!id) return;
+            setEdges((eds) => eds.filter((e) => e.id !== id));
+        }));
+
+        // Apply remote node patches (currently just position drags). Routing
+        // through ``setNodes`` does not re-fire ReactFlow's ``onNodesChange``
+        // — that only dispatches on internal events — so the apply does not
+        // bounce back as a new broadcast.
+        unsubs.push(collab.onRemote("node_updated", (payload: any) => {
+            const id = payload?.nodeId;
+            const patch = payload?.patch;
+            if (!id || !patch) return;
+            setNodes((nds) =>
+                nds.map((n) => {
+                    if (n.id !== id) return n;
+                    const next: any = { ...n };
+                    if (patch.position && typeof patch.position.x === "number" &&
+                        typeof patch.position.y === "number") {
+                        next.position = { x: patch.position.x, y: patch.position.y };
+                    }
+                    if (patch.data && typeof patch.data === "object") {
+                        // Preserve runtime callbacks attached on the
+                        // receiver side — peers only ship serialisable
+                        // data fields.
+                        next.data = { ...n.data, ...patch.data };
+                    }
+                    return next;
+                }),
+            );
+        }));
+
+        return () => unsubs.forEach((u) => u());
+    }, [collab.enabled, collab.onRemote, setNodes, setEdges, setInteractions]);
     // NEW CODE
 
     // Workflow operations extracted into a dedicated hook

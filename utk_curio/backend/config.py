@@ -55,6 +55,13 @@ CURIO_RESEED_PACKAGES = _env_flag("CURIO_RESEED_PACKAGES", False)
 # Seed example projects from docs/examples/ on startup.
 CURIO_SEED_EXAMPLES = _env_flag("CURIO_SEED_EXAMPLES", False)
 
+# Real-time collaboration (opt-in). When False, the SocketIO server is never
+# instantiated and the flask-socketio package is never imported — installs
+# without this feature pay zero runtime cost.
+ENABLE_COLLAB = _env_flag("ENABLE_COLLAB", False)
+COLLAB_CORS_ORIGINS = os.environ.get("COLLAB_CORS_ORIGINS", "*")
+COLLAB_NAMESPACE = os.environ.get("COLLAB_NAMESPACE", "/collab")
+
 GUEST_LLM_API_TYPE = os.environ.get("GUEST_LLM_API_TYPE", "openai_compatible")
 GUEST_LLM_BASE_URL = os.environ.get("GUEST_LLM_BASE_URL", "")
 GUEST_LLM_API_KEY = os.environ.get("GUEST_LLM_API_KEY", "")

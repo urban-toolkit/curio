@@ -27,7 +27,9 @@ export const useMergeFlowLifecycle: NodeLifecycleHook = (data, _nodeState) => {
   useEffect(() => {
     const outArr = inputValues.filter(v => v !== undefined);
     if (connectedCount > 0 && outArr.length === connectedCount) {
-      data.outputCallback(data.nodeId, { data: outArr, dataType: 'outputs' });
+      if (typeof data.outputCallback === 'function') {
+        data.outputCallback(data.nodeId, { data: outArr, dataType: 'outputs' });
+      }
     }
   }, [inputValues, connectedCount, data.nodeId, data.outputCallback]);
 

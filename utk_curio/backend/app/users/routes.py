@@ -12,6 +12,7 @@ from utk_curio.backend.config import (
     CURIO_NO_PROJECT,
     CURIO_ENV,
     CURIO_SHARED_GUEST_USERNAME,
+    ENABLE_COLLAB,
 )
 from utk_curio.backend.app.users.dependencies import get_current_token, require_auth
 from utk_curio.backend.app.users.schemas import SignInIn, SignUpIn, UserPatchIn
@@ -179,5 +180,6 @@ def public_config_route():
             "google_client_id": os.environ.get("CLIENT_ID", ""),
             "curio_env": CURIO_ENV,
             "shared_guest_username": CURIO_SHARED_GUEST_USERNAME,
+            "enable_collab": ENABLE_COLLAB,
         }
     ), 200

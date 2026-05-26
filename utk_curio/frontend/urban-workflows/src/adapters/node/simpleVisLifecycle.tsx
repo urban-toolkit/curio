@@ -126,14 +126,18 @@ export const useSimpleVisLifecycle: NodeLifecycleHook = (data, nodeState) => {
       }
 
       nodeState.setOutput({ code: 'success', content: parsedInput });
-      data.outputCallback(data.nodeId, data.input);
+      if (typeof data.outputCallback === 'function') {
+        data.outputCallback(data.nodeId, data.input);
+      }
     };
 
     handleInput();
   }, [data.input]);
 
   useEffect(() => {
-    data.interactionsCallback(interactions, data.nodeId);
+    if (typeof data.interactionsCallback === 'function') {
+      data.interactionsCallback(interactions, data.nodeId);
+    }
   }, [interactions]);
 
   const clickImage = useCallback((index: number) => {

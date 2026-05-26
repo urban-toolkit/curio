@@ -93,7 +93,7 @@ def stream_output(process, name, color):
         if process.stderr:
             process.stderr.close()
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, auth=False, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, auth=False, no_project=False, deploy=False, with_examples=False, reseed=False, allow_publish=True, collab=False):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
@@ -121,6 +121,8 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
         )
         os.environ["CURIO_NO_PROJECT"] = "1" if no_project else "0"
 
+    os.environ["ENABLE_COLLAB"] = "1" if collab else "0"
+
     log_always(f"Environment Variables Set:")
     log_always(f"FLASK_BACKEND_HOST={os.environ['FLASK_BACKEND_HOST']}")
     log_always(f"FLASK_BACKEND_PORT={os.environ['FLASK_BACKEND_PORT']}")
@@ -133,6 +135,7 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
     log_always(f"CURIO_SEED_EXAMPLES={os.environ['CURIO_SEED_EXAMPLES']}")
     log_always(f"CURIO_RESEED_PACKAGES={os.environ['CURIO_RESEED_PACKAGES']}")
     log_always(f"CURIO_ALLOW_FACTORY_CATALOG_PUBLISH={os.environ['CURIO_ALLOW_FACTORY_CATALOG_PUBLISH']}")
+    log_always(f"ENABLE_COLLAB={os.environ['ENABLE_COLLAB']}")
 
 def logger():
     """
@@ -673,6 +676,13 @@ def main():
             "Pass --no-allow-publish to lock these author actions down."
         ),
     )
+    parser.add_argument(
+        "--collab", action="store_true", default=False,
+        help=(
+            "Enable real-time collaborative editing (sets ENABLE_COLLAB=1). "
+            "Experimental, LAN-only. Default: off"
+        ),
+    )
     if os.getenv("CURIO_DEV") == "1":
         parser.add_argument(
             "--force-rebuild", action="store_true",
@@ -704,6 +714,7 @@ def main():
         with_examples=args.with_examples,
         reseed=args.reseed,
         allow_publish=args.allow_publish,
+        collab=args.collab,
     )
 
     # if os.getenv("CURIO_DEV") != "1":
