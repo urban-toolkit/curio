@@ -162,7 +162,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
           custom={nodeState.templateData.custom}
         />
 
-        {adapter.editor && (
+        {adapter.editor ? (
           <NodeEditor
             outputId={lifecycle.outputIdOverride ?? adapter.editor.outputId?.(data.nodeId)}
             setSendCodeCallback={setSendCodeCallback}
@@ -183,6 +183,15 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
             floatCode={nodeState.setCode}
             contentComponent={lifecycle.contentComponent}
           />
+        ) : (
+          // ``editor: "none"`` in the manifest means there's no tabbed editor
+          // surface — but the lifecycle hook can still inject custom UI via
+          // ``contentComponent`` (the streetvision place-picker, etc.).
+          // Without this branch that UI would be silently dropped because
+          // ``contentComponent`` is otherwise only rendered inside NodeEditor's
+          // output tab. ``noContent`` containers (merge-flow, spatial-join)
+          // legitimately return ``undefined`` here — they're icon-only.
+          lifecycle.contentComponent ?? null
         )}
 
         {!dashboardOn && adapter.outputIconType && <OutputIcon type={adapter.outputIconType as TIconCardinality} />}
