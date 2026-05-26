@@ -8,7 +8,17 @@
   "dependencies": {
     "js": {},
     "packages": {},
-    "python": {}
+    "python": {
+      "pandas": "==3.0.2",
+      "geopandas": "==1.1.3",
+      "shapely": ">=2.0",
+      "numpy": "",
+      "pyarrow": "==24.0.0",
+      "rasterio": "==1.5.0",
+      "duckdb": ">=1.5.0",
+      "fiona": "==1.10.1",
+      "pillow": "==12.2.0"
+    }
   },
   "description": "The default set of nodes that ships with Curio. Auto-installed for every user; provides Data Loading/Export/Transformation, Computation, Visualization, AUTK integrations, and flow control.",
   "id": "curio.builtin",
@@ -545,5 +555,5 @@
       "tutorialId": "step-merge"
     }
   ],
-  "version": "1.0.0"
+  "version": "1.0.1"
 }

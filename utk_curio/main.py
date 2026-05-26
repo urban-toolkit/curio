@@ -582,6 +582,144 @@ def get_command_prefix():
             return "curio"
     return "python curio.py"
 
+def _run_pip(cmd: list[str], failure_label: str) -> None:
+    """Stream ``pip``'s stdout+stderr line-by-line, gating each line on
+    verbosity >= 2 via ``log_info``. The ``[Setup]`` banners around this
+    call print unconditionally; pip's own chatter ("Requirement already
+    satisfied", "Collecting …", "Successfully installed …") stays silent
+    at the default verbosity. On non-zero exit, surface ``failure_label``
+    via ``log_error`` and abort startup.
+    """
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    if process.stdout is not None:
+        for line in process.stdout:
+            log_info(f"[pip] {line.rstrip()}", COLOR_BACKEND, 2)
+    rc = process.wait()
+    if rc != 0:
+        log_error(f"{failure_label} (exit {rc}). Re-run with --verbose 2 to see pip's output.")
+        sys.exit(1)
+
+
+def install_framework_requirements() -> None:
+    """``pip install -r requirements.txt`` for Curio's framework deps —
+    the libraries the backend + sandbox Flask apps need at module load.
+    Data-ops libs (pandas, geopandas, rasterio, …) live in each node
+    package's manifest and get installed by
+    ``install_manifest_dependencies`` below.
+
+    Idempotent: pip exits in ~1 s when every line is already satisfied,
+    so we run unconditionally at ``curio start``.
+    """
+    req = Path(__file__).resolve().parent.parent / "requirements.txt"
+    if not req.is_file():
+        return
+    log_info(f"[Setup] Ensuring framework deps from {req.name}...", COLOR_BACKEND, 0)
+    _run_pip(
+        [sys.executable, "-m", "pip", "install", "-r", str(req)],
+        f"[Setup] pip install -r {req.name} failed",
+    )
+
+
+def install_manifest_dependencies() -> None:
+    """Walk every installed package manifest — catalog source-of-truth at
+    ``<repo>/packages/`` PLUS every user store under
+    ``$CURIO_LAUNCH_CWD/.curio/users/<u>/packages/`` — collect their
+    ``dependencies.python`` maps, merge into a single conflict-aware
+    union via ``resolver.merge_python_deps``, and pip-install the result
+    through ``pip_runner.install_python_deps``.
+
+    Why this lives in the launcher: the sandbox process imports
+    ``pandas`` / ``geopandas`` / ``rasterio`` at module load
+    (``sandbox/app/api.py``, ``worker.py::_worker_init``), so those libs
+    must already be present in the shared interpreter before the
+    sandbox's ``Popen`` lands. Running here — synchronously, sequenced
+    before ``start_sandbox`` — is the simplest race-free order.
+
+    All helpers are reused from the backend:
+    - ``manifest.load_packageage_manifest`` to parse each
+      ``manifest.json`` into a typed dataclass with ``.python_deps``.
+    - ``resolver.merge_python_deps`` to surface incompatible ranges as
+      warnings instead of silently last-write-wins.
+    - ``pip_runner.install_python_deps`` to do the pip work
+      (PEP 440 + ``^X.Y`` caret rewrite + already-satisfied skip + batched
+      pip + stderr-tail surfacing on failure).
+    """
+    from utk_curio.backend.app.packages.manifest import (
+        ManifestError,
+        load_packageage_manifest,
+    )
+    from utk_curio.backend.app.packages.resolver import merge_python_deps
+    from utk_curio.backend.app.packages.pip_runner import (
+        PipInstallError,
+        install_python_deps,
+    )
+
+    repo_root = Path(__file__).resolve().parent.parent
+    launch_cwd = Path(os.environ.get("CURIO_LAUNCH_CWD") or os.getcwd())
+    catalog = repo_root / "packages"
+    users = launch_cwd / ".curio" / "users"
+
+    per_pkg: list[tuple[str, dict[str, str]]] = []
+    seen: set[str] = set()  # dir_name dedupe across users
+
+    # Catalog walk is scoped to ``curio.builtin@*`` only — the catalog
+    # lists every *available* package, but only the built-in is
+    # auto-seeded for every user. Other catalog entries (UHVI,
+    # milan-heat, streetvision, …) are opt-in via the /catalog drawer;
+    # their deps come along when the user installs them, via the
+    # per-user-store walk below.
+    if catalog.is_dir():
+        for pkg_dir in catalog.glob("curio.builtin@*"):
+            try:
+                m = load_packageage_manifest(pkg_dir)
+            except ManifestError:
+                continue
+            seen.add(m.dir_name)
+            if m.python_deps:
+                per_pkg.append((m.dir_name, dict(m.python_deps)))
+
+    # Per-user store walk — every package any user has actually installed.
+    if users.is_dir():
+        for mf in users.rglob("manifest.json"):
+            try:
+                m = load_packageage_manifest(mf.parent)
+            except ManifestError:
+                continue
+            if m.dir_name in seen:
+                continue
+            seen.add(m.dir_name)
+            if m.python_deps:
+                per_pkg.append((m.dir_name, dict(m.python_deps)))
+
+    if not per_pkg:
+        return
+    merged, conflicts = merge_python_deps(per_pkg)
+    for c in conflicts:
+        log_warning(
+            f"Dependency range conflict for {c.package}: "
+            + ", ".join(f"{dn}={rng}" for dn, rng in c.ranges)
+        )
+    if not merged:
+        return
+    log_info(
+        f"[Setup] Installing manifest python deps for: {', '.join(sorted(merged))}",
+        COLOR_BACKEND, 0,
+    )
+    try:
+        install_python_deps(
+            merged,
+            on_line=lambda line: log_info(f"[pip] {line}", COLOR_BACKEND, 2),
+        )
+    except PipInstallError as exc:
+        log_error(f"[Setup] Manifest dep install failed: {exc}")
+        sys.exit(1)
+
+
 def main():
 
     global processes
@@ -738,6 +876,16 @@ def main():
         run_backend_coverage()
 
     if args.command == "start":
+        # Mirror the ``shutil.which("npm")`` check at the top of
+        # ``start_frontend``: catch drifted Python envs at launch instead
+        # of crashing the sandbox/backend on its first module-level import.
+        # Framework first (gives us Flask + manifest-parsing deps), then
+        # the manifest walk (covers builtin's data-ops libs + every other
+        # installed package's declared python deps).
+        if args.server in ("all", "backend", "sandbox"):
+            install_framework_requirements()
+            install_manifest_dependencies()
+
         if args.server == "all":
             log_always("Starting all servers (backend, sandbox, frontend)...")
             processes = [

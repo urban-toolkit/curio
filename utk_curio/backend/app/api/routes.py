@@ -62,7 +62,6 @@ from utk_curio.backend.app.users.dependencies import require_auth, get_current_t
 import uuid
 import os
 import time
-import pandas as pd
 from utk_curio.backend.config import (
     GUEST_LLM_API_TYPE,
     GUEST_LLM_BASE_URL,
@@ -533,6 +532,13 @@ def get_starters():
     return jsonify(starters)
 
 def get_loaded_files_metadata(folder_path):
+    # ``pandas`` + ``geopandas`` belong to the ``curio.builtin@1`` package's
+    # ``manifest.dependencies.python`` (installed via the launcher walker),
+    # not Curio's framework requirements. Importing them lazily here keeps
+    # the backend module load free of data-lib deps so a stripped framework
+    # install still boots.
+    import pandas as pd
+
     metadata = ""
 
     for file in os.listdir(folder_path):

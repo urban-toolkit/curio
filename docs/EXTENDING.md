@@ -51,16 +51,21 @@ Never call third-party APIs from the lifecycle hook directly:
 
 The lifecycle hook hits `${BACKEND_URL}/api/<feature>/...`; the Flask handler in turn calls the upstream service. See [`streetvision/routes.py`](../utk_curio/backend/app/streetvision/routes.py) for the pattern.
 
-### 3.2 API keys live in environment variables
+### 3.2 API keys: per-session input on the node (preferred) vs env vars
 
-Read at request time (not at module import), so a user can edit `.env` and restart without rebuilding anything. Surface presence in `/health` so the frontend can warn the user *before* they trigger an action that needs the key:
+Curio supports two patterns for third-party API keys; pick by who the key belongs to:
+
+- **Per-user secrets** (Google Maps, Mapbox, OpenAI personal keys, …) → make it a **text input on the node itself**, held in React state for the session. The lifecycle hook passes it to the backend as a request-body field. Never persist to the dataflow spec (it would leak when shared) or to `localStorage` (it would survive logout). The Street View Fetcher node is the worked example — see [`streetViewFetcherLifecycle.tsx`](../packages/curio.streetvision@1/sources/streetViewFetcherLifecycle.tsx) and the `api_key` body field in [`streetvision/routes.py`](../utk_curio/backend/app/streetvision/routes.py).
+
+- **Operator-wide secrets** that every user of a deployment shares (an internal data-source token, a back-of-house HuggingFace token) → keep using `os.environ.get(...)` at the backend, read at request time so editing `.env` + restart picks it up without rebuilding. The Street Vision blueprint still does this for `HUGGINGFACE_TOKEN` because gated-model access is the operator's concern, not the user's.
+
+For the operator pattern, surface presence in `/health` so the frontend can warn the user before they trigger an action that needs the key:
 
 ```python
 @bp.get("/health")
 def health():
     return jsonify({
         "status": "healthy",
-        "has_google_api_key": bool(os.environ.get("GOOGLE_MAPS_API_KEY")),
         "has_huggingface_token": bool(os.environ.get("HUGGINGFACE_TOKEN")),
     })
 ```
@@ -83,22 +88,36 @@ Always set a **timeout** (`requests`'s default is "wait forever"). Always check 
 
 ### 3.4 APIs with API keys
 
+For per-user keys (the recommended pattern — see 3.2), take the key as a body field and treat it as required:
+
 ```python
-# streetview.py
-def fetch_panorama(lat: float, lon: float):
-    key = os.environ.get("GOOGLE_MAPS_API_KEY")
-    if not key:
-        raise RuntimeError("GOOGLE_MAPS_API_KEY not set")
-    r = requests.get(
-        "https://maps.googleapis.com/maps/api/streetview",
-        params={"size": "640x640", "location": f"{lat},{lon}", "key": key},
-        timeout=15,
-    )
-    r.raise_for_status()
-    return r.content
+# routes.py
+@bp.post("/data/streetview/coverage")
+def streetview_coverage():
+    body = request.get_json(silent=True) or {}
+    api_key = (body.get("api_key") or "").strip()
+    if not api_key:
+        return jsonify({
+            "error": "Google Maps API key required",
+            "hint": "Enter your Google Maps API key in the Street View Fetcher node",
+        }), 400
+    # ... call streetview.fetch_panorama(..., api_key=api_key)
 ```
 
-Endpoints that need the key should return a **400 / 503 with a hint** when it's missing — not crash with a stacktrace. The frontend can render that hint inline (see Street View Fetcher's "Google Maps API key required" banner for an example).
+The lifecycle hook holds the key in React state and sends it in the request body:
+
+```tsx
+// streetViewFetcherLifecycle.tsx
+const [apiKey, setApiKey] = useState('');
+// ... <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} />
+fetch(`${API_BASE}/data/streetview/coverage`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ bbox, api_key: apiKey }),
+});
+```
+
+Endpoints that need the key should return a **400 / 503 with a hint** when it's missing — not crash with a stacktrace. The frontend renders that hint inline so the user knows exactly what to do.
 
 ### 3.5 Long-running calls — job-id polling
 
@@ -129,36 +148,52 @@ The job store is in-memory. Restarting Curio loses any in-flight jobs — fine f
 
 Always return JSON bodies with `{ "error": "...", "hint": "..." }` for non-200 responses; the frontend reads `hint` to give the user an actionable next step. Don't return plain-text 500s.
 
-### 3.8 Optional dependency extras
+### 3.8 Per-package Python dependencies
 
-Heavy native libraries (`torch`, `transformers`, `ultralytics`) shouldn't be required for every Curio install — most users won't run on-device CV inference. Declare them as a `[project.optional-dependencies]` group in [`pyproject.toml`](../pyproject.toml):
+Curio's `requirements.txt` / `pyproject.toml::dependencies` carries **only** the framework — what the backend + sandbox Flask apps need at module load (Flask, SQLAlchemy, requests, the LLM SDKs, etc.). **Every node package** ships its own data-ops libs in its manifest's `dependencies.python` — including the bundled `curio.builtin@1` (pandas, geopandas, rasterio, etc.) and the optional `curio.streetvision@1` (torch, transformers, ...). The `curio start` launcher walks every installed manifest at startup, merges them into a single conflict-aware union, and pip-installs the result before booting the subprocesses. See [`main.py::install_manifest_dependencies`](../utk_curio/main.py) for the walker.
 
-```toml
-[project.optional-dependencies]
-streetvision = [
-  "torch>=2.0",
-  "transformers>=4.30",
-  "ultralytics>=8.0",
-  "huggingface_hub>=0.20",
-]
+Declare your package's deps in `manifest.dependencies.python`:
+
+```json
+{
+  "id": "curio.streetvision",
+  "dependencies": {
+    "python": {
+      "torch": ">=2.0",
+      "transformers": ">=4.30",
+      "ultralytics": ">=8.0",
+      "huggingface_hub": ">=0.20"
+    },
+    "js": {},
+    "packages": {}
+  }
+}
 ```
 
-Users install with `pip install "utk-curio[streetvision]"`. Endpoints that need these deps **lazy-import inside the route handler** and return the `503` error contract from §3.7 if the import fails:
+Accepted spec syntax: PEP 440 comparators (`>=2.0`, `~=4.30`, `==1.5.0`, `!=2.0`), bare versions (`1.2.3` → treated as `==1.2.3`), npm-style carets (`^0.14` → rewritten to `~=0.14`), or empty string for "latest".
+
+#### How the install/uninstall flow handles them
+
+- **Catalog Install** copies the package files, then runs `pip install` (via [`utk_curio/backend/app/packages/pip_runner.py`](../utk_curio/backend/app/packages/pip_runner.py)) for every dep that isn't already importable. Already-satisfied deps are skipped — re-installs of the same package are near-instant. The install request blocks until pip finishes (v1 sync UX); the Install button stays busy.
+- **Uninstall** (when a package's user-store copy is being pruned) walks every other still-installed package's manifest, finds the python deps the pruned package declared that **no other package needs**, and pip-uninstalls those. Shared deps stay.
+- A failed pip install rolls back the package's user-store copy so the user can retry cleanly. The Flask response carries the tail of pip's stderr so the user knows what failed (network error, version conflict, missing wheel, etc.).
+
+#### When to still lazy-import
+
+Even though deps are installed up front, lazy-import expensive libraries inside the route handler that needs them so a broken install fails per-request with a clean 503 instead of crashing the backend on startup:
 
 ```python
 @bp.post("/inference/run")
 def inference_run():
     try:
-        from .services.inference import run_batch  # heavy lazy import
+        from .services.inference import run_batch  # lazy import
     except ImportError as e:
         return jsonify({
-            "error": "streetvision extras not installed",
-            "hint": "pip install curio[streetvision]",
+            "error": f"streetvision dependency unavailable: {e}",
+            "hint": "Reinstall the Street Vision package from /catalog",
         }), 503
     # ...
 ```
-
-This keeps the base install light and the failure mode actionable.
 
 ## 4. Walked example: the Street Vision package
 
@@ -291,15 +326,15 @@ When your node needs server-side capabilities the sandbox can't provide (externa
    ```
    Surface API-key presence in `/health` (§3.2). Validate `body` against `request.get_json(silent=True) or {}` and return `{ error, hint }` with appropriate status codes (§3.7). Keep route handlers thin — push real work into a sibling `services/` package so handlers stay testable.
 
-3. **Lazy-import heavy deps** inside the handler that needs them so the base install stays light (§3.8):
+3. **Lazy-import heavy deps** inside the handler that needs them so a broken install doesn't crash the whole backend on startup (§3.8):
    ```python
    @bp.post("/run-inference")
    def run_inference():
        try:
            from .services.inference import run  # heavy lazy import
        except ImportError as e:
-           return jsonify({"error": "<feature> extras not installed",
-                           "hint": "pip install curio[<feature>]"}), 503
+           return jsonify({"error": f"<feature> dependency unavailable: {e}",
+                           "hint": "Reinstall Curio"}), 503
        # ...
    ```
 
@@ -309,12 +344,7 @@ When your node needs server-side capabilities the sandbox can't provide (externa
    app.register_blueprint(<feature>_bp, url_prefix="/api/<feature>")
    ```
 
-5. **(If applicable) Add the optional-dependencies extras group** in [`pyproject.toml`](../pyproject.toml):
-   ```toml
-   [project.optional-dependencies]
-   <feature> = ["torch>=2.0", "transformers>=4.30", ...]
-   ```
-   Users opt in with `pip install "utk-curio[<feature>]"`.
+5. **Declare any Python deps your blueprint needs in the *package's* `manifest.dependencies.python`** (see §3.8). The catalog install pip-installs them automatically. Only put a library in Curio's core `pyproject.toml` if *every* install needs it.
 
 6. **Verify the blueprint is mounted** by booting the app and checking the URL map:
    ```bash
@@ -450,7 +480,7 @@ The smallest possible package adds one template plus its lifecycle hook. Use thi
 - [ ] Register lifecycle keys in [`registry/builtinLifecycles.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinLifecycles.ts).
 - [ ] *(If backend)* New Flask blueprint under `utk_curio/backend/app/<feature>/`.
 - [ ] *(If backend)* Register the blueprint in [`utk_curio/backend/app/__init__.py`](../utk_curio/backend/app/__init__.py).
-- [ ] *(If heavy deps)* Add a `[project.optional-dependencies]` group in [`pyproject.toml`](../pyproject.toml); lazy-import in the route layer; return 503 with a hint when missing.
+- [ ] *(If new Python deps)* Add them to the package's `manifest.dependencies.python` (catalog install pip-installs them automatically; see §3.8); lazy-import in the route layer so a broken install returns 503 instead of crashing startup.
 - [ ] User-facing docs example in `docs/examples/<NN>-<name>.md`, linked from [`docs/README.md`](README.md).
 
 Skip any item that doesn't apply — a pure-frontend node typically only needs the first six.
