@@ -244,6 +244,19 @@ def _error(message: str, status: int = 400) -> tuple[Response, int]:
 @require_auth
 def list_installed_packageages():
     user_key = _user_dir_key(g.user)
+    # Lazy-seed curio.builtin@1 for any user who doesn't have it yet. The
+    # startup-time seeder only handles the shared `guest` key, so a newly-
+    # signed-up account (or a `/api/testing/stub-login` user during e2e
+    # tests) lands here with an empty package store, the frontend sees zero
+    # descriptors registered, and every node from a saved dataflow renders
+    # the descriptor-missing placeholder (or pre-fix, a hard crash). Seeding
+    # on first access is idempotent — the underlying seeder writes a state
+    # marker so subsequent calls are no-ops.
+    try:
+        from utk_curio.backend.app.packages.seed import seed_dev_packageages
+        seed_dev_packageages(user_key=user_key)
+    except Exception:  # noqa: BLE001 — never block /api/packages on seed errors
+        log.warning("Lazy builtin seed failed for user_key=%s", user_key, exc_info=True)
     out: list[dict] = []
     for package_path in list_user_packageages(user_key):
         try:

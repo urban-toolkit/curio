@@ -110,16 +110,25 @@ export function registerNode(descriptor: NodeDescriptor): void {
 }
 
 /**
- * Drop every descriptor whose {@link NodeDescriptor.source} is `'package'`.
+ * Drop every descriptor whose {@link NodeDescriptor.source} is `'package'`
+ * — EXCEPT the always-installed ``curio.builtin@1`` templates, which stay
+ * registered across refreshes.
  *
- * Called before re-registering from `GET /api/packages` so uninstalled packages
- * disappear from the palette; built-ins omit `source` (or use `'core'`) and
- * are kept.
+ * Called before re-registering from `GET /api/packages` so uninstalled
+ * third-party packages disappear from the palette. We keep built-ins
+ * across the clear→re-register cycle because any node on the canvas with
+ * `nodeType: "curio.builtin/..."` calls ``getNodeDescriptor`` on render;
+ * if the registry shows a transient empty state for a built-in id (even
+ * with ``withSuspendedRegistryNotifications`` suspending listener
+ * notifications), an in-flight ``UniversalNodeBody`` render still throws
+ * "No descriptor registered" — which is exactly what e2e workflow tests
+ * hit when ``ProjectLoader`` runs ``refreshPackageRegistry()`` while the
+ * loaded workflow's nodes are mounting.
  */
 export function clearPackageNodes(): void {
   let removed = false;
   for (const [id, d] of registry) {
-    if (d.source === 'package') {
+    if (d.source === 'package' && d.package?.packageId !== 'curio.builtin') {
       registry.delete(id);
       forgetMajor(id);
       removed = true;
