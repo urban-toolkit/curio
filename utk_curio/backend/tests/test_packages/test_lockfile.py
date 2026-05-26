@@ -327,11 +327,18 @@ class TestHttpEndpoints:
         assert body["packages"] == []
         assert UHVI_DIR in body["pruned"]
 
-    def test_get_defaults_starts_empty(self, client, user_and_token):
+    def test_get_defaults_seeds_builtin_for_new_user(self, client, user_and_token):
+        """``GET /api/packages/defaults`` lazy-seeds ``curio.builtin@1`` on the
+        first request for any non-guest user, so the catalog page's "Installed"
+        badge renders correctly on fresh accounts. The seed is idempotent — a
+        second call returns the same set without duplicates."""
         _, token = user_and_token
         resp = client.get("/api/packages/defaults", headers=_auth(token))
         assert resp.status_code == 200
-        assert resp.get_json() == {"packages": []}
+        assert resp.get_json() == {"packages": ["curio.builtin@1"]}
+
+        resp2 = client.get("/api/packages/defaults", headers=_auth(token))
+        assert resp2.get_json() == {"packages": ["curio.builtin@1"]}
 
     def test_post_defaults_adds_to_list_and_walks_projects(
         self, client, user_and_token, alice_project,

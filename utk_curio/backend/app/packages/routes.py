@@ -240,23 +240,48 @@ def _error(message: str, status: int = 400) -> tuple[Response, int]:
 # GET /api/packages — list installed
 # ---------------------------------------------------------------------------
 
+def _ensure_user_seeded(user_key: str) -> None:
+    """Idempotently seed ``curio.builtin@1`` into ``user_key``'s package store
+    AND defaults list.
+
+    Startup-time seeding only handles the shared ``guest`` key, so signed-up
+    accounts (and ``/api/testing/stub-login`` users during e2e tests) land
+    with an empty store. ``/api/packages`` and ``/api/packages/catalog`` both
+    rely on the user's store to compute "installed" — without a seed, the
+    catalog page shows the built-in package as available-but-not-installed
+    and any saved dataflow's nodes fail to find their descriptors. The
+    catalog page additionally reads ``defaults`` to render the "Installed"
+    badge, so we also add the seeded builtin to defaults — symmetric with
+    the catalog-page install path. The seeder and defaults writer are both
+    idempotent (a marker file + a sorted set on disk), so this is a no-op
+    after the first call.
+    """
+    try:
+        from utk_curio.backend.app.packages.seed import seed_dev_packageages
+        from utk_curio.backend.app.packages import defaults as defaults_io
+        from utk_curio.backend.app.packages.storage import list_user_packageages
+        from utk_curio.backend.app.packages.seed import BUILTIN_PACKAGE_ID
+
+        seed_dev_packageages(user_key=user_key)
+        # The seeder returns only NEWLY-seeded names, so a re-seed-suppressed
+        # call returns []. Inspect the store directly to find whatever
+        # ``curio.builtin@<major>`` the user actually has and ensure it's in
+        # defaults — covers both first-run and "store exists but defaults
+        # never got the entry" (e.g. an earlier seed before this code shipped).
+        prefix = f"{BUILTIN_PACKAGE_ID}@"
+        existing_defaults = defaults_io.load_defaults(user_key)
+        for package_path in list_user_packageages(user_key):
+            if package_path.name.startswith(prefix) and package_path.name not in existing_defaults:
+                defaults_io.add_to_defaults(user_key, package_path.name)
+    except Exception:  # noqa: BLE001 — never block the request on a seed error
+        log.warning("Lazy builtin seed failed for user_key=%s", user_key, exc_info=True)
+
+
 @packages_bp.route("", methods=["GET"])
 @require_auth
 def list_installed_packageages():
     user_key = _user_dir_key(g.user)
-    # Lazy-seed curio.builtin@1 for any user who doesn't have it yet. The
-    # startup-time seeder only handles the shared `guest` key, so a newly-
-    # signed-up account (or a `/api/testing/stub-login` user during e2e
-    # tests) lands here with an empty package store, the frontend sees zero
-    # descriptors registered, and every node from a saved dataflow renders
-    # the descriptor-missing placeholder (or pre-fix, a hard crash). Seeding
-    # on first access is idempotent — the underlying seeder writes a state
-    # marker so subsequent calls are no-ops.
-    try:
-        from utk_curio.backend.app.packages.seed import seed_dev_packageages
-        seed_dev_packageages(user_key=user_key)
-    except Exception:  # noqa: BLE001 — never block /api/packages on seed errors
-        log.warning("Lazy builtin seed failed for user_key=%s", user_key, exc_info=True)
+    _ensure_user_seeded(user_key)
     out: list[dict] = []
     for package_path in list_user_packageages(user_key):
         try:
@@ -286,6 +311,7 @@ def list_catalog_packageages():
     JSON body also includes ``families`` and ``catalogCollisions``.
     """
     user_key = _user_dir_key(g.user)
+    _ensure_user_seeded(user_key)
     installed_coords = {p.name for p in list_user_packageages(user_key)}
 
     root = _catalog_root()
@@ -1075,6 +1101,12 @@ def get_defaults_route():
     from utk_curio.backend.app.packages import defaults as defaults_io
 
     user_key = _user_dir_key(g.user)
+    # /catalog fetches `/api/packages/defaults` in parallel with `/catalog` and
+    # `/api/packages`. If this endpoint resolves before either of those has
+    # seeded the user, the page renders with an empty defaults set and the
+    # built-in package shows as "available but not installed" until the next
+    # refresh. Seed eagerly here too — idempotent on the seeded path.
+    _ensure_user_seeded(user_key)
     return jsonify({"packages": sorted(defaults_io.load_defaults(user_key))}), 200
 
 
