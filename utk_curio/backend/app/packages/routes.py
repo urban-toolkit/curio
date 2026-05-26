@@ -166,6 +166,7 @@ def _manifest_to_payload(manifest: PackageManifest, *, package_mtime_path: Path 
         "channel": manifest.channel,
         **({"readOnly": True} if manifest.read_only else {}),
         "createdAtMs": manifest.created_at_ms,
+        **({"lifecycleScript": manifest.lifecycle_script} if manifest.lifecycle_script else {}),
     }
     if manifest.created_at_iso:
         payload["createdAt"] = manifest.created_at_iso
@@ -585,6 +586,81 @@ def download_packageage_archive(dir_name: str):
     )
     return response
 
+
+# ---------------------------------------------------------------------------
+# GET /api/packages/<dir_name>/file/<path:filename>
+# ---------------------------------------------------------------------------
+# Serves a static file from a user's installed copy of a package. Used by the
+# dynamic-lifecycle loader on the frontend to fetch each package's compiled
+# `lifecycles.js` bundle (declared in the manifest via `lifecycleScript`).
+# Path resolution flows through `safe_join` so traversal payloads can't escape
+# the package directory, and the result is always rooted in the user's own
+# `<instance>/.curio/users/<user_key>/packages/<dir>/` tree.
+
+_PACKAGE_FILE_MIMETYPES: dict[str, str] = {
+    ".js":   "application/javascript; charset=utf-8",
+    ".mjs":  "application/javascript; charset=utf-8",
+    ".css":  "text/css; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".geojson": "application/geo+json; charset=utf-8",
+    ".md":   "text/markdown; charset=utf-8",
+    ".txt":  "text/plain; charset=utf-8",
+    ".svg":  "image/svg+xml",
+    ".png":  "image/png",
+    ".jpg":  "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif":  "image/gif",
+    ".webp": "image/webp",
+    ".map":  "application/json; charset=utf-8",
+}
+
+
+@packages_bp.route("/<dir_name>/file/<path:filename>", methods=["GET"])
+@require_auth
+def get_package_file(dir_name: str, filename: str):
+    """Serve a static file from the user's installed copy of ``<dir_name>``.
+
+    Mounted at ``GET /api/packages/<dir_name>/file/<path:filename>``. The
+    frontend's dynamic lifecycle loader hits this to fetch each package's
+    compiled ``lifecycles.js`` bundle (when its manifest declares
+    ``lifecycleScript``). Any package-shipped asset (overlay imagery,
+    starter source, …) can be retrieved via the same route.
+    """
+    from utk_curio.backend.app.common.safe_paths import (
+        PathTraversalError,
+        safe_join,
+    )
+
+    user_key = _user_dir_key(g.user)
+    try:
+        base = package_dir(user_key, dir_name)
+    except (PackageIdError, PathTraversalError) as exc:
+        return _error(str(exc), 404)
+
+    try:
+        # `validate=False` because the request can legitimately span subdirs
+        # (e.g. `sources/index.js`). The final `is_within` check still
+        # guarantees containment.
+        target = safe_join(base, filename, validate=False, field="filename")
+    except PathTraversalError as exc:
+        return _error(str(exc), 400)
+
+    if not target.is_file():
+        return _error(f"package file not found: {filename}", 404)
+
+    suffix = target.suffix.lower()
+    mimetype = _PACKAGE_FILE_MIMETYPES.get(suffix, "application/octet-stream")
+    try:
+        body = target.read_bytes()
+    except OSError as exc:
+        return _error(f"could not read package file: {exc}", 500)
+
+    response = Response(body, mimetype=mimetype)
+    # Package files are content-addressed via integrity.json — once a sha
+    # matches, the file is immutable for this install. A short browser
+    # cache is safe and keeps the dynamic loader fast on repeat boots.
+    response.headers["Cache-Control"] = "private, max-age=300"
+    return response
 
 
 # ---------------------------------------------------------------------------
