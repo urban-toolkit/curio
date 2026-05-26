@@ -60,7 +60,7 @@ export const UserMenu = () => {
             onClick={handleSignOut}
             data-testid="signout-button"
           >
-            Logout
+            Sign out
           </button>
         )}
       </div>
