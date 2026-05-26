@@ -23,9 +23,6 @@ import {
   useAutkComputeLifecycle,
   useAutkDbLifecycle,
   useSpatialJoinLifecycle,
-  useStreetViewFetcherLifecycle,
-  useHfCvInferenceLifecycle,
-  useCvGalleryLifecycle,
 } from '../adapters/node';
 import { registerLifecycle } from './lifecycleRegistry';
 
@@ -40,8 +37,12 @@ registerLifecycle('autk-map', useAutkMapLifecycle);
 registerLifecycle('autk-compute', useAutkComputeLifecycle);
 registerLifecycle('autk-db', useAutkDbLifecycle);
 registerLifecycle('merge-flow', useMergeFlowLifecycle);
-// curio.builtin@1 spatial-join + curio.streetvision@1 nodes.
+// curio.builtin@1 spatial-join node (stays in core because the builtin
+// package's lifecycles must be registered before ANY package registry runs).
 registerLifecycle('spatial-join', useSpatialJoinLifecycle);
-registerLifecycle('street-view-fetcher', useStreetViewFetcherLifecycle);
-registerLifecycle('hf-cv-inference', useHfCvInferenceLifecycle);
-registerLifecycle('cv-gallery', useCvGalleryLifecycle);
+//
+// The curio.streetvision@1 lifecycles (street-view-fetcher, hf-cv-inference,
+// cv-gallery) are NOT registered here — they ship as a pre-built `lifecycles.js`
+// bundle inside the package directory and self-register via the dynamic
+// loader at `loadPackageLifecycleScripts` in packagesClient. See
+// docs/EXTENDING.md §5 for the contract.

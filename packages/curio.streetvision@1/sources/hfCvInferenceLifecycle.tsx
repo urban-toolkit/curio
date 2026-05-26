@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { NodeLifecycleHook } from '../../registry/types';
+import { NodeLifecycleHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
 
 /**
  * HuggingFace CV Inference lifecycle.

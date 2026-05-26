@@ -12,9 +12,10 @@ export { useAutkComputeLifecycle } from './autkComputeLifecycle';
 export { useAutkDbLifecycle } from './autkDbLifecycle';
 export { createAutkLifecycle } from './autkLifecycleFactory';
 export { useSpatialJoinLifecycle } from './spatialJoinLifecycle';
-export { useStreetViewFetcherLifecycle } from './streetViewFetcherLifecycle';
-export { useHfCvInferenceLifecycle } from './hfCvInferenceLifecycle';
-export { useCvGalleryLifecycle } from './cvGalleryLifecycle';
+// Note: the three curio.streetvision@1 lifecycle hooks now live IN the
+// package directory at `packages/curio.streetvision@1/sources/` and ship
+// as a pre-built `lifecycles.js` loaded dynamically by the package
+// registry bootstrap. They are intentionally NOT re-exported here.
 
 export { standardInOut, outputOnly, inputOnly, withBidirectional } from './handleHelpers';
 

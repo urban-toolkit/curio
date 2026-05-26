@@ -1,6 +1,11 @@
 {
   "sha256": {
     "README.md": "d8483f1ae456682d163f2e8b2139b752c8af4665c70cd7f72b338dc54ca38663",
-    "manifest.json": "5e0f08f29fb21c6250c92c19b6a04694a1928a769335f4e9321910899dd844e2"
+    "lifecycles.js": "5cf4cd0253d5be58119cb9f98a586bbb3591af497d944ff22cf8482cb769ea96",
+    "manifest.json": "c57ef0bcc3ee4021e9c84d0f9f3b742e160d462f9fb6fb954cb41f1c1b90ec84",
+    "sources/cvGalleryLifecycle.tsx": "e140e6a169c4fd0b1509813b2dea48a7fe6cdacb2badb63415115e0a56ef6317",
+    "sources/hfCvInferenceLifecycle.tsx": "302e380cb57f250950e97c7adc9309c57b69a72baf09bc6d26c7afa87f57930a",
+    "sources/index.tsx": "9be96771196a78af523e08265eaf6890dea220a69b1188ab163e2253f65a1194",
+    "sources/streetViewFetcherLifecycle.tsx": "cbf32aa8fc5b86b7afb3dae0cb159b4bc2df0a5e61ac7f41ea83f72bea263edc"
   }
 }
