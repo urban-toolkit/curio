@@ -268,7 +268,8 @@
         {
           "cardinality": "1",
           "types": [
-            "DATAFRAME"
+            "DATAFRAME",
+            "GEODATAFRAME"
           ]
         }
       ],
@@ -278,7 +279,8 @@
         {
           "cardinality": "1",
           "types": [
-            "DATAFRAME"
+            "DATAFRAME",
+            "GEODATAFRAME"
           ]
         }
       ],
