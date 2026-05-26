@@ -19,7 +19,7 @@ EXAMPLES_DIR = os.path.join(REPO_ROOT, "docs", "examples")
 
 
 def _example_json_paths() -> list[str]:
-    return sorted(glob.glob(os.path.join(EXAMPLES_DIR, "0[1-9]-*.json")))
+    return sorted(glob.glob(os.path.join(EXAMPLES_DIR, "[0-9][0-9]-*.json")))
 
 
 # (basename, expected_nodes, expected_edges, min_type_counts, requires_interaction_edge)
@@ -42,18 +42,26 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/autk-db": 1, "curio.builtin/autk-compute": 1}, True),
     ("09-heterogeneous-data-linked-views.json", 13, 15,
      {"curio.builtin/autk-map": 1, "curio.builtin/vis-vega": 2}, True),
+    ("10-street-vision-cv-analysis.json", 8, 7,
+     {
+         "curio.streetvision/street-view-fetcher": 1,
+         "curio.streetvision/hf-cv-inference": 1,
+         "curio.streetvision/cv-gallery": 1,
+         "curio.builtin/spatial-join": 1,
+         "curio.builtin/vis-vega": 2,
+     }, False),
 ]
 
 
-def test_nine_examples_present():
-    """Exactly 9 files match docs/examples/0[1-9]-*.json with no gaps."""
+def test_examples_present():
+    """Every NN-*.json under docs/examples/ is sequentially numbered with no gaps."""
     paths = _example_json_paths()
     basenames = [os.path.basename(p) for p in paths]
-    assert len(paths) == 9, (
-        f"Expected 9 example JSONs, found {len(paths)}: {basenames}"
+    assert len(paths) >= 9, (
+        f"Expected at least 9 example JSONs, found {len(paths)}: {basenames}"
     )
-    prefixes = sorted(b[:2] for b in basenames)
-    assert prefixes == [f"0{i}" for i in range(1, 10)], (
+    prefixes = sorted(int(b[:2]) for b in basenames)
+    assert prefixes == list(range(1, len(prefixes) + 1)), (
         f"Example prefixes have gaps or duplicates: {prefixes}"
     )
 

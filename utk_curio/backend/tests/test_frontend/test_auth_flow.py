@@ -29,8 +29,11 @@ def test_signup_signin_flow(app_frontend: FrontendPage, page):
 
     page.get_by_role("heading", name="Projects").wait_for(timeout=10000)
 
-    # 4. Sign out
-    page.get_by_text("Sign out").click()
+    # 4. Sign out — use the stable data-testid (UserMenu mounts the sign-out
+    # button asynchronously after the auth context resolves; Playwright's
+    # auto-wait on test_id locators handles the race more cleanly than a
+    # bare get_by_text(...).click() which timed out under load).
+    page.get_by_test_id("signout-button").click()
     page.wait_for_url("**/auth/signin", timeout=15000)
 
     # 5. Sign back in by username

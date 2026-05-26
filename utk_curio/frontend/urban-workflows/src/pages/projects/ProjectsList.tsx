@@ -155,12 +155,13 @@ const ProjectsList: React.FC = () => {
             {enableUserAuth && (
               <button
                 style={signoutBtnStyle}
+                data-testid="signout-button"
                 onClick={async () => {
                   await signout();
                   navigate("/auth/signin");
                 }}
               >
-                Logout
+                Sign out
               </button>
             )}
           </div>
