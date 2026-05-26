@@ -462,6 +462,41 @@
       "paletteOrder": 5
     },
     {
+      "category": "data",
+      "containerStyle": {
+        "noContent": true,
+        "nodeHeight": 180,
+        "nodeWidth": 50
+      },
+      "description": "Tag each point with the polygon it falls in (point-in-polygon spatial join). Two distinct input handles: points (top) and polygons (bottom); each accepts a GEODATAFRAME / GeoJSON FeatureCollection. Output points carry the containing polygon's `name` property plus per-polygon roll-up aggregates. If your polygons use a different property name (e.g. `pri_neigh`, `BoroName`), rename it to `name` via a Data Transformation node upstream.",
+      "editor": "none",
+      "engine": "python",
+      "hasCode": false,
+      "hasGrammar": false,
+      "hasWidgets": false,
+      "iconRef": "fa-solid:object-group",
+      "id": "spatial-join",
+      "inputPorts": [
+        {
+          "cardinality": "1",
+          "types": ["GEODATAFRAME"]
+        },
+        {
+          "cardinality": "1",
+          "types": ["GEODATAFRAME"]
+        }
+      ],
+      "label": "Spatial Join",
+      "lifecycle": "spatial-join",
+      "outputPorts": [
+        {
+          "cardinality": "1",
+          "types": ["GEODATAFRAME"]
+        }
+      ],
+      "paletteOrder": 4
+    },
+    {
       "category": "flow",
       "containerStyle": {
         "noContent": true,
