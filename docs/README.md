@@ -12,6 +12,7 @@
 - [Contributing to Curio](CONTRIBUTING.md)
 - [Onboarding for undergraduate students](ONBOARDING.md)
 - [System architecture](ARCHITECTURE.md)
+- [Extending Curio with new node packages](EXTENDING.md)
 
 ## Examples
 

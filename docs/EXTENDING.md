@@ -1,0 +1,262 @@
+# Extending Curio with new node packages
+
+Curio nodes are defined by **packages**, not by code. A package is a directory under [`packages/`](../packages/) that ships a `manifest.json` declaring one or more node *templates*. Each template references a **lifecycle key** that resolves to a React hook implementing the node's behaviour. Optionally, a package can ship a backend Flask blueprint for endpoints the lifecycle hook calls.
+
+This guide walks through adding a new node package end-to-end, using the recent [`curio.streetvision@1`](../packages/curio.streetvision@1/) package — which adds three CV nodes plus a generic Spatial Join — as the worked example. The merge that introduced it is a fairly involved case: it spans the manifest, four lifecycle hooks, a Flask blueprint with eight endpoints, optional dependency extras, and a user-facing docs example. Easier packages can skip several of the steps below.
+
+## 1. Anatomy of a package
+
+```
+packages/<packageId>@<major>/
+├── manifest.json   ← declares templates, ports, lifecycle keys, deps
+├── integrity.json  ← sha256 of every other file (regen on every edit)
+├── README.md       ← shown in the catalog UI
+└── sources/        ← optional Python / JS template starters per template
+```
+
+A `template` inside `manifest.json` declares one node kind. It carries:
+
+- `id` + `label` + `description` + `iconRef` — palette presentation
+- `category` (`data` | `computation` | `vis_grammar` | `vis_simple` | `flow`) — palette sectioning
+- `inputPorts` + `outputPorts` — port types and cardinalities (see [`docs/schemas/node-package.v3.json`](schemas/node-package.v3.json))
+- `editor` (`code` | `widgets` | `grammar` | `none`) — what editor surface to mount
+- `lifecycle` — string key resolved through [`registry/lifecycleRegistry`](../utk_curio/frontend/urban-workflows/src/registry/lifecycleRegistry.ts) to the React hook that implements the node's behaviour
+- `engine` (`python` | `javascript`) — if the node runs user code, which sandbox executes it
+
+The frontend's package loader at [`registry/packagesClient.ts`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) reads every installed package, calls `buildDescriptor()` per template, and registers them in the canvas's node-type registry. Adding a node is therefore *adding a manifest entry plus a lifecycle hook* — there is no monolithic switch-case anywhere.
+
+## 2. When you do — and don't — need a backend blueprint
+
+Three patterns cover essentially every node Curio ships:
+
+| Pattern | Examples | Backend? |
+|---|---|---|
+| **Pure-frontend** | `vis-vega`, `vis-simple`, `autk-map`, `autk-plot`, `cv-gallery` | None. The lifecycle hook does its work in the browser. |
+| **Sandbox-Python** | `data-loading`, `data-transformation`, `computation-analysis`, `data-summary` | Reuses Curio's existing code sandbox at [`utk_curio/sandbox/`](../utk_curio/sandbox/) via the `code` lifecycle. User-provided Python runs out-of-process. |
+| **Custom blueprint** | `streetvision` (calls Google Street View + HuggingFace + runs `torch` inference), `spatial-join` (shapely STRtree) | A new Flask blueprint under [`utk_curio/backend/app/<feature>/`](../utk_curio/backend/app/). Right call when the node needs external APIs, long-running jobs, persistent state, or heavy native dependencies that the sandbox can't reasonably ship. |
+
+Pure-frontend is the right default; reach for the sandbox before a blueprint, and only stand up a blueprint when neither covers it.
+
+## 3. Connecting to external services
+
+Most non-trivial node packages need to call a third-party API. The Street Vision package touches three — HuggingFace Hub (model search), Nominatim (geocoding), and Google Street View (imagery, behind an API key). The patterns below are the conventions the merged code follows, all in [`utk_curio/backend/app/streetvision/services/`](../utk_curio/backend/app/streetvision/services/).
+
+### 3.1 Always proxy through the backend
+
+Never call third-party APIs from the lifecycle hook directly:
+
+1. **API keys leak.** Anything built into the frontend bundle — even read-at-runtime values — is visible in DevTools' network tab.
+2. **CORS.** Most public APIs (Google, Nominatim) reject browser-origin requests.
+3. **Rate-limit hygiene.** Centralising in the backend lets you add caching, retries, and per-user quota in one place.
+
+The lifecycle hook hits `${BACKEND_URL}/api/<feature>/...`; the Flask handler in turn calls the upstream service. See [`streetvision/routes.py`](../utk_curio/backend/app/streetvision/routes.py) for the pattern.
+
+### 3.2 API keys live in environment variables
+
+Read at request time (not at module import), so a user can edit `.env` and restart without rebuilding anything. Surface presence in `/health` so the frontend can warn the user *before* they trigger an action that needs the key:
+
+```python
+@bp.get("/health")
+def health():
+    return jsonify({
+        "status": "healthy",
+        "has_google_api_key": bool(os.environ.get("GOOGLE_MAPS_API_KEY")),
+        "has_huggingface_token": bool(os.environ.get("HUGGINGFACE_TOKEN")),
+    })
+```
+
+Document the env var in the package's `README.md` and in the user-facing example doc. Never check secrets into git.
+
+### 3.3 Public APIs without auth
+
+HuggingFace Hub's model search and Nominatim's geocoder are free and public — just use `requests`:
+
+```python
+# huggingface.py
+from huggingface_hub import HfApi
+def search_models(task: str, query: str, limit: int = 20):
+    api = HfApi()
+    return [...]  # api.list_models(filter=task, search=query, sort='downloads', limit=limit)
+```
+
+Always set a **timeout** (`requests`'s default is "wait forever"). Always check the response status. Nominatim has a strict 1 req/sec rate limit and requires a `User-Agent` header that identifies your app — read their usage policy before shipping a node that hits them in a tight loop, and **cache aggressively** (a single user might re-search the same place a dozen times in one session).
+
+### 3.4 APIs with API keys
+
+```python
+# streetview.py
+def fetch_panorama(lat: float, lon: float):
+    key = os.environ.get("GOOGLE_MAPS_API_KEY")
+    if not key:
+        raise RuntimeError("GOOGLE_MAPS_API_KEY not set")
+    r = requests.get(
+        "https://maps.googleapis.com/maps/api/streetview",
+        params={"size": "640x640", "location": f"{lat},{lon}", "key": key},
+        timeout=15,
+    )
+    r.raise_for_status()
+    return r.content
+```
+
+Endpoints that need the key should return a **400 / 503 with a hint** when it's missing — not crash with a stacktrace. The frontend can render that hint inline (see Street View Fetcher's "Google Maps API key required" banner for an example).
+
+### 3.5 Long-running calls — job-id polling
+
+Inference, batch downloads, or any external call that takes more than a few seconds shouldn't hold a connection open. The streetvision pattern, in [`streetvision/jobs.py`](../utk_curio/backend/app/streetvision/jobs.py):
+
+1. `POST /inference/run` returns `{ job_id }` immediately and spawns a `threading.Thread` that does the work and writes progress into a module-level dict guarded by a lock.
+2. The frontend polls `GET /inference/results/<job_id>` every ~2 s, reads `{ status, processed, total_images, results }`, and renders a progress bar.
+3. On `status === "completed"`, the lifecycle hook pulls the results and pushes them downstream via `data.outputCallback(...)`.
+
+The job store is in-memory. Restarting Curio loses any in-flight jobs — fine for typical interactive use, document it in the package README. If you genuinely need durability (multi-hour jobs, multi-process workers), reach for SQLite or Redis, but most node packages don't.
+
+### 3.6 Caching expensive responses
+
+[`streetvision/services/cache.py`](../utk_curio/backend/app/streetvision/services/cache.py) stores fetched Street View images under `instance/streetvision_cache/` so re-running with the same bbox doesn't re-hit Google (and re-bill the user). Pattern:
+
+- Cache key = hash of the request inputs (e.g., `pano_id + size`).
+- TTL: forever for immutable content (an image at a coordinate); a few hours for content that changes (model lists).
+- Store under `instance/<package-name>_cache/` so it lives alongside Curio's other ephemeral state (gitignored).
+
+### 3.7 The error contract back to the frontend
+
+| HTTP | Meaning | Lifecycle reaction |
+|---|---|---|
+| `200` | OK | Render the result |
+| `400` | Bad input (missing field, malformed body) | Surface inline message |
+| `503` | Service / extras unavailable | Show "install hint" / "backend offline" banner |
+| `5xx` | Unhandled backend error | Generic "Lost connection to backend" toast |
+
+Always return JSON bodies with `{ "error": "...", "hint": "..." }` for non-200 responses; the frontend reads `hint` to give the user an actionable next step. Don't return plain-text 500s.
+
+### 3.8 Optional dependency extras
+
+Heavy native libraries (`torch`, `transformers`, `ultralytics`) shouldn't be required for every Curio install — most users won't run on-device CV inference. Declare them as a `[project.optional-dependencies]` group in [`pyproject.toml`](../pyproject.toml):
+
+```toml
+[project.optional-dependencies]
+streetvision = [
+  "torch>=2.0",
+  "transformers>=4.30",
+  "ultralytics>=8.0",
+  "huggingface_hub>=0.20",
+]
+```
+
+Users install with `pip install "utk-curio[streetvision]"`. Endpoints that need these deps **lazy-import inside the route handler** and return the `503` error contract from §3.7 if the import fails:
+
+```python
+@bp.post("/inference/run")
+def inference_run():
+    try:
+        from .services.inference import run_batch  # heavy lazy import
+    except ImportError as e:
+        return jsonify({
+            "error": "streetvision extras not installed",
+            "hint": "pip install curio[streetvision]",
+        }), 503
+    # ...
+```
+
+This keeps the base install light and the failure mode actionable.
+
+## 4. Walked example: the Street Vision package
+
+The merge of [PR #120](https://github.com/urban-toolkit/curio/pull/120) decomposed two large student-contributed nodes into four small reusable ones and ported a companion FastAPI service into Curio's Flask backend. The artefacts that landed:
+
+### 4.1 Three templates in [`packages/curio.streetvision@1/manifest.json`](../packages/curio.streetvision@1/manifest.json)
+
+```jsonc
+"templates": [
+  { "id": "street-view-fetcher", "lifecycle": "street-view-fetcher",
+    "inputPorts": [],                                                  "outputPorts": [{"types":["GEODATAFRAME"]}] },
+  { "id": "hf-cv-inference",     "lifecycle": "hf-cv-inference",
+    "inputPorts": [{"types":["GEODATAFRAME","JSON"]}],                 "outputPorts": [{"types":["JSON"]}] },
+  { "id": "cv-gallery",          "lifecycle": "cv-gallery",
+    "inputPorts": [{"types":["JSON"]}],                                "outputPorts": [{"types":["GEODATAFRAME"]}] }
+]
+```
+
+Each entry names a *lifecycle key* (a string), not a JS module path — the same key can be implemented by an entirely different package and still work, which is how forks / overrides happen.
+
+### 4.2 Plus a fourth template in [`packages/curio.builtin@1/manifest.json`](../packages/curio.builtin@1/manifest.json)
+
+A generic Spatial Join that takes points + polygons and tags each point with the containing polygon's properties:
+
+```jsonc
+{ "id": "spatial-join", "lifecycle": "spatial-join",
+  "inputPorts": [
+    {"types":["GEODATAFRAME"]},   // points (handle 0 — top of node)
+    {"types":["GEODATAFRAME"]}    // polygons (handle 1 — bottom of node)
+  ],
+  "outputPorts": [{"types":["GEODATAFRAME"]}]
+}
+```
+
+This one belongs in `curio.builtin@1`, not `curio.streetvision@1`, because it's reusable for any spatial workflow. Generally: if a capability is reusable outside the package's narrow theme, factor it out into builtin.
+
+### 4.3 Four lifecycle hooks in [`utk_curio/frontend/urban-workflows/src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/)
+
+- [`streetViewFetcherLifecycle.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/streetViewFetcherLifecycle.tsx) — place picker + bbox preview + fetch button. Hits `/api/streetvision/data/streetview/{search_place,coverage,fetch}`, emits a GEODATAFRAME via `data.outputCallback`.
+- [`hfCvInferenceLifecycle.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/hfCvInferenceLifecycle.tsx) — reads upstream image points from `data.input`, runs an inference job, polls `/api/streetvision/inference/results/<id>`. Demonstrates the long-running job pattern from §3.5.
+- [`cvGalleryLifecycle.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/cvGalleryLifecycle.tsx) — pure frontend node. Gallery + per-image inspector + aggregate stats; re-emits the results as a GEODATAFRAME.
+- [`spatialJoinLifecycle.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/spatialJoinLifecycle.tsx) — the only node here with two distinct input handles, mounted via `dynamicHandles` (the same mechanism Merge Flow uses). Worth reading if you ever need a 2-input node.
+
+Each is registered as a global lifecycle key in [`registry/builtinLifecycles.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinLifecycles.ts):
+
+```typescript
+registerLifecycle('street-view-fetcher', useStreetViewFetcherLifecycle);
+registerLifecycle('hf-cv-inference',     useHfCvInferenceLifecycle);
+registerLifecycle('cv-gallery',          useCvGalleryLifecycle);
+registerLifecycle('spatial-join',        useSpatialJoinLifecycle);
+```
+
+Even though three of those templates live in a separate (non-built-in) package, their lifecycle hooks are registered globally — packages reference lifecycle keys by name, not by import.
+
+### 4.4 The backend Flask blueprint at [`utk_curio/backend/app/streetvision/`](../utk_curio/backend/app/streetvision/)
+
+```
+streetvision/
+├── __init__.py     # bp = Blueprint("streetvision", __name__)
+├── routes.py       # 8 endpoints (health, models/search, search_place,
+│                   #              coverage, fetch, inference/run,
+│                   #              inference/results, inference/overlay)
+├── jobs.py         # threading-based job store (§3.5)
+└── services/
+    ├── huggingface.py   # search_models + lazy load_model
+    ├── streetview.py    # Google API client (§3.4)
+    ├── inference.py     # torch + transformers (lazy-imported)
+    └── cache.py         # on-disk image cache (§3.6)
+```
+
+Registered next to the other blueprints in [`utk_curio/backend/app/__init__.py`](../utk_curio/backend/app/__init__.py):
+
+```python
+from utk_curio.backend.app.streetvision import bp as streetvision_bp
+app.register_blueprint(streetvision_bp, url_prefix="/api/streetvision")
+```
+
+Spatial Join is simpler: a single handler at the end of [`api/routes.py`](../utk_curio/backend/app/api/routes.py) (`POST /spatial_join`) that calls a generic helper at [`utk_curio/backend/app/common/spatial.py`](../utk_curio/backend/app/common/spatial.py). Reusable utilities like that belong under `common/`, not in any specific blueprint.
+
+### 4.5 Shipping the package
+
+The Street Vision package is bundled in-repo under [`packages/`](../packages/) but **not auto-installed** (`readOnly: true`, but no `factoryInstall` entry). Users opt in by clicking *Install* in the catalog. Generally:
+
+- **Bundled-and-auto-installed** → only for `curio.builtin@1`. Anything every user must have.
+- **Bundled-and-installable** → optional first-party packages like `curio.streetvision@1`, `ai.urbanlab.uhvi@1`. Visible in the catalog without a remote registry roundtrip.
+- **Remote** → publishing through Curio's catalog endpoint, for third-party packages. Same manifest schema.
+
+## 5. Checklist for a new node package
+
+- [ ] `packages/<id>@<major>/manifest.json` — templates with lifecycle keys, port shapes, palette ordering.
+- [ ] `packages/<id>@<major>/integrity.json` — sha256 of every other file. Regenerate on every edit (a small script is sufficient — see `regen-integrity` helpers in the existing packages).
+- [ ] `packages/<id>@<major>/README.md` — shown in the catalog. Cover setup, env vars, costs.
+- [ ] Lifecycle hooks under `utk_curio/frontend/urban-workflows/src/adapters/node/`.
+- [ ] Export them from [`adapters/node/index.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/index.ts).
+- [ ] Register lifecycle keys in [`registry/builtinLifecycles.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinLifecycles.ts).
+- [ ] *(If backend)* New Flask blueprint under `utk_curio/backend/app/<feature>/`.
+- [ ] *(If backend)* Register the blueprint in [`utk_curio/backend/app/__init__.py`](../utk_curio/backend/app/__init__.py).
+- [ ] *(If heavy deps)* Add a `[project.optional-dependencies]` group in [`pyproject.toml`](../pyproject.toml); lazy-import in the route layer; return 503 with a hint when missing.
+- [ ] User-facing docs example in `docs/examples/<NN>-<name>.md`, linked from [`docs/README.md`](README.md).
+
+Skip any item that doesn't apply — a pure-frontend node typically only needs the first six.
