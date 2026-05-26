@@ -42,14 +42,10 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/autk-db": 1, "curio.builtin/autk-compute": 1}, True),
     ("09-heterogeneous-data-linked-views.json", 13, 15,
      {"curio.builtin/autk-map": 1, "curio.builtin/vis-vega": 2}, True),
-    ("10-street-vision-cv-analysis.json", 8, 7,
-     {
-         "curio.streetvision/street-view-fetcher": 1,
-         "curio.streetvision/hf-cv-inference": 1,
-         "curio.streetvision/cv-gallery": 1,
-         "curio.builtin/spatial-join": 1,
-         "curio.builtin/vis-vega": 2,
-     }, False),
+    # NOTE: the "10-street-vision-cv-analysis.json" parametrization
+    # ships on the computer-vision-revised branch alongside the
+    # curio.streetvision package and the spatial-join builtin template.
+    # Neither is present on this branch, so the entry is omitted here.
 ]
 
 

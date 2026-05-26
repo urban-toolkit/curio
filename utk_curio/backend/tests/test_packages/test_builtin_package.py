@@ -31,13 +31,15 @@ EXPECTED_TEMPLATE_IDS: frozenset[str] = frozenset({
     "autk-compute",
     "autk-db",
     "merge-flow",
-    "spatial-join",
+    # NOTE: "spatial-join" is added to the builtin package on
+    # computer-vision-revised; it is not present on this branch's catalog.
 })
 
 EXPECTED_LIFECYCLES: frozenset[str] = frozenset({
     "code", "data-export", "data-pool", "data-summary", "vega",
     "simple-vis", "autk-plot", "autk-map", "autk-compute", "autk-db",
-    "merge-flow", "spatial-join",
+    "merge-flow",
+    # "spatial-join" lifecycle is registered on computer-vision-revised only.
 })
 
 
