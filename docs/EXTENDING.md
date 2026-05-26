@@ -246,7 +246,159 @@ The Street Vision package is bundled in-repo under [`packages/`](../packages/) b
 - **Bundled-and-installable** → optional first-party packages like `curio.streetvision@1`, `ai.urbanlab.uhvi@1`. Visible in the catalog without a remote registry roundtrip.
 - **Remote** → publishing through Curio's catalog endpoint, for third-party packages. Same manifest schema.
 
-## 5. Checklist for a new node package
+## 5. Recipe: add a Flask blueprint
+
+When your node needs server-side capabilities the sandbox can't provide (external APIs, long-running jobs, persistent state, native deps), add a blueprint under `utk_curio/backend/app/<feature>/`. The streetvision blueprint (§4.4) is the canonical example.
+
+1. **Create the directory + entry-point.** `utk_curio/backend/app/<feature>/__init__.py`:
+   ```python
+   from flask import Blueprint
+   bp = Blueprint("<feature>", __name__)
+   from . import routes  # noqa: E402,F401 — handlers register on import
+   ```
+
+2. **Author the handlers.** `utk_curio/backend/app/<feature>/routes.py`:
+   ```python
+   import os
+   from flask import jsonify, request
+   from . import bp
+
+   @bp.get("/health")
+   def health():
+       return jsonify({
+           "status": "healthy",
+           "has_my_api_key": bool(os.environ.get("MY_API_KEY")),
+       })
+
+   @bp.post("/do-thing")
+   def do_thing():
+       body = request.get_json(silent=True) or {}
+       # ... validate, return jsonify({...}) or jsonify({"error": "..."}), 400
+   ```
+   Surface API-key presence in `/health` (§3.2). Validate `body` against `request.get_json(silent=True) or {}` and return `{ error, hint }` with appropriate status codes (§3.7). Keep route handlers thin — push real work into a sibling `services/` package so handlers stay testable.
+
+3. **Lazy-import heavy deps** inside the handler that needs them so the base install stays light (§3.8):
+   ```python
+   @bp.post("/run-inference")
+   def run_inference():
+       try:
+           from .services.inference import run  # heavy lazy import
+       except ImportError as e:
+           return jsonify({"error": "<feature> extras not installed",
+                           "hint": "pip install curio[<feature>]"}), 503
+       # ...
+   ```
+
+4. **Register the blueprint** next to the others in [`utk_curio/backend/app/__init__.py`](../utk_curio/backend/app/__init__.py):
+   ```python
+   from utk_curio.backend.app.<feature> import bp as <feature>_bp
+   app.register_blueprint(<feature>_bp, url_prefix="/api/<feature>")
+   ```
+
+5. **(If applicable) Add the optional-dependencies extras group** in [`pyproject.toml`](../pyproject.toml):
+   ```toml
+   [project.optional-dependencies]
+   <feature> = ["torch>=2.0", "transformers>=4.30", ...]
+   ```
+   Users opt in with `pip install "utk-curio[<feature>]"`.
+
+6. **Verify the blueprint is mounted** by booting the app and checking the URL map:
+   ```bash
+   python -c "
+   from utk_curio.backend.app import create_app
+   app = create_app()
+   for r in sorted(str(r) for r in app.url_map.iter_rules() if '/api/<feature>/' in str(r)):
+       print(r)
+   "
+   ```
+   Every route handler you wrote should show up.
+
+## 6. Recipe: ship a node package
+
+The smallest possible package adds one template plus its lifecycle hook. Use this when you have a new node kind to introduce.
+
+1. **Create the package directory.** `packages/<publisher>.<name>@<major>/`. Pick a `major` integer; bump it on breaking changes to existing templates (lifecycle keys, port types) — additive changes (new templates, new fields) don't need a bump.
+
+2. **Author the manifest.** `packages/<publisher>.<name>@<major>/manifest.json` — the schema is at [`docs/schemas/node-package.v3.json`](schemas/node-package.v3.json). Minimum viable:
+   ```json
+   {
+     "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v3.json",
+     "id": "<publisher>.<name>",
+     "name": "Human-readable Package Name",
+     "publisher": "Your Org",
+     "version": "1.0.0",
+     "compatibility": { "curioRuntime": ">=0.5.0", "major": 1 },
+     "createdAt": "2026-05-26T00:00:00Z",
+     "license": "MIT",
+     "dependencies": { "js": {}, "packages": {}, "python": {} },
+     "templates": [
+       {
+         "id": "my-node",
+         "label": "My Node",
+         "description": "What this node does — shown in the palette tooltip.",
+         "category": "computation",
+         "editor": "none",
+         "lifecycle": "my-node",
+         "iconRef": "fa-solid:cube",
+         "inputPorts":  [{ "cardinality": "1", "types": ["GEODATAFRAME"] }],
+         "outputPorts": [{ "cardinality": "1", "types": ["GEODATAFRAME"] }],
+         "hasCode": false, "hasGrammar": false, "hasWidgets": false
+       }
+     ]
+   }
+   ```
+
+3. **Write the lifecycle hook.** `utk_curio/frontend/urban-workflows/src/adapters/node/myNodeLifecycle.tsx` (or `.ts`). The hook must satisfy `NodeLifecycleHook` from [`registry/types.ts`](../utk_curio/frontend/urban-workflows/src/registry/types.ts):
+   ```tsx
+   import { NodeLifecycleHook } from '../../registry/types';
+   export const useMyNodeLifecycle: NodeLifecycleHook = (data, nodeState) => {
+     // Read `data.input` from upstream, push downstream via `data.outputCallback`.
+     // Return `{ contentComponent: <YourUI /> }` to render a body, or omit for
+     //   icon-only nodes (also set `containerStyle.noContent: true` in the
+     //   manifest — see §2 / §4.4 for examples like merge-flow + spatial-join).
+     return { /* contentComponent: ..., dynamicHandles?, handlesOverride? */ };
+   };
+   ```
+
+4. **Export it from the adapter barrel** in [`adapters/node/index.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/index.ts):
+   ```ts
+   export { useMyNodeLifecycle } from './myNodeLifecycle';
+   ```
+
+5. **Register the lifecycle key globally** in [`registry/builtinLifecycles.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinLifecycles.ts) so the manifest's `"lifecycle": "my-node"` resolves to your hook:
+   ```ts
+   import { useMyNodeLifecycle } from '../adapters/node';
+   registerLifecycle('my-node', useMyNodeLifecycle);
+   ```
+
+6. **(If a custom icon)** register it in [`registry/iconRegistry.ts`](../utk_curio/frontend/urban-workflows/src/registry/iconRegistry.ts):
+   ```ts
+   import { faSomeIcon } from '@fortawesome/free-solid-svg-icons';
+   registerIcon('fa-solid:some-icon', faSomeIcon);
+   ```
+   Unregistered icons silently fall back to `faCube` with a one-time console warning.
+
+7. **Compute `integrity.json`** — Curio's package loader validates every file's sha256 against this manifest. After every content change, regenerate it:
+   ```bash
+   cd packages/<publisher>.<name>@<major>/
+   python -c "
+   import hashlib, json, os, sys
+   files = [f for f in sorted(os.listdir('.'))
+            if f != 'integrity.json' and os.path.isfile(f)]
+   hashes = {fn: hashlib.sha256(open(fn,'rb').read()).hexdigest() for fn in files}
+   json.dump({'sha256': hashes}, open('integrity.json','w'), indent=2)
+   "
+   ```
+   Forget this step and the package fails to load with a hash-mismatch error.
+
+8. **Write `README.md`** in the package directory — the catalog UI shows it inline when users browse for packages to install. Cover install steps (pip extras), env vars (API keys), costs (paid APIs), and limitations.
+
+9. **Validate end-to-end** by booting Curio and checking that:
+   - The package shows up in `/catalog` for installation.
+   - After install, your node appears in the palette under its declared `category`.
+   - Dragging it to the canvas mounts your lifecycle hook (open dev tools → check for warnings).
+
+## 7. Checklist for a new node package
 
 - [ ] `packages/<id>@<major>/manifest.json` — templates with lifecycle keys, port shapes, palette ordering.
 - [ ] `packages/<id>@<major>/integrity.json` — sha256 of every other file. Regenerate on every edit (a small script is sufficient — see `regen-integrity` helpers in the existing packages).
