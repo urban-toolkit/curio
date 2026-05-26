@@ -50,7 +50,11 @@ export const useMergeFlowLifecycle: NodeLifecycleHook = (data, _nodeState) => {
       return cp;
     });
 
-  const dynamicHandles: HandleDef[] = Array.from({ length: MERGE_SLOT_COUNT }).map((_, idx) => {
+  // Build the 5 input slot handles + the single output handle, fully replacing
+  // `adapter.handles`. We use `handlesOverride` rather than `dynamicHandles`
+  // so the default `standardInOut()` "in" handle (which sits at top:50%) is
+  // suppressed — otherwise it leaks through and overlays slot 3.
+  const inputHandles: HandleDef[] = Array.from({ length: MERGE_SLOT_COUNT }).map((_, idx) => {
     const handleId = `in_${idx}`;
     const connected = edges.some(e => e.target === data.nodeId && e.targetHandle === handleId);
     return {
@@ -73,8 +77,13 @@ export const useMergeFlowLifecycle: NodeLifecycleHook = (data, _nodeState) => {
     };
   });
 
+  const handlesOverride: HandleDef[] = [
+    ...inputHandles,
+    { id: 'out', type: 'source', position: Position.Right },
+  ];
+
   return {
-    dynamicHandles,
+    handlesOverride,
     setOutputCallbackOverride,
   };
 }

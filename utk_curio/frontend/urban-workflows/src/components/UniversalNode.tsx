@@ -76,7 +76,8 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const readOnly =
     nodeState.templateData.custom != undefined && nodeState.templateData.custom === false;
 
-  const allHandles = [...adapter.handles, ...(lifecycle.dynamicHandles ?? [])];
+  const allHandles = lifecycle.handlesOverride
+    ?? [...adapter.handles, ...(lifecycle.dynamicHandles ?? [])];
   const kindConfig = readCanvasTemplateConfig({ data });
   const editorTabs = resolveEditorTabFlags(descriptor, kindConfig);
 
