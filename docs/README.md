@@ -32,3 +32,4 @@ Icons indicate the complexity level of each example: 🟢 Easy, 🟡 Intermediat
 | 07 | [Autark GPU shader](examples/07-autark-gpu-shader.md) | WGSL shader executed via `AUTK_COMPUTE`; brushable `AUTK_PLOT` ↔ `AUTK_MAP` | Chicago Loop shadow | 🔴 |
 | 08 | [Autark spatial join + regression](examples/08-autark-spatial-join-regression.md) | DuckDB spatial join in `JS_COMPUTATION` + per-feature OLS GPU regression + linked Autark scatter | Niterói land-surface temperature warming | 🔴 |
 | 09 | [Heterogeneous data + linked views](examples/09-heterogeneous-data-linked-views.md) | Cross-grammar Autark ↔ Vega-Lite brushing on raster + tabular + GeoJSON merged via `MERGE_FLOW` and fanned out via `DATA_POOL` | Milan urban heat exposure (UTCI) | 🔴 |
+| 10 | [Street-level computer vision](examples/10-street-vision-cv-analysis.md) | `curio.streetvision@1` Fetcher → HF Inference → Gallery → `Spatial Join` → Vega-Lite polygons + bars | Chicago Lincoln Park greenery audit | 🔴 |
