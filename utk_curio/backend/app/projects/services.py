@@ -129,12 +129,18 @@ def _output_refs_from_manifest(manifest: Optional[dict]) -> List[OutputRef]:
 # ---------------------------------------------------------------------------
 
 def save_project(user, data: ProjectCreate) -> ProjectDetail:
-    from utk_curio.backend.app.packages.services import seed_spec_with_defaults
+    from utk_curio.backend.app.packages.services import (
+        ensure_user_packages_initialized,
+        seed_spec_with_defaults,
+    )
 
     _assert_guest_can_save(user)
 
     project_id = str(uuid4())
     ukey = _user_dir_key(user)
+    # First-time real users have no per-user package store yet; seed builtin
+    # so the new dataflow's palette isn't empty.
+    ensure_user_packages_initialized(ukey)
     folder = str(storage.project_dir(ukey, project_id))
 
     project = repo.upsert_project(
@@ -204,10 +210,17 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
 # ---------------------------------------------------------------------------
 
 def load_project(user, project_id: str) -> dict:
+    from utk_curio.backend.app.packages.services import (
+        ensure_user_packages_initialized,
+    )
+
     project = repo.get_for_user(project_id, user.id)
     repo.touch_last_opened(project_id, user.id)
 
     ukey = _user_dir_key(user)
+    # Defense in depth: a user who has projects from before the builtin-seed
+    # fix still needs builtin in their store to render the palette.
+    ensure_user_packages_initialized(ukey)
     spec = storage.read_spec(ukey, project_id)
     manifest = storage.read_manifest(ukey, project_id)
 
