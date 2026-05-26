@@ -24,6 +24,7 @@ import {
     faFloppyDisk,
     faPlus,
     faRobot,
+    faUsers,
     faTableColumns,
     faUpRightAndDownLeftFromCenter,
     faDownLeftAndUpRightToCenter,
@@ -569,6 +570,35 @@ export default function UpMenu({
                 >
                     <FontAwesomeIcon icon={faRobot} />
                 </button>
+
+                {/* Real-time collaboration side panel toggle. Only rendered
+                    when --collab is on; the badge surfaces the live peer
+                    count so presence stays glanceable even with the panel
+                    closed. */}
+                {collab.enabled && (
+                    <button
+                        className={clsx(styles.button, collab.panelOpen && styles.aiIconActive)}
+                        onClick={() => collab.setPanelOpen(!collab.panelOpen)}
+                        title={
+                            collab.connected
+                                ? `Collaboration (${collab.users.length} online)`
+                                : "Collaboration disconnected"
+                        }
+                    >
+                        <FontAwesomeIcon icon={faUsers} />
+                        {collab.users.length > 1 && (
+                            <span
+                                style={{
+                                    marginLeft: 4,
+                                    fontSize: 10,
+                                    fontWeight: 700,
+                                }}
+                            >
+                                {collab.users.length}
+                            </span>
+                        )}
+                    </button>
+                )}
 
                 {/* Save status indicator */}
                 {(saving || projectDirty || projectSavedAt) && (

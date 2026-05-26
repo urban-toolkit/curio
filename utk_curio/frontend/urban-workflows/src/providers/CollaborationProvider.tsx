@@ -88,6 +88,11 @@ export interface CollabContextValue {
     proposals: CodeProposal[];
     activity: ActivityEntry[];
 
+    /** Whether the right-docked side panel is currently visible. */
+    panelOpen: boolean;
+    /** Toggle the side panel from anywhere in the tree (UpMenu trigger). */
+    setPanelOpen: (open: boolean) => void;
+
     lockNode: (nodeId: string) => void;
     unlockNode: (nodeId: string) => void;
     requestCodeChange: (
@@ -127,6 +132,9 @@ const NOOP_VALUE: CollabContextValue = {
     lockedNodes: {},
     proposals: [],
     activity: [],
+
+    panelOpen: false,
+    setPanelOpen: () => undefined,
 
     lockNode: () => undefined,
     unlockNode: () => undefined,
@@ -187,6 +195,9 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
     const [proposals, setProposals] = useState<CodeProposal[]>([]);
     const [activity, setActivity] = useState<ActivityEntry[]>([]);
     const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+    // Panel visibility is owned by the provider so the UpMenu trigger can
+    // toggle it without prop-drilling through MainCanvas.
+    const [panelOpen, setPanelOpen] = useState<boolean>(true);
 
     const socketRef = useRef<Socket | null>(null);
     const projectIdRef = useRef<string | undefined>(getCurrentProjectId());
@@ -530,6 +541,9 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
             proposals,
             activity,
 
+            panelOpen,
+            setPanelOpen,
+
             lockNode,
             unlockNode,
             requestCodeChange,
@@ -555,6 +569,7 @@ export const CollaborationProvider: React.FC<{ children: React.ReactNode }> = ({
             lockedNodes,
             proposals,
             activity,
+            panelOpen,
             lockNode,
             unlockNode,
             requestCodeChange,

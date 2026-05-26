@@ -7,7 +7,7 @@
  * mount it inside ``MainCanvas`` only when ``collab.enabled`` is true.
  */
 
-import React, { useState } from "react";
+import React from "react";
 
 import { useCollab } from "../../providers/CollaborationProvider";
 
@@ -15,9 +15,10 @@ const PANEL_WIDTH = 260;
 
 export const CollaborationSidePanel: React.FC = () => {
     const collab = useCollab();
-    const [open, setOpen] = useState<boolean>(true);
 
-    if (!collab.enabled) return null;
+    // Visibility is gated on the panelOpen flag in CollaborationProvider —
+    // toggled by the trigger button next to Urbanite in the UpMenu.
+    if (!collab.enabled || !collab.panelOpen) return null;
 
     return (
         <div
@@ -31,31 +32,7 @@ export const CollaborationSidePanel: React.FC = () => {
                 pointerEvents: "none",
             }}
         >
-            <button
-                type="button"
-                onClick={() => setOpen((v) => !v)}
-                style={{
-                    pointerEvents: "auto",
-                    transform: "translateX(-100%)",
-                    background: collab.connected ? "#2e7d32" : "#9e9e9e",
-                    color: "#fff",
-                    border: "none",
-                    padding: "6px 10px",
-                    borderRadius: "8px 0 0 8px",
-                    fontSize: 11,
-                    cursor: "pointer",
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
-                }}
-                title={
-                    collab.connected
-                        ? "Collaboration connected — click to toggle panel"
-                        : "Collaboration disconnected"
-                }
-            >
-                {open ? "▶" : "◀"} Collab ({collab.users.length})
-            </button>
-            {open && (
-                <div
+            <div
                     style={{
                         pointerEvents: "auto",
                         width: PANEL_WIDTH,
@@ -153,7 +130,6 @@ export const CollaborationSidePanel: React.FC = () => {
                         )}
                     </Section>
                 </div>
-            )}
         </div>
     );
 };
