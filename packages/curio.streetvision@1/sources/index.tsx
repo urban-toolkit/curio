@@ -1,9 +1,11 @@
 /**
  * Entry point for the curio.streetvision@1 dynamic lifecycle bundle.
  *
- * Webpack builds this into `../lifecycles.js` (alongside `manifest.json` in
- * the package directory). When the frontend fetches the installed package
- * list and sees `manifest.lifecycleScript: "lifecycles.js"`, it loads this
+ * Webpack builds this into `../scripts/lifecycles.js` (under the package
+ * directory). The `scripts/` subdir is one of the archive validator's
+ * allowed top-level dirs, so the bundle survives the catalog install
+ * round-trip. When the frontend fetches the installed package list and
+ * sees `manifest.lifecycleScript: "scripts/lifecycles.js"`, it loads this
  * bundle via a `<script>` tag injection. The side-effect calls below
  * register each lifecycle against the global registry exposed on
  * `window.curio` at app boot.

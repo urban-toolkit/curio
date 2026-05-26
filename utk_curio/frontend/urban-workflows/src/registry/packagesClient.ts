@@ -32,6 +32,7 @@ import {
   withBidirectional,
 } from '../adapters/node';
 import { packagesApi } from 'api/packagesApi';
+import { getToken } from '../utils/authApi';
 
 import { getLifecycle } from './lifecycleRegistry';
 import { resolveIconRef } from './iconRegistry';
@@ -297,31 +298,53 @@ export function registerPackageTemplates(packages: RawPackage[]): NodeDescriptor
  * templates will fall back to `usePackageNodeLifecycle` (generic code
  * editor) so the palette still renders.
  */
-function loadPackageLifecycleScripts(packages: RawPackage[]): Promise<void> {
+async function loadPackageLifecycleScripts(packages: RawPackage[]): Promise<void> {
   const base = process.env.BACKEND_URL ?? '';
   const targets = packages.filter((p) => p.lifecycleScript && p.dirName);
-  if (targets.length === 0) return Promise.resolve();
-  return Promise.all(
-    targets.map((p) => {
-      const url = `${base}/api/packages/${encodeURIComponent(p.dirName!)}/file/${p.lifecycleScript}`;
-      // De-dupe across re-renders: the same bundle should only load once
-      // even if refreshPackageRegistry runs again.
-      const existing = document.querySelector(`script[data-curio-package="${p.packageId}@${p.major}"]`);
-      if (existing) return Promise.resolve();
-      return new Promise<void>((resolve) => {
-        const s = document.createElement('script');
-        s.src = url;
-        s.async = false; // preserve load order across multiple packages
-        s.dataset.curioPackage = `${p.packageId}@${p.major}`;
-        s.onload = () => resolve();
-        s.onerror = (err) => {
-          console.warn(`[curio] failed to load lifecycle script for ${p.packageId}@${p.major}:`, err);
-          resolve(); // never reject — descriptor build still proceeds (with code-editor fallback)
-        };
-        document.head.appendChild(s);
-      });
-    }),
-  ).then(() => undefined);
+  if (targets.length === 0) return;
+  const token = getToken();
+  // Sequential, not Promise.all, so each bundle's top-level
+  // `registerLifecycle` side-effect runs before the next bundle's does —
+  // matches the deterministic order the old `<script async={false}>` chain
+  // guaranteed.
+  for (const p of targets) {
+    // De-dupe across re-renders: the same bundle should only load once
+    // even if refreshPackageRegistry runs again.
+    const existing = document.querySelector(`script[data-curio-package="${p.packageId}@${p.major}"]`);
+    if (existing) continue;
+    const url = `${base}/api/packages/${encodeURIComponent(p.dirName!)}/file/${p.lifecycleScript}`;
+    try {
+      // ``<script src>`` cannot carry an Authorization header, and the
+      // file-serving endpoint is under ``@require_auth``. Firefox's ORB
+      // then blocks the resulting 401 response and the bundle never
+      // evaluates. Fetch via ``fetch`` (with the Bearer token) and
+      // inject the body as inline script text instead.
+      const headers: Record<string, string> = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+      // ``cache: 'no-store'`` bypasses the HTTP cache entirely. Without it,
+      // a stale bundle (e.g. an earlier broken build still in the disk
+      // cache) gets re-evaluated forever — the file-serving endpoint
+      // doesn't set strong cache headers, so the browser uses its
+      // heuristic freshness window. Package bundles are small + fetched
+      // once per boot, so the cost of bypassing the cache is negligible
+      // next to the correctness win.
+      const res = await fetch(url, { headers, cache: 'no-store' });
+      if (!res.ok) {
+        console.warn(
+          `[curio] failed to load lifecycle script for ${p.packageId}@${p.major}: HTTP ${res.status}`,
+        );
+        continue;
+      }
+      const code = await res.text();
+      const s = document.createElement('script');
+      s.dataset.curioPackage = `${p.packageId}@${p.major}`;
+      s.textContent = code;
+      document.head.appendChild(s);
+    } catch (err) {
+      console.warn(`[curio] failed to load lifecycle script for ${p.packageId}@${p.major}:`, err);
+      // never throw — descriptor build still proceeds (with code-editor fallback)
+    }
+  }
 }
 
 export async function loadInstalledPackages(

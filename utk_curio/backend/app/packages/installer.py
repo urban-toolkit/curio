@@ -117,7 +117,7 @@ _ALLOWED_TOP_FILES: frozenset[str] = frozenset({
     "manifest.json", "README.md", "LICENSE", "LICENSE.md", "LICENSE.txt",
 })
 _ALLOWED_TOP_DIRS: frozenset[str] = frozenset({
-    "sources", "starters", "grammars", "widgets", "icons",
+    "sources", "starters", "grammars", "widgets", "icons", "scripts",
 })
 
 # A safe path segment matches the existing safe-paths charset, with the

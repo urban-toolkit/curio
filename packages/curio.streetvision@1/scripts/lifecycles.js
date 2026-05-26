@@ -59,7 +59,7 @@ function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
  * live in the user-facing docs example.
  */
 
-var API_BASE = "".concat(process.env.BACKEND_URL || '', "/api/streetvision");
+var API_BASE = "".concat( false || '', "/api/streetvision");
 // Cityscapes-flavored palette; kept in sync with the inference service's
 // overlay PNG palette so colors in the gallery match colors in the overlays.
 var CLASS_COLORS = {
@@ -1013,7 +1013,7 @@ function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == 
  * in ManeeshJupalle/curio (feat/street-vision-cv-analysis, #120).
  */
 
-var API_BASE = "".concat(process.env.BACKEND_URL || '', "/api/streetvision");
+var API_BASE = "".concat( false || '', "/api/streetvision");
 var CLASS_SUGGESTIONS = ['building', 'road', 'sidewalk', 'vegetation', 'pole', 'fence', 'wall', 'traffic sign'];
 var S = {
   root: {
@@ -1943,7 +1943,7 @@ function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
  * in ManeeshJupalle/curio (feat/street-vision-cv-analysis, #120).
  */
 
-var API_BASE = "".concat(process.env.BACKEND_URL || '', "/api/streetvision");
+var API_BASE = "".concat( false || '', "/api/streetvision");
 var S = {
   root: {
     padding: '12px 14px',
@@ -2536,9 +2536,11 @@ __webpack_require__.r(__webpack_exports__);
 /**
  * Entry point for the curio.streetvision@1 dynamic lifecycle bundle.
  *
- * Webpack builds this into `../lifecycles.js` (alongside `manifest.json` in
- * the package directory). When the frontend fetches the installed package
- * list and sees `manifest.lifecycleScript: "lifecycles.js"`, it loads this
+ * Webpack builds this into `../scripts/lifecycles.js` (under the package
+ * directory). The `scripts/` subdir is one of the archive validator's
+ * allowed top-level dirs, so the bundle survives the catalog install
+ * round-trip. When the frontend fetches the installed package list and
+ * sees `manifest.lifecycleScript: "scripts/lifecycles.js"`, it loads this
  * bundle via a `<script>` tag injection. The side-effect calls below
  * register each lifecycle against the global registry exposed on
  * `window.curio` at app boot.

@@ -250,13 +250,13 @@ The Street Vision package is bundled in-repo under [`packages/`](../packages/) b
 
 When you install a package that ships its own custom node UIs, Curio needs to find a way to load the lifecycle JavaScript without rebuilding the main app. The mechanism in place today:
 
-1. **The package directory contains both the manifest *and* a pre-built `lifecycles.js`.** For first-party packages (in-repo), `npm run build` produces that JS via [`webpack.packages.config.js`](../utk_curio/frontend/urban-workflows/webpack.packages.config.js). Third-party authors compile their own.
-2. **The manifest declares the bundle via `lifecycleScript: "lifecycles.js"`** (a top-level field, not per-template).
-3. **At app boot, the frontend's `loadInstalledPackages` injects a `<script src="/api/packages/<dirName>/file/lifecycles.js">` BEFORE building descriptors**. The bundle's top-level side-effect calls `window.curio.registerLifecycle(...)` for each lifecycle hook it ships. By the time `buildDescriptor` looks up `getLifecycle('street-view-fetcher')`, the key is registered.
+1. **The package directory contains both the manifest *and* a pre-built `scripts/lifecycles.js`.** For first-party packages (in-repo), `npm run build` produces that JS via [`webpack.packages.config.js`](../utk_curio/frontend/urban-workflows/webpack.packages.config.js). Third-party authors compile their own. The bundle lives under `scripts/` because that subdirectory is one of the archive validator's allowed top-level dirs (see [`installer.py::_ALLOWED_TOP_DIRS`](../utk_curio/backend/app/packages/installer.py)), so the bundle survives the catalog install round-trip.
+2. **The manifest declares the bundle via `lifecycleScript: "scripts/lifecycles.js"`** (a top-level field, not per-template). The path is relative to the package directory; any allowed-subdirectory location works.
+3. **At app boot, the frontend's `loadInstalledPackages` injects a `<script src="/api/packages/<dirName>/file/scripts/lifecycles.js">` BEFORE building descriptors**. The bundle's top-level side-effect calls `window.curio.registerLifecycle(...)` for each lifecycle hook it ships. By the time `buildDescriptor` looks up `getLifecycle('street-view-fetcher')`, the key is registered.
 4. **The lifecycle bundle externalises React, ReactDOM, ReactFlow, and `registerLifecycle`** so it shares Curio's instances at runtime. Curio's main bundle exposes them as `window.React`, `window.ReactDOM`, `window.ReactFlow`, `window.curio.registerLifecycle` ([`src/registry/index.ts`](../utk_curio/frontend/urban-workflows/src/registry/index.ts)). Without this, distinct React copies would break rules-of-hooks.
 5. **If the bundle fails to load** (network error, hash mismatch, parse error), the package's templates fall back to `usePackageNodeLifecycle` (a generic code-editor). The palette still renders; the user just gets the default UI instead of the package's custom UI.
 
-This means *adding a new package to a running Curio instance does not require rebuilding Curio* — the package's `lifecycles.js` is loaded dynamically. Authors bundle once; deployments stay decoupled.
+This means *adding a new package to a running Curio instance does not require rebuilding Curio* — the package's `scripts/lifecycles.js` is loaded dynamically. Authors bundle once; deployments stay decoupled.
 
 The lifecycles in `curio.builtin@1` (`code`, `vega`, `merge-flow`, `spatial-join`, `data-pool`, …) are an exception — they live in Curio's main bundle because they must be registered before *any* package registry exists.
 
@@ -395,23 +395,23 @@ The smallest possible package adds one template plus its lifecycle hook. Use thi
    ```json
    {
      "id": "<publisher>.<name>",
-     "lifecycleScript": "lifecycles.js",
+     "lifecycleScript": "scripts/lifecycles.js",
      ...
    }
    ```
-   `lifecycleScript` is a path relative to the package directory. Curio's package registry bootstrap injects a `<script src="/api/packages/<dirName>/file/lifecycles.js">` BEFORE building descriptors, so the lifecycle keys are registered by the time `getLifecycle('my-node')` looks them up.
+   `lifecycleScript` is a path relative to the package directory. The archive validator only accepts a small set of top-level dirs (see [`installer.py::_ALLOWED_TOP_DIRS`](../utk_curio/backend/app/packages/installer.py): `sources`, `starters`, `grammars`, `widgets`, `icons`, `scripts`); the bundle goes under `scripts/` so it survives the catalog round-trip. Curio's package registry bootstrap injects a `<script src="/api/packages/<dirName>/file/scripts/lifecycles.js">` BEFORE building descriptors, so the lifecycle keys are registered by the time `getLifecycle('my-node')` looks them up.
 
 6. **Wire up the build for first-party packages.** Add an entry to [`utk_curio/frontend/urban-workflows/webpack.packages.config.js`](../utk_curio/frontend/urban-workflows/webpack.packages.config.js)'s `PACKAGE_ENTRIES` list:
    ```js
    {
      id: "<publisher>.<name>@<major>",
      entry: path.resolve(__dirname, "../../../packages/<publisher>.<name>@<major>/sources/index.tsx"),
-     outputDir: path.resolve(__dirname, "../../../packages/<publisher>.<name>@<major>"),
+     outputDir: path.resolve(__dirname, "../../../packages/<publisher>.<name>@<major>/scripts"),
    },
    ```
-   Then `npm run build` (which now chains `npm run build:packages`) compiles `sources/index.tsx` into `<package-dir>/lifecycles.js` — UMD output, externalizing React / ReactDOM / ReactFlow so the bundle shares Curio's instances at runtime (essential for rules-of-hooks).
+   Then `npm run build` (which now chains `npm run build:packages`) compiles `sources/index.tsx` into `<package-dir>/scripts/lifecycles.js` — UMD output, externalizing React / ReactDOM / ReactFlow so the bundle shares Curio's instances at runtime (essential for rules-of-hooks).
 
-   **Third-party packages** ship their own pre-built `lifecycles.js` and don't need a row in this file — Curio loads any `lifecycleScript` it finds in an installed package regardless of who built it.
+   **Third-party packages** ship their own pre-built `scripts/lifecycles.js` and don't need a row in this file — Curio loads any `lifecycleScript` it finds in an installed package regardless of who built it.
 
 7. **(If a custom icon)** register it in [`registry/iconRegistry.ts`](../utk_curio/frontend/urban-workflows/src/registry/iconRegistry.ts):
    ```ts

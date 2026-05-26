@@ -13,7 +13,7 @@
   "description": "Street-level computer vision nodes: fetch Google Street View imagery, run HuggingFace segmentation/detection models on the panoramas, and inspect the results in a rich gallery. Requires the streetvision pip extras (torch, transformers, ultralytics) and a GOOGLE_MAPS_API_KEY in the backend environment.",
   "id": "curio.streetvision",
   "license": "MIT",
-  "lifecycleScript": "lifecycles.js",
+  "lifecycleScript": "scripts/lifecycles.js",
   "name": "Street Vision",
   "permissions": [],
   "publisher": "Curio",
