@@ -246,6 +246,20 @@ The Street Vision package is bundled in-repo under [`packages/`](../packages/) b
 - **Bundled-and-installable** → optional first-party packages like `curio.streetvision@1`, `ai.urbanlab.uhvi@1`. Visible in the catalog without a remote registry roundtrip.
 - **Remote** → publishing through Curio's catalog endpoint, for third-party packages. Same manifest schema.
 
+### 4.6 How lifecycle distribution works (and why)
+
+When you install a package that ships its own custom node UIs, Curio needs to find a way to load the lifecycle JavaScript without rebuilding the main app. The mechanism in place today:
+
+1. **The package directory contains both the manifest *and* a pre-built `lifecycles.js`.** For first-party packages (in-repo), `npm run build` produces that JS via [`webpack.packages.config.js`](../utk_curio/frontend/urban-workflows/webpack.packages.config.js). Third-party authors compile their own.
+2. **The manifest declares the bundle via `lifecycleScript: "lifecycles.js"`** (a top-level field, not per-template).
+3. **At app boot, the frontend's `loadInstalledPackages` injects a `<script src="/api/packages/<dirName>/file/lifecycles.js">` BEFORE building descriptors**. The bundle's top-level side-effect calls `window.curio.registerLifecycle(...)` for each lifecycle hook it ships. By the time `buildDescriptor` looks up `getLifecycle('street-view-fetcher')`, the key is registered.
+4. **The lifecycle bundle externalises React, ReactDOM, ReactFlow, and `registerLifecycle`** so it shares Curio's instances at runtime. Curio's main bundle exposes them as `window.React`, `window.ReactDOM`, `window.ReactFlow`, `window.curio.registerLifecycle` ([`src/registry/index.ts`](../utk_curio/frontend/urban-workflows/src/registry/index.ts)). Without this, distinct React copies would break rules-of-hooks.
+5. **If the bundle fails to load** (network error, hash mismatch, parse error), the package's templates fall back to `usePackageNodeLifecycle` (a generic code-editor). The palette still renders; the user just gets the default UI instead of the package's custom UI.
+
+This means *adding a new package to a running Curio instance does not require rebuilding Curio* — the package's `lifecycles.js` is loaded dynamically. Authors bundle once; deployments stay decoupled.
+
+The lifecycles in `curio.builtin@1` (`code`, `vega`, `merge-flow`, `spatial-join`, `data-pool`, …) are an exception — they live in Curio's main bundle because they must be registered before *any* package registry exists.
+
 ## 5. Recipe: add a Flask blueprint
 
 When your node needs server-side capabilities the sandbox can't provide (external APIs, long-running jobs, persistent state, native deps), add a blueprint under `utk_curio/backend/app/<feature>/`. The streetvision blueprint (§4.4) is the canonical example.
@@ -348,9 +362,9 @@ The smallest possible package adds one template plus its lifecycle hook. Use thi
    }
    ```
 
-3. **Write the lifecycle hook.** `utk_curio/frontend/urban-workflows/src/adapters/node/myNodeLifecycle.tsx` (or `.ts`). The hook must satisfy `NodeLifecycleHook` from [`registry/types.ts`](../utk_curio/frontend/urban-workflows/src/registry/types.ts):
+3. **Write the lifecycle hook inside the package directory.** Put it under `packages/<publisher>.<name>@<major>/sources/myNodeLifecycle.tsx`. The hook must satisfy `NodeLifecycleHook` from `registry/types`:
    ```tsx
-   import { NodeLifecycleHook } from '../../registry/types';
+   import { NodeLifecycleHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
    export const useMyNodeLifecycle: NodeLifecycleHook = (data, nodeState) => {
      // Read `data.input` from upstream, push downstream via `data.outputCallback`.
      // Return `{ contentComponent: <YourUI /> }` to render a body, or omit for
@@ -359,26 +373,54 @@ The smallest possible package adds one template plus its lifecycle hook. Use thi
      return { /* contentComponent: ..., dynamicHandles?, handlesOverride? */ };
    };
    ```
+   The import path back to Curio's `registry/types` resolves at build time only — types are erased at runtime, so the runtime bundle stays decoupled from Curio's internal source tree.
 
-4. **Export it from the adapter barrel** in [`adapters/node/index.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/index.ts):
-   ```ts
-   export { useMyNodeLifecycle } from './myNodeLifecycle';
+4. **Add a registration entry-point** at `packages/<publisher>.<name>@<major>/sources/index.tsx`:
+   ```tsx
+   import { useMyNodeLifecycle } from './myNodeLifecycle';
+
+   type CurioGlobal = { registerLifecycle: (key: string, hook: any) => void };
+   function registerAll(curio: CurioGlobal) {
+     curio.registerLifecycle('my-node', useMyNodeLifecycle);
+   }
+   if (typeof window !== 'undefined') {
+     const w = window as any;
+     if (w.curio?.registerLifecycle) registerAll(w.curio);
+     else (w.__curioPendingPackages__ ??= []).push(registerAll);
+   }
    ```
+   This file is what gets compiled into the package's runtime bundle. Its side-effect is calling `window.curio.registerLifecycle(...)` for each lifecycle the package ships. The pending-callbacks fallback handles the race where the bundle loads before Curio's main bundle finishes initialising the global registry.
 
-5. **Register the lifecycle key globally** in [`registry/builtinLifecycles.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinLifecycles.ts) so the manifest's `"lifecycle": "my-node"` resolves to your hook:
-   ```ts
-   import { useMyNodeLifecycle } from '../adapters/node';
-   registerLifecycle('my-node', useMyNodeLifecycle);
+5. **Declare the bundle in the manifest** so Curio knows to load it. Add at the top-level (not per-template):
+   ```json
+   {
+     "id": "<publisher>.<name>",
+     "lifecycleScript": "lifecycles.js",
+     ...
+   }
    ```
+   `lifecycleScript` is a path relative to the package directory. Curio's package registry bootstrap injects a `<script src="/api/packages/<dirName>/file/lifecycles.js">` BEFORE building descriptors, so the lifecycle keys are registered by the time `getLifecycle('my-node')` looks them up.
 
-6. **(If a custom icon)** register it in [`registry/iconRegistry.ts`](../utk_curio/frontend/urban-workflows/src/registry/iconRegistry.ts):
+6. **Wire up the build for first-party packages.** Add an entry to [`utk_curio/frontend/urban-workflows/webpack.packages.config.js`](../utk_curio/frontend/urban-workflows/webpack.packages.config.js)'s `PACKAGE_ENTRIES` list:
+   ```js
+   {
+     id: "<publisher>.<name>@<major>",
+     entry: path.resolve(__dirname, "../../../packages/<publisher>.<name>@<major>/sources/index.tsx"),
+     outputDir: path.resolve(__dirname, "../../../packages/<publisher>.<name>@<major>"),
+   },
+   ```
+   Then `npm run build` (which now chains `npm run build:packages`) compiles `sources/index.tsx` into `<package-dir>/lifecycles.js` — UMD output, externalizing React / ReactDOM / ReactFlow so the bundle shares Curio's instances at runtime (essential for rules-of-hooks).
+
+   **Third-party packages** ship their own pre-built `lifecycles.js` and don't need a row in this file — Curio loads any `lifecycleScript` it finds in an installed package regardless of who built it.
+
+7. **(If a custom icon)** register it in [`registry/iconRegistry.ts`](../utk_curio/frontend/urban-workflows/src/registry/iconRegistry.ts):
    ```ts
    import { faSomeIcon } from '@fortawesome/free-solid-svg-icons';
    registerIcon('fa-solid:some-icon', faSomeIcon);
    ```
    Unregistered icons silently fall back to `faCube` with a one-time console warning.
 
-7. **Compute `integrity.json`** — Curio's package loader validates every file's sha256 against this manifest. After every content change, regenerate it:
+8. **Compute `integrity.json`** — Curio's package loader validates every file's sha256 against this manifest. After every content change, regenerate it:
    ```bash
    cd packages/<publisher>.<name>@<major>/
    python -c "
@@ -391,9 +433,9 @@ The smallest possible package adds one template plus its lifecycle hook. Use thi
    ```
    Forget this step and the package fails to load with a hash-mismatch error.
 
-8. **Write `README.md`** in the package directory — the catalog UI shows it inline when users browse for packages to install. Cover install steps (pip extras), env vars (API keys), costs (paid APIs), and limitations.
+9. **Write `README.md`** in the package directory — the catalog UI shows it inline when users browse for packages to install. Cover install steps (pip extras), env vars (API keys), costs (paid APIs), and limitations.
 
-9. **Validate end-to-end** by booting Curio and checking that:
+10. **Validate end-to-end** by booting Curio and checking that:
    - The package shows up in `/catalog` for installation.
    - After install, your node appears in the palette under its declared `category`.
    - Dragging it to the canvas mounts your lifecycle hook (open dev tools → check for warnings).
