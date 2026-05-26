@@ -26,6 +26,7 @@ import { TrillGenerator } from "../TrillGenerator";
 import { projectsApi, OutputRef } from "../api/projectsApi";
 import {
     getCurrentProjectPackagesList,
+    setCurrentProject,
     setCurrentProjectPackages,
     subscribe as subscribeProjectPackages,
 } from "../registry/projectPackagesStore";
@@ -573,6 +574,18 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             setProjectName(detail.name);
             setProjectSavedAt(new Date());
             setProjectDirty(false);
+            // The backend merges the user's defaults (e.g. ``curio.builtin@1``)
+            // into the spec's lockfile on first save. We need to:
+            //  1. Pin the store's `projectId` to the freshly-created id —
+            //     ProjectLoader's ``clearCurrentProject`` ran on `/dataflow/new`
+            //     and left it ``undefined``, so the palette filter (which keys
+            //     off this) would otherwise stay in "no project" mode.
+            //  2. Sync the seeded packages so the drawer immediately treats
+            //     ``curio.builtin@1`` (and anything else in defaults) as
+            //     installed in the new project — without this the user sees
+            //     "Install" buttons for packages they "just got".
+            const seededPackages: string[] | undefined = detail?.spec?.dataflow?.packages;
+            setCurrentProject(detail.id, Array.isArray(seededPackages) ? seededPackages : []);
             return detail;
         }
     }, [projectId, projectName, packages, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode]);

@@ -87,13 +87,22 @@ import { ProjectLoader } from "./components/ProjectLoader";
 const MainCanvasRoute: React.FC = () => (
   <DialogProvider>
     <FlowProvider>
-      <StarterProvider>
-        <ProjectLoader>
-          <PackagePaletteProvider>
-            <MainCanvas />
-          </PackagePaletteProvider>
-        </ProjectLoader>
-      </StarterProvider>
+      {/* NodeCatalogDrawerProvider must sit INSIDE FlowProvider — the drawer
+          calls useFlowContext to auto-save unsaved dataflows on Install, and
+          a portal preserves React tree context, not DOM position. Outside
+          FlowProvider, useFlowContext returns no-op defaults and Install
+          silently does nothing. The drawer is only ever opened from canvas
+          components (UpMenu, PackagesPaletteDropdown), so scoping it here
+          doesn't reduce reach. */}
+      <NodeCatalogDrawerProvider>
+        <StarterProvider>
+          <ProjectLoader>
+            <PackagePaletteProvider>
+              <MainCanvas />
+            </PackagePaletteProvider>
+          </ProjectLoader>
+        </StarterProvider>
+      </NodeCatalogDrawerProvider>
     </FlowProvider>
   </DialogProvider>
 );
@@ -123,7 +132,6 @@ const App: React.FC = () => {
     <BrowserRouter basename={(process.env.PUBLIC_PATH || "/").replace(/\/$/, "") || undefined}>
       <BackendHealthBanner>
         <ToastProvider>
-            <NodeCatalogDrawerProvider>
             <ReactFlowProvider>
               <LLMProvider>
                 <ProvenanceProvider>
@@ -172,7 +180,6 @@ const App: React.FC = () => {
                 </ProvenanceProvider>
               </LLMProvider>
             </ReactFlowProvider>
-            </NodeCatalogDrawerProvider>
         </ToastProvider>
       </BackendHealthBanner>
     </BrowserRouter>

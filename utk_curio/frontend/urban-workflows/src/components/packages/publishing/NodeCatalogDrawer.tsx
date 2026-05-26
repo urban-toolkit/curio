@@ -39,9 +39,9 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
 
   // The drawer is *per-project*: Install/Uninstall write to the current
   // project's lockfile (see docs/CATALOG.md). When projectId is null
-  // (user landed on /dataflow/new and hasn't saved yet), the install
-  // affordances are disabled — see `unsavedBanner` below.
-  const { projectId, packages: projectPackages } = useFlowContext();
+  // (user landed on /dataflow/new and hasn't saved yet), Install auto-saves
+  // the dataflow first so the user isn't forced to interrupt their flow.
+  const { projectId, packages: projectPackages, saveCurrentProject } = useFlowContext();
 
   const [catalog, setCatalog] = useState<PackagePayload[]>([]);
   const [installed, setInstalled] = useState<PackagePayload[]>([]);
@@ -57,6 +57,11 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   const [conflictReport, setConflictReport] = useState<ResolveConflict[] | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const installedByDirRef = useRef<Map<string, PackagePayload>>(new Map());
+  // When Install auto-saves a brand-new dataflow, the React state update
+  // for `projectId` doesn't always make it into `confirmCatalogInstall`'s
+  // closure before the user clicks Install on the dialog. Stash the freshly
+  // created id here so the confirm handler has a synchronous fallback.
+  const savedProjectIdRef = useRef<string | null>(null);
 
   /** Pulls the friendliest message off an unknown error and surfaces it as a banner. */
   const reportActionError = useCallback((label: string, err: unknown) => {
@@ -85,18 +90,37 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   const catalogPublishedDirs = useMemo(() => new Set(catalog.map((p) => p.dirName)), [catalog]);
 
   const reload = useCallback(async () => {
-    const [cat, mine, cap] = await Promise.all([
+    // The drawer is the canonical "what's installed in THIS project" UI, so
+    // also pull the project's lockfile fresh from the backend on every
+    // reload — otherwise we trust React state (`useFlowContext().packages`)
+    // which can drift from the backend across navigation paths that don't
+    // remount ProjectLoader (e.g. installing via /catalog and coming back).
+    // The pull is best-effort: 404 / network error just leaves the existing
+    // store untouched.
+    const promises: [
+      ReturnType<typeof packagesApi.catalog>,
+      ReturnType<typeof packagesApi.listInstalled>,
+      ReturnType<typeof packagesApi.factoryCapabilities>,
+      Promise<{ packages: string[] } | null>,
+    ] = [
       packagesApi.catalog(),
       packagesApi.listInstalled(),
       packagesApi.factoryCapabilities(),
-    ]);
+      projectId
+        ? packagesApi.getProjectPackages(projectId).catch(() => null)
+        : Promise.resolve(null),
+    ];
+    const [cat, mine, cap, projLock] = await Promise.all(promises);
     setCatalog(cat.packages.map((p) => ({ ...p, installed: userStoreDirs.has(p.dirName) })));
     setInstalled(mine.packages);
     installedByDirRef.current = new Map(mine.packages.map((p) => [p.dirName, p]));
     setCatalogPublishAllowed(cap.catalogPublish);
+    if (projLock && Array.isArray(projLock.packages)) {
+      setCurrentProjectPackages(projLock.packages);
+    }
   // userStoreDirs intentionally omitted — it's derived from `installed` which we set here.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     void reload().catch((err) => {
@@ -153,12 +177,20 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
 
   const onInstall = useCallback(
     async (pkg: PackagePayload) => {
+      // Auto-save on first install so the user doesn't hit a dead-end
+      // banner. saveCurrentProject throws for guests and shared viewers —
+      // surface that as an actionable error rather than letting it fail
+      // silently inside the install flow below.
       if (!projectId) {
-        reportActionError(
-          "Save the dataflow first",
-          new Error("install requires a saved project"),
-        );
-        return;
+        try {
+          const detail = await saveCurrentProject();
+          savedProjectIdRef.current = (detail as { id?: string } | undefined)?.id ?? null;
+        } catch (err) {
+          reportActionError("Couldn't save dataflow before install", err);
+          return;
+        }
+      } else {
+        savedProjectIdRef.current = projectId;
       }
       setInstallCandidate(pkg);
       try {
@@ -177,16 +209,17 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
         }
       }
     },
-    [installed, projectId, reportActionError],
+    [installed, projectId, reportActionError, saveCurrentProject],
   );
 
   const confirmCatalogInstall = useCallback(async () => {
-    if (!installCandidate || !projectId) return;
+    const effectiveProjectId = projectId ?? savedProjectIdRef.current;
+    if (!installCandidate || !effectiveProjectId) return;
     setBusy(true);
     setActionError(null);
     try {
       const result = await packagesApi.installToProject(
-        projectId, installCandidate.dirName,
+        effectiveProjectId, installCandidate.dirName,
       );
       // Keep the lockfile store in sync — palette filter reads this.
       setCurrentProjectPackages(result.packages);
@@ -307,7 +340,7 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
   const unsavedBanner = !projectId ? (
     <div className={styles.errorBanner} role="status">
       <span className={styles.errorBannerText}>
-        Save this dataflow first to install packages into it.
+        This dataflow isn't saved yet — installing will save it first.
       </span>
     </div>
   ) : null;
@@ -391,8 +424,15 @@ export const NodeCatalogDrawer: React.FC<NodeCatalogDrawerProps> = ({
                     {filteredCatalog.map((pkg) => {
                       // "Installed" in the drawer means "in this project's
                       // lockfile" — the user-store presence is irrelevant
-                      // for the per-project surface.
-                      const isInstalled = projectInstalledDirs.has(pkg.dirName);
+                      // for the per-project surface. The one exception is
+                      // ``curio.builtin@*``: it ships with every Curio
+                      // instance and can't be uninstalled, so it's always
+                      // "installed" regardless of what the lockfile says
+                      // (which matters for unsaved /dataflow/new dataflows
+                      // and for legacy projects saved before the lockfile
+                      // contract included it).
+                      const isBuiltin = pkg.dirName.startsWith("curio.builtin@");
+                      const isInstalled = isBuiltin || projectInstalledDirs.has(pkg.dirName);
                       const catalogRow = catalogByDir.get(pkg.dirName);
                       const userStoreRow = userStoreDirs.has(pkg.dirName)
                         ? installed.find((r) => r.dirName === pkg.dirName)

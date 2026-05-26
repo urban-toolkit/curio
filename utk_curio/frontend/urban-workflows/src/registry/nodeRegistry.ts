@@ -101,7 +101,12 @@ export function subscribeToRegistry(listener: () => void): () => void {
 }
 
 export function registerNode(descriptor: NodeDescriptor): void {
-  if (registry.has(descriptor.id)) {
+  const prev = registry.get(descriptor.id);
+  // `clearPackageNodes` preserves `curio.builtin@1` descriptors across refreshes
+  // (see comment there), so every `refreshPackageRegistry` round re-registers
+  // the same builtin templates on top of themselves. That's intentional and
+  // not worth warning about — only flag when the descriptor genuinely changes.
+  if (prev && prev.package?.version !== descriptor.package?.version) {
     console.warn(`NodeDescriptor for ${descriptor.id} is being overwritten`);
   }
   registry.set(descriptor.id, descriptor);
