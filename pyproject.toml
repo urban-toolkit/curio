@@ -37,7 +37,22 @@ dependencies = [
   "pytest-playwright==0.7.2",
   "pytest-flask==1.3.0",
   "allure-pytest==2.16.0",
-  "black==26.3.1"
+  "black==26.3.1",
+  "shapely>=2.0"
+]
+
+[project.optional-dependencies]
+# Installs the heavy ML stack needed by the Street Vision / CV Inference
+# nodes (curio.streetvision@1). Endpoints in
+# utk_curio/backend/app/streetvision/services/inference.py lazy-import these
+# and return HTTP 503 with a "pip install curio[streetvision]" hint when
+# they're missing, so the base install stays light for users who don't
+# need on-device CV inference.
+streetvision = [
+  "torch>=2.0",
+  "transformers>=4.30",
+  "ultralytics>=8.0",
+  "huggingface_hub>=0.20",
 ]
 
 [project.scripts]
