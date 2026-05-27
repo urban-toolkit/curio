@@ -11,6 +11,7 @@ import { readCanvasTemplateConfig, resolveEditorTabFlags } from '../utils/canvas
 import { useNodeState } from '../hook/useNodeState';
 import { HandleDef, TIconCardinality } from '../registry/types';
 import { useFlowContext } from '../providers/FlowProvider';
+import { useCollab } from '../providers/CollaborationProvider';
 import './Node.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
@@ -70,8 +71,29 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const disablePlay = lifecycle.disablePlay ?? adapter.container.disablePlay ?? false;
 
   const { signalNodeExecDone, dashboardOn } = useFlowContext();
+  const collab = useCollab();
   const lastTriggerExecRef = useRef<number>(data.triggerExec ?? 0);
   const outputCodeRef = useRef(output?.code);
+
+  // Lock-on-focus / unlock-on-blur. Safe to call always: useCollab()
+  // returns no-op handlers when collaboration is disabled.
+  const handleNodeFocus = () => {
+    if (collab.enabled) collab.lockNode(data.nodeId);
+  };
+  const handleNodeBlur = (e: React.FocusEvent<HTMLDivElement>) => {
+    if (!collab.enabled) return;
+    // Only release when focus leaves the entire node subtree — clicks
+    // between buttons / handles inside the node shouldn't toggle the lock.
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    collab.unlockNode(data.nodeId);
+  };
+
+  // Peer lock detection. ``self`` lock is suppressed so the user sees no
+  // chip over their own node.
+  const lockInfo = collab.lockedNodes[data.nodeId];
+  const lockedByOther = Boolean(
+    lockInfo && (collab.currentUserId == null || lockInfo.user_id !== collab.currentUserId),
+  );
 
   useEffect(() => {
     const current = data.triggerExec ?? 0;
@@ -83,12 +105,20 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     }
     setOutputCallback({ code: "exec", content: "" });
     sendCode(nodeState.code);
+    if (collab.enabled) collab.signalExecDisplay(data.nodeId);
   }, [data.triggerExec]);
 
   useEffect(() => {
     outputCodeRef.current = output?.code;
     if (output?.code === "error" || output?.code === "success") {
       signalNodeExecDone(data.nodeId);
+      if (collab.enabled && output) {
+        collab.broadcastOutputProduced({
+          nodeId: data.nodeId,
+          nodeType: data.nodeType,
+          output: output as { code: string; content: unknown },
+        });
+      }
     }
   }, [output?.code]);
 
@@ -112,7 +142,40 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const editorTabs = resolveEditorTabFlags(descriptor, kindConfig);
 
   return (
-    <>
+    // ``display: contents`` keeps the wrapper invisible to ReactFlow's
+    // layout (handle positioning relies on ``.react-flow__node`` as the
+    // anchor) while still catching React's bubbled focus/blur events.
+    <div
+      onFocus={handleNodeFocus}
+      onBlur={handleNodeBlur}
+      style={{ display: "contents" }}
+    >
+      {lockedByOther && (
+        <div
+          className="collab-lock-chip"
+          title={`Editing: ${lockInfo?.name || lockInfo?.username}`}
+          style={{
+            position: "absolute",
+            top: -8,
+            right: -8,
+            zIndex: 10,
+            background: "#ff9800",
+            color: "#fff",
+            borderRadius: "50%",
+            width: 22,
+            height: 22,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 10,
+            fontWeight: 700,
+            boxShadow: "0 1px 3px rgba(0,0,0,0.35)",
+            pointerEvents: "none",
+          }}
+        >
+          {(lockInfo?.username || "?").slice(0, 2).toUpperCase()}
+        </div>
+      )}
       {!dashboardOn && allHandles.map((h: HandleDef) => {
         const connectable =
           h.isConnectableOverride
@@ -179,7 +242,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
             applyGrammar={lifecycle.applyGrammar}
             customWidgetsCallback={lifecycle.customWidgetsCallback}
             defaultValue={defaultValue}
-            readOnly={readOnly}
+            readOnly={readOnly || lockedByOther}
             floatCode={nodeState.setCode}
             contentComponent={lifecycle.contentComponent}
           />
@@ -196,7 +259,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
 
         {!dashboardOn && adapter.outputIconType && <OutputIcon type={adapter.outputIconType as TIconCardinality} />}
       </NodeContainer>
-    </>
+    </div>
   );
 });
 

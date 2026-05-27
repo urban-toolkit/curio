@@ -65,6 +65,7 @@ export { refreshPackageRegistry };
 void refreshPackageRegistry();
 
 import FlowProvider from "./providers/FlowProvider";
+import { CollaborationProvider } from "./providers/CollaborationProvider";
 import StarterProvider from "./providers/StarterProvider";
 import UserProvider, { useUserContext } from "./providers/UserProvider";
 import DialogProvider from "./providers/DialogProvider";
@@ -85,25 +86,32 @@ import CatalogPage from "./pages/catalog/CatalogPage";
 import { ProjectLoader } from "./components/ProjectLoader";
 
 const MainCanvasRoute: React.FC = () => (
+  // CollaborationProvider must wrap FlowProvider: FlowProvider's mutation
+  // handlers call ``useCollab()`` to broadcast graph changes, and a
+  // context only reaches *descendants*. Putting it on the inside would
+  // hand FlowProvider the no-op default value and silently drop every
+  // broadcast.
   <DialogProvider>
-    <FlowProvider>
-      {/* NodeCatalogDrawerProvider must sit INSIDE FlowProvider — the drawer
-          calls useFlowContext to auto-save unsaved dataflows on Install, and
-          a portal preserves React tree context, not DOM position. Outside
-          FlowProvider, useFlowContext returns no-op defaults and Install
-          silently does nothing. The drawer is only ever opened from canvas
-          components (UpMenu, PackagesPaletteDropdown), so scoping it here
-          doesn't reduce reach. */}
-      <NodeCatalogDrawerProvider>
-        <StarterProvider>
-          <ProjectLoader>
-            <PackagePaletteProvider>
-              <MainCanvas />
-            </PackagePaletteProvider>
-          </ProjectLoader>
-        </StarterProvider>
-      </NodeCatalogDrawerProvider>
-    </FlowProvider>
+    <CollaborationProvider>
+      <FlowProvider>
+        {/* NodeCatalogDrawerProvider must sit INSIDE FlowProvider — the drawer
+            calls useFlowContext to auto-save unsaved dataflows on Install, and
+            a portal preserves React tree context, not DOM position. Outside
+            FlowProvider, useFlowContext returns no-op defaults and Install
+            silently does nothing. The drawer is only ever opened from canvas
+            components (UpMenu, PackagesPaletteDropdown), so scoping it here
+            doesn't reduce reach. */}
+        <NodeCatalogDrawerProvider>
+          <StarterProvider>
+            <ProjectLoader>
+              <PackagePaletteProvider>
+                <MainCanvas />
+              </PackagePaletteProvider>
+            </ProjectLoader>
+          </StarterProvider>
+        </NodeCatalogDrawerProvider>
+      </FlowProvider>
+    </CollaborationProvider>
   </DialogProvider>
 );
 

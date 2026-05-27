@@ -150,6 +150,28 @@ def _ensure_user_store_install(user_key: str, dir_name: str) -> None:
         ) from exc
 
 
+def ensure_user_packages_initialized(user_key: str) -> None:
+    """Idempotently seed the per-user package store with ``curio.builtin``.
+
+    The startup seeder in ``app/__init__.py`` only runs for the shared
+    ``guest`` user, so the first time a real authenticated user touches the
+    package system, their store is empty and the palette would be missing
+    even the built-in nodes. Call this at the project-entry boundaries
+    (save_project, load_project) so the user always has builtin available
+    by the time the canvas mounts.
+
+    Safe to call repeatedly: :func:`seed_dev_packageages` consults the
+    per-user marker file and only re-seeds when fixtures have actually
+    moved.
+    """
+    from utk_curio.backend.app.packages.seed import seed_dev_packageages
+
+    try:
+        seed_dev_packageages(user_key=user_key)
+    except Exception:  # noqa: BLE001 — seeding must never block a project request
+        log.warning("Builtin seed failed for user_key=%s", user_key, exc_info=True)
+
+
 # ---------------------------------------------------------------------------
 # Project lockfile read/write
 # ---------------------------------------------------------------------------

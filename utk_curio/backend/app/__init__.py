@@ -110,4 +110,17 @@ def create_app(config_class=config_class):
     from utk_curio.backend.app.projects.tasks import start_cleanup_scheduler
     start_cleanup_scheduler(app)
 
+    # Real-time collaboration: opt-in via ENABLE_COLLAB. The collaboration
+    # package and flask-socketio are imported only inside this branch so the
+    # default (flag off) deployment never loads them.
+    from utk_curio.backend.config import ENABLE_COLLAB, COLLAB_NAMESPACE
+    if ENABLE_COLLAB:
+        from utk_curio.backend.extensions import init_socketio
+        sio = init_socketio(app)
+        from utk_curio.backend.app.collaboration import events as _collab_events
+        _collab_events.register(sio)
+        app.logger.info(
+            "Real-time collaboration ENABLED on namespace=%s", COLLAB_NAMESPACE,
+        )
+
     return app

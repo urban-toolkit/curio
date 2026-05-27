@@ -58,13 +58,28 @@ def health():
     return 'OK', 200
 
 if __name__ == '__main__':
-    app.run(
-        host=os.getenv('FLASK_BACKEND_HOST', '127.0.0.1'),
-        port=int(os.getenv('FLASK_BACKEND_PORT', 5002)),
-        threaded=True,
-        debug=True,
-        use_reloader=os.getenv('FLASK_USE_RELOADER', '1') != '0',
-        exclude_patterns=RELOADER_EXCLUDE_PATTERNS,
-        reloader_type=DEFAULT_RELOADER_TYPE,
-    )
+    from utk_curio.backend.config import ENABLE_COLLAB
+    if ENABLE_COLLAB:
+        # SocketIO requires its own .run() so the engineio server can attach.
+        # The Werkzeug dev server is not officially supported but is fine for
+        # local dev; allow_unsafe_werkzeug=True suppresses the refusal.
+        from utk_curio.backend.extensions import socketio
+        socketio.run(
+            app,
+            host=os.getenv('FLASK_BACKEND_HOST', '127.0.0.1'),
+            port=int(os.getenv('FLASK_BACKEND_PORT', 5002)),
+            debug=True,
+            use_reloader=os.getenv('FLASK_USE_RELOADER', '1') != '0',
+            allow_unsafe_werkzeug=True,
+        )
+    else:
+        app.run(
+            host=os.getenv('FLASK_BACKEND_HOST', '127.0.0.1'),
+            port=int(os.getenv('FLASK_BACKEND_PORT', 5002)),
+            threaded=True,
+            debug=True,
+            use_reloader=os.getenv('FLASK_USE_RELOADER', '1') != '0',
+            exclude_patterns=RELOADER_EXCLUDE_PATTERNS,
+            reloader_type=DEFAULT_RELOADER_TYPE,
+        )
 

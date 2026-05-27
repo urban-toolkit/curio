@@ -14,6 +14,7 @@ import ReactFlow, {
 import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
 
 import { useFlowContext } from "../providers/FlowProvider";
+import { useCollab } from "../providers/CollaborationProvider";
 import { usePackagePalette } from "../providers/PackagePaletteContext";
 import { useToastContext } from "../providers/ToastProvider";
 import { packageKeyFromCanonicalNodeType } from "../registry/packageKeys";
@@ -37,6 +38,7 @@ import html2canvas from "html2canvas";
 import FloatingPanel from "./FloatingPanel";
 import WorkflowGoal from "./menus/top/WorkflowGoal";
 import { DashboardPanel } from "./DashboardPanel";
+import { CollaborationSidePanel } from "./collab/CollaborationSidePanel";
 
 const CANVAS_EXTENT: [[number, number], [number, number]] = [[-2000, -2000], [6000, 6000]];
 
@@ -55,6 +57,9 @@ export function MainCanvas() {
         onNodesDelete,
         markDirty,
     } = useFlowContext();
+    const collab = useCollab();
+    const collabRef = useRef(collab);
+    collabRef.current = collab;
 
     const isDraggingRef = useRef(false);
     const startPosRef = useRef<any>(null);
@@ -141,7 +146,13 @@ export function MainCanvas() {
         viewerMode,
     } = useFlowContext();
 
-    const isSharedView = viewerMode === "shared";
+    // When real-time collaboration is on, a peer opening the owner's URL
+    // lands in ``viewerMode === "shared"`` (loadSharedProject was the only
+    // way to bypass the owner-only /api/projects/<id> 404). For collab to
+    // be useful peers must be able to *edit*; their edits flow over the
+    // socket to the owner, who persists. Without this gate, peers see the
+    // canvas as read-only and the lock/proposal flow does nothing.
+    const isSharedView = viewerMode === "shared" && !collab.enabled;
 
     // Refs used inside callbacks so the callbacks don't need to list them as deps
     const selectedEdgeIdRef = useRef<string>("");
@@ -310,6 +321,16 @@ export function MainCanvas() {
                     updatePositionWorkflow(change.id, change);
                 }
                 dirty = true;
+                // Broadcast the new position to peers. Dashboard positions
+                // are intentionally local-only — they're a per-user view of
+                // the same nodes — so only the canvas-workflow position is
+                // synced.
+                if (!dashboardOnRef.current) {
+                    collabRef.current.broadcastNodeUpdated({
+                        nodeId: change.id,
+                        patch: { position: change.position },
+                    });
+                }
             }
 
             if (allowed) allowedChanges.push(change);
@@ -447,6 +468,7 @@ export function MainCanvas() {
                 dashboardOn={dashboardOn}
                 setAIMode={setAIMode}
             />}
+            {!dashboardOn && <CollaborationSidePanel />}
 
             {dashboardOn && <DashboardPanel />}
             <ReactFlow

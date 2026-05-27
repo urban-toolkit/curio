@@ -1,7 +1,7 @@
 """Smoke tests for the committed ``packages/curio.builtin@1`` catalog entry.
 
 The built-in package is auto-installed for every user and provides the 14
-default node kinds. A regression in its manifest would silently strand
+default node templates. A regression in its manifest would silently strand
 users with an empty palette, so we exercise the load + payload-serialize
 paths against the on-disk artefact.
 """
@@ -16,7 +16,7 @@ from utk_curio.backend.app.packages.manifest import load_packageage_manifest
 from utk_curio.backend.app.packages.routes import _catalog_root, _manifest_to_payload
 
 
-EXPECTED_KIND_IDS: frozenset[str] = frozenset({
+EXPECTED_TEMPLATE_IDS: frozenset[str] = frozenset({
     "data-loading",
     "data-export",
     "data-transformation",
@@ -56,28 +56,28 @@ def test_builtin_packageage_manifest_loads(builtin_packageage_dir: Path):
     manifest = load_packageage_manifest(builtin_packageage_dir)
     assert manifest.package_id == "curio.builtin"
     assert manifest.major == 1
-    kind_ids = {k.template_id for k in manifest.templates}
-    assert kind_ids == EXPECTED_KIND_IDS
+    template_ids = {t.template_id for t in manifest.templates}
+    assert template_ids == EXPECTED_TEMPLATE_IDS
 
 
-def test_builtin_packageage_every_kind_has_lifecycle_and_icon(builtin_packageage_dir: Path):
+def test_builtin_packageage_every_template_has_lifecycle_and_icon(builtin_packageage_dir: Path):
     manifest = load_packageage_manifest(builtin_packageage_dir)
-    for kind in manifest.templates:
-        assert kind.lifecycle in EXPECTED_LIFECYCLES, (
-            f"kind {kind.template_id} declares unknown lifecycle {kind.lifecycle!r}"
+    for template in manifest.templates:
+        assert template.lifecycle in EXPECTED_LIFECYCLES, (
+            f"template {template.template_id} declares unknown lifecycle {template.lifecycle!r}"
         )
-        assert kind.icon_ref, f"kind {kind.template_id} is missing iconRef"
-        assert kind.palette_order is not None, (
-            f"kind {kind.template_id} must declare paletteOrder"
+        assert template.icon_ref, f"template {template.template_id} is missing iconRef"
+        assert template.palette_order is not None, (
+            f"template {template.template_id} must declare paletteOrder"
         )
 
 
 def test_builtin_packageage_ships_no_sources(builtin_packageage_dir: Path):
-    """Built-in kinds are structural shells — no starter code files."""
+    """Built-in templates are structural shells — no starter code files."""
     manifest = load_packageage_manifest(builtin_packageage_dir)
-    for kind in manifest.templates:
-        assert kind.source is None, (
-            f"built-in kind {kind.template_id} must not declare a source"
+    for template in manifest.templates:
+        assert template.source is None, (
+            f"built-in template {template.template_id} must not declare a source"
         )
     assert not (builtin_packageage_dir / "sources").exists(), (
         "built-in package must not ship a sources/ directory"
@@ -104,22 +104,22 @@ def test_every_catalog_packageage_validates_against_schema():
 
 
 def test_builtin_packageage_payload_passthrough(builtin_packageage_dir: Path):
-    """The wire payload exposes the new manifest fields per kind."""
+    """The wire payload exposes the new manifest fields per template."""
     manifest = load_packageage_manifest(builtin_packageage_dir)
     payload = _manifest_to_payload(manifest)
-    kinds_by_id = {k["templateId"]: k for k in payload["templates"]}
-    vega = kinds_by_id["vis-vega"]
+    templates_by_id = {t["templateId"]: t for t in payload["templates"]}
+    vega = templates_by_id["vis-vega"]
     assert vega["lifecycle"] == "vega"
     assert vega["iconRef"] == "fa-solid:chart-line"
     assert vega["badge"] == "VEGA"
     assert vega["grammarId"] == "vega-lite"
     assert vega["source"] is None
 
-    autk_map = kinds_by_id["autk-map"]
+    autk_map = templates_by_id["autk-map"]
     assert autk_map["lifecycle"] == "autk-map"
     assert autk_map["badge"] == "AUTK"
 
-    data_loading = kinds_by_id["data-loading"]
+    data_loading = templates_by_id["data-loading"]
     assert data_loading["lifecycle"] == "code"
     assert data_loading["iconRef"] == "fa-solid:upload"
     assert data_loading["badge"] is None

@@ -19,6 +19,13 @@ altair>=6.1.0
 tqdm>=4.67.3
 pygments>=2.20.0
 
+# Real-time collaboration (opt-in via --collab; imported lazily so installs
+# without ENABLE_COLLAB=1 do not pay for the import).
+# ------------------------------------------------------------------------------
+flask-socketio==5.6.0
+python-socketio==5.16.0
+python-engineio==4.13.2
+
 # Testing
 # ------------------------------------------------------------------------------
 pytest==9.0.3

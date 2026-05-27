@@ -70,6 +70,7 @@ export interface PublicConfig {
   google_client_id: string;
   curio_env: string;
   shared_guest_username: string;
+  enable_collab: boolean;
 }
 
 export const authApi = {

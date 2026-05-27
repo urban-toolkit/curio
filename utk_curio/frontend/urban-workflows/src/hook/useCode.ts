@@ -10,8 +10,12 @@ import { TrillGenerator } from "../TrillGenerator";
 import { usePosition } from "./usePosition";
 import { AccessLevelType, EdgeType, CURIO_UNIVERSAL_NODE_TYPE } from "../constants";
 
-const pythonInterpreter = new PythonInterpreter();
-const jsInterpreter = new JavaScriptInterpreter();
+// Module-level singletons so every node shares the same interpreter
+// connection pool. Exported so collaboration's remote-graph handler can
+// re-attach them to nodes that arrive over the socket (which strips
+// non-serializable fields).
+export const pythonInterpreter = new PythonInterpreter();
+export const jsInterpreter = new JavaScriptInterpreter();
 
 type CreateCodeNodeOptions = {
     nodeId?: string;
