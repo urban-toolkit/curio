@@ -129,6 +129,9 @@ fi
 echo "==> Installing Python dependencies..."
 pip install -r "$REPO_ROOT/requirements.txt" -q
 
+echo "==> Installing manifest python deps via curio setup..."
+PYTHONPATH="$REPO_ROOT" python "$REPO_ROOT/curio.py" setup
+
 if [[ $USE_EXISTING -eq 0 ]]; then
   echo "==> Installing frontend npm dependencies..."
   (cd "$REPO_ROOT/utk_curio/frontend/urban-workflows" && npm install -q)

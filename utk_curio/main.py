@@ -751,8 +751,13 @@ def main():
     parser.add_argument(
         "command",
         nargs="?",
-        choices=["start"],
-        help="Command to execute (start)",
+        choices=["start", "setup"],
+        help=(
+            "Command to execute "
+            "(start: launch the servers — automatically runs setup first; "
+            "setup: install framework + manifest python deps for this "
+            "interpreter and exit, no servers)"
+        ),
     )
     parser.add_argument(
         "server", nargs="?", default="all", choices=["all", "frontend", "backend", "sandbox"],
@@ -885,6 +890,11 @@ def main():
             log_error("coverage only runs backend tests; use: curio coverage  or  curio coverage backend")
             sys.exit(1)
         run_backend_coverage()
+
+    if args.command == "setup":
+        install_framework_requirements()
+        install_manifest_dependencies()
+        sys.exit(0)
 
     if args.command == "start":
         # Mirror the ``shutil.which("npm")`` check at the top of
