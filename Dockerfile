@@ -28,6 +28,7 @@ RUN pip install --upgrade pip setuptools wheel && \
 FROM node:24-bookworm-slim AS frontend_builder
 WORKDIR /src
 COPY utk_curio/frontend/ /src/utk_curio/frontend/
+COPY packages/ /src/packages/
 
 # BACKEND_URL and PUBLIC_PATH are baked into the JS bundle at build time.
 # Passed in via docker compose build args (see docker-compose.yml).
