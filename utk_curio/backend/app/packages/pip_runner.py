@@ -72,7 +72,7 @@ def _spec_argv(name: str, spec: str) -> str:
     - Empty spec — install latest.
     """
     spec = (spec or "").strip()
-    if not spec:
+    if not spec or spec == "*":
         return name
     if spec[0] == "^":
         # ``^X.Y`` ≈ ``~=X.Y``: same major (and same minor for 0.x), any

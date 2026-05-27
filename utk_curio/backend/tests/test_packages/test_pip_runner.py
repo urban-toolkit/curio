@@ -44,6 +44,11 @@ def test_spec_argv_bare_version_becomes_exact_match():
 def test_spec_argv_empty_spec_is_bare_name():
     assert _spec_argv("ultralytics", "") == "ultralytics"
     assert _spec_argv("ultralytics", "   ") == "ultralytics"
+    # `_format_range` round-trips an unbounded range to "*", so the
+    # resolver hands `*` to `_spec_argv` whenever a manifest leaves a
+    # version field empty. Treat it the same as the empty spec — pip
+    # rejects bare "numpy==*" as invalid syntax.
+    assert _spec_argv("numpy", "*") == "numpy"
 
 
 def test_install_empty_deps_is_noop():
