@@ -31,12 +31,13 @@ EXPECTED_KIND_IDS: frozenset[str] = frozenset({
     "autk-compute",
     "autk-db",
     "merge-flow",
+    "spatial-join",
 })
 
 EXPECTED_LIFECYCLES: frozenset[str] = frozenset({
     "code", "data-export", "data-pool", "data-summary", "vega",
     "simple-vis", "autk-plot", "autk-map", "autk-compute", "autk-db",
-    "merge-flow",
+    "merge-flow", "spatial-join",
 })
 
 

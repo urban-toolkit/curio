@@ -25,6 +25,15 @@ app = create_app()
 RELOADER_EXCLUDE_PATTERNS = [
     '*.duckdb', '*.duckdb.wal', '*.duckdb-shm', '*.duckdb-wal',
     '*/.curio/*', '*/.curio', '*starters*',
+    # Synchronous catalog installs run ``pip install`` from inside the
+    # backend (see ``packages/pip_runner.py``); pip writes ~thousands of
+    # files into ``site-packages/`` for a heavy package like ``torch``,
+    # which would otherwise trip the stat reloader mid-install and SIGTERM
+    # the worker, dropping the in-flight install request. The sandbox
+    # shares this exclude list (sandbox/server.py imports it) so its
+    # equivalent ``/install`` endpoint is protected the same way.
+    '*/site-packages/*', '*\\site-packages\\*',
+    '*/site-packages', '*\\site-packages',
 ]
 
 DEFAULT_RELOADER_TYPE = os.getenv('FLASK_RELOADER_TYPE', 'stat')

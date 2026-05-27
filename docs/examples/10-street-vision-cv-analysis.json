@@ -1,0 +1,166 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "5988175e-84aa-4964-84de-aba7d55cf122",
+        "type": "curio.streetvision/street-view-fetcher",
+        "x": 0,
+        "y": 0,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Reproduce the Chicago Greenery case study: type 'Lincoln Park, Chicago' (bbox -87.66,41.91 → -87.62,41.94), set limit 20 (or up to 100 to match the paper), Verify Coverage, then Fetch Images.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "4067fb98-3ed5-497a-97a5-41a98ce1085b",
+        "type": "curio.streetvision/hf-cv-inference",
+        "x": 600,
+        "y": 0,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Recommended model: nvidia/segformer-b2-finetuned-cityscapes-1024-1024 (SegFormer B2 Cityscapes — the one used in the Chicago Greenery case study). Recommended classes: vegetation, road, building, sidewalk, sky. Then Run Inference.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "5d2ac264-58a5-431d-83cd-d6785c6fd176",
+        "type": "curio.streetvision/cv-gallery",
+        "x": 1200,
+        "y": 0,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Inspect the per-image overlays and stats, then click 'Push to Downstream' to emit a GEODATAFRAME.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "408e6f23-7b85-4470-9c91-f0c58c5769dd",
+        "type": "curio.builtin/data-loading",
+        "x": 0,
+        "y": 600,
+        "content": "import geopandas as gpd\n\n# Chicago official neighborhoods boundary. Swap in any local file via\n# `gpd.read_file(\"docs/examples/data/<your-polygons>.geojson\")` for non-Chicago runs.\ngdf = gpd.read_file(\n    \"https://data.cityofchicago.org/api/geospatial/bbvr-jsnu?method=export&format=GeoJSON\",\n)\n\ngdf.metadata = {\"name\": \"chicago_neighborhoods\"}\nreturn gdf\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load a polygon GeoDataFrame with a `pri_neigh` column (Chicago's neighborhood name field).",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "1cbd2725-458f-4617-86cd-2fd9d190f908",
+        "type": "curio.builtin/data-transformation",
+        "x": 600,
+        "y": 600,
+        "content": "# Spatial Join hardcodes the polygon tag column to `name`. Chicago's file uses\n# `pri_neigh`, so rename it here. For NYC boroughs use `BoroName` -> `name`,\n# for OSM admin polygons use `name` directly (this step becomes a no-op).\nimport geopandas as gpd\n\ngdf = arg.rename(columns={\"pri_neigh\": \"name\"})\ngdf.metadata = {\"name\": \"chicago_neighborhoods\"}\nreturn gdf\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Rename the polygon name field to `name` so Spatial Join picks it up.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "7541416c-a960-4d64-b7f8-175b8978c563",
+        "type": "curio.builtin/spatial-join",
+        "x": 1500,
+        "y": 300,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Tag each image point with the polygon it falls in. Wire CV Gallery to in_points (top) and Data Transformation to in_polygons (bottom).",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "8aaff248-9894-4ca8-b9a3-3b79216ce592",
+        "type": "curio.builtin/vis-vega",
+        "x": 2000,
+        "y": 0,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"width\": 600,\n  \"height\": 600,\n  \"projection\": {\"type\": \"mercator\"},\n  \"layer\": [\n    {\n      \"data\": {\"name\": \"table\"},\n      \"transform\": [{\"filter\": \"datum.geometry != null\"}],\n      \"mark\": {\"type\": \"geoshape\", \"stroke\": \"#888\", \"strokeWidth\": 0.4},\n      \"encoding\": {\n        \"color\": {\n          \"field\": \"properties.nbhd_dominant_class\",\n          \"type\": \"nominal\",\n          \"scale\": {\n            \"domain\": [\"road\", \"sidewalk\", \"building\", \"vegetation\", \"sky\", \"car\"],\n            \"range\":  [\"#4A90D9\", \"#8B5CF6\", \"#2ECC71\", \"#F5A623\", \"#3498DB\", \"#2C3E50\"]\n          },\n          \"legend\": {\"title\": \"Dominant class\"}\n        },\n        \"tooltip\": [\n          {\"field\": \"properties.neighborhood_name\", \"title\": \"neighborhood\"},\n          {\"field\": \"properties.nbhd_dominant_class\", \"title\": \"dominant\"},\n          {\"field\": \"properties.nbhd_dominant_pct\",   \"title\": \"avg %\"}\n        ]\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Polygon map: each neighborhood colored by its dominant detected class.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "1aa27f1a-5ed7-4872-a413-ce6fd1eb2c6b",
+        "type": "curio.builtin/vis-vega",
+        "x": 2000,
+        "y": 600,
+        "content": "{\n  \"$schema\": \"https://vega.github.io/schema/vega-lite/v6.json\",\n  \"width\": 400,\n  \"height\": {\"step\": 16},\n  \"data\": {\"name\": \"table\"},\n  \"transform\": [\n    {\"filter\": \"datum.properties.neighborhood_name != null\"},\n    {\n      \"aggregate\": [{\"op\": \"count\", \"as\": \"image_count\"}],\n      \"groupby\": [\"properties.neighborhood_name\", \"properties.dominant_class\"]\n    }\n  ],\n  \"mark\": \"bar\",\n  \"encoding\": {\n    \"y\": {\"field\": \"properties.neighborhood_name\", \"type\": \"nominal\", \"sort\": \"-x\", \"title\": null},\n    \"x\": {\"field\": \"image_count\", \"type\": \"quantitative\", \"title\": \"images\"},\n    \"color\": {\n      \"field\": \"properties.dominant_class\",\n      \"type\": \"nominal\",\n      \"scale\": {\n        \"domain\": [\"road\", \"sidewalk\", \"building\", \"vegetation\", \"sky\", \"car\"],\n        \"range\":  [\"#4A90D9\", \"#8B5CF6\", \"#2ECC71\", \"#F5A623\", \"#3498DB\", \"#2C3E50\"]\n      }\n    }\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Per-neighborhood image count, segmented by modal dominant class.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-5988175e-84aa-4964-84de-aba7d55cf122out-4067fb98-3ed5-497a-97a5-41a98ce1085bin",
+        "source": "5988175e-84aa-4964-84de-aba7d55cf122",
+        "sourceHandle": "out",
+        "target": "4067fb98-3ed5-497a-97a5-41a98ce1085b",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-4067fb98-3ed5-497a-97a5-41a98ce1085bout-5d2ac264-58a5-431d-83cd-d6785c6fd176in",
+        "source": "4067fb98-3ed5-497a-97a5-41a98ce1085b",
+        "sourceHandle": "out",
+        "target": "5d2ac264-58a5-431d-83cd-d6785c6fd176",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-5d2ac264-58a5-431d-83cd-d6785c6fd176out-7541416c-a960-4d64-b7f8-175b8978c563in_points",
+        "source": "5d2ac264-58a5-431d-83cd-d6785c6fd176",
+        "sourceHandle": "out",
+        "target": "7541416c-a960-4d64-b7f8-175b8978c563",
+        "targetHandle": "in_points"
+      },
+      {
+        "id": "reactflow__edge-408e6f23-7b85-4470-9c91-f0c58c5769ddout-1cbd2725-458f-4617-86cd-2fd9d190f908in",
+        "source": "408e6f23-7b85-4470-9c91-f0c58c5769dd",
+        "sourceHandle": "out",
+        "target": "1cbd2725-458f-4617-86cd-2fd9d190f908",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-1cbd2725-458f-4617-86cd-2fd9d190f908out-7541416c-a960-4d64-b7f8-175b8978c563in_polygons",
+        "source": "1cbd2725-458f-4617-86cd-2fd9d190f908",
+        "sourceHandle": "out",
+        "target": "7541416c-a960-4d64-b7f8-175b8978c563",
+        "targetHandle": "in_polygons"
+      },
+      {
+        "id": "reactflow__edge-7541416c-a960-4d64-b7f8-175b8978c563out-8aaff248-9894-4ca8-b9a3-3b79216ce592in",
+        "source": "7541416c-a960-4d64-b7f8-175b8978c563",
+        "sourceHandle": "out",
+        "target": "8aaff248-9894-4ca8-b9a3-3b79216ce592",
+        "targetHandle": "in"
+      },
+      {
+        "id": "reactflow__edge-7541416c-a960-4d64-b7f8-175b8978c563out-1aa27f1a-5ed7-4872-a413-ce6fd1eb2c6bin",
+        "source": "7541416c-a960-4d64-b7f8-175b8978c563",
+        "sourceHandle": "out",
+        "target": "1aa27f1a-5ed7-4872-a413-ce6fd1eb2c6b",
+        "targetHandle": "in"
+      }
+    ],
+    "name": "Street-level computer vision",
+    "task": "",
+    "timestamp": 1778306678524,
+    "provenance_id": "Street-level computer vision",
+    "packages": []
+  }
+}

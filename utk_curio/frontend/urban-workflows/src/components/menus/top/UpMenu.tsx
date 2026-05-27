@@ -512,7 +512,7 @@ export default function UpMenu({
                                 }}
                             >
                                 <FontAwesomeIcon className={styles.dropDownIcon} icon={faCubes} />
-                                <button className={styles.noStyleButton}>Python packages</button>
+                                <button className={styles.noStyleButton}>Installed libraries</button>
                             </div>
                             <div className={styles.dropDownRow} onClick={openDatasetsModal}>
                                 <FontAwesomeIcon className={styles.dropDownIcon} icon={faDatabase} />

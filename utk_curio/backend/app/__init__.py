@@ -55,6 +55,9 @@ def create_app(config_class=config_class):
     from utk_curio.backend.app.packages import packages_bp, seed_dev_packageages
     app.register_blueprint(packages_bp)
 
+    from utk_curio.backend.app.streetvision import bp as streetvision_bp
+    app.register_blueprint(streetvision_bp, url_prefix="/api/streetvision")
+
     # Non-prod DB stub endpoints for Playwright E2E tests.
     # Lets Playwright seed users / projects directly without the signup form.
     if _is_dev():

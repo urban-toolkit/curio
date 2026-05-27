@@ -11,13 +11,17 @@ if TYPE_CHECKING:
 
 
 def test_project_save_via_menu(app_frontend: "FrontendPage", page):
-    """Save via File > Save specification, verify it appears in Saved dataflows.
+    """Save via File > Save dataflow and verify the project appears on /projects.
 
-    Regression guard for the bug where the freshly-saved project did not show
-    up in the `Saved dataflows` submenu right after saving because the cached
-    `savedProjects` state was not invalidated. `handleSave` now refreshes the
-    list via `refreshSavedProjects()` before closing the menu, so reopening
-    File > Saved dataflows must render the new project immediately.
+    Previous incarnation of this test looked for a `Saved dataflows` submenu
+    inside the File menu; that submenu was removed in
+    a9c3f66 ("Standardizing interface elements, tweaks to the file menu")
+    when the in-canvas list was superseded by the dedicated `/projects`
+    page. The save round-trip itself is the same — `handleSave` POSTs to
+    `/api/projects` and `refreshSavedProjects()` invalidates the cache —
+    so we verify the save by navigating to `/projects` and asserting the
+    new entry renders, which is the user-facing path that replaced the
+    submenu.
     """
     require_project_page()
     signup_and_enter_new_workflow(
@@ -40,29 +44,16 @@ def test_project_save_via_menu(app_frontend: "FrontendPage", page):
     save_btn.wait_for(state="hidden", timeout=10000)
     # wait for the save to be completed
     page.wait_for_timeout(2000)
-    # Reopen File menu and expand Saved dataflows; the just-saved project must
-    # be visible without needing any extra refresh click. `FlowProvider`
-    # seeds `workflowName` to "DefaultDataflow" and `handleSave` defaults to
-    # that name, so the new project shows up under that label.
-    file_btn.click(force=True)
-    saved_wf = page.get_by_text("Saved dataflows", exact=True)
-    saved_wf.wait_for(state="visible", timeout=15000)
-    saved_wf.click()
 
-    # The submenu's outer div has a CSS-modules-hashed class name so we can't
-    # match it by substring — use the stable data-testid instead.
-    submenu = page.get_by_test_id("saved-workflows-submenu")
-    submenu.wait_for(state="visible", timeout=5000)
-
-    saved_items = submenu.get_by_test_id("saved-workflows-item")
-    saved_items.first.wait_for(state="visible", timeout=10000)
-    assert saved_items.count() >= 1, (
-        f"Expected at least one saved dataflow in the submenu, got: "
-        f"{submenu.text_content()!r}"
-    )
-    # And the specific label we expect for the default-named dataflow.
-    expected = submenu.get_by_text("DefaultDataflow", exact=True)
-    expected.wait_for(state="visible", timeout=5000)
+    # Navigate to /projects (the current home for saved dataflows after
+    # the file-menu simplification). `FlowProvider` seeds `workflowName` to
+    # "DefaultDataflow" and `handleSave` defaults to that name, so a project
+    # row with that title must be present.
+    page.goto(f"{app_frontend.base_url}/projects")
+    page.wait_for_load_state("domcontentloaded")
+    page.get_by_role("heading", name="Projects").wait_for(timeout=15000)
+    expected = page.get_by_text("DefaultDataflow", exact=True)
+    expected.first.wait_for(state="visible", timeout=10000)
 
 
 def test_project_list_page(app_frontend: "FrontendPage", page):

@@ -253,6 +253,12 @@ class PackageManifest:
     read_only: bool = False
     created_at_iso: str | None = None
     created_at_ms: int = 0
+    # Optional path (relative to package dir) of a pre-built JS bundle that
+    # registers this package's lifecycle hooks against `window.curio` at
+    # load time. When set, the frontend injects a <script src=...> for it
+    # before building descriptors. See docs/EXTENDING.md §5 for the
+    # contract package authors follow.
+    lifecycle_script: str | None = None
 
     @property
     def dir_name(self) -> str:
@@ -347,6 +353,13 @@ def load_packageage_manifest(package_dir_path: Path) -> PackageManifest:
         raw.get("createdAt"), where=f"{manifest_path}"
     )
 
+    lifecycle_script_raw = raw.get("lifecycleScript")
+    if lifecycle_script_raw is not None and not isinstance(lifecycle_script_raw, str):
+        raise ManifestError(f"{manifest_path}.lifecycleScript must be a string when present")
+    lifecycle_script = (
+        lifecycle_script_raw.strip() if isinstance(lifecycle_script_raw, str) else None
+    ) or None
+
     return PackageManifest(
         package_id=package_id,
         major=major,
@@ -365,6 +378,7 @@ def load_packageage_manifest(package_dir_path: Path) -> PackageManifest:
         read_only=read_only,
         created_at_iso=created_at_iso,
         created_at_ms=created_at_ms,
+        lifecycle_script=lifecycle_script,
     )
 
 

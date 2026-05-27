@@ -160,11 +160,16 @@ export function useCode(): IUseCode {
 
         for(const edge of trill.dataflow.edges){
 
-            let targetHandle = "in";
-
-            for(let i = 0; i < 5; i++){
-                if(edge.id && edge.id.includes("in_"+i))
-                    targetHandle = "in_"+i;
+            // Respect explicit handle ids in the spec (named handles like
+            // `in_points` / `in_polygons` on spatial-join). Fall back to
+            // legacy in_0 / in_1 / ... inference from the edge id, then to
+            // the default "in" handle.
+            let targetHandle = edge.targetHandle || "in";
+            if (!edge.targetHandle) {
+                for(let i = 0; i < 5; i++){
+                    if(edge.id && edge.id.includes("in_"+i))
+                        targetHandle = "in_"+i;
+                }
             }
 
             let add_edge: any = {
@@ -172,7 +177,7 @@ export function useCode(): IUseCode {
                 type: EdgeType.UNIDIRECTIONAL_EDGE,
                 markerEnd: {type: "arrow"},
                 source: edge.source,
-                sourceHandle: "out",
+                sourceHandle: edge.sourceHandle || "out",
                 target: edge.target,
                 targetHandle
             }

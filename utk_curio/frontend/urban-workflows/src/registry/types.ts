@@ -154,6 +154,14 @@ export interface LifecycleResult {
   outputOverride?: ICodeData;
   /** Extra handles appended to `adapter.handles` at render time (MergeFlow dynamic inputs). */
   dynamicHandles?: HandleDef[];
+  /**
+   * Fully replaces `adapter.handles` at render time. Used by lifecycles that
+   * want exact control over handle ids / positions (e.g. multi-input nodes
+   * like Spatial Join or MergeFlow where the default `standardInOut()` "in"
+   * handle would leak through and render an unwanted gray circle at top:50%).
+   * When set, both `adapter.handles` AND `dynamicHandles` are ignored.
+   */
+  handlesOverride?: HandleDef[];
   /** When `true`, the play button is disabled. */
   disablePlay?: boolean;
   /**

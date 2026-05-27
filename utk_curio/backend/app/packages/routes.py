@@ -166,6 +166,7 @@ def _manifest_to_payload(manifest: PackageManifest, *, package_mtime_path: Path 
         "channel": manifest.channel,
         **({"readOnly": True} if manifest.read_only else {}),
         "createdAtMs": manifest.created_at_ms,
+        **({"lifecycleScript": manifest.lifecycle_script} if manifest.lifecycle_script else {}),
     }
     if manifest.created_at_iso:
         payload["createdAt"] = manifest.created_at_iso
@@ -239,10 +240,48 @@ def _error(message: str, status: int = 400) -> tuple[Response, int]:
 # GET /api/packages — list installed
 # ---------------------------------------------------------------------------
 
+def _ensure_user_seeded(user_key: str) -> None:
+    """Idempotently seed ``curio.builtin@1`` into ``user_key``'s package store
+    AND defaults list.
+
+    Startup-time seeding only handles the shared ``guest`` key, so signed-up
+    accounts (and ``/api/testing/stub-login`` users during e2e tests) land
+    with an empty store. ``/api/packages`` and ``/api/packages/catalog`` both
+    rely on the user's store to compute "installed" — without a seed, the
+    catalog page shows the built-in package as available-but-not-installed
+    and any saved dataflow's nodes fail to find their descriptors. The
+    catalog page additionally reads ``defaults`` to render the "Installed"
+    badge, so we also add the seeded builtin to defaults — symmetric with
+    the catalog-page install path. The seeder and defaults writer are both
+    idempotent (a marker file + a sorted set on disk), so this is a no-op
+    after the first call.
+    """
+    try:
+        from utk_curio.backend.app.packages.seed import seed_dev_packageages
+        from utk_curio.backend.app.packages import defaults as defaults_io
+        from utk_curio.backend.app.packages.storage import list_user_packageages
+        from utk_curio.backend.app.packages.seed import BUILTIN_PACKAGE_ID
+
+        seed_dev_packageages(user_key=user_key)
+        # The seeder returns only NEWLY-seeded names, so a re-seed-suppressed
+        # call returns []. Inspect the store directly to find whatever
+        # ``curio.builtin@<major>`` the user actually has and ensure it's in
+        # defaults — covers both first-run and "store exists but defaults
+        # never got the entry" (e.g. an earlier seed before this code shipped).
+        prefix = f"{BUILTIN_PACKAGE_ID}@"
+        existing_defaults = defaults_io.load_defaults(user_key)
+        for package_path in list_user_packageages(user_key):
+            if package_path.name.startswith(prefix) and package_path.name not in existing_defaults:
+                defaults_io.add_to_defaults(user_key, package_path.name)
+    except Exception:  # noqa: BLE001 — never block the request on a seed error
+        log.warning("Lazy builtin seed failed for user_key=%s", user_key, exc_info=True)
+
+
 @packages_bp.route("", methods=["GET"])
 @require_auth
 def list_installed_packageages():
     user_key = _user_dir_key(g.user)
+    _ensure_user_seeded(user_key)
     out: list[dict] = []
     for package_path in list_user_packageages(user_key):
         try:
@@ -272,6 +311,7 @@ def list_catalog_packageages():
     JSON body also includes ``families`` and ``catalogCollisions``.
     """
     user_key = _user_dir_key(g.user)
+    _ensure_user_seeded(user_key)
     installed_coords = {p.name for p in list_user_packageages(user_key)}
 
     root = _catalog_root()
@@ -585,6 +625,81 @@ def download_packageage_archive(dir_name: str):
     )
     return response
 
+
+# ---------------------------------------------------------------------------
+# GET /api/packages/<dir_name>/file/<path:filename>
+# ---------------------------------------------------------------------------
+# Serves a static file from a user's installed copy of a package. Used by the
+# dynamic-lifecycle loader on the frontend to fetch each package's compiled
+# `lifecycles.js` bundle (declared in the manifest via `lifecycleScript`).
+# Path resolution flows through `safe_join` so traversal payloads can't escape
+# the package directory, and the result is always rooted in the user's own
+# `<instance>/.curio/users/<user_key>/packages/<dir>/` tree.
+
+_PACKAGE_FILE_MIMETYPES: dict[str, str] = {
+    ".js":   "application/javascript; charset=utf-8",
+    ".mjs":  "application/javascript; charset=utf-8",
+    ".css":  "text/css; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".geojson": "application/geo+json; charset=utf-8",
+    ".md":   "text/markdown; charset=utf-8",
+    ".txt":  "text/plain; charset=utf-8",
+    ".svg":  "image/svg+xml",
+    ".png":  "image/png",
+    ".jpg":  "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif":  "image/gif",
+    ".webp": "image/webp",
+    ".map":  "application/json; charset=utf-8",
+}
+
+
+@packages_bp.route("/<dir_name>/file/<path:filename>", methods=["GET"])
+@require_auth
+def get_package_file(dir_name: str, filename: str):
+    """Serve a static file from the user's installed copy of ``<dir_name>``.
+
+    Mounted at ``GET /api/packages/<dir_name>/file/<path:filename>``. The
+    frontend's dynamic lifecycle loader hits this to fetch each package's
+    compiled ``lifecycles.js`` bundle (when its manifest declares
+    ``lifecycleScript``). Any package-shipped asset (overlay imagery,
+    starter source, …) can be retrieved via the same route.
+    """
+    from utk_curio.backend.app.common.safe_paths import (
+        PathTraversalError,
+        safe_join,
+    )
+
+    user_key = _user_dir_key(g.user)
+    try:
+        base = package_dir(user_key, dir_name)
+    except (PackageIdError, PathTraversalError) as exc:
+        return _error(str(exc), 404)
+
+    try:
+        # `validate=False` because the request can legitimately span subdirs
+        # (e.g. `sources/index.js`). The final `is_within` check still
+        # guarantees containment.
+        target = safe_join(base, filename, validate=False, field="filename")
+    except PathTraversalError as exc:
+        return _error(str(exc), 400)
+
+    if not target.is_file():
+        return _error(f"package file not found: {filename}", 404)
+
+    suffix = target.suffix.lower()
+    mimetype = _PACKAGE_FILE_MIMETYPES.get(suffix, "application/octet-stream")
+    try:
+        body = target.read_bytes()
+    except OSError as exc:
+        return _error(f"could not read package file: {exc}", 500)
+
+    response = Response(body, mimetype=mimetype)
+    # Package files are content-addressed via integrity.json — once a sha
+    # matches, the file is immutable for this install. A short browser
+    # cache is safe and keeps the dynamic loader fast on repeat boots.
+    response.headers["Cache-Control"] = "private, max-age=300"
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -986,6 +1101,12 @@ def get_defaults_route():
     from utk_curio.backend.app.packages import defaults as defaults_io
 
     user_key = _user_dir_key(g.user)
+    # /catalog fetches `/api/packages/defaults` in parallel with `/catalog` and
+    # `/api/packages`. If this endpoint resolves before either of those has
+    # seeded the user, the page renders with an empty defaults set and the
+    # built-in package shows as "available but not installed" until the next
+    # refresh. Seed eagerly here too — idempotent on the seeded path.
+    _ensure_user_seeded(user_key)
     return jsonify({"packages": sorted(defaults_io.load_defaults(user_key))}), 200
 
 
@@ -1002,3 +1123,144 @@ def install_to_defaults_route():
     except packages_services.PackageServiceError as exc:
         return _packages_error(exc)
     return jsonify(payload), 201
+
+
+# ---------------------------------------------------------------------------
+# /api/libraries — per-user "Installed libraries" surface (Python + JS)
+# ---------------------------------------------------------------------------
+
+@packages_bp.route("/libraries", methods=["GET"])
+@require_auth
+def list_libraries_route():
+    """Return the user's standalone library list plus every library a
+    currently-installed node package declares in its manifest.
+
+    The frontend's "Installed libraries" modal renders the union as a
+    single flat list with a ``Source`` column (``"standalone"`` or
+    ``"<package>@<major>"``).
+    """
+    from utk_curio.backend.app.packages import libraries as libs
+
+    user_key = _user_dir_key(g.user)
+    _ensure_user_seeded(user_key)
+    agg = libs.aggregate(user_key)
+    return jsonify({
+        "standalone": agg.standalone,
+        "fromPackages": [
+            {"name": e.name, "spec": e.spec, "kind": e.kind, "source": e.source}
+            for e in agg.from_packages
+        ],
+    }), 200
+
+
+@packages_bp.route("/libraries", methods=["POST"])
+@require_auth
+def add_library_route():
+    """Append a standalone library to the user's list and pip-install it.
+
+    Body: ``{"kind": "python"|"js", "spec": "<name><version>"}`` where
+    ``spec`` is a pip-install / npm-install argv entry (``numpy``,
+    ``scikit-learn==1.4.0``, ``lodash@^4.17``).
+    """
+    from utk_curio.backend.app.packages import libraries as libs
+    from utk_curio.backend.app.packages.pip_runner import (
+        PipInstallError, install_python_deps,
+    )
+
+    body = request.get_json(silent=True) or {}
+    kind = body.get("kind")
+    spec = body.get("spec")
+    if not isinstance(spec, str) or not spec.strip():
+        return _error("body must include non-empty 'spec'")
+    if kind not in ("python", "js"):
+        return _error("kind must be 'python' or 'js'")
+    if kind == "js":
+        # No JS install runner yet — the modal will still accept the
+        # entry as a declaration, but won't actually `npm install`. This
+        # keeps the data path consistent for a future js_runner module.
+        return _error("JS library install is not yet supported; declare in a node package's manifest instead", 501)
+
+    user_key = _user_dir_key(g.user)
+    # Spec parsing: split "<name><version>" → {name: version}. We let the
+    # pip_runner re-canonicalize the version spec.
+    name, version = _split_lib_spec(spec)
+    try:
+        report = install_python_deps({name: version})
+    except PipInstallError as exc:
+        return _error(f"pip install failed: {exc}", 502)
+    libs.add_library(user_key, kind, spec)
+    return jsonify({
+        "standalone": libs.list_standalone(user_key),
+        # ``skipped`` is non-empty when the lib was already importable —
+        # the frontend reads this to show "Already installed" instead of
+        # "Installed" so the user knows nothing was actually downloaded.
+        "installed": list(report.installed),
+        "skipped": list(report.skipped),
+    }), 201
+
+
+@packages_bp.route("/libraries/<kind>/<path:spec>", methods=["DELETE"])
+@require_auth
+def remove_library_route(kind: str, spec: str):
+    """Drop a standalone library and pip-uninstall it.
+
+    Package-derived libs aren't removable here — the package itself has
+    to be uninstalled, which triggers the ref-counted prune in
+    ``prune_unreferenced_packages``.
+    """
+    from utk_curio.backend.app.packages import libraries as libs
+    from utk_curio.backend.app.packages.pip_runner import (
+        PipInstallError, uninstall_python_deps,
+    )
+
+    if kind not in ("python", "js"):
+        return _error("kind must be 'python' or 'js'")
+    if kind == "js":
+        return _error("JS library uninstall is not yet supported", 501)
+
+    user_key = _user_dir_key(g.user)
+    name, _ = _split_lib_spec(spec)
+    # Only uninstall via pip if no installed package still declares this
+    # library — same ref-counting contract as the package prune path.
+    if not _any_package_declares(user_key, name, "python"):
+        try:
+            uninstall_python_deps([name])
+        except PipInstallError as exc:
+            log.warning("library remove: pip uninstall %s failed: %s", name, exc)
+    libs.remove_library(user_key, kind, spec)
+    return jsonify({"standalone": libs.list_standalone(user_key)}), 200
+
+
+def _split_lib_spec(spec: str) -> tuple[str, str]:
+    """Split ``"name<spec>"`` into ``(name, "<spec>")``. The version part
+    may be empty for bare names. Recognises PEP 440 comparators + the
+    npm-ish ``@version`` separator (kept verbatim so the user's exact
+    string round-trips through storage)."""
+    s = spec.strip()
+    for sep_start, _ in [(i, c) for i, c in enumerate(s) if c in "=<>~!"]:
+        return s[:sep_start], s[sep_start:]
+    if "@" in s and not s.startswith("@"):
+        i = s.index("@")
+        return s[:i], s[i + 1:]
+    return s, ""
+
+
+def _any_package_declares(user_key: str, lib_name: str, kind: str) -> bool:
+    """True if any installed package's manifest declares *lib_name* under
+    ``dependencies.<kind>``. Used to gate pip uninstall on standalone
+    remove — if a package needs the lib, we keep it on disk."""
+    from utk_curio.backend.app.packages.manifest import (
+        ManifestError,
+        load_packageage_manifest,
+    )
+    from utk_curio.backend.app.packages.storage import list_user_packageages
+
+    for package_path in list_user_packageages(user_key):
+        try:
+            m = load_packageage_manifest(package_path)
+        except ManifestError:
+            continue
+        deps = (m.python_deps if kind == "python" else m.js_deps) or {}
+        if lib_name in deps:
+            return True
+    return False

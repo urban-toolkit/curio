@@ -57,12 +57,18 @@ export const PackageCard: React.FC<PackageCardProps> = ({
   onPublish,
 }) => {
   const cardBusy = busy || cardActionDir === pkg.dirName;
-  // Author actions are suppressed on read-only packages (e.g. ``curio.builtin``)
-  // — the backend rejects publish/uninstall there anyway, so don't tempt
-  // users with buttons that 4xx. The Published BADGE still renders (it's
+  // Author actions (Publish / Unpublish) are suppressed on read-only
+  // packages (e.g. ``curio.builtin@1``, ``curio.streetvision@1``) — the
+  // backend rejects modify/publish there anyway, so don't tempt users with
+  // buttons that 4xx. The Published BADGE still renders (it's
   // informational, not destructive).
   const isAuthorable = pkg.readOnly !== true;
-  const showUninstall = isInstalled && onUninstall != null && isAuthorable;
+  // Uninstall is a project-lockfile operation, not a modification of the
+  // package files, so `readOnly` doesn't gate it. Only ``curio.builtin@*``
+  // is genuinely non-uninstallable (backend enforces; see
+  // ``uninstall_from_project``).
+  const isUninstallable = !pkg.dirName.startsWith("curio.builtin@");
+  const showUninstall = isInstalled && onUninstall != null && isUninstallable;
   const showUnpublish = catalogPublishAllowed && onUnpublish != null && isAuthorable;
   const showPublishButton = onPublish != null && catalogPublishAllowed && isAuthorable;
   // The pill renders for two distinct cases:

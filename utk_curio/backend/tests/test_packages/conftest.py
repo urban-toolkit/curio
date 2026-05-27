@@ -35,6 +35,30 @@ def tmp_curio(tmp_path):
     os.environ.pop("CURIO_LAUNCH_CWD", None)
 
 
+@pytest.fixture(autouse=True)
+def _stub_pip_runner(monkeypatch):
+    """Stub the per-package pip runner so service-level tests never shell
+    out to the real pip. The UHVI fixture package's manifest declares real
+    ``python_deps`` (geopandas, numpy, rasterio); without this stub the
+    catalog install path tries to ``pip install`` them inside the test
+    interpreter, which is slow and dependent on test-host network state.
+
+    Individual tests in ``test_pip_runner.py`` patch ``subprocess.run``
+    directly and don't hit this fixture's stubs.
+    """
+    from utk_curio.backend.app.packages import pip_runner
+    from utk_curio.backend.app.packages.pip_runner import InstallReport, UninstallReport
+
+    monkeypatch.setattr(
+        pip_runner, "install_python_deps",
+        lambda deps: InstallReport(installed=[], skipped=list(deps.keys() if deps else [])),
+    )
+    monkeypatch.setattr(
+        pip_runner, "uninstall_python_deps",
+        lambda names: UninstallReport(removed=list(names), kept=[]),
+    )
+
+
 @pytest.fixture()
 def app(tmp_curio):
     application = create_app(TestConfig)

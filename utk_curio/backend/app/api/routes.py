@@ -62,7 +62,6 @@ from utk_curio.backend.app.users.dependencies import require_auth, get_current_t
 import uuid
 import os
 import time
-import pandas as pd
 from utk_curio.backend.config import (
     GUEST_LLM_API_TYPE,
     GUEST_LLM_BASE_URL,
@@ -533,6 +532,13 @@ def get_starters():
     return jsonify(starters)
 
 def get_loaded_files_metadata(folder_path):
+    # ``pandas`` + ``geopandas`` belong to the ``curio.builtin@1`` package's
+    # ``manifest.dependencies.python`` (installed via the launcher walker),
+    # not Curio's framework requirements. Importing them lazily here keeps
+    # the backend module load free of data-lib deps so a stripped framework
+    # install still boots.
+    import pandas as pd
+
     metadata = ""
 
     for file in os.listdir(folder_path):
@@ -655,3 +661,97 @@ def llm_clean():
     conversation[chatId] = []
 
     return jsonify({"message": "Success"}), 200
+
+
+@bp.route('/spatial_join', methods=['POST'])
+def spatial_join():
+    """Tag each input point with the polygon it falls in (point-in-polygon).
+
+    Backs the Spatial Join node in curio.builtin@1. Accepts and returns
+    plain GeoJSON FeatureCollections so the node sits naturally between any
+    pair of nodes that emit / consume the GEODATAFRAME type.
+
+    Request body:
+        {
+          "points":        FeatureCollection (Point features),
+          "polygons":      FeatureCollection (Polygon/MultiPolygon features),
+          "name_property": optional, defaults to "name". Which property on
+                           each polygon to use as the tag (e.g. "pri_neigh"
+                           for Chicago neighborhoods, "BoroName" for NYC).
+        }
+
+    Response:
+        {
+          "type": "FeatureCollection",
+          "features": [...]   # input points augmented with `neighborhood_name`
+                              # (and `nbhd_*` aggregates) on properties
+          "metadata": { "aggregates": [...] }   # per-polygon roll-up
+        }
+
+    Returns 503 if the shapely extras aren't installed (geopandas is already
+    a Curio base dep, but we lazy-import shapely so the failure mode is
+    explicit).
+    """
+    body = request.get_json(silent=True) or {}
+    points_fc = body.get("points")
+    polygons_fc = body.get("polygons")
+    name_property = body.get("name_property") or "name"
+
+    if not isinstance(points_fc, dict) or not isinstance(polygons_fc, dict):
+        return jsonify({
+            "error": "body must be { points: FeatureCollection, polygons: FeatureCollection, name_property? }",
+        }), 400
+
+    # Extract per-point dicts from the points FeatureCollection. Surface
+    # `latitude` / `longitude` from properties OR from the geometry itself.
+    point_dicts = []
+    for f in (points_fc.get("features") or []):
+        props = dict(f.get("properties") or {})
+        lat = props.get("latitude")
+        lon = props.get("longitude")
+        geom = f.get("geometry") or {}
+        coords = geom.get("coordinates") if isinstance(geom, dict) else None
+        if (lat is None or lon is None) and isinstance(coords, list) and len(coords) >= 2:
+            lon, lat = coords[0], coords[1]
+        props["latitude"] = lat
+        props["longitude"] = lon
+        point_dicts.append(props)
+
+    try:
+        from utk_curio.backend.app.common.spatial import enrich_points_with_polygons
+        enriched, aggregates = enrich_points_with_polygons(
+            points=point_dicts,
+            polygon_fc=polygons_fc,
+            name_property=name_property,
+        )
+    except ImportError as e:
+        return jsonify({
+            "error": "spatial extras not installed (shapely required)",
+            "hint": "pip install shapely",
+            "detail": str(e),
+        }), 503
+    except Exception as e:
+        return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
+
+    # Re-pack enriched points as Features so downstream consumers see the
+    # same shape they sent in.
+    out_features = []
+    for p in enriched:
+        lat = p.get("latitude")
+        lon = p.get("longitude")
+        geometry = (
+            {"type": "Point", "coordinates": [lon, lat]}
+            if lat is not None and lon is not None
+            else None
+        )
+        out_features.append({
+            "type": "Feature",
+            "geometry": geometry,
+            "properties": p,
+        })
+
+    return jsonify({
+        "type": "FeatureCollection",
+        "features": out_features,
+        "metadata": {"name": "spatial_join_result", "aggregates": aggregates},
+    })

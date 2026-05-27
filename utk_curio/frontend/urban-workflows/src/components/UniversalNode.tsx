@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useSyncExternalStore } from 'react';
 import CSS from "csstype";
 import { Handle, Edge, useEdges } from 'reactflow';
 import { NodeContainer } from './styles';
@@ -6,7 +6,7 @@ import NodeEditor from './editing/NodeEditor';
 import DescriptionModal from './DescriptionModal';
 import { OutputIcon } from './edges/OutputIcon';
 import { InputIcon } from './edges/InputIcon';
-import { getNodeDescriptor } from '../registry/nodeRegistry';
+import { getNodeDescriptor, tryGetNodeDescriptor, subscribeToRegistry } from '../registry/nodeRegistry';
 import { readCanvasTemplateConfig, resolveEditorTabFlags } from '../utils/canvasTemplateConfig';
 import { useNodeState } from '../hook/useNodeState';
 import { HandleDef, TIconCardinality } from '../registry/types';
@@ -20,7 +20,37 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 // React's rules of hooks and corrupts the state slots ("baseQueue is undefined").
 // Keying the inner body by `data.nodeType` forces an unmount/remount so the
 // new hook chain starts fresh.
+//
+// The outer wrapper also gates on descriptor presence: a node imported from a
+// saved dataflow can mount before its package's descriptor has finished
+// registering (race against `refreshPackageRegistry` mid-`loadProject`). We
+// render a placeholder until the registry catches up — `useSyncExternalStore`
+// subscribes to registry mutations so the body remounts as soon as its
+// descriptor lands.
 const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }: { data: any; isConnectable: boolean }) {
+  // The snapshot must be stable when the descriptor exists so React doesn't
+  // tear-and-rebuild on every keystroke; return the descriptor itself (or
+  // null) and re-subscribe on every registry pulse.
+  const descriptor = useSyncExternalStore(
+    subscribeToRegistry,
+    () => tryGetNodeDescriptor(data.nodeType) ?? null,
+  );
+  if (!descriptor) {
+    return (
+      <div
+        style={{
+          padding: '8px 12px', minWidth: 180, minHeight: 50,
+          border: '1px dashed #b8b8b8', borderRadius: 6,
+          background: '#fafafa', color: '#64748b', fontSize: 11,
+          fontFamily: '"Roboto","Helvetica","Arial",sans-serif',
+        }}
+        title={`Waiting on descriptor for ${data.nodeType}`}
+      >
+        <strong style={{ color: '#334155', fontSize: 12 }}>Loading node…</strong>
+        <div style={{ marginTop: 4, opacity: 0.7 }}>{data.nodeType}</div>
+      </div>
+    );
+  }
   return <UniversalNodeBody key={data.nodeType} data={data} isConnectable={isConnectable} />;
 });
 
@@ -76,7 +106,8 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const readOnly =
     nodeState.templateData.custom != undefined && nodeState.templateData.custom === false;
 
-  const allHandles = [...adapter.handles, ...(lifecycle.dynamicHandles ?? [])];
+  const allHandles = lifecycle.handlesOverride
+    ?? [...adapter.handles, ...(lifecycle.dynamicHandles ?? [])];
   const kindConfig = readCanvasTemplateConfig({ data });
   const editorTabs = resolveEditorTabFlags(descriptor, kindConfig);
 
@@ -131,7 +162,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
           custom={nodeState.templateData.custom}
         />
 
-        {adapter.editor && (
+        {adapter.editor ? (
           <NodeEditor
             outputId={lifecycle.outputIdOverride ?? adapter.editor.outputId?.(data.nodeId)}
             setSendCodeCallback={setSendCodeCallback}
@@ -152,6 +183,15 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
             floatCode={nodeState.setCode}
             contentComponent={lifecycle.contentComponent}
           />
+        ) : (
+          // ``editor: "none"`` in the manifest means there's no tabbed editor
+          // surface — but the lifecycle hook can still inject custom UI via
+          // ``contentComponent`` (the streetvision place-picker, etc.).
+          // Without this branch that UI would be silently dropped because
+          // ``contentComponent`` is otherwise only rendered inside NodeEditor's
+          // output tab. ``noContent`` containers (merge-flow, spatial-join)
+          // legitimately return ``undefined`` here — they're icon-only.
+          lifecycle.contentComponent ?? null
         )}
 
         {!dashboardOn && adapter.outputIconType && <OutputIcon type={adapter.outputIconType as TIconCardinality} />}

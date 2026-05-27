@@ -32,6 +32,7 @@ import {
   withBidirectional,
 } from '../adapters/node';
 import { packagesApi } from 'api/packagesApi';
+import { getToken } from '../utils/authApi';
 
 import { getLifecycle } from './lifecycleRegistry';
 import { resolveIconRef } from './iconRegistry';
@@ -88,6 +89,13 @@ interface RawPackage {
   license: string | null;
   permissions: string[];
   templates: RawPackageTemplate[];
+  /** Path (relative to package dir) of a pre-built JS bundle to load before
+   *  descriptor build. Registers this package's lifecycle hooks via
+   *  `window.curio.registerLifecycle`. See docs/EXTENDING.md §5. */
+  lifecycleScript?: string;
+  /** Server-side dirname (`<packageId>@<major>`). Used for static-asset
+   *  URLs like `/api/packages/<dirName>/file/<...>`. */
+  dirName?: string;
   lineage: {
     forkedFrom: { packageId: string; major: number };
     root: { packageId: string; major: number };
@@ -277,6 +285,68 @@ export function registerPackageTemplates(packages: RawPackage[]): NodeDescriptor
  * packages installed, or if the request fails). Failure is logged and
  * swallowed so app boot never blocks on package discovery.
  */
+/**
+ * Loads a package's pre-built `lifecycleScript` bundle by injecting a
+ * <script> tag pointed at `/api/packages/<dirName>/file/<script>`. The
+ * bundle's top-level side-effect calls `window.curio.registerLifecycle`
+ * for each lifecycle hook it ships, so by the time the returned Promise
+ * resolves the lifecycle keys declared in the package's templates are
+ * registered and `buildDescriptor`'s lookup will succeed.
+ *
+ * Errors are swallowed (and logged) — one broken package's bundle
+ * shouldn't take the whole canvas down. The descriptors for its
+ * templates will fall back to `usePackageNodeLifecycle` (generic code
+ * editor) so the palette still renders.
+ */
+async function loadPackageLifecycleScripts(packages: RawPackage[]): Promise<void> {
+  const base = process.env.BACKEND_URL ?? '';
+  const targets = packages.filter((p) => p.lifecycleScript && p.dirName);
+  if (targets.length === 0) return;
+  const token = getToken();
+  // Sequential, not Promise.all, so each bundle's top-level
+  // `registerLifecycle` side-effect runs before the next bundle's does —
+  // matches the deterministic order the old `<script async={false}>` chain
+  // guaranteed.
+  for (const p of targets) {
+    // De-dupe across re-renders: the same bundle should only load once
+    // even if refreshPackageRegistry runs again.
+    const existing = document.querySelector(`script[data-curio-package="${p.packageId}@${p.major}"]`);
+    if (existing) continue;
+    const url = `${base}/api/packages/${encodeURIComponent(p.dirName!)}/file/${p.lifecycleScript}`;
+    try {
+      // ``<script src>`` cannot carry an Authorization header, and the
+      // file-serving endpoint is under ``@require_auth``. Firefox's ORB
+      // then blocks the resulting 401 response and the bundle never
+      // evaluates. Fetch via ``fetch`` (with the Bearer token) and
+      // inject the body as inline script text instead.
+      const headers: Record<string, string> = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+      // ``cache: 'no-store'`` bypasses the HTTP cache entirely. Without it,
+      // a stale bundle (e.g. an earlier broken build still in the disk
+      // cache) gets re-evaluated forever — the file-serving endpoint
+      // doesn't set strong cache headers, so the browser uses its
+      // heuristic freshness window. Package bundles are small + fetched
+      // once per boot, so the cost of bypassing the cache is negligible
+      // next to the correctness win.
+      const res = await fetch(url, { headers, cache: 'no-store' });
+      if (!res.ok) {
+        console.warn(
+          `[curio] failed to load lifecycle script for ${p.packageId}@${p.major}: HTTP ${res.status}`,
+        );
+        continue;
+      }
+      const code = await res.text();
+      const s = document.createElement('script');
+      s.dataset.curioPackage = `${p.packageId}@${p.major}`;
+      s.textContent = code;
+      document.head.appendChild(s);
+    } catch (err) {
+      console.warn(`[curio] failed to load lifecycle script for ${p.packageId}@${p.major}:`, err);
+      // never throw — descriptor build still proceeds (with code-editor fallback)
+    }
+  }
+}
+
 export async function loadInstalledPackages(
   projectFilter: ReadonlySet<string> | null = null,
 ): Promise<NodeDescriptor[]> {
@@ -289,6 +359,12 @@ export async function loadInstalledPackages(
             projectFilter.has(`${p.packageId}@${p.major}`),
         )
       : (packages ?? []);
+    // Inject and await any `lifecycleScript` bundles BEFORE descriptor
+    // build so the lifecycle keys referenced in the templates are
+    // actually registered against the global lifecycle registry. Without
+    // this step, `getLifecycle()` returns undefined and packages with
+    // custom lifecycles soft-fail to the package code editor.
+    await loadPackageLifecycleScripts(filtered);
     // Replace package-derived kinds wholesale — `registerNode` only adds/overwrites,
     // so without this pass, uninstalled packages would leave stale palette entries.
     // Notify subscribers only after clear + register so React Flow keeps package node types wired.

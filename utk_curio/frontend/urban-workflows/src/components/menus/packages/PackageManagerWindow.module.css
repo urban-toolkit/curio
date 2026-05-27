@@ -143,3 +143,116 @@
   max-height: 100px;
   overflow-y: auto;
 }
+
+.libraryTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.libraryTable th,
+.libraryTable td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid #eee;
+}
+.libraryTable th {
+  font-weight: 600;
+  color: #475569;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.cellName { font-family: monospace; }
+.cellSpec { font-family: monospace; color: #64748b; }
+.cellSource { font-size: 12px; }
+.sourceStandalone {
+  color: #475569;
+  background: #f1f5f9;
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 11px;
+}
+.sourcePackage {
+  color: #4338ca;
+  background: #eef2ff;
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-family: monospace;
+}
+
+/* ── Per-row status cell + indeterminate progress bar ──────────────── */
+
+.statusInstalling {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #1d4ed8;
+}
+.progressBar {
+  width: 70px;
+  height: 6px;
+  background: #e0e7ff;
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+/* Indeterminate stripe — slides left to right to signal "working" without
+ * a real % from pip. Cuts off at the bar's edges via overflow: hidden. */
+.progressStripe {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 35%;
+  background: linear-gradient(90deg, #6366f1, #4338ca);
+  border-radius: 3px;
+  animation: progressSlide 1.1s ease-in-out infinite;
+}
+@keyframes progressSlide {
+  0%   { left: -35%; }
+  100% { left: 100%; }
+}
+
+.statusSuccess {
+  color: #166534;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 11px;
+}
+
+.statusErrorInline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #b91c1c;
+  font-size: 11px;
+}
+.statusDismiss {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 4px;
+}
+.statusDismiss:hover { color: #000; }
+
+.rowPending {
+  background: #f5f3ff;  /* subtle violet hint so the in-flight row is visually distinct */
+}
+
+.errorList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}
+.errorHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
