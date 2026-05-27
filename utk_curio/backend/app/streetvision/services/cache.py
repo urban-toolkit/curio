@@ -4,9 +4,10 @@ Two cache namespaces:
 - ``images/``  raw JPEG panoramas downloaded from Google.
 - ``overlays/`` segmentation overlay PNGs produced by the inference run.
 
-Cache root defaults to ``<instance>/streetvision_cache/`` (where ``instance``
-is Flask's app instance path — the same place Curio writes its other
-ephemeral state). Override with the ``STREETVISION_CACHE_DIR`` env var.
+Cache root defaults to ``$CURIO_LAUNCH_CWD/.curio/streetvision/cache/`` —
+matches the convention used by every other piece of Curio runtime state
+(per-user package store, SQLite DB, HF model cache). Override with the
+``STREETVISION_CACHE_DIR`` env var.
 """
 
 import os
@@ -18,12 +19,8 @@ def cache_root() -> str:
     override = os.environ.get("STREETVISION_CACHE_DIR")
     if override:
         return override
-    # Match Curio's instance-folder convention. Falling back to ./cache keeps
-    # us working in scratch test runs that don't set up Flask's instance path.
-    instance = os.environ.get("CURIO_INSTANCE_PATH") or os.path.join(
-        os.getcwd(), "instance"
-    )
-    return os.path.join(instance, "streetvision_cache")
+    launch_cwd = os.environ.get("CURIO_LAUNCH_CWD") or os.getcwd()
+    return os.path.join(launch_cwd, ".curio", "streetvision", "cache")
 
 
 def images_dir() -> str:

@@ -25,7 +25,20 @@ def _hf_token() -> Optional[str]:
 
 
 def _model_cache_dir() -> str:
-    return os.environ.get("STREETVISION_MODEL_CACHE_DIR", "./model_cache")
+    """Return the on-disk HuggingFace Hub model cache root.
+
+    Defaults to ``$CURIO_LAUNCH_CWD/.curio/streetvision/model_cache`` so
+    Curio's runtime state lives in the standard ``.curio/`` location —
+    gitignored, easy to clear, and matches the convention used by the
+    per-user package store + the SQLite DB. Override with
+    ``STREETVISION_MODEL_CACHE_DIR`` for deployments that want a shared
+    pre-warmed cache elsewhere.
+    """
+    override = os.environ.get("STREETVISION_MODEL_CACHE_DIR")
+    if override:
+        return override
+    launch_cwd = os.environ.get("CURIO_LAUNCH_CWD") or os.getcwd()
+    return os.path.join(launch_cwd, ".curio", "streetvision", "model_cache")
 
 
 def search_models(task: str, query: str, limit: int = 20) -> list:
