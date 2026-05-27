@@ -71,7 +71,7 @@ describe('nodeRegistry', () => {
       expect(result.package?.packageId).toBe('ai.urbanlab.uhvi');
     });
 
-    test('overwrites duplicate registration with warning', () => {
+    test('silently overwrites same-version re-registration (refresh-loop case)', () => {
       const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
 
       const first = makeDescriptor({ id: NodeType.DATA_POOL, label: 'First' });
@@ -80,10 +80,36 @@ describe('nodeRegistry', () => {
       registerNode(first);
       registerNode(second);
 
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining(NodeType.DATA_POOL),
-      );
+      expect(warnSpy).not.toHaveBeenCalled();
       expect(getNodeDescriptor(NodeType.DATA_POOL).label).toBe('Second');
+
+      warnSpy.mockRestore();
+    });
+
+    test('warns when an existing descriptor is overwritten by a different package version', () => {
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation();
+
+      const canonical = 'zz.test.warn-on-overwrite/k1@1';
+      const first = makeDescriptor({
+        id: canonical,
+        label: 'v1',
+        source: 'package',
+        package: { packageId: 'zz.test.warn-on-overwrite', major: 1, version: '1.0.0' },
+      });
+      const second = makeDescriptor({
+        id: canonical,
+        label: 'v2',
+        source: 'package',
+        package: { packageId: 'zz.test.warn-on-overwrite', major: 1, version: '1.1.0' },
+      });
+
+      registerNode(first);
+      registerNode(second);
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(canonical),
+      );
+      expect(getNodeDescriptor(canonical).label).toBe('v2');
 
       warnSpy.mockRestore();
     });

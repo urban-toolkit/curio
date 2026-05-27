@@ -127,6 +127,7 @@ const LIFECYCLE_RESULT_KEYS: (keyof LifecycleResult)[] = [
   'outputIdOverride',
   'disablePlay',
   'dynamicHandles',
+  'handlesOverride',
 ];
 
 function assertValidLifecycleResult(result: LifecycleResult) {
@@ -210,23 +211,30 @@ describe('Lifecycle hooks — NodeLifecycleHook contract conformance', () => {
   });
 
   describe('useMergeFlowLifecycle', () => {
-    test('returns dynamicHandles and setOutputCallbackOverride', async () => {
+    test('returns handlesOverride and setOutputCallbackOverride', async () => {
       const result = await callLifecycle(useMergeFlowLifecycle);
       assertValidLifecycleResult(result.current);
-      expect(Array.isArray(result.current.dynamicHandles)).toBe(true);
-      expect(result.current.dynamicHandles!.length).toBe(5);
+      expect(Array.isArray(result.current.handlesOverride)).toBe(true);
+      // 5 input slots + 1 output handle (fully replaces adapter.handles).
+      expect(result.current.handlesOverride!.length).toBe(6);
       expect(typeof result.current.setOutputCallbackOverride).toBe('function');
     });
 
-    test('dynamic handles have correct ids and positions', async () => {
+    test('handles override has correct ids and positions', async () => {
       const result = await callLifecycle(useMergeFlowLifecycle);
-      const handles = result.current.dynamicHandles!;
+      const handles = result.current.handlesOverride!;
 
-      handles.forEach((h, i) => {
+      const inputs = handles.slice(0, 5);
+      inputs.forEach((h, i) => {
         expect(h.id).toBe(`in_${i}`);
         expect(h.type).toBe('target');
         expect(h.position).toBe('left');
       });
+
+      const output = handles[5];
+      expect(output.id).toBe('out');
+      expect(output.type).toBe('source');
+      expect(output.position).toBe('right');
     });
   });
 

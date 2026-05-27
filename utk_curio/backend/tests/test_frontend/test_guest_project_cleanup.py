@@ -35,19 +35,24 @@ def test_guest_save_is_blocked(app_frontend: FrontendPage, page):
     Now we wait briefly, then assert that no save request was issued.
     """
     require_project_page()
-    base = app_frontend.base_url
-    auth_enabled = auth_enabled_env()
-    allow_guest = allow_guest_login_env()
+    # The guest-save block only exists when auth is enabled — the frontend
+    # guard is ``enableUserAuth && !!user?.is_guest``, so with
+    # ``CURIO_NO_AUTH=1`` (scripts/test.sh's default) ``enableUserAuth`` is
+    # false, no user is a guest, and a save POST is legitimately allowed.
+    # Skip rather than fail in that mode.
+    if not auth_enabled_env():
+        pytest.skip("Guest-save policy only applies with CURIO_NO_AUTH=0")
+    if not allow_guest_login_env():
+        pytest.skip("Explicit guest login is disabled for this session")
 
-    page.goto(f"{base}/auth/signin" if auth_enabled else f"{base}/")
+    base = app_frontend.base_url
+
+    page.goto(f"{base}/auth/signin")
     page.wait_for_load_state("domcontentloaded")
 
-    if auth_enabled:
-        if not allow_guest:
-            pytest.skip("Explicit guest login is disabled for this session")
-        guest_btn = page.get_by_text("Continue as Guest")
-        guest_btn.wait_for(timeout=10000)
-        guest_btn.click()
+    guest_btn = page.get_by_text("Continue as Guest")
+    guest_btn.wait_for(timeout=10000)
+    guest_btn.click()
 
     page.wait_for_url("**/projects", timeout=30000)
     page.get_by_role("heading", name="Projects").wait_for(timeout=10000)
