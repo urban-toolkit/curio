@@ -342,136 +342,41 @@
     },
     {
       "badge": "AUTK",
-      "bidirectional": true,
-      "category": "vis_simple",
-      "description": "Renders charts using autk-plot. Supports scatterplot, barchart, linechart, heatmatrix, parallel-coordinates, and table. Bidirectional brushing with AutkMap when linked.",
-      "editor": "code",
-      "engine": "javascript",
-      "hasCode": true,
-      "hasGrammar": false,
-      "hasWidgets": false,
-      "iconRef": "fa-solid:chart-column",
-      "id": "autk-plot",
-      "inputPorts": [
-        {
-          "cardinality": "1",
-          "types": [
-            "LIST",
-            "JSON",
-            "GEODATAFRAME",
-            "DATAFRAME"
-          ]
-        }
-      ],
-      "label": "AutkPlot",
-      "lifecycle": "autk-plot",
-      "outputPorts": [
-        {
-          "cardinality": "[0,1]",
-          "types": [
-            "LIST",
-            "JSON",
-            "GEODATAFRAME",
-            "DATAFRAME"
-          ]
-        }
-      ],
-      "paletteOrder": 10
-    },
-    {
-      "badge": "AUTK",
-      "bidirectional": true,
-      "category": "vis_simple",
-      "description": "Renders urban 3D map layers using autk-map. Accepts an Autark layer array, a FeatureCollection, or a GeoDataFrame. Bidirectional brushing with AutkPlot when linked.",
-      "editor": "code",
-      "engine": "javascript",
-      "hasCode": true,
-      "hasGrammar": false,
-      "hasWidgets": false,
+      "category": "vis_grammar",
+      "description": "Grammar-driven urban analytics. Write an UrbanSpec (JSON) covering data loading (OSM, CSV, GeoJSON), GPU compute, map rendering, and/or plot rendering in one declarative spec. Runs entirely in the browser via WebGPU + DuckDB-WASM.",
+      "editor": "grammar",
+      "engine": "python",
+      "grammarId": "autk-grammar",
+      "hasCode": false,
+      "hasGrammar": true,
+      "hasWidgets": true,
       "iconRef": "fa-solid:city",
-      "id": "autk-map",
+      "id": "autk-grammar",
       "inputPorts": [
         {
-          "cardinality": "1",
+          "cardinality": "[0,1]",
           "types": [
             "LIST",
             "JSON",
-            "GEODATAFRAME"
+            "GEODATAFRAME",
+            "DATAFRAME"
           ]
         }
       ],
-      "label": "AutkMap",
-      "lifecycle": "autk-map",
+      "label": "Autark",
+      "lifecycle": "autk-grammar",
       "outputPorts": [
         {
           "cardinality": "[0,1]",
           "types": [
             "LIST",
             "JSON",
-            "GEODATAFRAME"
+            "GEODATAFRAME",
+            "DATAFRAME"
           ]
         }
       ],
-      "paletteOrder": 9
-    },
-    {
-      "badge": "AUTK",
-      "category": "computation",
-      "description": "GPU compute on urban layers via autk-compute. Receives a layer array, returns a transformed layer array. Runs on a hidden offscreen canvas.",
-      "editor": "code",
-      "engine": "javascript",
-      "hasCode": true,
-      "hasGrammar": false,
-      "hasWidgets": false,
-      "iconRef": "fa-solid:cubes",
-      "id": "autk-compute",
-      "inputPorts": [
-        {
-          "cardinality": "1",
-          "types": [
-            "LIST",
-            "JSON",
-            "GEODATAFRAME"
-          ]
-        }
-      ],
-      "label": "AutkCompute",
-      "lifecycle": "autk-compute",
-      "outputPorts": [
-        {
-          "cardinality": "1",
-          "types": [
-            "LIST",
-            "JSON",
-            "GEODATAFRAME"
-          ]
-        }
-      ],
-      "paletteOrder": 12
-    },
-    {
-      "badge": "AUTK",
-      "category": "data",
-      "description": "Server-side spatial database via autk-db. Loads OSM data through Overpass and emits a layer array downstream.",
-      "editor": "code",
-      "engine": "javascript",
-      "hasCode": true,
-      "hasGrammar": false,
-      "hasWidgets": false,
-      "iconRef": "fa-solid:map-location-dot",
-      "id": "autk-db",
-      "inputPorts": [],
-      "label": "AutkDB",
-      "lifecycle": "autk-db",
-      "outputPorts": [
-        {
-          "cardinality": "1",
-          "types": [
-            "LIST"
-          ]
-        }
-      ],
-      "paletteOrder": 5
+      "paletteOrder": 6
     },
     {
       "category": "data",

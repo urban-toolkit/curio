@@ -6,11 +6,7 @@ export { useSimpleVisLifecycle } from './simpleVisLifecycle';
 export { useMergeFlowLifecycle } from './mergeFlowLifecycle';
 export { useDataPoolLifecycle } from './dataPoolLifecycle';
 export { useDataSummaryLifecycle } from './dataSummaryLifecycle';
-export { useAutkMapLifecycle } from './autkMapLifecycle';
-export { useAutkPlotLifecycle } from './autkPlotLifecycle';
-export { useAutkComputeLifecycle } from './autkComputeLifecycle';
-export { useAutkDbLifecycle } from './autkDbLifecycle';
-export { createAutkLifecycle } from './autkLifecycleFactory';
+export { useAutkGrammarLifecycle } from './autkGrammarLifecycle';
 export { useSpatialJoinLifecycle } from './spatialJoinLifecycle';
 // Note: the three curio.streetvision@1 lifecycle hooks now live IN the
 // package directory at `packages/curio.streetvision@1/sources/` and ship

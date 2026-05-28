@@ -16,13 +16,13 @@
       },
       {
         "id": "4d414f97-fad3-4ac7-9e1d-53725eb61f70",
-        "type": "curio.builtin/autk-map",
-        "x": 1495.310854988554,
-        "y": 441.3274150435921,
-        "content": "// 'arg' is the layer array — the upstream GeoDataFrame is auto-wrapped\n// to [{ name: 'layer', type: 'POLYGONS_2D', geojson: <FeatureCollection> }]\n// by the AUTK_MAP lifecycle. autk-map's loadCollection rejects\n// 'POLYGONS_2D' (valid: 'polygons' / 'roads' / 'points' / 'buildings' /\n// 'surface' / 'water' / 'parks' / 'raster' — see autk-map api.d.ts), so\n// pass null to let the map infer the type from the feature geometries.\nconst map = new AutkMap(container);\nawait map.init();\nfor (const layer of arg) {\n    map.loadCollection(layer.name, { collection: layer.geojson, type: null });\n    map.updateRenderInfo(layer.name, { renderInfo: { isColorMap: true } });\n    map.updateThematic(layer.name, {\n        collection: layer.geojson,\n        property: 'properties.value',\n    });\n}\nmap.draw();\nreturn map;",
+        "type": "curio.builtin/autk-grammar",
+        "x": 1495,
+        "y": 441,
+        "content": "{\"map\":{\"layerRefs\":[{\"dataRef\":\"upstream\",\"getFnv\":\"value\",\"getFnvType\":\"quantitative\",\"defaultFnv\":0}]}}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "",
+        "goal": "Render upstream GeoDataFrame polygons coloured by the 'value' property.",
         "metadata": {
           "keywords": []
         }

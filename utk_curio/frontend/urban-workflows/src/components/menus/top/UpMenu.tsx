@@ -332,7 +332,7 @@ export default function UpMenu({
                 },
                 {
                     element: "#step-utk",
-                    intro: "This is an Autark Map Node. It renders your data in an interactive 3D environment using Autark (autk-map).",
+                    intro: "This is an Autark Node. Write a declarative UrbanSpec to load data (OSM, CSV, GeoJSON), run GPU compute, and render maps or plots — all in the browser.",
                 },
                 {
                     element: "#step-vega",

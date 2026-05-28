@@ -25,10 +25,7 @@ export enum NodeType {
   DATA_POOL = "curio.builtin/data-pool",
   MERGE_FLOW = "curio.builtin/merge-flow",
   JS_COMPUTATION = "curio.builtin/js-computation",
-  AUTK_MAP = "curio.builtin/autk-map",
-  AUTK_PLOT = "curio.builtin/autk-plot",
-  AUTK_COMPUTE = "curio.builtin/autk-compute",
-  AUTK_DB = "curio.builtin/autk-db",
+  AUTK_GRAMMAR = "curio.builtin/autk-grammar",
 }
 
 export enum EdgeType {

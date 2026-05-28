@@ -18,10 +18,7 @@ import {
   useMergeFlowLifecycle,
   useDataPoolLifecycle,
   useDataSummaryLifecycle,
-  useAutkMapLifecycle,
-  useAutkPlotLifecycle,
-  useAutkComputeLifecycle,
-  useAutkDbLifecycle,
+  useAutkGrammarLifecycle,
   useSpatialJoinLifecycle,
 } from '../adapters/node';
 import { registerLifecycle } from './lifecycleRegistry';
@@ -32,10 +29,7 @@ registerLifecycle('data-pool', useDataPoolLifecycle);
 registerLifecycle('data-summary', useDataSummaryLifecycle);
 registerLifecycle('vega', useVegaLifecycle);
 registerLifecycle('simple-vis', useSimpleVisLifecycle);
-registerLifecycle('autk-plot', useAutkPlotLifecycle);
-registerLifecycle('autk-map', useAutkMapLifecycle);
-registerLifecycle('autk-compute', useAutkComputeLifecycle);
-registerLifecycle('autk-db', useAutkDbLifecycle);
+registerLifecycle('autk-grammar', useAutkGrammarLifecycle);
 registerLifecycle('merge-flow', useMergeFlowLifecycle);
 // curio.builtin@1 spatial-join node (stays in core because the builtin
 // package's lifecycles must be registered before ANY package registry runs).

@@ -60,13 +60,7 @@ jest.mock('../../../utils/formatters', () => ({
   mapTypes: (t: any) => t,
 }));
 
-jest.mock('@urban-toolkit/autk-map', () => ({ AutkMap: jest.fn() }), { virtual: true });
-jest.mock('@urban-toolkit/autk-plot', () => ({ AutkPlot: jest.fn() }), { virtual: true });
-jest.mock(
-  '@urban-toolkit/autk-compute',
-  () => ({ ComputeGpgpu: jest.fn(), ComputeRender: jest.fn() }),
-  { virtual: true },
-);
+jest.mock('@urban-toolkit/autk-grammar', () => ({ AutkGrammar: jest.fn().mockImplementation(() => ({ run: jest.fn().mockResolvedValue(undefined), data: {} })) }), { virtual: true });
 
 import { useCodeNodeLifecycle } from '../../../adapters/node/codeNodeLifecycle';
 import { useDataExportLifecycle } from '../../../adapters/node/dataExportLifecycle';
@@ -74,10 +68,7 @@ import { useVegaLifecycle } from '../../../adapters/node/vegaLifecycle';
 import { useSimpleVisLifecycle } from '../../../adapters/node/simpleVisLifecycle';
 import { useMergeFlowLifecycle } from '../../../adapters/node/mergeFlowLifecycle';
 import { useDataPoolLifecycle } from '../../../adapters/node/dataPoolLifecycle';
-import { useAutkMapLifecycle } from '../../../adapters/node/autkMapLifecycle';
-import { useAutkPlotLifecycle } from '../../../adapters/node/autkPlotLifecycle';
-import { useAutkComputeLifecycle } from '../../../adapters/node/autkComputeLifecycle';
-import { useAutkDbLifecycle } from '../../../adapters/node/autkDbLifecycle';
+import { useAutkGrammarLifecycle } from '../../../adapters/node/autkGrammarLifecycle';
 
 function makeMockData(overrides: Partial<NodeLifecycleData> = {}): NodeLifecycleData {
   return {
@@ -252,57 +243,18 @@ describe('Lifecycle hooks — NodeLifecycleHook contract conformance', () => {
     });
   });
 
-  describe('useAutkMapLifecycle', () => {
-    test('returns canvas contentComponent, default code, and sendCodeOverride', async () => {
-      const result = await callLifecycle(useAutkMapLifecycle);
+  describe('useAutkGrammarLifecycle', () => {
+    test('returns applyGrammar, contentComponent, and default spec', async () => {
+      const result = await callLifecycle(useAutkGrammarLifecycle);
       assertValidLifecycleResult(result.current);
+      expect(typeof result.current.applyGrammar).toBe('function');
       expect(result.current.contentComponent).toBeDefined();
       expect(typeof result.current.defaultValueOverride).toBe('string');
-      expect(result.current.defaultValueOverride).toContain('AutkMap');
-      expect(typeof result.current.sendCodeOverride).toBe('function');
     });
 
     test('omits defaultValueOverride when node already has code', async () => {
-      const result = await callLifecycle(useAutkMapLifecycle, {
-        defaultCode: 'const map = new AutkMap(container);',
-      } as any);
-      assertValidLifecycleResult(result.current);
-      expect(result.current.defaultValueOverride).toBeUndefined();
-    });
-  });
-
-  describe('useAutkPlotLifecycle', () => {
-    test('returns div contentComponent, default code, and sendCodeOverride', async () => {
-      const result = await callLifecycle(useAutkPlotLifecycle);
-      assertValidLifecycleResult(result.current);
-      expect(result.current.contentComponent).toBeDefined();
-      expect(typeof result.current.defaultValueOverride).toBe('string');
-      expect(result.current.defaultValueOverride).toContain('AutkPlot');
-      expect(typeof result.current.sendCodeOverride).toBe('function');
-    });
-  });
-
-  describe('useAutkComputeLifecycle', () => {
-    test('returns hidden contentComponent, default code, and sendCodeOverride', async () => {
-      const result = await callLifecycle(useAutkComputeLifecycle);
-      assertValidLifecycleResult(result.current);
-      expect(result.current.contentComponent).toBeDefined();
-      expect(typeof result.current.defaultValueOverride).toBe('string');
-      expect(typeof result.current.sendCodeOverride).toBe('function');
-    });
-  });
-
-  describe('useAutkDbLifecycle', () => {
-    test('seeds default code on a fresh palette drop', async () => {
-      const result = await callLifecycle(useAutkDbLifecycle);
-      assertValidLifecycleResult(result.current);
-      expect(typeof result.current.defaultValueOverride).toBe('string');
-      expect(result.current.defaultValueOverride).toContain('AutkSpatialDb');
-    });
-
-    test('returns no override when example or saved code already exists', async () => {
-      const result = await callLifecycle(useAutkDbLifecycle, {
-        defaultCode: 'await db.init();',
+      const result = await callLifecycle(useAutkGrammarLifecycle, {
+        defaultCode: '{"map":{}}',
       } as any);
       assertValidLifecycleResult(result.current);
       expect(result.current.defaultValueOverride).toBeUndefined();

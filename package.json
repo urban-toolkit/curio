@@ -1,12 +1,1 @@
-{
-  "dependencies": {
-    "@urban-toolkit/autk-compute": "^2.0.1",
-    "@urban-toolkit/autk-db": "^2.0.1",
-    "@urban-toolkit/autk-map": "^2.0.1",
-    "@urban-toolkit/autk-plot": "^2.0.1",
-    "web-worker": "^1.5.0"
-  },
-  "devDependencies": {
-    "minimatch": "^10.2.5"
-  }
-}
+{}

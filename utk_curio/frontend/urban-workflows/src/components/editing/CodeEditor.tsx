@@ -179,7 +179,7 @@ function CodeEditor({
             setOutputCallback({ code: "error", content: "No code to execute" });
             return;
         }
-        const isJsNode = nodeType === NodeType.JS_COMPUTATION || nodeType === NodeType.AUTK_DB;
+        const isJsNode = nodeType === NodeType.JS_COMPUTATION;
         const interpreter = (isJsNode && data.jsInterpreter)
             ? data.jsInterpreter
             : data.pythonInterpreter;
@@ -338,7 +338,7 @@ function CodeEditor({
             <div style={{ flex: 2, minHeight: 0 }}>
                 <Editor
                     height="100%"
-                    language={(nodeType === NodeType.JS_COMPUTATION || nodeType === NodeType.AUTK_DB) ? "javascript" : "python"}
+                    language={nodeType === NodeType.JS_COMPUTATION ? "javascript" : "python"}
                     theme="vs"
                     value={code}
                     onChange={handleCodeChange}

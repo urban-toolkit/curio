@@ -153,10 +153,7 @@ _node_type_registry: dict = {
     "DATA_POOL":             {"inputTypes": ["DATAFRAME", "GEODATAFRAME"],                                 "outputTypes": ["DATAFRAME", "GEODATAFRAME"]},
     "MERGE_FLOW":            {"inputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"],        "outputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"]},
     "DATA_SUMMARY":          {"inputTypes": ["DATAFRAME", "GEODATAFRAME"],                                 "outputTypes": ["JSON"]},
-    "AUTK_DB":               {"inputTypes": [],                                                             "outputTypes": ["LIST"]},
-    "AUTK_COMPUTE":          {"inputTypes": ["LIST", "JSON", "GEODATAFRAME"],                              "outputTypes": ["LIST", "JSON", "GEODATAFRAME"]},
-    "AUTK_MAP":              {"inputTypes": ["LIST", "JSON", "GEODATAFRAME"],                              "outputTypes": ["LIST", "JSON", "GEODATAFRAME"]},
-    "AUTK_PLOT":             {"inputTypes": ["LIST", "JSON", "GEODATAFRAME", "DATAFRAME"],                 "outputTypes": ["LIST", "JSON", "GEODATAFRAME", "DATAFRAME"]},
+    "AUTK_GRAMMAR":          {"inputTypes": ["LIST", "JSON", "GEODATAFRAME", "DATAFRAME"],                 "outputTypes": ["LIST", "JSON", "GEODATAFRAME", "DATAFRAME"]},
 }
 
 def get_output_types(node_type: str) -> list:

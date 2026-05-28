@@ -491,52 +491,12 @@ def start_backend(host, port, no_server=False):
     return process
 
 
-def _ensure_root_node_modules(project_root: str) -> None:
-    """Install the repo-root node_modules used by the sandbox's Node.js
-    subprocess. The Autark family (``@urban-toolkit/autk-db``,
-    ``autk-compute``, ``autk-map``, ``autk-plot``) is declared in the root
-    ``package.json``; AUTK_DB / AUTK_COMPUTE workflows import from this
-    location at runtime via ESM. ``check_install_build`` only manages the
-    *frontend* node_modules under ``utk_curio/frontend/urban-workflows/``,
-    so without this step a fresh checkout fails AUTK examples with
-    ``ERR_MODULE_NOT_FOUND``.
-    """
-    root_modules = os.path.join(project_root, "node_modules")
-    if os.path.exists(root_modules):
-        return
-    if shutil.which("npm") is None:
-        log_warning(
-            "[Sandbox] npm not found in PATH; skipping root npm install. "
-            "AUTK_DB / AUTK_COMPUTE workflows will fail with "
-            "ERR_MODULE_NOT_FOUND until 'npm install' is run at the repo root."
-        )
-        return
-    log_info(
-        "[Sandbox] Root node_modules not found. Running 'npm install' at "
-        f"{project_root} to provide @urban-toolkit/autk-* packages...",
-        COLOR_SANDBOX, 0,
-    )
-    try:
-        subprocess.run(
-            ["npm", "install", "--no-audit", "--no-fund"],
-            check=True, cwd=project_root, shell=shell_required,
-        )
-    except subprocess.CalledProcessError as e:
-        log_error(
-            f"[Sandbox] Root 'npm install' failed (exit code {e.returncode}). "
-            f"AUTK examples will fail; install manually at {project_root}."
-        )
-    except Exception as e:
-        log_error(f"[Sandbox] Failed to run root 'npm install': {e}")
-
-
 def start_sandbox(host, port):
     _kill_port(int(port))
     log_info(f"Starting sandbox on {host}:{port}...", COLOR_SANDBOX, 0)
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(script_dir, ".."))
-    _ensure_root_node_modules(project_root)
     # sandbox_server = os.path.join(script_dir, "sandbox", "server.py")
     env = os.environ.copy()
     env = {**os.environ, "PYTHONPATH": project_root + os.pathsep + env.get("PYTHONPATH", "")}
@@ -673,7 +633,7 @@ def install_manifest_dependencies() -> None:
     # Catalog walk is scoped to ``curio.builtin@*`` only — the catalog
     # lists every *available* package, but only the built-in is
     # auto-seeded for every user. Other catalog entries (UHVI,
-    # milan-heat, streetvision, …) are opt-in via the /catalog drawer;
+    # weather, streetvision, …) are opt-in via the /catalog drawer;
     # their deps come along when the user installs them, via the
     # per-user-store walk below.
     if catalog.is_dir():

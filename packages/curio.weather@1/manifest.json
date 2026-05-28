@@ -9,18 +9,14 @@
     "js": {},
     "packages": {},
     "python": {
-      "geopandas": "^0.14",
-      "numpy": "^1.26",
-      "pandas": "^2.0",
       "pythermalcomfort": "^2.10",
-      "rasterio": "^1.3",
       "rasterstats": "^0.20"
     }
   },
-  "description": "Python pipeline that reproduces the Curio example 'Heterogeneous data + cross-grammar linked views' (docs/examples/09-heterogeneous-data-linked-views.md). Loads a Milan thermal raster + ERA5 weather + census polygons, computes per-pixel UTCI, aggregates it onto polygons, and projects the result for downstream AUTK_MAP / VIS_VEGA views.",
-  "id": "it.urbanlab.milan-heat",
+  "description": "Nodes for weather data ingestion and thermal-comfort analysis. Provides ERA5 meteorological loading, UTCI computation via pythermalcomfort, raster zonal statistics via rasterstats, and census/polygon reprojection. Used by the 'Heterogeneous data + linked views' example workflow.",
+  "id": "curio.weather",
   "license": "MIT",
-  "name": "Milan Heat Vulnerability",
+  "name": "Weather Analysis",
   "permissions": [
     "filesystem.read"
   ],
