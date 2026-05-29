@@ -547,7 +547,11 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         }
         const currentNodes = reactFlow.getNodes();
         const currentEdges = reactFlow.getEdges();
-        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", packages, workflowDescriptionRef.current);
+        // Read packages directly from the store (always up-to-date) rather than
+        // from the React state snapshot, which may lag behind the store when a
+        // package install/uninstall updates the store before React re-renders.
+        const currentPackages = getCurrentProjectPackagesList();
+        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", currentPackages, workflowDescriptionRef.current);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
 
@@ -588,7 +592,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             setCurrentProject(detail.id, Array.isArray(seededPackages) ? seededPackages : []);
             return detail;
         }
-    }, [projectId, projectName, packages, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode]);
+    }, [projectId, projectName, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode]);
 
     // Auto-save every 30 seconds when a project has been explicitly saved at least once
     useEffect(() => {
@@ -609,7 +613,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         }
         const currentNodes = reactFlow.getNodes();
         const currentEdges = reactFlow.getEdges();
-        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", packages, workflowDescriptionRef.current);
+        // Same as saveCurrentProject: read from store to avoid stale React state snapshot.
+        const currentPackages = getCurrentProjectPackagesList();
+        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", currentPackages, workflowDescriptionRef.current);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
 
@@ -626,7 +632,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setProjectDirty(false);
         setViewerMode("owner");
         return detail;
-    }, [packages, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves]);
+    }, [workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves]);
 
     const loadProject = useCallback(async (id: string) => {
         const result = await projectsApi.get(id);

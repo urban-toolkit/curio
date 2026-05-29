@@ -40,6 +40,7 @@ import { useNavigate } from "react-router-dom";
 import { useUserContext } from "../../../providers/UserProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
 import { useNodeCatalogDrawer } from "../../../providers/NodeCatalogDrawerProvider";
+import { getCurrentProjectPackagesList } from "../../../registry/projectPackagesStore";
 
 export default function UpMenu({
     setDashBoardMode,
@@ -210,7 +211,7 @@ export default function UpMenu({
             edges,
             workflowNameRef.current,
             "",
-            packages,
+            getCurrentProjectPackagesList(),
         );
         const content = JSON.stringify(trillSpec, null, 2);
         const url = URL.createObjectURL(new Blob([content], { type: "application/json" }));
