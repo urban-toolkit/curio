@@ -39,6 +39,10 @@ import FloatingPanel from "./FloatingPanel";
 import WorkflowGoal from "./menus/top/WorkflowGoal";
 import { DashboardPanel } from "./DashboardPanel";
 import { CollaborationSidePanel } from "./collab/CollaborationSidePanel";
+import {
+    buildDatasetLoaderCode,
+    readDatasetDragPayload,
+} from "../services/datasetCatalog";
 
 const CANVAS_EXTENT: [[number, number], [number, number]] = [[-2000, -2000], [6000, 6000]];
 
@@ -281,12 +285,33 @@ export function MainCanvas() {
 
     const handleDrop = useCallback((event: React.DragEvent) => {
         event.preventDefault();
+        const dataset = readDatasetDragPayload(event.dataTransfer);
+        if (dataset) {
+            const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+            createCodeNode(NodeType.DATA_LOADING, {
+                position,
+                code: buildDatasetLoaderCode(dataset),
+                datasetRefs: [dataset.datasetId],
+                appliedDatasets: {
+                    [dataset.datasetId]: {
+                        id: dataset.datasetId,
+                        title: dataset.title,
+                        uri: dataset.uri,
+                        path: dataset.path,
+                        format: dataset.format,
+                    },
+                },
+            });
+            showToast(`Created a Data Loading node for ${dataset.title}.`, "success");
+            markDirty();
+            return;
+        }
         const type = event.dataTransfer.getData("application/reactflow") as NodeType;
         if (!type) return;
         const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
         createCodeNode(type, { position });
         markDirty();
-    }, [screenToFlowPosition, createCodeNode, markDirty]);
+    }, [screenToFlowPosition, createCodeNode, markDirty, showToast]);
 
     const handleNodesChange = useCallback((changes: NodeChange[]) => {
         const allowedChanges: NodeChange[] = [];

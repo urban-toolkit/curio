@@ -15,6 +15,7 @@ import {
     paletteDescriptorBootstrapKey,
     type ToolsMenuTooltipSide,
 } from "./toolsMenuPackagePalette";
+import { DatasetsPaletteDropdown } from "./datasetPalette";
 import styles from "./ToolsMenu.module.css";
 
 const DraggableTool = memo(function DraggableTool({
@@ -131,6 +132,7 @@ const ToolsMenu = memo(function ToolsMenu() {
                     <FontAwesomeIcon icon={faForwardStep} />
                 </button>
             </div>
+            <DatasetsPaletteDropdown />
             <PackagesPaletteDropdown groups={packageGroups} />
         </div>
     );

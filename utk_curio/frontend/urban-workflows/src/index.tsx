@@ -71,6 +71,7 @@ import UserProvider, { useUserContext } from "./providers/UserProvider";
 import DialogProvider from "./providers/DialogProvider";
 import { ToastProvider } from "./providers/ToastProvider";
 import { NodeCatalogDrawerProvider } from "./providers/NodeCatalogDrawerProvider";
+import { DatasetCatalogDrawerProvider } from "./providers/datasetCatalog";
 import { BackendHealthBanner } from "./providers/BackendHealthBanner";
 import { MainCanvas } from "./components/MainCanvas";
 import { PackagePaletteProvider } from "./providers/PackagePaletteContext";
@@ -83,6 +84,7 @@ import SignIn from "./pages/auth/SignIn";
 import SignUp from "./pages/auth/SignUp";
 import ProjectsList from "./pages/projects/ProjectsList";
 import CatalogPage from "./pages/catalog/CatalogPage";
+import DataHubPage from "./pages/dataHub/DataHubPage";
 import { ProjectLoader } from "./components/ProjectLoader";
 
 const MainCanvasRoute: React.FC = () => (
@@ -102,13 +104,15 @@ const MainCanvasRoute: React.FC = () => (
             components (UpMenu, PackagesPaletteDropdown), so scoping it here
             doesn't reduce reach. */}
         <NodeCatalogDrawerProvider>
-          <StarterProvider>
-            <ProjectLoader>
-              <PackagePaletteProvider>
-                <MainCanvas />
-              </PackagePaletteProvider>
-            </ProjectLoader>
-          </StarterProvider>
+          <DatasetCatalogDrawerProvider>
+            <StarterProvider>
+              <ProjectLoader>
+                <PackagePaletteProvider>
+                  <MainCanvas />
+                </PackagePaletteProvider>
+              </ProjectLoader>
+            </StarterProvider>
+          </DatasetCatalogDrawerProvider>
         </NodeCatalogDrawerProvider>
       </FlowProvider>
     </CollaborationProvider>
@@ -168,6 +172,14 @@ const App: React.FC = () => {
                       element={
                         <RequireAuth>
                           <CatalogPage />
+                        </RequireAuth>
+                      }
+                    />
+                    <Route
+                      path="/data-hub/:datasetId?"
+                      element={
+                        <RequireAuth>
+                          <DataHubPage />
                         </RequireAuth>
                       }
                     />

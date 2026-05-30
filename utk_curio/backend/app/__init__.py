@@ -55,6 +55,9 @@ def create_app(config_class=config_class):
     from utk_curio.backend.app.packages import packages_bp, seed_dev_packageages
     app.register_blueprint(packages_bp)
 
+    from utk_curio.backend.app.datasets import datasets_bp
+    app.register_blueprint(datasets_bp)
+
     from utk_curio.backend.app.streetvision import bp as streetvision_bp
     app.register_blueprint(streetvision_bp, url_prefix="/api/streetvision")
 

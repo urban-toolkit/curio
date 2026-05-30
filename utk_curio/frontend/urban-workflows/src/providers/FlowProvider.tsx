@@ -98,11 +98,13 @@ interface FlowContextProps {
     loading: boolean;
 
     applyRemoveChanges: (changes: NodeRemoveChange[]) => void;
-    loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[], description?: string) => void;
+    loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[], description?: string, datasets?: any[]) => void;
     packages: string[];
     setPackages: (pkgs: string[]) => void;
     addPackage: (pkg: string) => void;
     removePackage: (pkg: string) => void;
+    dataflowDatasets: any[];
+    setDataflowDatasets: React.Dispatch<React.SetStateAction<any[]>>;
     updateDataNode: (nodeId: string, newData: any) => void;
     updateWarnings: (trill_spec: any) => void;
     updateDefaultCode: (nodeId: string, content: string) => void;
@@ -223,6 +225,8 @@ export const FlowContext = createContext<FlowContextProps>({
     setPackages: () => {},
     addPackage: () => {},
     removePackage: () => {},
+    dataflowDatasets: [],
+    setDataflowDatasets: () => {},
 
     // Project defaults
     projectId: null,

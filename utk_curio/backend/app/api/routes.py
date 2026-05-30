@@ -502,10 +502,9 @@ def check_db():
 
 @bp.route('/datasets', methods=['GET'])
 def list_datasets():
-    response = requests.get(api_address+":"+str(api_port)+"/datasets", timeout=30)
-    response.raise_for_status()
-    files = response.json()
-    return jsonify(files)
+    from utk_curio.backend.app.datasets.service import DatasetCatalogService
+
+    return jsonify(DatasetCatalogService().legacy_dataset_paths())
 
 
 @bp.route("/starters", methods=["GET"])

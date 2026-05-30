@@ -60,6 +60,12 @@ import {
 import { AccessLevelType, NodeType, SupportedType } from "../constants";
 import { getNodeDescriptor, tryGetNodeDescriptor } from "../registry";
 import { NodeTemplateId } from "../registry/types";
+import {
+    applyDatasetToNodeData,
+    canApplyDatasetToNode,
+    hasDatasetDrag,
+    readDatasetDragPayload,
+} from "../services/datasetCatalog";
 import "./styles.css";
 import { useStarterContext } from "../providers/StarterProvider";
 import { useCode } from "../hook/useCode";
@@ -133,6 +139,7 @@ export const NodeContainer = ({
         playNodesUpTo,
         dashboardOn,
         dashboardLocked,
+        markDirty,
     } = useFlowContext();
     const { getNodes, getEdges } = useReactFlow();
     const { getStarters, deleteStarter, fetchStarters } = useStarterContext();
@@ -509,6 +516,30 @@ export const NodeContainer = ({
     const suggestionActive = data.suggestionType != "none" && data.suggestionType != undefined;
     const nodeHeaderBandPx = 28;
 
+    const onDatasetDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+        if (!hasDatasetDrag(event.dataTransfer)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.dataTransfer.dropEffect = canApplyDatasetToNode(data) ? "copy" : "none";
+    };
+
+    const onDatasetDrop = (event: React.DragEvent<HTMLDivElement>) => {
+        const dataset = readDatasetDragPayload(event.dataTransfer);
+        if (!dataset) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (!canApplyDatasetToNode(data)) {
+            showToast("Datasets can be applied to Data Loader or code nodes.", "warning");
+            return;
+        }
+        const applied = applyDatasetToNodeData(data, code ?? data.code ?? data.defaultCode, dataset);
+        updateDataNode(nodeId, applied.data);
+        updateDefaultCode(nodeId, applied.code);
+        sendCodeToWidgets?.(applied.code);
+        markDirty();
+        showToast(`Applied ${dataset.title} to this node.`, "success");
+    };
+
     return (
         <>
 
@@ -639,6 +670,8 @@ export const NodeContainer = ({
             <div
                 id={nodeId + "resizable"}
                 className={"resizable"}
+                onDragOver={onDatasetDragOver}
+                onDrop={onDatasetDrop}
                 style={{
                     ...getNodeContainerStyles(data.nodeType),
                     ...styles,

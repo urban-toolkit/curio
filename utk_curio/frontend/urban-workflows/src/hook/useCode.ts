@@ -39,6 +39,8 @@ type CreateCodeNodeOptions = {
     dashboardY?: number;
     dashboardWidth?: number;
     dashboardHeight?: number;
+    datasetRefs?: string[];
+    appliedDatasets?: Record<string, unknown>;
 };
 
 interface IUseCode {
@@ -136,6 +138,9 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && node.metadata.keywords != undefined)
                 nodeMeta.keywords = node.metadata.keywords;
 
+            if(node.metadata != undefined && Array.isArray(node.metadata.datasetRefs))
+                nodeMeta.datasetRefs = node.metadata.datasetRefs;
+
             if(typeof parsedWidth === "number")
                 nodeMeta.nodeWidth = parsedWidth;
 
@@ -208,14 +213,14 @@ export function useCode(): IUseCode {
             // Reverting to a historical version: preserve the current provenance graph.
             // latestTrill was already set to the target version by switchProvenanceTrill.
             const savedProv = TrillGenerator.getSerializableDataflowProvenance();
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, false, trill.dataflow.packages || [], trill.dataflow.description || "");
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || []);
             TrillGenerator.loadDataflowProvenance(savedProv);
         } else if(suggestionType == undefined) {
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "");
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || []);
             if (trill.nodeProvenance) loadNodeProvenance(trill.nodeProvenance);
             if (trill.dataflowProvenance) TrillGenerator.loadDataflowProvenance(trill.dataflowProvenance);
         } else {
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, true, undefined, trill.dataflow.description || "");
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, true, undefined, trill.dataflow.description || "", trill.dataflow.datasets || []);
         }
 
     }
@@ -243,6 +248,8 @@ export function useCode(): IUseCode {
             dashboardY = undefined,
             dashboardWidth = undefined,
             dashboardHeight = undefined,
+            datasetRefs = undefined,
+            appliedDatasets = undefined,
         } = options;
 
         const node: Node = {
@@ -273,6 +280,8 @@ export function useCode(): IUseCode {
                 dashboardY,
                 dashboardWidth,
                 dashboardHeight,
+                datasetRefs,
+                appliedDatasets,
                 input: "",
                 inputTypes: [],
                 keywords,

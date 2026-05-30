@@ -87,6 +87,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // code (palette filter, registry bootstrap) can read it without context.
     // This component subscribes so save callers see fresh state.
     const [packages, setPackagesState] = useState<string[]>(getCurrentProjectPackagesList());
+    const [dataflowDatasets, setDataflowDatasets] = useState<any[]>([]);
     useEffect(() => subscribeProjectPackages(() => {
         setPackagesState(getCurrentProjectPackagesList());
     }), []);
@@ -202,14 +203,15 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setNodes((prevNodes: Node[]) => updateNodeData(prevNodes, nodeId, () => ({ ...newData })));
     }, [setNodes]);
 
-    const loadParsedTrill = async (workflowName: string, task: string, loaded_nodes: any, loaded_edges: any, provenance?: boolean, merge?: boolean, incomingPackages?: string[], incomingDescription?: string) => {
+    const loadParsedTrill = async (workflowName: string, task: string, loaded_nodes: any, loaded_edges: any, provenance?: boolean, merge?: boolean, incomingPackages?: string[], incomingDescription?: string, incomingDatasets?: any[]) => {
         if (!merge) {
             TrillGenerator.reset();
             setWorkflowName(workflowName);
             setWorkflowDescription(incomingDescription || "");
-            const empty_trill = TrillGenerator.generateTrill([], [], workflowName, "", [], incomingDescription || "");
+            const empty_trill = TrillGenerator.generateTrill([], [], workflowName, "", [], incomingDescription || "", incomingDatasets || []);
             TrillGenerator.intializeProvenance(empty_trill);
             setPackages(incomingPackages || []);
+            setDataflowDatasets(incomingDatasets || []);
             console.log("loadParsedTrill reseting nodes");
             setNodes(() => []);
         }
@@ -551,7 +553,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // from the React state snapshot, which may lag behind the store when a
         // package install/uninstall updates the store before React re-renders.
         const currentPackages = getCurrentProjectPackagesList();
-        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", currentPackages, workflowDescriptionRef.current);
+        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", currentPackages, workflowDescriptionRef.current, dataflowDatasets);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
 
@@ -592,7 +594,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             setCurrentProject(detail.id, Array.isArray(seededPackages) ? seededPackages : []);
             return detail;
         }
-    }, [projectId, projectName, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode]);
+    }, [projectId, projectName, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode, dataflowDatasets]);
 
     // Auto-save every 30 seconds when a project has been explicitly saved at least once
     useEffect(() => {
@@ -615,7 +617,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         const currentEdges = reactFlow.getEdges();
         // Same as saveCurrentProject: read from store to avoid stale React state snapshot.
         const currentPackages = getCurrentProjectPackagesList();
-        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", currentPackages, workflowDescriptionRef.current);
+        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", currentPackages, workflowDescriptionRef.current, dataflowDatasets);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
 
@@ -632,7 +634,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setProjectDirty(false);
         setViewerMode("owner");
         return detail;
-    }, [workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves]);
+    }, [workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, dataflowDatasets]);
 
     const loadProject = useCallback(async (id: string) => {
         const result = await projectsApi.get(id);
@@ -681,6 +683,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setProjectDirty(false);
         setProjectSavedAt(null);
         setNodeExecStatus({});
+        setDataflowDatasets([]);
         setViewerMode("owner");
     }, []);
 
@@ -709,6 +712,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setPackages,
         addPackage,
         removePackage,
+        dataflowDatasets,
+        setDataflowDatasets,
 
         // Project state
         projectId,

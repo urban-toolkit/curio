@@ -40,6 +40,7 @@ import { useNavigate } from "react-router-dom";
 import { useUserContext } from "../../../providers/UserProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
 import { useNodeCatalogDrawer } from "../../../providers/NodeCatalogDrawerProvider";
+import { useDatasetCatalogDrawer } from "../../../providers/datasetCatalog";
 import { getCurrentProjectPackagesList } from "../../../registry/projectPackagesStore";
 
 export default function UpMenu({
@@ -99,6 +100,7 @@ export default function UpMenu({
     const { loadTrill } = useCode();
     const { showToast } = useToastContext();
     const { openNodeCatalogDrawer } = useNodeCatalogDrawer();
+    const { openDatasetCatalogDrawer } = useDatasetCatalogDrawer();
 
     const toggleMenu = (menu: string) => {
         setActiveMenu((prev) => (prev === menu ? null : menu));
@@ -511,6 +513,26 @@ export default function UpMenu({
                             >
                                 <FontAwesomeIcon className={styles.dropDownIcon} icon={faStore} />
                                 <button className={styles.noStyleButton}>Node Catalog</button>
+                            </div>
+                            <div
+                                className={styles.dropDownRow}
+                                onClick={() => {
+                                    openDatasetCatalogDrawer();
+                                    setActiveMenu(null);
+                                }}
+                            >
+                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faDatabase} />
+                                <button className={styles.noStyleButton}>Data Catalog</button>
+                            </div>
+                            <div
+                                className={styles.dropDownRow}
+                                onClick={() => {
+                                    navigate("/data-hub");
+                                    setActiveMenu(null);
+                                }}
+                            >
+                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faTableColumns} />
+                                <button className={styles.noStyleButton}>Data Hub</button>
                             </div>
                             <div
                                 className={styles.dropDownRow}
