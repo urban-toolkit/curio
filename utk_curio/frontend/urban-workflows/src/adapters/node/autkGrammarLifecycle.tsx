@@ -10,6 +10,9 @@ export const useAutkGrammarLifecycle: NodeLifecycleHook = (data, nodeState) => {
     const wrapperRef = useRef<HTMLDivElement>(null);
 
     const applyGrammar = async (specString: string) => {
+
+        console.log("apply grammar spec: ", specString);
+
         let spec: any;
         try {
             spec = typeof specString === 'string' ? JSON.parse(specString) : { ...(specString as any) };
@@ -43,16 +46,35 @@ export const useAutkGrammarLifecycle: NodeLifecycleHook = (data, nodeState) => {
             }
         }
 
+        console.log("data input", data.input);
+
         // Inject upstream input as a 'geojson' data source named 'upstream' so
         // users can reference "dataRef": "upstream" in the grammar spec.
         if (data.input) {
             try {
+
                 const fc = await resolveUpstreamAsGeoJson(data.input);
+
+                console.log("resolved upstream", fc);
+
                 if (fc) {
+                    // Detect the CRS of the incoming GeoJSON. Standard GeoJSON
+                    // (RFC 7946) uses WGS84 (EPSG:4326) with coordinates in the
+                    // range [-180,180] x [-90,90]. Python GeoDataFrames that have
+                    // been explicitly reprojected to the autk workspace CRS
+                    // (EPSG:3395) will have Mercator metre values (e.g. 1 000 000+).
+                    // We pass the detected CRS as coordinateFormat so autk-db can
+                    // apply the correct (or no-op) ST_Transform rather than always
+                    // assuming EPSG:4326, which produced degenerate geometries and
+                    // caused "Malformed JSON at byte 0" errors downstream.
+                    const coordinateFormat = detectCoordinateFormat(fc);
+
+                    console.log("coordinate format", coordinateFormat);
+
                     spec = {
                         ...spec,
                         data: [
-                            { type: 'geojson', geojsonObject: fc, outputTableName: 'upstream' },
+                            { type: 'geojson', geojsonObject: fc, outputTableName: 'upstream', coordinateFormat },
                             ...(spec.data ?? []),
                         ],
                     };
@@ -61,6 +83,8 @@ export const useAutkGrammarLifecycle: NodeLifecycleHook = (data, nodeState) => {
                 // Non-fatal: upstream injection is best-effort only
             }
         }
+
+        console.log("spec", spec);
 
         const targets: Record<string, string> = {};
         if (hasMaps) targets.map = mapCanvasId;
@@ -190,4 +214,55 @@ async function resolveUpstreamAsGeoJson(raw: any): Promise<FeatureCollection | n
     if (arg.type === 'FeatureCollection') return arg as FeatureCollection;
 
     return null;
+}
+
+// Determine the CRS of a FeatureCollection produced by Python/geopandas so
+// the correct coordinateFormat can be passed to autk-db's loadGeojson.
+//
+// Strategy (in order of reliability):
+//   1. Read the "crs" field that geopandas embeds in every to_json() output,
+//      e.g. {"type":"name","properties":{"name":"urn:ogc:def:crs:EPSG::3395"}}.
+//      This is the most reliable signal and handles any EPSG code, not just 3395.
+//   2. Fall back to inspecting coordinate magnitudes: anything outside the
+//      WGS84 bounding box (±180° lon / ±90° lat) is clearly projected.
+//   3. Default to EPSG:4326 (standards-compliant GeoJSON) when no signal found.
+function detectCoordinateFormat(fc: FeatureCollection): string {
+    // --- Strategy 1: embedded CRS field ---
+    const crsName: string | undefined = (fc as any)?.crs?.properties?.name;
+    if (crsName) {
+        // Matches both "urn:ogc:def:crs:EPSG::3395" and "EPSG:3395"
+        const m = crsName.match(/EPSG:{1,2}(\d+)/i);
+        if (m) return `EPSG:${m[1]}`;
+    }
+
+    // --- Strategy 2: coordinate magnitude heuristic ---
+    const WGS84_LON_MAX = 180;
+    const WGS84_LAT_MAX = 90;
+    const SAMPLE = 5;
+
+    for (let i = 0; i < Math.min(fc.features.length, SAMPLE); i++) {
+        const geom = fc.features[i]?.geometry;
+        if (!geom || !('coordinates' in geom)) continue;
+
+        const coord = firstCoordinate((geom as any).coordinates);
+        if (!coord) continue;
+
+        const [x, y] = coord;
+        if (
+            typeof x === 'number' && typeof y === 'number' &&
+            isFinite(x) && isFinite(y) &&
+            (Math.abs(x) > WGS84_LON_MAX || Math.abs(y) > WGS84_LAT_MAX)
+        ) {
+            return 'EPSG:3395';
+        }
+    }
+
+    // --- Strategy 3: assume standards-compliant WGS84 ---
+    return 'EPSG:4326';
+}
+
+function firstCoordinate(coords: any): [number, number] | null {
+    if (!Array.isArray(coords) || coords.length === 0) return null;
+    if (typeof coords[0] === 'number') return coords as [number, number];
+    return firstCoordinate(coords[0]);
 }

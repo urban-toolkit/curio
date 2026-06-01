@@ -409,10 +409,19 @@ def parseOutput(output):
         json_output['data'] = clean_df.to_dict(orient='list')
         json_output['dataType'] = 'dataframe'
     elif isinstance(output, gpd.GeoDataFrame):
-        # output['geometry'] = output['geometry'].apply(lambda geom: geom.wkt)
-        # json_output['data'] = output.to_dict(orient='list')
         gdf = fix_json_strings(output)
         geojson_dict = json.loads(gdf.to_json())
+        # geopandas ≥1.0 removed the non-standard 'crs' key from to_json() output
+        # (deprecated since 0.9, following RFC 7946). Re-inject it so that
+        # JavaScript consumers (e.g. the autk-grammar lifecycle) can determine
+        # the coordinate reference system without guessing from coordinate values.
+        if output.crs is not None:
+            epsg = output.crs.to_epsg()
+            if epsg is not None:
+                geojson_dict['crs'] = {
+                    'type': 'name',
+                    'properties': {'name': f'urn:ogc:def:crs:EPSG::{epsg}'},
+                }
         json_output['data'] = geojson_dict
         json_output['dataType'] = 'geodataframe'
         if hasattr(output, 'metadata') and 'name' in output.metadata:
