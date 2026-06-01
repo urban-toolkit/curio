@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { GlobalPageHeader } from "../../components/layout/GlobalPageHeader";
+import { DatasetDetailPanel } from "../../components/datasets/catalog/DatasetDetailPanel";
 import {
   DATASET_FORMAT_LABEL,
   DATASET_ORIGIN_LABEL,
@@ -270,119 +272,29 @@ function BrowsePage() {
 
 function DetailPage({ datasetId }: { datasetId: string }) {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState("Overview");
   const catalog = useDatasetCatalog({ includeHub: true });
   const decodedDatasetId = decodeURIComponent(datasetId);
   const dataset = catalog.items.find((item) => item.id === decodedDatasetId) || catalog.items[0] || null;
-  const fields = dataset?.schema?.fields?.length
-    ? dataset.schema.fields
-    : [
-      { name: "geometry", type: dataset?.format === "geojson" ? "GEOMETRY" : "STRING", nullable: false },
-      { name: "id", type: "INTEGER", nullable: false },
-      { name: "name", type: "STRING", nullable: true },
-      { name: "source", type: "STRING", nullable: true },
-      { name: "updated_at", type: "DATETIME", nullable: true },
-    ];
-  const rows = [
-    ["100001", dataset?.title || "Dataset", dataset?.format || "csv", "active", "today"],
-    ["100002", "Filtered extract", "computed", "ready", "today"],
-    ["100003", "Loader sample", "source", "ready", "yesterday"],
-  ];
-  const tabs = ["Overview", "Schema", "Table Preview", "Lineage"];
 
   return (
     <div className={styles.detailPage}>
-      <main className={styles.inspector}>
-        <div className={styles.breadcrumb}>
-          <span>DATA HUB</span><span>/</span><span>INSTALLED DATASETS</span><span>/</span><strong>{dataset?.title || "Dataset"}</strong>
-        </div>
-        <button className={styles.backButton} type="button" onClick={() => navigate("/data-hub")}>Back</button>
-        <header className={styles.inspectorHeader}>
-          <div>
-            <h1>{dataset?.title || (catalog.loading ? "Loading dataset..." : "Dataset")}</h1>
-            <div className={styles.inspectorMeta}>
-              <span className={styles.installedBadge}>{dataset?.installed ? "Installed" : "Hub dataset"}</span>
-              {dataset ? <span className={formatClass(dataset.format)}>{DATASET_FORMAT_LABEL[dataset.format]}</span> : null}
-              <span>{datasetCount(dataset) || "Unknown rows"}</span>
-              <span>{fields.length} columns</span>
-              <span>{formatBytes(dataset?.sizeBytes) || "Unknown size"}</span>
-              <span>Updated {relativeTime(dataset?.updatedAt)}</span>
-            </div>
-          </div>
-          <div className={styles.inspectorActions}>
-            <button className={styles.publishButton} type="button">Publish to Hub</button>
-            <button className={styles.exportButton} type="button">Export</button>
-          </div>
-        </header>
-        <nav className={styles.inspectorTabs}>
-          {tabs.map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              className={tab === activeTab ? styles.inspectorTabActive : ""}
-              onClick={() => setActiveTab(tab)}
-            >
-              {tab}
-            </button>
-          ))}
-        </nav>
-        {catalog.error ? <div className={styles.error}>{catalog.error}</div> : null}
-        <div className={styles.inspectorGrid}>
-          <section className={styles.schemaPanel}>
-            <div className={styles.panelHeader}>
-              <h2>Schema</h2>
-              <span>{fields.length}</span>
-            </div>
-            <div className={styles.schemaTable}>
-              <div className={styles.schemaHead}><span>Field</span><span>Type</span><span>Null</span></div>
-              {fields.map((field) => (
-                <div className={styles.schemaRow} key={field.name}>
-                  <span>{field.name}</span><span>{field.type}</span><span>{field.nullable ? "null" : ""}</span>
-                </div>
-              ))}
-            </div>
-            <p className={styles.panelFoot}>{fields.length} fields / {dataset?.schema?.geometryType || "1 geometry"}</p>
-          </section>
-
-          <section className={styles.previewPanel}>
-            <h2>Table Preview</h2>
-            <p>Showing rows 1-3</p>
-            <div className={styles.previewTable}>
-              <div className={styles.previewHead}><span>id</span><span>name</span><span>format</span><span>status</span><span>updated</span></div>
-              {rows.map((row) => (
-                <div className={styles.previewRow} key={row[0]}>{row.map((cell, index) => <span key={`${cell}-${index}`}>{cell}</span>)}</div>
-              ))}
-            </div>
-          </section>
-
-          <section className={styles.lineagePanel}>
-            <h2>Data Flows <span>live</span></h2>
-            <p>Dataflows that generate or consume this dataset</p>
-            <div className={styles.lineageItem}><strong>Dataset Loader</strong><span>Source node / current dataflow</span><button type="button">View node</button></div>
-            <div className={styles.lineageItem}><strong>Spatial Filter</strong><span>Compute node / consumes dataset</span><button type="button">View node</button></div>
-          </section>
-
-          <aside className={styles.infoPanel}>
-            <h2>Dataset Info</h2>
-            <div className={styles.infoGrid}>
-              <span>Format</span><strong>{dataset ? DATASET_FORMAT_LABEL[dataset.format] : "Dataset"}</strong>
-              <span>Total records</span><strong>{datasetCount(dataset) || "Unknown"}</strong>
-              <span>Size</span><strong>{formatBytes(dataset?.sizeBytes) || "Unknown"}</strong>
-              <span>License</span><strong>{dataset?.license || "MIT"}</strong>
-              <span>Source</span><strong>{dataset ? formatDatasetLocation(dataset) : "Current dataflow"}</strong>
-            </div>
-            <div className={styles.drawerSection}>
-              <h3>Required Loader Code</h3>
-              <pre className={styles.snippet}>{dataset?.loaderSnippet?.code || "dataset_path = \"<dataset-path>\""}</pre>
-            </div>
-          </aside>
-        </div>
-      </main>
+      <DatasetDetailPanel
+        dataset={dataset}
+        loading={catalog.loading}
+        error={catalog.error}
+        variant="page"
+        onBack={() => navigate("/data-hub")}
+      />
     </div>
   );
 }
 
 export default function DataHubPage() {
   const { datasetId } = useParams<{ datasetId?: string }>();
-  return datasetId ? <DetailPage datasetId={datasetId} /> : <BrowsePage />;
+  return (
+    <div className={styles.pageShell}>
+      <GlobalPageHeader />
+      {datasetId ? <DetailPage datasetId={datasetId} /> : <BrowsePage />}
+    </div>
+  );
 }

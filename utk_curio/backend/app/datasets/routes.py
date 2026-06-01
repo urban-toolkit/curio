@@ -38,6 +38,7 @@ def list_dataset_catalog():
             sort=request.args.get("sort", "recent"),
             include_hub=include_hub,
         )
+        print("list_dataset_catalog: payload", payload)
     except (DatasetCatalogError, ProjectError) as exc:
         return _error(str(exc), getattr(exc, "status", 400))
     except NotFoundError:
@@ -61,14 +62,16 @@ def get_dataset(dataset_id: str):
 @require_auth
 def preview_dataset(dataset_id: str):
     row_limit = request.args.get("rowLimit", "50")
+    offset = request.args.get("offset", "0")
     try:
         payload = _service().preview(
             dataset_id,
             dataflow_id=_dataflow_id_from_request(),
             row_limit=max(1, min(int(row_limit), 500)),
+            offset=max(0, int(offset)),
         )
     except ValueError:
-        return _error("rowLimit must be an integer")
+        return _error("rowLimit and offset must be integers")
     except (DatasetCatalogError, ProjectError) as exc:
         return _error(str(exc), getattr(exc, "status", 400))
     except NotFoundError:

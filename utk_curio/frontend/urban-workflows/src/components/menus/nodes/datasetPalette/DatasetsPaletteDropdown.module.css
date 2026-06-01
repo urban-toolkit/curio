@@ -43,6 +43,12 @@
   font-size: 1.25em;
 }
 
+.triggerChevron {
+  font-size: 10px;
+  opacity: 0.85;
+}
+
+
 .triggerLabel {
   color: inherit;
   font-size: 8px;

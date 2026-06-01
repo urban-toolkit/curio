@@ -1,5 +1,4 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faFileImport, faXmark } from "@fortawesome/free-solid-svg-icons";
 import { useFlowContext } from "../../../providers/FlowProvider";
@@ -7,14 +6,15 @@ import { useToastContext } from "../../../providers/ToastProvider";
 import {
   createDatasetDragPayload,
   DATASET_DRAG_MIME,
-  DATASET_FORMAT_LABEL,
-  DATASET_ORIGIN_LABEL,
   DatasetCatalogItem,
   DatasetOrigin,
   DatasetSortMode,
   datasetCatalogApi,
   useDatasetCatalog,
 } from "../../../services/datasetCatalog";
+import { DatasetCard } from "./DatasetCard";
+import { DatasetDetailModal } from "./DatasetDetailModal";
+import { InstalledDatasetsList } from "./InstalledDatasetsList";
 import styles from "./DatasetCatalogDrawer.module.css";
 
 export interface DatasetCatalogDrawerProps {
@@ -25,42 +25,12 @@ export interface DatasetCatalogDrawerProps {
 
 type DrawerTab = "featured" | "browse" | "installed" | "computed";
 
-function formatBytes(value?: number | null): string | null {
-  if (value == null) return null;
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function relativeTime(iso: string): string {
-  const delta = Date.now() - new Date(iso).getTime();
-  if (!Number.isFinite(delta)) return "recent";
-  const minutes = Math.max(1, Math.round(delta / 60_000));
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 48) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}
-
-function datasetMeta(dataset: DatasetCatalogItem): string[] {
-  const primaryCount =
-    dataset.featureCount != null
-      ? `${dataset.featureCount.toLocaleString()} feat.`
-      : dataset.rowCount != null
-        ? `${dataset.rowCount.toLocaleString()} rows`
-        : null;
-  return [
-    primaryCount,
-    formatBytes(dataset.sizeBytes),
-    dataset.consumerNodeIds.length > 0 ? `${dataset.consumerNodeIds.length} nodes consume` : "ready",
-  ].filter((part): part is string => Boolean(part));
-}
-
-function initials(title: string): string {
-  const words = title.trim().split(/\s+/).filter(Boolean);
-  const seed = words.length > 1 ? `${words[0][0]}${words[1][0]}` : title.slice(0, 2);
-  return seed.toUpperCase();
-}
+const TAB_LABEL: Record<DrawerTab, string> = {
+  featured: "Featured",
+  browse: "Browse",
+  installed: "Installed",
+  computed: "Computed",
+};
 
 function tabOrigin(tab: DrawerTab): DatasetOrigin | "" {
   return tab === "computed" ? "computed" : "";
@@ -73,13 +43,15 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
 }) => {
   const drawerRef = useRef<HTMLElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const navigate = useNavigate();
+  const importInFlightRef = useRef(false);
   const { projectId, saveCurrentProject, setDataflowDatasets } = useFlowContext();
   const { showToast } = useToastContext();
   const [tab, setTab] = useState<DrawerTab>("browse");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<DatasetSortMode>("recent");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [publishingId, setPublishingId] = useState<string | null>(null);
+  const [detailDatasetId, setDetailDatasetId] = useState<string | null>(null);
 
   const includeHub = tab === "featured" || tab === "browse";
   const catalog = useDatasetCatalog({
@@ -108,6 +80,10 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
     [catalog.items],
   );
   const computedCount = catalog.facets.origin.computed ?? 0;
+  const detailFallback = useMemo(
+    () => (detailDatasetId ? catalog.items.find((item) => item.id === detailDatasetId) ?? null : null),
+    [catalog.items, detailDatasetId],
+  );
 
   const ensureProjectId = useCallback(async (): Promise<string | null> => {
     if (projectId) return projectId;
@@ -160,7 +136,65 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
     [catalog, ensureProjectId, setDataflowDatasets, showToast],
   );
 
+  const onUninstall = useCallback(
+    async (dataset: DatasetCatalogItem) => {
+      const id = await ensureProjectId();
+      if (!id) return;
+      setBusyId(dataset.id);
+      try {
+        await datasetCatalogApi.uninstallFromDataflow(id, dataset.id);
+        setDataflowDatasets((prev) =>
+          prev.filter((row) => (row?.datasetId || row?.id) !== dataset.id),
+        );
+        await catalog.reload();
+        showToast(`Removed ${dataset.title} from this dataflow.`, "success");
+      } catch (err) {
+        showToast((err as Error)?.message || "Could not remove dataset.", "error");
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [catalog, ensureProjectId, setDataflowDatasets, showToast],
+  );
+
+  const onPublish = useCallback(
+    async (datasetId: string) => {
+      const id = await ensureProjectId();
+      if (!id) return;
+      setPublishingId(datasetId);
+      try {
+        await datasetCatalogApi.publishDataset(datasetId, { dataflowId: id });
+        await catalog.reload();
+        showToast("Dataset published to Data Hub.", "success");
+      } catch (err) {
+        showToast((err as Error)?.message || "Could not publish dataset.", "error");
+      } finally {
+        setPublishingId(null);
+      }
+    },
+    [catalog, ensureProjectId, showToast],
+  );
+
+  const onUnpublish = useCallback(
+    async (dataset: DatasetCatalogItem) => {
+      const confirmed = window.confirm(
+        `Unpublish ${dataset.title} from the Data Hub?\n\nThis removes the hub listing. Installed copies in dataflows are not removed.`,
+      );
+      if (!confirmed) return;
+      setBusyId(dataset.id);
+      try {
+        // Hub unpublish API is not wired yet; surface intent until backend lands.
+        showToast(`${dataset.title} unpublish is not available yet.`, "info");
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [showToast],
+  );
+
   const onPickImport = useCallback(async (file: File) => {
+    if (importInFlightRef.current) return;
+    importInFlightRef.current = true;
     setBusyId("import");
     try {
       const imported = await catalog.importDataset(file);
@@ -190,15 +224,23 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
     } catch (err) {
       showToast((err as Error)?.message || "Could not import dataset.", "error");
     } finally {
+      importInFlightRef.current = false;
       setBusyId(null);
     }
   }, [catalog, setDataflowDatasets, showToast]);
 
-  const onInsert = useCallback((dataset: DatasetCatalogItem) => {
-    const path = dataset.path || dataset.uri;
-    if (path) void navigator.clipboard?.writeText(path);
-    showToast("Drag this dataset onto a Data Loader node to apply path and loader code.", "info");
-  }, [showToast]);
+  const handleDatasetDragStart = useCallback((dataset: DatasetCatalogItem, event: React.DragEvent<HTMLElement>) => {
+    event.dataTransfer.setData(DATASET_DRAG_MIME, JSON.stringify(createDatasetDragPayload(dataset)));
+    event.dataTransfer.effectAllowed = "copy";
+  }, []);
+
+  const openDatasetDetails = useCallback((dataset: DatasetCatalogItem) => {
+    setDetailDatasetId(dataset.id);
+  }, []);
+
+  const closeDatasetDetails = useCallback(() => {
+    setDetailDatasetId(null);
+  }, []);
 
   const handleDrawerTransitionEnd = useCallback(
     (e: React.TransitionEvent<HTMLElement>) => {
@@ -209,10 +251,11 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
   );
 
   return (
-    <div
-      className={`${styles.overlayRoot} ${presented ? styles.overlayRootPresented : ""}`}
-      data-curio-dataset-catalog-drawer="true"
-    >
+    <>
+      <div
+        className={`${styles.overlayRoot} ${presented ? styles.overlayRootPresented : ""}`}
+        data-curio-dataset-catalog-drawer="true"
+      >
       <button type="button" className={styles.scrim} aria-label="Close dataset catalog" onClick={onRequestClose} />
       <aside
         ref={drawerRef}
@@ -286,81 +329,55 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
         <main className={styles.content}>
           {catalog.error ? <div className={styles.error}>{catalog.error}</div> : null}
           {catalog.loading ? <div className={styles.empty}>Loading datasets...</div> : null}
-          {!catalog.loading && !catalog.error && items.length === 0 ? (
-            <div className={styles.empty}>
-              {tab === "installed" || tab === "computed"
-                ? "No installed or computed datasets yet."
-                : "No datasets match the current filters."}
-            </div>
-          ) : null}
-          <div className={styles.cardList}>
-            {items.map((dataset) => (
-              <article
-                key={`${dataset.origin}:${dataset.id}`}
-                className={styles.card}
-                draggable
-                onDragStart={(event) => {
-                  event.dataTransfer.setData(DATASET_DRAG_MIME, JSON.stringify(createDatasetDragPayload(dataset)));
-                  event.dataTransfer.effectAllowed = "copy";
-                }}
-              >
-                <div className={styles.avatar}>{initials(dataset.title)}</div>
-                <div className={styles.cardBody}>
-                  <div className={styles.cardHeader}>
-                    <div>
-                      <h3 className={styles.cardTitle}>{dataset.title}</h3>
-                      <p className={styles.cardSource}>
-                        {DATASET_FORMAT_LABEL[dataset.format]} Loader - {DATASET_ORIGIN_LABEL[dataset.origin]} - {dataset.license || "MIT"}
-                      </p>
-                    </div>
-                    <span className={styles.formatChip}>{DATASET_FORMAT_LABEL[dataset.format]}</span>
-                  </div>
-                  {dataset.description ? <p className={styles.description}>{dataset.description}</p> : null}
-                  <div className={styles.metaRow}>
-                    {datasetMeta(dataset).map((part) => <span key={part}>{part}</span>)}
-                    <span className={styles.dot} aria-hidden />
-                    <span>{relativeTime(dataset.updatedAt)}</span>
-                  </div>
-                  <div className={styles.tagRow}>
-                    {(dataset.tags.length > 0 ? dataset.tags.slice(0, 2) : [dataset.format, "data"]).map((tag) => (
-                      <span key={tag}>{tag}</span>
-                    ))}
-                  </div>
-                  <div className={styles.actions}>
-                    <button
-                      type="button"
-                      className={styles.secondaryButton}
-                      onClick={() => {
-                        navigate(`/data-hub/${encodeURIComponent(dataset.id)}`);
-                        onRequestClose();
-                      }}
-                    >
-                      Open
-                    </button>
-                    {dataset.installed || dataset.origin !== "hub" ? (
-                      <button
-                        type="button"
-                        className={styles.secondaryButton}
-                        onClick={() => onInsert(dataset)}
-                      >
-                        Insert
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className={styles.button}
-                        disabled={busyId === dataset.id}
-                        onClick={() => void onInstall(dataset)}
-                      >
-                        {busyId === dataset.id ? "Installing..." : "Install"}
-                      </button>
-                    )}
-                    {dataset.origin === "computed" ? <button type="button" className={styles.button}>Publish</button> : null}
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
+          {tab === "installed" ? (
+            !catalog.loading && !catalog.error && items.length === 0 ? (
+              <div className={styles.empty}>No datasets installed in this dataflow yet.</div>
+            ) : (
+              <InstalledDatasetsList
+                datasets={items}
+                busy={busyId != null || publishingId != null}
+                publishingId={publishingId}
+                onUninstall={projectId ? (dataset) => void onUninstall(dataset) : undefined}
+                onPublish={(datasetId) => void onPublish(datasetId)}
+                onDragStart={handleDatasetDragStart}
+              />
+            )
+          ) : (
+            <>
+              {!catalog.loading && !catalog.error ? (
+                <p className={styles.sectionLabel}>{TAB_LABEL[tab]}</p>
+              ) : null}
+              {!catalog.loading && !catalog.error && items.length === 0 ? (
+                <div className={styles.empty}>No datasets match the current filters.</div>
+              ) : null}
+              <div className={styles.cardList}>
+                {items.map((dataset) => {
+                  const isInstalled = dataset.installed === true || dataset.origin !== "hub";
+                  const isPublished = dataset.origin === "hub";
+                  return (
+                    <DatasetCard
+                      key={`${dataset.origin}:${dataset.id}`}
+                      dataset={dataset}
+                      isInstalled={isInstalled}
+                      isPublished={isPublished}
+                      busy={busyId === dataset.id || publishingId === dataset.id}
+                      publishingId={publishingId}
+                      onDragStart={(event) => handleDatasetDragStart(dataset, event)}
+                      onInstall={(row) => void onInstall(row)}
+                      onUninstall={projectId ? (row) => void onUninstall(row) : undefined}
+                      onUnpublish={
+                        isPublished && isInstalled
+                          ? (row) => void onUnpublish(row)
+                          : undefined
+                      }
+                      onPublish={(datasetId) => void onPublish(datasetId)}
+                      onOpenDetails={openDatasetDetails}
+                    />
+                  );
+                })}
+              </div>
+            </>
+          )}
           <div className={styles.assistNote}>
             <strong>Shared dataflow environment</strong>
             <span>Drag a dataset onto a loader node to fill path, schema, ports, and required loader code.</span>
@@ -388,6 +405,16 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
           </button>
         </footer>
       </aside>
-    </div>
+      </div>
+
+      {detailDatasetId ? (
+        <DatasetDetailModal
+          datasetId={detailDatasetId}
+          dataflowId={projectId}
+          fallbackDataset={detailFallback}
+          onClose={closeDatasetDetails}
+        />
+      ) : null}
+    </>
   );
 };

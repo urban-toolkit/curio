@@ -3,6 +3,7 @@ import {
   DatasetCatalogItem,
   DatasetCatalogQuery,
   DatasetCatalogResponse,
+  DatasetPreviewQuery,
   DatasetPreviewResponse,
 } from "./datasetCatalogTypes";
 
@@ -20,6 +21,15 @@ function queryString(query: DatasetCatalogQuery = {}): string {
   return raw ? `?${raw}` : "";
 }
 
+function previewQueryString(query: DatasetPreviewQuery = {}): string {
+  const params = new URLSearchParams();
+  if (query.dataflowId) params.set("dataflowId", query.dataflowId);
+  if (query.offset != null) params.set("offset", String(query.offset));
+  if (query.rowLimit != null) params.set("rowLimit", String(query.rowLimit));
+  const raw = params.toString();
+  return raw ? `?${raw}` : "";
+}
+
 export const datasetCatalogApi = {
   listCatalog(query: DatasetCatalogQuery = {}): Promise<DatasetCatalogResponse> {
     return apiFetch(`/api/datasets/catalog${queryString(query)}`);
@@ -29,8 +39,8 @@ export const datasetCatalogApi = {
     return apiFetch(`/api/datasets/${encodeURIComponent(datasetId)}${queryString(query)}`);
   },
 
-  preview(datasetId: string, query: Pick<DatasetCatalogQuery, "dataflowId"> = {}): Promise<DatasetPreviewResponse> {
-    return apiFetch(`/api/datasets/${encodeURIComponent(datasetId)}/preview${queryString(query)}`);
+  preview(datasetId: string, query: DatasetPreviewQuery = {}): Promise<DatasetPreviewResponse> {
+    return apiFetch(`/api/datasets/${encodeURIComponent(datasetId)}/preview${previewQueryString(query)}`);
   },
 
   async importDataset(

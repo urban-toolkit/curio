@@ -19,6 +19,8 @@ from typing import Any
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
+from utk_curio.backend.app.datasets.manifest import DatasetManifest
+
 
 SUPPORTED_SUFFIXES = {
     ".csv": "csv",
@@ -140,56 +142,57 @@ def _item_from_file(path: Path, *, source_label: str, origin: str = "imported") 
 
 
 class DatasetRegistryRepository:
-    """Fixture-backed Data Hub rows for v1."""
+    """Manifest-backed Data Hub catalog at ``<repo_root>/datasets/``."""
 
     def list_items(self) -> list[dict[str, Any]]:
-        return [
-            _base_item(
-                id="hub-chicago-boundaries",
-                title="Chicago Community Areas",
-                description="Boundary geometries for Chicago community areas.",
-                origin="hub",
-                format="geojson",
-                uri="curio://hub/chicago-community-areas",
-                path=None,
-                featureCount=77,
-                sizeBytes=1_800_000,
-                updatedAt="2026-05-20T12:00:00Z",
-                sourceLabel="Data Hub",
-                license="Open Data",
-                tags=["boundaries", "chicago", "geojson"],
-            ),
-            _base_item(
-                id="hub-census-acs-profile",
-                title="ACS Neighborhood Profile",
-                description="Tabular demographic indicators prepared for urban analysis.",
-                origin="hub",
-                format="csv",
-                uri="curio://hub/acs-neighborhood-profile",
-                path=None,
-                rowCount=2_408,
-                sizeBytes=1_200_000,
-                updatedAt="2026-05-19T09:00:00Z",
-                sourceLabel="Data Hub",
-                license="Public domain",
-                tags=["acs", "demographics", "csv"],
-            ),
-            _base_item(
-                id="hub-street-vision-sample",
-                title="Street Vision Detections",
-                description="Sample detections for visual analytics workflows.",
-                origin="hub",
-                format="json",
-                uri="curio://hub/street-vision-detections",
-                path=None,
-                rowCount=12_800,
-                sizeBytes=3_400_000,
-                updatedAt="2026-05-17T16:30:00Z",
-                sourceLabel="Data Hub",
-                license="CC BY 4.0",
-                tags=["vision", "detections", "json"],
-            ),
-        ]
+        from utk_curio.backend.app.datasets.manifest import ManifestError, load_dataset_manifest_from_dir
+        from utk_curio.backend.app.datasets.storage import list_catalog_datasets
+
+        items: list[dict[str, Any]] = []
+        for dataset_root in list_catalog_datasets():
+            try:
+                manifest = load_dataset_manifest_from_dir(dataset_root)
+            except ManifestError:
+                continue
+            items.append(_item_from_manifest(manifest, dataset_root))
+        return items
+
+    def get_catalog_dir(self, dataset_id: str) -> Path | None:
+        from utk_curio.backend.app.datasets.manifest import ManifestError, load_dataset_manifest_from_dir
+        from utk_curio.backend.app.datasets.storage import list_catalog_datasets
+
+        for dataset_root in list_catalog_datasets():
+            try:
+                manifest = load_dataset_manifest_from_dir(dataset_root)
+            except ManifestError:
+                continue
+            if manifest.id == dataset_id:
+                return dataset_root
+        return None
+
+
+def _item_from_manifest(manifest: DatasetManifest, dataset_root: Path) -> dict[str, Any]:
+    data_path = dataset_root / manifest.data_file
+    size_bytes = data_path.stat().st_size if data_path.is_file() else None
+    updated_at = manifest.updated_at or manifest.created_at or _iso_from_timestamp()
+    return _base_item(
+        id=manifest.id,
+        title=manifest.name,
+        description=manifest.description,
+        origin="hub",
+        format=manifest.format,
+        uri=f"curio://hub/{manifest.id}",
+        path=None,
+        dirName=manifest.dir_name,
+        sizeBytes=size_bytes,
+        rowCount=manifest.row_count,
+        featureCount=manifest.feature_count,
+        updatedAt=updated_at,
+        sourceLabel=manifest.source_label or manifest.publisher,
+        license=manifest.license or None,
+        tags=manifest.tags,
+        schema=manifest.schema,
+    )
 
 
 class LocalDatasetRepository:
@@ -213,6 +216,7 @@ class LocalDatasetRepository:
                     continue
                 items.append(item)
                 seen.add(item["id"])
+        print("local: items", items)
         return items
 
     def save_import(self, file: FileStorage) -> dict[str, Any]:
@@ -301,6 +305,7 @@ class InstalledDatasetRepository:
                 format=fmt,
                 uri=ref.get("uri") or "",
                 path=ref.get("path"),
+                dirName=ref.get("dirName"),
                 sizeBytes=ref.get("sizeBytes"),
                 rowCount=ref.get("rowCount"),
                 featureCount=ref.get("featureCount"),
@@ -332,13 +337,15 @@ class InstalledDatasetRepository:
 
 
 class DatasetPreviewService:
-    def preview(self, item: dict[str, Any], row_limit: int = 50) -> dict[str, Any]:
+    def preview(self, item: dict[str, Any], *, row_limit: int = 50, offset: int = 0) -> dict[str, Any]:
         path_value = item.get("path")
         if not path_value or str(path_value).startswith("curio://"):
             return {
                 "schema": item.get("schema") or {"fields": []},
                 "rows": [],
                 "rowLimit": row_limit,
+                "offset": offset,
+                "totalRows": item.get("featureCount") or item.get("rowCount") or 0,
                 "truncated": False,
                 "unsupported": True,
                 "message": "Preview is available after the dataset is installed or computed locally.",
@@ -350,6 +357,8 @@ class DatasetPreviewService:
                 "schema": item.get("schema") or {"fields": []},
                 "rows": [],
                 "rowLimit": row_limit,
+                "offset": offset,
+                "totalRows": item.get("featureCount") or item.get("rowCount") or 0,
                 "truncated": False,
                 "unsupported": True,
                 "message": "Dataset file is not available on disk.",
@@ -357,19 +366,32 @@ class DatasetPreviewService:
 
         fmt = item.get("format")
         if fmt == "csv":
-            return self._preview_csv(path, row_limit)
+            return self._preview_csv(path, row_limit, offset, item)
         if fmt == "json":
-            return self._preview_json(path, row_limit)
+            return self._preview_json(path, row_limit, offset, item)
         if fmt == "geojson":
-            return self._preview_geojson(path, row_limit)
+            return self._preview_geojson(path, row_limit, offset, item)
         return {
             "schema": {"fields": []},
             "rows": [],
             "rowLimit": row_limit,
+            "offset": offset,
+            "totalRows": item.get("featureCount") or item.get("rowCount") or 0,
             "truncated": False,
             "unsupported": True,
             "message": f"Preview is not supported for {fmt} datasets yet.",
         }
+
+    def _total_rows(self, item: dict[str, Any], computed: int | None) -> int:
+        if computed is not None:
+            return computed
+        return int(item.get("featureCount") or item.get("rowCount") or 0)
+
+    def _count_csv_rows(self, path: Path) -> int:
+        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+            reader = csv.reader(handle)
+            next(reader, None)
+            return sum(1 for _ in reader)
 
     def _infer_fields(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not rows:
@@ -392,58 +414,69 @@ class DatasetPreviewService:
             fields.append({"name": name, "type": field_type, "nullable": True, "sample": sample})
         return fields
 
-    def _preview_csv(self, path: Path, row_limit: int) -> dict[str, Any]:
+    def _preview_csv(self, path: Path, row_limit: int, offset: int, item: dict[str, Any]) -> dict[str, Any]:
+        total_rows = self._count_csv_rows(path)
         rows: list[dict[str, Any]] = []
         with path.open("r", encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle)
             for index, row in enumerate(reader):
-                if index >= row_limit:
-                    return {
-                        "schema": {"fields": self._infer_fields(rows)},
-                        "rows": rows,
-                        "rowLimit": row_limit,
-                        "truncated": True,
-                    }
+                if index < offset:
+                    continue
+                if len(rows) >= row_limit:
+                    break
                 rows.append(dict(row))
+        end = offset + len(rows)
         return {
-            "schema": {"fields": self._infer_fields(rows)},
+            "schema": {"fields": self._infer_fields(rows) if rows else (item.get("schema") or {}).get("fields", [])},
             "rows": rows,
             "rowLimit": row_limit,
-            "truncated": False,
+            "offset": offset,
+            "totalRows": self._total_rows(item, total_rows),
+            "truncated": end < self._total_rows(item, total_rows),
         }
 
-    def _preview_json(self, path: Path, row_limit: int) -> dict[str, Any]:
+    def _preview_json(self, path: Path, row_limit: int, offset: int, item: dict[str, Any]) -> dict[str, Any]:
         with path.open("r", encoding="utf-8") as handle:
             data = json.load(handle)
         rows = data if isinstance(data, list) else [data] if isinstance(data, dict) else [{"value": data}]
-        display_rows = [row if isinstance(row, dict) else {"value": row} for row in rows[:row_limit]]
+        total_rows = len(rows)
+        page = rows[offset : offset + row_limit]
+        display_rows = [row if isinstance(row, dict) else {"value": row} for row in page]
+        end = offset + len(display_rows)
         return {
-            "schema": {"fields": self._infer_fields(display_rows)},
+            "schema": {"fields": self._infer_fields(display_rows) if display_rows else (item.get("schema") or {}).get("fields", [])},
             "rows": display_rows,
             "rowLimit": row_limit,
-            "truncated": len(rows) > row_limit,
+            "offset": offset,
+            "totalRows": self._total_rows(item, total_rows),
+            "truncated": end < self._total_rows(item, total_rows),
         }
 
-    def _preview_geojson(self, path: Path, row_limit: int) -> dict[str, Any]:
+    def _preview_geojson(self, path: Path, row_limit: int, offset: int, item: dict[str, Any]) -> dict[str, Any]:
         with path.open("r", encoding="utf-8") as handle:
             data = json.load(handle)
         features = data.get("features", []) if isinstance(data, dict) else []
+        total_rows = len(features)
         rows = []
         geometry_type = None
-        for feature in features[:row_limit]:
+        for feature in features[offset : offset + row_limit]:
             props = feature.get("properties") or {}
             geom = feature.get("geometry") or {}
             geometry_type = geometry_type or geom.get("type")
             rows.append({**props, "geometry": geom.get("type")})
+        end = offset + len(rows)
+        schema_fields = self._infer_fields(rows) if rows else (item.get("schema") or {}).get("fields", [])
         return {
             "schema": {
-                "fields": self._infer_fields(rows),
-                "geometryType": geometry_type,
+                "fields": schema_fields,
+                "geometryType": geometry_type or (item.get("schema") or {}).get("geometryType"),
                 "crs": data.get("crs", {}).get("properties", {}).get("name") if isinstance(data, dict) else None,
             },
             "rows": rows,
             "rowLimit": row_limit,
-            "truncated": len(features) > row_limit,
+            "offset": offset,
+            "totalRows": self._total_rows(item, total_rows),
+            "truncated": end < self._total_rows(item, total_rows),
         }
 
 
@@ -455,6 +488,51 @@ class DatasetCatalogService:
         self.installed = InstalledDatasetRepository(user)
         self.computed = ComputedDatasetIndexer()
         self.preview_service = DatasetPreviewService()
+
+    def _user_key(self) -> str:
+        if self.user is None:
+            raise DatasetCatalogError("Authorization required", 401)
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        return _user_dir_key(self.user)
+
+    def _resolve_item_path(self, item: dict[str, Any]) -> str | None:
+        path_value = item.get("path")
+        if path_value and not str(path_value).startswith("curio://"):
+            return str(path_value)
+
+        dir_name = item.get("dirName")
+        if not dir_name:
+            catalog_dir = self.registry.get_catalog_dir(item.get("id", ""))
+            if catalog_dir is not None:
+                dir_name = catalog_dir.name
+            else:
+                return None
+
+        from utk_curio.backend.app.datasets.installer import resolve_installed_data_path
+        from utk_curio.backend.app.datasets.manifest import ManifestError, load_dataset_manifest
+        from utk_curio.backend.app.datasets.storage import catalog_root, dataset_dir
+
+        if self.user is not None:
+            user_key = self._user_key()
+            user_root = dataset_dir(user_key, dir_name)
+            if (user_root / "manifest.json").is_file():
+                try:
+                    manifest = load_dataset_manifest(user_root)
+                    return resolve_installed_data_path(user_key, manifest).as_posix()
+                except (ManifestError, Exception):
+                    pass
+
+        catalog_root_dir = catalog_root() / dir_name
+        if (catalog_root_dir / "manifest.json").is_file():
+            try:
+                manifest = load_dataset_manifest(catalog_root_dir)
+                candidate = catalog_root_dir / manifest.data_file
+                if candidate.is_file():
+                    return candidate.as_posix()
+            except ManifestError:
+                return None
+        return None
 
     def _project_manifest(self, dataflow_id: str | None) -> dict[str, Any]:
         if not dataflow_id:
@@ -479,11 +557,12 @@ class DatasetCatalogService:
         if dataflow_id:
             items.extend(self.installed.list_items(dataflow_id))
             items.extend(self.computed.list_items(manifest=self._project_manifest(dataflow_id)))
-
+        print("DatasetsService: items", items)
         installed_ids = {item["id"] for item in self.installed.list_items(dataflow_id) if item.get("id")}
         for item in items:
             if item["id"] in installed_ids:
                 item["installed"] = True
+        items = self._dedupe_items(items)
 
         if q:
             needle = q.casefold()
@@ -512,14 +591,25 @@ class DatasetCatalogService:
     def get_dataset(self, dataset_id: str, *, dataflow_id: str | None = None) -> dict[str, Any]:
         for include_hub in (True, False):
             result = self.list_catalog(dataflow_id=dataflow_id, include_hub=include_hub)
+            print("get_dataset: payload", result)
             for item in result["items"]:
                 if item["id"] == dataset_id:
                     return item
         raise DatasetCatalogError("Dataset not found", 404)
 
-    def preview(self, dataset_id: str, *, dataflow_id: str | None = None, row_limit: int = 50) -> dict[str, Any]:
-        item = self.get_dataset(dataset_id, dataflow_id=dataflow_id)
-        return self.preview_service.preview(item, row_limit=row_limit)
+    def preview(
+        self,
+        dataset_id: str,
+        *,
+        dataflow_id: str | None = None,
+        row_limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        item = deepcopy(self.get_dataset(dataset_id, dataflow_id=dataflow_id))
+        resolved = self._resolve_item_path(item)
+        if resolved:
+            item["path"] = resolved
+        return self.preview_service.preview(item, row_limit=row_limit, offset=offset)
 
     def import_dataset(
         self,
@@ -554,6 +644,26 @@ class DatasetCatalogService:
         source_item: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         item = deepcopy(source_item or self.get_dataset(dataset_id, dataflow_id=dataflow_id))
+        if item.get("origin") == "hub":
+            dir_name = item.get("dirName")
+            if not dir_name:
+                raise DatasetCatalogError("Hub dataset is missing catalog directory metadata", 500)
+            from utk_curio.backend.app.datasets.installer import (
+                InstallerError,
+                install_dataset_from_catalog,
+                resolve_installed_data_path,
+            )
+
+            user_key = self._user_key()
+            try:
+                result = install_dataset_from_catalog(user_key, dir_name)
+                data_path = resolve_installed_data_path(user_key, result.manifest)
+            except InstallerError as exc:
+                raise DatasetCatalogError(str(exc)) from exc
+            item["path"] = data_path.as_posix()
+            item["sizeBytes"] = data_path.stat().st_size
+            item["dirName"] = dir_name
+
         refs = self.installed.list_refs(dataflow_id)
         existing = next((ref for ref in refs if ref.get("datasetId") == item["id"]), None)
         ref = self._ref_from_item(item)
@@ -578,6 +688,17 @@ class DatasetCatalogService:
     def legacy_dataset_paths(self) -> list[str]:
         return [item["path"] for item in self.local.list_items() if item.get("path")]
 
+    def _dedupe_items(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        by_id: dict[str, dict[str, Any]] = {}
+        anonymous: list[dict[str, Any]] = []
+        for item in items:
+            item_id = item.get("id")
+            if not item_id:
+                anonymous.append(item)
+                continue
+            by_id[item_id] = item
+        return [*by_id.values(), *anonymous]
+
     def _ref_from_item(self, item: dict[str, Any]) -> dict[str, Any]:
         origin = item.get("origin")
         ref_origin = origin if origin in {"computed", "source_node"} else "imported"
@@ -589,6 +710,7 @@ class DatasetCatalogService:
             "sourceOrigin": origin,
             "uri": item.get("uri") or "",
             "path": item.get("path"),
+            "dirName": item.get("dirName"),
             "format": item.get("format") or "csv",
             "sizeBytes": item.get("sizeBytes"),
             "rowCount": item.get("rowCount"),

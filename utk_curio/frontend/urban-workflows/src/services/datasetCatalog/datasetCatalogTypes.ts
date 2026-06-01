@@ -58,11 +58,19 @@ export interface DatasetCatalogResponse {
 
 export interface DatasetPreviewResponse {
   schema: DatasetSchema;
-  rows: unknown[];
+  rows: Record<string, unknown>[];
   rowLimit: number;
+  offset: number;
+  totalRows: number;
   truncated: boolean;
   unsupported?: boolean;
   message?: string;
+}
+
+export interface DatasetPreviewQuery {
+  dataflowId?: string | null;
+  offset?: number;
+  rowLimit?: number;
 }
 
 export interface DatasetCatalogQuery {

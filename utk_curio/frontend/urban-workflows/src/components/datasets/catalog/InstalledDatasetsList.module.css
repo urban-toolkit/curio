@@ -1,0 +1,93 @@
+.sectionLabel {
+  margin: 0 0 12px;
+  font-size: var(--curio-font-size-xs, 11px);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--curio-text-muted, #86878c);
+}
+
+.installedList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  font-family: var(--curio-font-family, Inter, system-ui, sans-serif);
+}
+
+.installedRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--curio-border, #dedcd6);
+  border-radius: var(--curio-radius-md, 4px);
+  background: var(--curio-card-bg, #fff);
+  font-size: var(--curio-font-size-md, 13px);
+  cursor: grab;
+}
+
+.installedRow:active {
+  cursor: grabbing;
+}
+
+.installedDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--curio-accent-mint-fg, #2f8f4a);
+  flex-shrink: 0;
+}
+
+.installedBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.installedName {
+  font-weight: 600;
+  color: var(--curio-text-primary, #2f3034);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.installedMeta {
+  color: var(--curio-text-muted, #86878c);
+  white-space: nowrap;
+  font-size: var(--curio-font-size-sm, 11px);
+}
+
+.installedActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.rowActionBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--curio-radius-sm, 4px);
+  background: transparent;
+  color: var(--curio-text-secondary, #67686d);
+  cursor: pointer;
+}
+
+.rowActionBtn:hover:not(:disabled) {
+  background: var(--curio-page-bg, #f0efeb);
+  color: var(--curio-text-primary, #2f3034);
+}
+
+.rowActionBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

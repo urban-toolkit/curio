@@ -103,7 +103,8 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
           <FontAwesomeIcon icon={faDatabase} className={styles.triggerIcon} />
           <span className={styles.triggerLabel}>Data</span>
           <span className={styles.triggerCount}>{total}</span>
-          <FontAwesomeIcon icon={open ? faChevronUp : faChevronDown} />
+          <FontAwesomeIcon icon={open ? faChevronUp : faChevronDown} className={styles.triggerChevron}/>
+          
         </button>
         {total === 0 ? <p className={styles.emptyHint}>No data yet</p> : null}
       </div>

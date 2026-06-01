@@ -1,9 +1,16 @@
-.page,
-.detailPage {
+.pageShell {
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
   color: var(--curio-text-primary, #2f3034);
   background: #f7f7f4;
   font-family: var(--curio-font-family, Inter, system-ui, sans-serif);
+}
+
+.page,
+.detailPage {
+  flex: 1;
+  min-height: 0;
 }
 
 .page {

@@ -1,0 +1,175 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #fff;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
+  padding: 0 16px;
+  background: #f8f8f8;
+  border-bottom: 1px solid #ebebeb;
+}
+
+.toolbarNote {
+  color: #888;
+  font-size: 11px;
+}
+
+.columnsButton {
+  border: 0;
+  background: transparent;
+  color: #555;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.tableWrap {
+  overflow: auto;
+}
+
+.tableRefreshing {
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: "Fira Code", "Courier New", monospace;
+  font-size: 12px;
+}
+
+.table thead tr {
+  background: #f0f0f0;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.table th {
+  padding: 8px 14px;
+  color: #999;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+  text-align: left;
+  white-space: nowrap;
+  border-right: 1px solid #e0e0e0;
+}
+
+.table th:last-child {
+  border-right: 0;
+}
+
+.table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid #ebebeb;
+  border-right: 1px solid #f0f0f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+
+.table td:last-child {
+  border-right: 0;
+}
+
+.rowTint {
+  background: rgba(16, 185, 129, 0.04);
+}
+
+.cellId {
+  color: #3b6fd4;
+}
+
+.cellNumber {
+  color: #2f8f4a;
+}
+
+.cellText {
+  color: #1e1f23;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+  padding: 0 16px;
+  background: #fafafa;
+  border-top: 1px solid #ebebeb;
+}
+
+.paginationNote {
+  color: #888;
+  font-size: 11px;
+}
+
+.paginationControls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pageButton {
+  min-width: 22px;
+  height: 20px;
+  border: 1px solid #ebebeb;
+  border-radius: 4px;
+  background: #fff;
+  color: #888;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 6px;
+}
+
+.pageButton:hover:not(:disabled) {
+  border-color: #d0d0d0;
+  color: #555;
+}
+
+.pageButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pageButtonActive {
+  background: #1e1f23;
+  border-color: #1e1f23;
+  color: #fff;
+}
+
+.state,
+.stateError,
+.emptyRows {
+  padding: 24px 16px;
+  color: #85868b;
+  font-size: 12px;
+}
+
+.stateError {
+  color: #9f3f3f;
+}
+
+.emptyRows {
+  border-top: 1px solid #ebebeb;
+}
+
+.inlineError {
+  padding: 8px 16px 12px;
+  color: #9f3f3f;
+  font-size: 11px;
+  background: #fff6f4;
+  border-top: 1px solid #ecc8c0;
+}
