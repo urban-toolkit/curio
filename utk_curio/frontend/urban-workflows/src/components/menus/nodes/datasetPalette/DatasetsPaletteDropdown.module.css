@@ -84,7 +84,8 @@
 
 .panel {
   width: min(380px, calc(100vw - 120px));
-  height: min(720px, 75vh);
+  min-height: 0;
+  max-height: calc(100vh - 152px);
   display: flex;
   flex-direction: column;
   overflow: hidden;

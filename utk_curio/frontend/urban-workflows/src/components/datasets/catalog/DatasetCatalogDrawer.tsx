@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faFileImport, faXmark } from "@fortawesome/free-solid-svg-icons";
+import { faFileImport, faThumbtack, faXmark } from "@fortawesome/free-solid-svg-icons";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
 import {
@@ -49,6 +49,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
   const [tab, setTab] = useState<DrawerTab>("browse");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<DatasetSortMode>("recent");
+  const [pinned, setPinned] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [publishingId, setPublishingId] = useState<string | null>(null);
   const [detailDatasetId, setDetailDatasetId] = useState<string | null>(null);
@@ -256,7 +257,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
         className={`${styles.overlayRoot} ${presented ? styles.overlayRootPresented : ""}`}
         data-curio-dataset-catalog-drawer="true"
       >
-      <button type="button" className={styles.scrim} aria-label="Close dataset catalog" onClick={onRequestClose} />
+      <button type="button" className={styles.scrim} aria-label="Close dataset catalog" onClick={() => { if (!pinned) onRequestClose(); }} />
       <aside
         ref={drawerRef}
         className={styles.drawer}
@@ -267,6 +268,16 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
         onTransitionEnd={handleDrawerTransitionEnd}
       >
         <header className={styles.header}>
+          <button
+            type="button"
+            className={`${styles.pinButton} ${pinned ? styles.pinButtonActive : ""}`}
+            aria-label={pinned ? "Unpin drawer" : "Pin drawer open"}
+            aria-pressed={pinned}
+            title={pinned ? "Unpin drawer" : "Pin drawer (scrim won't close)"}
+            onClick={() => setPinned((v) => !v)}
+          >
+            <FontAwesomeIcon icon={faThumbtack} aria-hidden />
+          </button>
           <div className={styles.titleBlock}>
             <h2 id="dataset-catalog-title" className={styles.title}>Data catalog</h2>
             <p className={styles.subtitle}>Datasets available to this dataflow.</p>

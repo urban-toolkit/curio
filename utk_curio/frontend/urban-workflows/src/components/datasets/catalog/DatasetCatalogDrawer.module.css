@@ -48,31 +48,14 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 18px 18px 14px;
+  padding: 14px 16px;
   background: #fbfbf8;
   border-bottom: 1px solid #e4e2dc;
 }
 
-.titleBlock {
-  min-width: 0;
-}
-
-.title {
-  margin: 0;
-  color: #303136;
-  font-size: 22px;
-  font-weight: 850;
-  letter-spacing: 0;
-}
-
-.subtitle {
-  margin: 5px 0 0;
-  color: #76777d;
-  font-size: 13px;
-  line-height: 1.35;
-}
-
+.pinButton,
 .closeButton {
+  flex-shrink: 0;
   width: 30px;
   height: 30px;
   display: inline-flex;
@@ -83,6 +66,44 @@
   color: #55565b;
   background: #fff;
   cursor: pointer;
+  margin-top: 3px;
+}
+
+.pinButton:hover,
+.closeButton:hover {
+  background: #f0efea;
+  color: #2f3034;
+}
+
+.pinButtonActive {
+  border-color: #2f3034;
+  background: #24252a;
+  color: #fbfcf6;
+}
+
+.pinButtonActive:hover {
+  background: #3a3b40;
+  color: #fbfcf6;
+}
+
+.titleBlock {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  color: #303136;
+  font-size: 20px;
+  font-weight: 850;
+  letter-spacing: 0;
+}
+
+.subtitle {
+  margin: 4px 0 0;
+  color: #76777d;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .searchBar {
