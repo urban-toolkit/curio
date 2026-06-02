@@ -26,17 +26,14 @@ EXPECTED_TEMPLATE_IDS: frozenset[str] = frozenset({
     "js-computation",
     "vis-vega",
     "vis-simple",
-    "autk-plot",
-    "autk-map",
-    "autk-compute",
-    "autk-db",
+    "autk-grammar",
     "merge-flow",
     "spatial-join",
 })
 
 EXPECTED_LIFECYCLES: frozenset[str] = frozenset({
     "code", "data-export", "data-pool", "data-summary", "vega",
-    "simple-vis", "autk-plot", "autk-map", "autk-compute", "autk-db",
+    "simple-vis", "autk-grammar",
     "merge-flow", "spatial-join",
 })
 
@@ -115,9 +112,10 @@ def test_builtin_packageage_payload_passthrough(builtin_packageage_dir: Path):
     assert vega["grammarId"] == "vega-lite"
     assert vega["source"] is None
 
-    autk_map = templates_by_id["autk-map"]
-    assert autk_map["lifecycle"] == "autk-map"
-    assert autk_map["badge"] == "AUTK"
+    autk_grammar = templates_by_id["autk-grammar"]
+    assert autk_grammar["lifecycle"] == "autk-grammar"
+    assert autk_grammar["badge"] == "AUTK"
+    assert autk_grammar["grammarId"] == "autk-grammar"
 
     data_loading = templates_by_id["data-loading"]
     assert data_loading["lifecycle"] == "code"

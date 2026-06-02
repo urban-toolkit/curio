@@ -20,8 +20,8 @@ def _merge_edge_handle_index(edge_id: str) -> int | None:
 # Data model: parse workflow JSON into structured specs
 # ---------------------------------------------------------------------------
 
-GRAMMAR_TYPES = {"VIS_VEGA"}
-JS_CODE_TYPES = {"AUTK_MAP", "AUTK_PLOT", "AUTK_COMPUTE", "AUTK_DB"}
+GRAMMAR_TYPES = {"VIS_VEGA", "AUTK_GRAMMAR"}
+JS_CODE_TYPES: set[str] = set()   # old AUTK_MAP/PLOT/COMPUTE/DB nodes removed
 CODE_TYPES = {
     "DATA_LOADING", "DATA_TRANSFORMATION",
     "DATA_EXPORT", "COMPUTATION_ANALYSIS", "CONSTANTS",

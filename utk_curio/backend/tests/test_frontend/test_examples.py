@@ -34,14 +34,14 @@ EXAMPLE_INVARIANTS = [
      {"curio.builtin/merge-flow": 1, "curio.builtin/vis-vega": 2}, False),
     ("05-vega-lite-multi-view-drilldown.json", 27, 22,
      {"curio.builtin/data-loading": 5, "curio.builtin/vis-vega": 2}, False),
-    ("06-autark-what-if-shadow-study.json", 5, 4,
-     {"curio.builtin/autk-db": 1, "curio.builtin/autk-compute": 2, "curio.builtin/autk-map": 2}, False),
-    ("07-autark-gpu-shader.json", 5, 5,
-     {"curio.builtin/autk-compute": 1, "curio.builtin/autk-map": 1, "curio.builtin/autk-plot": 1}, True),
-    ("08-autark-spatial-join-regression.json", 7, 7,
-     {"curio.builtin/autk-db": 1, "curio.builtin/autk-compute": 1}, True),
+    ("06-autark-what-if-shadow-study.json", 2, 0,
+     {"curio.builtin/autk-grammar": 2}, False),
+    ("07-autark-gpu-shader.json", 1, 0,
+     {"curio.builtin/autk-grammar": 1}, False),
+    ("08-autark-spatial-join-regression.json", 1, 0,
+     {"curio.builtin/autk-grammar": 1}, False),
     ("09-heterogeneous-data-linked-views.json", 13, 15,
-     {"curio.builtin/autk-map": 1, "curio.builtin/vis-vega": 2}, True),
+     {"curio.builtin/autk-grammar": 1, "curio.builtin/vis-vega": 2}, True),
     ("10-street-vision-cv-analysis.json", 8, 7,
      {
          "curio.streetvision/street-view-fetcher": 1,
@@ -50,6 +50,8 @@ EXAMPLE_INVARIANTS = [
          "curio.builtin/spatial-join": 1,
          "curio.builtin/vis-vega": 2,
      }, False),
+    ("11-autark-pbf-loading.json", 1, 0,
+     {"curio.builtin/autk-grammar": 1}, False),
 ]
 
 
@@ -91,12 +93,15 @@ def test_each_example_referenced_in_readme():
 
 
 def test_each_example_has_valid_dataflow_structure():
-    """Every example parses into a WorkflowSpec with >0 nodes/edges and unique IDs."""
+    """Every example parses into a WorkflowSpec with >0 nodes and unique IDs.
+
+    Edges are not required: single-node autk-grammar examples (06-08, 11)
+    are self-contained and have zero edges by design.
+    """
     for json_path in _example_json_paths():
         spec = parse_workflow(json_path)
         basename = os.path.basename(json_path)
         assert spec.nodes_count > 0, f"{basename} has zero nodes"
-        assert spec.edges_count > 0, f"{basename} has zero edges"
         ids = [n.id for n in spec.nodes]
         assert len(ids) == len(set(ids)), (
             f"{basename} has duplicate node IDs: "
@@ -150,22 +155,18 @@ def test_example_documented_invariants(
 
 
 def test_example_07_drives_compute_gpgpu():
-    """Example 07's headline functionality is a WGSL shader run via AUTK's
-    ``ComputeGpgpu`` primitive. The WGSL itself is wrapped (the literal
-    ``@compute`` decorator is added by AUTK at runtime), so we assert on the
-    JS API surface instead — an AUTK_COMPUTE node that references both
-    ``ComputeGpgpu`` and ``wgslBody``."""
+    """Example 07's headline functionality is a WGSL shader run via the
+    autk-grammar's ``compute`` block.  Assert the grammar spec contains
+    a ``wglsFunction`` so we catch accidental removals of the GPU step."""
     path = os.path.join(EXAMPLES_DIR, "07-autark-gpu-shader.json")
     with open(path, "r", encoding="utf-8") as f:
         wf = json.load(f)
     matches = [
         n for n in wf["dataflow"]["nodes"]
-        if n["type"] == "curio.builtin/autk-compute"
-        and "ComputeGpgpu" in n.get("content", "")
-        and "wgslBody" in n.get("content", "")
+        if n["type"] == "curio.builtin/autk-grammar"
+        and "wglsFunction" in n.get("content", "")
     ]
     assert matches, (
-        "07-autark-gpu-shader.json no longer has a curio.builtin/autk-compute "
-        "node that drives ComputeGpgpu with a wgslBody — the example's "
-        "headline functionality is gone."
+        "07-autark-gpu-shader.json no longer has a curio.builtin/autk-grammar "
+        "node with a wglsFunction — the example's GPU compute step is gone."
     )

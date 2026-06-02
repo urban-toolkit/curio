@@ -52,9 +52,9 @@ def test_load_workflow_files(workflow_files):
             edges_count = len(workflow_data['dataflow']['edges'])
 
             print(f"{os.path.basename(workflow_file)}: {nodes_count} nodes, {edges_count} edges")
-            # add assertion to check that the workflow file has at least 1 node and 1 edge
+            # Edges are not required: single-node autk-grammar workflows are
+            # self-contained and have zero edges by design.
             assert nodes_count > 0, f"Workflow file {workflow_file} has no nodes"
-            assert edges_count > 0, f"Workflow file {workflow_file} has no edges"
 
 
 
