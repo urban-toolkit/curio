@@ -6,6 +6,15 @@ import {
 import { CatalogPublishPill } from "../../packages/CatalogPublishPill";
 import styles from "./DatasetCard.module.css";
 
+// ── Version helper ───────────────────────────────────────────────────────────
+
+/** Extract the ``@N`` major version from a dirName like ``computed.abc123@1``. */
+function datasetVersion(dirName?: string | null): string | null {
+  if (!dirName) return null;
+  const m = dirName.match(/@(\d+)$/);
+  return m ? `v${m[1]}` : null;
+}
+
 // ── Format helpers ───────────────────────────────────────────────────────────
 
 const FORMAT_ABBR: Record<DatasetFormat, string> = {
@@ -54,6 +63,8 @@ export interface DatasetCardProps {
   publishAllowed?: boolean;
   publishingId?: string | null;
   draggable?: boolean;
+  /** When true the Install button label changes to "Reinstall". */
+  reinstall?: boolean;
   onDragStart?: (event: React.DragEvent<HTMLElement>) => void;
   onInstall: (dataset: DatasetCatalogItem) => void;
   onUninstall?: (dataset: DatasetCatalogItem) => void;
@@ -72,6 +83,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
   publishAllowed = true,
   publishingId = null,
   draggable = true,
+  reinstall = false,
   onDragStart,
   onInstall,
   onUninstall,
@@ -87,6 +99,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
 
   const count = datasetCount(dataset);
   const time = relativeTime(dataset.updatedAt);
+  const version = datasetVersion(dataset.dirName);
   const metaParts = [count, time].filter(Boolean).join(" · ");
 
   const upCount = dataset.producerNodeId ? 1 : 0;
@@ -124,7 +137,10 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
         <h3 className={styles.cardTitle}>{dataset.title}</h3>
 
         {dataset.sourceLabel ? (
-          <p className={styles.cardSource}>{dataset.sourceLabel}</p>
+          <p className={styles.cardSource}>
+            {dataset.sourceLabel}
+            {version ? <span className={styles.versionBadge}>{version}</span> : null}
+          </p>
         ) : null}
 
         <div className={styles.cardMetaRow}>
@@ -154,7 +170,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
             disabled={cardBusy}
             onClick={() => onInstall(dataset)}
           >
-            Install
+            {reinstall ? "Reinstall" : "Install"}
           </button>
         ) : null}
 

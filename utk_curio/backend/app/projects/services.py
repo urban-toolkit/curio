@@ -53,6 +53,101 @@ def _assert_guest_can_save(user) -> None:
         raise ProjectError("Guest users cannot save projects", 403)
 
 
+def _auto_install_computed_outputs(
+    user_key: str,
+    output_refs: List[OutputRef],
+    spec: Optional[dict],
+) -> Optional[dict]:
+    """Install each newly computed output as ``computed.x{hash}@1/`` and add lean
+    refs to *spec* so the catalog can resolve them without live_outputs.
+
+    Returns the (possibly updated) spec dict, or the original spec unchanged if
+    nothing new was installed.  Errors for individual files are swallowed so a
+    single bad output never blocks the whole save.
+    """
+    if not output_refs or not spec:
+        return spec
+
+    from pathlib import Path
+
+    from utk_curio.backend.app.datasets.installer import (
+        install_computed_file_for_node,
+    )
+    from utk_curio.backend.app.datasets.storage import DATASET_DIR_RE
+
+    shared = storage._shared_data_dir()
+
+    dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+    if not isinstance(dataflow, dict):
+        return spec
+
+    datasets_refs: list[dict] = list(dataflow.get("datasets") or [])
+
+    changed = False
+    for ref in output_refs:
+        filename = ref.filename
+        node_id = ref.node_id
+
+        # Find the parquet in the shared data dir (copy_outputs may have already
+        # moved it to the project folder, but the shared copy should still exist).
+        src = shared / filename
+        if not src.is_file():
+            continue
+
+        try:
+            file_bytes = src.read_bytes()
+        except OSError:
+            continue
+
+        from utk_curio.backend.app.datasets.service import SUPPORTED_SUFFIXES as _SUFF
+
+        fmt = _SUFF.get(Path(filename).suffix.lower(), "parquet")
+
+        try:
+            result = install_computed_file_for_node(
+                user_key, file_bytes, filename, fmt, node_id=node_id
+            )
+        except Exception:  # noqa: BLE001 – best-effort; don't block save
+            continue
+
+        dataset_id = result.manifest.id   # "computed.<sanitized_node_id>"
+        dir_name = result.manifest.dir_name  # "computed.<sanitized_node_id>@1"
+
+        # Validate the generated dir_name before writing it to the spec – if
+        # somehow it's invalid we'd rather skip than persist a broken ref.
+        if not DATASET_DIR_RE.match(dir_name):
+            continue
+
+        # Replace any existing ref for this producer node or add a new one.
+        updated = False
+        for existing_ref in datasets_refs:
+            if existing_ref.get("producerNodeId") == node_id:
+                existing_ref.update({
+                    "datasetId": dataset_id,
+                    "dirName": dir_name,
+                    "origin": "computed",
+                })
+                updated = True
+                changed = True
+                break
+        if not updated:
+            datasets_refs.append({
+                "datasetId": dataset_id,
+                "dirName": dir_name,
+                "origin": "computed",
+                "producerNodeId": node_id,
+                "consumerNodeIds": [],
+            })
+            changed = True
+
+    if not changed:
+        return spec
+
+    new_spec = dict(spec)
+    new_spec["dataflow"] = {**dataflow, "datasets": datasets_refs}
+    return new_spec
+
+
 def _extract_graph_preview(spec: Optional[dict]) -> Optional[dict]:
     if not spec:
         return None
@@ -187,13 +282,22 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
     )
 
     effective_spec = data.spec if data.spec is not None else existing_spec
-    if data.spec is not None:
-        storage.write_spec(ukey, project_id, data.spec)
-
     if data.outputs is not None:
         output_refs = storage.copy_outputs(ukey, project_id, data.outputs)
+        # Auto-install computed outputs into the user's dataset store and
+        # update the spec with lean refs (computed.<node_id>@1) so the catalog
+        # can resolve them without needing live_outputs.
+        updated_spec = _auto_install_computed_outputs(ukey, output_refs, effective_spec)
+        if updated_spec is not effective_spec:
+            effective_spec = updated_spec
+            storage.write_spec(ukey, project_id, effective_spec)
     else:
         output_refs = _output_refs_from_manifest(existing_manifest)
+    if data.spec is not None and effective_spec is not data.spec:
+        # spec was already written above by auto_install; nothing to do.
+        pass
+    elif data.spec is not None:
+        storage.write_spec(ukey, project_id, data.spec)
 
     storage.write_manifest(ukey, project_id, project.spec_revision, output_refs,
         name=project.name,

@@ -7,7 +7,7 @@
  * and connection logic.
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
     Node,
     Edge,
@@ -88,6 +88,11 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // This component subscribes so save callers see fresh state.
     const [packages, setPackagesState] = useState<string[]>(getCurrentProjectPackagesList());
     const [dataflowDatasets, setDataflowDatasets] = useState<any[]>([]);
+    // Keep a ref that's always in sync so saveCurrentProject never reads a
+    // stale closure value (important: set during render, not in a useEffect,
+    // so it's always the value from the most recent completed render).
+    const dataflowDatasetsRef = useRef<any[]>([]);
+    dataflowDatasetsRef.current = dataflowDatasets;
     useEffect(() => subscribeProjectPackages(() => {
         setPackagesState(getCurrentProjectPackagesList());
     }), []);
@@ -529,12 +534,19 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         deps.outputsRef.current
             .map((o: any) => {
                 const raw = o?.output;
-                const filename =
-                    typeof raw === "string"
-                        ? raw
-                        : typeof raw?.path === "string"
-                            ? raw.path
-                            : null;
+                // Prefer the dedicated dataset parquet file (output.dataset) saved
+                // by the sandbox so copy_outputs persists the right file on save.
+                // Fall back to output.path (DuckDB art_id) for legacy / non-tabular nodes.
+                let filename: string | null = null;
+                if (raw && typeof raw === "object") {
+                    if (typeof raw.dataset === "string" && raw.dataset.trim()) {
+                        filename = raw.dataset.trim();
+                    } else if (typeof raw.path === "string" && raw.path.trim()) {
+                        filename = raw.path.trim();
+                    }
+                } else if (typeof raw === "string") {
+                    filename = raw;
+                }
                 if (!filename || !o?.nodeId) return null;
                 return { node_id: o.nodeId, filename };
             })
@@ -553,7 +565,10 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // from the React state snapshot, which may lag behind the store when a
         // package install/uninstall updates the store before React re-renders.
         const currentPackages = getCurrentProjectPackagesList();
-        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", currentPackages, workflowDescriptionRef.current, dataflowDatasets);
+        // Read datasets from the ref (always current) rather than the closure so
+        // that a stale snapshot can never overwrite a publish/unpublish that the
+        // backend already wrote to the spec.
+        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
 
@@ -594,7 +609,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             setCurrentProject(detail.id, Array.isArray(seededPackages) ? seededPackages : []);
             return detail;
         }
-    }, [projectId, projectName, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode, dataflowDatasets]);
+    }, [projectId, projectName, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode]);
 
     // Auto-save every 30 seconds when a project has been explicitly saved at least once
     useEffect(() => {
@@ -617,7 +632,8 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         const currentEdges = reactFlow.getEdges();
         // Same as saveCurrentProject: read from store to avoid stale React state snapshot.
         const currentPackages = getCurrentProjectPackagesList();
-        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", currentPackages, workflowDescriptionRef.current, dataflowDatasets);
+        // Same as saveCurrentProject: read from ref so we always use the latest datasets.
+        const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
 
@@ -634,7 +650,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setProjectDirty(false);
         setViewerMode("owner");
         return detail;
-    }, [workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, dataflowDatasets]);
+    }, [workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves]);
 
     const loadProject = useCallback(async (id: string) => {
         const result = await projectsApi.get(id);

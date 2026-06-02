@@ -1,4 +1,4 @@
-import React, { ReactNode, useState, useEffect } from "react";
+import React, { ReactNode, useState, useEffect, useRef } from "react";
 import CSS from "csstype";
 import { Dropdown, Spinner } from "react-bootstrap";
 
@@ -516,18 +516,21 @@ export const NodeContainer = ({
     const suggestionActive = data.suggestionType != "none" && data.suggestionType != undefined;
     const nodeHeaderBandPx = 28;
 
-    const onDatasetDragOver = (event: React.DragEvent<HTMLDivElement>) => {
-        if (!hasDatasetDrag(event.dataTransfer)) return;
-        event.preventDefault();
-        event.stopPropagation();
-        event.dataTransfer.dropEffect = canApplyDatasetToNode(data) ? "copy" : "none";
-    };
+    // --- Dataset drag-and-drop via capture-phase native listeners ---
+    // Monaco editor installs its own native dragover/drop handlers that call
+    // stopPropagation() before React's event delegation layer runs. Using
+    // capture-phase listeners lets us intercept the event *before* Monaco.
+    const resizableRef = useRef<HTMLDivElement>(null);
 
-    const onDatasetDrop = (event: React.DragEvent<HTMLDivElement>) => {
-        const dataset = readDatasetDragPayload(event.dataTransfer);
+    // Keep a ref to the handler so the capture listener always uses the latest
+    // closure values (data, code, etc.) without needing to re-register.
+    const datasetDropHandlerRef = useRef<(e: DragEvent) => void>(() => {});
+    datasetDropHandlerRef.current = (e: DragEvent) => {
+        if (!e.dataTransfer) return;
+        const dataset = readDatasetDragPayload(e.dataTransfer);
         if (!dataset) return;
-        event.preventDefault();
-        event.stopPropagation();
+        e.preventDefault();
+        e.stopPropagation();
         if (!canApplyDatasetToNode(data)) {
             showToast("Datasets can be applied to Data Loader or code nodes.", "warning");
             return;
@@ -538,6 +541,53 @@ export const NodeContainer = ({
         sendCodeToWidgets?.(applied.code);
         markDirty();
         showToast(`Applied ${dataset.title} to this node.`, "success");
+    };
+    // Also keep canApply in a ref so the dragover handler always reflects the
+    // latest node state even though the effect only registers once.
+    const canApplyRef = useRef(false);
+    canApplyRef.current = canApplyDatasetToNode(data);
+
+    useEffect(() => {
+        const el = resizableRef.current;
+        if (!el) return;
+
+        const handleDragOver = (e: DragEvent) => {
+            if (!e.dataTransfer || !hasDatasetDrag(e.dataTransfer)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = canApplyRef.current ? "copy" : "none";
+        };
+
+        const handleDrop = (e: DragEvent) => {
+            datasetDropHandlerRef.current(e);
+        };
+
+        el.addEventListener("dragover", handleDragOver, true);
+        el.addEventListener("drop", handleDrop, true);
+        return () => {
+            el.removeEventListener("dragover", handleDragOver, true);
+            el.removeEventListener("drop", handleDrop, true);
+        };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [nodeId]);
+
+    // Keep React synthetic handlers as pass-throughs so the browser still
+    // sees preventDefault() called (belt-and-suspenders).
+    const onDatasetDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+        if (!hasDatasetDrag(event.dataTransfer)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.dataTransfer.dropEffect = canApplyDatasetToNode(data) ? "copy" : "none";
+    };
+
+    const onDatasetDrop = (event: React.DragEvent<HTMLDivElement>) => {
+        // Primary handling is done by the capture-phase native listener above.
+        // This synthetic handler is kept only to prevent browser default actions
+        // (e.g. Monaco opening dropped file as text) for dataset drags that the
+        // native listener already handled.
+        if (!hasDatasetDrag(event.dataTransfer)) return;
+        event.preventDefault();
+        event.stopPropagation();
     };
 
     return (
@@ -668,6 +718,7 @@ export const NodeContainer = ({
                 }}
             ></div>}
             <div
+                ref={resizableRef}
                 id={nodeId + "resizable"}
                 className={"resizable"}
                 onDragOver={onDatasetDragOver}

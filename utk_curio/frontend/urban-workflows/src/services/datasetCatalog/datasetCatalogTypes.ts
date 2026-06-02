@@ -22,6 +22,8 @@ export interface DatasetLoaderSnippet {
   imports: string[];
   code: string;
   pathVariable: string;
+  /** Variable name that should be returned from a standalone Data Loading node (e.g. "df"). */
+  returnVariable?: string | null;
 }
 
 export interface DatasetCatalogItem {
@@ -46,6 +48,11 @@ export interface DatasetCatalogItem {
   schema?: DatasetSchema | null;
   loaderSnippet?: DatasetLoaderSnippet | null;
   installed?: boolean;
+  /** True when the producer node has been re-executed since the dataset was last installed. */
+  needsReinstall?: boolean;
+  /** True when a computed dataset (origin="computed") has been published to the Data Hub.
+   * The origin field stays "computed" — use this flag to determine published state. */
+  publishedToHub?: boolean;
 }
 
 export interface DatasetCatalogFacets {
@@ -82,6 +89,8 @@ export interface DatasetCatalogQuery {
   origin?: DatasetOrigin | "";
   sort?: DatasetSortMode;
   includeHub?: boolean;
+  /** Current (possibly unsaved) node outputs to show as computed datasets immediately. */
+  liveOutputs?: Array<{ node_id: string; filename: string }>;
 }
 
 export interface DatasetDragPayload {

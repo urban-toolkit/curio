@@ -130,9 +130,14 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
       }
     };
   }, []);
+  // Prefer data.defaultCode (always up-to-date via updateDefaultCode / setNodes) over
+  // the locally-cached templateData.code which is only initialised once when templateId
+  // first appears and never re-synced.  This ensures that programmatic code updates
+  // (e.g. dataset drag-and-drop, AI suggestions) are reflected in the Monaco editor.
   const defaultValue =
     lifecycle.defaultValueOverride ??
-    (nodeState.templateData.code ? nodeState.templateData.code : data.defaultCode);
+    data.defaultCode ??
+    nodeState.templateData.code;
   const readOnly =
     nodeState.templateData.custom != undefined && nodeState.templateData.custom === false;
 

@@ -14,8 +14,10 @@ export interface InstalledDatasetsListProps {
   publishAllowed?: boolean;
   publishingId?: string | null;
   refreshing?: boolean;
+  sectionLabel?: string;
   onUninstall?: (dataset: DatasetCatalogItem) => void;
   onPublish?: (datasetId: string) => void;
+  onUnpublish?: (dataset: DatasetCatalogItem) => void;
   onDragStart?: (dataset: DatasetCatalogItem, event: React.DragEvent<HTMLElement>) => void;
 }
 
@@ -26,6 +28,7 @@ function InstalledDatasetRow({
   publishingId,
   onUninstall,
   onPublish,
+  onUnpublish,
   onDragStart,
 }: {
   dataset: DatasetCatalogItem;
@@ -34,10 +37,11 @@ function InstalledDatasetRow({
   publishingId: string | null;
   onUninstall?: (dataset: DatasetCatalogItem) => void;
   onPublish?: (datasetId: string) => void;
+  onUnpublish?: (dataset: DatasetCatalogItem) => void;
   onDragStart?: (dataset: DatasetCatalogItem, event: React.DragEvent<HTMLElement>) => void;
 }) {
-  const isPublished = dataset.origin === "hub";
-  const hasActions = onUninstall != null || onPublish != null;
+  const isPublished = dataset.origin === "hub" || dataset.publishedToHub === true;
+  const hasActions = onUninstall != null || onPublish != null || onUnpublish != null;
 
   return (
     <div
@@ -49,7 +53,7 @@ function InstalledDatasetRow({
       <div className={styles.installedBody}>
         <span className={styles.installedName}>{dataset.title}</span>
         <span className={styles.installedMeta}>
-          {DATASET_FORMAT_LABEL[dataset.format]} · {dataset.origin === "hub" ? "Data Hub" : "In dataflow"}
+          {DATASET_FORMAT_LABEL[dataset.format]} · {isPublished ? "Data Hub" : "In dataflow"}
         </span>
       </div>
       {hasActions ? (
@@ -88,15 +92,19 @@ export const InstalledDatasetsList: React.FC<InstalledDatasetsListProps> = ({
   publishAllowed = true,
   publishingId = null,
   refreshing = false,
+  sectionLabel,
   onUninstall,
   onPublish,
+  onUnpublish,
   onDragStart,
 }) => {
   if (datasets.length === 0) return null;
 
+  const label = sectionLabel ?? `Your datasets · ${datasets.length} installed`;
+
   return (
     <>
-      <p className={styles.sectionLabel}>Your datasets · {datasets.length} installed</p>
+      <p className={styles.sectionLabel}>{label}</p>
       <div
         className={styles.installedList}
         style={refreshing ? { opacity: 0.6, pointerEvents: "none", transition: "opacity 0.15s" } : { transition: "opacity 0.15s" }}
@@ -110,6 +118,7 @@ export const InstalledDatasetsList: React.FC<InstalledDatasetsListProps> = ({
             publishingId={publishingId}
             onUninstall={onUninstall}
             onPublish={onPublish}
+            onUnpublish={onUnpublish}
             onDragStart={onDragStart}
           />
         ))}

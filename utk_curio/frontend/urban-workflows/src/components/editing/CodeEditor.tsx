@@ -7,6 +7,7 @@ import { NodeTemplateId } from "../../registry/types";
 // Editor
 import Editor, { Monaco } from "@monaco-editor/react";
 import { useFlowContext } from "../../providers/FlowProvider";
+import { notifyDatasetCatalogRefresh } from "../../services/datasetCatalog/datasetCatalogApi";
 import { useProvenanceContext } from "../../providers/ProvenanceProvider";
 import { useCollab, CodeProposal } from "../../providers/CollaborationProvider";
 import { ICodeData } from "../../types";
@@ -39,7 +40,7 @@ function CodeEditor({
     const [code, setCode] = useState<string>(""); // code with all original markers
     const [execCount, setExecCount] = useState<number>(0);
 
-    const { workflowNameRef, markNodeExecuted, markNodeStale, signalNodeExecDone } = useFlowContext();
+    const { workflowNameRef, markNodeExecuted, markNodeStale, signalNodeExecDone, projectId, setDataflowDatasets } = useFlowContext();
     const { nodeExecProv } = useProvenanceContext();
     const collab = useCollab();
 
@@ -150,6 +151,30 @@ function CodeEditor({
                 : stdoutText)
             : "";
 
+        // ── Persist auto-installed computed dataset in the local spec state ──
+        // The backend installs the parquet to the user's datasets folder
+        // (and writes to spec.trill.json if dataflowId was provided).  We
+        // also update the React state here so the dataset appears in the
+        // drawer immediately and is included in the next manual save even
+        // if the backend spec write failed (e.g. project not saved yet).
+        const inst = result.installedDataset;
+        if (inst?.id && inst?.dirName) {
+            setDataflowDatasets((prev: any[]) => {
+                const next = prev.filter(
+                    (row: any) => (row?.datasetId || row?.id) !== inst.id,
+                );
+                const ref = {
+                    datasetId: inst.id,
+                    dirName: inst.dirName,
+                    origin: inst.origin ?? "computed",
+                    producerNodeId: inst.producerNodeId ?? null,
+                    installedAt: new Date().toISOString(),
+                };
+                return [...next, ref];
+            });
+            notifyDatasetCatalogRefresh();
+        }
+
         if (hasOutput) {
             let outputContent = stdoutBlock;
             if (result.stderr) {
@@ -192,7 +217,8 @@ function CodeEditor({
             nodeType,
             data.nodeId,
             workflowNameRef.current,
-            nodeExecProv
+            nodeExecProv,
+            projectId,
         );
     }, [replacedCodeDirty]);
 

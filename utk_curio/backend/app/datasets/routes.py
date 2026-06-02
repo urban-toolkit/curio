@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+import json
+
 from flask import Blueprint, g, jsonify, request
 
 from utk_curio.backend.app.datasets.service import DatasetCatalogError, DatasetCatalogService
@@ -29,6 +32,26 @@ def _dataflow_id_from_request() -> str | None:
 @require_auth
 def list_dataset_catalog():
     include_hub = request.args.get("includeHub", "true").lower() not in {"0", "false", "no"}
+
+    # Parse optional live outputs (base64-encoded JSON array of {node_id, filename}).
+    # These are the current execution outputs from the frontend that may not yet be
+    # saved in the project manifest, allowing computed datasets to appear immediately
+    # after node execution.
+    live_outputs = None
+    raw_live = request.args.get("liveOutputs")
+    if raw_live:
+        try:
+            decoded = base64.b64decode(raw_live.encode()).decode("utf-8")
+            parsed = json.loads(decoded)
+            if isinstance(parsed, list):
+                live_outputs = [
+                    {"node_id": o["node_id"], "filename": o["filename"]}
+                    for o in parsed
+                    if isinstance(o, dict) and o.get("node_id") and o.get("filename")
+                ]
+        except Exception:  # noqa: BLE001 – malformed payload is silently ignored
+            pass
+
     try:
         payload = _service().list_catalog(
             dataflow_id=_dataflow_id_from_request(),
@@ -37,6 +60,7 @@ def list_dataset_catalog():
             origin=request.args.get("origin") or None,
             sort=request.args.get("sort", "recent"),
             include_hub=include_hub,
+            live_outputs=live_outputs,
         )
     except (DatasetCatalogError, ProjectError) as exc:
         return _error(str(exc), getattr(exc, "status", 400))
@@ -104,17 +128,34 @@ def publish_dataset():
     dataset_id = body.get("datasetId")
     if not dataset_id:
         return _error("datasetId is required")
+    live_outputs = body.get("liveOutputs") or None
     try:
         payload = _service().publish_dataset(
             dataset_id,
             body,
             dataflow_id=body.get("dataflowId") or body.get("projectId"),
+            live_outputs=live_outputs,
         )
     except (DatasetCatalogError, ProjectError) as exc:
         return _error(str(exc), getattr(exc, "status", 400))
     except NotFoundError:
         return _error("Dataflow not found", 404)
     return jsonify(payload), 201
+
+
+@datasets_bp.route("/datasets/publish/<dataset_id>", methods=["DELETE"])
+@require_auth
+def unpublish_dataset(dataset_id: str):
+    try:
+        payload = _service().unpublish_dataset(
+            dataset_id,
+            dataflow_id=_dataflow_id_from_request(),
+        )
+    except (DatasetCatalogError, ProjectError) as exc:
+        return _error(str(exc), getattr(exc, "status", 400))
+    except NotFoundError:
+        return _error("Dataflow not found", 404)
+    return jsonify(payload), 200
 
 
 @datasets_bp.route("/dataflows/<dataflow_id>/datasets/install", methods=["POST"])
@@ -124,8 +165,11 @@ def install_dataset(dataflow_id: str):
     dataset_id = body.get("datasetId")
     if not dataset_id:
         return _error("datasetId is required")
+    # sourceItem is optionally provided by the frontend for ephemeral computed
+    # datasets (live outputs) that don't exist in the persisted catalog yet.
+    source_item = body.get("sourceItem") or None
     try:
-        payload = _service().install_dataset(dataflow_id, dataset_id)
+        payload = _service().install_dataset(dataflow_id, dataset_id, source_item=source_item)
     except (DatasetCatalogError, ProjectError) as exc:
         return _error(str(exc), getattr(exc, "status", 400))
     except NotFoundError:

@@ -9,6 +9,15 @@ import {
 
 const BACKEND_URL = process.env.BACKEND_URL || "";
 
+/** Dispatched after a node auto-installs a computed dataset so open drawers reload. */
+export const DATASET_CATALOG_REFRESH_EVENT = "curio:dataset-catalog-refresh";
+
+export function notifyDatasetCatalogRefresh(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(DATASET_CATALOG_REFRESH_EVENT));
+  }
+}
+
 function queryString(query: DatasetCatalogQuery = {}): string {
   const params = new URLSearchParams();
   if (query.dataflowId) params.set("dataflowId", query.dataflowId);
@@ -17,6 +26,9 @@ function queryString(query: DatasetCatalogQuery = {}): string {
   if (query.origin) params.set("origin", query.origin);
   if (query.sort) params.set("sort", query.sort);
   if (query.includeHub !== undefined) params.set("includeHub", String(query.includeHub));
+  if (query.liveOutputs && query.liveOutputs.length > 0) {
+    params.set("liveOutputs", btoa(JSON.stringify(query.liveOutputs)));
+  }
   const raw = params.toString();
   return raw ? `?${raw}` : "";
 }
@@ -69,7 +81,14 @@ export const datasetCatalogApi = {
 
   publishDataset(
     datasetId: string,
-    metadata: { title?: string; description?: string; tags?: string[]; license?: string; dataflowId?: string | null },
+    metadata: {
+      title?: string;
+      description?: string;
+      tags?: string[];
+      license?: string;
+      dataflowId?: string | null;
+      liveOutputs?: Array<{ node_id: string; filename: string }>;
+    },
   ): Promise<DatasetCatalogItem> {
     return apiFetch("/api/datasets/publish", {
       method: "POST",
@@ -77,15 +96,22 @@ export const datasetCatalogApi = {
     });
   },
 
-  installToDataflow(dataflowId: string, datasetId: string): Promise<DatasetCatalogItem> {
+  installToDataflow(dataflowId: string, datasetId: string, sourceItem?: DatasetCatalogItem): Promise<DatasetCatalogItem> {
     return apiFetch(`/api/dataflows/${encodeURIComponent(dataflowId)}/datasets/install`, {
       method: "POST",
-      body: JSON.stringify({ datasetId }),
+      body: JSON.stringify({ datasetId, ...(sourceItem ? { sourceItem } : {}) }),
     });
   },
 
   uninstallFromDataflow(dataflowId: string, datasetId: string): Promise<{ datasets: unknown[] }> {
     return apiFetch(`/api/dataflows/${encodeURIComponent(dataflowId)}/datasets/${encodeURIComponent(datasetId)}`, {
+      method: "DELETE",
+    });
+  },
+
+  unpublishDataset(datasetId: string, opts: { dataflowId?: string | null } = {}): Promise<{ id: string; unpublished: boolean }> {
+    const qs = opts.dataflowId ? `?dataflowId=${encodeURIComponent(opts.dataflowId)}` : "";
+    return apiFetch(`/api/datasets/publish/${encodeURIComponent(datasetId)}${qs}`, {
       method: "DELETE",
     });
   },

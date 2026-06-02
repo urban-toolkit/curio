@@ -75,6 +75,7 @@ def _worker_init():
         save_to_duckdb,
         detect_kind,
         checkIOType,
+        save_dataset_parquet,
     )
 
     _globals_cache = {
@@ -95,6 +96,7 @@ def _worker_init():
         'save_to_duckdb': save_to_duckdb,
         'detect_kind': detect_kind,
         'checkIOType': checkIOType,
+        'save_dataset_parquet': save_dataset_parquet,
     }
 
 
@@ -119,6 +121,7 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
     save_to_duckdb   = _globals_cache['save_to_duckdb']
     detect_kind      = _globals_cache['detect_kind']
     checkIOType      = _globals_cache['checkIOType']
+    save_dataset_parquet = _globals_cache['save_dataset_parquet']
 
     # _exec_lock serializes sys.stdout mutation and os.chdir.
     with _exec_lock:
@@ -199,7 +202,13 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
 
                 # Save output to DuckDB, tagged with the session that produced it.
                 result_path = save_to_duckdb(output, node_id=node_type, session_id=session_id)
-                result = {'path': result_path, 'dataType': out_kind}
+
+                # For tabular outputs (DataFrame / GeoDataFrame) also save a named
+                # Parquet file directly in the shared data directory so the dataset
+                # catalog can discover and auto-install it.
+                dataset_file = save_dataset_parquet(output, out_kind)
+
+                result = {'path': result_path, 'dataType': out_kind, 'dataset': dataset_file}
                 t_save = time.perf_counter()
 
         except BaseException:

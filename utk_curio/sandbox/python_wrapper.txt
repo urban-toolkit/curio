@@ -100,4 +100,10 @@ checkIOType(synthetic_out, nodeType, False)
 
 # duckdb output saving
 file_path = save_to_duckdb(output, node_id=nodeType)
-print(json.dumps({'path': file_path, 'dataType': out_kind})) # path: -1
+
+# For tabular outputs (DataFrame / GeoDataFrame) also save a named Parquet file
+# directly in the shared data directory so the dataset catalog can discover and
+# auto-install it without requiring the user to manually click "Install".
+dataset_file = save_dataset_parquet(output, out_kind)
+
+print(json.dumps({'path': file_path, 'dataType': out_kind, 'dataset': dataset_file})) # path: -1

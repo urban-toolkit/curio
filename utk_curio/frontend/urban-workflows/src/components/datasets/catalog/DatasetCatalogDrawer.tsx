@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faFileImport, faThumbtack, faXmark } from "@fortawesome/free-solid-svg-icons";
 import { useFlowContext } from "../../../providers/FlowProvider";
@@ -9,6 +9,7 @@ import {
   DatasetCatalogItem,
   DatasetOrigin,
   DatasetSortMode,
+  DATASET_CATALOG_REFRESH_EVENT,
   datasetCatalogApi,
   useDatasetCatalog,
 } from "../../../services/datasetCatalog";
@@ -33,7 +34,10 @@ const TAB_LABEL: Record<DrawerTab, string> = {
 };
 
 function tabOrigin(tab: DrawerTab): DatasetOrigin | "" {
-  return tab === "computed" ? "computed" : "";
+  // For the computed tab we don't filter by origin — a computed dataset may have
+  // been published (origin=hub) or unpublished (origin=imported) while still
+  // belonging to the computed tab.  We filter frontend-side using producerNodeId.
+  return "";
 }
 
 export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
@@ -44,7 +48,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
   const drawerRef = useRef<HTMLElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importInFlightRef = useRef(false);
-  const { projectId, saveCurrentProject, setDataflowDatasets } = useFlowContext();
+  const { projectId, saveCurrentProject, setDataflowDatasets, outputs } = useFlowContext();
   const { showToast } = useToastContext();
   const [tab, setTab] = useState<DrawerTab>("browse");
   const [search, setSearch] = useState("");
@@ -54,14 +58,52 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
   const [publishingId, setPublishingId] = useState<string | null>(null);
   const [detailDatasetId, setDetailDatasetId] = useState<string | null>(null);
 
-  const includeHub = tab === "featured" || tab === "browse";
+  // Convert current execution outputs to the liveOutputs format understood by
+  // the catalog API.  This allows computed datasets to appear immediately after
+  // node execution, even before the project has been saved and the backend
+  // manifest has been written.
+  const liveOutputs = useMemo(() => {
+    if (!outputs || outputs.length === 0) return undefined;
+    return outputs
+      .map((o) => {
+        const raw = o?.output;
+        // output may be a plain filename string OR the sandbox result object
+        // {path, dataType, dataset?}.  Prefer the dedicated dataset parquet file
+        // (output.dataset) so the catalog can discover the file in the shared
+        // data dir; fall back to output.path (DuckDB art_id) for legacy nodes.
+        let filename: string | null = null;
+        if (raw && typeof raw === "object") {
+          const r = raw as { dataset?: unknown; path?: unknown };
+          if (typeof r.dataset === "string" && r.dataset.trim()) {
+            filename = r.dataset.trim();
+          } else if (typeof r.path === "string" && r.path.trim()) {
+            filename = r.path.trim();
+          }
+        } else if (typeof raw === "string") {
+          filename = raw.trim();
+        }
+        if (!filename || !o?.nodeId) return null;
+        return { node_id: o.nodeId, filename };
+      })
+      .filter((r): r is { node_id: string; filename: string } => r !== null && r.filename !== "");
+  }, [outputs]);
+
+  const includeHub = tab === "featured" || tab === "browse" || tab === "computed";
   const catalog = useDatasetCatalog({
     dataflowId: projectId,
     search,
     sort,
     origin: tabOrigin(tab),
     includeHub,
+    liveOutputs,
   });
+
+  // Reload when a node execution auto-installs a computed dataset.
+  useEffect(() => {
+    const onRefresh = () => void catalog.reload();
+    window.addEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
+    return () => window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
+  }, [catalog.reload]);
 
   const items = useMemo(() => {
     if (tab === "featured") {
@@ -71,7 +113,12 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
       return catalog.items.filter((item) => item.origin !== "hub" || item.installed);
     }
     if (tab === "computed") {
-      return catalog.items.filter((item) => item.origin === "computed");
+      // A dataset belongs to the computed tab if it was originally produced by a node,
+      // regardless of whether it has since been published (origin=hub) or unpublished
+      // (origin=imported).  producerNodeId is the canonical signal.
+      return catalog.items.filter(
+        (item) => item.origin === "computed" || Boolean(item.producerNodeId),
+      );
     }
     return catalog.items;
   }, [catalog.items, tab]);
@@ -80,7 +127,13 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
     () => catalog.items.filter((item) => item.origin !== "hub" || item.installed).length,
     [catalog.items],
   );
-  const computedCount = catalog.facets.origin.computed ?? 0;
+  // Count all datasets that were produced by a node (includes published/imported ones).
+  const computedCount = useMemo(
+    () =>
+      catalog.items.filter((item) => item.origin === "computed" || Boolean(item.producerNodeId))
+        .length,
+    [catalog.items],
+  );
   const detailFallback = useMemo(
     () => (detailDatasetId ? catalog.items.find((item) => item.id === detailDatasetId) ?? null : null),
     [catalog.items, detailDatasetId],
@@ -103,35 +156,39 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
       if (!id) return;
       setBusyId(dataset.id);
       try {
-        const installed = await datasetCatalogApi.installToDataflow(id, dataset.id);
+        const installed = await datasetCatalogApi.installToDataflow(id, dataset.id, dataset);
         setDataflowDatasets((prev) => {
           const next = prev.filter((row) => (row?.datasetId || row?.id) !== installed.id);
-          // Hub datasets: store only the lean link to the folder; all metadata
-          // lives in the installed manifest and is read by the backend API.
-          const ref =
-            installed.origin === "hub" && installed.dirName
-              ? {
-                  datasetId: installed.id,
-                  dirName: installed.dirName,
-                  origin: "hub" as const,
-                  installedAt: new Date().toISOString(),
-                }
-              : {
-                  datasetId: installed.id,
-                  title: installed.title,
-                  description: installed.description,
-                  origin: installed.origin,
-                  uri: installed.uri,
-                  path: installed.path,
-                  format: installed.format,
-                  sizeBytes: installed.sizeBytes,
-                  rowCount: installed.rowCount,
-                  featureCount: installed.featureCount,
-                  sourceLabel: installed.sourceLabel,
-                  tags: installed.tags,
-                  updatedAt: installed.updatedAt,
-                  installedAt: new Date().toISOString(),
-                };
+          // Folder-backed datasets (hub, imported, computed→imported): store only
+          // the lean link to the dataset folder.  All metadata is authoritative in
+          // the installed manifest.json on disk and is read by the backend API.
+          // Fat refs must be avoided here — on the next project save the frontend
+          // regenerates spec.trill from this state, so a fat ref would overwrite
+          // the correct lean ref the backend already wrote.
+          const ref = installed.dirName
+            ? {
+                datasetId: installed.id,
+                dirName: installed.dirName,
+                origin: installed.origin,
+                ...(installed.producerNodeId ? { producerNodeId: installed.producerNodeId } : {}),
+                installedAt: new Date().toISOString(),
+              }
+            : {
+                datasetId: installed.id,
+                title: installed.title,
+                description: installed.description,
+                origin: installed.origin,
+                uri: installed.uri,
+                path: installed.path,
+                format: installed.format,
+                sizeBytes: installed.sizeBytes,
+                rowCount: installed.rowCount,
+                featureCount: installed.featureCount,
+                sourceLabel: installed.sourceLabel,
+                tags: installed.tags,
+                updatedAt: installed.updatedAt,
+                installedAt: new Date().toISOString(),
+              };
           return [...next, ref];
         });
         await catalog.reload();
@@ -172,7 +229,27 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
       if (!id) return;
       setPublishingId(datasetId);
       try {
-        await datasetCatalogApi.publishDataset(datasetId, { dataflowId: id });
+        const published = await datasetCatalogApi.publishDataset(datasetId, { dataflowId: id, liveOutputs });
+        // Sync the React state so the next auto-save includes the hub origin.
+        // Remove both the original ref (by old datasetId) and any existing ref
+        // for the new catalog id (in case the ID was remapped on publish).
+        setDataflowDatasets((prev) => {
+          const next = prev.filter((row) => {
+            const rowId = row?.datasetId || row?.id;
+            return rowId !== datasetId && rowId !== published.id;
+          });
+          // Computed datasets keep origin="computed" always; track publish state separately.
+          const isComputed = Boolean(published.producerNodeId);
+          const ref: Record<string, unknown> = {
+            datasetId: published.id,
+            dirName: published.dirName,
+            origin: isComputed ? "computed" : "hub",
+            installedAt: new Date().toISOString(),
+          };
+          if (published.producerNodeId) ref.producerNodeId = published.producerNodeId;
+          if (isComputed) ref.publishedToHub = true;
+          return [...next, ref];
+        });
         await catalog.reload();
         showToast("Dataset published to Data Hub.", "success");
       } catch (err) {
@@ -181,7 +258,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
         setPublishingId(null);
       }
     },
-    [catalog, ensureProjectId, showToast],
+    [catalog, ensureProjectId, setDataflowDatasets, showToast, liveOutputs],
   );
 
   const onUnpublish = useCallback(
@@ -192,13 +269,31 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
       if (!confirmed) return;
       setBusyId(dataset.id);
       try {
-        // Hub unpublish API is not wired yet; surface intent until backend lands.
-        showToast(`${dataset.title} unpublish is not available yet.`, "info");
+        const id = await ensureProjectId();
+        await datasetCatalogApi.unpublishDataset(dataset.id, { dataflowId: id });
+        // Revert the ref's origin in React state. Computed datasets stay "computed";
+        // non-computed hub datasets revert to "imported". Keep dirName — it now
+        // points to the user's local copy (preserved by the backend unpublish routine).
+        setDataflowDatasets((prev) =>
+          prev.map((row) => {
+            const rowId = row?.datasetId || row?.id;
+            if (rowId !== dataset.id) return row;
+            const isComputed = Boolean(row?.producerNodeId ?? dataset.producerNodeId);
+            if (isComputed) {
+              return { ...row, origin: "computed", publishedToHub: false };
+            }
+            return { ...row, origin: "imported", publishedToHub: false };
+          }),
+        );
+        await catalog.reload();
+        showToast(`${dataset.title} unpublished from the Data Hub.`, "success");
+      } catch (err) {
+        showToast((err as Error)?.message || "Could not unpublish dataset.", "error");
       } finally {
         setBusyId(null);
       }
     },
-    [showToast],
+    [catalog, ensureProjectId, setDataflowDatasets, showToast],
   );
 
   const onPickImport = useCallback(async (file: File) => {
@@ -380,26 +475,43 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
                 <p className={styles.sectionLabel}>{TAB_LABEL[tab]}</p>
               ) : null}
               {!catalog.loading && !catalog.error && items.length === 0 ? (
-                <div className={styles.empty}>No datasets match the current filters.</div>
+                <div className={styles.empty}>
+                  {tab === "computed"
+                    ? "No computed datasets yet. Run a dataflow node that outputs a table — it will appear here and be installed automatically."
+                    : "No datasets match the current filters."}
+                </div>
               ) : null}
               <div
                 className={styles.cardList}
                 style={catalog.refreshing ? { opacity: 0.6, pointerEvents: "none", transition: "opacity 0.15s" } : { transition: "opacity 0.15s" }}
               >
                 {items.map((dataset) => {
-                  const isInstalled = dataset.installed === true || dataset.origin !== "hub";
-                  const isPublished = dataset.origin === "hub";
+                  const isComputedInstalled =
+                    dataset.origin === "computed" && dataset.installed === true;
+                  const needsReinstall =
+                    isComputedInstalled && dataset.needsReinstall === true;
+                  const isInstalled =
+                    (isComputedInstalled && !needsReinstall) ||
+                    (!isComputedInstalled &&
+                      (dataset.installed === true ||
+                        (dataset.origin !== "hub" && dataset.origin !== "computed")));
+                  const isPublished = dataset.origin === "hub" || dataset.publishedToHub === true;
                   return (
                     <DatasetCard
                       key={`${dataset.origin}:${dataset.id}`}
                       dataset={dataset}
                       isInstalled={isInstalled}
                       isPublished={isPublished}
+                      reinstall={needsReinstall}
                       busy={busyId === dataset.id || publishingId === dataset.id}
                       publishingId={publishingId}
                       onDragStart={(event) => handleDatasetDragStart(dataset, event)}
                       onInstall={(row) => void onInstall(row)}
-                      onUninstall={projectId ? (row) => void onUninstall(row) : undefined}
+                      onUninstall={
+                        projectId && !isComputedInstalled
+                          ? (row) => void onUninstall(row)
+                          : undefined
+                      }
                       onUnpublish={
                         isPublished && isInstalled
                           ? (row) => void onUnpublish(row)

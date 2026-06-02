@@ -5,6 +5,7 @@ import {
   DATASET_DRAG_MIME,
   DatasetCatalogItem,
 } from "../../services/datasetCatalog";
+import { mergeDatasetLoaderCode } from "../../services/datasetCatalog/datasetLoaderSnippets";
 import { NodeType } from "../../constants";
 
 const dataset: DatasetCatalogItem = {
@@ -21,10 +22,33 @@ const dataset: DatasetCatalogItem = {
   tags: ["csv"],
 };
 
+const parquetDataset: DatasetCatalogItem = {
+  id: "parquet-456",
+  title: "Output Data",
+  origin: "computed",
+  format: "parquet",
+  uri: "curio://outputs/output.parquet",
+  path: "/tmp/output.parquet",
+  consumerNodeIds: [],
+  updatedAt: "2026-06-01T00:00:00Z",
+  tags: ["parquet"],
+};
+
 test("buildDatasetLoaderCode creates CSV imports and loader", () => {
   expect(buildDatasetLoaderCode(dataset)).toContain("import pandas as pd");
   expect(buildDatasetLoaderCode(dataset)).toContain('dataset_path = "/tmp/blocks.csv"');
   expect(buildDatasetLoaderCode(dataset)).toContain("pd.read_csv(dataset_path)");
+});
+
+test("buildDatasetLoaderCode includes return statement for CSV", () => {
+  const code = buildDatasetLoaderCode(dataset);
+  expect(code).toContain("return df");
+});
+
+test("buildDatasetLoaderCode includes return statement for parquet", () => {
+  const code = buildDatasetLoaderCode(parquetDataset);
+  expect(code).toContain("pd.read_parquet(dataset_path)");
+  expect(code).toContain("return df");
 });
 
 test("createDatasetDragPayload preserves decoupled dataset identity", () => {
@@ -48,3 +72,20 @@ test("applyDatasetToNodeData records refs and merges loader code", () => {
   expect(result.code).toContain("print('hello')");
   expect(result.code).toContain("pd.read_csv(dataset_path)");
 });
+
+test("mergeDatasetLoaderCode inserts loader before return in existing code", () => {
+  const existingCode = "import pandas as pd\n\ndf = old_data\nreturn df";
+  const merged = mergeDatasetLoaderCode(existingCode, dataset);
+  // loader code should appear before the return
+  const loaderPos = merged.indexOf("pd.read_csv");
+  const returnPos = merged.indexOf("return df");
+  expect(loaderPos).toBeGreaterThan(-1);
+  expect(returnPos).toBeGreaterThan(loaderPos);
+});
+
+test("mergeDatasetLoaderCode on empty code includes return", () => {
+  const merged = mergeDatasetLoaderCode("", dataset);
+  expect(merged).toContain("pd.read_csv(dataset_path)");
+  expect(merged).toContain("return df");
+});
+

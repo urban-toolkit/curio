@@ -32,8 +32,16 @@ export function useDatasetCatalog(query: DatasetCatalogQuery = {}) {
       origin: query.origin || undefined,
       sort: query.sort || "recent",
       includeHub: query.includeHub,
+      liveOutputs: query.liveOutputs,
     }),
-    [query.dataflowId, query.search, query.format, query.origin, query.sort, query.includeHub],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      query.dataflowId, query.search, query.format, query.origin, query.sort, query.includeHub,
+      // Serialize liveOutputs so the memo updates when the outputs array changes
+      // (comparing array references would always differ on re-render).
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      JSON.stringify(query.liveOutputs),
+    ],
   );
 
   // Reset the "has-data" flag whenever the query changes so tab switches get a
@@ -72,7 +80,7 @@ export function useDatasetCatalog(query: DatasetCatalogQuery = {}) {
       if (!stableQuery.dataflowId) {
         throw new Error("Save the dataflow before installing datasets.");
       }
-      const item = await datasetCatalogApi.installToDataflow(stableQuery.dataflowId, dataset.id);
+      const item = await datasetCatalogApi.installToDataflow(stableQuery.dataflowId, dataset.id, dataset);
       await reload();
       return item;
     },

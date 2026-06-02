@@ -145,8 +145,15 @@ def _catalog_id_from_title(title: str) -> str:
 
     Returns a string like ``local.data.<slug>`` that satisfies the
     ``<datasetId>@<major>`` directory-name regex when combined with ``@1``.
+
+    Each dot-segment in a valid dataset ID must start with a letter ``[a-z]``.
+    A numeric-leading slug (e.g. from a timestamp-based filename) is prefixed
+    with ``d`` so the generated ID always passes the storage regex.
     """
     slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:40] or "dataset"
+    # Ensure the slug's first character is a letter.
+    if slug and not slug[0].isalpha():
+        slug = f"d{slug}"
     return f"local.data.{slug}"
 
 
@@ -162,6 +169,7 @@ def _loader_snippet(fmt: str, path: str | None) -> dict[str, Any]:
             "imports": ["import pandas as pd"],
             "pathVariable": "dataset_path",
             "code": f'dataset_path = "{dataset_path}"\ndf = pd.read_csv(dataset_path)',
+            "returnVariable": "df",
         }
     if fmt in {"geojson", "shp"}:
         return {
@@ -169,6 +177,15 @@ def _loader_snippet(fmt: str, path: str | None) -> dict[str, Any]:
             "imports": ["import geopandas as gpd"],
             "pathVariable": "dataset_path",
             "code": f'dataset_path = "{dataset_path}"\ngdf = gpd.read_file(dataset_path)',
+            "returnVariable": "gdf",
+        }
+    if fmt == "parquet":
+        return {
+            "language": "python",
+            "imports": ["import pandas as pd"],
+            "pathVariable": "dataset_path",
+            "code": f'dataset_path = "{dataset_path}"\ndf = pd.read_parquet(dataset_path)',
+            "returnVariable": "df",
         }
     if fmt == "json":
         return {
@@ -176,6 +193,7 @@ def _loader_snippet(fmt: str, path: str | None) -> dict[str, Any]:
             "imports": ["import json"],
             "pathVariable": "dataset_path",
             "code": f'dataset_path = "{dataset_path}"\nwith open(dataset_path) as f:\n    data = json.load(f)',
+            "returnVariable": "data",
         }
     if fmt == "geotiff":
         return {
@@ -183,12 +201,14 @@ def _loader_snippet(fmt: str, path: str | None) -> dict[str, Any]:
             "imports": ["import rasterio"],
             "pathVariable": "dataset_path",
             "code": f'dataset_path = "{dataset_path}"\nsrc = rasterio.open(dataset_path)',
+            "returnVariable": "src",
         }
     return {
         "language": "python",
         "imports": [],
         "pathVariable": "dataset_path",
         "code": f'dataset_path = "{dataset_path}"',
+        "returnVariable": None,
     }
 
 
@@ -357,22 +377,51 @@ class LocalDatasetRepository:
 
 
 class ComputedDatasetIndexer:
-    def list_items(self, *, manifest: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-        if not manifest:
-            return []
-        outputs = manifest.get("outputs", [])
+    def list_items(
+        self,
+        *,
+        manifest: dict[str, Any] | None = None,
+        live_outputs: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return catalog items for node-computed outputs.
+
+        Sources (merged, with live_outputs taking precedence over manifest):
+        - ``manifest``:     project manifest written to disk on save
+        - ``live_outputs``: current session outputs from the frontend
+                            (present even when the project hasn't been saved yet)
+        """
+        # Build a merged list of {node_id, filename} entries.
+        # live_outputs override manifest entries for the same node_id so a
+        # re-execution is reflected immediately without requiring a save.
+        merged: dict[str, dict[str, Any]] = {}  # node_id -> entry
+
+        manifest_outputs = (manifest or {}).get("outputs", []) if manifest else []
+        for output in manifest_outputs:
+            if isinstance(output, dict) and output.get("node_id") and output.get("filename"):
+                merged[output["node_id"]] = output
+
+        for output in (live_outputs or []):
+            if isinstance(output, dict) and output.get("node_id") and output.get("filename"):
+                merged[output["node_id"]] = output
+
         items: list[dict[str, Any]] = []
-        for output in outputs:
-            if not isinstance(output, dict):
-                continue
+        for output in merged.values():
             filename = output.get("filename")
             node_id = output.get("node_id")
             if not filename:
                 continue
             raw = str(filename)
             fmt = SUPPORTED_SUFFIXES.get(Path(raw).suffix.lower(), "json")
+            # Use the same stable node-based ID that install_computed_file_for_node
+            # writes to the manifest so that the live-output item and the
+            # user-store item share the same ID and are correctly deduped.
+            if node_id:
+                from utk_curio.backend.app.datasets.installer import sanitize_node_id_segment
+                item_id = f"computed.{sanitize_node_id_segment(node_id)}"
+            else:
+                item_id = _stable_id("computed", f"{node_id}:{raw}")
             items.append(_base_item(
-                id=_stable_id("computed", f"{node_id}:{raw}"),
+                id=item_id,
                 title=Path(raw).stem.replace("_", " ").replace("-", " ").title() or raw,
                 description="Dataset computed by a node in the current dataflow.",
                 origin="computed",
@@ -433,20 +482,26 @@ class InstalledDatasetRepository:
                 from utk_curio.backend.app.projects.services import _user_dir_key
 
                 user_key = _user_dir_key(self.user)
-                installed_dir = dataset_dir(user_key, dir_name)
                 try:
+                    installed_dir = dataset_dir(user_key, dir_name)
                     manifest = load_dataset_manifest(installed_dir)
                     data_path = resolve_installed_data_path(user_key, manifest)
                     item = _item_from_manifest(
                         manifest, installed_dir, origin=ref.get("origin") or "hub"
                     )
                     item["path"] = data_path.as_posix()
+                    # Keep loaderSnippet in sync with the resolved path.
+                    item["loaderSnippet"] = _loader_snippet(item["format"], data_path.as_posix())
                     item["sizeBytes"] = data_path.stat().st_size
                     item["installed"] = True
                     item["producerNodeId"] = ref.get("producerNodeId")
                     item["consumerNodeIds"] = ref.get("consumerNodeIds") or []
+                    # Propagate publishedToHub flag so computed datasets can be
+                    # shown as published without changing their origin.
+                    if ref.get("publishedToHub"):
+                        item["publishedToHub"] = True
                     items.append(item)
-                except (InstallerError, ManifestError, OSError):
+                except (InstallerError, ManifestError, OSError, ValueError):
                     # Dataset not on disk or manifest unreadable – show a
                     # placeholder so the user can see it's broken.
                     items.append(_base_item(
@@ -664,8 +719,70 @@ class DatasetCatalogService:
 
         return _user_dir_key(self.user)
 
+    def _resolve_computed_output_path(self, item: dict[str, Any]) -> str | None:
+        """Resolve a ``curio://outputs/{filename}`` URI to an absolute filesystem path.
+
+        Computed datasets live in the shared-data directory written by node
+        execution.  This helper maps the virtual URI to the real file so that
+        preview and install can both work without any special-casing at call
+        sites.
+
+        Falls back to checking the ``artifacts/`` subdirectory for legacy
+        DuckDB artifact IDs (bare name, no extension) that were stored in
+        project specs before the named-parquet dataset system was introduced.
+        """
+        uri = item.get("uri") or ""
+        if not uri.startswith("curio://outputs/"):
+            return None
+        filename = uri[len("curio://outputs/"):]
+        if not filename:
+            return None
+        from utk_curio.backend.app.projects.storage import _shared_data_dir
+
+        shared = _shared_data_dir()
+
+        # 1. Exact filename match in the top-level shared-data dir (new-style
+        #    named parquet files written by save_dataset_parquet).
+        candidate = shared / filename
+        if candidate.is_file():
+            return candidate.as_posix()
+
+        # 2. Legacy DuckDB artifact: the path stored in the ref is the bare
+        #    artifact ID (no extension).  DuckDB saves these as
+        #    ``artifacts/<id>.parquet`` inside the shared-data dir.  Only
+        #    parquet files are returned — compressed JSON artifacts
+        #    (.json.zlib) are an internal format and cannot be loaded with
+        #    standard Python tooling.
+        if "." not in Path(filename).name:
+            artifact_parquet = shared / "artifacts" / f"{filename}.parquet"
+            if artifact_parquet.is_file():
+                return artifact_parquet.as_posix()
+
+        return None
+
     def _resolve_item_path(self, item: dict[str, Any]) -> str | None:
+        # ── Computed datasets must be resolved via the shared-data directory
+        # first, regardless of what the ``path`` field says (it is just the
+        # bare filename, not an absolute path).
+        if item.get("origin") == "computed":
+            resolved = self._resolve_computed_output_path(item)
+            if resolved:
+                return resolved
+            return None
+
         path_value = item.get("path")
+        uri_value = item.get("uri") or ""
+
+        # Resolve curio://outputs/ for items that carry that URI scheme (legacy
+        # fat refs stored before the origin field existed use this URI even
+        # when origin is "imported").  Check the item URI, not just the path,
+        # because the path may be a bare artifact ID with no curio:// prefix.
+        if uri_value.startswith("curio://outputs/"):
+            resolved = self._resolve_computed_output_path(item)
+            if resolved:
+                return resolved
+            return None  # artifact gone – caller will show unsupported preview
+
         if path_value and not str(path_value).startswith("curio://"):
             return str(path_value)
 
@@ -717,19 +834,90 @@ class DatasetCatalogService:
         origin: str | None = None,
         sort: str = "recent",
         include_hub: bool = True,
+        live_outputs: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         items: list[dict[str, Any]] = []
         if include_hub:
             items.extend(self.registry.list_items())
         if dataflow_id:
             items.extend(self.installed.list_items(dataflow_id))
-            items.extend(self.computed.list_items(manifest=self._project_manifest(dataflow_id)))
+            items.extend(self.computed.list_items(
+                manifest=self._project_manifest(dataflow_id),
+                live_outputs=live_outputs,
+            ))
+        elif live_outputs:
+            # No project yet (unsaved new dataflow) but live outputs provided —
+            # still show computed items so outputs are visible immediately.
+            items.extend(self.computed.list_items(live_outputs=live_outputs))
 
-        installed_ids = {item["id"] for item in self.installed.list_items(dataflow_id) if item.get("id")}
+        inst_items = self.installed.list_items(dataflow_id)
+        installed_ids = {item["id"] for item in inst_items if item.get("id")}
+
+        # Map producerNodeId → installed output basename for computed datasets.
+        # Used to determine whether the node has been re-executed since the last
+        # install: if the current output filename differs from the installed one
+        # the node was re-run and a "Reinstall" prompt is warranted.
+        installed_computed_filenames: dict[str, str] = {}
+        for inst_item in inst_items:
+            pid = inst_item.get("producerNodeId")
+            if pid and inst_item.get("origin") == "computed":
+                inst_path = inst_item.get("path") or ""
+                installed_computed_filenames[pid] = Path(inst_path).name if inst_path else ""
+
         for item in items:
             if item["id"] in installed_ids:
                 item["installed"] = True
+            elif item.get("origin") == "computed":
+                pid = item.get("producerNodeId")
+                if pid and pid in installed_computed_filenames:
+                    item["installed"] = True
+                    # Only flag needsReinstall when the node produced a NEW output
+                    # file after the last install (filenames differ).  If the
+                    # filename is unchanged the node has not been re-executed and
+                    # the "Reinstall" button should not appear.
+                    current_filename = Path(item.get("path") or "").name
+                    installed_filename = installed_computed_filenames[pid]
+                    if current_filename and installed_filename and current_filename != installed_filename:
+                        item["needsReinstall"] = True
         items = self._dedupe_items(items)
+
+        # Enrich computed items: resolve their bare filename to an absolute path
+        # so the loader snippet points to a real file.  This must happen after
+        # deduplication so we don't do wasted work on duplicates.
+        #
+        # Also covers legacy "fat refs" stored in old project specs: those refs
+        # carry a ``curio://outputs/`` URI but may have ``origin == "imported"``
+        # (or no origin at all) because they predate the ``origin`` field.
+        for item in items:
+            uri = item.get("uri") or ""
+            is_outputs_uri = uri.startswith("curio://outputs/")
+            if item.get("origin") == "computed" or is_outputs_uri:
+                # Auto-installed copies already carry an absolute path into the
+                # user's dataset store — do not replace it with the ephemeral
+                # shared-data parquet used only for live discovery.
+                path_val = item.get("path") or ""
+                if path_val and Path(path_val).is_file():
+                    item["loaderSnippet"] = _loader_snippet(item["format"], path_val)
+                    continue
+                resolved = self._resolve_computed_output_path(item)
+                if resolved:
+                    # If the resolved file is a parquet but the stored format
+                    # differs (e.g. legacy "json" artifact), update the format
+                    # so the loader snippet uses the right reader.
+                    resolved_ext = Path(resolved).suffix.lower()
+                    if resolved_ext in SUPPORTED_SUFFIXES:
+                        item["format"] = SUPPORTED_SUFFIXES[resolved_ext]
+                    item["path"] = resolved
+                    item["loaderSnippet"] = _loader_snippet(item["format"], resolved)
+                elif is_outputs_uri:
+                    # The URI looks like an output but the file no longer
+                    # exists on disk.  Replace the stale relative path with
+                    # None so the loader snippet shows a clear placeholder
+                    # rather than a bare artifact ID that Python can't open.
+                    path_val = item.get("path") or ""
+                    if not path_val or not Path(path_val).is_absolute():
+                        item["path"] = None
+                        item["loaderSnippet"] = _loader_snippet(item["format"], None)
 
         if q:
             needle = q.casefold()
@@ -755,9 +943,9 @@ class DatasetCatalogService:
 
         return {"items": items, "facets": self._facets(items)}
 
-    def get_dataset(self, dataset_id: str, *, dataflow_id: str | None = None) -> dict[str, Any]:
+    def get_dataset(self, dataset_id: str, *, dataflow_id: str | None = None, live_outputs: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         for include_hub in (True, False):
-            result = self.list_catalog(dataflow_id=dataflow_id, include_hub=include_hub)
+            result = self.list_catalog(dataflow_id=dataflow_id, include_hub=include_hub, live_outputs=live_outputs)
 
             for item in result["items"]:
                 if item["id"] == dataset_id:
@@ -821,6 +1009,8 @@ class DatasetCatalogService:
         manifest = load_dataset_manifest(result.dest)
         item = _item_from_manifest(manifest, result.dest, origin="imported")
         item["path"] = data_path.as_posix()
+        # Keep loaderSnippet in sync with the resolved path.
+        item["loaderSnippet"] = _loader_snippet(item["format"], data_path.as_posix())
         item["sizeBytes"] = data_path.stat().st_size
         if row_count is not None:
             item["rowCount"] = row_count
@@ -832,10 +1022,10 @@ class DatasetCatalogService:
             item["installed"] = True
         return item
 
-    def publish_dataset(self, dataset_id: str, metadata: dict[str, Any], *, dataflow_id: str | None = None) -> dict[str, Any]:
+    def publish_dataset(self, dataset_id: str, metadata: dict[str, Any], *, dataflow_id: str | None = None, live_outputs: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         from utk_curio.backend.app.datasets.storage import catalog_root
 
-        item = deepcopy(self.get_dataset(dataset_id, dataflow_id=dataflow_id))
+        item = deepcopy(self.get_dataset(dataset_id, dataflow_id=dataflow_id, live_outputs=live_outputs))
         for key in ("title", "description", "license", "tags"):
             if key in metadata:
                 item[key] = metadata[key]
@@ -917,7 +1107,15 @@ class DatasetCatalogService:
                     if ref_id in (dataset_id, catalog_id):
                         ref["datasetId"] = catalog_id
                         ref["dirName"] = dir_name
-                        ref["origin"] = "hub"
+                        # Computed datasets keep origin="computed" always; track publish
+                        # state with a separate publishedToHub flag so the frontend can
+                        # show the correct Published badge without changing the origin.
+                        if ref.get("origin") == "computed" or ref.get("producerNodeId"):
+                            ref["publishedToHub"] = True
+                            # Ensure origin is "computed" (not "hub") for computed datasets
+                            ref.setdefault("origin", "computed")
+                        else:
+                            ref["origin"] = "hub"
                         changed = True
                 if changed:
                     self.installed.replace_refs(dataflow_id, refs)
@@ -980,6 +1178,97 @@ class DatasetCatalogService:
                     _patch_manifest_file(result.dest / "manifest.json", row_count, feature_count)
                     _write_file_meta(data_path, row_count, feature_count)
 
+        elif item.get("origin") == "computed":
+            # ── Promote a node-computed output to a persistent installed dataset.
+            #
+            # Computed datasets live as raw files in the shared-data directory
+            # while the workflow is active, but they are ephemeral — they
+            # disappear when the project is unloaded.  "Installing" a computed
+            # dataset copies the file into the user's dataset store, writes a
+            # proper manifest.json, and registers it as ``origin="computed"``
+            # keyed on the producer node ID.  Re-running "Install" (Reinstall)
+            # replaces the same ``computed.<node_id>@1`` folder so the dataset
+            # ID remains stable across multiple node executions.
+            #
+            # If no producerNodeId is known (legacy items) we fall back to the
+            # old content-hash naming.
+            #
+            # Fast-path: if the item was already auto-installed by the execution
+            # route (has a dirName pointing to the user's dataset store) we skip
+            # re-copying the file and just fall through to the ref-write below.
+            already_in_store = bool(item.get("dirName"))
+            if not already_in_store:
+                resolved = self._resolve_computed_output_path(item)
+                if resolved is None:
+                    raise DatasetCatalogError(
+                        "Computed output file is not available. Run the dataflow node first.",
+                        404,
+                    )
+                data_path = Path(resolved)
+                suffix = data_path.suffix.lower()
+                fmt = SUPPORTED_SUFFIXES.get(suffix, "json")
+
+                producer_node_id = item.get("producerNodeId")
+
+                if producer_node_id:
+                    from utk_curio.backend.app.datasets.installer import (
+                        InstallerError,
+                        install_computed_file_for_node,
+                        resolve_installed_data_path,
+                    )
+
+                    user_key = self._user_key()
+                    file_bytes = data_path.read_bytes()
+                    try:
+                        result = install_computed_file_for_node(
+                            user_key, file_bytes, data_path.name, fmt,
+                            node_id=producer_node_id,
+                            title=item.get("title"),
+                        )
+                    except InstallerError as exc:
+                        raise DatasetCatalogError(str(exc)) from exc
+                else:
+                    from utk_curio.backend.app.datasets.installer import (
+                        InstallerError,
+                        install_computed_file,
+                        resolve_installed_data_path,
+                    )
+
+                    user_key = self._user_key()
+                    file_bytes = data_path.read_bytes()
+                    try:
+                        result = install_computed_file(
+                            user_key, file_bytes, data_path.name, fmt,
+                            title=item.get("title"),
+                            node_id=producer_node_id,
+                        )
+                    except InstallerError as exc:
+                        raise DatasetCatalogError(str(exc)) from exc
+
+                inst_data_path = resolve_installed_data_path(user_key, result.manifest)
+
+                # Compute row/feature counts and patch the sidecar.
+                row_count, feature_count = _count_file(inst_data_path, fmt)
+                if (result.manifest.row_count is None and row_count is not None) or (
+                    result.manifest.feature_count is None and feature_count is not None
+                ):
+                    _patch_manifest_file(result.dest / "manifest.json", row_count, feature_count)
+                    _write_file_meta(inst_data_path, row_count, feature_count)
+
+                from utk_curio.backend.app.datasets.manifest import load_dataset_manifest
+
+                installed_manifest = load_dataset_manifest(result.dest)
+                installed_item = _item_from_manifest(installed_manifest, result.dest, origin="computed")
+                installed_item["path"] = inst_data_path.as_posix()
+                installed_item["sizeBytes"] = inst_data_path.stat().st_size
+                if row_count is not None:
+                    installed_item["rowCount"] = row_count
+                if feature_count is not None:
+                    installed_item["featureCount"] = feature_count
+                # Preserve the producer link so the catalog can show the connection.
+                installed_item["producerNodeId"] = item.get("producerNodeId")
+                item = installed_item
+
         refs = self.installed.list_refs(dataflow_id)
         existing = next((ref for ref in refs if ref.get("datasetId") == item["id"]), None)
         ref = self._ref_from_item(item)
@@ -995,11 +1284,98 @@ class DatasetCatalogService:
 
     def uninstall_dataset(self, dataflow_id: str, dataset_id: str) -> dict[str, Any]:
         refs = self.installed.list_refs(dataflow_id)
+        removed_ref = next(
+            (ref for ref in refs if ref.get("datasetId") == dataset_id or ref.get("id") == dataset_id),
+            None,
+        )
         next_refs = [ref for ref in refs if ref.get("datasetId") != dataset_id and ref.get("id") != dataset_id]
         if len(next_refs) == len(refs):
             raise DatasetCatalogError("Dataset is not installed in this dataflow", 404)
         self.installed.replace_refs(dataflow_id, next_refs)
+
+        # For computed datasets, also remove the folder from the user's dataset store
+        # so the dataset is fully gone (it can be regenerated by re-running the node).
+        if removed_ref and removed_ref.get("origin") == "computed" and self.user is not None:
+            dir_name = removed_ref.get("dirName")
+            if dir_name:
+                try:
+                    from utk_curio.backend.app.datasets.storage import dataset_dir
+                    dest = dataset_dir(self._user_key(), dir_name)
+                    if dest.exists():
+                        shutil.rmtree(dest, ignore_errors=True)
+                except Exception:  # noqa: BLE001
+                    pass
+
         return {"datasets": next_refs}
+
+    def unpublish_dataset(self, dataset_id: str, *, dataflow_id: str | None = None) -> dict[str, Any]:
+        """Remove a dataset from the local Data Hub catalog directory.
+
+        The dataset must be in the catalog (origin=hub).  Any installed ref in the
+        given dataflow is reverted to origin='imported' so it continues resolving
+        against the user's dataset store.  The user's own copy of the data is left
+        intact.
+        """
+        from utk_curio.backend.app.datasets.storage import catalog_root
+
+        # Locate the catalog directory for this dataset.
+        root = catalog_root()
+        catalog_dir: Path | None = None
+        for d in root.iterdir():
+            if not d.is_dir():
+                continue
+            # The dir_name is typically <catalog_id>@<major>
+            base = d.name.split("@")[0] if "@" in d.name else d.name
+            if base == dataset_id or d.name == dataset_id:
+                catalog_dir = d
+                break
+
+        if catalog_dir is None:
+            raise DatasetCatalogError(f"Dataset '{dataset_id}' is not in the Data Hub catalog", 404)
+
+        dir_name = catalog_dir.name
+
+        # Before removing the catalog folder, ensure the user's own dataset store has
+        # a copy so that the spec ref's dirName continues to resolve after unpublish.
+        # This also preserves the manifest.json (and therefore the dataset title).
+        if self.user is not None:
+            try:
+                from utk_curio.backend.app.datasets.installer import (
+                    install_dataset_from_catalog,
+                )
+                install_dataset_from_catalog(self._user_key(), dir_name, replace=False)
+            except Exception:  # noqa: BLE001
+                pass
+
+        # Remove the catalog directory tree.
+        shutil.rmtree(catalog_dir, ignore_errors=True)
+
+        # Revert the spec.trill.json ref back to 'imported' origin so the dataset
+        # keeps working from the user's store.  Keep dirName so the manifest (and
+        # therefore the title) is still readable from the user's local copy.
+        if dataflow_id:
+            try:
+                refs = self.installed.list_refs(dataflow_id)
+                changed = False
+                for ref in refs:
+                    ref_id = ref.get("datasetId") or ref.get("id")
+                    if ref_id == dataset_id or ref.get("dirName", "").split("@")[0] == dataset_id:
+                        # Computed datasets keep origin="computed"; only clear the publishedToHub flag.
+                        # Non-computed datasets revert to "imported".
+                        if ref.get("origin") == "computed" or ref.get("producerNodeId"):
+                            ref["publishedToHub"] = False
+                            ref.setdefault("origin", "computed")
+                        else:
+                            ref["origin"] = "imported"
+                            ref["publishedToHub"] = False
+                        # Keep dirName – it now points to the user's store copy.
+                        changed = True
+                if changed:
+                    self.installed.replace_refs(dataflow_id, refs)
+            except Exception:  # noqa: BLE001
+                pass
+
+        return {"id": dataset_id, "unpublished": True}
 
     def legacy_dataset_paths(self) -> list[str]:
         """Return paths for backwards-compatible /datasets route.
@@ -1010,6 +1386,40 @@ class DatasetCatalogService:
         items = self.registry.list_items()
         return [item["path"] for item in items if item.get("path")]
 
+    @staticmethod
+    def _catalog_item_rank(item: dict[str, Any]) -> int:
+        """Higher rank = richer catalog record (prefer when deduping by id)."""
+        score = 0
+        if item.get("dirName"):
+            score += 8
+        path_val = item.get("path") or ""
+        if path_val and Path(path_val).is_absolute() and Path(path_val).is_file():
+            score += 4
+        if item.get("installed"):
+            score += 2
+        uri = item.get("uri") or ""
+        if not uri.startswith("curio://outputs/"):
+            score += 1
+        return score
+
+    @classmethod
+    def _merge_catalog_items(cls, existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+        """Merge two catalog rows that share the same id."""
+        winner = existing if cls._catalog_item_rank(existing) >= cls._catalog_item_rank(incoming) else incoming
+        loser = incoming if winner is existing else existing
+        merged = dict(winner)
+        if loser.get("installed"):
+            merged["installed"] = True
+        if loser.get("needsReinstall"):
+            merged["needsReinstall"] = True
+        if not merged.get("dirName") and loser.get("dirName"):
+            merged["dirName"] = loser["dirName"]
+        if not merged.get("producerNodeId") and loser.get("producerNodeId"):
+            merged["producerNodeId"] = loser["producerNodeId"]
+        if not merged.get("publishedToHub") and loser.get("publishedToHub"):
+            merged["publishedToHub"] = loser["publishedToHub"]
+        return merged
+
     def _dedupe_items(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         by_id: dict[str, dict[str, Any]] = {}
         anonymous: list[dict[str, Any]] = []
@@ -1018,7 +1428,8 @@ class DatasetCatalogService:
             if not item_id:
                 anonymous.append(item)
                 continue
-            by_id[item_id] = item
+            prev = by_id.get(item_id)
+            by_id[item_id] = item if prev is None else self._merge_catalog_items(prev, item)
         return [*by_id.values(), *anonymous]
 
     def _ref_from_item(self, item: dict[str, Any]) -> dict[str, Any]:

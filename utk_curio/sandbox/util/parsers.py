@@ -859,3 +859,42 @@ def detect_kind(obj):
     if isinstance(obj, rasterio.io.DatasetReader): return 'raster'
     if isinstance(obj, tuple): return 'outputs'
     return 'unknown'
+
+
+def save_dataset_parquet(output, kind):
+    """Save a DataFrame or GeoDataFrame as a named Parquet file in the shared data
+    directory (top-level, not inside ``artifacts/``).
+
+    This file is tracked as a *dataset* by the catalog (via liveOutputs / copy_outputs)
+    so it appears immediately after node execution and is persisted on project save.
+
+    Args:
+        output: the raw Python object (DataFrame or GeoDataFrame).
+        kind:   the Curio kind string ('dataframe' or 'geodataframe').
+
+    Returns:
+        str: The bare filename (e.g. ``1718123456789_ab12cd34_output.parquet``), or
+             ``None`` if saving failed or the kind is not tabular.
+    """
+    import sys
+    if kind not in ('dataframe', 'geodataframe'):
+        return None
+
+    data_dir = _shared_data_dir()
+    timestamp = str(int(time.time() * 1000))
+    rand = hashlib.sha256(os.urandom(8)).digest()[:4].hex()
+    filename = f"{timestamp}_{rand}_output.parquet"
+    full_path = data_dir / filename
+
+    try:
+        if isinstance(output, gpd.GeoDataFrame):
+            # GeoParquet preserves CRS and geometry column automatically.
+            prepared, _ = _prepare_frame_for_parquet(output, geometry_col=output.geometry.name)
+            prepared.to_parquet(full_path)
+        else:
+            _write_dataframe_parquet(output, full_path)
+        return filename
+    except Exception as exc:
+        print(f"[save_dataset_parquet] Could not save dataset file: {exc}", file=sys.stderr)
+        return None
+

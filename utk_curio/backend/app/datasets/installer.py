@@ -84,6 +84,168 @@ def resolve_installed_data_path(user_key: str, manifest: DatasetManifest) -> Pat
     return data_path
 
 
+def _sanitize_node_id_segment(node_id: str) -> str:
+    """Convert an arbitrary node ID to a valid single-segment string for a dataset dir name.
+
+    Rules (matching ``DATASET_DIR_RE`` segment constraints):
+    - Lowercase, replace any non-``[a-z0-9-]`` character with ``-``.
+    - Collapse consecutive hyphens and strip leading/trailing hyphens.
+    - Truncate to 62 characters (leaving room for mandatory leading letter).
+    - Prefix with ``n`` if the result does not start with a letter.
+    """
+    import re as _re
+    seg = _re.sub(r"[^a-z0-9-]", "-", node_id.lower())
+    seg = _re.sub(r"-+", "-", seg).strip("-")[:62]
+    if not seg or not seg[0].isalpha():
+        seg = ("n" + seg)[:63]
+    return seg or "node"
+
+
+# Public alias for use outside this module (e.g. service.py).
+sanitize_node_id_segment = _sanitize_node_id_segment
+
+
+def install_computed_file_for_node(
+    user_key: str,
+    file_bytes: bytes,
+    safe_filename: str,
+    fmt: str,
+    *,
+    node_id: str,
+    title: str | None = None,
+) -> InstallResult:
+    """Save a node-computed output into the user's dataset store keyed by *node_id*.
+
+    Uses ``computed.<sanitized_node_id>@1`` so re-executing the same node always
+    replaces the same dataset folder, keeping a stable dataset identity across
+    multiple executions.  The destination is always (re-)written — no fast-path
+    skip — so that the latest execution's file is always reflected.
+    """
+    seg = _sanitize_node_id_segment(node_id)
+    dataset_id = f"computed.{seg}"
+    dir_name = f"{dataset_id}@1"
+
+    dest = dataset_dir(user_key, dir_name)
+
+    # Always replace so the folder reflects the latest execution.
+    if dest.exists():
+        shutil.rmtree(dest, ignore_errors=True)
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / "data").mkdir(exist_ok=True)
+
+    data_path = dest / "data" / safe_filename
+    data_path.write_bytes(file_bytes)
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    display_title = title or (
+        Path(safe_filename).stem.replace("_", " ").replace("-", " ").strip().title()
+        or safe_filename
+    )
+    manifest_obj = DatasetManifest(
+        id=dataset_id,
+        name=display_title,
+        version="1.0.0",
+        format=fmt,
+        description=f"{fmt.upper()} dataset computed by a dataflow node.",
+        publisher="User",
+        license="",
+        tags=[fmt, "computed"],
+        data_file=f"data/{safe_filename}",
+        major=1,
+        source_label="Computed",
+        created_at=now,
+        updated_at=now,
+        row_count=None,
+        feature_count=None,
+        schema=None,
+    )
+    write_manifest(manifest_obj, dest)
+
+    try:
+        manifest = load_dataset_manifest(dest)
+    except ManifestError as exc:
+        shutil.rmtree(dest, ignore_errors=True)
+        raise InstallerError(f"Failed to create computed dataset manifest: {exc}") from exc
+
+    return InstallResult(manifest=manifest, dest=dest, replaced=True)
+
+
+def install_computed_file(
+    user_key: str,
+    file_bytes: bytes,
+    safe_filename: str,
+    fmt: str,
+    *,
+    title: str | None = None,
+    node_id: str | None = None,
+    replace: bool = False,
+) -> InstallResult:
+    """Save a node-computed output file into the user's dataset store.
+
+    Similar to :func:`install_imported_file` but uses the ``computed.x{hash}@1``
+    naming convention so computed datasets are visually distinct from user-uploaded
+    imports.  The *node_id* is stored in the manifest tags for provenance.
+
+    .. deprecated::
+        Prefer :func:`install_computed_file_for_node` which keys the dataset
+        folder on *node_id* so re-execution replaces the same folder.
+    """
+    hash_hex = hashlib.sha256(file_bytes).hexdigest()[:8]
+    dataset_id = f"computed.x{hash_hex}"
+    dir_name = f"{dataset_id}@1"
+
+    dest = dataset_dir(user_key, dir_name)
+
+    # Fast path: already fully installed and no replacement requested.
+    if dest.exists() and not replace:
+        try:
+            manifest = load_dataset_manifest(dest)
+            if (dest / manifest.data_file).is_file():
+                return InstallResult(manifest=manifest, dest=dest, replaced=False)
+        except ManifestError:
+            pass
+        shutil.rmtree(dest, ignore_errors=True)
+
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / "data").mkdir(exist_ok=True)
+
+    data_path = dest / "data" / safe_filename
+    data_path.write_bytes(file_bytes)
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    display_title = title or (
+        Path(safe_filename).stem.replace("_", " ").replace("-", " ").strip().title()
+        or safe_filename
+    )
+    manifest_obj = DatasetManifest(
+        id=dataset_id,
+        name=display_title,
+        version="1.0.0",
+        format=fmt,
+        description=f"{fmt.upper()} dataset computed by a dataflow node.",
+        publisher="User",
+        license="",
+        tags=[fmt, "computed"],
+        data_file=f"data/{safe_filename}",
+        major=1,
+        source_label="Computed",
+        created_at=now,
+        updated_at=now,
+        row_count=None,
+        feature_count=None,
+        schema=None,
+    )
+    write_manifest(manifest_obj, dest)
+
+    try:
+        manifest = load_dataset_manifest(dest)
+    except ManifestError as exc:
+        shutil.rmtree(dest, ignore_errors=True)
+        raise InstallerError(f"Failed to create computed dataset manifest: {exc}") from exc
+
+    return InstallResult(manifest=manifest, dest=dest, replaced=True)
+
+
 def install_imported_file(
     user_key: str,
     file_bytes: bytes,

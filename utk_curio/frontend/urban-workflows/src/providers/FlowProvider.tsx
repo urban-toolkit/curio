@@ -62,6 +62,7 @@ interface PlayAllState {
 interface FlowContextProps {
     nodes: Node[];
     edges: Edge[];
+    outputs: IOutput[];
     setOutputs: (updateFn: (outputs: IOutput[]) => IOutput[]) => void;
     setInteractions: (updateFn: (interactions: IInteraction[]) => IInteraction[]) => void;
     applyNewPropagation: (propagation: IPropagation) => void;
@@ -175,6 +176,7 @@ export const useNodeActionsContext = () => useContext(NodeActionsContext);
 export const FlowContext = createContext<FlowContextProps>({
     nodes: [],
     edges: [],
+    outputs: [],
     setOutputs: () => { },
     setInteractions: () => { },
     applyNewPropagation: () => { },
@@ -1278,6 +1280,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             value={{
                 nodes,
                 edges,
+                outputs,
                 setOutputs,
                 setInteractions,
                 applyNewPropagation,

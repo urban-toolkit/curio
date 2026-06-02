@@ -119,7 +119,7 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
   }, [open]);
 
   const rows = useMemo(
-    () => catalog.items.filter((item) => item.origin === "imported" || item.origin === "hub"),
+    () => catalog.items.filter((item) => item.origin === "imported" || item.origin === "hub" || item.origin === "computed"),
     [catalog.items],
   );
   const installedRows = useMemo(
