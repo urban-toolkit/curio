@@ -342,6 +342,7 @@
     },
     {
       "badge": "AUTK",
+      "bidirectional": true,
       "category": "vis_grammar",
       "description": "Grammar-driven urban analytics. Write an UrbanSpec (JSON) covering data loading (OSM, CSV, GeoJSON), GPU compute, map rendering, and/or plot rendering in one declarative spec. Runs entirely in the browser via WebGPU + DuckDB-WASM.",
       "editor": "grammar",

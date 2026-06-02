@@ -230,6 +230,28 @@ def launchCwd():
 def sharedDataPath():
     return os.environ["CURIO_SHARED_DATA"]
 
+@bp.route('/examples/data/<path:filename>', methods=['GET'])
+def serve_example_data(filename: str):
+    """Serve a static file from docs/examples/data/ so browser-side nodes
+    (e.g. autk-grammar) can fetch binary assets such as PBF files.
+
+    URL path mirrors the filesystem convention used in Python sandbox nodes:
+      Python node:    rasterio.open('docs/examples/data/file.tif')
+      Grammar spec:   pbfFileUrl: 'http://localhost:5002/examples/data/file.pbf'
+
+    safe_join blocks path-traversal payloads from escaping the directory.
+    """
+    from flask import send_from_directory
+    from utk_curio.backend.app.common.safe_paths import PathTraversalError, safe_join
+
+    launch_cwd = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
+    data_dir = os.path.join(launch_cwd, 'docs', 'examples', 'data')
+    try:
+        safe_join(data_dir, filename)
+    except PathTraversalError:
+        abort(403)
+    return send_from_directory(data_dir, filename)
+
 @bp.route('/upload', methods=['POST'])
 @require_auth
 def upload_file():

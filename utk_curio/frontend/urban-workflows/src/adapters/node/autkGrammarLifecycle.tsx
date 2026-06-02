@@ -4,15 +4,25 @@ import { NodeLifecycleHook } from '../../registry/types';
 import { fetchData } from '../../services/api';
 import { useToastContext } from '../../providers/ToastProvider';
 import { autkGrammarAdapter } from '../../adapters/autkGrammarAdapter';
+import { VisInteractionType, NodeType } from '../../constants';
 
 export const useAutkGrammarLifecycle: NodeLifecycleHook = (data, nodeState) => {
     const { showToast } = useToastContext();
     const wrapperRef = useRef<HTMLDivElement>(null);
 
+    // Grammar instance and last-run spec, kept in refs so effects can access
+    // them without causing re-renders.
+    const grammarRef = useRef<any>(null);
+    const specRef    = useRef<any>(null);
+    // Unsubscribe functions returned by grammar.interactions.on(); cleared and
+    // re-populated on every applyGrammar call and on unmount.
+    const interactionOffRef = useRef<Array<() => void>>([]);
+    // Always-current ref to data so grammar event callbacks never close over a
+    // stale data object (grammar subscriptions outlive individual renders).
+    const dataRef = useRef(data);
+    useEffect(() => { dataRef.current = data; });
+
     const applyGrammar = async (specString: string) => {
-
-        console.log("apply grammar spec: ", specString);
-
         let spec: any;
         try {
             spec = typeof specString === 'string' ? JSON.parse(specString) : { ...(specString as any) };
@@ -46,31 +56,13 @@ export const useAutkGrammarLifecycle: NodeLifecycleHook = (data, nodeState) => {
             }
         }
 
-        console.log("data input", data.input);
-
         // Inject upstream input as a 'geojson' data source named 'upstream' so
         // users can reference "dataRef": "upstream" in the grammar spec.
         if (data.input) {
             try {
-
                 const fc = await resolveUpstreamAsGeoJson(data.input);
-
-                console.log("resolved upstream", fc);
-
                 if (fc) {
-                    // Detect the CRS of the incoming GeoJSON. Standard GeoJSON
-                    // (RFC 7946) uses WGS84 (EPSG:4326) with coordinates in the
-                    // range [-180,180] x [-90,90]. Python GeoDataFrames that have
-                    // been explicitly reprojected to the autk workspace CRS
-                    // (EPSG:3395) will have Mercator metre values (e.g. 1 000 000+).
-                    // We pass the detected CRS as coordinateFormat so autk-db can
-                    // apply the correct (or no-op) ST_Transform rather than always
-                    // assuming EPSG:4326, which produced degenerate geometries and
-                    // caused "Malformed JSON at byte 0" errors downstream.
                     const coordinateFormat = detectCoordinateFormat(fc);
-
-                    console.log("coordinate format", coordinateFormat);
-
                     spec = {
                         ...spec,
                         data: [
@@ -84,17 +76,49 @@ export const useAutkGrammarLifecycle: NodeLifecycleHook = (data, nodeState) => {
             }
         }
 
-        console.log("spec", spec);
+        // Resolve relative data-source URLs to the backend origin so users can
+        // write 'examples/data/file.pbf' instead of 'http://localhost:5002/...'.
+        spec = resolveDataSourceUrls(spec);
 
         const targets: Record<string, string> = {};
         if (hasMaps) targets.map = mapCanvasId;
         if (hasPlot && !hasMaps) targets.plot = plotDivId;
+
+        // Tear down any listeners from the previous run before creating a new
+        // grammar instance, so we never hold stale references.
+        interactionOffRef.current.forEach(f => f());
+        interactionOffRef.current = [];
 
         nodeState.setOutput({ code: 'exec', content: '' });
         try {
             const { AutkGrammar } = await import('@urban-toolkit/autk-grammar');
             const grammar = new AutkGrammar(targets);
             await grammar.run(spec);
+
+            // Store for interaction effects
+            grammarRef.current = grammar;
+            specRef.current    = spec;
+
+            // Grammar → Curio: forward map-picking and plot-selection events to
+            // the Curio interaction bus so connected nodes (data-pool, Vega) react.
+            // Guard against older package versions that pre-date the interactions API.
+            if (grammar.interactions) {
+                const emitInteraction = (selection: number[]) => {
+                    const d = dataRef.current;
+                    d.interactionsCallback?.({
+                        autk_selection: {
+                            type: selection.length > 0 ? VisInteractionType.POINT : VisInteractionType.UNDETERMINED,
+                            data: selection,
+                            priority: 1,
+                            source: NodeType.AUTK_GRAMMAR,
+                        },
+                    }, d.nodeId);
+                };
+
+                const off1 = grammar.interactions.on('map:picking', ({ selection }) => emitInteraction(selection));
+                const off2 = grammar.interactions.on('plot:selection', ({ selection }) => emitInteraction(selection));
+                interactionOffRef.current = [off1, off2];
+            }
 
             if (hasMaps || hasPlot) {
                 // Visual output: pass input through downstream (mirrors VIS_VEGA behaviour)
@@ -123,6 +147,40 @@ export const useAutkGrammarLifecycle: NodeLifecycleHook = (data, nodeState) => {
         }
     };
 
+    // Curio → grammar: the Data Pool marks each feature with interacted:'1'/'0'
+    // after resolving interactions, then sends updated data via outputCallback.
+    // When data.input changes here, read those flags and apply highlights so
+    // the grammar map/plot stays in sync with whatever the Data Pool resolved.
+    useEffect(() => {
+        const grammar = grammarRef.current;
+        const spec    = specRef.current;
+        if (!grammar || !spec || !data.input) return;
+
+        (async () => {
+            const fc = await resolveUpstreamAsGeoJson(data.input);
+            if (!fc) return;
+
+            const selectedIndices = fc.features.reduce<number[]>((acc, f, i) => {
+                if (f.properties?.interacted === '1') acc.push(i);
+                return acc;
+            }, []);
+
+            const maps  = spec.map  ? (Array.isArray(spec.map)  ? spec.map  : [spec.map])  : [];
+            const plots = spec.plot ? (Array.isArray(spec.plot) ? spec.plot : [spec.plot]) : [];
+
+            for (const mapSpec of maps)
+                for (const lr of mapSpec.layerRefs)
+                    selectedIndices.length === 0
+                        ? grammar.clearHighlightOnMap?.(lr.dataRef)
+                        : grammar.highlightOnMap?.(lr.dataRef, selectedIndices);
+
+            for (const plotSpec of plots)
+                selectedIndices.length === 0
+                    ? grammar.clearHighlightOnPlot?.(plotSpec.dataRef)
+                    : grammar.setPlotSelection?.(plotSpec.dataRef, selectedIndices);
+        })();
+    }, [data.input]);
+
     // Forward parent container resizes to AutkMap via a synthetic window.resize.
     // AutkMap binds only to window.resize, so node-handle drags are otherwise silent.
     useEffect(() => {
@@ -142,6 +200,9 @@ export const useAutkGrammarLifecycle: NodeLifecycleHook = (data, nodeState) => {
         ro.observe(target);
         return () => ro.disconnect();
     }, []);
+
+    // Unsubscribe grammar event listeners when the node is removed from the canvas.
+    useEffect(() => () => { interactionOffRef.current.forEach(f => f()); }, []);
 
     // Stable JSX reference across incidental re-renders, but identity changes
     // on run completion so NodeEditor switches to the output tab automatically.
@@ -230,7 +291,6 @@ function detectCoordinateFormat(fc: FeatureCollection): string {
     // --- Strategy 1: embedded CRS field ---
     const crsName: string | undefined = (fc as any)?.crs?.properties?.name;
     if (crsName) {
-        // Matches both "urn:ogc:def:crs:EPSG::3395" and "EPSG:3395"
         const m = crsName.match(/EPSG:{1,2}(\d+)/i);
         if (m) return `EPSG:${m[1]}`;
     }
@@ -266,3 +326,29 @@ function firstCoordinate(coords: any): [number, number] | null {
     if (typeof coords[0] === 'number') return coords as [number, number];
     return firstCoordinate(coords[0]);
 }
+
+// Resolve relative URLs in data source specs to the Curio backend origin so
+// users can write 'examples/data/file.pbf' instead of the full localhost URL.
+// Absolute URIs (http://, https://, data:, blob:, …) are passed through unchanged.
+// Applies to all file-URL fields across every data source type.
+function resolveDataSourceUrls(spec: any): any {
+    if (!Array.isArray(spec.data) || spec.data.length === 0) return spec;
+
+    const backendUrl = (process.env.BACKEND_URL || 'http://localhost:5002').replace(/\/$/, '');
+    const urlFields = ['pbfFileUrl', 'csvFileUrl', 'jsonFileUrl', 'geojsonFileUrl'];
+    const isAbsolute = (url: string) => /^[a-z][a-z\d+\-.]*:/i.test(url);
+
+    const resolved = spec.data.map((source: any) => {
+        const patch: Record<string, string> = {};
+        for (const field of urlFields) {
+            const val = source[field];
+            if (typeof val === 'string' && !isAbsolute(val)) {
+                patch[field] = `${backendUrl}/${val.replace(/^\/+/, '')}`;
+            }
+        }
+        return Object.keys(patch).length > 0 ? { ...source, ...patch } : source;
+    });
+
+    return { ...spec, data: resolved };
+}
+

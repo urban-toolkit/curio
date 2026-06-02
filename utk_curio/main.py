@@ -192,12 +192,10 @@ def check_install_build(dir, force_rebuild=False):
     
     if force_rebuild:
         log_info(f"[Frontend] Force rebuilding in {dir}...", COLOR_FRONTEND)
-        if os.path.exists("node_modules"):
-            subprocess.run(["rm", "-rf", "node_modules"], check=True)
-        if os.path.exists("dist"):
-            subprocess.run(["rm", "-rf", "dist"], check=True)
-        if os.path.exists("build"):
-            subprocess.run(["rm", "-rf", "build"], check=True)
+        for subdir in ("node_modules", "dist", "build"):
+            full_path = os.path.join(abs_dir, subdir)
+            if os.path.exists(full_path):
+                shutil.rmtree(full_path)
     
     if shutil.which("npm") is None:
         log_error("[Frontend] npm not found in PATH. Install Node.js 24 from https://nodejs.org, or via conda ('conda install -c conda-forge nodejs=24'), and make sure 'npm' is available in your terminal, then retry.")

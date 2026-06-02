@@ -136,7 +136,7 @@
         "type": "curio.builtin/autk-grammar",
         "x": 4009.1411683828164,
         "y": -38.90265429297569,
-        "content": "{\"map\":{\"layerRefs\":[{\"dataRef\":\"upstream\",\"getFnv\":\"mean\",\"getFnvType\":\"quantitative\",\"defaultFnv\":0}]}}",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"upstream\",\n        \"getFnv\": \"mean\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 0,\n        \"isPick\": true\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Render Milan census polygons coloured by mean UTCI value.",
@@ -241,6 +241,12 @@
         "type": "Interaction",
         "id": "reactflow__edge-3334485c-50ad-4adf-9574-45f8a9704860in/out-e1cf73df-4713-46e8-95d3-ec677378e125in/out",
         "source": "3334485c-50ad-4adf-9574-45f8a9704860",
+        "target": "e1cf73df-4713-46e8-95d3-ec677378e125"
+      },
+      {
+        "type": "Interaction",
+        "id": "reactflow__edge-6c4aa6a8-45eb-480e-bb3d-3fd54d13325bin/out-e1cf73df-4713-46e8-95d3-ec677378e125in/out",
+        "source": "6c4aa6a8-45eb-480e-bb3d-3fd54d13325b",
         "target": "e1cf73df-4713-46e8-95d3-ec677378e125"
       }
     ],
