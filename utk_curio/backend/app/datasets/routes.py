@@ -38,7 +38,6 @@ def list_dataset_catalog():
             sort=request.args.get("sort", "recent"),
             include_hub=include_hub,
         )
-        print("list_dataset_catalog: payload", payload)
     except (DatasetCatalogError, ProjectError) as exc:
         return _error(str(exc), getattr(exc, "status", 400))
     except NotFoundError:

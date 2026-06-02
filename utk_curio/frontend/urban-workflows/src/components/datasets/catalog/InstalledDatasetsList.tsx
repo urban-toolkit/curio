@@ -13,6 +13,7 @@ export interface InstalledDatasetsListProps {
   busy?: boolean;
   publishAllowed?: boolean;
   publishingId?: string | null;
+  refreshing?: boolean;
   onUninstall?: (dataset: DatasetCatalogItem) => void;
   onPublish?: (datasetId: string) => void;
   onDragStart?: (dataset: DatasetCatalogItem, event: React.DragEvent<HTMLElement>) => void;
@@ -86,6 +87,7 @@ export const InstalledDatasetsList: React.FC<InstalledDatasetsListProps> = ({
   busy = false,
   publishAllowed = true,
   publishingId = null,
+  refreshing = false,
   onUninstall,
   onPublish,
   onDragStart,
@@ -95,7 +97,10 @@ export const InstalledDatasetsList: React.FC<InstalledDatasetsListProps> = ({
   return (
     <>
       <p className={styles.sectionLabel}>Your datasets · {datasets.length} installed</p>
-      <div className={styles.installedList}>
+      <div
+        className={styles.installedList}
+        style={refreshing ? { opacity: 0.6, pointerEvents: "none", transition: "opacity 0.15s" } : { transition: "opacity 0.15s" }}
+      >
         {datasets.map((dataset) => (
           <InstalledDatasetRow
             key={`${dataset.origin}:${dataset.id}`}

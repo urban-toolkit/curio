@@ -11,6 +11,8 @@ import csv
 import hashlib
 import json
 import os
+import re
+import shutil
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
@@ -47,6 +49,105 @@ def _iso_from_timestamp(ts: float | None = None) -> str:
 def _stable_id(prefix: str, raw: str) -> str:
     digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:14]
     return f"{prefix}-{digest}"
+
+
+def _count_file(path: Path, fmt: str) -> tuple[int | None, int | None]:
+    """Return (row_count, feature_count) for a local dataset file.
+
+    Both values may be None if the format is unsupported or the file cannot
+    be read.  For CSV the header row is excluded from the count.  For GeoJSON
+    only the feature array length is returned as feature_count.
+    """
+    try:
+        if fmt == "csv":
+            with path.open("r", encoding="utf-8-sig", newline="") as fh:
+                reader = csv.reader(fh)
+                next(reader, None)  # skip header
+                count = sum(1 for _ in reader)
+            return count, None
+        if fmt == "json":
+            with path.open("r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            if isinstance(data, list):
+                return len(data), None
+            return 1, None
+        if fmt == "geojson":
+            with path.open("r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            features = data.get("features", []) if isinstance(data, dict) else []
+            return None, len(features)
+    except Exception:
+        pass
+    return None, None
+
+
+def _meta_path(data_path: Path) -> Path:
+    """Return the sidecar metadata path for a dataset file.
+
+    E.g. ``data/energy_dataset.csv`` → ``data/energy_dataset.csv.meta.json``
+    """
+    return data_path.parent / (data_path.name + ".meta.json")
+
+
+def _read_file_meta(data_path: Path) -> tuple[int | None, int | None]:
+    """Read (row_count, feature_count) from the sidecar, or (None, None) if absent."""
+    meta = _meta_path(data_path)
+    try:
+        raw = json.loads(meta.read_text(encoding="utf-8"))
+        return raw.get("rowCount"), raw.get("featureCount")
+    except Exception:
+        return None, None
+
+
+def _write_file_meta(data_path: Path, row_count: int | None, feature_count: int | None) -> None:
+    """Persist counts to the sidecar file next to the dataset."""
+    meta = _meta_path(data_path)
+    try:
+        payload: dict[str, Any] = {}
+        if row_count is not None:
+            payload["rowCount"] = row_count
+        if feature_count is not None:
+            payload["featureCount"] = feature_count
+        meta.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except Exception:
+        pass  # never break a request over a cache write failure
+
+
+def _patch_manifest_file(
+    manifest_path: Path,
+    row_count: int | None,
+    feature_count: int | None,
+) -> None:
+    """Write rowCount/featureCount into an existing manifest.json on disk.
+
+    Only patches fields that are currently null/missing.  Silently skips
+    on any I/O or parse error so callers never break on a patching failure.
+    """
+    try:
+        raw: dict[str, Any] = json.loads(manifest_path.read_text(encoding="utf-8"))
+        changed = False
+        if row_count is not None and raw.get("rowCount") is None:
+            raw["rowCount"] = row_count
+            changed = True
+        if feature_count is not None and raw.get("featureCount") is None:
+            raw["featureCount"] = feature_count
+            changed = True
+        if changed:
+            manifest_path.write_text(
+                json.dumps(raw, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+    except Exception:
+        pass
+
+
+def _catalog_id_from_title(title: str) -> str:
+    """Generate a local catalog dataset id from a human title.
+
+    Returns a string like ``local.data.<slug>`` that satisfies the
+    ``<datasetId>@<major>`` directory-name regex when combined with ``@1``.
+    """
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:40] or "dataset"
+    return f"local.data.{slug}"
 
 
 def _format_for_path(path: Path) -> str | None:
@@ -126,6 +227,9 @@ def _item_from_file(path: Path, *, source_label: str, origin: str = "imported") 
     stat = path.stat()
     file_path = path.as_posix()
     title = path.stem.replace("_", " ").replace("-", " ").strip().title() or path.name
+    # Counts are read from the sidecar written at import/install time — never
+    # computed on the fly here so catalog listing stays fast.
+    row_count, feature_count = _read_file_meta(path)
     return _base_item(
         id=_stable_id("file", str(path.resolve())),
         title=title,
@@ -135,6 +239,8 @@ def _item_from_file(path: Path, *, source_label: str, origin: str = "imported") 
         uri=f"file://{file_path}",
         path=file_path,
         sizeBytes=stat.st_size,
+        rowCount=row_count,
+        featureCount=feature_count,
         updatedAt=_iso_from_timestamp(stat.st_mtime),
         sourceLabel=source_label,
         tags=[fmt, origin],
@@ -171,7 +277,7 @@ class DatasetRegistryRepository:
         return None
 
 
-def _item_from_manifest(manifest: DatasetManifest, dataset_root: Path) -> dict[str, Any]:
+def _item_from_manifest(manifest: DatasetManifest, dataset_root: Path, *, origin: str = "hub") -> dict[str, Any]:
     data_path = dataset_root / manifest.data_file
     size_bytes = data_path.stat().st_size if data_path.is_file() else None
     updated_at = manifest.updated_at or manifest.created_at or _iso_from_timestamp()
@@ -179,10 +285,10 @@ def _item_from_manifest(manifest: DatasetManifest, dataset_root: Path) -> dict[s
         id=manifest.id,
         title=manifest.name,
         description=manifest.description,
-        origin="hub",
+        origin=origin,
         format=manifest.format,
-        uri=f"curio://hub/{manifest.id}",
-        path=None,
+        uri=f"curio://hub/{manifest.id}" if origin == "hub" else f"curio://datasets/{manifest.dir_name}",
+        path=data_path.as_posix() if data_path.is_file() else None,
         dirName=manifest.dir_name,
         sizeBytes=size_bytes,
         rowCount=manifest.row_count,
@@ -211,12 +317,20 @@ class LocalDatasetRepository:
             if not root.exists() or not root.is_dir():
                 continue
             for path in sorted(root.iterdir()):
+                fmt = _format_for_path(path)
+                if fmt is None:
+                    continue
+                # Lazily generate the sidecar for pre-existing files that have
+                # never been imported through save_import.
+                if not _meta_path(path).exists():
+                    row_count, feature_count = _count_file(path, fmt)
+                    _write_file_meta(path, row_count, feature_count)
                 item = _item_from_file(path, source_label=source_label)
                 if item is None or item["id"] in seen:
                     continue
                 items.append(item)
                 seen.add(item["id"])
-        print("local: items", items)
+
         return items
 
     def save_import(self, file: FileStorage) -> dict[str, Any]:
@@ -231,6 +345,11 @@ class LocalDatasetRepository:
         data_dir.mkdir(parents=True, exist_ok=True)
         target = data_dir / filename
         file.save(target)
+        # Compute counts once at import time and persist to sidecar so that
+        # every subsequent catalog listing reads cheaply from the cache.
+        fmt = SUPPORTED_SUFFIXES[suffix]
+        row_count, feature_count = _count_file(target, fmt)
+        _write_file_meta(target, row_count, feature_count)
         item = _item_from_file(target, source_label="Workspace data")
         if item is None:
             raise DatasetCatalogError("Imported file could not be cataloged")
@@ -296,6 +415,55 @@ class InstalledDatasetRepository:
     def list_items(self, dataflow_id: str | None) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         for ref in self.list_refs(dataflow_id):
+            dir_name = ref.get("dirName")
+
+            # Folder-based datasets (hub OR imported): all metadata lives in the
+            # installed manifest.  Any ref that carries a dirName is handled here,
+            # regardless of origin.
+            if dir_name:
+                from utk_curio.backend.app.datasets.installer import (
+                    InstallerError,
+                    resolve_installed_data_path,
+                )
+                from utk_curio.backend.app.datasets.manifest import (
+                    ManifestError,
+                    load_dataset_manifest,
+                )
+                from utk_curio.backend.app.datasets.storage import dataset_dir
+                from utk_curio.backend.app.projects.services import _user_dir_key
+
+                user_key = _user_dir_key(self.user)
+                installed_dir = dataset_dir(user_key, dir_name)
+                try:
+                    manifest = load_dataset_manifest(installed_dir)
+                    data_path = resolve_installed_data_path(user_key, manifest)
+                    item = _item_from_manifest(
+                        manifest, installed_dir, origin=ref.get("origin") or "hub"
+                    )
+                    item["path"] = data_path.as_posix()
+                    item["sizeBytes"] = data_path.stat().st_size
+                    item["installed"] = True
+                    item["producerNodeId"] = ref.get("producerNodeId")
+                    item["consumerNodeIds"] = ref.get("consumerNodeIds") or []
+                    items.append(item)
+                except (InstallerError, ManifestError, OSError):
+                    # Dataset not on disk or manifest unreadable – show a
+                    # placeholder so the user can see it's broken.
+                    items.append(_base_item(
+                        id=ref.get("datasetId") or ref.get("id") or dir_name,
+                        title=dir_name,
+                        description="Dataset is not installed on this machine.",
+                        origin=ref.get("origin") or "imported",
+                        format=ref.get("format") or "csv",
+                        uri=f"curio://datasets/{dir_name}",
+                        dirName=dir_name,
+                        producerNodeId=ref.get("producerNodeId"),
+                        consumerNodeIds=ref.get("consumerNodeIds") or [],
+                        installed=True,
+                    ))
+                continue
+
+            # Legacy fat refs (no dirName): reconstruct from the ref's stored fields.
             fmt = ref.get("format") or "csv"
             items.append(_base_item(
                 id=ref.get("datasetId") or ref.get("id") or _stable_id("installed", ref.get("uri", "")),
@@ -553,11 +721,10 @@ class DatasetCatalogService:
         items: list[dict[str, Any]] = []
         if include_hub:
             items.extend(self.registry.list_items())
-        items.extend(self.local.list_items())
         if dataflow_id:
             items.extend(self.installed.list_items(dataflow_id))
             items.extend(self.computed.list_items(manifest=self._project_manifest(dataflow_id)))
-        print("DatasetsService: items", items)
+
         installed_ids = {item["id"] for item in self.installed.list_items(dataflow_id) if item.get("id")}
         for item in items:
             if item["id"] in installed_ids:
@@ -591,7 +758,7 @@ class DatasetCatalogService:
     def get_dataset(self, dataset_id: str, *, dataflow_id: str | None = None) -> dict[str, Any]:
         for include_hub in (True, False):
             result = self.list_catalog(dataflow_id=dataflow_id, include_hub=include_hub)
-            print("get_dataset: payload", result)
+
             for item in result["items"]:
                 if item["id"] == dataset_id:
                     return item
@@ -618,22 +785,158 @@ class DatasetCatalogService:
         dataflow_id: str | None = None,
         title: str | None = None,
     ) -> dict[str, Any]:
-        item = self.local.save_import(file)
-        if title:
-            item["title"] = title
+        from utk_curio.backend.app.datasets.installer import (
+            InstallerError,
+            install_imported_file,
+        )
+
+        filename = secure_filename(file.filename or "")
+        if not filename:
+            raise DatasetCatalogError("No file selected")
+        suffix = Path(filename).suffix.lower()
+        if suffix not in SUPPORTED_SUFFIXES:
+            raise DatasetCatalogError(f"Unsupported dataset format: {suffix or filename}")
+        fmt = SUPPORTED_SUFFIXES[suffix]
+
+        user_key = self._user_key()
+        file_bytes = file.read()
+
+        try:
+            result = install_imported_file(
+                user_key, file_bytes, filename, fmt, title=title
+            )
+        except InstallerError as exc:
+            raise DatasetCatalogError(str(exc)) from exc
+
+        # Compute row/feature counts and patch the manifest if they were missing.
+        data_path = result.dest / result.manifest.data_file
+        row_count, feature_count = _count_file(data_path, fmt)
+        if (result.manifest.row_count is None and row_count is not None) or (
+            result.manifest.feature_count is None and feature_count is not None
+        ):
+            _patch_manifest_file(result.dest / "manifest.json", row_count, feature_count)
+            _write_file_meta(data_path, row_count, feature_count)
+
+        from utk_curio.backend.app.datasets.manifest import load_dataset_manifest
+        manifest = load_dataset_manifest(result.dest)
+        item = _item_from_manifest(manifest, result.dest, origin="imported")
+        item["path"] = data_path.as_posix()
+        item["sizeBytes"] = data_path.stat().st_size
+        if row_count is not None:
+            item["rowCount"] = row_count
+        if feature_count is not None:
+            item["featureCount"] = feature_count
+
         if dataflow_id:
             self.install_dataset(dataflow_id, item["id"], source_item=item)
             item["installed"] = True
         return item
 
     def publish_dataset(self, dataset_id: str, metadata: dict[str, Any], *, dataflow_id: str | None = None) -> dict[str, Any]:
+        from utk_curio.backend.app.datasets.storage import catalog_root
+
         item = deepcopy(self.get_dataset(dataset_id, dataflow_id=dataflow_id))
         for key in ("title", "description", "license", "tags"):
             if key in metadata:
                 item[key] = metadata[key]
-        item["sourceLabel"] = "Data Hub draft"
+
+        # ── Compute counts from the local data file ──────────────────────────
+        local_path: Path | None = None
+        path_value = item.get("path")
+        if path_value and not str(path_value).startswith("curio://"):
+            p = Path(path_value)
+            if p.is_file():
+                local_path = p
+
+        if local_path is not None:
+            fmt = item.get("format", "")
+            row_count, feature_count = _count_file(local_path, fmt)
+            if row_count is not None and item.get("rowCount") is None:
+                item["rowCount"] = row_count
+            if feature_count is not None and item.get("featureCount") is None:
+                item["featureCount"] = feature_count
+
+        # ── Write to the local catalog ────────────────────────────────────────
+        catalog_id = item.get("id", "")
+        # Convert file-hash IDs (e.g. "file-abc123") to a valid catalog id
+        if not re.match(r"^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*){1,5}$", catalog_id):
+            catalog_id = _catalog_id_from_title(str(item.get("title") or "dataset"))
+            item["id"] = catalog_id
+
+        dir_name = f"{catalog_id}@1"
+        dest = catalog_root() / dir_name
+        (dest / "data").mkdir(parents=True, exist_ok=True)
+
+        # Copy data file into the catalog data/ subdirectory
+        data_file = "data/data." + str(item.get("format", "csv"))
+        if local_path is not None:
+            dest_data = dest / "data" / local_path.name
+            shutil.copy2(local_path, dest_data)
+            data_file = f"data/{local_path.name}"
+
+        # ── Write manifest.json with all fields ───────────────────────────────
+        from utk_curio.backend.app.datasets.manifest import DatasetManifest, write_manifest
+
+        now = _iso_from_timestamp()
+        manifest_obj = DatasetManifest(
+            id=catalog_id,
+            name=item.get("title") or catalog_id,
+            version="1.0.0",
+            format=item.get("format", "csv"),
+            description=item.get("description") or "",
+            publisher=str(self.user) if self.user else "Data Hub",
+            license=item.get("license") or "MIT",
+            tags=item.get("tags") or [],
+            data_file=data_file,
+            major=1,
+            source_label="Data Hub",
+            row_count=item.get("rowCount"),
+            feature_count=item.get("featureCount"),
+            schema=item.get("schema"),
+            created_at=item.get("updatedAt") or now,
+            updated_at=now,
+        )
+        write_manifest(manifest_obj, dest)
+
+        item["sourceLabel"] = "Data Hub"
         item["origin"] = "hub"
+        item["dirName"] = dir_name
         item["updatedAt"] = _iso_from_timestamp()
+
+        # ── Promote ref in spec.trill to hub so next catalog reload reflects publish ──
+        # The original dataset (e.g. imported.x{hash}) may have been stored with
+        # origin="imported".  We update the ref so InstalledDatasetRepository returns
+        # the correct origin="hub" on the next list, ensuring the Published badge shows.
+        if dataflow_id:
+            try:
+                refs = self.installed.list_refs(dataflow_id)
+                changed = False
+                for ref in refs:
+                    ref_id = ref.get("datasetId") or ref.get("id")
+                    # Match by original dataset_id OR new catalog_id (in case ID was remapped)
+                    if ref_id in (dataset_id, catalog_id):
+                        ref["datasetId"] = catalog_id
+                        ref["dirName"] = dir_name
+                        ref["origin"] = "hub"
+                        changed = True
+                if changed:
+                    self.installed.replace_refs(dataflow_id, refs)
+            except Exception:  # noqa: BLE001 – never block publish on a ref update failure
+                pass
+
+        # ── If the dataset ID was remapped, also install the catalog entry into the
+        # user's store so the ref's new dirName can be resolved on next list. ─────────
+        if catalog_id != dataset_id and dataflow_id:
+            try:
+                from utk_curio.backend.app.datasets.installer import (
+                    InstallerError,
+                    install_dataset_from_catalog,
+                )
+                user_key = self._user_key()
+                install_dataset_from_catalog(user_key, dir_name)
+            except Exception:  # noqa: BLE001 – best-effort; don't block the publish response
+                pass
+
         return item
 
     def install_dataset(
@@ -664,6 +967,19 @@ class DatasetCatalogService:
             item["sizeBytes"] = data_path.stat().st_size
             item["dirName"] = dir_name
 
+            # Backfill rowCount/featureCount into the user-store manifest when
+            # the hub manifest didn't include them (older catalog entries, etc.)
+            if item.get("rowCount") is None and item.get("featureCount") is None:
+                fmt = item.get("format", "")
+                row_count, feature_count = _count_file(data_path, fmt)
+                if row_count is not None:
+                    item["rowCount"] = row_count
+                if feature_count is not None:
+                    item["featureCount"] = feature_count
+                if row_count is not None or feature_count is not None:
+                    _patch_manifest_file(result.dest / "manifest.json", row_count, feature_count)
+                    _write_file_meta(data_path, row_count, feature_count)
+
         refs = self.installed.list_refs(dataflow_id)
         existing = next((ref for ref in refs if ref.get("datasetId") == item["id"]), None)
         ref = self._ref_from_item(item)
@@ -686,7 +1002,13 @@ class DatasetCatalogService:
         return {"datasets": next_refs}
 
     def legacy_dataset_paths(self) -> list[str]:
-        return [item["path"] for item in self.local.list_items() if item.get("path")]
+        """Return paths for backwards-compatible /datasets route.
+
+        Now that all datasets live in the manifest-backed catalog, this
+        delegates to the registry instead of scanning the raw data/ folder.
+        """
+        items = self.registry.list_items()
+        return [item["path"] for item in items if item.get("path")]
 
     def _dedupe_items(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         by_id: dict[str, dict[str, Any]] = {}
@@ -701,6 +1023,23 @@ class DatasetCatalogService:
 
     def _ref_from_item(self, item: dict[str, Any]) -> dict[str, Any]:
         origin = item.get("origin")
+        dir_name = item.get("dirName")
+
+        # Folder-based datasets (hub OR imported): store only the link to the
+        # dataset folder.  All metadata is authoritative in manifest.json.
+        if dir_name:
+            return {
+                "datasetId": item["id"],
+                "dirName": dir_name,
+                "origin": origin or "imported",
+                "producerNodeId": item.get("producerNodeId"),
+                "consumerNodeIds": item.get("consumerNodeIds") or [],
+                "installedAt": _iso_from_timestamp(),
+            }
+
+        # Legacy datasets without a folder (computed, source_node, or old
+        # imported files): keep a fat ref because there is no manifest to
+        # hydrate from at read time.
         ref_origin = origin if origin in {"computed", "source_node"} else "imported"
         return {
             "datasetId": item["id"],
@@ -710,7 +1049,7 @@ class DatasetCatalogService:
             "sourceOrigin": origin,
             "uri": item.get("uri") or "",
             "path": item.get("path"),
-            "dirName": item.get("dirName"),
+            "dirName": dir_name,
             "format": item.get("format") or "csv",
             "sizeBytes": item.get("sizeBytes"),
             "rowCount": item.get("rowCount"),

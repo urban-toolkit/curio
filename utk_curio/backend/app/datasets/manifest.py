@@ -102,6 +102,43 @@ def _parse_manifest(raw: dict[str, Any], *, where: str) -> DatasetManifest:
     )
 
 
+def build_manifest_dict(manifest: DatasetManifest) -> dict[str, Any]:
+    """Serialise a DatasetManifest to a complete JSON-ready dict.
+
+    Every known field is always present.  Optional fields that carry no value
+    are written as ``null`` (or ``""`` for string fields that are semantically
+    empty rather than absent).  This ensures that manifest.json files on disk
+    are self-describing and forward-compatible.
+    """
+    return {
+        "id": manifest.id,
+        "name": manifest.name,
+        "version": manifest.version,
+        "format": manifest.format,
+        "description": manifest.description or "",
+        "publisher": manifest.publisher or "",
+        "license": manifest.license or "",
+        "tags": list(manifest.tags),
+        "dataFile": manifest.data_file,
+        "compatibility": {"major": manifest.major},
+        "sourceLabel": manifest.source_label or "",
+        "rowCount": manifest.row_count,
+        "featureCount": manifest.feature_count,
+        "schema": manifest.schema,
+        "createdAt": manifest.created_at or None,
+        "updatedAt": manifest.updated_at or None,
+    }
+
+
+def write_manifest(manifest: DatasetManifest, dataset_root: Path) -> None:
+    """Write a complete manifest.json to *dataset_root*, replacing any existing file."""
+    manifest_path = dataset_root / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(build_manifest_dict(manifest), indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
 def load_dataset_manifest(dataset_root: Path) -> DatasetManifest:
     manifest_path = dataset_root / "manifest.json"
     if not manifest_path.is_file():

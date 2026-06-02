@@ -32,6 +32,8 @@ export interface DatasetCatalogItem {
   format: DatasetFormat;
   uri: string;
   path?: string | null;
+  /** Folder name in the dataset store (e.g. ``data.urbanlab.chicago-boundary@1``). Present for hub datasets. */
+  dirName?: string | null;
   sizeBytes?: number | null;
   rowCount?: number | null;
   featureCount?: number | null;

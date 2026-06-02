@@ -1,31 +1,50 @@
 import React from "react";
 import {
-  DATASET_FORMAT_LABEL,
-  DATASET_ORIGIN_LABEL,
   DatasetCatalogItem,
+  DatasetFormat,
 } from "../../../services/datasetCatalog";
 import { CatalogPublishPill } from "../../packages/CatalogPublishPill";
 import styles from "./DatasetCard.module.css";
 
-const CARD_ICON_VARIANTS = [
-  styles.cardIconWarm,
-  styles.cardIconCool,
-  styles.cardIconViolet,
-] as const;
+// ── Format helpers ───────────────────────────────────────────────────────────
 
-function iconVariantForDataset(id: string): string {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) {
-    hash = (hash + id.charCodeAt(i)) % CARD_ICON_VARIANTS.length;
-  }
-  return CARD_ICON_VARIANTS[hash]!;
+const FORMAT_ABBR: Record<DatasetFormat, string> = {
+  geojson: "GeoJSON",
+  csv: "CSV",
+  json: "JSON",
+  parquet: "Parquet",
+  geotiff: "GeoTIFF",
+  shp: "SHP",
+};
+
+function formatAvatarClass(format: DatasetFormat): string {
+  return styles[`avatar_${format}` as keyof typeof styles] ?? "";
 }
 
-function initials(title: string): string {
-  const words = title.trim().split(/\s+/).filter(Boolean);
-  const seed = words.length > 1 ? `${words[0][0]}${words[1][0]}` : title.slice(0, 2);
-  return seed.toUpperCase();
+function formatAccentClass(format: DatasetFormat): string {
+  return styles[`accent_${format}` as keyof typeof styles] ?? "";
 }
+
+// ── Count / time helpers ─────────────────────────────────────────────────────
+
+function datasetCount(dataset: DatasetCatalogItem): string | null {
+  if (dataset.featureCount != null) return `${dataset.featureCount.toLocaleString()} feat.`;
+  if (dataset.rowCount != null) return `${dataset.rowCount.toLocaleString()} rows`;
+  return null;
+}
+
+function relativeTime(iso?: string | null): string {
+  if (!iso) return "";
+  const delta = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(delta) || delta < 0) return "";
+  const minutes = Math.max(1, Math.round(delta / 60_000));
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+// ── Props ────────────────────────────────────────────────────────────────────
 
 export interface DatasetCardProps {
   dataset: DatasetCatalogItem;
@@ -42,6 +61,8 @@ export interface DatasetCardProps {
   onPublish?: (datasetId: string) => void;
   onOpenDetails?: (dataset: DatasetCatalogItem) => void;
 }
+
+// ── Component ────────────────────────────────────────────────────────────────
 
 export const DatasetCard: React.FC<DatasetCardProps> = ({
   dataset,
@@ -63,8 +84,20 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
   const showUnpublish = isPublished && isInstalled && onUnpublish != null;
   const showPublishButton = onPublish != null && publishAllowed && !isPublished;
   const showPublishPill = isPublished || showPublishButton;
-  const publisher = dataset.sourceLabel || DATASET_ORIGIN_LABEL[dataset.origin];
-  const tags = dataset.tags.length > 0 ? dataset.tags.slice(0, 2) : [dataset.format, "data"];
+
+  const count = datasetCount(dataset);
+  const time = relativeTime(dataset.updatedAt);
+  const metaParts = [count, time].filter(Boolean).join(" · ");
+
+  const upCount = dataset.producerNodeId ? 1 : 0;
+  const downCount = dataset.consumerNodeIds?.length ?? 0;
+  const hasConnections = upCount > 0 || downCount > 0;
+  const connLabel = [
+    upCount > 0 ? `${upCount}\u2191` : "",
+    downCount > 0 ? `${downCount}\u2193` : "",
+  ].filter(Boolean).join(" ");
+
+  const tags = dataset.tags.length > 0 ? dataset.tags.slice(0, 2) : [];
 
   return (
     <article
@@ -72,29 +105,47 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
       draggable={draggable}
       onDragStart={onDragStart}
     >
+      {/* Left accent bar */}
+      <div className={`${styles.cardAccent} ${formatAccentClass(dataset.format)}`} />
+
+      {/* Format avatar */}
       <button
         type="button"
-        className={`${styles.cardIcon} ${iconVariantForDataset(dataset.id)} ${styles.cardIconButton}`}
+        className={`${styles.cardAvatar} ${formatAvatarClass(dataset.format)} ${styles.cardAvatarButton}`}
         title={`View ${dataset.title} details`}
         aria-label={`View ${dataset.title} details`}
         onClick={() => onOpenDetails?.(dataset)}
       >
-        {initials(dataset.title)}
+        {FORMAT_ABBR[dataset.format]}
       </button>
 
+      {/* Body */}
       <div className={styles.cardBody}>
         <h3 className={styles.cardTitle}>{dataset.title}</h3>
-        <p className={styles.cardMeta}>
-          {publisher} · v1.0.0{dataset.license ? ` · ${dataset.license}` : " · MIT"}
-        </p>
-        <div className={styles.tagRow}>
-          <span className={styles.tag}>{DATASET_FORMAT_LABEL[dataset.format]}</span>
-          {tags.map((tag) => (
-            <span key={tag} className={styles.tag}>{tag}</span>
-          ))}
+
+        {dataset.sourceLabel ? (
+          <p className={styles.cardSource}>{dataset.sourceLabel}</p>
+        ) : null}
+
+        <div className={styles.cardMetaRow}>
+          {metaParts ? (
+            <span className={styles.cardMetaText}>{metaParts}</span>
+          ) : null}
+          {hasConnections ? (
+            <span className={styles.connBadge}>{connLabel}</span>
+          ) : null}
         </div>
+
+        {tags.length > 0 ? (
+          <div className={styles.tagRow}>
+            {tags.map((tag) => (
+              <span key={tag} className={styles.tag}>{tag}</span>
+            ))}
+          </div>
+        ) : null}
       </div>
 
+      {/* Actions */}
       <div className={styles.cardAction}>
         {!isInstalled ? (
           <button

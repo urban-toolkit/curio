@@ -19,9 +19,27 @@ import {
 import styles from "./DatasetsPaletteDropdown.module.css";
 
 function formatAbbreviation(dataset: DatasetCatalogItem): string {
-  if (dataset.format === "geojson") return "GEO";
-  if (dataset.format === "json") return "JSN";
-  return DATASET_FORMAT_LABEL[dataset.format].slice(0, 3).toUpperCase();
+  if (dataset.format === "geojson") return "GeoJSON";
+  if (dataset.format === "json") return "JSON";
+  if (dataset.format === "geotiff") return "GeoTIFF";
+  return DATASET_FORMAT_LABEL[dataset.format].toUpperCase();
+}
+
+function relativeTime(iso?: string | null): string {
+  if (!iso) return "";
+  const delta = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(delta) || delta < 0) return "";
+  const minutes = Math.max(1, Math.round(delta / 60_000));
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+function datasetCount(dataset: DatasetCatalogItem): string | null {
+  if (dataset.featureCount != null) return `${dataset.featureCount.toLocaleString()} feat.`;
+  if (dataset.rowCount != null) return `${dataset.rowCount.toLocaleString()} rows`;
+  return null;
 }
 
 function stopAccordionToggle(event: React.MouseEvent<HTMLButtonElement>) {
@@ -30,20 +48,42 @@ function stopAccordionToggle(event: React.MouseEvent<HTMLButtonElement>) {
 }
 
 function DatasetRow({ dataset }: { dataset: DatasetCatalogItem }) {
+  const count = datasetCount(dataset);
+  const time = relativeTime(dataset.updatedAt);
+  const metaParts = [count, time].filter(Boolean).join(" · ");
+  const upCount = dataset.producerNodeId ? 1 : 0;
+  const downCount = dataset.consumerNodeIds?.length ?? 0;
+  const hasConnections = upCount > 0 || downCount > 0;
+
   return (
     <div
-      className={styles.row}
+      className={`${styles.row} ${styles[`fmt_${dataset.format}` as keyof typeof styles] ?? ""}`}
       draggable
       onDragStart={(event) => {
         event.dataTransfer.setData(DATASET_DRAG_MIME, JSON.stringify(createDatasetDragPayload(dataset)));
         event.dataTransfer.effectAllowed = "copy";
       }}
     >
-      <span className={styles.formatTile}>{formatAbbreviation(dataset)}</span>
-      <span className={styles.rowText}>
-        <span className={styles.rowTitle}>{dataset.title}</span>
-        <span className={styles.typePill}>{dataset.origin === "computed" ? "COMPUTED" : "DATA"}</span>
-      </span>
+      {/*<div className={styles.rowAccent} />*/}
+      <div className={styles.rowBody}>
+        <div className={styles.rowTop}>
+          <span className={`${styles.formatChip} ${styles[`chip_${dataset.format}` as keyof typeof styles] ?? ""}`}>
+            {formatAbbreviation(dataset)}
+          </span>
+          <span className={styles.rowTitle}>{dataset.title}</span>
+        </div>
+        {dataset.sourceLabel ? (
+          <span className={styles.rowSource}>{dataset.sourceLabel}</span>
+        ) : null}
+        <div className={styles.rowMeta}>
+          {metaParts ? <span className={styles.rowMetaText}>{metaParts}</span> : null}
+          {hasConnections ? (
+            <span className={styles.connBadge}>
+              {upCount > 0 ? `${upCount}\u2191 ` : ""}{downCount > 0 ? `${downCount}\u2193` : ""}
+            </span>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }
@@ -79,7 +119,7 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
   }, [open]);
 
   const rows = useMemo(
-    () => catalog.items.filter((item) => item.origin !== "hub"),
+    () => catalog.items.filter((item) => item.origin === "imported" || item.origin === "hub"),
     [catalog.items],
   );
   const installedRows = useMemo(

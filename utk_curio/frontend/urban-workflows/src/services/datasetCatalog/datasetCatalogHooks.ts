@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { datasetCatalogApi } from "./datasetCatalogApi";
 import {
   DatasetCatalogItem,
@@ -17,7 +17,12 @@ const EMPTY_RESPONSE: DatasetCatalogResponse = {
 export function useDatasetCatalog(query: DatasetCatalogQuery = {}) {
   const [response, setResponse] = useState<DatasetCatalogResponse>(EMPTY_RESPONSE);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Track whether we have received data at least once for the current query so
+  // we can distinguish "initial load" (show skeleton) from "background refresh"
+  // (keep existing items visible, only apply a subtle opacity change).
+  const hasDataRef = useRef(false);
 
   const stableQuery = useMemo(
     () => ({
@@ -31,17 +36,30 @@ export function useDatasetCatalog(query: DatasetCatalogQuery = {}) {
     [query.dataflowId, query.search, query.format, query.origin, query.sort, query.includeHub],
   );
 
+  // Reset the "has-data" flag whenever the query changes so tab switches get a
+  // proper initial-load indicator rather than silently swapping the list.
+  useEffect(() => {
+    hasDataRef.current = false;
+  }, [stableQuery]);
+
   const reload = useCallback(async () => {
-    setLoading(true);
+    if (hasDataRef.current) {
+      // Already have data – refresh silently so the list doesn't blink.
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     setError(null);
     try {
       const next = await datasetCatalogApi.listCatalog(stableQuery);
       setResponse(next);
+      hasDataRef.current = true;
     } catch (err) {
       const message = (err as Error)?.message || "Could not load datasets.";
       setError(message);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [stableQuery]);
 
@@ -83,6 +101,7 @@ export function useDatasetCatalog(query: DatasetCatalogQuery = {}) {
     items: response.items,
     facets: response.facets,
     loading,
+    refreshing,
     error,
     reload,
     install,

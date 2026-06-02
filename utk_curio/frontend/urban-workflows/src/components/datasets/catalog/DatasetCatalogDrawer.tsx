@@ -106,25 +106,33 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
         const installed = await datasetCatalogApi.installToDataflow(id, dataset.id);
         setDataflowDatasets((prev) => {
           const next = prev.filter((row) => (row?.datasetId || row?.id) !== installed.id);
-          return [
-            ...next,
-            {
-              datasetId: installed.id,
-              title: installed.title,
-              description: installed.description,
-              origin: installed.origin,
-              uri: installed.uri,
-              path: installed.path,
-              format: installed.format,
-              sizeBytes: installed.sizeBytes,
-              rowCount: installed.rowCount,
-              featureCount: installed.featureCount,
-              sourceLabel: installed.sourceLabel,
-              tags: installed.tags,
-              updatedAt: installed.updatedAt,
-              installedAt: new Date().toISOString(),
-            },
-          ];
+          // Hub datasets: store only the lean link to the folder; all metadata
+          // lives in the installed manifest and is read by the backend API.
+          const ref =
+            installed.origin === "hub" && installed.dirName
+              ? {
+                  datasetId: installed.id,
+                  dirName: installed.dirName,
+                  origin: "hub" as const,
+                  installedAt: new Date().toISOString(),
+                }
+              : {
+                  datasetId: installed.id,
+                  title: installed.title,
+                  description: installed.description,
+                  origin: installed.origin,
+                  uri: installed.uri,
+                  path: installed.path,
+                  format: installed.format,
+                  sizeBytes: installed.sizeBytes,
+                  rowCount: installed.rowCount,
+                  featureCount: installed.featureCount,
+                  sourceLabel: installed.sourceLabel,
+                  tags: installed.tags,
+                  updatedAt: installed.updatedAt,
+                  installedAt: new Date().toISOString(),
+                };
+          return [...next, ref];
         });
         await catalog.reload();
         showToast(`Installed ${dataset.title}.`, "success");
@@ -201,25 +209,33 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
       const imported = await catalog.importDataset(file);
       setDataflowDatasets((prev) => {
         const next = prev.filter((row) => (row?.datasetId || row?.id) !== imported.id);
-        return [
-          ...next,
-          {
-            datasetId: imported.id,
-            title: imported.title,
-            description: imported.description,
-            origin: imported.origin,
-            uri: imported.uri,
-            path: imported.path,
-            format: imported.format,
-            sizeBytes: imported.sizeBytes,
-            rowCount: imported.rowCount,
-            featureCount: imported.featureCount,
-            sourceLabel: imported.sourceLabel,
-            tags: imported.tags,
-            updatedAt: imported.updatedAt,
-            installedAt: new Date().toISOString(),
-          },
-        ];
+        // Imported datasets now live in the user datasets folder with a manifest —
+        // store only the lean ref, same as hub datasets.
+        const ref =
+          imported.dirName
+            ? {
+                datasetId: imported.id,
+                dirName: imported.dirName,
+                origin: imported.origin,
+                installedAt: new Date().toISOString(),
+              }
+            : {
+                datasetId: imported.id,
+                title: imported.title,
+                description: imported.description,
+                origin: imported.origin,
+                uri: imported.uri,
+                path: imported.path,
+                format: imported.format,
+                sizeBytes: imported.sizeBytes,
+                rowCount: imported.rowCount,
+                featureCount: imported.featureCount,
+                sourceLabel: imported.sourceLabel,
+                tags: imported.tags,
+                updatedAt: imported.updatedAt,
+                installedAt: new Date().toISOString(),
+              };
+        return [...next, ref];
       });
       showToast(`Imported ${file.name}.`, "success");
     } catch (err) {
@@ -339,7 +355,11 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
 
         <main className={styles.content}>
           {catalog.error ? <div className={styles.error}>{catalog.error}</div> : null}
-          {catalog.loading ? <div className={styles.empty}>Loading datasets...</div> : null}
+          {/* Show full loading state only on initial load (no items yet).
+              Background refreshes keep existing items visible. */}
+          {catalog.loading && items.length === 0 ? (
+            <div className={styles.empty}>Loading datasets...</div>
+          ) : null}
           {tab === "installed" ? (
             !catalog.loading && !catalog.error && items.length === 0 ? (
               <div className={styles.empty}>No datasets installed in this dataflow yet.</div>
@@ -351,17 +371,21 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
                 onUninstall={projectId ? (dataset) => void onUninstall(dataset) : undefined}
                 onPublish={(datasetId) => void onPublish(datasetId)}
                 onDragStart={handleDatasetDragStart}
+                refreshing={catalog.refreshing}
               />
             )
           ) : (
             <>
-              {!catalog.loading && !catalog.error ? (
+              {!catalog.error ? (
                 <p className={styles.sectionLabel}>{TAB_LABEL[tab]}</p>
               ) : null}
               {!catalog.loading && !catalog.error && items.length === 0 ? (
                 <div className={styles.empty}>No datasets match the current filters.</div>
               ) : null}
-              <div className={styles.cardList}>
+              <div
+                className={styles.cardList}
+                style={catalog.refreshing ? { opacity: 0.6, pointerEvents: "none", transition: "opacity 0.15s" } : { transition: "opacity 0.15s" }}
+              >
                 {items.map((dataset) => {
                   const isInstalled = dataset.installed === true || dataset.origin !== "hub";
                   const isPublished = dataset.origin === "hub";

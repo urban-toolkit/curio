@@ -1,14 +1,16 @@
+/* ── Card shell ─────────────────────────────────────────────────────────────── */
+
 .card {
-  display: grid;
-  grid-template-columns: 56px 1fr auto;
-  gap: 12px;
-  align-items: center;
-  padding: 12px;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  overflow: hidden;
   border: 1px solid var(--curio-border, #dedcd6);
   border-radius: var(--curio-radius-lg, 6px);
   background: var(--curio-card-bg, #fff);
   box-shadow: var(--curio-shadow-card, 0 1px 0 rgba(20, 20, 20, 0.03));
   font-family: var(--curio-font-family, Inter, system-ui, sans-serif);
+  gap: 0;
 }
 
 .cardDraggable {
@@ -19,87 +21,153 @@
   cursor: grabbing;
 }
 
-.cardIcon {
-  width: 56px;
-  height: 56px;
-  border-radius: var(--curio-radius-md, 4px);
+/* ── Left accent bar ─────────────────────────────────────────────────────────── */
+
+.cardAccent {
+  width: 5px;
+  flex-shrink: 0;
+  background: #d9d7d1;
+}
+
+.accent_geojson  { background: #4caf72; }
+.accent_csv      { background: #5b9bd5; }
+.accent_json     { background: #9b7fda; }
+.accent_parquet  { background: #f5a623; }
+.accent_geotiff  { background: #26c6da; }
+.accent_shp      { background: #a0836a; }
+
+/* ── Format avatar ───────────────────────────────────────────────────────────── */
+
+.cardAvatar {
+  flex-shrink: 0;
+  width: 72px;
+  height: 72px;
+  align-self: center;
+  margin: 10px 0 10px 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1rem;
-  font-weight: 700;
-  flex-shrink: 0;
+  border-radius: var(--curio-radius-md, 5px);
+  padding: 6px 4px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  line-height: 1.2;
+  text-align: center;
+  text-transform: uppercase;
+  word-break: break-all;
+  /* default fallback */
+  background: #f0efeb;
+  color: #5a5b60;
 }
 
-.cardIconButton {
+.cardAvatarButton {
   border: none;
-  padding: 0;
   cursor: pointer;
   transition: box-shadow 0.15s, transform 0.15s;
 }
 
-.cardIconButton:hover {
-  box-shadow: 0 0 0 2px rgba(47, 48, 52, 0.12);
+.cardAvatarButton:hover {
+  box-shadow: 0 0 0 2px rgba(47, 48, 52, 0.14);
 }
 
-.cardIconButton:active {
+.cardAvatarButton:active {
   transform: scale(0.97);
 }
 
-.cardIconWarm {
-  background: var(--curio-accent-peach-bg, #fde8dc);
-  color: var(--curio-accent-peach-fg, #e86f3a);
-}
+/* Format-specific avatar colours (light surface) */
+.avatar_geojson  { background: #e3f4eb; color: #2d7a4f; }
+.avatar_csv      { background: #e0eaf8; color: #2a5fa0; }
+.avatar_json     { background: #ece4f8; color: #5c3fa0; }
+.avatar_parquet  { background: #fdf0dc; color: #a06a10; }
+.avatar_geotiff  { background: #ddf4f6; color: #1a8a9a; }
+.avatar_shp      { background: #f0e8e2; color: #7a4f30; }
 
-.cardIconCool {
-  background: var(--curio-accent-sky-bg, #dce8fb);
-  color: var(--curio-accent-sky-fg, #3567c7);
-}
-
-.cardIconViolet {
-  background: var(--curio-accent-lilac-bg, #ebe4fb);
-  color: var(--curio-accent-lilac-fg, #6b4fc7);
-}
+/* ── Card body ───────────────────────────────────────────────────────────────── */
 
 .cardBody {
+  flex: 1;
   min-width: 0;
+  padding: 10px 10px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
 .cardTitle {
-  margin: 0 0 4px;
-  font-size: var(--curio-font-size-md, 14px);
-  font-weight: 600;
+  margin: 0;
+  font-size: var(--curio-font-size-md, 13px);
+  font-weight: 650;
   color: var(--curio-text-primary, #2f3034);
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.cardMeta {
-  margin: 0 0 8px;
-  font-size: var(--curio-font-size-sm, 11px);
+.cardSource {
+  margin: 0;
+  font-size: 11px;
   color: var(--curio-text-muted, #86878c);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardMetaRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 16px;
+  margin-top: 2px;
+}
+
+.cardMetaText {
+  font-size: 11px;
+  color: var(--curio-text-muted, #86878c);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.connBadge {
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: #f0efeb;
+  color: #74757b;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
 }
 
 .tagRow {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
+  margin-top: 4px;
 }
 
 .tag {
   display: inline-block;
-  padding: 2px 8px;
+  padding: 2px 7px;
   border-radius: var(--curio-radius-sm, 4px);
   background: var(--curio-page-bg, #f0efeb);
   font-size: var(--curio-font-size-xs, 10px);
   color: var(--curio-text-secondary, #67686d);
 }
 
+/* ── Action column ───────────────────────────────────────────────────────────── */
+
 .cardAction {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: stretch;
+  justify-content: center;
   gap: 6px;
+  padding: 10px 12px;
   min-width: 96px;
 }
 
@@ -110,15 +178,15 @@
 }
 
 .btnInstall {
-  min-width: 96px;
-  height: var(--curio-input-height, 32px);
-  padding: 0 16px;
+  min-width: 86px;
+  height: var(--curio-input-height, 30px);
+  padding: 0 14px;
   border: none;
   border-radius: var(--curio-radius-md, 4px);
   background: var(--curio-top-bar-bg, #24252a);
   color: var(--curio-text-on-dark, #fbfcf6);
   font: inherit;
-  font-size: var(--curio-font-size-md, 13px);
+  font-size: var(--curio-font-size-sm, 12px);
   font-weight: 600;
   cursor: pointer;
 }
@@ -133,9 +201,9 @@
 }
 
 .btnSecondary {
-  min-width: 96px;
-  height: 30px;
-  padding: 0 12px;
+  min-width: 86px;
+  height: 28px;
+  padding: 0 10px;
   border: 1px solid var(--curio-border-strong, #d9d7d1);
   border-radius: var(--curio-radius-md, 4px);
   background: var(--curio-card-bg, #fff);
