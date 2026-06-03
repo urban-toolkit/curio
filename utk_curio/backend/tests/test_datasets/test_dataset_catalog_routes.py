@@ -101,7 +101,7 @@ def test_hub_dataset_preview_reads_catalog_payload(client, user_and_token, tmp_p
     assert resp.status_code == 200
     body = resp.get_json()
     assert body["rows"][0]["tract_id"] == "17031010100"
-    assert body["unsupported"] is not True
+    assert body.get("unsupported") is not True
 
 
 def test_install_dataset_persists_dataflow_dataset_ref(client, user_and_token, tmp_path, monkeypatch):
