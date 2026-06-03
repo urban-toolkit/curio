@@ -1,0 +1,45 @@
+{
+  "compatibility": {
+    "curioRuntime": ">=0.5.0",
+    "major": 1
+  },
+  "createdAt": "2026-05-20T12:00:00Z",
+  "dataFile": "data/community-areas.geojson",
+  "description": "Boundary geometries for Chicago community areas.",
+  "featureCount": 77,
+  "format": "geojson",
+  "id": "data.urbanlab.chicago-community-areas",
+  "license": "Open Data",
+  "name": "Chicago Community Areas",
+  "publisher": "Data Hub",
+  "schema": {
+    "fields": [
+      {
+        "name": "community",
+        "type": "STRING",
+        "nullable": false
+      },
+      {
+        "name": "area_numbe",
+        "type": "INTEGER",
+        "nullable": false
+      },
+      {
+        "name": "geometry",
+        "type": "GEOMETRY",
+        "nullable": false
+      }
+    ],
+    "geometryType": "MultiPolygon",
+    "crs": "EPSG:4326"
+  },
+  "sourceLabel": "Data Hub",
+  "tags": [
+    "boundaries",
+    "chicago",
+    "geojson"
+  ],
+  "version": "1.0.0",
+  "rowCount": null,
+  "updatedAt": null
+}

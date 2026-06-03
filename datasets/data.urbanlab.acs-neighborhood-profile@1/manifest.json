@@ -1,0 +1,43 @@
+{
+  "compatibility": {
+    "curioRuntime": ">=0.5.0",
+    "major": 1
+  },
+  "createdAt": "2026-05-19T09:00:00Z",
+  "dataFile": "data/acs-neighborhood-profile.csv",
+  "description": "Tabular demographic indicators prepared for urban analysis.",
+  "format": "csv",
+  "id": "data.urbanlab.acs-neighborhood-profile",
+  "license": "Public domain",
+  "name": "ACS Neighborhood Profile",
+  "publisher": "Data Hub",
+  "rowCount": 2408,
+  "schema": {
+    "fields": [
+      {
+        "name": "tract_id",
+        "type": "STRING",
+        "nullable": false
+      },
+      {
+        "name": "population",
+        "type": "INTEGER",
+        "nullable": true
+      },
+      {
+        "name": "median_income",
+        "type": "INTEGER",
+        "nullable": true
+      }
+    ]
+  },
+  "sourceLabel": "Data Hub",
+  "tags": [
+    "acs",
+    "demographics",
+    "csv"
+  ],
+  "version": "1.0.0",
+  "featureCount": null,
+  "updatedAt": null
+}
