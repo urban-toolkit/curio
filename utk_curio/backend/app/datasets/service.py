@@ -839,7 +839,6 @@ class DatasetCatalogService:
         items: list[dict[str, Any]] = []
         if include_hub:
             items.extend(self.registry.list_items())
-        items.extend(self.local.list_items())
         if dataflow_id:
             items.extend(self.installed.list_items(dataflow_id))
             items.extend(self.computed.list_items(
@@ -1379,15 +1378,13 @@ class DatasetCatalogService:
         return {"id": dataset_id, "unpublished": True}
 
     def legacy_dataset_paths(self) -> list[str]:
-        """Return paths for backwards-compatible /datasets route."""
-        paths: list[str] = []
-        seen: set[str] = set()
-        for item in [*self.registry.list_items(), *self.local.list_items()]:
-            path = item.get("path")
-            if path and path not in seen:
-                paths.append(path)
-                seen.add(path)
-        return paths
+        """Return paths for backwards-compatible /datasets route.
+
+        Now that all datasets live in the manifest-backed catalog, this
+        delegates to the registry instead of scanning the raw data/ folder.
+        """
+        items = self.registry.list_items()
+        return [item["path"] for item in items if item.get("path")]
 
     @staticmethod
     def _catalog_item_rank(item: dict[str, Any]) -> int:
