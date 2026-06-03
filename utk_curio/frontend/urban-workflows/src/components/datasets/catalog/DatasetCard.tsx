@@ -66,6 +66,7 @@ export interface DatasetCardProps {
   /** When true the Install button label changes to "Reinstall". */
   reinstall?: boolean;
   onDragStart?: (event: React.DragEvent<HTMLElement>) => void;
+  onDragEnd?: () => void;
   onInstall: (dataset: DatasetCatalogItem) => void;
   onUninstall?: (dataset: DatasetCatalogItem) => void;
   onUnpublish?: (dataset: DatasetCatalogItem) => void;
@@ -85,6 +86,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
   draggable = true,
   reinstall = false,
   onDragStart,
+  onDragEnd,
   onInstall,
   onUninstall,
   onUnpublish,
@@ -117,6 +119,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
       className={`${styles.card} ${draggable ? styles.cardDraggable : ""}`}
       draggable={draggable}
       onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
     >
       {/* Left accent bar */}
       <div className={`${styles.cardAccent} ${formatAccentClass(dataset.format)}`} />

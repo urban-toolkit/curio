@@ -3,11 +3,44 @@ import {
   DatasetCatalogItem,
   DatasetDragPayload,
 } from "./datasetCatalogTypes";
-import { mergeDatasetLoaderCode } from "./datasetLoaderSnippets";
+import { buildDatasetLoaderCode, mergeDatasetLoaderCode } from "./datasetLoaderSnippets";
+
+export type DatasetLoaderNodeOptions = {
+  position: { x: number; y: number };
+  code: string;
+  datasetRefs: string[];
+  appliedDatasets: Record<string, { id: string; title: string; uri: string; path?: string | null; format: string }>;
+};
+
+/** Options for ``createCodeNode(NodeType.DATA_LOADING, …)`` after a dataset drop. */
+export function buildDatasetLoaderNodeOptions(
+  dataset: DatasetLike,
+  position: { x: number; y: number },
+): DatasetLoaderNodeOptions {
+  const datasetId = "datasetId" in dataset ? dataset.datasetId : dataset.id;
+  return {
+    position,
+    code: buildDatasetLoaderCode(dataset),
+    datasetRefs: [datasetId],
+    appliedDatasets: {
+      [datasetId]: {
+        id: datasetId,
+        title: dataset.title,
+        uri: dataset.uri,
+        path: dataset.path,
+        format: dataset.format,
+      },
+    },
+  };
+}
 
 export const DATASET_DRAG_MIME = "application/x-curio-dataset";
+const DATASET_DRAG_PLAIN_PREFIX = "curio-dataset:";
 
 type DatasetLike = DatasetCatalogItem | DatasetDragPayload;
+
+/** In-memory payload for the current drag (HTML5 getData is unreliable for custom MIME). */
+let activeDatasetDrag: DatasetDragPayload | null = null;
 
 export function createDatasetDragPayload(dataset: DatasetCatalogItem): DatasetDragPayload {
   return {
@@ -20,8 +53,7 @@ export function createDatasetDragPayload(dataset: DatasetCatalogItem): DatasetDr
   };
 }
 
-export function readDatasetDragPayload(dataTransfer: DataTransfer): DatasetDragPayload | null {
-  const raw = dataTransfer.getData(DATASET_DRAG_MIME);
+function parseDatasetDragJson(raw: string): DatasetDragPayload | null {
   if (!raw) return null;
   try {
     const payload = JSON.parse(raw) as Partial<DatasetDragPayload>;
@@ -34,8 +66,41 @@ export function readDatasetDragPayload(dataTransfer: DataTransfer): DatasetDragP
   }
 }
 
+/** Call from ``dragStart`` on dataset rows/cards. */
+export function beginDatasetDrag(dataset: DatasetCatalogItem): DatasetDragPayload {
+  const payload = createDatasetDragPayload(dataset);
+  activeDatasetDrag = payload;
+  return payload;
+}
+
+/** Call from ``dragEnd`` so stale payloads are not reused. */
+export function endDatasetDrag(): void {
+  activeDatasetDrag = null;
+}
+
+/** Write drag data (custom MIME + text/plain fallback for the drop handler). */
+export function writeDatasetDragData(dataTransfer: DataTransfer, payload: DatasetDragPayload): void {
+  const json = JSON.stringify(payload);
+  dataTransfer.setData(DATASET_DRAG_MIME, json);
+  dataTransfer.setData("text/plain", `${DATASET_DRAG_PLAIN_PREFIX}${json}`);
+  dataTransfer.effectAllowed = "copy";
+}
+
+export function readDatasetDragPayload(dataTransfer: DataTransfer): DatasetDragPayload | null {
+  if (activeDatasetDrag) return activeDatasetDrag;
+  const fromMime = parseDatasetDragJson(dataTransfer.getData(DATASET_DRAG_MIME));
+  if (fromMime) return fromMime;
+  const plain = dataTransfer.getData("text/plain");
+  if (plain.startsWith(DATASET_DRAG_PLAIN_PREFIX)) {
+    return parseDatasetDragJson(plain.slice(DATASET_DRAG_PLAIN_PREFIX.length));
+  }
+  return null;
+}
+
 export function hasDatasetDrag(dataTransfer: DataTransfer): boolean {
-  return Array.from(dataTransfer.types || []).includes(DATASET_DRAG_MIME);
+  if (activeDatasetDrag) return true;
+  const types = Array.from(dataTransfer.types || []);
+  return types.includes(DATASET_DRAG_MIME);
 }
 
 export function canApplyDatasetToNode(data: any): boolean {

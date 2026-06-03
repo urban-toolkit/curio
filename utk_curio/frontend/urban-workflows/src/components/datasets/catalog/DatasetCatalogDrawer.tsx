@@ -4,8 +4,9 @@ import { faFileImport, faThumbtack, faXmark } from "@fortawesome/free-solid-svg-
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
 import {
-  createDatasetDragPayload,
-  DATASET_DRAG_MIME,
+  beginDatasetDrag,
+  endDatasetDrag,
+  writeDatasetDragData,
   DatasetCatalogItem,
   DatasetOrigin,
   DatasetSortMode,
@@ -342,8 +343,11 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
   }, [catalog, setDataflowDatasets, showToast]);
 
   const handleDatasetDragStart = useCallback((dataset: DatasetCatalogItem, event: React.DragEvent<HTMLElement>) => {
-    event.dataTransfer.setData(DATASET_DRAG_MIME, JSON.stringify(createDatasetDragPayload(dataset)));
-    event.dataTransfer.effectAllowed = "copy";
+    writeDatasetDragData(event.dataTransfer, beginDatasetDrag(dataset));
+  }, []);
+
+  const handleDatasetDragEnd = useCallback(() => {
+    endDatasetDrag();
   }, []);
 
   const openDatasetDetails = useCallback((dataset: DatasetCatalogItem) => {
@@ -466,6 +470,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
                 onUninstall={projectId ? (dataset) => void onUninstall(dataset) : undefined}
                 onPublish={(datasetId) => void onPublish(datasetId)}
                 onDragStart={handleDatasetDragStart}
+                onDragEnd={handleDatasetDragEnd}
                 refreshing={catalog.refreshing}
               />
             )
@@ -506,6 +511,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
                       busy={busyId === dataset.id || publishingId === dataset.id}
                       publishingId={publishingId}
                       onDragStart={(event) => handleDatasetDragStart(dataset, event)}
+                      onDragEnd={handleDatasetDragEnd}
                       onInstall={(row) => void onInstall(row)}
                       onUninstall={
                         projectId && !isComputedInstalled

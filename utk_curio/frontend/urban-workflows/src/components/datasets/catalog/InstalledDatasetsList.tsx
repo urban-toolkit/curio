@@ -19,6 +19,7 @@ export interface InstalledDatasetsListProps {
   onPublish?: (datasetId: string) => void;
   onUnpublish?: (dataset: DatasetCatalogItem) => void;
   onDragStart?: (dataset: DatasetCatalogItem, event: React.DragEvent<HTMLElement>) => void;
+  onDragEnd?: () => void;
 }
 
 function InstalledDatasetRow({
@@ -30,6 +31,7 @@ function InstalledDatasetRow({
   onPublish,
   onUnpublish,
   onDragStart,
+  onDragEnd,
 }: {
   dataset: DatasetCatalogItem;
   busy: boolean;
@@ -39,6 +41,7 @@ function InstalledDatasetRow({
   onPublish?: (datasetId: string) => void;
   onUnpublish?: (dataset: DatasetCatalogItem) => void;
   onDragStart?: (dataset: DatasetCatalogItem, event: React.DragEvent<HTMLElement>) => void;
+  onDragEnd?: () => void;
 }) {
   const isPublished = dataset.origin === "hub" || dataset.publishedToHub === true;
   const hasActions = onUninstall != null || onPublish != null || onUnpublish != null;
@@ -48,6 +51,7 @@ function InstalledDatasetRow({
       className={styles.installedRow}
       draggable
       onDragStart={(event) => onDragStart?.(dataset, event)}
+      onDragEnd={() => onDragEnd?.()}
     >
       <span className={styles.installedDot} aria-hidden />
       <div className={styles.installedBody}>
@@ -97,6 +101,7 @@ export const InstalledDatasetsList: React.FC<InstalledDatasetsListProps> = ({
   onPublish,
   onUnpublish,
   onDragStart,
+  onDragEnd,
 }) => {
   if (datasets.length === 0) return null;
 
@@ -120,6 +125,7 @@ export const InstalledDatasetsList: React.FC<InstalledDatasetsListProps> = ({
             onPublish={onPublish}
             onUnpublish={onUnpublish}
             onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
           />
         ))}
       </div>

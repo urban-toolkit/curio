@@ -10,8 +10,9 @@ import { useFlowContext } from "../../../../providers/FlowProvider";
 import { useDatasetCatalogDrawer } from "../../../../providers/datasetCatalog";
 import { PaletteAccordion } from "../paletteAccordion";
 import {
-  createDatasetDragPayload,
-  DATASET_DRAG_MIME,
+  beginDatasetDrag,
+  endDatasetDrag,
+  writeDatasetDragData,
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
   useDatasetCatalog,
@@ -60,22 +61,23 @@ function DatasetRow({ dataset }: { dataset: DatasetCatalogItem }) {
       className={`${styles.row} ${styles[`fmt_${dataset.format}` as keyof typeof styles] ?? ""}`}
       draggable
       onDragStart={(event) => {
-        event.dataTransfer.setData(DATASET_DRAG_MIME, JSON.stringify(createDatasetDragPayload(dataset)));
-        event.dataTransfer.effectAllowed = "copy";
+        writeDatasetDragData(event.dataTransfer, beginDatasetDrag(dataset));
       }}
+      onDragEnd={() => endDatasetDrag()}
     >
       {/*<div className={styles.rowAccent} />*/}
       <div className={styles.rowBody}>
         <div className={styles.rowTop}>
-          <span className={`${styles.formatChip} ${styles[`chip_${dataset.format}` as keyof typeof styles] ?? ""}`}>
+          <FontAwesomeIcon icon={faDatabase} className={styles.triggerIcon} />
+          <span className={`${styles.formatChip} ${styles.iconBadge} ${styles[`chip_${dataset.format}` as keyof typeof styles] ?? ""}`}>
             {formatAbbreviation(dataset)}
           </span>
           <span className={styles.rowTitle}>{dataset.title}</span>
         </div>
-        {dataset.sourceLabel ? (
-          <span className={styles.rowSource}>{dataset.sourceLabel}</span>
-        ) : null}
+
         <div className={styles.rowMeta}>
+          <span className={styles.typePill}>{dataset.sourceLabel ? dataset.sourceLabel : "DATA"}</span>
+
           {metaParts ? <span className={styles.rowMetaText}>{metaParts}</span> : null}
           {hasConnections ? (
             <span className={styles.connBadge}>

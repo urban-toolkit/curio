@@ -529,12 +529,12 @@ export const NodeContainer = ({
         if (!e.dataTransfer) return;
         const dataset = readDatasetDragPayload(e.dataTransfer);
         if (!dataset) return;
-        e.preventDefault();
-        e.stopPropagation();
         if (!canApplyDatasetToNode(data)) {
-            showToast("Datasets can be applied to Data Loader or code nodes.", "warning");
+            // Let the event bubble to the canvas drop target.
             return;
         }
+        e.preventDefault();
+        e.stopPropagation();
         const applied = applyDatasetToNodeData(data, code ?? data.code ?? data.defaultCode, dataset);
         updateDataNode(nodeId, applied.data);
         updateDefaultCode(nodeId, applied.code);
@@ -542,8 +542,6 @@ export const NodeContainer = ({
         markDirty();
         showToast(`Applied ${dataset.title} to this node.`, "success");
     };
-    // Also keep canApply in a ref so the dragover handler always reflects the
-    // latest node state even though the effect only registers once.
     const canApplyRef = useRef(false);
     canApplyRef.current = canApplyDatasetToNode(data);
 
@@ -553,9 +551,10 @@ export const NodeContainer = ({
 
         const handleDragOver = (e: DragEvent) => {
             if (!e.dataTransfer || !hasDatasetDrag(e.dataTransfer)) return;
+            if (!canApplyRef.current) return;
             e.preventDefault();
             e.stopPropagation();
-            e.dataTransfer.dropEffect = canApplyRef.current ? "copy" : "none";
+            e.dataTransfer.dropEffect = "copy";
         };
 
         const handleDrop = (e: DragEvent) => {
@@ -575,9 +574,10 @@ export const NodeContainer = ({
     // sees preventDefault() called (belt-and-suspenders).
     const onDatasetDragOver = (event: React.DragEvent<HTMLDivElement>) => {
         if (!hasDatasetDrag(event.dataTransfer)) return;
+        if (!canApplyDatasetToNode(data)) return;
         event.preventDefault();
         event.stopPropagation();
-        event.dataTransfer.dropEffect = canApplyDatasetToNode(data) ? "copy" : "none";
+        event.dataTransfer.dropEffect = "copy";
     };
 
     const onDatasetDrop = (event: React.DragEvent<HTMLDivElement>) => {
