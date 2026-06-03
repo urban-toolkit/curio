@@ -10,7 +10,7 @@
   "id": "data.urbanlab.acs-neighborhood-profile",
   "license": "Public domain",
   "name": "ACS Neighborhood Profile",
-  "publisher": "Data Hub",
+  "publisher": "Data Catalog",
   "rowCount": 2408,
   "schema": {
     "fields": [
@@ -31,7 +31,7 @@
       }
     ]
   },
-  "sourceLabel": "Data Hub",
+  "sourceLabel": "Data Catalog",
   "tags": [
     "acs",
     "demographics",

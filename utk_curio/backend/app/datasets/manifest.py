@@ -88,7 +88,7 @@ def _parse_manifest(raw: dict[str, Any], *, where: str) -> DatasetManifest:
         version=_require_str(raw.get("version"), "version"),
         format=fmt,
         description=str(raw.get("description") or ""),
-        publisher=str(raw.get("publisher") or "Data Hub"),
+        publisher=str(raw.get("publisher") or "Data Catalog"),
         license=str(raw.get("license") or ""),
         tags=tags,
         data_file=_require_str(raw.get("dataFile"), "dataFile"),
@@ -98,7 +98,7 @@ def _parse_manifest(raw: dict[str, Any], *, where: str) -> DatasetManifest:
         feature_count=feature_count,
         row_count=row_count,
         schema=schema,
-        source_label=str(raw.get("sourceLabel") or raw.get("publisher") or "Data Hub") or None,
+        source_label=str(raw.get("sourceLabel") or raw.get("publisher") or "Data Catalog") or None,
     )
 
 

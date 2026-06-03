@@ -1,7 +1,7 @@
 """Dataset catalog service.
 
 This module intentionally knows nothing about node packages. It normalizes
-datasets from three sources: local/imported files, fixture-backed Data Hub rows,
+datasets from three sources: local/imported files, fixture-backed Data Catalog rows,
 and datasets already recorded on a saved dataflow.
 """
 
@@ -283,7 +283,7 @@ def _item_from_file(path: Path, *, source_label: str, origin: str = "imported") 
 
 
 class DatasetRegistryRepository:
-    """Manifest-backed Data Hub catalog at ``<repo_root>/datasets/``."""
+    """Manifest-backed Data Catalog at ``<repo_root>/datasets/``."""
 
     def list_items(self) -> list[dict[str, Any]]:
         from utk_curio.backend.app.datasets.manifest import ManifestError, load_dataset_manifest_from_dir
@@ -982,6 +982,12 @@ class DatasetCatalogService:
                     " ".join(item.get("tags") or []),
                 ]).casefold()
             ]
+
+        # Facet counts should reflect the same universe as search (q), not the
+        # narrowed list after format/origin filters — otherwise rails show zeros
+        # or misleading counts while other filters are active.
+        facets = self._facets(items)
+
         if fmt:
             items = [item for item in items if item.get("format") == fmt]
         if origin:
@@ -992,7 +998,7 @@ class DatasetCatalogService:
         else:
             items.sort(key=lambda item: item.get("updatedAt") or "", reverse=True)
 
-        return {"items": items, "facets": self._facets(items)}
+        return {"items": items, "facets": facets}
 
     def get_dataset(self, dataset_id: str, *, dataflow_id: str | None = None, live_outputs: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         for include_hub in (True, False):
@@ -1125,12 +1131,12 @@ class DatasetCatalogService:
             version="1.0.0",
             format=item.get("format", "csv"),
             description=item.get("description") or "",
-            publisher=str(self.user) if self.user else "Data Hub",
+            publisher=str(self.user) if self.user else "Data Catalog",
             license=item.get("license") or "MIT",
             tags=item.get("tags") or [],
             data_file=data_file,
             major=1,
-            source_label="Data Hub",
+            source_label="Data Catalog",
             row_count=item.get("rowCount"),
             feature_count=item.get("featureCount"),
             schema=item.get("schema"),
@@ -1139,7 +1145,7 @@ class DatasetCatalogService:
         )
         write_manifest(manifest_obj, dest)
 
-        item["sourceLabel"] = "Data Hub"
+        item["sourceLabel"] = "Data Catalog"
         item["origin"] = "hub"
         item["dirName"] = dir_name
         item["updatedAt"] = _iso_from_timestamp()
@@ -1199,7 +1205,7 @@ class DatasetCatalogService:
         if item.get("origin") == "hub":
             dir_name = item.get("dirName")
             if not dir_name:
-                raise DatasetCatalogError("Hub dataset is missing catalog directory metadata", 500)
+                raise DatasetCatalogError("Catalog dataset is missing catalog directory metadata", 500)
             from utk_curio.backend.app.datasets.installer import (
                 InstallerError,
                 install_dataset_from_catalog,
@@ -1360,7 +1366,7 @@ class DatasetCatalogService:
         return {"datasets": next_refs}
 
     def unpublish_dataset(self, dataset_id: str, *, dataflow_id: str | None = None) -> dict[str, Any]:
-        """Remove a dataset from the local Data Hub catalog directory.
+        """Remove a dataset from the local Data Catalog directory.
 
         The dataset must be in the catalog (origin=hub).  Any installed ref in the
         given dataflow is reverted to origin='imported' so it continues resolving
@@ -1382,7 +1388,7 @@ class DatasetCatalogService:
                 break
 
         if catalog_dir is None:
-            raise DatasetCatalogError(f"Dataset '{dataset_id}' is not in the Data Hub catalog", 404)
+            raise DatasetCatalogError(f"Dataset '{dataset_id}' is not in the Data Catalog", 404)
 
         dir_name = catalog_dir.name
 

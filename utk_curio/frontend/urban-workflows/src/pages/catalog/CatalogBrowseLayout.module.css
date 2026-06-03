@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────
-   Shared 3-column browse layout (Data Hub + Node catalog master).
+   Shared 3-column browse layout (Data Catalog + Node catalog master).
    Font: Rubik  |  Accent: #FBAA69  |  Dark: #1E1F23
    Page shell lives in CatalogMasterPage.module.css.
    ───────────────────────────────────────────────────────────── */
@@ -141,6 +141,7 @@
 
 .originButton {
   width: 100%;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;

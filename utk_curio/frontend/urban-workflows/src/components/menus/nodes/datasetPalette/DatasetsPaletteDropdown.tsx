@@ -216,7 +216,7 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
                 openDatasetCatalogDrawer();
               }}
             >
-              Browse Data Hub +
+              Browse Data Catalog +
             </button>
           </div>
         </div>

@@ -532,7 +532,7 @@ export default function UpMenu({
                                 }}
                             >
                                 <FontAwesomeIcon className={styles.dropDownIcon} icon={faTableColumns} />
-                                <button className={styles.noStyleButton}>Data Hub</button>
+                                <button className={styles.noStyleButton}>Data Catalog</button>
                             </div>
                             <div
                                 className={styles.dropDownRow}

@@ -65,7 +65,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
         <div className={styles.breadcrumb}>
           {variant === "page" ? (
             <>
-              <span>DATA HUB</span><span>/</span><span>INSTALLED DATASETS</span><span>/</span>
+              <span>DATA CATALOG</span><span>/</span><span>INSTALLED DATASETS</span><span>/</span>
             </>
           ) : (
             <>
@@ -88,7 +88,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
               <h1>{dataset.title}</h1>
               <div className={styles.inspectorMeta}>
                 <span className={styles.installedBadge}>
-                  {dataset.installed ? "Installed" : dataset.origin === "hub" ? "Hub dataset" : "In dataflow"}
+                  {dataset.installed ? "Installed" : dataset.origin === "hub" ? "Catalog dataset" : "In dataflow"}
                 </span>
                 <span className={formatClass(dataset.format, styles)}>{DATASET_FORMAT_LABEL[dataset.format]}</span>
                 {countLabel ? <span>{countLabel}</span> : null}
@@ -106,7 +106,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
             </div>
           </div>
           <div className={styles.inspectorActions}>
-            <button className={styles.publishButton} type="button">Publish to Hub</button>
+            <button className={styles.publishButton} type="button">Publish to Catalog</button>
             <button className={styles.exportButton} type="button">Export</button>
           </div>
         </div>
@@ -215,7 +215,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
             </article>
             {dataset.origin === "hub" || dataset.installed ? (
               <div className={styles.hubSourceCard}>
-                <strong>Installed from Data Hub</strong>
+                <strong>Installed from Data Catalog</strong>
                 <span>{dataset.sourceLabel || "Urban Lab"} · v1 · Installed recently</span>
               </div>
             ) : null}

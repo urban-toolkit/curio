@@ -57,7 +57,7 @@ function InstalledDatasetRow({
       <div className={styles.installedBody}>
         <span className={styles.installedName}>{dataset.title}</span>
         <span className={styles.installedMeta}>
-          {DATASET_FORMAT_LABEL[dataset.format]} · {isPublished ? "Data Hub" : "In dataflow"}
+          {DATASET_FORMAT_LABEL[dataset.format]} · {isPublished ? "Data Catalog" : "In dataflow"}
         </span>
       </div>
       {hasActions ? (

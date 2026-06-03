@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "format": "geojson",
   "description": "GeoJSON boundary geometry for the City of Chicago.",
-  "publisher": "Data Hub",
+  "publisher": "Data Catalog",
   "license": "Open Data",
   "tags": [
     "boundary",
@@ -15,7 +15,7 @@
   "compatibility": {
     "major": 1
   },
-  "sourceLabel": "Data Hub",
+  "sourceLabel": "Data Catalog",
   "createdAt": "2026-06-01T00:00:00Z",
   "updatedAt": "2026-06-01T00:00:00Z",
   "featureCount": 61,

@@ -34,7 +34,7 @@ export interface DatasetCatalogItem {
   format: DatasetFormat;
   uri: string;
   path?: string | null;
-  /** Folder name in the dataset store (e.g. ``data.urbanlab.chicago-boundary@1``). Present for hub datasets. */
+  /** Folder name in the dataset store (e.g. ``data.urbanlab.chicago-boundary@1``). Present for catalog (hub) datasets. */
   dirName?: string | null;
   sizeBytes?: number | null;
   rowCount?: number | null;
@@ -50,7 +50,7 @@ export interface DatasetCatalogItem {
   installed?: boolean;
   /** True when the producer node has been re-executed since the dataset was last installed. */
   needsReinstall?: boolean;
-  /** True when a computed dataset (origin="computed") has been published to the Data Hub.
+  /** True when a computed dataset (origin="computed") has been published to the Data Catalog.
    * The origin field stays "computed" — use this flag to determine published state. */
   publishedToHub?: boolean;
 }
@@ -106,7 +106,7 @@ export const DATASET_ORIGIN_LABEL: Record<DatasetOrigin, string> = {
   source_node: "Source nodes",
   computed: "Computed",
   imported: "Imported",
-  hub: "Data Hub",
+  hub: "Data Catalog",
 };
 
 export const DATASET_FORMAT_LABEL: Record<DatasetFormat, string> = {

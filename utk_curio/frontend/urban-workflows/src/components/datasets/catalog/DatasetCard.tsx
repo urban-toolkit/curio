@@ -195,7 +195,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
                 type="button"
                 className={styles.btnSecondary}
                 disabled={cardBusy}
-                title={`Remove ${dataset.title} from the Data Hub`}
+                title={`Remove ${dataset.title} from the Data Catalog`}
                 onClick={() => onUnpublish(dataset)}
               >
                 Unpublish

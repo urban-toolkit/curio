@@ -11,7 +11,7 @@
   "id": "data.urbanlab.chicago-community-areas",
   "license": "Open Data",
   "name": "Chicago Community Areas",
-  "publisher": "Data Hub",
+  "publisher": "Data Catalog",
   "schema": {
     "fields": [
       {
@@ -33,7 +33,7 @@
     "geometryType": "MultiPolygon",
     "crs": "EPSG:4326"
   },
-  "sourceLabel": "Data Hub",
+  "sourceLabel": "Data Catalog",
   "tags": [
     "boundaries",
     "chicago",

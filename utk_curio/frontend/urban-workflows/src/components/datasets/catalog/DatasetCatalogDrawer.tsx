@@ -252,7 +252,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
           return [...next, ref];
         });
         await catalog.reload();
-        showToast("Dataset published to Data Hub.", "success");
+        showToast("Dataset published to Data Catalog.", "success");
       } catch (err) {
         showToast((err as Error)?.message || "Could not publish dataset.", "error");
       } finally {
@@ -265,7 +265,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
   const onUnpublish = useCallback(
     async (dataset: DatasetCatalogItem) => {
       const confirmed = window.confirm(
-        `Unpublish ${dataset.title} from the Data Hub?\n\nThis removes the hub listing. Installed copies in dataflows are not removed.`,
+        `Unpublish ${dataset.title} from the Data Catalog?\n\nThis removes the catalog listing. Installed copies in dataflows are not removed.`,
       );
       if (!confirmed) return;
       setBusyId(dataset.id);
@@ -287,7 +287,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
           }),
         );
         await catalog.reload();
-        showToast(`${dataset.title} unpublished from the Data Hub.`, "success");
+        showToast(`${dataset.title} unpublished from the Data Catalog.`, "success");
       } catch (err) {
         showToast((err as Error)?.message || "Could not unpublish dataset.", "error");
       } finally {
@@ -394,7 +394,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
             <FontAwesomeIcon icon={faThumbtack} aria-hidden />
           </button>
           <div className={styles.titleBlock}>
-            <h2 id="dataset-catalog-title" className={styles.title}>Data catalog</h2>
+            <h2 id="dataset-catalog-title" className={styles.title}>Data Catalog</h2>
             <p className={styles.subtitle}>Datasets available to this dataflow.</p>
           </div>
           <button className={styles.closeButton} type="button" onClick={onRequestClose} aria-label="Close">

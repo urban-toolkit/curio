@@ -1,6 +1,6 @@
 /**
  * Global node catalog under /catalog/nodes (see docs/CATALOG.md).
- * Same install/publish semantics as the former CatalogPage; layout matches Data Hub browse.
+ * Same install/publish semantics as the former CatalogPage; layout matches Data Catalog browse.
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {

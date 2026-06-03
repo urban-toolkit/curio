@@ -11,7 +11,8 @@ import {
 } from "../../services/datasetCatalog";
 import styles from "../catalog/CatalogBrowseLayout.module.css";
 
-const ORIGIN_FILTERS: DatasetOrigin[] = ["source_node", "computed", "imported"];
+/** Include hub (Data Catalog library); global browse is mostly origin=hub. */
+const ORIGIN_FILTERS: DatasetOrigin[] = ["hub", "source_node", "computed", "imported"];
 const FORMAT_FILTERS: DatasetFormat[] = ["geojson", "csv", "json", "parquet", "geotiff", "shp"];
 const QUICK_FORMAT_FILTERS: DatasetFormat[] = ["geojson", "csv", "json"];
 
@@ -206,7 +207,7 @@ function BrowseRightDrawer({ dataset }: { dataset: DatasetCatalogItem | null }) 
           <span className={`${styles.drawerFormatBadge} ${styles[`dfmt_${dataset.format}`] || ""}`}>
             {DATASET_FORMAT_LABEL[dataset.format]}
           </span>
-          <span className={styles.drawerHubBadge}>⊕ Hub</span>
+          <span className={styles.drawerHubBadge}>⊕ Catalog</span>
           {dataset.installed && (
             <span className={`${styles.drawerFormatBadge} ${styles.dfmt_geojson}`}>✓ Installed</span>
           )}
@@ -361,20 +362,20 @@ export const DataCatalogBrowse: React.FC = () => {
 
       <main className={styles.browseMain}>
         <section className={styles.browseHeader}>
-          <p className={styles.crumb}>Data Hub</p>
+          <p className={styles.crumb}>Data Catalog</p>
           <div className={styles.titleRow}>
-            <h1>Data Hub</h1>
+            <h1>Data Catalog</h1>
             <span className={styles.titleCount}>{catalog.items.length}</span>
           </div>
           <div className={styles.headerTools}>
             <span className={styles.hubStatusChip}>
               <span className={styles.hubStatusDot} />
-              Hub library
+              Catalog library
             </span>
             <input
               className={styles.hubSearch}
               type="search"
-              placeholder="Search hub datasets…"
+              placeholder="Search catalog datasets…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />

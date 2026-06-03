@@ -82,7 +82,7 @@ def _user_key_segment(user_key: str) -> str:
 
 
 def catalog_root() -> Path:
-    """Return ``<repo_root>/datasets/`` — committed Data Hub catalog root."""
+    """Return ``<repo_root>/datasets/`` — committed Data Catalog root."""
     # storage.py -> datasets/ -> app/ -> backend/ -> utk_curio/ -> repo_root/datasets/
     return Path(__file__).resolve().parents[4] / "datasets"
 
