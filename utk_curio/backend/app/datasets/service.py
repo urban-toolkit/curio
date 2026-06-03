@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -22,6 +23,8 @@ from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
 from utk_curio.backend.app.datasets.manifest import DatasetManifest
+
+logger = logging.getLogger(__name__)
 
 
 SUPPORTED_SUFFIXES = {
@@ -77,7 +80,14 @@ def _count_file(path: Path, fmt: str) -> tuple[int | None, int | None]:
             features = data.get("features", []) if isinstance(data, dict) else []
             return None, len(features)
     except Exception:
-        pass
+        # Best-effort counts; unreadable or unsupported files return (None, None).
+        logger.debug(
+            "Could not count rows/features for %s (format=%s); returning None",
+            path,
+            fmt,
+            exc_info=True,
+        )
+        return None, None
     return None, None
 
 
@@ -137,7 +147,12 @@ def _patch_manifest_file(
                 json.dumps(raw, indent=2, ensure_ascii=False), encoding="utf-8"
             )
     except Exception:
-        pass
+        # Optional manifest patch; never break callers on I/O or parse errors.
+        logger.debug(
+            "Skipping optional manifest patch for %s",
+            manifest_path,
+            exc_info=True,
+        )
 
 
 def _catalog_id_from_title(title: str) -> str:

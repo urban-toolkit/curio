@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -15,6 +16,8 @@ from utk_curio.backend.app.datasets.manifest import (
     write_manifest,
 )
 from utk_curio.backend.app.datasets.storage import catalog_root, dataset_dir
+
+logger = logging.getLogger(__name__)
 
 
 class InstallerError(Exception):
@@ -203,7 +206,12 @@ def install_computed_file(
             if (dest / manifest.data_file).is_file():
                 return InstallResult(manifest=manifest, dest=dest, replaced=False)
         except ManifestError:
-            pass
+            # Corrupt or incomplete prior install; remove and reinstall below.
+            logger.debug(
+                "Corrupt or incomplete prior install at %s; reinstalling",
+                dest,
+                exc_info=True,
+            )
         shutil.rmtree(dest, ignore_errors=True)
 
     dest.mkdir(parents=True, exist_ok=True)
@@ -275,7 +283,12 @@ def install_imported_file(
             if (dest / manifest.data_file).is_file():
                 return InstallResult(manifest=manifest, dest=dest, replaced=False)
         except ManifestError:
-            pass
+            # Corrupt or incomplete prior install; remove and reinstall below.
+            logger.debug(
+                "Corrupt or incomplete prior install at %s; reinstalling",
+                dest,
+                exc_info=True,
+            )
         shutil.rmtree(dest, ignore_errors=True)
 
     dest.mkdir(parents=True, exist_ok=True)

@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from utk_curio.backend.app.datasets.storage import DATASET_DIR_RE, DatasetId
+from utk_curio.backend.app.datasets.storage import DatasetId
 
 
 SUPPORTED_FORMATS = {"csv", "geojson", "json", "parquet", "geotiff", "shp"}

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
 from utk_curio.sandbox.util.parsers import parseOutput
+
+logger = logging.getLogger(__name__)
 
 
 def rows_from_parse_output(parsed: dict[str, Any]) -> list[dict[str, Any]]:
@@ -53,7 +56,12 @@ def load_parquet_frame(path: Path) -> tuple[Any, int]:
         try:
             frame = gpd.GeoDataFrame(frame, geometry="geometry")
         except (ValueError, TypeError):
-            pass
+            # Geometry column is not valid GeoDataFrame geometry; keep as DataFrame.
+            logger.debug(
+                "GeoDataFrame conversion failed for %s; using plain DataFrame",
+                path,
+                exc_info=True,
+            )
     return frame, len(frame)
 
 
