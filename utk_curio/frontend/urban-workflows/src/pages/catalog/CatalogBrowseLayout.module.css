@@ -1,16 +1,8 @@
 /* ─────────────────────────────────────────────────────────────
-   DataHubPage — matches 01_data_hub_browse.svg
+   Shared 3-column browse layout (Data Hub + Node catalog master).
    Font: Rubik  |  Accent: #FBAA69  |  Dark: #1E1F23
+   Page shell lives in CatalogMasterPage.module.css.
    ───────────────────────────────────────────────────────────── */
-
-.pageShell {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  font-family: Rubik, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  background: #f0f0f0;
-  color: #1E1F23;
-}
 
 /* ── 3-column browse layout ── */
 .page {
@@ -411,7 +403,7 @@
 
 /* ── Card grid ── */
 .cardGrid {
-  height: calc(100vh - 235px);
+  height: calc(100vh - 290px);
   overflow-y: scroll;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -705,7 +697,7 @@
   overflow-y: auto;
   position: sticky;
   top: 0;
-  max-height: calc(100vh - 65px);
+  max-height: calc(100vh - 120px);
   box-shadow: -4px 0 10px rgba(0,0,0,0.09);
 }
 

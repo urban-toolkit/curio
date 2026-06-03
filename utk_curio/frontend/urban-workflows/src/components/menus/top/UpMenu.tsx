@@ -527,7 +527,7 @@ export default function UpMenu({
                             <div
                                 className={styles.dropDownRow}
                                 onClick={() => {
-                                    navigate("/data-hub");
+                                    navigate("/catalog/data");
                                     setActiveMenu(null);
                                 }}
                             >
