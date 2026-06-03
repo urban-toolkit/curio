@@ -1,10 +1,7 @@
 import React from "react";
 import { PackagePayload } from "../../api/packagesApi";
 import { CatalogPublishPill } from "../../components/packages/CatalogPublishPill";
-import {
-  packageInitial,
-  primaryCategory,
-} from "../../components/packages/publishing/packageUtils";
+import { primaryCategory } from "../../components/packages/publishing/packageUtils";
 import styles from "./PackageBrowseCard.module.css";
 
 type StripVariant = "warm" | "cool" | "violet";
@@ -95,9 +92,12 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
           {pkg.publisher || pkg.packageId} · v{pkg.version}
           {pkg.license ? ` · ${pkg.license}` : ""}
         </p>
-        {pkg.description ? (
-          <p className={styles.cardDescription}>{pkg.description}</p>
-        ) : null}
+        <p
+          className={styles.cardDescription}
+          {...(!pkg.description ? { "aria-hidden": true } : {})}
+        >
+          {pkg.description || "\u00a0"}
+        </p>
         <div className={styles.tagRow}>
           <span className={styles.tag}>
             {pkg.templates.length} node{pkg.templates.length === 1 ? "" : "s"}
@@ -122,7 +122,7 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
       </div>
 
       <div className={styles.cardActions}>
-        <div className={styles.secondaryRow}>
+        <div className={styles.cardActionsLeft}>
           {showPublishPill ? (
             <CatalogPublishPill
               variant="hub"
@@ -134,7 +134,7 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
             />
           ) : null}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div className={styles.cardActionsRight}>
           {!isInstalled ? (
             <button
               type="button"

@@ -11,6 +11,22 @@
   display: grid;
   grid-template-columns: 212px minmax(0, 1fr) 320px;
   grid-template-rows: minmax(0, 1fr);
+  /* Shared browse cards (Data + Nodes tabs; inherited by nested cards) */
+  --catalogBrowseCardMinHeight: 268px;
+  --catalogBrowseCardGridGap: 20px;
+  --catalogBrowseCardGridPadding: 24px;
+  --catalogBrowseCardBodyPadX: 16px;
+  --catalogBrowseCardBodyPadBottom: 8px;
+  --catalogBrowseCardDescLineHeight: 1.4;
+  --catalogBrowseCardDescLines: 2;
+  --catalogBrowseCardActionsMinH: 44px;
+  --catalogBrowseCardActionsPadY: 8px;
+  --catalogBrowseCardMetaPadTop: 10px;
+  --catalogBrowseCardTagGap: 5px;
+  /* Card grid scrollbar (Data + Nodes tabs) */
+  --catalogBrowseCardGridScrollbarThumb: rgba(30, 31, 35, 0.22);
+  --catalogBrowseCardGridScrollbarThumbHover: rgba(30, 31, 35, 0.35);
+  --catalogBrowseCardGridScrollbarTrack: rgba(30, 31, 35, 0.06);
 }
 
 .detailPage {
@@ -405,10 +421,41 @@
 .cardGrid {
   height: calc(100vh - 290px);
   overflow-y: scroll;
+  overflow-x: hidden;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-  padding: 24px;
+  gap: var(--catalogBrowseCardGridGap, 20px);
+  padding: var(--catalogBrowseCardGridPadding, 24px);
+  /* Pack rows to the top so a short filtered list does not stretch rows to fill the viewport */
+  align-content: start;
+  align-items: stretch;
+  box-sizing: border-box;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--catalogBrowseCardGridScrollbarThumb, rgba(30, 31, 35, 0.22))
+    var(--catalogBrowseCardGridScrollbarTrack, rgba(30, 31, 35, 0.06));
+}
+
+.cardGrid::-webkit-scrollbar {
+  width: 6px;
+}
+
+.cardGrid::-webkit-scrollbar-track {
+  background: var(--catalogBrowseCardGridScrollbarTrack, rgba(30, 31, 35, 0.06));
+  border-radius: 3px;
+  margin: 4px 0;
+}
+
+.cardGrid::-webkit-scrollbar-thumb {
+  background: var(--catalogBrowseCardGridScrollbarThumb, rgba(30, 31, 35, 0.22));
+  border-radius: 3px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+.cardGrid::-webkit-scrollbar-thumb:hover {
+  background: var(--catalogBrowseCardGridScrollbarThumbHover, rgba(30, 31, 35, 0.35));
+  background-clip: padding-box;
 }
 
 .empty, .error {
@@ -441,7 +488,10 @@
   cursor: pointer;
   outline: none;
   transition: box-shadow 0.15s, border-color 0.15s;
-  height: max-content;
+  box-sizing: border-box;
+  min-height: var(--catalogBrowseCardMinHeight, 268px);
+  height: auto;
+  align-self: stretch;
 }
 
 .card:hover, .card:focus-visible {
@@ -536,7 +586,8 @@
   display: flex;
   flex-direction: column;
   flex: 1;
-  padding: 0 16px;
+  min-height: 0;
+  padding: 0 var(--catalogBrowseCardBodyPadX, 16px) var(--catalogBrowseCardBodyPadBottom, 8px);
 }
 
 .cardTitle {
@@ -557,18 +608,24 @@
   margin: 8px 0 0;
   font-size: 13px;
   color: #1E1F23;
-  line-height: 1.4;
+  line-height: var(--catalogBrowseCardDescLineHeight, 1.4);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  min-height: calc(var(--catalogBrowseCardDescLines, 2) * var(--catalogBrowseCardDescLineHeight, 1.4) * 1em);
+  flex-shrink: 0;
 }
 
 .tagRow {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
-  margin: 10px 0 0;
+  gap: var(--catalogBrowseCardTagGap, 5px);
+  margin: 0;
+  margin-top: auto;
+  padding-top: 10px;
+  min-height: 22px;
+  align-content: flex-end;
 }
 
 .tag {
@@ -593,11 +650,13 @@
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  margin: 10px 0 0;
-  padding: 10px 16px 0;
+  margin: 0;
+  margin-top: 4px;
+  padding: var(--catalogBrowseCardMetaPadTop, 10px) var(--catalogBrowseCardBodyPadX, 16px) 0;
   border-top: 1px solid #F0F0F0;
   font-size: 10px;
   color: #888888;
+  flex-shrink: 0;
 }
 
 .metaLeft {
@@ -631,9 +690,13 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 0 0;
-  padding: 8px 16px;
+  gap: 10px;
+  margin: 0;
+  min-height: var(--catalogBrowseCardActionsMinH, 44px);
+  padding: var(--catalogBrowseCardActionsPadY, 8px) var(--catalogBrowseCardBodyPadX, 16px) 10px;
   border-top: 1px solid #F0F0F0;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .linkButton {

@@ -126,9 +126,12 @@ function BrowseCard({
       <div className={styles.cardBody}>
         <h2 className={styles.cardTitle}>{dataset.title}</h2>
         <p className={styles.publisher}>{formatDatasetLocation(dataset)} · v1.0.0</p>
-        {dataset.description && (
-          <p className={styles.cardDescription}>{dataset.description}</p>
-        )}
+        <p
+          className={styles.cardDescription}
+          {...(!dataset.description ? { "aria-hidden": true } : {})}
+        >
+          {dataset.description || "\u00a0"}
+        </p>
         <div className={styles.tagRow}>
           {tags.map((tag, i) => (
             <span
