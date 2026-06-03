@@ -2,6 +2,7 @@ import {
   DATASET_ORIGIN_LABEL,
   DatasetCatalogItem,
   DatasetFormat,
+  datasetListSourceCaption,
 } from "../../../services/datasetCatalog";
 
 export function formatBytes(value?: number | null): string | null {
@@ -44,7 +45,9 @@ export function datasetInitials(title: string): string {
 }
 
 export function formatDatasetLocation(dataset: DatasetCatalogItem): string {
-  return dataset.sourceLabel || dataset.path || dataset.uri || DATASET_ORIGIN_LABEL[dataset.origin];
+  const caption = datasetListSourceCaption(dataset);
+  if (caption) return caption;
+  return dataset.path || dataset.uri || DATASET_ORIGIN_LABEL[dataset.origin];
 }
 
 export function defaultSchemaFields(dataset?: DatasetCatalogItem | null) {

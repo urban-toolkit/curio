@@ -2,6 +2,7 @@ import React from "react";
 import {
   DatasetCatalogItem,
   DatasetFormat,
+  datasetListSourceCaption,
 } from "../../../services/datasetCatalog";
 import { CatalogPublishPill } from "../../packages/CatalogPublishPill";
 import styles from "./DatasetCard.module.css";
@@ -112,6 +113,8 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
     downCount > 0 ? `${downCount}\u2193` : "",
   ].filter(Boolean).join(" ");
 
+  const sourceCaption = datasetListSourceCaption(dataset);
+
   const tags = dataset.tags.length > 0 ? dataset.tags.slice(0, 2) : [];
 
   return (
@@ -139,9 +142,9 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
       <div className={styles.cardBody}>
         <h3 className={styles.cardTitle}>{dataset.title}</h3>
 
-        {dataset.sourceLabel ? (
+        {sourceCaption ? (
           <p className={styles.cardSource}>
-            {dataset.sourceLabel}
+            {sourceCaption}
             {version ? <span className={styles.versionBadge}>{version}</span> : null}
           </p>
         ) : null}

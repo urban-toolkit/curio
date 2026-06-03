@@ -1,8 +1,9 @@
 import React, { useState } from "react";
 import {
   DATASET_FORMAT_LABEL,
-  DATASET_ORIGIN_LABEL,
   DatasetCatalogItem,
+  datasetListSourceCaption,
+  datasetProvenanceLabel,
 } from "../../../services/datasetCatalog";
 import {
   datasetCount,
@@ -88,7 +89,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
               <h1>{dataset.title}</h1>
               <div className={styles.inspectorMeta}>
                 <span className={styles.installedBadge}>
-                  {dataset.installed ? "Installed" : dataset.origin === "hub" ? "Catalog dataset" : "In dataflow"}
+                  {dataset.installed ? "Installed" : datasetProvenanceLabel(dataset.origin)}
                 </span>
                 <span className={formatClass(dataset.format, styles)}>{DATASET_FORMAT_LABEL[dataset.format]}</span>
                 {countLabel ? <span>{countLabel}</span> : null}
@@ -148,11 +149,9 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
             <article className={styles.lineageCard}>
               <div className={styles.lineageCardAccentWarm} />
               <div className={styles.lineageCardBody}>
-                <strong>{dataset.sourceLabel || "Dataset Loader"}</strong>
+                <strong>{datasetListSourceCaption(dataset)}</strong>
                 <span className={styles.lineageNodeBadge}>Source node</span>
-                <span className={styles.lineageFlowName}>
-                  Dataflow: {formatDatasetLocation(dataset)}
-                </span>
+                <span className={styles.lineageFlowName}>Provenance: {formatDatasetLocation(dataset)}</span>
               </div>
               <button type="button" className={styles.lineageViewLink}>View node</button>
             </article>
@@ -169,7 +168,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
                 <div className={styles.lineageCardBody}>
                   <strong>{nodeId}</strong>
                   <span className={styles.lineageNodeBadgeMuted}>Compute node</span>
-                  <span className={styles.lineageFlowName}>Dataflow: current workflow</span>
+                  <span className={styles.lineageFlowName}>Provenance: {formatDatasetLocation(dataset)}</span>
                 </div>
                 <button type="button" className={styles.lineageViewLink}>View node</button>
               </article>
@@ -208,7 +207,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
             <article className={styles.originCard}>
               <div className={styles.lineageCardAccentWarm} />
               <div>
-                <strong>{dataset.sourceLabel || DATASET_ORIGIN_LABEL[dataset.origin]}</strong>
+                <strong>{datasetListSourceCaption(dataset)}</strong>
                 <span>Source node · {DATASET_FORMAT_LABEL[dataset.format]} Loader</span>
                 <button type="button" className={styles.lineageViewLink}>View node</button>
               </div>

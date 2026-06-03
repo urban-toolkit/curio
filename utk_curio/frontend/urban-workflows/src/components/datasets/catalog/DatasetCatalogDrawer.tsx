@@ -35,9 +35,7 @@ const TAB_LABEL: Record<DrawerTab, string> = {
 };
 
 function tabOrigin(tab: DrawerTab): DatasetOrigin | "" {
-  // For the computed tab we don't filter by origin — a computed dataset may have
-  // been published (origin=hub) or unpublished (origin=imported) while still
-  // belonging to the computed tab.  We filter frontend-side using producerNodeId.
+  // Computed tab filters by producerNodeId client-side; do not narrow by origin here.
   return "";
 }
 
@@ -114,9 +112,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
       return catalog.items.filter((item) => item.origin !== "hub" || item.installed);
     }
     if (tab === "computed") {
-      // A dataset belongs to the computed tab if it was originally produced by a node,
-      // regardless of whether it has since been published (origin=hub) or unpublished
-      // (origin=imported).  producerNodeId is the canonical signal.
+      // Tab lists node-produced datasets; publish state does not change that.
       return catalog.items.filter(
         (item) => item.origin === "computed" || Boolean(item.producerNodeId),
       );
@@ -231,7 +227,8 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
       setPublishingId(datasetId);
       try {
         const published = await datasetCatalogApi.publishDataset(datasetId, { dataflowId: id, liveOutputs });
-        // Sync the React state so the next auto-save includes the hub origin.
+        // Sync the React state so the next auto-save matches backend refs:
+        // computed stays computed + publishedToHub; others stay imported + publishedToHub.
         // Remove both the original ref (by old datasetId) and any existing ref
         // for the new catalog id (in case the ID was remapped on publish).
         setDataflowDatasets((prev) => {
@@ -244,11 +241,11 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
           const ref: Record<string, unknown> = {
             datasetId: published.id,
             dirName: published.dirName,
-            origin: isComputed ? "computed" : "hub",
+            origin: isComputed ? "computed" : "imported",
             installedAt: new Date().toISOString(),
+            publishedToHub: true,
           };
           if (published.producerNodeId) ref.producerNodeId = published.producerNodeId;
-          if (isComputed) ref.publishedToHub = true;
           return [...next, ref];
         });
         await catalog.reload();

@@ -154,8 +154,9 @@
 
 .format_geojson { background: #dff2e1; color: #2f8f4a; }
 .format_csv { background: #edf0fb; color: #405da4; }
-.format_json { background: #f8eadc; color: #9a5a1e; }
-.format_parquet { background: #ece7fb; color: #694ca0; }
+/* Match DatasetCard / catalog rail: JSON = purple, Parquet = amber */
+.format_json { background: #ece4f8; color: #5c3fa0; }
+.format_parquet { background: #fdf0dc; color: #a06a10; }
 .format_geotiff { background: #e3f1f3; color: #2e6874; }
 .format_shp { background: #f0e5ec; color: #7a4865; }
 

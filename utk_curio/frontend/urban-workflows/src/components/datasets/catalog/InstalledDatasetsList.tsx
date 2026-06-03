@@ -4,6 +4,7 @@ import { faTrashCan } from "@fortawesome/free-solid-svg-icons";
 import {
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
+  datasetProvenanceLabel,
 } from "../../../services/datasetCatalog";
 import { CatalogPublishPill } from "../../packages/CatalogPublishPill";
 import styles from "./InstalledDatasetsList.module.css";
@@ -57,7 +58,10 @@ function InstalledDatasetRow({
       <div className={styles.installedBody}>
         <span className={styles.installedName}>{dataset.title}</span>
         <span className={styles.installedMeta}>
-          {DATASET_FORMAT_LABEL[dataset.format]} · {isPublished ? "Data Catalog" : "In dataflow"}
+          {DATASET_FORMAT_LABEL[dataset.format]}
+          {" · "}
+          {datasetProvenanceLabel(dataset.origin)}
+          {isPublished ? " · Published" : ""}
         </span>
       </div>
       {hasActions ? (

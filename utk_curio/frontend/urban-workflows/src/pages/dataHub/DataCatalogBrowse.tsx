@@ -1,5 +1,7 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { packagesApi } from "../../api/packagesApi";
+import { CatalogPublishPill } from "../../components/packages/CatalogPublishPill";
 import {
   DATASET_FORMAT_LABEL,
   DATASET_ORIGIN_LABEL,
@@ -7,12 +9,20 @@ import {
   DatasetFormat,
   DatasetOrigin,
   DatasetSortMode,
+  datasetProvenanceLabel,
+  facetImportedTotal,
+  isDatasetPublishedToCatalog,
+  datasetCatalogApi,
+  notifyDatasetCatalogRefresh,
   useDatasetCatalog,
 } from "../../services/datasetCatalog";
+import { formatDatasetLocation } from "../../components/datasets/catalog/datasetDetailHelpers";
+import { useFlowContext } from "../../providers/FlowProvider";
+import { useToastContext } from "../../providers/ToastProvider";
 import styles from "../catalog/CatalogBrowseLayout.module.css";
 
-/** Include hub (Data Catalog library); global browse is mostly origin=hub. */
-const ORIGIN_FILTERS: DatasetOrigin[] = ["hub", "source_node", "computed", "imported"];
+/** Browse rail: two provenance buckets (API maps ``imported`` filter to hub/imported/source_node). */
+const ORIGIN_FILTERS: DatasetOrigin[] = ["computed", "imported"];
 const FORMAT_FILTERS: DatasetFormat[] = ["geojson", "csv", "json", "parquet", "geotiff", "shp"];
 const QUICK_FORMAT_FILTERS: DatasetFormat[] = ["geojson", "csv", "json"];
 
@@ -57,10 +67,6 @@ function metaLeft(dataset: DatasetCatalogItem): string {
     .join(" | ");
 }
 
-function formatDatasetLocation(dataset: DatasetCatalogItem): string {
-  return dataset.sourceLabel || dataset.path || dataset.uri || DATASET_ORIGIN_LABEL[dataset.origin];
-}
-
 function GeoPreviewIllustration({ format }: { format: DatasetFormat }) {
   const colors: Record<DatasetFormat, { fill: string; stroke: string; bg: string }> = {
     geojson: { fill: "rgba(47,143,74,0.12)", stroke: "rgba(47,143,74,0.3)", bg: "#F0FAF2" },
@@ -93,16 +99,24 @@ function BrowseCard({
   selected,
   onSelect,
   onViewDetails,
+  publishingId,
+  onPublish,
+  catalogPublishAllowed,
 }: {
   dataset: DatasetCatalogItem;
   selected: boolean;
   onSelect: () => void;
   onViewDetails: () => void;
+  publishingId: string | null;
+  onPublish: (dataset: DatasetCatalogItem) => void;
+  catalogPublishAllowed: boolean;
 }) {
   const fresh = isFresh(dataset.updatedAt);
   const left = metaLeft(dataset);
   const tags = dataset.tags.length > 0 ? dataset.tags.slice(0, 3) : [dataset.format];
   const lastTagIdx = tags.length - 1;
+  const published = isDatasetPublishedToCatalog(dataset);
+  const showPublishPill = published || catalogPublishAllowed;
 
   return (
     <article
@@ -154,28 +168,45 @@ function BrowseCard({
       </div>
 
       <div className={styles.cardActions}>
-        <button
-          className={`${styles.linkButton} ${styles[`link_${dataset.format}`] || ""}`}
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onViewDetails(); }}
-        >
-          View details ↗
-        </button>
-        {dataset.installed ? (
-          <button className={styles.installedButton} type="button" onClick={(e) => e.stopPropagation()}>
-            ✓ Installed
+        <div className={styles.cardActionsLeft}>
+          {showPublishPill ? (
+            <CatalogPublishPill
+              variant="hub"
+              dirName={dataset.dirName || dataset.id}
+              published={published}
+              allowPublish={catalogPublishAllowed}
+              busy={publishingId === dataset.id}
+              onPublish={() => {
+                void onPublish(dataset);
+              }}
+              publishedTitle="Listed in the Data Catalog"
+              publishActionTitle="Write this dataset into the dev catalog under datasets/"
+            />
+          ) : null}
+        </div>
+        <div className={styles.cardActionsRight}>
+          <button
+            className={`${styles.linkButton} ${styles[`link_${dataset.format}`] || ""}`}
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onViewDetails(); }}
+          >
+            View details ↗
           </button>
-        ) : (
-          <button className={styles.installButton} type="button" onClick={(e) => e.stopPropagation()}>
-            Install
-          </button>
-        )}
+        </div>
       </div>
     </article>
   );
 }
 
-function BrowseRightDrawer({ dataset }: { dataset: DatasetCatalogItem | null }) {
+function BrowseRightDrawer({
+  dataset,
+  publishingId,
+  onPublish,
+}: {
+  dataset: DatasetCatalogItem | null;
+  publishingId: string | null;
+  onPublish: (dataset: DatasetCatalogItem) => void;
+}) {
   if (!dataset) {
     return (
       <aside className={styles.browseDrawer}>
@@ -191,6 +222,7 @@ function BrowseRightDrawer({ dataset }: { dataset: DatasetCatalogItem | null }) 
   const fresh = isFresh(dataset.updatedAt);
   const left = metaLeft(dataset);
   const crs = dataset.schema?.crs ?? null;
+  const published = isDatasetPublishedToCatalog(dataset);
 
   return (
     <aside className={styles.browseDrawer}>
@@ -207,7 +239,11 @@ function BrowseRightDrawer({ dataset }: { dataset: DatasetCatalogItem | null }) 
           <span className={`${styles.drawerFormatBadge} ${styles[`dfmt_${dataset.format}`] || ""}`}>
             {DATASET_FORMAT_LABEL[dataset.format]}
           </span>
-          <span className={styles.drawerHubBadge}>⊕ Catalog</span>
+          {published ? (
+            <span className={styles.drawerPublishStatusPublished}>Published</span>
+          ) : (
+            <span className={styles.drawerPublishStatusUnpublished}>Unpublished</span>
+          )}
           {dataset.installed && (
             <span className={`${styles.drawerFormatBadge} ${styles.dfmt_geojson}`}>✓ Installed</span>
           )}
@@ -268,7 +304,7 @@ function BrowseRightDrawer({ dataset }: { dataset: DatasetCatalogItem | null }) 
         </div>
         <div className={styles.infoRow}>
           <span className={styles.infoRowLabel}>Origin</span>
-          <span className={styles.infoRowValue}>{DATASET_ORIGIN_LABEL[dataset.origin]}</span>
+          <span className={styles.infoRowValue}>{datasetProvenanceLabel(dataset.origin)}</span>
         </div>
       </div>
 
@@ -284,9 +320,20 @@ function BrowseRightDrawer({ dataset }: { dataset: DatasetCatalogItem | null }) 
       )}
 
       <div className={styles.drawerCtas}>
-        <button className={styles.addToPaletteBtn} type="button">
-          ↓ Install
-        </button>
+        {published ? (
+          <div className={styles.drawerPublishedPrimary} role="status" aria-label="Published to Data Catalog">
+            Published
+          </div>
+        ) : (
+          <button
+            type="button"
+            className={styles.addToPaletteBtn}
+            disabled={publishingId != null}
+            onClick={() => onPublish(dataset)}
+          >
+            Publish
+          </button>
+        )}
         <button className={styles.viewSampleBtn} type="button">
           View sample data
         </button>
@@ -302,15 +349,49 @@ function BrowseRightDrawer({ dataset }: { dataset: DatasetCatalogItem | null }) 
 
 export const DataCatalogBrowse: React.FC = () => {
   const navigate = useNavigate();
+  const { projectId } = useFlowContext();
+  const { showToast } = useToastContext();
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<DatasetSortMode>("recent");
   const [origin, setOrigin] = useState<DatasetOrigin | "">("");
   const [format, setFormat] = useState<DatasetFormat | "">("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [publishingId, setPublishingId] = useState<string | null>(null);
+  const [catalogPublishAllowed, setCatalogPublishAllowed] = useState(false);
   const catalog = useDatasetCatalog({ search, sort, origin, format, includeHub: true });
+
+  useEffect(() => {
+    void packagesApi
+      .factoryCapabilities()
+      .then((cap) => {
+        setCatalogPublishAllowed(cap.catalogPublish);
+      })
+      .catch(() => {
+        setCatalogPublishAllowed(false);
+      });
+  }, []);
   const selected = useMemo(
     () => catalog.items.find((item) => item.id === selectedId) || catalog.items[0] || null,
     [catalog.items, selectedId],
+  );
+
+  const handlePublish = useCallback(
+    async (dataset: DatasetCatalogItem) => {
+      setPublishingId(dataset.id);
+      try {
+        await datasetCatalogApi.publishDataset(dataset.id, {
+          ...(projectId ? { dataflowId: projectId } : {}),
+        });
+        notifyDatasetCatalogRefresh();
+        await catalog.reload();
+        showToast(`Published ${dataset.title}.`, "success");
+      } catch (err) {
+        showToast((err as Error)?.message || "Could not publish dataset.", "error");
+      } finally {
+        setPublishingId(null);
+      }
+    },
+    [catalog.reload, projectId, showToast],
   );
 
   return (
@@ -353,7 +434,9 @@ export const DataCatalogBrowse: React.FC = () => {
             onClick={() => setOrigin((prev) => (prev === key ? "" : key))}
           >
             <span>{DATASET_ORIGIN_LABEL[key]}</span>
-            <span className={styles.railCount}>{catalog.facets.origin[key] ?? 0}</span>
+            <span className={styles.railCount}>
+              {key === "imported" ? facetImportedTotal(catalog.facets.origin) : catalog.facets.origin[key] ?? 0}
+            </span>
           </button>
         ))}
 
@@ -451,12 +534,19 @@ export const DataCatalogBrowse: React.FC = () => {
               selected={selected?.id === dataset.id}
               onSelect={() => setSelectedId(dataset.id)}
               onViewDetails={() => navigate(`/catalog/data/${encodeURIComponent(dataset.id)}`)}
+              publishingId={publishingId}
+              onPublish={handlePublish}
+              catalogPublishAllowed={catalogPublishAllowed}
             />
           ))}
         </section>
       </main>
 
-      <BrowseRightDrawer dataset={selected} />
+      <BrowseRightDrawer
+        dataset={selected}
+        publishingId={publishingId}
+        onPublish={handlePublish}
+      />
     </div>
   );
 };

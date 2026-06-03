@@ -15,6 +15,7 @@ import {
   writeDatasetDragData,
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
+  datasetProvenanceLabel,
   useDatasetCatalog,
 } from "../../../../services/datasetCatalog";
 import styles from "./DatasetsPaletteDropdown.module.css";
@@ -76,7 +77,7 @@ function DatasetRow({ dataset }: { dataset: DatasetCatalogItem }) {
         </div>
 
         <div className={styles.rowMeta}>
-          <span className={styles.typePill}>{dataset.sourceLabel ? dataset.sourceLabel : "DATA"}</span>
+          <span className={styles.typePill}>{datasetProvenanceLabel(dataset.origin)}</span>
 
           {metaParts ? <span className={styles.rowMetaText}>{metaParts}</span> : null}
           {hasConnections ? (
@@ -185,7 +186,7 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
             </PaletteAccordion>
 
             <PaletteAccordion
-              title="Current dataflow"
+              title="Project datasets"
               count={total}
               selected
               defaultOpen
@@ -193,7 +194,7 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
                 <button
                   type="button"
                   className={styles.downloadButton}
-                  aria-label="Import into current dataflow"
+                  aria-label="Import into this project"
                   onMouseDown={stopAccordionToggle}
                   onClick={stopAccordionToggle}
                 >

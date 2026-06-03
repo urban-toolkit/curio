@@ -26,6 +26,31 @@ from utk_curio.backend.app.datasets.manifest import DatasetManifest
 
 logger = logging.getLogger(__name__)
 
+def _catalog_item_is_computed_provenance(item: dict[str, Any]) -> bool:
+    """Return True when a row should appear under the Data Catalog *Computed* rail.
+
+    Stored ``origin`` may remain ``hub`` for datasets published from node outputs;
+    those rows are still surfaced as *computed* using tags / description / producer.
+    """
+    if item.get("origin") == "computed":
+        return True
+    if item.get("producerNodeId"):
+        return True
+    if item.get("origin") != "hub":
+        return False
+    tags_cf = [str(t).casefold() for t in (item.get("tags") or [])]
+    if "computed" in tags_cf:
+        return True
+    desc = (item.get("description") or "").casefold()
+    if "dataflow node" in desc:
+        return True
+    if "computed" in desc and "node" in desc:
+        return True
+    sl = (item.get("sourceLabel") or "").strip().casefold()
+    if sl == "computed":
+        return True
+    return False
+
 
 SUPPORTED_SUFFIXES = {
     ".csv": "csv",
@@ -255,6 +280,27 @@ def _base_item(**overrides: Any) -> dict[str, Any]:
     return item
 
 
+def _origin_from_dataflow_ref(ref: dict[str, Any]) -> str:
+    """Resolve ``origin`` for a dataflow's installed dataset ref.
+
+    ``hub`` applies only to global registry rows under the repo catalog tree.
+    Datasets living in the per-user store stay ``imported``, ``computed``, or
+    ``source_node`` regardless of project or publish state (use ``publishedToHub``).
+    """
+    dir_name = str(ref.get("dirName") or "")
+    explicit = ref.get("origin")
+
+    if explicit == "computed" or ref.get("producerNodeId") or dir_name.startswith("computed."):
+        return "computed"
+    if explicit == "source_node":
+        return "source_node"
+    if explicit == "hub":
+        return "imported"
+    if explicit == "imported":
+        return "imported"
+    return "imported"
+
+
 def _item_from_file(path: Path, *, source_label: str, origin: str = "imported") -> dict[str, Any] | None:
     fmt = _format_for_path(path)
     if fmt is None or not path.is_file():
@@ -438,14 +484,14 @@ class ComputedDatasetIndexer:
             items.append(_base_item(
                 id=item_id,
                 title=Path(raw).stem.replace("_", " ").replace("-", " ").title() or raw,
-                description="Dataset computed by a node in the current dataflow.",
+                description="Dataset produced by a node output.",
                 origin="computed",
                 format=fmt,
                 uri=f"curio://outputs/{raw}",
                 path=raw,
                 producerNodeId=node_id,
                 updatedAt=_iso_from_timestamp(),
-                sourceLabel="Current dataflow",
+                sourceLabel="Computed",
                 tags=["computed", fmt],
             ))
         return items
@@ -502,7 +548,7 @@ class InstalledDatasetRepository:
                     manifest = load_dataset_manifest(installed_dir)
                     data_path = resolve_installed_data_path(user_key, manifest)
                     item = _item_from_manifest(
-                        manifest, installed_dir, origin=ref.get("origin") or "hub"
+                        manifest, installed_dir, origin=_origin_from_dataflow_ref(ref)
                     )
                     item["path"] = data_path.as_posix()
                     # Keep loaderSnippet in sync with the resolved path.
@@ -538,7 +584,7 @@ class InstalledDatasetRepository:
             items.append(_base_item(
                 id=ref.get("datasetId") or ref.get("id") or _stable_id("installed", ref.get("uri", "")),
                 title=ref.get("title") or "Installed dataset",
-                description=ref.get("description") or "Dataset installed in the current dataflow.",
+                description=ref.get("description") or "Dataset installed in this project.",
                 origin=ref.get("origin") or "imported",
                 format=fmt,
                 uri=ref.get("uri") or "",
@@ -550,7 +596,12 @@ class InstalledDatasetRepository:
                 producerNodeId=ref.get("producerNodeId"),
                 consumerNodeIds=ref.get("consumerNodeIds") or [],
                 updatedAt=ref.get("updatedAt") or ref.get("installedAt") or _iso_from_timestamp(),
-                sourceLabel=ref.get("sourceLabel") or "Current dataflow",
+                sourceLabel=ref.get("sourceLabel")
+                or (
+                    "Computed"
+                    if ref.get("origin") == "computed" or ref.get("producerNodeId")
+                    else "Imported"
+                ),
                 license=ref.get("license"),
                 tags=ref.get("tags") or [fmt],
                 installed=True,
@@ -991,7 +1042,12 @@ class DatasetCatalogService:
         if fmt:
             items = [item for item in items if item.get("format") == fmt]
         if origin:
-            items = [item for item in items if item.get("origin") == origin]
+            if origin == "imported":
+                items = [item for item in items if not _catalog_item_is_computed_provenance(item)]
+            elif origin == "computed":
+                items = [item for item in items if _catalog_item_is_computed_provenance(item)]
+            else:
+                items = [item for item in items if item.get("origin") == origin]
 
         if sort == "name":
             items.sort(key=lambda item: (item.get("title") or "").casefold())
@@ -1087,6 +1143,10 @@ class DatasetCatalogService:
             if key in metadata:
                 item[key] = metadata[key]
 
+        publish_is_computed = item.get("origin") == "computed" or bool(item.get("producerNodeId"))
+        prior_source_label = item.get("sourceLabel")
+        prior_producer_node_id = item.get("producerNodeId")
+
         # ── Compute counts from the local data file ──────────────────────────
         local_path: Path | None = None
         path_value = item.get("path")
@@ -1136,7 +1196,7 @@ class DatasetCatalogService:
             tags=item.get("tags") or [],
             data_file=data_file,
             major=1,
-            source_label="Data Catalog",
+            source_label="Computed" if publish_is_computed else "Data Catalog",
             row_count=item.get("rowCount"),
             feature_count=item.get("featureCount"),
             schema=item.get("schema"),
@@ -1145,23 +1205,41 @@ class DatasetCatalogService:
         )
         write_manifest(manifest_obj, dest)
 
-        item["sourceLabel"] = "Data Catalog"
-        item["origin"] = "hub"
         item["dirName"] = dir_name
         item["updatedAt"] = _iso_from_timestamp()
+        if publish_is_computed:
+            item["origin"] = "computed"
+            item["producerNodeId"] = prior_producer_node_id
+            item["publishedToHub"] = True
+            sl = (prior_source_label or "").strip()
+            bad = ("data catalog", "data hub", "current dataflow", "current workflow")
+            if sl and sl.lower() not in bad:
+                item["sourceLabel"] = prior_source_label
+            else:
+                item["sourceLabel"] = "Computed"
+        else:
+            item["sourceLabel"] = "Data Catalog"
+            item["origin"] = "hub"
 
-        # ── Promote ref in spec.trill to hub so next catalog reload reflects publish ──
-        # The original dataset (e.g. imported.x{hash}) may have been stored with
-        # origin="imported".  We update the ref so InstalledDatasetRepository returns
-        # the correct origin="hub" on the next list, ensuring the Published badge shows.
+        # ── Update dataflow ref so the next catalog reload shows publish state ──
+        # The canonical catalog entry is ``origin="hub"`` under ``datasets/``; the
+        # dataflow ref still points at the user-store copy and keeps
+        # ``imported`` / ``computed`` provenance (``publishedToHub`` for the badge).
         if dataflow_id:
             try:
                 refs = self.installed.list_refs(dataflow_id)
                 changed = False
                 for ref in refs:
                     ref_id = ref.get("datasetId") or ref.get("id")
-                    # Match by original dataset_id OR new catalog_id (in case ID was remapped)
-                    if ref_id in (dataset_id, catalog_id):
+                    # Match by id, or (computed) any ref for the same producer node so
+                    # project refs keyed as ``computed.<node>`` update when publish is
+                    # invoked with the hub / remapped catalog id from the Data Catalog page.
+                    matches_producer = bool(
+                        publish_is_computed
+                        and prior_producer_node_id
+                        and ref.get("producerNodeId") == prior_producer_node_id,
+                    )
+                    if ref_id in (dataset_id, catalog_id) or matches_producer:
                         ref["datasetId"] = catalog_id
                         ref["dirName"] = dir_name
                         # Computed datasets keep origin="computed" always; track publish
@@ -1172,7 +1250,12 @@ class DatasetCatalogService:
                             # Ensure origin is "computed" (not "hub") for computed datasets
                             ref.setdefault("origin", "computed")
                         else:
-                            ref["origin"] = "hub"
+                            ref["publishedToHub"] = True
+                            # Keep provenance: published copies in the user store stay imported.
+                            if ref.get("origin") == "source_node":
+                                pass
+                            else:
+                                ref["origin"] = "imported"
                         changed = True
                 if changed:
                     self.installed.replace_refs(dataflow_id, refs)
@@ -1234,6 +1317,10 @@ class DatasetCatalogService:
                 if row_count is not None or feature_count is not None:
                     _patch_manifest_file(result.dest / "manifest.json", row_count, feature_count)
                     _write_file_meta(data_path, row_count, feature_count)
+
+            # Project install is a user-store copy — not a global hub row.
+            item["origin"] = "imported"
+            item["uri"] = f"curio://datasets/{dir_name}"
 
         elif item.get("origin") == "computed":
             # ── Promote a node-computed output to a persistent installed dataset.
@@ -1368,10 +1455,9 @@ class DatasetCatalogService:
     def unpublish_dataset(self, dataset_id: str, *, dataflow_id: str | None = None) -> dict[str, Any]:
         """Remove a dataset from the local Data Catalog directory.
 
-        The dataset must be in the catalog (origin=hub).  Any installed ref in the
-        given dataflow is reverted to origin='imported' so it continues resolving
-        against the user's dataset store.  The user's own copy of the data is left
-        intact.
+        The dataset must exist in the committed catalog tree. Project refs keep
+        ``imported`` / ``computed`` provenance; only ``publishedToHub`` is cleared.
+        The user's store copy (if any) is left intact.
         """
         from utk_curio.backend.app.datasets.storage import catalog_root
 
@@ -1475,6 +1561,39 @@ class DatasetCatalogService:
             merged["producerNodeId"] = loser["producerNodeId"]
         if not merged.get("publishedToHub") and loser.get("publishedToHub"):
             merged["publishedToHub"] = loser["publishedToHub"]
+        # Hub registry rows do not carry ``publishedToHub``; merge must still reflect
+        # that the dataset is listed in the committed Data Catalog when the same id
+        # appears as a project ``computed`` / live row (or publish ran without ref sync).
+        if winner.get("origin") == "hub" or loser.get("origin") == "hub":
+            merged["publishedToHub"] = True
+        # Prefer project provenance when the same id appears as hub (registry) + installed copy.
+        win_o, los_o = winner.get("origin"), loser.get("origin")
+        if merged.get("installed") and win_o == "hub" and los_o in ("imported", "computed", "source_node"):
+            merged["origin"] = los_o
+        elif merged.get("installed") and los_o == "hub" and win_o in ("imported", "computed", "source_node"):
+            merged["origin"] = win_o
+        # Node-produced rows must never pick up the global catalog listing subtitle.
+        if (
+            winner.get("origin") == "computed"
+            or loser.get("origin") == "computed"
+            or winner.get("producerNodeId")
+            or loser.get("producerNodeId")
+        ):
+            merged["origin"] = "computed"
+            pid = merged.get("producerNodeId") or winner.get("producerNodeId") or loser.get("producerNodeId")
+            if pid:
+                merged["producerNodeId"] = pid
+            chosen_sl = None
+            bad_sl = frozenset(
+                {"data catalog", "data hub", "current dataflow", "current workflow"},
+            )
+            for cand in (winner, loser):
+                if cand.get("origin") == "computed" or cand.get("producerNodeId"):
+                    lab = (cand.get("sourceLabel") or "").strip()
+                    if lab and lab.lower() not in bad_sl:
+                        chosen_sl = cand.get("sourceLabel")
+                        break
+            merged["sourceLabel"] = chosen_sl or "Computed"
         return merged
 
     def _dedupe_items(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1537,10 +1656,13 @@ class DatasetCatalogService:
             "format": {fmt: 0 for fmt in sorted(set(SUPPORTED_SUFFIXES.values()))},
         }
         for item in items:
-            origin = item.get("origin")
             fmt = item.get("format")
-            if origin in facets["origin"]:
-                facets["origin"][origin] += 1
             if fmt in facets["format"]:
                 facets["format"][fmt] += 1
+            if _catalog_item_is_computed_provenance(item):
+                facets["origin"]["computed"] += 1
+            else:
+                raw_origin = item.get("origin")
+                if raw_origin in facets["origin"]:
+                    facets["origin"][raw_origin] += 1
         return facets

@@ -700,6 +700,22 @@
   box-sizing: border-box;
 }
 
+.cardActionsLeft {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cardActionsRight {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .linkButton {
   border: 0;
   background: transparent;
@@ -880,6 +896,32 @@
   gap: 4px;
 }
 
+.drawerPublishStatusPublished {
+  height: 20px;
+  border-radius: 10px;
+  background: #eef3f8;
+  color: #405da4;
+  padding: 0 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+}
+
+.drawerPublishStatusUnpublished {
+  height: 20px;
+  border-radius: 10px;
+  background: #fff4e5;
+  color: #996300;
+  padding: 0 10px;
+  font-size: 10px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+}
+
 /* Publisher row */
 .drawerPublisher {
   padding: 0 20px 6px;
@@ -1023,6 +1065,23 @@
 }
 
 .addToPaletteBtn:hover { background: #2a2b30; }
+
+.drawerPublishedPrimary {
+  width: 100%;
+  min-height: 42px;
+  border-radius: 8px;
+  background: #f0f0f0;
+  color: #555555;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
 
 .viewSampleBtn {
   width: 100%;
