@@ -594,6 +594,8 @@ class DatasetPreviewService:
             return self._preview_json(path, row_limit, offset, item)
         if fmt == "geojson":
             return self._preview_geojson(path, row_limit, offset, item)
+        if fmt == "parquet":
+            return self._preview_parquet(path, row_limit, offset, item)
         return {
             "schema": {"fields": []},
             "rows": [],
@@ -669,6 +671,40 @@ class DatasetPreviewService:
         return {
             "schema": {"fields": self._infer_fields(display_rows) if display_rows else (item.get("schema") or {}).get("fields", [])},
             "rows": display_rows,
+            "rowLimit": row_limit,
+            "offset": offset,
+            "totalRows": self._total_rows(item, total_rows),
+            "truncated": end < self._total_rows(item, total_rows),
+        }
+
+    def _preview_parquet(self, path: Path, row_limit: int, offset: int, item: dict[str, Any]) -> dict[str, Any]:
+        from utk_curio.sandbox.util.tabular_preview import preview_parquet_file
+
+        try:
+            rows, total_rows, _parsed = preview_parquet_file(
+                path,
+                row_limit=row_limit,
+                offset=offset,
+            )
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "schema": item.get("schema") or {"fields": []},
+                "rows": [],
+                "rowLimit": row_limit,
+                "offset": offset,
+                "totalRows": item.get("featureCount") or item.get("rowCount") or 0,
+                "truncated": False,
+                "unsupported": True,
+                "message": f"Could not read parquet preview: {exc}",
+            }
+
+        end = offset + len(rows)
+        schema_fields = (item.get("schema") or {}).get("fields", [])
+        return {
+            "schema": {
+                "fields": schema_fields if schema_fields else self._infer_fields(rows),
+            },
+            "rows": rows,
             "rowLimit": row_limit,
             "offset": offset,
             "totalRows": self._total_rows(item, total_rows),
