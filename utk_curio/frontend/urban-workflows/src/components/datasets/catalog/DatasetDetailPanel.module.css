@@ -159,6 +159,7 @@
 .format_parquet { background: #fdf0dc; color: #a06a10; }
 .format_geotiff { background: #e3f1f3; color: #2e6874; }
 .format_shp { background: #f0e5ec; color: #7a4865; }
+.format_bundle { background: #f3ebe0; color: #8a4f1a; }
 
 .installedBadge {
   background: #1e1f23;

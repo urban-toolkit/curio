@@ -83,8 +83,8 @@ def test_computed_indexer_produces_items():
     assert csv_item["id"] == ComputedDatasetIndexer().list_items(manifest=manifest)[0]["id"]
 
 
-def test_computed_indexer_skips_outputs_bundle_datatype():
-    """Tuple / multi-output intermediates must not appear as catalog datasets."""
+def test_computed_indexer_outputs_bundle_datatype():
+    """Tuple / multi-output bundles use catalog format ``bundle``."""
     from utk_curio.backend.app.datasets.service import ComputedDatasetIndexer
 
     indexer = ComputedDatasetIndexer()
@@ -92,9 +92,10 @@ def test_computed_indexer_skips_outputs_bundle_datatype():
         {"node_id": "utci-node", "filename": "1780604607968_abc", "data_type": "outputs"},
         {"node_id": "zonal-node", "filename": "1780604607999_out.parquet", "data_type": "geodataframe"},
     ])
-    assert len(items) == 1
-    assert items[0]["producerNodeId"] == "zonal-node"
-    assert items[0]["format"] == "parquet"
+    assert len(items) == 2
+    bundle_item = next(i for i in items if i["producerNodeId"] == "utci-node")
+    assert bundle_item["format"] == "bundle"
+    assert items[1]["format"] == "parquet"
 
 
 def test_computed_indexer_uses_data_type_for_extensionless_artifacts():
@@ -381,6 +382,68 @@ def test_install_computed_dataset_404_when_file_missing(client, user_and_token):
     assert resp.status_code == 404
     body = resp.get_json()
     assert "available" in body.get("error", "").lower() or "available" in body.get("message", "").lower()
+
+
+def test_process_python_code_auto_installs_outputs_bundle(client, user_and_token, monkeypatch):
+    """Tuple (outputs) installs as a multi-part bundle dataset."""
+    from unittest.mock import MagicMock
+
+    from utk_curio.backend.app.datasets.installer import sanitize_node_id_segment
+    from utk_curio.sandbox.util.db import release_connection
+    from utk_curio.sandbox.util.parsers import init_db, save_to_duckdb
+
+    _, token = user_and_token
+    project_id = _create_project(client, token, name="Bundle auto install")
+    node_id = "node-utci"
+
+    init_db()
+    parent_id = save_to_duckdb(([1, 2, 3], [10, 20]), node_id=node_id)
+    release_connection()
+
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "stdout": "",
+        "stderr": "",
+        "output": {"path": parent_id, "dataType": "outputs"},
+    }
+    monkeypatch.setattr(
+        "utk_curio.backend.app.api.routes._sandbox_call",
+        lambda *args, **kwargs: mock_response,
+    )
+
+    resp = client.post(
+        "/processPythonCode",
+        data=json.dumps({
+            "code": "    return ([1,2,3], [10,20])\n",
+            "nodeType": "PYTHON_COMPUTATION",
+            "nodeId": node_id,
+            "dataflowId": project_id,
+            "input": {"path": "", "dataType": "str"},
+        }),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    body = resp.get_json()
+    inst = body.get("installedDataset")
+    assert inst is not None, body
+    expected_id = f"computed.{sanitize_node_id_segment(node_id)}"
+    assert inst["id"] == expected_id
+    assert inst["format"] == "bundle"
+
+    catalog = client.get(
+        f"/api/datasets/catalog?includeHub=false&dataflowId={project_id}",
+        headers=_auth(token),
+    ).get_json()
+    item = next(i for i in catalog["items"] if i["id"] == expected_id)
+    assert item.get("installed") is True
+    assert item["format"] == "bundle"
+
+    preview = client.get(
+        f"/api/datasets/{expected_id}/preview?dataflowId={project_id}",
+        headers=_auth(token),
+    ).get_json()
+    assert preview.get("bundle") is True
+    assert len(preview.get("parts") or []) >= 2
 
 
 def test_process_python_code_auto_installs_dataset(client, user_and_token, monkeypatch):

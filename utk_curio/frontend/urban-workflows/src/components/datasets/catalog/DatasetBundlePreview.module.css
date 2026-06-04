@@ -1,0 +1,62 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 120px;
+}
+
+.tabBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tab,
+.tabActive {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle, #e2e4e8);
+  background: var(--surface-raised, #fff);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.tabActive {
+  border-color: var(--accent, #e85d2a);
+  background: color-mix(in srgb, var(--accent, #e85d2a) 8%, white);
+}
+
+.tabLabel {
+  font-weight: 600;
+  color: var(--text-primary, #1a1d21);
+}
+
+.tabFormat {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted, #6b7280);
+}
+
+.tableWrap {
+  border: 1px solid var(--border-subtle, #e2e4e8);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.partNote {
+  margin: 8px 12px 10px;
+  font-size: 11px;
+  color: var(--text-muted, #6b7280);
+}
+
+.state {
+  padding: 16px;
+  font-size: 13px;
+  color: var(--text-muted, #6b7280);
+}

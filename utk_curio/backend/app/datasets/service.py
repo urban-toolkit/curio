@@ -76,18 +76,13 @@ SANDBOX_DATATYPE_TO_FORMAT: dict[str, str] = {
     "bool": "json",
     "null": "json",
     "unknown": "json",
-    "outputs": "json",
+    "outputs": "bundle",
 }
-
-# Tuple / multi-artifact bundles (``detect_kind`` → ``outputs``) are workflow
-# intermediates, not installable tabular datasets for the Data Catalog.
-NON_CATALOG_DATATYPES = frozenset({"outputs"})
 
 
 def _is_catalogable_output(data_type: str | None) -> bool:
-    if not data_type:
-        return True
-    return data_type.strip().lower() not in NON_CATALOG_DATATYPES
+    """All sandbox output kinds may be installed (including tuple bundles)."""
+    return True
 
 
 def _computed_output_format(filename: str, data_type: str | None = None) -> str:
@@ -706,6 +701,8 @@ class DatasetPreviewService:
             }
 
         fmt = item.get("format")
+        if fmt == "bundle":
+            return self._preview_bundle(path, row_limit, offset, item)
         if fmt == "csv":
             return self._preview_csv(path, row_limit, offset, item)
         if fmt == "json":
@@ -714,6 +711,17 @@ class DatasetPreviewService:
             return self._preview_geojson(path, row_limit, offset, item)
         if fmt == "parquet":
             return self._preview_parquet(path, row_limit, offset, item)
+        if fmt == "geotiff":
+            return {
+                "schema": item.get("schema") or {"fields": []},
+                "rows": [],
+                "rowLimit": row_limit,
+                "offset": offset,
+                "totalRows": 0,
+                "truncated": False,
+                "unsupported": True,
+                "message": "Raster preview is not available in the catalog yet. Use the map canvas.",
+            }
         return {
             "schema": {"fields": []},
             "rows": [],
@@ -756,6 +764,90 @@ class DatasetPreviewService:
                 field_type = "number"
             fields.append({"name": name, "type": field_type, "nullable": True, "sample": sample})
         return fields
+
+    def _preview_bundle(self, bundle_path: Path, row_limit: int, offset: int, item: dict[str, Any]) -> dict[str, Any]:
+        try:
+            spec = json.loads(bundle_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return {
+                "schema": item.get("schema") or {"fields": []},
+                "rows": [],
+                "rowLimit": row_limit,
+                "offset": offset,
+                "totalRows": 0,
+                "truncated": False,
+                "bundle": True,
+                "parts": [],
+                "unsupported": True,
+                "message": f"Could not read bundle manifest: {exc}",
+            }
+
+        root = bundle_path.parent
+        parts_payload: list[dict[str, Any]] = []
+        for part in spec.get("parts") or []:
+            if not isinstance(part, dict):
+                continue
+            label = str(part.get("label") or f"Part {part.get('index', 0)}")
+            fmt = str(part.get("format") or "json")
+            rel = part.get("file")
+            part_path = (root / rel).resolve() if rel else None
+            sub_item = {**item, "format": fmt}
+            if part_path is not None and part_path.is_file():
+                if fmt == "csv":
+                    part_preview = self._preview_csv(part_path, row_limit, 0, sub_item)
+                elif fmt == "parquet":
+                    part_preview = self._preview_parquet(part_path, row_limit, 0, sub_item)
+                elif fmt == "geojson":
+                    part_preview = self._preview_geojson(part_path, row_limit, 0, sub_item)
+                elif fmt == "geotiff":
+                    part_preview = {
+                        "schema": {"fields": []},
+                        "rows": [],
+                        "rowLimit": row_limit,
+                        "offset": 0,
+                        "totalRows": 0,
+                        "truncated": False,
+                        "unsupported": True,
+                        "message": "Raster preview is not available in the catalog yet.",
+                    }
+                else:
+                    part_preview = self._preview_json(part_path, row_limit, 0, sub_item)
+            else:
+                part_preview = {
+                    "schema": {"fields": []},
+                    "rows": [],
+                    "rowLimit": row_limit,
+                    "offset": 0,
+                    "totalRows": 0,
+                    "truncated": False,
+                    "unsupported": True,
+                    "message": "Part file is not available on disk.",
+                }
+            parts_payload.append({
+                "label": label,
+                "format": fmt,
+                "kind": part.get("kind"),
+                **part_preview,
+            })
+
+        part_count = len(parts_payload)
+        schema = item.get("schema") or {
+            "fields": [{"name": "parts", "type": "integer", "nullable": False, "sample": part_count}],
+            "bundleParts": [
+                {"label": p.get("label"), "format": p.get("format")}
+                for p in parts_payload
+            ],
+        }
+        return {
+            "schema": schema,
+            "rows": [],
+            "rowLimit": row_limit,
+            "offset": offset,
+            "totalRows": part_count,
+            "truncated": False,
+            "bundle": True,
+            "parts": parts_payload,
+        }
 
     def _preview_csv(self, path: Path, row_limit: int, offset: int, item: dict[str, Any]) -> dict[str, Any]:
         total_rows = self._count_csv_rows(path)

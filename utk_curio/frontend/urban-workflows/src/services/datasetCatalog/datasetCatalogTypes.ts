@@ -1,6 +1,6 @@
 export type DatasetOrigin = "source_node" | "computed" | "imported" | "hub";
 
-export type DatasetFormat = "csv" | "geojson" | "json" | "parquet" | "geotiff" | "shp";
+export type DatasetFormat = "csv" | "geojson" | "json" | "parquet" | "geotiff" | "shp" | "bundle";
 
 export type DatasetSortMode = "recent" | "name";
 
@@ -15,6 +15,8 @@ export interface DatasetSchema {
   fields: DatasetSchemaField[];
   geometryType?: string | null;
   crs?: string | null;
+  /** Present on ``bundle`` datasets — one entry per tuple/output part. */
+  bundleParts?: Array<{ label?: string; format?: string; kind?: string }>;
 }
 
 export interface DatasetLoaderSnippet {
@@ -66,6 +68,20 @@ export interface DatasetCatalogResponse {
   facets: DatasetCatalogFacets;
 }
 
+export interface DatasetPreviewPart {
+  label: string;
+  format: DatasetFormat;
+  schema: DatasetSchema;
+  rows: Record<string, unknown>[];
+  rowLimit: number;
+  offset: number;
+  totalRows: number;
+  truncated: boolean;
+  unsupported?: boolean;
+  message?: string;
+  kind?: string;
+}
+
 export interface DatasetPreviewResponse {
   schema: DatasetSchema;
   rows: Record<string, unknown>[];
@@ -75,6 +91,9 @@ export interface DatasetPreviewResponse {
   truncated: boolean;
   unsupported?: boolean;
   message?: string;
+  /** Multi-part tuple / ``outputs`` installs. */
+  bundle?: boolean;
+  parts?: DatasetPreviewPart[];
 }
 
 export interface DatasetPreviewQuery {
@@ -168,4 +187,5 @@ export const DATASET_FORMAT_LABEL: Record<DatasetFormat, string> = {
   parquet: "Parquet",
   geotiff: "GeoTIFF",
   shp: "SHP",
+  bundle: "Bundle",
 };

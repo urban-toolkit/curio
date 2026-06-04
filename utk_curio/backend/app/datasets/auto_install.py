@@ -24,36 +24,24 @@ def auto_install_node_output(
         return None
 
     data_type = sandbox_output.get("dataType") or sandbox_output.get("data_type")
-    from utk_curio.backend.app.datasets.service import _is_catalogable_output
-
-    if not _is_catalogable_output(data_type):
-        return None
 
     try:
         from datetime import datetime as _dt, timezone as _tz
 
-        from utk_curio.backend.app.datasets.installer import (
-            install_computed_file_for_node,
-        )
-        from utk_curio.backend.app.datasets.output_paths import resolve_shared_output_path
-        from utk_curio.backend.app.datasets.service import _computed_output_format
+        from utk_curio.backend.app.datasets.bundle import install_node_output
         from utk_curio.backend.app.projects.services import _user_dir_key
 
-        src = resolve_shared_output_path(str(path_ref), data_type=data_type)
-        if src is None:
+        user_key = _user_dir_key(user)
+        result = install_node_output(
+            user_key,
+            node_id=node_id,
+            path_ref=str(path_ref),
+            data_type=data_type,
+        )
+        if result is None:
             return None
 
-        user_key = _user_dir_key(user)
-        fmt = _computed_output_format(src.name, data_type)
-        store_name = src.name if src.suffix else str(path_ref)
-        result = install_computed_file_for_node(
-            user_key,
-            src.read_bytes(),
-            store_name,
-            fmt,
-            node_id=node_id,
-        )
-
+        fmt = result.manifest.format
         installed = {
             "id": result.manifest.id,
             "dirName": result.manifest.dir_name,

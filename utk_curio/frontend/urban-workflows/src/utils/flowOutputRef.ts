@@ -33,9 +33,6 @@ export function flowOutputRefFromRaw(
 
   if (!filename || !nodeId) return null;
 
-  // Tuple / multi-output bundles are workflow intermediates, not catalog datasets.
-  if (dataType?.toLowerCase() === "outputs") return null;
-
   const ref: FlowOutputRef = { node_id: nodeId, filename };
   if (dataType) ref.data_type = dataType;
   return ref;

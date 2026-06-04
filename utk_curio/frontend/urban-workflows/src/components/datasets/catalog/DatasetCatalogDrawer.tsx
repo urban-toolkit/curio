@@ -52,6 +52,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
   const { showToast } = useToastContext();
   const [tab, setTab] = useState<DrawerTab>("browse");
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sort, setSort] = useState<DatasetSortMode>("recent");
   const [pinned, setPinned] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -69,38 +70,57 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
       .filter((r): r is NonNullable<typeof r> => r !== null);
   }, [outputs]);
 
-  const includeHub = tab === "featured" || tab === "browse" || tab === "computed";
+  useEffect(() => {
+    const handle = window.setTimeout(() => setDebouncedSearch(search), 280);
+    return () => window.clearTimeout(handle);
+  }, [search]);
+
+  // Tabs filter client-side only — keep a stable fetch so switching tabs is instant.
   const catalog = useDatasetCatalog({
     dataflowId: projectId,
-    search,
+    search: debouncedSearch,
     sort,
     origin: tabOrigin(tab),
-    includeHub,
+    includeHub: true,
     liveOutputs,
   });
 
   // Reload when a node execution auto-installs a computed dataset.
   useEffect(() => {
-    const onRefresh = () => void catalog.reload();
+    const onRefresh = () => void catalog.reload({ bustCache: true });
     window.addEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
     return () => window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
   }, [catalog.reload]);
 
   const items = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    const matchesSearch = (item: DatasetCatalogItem) => {
+      if (!needle) return true;
+      const haystack = [
+        item.title,
+        item.description,
+        item.sourceLabel,
+        item.format,
+        ...(item.tags ?? []),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(needle);
+    };
+
+    let list = catalog.items;
     if (tab === "featured") {
-      return catalog.items.filter((item) => item.origin === "hub" || item.installed).slice(0, 6);
-    }
-    if (tab === "installed") {
-      return catalog.items.filter((item) => item.origin !== "hub" || item.installed);
-    }
-    if (tab === "computed") {
-      // Tab lists node-produced datasets; publish state does not change that.
-      return catalog.items.filter(
+      list = list.filter((item) => item.origin === "hub" || item.installed).slice(0, 6);
+    } else if (tab === "installed") {
+      list = list.filter((item) => item.origin !== "hub" || item.installed);
+    } else if (tab === "computed") {
+      list = list.filter(
         (item) => item.origin === "computed" || Boolean(item.producerNodeId),
       );
     }
-    return catalog.items;
-  }, [catalog.items, tab]);
+    return list.filter(matchesSearch);
+  }, [catalog.items, tab, search]);
 
   const installedCount = useMemo(
     () => catalog.items.filter((item) => item.origin !== "hub" || item.installed).length,
@@ -435,11 +455,11 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
           {catalog.error ? <div className={styles.error}>{catalog.error}</div> : null}
           {/* Show full loading state only on initial load (no items yet).
               Background refreshes keep existing items visible. */}
-          {catalog.loading && items.length === 0 ? (
+          {catalog.loading ? (
             <div className={styles.empty}>Loading datasets...</div>
           ) : null}
           {tab === "installed" ? (
-            !catalog.loading && !catalog.refreshing && !catalog.error && items.length === 0 ? (
+            !catalog.loading && !catalog.error && items.length === 0 ? (
               <div className={styles.empty}>No datasets installed in this dataflow yet.</div>
             ) : (
               <InstalledDatasetsList
@@ -450,7 +470,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
                 onPublish={(datasetId) => void onPublish(datasetId)}
                 onDragStart={handleDatasetDragStart}
                 onDragEnd={handleDatasetDragEnd}
-                refreshing={catalog.refreshing}
+                refreshing={false}
               />
             )
           ) : (
@@ -458,17 +478,14 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
               {!catalog.error ? (
                 <p className={styles.sectionLabel}>{TAB_LABEL[tab]}</p>
               ) : null}
-              {!catalog.loading && !catalog.refreshing && !catalog.error && items.length === 0 ? (
+              {!catalog.loading && !catalog.error && items.length === 0 ? (
                 <div className={styles.empty}>
                   {tab === "computed"
                     ? "No computed datasets yet. Run a dataflow node that outputs a table — it will appear here and be installed automatically."
                     : "No datasets match the current filters."}
                 </div>
               ) : null}
-              <div
-                className={styles.cardList}
-                style={catalog.refreshing ? { opacity: 0.6, pointerEvents: "none", transition: "opacity 0.15s" } : { transition: "opacity 0.15s" }}
-              >
+              <div className={styles.cardList}>
                 {items.map((dataset) => {
                   const isComputedInstalled =
                     dataset.origin === "computed" && dataset.installed === true;

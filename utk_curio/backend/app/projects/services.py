@@ -68,11 +68,7 @@ def _auto_install_computed_outputs(
     if not output_refs or not spec:
         return spec
 
-    from utk_curio.backend.app.datasets.installer import (
-        install_computed_file_for_node,
-    )
-    from utk_curio.backend.app.datasets.output_paths import resolve_shared_output_path
-    from utk_curio.backend.app.datasets.service import _computed_output_format
+    from utk_curio.backend.app.datasets.bundle import install_node_output
     from utk_curio.backend.app.datasets.storage import DATASET_DIR_RE
 
     dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
@@ -82,32 +78,21 @@ def _auto_install_computed_outputs(
     datasets_refs: list[dict] = list(dataflow.get("datasets") or [])
 
     changed = False
-    from utk_curio.backend.app.datasets.service import _is_catalogable_output
-
     for ref in output_refs:
         filename = ref.filename
         node_id = ref.node_id
         data_type = getattr(ref, "data_type", None)
-        if not _is_catalogable_output(data_type):
-            continue
-
-        src = resolve_shared_output_path(filename, data_type=data_type)
-        if src is None:
-            continue
 
         try:
-            file_bytes = src.read_bytes()
-        except OSError:
-            continue
-
-        fmt = _computed_output_format(src.name, data_type)
-        store_name = src.name if src.suffix else filename
-
-        try:
-            result = install_computed_file_for_node(
-                user_key, file_bytes, store_name, fmt, node_id=node_id
+            result = install_node_output(
+                user_key,
+                node_id=node_id,
+                path_ref=filename,
+                data_type=data_type,
             )
         except Exception:  # noqa: BLE001 – best-effort; don't block save
+            continue
+        if result is None:
             continue
 
         dataset_id = result.manifest.id   # "computed.<sanitized_node_id>"

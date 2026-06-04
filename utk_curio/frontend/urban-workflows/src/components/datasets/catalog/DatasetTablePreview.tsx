@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { TabularPreviewTable } from "../../tables/TabularPreviewTable";
+import { DatasetBundlePreview } from "./DatasetBundlePreview";
 import {
   DatasetCatalogItem,
   DatasetPreviewResponse,
@@ -80,7 +81,8 @@ export const DatasetTablePreview: React.FC<DatasetTablePreviewProps> = ({
   const rangeLabel = totalRows === 0
     ? "No rows to preview"
     : `Showing rows ${startRow}-${endRow} of ${formatTotal(totalRows)}`;
-  const showTable = preview != null && !preview.unsupported && !error;
+  const isBundle = preview?.bundle === true && (preview.parts?.length ?? 0) > 0;
+  const showTable = preview != null && !preview.unsupported && !error && !isBundle;
 
   return (
     <section className={styles.panel}>
@@ -93,8 +95,12 @@ export const DatasetTablePreview: React.FC<DatasetTablePreviewProps> = ({
 
       {isInitialLoad ? <div className={styles.state}>Loading preview...</div> : null}
       {error && !preview ? <div className={styles.stateError}>{error}</div> : null}
-      {!isInitialLoad && preview?.unsupported ? (
+      {!isInitialLoad && preview?.unsupported && !isBundle ? (
         <div className={styles.state}>{preview.message || "Preview is not available for this dataset yet."}</div>
+      ) : null}
+
+      {!isInitialLoad && isBundle && preview ? (
+        <DatasetBundlePreview preview={preview} datasetId={dataset.id} pageSize={PAGE_SIZE} />
       ) : null}
 
       {showTable ? (

@@ -10,7 +10,7 @@ from typing import Any
 from utk_curio.backend.app.datasets.storage import DatasetId
 
 
-SUPPORTED_FORMATS = {"csv", "geojson", "json", "parquet", "geotiff", "shp"}
+SUPPORTED_FORMATS = {"csv", "geojson", "json", "parquet", "geotiff", "shp", "bundle"}
 
 
 class ManifestError(ValueError):

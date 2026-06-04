@@ -62,9 +62,18 @@ export const DatasetSchemaPanel: React.FC<DatasetSchemaPanelProps> = ({
           setUnsupportedMessage(response.message || null);
           return;
         }
-        const previewFields = response.schema?.fields?.length
-          ? response.schema.fields
-          : defaultSchemaFields(dataset);
+        const bundleParts = response.schema?.bundleParts as
+          | Array<{ label?: string; format?: string; kind?: string }>
+          | undefined;
+        const previewFields = bundleParts?.length
+          ? bundleParts.map((part, index) => ({
+              name: part.label || `Part ${index + 1}`,
+              type: (part.format || "json").toUpperCase(),
+              nullable: true,
+            }))
+          : response.schema?.fields?.length
+            ? response.schema.fields
+            : defaultSchemaFields(dataset);
         setFields(previewFields);
         setGeometryType(response.schema?.geometryType ?? dataset.schema?.geometryType);
         setUnsupportedMessage(null);

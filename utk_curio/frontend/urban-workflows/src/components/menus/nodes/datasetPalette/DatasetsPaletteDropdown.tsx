@@ -28,6 +28,7 @@ function formatAbbreviation(dataset: DatasetCatalogItem): string {
   if (dataset.format === "geojson") return "GeoJSON";
   if (dataset.format === "json") return "JSON";
   if (dataset.format === "geotiff") return "GeoTIFF";
+  if (dataset.format === "bundle") return "Bundle";
   return DATASET_FORMAT_LABEL[dataset.format].toUpperCase();
 }
 
@@ -115,7 +116,7 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
   });
 
   useEffect(() => {
-    const onRefresh = () => void catalog.reload();
+    const onRefresh = () => void catalog.reload({ bustCache: true });
     window.addEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
     return () => window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
   }, [catalog.reload]);

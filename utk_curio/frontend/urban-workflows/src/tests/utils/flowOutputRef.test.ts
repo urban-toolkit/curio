@@ -14,13 +14,15 @@ describe('flowOutputRefFromRaw', () => {
     });
   });
 
-  test('skips tuple outputs bundle', () => {
-    expect(
-      flowOutputRefFromRaw('utci-node', {
-        path: '1780604607968_abc',
-        dataType: 'outputs',
-      }),
-    ).toBeNull();
+  test('includes tuple outputs bundle with dataType', () => {
+    expect(flowOutputRefFromRaw('utci-node', {
+      path: '1780604607968_abc',
+      dataType: 'outputs',
+    })).toEqual({
+      node_id: 'utci-node',
+      filename: '1780604607968_abc',
+      data_type: 'outputs',
+    });
   });
 
   test('falls back to path with dataType for raster', () => {
