@@ -157,8 +157,8 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
             <div className={styles.title}>Dataset Palette</div>
           </div>
           <div className={styles.scroll}>
-            {catalog.loading ? <div className={styles.empty}>Loading datasets...</div> : null}
-            {!catalog.loading && total === 0 ? (
+            {catalog.loading && rows.length === 0 ? <div className={styles.empty}>Loading datasets...</div> : null}
+            {!catalog.loading && !catalog.refreshing && total === 0 ? (
               <div className={styles.empty}>
                 Install, import, or compute a dataset to use it here.
               </div>

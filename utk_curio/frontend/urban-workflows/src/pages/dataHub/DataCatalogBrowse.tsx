@@ -520,13 +520,20 @@ export const DataCatalogBrowse: React.FC = () => {
           </div>
         </div>
 
-        {catalog.loading ? <div className={styles.empty}>Loading datasets…</div> : null}
+        {catalog.loading && catalog.items.length === 0 ? (
+          <div className={styles.empty}>Loading datasets…</div>
+        ) : null}
         {catalog.error ? <div className={styles.error}>{catalog.error}</div> : null}
-        {!catalog.loading && !catalog.error && catalog.items.length === 0 ? (
+        {!catalog.loading && !catalog.refreshing && !catalog.error && catalog.items.length === 0 ? (
           <div className={styles.empty}>No datasets match the current filters.</div>
         ) : null}
 
-        <section className={styles.cardGrid}>
+        <section
+          className={[
+            styles.cardGrid,
+            catalog.refreshing ? styles.cardGridRefreshing : "",
+          ].join(" ")}
+        >
           {catalog.items.map((dataset) => (
             <BrowseCard
               key={`${dataset.origin}:${dataset.id}`}

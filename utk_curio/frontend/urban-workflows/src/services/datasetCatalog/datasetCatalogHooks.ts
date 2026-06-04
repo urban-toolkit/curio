@@ -14,15 +14,22 @@ const EMPTY_RESPONSE: DatasetCatalogResponse = {
   },
 };
 
+function catalogScopeKey(query: {
+  dataflowId?: string;
+  includeHub?: boolean;
+}): string {
+  return `${query.dataflowId ?? ""}\u0000${String(query.includeHub)}`;
+}
+
 export function useDatasetCatalog(query: DatasetCatalogQuery = {}) {
   const [response, setResponse] = useState<DatasetCatalogResponse>(EMPTY_RESPONSE);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Track whether we have received data at least once for the current query so
-  // we can distinguish "initial load" (show skeleton) from "background refresh"
-  // (keep existing items visible, only apply a subtle opacity change).
-  const hasDataRef = useRef(false);
+  /** Last successful payload; kept visible while a background refetch runs. */
+  const committedRef = useRef<DatasetCatalogResponse>(EMPTY_RESPONSE);
+  const prevScopeKeyRef = useRef<string | null>(null);
+  const fetchGenRef = useRef(0);
 
   const stableQuery = useMemo(
     () => ({
@@ -44,15 +51,24 @@ export function useDatasetCatalog(query: DatasetCatalogQuery = {}) {
     ],
   );
 
-  // Reset the "has-data" flag whenever the query changes so tab switches get a
-  // proper initial-load indicator rather than silently swapping the list.
-  useEffect(() => {
-    hasDataRef.current = false;
-  }, [stableQuery]);
+  const scopeKey = useMemo(
+    () => catalogScopeKey({ dataflowId: stableQuery.dataflowId, includeHub: stableQuery.includeHub }),
+    [stableQuery.dataflowId, stableQuery.includeHub],
+  );
 
   const reload = useCallback(async () => {
-    if (hasDataRef.current) {
-      // Already have data – refresh silently so the list doesn't blink.
+    const gen = ++fetchGenRef.current;
+
+    if (prevScopeKeyRef.current !== scopeKey) {
+      if (prevScopeKeyRef.current != null) {
+        committedRef.current = EMPTY_RESPONSE;
+        setResponse(EMPTY_RESPONSE);
+      }
+      prevScopeKeyRef.current = scopeKey;
+    }
+
+    const keepPreviousVisible = committedRef.current.items.length > 0;
+    if (keepPreviousVisible) {
       setRefreshing(true);
     } else {
       setLoading(true);
@@ -60,20 +76,30 @@ export function useDatasetCatalog(query: DatasetCatalogQuery = {}) {
     setError(null);
     try {
       const next = await datasetCatalogApi.listCatalog(stableQuery);
+      if (gen !== fetchGenRef.current) {
+        return;
+      }
+      committedRef.current = next;
       setResponse(next);
-      hasDataRef.current = true;
     } catch (err) {
+      if (gen !== fetchGenRef.current) {
+        return;
+      }
       const message = (err as Error)?.message || "Could not load datasets.";
       setError(message);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (gen === fetchGenRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, [stableQuery]);
+  }, [scopeKey, stableQuery]);
 
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  const display = refreshing ? committedRef.current : response;
 
   const install = useCallback(
     async (dataset: DatasetCatalogItem) => {
@@ -106,8 +132,8 @@ export function useDatasetCatalog(query: DatasetCatalogQuery = {}) {
   );
 
   return {
-    items: response.items,
-    facets: response.facets,
+    items: display.items,
+    facets: display.facets,
     loading,
     refreshing,
     error,

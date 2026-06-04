@@ -457,7 +457,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
             <div className={styles.empty}>Loading datasets...</div>
           ) : null}
           {tab === "installed" ? (
-            !catalog.loading && !catalog.error && items.length === 0 ? (
+            !catalog.loading && !catalog.refreshing && !catalog.error && items.length === 0 ? (
               <div className={styles.empty}>No datasets installed in this dataflow yet.</div>
             ) : (
               <InstalledDatasetsList
@@ -476,7 +476,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
               {!catalog.error ? (
                 <p className={styles.sectionLabel}>{TAB_LABEL[tab]}</p>
               ) : null}
-              {!catalog.loading && !catalog.error && items.length === 0 ? (
+              {!catalog.loading && !catalog.refreshing && !catalog.error && items.length === 0 ? (
                 <div className={styles.empty}>
                   {tab === "computed"
                     ? "No computed datasets yet. Run a dataflow node that outputs a table — it will appear here and be installed automatically."

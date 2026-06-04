@@ -16,7 +16,7 @@ export const DataCatalogDetail: React.FC = () => {
     <div className={styles.detailPage}>
       <DatasetDetailPanel
         dataset={dataset}
-        loading={catalog.loading}
+        loading={catalog.loading && catalog.items.length === 0}
         error={catalog.error}
         variant="page"
         onBack={() => navigate("/catalog/data")}
