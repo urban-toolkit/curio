@@ -528,17 +528,6 @@ def test_process_python_code_skips_auto_install_when_save_disabled(client, user_
     assert resp.status_code == 200, resp.get_data(as_text=True)
     assert resp.get_json().get("installedDataset") is None
 
-    catalog = client.get(
-        f"/api/datasets/catalog?includeHub=false&dataflowId={project_id}",
-        headers=_auth(token),
-    ).get_json()
-    item = next(i for i in catalog["items"] if i["id"] == expected_id)
-    assert item.get("installed") is True
-    assert item.get("dirName") == inst["dirName"]
-    path = item.get("path") or ""
-    assert Path(path).is_file()
-    assert path.endswith(parquet_name) or parquet_name in path
-
 
 def test_installed_computed_dataset_appears_in_dataflow_catalog(client, user_and_token):
     """After installing a computed dataset it shows up as installed in the
