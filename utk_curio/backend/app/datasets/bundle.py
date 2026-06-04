@@ -314,7 +314,7 @@ def install_node_output(
 ) -> Any:
     """Install a single file or multi-part ``outputs`` bundle from shared storage."""
     from utk_curio.backend.app.datasets.output_paths import resolve_shared_output_path
-    from utk_curio.backend.app.datasets.service import _computed_output_format
+    from utk_curio.backend.app.datasets.provenance import computed_output_format
 
     dtype = (data_type or "").strip().lower()
     if dtype == "outputs":
@@ -331,7 +331,7 @@ def install_node_output(
     src = resolve_shared_output_path(path_ref, data_type=data_type)
     if src is None:
         return None
-    fmt = _computed_output_format(src.name, data_type)
+    fmt = computed_output_format(src.name, data_type)
     store_name = src.name if src.suffix else path_ref
     return install_computed_file_for_node(
         user_key,
