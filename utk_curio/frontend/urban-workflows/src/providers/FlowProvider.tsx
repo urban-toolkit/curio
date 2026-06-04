@@ -39,6 +39,7 @@ import { useToastContext } from "./ToastProvider";
 import { useCollab } from "./CollaborationProvider";
 import { pythonInterpreter, jsInterpreter } from "../hook/useCode";
 import { normalizeFlowInput } from "../utils/flowOutputRef";
+import { DEFAULT_SAVE_OUTPUT_DATASET } from "../utils/saveOutputDataset";
 
 
 export interface IOutput {
@@ -143,6 +144,8 @@ interface FlowContextProps {
     playAllNodes: () => void;
     playNodesUpTo: (targetNodeId: string) => void;
     signalNodeExecDone: (nodeId: string) => void;
+    defaultSaveOutputDataset: boolean;
+    setDefaultSaveOutputDataset: (value: boolean) => void;
 }
 
 // Stable context for NodeContainer — only updates when goal/minimized change, NOT on node drag
@@ -255,6 +258,8 @@ export const FlowContext = createContext<FlowContextProps>({
     playAllNodes: () => {},
     playNodesUpTo: () => {},
     signalNodeExecDone: () => {},
+    defaultSaveOutputDataset: false,
+    setDefaultSaveOutputDataset: () => {},
 });
 
 function computeTopologicalLevels(nodes: Node[], edges: Edge[]): string[][] {
@@ -311,6 +316,9 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const markNodeExecutedRef = useRef<(nodeId: string) => void>(() => {});
     const markNodeStaleRef = useRef<(nodeId: string) => void>(() => {});
     const markDirtyRef = useRef<() => void>(() => {});
+    const [defaultSaveOutputDataset, setDefaultSaveOutputDataset] = useState(
+        DEFAULT_SAVE_OUTPUT_DATASET,
+    );
 
     // Collaboration broadcasters. The provider may be a no-op (when
     // --collab is off or no project is loaded), in which case every
@@ -1358,6 +1366,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 loading,
 
                 ...workflowOps,
+                defaultSaveOutputDataset,
+                setDefaultSaveOutputDataset,
 
             }}
         >

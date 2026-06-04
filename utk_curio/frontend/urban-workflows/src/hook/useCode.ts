@@ -41,6 +41,7 @@ type CreateCodeNodeOptions = {
     dashboardHeight?: number;
     datasetRefs?: string[];
     appliedDatasets?: Record<string, unknown>;
+    saveOutputDataset?: boolean;
 };
 
 interface IUseCode {
@@ -49,7 +50,15 @@ interface IUseCode {
 }
 
 export function useCode(): IUseCode {
-    const { addNode, setOutputs, setInteractions, applyNewPropagation, applyNewOutput, loadParsedTrill } = useFlowContext();
+    const {
+        addNode,
+        setOutputs,
+        setInteractions,
+        applyNewPropagation,
+        applyNewOutput,
+        loadParsedTrill,
+        defaultSaveOutputDataset,
+    } = useFlowContext();
     const { loadNodeProvenance } = useProvenanceContext();
     const { getPosition } = usePosition();
 
@@ -250,6 +259,7 @@ export function useCode(): IUseCode {
             dashboardHeight = undefined,
             datasetRefs = undefined,
             appliedDatasets = undefined,
+            saveOutputDataset = undefined,
         } = options;
 
         const node: Node = {
@@ -282,6 +292,10 @@ export function useCode(): IUseCode {
                 dashboardHeight,
                 datasetRefs,
                 appliedDatasets,
+                saveOutputDataset:
+                    saveOutputDataset !== undefined
+                        ? saveOutputDataset
+                        : defaultSaveOutputDataset,
                 input: "",
                 inputTypes: [],
                 keywords,
@@ -293,7 +307,7 @@ export function useCode(): IUseCode {
 
         return node;
 
-    }, [addNode, outputCallback, getPosition]);
+    }, [addNode, outputCallback, getPosition, defaultSaveOutputDataset]);
 
     const createCodeNode = useCallback((nodeType: string, options: CreateCodeNodeOptions = {}) => {
         let node = generateCodeNode(nodeType, options);

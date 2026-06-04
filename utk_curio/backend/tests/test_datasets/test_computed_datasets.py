@@ -419,6 +419,7 @@ def test_process_python_code_auto_installs_outputs_bundle(client, user_and_token
             "nodeId": node_id,
             "dataflowId": project_id,
             "input": {"path": "", "dataType": "str"},
+            "saveOutputDataset": True,
         }),
         headers=_auth(token),
     )
@@ -481,6 +482,7 @@ def test_process_python_code_auto_installs_dataset(client, user_and_token, monke
             "nodeId": node_id,
             "dataflowId": project_id,
             "input": {"path": "", "dataType": "str"},
+            "saveOutputDataset": True,
         }),
         headers=_auth(token),
     )
@@ -491,6 +493,40 @@ def test_process_python_code_auto_installs_dataset(client, user_and_token, monke
     expected_id = f"computed.{sanitize_node_id_segment(node_id)}"
     assert inst["id"] == expected_id
     assert inst["dirName"] == f"{expected_id}@1"
+
+
+def test_process_python_code_skips_auto_install_when_save_disabled(client, user_and_token, monkeypatch):
+    from unittest.mock import MagicMock
+
+    _, token = user_and_token
+    project_id = _create_project(client, token, name="Save off")
+    node_id = "node-save-off"
+
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "stdout": "",
+        "stderr": "",
+        "output": {"path": "art-1", "dataType": "dataframe"},
+    }
+    monkeypatch.setattr(
+        "utk_curio.backend.app.api.routes._sandbox_call",
+        lambda *args, **kwargs: mock_response,
+    )
+
+    resp = client.post(
+        "/processPythonCode",
+        data=json.dumps({
+            "code": "    return df\n",
+            "nodeType": "PYTHON_COMPUTATION",
+            "nodeId": node_id,
+            "dataflowId": project_id,
+            "input": {"path": "", "dataType": "str"},
+            "saveOutputDataset": False,
+        }),
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert resp.get_json().get("installedDataset") is None
 
     catalog = client.get(
         f"/api/datasets/catalog?includeHub=false&dataflowId={project_id}",

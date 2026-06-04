@@ -100,7 +100,7 @@ def _worker_init():
     }
 
 
-def execute_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None):
+def execute_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True):
     """
     Execute user code in-process using pre-loaded library globals.
 
@@ -203,12 +203,13 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 # Save output to DuckDB, tagged with the session that produced it.
                 result_path = save_to_duckdb(output, node_id=node_type, session_id=session_id)
 
-                # For tabular outputs (DataFrame / GeoDataFrame) also save a named
-                # Parquet file directly in the shared data directory so the dataset
-                # catalog can discover and auto-install it.
-                dataset_file = save_dataset_parquet(output, out_kind)
+                dataset_file = None
+                if save_dataset:
+                    dataset_file = save_dataset_parquet(output, out_kind)
 
-                result = {'path': result_path, 'dataType': out_kind, 'dataset': dataset_file}
+                result = {'path': result_path, 'dataType': out_kind}
+                if dataset_file:
+                    result['dataset'] = dataset_file
                 t_save = time.perf_counter()
 
         except BaseException:

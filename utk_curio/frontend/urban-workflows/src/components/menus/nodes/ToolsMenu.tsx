@@ -16,6 +16,7 @@ import {
     type ToolsMenuTooltipSide,
 } from "./toolsMenuPackagePalette";
 import { DatasetsPaletteDropdown } from "./datasetPalette";
+import { SaveOutputToggle } from "../../nodes/SaveOutputToggle";
 import styles from "./ToolsMenu.module.css";
 
 const DraggableTool = memo(function DraggableTool({
@@ -115,7 +116,7 @@ const ToolsMenu = memo(function ToolsMenu() {
     const packageTypes = paletteTypes.filter((d) => !isBuiltin(d));
     const coreGroups = groupPaletteTypes(coreTypes);
     const packageGroups = groupPalettePackages(packageTypes);
-    const { playAllNodes } = useFlowContext();
+    const { playAllNodes, defaultSaveOutputDataset, setDefaultSaveOutputDataset } = useFlowContext();
     return (
         <div id="tools-palette-dock" className={styles.paletteDock}>
             <div id="tools-menu" className={styles.builtinStack}>
@@ -128,9 +129,23 @@ const ToolsMenu = memo(function ToolsMenu() {
                         </Fragment>
                     ))}
                 </div>
-                <button className={styles.playAllButton} onClick={playAllNodes} title="Run all nodes">
-                    <FontAwesomeIcon icon={faForwardStep} />
-                </button>
+                <div className={styles.playAllRow}>
+                    <button
+                        type="button"
+                        className={styles.playAllButton}
+                        onClick={playAllNodes}
+                        title="Run all nodes"
+                        aria-label="Run all nodes"
+                    >
+                        <FontAwesomeIcon icon={faForwardStep} />
+                    </button>
+                    <SaveOutputToggle
+                        variant="toolbar"
+                        id="save-output-default"
+                        checked={defaultSaveOutputDataset}
+                        onChange={setDefaultSaveOutputDataset}
+                    />
+                </div>
             </div>
             <DatasetsPaletteDropdown />
             <PackagesPaletteDropdown groups={packageGroups} />

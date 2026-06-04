@@ -63,6 +63,7 @@ import uuid
 import os
 import time
 from utk_curio.backend.config import (
+    CURIO_DEFAULT_SAVE_NODE_OUTPUT,
     GUEST_LLM_API_TYPE,
     GUEST_LLM_BASE_URL,
     GUEST_LLM_API_KEY,
@@ -358,6 +359,12 @@ def process_python_code():
     node_id = request.json.get('nodeId') or None
     input = _parse_input_ref(request.json.get('input'))
 
+    save_output_dataset = request.json.get(
+        'saveOutputDataset', CURIO_DEFAULT_SAVE_NODE_OUTPUT,
+    )
+    if isinstance(save_output_dataset, str):
+        save_output_dataset = save_output_dataset.strip().lower() not in ('0', 'false', 'no')
+
     session_id = get_current_token()
     t1 = _time.perf_counter()
     response = _sandbox_call(
@@ -369,6 +376,7 @@ def process_python_code():
             "nodeType": nodeType,
             "dataType": input['dataType'],
             "session_id": session_id,
+            "save_dataset": bool(save_output_dataset),
         }),
         headers={"Content-Type": "application/json"},
     )
@@ -407,7 +415,7 @@ def process_python_code():
     from utk_curio.backend.app.datasets.auto_install import auto_install_node_output
 
     installed_dataset = None
-    if isinstance(output, dict) and node_id:
+    if save_output_dataset and isinstance(output, dict) and node_id:
         installed_dataset = auto_install_node_output(
             user=getattr(g, "user", None),
             node_id=node_id,
@@ -441,6 +449,12 @@ def process_javascript_code():
     node_id = request.json.get('nodeId') or None
     input = _parse_input_ref(request.json.get('input'))
 
+    save_output_dataset = request.json.get(
+        'saveOutputDataset', CURIO_DEFAULT_SAVE_NODE_OUTPUT,
+    )
+    if isinstance(save_output_dataset, str):
+        save_output_dataset = save_output_dataset.strip().lower() not in ('0', 'false', 'no')
+
     session_id = get_current_token()
     t1 = _time.perf_counter()
     response = _sandbox_call(
@@ -452,6 +466,7 @@ def process_javascript_code():
             "nodeType": nodeType,
             "dataType": input['dataType'],
             "session_id": session_id,
+            "save_dataset": bool(save_output_dataset),
         }),
         headers={"Content-Type": "application/json"},
     )
@@ -489,7 +504,7 @@ def process_javascript_code():
     from utk_curio.backend.app.datasets.auto_install import auto_install_node_output
 
     installed_dataset = None
-    if isinstance(output, dict) and node_id:
+    if save_output_dataset and isinstance(output, dict) and node_id:
         installed_dataset = auto_install_node_output(
             user=getattr(g, "user", None),
             node_id=node_id,

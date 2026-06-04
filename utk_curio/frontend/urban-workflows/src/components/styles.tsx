@@ -71,6 +71,8 @@ import { useStarterContext } from "../providers/StarterProvider";
 import { useCode } from "../hook/useCode";
 import { TrillGenerator } from "TrillGenerator";
 import { ICodeData } from "types";
+import { SaveOutputToggle } from "./nodes/SaveOutputToggle";
+import { resolveSaveOutputDataset } from "../utils/saveOutputDataset";
 
 const MIN_NODE_WIDTH = 200;
 const MIN_NODE_HEIGHT = 150;
@@ -140,7 +142,9 @@ export const NodeContainer = ({
         dashboardOn,
         dashboardLocked,
         markDirty,
+        defaultSaveOutputDataset,
     } = useFlowContext();
+    const saveOutputDataset = resolveSaveOutputDataset(data, defaultSaveOutputDataset);
     const { getNodes, getEdges } = useReactFlow();
     const { getStarters, deleteStarter, fetchStarters } = useStarterContext();
     const { createCodeNode, loadTrill } = useCode();
@@ -861,6 +865,19 @@ export const NodeContainer = ({
                                     )}
                                 </Col> : null
                             }
+                            {!disablePlay ? (
+                                <Col md="auto" style={{ padding: 0, display: "flex", alignItems: "center" }}>
+                                    <SaveOutputToggle
+                                        variant="node"
+                                        id={`save-output-${data.nodeId}`}
+                                        checked={saveOutputDataset}
+                                        disabled={isLoading}
+                                        onChange={(next) => {
+                                            updateDataNode(nodeId, { ...data, saveOutputDataset: next });
+                                        }}
+                                    />
+                                </Col>
+                            ) : null}
                             {output != undefined ? (
                                 <Col
                                     md={2}

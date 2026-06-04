@@ -13,7 +13,9 @@ export class JavaScriptInterpreter {
         nodeType: NodeTemplateId,
         nodeId: string,
         workflow_name: string,
-        nodeExecProv: any
+        nodeExecProv: any,
+        dataflowId?: string | null,
+        saveOutputDataset = false,
     ) {
         const callbackError = (message: string) => {
             callback({
@@ -38,6 +40,9 @@ export class JavaScriptInterpreter {
                 input: input,
                 inputTypes: inputTypes,
                 nodeType: nodeType,
+                nodeId: nodeId,
+                ...(dataflowId ? { dataflowId } : {}),
+                saveOutputDataset,
             }),
             headers: {
                 "Content-type": "application/json; charset=UTF-8",

@@ -8,6 +8,7 @@ import { NodeTemplateId } from "../../registry/types";
 import Editor, { Monaco } from "@monaco-editor/react";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { applyInstalledDatasetToProject } from "../../services/datasetCatalog/datasetCatalogApi";
+import { resolveSaveOutputDataset } from "../../utils/saveOutputDataset";
 import { useProvenanceContext } from "../../providers/ProvenanceProvider";
 import { useCollab, CodeProposal } from "../../providers/CollaborationProvider";
 import { ICodeData } from "../../types";
@@ -40,7 +41,15 @@ function CodeEditor({
     const [code, setCode] = useState<string>(""); // code with all original markers
     const [execCount, setExecCount] = useState<number>(0);
 
-    const { workflowNameRef, markNodeExecuted, markNodeStale, signalNodeExecDone, projectId, setDataflowDatasets } = useFlowContext();
+    const {
+        workflowNameRef,
+        markNodeExecuted,
+        markNodeStale,
+        signalNodeExecDone,
+        projectId,
+        setDataflowDatasets,
+        defaultSaveOutputDataset,
+    } = useFlowContext();
     const { nodeExecProv } = useProvenanceContext();
     const collab = useCollab();
 
@@ -157,7 +166,9 @@ function CodeEditor({
         // also update the React state here so the dataset appears in the
         // drawer immediately and is included in the next manual save even
         // if the backend spec write failed (e.g. project not saved yet).
-        applyInstalledDatasetToProject(result.installedDataset, setDataflowDatasets);
+        if (resolveSaveOutputDataset(data, defaultSaveOutputDataset)) {
+            applyInstalledDatasetToProject(result.installedDataset, setDataflowDatasets);
+        }
 
         if (hasOutput) {
             let outputContent = stdoutBlock;
@@ -203,6 +214,7 @@ function CodeEditor({
             workflowNameRef.current,
             nodeExecProv,
             projectId,
+            resolveSaveOutputDataset(data, defaultSaveOutputDataset),
         );
     }, [replacedCodeDirty]);
 

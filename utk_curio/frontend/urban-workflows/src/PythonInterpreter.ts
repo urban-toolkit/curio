@@ -23,6 +23,7 @@ export class PythonInterpreter {
         workflow_name: string,
         nodeExecProv: any,
         dataflowId?: string | null,
+        saveOutputDataset = false,
     ) {
         const callbackError = (message: string) => {
             callback({
@@ -75,6 +76,7 @@ export class PythonInterpreter {
                 nodeType: nodeType, // new
                 nodeId: nodeId,
                 ...(dataflowId ? { dataflowId } : {}),
+                saveOutputDataset,
             }),
             headers: {
                 "Content-type": "application/json; charset=UTF-8",
