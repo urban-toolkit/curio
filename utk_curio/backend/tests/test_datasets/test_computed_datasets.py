@@ -396,6 +396,7 @@ def test_process_python_code_auto_installs_outputs_bundle(client, user_and_token
     project_id = _create_project(client, token, name="Bundle auto install")
     node_id = "node-utci"
 
+    release_connection()
     init_db()
     parent_id = save_to_duckdb(([1, 2, 3], [10, 20]), node_id=node_id)
     release_connection()

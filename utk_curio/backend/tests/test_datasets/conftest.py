@@ -20,6 +20,9 @@ class TestConfig:
 def app(tmp_path):
     # Wire a fresh temp workspace so every test gets its own isolated
     # file-system sandbox (shared data dir, user store, etc.).
+    from utk_curio.sandbox.util.db import release_connection
+
+    release_connection()
     shared_data = tmp_path / ".curio" / "data"
     shared_data.mkdir(parents=True)
     prev_cwd = os.environ.get("CURIO_LAUNCH_CWD")
@@ -34,6 +37,7 @@ def app(tmp_path):
         _db.session.remove()
         _db.drop_all()
 
+    release_connection()
     # Restore env vars so parallel/sequential tests don't interfere.
     if prev_cwd is not None:
         os.environ["CURIO_LAUNCH_CWD"] = prev_cwd

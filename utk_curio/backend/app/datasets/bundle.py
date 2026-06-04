@@ -141,9 +141,15 @@ def resolve_output_bundle_parts(parent_art_id: str) -> list[BundlePart]:
     if not row or row[0] != "outputs" or not row[1]:
         return []
 
-    try:
-        child_ids = json.loads(row[1])
-    except (json.JSONDecodeError, TypeError):
+    raw_children = row[1]
+    if isinstance(raw_children, list):
+        child_ids = raw_children
+    elif isinstance(raw_children, str) and raw_children:
+        try:
+            child_ids = json.loads(raw_children)
+        except (json.JSONDecodeError, TypeError):
+            return []
+    else:
         return []
     if not isinstance(child_ids, list):
         return []
