@@ -139,6 +139,13 @@ const useTableData = ({ data }: { data: INodeData }) => {
         } else {
           wrappers = [data.input];
         }
+      } else if (typeof data.input === "string" && data.input.trim()) {
+        wrappers = [{ path: data.input.trim() }];
+      }
+
+      if (wrappers.length === 0) {
+        setTabData([]);
+        return { code: "success", content: "" };
       }
 
       // Fetch each wrapper by filename or path

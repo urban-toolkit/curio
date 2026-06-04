@@ -3,6 +3,7 @@ import Tabs from 'react-bootstrap/Tabs';
 import Tab from 'react-bootstrap/Tab';
 import { TabularPreviewTable } from '../../../components/tables/TabularPreviewTable';
 import { fetchPreviewData } from '../../../services/api';
+import { sandboxArtifactId } from '../../../utils/flowOutputRef';
 import { rowsFromParseOutput } from '../../../utils/tabularPreview';
 
 interface DataPoolContentProps {
@@ -36,9 +37,7 @@ const ContentComponent = ({
       let cancelled = false;
 
       const loadPreviewData = async () => {
-          const fileId = data.input && typeof data.input === "object"
-              ? (data.input.filename ?? data.input.path)
-              : null;
+          const fileId = sandboxArtifactId(data.input);
 
           if (!fileId) {
               setPreviewTable([]);

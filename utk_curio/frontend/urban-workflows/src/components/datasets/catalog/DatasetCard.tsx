@@ -64,8 +64,6 @@ export interface DatasetCardProps {
   publishAllowed?: boolean;
   publishingId?: string | null;
   draggable?: boolean;
-  /** When true the Install button label changes to "Reinstall". */
-  reinstall?: boolean;
   onDragStart?: (event: React.DragEvent<HTMLElement>) => void;
   onDragEnd?: () => void;
   onInstall: (dataset: DatasetCatalogItem) => void;
@@ -85,7 +83,6 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
   publishAllowed = true,
   publishingId = null,
   draggable = true,
-  reinstall = false,
   onDragStart,
   onDragEnd,
   onInstall,
@@ -176,7 +173,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
             disabled={cardBusy}
             onClick={() => onInstall(dataset)}
           >
-            {reinstall ? "Reinstall" : "Install"}
+            Install
           </button>
         ) : null}
 

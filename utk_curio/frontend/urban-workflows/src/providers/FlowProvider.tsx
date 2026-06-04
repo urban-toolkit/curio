@@ -38,11 +38,12 @@ import { useWorkflowOperations } from "../hook/useWorkflowOperations";
 import { useToastContext } from "./ToastProvider";
 import { useCollab } from "./CollaborationProvider";
 import { pythonInterpreter, jsInterpreter } from "../hook/useCode";
+import { normalizeFlowInput } from "../utils/flowOutputRef";
 
 
 export interface IOutput {
     nodeId: string;
-    output: string;
+    output: unknown;
 }
 
 export interface IInteraction {
@@ -492,6 +493,47 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         [setNodes]
     );
 
+    // Push a source node's cached output to every direct downstream consumer.
+    const propagateDownstreamInputs = (sourceId: string, rawOutput: unknown) => {
+        const currentEdges = reactFlow.getEdges();
+        const nodesAffected: string[] = [];
+        for (const edge of currentEdges) {
+            if (edge.sourceHandle == "in/out" && edge.targetHandle == "in/out") continue;
+            if (sourceId == edge.source) {
+                nodesAffected.push(edge.target);
+            }
+        }
+        if (!nodesAffected.length) return;
+
+        const normalized = normalizeFlowInput(rawOutput);
+        const inputPayload = normalized === "" ? "" : normalized;
+
+        setNodes((nds: any) =>
+            nds.map((node: any) => {
+                if (!nodesAffected.includes(node.id)) return node;
+
+                if (getFlowNodeCanonicalType(node) == NodeType.MERGE_FLOW) {
+                    const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
+                    const sourceIndex = mergeSlotForSource(
+                        currentEdges,
+                        node.id,
+                        sourceId,
+                        sourceList,
+                    );
+                    if (sourceIndex >= 0) {
+                        setMergeSlot(inputList, sourceList, sourceIndex, inputPayload, sourceId);
+                    }
+                    return { ...node, data: { ...node.data, input: inputList, source: sourceList } };
+                }
+
+                if (inputPayload === "") {
+                    return { ...node, data: { ...node.data, input: "", source: "" } };
+                }
+                return { ...node, data: { ...node.data, input: inputPayload, source: sourceId } };
+            })
+        );
+    };
+
     // updates a single box with the new input (new connections)
     const applyOutput = (
         inNodeType: NodeType,
@@ -502,20 +544,10 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     ) => {
         if (sourceHandle == "in/out" && targetHandle == "in/out") return;
 
-        let getOutput = outId;
-        let setInput = inId;
-
-        let output = "";
-
-        setOutputs((opts: any) =>
-            opts.map((opt: any) => {
-                if (opt.nodeId == getOutput) {
-                    output = opt.output;
-                }
-
-                return opt;
-            })
-        );
+        const entry = outputsRef.current.find((opt) => opt.nodeId === outId);
+        const raw = entry?.output;
+        const normalized =
+            raw != null && raw !== "" ? normalizeFlowInput(raw) : "";
 
         setNodes((nds: any) =>
             nds.map((node: any) => {
@@ -525,12 +557,12 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                     const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
                     const handleIndex = parseHandleIndex(targetHandle);
                     if (handleIndex >= 0) {
-                        setMergeSlot(inputList, sourceList, handleIndex, output, outId);
+                        setMergeSlot(inputList, sourceList, handleIndex, normalized, outId);
                     }
                     return { ...node, data: { ...node.data, input: inputList, source: sourceList } };
                 }
 
-                return { ...node, data: { ...node.data, input: output, source: outId } };
+                return { ...node, data: { ...node.data, input: normalized, source: outId } };
             })
         );
     };
@@ -810,7 +842,17 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                             edge: customConnection,
                         });
 
-                        return addEdge(customConnection, eds);
+                        const nextEdges = addEdge(customConnection, eds);
+                        const sourceId = conn.source as string;
+                        const cached = outputsRef.current.find((o) => o.nodeId === sourceId);
+                        if (cached?.output != null && cached.output !== "") {
+                            // Edge is in the graph now — fan out to all downstream nodes
+                            // (merge slots, multiple pools) using the live edge list.
+                            queueMicrotask(() => {
+                                propagateDownstreamInputs(sourceId, cached.output);
+                            });
+                        }
+                        return nextEdges;
                     });
                 }
             }
@@ -924,42 +966,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
     // a box generated a new output. Propagate it to directly connected boxes
     const applyNewOutput = (newOutput: IOutput) => {
-        const currentEdges = reactFlow.getEdges();
-
-        // Find which nodes are directly downstream of the output source
-        const nodesAffected: string[] = [];
-        for (const edge of currentEdges) {
-            if (edge.sourceHandle == "in/out" && edge.targetHandle == "in/out") continue;
-            if (newOutput.nodeId == edge.source) {
-                nodesAffected.push(edge.target);
-            }
-        }
-
-        setNodes((nds: any) =>
-            nds.map((node: any) => {
-                if (!nodesAffected.includes(node.id)) return node;
-
-                if (getFlowNodeCanonicalType(node) == NodeType.MERGE_FLOW) {
-                    const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
-                    const sourceIndex = mergeSlotForSource(
-                        currentEdges,
-                        node.id,
-                        newOutput.nodeId,
-                        sourceList,
-                    );
-                    if (sourceIndex >= 0) {
-                        inputList[sourceIndex] = newOutput.output;
-                        sourceList[sourceIndex] = newOutput.nodeId;
-                    }
-                    return { ...node, data: { ...node.data, input: inputList, source: sourceList } };
-                }
-
-                if (newOutput.output == undefined) {
-                    return { ...node, data: { ...node.data, input: "", source: "" } };
-                }
-                return { ...node, data: { ...node.data, input: newOutput.output, source: newOutput.nodeId } };
-            })
-        );
+        propagateDownstreamInputs(newOutput.nodeId, newOutput.output);
 
         setOutputs((opts: any) => {
             let added = false;

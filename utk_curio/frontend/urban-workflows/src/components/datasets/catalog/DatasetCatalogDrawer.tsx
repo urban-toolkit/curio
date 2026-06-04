@@ -489,10 +489,8 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
                 {items.map((dataset) => {
                   const isComputedInstalled =
                     dataset.origin === "computed" && dataset.installed === true;
-                  const needsReinstall =
-                    isComputedInstalled && dataset.needsReinstall === true;
                   const isInstalled =
-                    (isComputedInstalled && !needsReinstall) ||
+                    isComputedInstalled ||
                     (!isComputedInstalled &&
                       (dataset.installed === true ||
                         (dataset.origin !== "hub" && dataset.origin !== "computed")));
@@ -503,7 +501,6 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
                       dataset={dataset}
                       isInstalled={isInstalled}
                       isPublished={isPublished}
-                      reinstall={needsReinstall}
                       busy={busyId === dataset.id || publishingId === dataset.id}
                       publishingId={publishingId}
                       onDragStart={(event) => handleDatasetDragStart(dataset, event)}
