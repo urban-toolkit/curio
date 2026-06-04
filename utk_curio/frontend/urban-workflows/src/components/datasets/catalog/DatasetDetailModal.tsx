@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from "react";
 import ModalShell from "../../ModalShell";
-import { DatasetCatalogItem, datasetCatalogApi } from "../../../services/datasetCatalog";
+import { DatasetCatalogItem, datasetCatalogApi, type DatasetCatalogQuery } from "../../../services/datasetCatalog";
 import { DatasetDetailPanel } from "./DatasetDetailPanel";
 
 export interface DatasetDetailModalProps {
   datasetId: string;
   dataflowId?: string | null;
+  liveOutputs?: DatasetCatalogQuery["liveOutputs"];
   fallbackDataset?: DatasetCatalogItem | null;
   onClose: () => void;
 }
@@ -13,6 +14,7 @@ export interface DatasetDetailModalProps {
 export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
   datasetId,
   dataflowId = null,
+  liveOutputs,
   fallbackDataset = null,
   onClose,
 }) => {
@@ -26,7 +28,7 @@ export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
     setError(null);
     if (fallbackDataset) setDataset(fallbackDataset);
     void datasetCatalogApi
-      .getDataset(datasetId, { dataflowId })
+      .getDataset(datasetId, { dataflowId, liveOutputs })
       .then((item) => {
         if (!cancelled) setDataset(item);
       })
@@ -42,7 +44,7 @@ export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [dataflowId, datasetId]);
+  }, [dataflowId, datasetId, liveOutputs]);
 
   return (
     <ModalShell onClose={onClose} size="xlarge" layer="overlay">
@@ -52,6 +54,7 @@ export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
         error={error}
         variant="modal"
         dataflowId={dataflowId}
+        liveOutputs={liveOutputs}
       />
     </ModalShell>
   );

@@ -1,3 +1,4 @@
+import type { Dispatch, SetStateAction } from "react";
 import { apiFetch, getToken } from "../../utils/authApi";
 import {
   DatasetCatalogItem,
@@ -18,6 +19,39 @@ export function notifyDatasetCatalogRefresh(): void {
   }
 }
 
+export interface InstalledDatasetPayload {
+  id: string;
+  dirName: string;
+  origin?: string;
+  producerNodeId?: string | null;
+}
+
+/** Sync a backend auto-install into project spec state and refresh open catalog UIs. */
+export function applyInstalledDatasetToProject(
+  inst: InstalledDatasetPayload | null | undefined,
+  setDataflowDatasets: Dispatch<SetStateAction<unknown[]>>,
+): void {
+  if (!inst?.id || !inst?.dirName) return;
+  setDataflowDatasets((prev: unknown[]) => {
+    const rows = Array.isArray(prev) ? prev : [];
+    const next = rows.filter(
+      (row: unknown) => {
+        const r = row as { datasetId?: string; id?: string };
+        return (r?.datasetId || r?.id) !== inst.id;
+      },
+    );
+    const ref = {
+      datasetId: inst.id,
+      dirName: inst.dirName,
+      origin: inst.origin ?? "computed",
+      producerNodeId: inst.producerNodeId ?? null,
+      installedAt: new Date().toISOString(),
+    };
+    return [...next, ref];
+  });
+  notifyDatasetCatalogRefresh();
+}
+
 function queryString(query: DatasetCatalogQuery = {}): string {
   const params = new URLSearchParams();
   if (query.dataflowId) params.set("dataflowId", query.dataflowId);
@@ -36,6 +70,9 @@ function queryString(query: DatasetCatalogQuery = {}): string {
 function previewQueryString(query: DatasetPreviewQuery = {}): string {
   const params = new URLSearchParams();
   if (query.dataflowId) params.set("dataflowId", query.dataflowId);
+  if (query.liveOutputs && query.liveOutputs.length > 0) {
+    params.set("liveOutputs", btoa(JSON.stringify(query.liveOutputs)));
+  }
   if (query.offset != null) params.set("offset", String(query.offset));
   if (query.rowLimit != null) params.set("rowLimit", String(query.rowLimit));
   const raw = params.toString();
@@ -47,7 +84,10 @@ export const datasetCatalogApi = {
     return apiFetch(`/api/datasets/catalog${queryString(query)}`);
   },
 
-  getDataset(datasetId: string, query: Pick<DatasetCatalogQuery, "dataflowId"> = {}): Promise<DatasetCatalogItem> {
+  getDataset(
+    datasetId: string,
+    query: Pick<DatasetCatalogQuery, "dataflowId" | "liveOutputs"> = {},
+  ): Promise<DatasetCatalogItem> {
     return apiFetch(`/api/datasets/${encodeURIComponent(datasetId)}${queryString(query)}`);
   },
 
@@ -87,7 +127,7 @@ export const datasetCatalogApi = {
       tags?: string[];
       license?: string;
       dataflowId?: string | null;
-      liveOutputs?: Array<{ node_id: string; filename: string }>;
+      liveOutputs?: Array<{ node_id: string; filename: string; data_type?: string }>;
     },
   ): Promise<DatasetCatalogItem> {
     return apiFetch("/api/datasets/publish", {

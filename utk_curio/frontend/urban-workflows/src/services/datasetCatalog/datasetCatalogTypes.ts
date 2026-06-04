@@ -79,6 +79,7 @@ export interface DatasetPreviewResponse {
 
 export interface DatasetPreviewQuery {
   dataflowId?: string | null;
+  liveOutputs?: DatasetCatalogQuery["liveOutputs"];
   offset?: number;
   rowLimit?: number;
 }
@@ -91,7 +92,7 @@ export interface DatasetCatalogQuery {
   sort?: DatasetSortMode;
   includeHub?: boolean;
   /** Current (possibly unsaved) node outputs to show as computed datasets immediately. */
-  liveOutputs?: Array<{ node_id: string; filename: string }>;
+  liveOutputs?: Array<{ node_id: string; filename: string; data_type?: string }>;
 }
 
 export interface DatasetDragPayload {
@@ -125,6 +126,16 @@ export function datasetProvenanceLabel(origin: DatasetOrigin): string {
 /** True when the dataset is listed in the committed catalog (``hub``) or marked published from a project. */
 export function isDatasetPublishedToCatalog(dataset: DatasetCatalogItem): boolean {
   return dataset.origin === "hub" || dataset.publishedToHub === true;
+}
+
+/** User installation: computed / imported / hub-copy in the project, not yet published. */
+export function isUserInstalledDataset(dataset: DatasetCatalogItem): boolean {
+  return dataset.installed === true && !isDatasetPublishedToCatalog(dataset);
+}
+
+/** Live node output in the current session that is not yet in the user dataset store. */
+export function isProjectSessionDataset(dataset: DatasetCatalogItem): boolean {
+  return dataset.origin === "computed" && dataset.installed !== true;
 }
 
 /** Total for the “Imported” rail: ``imported`` + ``hub`` + ``source_node`` facet buckets (hub rows bucketed as computed are excluded). */

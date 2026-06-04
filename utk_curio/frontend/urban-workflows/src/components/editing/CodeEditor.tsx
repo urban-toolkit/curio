@@ -7,7 +7,7 @@ import { NodeTemplateId } from "../../registry/types";
 // Editor
 import Editor, { Monaco } from "@monaco-editor/react";
 import { useFlowContext } from "../../providers/FlowProvider";
-import { notifyDatasetCatalogRefresh } from "../../services/datasetCatalog/datasetCatalogApi";
+import { applyInstalledDatasetToProject } from "../../services/datasetCatalog/datasetCatalogApi";
 import { useProvenanceContext } from "../../providers/ProvenanceProvider";
 import { useCollab, CodeProposal } from "../../providers/CollaborationProvider";
 import { ICodeData } from "../../types";
@@ -157,23 +157,7 @@ function CodeEditor({
         // also update the React state here so the dataset appears in the
         // drawer immediately and is included in the next manual save even
         // if the backend spec write failed (e.g. project not saved yet).
-        const inst = result.installedDataset;
-        if (inst?.id && inst?.dirName) {
-            setDataflowDatasets((prev: any[]) => {
-                const next = prev.filter(
-                    (row: any) => (row?.datasetId || row?.id) !== inst.id,
-                );
-                const ref = {
-                    datasetId: inst.id,
-                    dirName: inst.dirName,
-                    origin: inst.origin ?? "computed",
-                    producerNodeId: inst.producerNodeId ?? null,
-                    installedAt: new Date().toISOString(),
-                };
-                return [...next, ref];
-            });
-            notifyDatasetCatalogRefresh();
-        }
+        applyInstalledDatasetToProject(result.installedDataset, setDataflowDatasets);
 
         if (hasOutput) {
             let outputContent = stdoutBlock;

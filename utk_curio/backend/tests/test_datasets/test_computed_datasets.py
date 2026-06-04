@@ -83,6 +83,41 @@ def test_computed_indexer_produces_items():
     assert csv_item["id"] == ComputedDatasetIndexer().list_items(manifest=manifest)[0]["id"]
 
 
+def test_computed_indexer_skips_outputs_bundle_datatype():
+    """Tuple / multi-output intermediates must not appear as catalog datasets."""
+    from utk_curio.backend.app.datasets.service import ComputedDatasetIndexer
+
+    indexer = ComputedDatasetIndexer()
+    items = indexer.list_items(live_outputs=[
+        {"node_id": "utci-node", "filename": "1780604607968_abc", "data_type": "outputs"},
+        {"node_id": "zonal-node", "filename": "1780604607999_out.parquet", "data_type": "geodataframe"},
+    ])
+    assert len(items) == 1
+    assert items[0]["producerNodeId"] == "zonal-node"
+    assert items[0]["format"] == "parquet"
+
+
+def test_computed_indexer_uses_data_type_for_extensionless_artifacts():
+    """Bare DuckDB artifact IDs should not default to JSON when data_type is known."""
+    from utk_curio.backend.app.datasets.service import ComputedDatasetIndexer
+
+    indexer = ComputedDatasetIndexer()
+    items = indexer.list_items(live_outputs=[
+        {"node_id": "load-raster", "filename": "1780602628735_abc", "data_type": "raster"},
+        {"node_id": "load-csv", "filename": "1780602588331_def", "data_type": "dataframe"},
+        {"node_id": "compute", "filename": "1780602590219_out.parquet", "data_type": "dataframe"},
+    ])
+
+    assert len(items) == 3
+    raster = next(i for i in items if i["producerNodeId"] == "load-raster")
+    table = next(i for i in items if i["producerNodeId"] == "load-csv")
+    parquet = next(i for i in items if i["producerNodeId"] == "compute")
+
+    assert raster["format"] == "geotiff"
+    assert table["format"] == "parquet"
+    assert parquet["format"] == "parquet"
+
+
 # ---------------------------------------------------------------------------
 # Unit-level: _resolve_computed_output_path
 # ---------------------------------------------------------------------------
@@ -145,6 +180,31 @@ def test_resolve_item_path_delegates_for_computed(app):
 # ---------------------------------------------------------------------------
 # Integration: catalog lists computed datasets
 # ---------------------------------------------------------------------------
+
+def test_save_installs_to_user_store_not_project_data(client, user_and_token):
+    """Saving a project must not copy outputs into project/data/."""
+    import os
+    from pathlib import Path
+
+    _, token = user_and_token
+    project_id = _create_project(client, token)
+    shared = Path(os.environ["CURIO_SHARED_DATA"])
+    (shared / "persist_me.csv").write_text("x,y\n1,2\n", encoding="utf-8")
+
+    _save_project_with_output(client, token, project_id, "persist_me.csv", node_id="node-save")
+
+    launch = Path(os.environ["CURIO_LAUNCH_CWD"])
+    proj_data = launch / ".curio" / "users" / "1" / "projects" / project_id / "data"
+    assert not (proj_data / "persist_me.csv").exists()
+
+    user_datasets = launch / ".curio" / "users" / "1" / "datasets"
+    installed = list(user_datasets.rglob("persist_me.csv"))
+    assert installed, "save should install into the user datasets store"
+
+    spec = client.get(f"/api/projects/{project_id}", headers=_auth(token)).get_json()
+    datasets = (spec.get("spec") or {}).get("dataflow", {}).get("datasets") or []
+    assert any(d.get("producerNodeId") == "node-save" and d.get("dirName") for d in datasets)
+
 
 def test_catalog_lists_computed_datasets_for_dataflow(client, user_and_token):
     """Computed datasets from the project manifest appear in the catalog."""

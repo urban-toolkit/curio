@@ -24,6 +24,8 @@ import { updateNodeData, updateNodesByMap, updateEdgesByMap, extractNodeFieldMap
 import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
 import { TrillGenerator } from "../TrillGenerator";
 import { projectsApi, OutputRef } from "../api/projectsApi";
+import { flowOutputRefFromRaw } from "../utils/flowOutputRef";
+import { notifyDatasetCatalogRefresh } from "../services/datasetCatalog/datasetCatalogApi";
 import {
     getCurrentProjectPackagesList,
     setCurrentProject,
@@ -532,25 +534,20 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
      */
     const buildOutputRefs = (): OutputRef[] =>
         deps.outputsRef.current
-            .map((o: any) => {
-                const raw = o?.output;
-                // Prefer the dedicated dataset parquet file (output.dataset) saved
-                // by the sandbox so copy_outputs persists the right file on save.
-                // Fall back to output.path (DuckDB art_id) for legacy / non-tabular nodes.
-                let filename: string | null = null;
-                if (raw && typeof raw === "object") {
-                    if (typeof raw.dataset === "string" && raw.dataset.trim()) {
-                        filename = raw.dataset.trim();
-                    } else if (typeof raw.path === "string" && raw.path.trim()) {
-                        filename = raw.path.trim();
-                    }
-                } else if (typeof raw === "string") {
-                    filename = raw;
-                }
-                if (!filename || !o?.nodeId) return null;
-                return { node_id: o.nodeId, filename };
-            })
+            .map((o: any) => flowOutputRefFromRaw(o?.nodeId ?? "", o?.output))
             .filter((r: OutputRef | null): r is OutputRef => r !== null);
+
+    const syncDatasetsFromSavedSpec = useCallback(
+        (spec: Record<string, unknown> | null | undefined) => {
+            const datasets = (spec as { dataflow?: { datasets?: unknown[] } } | undefined)?.dataflow
+                ?.datasets;
+            if (Array.isArray(datasets)) {
+                setDataflowDatasets(datasets);
+            }
+            notifyDatasetCatalogRefresh();
+        },
+        [setDataflowDatasets],
+    );
 
     const saveCurrentProject = useCallback(async (nameOverride?: string) => {
         if (viewerMode === "shared") {
@@ -582,6 +579,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 outputs: outputRefs,
                 name,
             });
+            syncDatasetsFromSavedSpec(detail.spec);
             setProjectSavedAt(new Date());
             setProjectDirty(false);
             return detail;
@@ -591,6 +589,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 spec,
                 outputs: outputRefs,
             });
+            syncDatasetsFromSavedSpec(detail.spec);
             setProjectId(detail.id);
             setProjectName(detail.name);
             setProjectSavedAt(new Date());
@@ -609,7 +608,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             setCurrentProject(detail.id, Array.isArray(seededPackages) ? seededPackages : []);
             return detail;
         }
-    }, [projectId, projectName, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode]);
+    }, [projectId, projectName, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode, syncDatasetsFromSavedSpec]);
 
     // Auto-save every 30 seconds when a project has been explicitly saved at least once
     useEffect(() => {
@@ -644,13 +643,14 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             spec,
             outputs: outputRefs,
         });
+        syncDatasetsFromSavedSpec(detail.spec);
         setProjectId(detail.id);
         setProjectName(detail.name);
         setProjectSavedAt(new Date());
         setProjectDirty(false);
         setViewerMode("owner");
         return detail;
-    }, [workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves]);
+    }, [workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, syncDatasetsFromSavedSpec]);
 
     const loadProject = useCallback(async (id: string) => {
         const result = await projectsApi.get(id);

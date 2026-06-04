@@ -403,95 +403,23 @@ def process_python_code():
         flush=True,
     )
 
-    # ── Auto-install computed dataset ────────────────────────────────────────
-    # When the sandbox produces a tabular output (DataFrame / GeoDataFrame),
-    # it saves a named Parquet file in the shared-data directory and reports
-    # the filename in output['dataset'].  We immediately install that file
-    # into the user's dataset store so it shows up in the catalog without
-    # any manual "Install" click.
-    #
-    # Note: we intentionally do NOT gate on `not stderr` here.  Python code
-    # can produce warnings (FutureWarning, DeprecationWarning, etc.) that land
-    # in stderr even when the execution succeeded and produced a valid DataFrame.
-    # If the code actually crashed, `result` never gets a 'dataset' key so
-    # `dataset_filename` will be None and we skip installation naturally.
+    # Auto-install into the user store (not the public Data Catalog).
+    from utk_curio.backend.app.datasets.auto_install import auto_install_node_output
+
     installed_dataset = None
-    dataset_filename = output.get('dataset') if isinstance(output, dict) else None
-    if dataset_filename and node_id:
-        try:
-            from datetime import datetime as _dt, timezone as _tz
-            from pathlib import Path as _Path
-            from utk_curio.backend.app.projects.storage import _shared_data_dir
-            from utk_curio.backend.app.datasets.installer import (
-                InstallerError,
-                install_computed_file_for_node,
+    if isinstance(output, dict) and node_id:
+        installed_dataset = auto_install_node_output(
+            user=getattr(g, "user", None),
+            node_id=node_id,
+            sandbox_output=output,
+            dataflow_id=request.json.get("dataflowId") or None,
+        )
+        if installed_dataset:
+            print(
+                f"[processPythonCode] auto-installed dataset "
+                f"{installed_dataset.get('id')} for node {node_id}",
+                flush=True,
             )
-
-            user = getattr(g, 'user', None)
-            if user is not None:
-                from utk_curio.backend.app.projects.services import _user_dir_key
-                user_key = _user_dir_key(user)
-                parquet_path = _shared_data_dir() / dataset_filename
-                if parquet_path.is_file():
-                    file_bytes = parquet_path.read_bytes()
-                    result = install_computed_file_for_node(
-                        user_key,
-                        file_bytes,
-                        dataset_filename,
-                        'parquet',
-                        node_id=node_id,
-                        title=None,
-                    )
-                    installed_dataset = {
-                        'id': result.manifest.id,
-                        'dirName': result.manifest.dir_name,
-                        'origin': 'computed',
-                        'format': 'parquet',
-                        'path': (result.dest / result.manifest.data_file).as_posix(),
-                        'producerNodeId': node_id,
-                        'replaced': result.replaced,
-                    }
-                    print(
-                        f"[processPythonCode] auto-installed dataset "
-                        f"{result.manifest.id} for node {node_id}",
-                        flush=True,
-                    )
-
-                    # ── Persist the ref in the spec.trill.json immediately ─────────
-                    # If the frontend sent the current dataflowId we can write the
-                    # spec right now, keeping it in sync even before the next manual
-                    # save.  This is best-effort — a failure here never blocks the
-                    # execution response.
-                    dataflow_id = request.json.get('dataflowId') or None
-                    if dataflow_id:
-                        try:
-                            from utk_curio.backend.app.datasets.service import DatasetCatalogService
-                            now_iso = _dt.now(_tz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                            ref = {
-                                'datasetId': result.manifest.id,
-                                'dirName': result.manifest.dir_name,
-                                'origin': 'computed',
-                                'producerNodeId': node_id,
-                                'installedAt': now_iso,
-                            }
-                            svc = DatasetCatalogService(user)
-                            refs = svc.installed.list_refs(dataflow_id)
-                            existing = next(
-                                (r for r in refs if r.get('datasetId') == result.manifest.id),
-                                None,
-                            )
-                            if existing:
-                                existing.update(ref)
-                            else:
-                                refs.append(ref)
-                            svc.installed.replace_refs(dataflow_id, refs)
-                        except Exception as _spec_exc:  # noqa: BLE001
-                            print(
-                                f"[processPythonCode] spec ref write failed: {_spec_exc}",
-                                flush=True,
-                            )
-        except Exception as _exc:  # noqa: BLE001 – never block execution on install failure
-            print(f"[processPythonCode] auto-install failed: {_exc}", flush=True)
 
     return {
         'stdout': stdout,
@@ -510,6 +438,7 @@ def process_javascript_code():
 
     code = request.json['code']
     nodeType = request.json['nodeType']
+    node_id = request.json.get('nodeId') or None
     input = _parse_input_ref(request.json.get('input'))
 
     session_id = get_current_token()
@@ -557,7 +486,24 @@ def process_javascript_code():
         flush=True,
     )
 
-    return {'stdout': stdout, 'stderr': stderr, 'input': input, 'output': output}
+    from utk_curio.backend.app.datasets.auto_install import auto_install_node_output
+
+    installed_dataset = None
+    if isinstance(output, dict) and node_id:
+        installed_dataset = auto_install_node_output(
+            user=getattr(g, "user", None),
+            node_id=node_id,
+            sandbox_output=output,
+            dataflow_id=request.json.get("dataflowId") or None,
+        )
+
+    return {
+        'stdout': stdout,
+        'stderr': stderr,
+        'input': input,
+        'output': output,
+        'installedDataset': installed_dataset,
+    }
 
 
 @bp.route('/installPackages', methods=['POST'])

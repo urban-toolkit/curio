@@ -13,11 +13,15 @@ import {
   beginDatasetDrag,
   endDatasetDrag,
   writeDatasetDragData,
+  DATASET_CATALOG_REFRESH_EVENT,
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
   datasetProvenanceLabel,
+  isProjectSessionDataset,
+  isUserInstalledDataset,
   useDatasetCatalog,
 } from "../../../../services/datasetCatalog";
+import { flowOutputRefFromRaw } from "../../../../utils/flowOutputRef";
 import styles from "./DatasetsPaletteDropdown.module.css";
 
 function formatAbbreviation(dataset: DatasetCatalogItem): string {
@@ -94,13 +98,27 @@ function DatasetRow({ dataset }: { dataset: DatasetCatalogItem }) {
 export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const { projectId } = useFlowContext();
+  const { projectId, outputs } = useFlowContext();
   const { openDatasetCatalogDrawer } = useDatasetCatalogDrawer();
+  const liveOutputs = useMemo(() => {
+    if (!outputs || outputs.length === 0) return undefined;
+    return outputs
+      .map((o) => flowOutputRefFromRaw(o?.nodeId ?? "", o?.output))
+      .filter((r): r is NonNullable<typeof r> => r !== null);
+  }, [outputs]);
+
   const catalog = useDatasetCatalog({
     dataflowId: projectId,
     includeHub: false,
     sort: "recent",
+    liveOutputs,
   });
+
+  useEffect(() => {
+    const onRefresh = () => void catalog.reload();
+    window.addEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
+    return () => window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
+  }, [catalog.reload]);
 
   useEffect(() => {
     if (!open) return;
@@ -126,7 +144,11 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
     [catalog.items],
   );
   const installedRows = useMemo(
-    () => rows.filter((item) => item.origin !== "computed"),
+    () => rows.filter((item) => isUserInstalledDataset(item)),
+    [rows],
+  );
+  const projectRows = useMemo(
+    () => rows.filter((item) => isProjectSessionDataset(item)),
     [rows],
   );
 
@@ -187,7 +209,7 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
 
             <PaletteAccordion
               title="Project datasets"
-              count={total}
+              count={projectRows.length}
               selected
               defaultOpen
               actions={(
@@ -202,10 +224,10 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
                 </button>
               )}
             >
-              {rows.length > 0 ? (
-                rows.map((dataset) => <DatasetRow key={`${dataset.origin}:${dataset.id}`} dataset={dataset} />)
+              {projectRows.length > 0 ? (
+                projectRows.map((dataset) => <DatasetRow key={`${dataset.origin}:${dataset.id}`} dataset={dataset} />)
               ) : (
-                <div className={styles.sectionEmpty}>No datasets in this dataflow yet.</div>
+                <div className={styles.sectionEmpty}>No live session outputs yet.</div>
               )}
             </PaletteAccordion>
           </div>

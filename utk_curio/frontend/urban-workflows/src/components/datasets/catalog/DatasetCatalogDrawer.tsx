@@ -17,6 +17,7 @@ import {
 import { DatasetCard } from "./DatasetCard";
 import { DatasetDetailModal } from "./DatasetDetailModal";
 import { InstalledDatasetsList } from "./InstalledDatasetsList";
+import { flowOutputRefFromRaw } from "../../../utils/flowOutputRef";
 import styles from "./DatasetCatalogDrawer.module.css";
 
 export interface DatasetCatalogDrawerProps {
@@ -64,27 +65,8 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
   const liveOutputs = useMemo(() => {
     if (!outputs || outputs.length === 0) return undefined;
     return outputs
-      .map((o) => {
-        const raw = o?.output;
-        // output may be a plain filename string OR the sandbox result object
-        // {path, dataType, dataset?}.  Prefer the dedicated dataset parquet file
-        // (output.dataset) so the catalog can discover the file in the shared
-        // data dir; fall back to output.path (DuckDB art_id) for legacy nodes.
-        let filename: string | null = null;
-        if (raw && typeof raw === "object") {
-          const r = raw as { dataset?: unknown; path?: unknown };
-          if (typeof r.dataset === "string" && r.dataset.trim()) {
-            filename = r.dataset.trim();
-          } else if (typeof r.path === "string" && r.path.trim()) {
-            filename = r.path.trim();
-          }
-        } else if (typeof raw === "string") {
-          filename = raw.trim();
-        }
-        if (!filename || !o?.nodeId) return null;
-        return { node_id: o.nodeId, filename };
-      })
-      .filter((r): r is { node_id: string; filename: string } => r !== null && r.filename !== "");
+      .map((o) => flowOutputRefFromRaw(o?.nodeId ?? "", o?.output))
+      .filter((r): r is NonNullable<typeof r> => r !== null);
   }, [outputs]);
 
   const includeHub = tab === "featured" || tab === "browse" || tab === "computed";
@@ -561,6 +543,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
         <DatasetDetailModal
           datasetId={detailDatasetId}
           dataflowId={projectId}
+          liveOutputs={liveOutputs}
           fallbackDataset={detailFallback}
           onClose={closeDatasetDetails}
         />

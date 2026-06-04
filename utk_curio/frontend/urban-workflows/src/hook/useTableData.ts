@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { formatDate, mapTypes } from "../utils/formatters";
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { fetchData } from "../services/api";
+import { sandboxArtifactId } from "../utils/flowOutputRef";
 
 const useTableData = ({ data }: { data: INodeData }) => {
   const [tabData, setTabData] = useState<any[]>([]);
@@ -143,7 +144,7 @@ const useTableData = ({ data }: { data: INodeData }) => {
       // Fetch each wrapper by filename or path
       const fetched = await Promise.all(
         wrappers.map(async (w) => {
-          const fileId = w.filename ?? w.path;
+          const fileId = sandboxArtifactId(w);
           if (!fileId) return null;
           try {
             return await fetchData(fileId);

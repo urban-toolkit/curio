@@ -68,14 +68,12 @@ def _auto_install_computed_outputs(
     if not output_refs or not spec:
         return spec
 
-    from pathlib import Path
-
     from utk_curio.backend.app.datasets.installer import (
         install_computed_file_for_node,
     )
+    from utk_curio.backend.app.datasets.output_paths import resolve_shared_output_path
+    from utk_curio.backend.app.datasets.service import _computed_output_format
     from utk_curio.backend.app.datasets.storage import DATASET_DIR_RE
-
-    shared = storage._shared_data_dir()
 
     dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
     if not isinstance(dataflow, dict):
@@ -84,14 +82,17 @@ def _auto_install_computed_outputs(
     datasets_refs: list[dict] = list(dataflow.get("datasets") or [])
 
     changed = False
+    from utk_curio.backend.app.datasets.service import _is_catalogable_output
+
     for ref in output_refs:
         filename = ref.filename
         node_id = ref.node_id
+        data_type = getattr(ref, "data_type", None)
+        if not _is_catalogable_output(data_type):
+            continue
 
-        # Find the parquet in the shared data dir (copy_outputs may have already
-        # moved it to the project folder, but the shared copy should still exist).
-        src = shared / filename
-        if not src.is_file():
+        src = resolve_shared_output_path(filename, data_type=data_type)
+        if src is None:
             continue
 
         try:
@@ -99,13 +100,12 @@ def _auto_install_computed_outputs(
         except OSError:
             continue
 
-        from utk_curio.backend.app.datasets.service import SUPPORTED_SUFFIXES as _SUFF
-
-        fmt = _SUFF.get(Path(filename).suffix.lower(), "parquet")
+        fmt = _computed_output_format(src.name, data_type)
+        store_name = src.name if src.suffix else filename
 
         try:
             result = install_computed_file_for_node(
-                user_key, file_bytes, filename, fmt, node_id=node_id
+                user_key, file_bytes, store_name, fmt, node_id=node_id
             )
         except Exception:  # noqa: BLE001 – best-effort; don't block save
             continue
@@ -210,11 +210,22 @@ def _to_detail(p, spec=None, outputs=None) -> ProjectDetail:
     )
 
 
+def _output_ref_dict(ref: OutputRef) -> dict:
+    entry = {"node_id": ref.node_id, "filename": ref.filename}
+    if ref.data_type:
+        entry["data_type"] = ref.data_type
+    return entry
+
+
 def _output_refs_from_manifest(manifest: Optional[dict]) -> List[OutputRef]:
     if not manifest:
         return []
     return [
-        OutputRef(node_id=o["node_id"], filename=o["filename"])
+        OutputRef(
+            node_id=o["node_id"],
+            filename=o["filename"],
+            data_type=o.get("data_type"),
+        )
         for o in manifest.get("outputs", [])
     ]
 
@@ -253,15 +264,18 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
     data.spec = seed_spec_with_defaults(ukey, data.spec)
 
     storage.write_spec(ukey, project_id, data.spec)
-    copied = storage.copy_outputs(ukey, project_id, data.outputs)
-    storage.write_manifest(ukey, project_id, project.spec_revision, copied,
+    output_refs = list(data.outputs)
+    effective_spec = _auto_install_computed_outputs(ukey, output_refs, data.spec) or data.spec
+    if effective_spec is not data.spec:
+        storage.write_spec(ukey, project_id, effective_spec)
+    storage.write_manifest(ukey, project_id, project.spec_revision, output_refs,
         name=data.name,
         description=data.description,
         thumbnail_accent=data.thumbnail_accent or "peach",
     )
 
     db.session.commit()
-    return _to_detail(project, spec=data.spec, outputs=copied)
+    return _to_detail(project, spec=effective_spec, outputs=output_refs)
 
 
 def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
@@ -283,12 +297,11 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
 
     effective_spec = data.spec if data.spec is not None else existing_spec
     if data.outputs is not None:
-        output_refs = storage.copy_outputs(ukey, project_id, data.outputs)
-        # Auto-install computed outputs into the user's dataset store and
-        # update the spec with lean refs (computed.<node_id>@1) so the catalog
-        # can resolve them without needing live_outputs.
+        output_refs = list(data.outputs)
+        # Install into users/<user>/datasets/ and register lean refs in the spec.
+        # Do not copy artifacts into project/data/ — that folder is legacy-only.
         updated_spec = _auto_install_computed_outputs(ukey, output_refs, effective_spec)
-        if updated_spec is not effective_spec:
+        if updated_spec is not None and updated_spec is not effective_spec:
             effective_spec = updated_spec
             storage.write_spec(ukey, project_id, effective_spec)
     else:
@@ -331,17 +344,21 @@ def load_project(user, project_id: str) -> dict:
     output_refs: List[OutputRef] = []
     if manifest and "outputs" in manifest:
         output_refs = [
-            OutputRef(node_id=o["node_id"], filename=o["filename"])
+            OutputRef(
+                node_id=o["node_id"],
+                filename=o["filename"],
+                data_type=o.get("data_type"),
+            )
             for o in manifest["outputs"]
         ]
 
-    hydrated = storage.hydrate_outputs(ukey, project_id, output_refs)
+    hydrated = storage.hydrate_outputs(ukey, project_id, output_refs, spec=spec)
 
     db.session.commit()
     return {
         "project": _to_detail(project, spec=spec, outputs=hydrated),
         "spec": spec,
-        "outputs": [{"node_id": r.node_id, "filename": r.filename} for r in hydrated],
+        "outputs": [_output_ref_dict(r) for r in hydrated],
     }
 
 
@@ -371,11 +388,15 @@ def load_shared_project(project_id: str) -> dict:
     output_refs: List[OutputRef] = []
     if manifest and "outputs" in manifest:
         output_refs = [
-            OutputRef(node_id=o["node_id"], filename=o["filename"])
+            OutputRef(
+                node_id=o["node_id"],
+                filename=o["filename"],
+                data_type=o.get("data_type"),
+            )
             for o in manifest["outputs"]
         ]
 
-    hydrated = storage.hydrate_outputs(ukey, project_id, output_refs)
+    hydrated = storage.hydrate_outputs(ukey, project_id, output_refs, spec=spec)
 
     detail = _to_detail(project, spec=spec, outputs=hydrated)
     # Don't leak server filesystem layout to shared-link visitors.
@@ -384,7 +405,7 @@ def load_shared_project(project_id: str) -> dict:
     return {
         "project": detail,
         "spec": spec,
-        "outputs": [{"node_id": r.node_id, "filename": r.filename} for r in hydrated],
+        "outputs": [_output_ref_dict(r) for r in hydrated],
     }
 
 
@@ -540,7 +561,11 @@ def duplicate_project(user, project_id: str) -> ProjectDetail:
     output_refs: List[OutputRef] = []
     if manifest and "outputs" in manifest:
         output_refs = [
-            OutputRef(node_id=o["node_id"], filename=o["filename"])
+            OutputRef(
+                node_id=o["node_id"],
+                filename=o["filename"],
+                data_type=o.get("data_type"),
+            )
             for o in manifest["outputs"]
         ]
 

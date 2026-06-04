@@ -16,11 +16,13 @@ function formatTotal(total: number): string {
 export interface DatasetTablePreviewProps {
   dataset: DatasetCatalogItem;
   dataflowId?: string | null;
+  liveOutputs?: Array<{ node_id: string; filename: string; data_type?: string }>;
 }
 
 export const DatasetTablePreview: React.FC<DatasetTablePreviewProps> = ({
   dataset,
   dataflowId = null,
+  liveOutputs,
 }) => {
   const [page, setPage] = useState(1);
   const [preview, setPreview] = useState<DatasetPreviewResponse | null>(null);
@@ -41,7 +43,7 @@ export const DatasetTablePreview: React.FC<DatasetTablePreviewProps> = ({
     let cancelled = false;
     setFetching(true);
     void datasetCatalogApi
-      .preview(dataset.id, { dataflowId, offset, rowLimit: PAGE_SIZE })
+      .preview(dataset.id, { dataflowId, liveOutputs, offset, rowLimit: PAGE_SIZE })
       .then((response) => {
         if (!cancelled) {
           setPreview(response);
@@ -59,7 +61,7 @@ export const DatasetTablePreview: React.FC<DatasetTablePreviewProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [dataflowId, dataset.id, offset]);
+  }, [dataflowId, dataset.id, liveOutputs, offset]);
 
   const previewRows = useMemo(
     () => (preview?.rows || []) as Record<string, unknown>[],

@@ -216,6 +216,10 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
 
         finally:
             os.chdir(original_dir)
+            # Drop the sandbox write lock so the backend can open read-only
+            # DuckDB (catalog, auto-install) as soon as this request returns.
+            from utk_curio.sandbox.util.db import release_connection
+            release_connection()
             t1 = time.perf_counter()
             print(
                 f"[exec] load={t_load-t0:.3f}s  code={t_code-t_load:.3f}s"
@@ -440,3 +444,6 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
                 'output': {'path': '', 'dataType': 'str'}}
     except Exception:
         return {'stdout': [], 'stderr': traceback.format_exc(), 'output': {'path': '', 'dataType': 'str'}}
+    finally:
+        from utk_curio.sandbox.util.db import release_connection
+        release_connection()

@@ -25,11 +25,13 @@ const ICON_CLASS: Record<ReturnType<typeof fieldIconKind>, string> = {
 export interface DatasetSchemaPanelProps {
   dataset: DatasetCatalogItem;
   dataflowId?: string | null;
+  liveOutputs?: Array<{ node_id: string; filename: string; data_type?: string }>;
 }
 
 export const DatasetSchemaPanel: React.FC<DatasetSchemaPanelProps> = ({
   dataset,
   dataflowId = null,
+  liveOutputs,
 }) => {
   const [filter, setFilter] = useState("");
   const [fields, setFields] = useState<DatasetSchemaField[]>(
@@ -52,7 +54,7 @@ export const DatasetSchemaPanel: React.FC<DatasetSchemaPanelProps> = ({
     let cancelled = false;
     setFetching(true);
     void datasetCatalogApi
-      .preview(dataset.id, { dataflowId, offset: 0, rowLimit: 1 })
+      .preview(dataset.id, { dataflowId, liveOutputs, offset: 0, rowLimit: 1 })
       .then((response) => {
         if (cancelled) return;
         if (response.unsupported) {
@@ -80,7 +82,7 @@ export const DatasetSchemaPanel: React.FC<DatasetSchemaPanelProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [dataflowId, dataset.id, dataset.schema?.fields]);
+  }, [dataflowId, dataset.id, dataset.schema?.fields, liveOutputs]);
 
   const filteredFields = useMemo(() => {
     const needle = filter.trim().toLowerCase();

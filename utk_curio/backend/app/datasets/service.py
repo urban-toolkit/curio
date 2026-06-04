@@ -62,6 +62,55 @@ SUPPORTED_SUFFIXES = {
     ".shp": "shp",
 }
 
+# Curio sandbox ``detect_kind`` strings → catalog ``DatasetFormat`` values.
+SANDBOX_DATATYPE_TO_FORMAT: dict[str, str] = {
+    "raster": "geotiff",
+    "geodataframe": "parquet",
+    "dataframe": "parquet",
+    "dict": "json",
+    "list": "json",
+    "json": "json",
+    "str": "json",
+    "int": "json",
+    "float": "json",
+    "bool": "json",
+    "null": "json",
+    "unknown": "json",
+    "outputs": "json",
+}
+
+# Tuple / multi-artifact bundles (``detect_kind`` → ``outputs``) are workflow
+# intermediates, not installable tabular datasets for the Data Catalog.
+NON_CATALOG_DATATYPES = frozenset({"outputs"})
+
+
+def _is_catalogable_output(data_type: str | None) -> bool:
+    if not data_type:
+        return True
+    return data_type.strip().lower() not in NON_CATALOG_DATATYPES
+
+
+def _computed_output_format(filename: str, data_type: str | None = None) -> str:
+    """Resolve catalog format from filename suffix and/or sandbox dataType."""
+    suffix_fmt = SUPPORTED_SUFFIXES.get(Path(filename).suffix.lower())
+    if suffix_fmt:
+        return suffix_fmt
+
+    if data_type:
+        mapped = SANDBOX_DATATYPE_TO_FORMAT.get(data_type.strip().lower())
+        if mapped:
+            return mapped
+
+    from utk_curio.backend.app.datasets.output_paths import resolve_shared_output_path
+
+    resolved = resolve_shared_output_path(filename, data_type=data_type)
+    if resolved is not None:
+        suffix_fmt = SUPPORTED_SUFFIXES.get(resolved.suffix.lower())
+        if suffix_fmt:
+            return suffix_fmt
+
+    return "json"
+
 
 class DatasetCatalogError(Exception):
     def __init__(self, message: str, status: int = 400):
@@ -472,7 +521,10 @@ class ComputedDatasetIndexer:
             if not filename:
                 continue
             raw = str(filename)
-            fmt = SUPPORTED_SUFFIXES.get(Path(raw).suffix.lower(), "json")
+            data_type = output.get("data_type") or output.get("dataType")
+            if not _is_catalogable_output(data_type):
+                continue
+            fmt = _computed_output_format(raw, data_type)
             # Use the same stable node-based ID that install_computed_file_for_node
             # writes to the manifest so that the live-output item and the
             # user-store item share the same ID and are correctly deduped.
@@ -839,28 +891,57 @@ class DatasetCatalogService:
         filename = uri[len("curio://outputs/"):]
         if not filename:
             return None
-        from utk_curio.backend.app.projects.storage import _shared_data_dir
+        from utk_curio.backend.app.datasets.output_paths import resolve_shared_output_path
 
-        shared = _shared_data_dir()
+        resolved = resolve_shared_output_path(filename)
+        return resolved.as_posix() if resolved is not None else None
 
-        # 1. Exact filename match in the top-level shared-data dir (new-style
-        #    named parquet files written by save_dataset_parquet).
-        candidate = shared / filename
-        if candidate.is_file():
-            return candidate.as_posix()
+    def _mark_user_store_computed_installs(
+        self,
+        items: list[dict[str, Any]],
+        user_key: str,
+        installed_computed_filenames: dict[str, str],
+    ) -> None:
+        """Mark computed rows installed when ``computed.<node>@1`` exists on disk."""
+        from utk_curio.backend.app.datasets.installer import (
+            InstallerError,
+            resolve_installed_data_path,
+            sanitize_node_id_segment,
+        )
+        from utk_curio.backend.app.datasets.manifest import ManifestError, load_dataset_manifest
+        from utk_curio.backend.app.datasets.storage import dataset_dir
 
-        # 2. Legacy DuckDB artifact: the path stored in the ref is the bare
-        #    artifact ID (no extension).  DuckDB saves these as
-        #    ``artifacts/<id>.parquet`` inside the shared-data dir.  Only
-        #    parquet files are returned — compressed JSON artifacts
-        #    (.json.zlib) are an internal format and cannot be loaded with
-        #    standard Python tooling.
-        if "." not in Path(filename).name:
-            artifact_parquet = shared / "artifacts" / f"{filename}.parquet"
-            if artifact_parquet.is_file():
-                return artifact_parquet.as_posix()
+        for item in items:
+            if item.get("origin") != "computed":
+                continue
+            producer = item.get("producerNodeId")
+            if not producer:
+                continue
 
-        return None
+            dir_name = f"computed.{sanitize_node_id_segment(producer)}@1"
+            try:
+                installed_dir = dataset_dir(user_key, dir_name)
+                manifest = load_dataset_manifest(installed_dir)
+                data_path = resolve_installed_data_path(user_key, manifest)
+            except (InstallerError, ManifestError, OSError, ValueError):
+                continue
+
+            live_name = ""
+            uri = item.get("uri") or ""
+            if uri.startswith("curio://outputs/"):
+                live_name = Path(uri[len("curio://outputs/"):]).name
+
+            item["installed"] = True
+            item["dirName"] = dir_name
+            item["path"] = data_path.as_posix()
+            item["uri"] = f"curio://datasets/{dir_name}"
+            item["loaderSnippet"] = _loader_snippet(item["format"], data_path.as_posix())
+            if live_name and live_name != data_path.name:
+                item["needsReinstall"] = True
+            elif producer in installed_computed_filenames:
+                installed_name = installed_computed_filenames[producer]
+                if live_name and installed_name and live_name != installed_name:
+                    item["needsReinstall"] = True
 
     def _resolve_item_path(self, item: dict[str, Any]) -> str | None:
         # ── Computed datasets must be resolved via the shared-data directory
@@ -981,6 +1062,19 @@ class DatasetCatalogService:
                     installed_filename = installed_computed_filenames[pid]
                     if current_filename and installed_filename and current_filename != installed_filename:
                         item["needsReinstall"] = True
+
+        # Post-execution auto-install writes to the user dataset store immediately;
+        # reflect that in the catalog even before the next project save syncs spec refs.
+        try:
+            user_key = self._user_key()
+            self._mark_user_store_computed_installs(
+                items,
+                user_key,
+                installed_computed_filenames,
+            )
+        except DatasetCatalogError:
+            pass
+
         items = self._dedupe_items(items)
 
         # Enrich computed items: resolve their bare filename to an absolute path
@@ -1070,10 +1164,15 @@ class DatasetCatalogService:
         dataset_id: str,
         *,
         dataflow_id: str | None = None,
+        live_outputs: list[dict[str, Any]] | None = None,
         row_limit: int = 50,
         offset: int = 0,
     ) -> dict[str, Any]:
-        item = deepcopy(self.get_dataset(dataset_id, dataflow_id=dataflow_id))
+        item = deepcopy(self.get_dataset(
+            dataset_id,
+            dataflow_id=dataflow_id,
+            live_outputs=live_outputs,
+        ))
         resolved = self._resolve_item_path(item)
         if resolved:
             item["path"] = resolved

@@ -27,6 +27,7 @@ export interface DatasetDetailPanelProps {
   error?: string | null;
   variant?: "page" | "modal";
   dataflowId?: string | null;
+  liveOutputs?: Array<{ node_id: string; filename: string; data_type?: string }>;
   onBack?: () => void;
 }
 
@@ -36,6 +37,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
   error = null,
   variant = "modal",
   dataflowId = null,
+  liveOutputs,
   onBack,
 }) => {
   const [activeTab, setActiveTab] = useState<(typeof TABS)[number]>("Overview");
@@ -128,7 +130,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
 
       <div className={styles.inspectorBody}>
         <section className={styles.schemaColumn} aria-label="Schema">
-          <DatasetSchemaPanel dataset={dataset} dataflowId={dataflowId} />
+          <DatasetSchemaPanel dataset={dataset} dataflowId={dataflowId} liveOutputs={liveOutputs} />
         </section>
 
         <section className={styles.centerColumn} aria-label="Preview and lineage">
@@ -136,7 +138,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
             <div className={styles.previewSubtab}>
               <span className={styles.previewSubtabActive}>Table Preview</span>
             </div>
-            <DatasetTablePreview dataset={dataset} dataflowId={dataflowId} />
+            <DatasetTablePreview dataset={dataset} dataflowId={dataflowId} liveOutputs={liveOutputs} />
           </div>
 
           <div className={styles.lineageSection}>

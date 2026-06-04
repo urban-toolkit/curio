@@ -28,29 +28,61 @@ def _dataflow_id_from_request() -> str | None:
     return request.args.get("dataflowId") or request.args.get("projectId")
 
 
+def _normalize_live_output_entry(raw: dict) -> dict | None:
+    node_id = raw.get("node_id") or raw.get("nodeId")
+    filename = raw.get("filename")
+    if not node_id or not filename:
+        return None
+    entry: dict = {"node_id": str(node_id), "filename": str(filename)}
+    data_type = raw.get("data_type") or raw.get("dataType")
+    if data_type:
+        entry["data_type"] = str(data_type)
+    return entry
+
+
+def _parse_live_outputs(raw_live: str | None) -> list[dict] | None:
+    if not raw_live:
+        return None
+    try:
+        decoded = base64.b64decode(raw_live.encode()).decode("utf-8")
+        parsed = json.loads(decoded)
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(parsed, list):
+        return None
+    entries = [
+        normalized
+        for o in parsed
+        if isinstance(o, dict)
+        for normalized in [_normalize_live_output_entry(o)]
+        if normalized
+    ]
+    return entries or None
+
+
+def _normalize_live_outputs_list(raw: list | None) -> list[dict] | None:
+    if not raw or not isinstance(raw, list):
+        return None
+    entries = [
+        normalized
+        for o in raw
+        if isinstance(o, dict)
+        for normalized in [_normalize_live_output_entry(o)]
+        if normalized
+    ]
+    return entries or None
+
+
 @datasets_bp.route("/datasets/catalog", methods=["GET"])
 @require_auth
 def list_dataset_catalog():
     include_hub = request.args.get("includeHub", "true").lower() not in {"0", "false", "no"}
 
-    # Parse optional live outputs (base64-encoded JSON array of {node_id, filename}).
+    # Parse optional live outputs (base64-encoded JSON array of output refs).
     # These are the current execution outputs from the frontend that may not yet be
     # saved in the project manifest, allowing computed datasets to appear immediately
     # after node execution.
-    live_outputs = None
-    raw_live = request.args.get("liveOutputs")
-    if raw_live:
-        try:
-            decoded = base64.b64decode(raw_live.encode()).decode("utf-8")
-            parsed = json.loads(decoded)
-            if isinstance(parsed, list):
-                live_outputs = [
-                    {"node_id": o["node_id"], "filename": o["filename"]}
-                    for o in parsed
-                    if isinstance(o, dict) and o.get("node_id") and o.get("filename")
-                ]
-        except Exception:  # noqa: BLE001 – malformed payload is silently ignored
-            pass
+    live_outputs = _parse_live_outputs(request.args.get("liveOutputs"))
 
     try:
         payload = _service().list_catalog(
@@ -73,7 +105,11 @@ def list_dataset_catalog():
 @require_auth
 def get_dataset(dataset_id: str):
     try:
-        payload = _service().get_dataset(dataset_id, dataflow_id=_dataflow_id_from_request())
+        payload = _service().get_dataset(
+            dataset_id,
+            dataflow_id=_dataflow_id_from_request(),
+            live_outputs=_parse_live_outputs(request.args.get("liveOutputs")),
+        )
     except (DatasetCatalogError, ProjectError) as exc:
         return _error(str(exc), getattr(exc, "status", 400))
     except NotFoundError:
@@ -90,6 +126,7 @@ def preview_dataset(dataset_id: str):
         payload = _service().preview(
             dataset_id,
             dataflow_id=_dataflow_id_from_request(),
+            live_outputs=_parse_live_outputs(request.args.get("liveOutputs")),
             row_limit=max(1, min(int(row_limit), 500)),
             offset=max(0, int(offset)),
         )
@@ -128,7 +165,7 @@ def publish_dataset():
     dataset_id = body.get("datasetId")
     if not dataset_id:
         return _error("datasetId is required")
-    live_outputs = body.get("liveOutputs") or None
+    live_outputs = _normalize_live_outputs_list(body.get("liveOutputs"))
     try:
         payload = _service().publish_dataset(
             dataset_id,
