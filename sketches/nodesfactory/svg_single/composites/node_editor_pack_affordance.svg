@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1082 760" width="1082" height="760">
+  <title>Curio node editor - base + pack browse affordance</title>
+  <desc>1082x760 underlay (1x screenshot, no HiDPI scaling). The bottom toolbar
+        in the underlay runs y=625..680 with: play (x=80), Error (x=140), Templates
+        pill (x=195..262), dark code button (x=327..400), toolbox (x=535..555),
+        rows (x=720..740), undo (x=895..916). The free gap between the toolbox and
+        rows icons (x~565..713) cleanly fits a 156-wide secondary pill in-row;
+        the hint label sits above the toolbar in the empty area below the error
+        output panel rather than below the toolbar on the node's bottom edge.</desc>
+  <defs>
+    <style type="text/css">
+      .rubik { font-family: Rubik, -apple-system, BlinkMacSystemFont, sans-serif; }
+    </style>
+  </defs>
+
+  <image id="Base_Photo" width="1082" height="760" preserveAspectRatio="xMidYMid meet"
+    xlink:href="../../preview/Screenshot%202026-05-04%20at%2013.38.41.png"/>
+
+  <!-- Browse packs pill: slotted into the toolbar gap between the toolbox and
+       row-list icons, vertically centered on the toolbar icon row (y~635..670). -->
+  <g id="Overlay_BrowsePacks" transform="translate(566, 632)">
+    <rect width="156" height="36" rx="18" fill="#FFFFFF" stroke="#1E1F23" stroke-width="1.5"/>
+    <text class="rubik" x="20" y="24" font-size="13" font-weight="700" fill="#1E1F23">Browse packs</text>
+    <circle cx="138" cy="18" r="3" fill="#FBAA69"/>
+  </g>
+
+  <!-- Hint sits above the toolbar (canvas/output gap at y~595..625), away from
+       the toolbar icons and the node frame's bottom edge. -->
+  <g id="Overlay_Hint" transform="translate(566, 612)" opacity="0.9">
+    <text class="rubik" font-size="11" font-weight="500" fill="#666666">Adds nodes from installed packs</text>
+  </g>
+</svg>

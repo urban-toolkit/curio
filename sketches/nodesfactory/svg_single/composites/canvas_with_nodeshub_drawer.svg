@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 3356 1474" width="3356" height="1474">
+  <title>Curio canvas - base photo + Nodes hub overlay</title>
+  <desc>Pixel-accurate PNG underlay (3356x1474, HiDPI) plus vector overlays. Overlay font sizes are scaled to match the underlying screenshot resolution (roughly 2x design pixels) so chrome reads alongside the app's own text rather than being microscopic. Overlay positions land in the empty middle of the top bar, on/around the palette ribbon (x=98..288, y=278..918 in real coords), and as a right-side drawer that starts below the top bar (y=110).</desc>
+  <defs>
+    <style type="text/css">
+      .rubik { font-family: Rubik, -apple-system, BlinkMacSystemFont, sans-serif; }
+      .nav { font-size: 28px; font-weight: 700; fill: #FBAA69; }
+      .drawer-title { font-size: 36px; font-weight: 700; fill: #1E1F23; }
+      .drawer-meta  { font-size: 24px; font-weight: 400; fill: #666666; }
+      .pill   { font-size: 24px; font-weight: 700; fill: #1E1F23; }
+      .pill-d { font-size: 24px; font-weight: 700; fill: #FFFFFF; }
+      .section { font-size: 22px; font-weight: 700; fill: #fbfcf6; letter-spacing: 0.08em; }
+      .section-pack { font-size: 22px; font-weight: 700; fill: #FBAA69; letter-spacing: 0.08em; }
+      .hint { font-size: 18px; font-weight: 500; fill: rgba(255,255,255,0.7); }
+    </style>
+    <filter id="shadow" x="-20%" y="-5%" width="140%" height="110%">
+      <feDropShadow dx="-8" dy="0" stdDeviation="20" flood-color="#000000" flood-opacity="0.15"/>
+    </filter>
+  </defs>
+
+  <image id="Base_Photo" width="3356" height="1474" preserveAspectRatio="xMidYMid meet"
+    xlink:href="../../preview/Screenshot%202026-05-06%20at%2008.25.16.png"/>
+
+  <!-- Top bar: Nodes hub chip in the empty gap between Help v/Curio icon and the Shared Guest avatar -->
+  <g id="Overlay_MenuChip">
+    <rect x="1320" y="22" rx="6" width="216" height="64" fill="#2B2C31" stroke="rgba(255,255,255,0.16)" stroke-width="1"/>
+    <text class="rubik nav" x="1348" y="64">Nodes hub</text>
+  </g>
+
+  <!-- Section banners around the existing palette ribbon (x=98..288, y=278..918 in
+       real coords). The title "DefaultDataflow" baseline sits at y=180 real, the
+       palette starts at y=278, the play-forward button is at y=973..1026, and the
+       zoom controls live at y=1258..1310. BUILT-IN goes ABOVE the palette in the
+       gap below the title; the PACKS extension band goes BELOW the play button,
+       in the empty zone before the zoom controls. -->
+  <g id="Overlay_PaletteSections" opacity="0.96">
+    <!-- BUILT-IN header, in the gap between title and first palette icon row -->
+    <rect x="98" y="222" width="190" height="40" rx="2" fill="#1E1F23"/>
+    <text class="rubik section" x="118" y="250">BUILT-IN</text>
+
+    <!-- PACKS extension band: under the play button (y=1026), above zoom (y=1258) -->
+    <rect x="98" y="1060" width="190" height="180" rx="6" fill="#1E1F23" stroke="rgba(255,255,255,0.10)" stroke-width="1"/>
+    <text class="rubik section-pack" x="124" y="1100">PACKS</text>
+    <line x1="118" y1="1118" x2="268" y2="1118" stroke="rgba(251,170,105,0.35)" stroke-width="1"/>
+    <text class="rubik hint" x="124" y="1150">No packs yet</text>
+    <g id="GetPacksCTA" transform="translate(118, 1172)">
+      <rect width="150" height="48" rx="4" fill="#FBAA69"/>
+      <text class="rubik" x="22" y="32" font-size="20" font-weight="700" fill="#1E1F23">Get packs  +</text>
+    </g>
+  </g>
+
+  <!-- Right-side warehouse drawer; starts at y=110 (just below the 105-px top bar)
+       so it does not cut the menu, and runs to the bottom of the canvas. -->
+  <g id="Overlay_WarehouseDrawer" filter="url(#shadow)">
+    <rect x="2736" y="110" width="620" height="1364" fill="#FAFAFA" stroke="#E5E5E5" stroke-width="1"/>
+    <line x1="2736" y1="110" x2="2736" y2="1474" stroke="rgba(0,0,0,0.06)" stroke-width="2"/>
+
+    <text class="rubik drawer-title" x="2768" y="172">Node warehouse</text>
+    <text class="rubik drawer-meta"  x="2768" y="208">Featured packs for this Curio version</text>
+
+    <g id="Drawer_Search" transform="translate(2768,236)">
+      <rect width="552" height="60" rx="4" fill="#FFFFFF" stroke="#CCCCCC" stroke-width="1"/>
+      <text class="rubik drawer-meta" x="20" y="40" fill="#999999">Search packs...</text>
+    </g>
+
+    <text class="rubik" x="2768" y="338" font-size="22" font-weight="700" fill="#999999" letter-spacing="0.08em">FEATURED</text>
+
+    <g id="Drawer_Card1" transform="translate(2768,358)">
+      <rect width="552" height="132" rx="6" fill="#F9F9F9" stroke="#EEEEEE" stroke-width="1"/>
+      <rect x="16" y="16" width="100" height="100" rx="4" fill="#E8E8EA"/>
+      <text class="rubik" x="138" y="56" font-size="26" font-weight="700" fill="#1E1F23">UHVI heat layers</text>
+      <text class="rubik drawer-meta" x="138" y="92">Urban Lab - v2.1.0</text>
+      <g transform="translate(412,70)">
+        <rect width="124" height="46" rx="4" fill="#1E1F23"/>
+        <text class="rubik pill-d" x="34" y="32">Install</text>
+      </g>
+    </g>
+
+    <g id="Drawer_Card2" transform="translate(2768,510)">
+      <rect width="552" height="132" rx="6" fill="#F9F9F9" stroke="#EEEEEE" stroke-width="1"/>
+      <rect x="16" y="16" width="100" height="100" rx="4" fill="#E8E8EA"/>
+      <text class="rubik" x="138" y="56" font-size="26" font-weight="700" fill="#1E1F23">OSM extract toolkit</text>
+      <text class="rubik drawer-meta" x="138" y="92">Community - v1.0.4</text>
+      <g transform="translate(388,70)">
+        <rect width="148" height="46" rx="4" fill="#FFFFFF" stroke="#1E1F23" stroke-width="1.5"/>
+        <text class="rubik pill" x="32" y="32">Installed</text>
+      </g>
+    </g>
+
+    <g id="Drawer_PrimaryCTA" transform="translate(2768,1376)">
+      <rect width="552" height="64" rx="4" fill="#1E1F23"/>
+      <text class="rubik" x="156" y="42" font-size="24" font-weight="700" fill="#FFFFFF">Open full warehouse</text>
+    </g>
+  </g>
+</svg>

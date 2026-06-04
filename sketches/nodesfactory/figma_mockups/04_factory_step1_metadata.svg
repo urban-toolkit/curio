@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" width="1440" height="900" fill="none">
+  <title>Curio - Node factory step 1 (metadata)</title>
+  <desc>Authoring wizard, step 1 of 5. Curio chrome (Rubik / 1E1F23 / FBAA69). Stable group ids for Figma.</desc>
+  <defs>
+    <style type="text/css">
+      .f { font-family: Rubik, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+      .nav { font-size: 15px; font-weight: 700; fill: #fbfcf6; }
+      .nav-muted { font-size: 15px; font-weight: 700; fill: #fbfcf6; fill-opacity: 0.65; }
+      .nav-accent { font-size: 15px; font-weight: 700; fill: #FBAA69; }
+      .h1 { font-size: 24px; font-weight: 700; fill: #1E1F23; }
+      .crumb { font-size: 12px; font-weight: 500; fill: #777777; letter-spacing: 0.04em; }
+      .lbl { font-size: 11px; font-weight: 700; fill: #555555; letter-spacing: 0.04em; text-transform: uppercase; }
+      .field { font-size: 13px; font-weight: 400; fill: #1E1F23; }
+      .placeholder { font-size: 13px; font-weight: 400; fill: #999999; }
+      .help { font-size: 11px; font-weight: 400; fill: #777777; }
+      .step-num { font-size: 12px; font-weight: 700; fill: #FFFFFF; }
+      .step-num-dim { font-size: 12px; font-weight: 700; fill: #777777; }
+      .step-label { font-size: 12px; font-weight: 600; fill: #1E1F23; }
+      .step-label-dim { font-size: 12px; font-weight: 500; fill: #999999; }
+      .btn-w { font-size: 13px; font-weight: 700; fill: #FFFFFF; }
+      .btn-b { font-size: 13px; font-weight: 700; fill: #1E1F23; }
+      .preview-card-title { font-size: 14px; font-weight: 700; fill: #1E1F23; }
+      .preview-meta { font-size: 11px; font-weight: 400; fill: #777777; }
+    </style>
+  </defs>
+
+  <rect id="Frame_BG" width="1440" height="900" fill="#F5F5F5"/>
+
+  <g id="Header_App">
+    <rect width="1440" height="65" fill="#1E1F23"/>
+    <line x1="0" y1="65" x2="1440" y2="65" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+    <text class="f nav" x="20" y="42">Curio</text>
+    <g id="Menus" transform="translate(100,0)">
+      <text class="f nav-muted" x="0" y="42">File</text>
+      <text class="f nav-muted" x="58" y="42">View</text>
+      <text class="f nav-muted" x="120" y="42">Data</text>
+      <text class="f nav-muted" x="190" y="42">Provenance</text>
+      <text class="f nav-muted" x="315" y="42">Help</text>
+      <text class="f nav-accent" x="392" y="42">Nodes hub</text>
+    </g>
+    <text class="f nav-muted" x="1280" y="42" font-size="14px">Shared Guest</text>
+  </g>
+
+  <g id="Page_Header" transform="translate(0,65)">
+    <rect width="1440" height="92" fill="#FAFAFA"/>
+    <line x1="0" y1="92" x2="1440" y2="92" stroke="#E5E5E5" stroke-width="1"/>
+    <text class="f crumb" x="24" y="32">NODES HUB / AUTHOR</text>
+    <text class="f h1" x="24" y="64">Node factory</text>
+
+    <g id="Stepper" transform="translate(560,30)">
+      <g id="Step_1">
+        <circle cx="14" cy="14" r="14" fill="#1E1F23"/>
+        <text class="f step-num" x="14" y="18" text-anchor="middle">1</text>
+        <text class="f step-label" x="36" y="19">Metadata</text>
+      </g>
+      <line x1="148" y1="14" x2="178" y2="14" stroke="#CCCCCC" stroke-width="1"/>
+      <g id="Step_2" transform="translate(180,0)">
+        <circle cx="14" cy="14" r="14" fill="#FFFFFF" stroke="#CCCCCC" stroke-width="1"/>
+        <text class="f step-num-dim" x="14" y="18" text-anchor="middle">2</text>
+        <text class="f step-label-dim" x="36" y="19">Ports</text>
+      </g>
+      <line x1="280" y1="14" x2="310" y2="14" stroke="#CCCCCC" stroke-width="1"/>
+      <g id="Step_3" transform="translate(312,0)">
+        <circle cx="14" cy="14" r="14" fill="#FFFFFF" stroke="#CCCCCC" stroke-width="1"/>
+        <text class="f step-num-dim" x="14" y="18" text-anchor="middle">3</text>
+        <text class="f step-label-dim" x="36" y="19">Template</text>
+      </g>
+      <line x1="430" y1="14" x2="460" y2="14" stroke="#CCCCCC" stroke-width="1"/>
+      <g id="Step_4" transform="translate(462,0)">
+        <circle cx="14" cy="14" r="14" fill="#FFFFFF" stroke="#CCCCCC" stroke-width="1"/>
+        <text class="f step-num-dim" x="14" y="18" text-anchor="middle">4</text>
+        <text class="f step-label-dim" x="36" y="19">Dependencies</text>
+      </g>
+      <line x1="610" y1="14" x2="640" y2="14" stroke="#CCCCCC" stroke-width="1"/>
+      <g id="Step_5" transform="translate(642,0)">
+        <circle cx="14" cy="14" r="14" fill="#FFFFFF" stroke="#CCCCCC" stroke-width="1"/>
+        <text class="f step-num-dim" x="14" y="18" text-anchor="middle">5</text>
+        <text class="f step-label-dim" x="36" y="19">Validate &amp; publish</text>
+      </g>
+    </g>
+  </g>
+
+  <g id="Body" transform="translate(0,157)">
+    <g id="Form_Card" transform="translate(48,32)">
+      <rect width="800" height="600" rx="6" fill="#FFFFFF" stroke="#E5E5E5" stroke-width="1"/>
+
+      <text class="f lbl" x="32" y="44">PACK IDENTITY</text>
+
+      <g id="F_Id" transform="translate(32,60)">
+        <text class="f lbl" x="0" y="0" font-size="11" letter-spacing="0">Pack id (reverse-DNS)</text>
+        <rect x="0" y="10" width="500" height="40" rx="4" fill="#FFFFFF" stroke="#CCCCCC" stroke-width="1"/>
+        <text class="f field" x="14" y="36">ai.urbanlab.uhvi</text>
+        <text class="f help" x="0" y="68">Lowercase, dot-separated. Example: ai.urbanlab.uhvi</text>
+      </g>
+
+      <g id="F_Version" transform="translate(548,70)">
+        <text class="f lbl" x="0" y="0" font-size="11" letter-spacing="0">Version (semver)</text>
+        <rect x="0" y="10" width="220" height="40" rx="4" fill="#FFFFFF" stroke="#CCCCCC" stroke-width="1"/>
+        <text class="f field" x="14" y="36">2.1.0</text>
+      </g>
+
+      <g id="F_Display" transform="translate(32,160)">
+        <text class="f lbl" x="0" y="0" font-size="11" letter-spacing="0">Display name</text>
+        <rect x="0" y="10" width="500" height="40" rx="4" fill="#FFFFFF" stroke="#CCCCCC" stroke-width="1"/>
+        <text class="f field" x="14" y="36">UHVI heat layers</text>
+      </g>
+
+      <g id="F_Category" transform="translate(548,160)">
+        <text class="f lbl" x="0" y="0" font-size="11" letter-spacing="0">Default category</text>
+        <rect x="0" y="10" width="220" height="40" rx="4" fill="#FFFFFF" stroke="#CCCCCC" stroke-width="1"/>
+        <text class="f field" x="14" y="36">data</text>
+        <polygon points="200,28 210,28 205,34" fill="#1E1F23"/>
+      </g>
+
+      <g id="F_Description" transform="translate(32,234)">
+        <text class="f lbl" x="0" y="0" font-size="11" letter-spacing="0">Description</text>
+        <rect x="0" y="10" width="736" height="80" rx="4" fill="#FFFFFF" stroke="#CCCCCC" stroke-width="1"/>
+        <text class="f field" x="14" y="36">Urban Heat Vulnerability Index loaders, raster ops,</text>
+        <text class="f field" x="14" y="58">and summary widgets.</text>
+        <text class="f help" x="0" y="106">10-500 chars. Markdown allowed in README.md (separate file).</text>
+      </g>
+
+      <text class="f lbl" x="32" y="362">AUTHOR</text>
+      <g id="F_Author" transform="translate(32,378)">
+        <rect x="0" y="0" width="380" height="40" rx="4" fill="#FFFFFF" stroke="#CCCCCC" stroke-width="1"/>
+        <text class="f field" x="14" y="26">Urban Lab</text>
+        <rect x="396" y="0" width="340" height="40" rx="4" fill="#FFFFFF" stroke="#CCCCCC" stroke-width="1"/>
+        <text class="f placeholder" x="410" y="26">https://urbanlab.example</text>
+      </g>
+
+      <text class="f lbl" x="32" y="448">LICENSE (SPDX)</text>
+      <g id="F_License" transform="translate(32,464)">
+        <rect x="0" y="0" width="220" height="40" rx="4" fill="#FFFFFF" stroke="#CCCCCC" stroke-width="1"/>
+        <text class="f field" x="14" y="26">Apache-2.0</text>
+        <text class="f help" x="240" y="26">Apache-2.0 / MIT / BSD-3-Clause / proprietary</text>
+      </g>
+
+      <text class="f lbl" x="32" y="528">PACK ICON</text>
+      <g id="F_Icon" transform="translate(32,544)">
+        <rect x="0" y="0" width="56" height="56" rx="6" fill="#F5F5F5" stroke="#CCCCCC" stroke-width="1"/>
+        <text class="f field" x="20" y="36" font-size="20">aA</text>
+        <text class="f help" x="72" y="22">Choose from FontAwesome subset, or upload SVG (sanitized).</text>
+        <g transform="translate(72,32)">
+          <rect width="120" height="28" rx="4" fill="#FFFFFF" stroke="#1E1F23" stroke-width="1"/>
+          <text class="f btn-b" x="22" y="19" font-size="12">Pick icon</text>
+        </g>
+        <g transform="translate(202,32)">
+          <rect width="120" height="28" rx="4" fill="#FFFFFF" stroke="#CCCCCC" stroke-width="1"/>
+          <text class="f field" x="18" y="19" font-size="12">Upload SVG</text>
+        </g>
+      </g>
+    </g>
+
+    <g id="Preview_Card" transform="translate(880,32)">
+      <text class="f lbl" x="0" y="14">LIVE PREVIEW</text>
+
+      <g transform="translate(0,30)">
+        <rect width="500" height="180" rx="6" fill="#FFFFFF" stroke="#E5E5E5" stroke-width="1"/>
+        <text class="f preview-meta" x="20" y="32">Warehouse card</text>
+        <rect x="20" y="44" width="460" height="80" rx="4" fill="#EFEFEF"/>
+        <text class="f preview-meta" x="220" y="92">thumbnail</text>
+        <text class="f preview-card-title" x="20" y="148">UHVI heat layers</text>
+        <text class="f preview-meta" x="20" y="166">Urban Lab - v2.1.0 - Apache-2.0</text>
+      </g>
+
+      <g transform="translate(0,234)">
+        <rect width="500" height="170" rx="6" fill="#FFFFFF" stroke="#E5E5E5" stroke-width="1"/>
+        <text class="f preview-meta" x="20" y="32">Manifest snippet (auto-generated)</text>
+        <rect x="20" y="44" width="460" height="110" rx="4" fill="#1E1F23"/>
+        <text class="f field" x="32" y="66" font-size="11" font-family="ui-monospace,Menlo,monospace" fill="#fbfcf6">"id":"ai.urbanlab.uhvi",</text>
+        <text class="f field" x="32" y="84" font-size="11" font-family="ui-monospace,Menlo,monospace" fill="#fbfcf6">"version":"2.1.0",</text>
+        <text class="f field" x="32" y="102" font-size="11" font-family="ui-monospace,Menlo,monospace" fill="#fbfcf6">"displayName":"UHVI heat layers",</text>
+        <text class="f field" x="32" y="120" font-size="11" font-family="ui-monospace,Menlo,monospace" fill="#fbfcf6">"author":{"name":"Urban Lab"},</text>
+        <text class="f field" x="32" y="138" font-size="11" font-family="ui-monospace,Menlo,monospace" fill="#fbfcf6">"license":"Apache-2.0"</text>
+      </g>
+
+      <g transform="translate(0,432)">
+        <rect width="500" height="156" rx="6" fill="#FFF8EE" stroke="#FBAA69" stroke-width="1"/>
+        <text class="f preview-card-title" x="20" y="32" fill="#7A4A12">Tip</text>
+        <text class="f preview-meta" x="20" y="58" fill="#7A4A12">The pack id and major version become part of every</text>
+        <text class="f preview-meta" x="20" y="76" fill="#7A4A12">node's saved type:</text>
+        <text class="f field" x="20" y="104" font-family="ui-monospace,Menlo,monospace" font-size="12" fill="#7A4A12">ai.urbanlab.uhvi/uhvi-load@2</text>
+        <text class="f preview-meta" x="20" y="132" fill="#7A4A12">Renaming the pack is a breaking change for saved graphs.</text>
+      </g>
+    </g>
+  </g>
+
+  <g id="Footer" transform="translate(0,836)">
+    <rect width="1440" height="64" fill="#FFFFFF"/>
+    <line x1="0" y1="0" x2="1440" y2="0" stroke="#E5E5E5" stroke-width="1"/>
+    <text class="f help" x="24" y="38">Step 1 of 5 - Metadata</text>
+
+    <g transform="translate(1064,14)">
+      <rect width="100" height="36" rx="4" fill="#FFFFFF" stroke="#CCCCCC" stroke-width="1"/>
+      <text class="f btn-b" x="34" y="23">Cancel</text>
+    </g>
+    <g transform="translate(1184,14)">
+      <rect width="100" height="36" rx="4" fill="#F5F5F5" stroke="#CCCCCC" stroke-width="1"/>
+      <text class="f btn-b" x="38" y="23" fill="#999999">Back</text>
+    </g>
+    <g transform="translate(1304,14)">
+      <rect width="112" height="36" rx="4" fill="#1E1F23"/>
+      <text class="f btn-w" x="36" y="23">Next: Ports</text>
+    </g>
+  </g>
+</svg>

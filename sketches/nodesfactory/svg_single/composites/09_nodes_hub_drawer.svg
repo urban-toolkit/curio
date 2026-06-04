@@ -1,0 +1,320 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" width="1440" height="900" fill="none">
+  <title>Curio - Nodes hub drawer</title>
+  <desc>Pure-vector equivalent of composites/canvas_with_nodeshub_drawer.svg. Right-side
+        slide-over surface that opens from the menu bar's "Nodes hub" link. The
+        backdrop is a dim canvas illustration (sectioned palette + a couple of
+        node tiles + scrim) so reviewers see how the drawer sits over the dataflow
+        without leaving the canvas. Tokens match 04..08 wizard mockups
+        (Rubik / 1E1F23 / FBAA69 / fbfcf6 / 65-px header / white cards on F5F5F5).
+        Stable group ids for Figma: Header_App, Backdrop_Canvas, Drawer_*.</desc>
+  <defs>
+    <style type="text/css">
+      .f { font-family: Rubik, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+      .nav         { font-size: 15px; font-weight: 700; fill: #fbfcf6; }
+      .nav-muted   { font-size: 15px; font-weight: 700; fill: #fbfcf6; fill-opacity: 0.65; }
+      .nav-accent  { font-size: 15px; font-weight: 700; fill: #FBAA69; }
+      .crumb       { font-size: 12px; font-weight: 500; fill: #777777; letter-spacing: 0.04em; }
+      .h2          { font-size: 18px; font-weight: 700; fill: #1E1F23; }
+      .lbl         { font-size: 11px; font-weight: 700; fill: #555555; letter-spacing: 0.06em; }
+      .section     { font-size: 11px; font-weight: 700; fill: #999999; letter-spacing: 0.08em; }
+      .meta        { font-size: 12px; font-weight: 400; fill: #666666; }
+      .meta-strong { font-size: 12px; font-weight: 600; fill: #1E1F23; }
+      .card-title  { font-size: 14px; font-weight: 700; fill: #1E1F23; }
+      .help        { font-size: 11px; font-weight: 400; fill: #777777; }
+      .placeholder { font-size: 13px; font-weight: 400; fill: #999999; }
+      .field       { font-size: 13px; font-weight: 400; fill: #1E1F23; }
+      .btn-w       { font-size: 13px; font-weight: 700; fill: #FFFFFF; }
+      .btn-b       { font-size: 13px; font-weight: 700; fill: #1E1F23; }
+      .pill-text   { font-size: 11px; font-weight: 700; fill: #1E1F23; }
+      .pill-on     { font-size: 11px; font-weight: 700; fill: #FBAA69; letter-spacing: 0.06em; }
+      .canvas-mut  { font-size: 14px; font-weight: 700; fill: rgba(30,31,35,0.50); }
+      .canvas-tile { font-size: 11px; font-weight: 600; fill: #1E1F23; }
+      .canvas-tile-meta { font-size: 9px; font-weight: 500; fill: #777777; }
+      .built-in    { font-size: 9px; font-weight: 700; fill: #fbfcf6; letter-spacing: 0.10em; }
+      .packs       { font-size: 9px; font-weight: 700; fill: #FBAA69; letter-spacing: 0.10em; }
+    </style>
+    <filter id="drawerShadow" x="-20%" y="-2%" width="140%" height="104%">
+      <feDropShadow dx="-12" dy="0" stdDeviation="18" flood-color="#000000" flood-opacity="0.18"/>
+    </filter>
+    <pattern id="dotGrid" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="0.8" cy="0.8" r="0.8" fill="#C8C9CC"/>
+    </pattern>
+  </defs>
+
+  <!-- Frame -->
+  <rect id="Frame_BG" width="1440" height="900" fill="#F5F5F5"/>
+
+  <!-- Header (Curio top bar with Nodes hub active) -->
+  <g id="Header_App">
+    <rect width="1440" height="65" fill="#1E1F23"/>
+    <line x1="0" y1="65" x2="1440" y2="65" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+    <text class="f nav" x="20" y="42">Curio</text>
+    <g id="Menus" transform="translate(100,0)">
+      <text class="f nav-muted" x="0"   y="42">File</text>
+      <text class="f nav-muted" x="58"  y="42">View</text>
+      <text class="f nav-muted" x="120" y="42">Data</text>
+      <text class="f nav-muted" x="190" y="42">Provenance</text>
+      <text class="f nav-muted" x="315" y="42">Help</text>
+      <rect x="386" y="20" width="124" height="28" rx="14" fill="#2B2C31" stroke="rgba(255,255,255,0.16)" stroke-width="1"/>
+      <text class="f nav-accent" x="406" y="40">Nodes hub</text>
+      <circle cx="498" cy="34" r="4" fill="#FBAA69"/>
+    </g>
+    <text class="f nav-muted" x="1280" y="42" font-size="14px">Shared Guest</text>
+  </g>
+
+  <!-- Page header strip -->
+  <g id="Page_Header" transform="translate(0,65)">
+    <rect width="1440" height="36" fill="#FAFAFA"/>
+    <line x1="0" y1="36" x2="1440" y2="36" stroke="#E5E5E5" stroke-width="1"/>
+    <text class="f crumb" x="24"   y="23">PROJECT / DATAFLOW</text>
+    <text class="f crumb" x="180"  y="23" fill="#1E1F23">DefaultDataflow</text>
+    <text class="f crumb" x="330"  y="23">NODES HUB DRAWER</text>
+  </g>
+
+  <!-- Backdrop canvas (dim, behind the drawer) -->
+  <g id="Backdrop_Canvas" transform="translate(0,101)">
+    <rect width="1440" height="799" fill="#FBFBFB"/>
+    <rect width="1440" height="799" fill="url(#dotGrid)"/>
+
+    <text class="f canvas-mut" x="24" y="34">DefaultDataflow</text>
+
+    <!-- Left palette ribbon (sectioned: BUILT-IN icons + play + PACKS extension band) -->
+    <g id="Backdrop_Palette" transform="translate(24,60)" opacity="0.92">
+      <rect x="0" y="0" width="56" height="18" rx="2" fill="#1E1F23"/>
+      <text class="f built-in" x="6" y="13">BUILT-IN</text>
+
+      <rect x="0" y="26" width="56" height="232" rx="6" fill="#1E1F23"/>
+      <g fill="#fbfcf6">
+        <rect x="10" y="36"  width="14" height="14" rx="2"/>
+        <rect x="32" y="36"  width="14" height="14" rx="2"/>
+        <rect x="10" y="62"  width="14" height="14" rx="2"/>
+        <rect x="32" y="62"  width="14" height="14" rx="2"/>
+        <rect x="10" y="88"  width="14" height="14" rx="2"/>
+        <rect x="32" y="88"  width="14" height="14" rx="2"/>
+        <rect x="10" y="114" width="14" height="14" rx="2"/>
+        <rect x="32" y="114" width="14" height="14" rx="2"/>
+        <rect x="10" y="140" width="14" height="14" rx="2"/>
+        <rect x="32" y="140" width="14" height="14" rx="2"/>
+        <rect x="10" y="166" width="14" height="14" rx="2"/>
+        <rect x="32" y="166" width="14" height="14" rx="2"/>
+        <rect x="10" y="192" width="14" height="14" rx="2"/>
+        <rect x="32" y="192" width="14" height="14" rx="2"/>
+        <rect x="10" y="218" width="14" height="14" rx="2"/>
+        <rect x="32" y="218" width="14" height="14" rx="2"/>
+      </g>
+
+      <rect x="0" y="268" width="56" height="22" rx="6" fill="#1E1F23"/>
+      <polygon points="25,275 25,283 33,279" fill="#fbfcf6"/>
+
+      <rect x="0" y="302" width="56" height="68" rx="6" fill="#1E1F23" stroke="rgba(255,255,255,0.10)" stroke-width="1"/>
+      <text class="f packs" x="8" y="318">PACKS</text>
+      <line x1="6" y1="324" x2="50" y2="324" stroke="rgba(251,170,105,0.35)" stroke-width="1"/>
+      <text class="f canvas-tile-meta" x="6" y="338" fill="#fbfcf6" opacity="0.7">No packs</text>
+      <rect x="6" y="346" width="44" height="18" rx="3" fill="#FBAA69"/>
+      <text class="f" x="11" y="359" font-size="9" font-weight="700" fill="#1E1F23">Get packs +</text>
+    </g>
+
+    <!-- Placeholder node tiles to suggest active canvas -->
+    <g id="Backdrop_Nodes" opacity="0.95">
+      <g transform="translate(160,120)">
+        <rect width="180" height="92" rx="6" fill="#FFFFFF" stroke="#D9DADC" stroke-width="1"/>
+        <rect width="180" height="22" rx="6" fill="#1E1F23"/>
+        <rect x="0" y="16" width="180" height="6" fill="#1E1F23"/>
+        <text class="f canvas-tile" x="14" y="16" fill="#fbfcf6">Data Loading</text>
+        <text class="f canvas-tile-meta" x="14" y="44">parks.geojson</text>
+        <text class="f canvas-tile-meta" x="14" y="62">3,214 rows GEODATAFRAME</text>
+        <circle cx="6"   cy="60" r="5" fill="#FFFFFF" stroke="#1E1F23" stroke-width="1.5"/>
+        <circle cx="174" cy="60" r="5" fill="#1E1F23"/>
+      </g>
+      <g transform="translate(420,160)">
+        <rect width="180" height="92" rx="6" fill="#FFFFFF" stroke="#D9DADC" stroke-width="1"/>
+        <rect width="180" height="22" rx="6" fill="#1E1F23"/>
+        <rect x="0" y="16" width="180" height="6" fill="#1E1F23"/>
+        <text class="f canvas-tile" x="14" y="16" fill="#fbfcf6">Data Cleaning</text>
+        <text class="f canvas-tile-meta" x="14" y="44">drop nulls + cast</text>
+        <text class="f canvas-tile-meta" x="14" y="62">GEODATAFRAME to DATAFRAME</text>
+        <circle cx="6"   cy="60" r="5" fill="#FFFFFF" stroke="#1E1F23" stroke-width="1.5"/>
+        <circle cx="174" cy="60" r="5" fill="#1E1F23"/>
+      </g>
+      <path d="M 334 180 C 380 180, 380 200, 426 200" stroke="#1E1F23" stroke-width="1.5" fill="none"/>
+      <polygon points="424,196 432,200 424,204" fill="#1E1F23"/>
+    </g>
+
+    <!-- Scrim over the backdrop so the drawer reads as focused -->
+    <rect width="960" height="799" fill="#000000" fill-opacity="0.12"/>
+  </g>
+
+  <!-- Drawer (right-side slide-over) -->
+  <g id="Drawer" transform="translate(960,65)" filter="url(#drawerShadow)">
+    <rect width="480" height="835" fill="#FFFFFF"/>
+    <line x1="0" y1="0" x2="0" y2="835" stroke="#E5E5E5" stroke-width="1"/>
+
+    <!-- Drawer top bar: pin / title / close -->
+    <g id="Drawer_TopBar">
+      <rect width="480" height="56" fill="#FFFFFF"/>
+      <line x1="0" y1="56" x2="480" y2="56" stroke="#EEEEEE" stroke-width="1"/>
+
+      <g id="Drawer_Pin" transform="translate(16,14)">
+        <rect width="28" height="28" rx="4" fill="#FFFFFF" stroke="#E5E5E5" stroke-width="1"/>
+        <path d="M 14 8 L 14 16 M 9 14 L 19 14 M 11 16 L 14 22 L 17 16 Z" stroke="#1E1F23" stroke-width="1.5" fill="#1E1F23" stroke-linejoin="round"/>
+      </g>
+
+      <text class="f h2" x="58" y="36">Node warehouse</text>
+
+      <g id="Drawer_Close" transform="translate(436,14)">
+        <rect width="28" height="28" rx="4" fill="#FFFFFF" stroke="#E5E5E5" stroke-width="1"/>
+        <path d="M 9 9 L 19 19 M 19 9 L 9 19" stroke="#1E1F23" stroke-width="1.5" stroke-linecap="round"/>
+      </g>
+    </g>
+
+    <!-- Subtitle + compatibility pill -->
+    <g id="Drawer_Subtitle" transform="translate(16,72)">
+      <text class="f meta" x="0" y="14">Discover and install nodes that extend Curio.</text>
+      <g transform="translate(0,26)">
+        <rect width="208" height="22" rx="11" fill="#FFF8EE" stroke="#FBAA69" stroke-width="1"/>
+        <circle cx="14" cy="11" r="3" fill="#FBAA69"/>
+        <text class="f pill-text" x="24" y="15">Compatible with Curio 1.4.0</text>
+      </g>
+    </g>
+
+    <!-- Search + sort -->
+    <g id="Drawer_Search" transform="translate(16,144)">
+      <rect width="338" height="40" rx="4" fill="#FAFAFA" stroke="#E5E5E5" stroke-width="1"/>
+      <circle cx="18" cy="20" r="6" fill="none" stroke="#999999" stroke-width="1.5"/>
+      <line x1="22" y1="24" x2="28" y2="30" stroke="#999999" stroke-width="1.5" stroke-linecap="round"/>
+      <text class="f placeholder" x="40" y="26">Search packs, authors, keywords...</text>
+
+      <g transform="translate(348,0)">
+        <rect width="100" height="40" rx="4" fill="#FFFFFF" stroke="#CCCCCC" stroke-width="1"/>
+        <text class="f field" x="14" y="26" font-size="12">Sort: New</text>
+        <polygon points="82,18 92,18 87,24" fill="#1E1F23"/>
+      </g>
+    </g>
+
+    <!-- Tab strip: Featured / Browse all / Installed / Updates -->
+    <g id="Drawer_Tabs" transform="translate(16,200)">
+      <text class="f meta-strong" x="0"   y="14">Featured</text>
+      <rect x="-4" y="22" width="64" height="2" fill="#FBAA69"/>
+      <text class="f meta" x="86"  y="14">Browse all</text>
+      <text class="f meta" x="180" y="14">Installed</text>
+      <rect x="240" y="2" width="22" height="14" rx="7" fill="#1E1F23"/>
+      <text class="f" x="246" y="13" font-size="9" font-weight="700" fill="#fbfcf6">2</text>
+
+      <text class="f meta" x="290" y="14" fill="#999999">Updates</text>
+      <rect x="346" y="2" width="22" height="14" rx="7" fill="#FBAA69"/>
+      <text class="f" x="354" y="13" font-size="9" font-weight="700" fill="#1E1F23">1</text>
+
+      <line x1="-16" y1="30" x2="464" y2="30" stroke="#EEEEEE" stroke-width="1"/>
+    </g>
+
+    <!-- Featured cards -->
+    <g id="Drawer_FeaturedCards" transform="translate(16,250)">
+      <text class="f section" x="0" y="0">FEATURED</text>
+
+      <g id="Card_UHVI" transform="translate(0,12)">
+        <rect width="448" height="96" rx="6" fill="#FFFFFF" stroke="#E5E5E5" stroke-width="1"/>
+        <rect x="12" y="12" width="72" height="72" rx="4" fill="#FFF8EE" stroke="#FBAA69" stroke-width="1"/>
+        <text class="f" x="34" y="56" font-size="22" font-weight="700" fill="#FBAA69">U</text>
+        <text class="f card-title" x="96" y="32">UHVI heat layers</text>
+        <text class="f meta" x="96" y="50">Urban Lab - v2.1.0 - Apache-2.0</text>
+        <g transform="translate(96,60)" font-family="Rubik" font-size="10" fill="#666666">
+          <rect width="50" height="16" rx="3" fill="#F0F0F0"/>
+          <text x="8" y="11">3 nodes</text>
+          <rect x="58" width="48" height="16" rx="3" fill="#F0F0F0"/>
+          <text x="64" y="11">raster</text>
+          <rect x="114" width="74" height="16" rx="3" fill="#F0F0F0"/>
+          <text x="120" y="11" fill="#1E1F23" font-weight="700">Verified</text>
+        </g>
+        <g transform="translate(348,32)">
+          <rect width="88" height="32" rx="4" fill="#1E1F23"/>
+          <text class="f btn-w" x="26" y="20">Install</text>
+        </g>
+      </g>
+
+      <g id="Card_OSM" transform="translate(0,124)">
+        <rect width="448" height="96" rx="6" fill="#FFFFFF" stroke="#E5E5E5" stroke-width="1"/>
+        <rect x="12" y="12" width="72" height="72" rx="4" fill="#EFF6FF" stroke="#A6C8FF" stroke-width="1"/>
+        <text class="f" x="32" y="56" font-size="20" font-weight="700" fill="#3E6AB2">OSM</text>
+        <text class="f card-title" x="96" y="32">OSM extract toolkit</text>
+        <text class="f meta" x="96" y="50">Community - v1.0.4 - MIT</text>
+        <g transform="translate(96,60)" font-family="Rubik" font-size="10" fill="#666666">
+          <rect width="50" height="16" rx="3" fill="#F0F0F0"/>
+          <text x="8" y="11">5 nodes</text>
+          <rect x="58" width="48" height="16" rx="3" fill="#F0F0F0"/>
+          <text x="64" y="11">geo</text>
+        </g>
+        <g transform="translate(332,32)">
+          <rect width="104" height="32" rx="4" fill="#FFFFFF" stroke="#1E1F23" stroke-width="1"/>
+          <circle cx="20" cy="16" r="3" fill="#2BA677"/>
+          <text class="f btn-b" x="32" y="20">Installed</text>
+        </g>
+      </g>
+
+      <g id="Card_Vega" transform="translate(0,236)">
+        <rect width="448" height="96" rx="6" fill="#FFFFFF" stroke="#E5E5E5" stroke-width="1"/>
+        <rect x="12" y="12" width="72" height="72" rx="4" fill="#F0F4FF" stroke="#3E6AB2" stroke-width="1"/>
+        <text class="f" x="32" y="56" font-size="20" font-weight="700" fill="#3E6AB2">VL</text>
+        <text class="f card-title" x="96" y="32">Vega-Lite extras</text>
+        <text class="f meta" x="96" y="50">Curio Labs - v0.9.1 - MIT</text>
+        <g transform="translate(96,60)" font-family="Rubik" font-size="10" fill="#666666">
+          <rect width="50" height="16" rx="3" fill="#F0F0F0"/>
+          <text x="8" y="11">4 nodes</text>
+          <rect x="58" width="96" height="16" rx="3" fill="#FFF8EE" stroke="#FBAA69" stroke-width="1"/>
+          <text x="64" y="11" fill="#7A4A12" font-weight="700">Update to 1.0.0</text>
+        </g>
+        <g transform="translate(348,32)">
+          <rect width="88" height="32" rx="4" fill="#FBAA69"/>
+          <text class="f btn-b" x="22" y="20">Update</text>
+        </g>
+      </g>
+    </g>
+
+    <!-- Recently installed list -->
+    <g id="Drawer_RecentInstalled" transform="translate(16,608)">
+      <text class="f section" x="0" y="0">YOUR PACKS - 2 INSTALLED</text>
+
+      <g transform="translate(0,12)">
+        <rect width="448" height="40" rx="4" fill="#FAFAFA" stroke="#EEEEEE" stroke-width="1"/>
+        <circle cx="20" cy="20" r="3" fill="#2BA677"/>
+        <text class="f meta-strong" x="36"  y="24">OSM extract toolkit</text>
+        <text class="f meta"        x="200" y="24">v1.0.4</text>
+        <text class="f help"        x="260" y="24">5 nodes - used in 2 graphs</text>
+        <text class="f meta"        x="416" y="24" fill="#1E1F23" font-weight="700">...</text>
+      </g>
+      <g transform="translate(0,58)">
+        <rect width="448" height="40" rx="4" fill="#FAFAFA" stroke="#EEEEEE" stroke-width="1"/>
+        <circle cx="20" cy="20" r="3" fill="#2BA677"/>
+        <text class="f meta-strong" x="36"  y="24">Vega-Lite extras</text>
+        <text class="f meta"        x="200" y="24">v0.9.1</text>
+        <text class="f help"        x="260" y="24">update available</text>
+        <text class="f meta"        x="416" y="24" fill="#1E1F23" font-weight="700">...</text>
+      </g>
+    </g>
+
+    <!-- Shared-env note (epic invariant 7) -->
+    <g id="Drawer_EnvNote" transform="translate(16,716)">
+      <rect width="448" height="62" rx="6" fill="#FFF8EE" stroke="#FBAA69" stroke-width="1"/>
+      <circle cx="24" cy="20" r="8" fill="#FBAA69"/>
+      <text class="f" x="20" y="24" font-size="11" font-weight="700" fill="#1E1F23">i</text>
+      <text class="f meta-strong" x="44" y="22" fill="#7A4A12">Shared project environment</text>
+      <text class="f meta"        x="44" y="40" fill="#7A4A12">Pack python deps install into this project's sandbox</text>
+      <text class="f meta"        x="44" y="54" fill="#7A4A12">interpreter; conflicting versions fail at install.</text>
+    </g>
+
+    <!-- Bottom action strip -->
+    <g id="Drawer_Footer" transform="translate(0,795)">
+      <line x1="0" y1="0" x2="480" y2="0" stroke="#E5E5E5" stroke-width="1"/>
+      <rect x="0" y="0" width="480" height="40" fill="#FFFFFF"/>
+
+      <g transform="translate(16,8)">
+        <rect width="180" height="24" rx="4" fill="#FFFFFF" stroke="#CCCCCC" stroke-width="1"/>
+        <text class="f btn-b" x="20" y="17" font-size="11">Sideload .curio-nodepack</text>
+      </g>
+      <g transform="translate(212,8)">
+        <rect width="252" height="24" rx="4" fill="#1E1F23"/>
+        <text class="f btn-w" x="68" y="17" font-size="11">Open full warehouse</text>
+      </g>
+    </g>
+  </g>
+</svg>

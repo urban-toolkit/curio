@@ -4,6 +4,10 @@
   z-index: 10045;
   display: flex;
   justify-content: flex-end;
+  pointer-events: none;
+}
+
+.overlayRootPresented {
   pointer-events: auto;
 }
 
@@ -362,6 +366,30 @@
   color: #74757b;
   font-size: 12px;
   line-height: 1.38;
+}
+
+.skeletonList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.skeletonCard {
+  height: 72px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #eceae4 0%, #f5f4f0 50%, #eceae4 100%);
+  background-size: 200% 100%;
+  animation: catalogSkeletonShimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes catalogSkeletonShimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
 }
 
 .empty,

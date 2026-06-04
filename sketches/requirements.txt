@@ -1,0 +1,4 @@
+numpy>=1.24
+pillow>=10.0
+opencv-python>=4.8
+pymupdf>=1.23

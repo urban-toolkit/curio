@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" width="1440" height="900" fill="none">
+  <title>Curio - Node factory step 5 (validate &amp; publish)</title>
+  <desc>Authoring wizard, step 5 of 5. Validation checklist + publish destination + summary.</desc>
+  <defs>
+    <style type="text/css">
+      .f { font-family: Rubik, -apple-system, BlinkMacSystemFont, sans-serif; }
+      .mono { font-family: ui-monospace,Menlo,Consolas,monospace; }
+      .nav { font-size: 15px; font-weight: 700; fill: #fbfcf6; }
+      .nav-muted { font-size: 15px; font-weight: 700; fill: #fbfcf6; fill-opacity: 0.65; }
+      .nav-accent { font-size: 15px; font-weight: 700; fill: #FBAA69; }
+      .h1 { font-size: 24px; font-weight: 700; fill: #1E1F23; }
+      .crumb { font-size: 12px; font-weight: 500; fill: #777777; letter-spacing: 0.04em; }
+      .lbl { font-size: 11px; font-weight: 700; fill: #555555; letter-spacing: 0.04em; text-transform: uppercase; }
+      .h2 { font-size: 14px; font-weight: 700; fill: #1E1F23; }
+      .field { font-size: 13px; fill: #1E1F23; }
+      .help { font-size: 11px; fill: #777777; }
+      .step-num { font-size: 12px; font-weight: 700; fill: #FFFFFF; }
+      .step-label { font-size: 12px; font-weight: 600; fill: #1E1F23; }
+      .btn-w { font-size: 13px; font-weight: 700; fill: #FFFFFF; }
+      .btn-b { font-size: 13px; font-weight: 700; fill: #1E1F23; }
+    </style>
+  </defs>
+
+  <rect width="1440" height="900" fill="#F5F5F5"/>
+
+  <g id="Header_App">
+    <rect width="1440" height="65" fill="#1E1F23"/>
+    <line x1="0" y1="65" x2="1440" y2="65" stroke="rgba(255,255,255,0.08)"/>
+    <text class="f nav" x="20" y="42">Curio</text>
+    <g transform="translate(100,0)">
+      <text class="f nav-muted" x="0" y="42">File</text>
+      <text class="f nav-muted" x="58" y="42">View</text>
+      <text class="f nav-muted" x="120" y="42">Data</text>
+      <text class="f nav-muted" x="190" y="42">Provenance</text>
+      <text class="f nav-muted" x="315" y="42">Help</text>
+      <text class="f nav-accent" x="392" y="42">Nodes hub</text>
+    </g>
+    <text class="f nav-muted" x="1280" y="42" font-size="14px">Shared Guest</text>
+  </g>
+
+  <g id="Page_Header" transform="translate(0,65)">
+    <rect width="1440" height="92" fill="#FAFAFA"/>
+    <line x1="0" y1="92" x2="1440" y2="92" stroke="#E5E5E5"/>
+    <text class="f crumb" x="24" y="32">NODES HUB / AUTHOR / UHVI HEAT LAYERS</text>
+    <text class="f h1" x="24" y="64">Node factory</text>
+
+    <g id="Stepper" transform="translate(560,30)">
+      <g><circle cx="14" cy="14" r="14" fill="#2F8F4A"/><path d="M8 14 l4 4 l9 -10" stroke="#FFFFFF" stroke-width="2" fill="none"/><text class="f step-label" x="36" y="19">Metadata</text></g>
+      <line x1="148" y1="14" x2="178" y2="14" stroke="#1E1F23"/>
+      <g transform="translate(180,0)"><circle cx="14" cy="14" r="14" fill="#2F8F4A"/><path d="M8 14 l4 4 l9 -10" stroke="#FFFFFF" stroke-width="2" fill="none"/><text class="f step-label" x="36" y="19">Ports</text></g>
+      <line x1="280" y1="14" x2="310" y2="14" stroke="#1E1F23"/>
+      <g transform="translate(312,0)"><circle cx="14" cy="14" r="14" fill="#2F8F4A"/><path d="M8 14 l4 4 l9 -10" stroke="#FFFFFF" stroke-width="2" fill="none"/><text class="f step-label" x="36" y="19">Template</text></g>
+      <line x1="430" y1="14" x2="460" y2="14" stroke="#1E1F23"/>
+      <g transform="translate(462,0)"><circle cx="14" cy="14" r="14" fill="#2F8F4A"/><path d="M8 14 l4 4 l9 -10" stroke="#FFFFFF" stroke-width="2" fill="none"/><text class="f step-label" x="36" y="19">Dependencies</text></g>
+      <line x1="610" y1="14" x2="640" y2="14" stroke="#1E1F23"/>
+      <g transform="translate(642,0)"><circle cx="14" cy="14" r="14" fill="#1E1F23"/><text class="f step-num" x="14" y="18" text-anchor="middle">5</text><text class="f step-label" x="36" y="19">Validate &amp; publish</text></g>
+    </g>
+  </g>
+
+  <g id="Body" transform="translate(0,157)">
+
+    <g id="Validation" transform="translate(48,32)">
+      <rect width="640" height="600" rx="6" fill="#FFFFFF" stroke="#E5E5E5"/>
+      <text class="f h2" x="24" y="36">Validation</text>
+      <text class="f help" x="24" y="56">All checks must pass before publishing.</text>
+
+      <g id="Checks" transform="translate(24,80)">
+        <g><circle cx="10" cy="10" r="10" fill="#2F8F4A"/><path d="M5 10 l4 3 l8 -7" stroke="#FFFFFF" stroke-width="1.5" fill="none"/><text class="f field" x="32" y="14">Manifest schema (v1) - valid</text></g>
+        <g transform="translate(0,32)"><circle cx="10" cy="10" r="10" fill="#2F8F4A"/><path d="M5 10 l4 3 l8 -7" stroke="#FFFFFF" stroke-width="1.5" fill="none"/><text class="f field" x="32" y="14">Pack id ai.urbanlab.uhvi - reverse-DNS OK</text></g>
+        <g transform="translate(0,64)"><circle cx="10" cy="10" r="10" fill="#2F8F4A"/><path d="M5 10 l4 3 l8 -7" stroke="#FFFFFF" stroke-width="1.5" fill="none"/><text class="f field" x="32" y="14">Curio runtime &gt;=1.4.0 &lt;2.0.0 satisfied (host 1.6.2)</text></g>
+        <g transform="translate(0,96)"><circle cx="10" cy="10" r="10" fill="#2F8F4A"/><path d="M5 10 l4 3 l8 -7" stroke="#FFFFFF" stroke-width="1.5" fill="none"/><text class="f field" x="32" y="14">Pack deps resolve (geo-base 1.2.4)</text></g>
+        <g transform="translate(0,128)"><circle cx="10" cy="10" r="10" fill="#2F8F4A"/><path d="M5 10 l4 3 l8 -7" stroke="#FFFFFF" stroke-width="1.5" fill="none"/><text class="f field" x="32" y="14">Python deps resolve (3 packages, lockfile generated)</text></g>
+        <g transform="translate(0,160)"><circle cx="10" cy="10" r="10" fill="#2F8F4A"/><path d="M5 10 l4 3 l8 -7" stroke="#FFFFFF" stroke-width="1.5" fill="none"/><text class="f field" x="32" y="14">Templates dry-run on sample inputs (3/3 OK)</text></g>
+        <g transform="translate(0,192)"><circle cx="10" cy="10" r="10" fill="#2F8F4A"/><path d="M5 10 l4 3 l8 -7" stroke="#FFFFFF" stroke-width="1.5" fill="none"/><text class="f field" x="32" y="14">Icons sanitized (1 SVG, 2 FA names allowed)</text></g>
+        <g transform="translate(0,224)"><circle cx="10" cy="10" r="10" fill="#FBAA69"/><text class="f mono" x="6.5" y="14" font-size="11" font-weight="700" fill="#FFFFFF">!</text><text class="f field" x="32" y="14">Network allowlist contains a wildcard - users will see a warning</text></g>
+      </g>
+
+      <line x1="24" y1="350" x2="616" y2="350" stroke="#EEEEEE"/>
+
+      <text class="f h2" x="24" y="382">Sample dry-run</text>
+      <g transform="translate(24,398)">
+        <rect width="592" height="170" rx="6" fill="#1E1F23"/>
+        <text class="f mono" x="14" y="22" font-size="11" fill="#fbfcf6">[uhvi-load]    in: 0   out: 2   ok in 1.2s</text>
+        <text class="f mono" x="14" y="40" font-size="11" fill="#fbfcf6">[uhvi-merge]   in: 2   out: 1   ok in 0.8s</text>
+        <text class="f mono" x="14" y="58" font-size="11" fill="#fbfcf6">[uhvi-summary] in: 2   out: 1   ok in 0.4s</text>
+        <text class="f mono" x="14" y="84" font-size="11" fill="#FBAA69">3/3 kinds passed dry-run.</text>
+        <text class="f mono" x="14" y="108" font-size="11" fill="#fbfcf6">deps lock:</text>
+        <text class="f mono" x="14" y="126" font-size="11" fill="#fbfcf6">  rasterio==1.3.10 (sha256-...)</text>
+        <text class="f mono" x="14" y="144" font-size="11" fill="#fbfcf6">  numpy==1.26.4    (sha256-...)</text>
+        <text class="f mono" x="14" y="162" font-size="11" fill="#fbfcf6">  shapely==2.0.4   (sha256-...)</text>
+      </g>
+    </g>
+
+    <g id="PublishCard" transform="translate(720,32)">
+      <rect width="672" height="380" rx="6" fill="#FFFFFF" stroke="#E5E5E5"/>
+      <text class="f h2" x="24" y="36">Publish destination</text>
+
+      <g id="ChoiceExport" transform="translate(24,60)">
+        <rect width="624" height="80" rx="6" fill="#FFF8EE" stroke="#FBAA69"/>
+        <circle cx="24" cy="40" r="9" fill="#FFFFFF" stroke="#FBAA69" stroke-width="2"/>
+        <circle cx="24" cy="40" r="4" fill="#FBAA69"/>
+        <text class="f h2" x="48" y="32">Export .curio-nodepack</text>
+        <text class="f help" x="48" y="54">Offline file you can share, install on another Curio instance, or commit alongside an enterprise project.</text>
+      </g>
+
+      <g id="ChoicePublish" transform="translate(24,160)">
+        <rect width="624" height="80" rx="6" fill="#FFFFFF" stroke="#CCCCCC"/>
+        <circle cx="24" cy="40" r="9" fill="#FFFFFF" stroke="#CCCCCC" stroke-width="2"/>
+        <text class="f h2" x="48" y="32">Publish to warehouse</text>
+        <text class="f help" x="48" y="54">Submit for review. After approval, all eligible Curio clients can install your pack.</text>
+      </g>
+
+      <text class="f lbl" x="24" y="278">VISIBILITY (warehouse only)</text>
+      <g transform="translate(24,290)">
+        <g><rect width="120" height="32" rx="16" fill="#FFFFFF" stroke="#CCCCCC"/><text class="f btn-b" x="36" y="21" font-size="12">Public</text></g>
+        <g transform="translate(132,0)"><rect width="120" height="32" rx="16" fill="#FFFFFF" stroke="#CCCCCC"/><text class="f btn-b" x="38" y="21" font-size="12">Private</text></g>
+        <g transform="translate(264,0)"><rect width="160" height="32" rx="16" fill="#FFFFFF" stroke="#CCCCCC"/><text class="f btn-b" x="34" y="21" font-size="12">Org allowlist</text></g>
+      </g>
+      <text class="f help" x="24" y="354">Public packs require an SPDX license. Private packs require a signing key.</text>
+    </g>
+
+    <g id="Summary" transform="translate(720,432)">
+      <rect width="672" height="200" rx="6" fill="#1E1F23"/>
+      <text class="f h2" x="24" y="32" fill="#fbfcf6">Pack summary</text>
+
+      <text class="f mono" x="24" y="62" font-size="12" fill="#fbfcf6">id              ai.urbanlab.uhvi</text>
+      <text class="f mono" x="24" y="80" font-size="12" fill="#fbfcf6">version         2.1.0  (canonical major: @2)</text>
+      <text class="f mono" x="24" y="98" font-size="12" fill="#fbfcf6">node kinds      3   (uhvi-load, uhvi-merge, uhvi-summary)</text>
+      <text class="f mono" x="24" y="116" font-size="12" fill="#fbfcf6">runtime         &gt;=1.4.0 &lt;2.0.0</text>
+      <text class="f mono" x="24" y="134" font-size="12" fill="#fbfcf6">pack deps       1   python deps 3   js deps 0</text>
+      <text class="f mono" x="24" y="152" font-size="12" fill="#fbfcf6">permissions     fileRead, network (2 hosts)</text>
+      <text class="f mono" x="24" y="170" font-size="12" fill="#FBAA69">core NodeType enum unchanged - kinds register at runtime via canonicalId</text>
+    </g>
+  </g>
+
+  <g id="Footer" transform="translate(0,836)">
+    <rect width="1440" height="64" fill="#FFFFFF"/>
+    <line x1="0" y1="0" x2="1440" y2="0" stroke="#E5E5E5"/>
+    <text class="f help" x="24" y="38">Step 5 of 5 - Validate &amp; publish</text>
+    <g transform="translate(824,14)"><rect width="100" height="36" rx="4" fill="#FFFFFF" stroke="#CCCCCC"/><text class="f btn-b" x="34" y="23">Cancel</text></g>
+    <g transform="translate(944,14)"><rect width="100" height="36" rx="4" fill="#FFFFFF" stroke="#CCCCCC"/><text class="f btn-b" x="38" y="23">Back</text></g>
+    <g transform="translate(1064,14)"><rect width="160" height="36" rx="4" fill="#FFFFFF" stroke="#1E1F23" stroke-width="1.5"/><text class="f btn-b" x="22" y="23">Save draft</text></g>
+    <g transform="translate(1244,14)"><rect width="172" height="36" rx="4" fill="#FBAA69"/><text class="f btn-b" x="20" y="23">Export .curio-nodepack</text></g>
+  </g>
+</svg>

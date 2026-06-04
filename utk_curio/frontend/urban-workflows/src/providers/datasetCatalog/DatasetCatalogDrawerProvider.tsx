@@ -10,6 +10,8 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import { DatasetCatalogDrawer } from "../../components/datasets/catalog";
+import { useFlowContext } from "../FlowProvider";
+import { prefetchDatasetCatalog } from "../../services/datasetCatalog";
 
 const DRAWER_MOTION_MS = 300;
 
@@ -32,6 +34,7 @@ function getReducedMotionSnapshot(): boolean {
 }
 
 export function DatasetCatalogDrawerProvider({ children }: { children: React.ReactNode }) {
+  const { projectId } = useFlowContext();
   const prefersReducedMotion = useSyncExternalStore(
     subscribeReducedMotion,
     getReducedMotionSnapshot,
@@ -54,7 +57,6 @@ export function DatasetCatalogDrawerProvider({ children }: { children: React.Rea
     if (exitSettledRef.current) return;
     exitSettledRef.current = true;
     clearExitTimer();
-    setMounted(false);
     setPresented(false);
     const el = preOpenFocusRef.current;
     preOpenFocusRef.current = null;
@@ -75,24 +77,32 @@ export function DatasetCatalogDrawerProvider({ children }: { children: React.Rea
     exitSettledRef.current = false;
     preOpenFocusRef.current = document.activeElement as HTMLElement | null;
     setMounted(true);
-    setPresented(false);
     if (prefersReducedMotion) {
       setPresented(true);
       return;
     }
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => setPresented(true));
-    });
+    setPresented(false);
+    window.requestAnimationFrame(() => setPresented(true));
   }, [clearExitTimer, prefersReducedMotion]);
 
+  // Warm catalog cache while the user works on the canvas (drawer default query).
   useEffect(() => {
-    if (!mounted) return;
+    if (!projectId) return;
+    prefetchDatasetCatalog({
+      dataflowId: projectId,
+      includeHub: true,
+      sort: "recent",
+    });
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!presented) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prevOverflow;
     };
-  }, [mounted]);
+  }, [presented]);
 
   useEffect(() => () => clearExitTimer(), [clearExitTimer]);
 
@@ -100,9 +110,9 @@ export function DatasetCatalogDrawerProvider({ children }: { children: React.Rea
     () => ({
       openDatasetCatalogDrawer,
       closeDatasetCatalogDrawer,
-      isDatasetCatalogDrawerOpen: mounted,
+      isDatasetCatalogDrawerOpen: presented,
     }),
-    [closeDatasetCatalogDrawer, mounted, openDatasetCatalogDrawer],
+    [closeDatasetCatalogDrawer, openDatasetCatalogDrawer, presented],
   );
 
   const drawer = mounted

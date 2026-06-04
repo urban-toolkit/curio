@@ -20,6 +20,7 @@ import {
   isProjectSessionDataset,
   isUserInstalledDataset,
   useDatasetCatalog,
+  prefetchDatasetCatalog,
 } from "../../../../services/datasetCatalog";
 import { flowOutputRefFromRaw } from "../../../../utils/flowOutputRef";
 import styles from "./DatasetsPaletteDropdown.module.css";
@@ -113,6 +114,7 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
     includeHub: false,
     sort: "recent",
     liveOutputs,
+    enabled: open,
   });
 
   useEffect(() => {
@@ -236,9 +238,14 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
             <button
               type="button"
               className={styles.catalogButton}
-              onClick={() => {
-                openDatasetCatalogDrawer();
+              onMouseEnter={() => {
+                prefetchDatasetCatalog({
+                  dataflowId: projectId,
+                  includeHub: true,
+                  sort: "recent",
+                });
               }}
+              onClick={() => openDatasetCatalogDrawer()}
             >
               Browse Data Catalog +
             </button>

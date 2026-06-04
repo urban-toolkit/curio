@@ -1,4 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faFileImport, faThumbtack, faXmark } from "@fortawesome/free-solid-svg-icons";
 import { useFlowContext } from "../../../providers/FlowProvider";
@@ -58,17 +66,16 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [publishingId, setPublishingId] = useState<string | null>(null);
   const [detailDatasetId, setDetailDatasetId] = useState<string | null>(null);
+  const [, startUiTransition] = useTransition();
 
-  // Convert current execution outputs to the liveOutputs format understood by
-  // the catalog API.  This allows computed datasets to appear immediately after
-  // node execution, even before the project has been saved and the backend
-  // manifest has been written.
+  // Only track live execution outputs while the drawer is open — avoids
+  // refetch churn and main-thread work while the panel is off-screen.
   const liveOutputs = useMemo(() => {
-    if (!outputs || outputs.length === 0) return undefined;
+    if (!presented || !outputs || outputs.length === 0) return undefined;
     return outputs
       .map((o) => flowOutputRefFromRaw(o?.nodeId ?? "", o?.output))
       .filter((r): r is NonNullable<typeof r> => r !== null);
-  }, [outputs]);
+  }, [presented, outputs]);
 
   useEffect(() => {
     const handle = window.setTimeout(() => setDebouncedSearch(search), 280);
@@ -83,17 +90,21 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
     origin: tabOrigin(tab),
     includeHub: true,
     liveOutputs,
+    enabled: presented,
   });
+
+  const catalogItems = useDeferredValue(catalog.items);
 
   // Reload when a node execution auto-installs a computed dataset.
   useEffect(() => {
+    if (!presented) return;
     const onRefresh = () => void catalog.reload({ bustCache: true });
     window.addEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
     return () => window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
-  }, [catalog.reload]);
+  }, [catalog.reload, presented]);
 
   const items = useMemo(() => {
-    const needle = search.trim().toLowerCase();
+    const needle = debouncedSearch.trim().toLowerCase();
     const matchesSearch = (item: DatasetCatalogItem) => {
       if (!needle) return true;
       const haystack = [
@@ -109,7 +120,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
       return haystack.includes(needle);
     };
 
-    let list = catalog.items;
+    let list = catalogItems;
     if (tab === "featured") {
       list = list.filter((item) => item.origin === "hub" || item.installed).slice(0, 6);
     } else if (tab === "installed") {
@@ -120,22 +131,31 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
       );
     }
     return list.filter(matchesSearch);
-  }, [catalog.items, tab, search]);
+  }, [catalogItems, tab, debouncedSearch]);
 
   const installedCount = useMemo(
-    () => catalog.items.filter((item) => item.origin !== "hub" || item.installed).length,
-    [catalog.items],
+    () => catalogItems.filter((item) => item.origin !== "hub" || item.installed).length,
+    [catalogItems],
   );
   // Count all datasets that were produced by a node (includes published/imported ones).
   const computedCount = useMemo(
     () =>
-      catalog.items.filter((item) => item.origin === "computed" || Boolean(item.producerNodeId))
+      catalogItems.filter((item) => item.origin === "computed" || Boolean(item.producerNodeId))
         .length,
-    [catalog.items],
+    [catalogItems],
   );
+  const tabInstalledCount =
+    catalogItems.length > 0
+      ? installedCount
+      : (catalog.facets.origin.imported ?? 0) +
+        (catalog.facets.origin.computed ?? 0) +
+        (catalog.facets.origin.source_node ?? 0);
+  const tabComputedCount =
+    catalogItems.length > 0 ? computedCount : (catalog.facets.origin.computed ?? 0);
+
   const detailFallback = useMemo(
-    () => (detailDatasetId ? catalog.items.find((item) => item.id === detailDatasetId) ?? null : null),
-    [catalog.items, detailDatasetId],
+    () => (detailDatasetId ? catalogItems.find((item) => item.id === detailDatasetId) ?? null : null),
+    [catalogItems, detailDatasetId],
   );
 
   const ensureProjectId = useCallback(async (): Promise<string | null> => {
@@ -370,6 +390,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
       <div
         className={`${styles.overlayRoot} ${presented ? styles.overlayRootPresented : ""}`}
         data-curio-dataset-catalog-drawer="true"
+        aria-hidden={!presented}
       >
       <button type="button" className={styles.scrim} aria-label="Close dataset catalog" onClick={() => { if (!pinned) onRequestClose(); }} />
       <aside
@@ -407,7 +428,10 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
             type="search"
             placeholder="Search datasets, sources..."
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              const value = event.target.value;
+              startUiTransition(() => setSearch(value));
+            }}
           />
           <select
             className={styles.sortSelect}
@@ -424,30 +448,30 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
           <button
             type="button"
             className={`${styles.tab} ${tab === "featured" ? styles.tabActive : ""}`}
-            onClick={() => setTab("featured")}
+            onClick={() => startUiTransition(() => setTab("featured"))}
           >
             Featured
           </button>
           <button
             type="button"
             className={`${styles.tab} ${tab === "browse" ? styles.tabActive : ""}`}
-            onClick={() => setTab("browse")}
+            onClick={() => startUiTransition(() => setTab("browse"))}
           >
             Browse all
           </button>
           <button
             type="button"
             className={`${styles.tab} ${tab === "installed" ? styles.tabActive : ""}`}
-            onClick={() => setTab("installed")}
+            onClick={() => startUiTransition(() => setTab("installed"))}
           >
-            Installed <span>{installedCount}</span>
+            Installed <span>{tabInstalledCount}</span>
           </button>
           <button
             type="button"
             className={`${styles.tab} ${tab === "computed" ? styles.tabActive : ""}`}
-            onClick={() => setTab("computed")}
+            onClick={() => startUiTransition(() => setTab("computed"))}
           >
-            Computed <span>{computedCount}</span>
+            Computed <span>{tabComputedCount}</span>
           </button>
         </div>
 
@@ -455,8 +479,12 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
           {catalog.error ? <div className={styles.error}>{catalog.error}</div> : null}
           {/* Show full loading state only on initial load (no items yet).
               Background refreshes keep existing items visible. */}
-          {catalog.loading ? (
-            <div className={styles.empty}>Loading datasets...</div>
+          {catalog.loading && items.length === 0 ? (
+            <div className={styles.skeletonList} aria-busy="true" aria-label="Loading datasets">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className={styles.skeletonCard} />
+              ))}
+            </div>
           ) : null}
           {tab === "installed" ? (
             !catalog.loading && !catalog.error && items.length === 0 ? (

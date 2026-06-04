@@ -41,6 +41,7 @@ import { useUserContext } from "../../../providers/UserProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
 import { useNodeCatalogDrawer } from "../../../providers/NodeCatalogDrawerProvider";
 import { useDatasetCatalogDrawer } from "../../../providers/datasetCatalog";
+import { prefetchDatasetCatalog } from "../../../services/datasetCatalog";
 import { getCurrentProjectPackagesList } from "../../../registry/projectPackagesStore";
 
 export default function UpMenu({
@@ -516,6 +517,15 @@ export default function UpMenu({
                             </div>
                             <div
                                 className={styles.dropDownRow}
+                                onMouseEnter={() => {
+                                    if (projectId) {
+                                        prefetchDatasetCatalog({
+                                            dataflowId: projectId,
+                                            includeHub: true,
+                                            sort: "recent",
+                                        });
+                                    }
+                                }}
                                 onClick={() => {
                                     openDatasetCatalogDrawer();
                                     setActiveMenu(null);

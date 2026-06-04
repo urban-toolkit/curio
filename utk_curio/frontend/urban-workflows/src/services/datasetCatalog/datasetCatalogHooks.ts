@@ -24,8 +24,11 @@ type StableCatalogQuery = {
   liveOutputs?: DatasetCatalogQuery["liveOutputs"];
 };
 
+/** Shared across hook instances (drawer, palette, prefetch). */
+const catalogResponseCache: Record<string, DatasetCatalogResponse> = {};
+
 /** Stable cache key for a catalog fetch (tab filters are client-side only). */
-function catalogFetchKey(query: StableCatalogQuery): string {
+export function catalogFetchKey(query: StableCatalogQuery): string {
   return JSON.stringify({
     dataflowId: query.dataflowId ?? "",
     includeHub: query.includeHub ?? true,
@@ -37,41 +40,75 @@ function catalogFetchKey(query: StableCatalogQuery): string {
   });
 }
 
-export function useDatasetCatalog(query: DatasetCatalogQuery = {}) {
-  const [response, setResponse] = useState<DatasetCatalogResponse>(EMPTY_RESPONSE);
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const cacheByFetchKeyRef = useRef<Record<string, DatasetCatalogResponse>>({});
-  const responseRef = useRef<DatasetCatalogResponse>(EMPTY_RESPONSE);
-  const fetchGenRef = useRef(0);
-  responseRef.current = response;
+export function toStableCatalogQuery(query: DatasetCatalogQuery = {}): StableCatalogQuery {
+  return {
+    dataflowId: query.dataflowId || undefined,
+    search: query.search || undefined,
+    format: query.format || undefined,
+    origin: query.origin || undefined,
+    sort: query.sort || "recent",
+    includeHub: query.includeHub ?? true,
+    liveOutputs: query.liveOutputs,
+  };
+}
 
+export function peekCatalogCache(fetchKey: string): DatasetCatalogResponse | undefined {
+  return catalogResponseCache[fetchKey];
+}
+
+/** Warm the shared catalog cache without subscribing (e.g. before opening the drawer). */
+export function prefetchDatasetCatalog(query: DatasetCatalogQuery = {}): void {
+  const stableQuery = toStableCatalogQuery(query);
+  const fetchKey = catalogFetchKey(stableQuery);
+  if (catalogResponseCache[fetchKey]) return;
+
+  void datasetCatalogApi.listCatalog(stableQuery).then((next) => {
+    catalogResponseCache[fetchKey] = next;
+  }).catch(() => {
+    /* ignore — the drawer hook will surface errors on open */
+  });
+}
+
+export type UseDatasetCatalogOptions = DatasetCatalogQuery & {
+  /** When false, skip network fetch until enabled (drawer closed). Cache still hydrates UI. */
+  enabled?: boolean;
+};
+
+export function useDatasetCatalog(query: UseDatasetCatalogOptions = {}) {
+  const { enabled = true, ...queryRest } = query;
   const stableQuery = useMemo<StableCatalogQuery>(
-    () => ({
-      dataflowId: query.dataflowId || undefined,
-      search: query.search || undefined,
-      format: query.format || undefined,
-      origin: query.origin || undefined,
-      sort: query.sort || "recent",
-      includeHub: query.includeHub ?? true,
-      liveOutputs: query.liveOutputs,
-    }),
+    () => toStableCatalogQuery(queryRest),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      query.dataflowId, query.search, query.format, query.origin, query.sort, query.includeHub,
-      JSON.stringify(query.liveOutputs),
+      queryRest.dataflowId,
+      queryRest.search,
+      queryRest.format,
+      queryRest.origin,
+      queryRest.sort,
+      queryRest.includeHub,
+      JSON.stringify(queryRest.liveOutputs),
     ],
   );
 
   const fetchKey = useMemo(() => catalogFetchKey(stableQuery), [stableQuery]);
 
+  const [response, setResponse] = useState<DatasetCatalogResponse>(
+    () => peekCatalogCache(fetchKey) ?? EMPTY_RESPONSE,
+  );
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const responseRef = useRef<DatasetCatalogResponse>(EMPTY_RESPONSE);
+  const fetchGenRef = useRef(0);
+  responseRef.current = response;
+
   const reload = useCallback(async (options?: { bustCache?: boolean }) => {
+    if (!enabled) return;
     const gen = ++fetchGenRef.current;
     if (options?.bustCache) {
-      delete cacheByFetchKeyRef.current[fetchKey];
+      delete catalogResponseCache[fetchKey];
     }
-    const cached = cacheByFetchKeyRef.current[fetchKey];
+    const cached = catalogResponseCache[fetchKey];
 
     if (cached) {
       setResponse(cached);
@@ -91,7 +128,7 @@ export function useDatasetCatalog(query: DatasetCatalogQuery = {}) {
       if (gen !== fetchGenRef.current) {
         return;
       }
-      cacheByFetchKeyRef.current[fetchKey] = next;
+      catalogResponseCache[fetchKey] = next;
       setResponse(next);
       setError(null);
     } catch (err) {
@@ -106,19 +143,24 @@ export function useDatasetCatalog(query: DatasetCatalogQuery = {}) {
         setRefreshing(false);
       }
     }
-  }, [fetchKey, stableQuery]);
+  }, [enabled, fetchKey, stableQuery]);
 
+  // Hydrate from shared cache when the fetch key changes (e.g. project load).
   useEffect(() => {
-    const cached = cacheByFetchKeyRef.current[fetchKey];
+    const cached = catalogResponseCache[fetchKey];
     if (cached) {
       setResponse(cached);
       setLoading(false);
       setRefreshing(false);
     }
-    void reload();
-  }, [fetchKey, reload]);
+  }, [fetchKey]);
 
-  const initialLoading = loading && response.items.length === 0;
+  useEffect(() => {
+    if (!enabled) return;
+    void reload();
+  }, [enabled, fetchKey, reload]);
+
+  const initialLoading = enabled && loading && response.items.length === 0;
 
   const install = useCallback(
     async (dataset: DatasetCatalogItem) => {

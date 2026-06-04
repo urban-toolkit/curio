@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" width="1440" height="900" fill="none">
+  <title>Curio - Sectioned node palette (canvas)</title>
+  <desc>Left rail with Built-in / Installed / New + entry to warehouse. Matches dataflow shell.</desc>
+  <defs>
+    <style type="text/css">
+      .font { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+      .t-nav { font-size: 13px; font-weight: 500; fill: #FFFFFF; }
+      .t-nav-dim { font-size: 13px; font-weight: 500; fill: #9A9A9E; }
+      .t-flow { font-size: 16px; font-weight: 600; fill: #0F0F11; }
+      .t-section { font-size: 10px; font-weight: 700; fill: #747474; letter-spacing: 0.08em; }
+      .t-mini { font-size: 11px; font-weight: 600; fill: #FFFFFF; }
+    </style>
+    <pattern id="dotGrid" width="20" height="20" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1" fill="#C8C8CC" opacity="0.55"/>
+    </pattern>
+  </defs>
+
+  <rect id="Canvas_BG" width="1440" height="900" fill="#ECECEE"/>
+
+  <g id="Header_App">
+    <rect width="1440" height="56" fill="#0F0F11"/>
+    <text class="font t-nav" x="24" y="35">Curio</text>
+    <g id="Header_Menus" transform="translate(120,0)">
+      <text class="font t-nav-dim" x="0" y="35">File</text>
+      <text class="font t-nav-dim" x="52" y="35">View</text>
+      <text class="font t-nav-dim" x="108" y="35">Data</text>
+      <text class="font t-nav-dim" x="164" y="35">Nodes hub</text>
+    </g>
+    <g id="Header_User" transform="translate(1280,0)">
+      <circle cx="126" cy="28" r="14" fill="#434548"/>
+      <text class="font t-nav" text-anchor="middle" x="126" y="33" font-size="10" font-weight="600">SG</text>
+    </g>
+  </g>
+
+  <rect y="56" width="1440" height="844" fill="url(#dotGrid)"/>
+
+  <text class="font t-flow" x="96" y="92">DefaultDataflow</text>
+
+  <!-- Palette rail (floating card) -->
+  <g id="Palette_Rail" transform="translate(24,120)">
+    <rect width="72" height="620" rx="14" fill="#2C2C2E" opacity="0.96"/>
+    <rect x="3" y="3" width="66" height="614" rx="12" fill="none" stroke="#000000" stroke-opacity="0.2" stroke-width="1"/>
+
+    <text class="font t-section" x="36" y="28" text-anchor="middle" fill="#9A9A9E">CORE</text>
+
+    <!-- Built-in grid 2 cols x 5 rows - icon slots -->
+    <g id="Builtin_Icons" transform="translate(12,40)">
+      <g id="Icon_R1" transform="translate(0,0)"><rect width="22" height="22" rx="4" fill="#FFFFFF" opacity="0.12"/></g>
+      <g id="Icon_R2" transform="translate(28,0)"><rect width="22" height="22" rx="4" fill="#FFFFFF" opacity="0.12"/></g>
+      <g transform="translate(0,34)"><rect width="22" height="22" rx="4" fill="#FFFFFF" opacity="0.12"/></g>
+      <g transform="translate(28,34)"><rect width="22" height="22" rx="4" fill="#FFFFFF" opacity="0.12"/></g>
+      <g transform="translate(0,68)"><rect width="22" height="22" rx="4" fill="#FFFFFF" opacity="0.12"/></g>
+      <g transform="translate(28,68)"><rect width="22" height="22" rx="4" fill="#FFFFFF" opacity="0.12"/></g>
+      <g transform="translate(0,102)"><rect width="22" height="22" rx="4" fill="#FFFFFF" opacity="0.12"/></g>
+      <g transform="translate(28,102)"><rect width="22" height="22" rx="4" fill="#FFFFFF" opacity="0.12"/></g>
+      <g transform="translate(0,136)"><rect width="22" height="22" rx="4" fill="#FFFFFF" opacity="0.12"/></g>
+      <g transform="translate(28,136)"><rect width="22" height="22" rx="4" fill="#FFFFFF" opacity="0.12"/></g>
+    </g>
+
+    <line x1="12" y1="198" x2="60" y2="198" stroke="#FFFFFF" stroke-opacity="0.15" stroke-width="1"/>
+
+    <text class="font t-section" x="36" y="218" text-anchor="middle" fill="#9A9A9E">ADDED</text>
+    <g id="Installed_Icons" transform="translate(12,228)">
+      <rect width="22" height="22" rx="4" fill="#C45C26" opacity="0.35" stroke="#FFFFFF" stroke-opacity="0.25"/>
+      <rect x="28" y="0" width="22" height="22" rx="4" fill="#FFFFFF" opacity="0.12"/>
+    </g>
+
+    <line x1="12" y1="274" x2="60" y2="274" stroke="#FFFFFF" stroke-opacity="0.15" stroke-width="1"/>
+
+    <g id="Section_New" transform="translate(0,290)">
+      <text class="font t-section" x="36" y="0" text-anchor="middle" fill="#9A9A9E">NEW</text>
+      <g transform="translate(12,10)">
+        <rect width="22" height="22" rx="4" fill="#FFFFFF" opacity="0.18"/>
+        <circle cx="18" cy="6" r="5" fill="#E53935"/>
+        <text class="font t-mini" text-anchor="middle" x="18" y="8.5" font-size="7">2</text>
+      </g>
+      <g transform="translate(40,10)">
+        <rect width="22" height="22" rx="4" fill="#FFFFFF" opacity="0.18"/>
+        <circle cx="18" cy="6" r="5" fill="#E53935"/>
+        <text class="font t-mini" text-anchor="middle" x="18" y="8.5" font-size="7">1</text>
+      </g>
+    </g>
+
+    <g id="Btn_GetNodes" transform="translate(10,540)">
+      <rect width="52" height="52" rx="10" fill="#0F0F11"/>
+      <line x1="26" y1="18" x2="26" y2="34" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+      <line x1="18" y1="26" x2="34" y2="26" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+    </g>
+    <text class="font t-section" x="36" y="608" text-anchor="middle" fill="#9A9A9E">STORE</text>
+  </g>
+
+  <!-- Hint callout -->
+  <g id="Callout_Hint" transform="translate(110,480)">
+    <rect width="200" height="56" rx="8" fill="#FFFFFF" stroke="#0F0F11" stroke-opacity="0.15" stroke-width="1"/>
+    <text class="font t-nav-dim" x="14" y="24" fill="#434548" font-size="12px">Section labels + badges keep</text>
+    <text class="font t-nav-dim" x="14" y="42" fill="#434548" font-size="12px">new packs obvious (epic).</text>
+  </g>
+</svg>

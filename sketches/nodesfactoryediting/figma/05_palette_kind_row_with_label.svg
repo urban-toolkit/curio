@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 120" width="280" height="120">
+  <title>05 - Pack kind row with label + category</title>
+  <defs>
+    <style type="text/css">
+      .f { font-family: Rubik, -apple-system, sans-serif; }
+    </style>
+  </defs>
+  <rect width="280" height="120" fill="#1E1F23"/>
+  <g transform="translate(12,24)">
+    <rect width="36" height="36" rx="4" fill="#2a2b30" stroke="rgba(255,255,255,0.1)"/>
+    <text class="f" x="48" y="22" fill="#fbfcf6" font-size="11px" font-weight="600">UHVI Loader</text>
+    <rect x="130" y="4" width="72" height="18" rx="9" fill="rgba(251,170,105,0.25)"/>
+    <text class="f" x="166" y="17" fill="#FBAA69" font-size="8px" font-weight="700" text-anchor="middle">DATA</text>
+    <text class="f" x="212" y="18" fill="#628ef4" font-size="8px" font-weight="700">PACK</text>
+  </g>
+  <text class="f" x="12" y="104" fill="rgba(255,255,255,0.4)" font-size="8px">Short label + category chip + PACK badge</text>
+</svg>
