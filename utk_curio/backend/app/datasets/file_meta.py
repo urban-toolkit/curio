@@ -73,7 +73,12 @@ def write_file_meta(data_path: Path, row_count: int | None, feature_count: int |
             payload["featureCount"] = feature_count
         meta.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     except Exception:
-        pass
+        # Sidecar writes are best-effort; never fail the caller on cache I/O errors.
+        logger.debug(
+            "Could not write sidecar metadata for %s",
+            data_path,
+            exc_info=True,
+        )
 
 
 def patch_manifest_file(

@@ -11,7 +11,6 @@ from utk_curio.backend.app.datasets.errors import DatasetCatalogError
 from utk_curio.backend.app.datasets.installed_repository import InstalledDatasetRepository
 from utk_curio.backend.app.datasets.local_repository import LocalDatasetRepository
 from utk_curio.backend.app.datasets.preview_service import DatasetPreviewService
-from utk_curio.backend.app.datasets.provenance import computed_output_format
 from utk_curio.backend.app.datasets.registry_repository import DatasetRegistryRepository
 
 # Private helpers kept for tests and bundle.py that imported from service.

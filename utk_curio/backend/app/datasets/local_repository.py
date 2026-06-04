@@ -10,7 +10,6 @@ from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
 from utk_curio.backend.app.datasets.catalog_items import format_for_path, item_from_file
-from utk_curio.backend.app.datasets.catalog_utils import iso_from_timestamp
 from utk_curio.backend.app.datasets.constants import SUPPORTED_SUFFIXES
 from utk_curio.backend.app.datasets.errors import DatasetCatalogError
 from utk_curio.backend.app.datasets.file_meta import count_file, meta_path, write_file_meta

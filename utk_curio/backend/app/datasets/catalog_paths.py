@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from utk_curio.backend.app.datasets.catalog_items import loader_snippet
 from utk_curio.backend.app.datasets.errors import DatasetCatalogError
@@ -141,7 +144,11 @@ class CatalogPathMixin:
                     manifest = load_dataset_manifest(user_root)
                     return resolve_installed_data_path(user_key, manifest).as_posix()
                 except (ManifestError, Exception):
-                    pass
+                    logger.debug(
+                        "Could not resolve installed path for %s in user store",
+                        dir_name,
+                        exc_info=True,
+                    )
 
         catalog_root_dir = catalog_root() / dir_name
         if (catalog_root_dir / "manifest.json").is_file():
