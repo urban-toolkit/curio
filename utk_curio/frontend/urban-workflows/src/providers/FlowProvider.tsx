@@ -27,7 +27,13 @@ import { NodeType, EdgeType } from "../constants";
 import { getFlowNodeCanonicalType } from "../utils/flowNodeCanonicalType";
 import { TrillGenerator } from "../TrillGenerator";
 import { applyDashboardLayout } from "../utils/dashboardLayout";
-import { ensureMergeArrays, parseHandleIndex, setMergeSlot, clearMergeSlot } from "../utils/mergeFlowUtils";
+import {
+    ensureMergeArrays,
+    parseHandleIndex,
+    setMergeSlot,
+    clearMergeSlot,
+    mergeSlotForSource,
+} from "../utils/mergeFlowUtils";
 import { useWorkflowOperations } from "../hook/useWorkflowOperations";
 import { useToastContext } from "./ToastProvider";
 import { useCollab } from "./CollaborationProvider";
@@ -694,6 +700,9 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                     showToast("Input and output types of these boxes are not compatible", "warning");
                 }
 
+                // Resolve merge target handle before validation / applyOutput. Imported
+                // trills set `in_0`/`in_1` explicitly; manual drags may omit it.
+                let resolvedConnection: Connection = connection;
                 if (inNodeType === NodeType.MERGE_FLOW && allowConnection) {
                     const availableHandles = Array(5).fill(1).map((_, i) => `in_${i}`);
                     const usedHandles = new Set(
@@ -705,13 +714,35 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                             .map((edge: Edge) => edge.targetHandle)
                     );
 
+                    let targetHandle = connection.targetHandle;
+                    if (!targetHandle || targetHandle === "in" || parseHandleIndex(targetHandle) < 0) {
+                        const nextFree = availableHandles.find((h) => !usedHandles.has(h));
+                        if (!nextFree) {
+                            showToast(
+                                "Connection limit reached. Merge nodes can only accept up to 5 input connections.",
+                                "warning",
+                            );
+                            allowConnection = false;
+                        } else {
+                            targetHandle = nextFree;
+                            resolvedConnection = { ...connection, targetHandle };
+                        }
+                    }
 
-                    if (usedHandles.size > 7) {
-                        showToast("Connection limit reached. Merge nodes can only accept up to 7 input connections.", "warning");
-                        allowConnection = false;
-                    } else if (usedHandles.has(connection.targetHandle)) {
-                        showToast("This input already has a connection. Each input handle can only accept one connection.", "warning");
-                        allowConnection = false;
+                    if (allowConnection) {
+                        if (usedHandles.size >= availableHandles.length) {
+                            showToast(
+                                "Connection limit reached. Merge nodes can only accept up to 5 input connections.",
+                                "warning",
+                            );
+                            allowConnection = false;
+                        } else if (usedHandles.has(resolvedConnection.targetHandle)) {
+                            showToast(
+                                "This input already has a connection. Each input handle can only accept one connection.",
+                                "warning",
+                            );
+                            allowConnection = false;
+                        }
                     }
                 }
 
@@ -728,18 +759,19 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 }
 
                 if (allowConnection) {
-                    markNodeStaleRef.current(connection.target as string);
+                    const conn = inNodeType === NodeType.MERGE_FLOW ? resolvedConnection : connection;
+                    markNodeStaleRef.current(conn.target as string);
                     applyOutput(
                         inNodeType as NodeType,
-                        connection.target as string,
-                        connection.source as string,
-                        connection.sourceHandle as string,
-                        connection.targetHandle as string
+                        conn.target as string,
+                        conn.source as string,
+                        conn.sourceHandle as string,
+                        conn.targetHandle as string
                     );
 
                     setEdges((eds) => {
                         let customConnection: any = {
-                            ...connection,
+                            ...conn,
                             markerEnd: { type: MarkerType.ArrowClosed },
                         };
 
@@ -747,15 +779,15 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                         // connections arrive as Connection (no id); addEdge assigns one later
                         // but addNewVersionProvenance is called before that.
                         if (!customConnection.id) {
-                            customConnection.id = `reactflow__edge-${connection.source}${connection.sourceHandle || ''}-${connection.target}${connection.targetHandle || ''}`;
+                            customConnection.id = `reactflow__edge-${conn.source}${conn.sourceHandle || ''}-${conn.target}${conn.targetHandle || ''}`;
                         }
 
                         if (customConnection.data == undefined)
                             customConnection.data = {};
 
                         if (
-                            connection.sourceHandle == "in/out" &&
-                            connection.targetHandle == "in/out"
+                            conn.sourceHandle == "in/out" &&
+                            conn.targetHandle == "in/out"
                         ) {
                             customConnection.markerStart = {
                                 type: MarkerType.ArrowClosed,
@@ -909,9 +941,15 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
                 if (getFlowNodeCanonicalType(node) == NodeType.MERGE_FLOW) {
                     const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
-                    const sourceIndex = sourceList.findIndex((s: any) => s === newOutput.nodeId);
+                    const sourceIndex = mergeSlotForSource(
+                        currentEdges,
+                        node.id,
+                        newOutput.nodeId,
+                        sourceList,
+                    );
                     if (sourceIndex >= 0) {
                         inputList[sourceIndex] = newOutput.output;
+                        sourceList[sourceIndex] = newOutput.nodeId;
                     }
                     return { ...node, data: { ...node.data, input: inputList, source: sourceList } };
                 }
