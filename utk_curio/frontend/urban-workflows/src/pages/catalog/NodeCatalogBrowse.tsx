@@ -287,15 +287,6 @@ export const NodeCatalogBrowse: React.FC = () => {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <select
-              className={browseStyles.sortSelect}
-              value={sort}
-              onChange={(e) => setSort(e.target.value as SortMode)}
-              style={{ border: "1px solid #E5E5E5", borderRadius: 8, padding: "6px 10px", background: "#fff" }}
-            >
-              <option value="new">Sort: Newest</option>
-              <option value="name">Sort: Name</option>
-            </select>
           </div>
         </section>
 
@@ -321,17 +312,48 @@ export const NodeCatalogBrowse: React.FC = () => {
           >
             Updates
           </button>
-          {quickCategories.map((cat) => (
-            <button
-              key={cat}
-              className={`${browseStyles.chip} ${categoryFilter === cat ? browseStyles.chipActive : ""}`}
-              type="button"
-              onClick={() => setCategoryFilter((prev) => (prev === cat ? "" : cat))}
-            >
-              {cat}
-            </button>
-          ))}
+          {quickCategories.map((cat) => {
+            const dotSlug = cat.toLowerCase().replace(/[^a-z0-9-]/g, "");
+            const dotClass =
+              (browseStyles as Record<string, string>)[`chipDot_${dotSlug}`] ?? browseStyles.chipDotDefault;
+            return (
+              <button
+                key={cat}
+                className={`${browseStyles.chip} ${categoryFilter === cat ? browseStyles.chipActive : ""}`}
+                type="button"
+                onClick={() => setCategoryFilter((prev) => (prev === cat ? "" : cat))}
+              >
+                <span className={`${browseStyles.chipDot} ${dotClass}`} />
+                {cat}
+              </button>
+            );
+          })}
           <span className={browseStyles.filterSpacer} />
+          <select
+            className={browseStyles.sortSelect}
+            value={sort}
+            onChange={(e) => setSort(e.target.value as SortMode)}
+          >
+            <option value="new">Sort: Newest</option>
+            <option value="name">Sort: Name</option>
+          </select>
+          <div className={browseStyles.viewToggles}>
+            <button className={browseStyles.viewToggleActive} type="button" title="Grid view" aria-label="Grid view">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <rect x="0" y="0" width="5" height="4" rx="0.5" fill="#555" />
+                <rect x="7" y="0" width="5" height="4" rx="0.5" fill="#555" />
+                <rect x="0" y="6" width="5" height="4" rx="0.5" fill="#555" />
+                <rect x="7" y="6" width="5" height="4" rx="0.5" fill="#555" />
+              </svg>
+            </button>
+            <button className={browseStyles.viewToggleInactive} type="button" title="List view" aria-label="List view">
+              <svg width="12" height="10" viewBox="0 0 12 10" fill="none">
+                <line x1="0" y1="1" x2="12" y2="1" stroke="#BBBBBB" strokeWidth="1.2" />
+                <line x1="0" y1="5" x2="12" y2="5" stroke="#BBBBBB" strokeWidth="1.2" />
+                <line x1="0" y1="9" x2="12" y2="9" stroke="#BBBBBB" strokeWidth="1.2" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {lastInstallSummary ? (

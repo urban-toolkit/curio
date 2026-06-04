@@ -31,11 +31,15 @@
   text-decoration: none;
   cursor: pointer;
   font-family: inherit;
+  opacity: 1;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 
-.tabLink:hover {
+/* Do not apply inactive-tab hover colors to the active tab (avoids “washed out” / fake opacity). */
+.tabLink:hover:not(.tabLinkActive) {
   border-color: #b0b0b8;
   color: #1e1f23;
+  background: #f7f7f7;
 }
 
 .tabLinkActive {
@@ -43,6 +47,18 @@
   border-color: #1e1f23;
   color: #fbfcf6;
   font-weight: 600;
+}
+
+.tabLinkActive:hover {
+  color: #fbfcf6;
+  background: #2a2b31;
+  border-color: #2a2b31;
+  opacity: 1;
+}
+
+.tabLink:focus-visible {
+  outline: 2px solid #3567c7;
+  outline-offset: 2px;
 }
 
 .outlet {

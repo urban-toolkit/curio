@@ -375,6 +375,12 @@ export const DataCatalogBrowse: React.FC = () => {
     [catalog.items, selectedId],
   );
 
+  /** Total rows in the current search universe (facets are computed before format/origin filters). */
+  const catalogFacetDatasetTotal = useMemo(
+    () => Object.values(catalog.facets.format).reduce((sum, n) => sum + n, 0),
+    [catalog.facets.format],
+  );
+
   const handlePublish = useCallback(
     async (dataset: DatasetCatalogItem) => {
       setPublishingId(dataset.id);
@@ -397,7 +403,7 @@ export const DataCatalogBrowse: React.FC = () => {
   return (
     <div className={styles.page}>
       <aside className={styles.categoryRail}>
-        <p className={styles.railLabel}>By Format</p>
+        <p className={styles.railLabel}>By format</p>
 
         <button
           className={`${styles.railButton} ${format === "" ? styles.railButtonActive : ""}`}
@@ -405,7 +411,7 @@ export const DataCatalogBrowse: React.FC = () => {
           onClick={() => setFormat("")}
         >
           <span>All datasets</span>
-          <span className={styles.railCountBadge}>{catalog.items.length}</span>
+          <span className={styles.railCountBadge}>{catalogFacetDatasetTotal}</span>
         </button>
 
         {FORMAT_FILTERS.map((key) => (
@@ -424,12 +430,20 @@ export const DataCatalogBrowse: React.FC = () => {
         ))}
 
         <div className={styles.railDivider} />
-        <p className={styles.railLabel}>By Origin</p>
+        <p className={styles.railLabel}>By origin</p>
+
+        <button
+          className={`${styles.railButton} ${origin === "" ? styles.railButtonActive : ""}`}
+          type="button"
+          onClick={() => setOrigin("")}
+        >
+          <span>All origins</span>
+        </button>
 
         {ORIGIN_FILTERS.map((key) => (
           <button
             key={key}
-            className={`${styles.originButton} ${origin === key ? styles.railButtonActive : ""}`}
+            className={`${styles.railButton} ${origin === key ? styles.railButtonActive : ""}`}
             type="button"
             onClick={() => setOrigin((prev) => (prev === key ? "" : key))}
           >
@@ -450,6 +464,10 @@ export const DataCatalogBrowse: React.FC = () => {
             <h1>Data Catalog</h1>
             <span className={styles.titleCount}>{catalog.items.length}</span>
           </div>
+          <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6B6B76", maxWidth: 720 }}>
+            View datasets available in the catalog library.
+            Installing a dataset into a project can be done in the project&apos;s data catalog.
+          </p>
           <div className={styles.headerTools}>
             <span className={styles.hubStatusChip}>
               <span className={styles.hubStatusDot} />
@@ -462,7 +480,7 @@ export const DataCatalogBrowse: React.FC = () => {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <button className={styles.publishButton} type="button">Publish Dataset</button>
+            {/* <button className={styles.publishButton} type="button">Publish Dataset</button> */}
           </div>
         </section>
 

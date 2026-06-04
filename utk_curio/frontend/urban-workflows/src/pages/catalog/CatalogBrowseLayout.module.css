@@ -40,7 +40,7 @@
 .categoryRail {
   grid-column: 1;
   grid-row: 1;
-  background: #FAFAFA;
+  background: #ffffff;
   border-right: 1px solid #E5E5E5;
   display: flex;
   flex-direction: column;
@@ -56,6 +56,10 @@
   color: #BBBBBB;
   letter-spacing: 0.07em;
   text-transform: uppercase;
+}
+
+.categoryRail > .railLabel:first-of-type {
+  margin-top: 18px;
 }
 
 .railButton {
@@ -80,7 +84,7 @@
 .railButton:hover { background: rgba(0,0,0,0.02); }
 
 .railButtonActive {
-  background: rgba(0,0,0,0.04);
+  background: #f0f0f0;
   color: #1E1F23;
   font-weight: 700;
 }
@@ -89,7 +93,7 @@
   content: "";
   position: absolute;
   left: 0; top: 0; bottom: 0;
-  width: 3px;
+  width: 4px;
   background: #1E1F23;
   border-radius: 0 2px 2px 0;
 }
@@ -138,27 +142,6 @@
 .dot_parquet  { background: #FBAA69; }
 .dot_geotiff  { background: #7A4BD1; opacity: 0.7; }
 .dot_shp      { background: #888888; }
-
-.originButton {
-  width: 100%;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  border: 0;
-  background: transparent;
-  color: #555555;
-  padding: 9px 18px;
-  font-family: inherit;
-  font-size: 15px;
-  font-weight: 400;
-  cursor: pointer;
-  text-align: left;
-  min-height: 40px;
-}
-
-.originButton:hover { background: rgba(0,0,0,0.02); }
 
 .railDivider {
   height: 1px;
@@ -360,6 +343,12 @@
 .chipDot_geojson { background: #2F8F4A; }
 .chipDot_csv     { background: #3B6FD4; }
 .chipDot_json    { background: #7A4BD1; }
+.chipDotDefault { background: #9E9E9E; }
+/* Node catalog category chips (primaryCategory) */
+.chipDot_data         { background: #FBAA69; }
+.chipDot_computation  { background: #3B6FD4; }
+.chipDot_vis          { background: #7A4BD1; }
+.chipDot_package      { background: #888888; }
 
 .newChip {
   height: 26px;

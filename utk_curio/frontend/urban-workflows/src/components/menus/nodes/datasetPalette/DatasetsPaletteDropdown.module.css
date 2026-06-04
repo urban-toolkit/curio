@@ -257,7 +257,7 @@
   grid-template-columns: 1fr 1fr 1fr;
   align-items: center;
   justify-items: baseline;
-  gap: 8px;
+  gap: 0;
   min-height: 16px;
   padding-left: 66px;
 }
