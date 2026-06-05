@@ -76,8 +76,9 @@ export const useAutkGrammarLifecycle: NodeLifecycleHook = (data, nodeState) => {
             }
         }
 
-        // Resolve relative data-source URLs to the backend origin so users can
-        // write 'examples/data/file.pbf' instead of 'http://localhost:5002/...'.
+        // Resolve relative data-source URLs to the backend's /file/ route so
+        // users can write the CURIO_LAUNCH_CWD-relative path
+        // 'docs/examples/data/file.pbf' instead of 'http://localhost:5002/...'.
         spec = resolveDataSourceUrls(spec);
 
         const targets: Record<string, string> = {};
@@ -327,8 +328,11 @@ function firstCoordinate(coords: any): [number, number] | null {
     return firstCoordinate(coords[0]);
 }
 
-// Resolve relative URLs in data source specs to the Curio backend origin so
-// users can write 'examples/data/file.pbf' instead of the full localhost URL.
+// Resolve relative URLs in data source specs to the Curio backend's /file/
+// route, which serves files by their path *relative to CURIO_LAUNCH_CWD* — the
+// same root and relative-path convention the Python sandbox uses. So users can
+// write the CURIO_LAUNCH_CWD-relative path 'docs/examples/data/file.pbf' (no
+// host/port, no route prefix) exactly as a Python node would read it.
 // Absolute URIs (http://, https://, data:, blob:, …) are passed through unchanged.
 // Applies to all file-URL fields across every data source type.
 function resolveDataSourceUrls(spec: any): any {
@@ -343,7 +347,7 @@ function resolveDataSourceUrls(spec: any): any {
         for (const field of urlFields) {
             const val = source[field];
             if (typeof val === 'string' && !isAbsolute(val)) {
-                patch[field] = `${backendUrl}/${val.replace(/^\/+/, '')}`;
+                patch[field] = `${backendUrl}/file/${val.replace(/^\/+/, '')}`;
             }
         }
         return Object.keys(patch).length > 0 ? { ...source, ...patch } : source;

@@ -230,27 +230,32 @@ def launchCwd():
 def sharedDataPath():
     return os.environ["CURIO_SHARED_DATA"]
 
-@bp.route('/examples/data/<path:filename>', methods=['GET'])
-def serve_example_data(filename: str):
-    """Serve a static file from docs/examples/data/ so browser-side nodes
-    (e.g. autk-grammar) can fetch binary assets such as PBF files.
+@bp.route('/file/<path:filename>', methods=['GET'])
+def serve_launch_cwd_file(filename: str):
+    """Serve a file by its path *relative to CURIO_LAUNCH_CWD* so browser-side
+    nodes (e.g. autk-grammar) can fetch binary assets (PBF, GeoTIFF, …) the
+    same way Python sandbox nodes read them from disk — one shared root, one
+    relative-path convention:
+      Python node:   rasterio.open('docs/examples/data/file.tif')
+      Grammar spec:  pbfFileUrl: 'docs/examples/data/file.pbf'
 
-    URL path mirrors the filesystem convention used in Python sandbox nodes:
-      Python node:    rasterio.open('docs/examples/data/file.tif')
-      Grammar spec:   pbfFileUrl: 'http://localhost:5002/examples/data/file.pbf'
+    The frontend prepends ``BACKEND_URL`` + ``/file/`` to the relative path at
+    run time (see resolveDataSourceUrls in autkGrammarLifecycle.tsx).
 
-    safe_join blocks path-traversal payloads from escaping the directory.
+    safe_join blocks path-traversal payloads from escaping CURIO_LAUNCH_CWD.
     """
     from flask import send_from_directory
     from utk_curio.backend.app.common.safe_paths import PathTraversalError, safe_join
 
     launch_cwd = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
-    data_dir = os.path.join(launch_cwd, 'docs', 'examples', 'data')
+    # ``filename`` is a multi-segment relative path (e.g. docs/examples/data/x.pbf);
+    # validate each component so traversal payloads can't escape CURIO_LAUNCH_CWD.
+    parts = [p for p in filename.split('/') if p]
     try:
-        safe_join(data_dir, filename)
+        safe_join(launch_cwd, *parts)
     except PathTraversalError:
         abort(403)
-    return send_from_directory(data_dir, filename)
+    return send_from_directory(launch_cwd, filename)
 
 @bp.route('/upload', methods=['POST'])
 @require_auth
