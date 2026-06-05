@@ -30,7 +30,7 @@ Two kinds of packages ship with Curio:
 
 | Package | What it provides |
 |---|---|
-| `curio.builtin@1` | The default 14 node kinds (Data Loading, Python/JS Computation, Vega-Lite, AutkMap, etc.). Auto-installed for every user; **read-only** (you can save edits as a new package but can't overwrite the originals) and can't be uninstalled. |
+| `curio.builtin@1` | The default 12 node kinds (Data Loading, Python/JS Computation, Vega-Lite, Autark, etc.). Auto-installed for every user; **read-only** (you can save edits as a new package but can't overwrite the originals) and can't be uninstalled. |
 | `ai.urbanlab.uhvi@1`, `curio.weather@1` | Example packages you can install from the catalog drawer to see the package workflow end-to-end. |
 
 You can install any number of additional packages — your own creations or archives shared by others.

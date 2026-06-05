@@ -152,10 +152,10 @@ Built-in templates (in `curio.builtin@1/manifest.json`) currently cover:
 
 | Category | Templates |
 |---|---|
-| Data | `data-loading`, `data-transformation`, `data-summary`, `data-export`, `data-pool`, `autk-db` |
-| Computation | `computation-analysis`, `js-computation`, `merge-flow`, `autk-compute`, `spatial-join` |
-| Map visualization | `autk-map` |
-| Chart/table visualization | `vis-vega`, `vis-simple`, `autk-plot` |
+| Data | `data-loading`, `data-transformation`, `data-summary`, `data-export`, `data-pool` |
+| Computation | `computation-analysis`, `js-computation`, `merge-flow`, `spatial-join` |
+| Grammar (Autark) | `autk-grammar` — one node whose UrbanSpec unifies OSM/PBF loading, GPU `compute`, and `map` + `plot` rendering |
+| Chart/table visualization | `vis-vega`, `vis-simple` |
 
 Third-party packages (or first-party optional ones, like `curio.streetvision@1`) install via the **catalog drawer** in the canvas, which copies the package directory into the user's store at `.curio/users/<user>/packages/`.
 
@@ -216,7 +216,7 @@ The hook can return:
 
 Lifecycles register against a single global registry — [`lifecycleRegistry.ts::registerLifecycle(name, hook)`](../utk_curio/frontend/urban-workflows/src/registry/lifecycleRegistry.ts) — and the manifest's `lifecycle` key looks them up by name. Two distribution channels:
 
-**1. Built-in (ships with Curio's main bundle).** [`builtinLifecycles.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinLifecycles.ts) calls `registerLifecycle(...)` at import time for the hooks every install needs — `useCodeNodeLifecycle`, `useVegaLifecycle`, the AUTK family, `useDataPoolLifecycle`, `useMergeFlowLifecycle`, `useSpatialJoinLifecycle`, etc. These power `curio.builtin@1`'s templates.
+**1. Built-in (ships with Curio's main bundle).** [`builtinLifecycles.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinLifecycles.ts) calls `registerLifecycle(...)` at import time for the hooks every install needs — `useCodeNodeLifecycle`, `useVegaLifecycle`, `useAutkGrammarLifecycle`, `useDataPoolLifecycle`, `useMergeFlowLifecycle`, `useSpatialJoinLifecycle`, etc. These power `curio.builtin@1`'s templates.
 
 **2. Per-package (dynamic, loaded at boot).** A package whose templates need custom UI can declare `"lifecycleScript": "scripts/lifecycles.js"` in its manifest and ship a pre-built JS bundle alongside the manifest. At boot, [`packagesClient.ts::loadPackageLifecycleScripts`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) fetches each installed package's bundle with the user's Bearer token and injects the response body as an inline `<script>` *before* descriptors are built. The bundle's top-level side-effect calls `window.curio.registerLifecycle(...)` for each hook it ships.
 
@@ -386,7 +386,7 @@ The sandbox runs as a completely separate Flask process. It:
 
 ## Interactions and Propagation
 
-Visualization nodes (`AUTK_MAP`, `AUTK_PLOT`, `VIS_VEGA`, `VIS_SIMPLE`) can emit user interactions (selections, filters, brushes) that flow **upstream** through the dataflow graph, causing upstream nodes to re-execute with the filtered subset.
+Visualization nodes (`AUTK_GRAMMAR`, `VIS_VEGA`, `VIS_SIMPLE`) can emit user interactions (selections, filters, brushes) that flow **upstream** through the dataflow graph, causing upstream nodes to re-execute with the filtered subset.
 
 ### IInteraction
 

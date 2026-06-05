@@ -31,7 +31,7 @@ Three patterns cover essentially every node Curio ships:
 
 | Pattern | Examples | Backend? |
 |---|---|---|
-| **Pure-frontend** | `vis-vega`, `vis-simple`, `autk-map`, `autk-plot`, `cv-gallery` | None. The lifecycle hook does its work in the browser. |
+| **Pure-frontend** | `vis-vega`, `vis-simple`, `autk-grammar`, `cv-gallery` | None. The lifecycle hook does its work in the browser. |
 | **Sandbox-Python** | `data-loading`, `data-transformation`, `computation-analysis`, `data-summary` | Reuses Curio's existing code sandbox at [`utk_curio/sandbox/`](../utk_curio/sandbox/) via the `code` lifecycle. User-provided Python runs out-of-process. |
 | **Custom blueprint** | `streetvision` (calls Google Street View + HuggingFace + runs `torch` inference), `spatial-join` (shapely STRtree) | A new Flask blueprint under [`utk_curio/backend/app/<feature>/`](../utk_curio/backend/app/). Right call when the node needs external APIs, long-running jobs, persistent state, or heavy native dependencies that the sandbox can't reasonably ship. |
 

@@ -1,9 +1,9 @@
 # Example: Heterogeneous data + cross-grammar linked views
 
-This example combines three different data sources — a high-resolution thermal raster, a tabular meteorological feed, and a sociodemographic GeoDataFrame — into a single pipeline that derives the Universal Thermal Climate Index (UTCI) per Milan census tract, and then renders the result through coordinated `AUTK_MAP`, Vega-Lite scatter, and Vega-Lite boxplot views with cross-grammar Interaction edges. The use case is heat exposure of older adults in Milan; the framework story is that Curio's `MERGE_FLOW` and `DATA_POOL` let you fan a heterogeneous join out to multiple linked views regardless of the visualization grammar.
+This example combines three different data sources — a high-resolution thermal raster, a tabular meteorological feed, and a sociodemographic GeoDataFrame — into a single pipeline that derives the Universal Thermal Climate Index (UTCI) per Milan census tract, and then renders the result through coordinated `autk-grammar` map, Vega-Lite scatter, and Vega-Lite boxplot views with cross-grammar Interaction edges. The use case is heat exposure of older adults in Milan; the framework story is that Curio's `MERGE_FLOW` and `DATA_POOL` let you fan a heterogeneous join out to multiple linked views regardless of the visualization grammar.
 
 !!! note "WebGPU required"
-    The `AUTK_MAP` step in this dataflow needs WebGPU. Run this example in a Chromium-based browser (Chrome / Edge) on a machine with a working GPU stack.
+    The `autk-grammar` map step in this dataflow needs WebGPU. Run this example in a Chromium-based browser (Chrome / Edge) on a machine with a working GPU stack.
 
 ## Pipeline overview
 
@@ -20,7 +20,7 @@ flowchart LR
   S --> Z
   Z --> T[DATA_TRANSFORMATION<br/>reproject + filter] --> P[DATA_POOL]
 
-  P --> M[AUTK_MAP<br/>thematic + picking]
+  P --> M[autk-grammar<br/>thematic map + picking]
   P --> SC[VIS_VEGA<br/>linked scatter]
   P --> BX[DATA_TRANSFORMATION<br/>gt_65 only] --> BV[VIS_VEGA<br/>linked boxplot]
 
@@ -151,7 +151,7 @@ return gdf.loc[:, [gdf.geometry.name, "mean", "gt_65"]]
 
 ## Step 7: Reproject and filter (`DATA_TRANSFORMATION`)
 
-Drop polygons with non-positive UTCI and reproject to EPSG:3395 so the `AUTK_MAP` downstream sees the CRS its tile pipeline expects. The `metadata.name` keeps the table referenceable as `census` throughout the rest of the dataflow.
+Drop polygons with non-positive UTCI and reproject to EPSG:3395 so the `autk-grammar` map downstream sees the CRS its tile pipeline expects. The `metadata.name` keeps the table referenceable as `census` throughout the rest of the dataflow.
 
 Note the assignment goes through ``__dict__['metadata']`` instead of plain attribute syntax: pandas emits a `UserWarning` when setting an unknown attribute on a sliced DataFrame, and curio's sandbox treats any non-empty stderr as a node failure during e2e. Curio reads `.metadata` back through `getattr`, so both write paths work — but only the dict path stays warning-free.
 
@@ -170,23 +170,26 @@ return filtered_gdf
 
 The pool keeps the joined `census` table in shared memory so the next three views can read it without re-running the spatial join.
 
-## Step 9: Thematic map of UTCI (`AUTK_MAP`)
+## Step 9: Thematic map of UTCI (`autk-grammar`)
 
-The map node loads the census polygons coloured by `properties.mean` and turns picking on so the linked scatterplot can highlight selected tracts.
+The map is an `autk-grammar` node with just a `map` block. The census polygons routed in from the Data
+Pool are auto-injected as the `upstream` source; the layer is coloured by the UTCI `mean` column and
+picking is enabled so the linked scatterplot can highlight selected tracts. No JavaScript and no explicit
+data block — the grammar reads the upstream GeoDataFrame directly.
 
-`arg` arrives as the auto-wrapped layer array `[{ name, type, geojson }]` (the `AUTK_MAP` lifecycle wraps any single GeoDataFrame routed through a Data Pool into this shape). Iterate it and use `layer.name` as the loaded layer id — the wrapper's `name` is what the lifecycle's selection fast-path looks up when a linked view brushes selection back through the pool, so passing a custom id like `'census'` would silently break that path. `type: null` lets autk-map infer the layer type from the feature geometries (`'polygons'`); the literal `'polygon'` is not in autk-map's accepted set (`'polygons' / 'roads' / 'polylines' / 'points' / 'buildings' / 'surface' / 'water' / 'parks' / 'raster'`) and would be silently rejected, leaving the map blank.
-
-```javascript
-const map = new AutkMap(container);
-await map.init();
-for (const layer of arg) {
-    map.loadCollection(layer.name, { collection: layer.geojson, type: null });
-    map.updateRenderInfo(layer.name, { renderInfo: { isPick: true, isColorMap: true } });
-    map.updateThematic(layer.name, { collection: layer.geojson, property: 'properties.mean' });
+```json
+{
+  "map": {
+    "layerRefs": [
+      { "dataRef": "upstream", "getFnv": "mean", "getFnvType": "quantitative", "defaultFnv": 0, "isPick": true }
+    ]
+  }
 }
-map.draw();
-return map;
 ```
+
+`getFnv: "mean"` resolves to `properties.mean` (the per-tract UTCI). Picking (`isPick`) flips the
+`interacted` flag through the pool, which the Vega scatter and boxplot consume on the next propagation
+cycle.
 
 ## Step 10: Linked scatterplot — UTCI vs. older adults (`VIS_VEGA`)
 
@@ -232,12 +235,12 @@ return gdf.loc[:, ["gt_65"]]
 
 ## Step 12: Wire the linked interaction (Interaction edges)
 
-Connect `AUTK_MAP`, `VIS_VEGA` (scatter), and `VIS_VEGA` (boxplot) to the shared `DATA_POOL` with edges of `type: "Interaction"`. Brushing in any one view propagates an `interacted` flag through the census table the pool holds; the other views re-style by reading that column on the next propagation cycle. This is the cross-grammar piece — the same Interaction wiring works between Vega-Lite and Autark views without either side knowing about the other.
+Connect the `autk-grammar` map, `VIS_VEGA` (scatter), and `VIS_VEGA` (boxplot) to the shared `DATA_POOL` with edges of `type: "Interaction"`. Brushing in any one view propagates an `interacted` flag through the census table the pool holds; the other views re-style by reading that column on the next propagation cycle. This is the cross-grammar piece — the same Interaction wiring works between Vega-Lite and Autark views without either side knowing about the other.
 
 This example wires two pool-anchored Interaction edges:
 
-- `DATA_POOL ↔ AUTK_MAP` — double-clicking a polygon in the map flips its row's `interacted` flag in the pool, which the Vega scatter and boxplot consume.
-- `VIS_VEGA` (scatter) `↔ DATA_POOL` — brushing a region of the scatter writes the matching rows' `interacted` flag in the pool, which the AutkMap consumes through the lifecycle's selection fast-path (this is why Step 9 uses `layer.name` rather than a custom id).
+- `DATA_POOL ↔ autk-grammar` — double-clicking a polygon in the map flips its row's `interacted` flag in the pool, which the Vega scatter and boxplot consume.
+- `VIS_VEGA` (scatter) `↔ DATA_POOL` — brushing a region of the scatter writes the matching rows' `interacted` flag in the pool, which the grammar map consumes through its `map:picking` interaction.
 
 ## Final result
 
