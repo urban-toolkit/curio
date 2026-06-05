@@ -1,16 +1,15 @@
 {
   "dataflow": {
-    "description": "Criterion-driven what-if shadow study: tall buildings (height > 20 m) in Boston's Back Bay are raised by 3× in the modified scenario. The two grammar nodes load the same OSM data independently, letting you compare baseline vs modified heights side-by-side.",
     "nodes": [
       {
         "id": "whatif-baseline",
         "type": "curio.builtin/autk-grammar",
         "x": 200,
         "y": 150,
-        "content": "{\n  \"data\": [{\n    \"type\": \"osm\",\n    \"queryArea\": { \"geocodeArea\": \"Boston\", \"areas\": [\"Back Bay\"] },\n    \"outputTableName\": \"table_osm\",\n    \"autoLoadLayers\": { \"layers\": [\"surface\", \"parks\", \"buildings\"], \"dropOsmTable\": true }\n  }],\n  \"map\": {\n    \"layerRefs\": [\n      { \"dataRef\": \"table_osm_surface\" },\n      { \"dataRef\": \"table_osm_parks\" },\n      {\n        \"dataRef\": \"table_osm_buildings\",\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 10\n      }\n    ]\n  }\n}",
+        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/back_bay.osm.pbf\",\n      \"queryArea\": {\n        \"geocodeArea\": \"Boston\",\n        \"areas\": [\n          \"Back Bay\"\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"surface\",\n          \"parks\",\n          \"buildings\"\n        ],\n        \"dropOsmTable\": true\n      }\n    }\n  ],\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_surface\"\n      },\n      {\n        \"dataRef\": \"table_osm_parks\"\n      },\n      {\n        \"dataRef\": \"table_osm_buildings\",\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 10\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Baseline view — Boston Back Bay buildings coloured by their original OSM height.",
+        "goal": "Baseline \u2014 Back Bay buildings coloured by their original OSM height.",
         "metadata": {
           "keywords": []
         }
@@ -20,10 +19,10 @@
         "type": "curio.builtin/autk-grammar",
         "x": 200,
         "y": 650,
-        "content": "{\n  \"data\": [{\n    \"type\": \"osm\",\n    \"queryArea\": { \"geocodeArea\": \"Boston\", \"areas\": [\"Back Bay\"] },\n    \"outputTableName\": \"table_osm\",\n    \"autoLoadLayers\": { \"layers\": [\"surface\", \"parks\", \"buildings\"], \"dropOsmTable\": true }\n  }],\n  \"compute\": [{\n    \"dataRef\": \"table_osm_buildings\",\n    \"attributes\": { \"h\": \"height\" },\n    \"outputColumnName\": \"height_mod\",\n    \"wglsFunction\": \"let base = h <= 0.0 ? 10.0 : h; if (base > 20.0) { return base * 3.0; } return base;\"\n  }],\n  \"map\": {\n    \"layerRefs\": [\n      { \"dataRef\": \"table_osm_surface\" },\n      { \"dataRef\": \"table_osm_parks\" },\n      {\n        \"dataRef\": \"table_osm_buildings\",\n        \"getFnv\": \"compute.height_mod\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 10\n      }\n    ]\n  }\n}",
+        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/back_bay.osm.pbf\",\n      \"queryArea\": {\n        \"geocodeArea\": \"Boston\",\n        \"areas\": [\n          \"Back Bay\"\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"surface\",\n          \"parks\",\n          \"buildings\"\n        ],\n        \"dropOsmTable\": true\n      }\n    }\n  ],\n  \"compute\": [\n    {\n      \"dataRef\": \"table_osm_buildings\",\n      \"attributes\": {\n        \"ring\": \"geometry.coordinates.0\",\n        \"h\": \"height\"\n      },\n      \"attributeMatrices\": {\n        \"ring\": {\n          \"rows\": \"auto\",\n          \"cols\": 2\n        }\n      },\n      \"outputColumnName\": \"height_mod\",\n      \"wglsFunction\": \"var area: f32 = 0.0;\\nlet nrows = ring_rows;\\nif (nrows >= 3u) {\\n  for (var i: u32 = 0u; i < nrows; i = i + 1u) {\\n    let j = (i + 1u) % nrows;\\n    let xi = ring[i * 2u]; let yi = ring[i * 2u + 1u];\\n    let xj = ring[j * 2u]; let yj = ring[j * 2u + 1u];\\n    area = area + (xi * yj - xj * yi);\\n  }\\n  area = abs(area) * 0.5;\\n}\\n// Back Bay buildings load in EPSG:3395, so `area` is in m^2. Tall = footprint > 200 m^2.\\nlet base = select(h, 10.0, h <= 0.0);\\nif (area > 200.0) { return base * 3.0; }\\nreturn base;\\n\"\n    }\n  ],\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_surface\"\n      },\n      {\n        \"dataRef\": \"table_osm_parks\"\n      },\n      {\n        \"dataRef\": \"table_osm_buildings\",\n        \"getFnv\": \"compute.height_mod\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 10\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Modified scenario — buildings taller than 20 m are raised by 3× via a GPU compute step.",
+        "goal": "Modified \u2014 buildings with footprint area > 200 m^2 are raised 3x via GPU compute.",
         "metadata": {
           "keywords": []
         }
@@ -32,7 +31,9 @@
     "edges": [],
     "name": "Autark what-if shadow study",
     "task": "",
-    "timestamp": 1775089298775,
-    "provenance_id": "DefaultWorkflow"
+    "timestamp": 1748990000000,
+    "provenance_id": "DefaultWorkflow",
+    "packages": [],
+    "description": "Criterion-driven what-if for Boston's Back Bay: buildings whose footprint area exceeds 200 m2 are raised by 3x in the modified scenario. Two autk-grammar nodes load the same local PBF independently so you can compare baseline vs modified heights side by side. The footprint area is computed on the GPU (shoelace over each building's outer ring) inside the grammar's compute block."
   }
 }

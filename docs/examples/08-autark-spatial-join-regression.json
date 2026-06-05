@@ -2,25 +2,62 @@
   "dataflow": {
     "nodes": [
       {
-        "id": "niteroi-grammar",
+        "id": "niteroi-osm",
         "type": "curio.builtin/autk-grammar",
-        "x": 400,
+        "x": 120,
         "y": 300,
-        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"queryArea\": { \"geocodeArea\": \"Rio de Janeiro\", \"areas\": [\"Niter\\u00f3i\"] },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": { \"layers\": [\"surface\", \"parks\", \"water\", \"roads\", \"buildings\"], \"dropOsmTable\": true }\n    },\n    {\n      \"type\": \"join\",\n      \"tableRootName\": \"table_osm_roads\",\n      \"tableJoinName\": \"table_osm_buildings\",\n      \"near\": { \"distance\": 100 },\n      \"groupBy\": [{ \"column\": \"height\", \"aggregateFn\": \"avg\" }]\n    }\n  ],\n  \"compute\": [{\n    \"dataRef\": \"table_osm_roads\",\n    \"attributes\": { \"h\": \"sjoin.avg.height\" },\n    \"outputColumnName\": \"building_height_index\",\n    \"wglsFunction\": \"if (h <= 0.0) { return 0.0; } return h;\"\n  }],\n  \"map\": {\n    \"layerRefs\": [\n      { \"dataRef\": \"table_osm_surface\" },\n      { \"dataRef\": \"table_osm_parks\" },\n      { \"dataRef\": \"table_osm_water\" },\n      { \"dataRef\": \"table_osm_buildings\" },\n      {\n        \"dataRef\": \"table_osm_roads\",\n        \"isPick\": true,\n        \"getFnv\": \"compute.building_height_index\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 0\n      }\n    ]\n  },\n  \"plot\": {\n    \"dataRef\": \"table_osm_roads\",\n    \"mark\": \"scatter\",\n    \"axis\": [\"lanes\", \"sjoin.avg.height\"],\n    \"title\": \"Road capacity vs nearby building height (Niter\\u00f3i)\",\n    \"events\": [\"brush\"],\n    \"mapRef\": \"table_osm_roads\"\n  }\n}",
+        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/niteroi.osm.pbf\",\n      \"queryArea\": {\n        \"geocodeArea\": \"Rio de Janeiro\",\n        \"areas\": [\n          \"Niter\\u00f3i\"\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"surface\",\n          \"parks\",\n          \"water\",\n          \"roads\"\n        ],\n        \"dropOsmTable\": true\n      }\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Load Niterói OSM, spatially join buildings to roads within 100 m, compute average nearby building height per road via GPU, render thematic map linked to brushable scatter.",
+        "goal": "Load Niter\u00f3i roads (+ surface/parks/water) from the local PBF and emit them downstream.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "niteroi-lst",
+        "type": "curio.builtin/computation-analysis",
+        "x": 460,
+        "y": 300,
+        "content": "import io\nimport requests\nimport numpy as np\nimport geopandas as gpd\nfrom rasterio.io import MemoryFile\nfrom rasterstats import zonal_stats\n\n# `arg` is the layer array emitted by the upstream autk-grammar (data-only) node:\n#   [{ \"name\": \"table_osm_roads\", \"type\": ..., \"geojson\": {...} }, ...]\n# The grammar loads OSM in EPSG:3395 (its default workspace CRS).\nlayers = arg if isinstance(arg, list) else [arg]\nroads_layer = next(l for l in layers if l.get(\"name\") == \"table_osm_roads\")\nroads = gpd.GeoDataFrame.from_features(roads_layer[\"geojson\"][\"features\"])\nroads = roads.set_crs(\"EPSG:3395\", allow_override=True)\n\n# 24-band Niteroi land-surface-temperature raster (summers 2001-2024).\nurl = \"https://raw.githubusercontent.com/urban-toolkit/autark/main/usecases/public/data/niteroi_lst_verao_2001_2024.tif\"\nresp = requests.get(url, timeout=180)\nresp.raise_for_status()\n\nwith MemoryFile(resp.content) as mf:\n    with mf.open() as src:\n        nbands = src.count\n        affine = src.transform\n        nod = src.nodata\n        # 1 km buffer around each road, in metric EPSG:3395, then to the raster CRS for sampling.\n        buf = gpd.GeoSeries(roads.geometry.buffer(1000), crs=\"EPSG:3395\").to_crs(src.crs)\n        series = [[] for _ in range(len(buf))]\n        for b in range(1, nbands + 1):\n            band = src.read(b).astype(\"float64\")\n            stats = zonal_stats(buf, band, affine=affine, stats=\"mean\", nodata=nod)\n            for i, s in enumerate(stats):\n                m = s.get(\"mean\")\n                series[i].append(float(m) if m is not None else 0.0)\n\n# Per-road yearly LST series consumed by the downstream grammar OLS compute as an array attribute.\nroads[\"lst_timeseries\"] = series\nroads = roads.set_crs(\"EPSG:3395\", allow_override=True)\nroads.metadata = {\"name\": \"niteroi_roads_lst\"}\nreturn roads\n",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Fetch the 24-band LST raster and attach each road's per-year mean LST within 1 km as lst_timeseries.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "niteroi-ols",
+        "type": "curio.builtin/autk-grammar",
+        "x": 800,
+        "y": 300,
+        "content": "{\n  \"compute\": [\n    {\n      \"dataRef\": \"upstream\",\n      \"attributes\": {\n        \"bands\": \"lst_timeseries\"\n      },\n      \"attributeArrays\": {\n        \"bands\": 24\n      },\n      \"outputColumns\": [\n        \"angle\",\n        \"intercept\"\n      ],\n      \"wglsFunction\": \"\\n  var n = f32(bands_length);\\n  var sum_x  = 0.0;\\n  var sum_y  = 0.0;\\n  var sum_xy = 0.0;\\n  var sum_x2 = 0.0;\\n\\n  for (var i = 0u; i < bands_length; i++) {\\n    let x   = f32(i);\\n    let y   = bands[i];\\n    sum_x  += x;\\n    sum_y  += y;\\n    sum_xy += x * y;\\n    sum_x2 += x * x;\\n  }\\n\\n  let denom = n * sum_x2 - sum_x * sum_x;\\n  var slope     = 0.0;\\n  var intercept = 0.0;\\n  if (denom != 0.0) {\\n    slope     = (n * sum_xy - sum_x * sum_y) / denom;\\n    intercept = (sum_y - slope * sum_x) / n;\\n  }\\n\\n  var out: OutputArray;\\n  out[0] = atan(slope) * (180.0 / 3.14159265358979);\\n  out[1] = intercept;\\n  return out;\\n\"\n    }\n  ],\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"upstream\",\n        \"isPick\": true,\n        \"getFnv\": \"compute.angle\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 0\n      }\n    ]\n  },\n  \"plot\": {\n    \"dataRef\": \"upstream\",\n    \"mark\": \"scatter\",\n    \"axis\": [\n      \"compute.intercept\",\n      \"compute.angle\"\n    ],\n    \"title\": \"LST regression \\u2014 warming angle vs baseline (Niter\\u00f3i roads)\",\n    \"events\": [\n      \"brush\"\n    ],\n    \"mapRef\": \"upstream\"\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Per-road OLS regression of the 24-year LST series on the GPU; colour roads by warming angle, link to a brushable scatter.",
         "metadata": {
           "keywords": []
         }
       }
     ],
-    "edges": [],
+    "edges": [
+      {
+        "id": "e-osm-lst",
+        "source": "niteroi-osm",
+        "target": "niteroi-lst"
+      },
+      {
+        "id": "e-lst-ols",
+        "source": "niteroi-lst",
+        "target": "niteroi-ols"
+      }
+    ],
     "name": "Autark spatial join + regression",
     "task": "",
-    "timestamp": 1778125768137,
+    "timestamp": 1748990500000,
     "provenance_id": "Regression",
     "packages": [],
-    "description": "Grammar-native spatial join (roads × buildings, 100 m NEAR) + GPU compute + linked scatter: road lane count vs average height of nearby buildings in Niterói."
+    "description": "Per-road warming trend in Niter\u00f3i: a grammar node loads roads from a local PBF, a Python node samples a 24-band (2001-2024) land-surface-temperature raster to build each road's yearly mean-LST series within 1 km, and a second grammar node fits an OLS regression per road on the GPU (warming angle + intercept), rendering a thematic map linked to a brushable scatter. The raster sampling stays in Python (the grammar has no raster source); the regression runs in the grammar's compute block."
   }
 }
