@@ -6,7 +6,7 @@ import {
   DatasetCatalogItem,
   isDatasetPublishedToCatalog,
 } from "../../services/datasetCatalog";
-import { datasetCount, isFresh, metaLeft, relativeTime } from "./dataHubBrowseFormat";
+import { isFresh, metaLeft, relativeTime } from "./dataHubBrowseFormat";
 import styles from "../catalog/CatalogBrowseLayout.module.css";
 
 export interface DataCatalogBrowseCardProps {

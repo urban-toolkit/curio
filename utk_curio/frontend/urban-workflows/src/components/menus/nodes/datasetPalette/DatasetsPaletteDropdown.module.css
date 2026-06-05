@@ -254,8 +254,8 @@
 
 .rowMeta {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  align-items: center;
+  grid-template-columns: 1fr 2fr 1fr;
+  align-items: baseline;
   justify-items: baseline;
   gap: 0;
   min-height: 16px;
