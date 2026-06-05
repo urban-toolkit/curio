@@ -68,6 +68,7 @@ def get_connection() -> '_NonClosingConn':
         release_connection()
     if _connection is None:
         _connection = _NonClosingConn(duckdb.connect(path))
+        _connection_path = path
     return _connection
 
 
