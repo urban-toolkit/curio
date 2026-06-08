@@ -85,7 +85,7 @@
         "type": "curio.builtin/autk-grammar",
         "x": 1436.2658130217023,
         "y": 1381.590014538249,
-        "content": "{\"map\":{\"layerRefs\":[{\"dataRef\":\"upstream\",\"getFnv\":\"accessibility\",\"getFnvType\":\"quantitative\",\"defaultFnv\":0}]}}",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"upstream\",\n        \"getFnv\": \"accessibility\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 0\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Render neighborhood accessibility map coloured by the 'accessibility' score.",

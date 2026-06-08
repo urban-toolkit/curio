@@ -31,7 +31,7 @@
         "type": "curio.builtin/autk-grammar",
         "x": 1400,
         "y": 600,
-        "content": "{\"map\":{\"layerRefs\":[{\"dataRef\":\"upstream\",\"getFnv\":\"value\",\"getFnvType\":\"quantitative\",\"defaultFnv\":0}]}}",
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"upstream\",\n        \"getFnv\": \"value\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 0\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Render upstream polygons from the Data Pool coloured by 'value'.",
