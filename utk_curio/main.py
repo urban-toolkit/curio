@@ -228,19 +228,20 @@ def check_install_build(dir, force_rebuild=False):
         clean_shutdown()
         return
 
-    # Check if node_modules exist, if not, run npm install
-    if not os.path.exists("node_modules"):
-        log_info(f"[Frontend] node_modules not found. Running npm install...", COLOR_FRONTEND, 0)
-        try:
-            subprocess.run(["npm", "install"], check=True, shell=shell_required)
-        except subprocess.CalledProcessError as e:
-            log_error(f"[Frontend] 'npm install' failed (exit code {e.returncode}). Check the output above for details.")
-            clean_shutdown()
-        except Exception as e:
-            log_error(f"[Frontend] Failed to run 'npm install': {e}")
-            clean_shutdown()
-    else:
-        log_info(f"[Frontend] node_modules directory already exists. Skipping npm install.", COLOR_FRONTEND, 0)
+    # Run npm install unconditionally. It's idempotent and fast (~1 s) when
+    # the lockfile is already satisfied, and it self-heals when package.json
+    # gains a new dep that node_modules/ doesn't have yet — gating on
+    # ``node_modules`` existing would skip the install and leave the new dep
+    # missing, failing the webpack build with "Module not found".
+    log_info(f"[Frontend] Ensuring npm deps are installed...", COLOR_FRONTEND, 0)
+    try:
+        subprocess.run(["npm", "install"], check=True, shell=shell_required)
+    except subprocess.CalledProcessError as e:
+        log_error(f"[Frontend] 'npm install' failed (exit code {e.returncode}). Check the output above for details.")
+        clean_shutdown()
+    except Exception as e:
+        log_error(f"[Frontend] Failed to run 'npm install': {e}")
+        clean_shutdown()
 
     # Check if dist/build directory exists (depending on your setup)
     build_dir = "dist" if os.path.exists("dist") else "build"
