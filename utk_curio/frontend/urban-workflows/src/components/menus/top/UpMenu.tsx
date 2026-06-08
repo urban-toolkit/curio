@@ -343,7 +343,6 @@ export default function UpMenu({
                     intro: "This is a Merge Flow Node. It allows you to combine multiple data streams into a single dataset. Red handles indicate a missing connection, while green handles show that a connection has been established. Note: each handle can only connect to one edge.",
                 },
                 {
-                    element: "#step-final",
                     intro: "That's it! Drag and drop nodes into your workspace and begin exploring your data with Curio.",
                 },
             ],
