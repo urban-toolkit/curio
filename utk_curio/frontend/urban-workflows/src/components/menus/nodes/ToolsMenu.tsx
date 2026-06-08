@@ -139,12 +139,12 @@ const ToolsMenu = memo(function ToolsMenu() {
                     >
                         <FontAwesomeIcon icon={faForwardStep} />
                     </button>
-                    <SaveOutputToggle
+                    {/* <SaveOutputToggle
                         variant="toolbar"
                         id="save-output-default"
                         checked={defaultSaveOutputDataset}
                         onChange={setDefaultSaveOutputDataset}
-                    />
+                    /> */}
                 </div>
             </div>
             <DatasetsPaletteDropdown />
