@@ -9,9 +9,12 @@ The Autark examples (``docs/examples/06|07|08``) load OSM through the
 offline — Overpass is heavily rate-limited (see the throttle workarounds in
 ``utk_curio/backend/tests/test_frontend/test_workflows.py``).
 
-``autk-db``'s PBF loader (``loadOsmFromPbf``) clips layers to the *loaded data's
-own* bbox, so ``queryArea`` does NOT subset a PBF — each example needs a PBF that
-already covers (only) its area. This script builds those, once, at authoring time.
+``autk-db``'s PBF loader (``loadOsmFromPbf`` → ``collectBoundaryContext``) clips
+each layer to an **administrative boundary relation whose ``name`` tag equals the
+``queryArea.areas`` entry** — so that boundary relation (and its member ways) MUST
+be present in the PBF, or loading fails with "No administrative boundary found in
+PBF". Each example therefore needs a PBF covering its area *and* carrying that
+named boundary relation. This script builds those, once, at authoring time.
 
 HOW
 ---
@@ -53,8 +56,10 @@ NOMINATIM = "https://nominatim.openstreetmap.org/search"
 # overpass-api.de sits behind a mod_security WAF that intermittently 406-rejects;
 # fall through to mirrors on 406/429/5xx.
 OVERPASS_ENDPOINTS = [
+    "https://overpass.private.coffee/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
     "https://overpass-api.de/api/interpreter",
+    "https://overpass.osm.ch/api/interpreter",
     "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
 ]
 UA = {"User-Agent": "curio-example-pbf-builder/1.0 (https://github.com/urban-toolkit/curio)"}
@@ -63,13 +68,16 @@ OUT_DIR = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "docs", "examples", "data")
 )
 
-# area key -> (Nominatim query, include_buildings).
+# area key -> (Nominatim query, include_buildings, boundary_area_names).
 # include_buildings mirrors each example's autoLoadLayers: 08/Niterói loads only
 # surface/parks/water/roads, so skipping buildings there keeps the PBF small.
+# boundary_area_names MUST match each example's grammar ``queryArea.areas`` exactly:
+# autk-db's PBF clip looks for a relation whose ``name`` tag equals each entry, so
+# that boundary relation has to be in the PBF.
 AREAS = {
-    "back_bay": ("Back Bay, Boston, Massachusetts, USA", True),       # ex 06
-    "chicago_loop": ("Loop, Chicago, Illinois, USA", True),           # ex 07
-    "niteroi": ("Niterói, Rio de Janeiro, Brazil", False),            # ex 08
+    "back_bay": ("Back Bay, Boston, Massachusetts, USA", True, ["Back Bay"]),       # ex 06
+    "chicago_loop": ("Loop, Chicago, Illinois, USA", True, ["Loop"]),              # ex 07
+    "niteroi": ("Niterói, Rio de Janeiro, Brazil", False, ["Niterói"]),            # ex 08
 }
 
 
@@ -89,7 +97,7 @@ def bbox_for(query: str):
     return s, w, n, e
 
 
-def overpass_query(bbox, include_buildings: bool) -> str:
+def overpass_query(bbox, include_buildings: bool, area_names: list[str]) -> str:
     s, w, n, e = bbox
     b = f"{s},{w},{n},{e}"
     # Use the combined node/way/relation selector ``nwr[...]``. NOTE: overpass-api.de
@@ -106,6 +114,15 @@ def overpass_query(bbox, include_buildings: bool) -> str:
     parts = [f"nwr[{k}]({b});" for k in selectors]
     if include_buildings:
         parts += [f"nwr[building]({b});", f'nwr["building:part"]({b});']
+    # Boundary relations autk-db's PBF clip requires: a relation whose ``name`` tag
+    # equals each ``queryArea.areas`` entry. Fetch every element named that within the
+    # bbox (autk-db picks the relation); the ``(._;>;)`` recursion below then pulls the
+    # relation's member ways and their nodes so the boundary geometry is complete.
+    # Bbox-scoped (not area-scoped) to avoid geocodeArea ambiguity (e.g. the
+    # "Rio de Janeiro" city vs. state areas both contain a relation, but only Niterói's
+    # own bbox unambiguously yields the Niterói municipality relation).
+    for nm in area_names:
+        parts.append(f'nwr["name"="{nm}"]({b});')
     body = "\n  ".join(parts)
     # recurse down (>;) to pull in member nodes/ways so geometry is complete.
     return f"[out:xml][timeout:300];\n(\n  {body}\n);\n(._;>;);\nout body;"
@@ -156,13 +173,14 @@ def xml_to_pbf(xml_bytes: bytes, out_path: str) -> tuple[int, int, int]:
 
 def main() -> None:
     os.makedirs(OUT_DIR, exist_ok=True)
-    for key, (query, include_buildings) in AREAS.items():
+    for key, (query, include_buildings, area_names) in AREAS.items():
         out_path = os.path.join(OUT_DIR, f"{key}.osm.pbf")
-        print(f"\n=== {key}  ({query})  buildings={include_buildings} ===", flush=True)
+        print(f"\n=== {key}  ({query})  buildings={include_buildings}  "
+              f"boundaries={area_names} ===", flush=True)
         bbox = bbox_for(query)
         print(f"  bbox (S,W,N,E): {bbox}", flush=True)
         time.sleep(1)  # be polite to Nominatim/Overpass
-        xml = fetch_osm_xml(overpass_query(bbox, include_buildings))
+        xml = fetch_osm_xml(overpass_query(bbox, include_buildings, area_names))
         print(f"  overpass XML bytes: {len(xml):,}", flush=True)
         n, w, r = xml_to_pbf(xml, out_path)
         size = os.path.getsize(out_path)

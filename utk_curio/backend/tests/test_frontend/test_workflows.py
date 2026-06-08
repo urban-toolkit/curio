@@ -103,27 +103,16 @@ class TestWorkflowCanvas:
                 webgpu_diagnostics=webgpu_diag,
             )
 
-    # AUTK nodes that render via WebGPU. AUTK_DB is the only JS_CODE_TYPES
-    # member that does not need WebGPU (it talks to the Node.js sandbox and
-    # Overpass), so its "Error" status — if it occurs — is a real failure,
-    # not a missing-GPU side-effect.
-    _WEBGPU_REQUIRED_TYPES = JS_CODE_TYPES - {"AUTK_DB"}
+    # All JS_CODE_TYPES autk nodes render via WebGPU when they carry a map/plot.
+    # The data section now runs in the backend sandbox (autk-db over local PBF),
+    # so there is no longer a non-WebGPU autk node to exclude here.
+    _WEBGPU_REQUIRED_TYPES = set(JS_CODE_TYPES)
 
-    # How many times to click Play on a node flagged
-    # ``_tolerate_external_service_error`` (currently AUTK_DB / Overpass)
-    # before giving up and falling through to the tolerance branch. The
-    # public Overpass endpoint rate-limits per-IP and individual
-    # requests intermittently come back with 0 elements; re-issuing the
-    # request after the throttle clears typically succeeds.
+    # Retry/backoff knobs for nodes flagged ``_tolerate_external_service_error``.
+    # Retained for any future node that depends on a flaky external service;
+    # currently inert because all autk data loads from local PBF in the backend
+    # (deterministic — no Overpass, nothing to retry).
     _EXTERNAL_SERVICE_RETRIES = 5
-
-    # Base + cap for exponential backoff between retries on
-    # ``_tolerate_external_service_error`` nodes. Schedule is
-    # ``base * 2^(attempt-2)`` clamped to ``cap`` — i.e. for 5 attempts:
-    # 15s, 30s, 60s, 60s. Overpass throttle windows sometimes run a minute+,
-    # so a fixed short backoff hammers the rate-limit while a runaway
-    # exponential would let a fully-down service stall the suite for many
-    # minutes. The cap keeps the worst case bounded.
     _EXTERNAL_SERVICE_RETRY_BACKOFF_S = 15
     _EXTERNAL_SERVICE_RETRY_BACKOFF_CAP_S = 60
 
@@ -277,16 +266,13 @@ class TestWorkflowCanvas:
         """``True`` for nodes whose execution depends on a flaky external
         service the test cannot stub.
 
-        AUTK_DB calls Overpass via ``db.loadOsm({ queryArea: ... })``. The
-        public Overpass instance throttles aggressively when the suite hits
-        it back-to-back from the same host, so a single test run will
-        intermittently see Overpass timeouts (no Done within budget) or
-        Overpass HTTP errors (autk-db rejects → node Error). Manual
-        single-shot use works fine because nothing else is hammering the
-        service. We tolerate both outcomes with a warning rather than
-        failing the suite on environmental flakiness.
+        No autk node hits an external service anymore: the grammar's data
+        section runs in the backend sandbox via autk-db over a local PBF
+        (``pbfFileUrl``), so OSM loading is deterministic and offline — there
+        is nothing to retry or tolerate. Kept as a hook for any future node
+        that genuinely depends on a flaky service.
         """
-        return node.type == "AUTK_DB"
+        return False
 
     def _mark_tolerated(self, node: NodeSpec) -> None:
         """Record that a node's failure was tolerated in
@@ -333,15 +319,14 @@ class TestWorkflowCanvas:
     def _node_execution_timeout_ms(self, node: NodeSpec) -> int:
         """Return a generous timeout for nodes that execute heavy data ops.
 
-        AUTK_DB gets the largest budget because its default code does a live
-        Overpass HTTP fetch (``db.loadOsm({ queryArea: { geocodeArea: ... }
-        })``), and Overpass latency varies wildly when the suite hits it
-        repeatedly from the same IP. ``_tolerate_external_service_error``
-        catches the case where Overpass errors out outright; this just buys
-        autk-db enough time to finish on the slow-but-eventually-OK path.
+        AUTK_GRAMMAR gets the largest budget because a node with a `data`
+        section runs that section in the backend sandbox — autk-db parses a
+        local OSM PBF (multi-MB) via DuckDB-WASM in Node and round-trips the
+        layers back over HTTP before the browser renders. That backend load
+        dominates the wall-clock, so the budget covers the slow path.
         """
-        if node.type == "AUTK_DB":
-            return 300000  # 5 min — Overpass is the bottleneck, not us
+        if node.type == "AUTK_GRAMMAR":
+            return 300000  # 5 min — backend PBF parse + round-trip is the bottleneck
         if node.type in {
             "DATA_LOADING",
             "DATA_TRANSFORMATION",

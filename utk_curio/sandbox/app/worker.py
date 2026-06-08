@@ -286,6 +286,57 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
         elif file_path:
             input_data = load_from_duckdb(file_path, session_id=session_id)
 
+        # Resolve bare package specifiers (e.g. '@urban-toolkit/autk-db') to an
+        # ABSOLUTE file URL under the repo-root node_modules so the dynamic ESM
+        # import() below resolves regardless of the Node subprocess cwd. Node's ESM
+        # resolver does NOT consult NODE_PATH and resolves a bare specifier only by
+        # walking node_modules up from the importing module — which fails when
+        # CURIO_LAUNCH_CWD is outside the repo. Rewriting only the top-level
+        # specifier is enough: the package's own internal imports still resolve
+        # relative to its installed location.
+        repo_root = pathlib.Path(__file__).resolve().parents[3]
+        root_node_modules = repo_root / 'node_modules'
+
+        def _resolve_pkg_entry_url(specifier):
+            # Only bare specifiers (not relative / absolute / URL / node: builtin).
+            if not specifier or specifier[0] in './' or ':' in specifier:
+                return None
+            seg = specifier.split('/')
+            pkg = '/'.join(seg[:2]) if specifier.startswith('@') else seg[0]
+            pkg_dir = root_node_modules / pkg
+            pj = pkg_dir / 'package.json'
+            if not pj.is_file():
+                return None
+            try:
+                meta = json.loads(pj.read_text(encoding='utf-8'))
+            except Exception:
+                return None
+            entry = None
+            exp = meta.get('exports')
+            if isinstance(exp, str):
+                entry = exp
+            elif isinstance(exp, dict):
+                dot = exp.get('.', exp)
+                if isinstance(dot, str):
+                    entry = dot
+                elif isinstance(dot, dict):
+                    entry = (dot.get('import') or dot.get('module') or dot.get('node')
+                             or dot.get('default') or dot.get('require'))
+            entry = entry or meta.get('module') or meta.get('main') or 'index.js'
+            try:
+                entry_path = (pkg_dir / entry).resolve()
+            except Exception:
+                return None
+            if not entry_path.is_file() or root_node_modules not in entry_path.parents:
+                return None
+            return entry_path.as_uri()
+
+        def _resolved_source(quoted_source):
+            # quoted_source keeps its surrounding quotes, e.g. "'@urban-toolkit/autk-db'".
+            spec = quoted_source[1:-1]
+            url = _resolve_pkg_entry_url(spec)
+            return f"'{url}'" if url else quoted_source
+
         # Rewrite static `import` statements to dynamic `await import()` calls
         # so user code runs inside a CJS IIFE (--input-type=commonjs), which
         # lets autk-db's eval'd Worker threads use require() without errors.
@@ -297,7 +348,7 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
         dynamic_import_lines: list[str] = []
 
         def _rewrite_named(m):
-            specs, source = m.group(1).strip(), m.group(2)
+            specs, source = m.group(1).strip(), _resolved_source(m.group(2))
             if specs.startswith('* as '):
                 return f'  const {specs[5:].strip()} = await import({source});'
             if specs.startswith('{'):
@@ -315,7 +366,7 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
             return ''
 
         def _collect_bare(m):
-            dynamic_import_lines.append(f'  await import({m.group(1)});')
+            dynamic_import_lines.append(f'  await import({_resolved_source(m.group(1))});')
             return ''
 
         clean_code = bare_re.sub(_collect_bare, code)
@@ -336,11 +387,25 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
 
         print(f"[execJs] starting Node.js  node={node_type}", file=_sys.stderr, flush=True)
 
+        # NODE_PATH is consulted only by the CommonJS require() resolver (not ESM),
+        # so it does NOT resolve the top-level autk-db ESM import — that is handled
+        # by rewriting it to an absolute file URL above. We still point NODE_PATH at
+        # the repo-root node_modules as a belt-and-braces aid for any CJS require()
+        # autk-db's worker threads perform. cwd stays launch_dir so other JS nodes'
+        # relative file reads keep working.
+        node_env = {**os.environ}
+        if root_node_modules.is_dir():
+            existing = node_env.get('NODE_PATH', '')
+            node_env['NODE_PATH'] = (
+                str(root_node_modules) + (os.pathsep + existing if existing else '')
+            )
+
         proc = subprocess.Popen(
             ['node', '--input-type=commonjs'],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding='utf-8', errors='replace', cwd=cwd,
+            env=node_env,
         )
 
         stdout_lines: list[str] = []

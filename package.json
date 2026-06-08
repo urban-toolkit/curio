@@ -1,1 +1,8 @@
-{}
+{
+  "private": true,
+  "description": "Repo-root node_modules for the Curio sandbox's Node.js subprocess. The Autark grammar's data section is compiled to autk-db JavaScript and executed server-side via @urban-toolkit/autk-db (see utk_curio/sandbox/app/worker.py execute_js_code). Pinned to match the frontend's autk-db version so backend data loading behaves identically. compute/map/plot stay browser-side (WebGPU/DOM) and are not needed here.",
+  "dependencies": {
+    "@urban-toolkit/autk-db": "2.1.2",
+    "web-worker": "^1.5.0"
+  }
+}

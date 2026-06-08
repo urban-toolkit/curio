@@ -50,8 +50,8 @@ EXAMPLE_INVARIANTS = [
          "curio.builtin/spatial-join": 1,
          "curio.builtin/vis-vega": 2,
      }, False),
-    ("11-autark-pbf-loading.json", 1, 0,
-     {"curio.builtin/autk-grammar": 1}, False),
+    ("11-autark-pbf-loading.json", 2, 1,
+     {"curio.builtin/autk-grammar": 2}, False),
 ]
 
 

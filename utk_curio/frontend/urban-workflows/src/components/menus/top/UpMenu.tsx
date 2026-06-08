@@ -396,7 +396,7 @@ export default function UpMenu({
                             toggleMenu("file");
                         }}
                     >
-                        File▾
+                        File ⏷
                     </button>
                     {activeMenu === "file" && (
                         <div className={styles.dropDownMenu} onClick={(e) => e.stopPropagation()}>

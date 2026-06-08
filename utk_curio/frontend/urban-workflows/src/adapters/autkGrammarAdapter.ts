@@ -5,6 +5,10 @@ const DEFAULT_SPEC = JSON.stringify(
     data: [
       {
         type: 'osm',
+        // Load from a local PBF (served via the backend /file/ route, fetched by
+        // the sandbox's autk-db) instead of the Overpass API, so a freshly created
+        // Autark node is offline and deterministic by default.
+        pbfFileUrl: 'docs/examples/data/chicago_loop.osm.pbf',
         outputTableName: 'osm_surface',
         queryArea: { geocodeArea: 'Chicago', areas: ['Loop'] },
         autoLoadLayers: {

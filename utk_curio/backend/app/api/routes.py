@@ -248,11 +248,13 @@ def serve_launch_cwd_file(filename: str):
     from utk_curio.backend.app.common.safe_paths import PathTraversalError, safe_join
 
     launch_cwd = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
-    # ``filename`` is a multi-segment relative path (e.g. docs/examples/data/x.pbf);
-    # validate each component so traversal payloads can't escape CURIO_LAUNCH_CWD.
+    # ``filename`` is a multi-segment relative path (e.g. docs/examples/data/x.pbf).
+    # Use validate=False (like /get) so the containment guard alone runs: real data
+    # filenames routinely contain spaces or leading '.'/'_'/'-' that the per-segment
+    # charset would reject, and is_within already prevents escaping CURIO_LAUNCH_CWD.
     parts = [p for p in filename.split('/') if p]
     try:
-        safe_join(launch_cwd, *parts)
+        safe_join(launch_cwd, *parts, validate=False)
     except PathTraversalError:
         abort(403)
     return send_from_directory(launch_cwd, filename)

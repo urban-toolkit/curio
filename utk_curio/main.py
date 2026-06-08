@@ -489,12 +489,56 @@ def start_backend(host, port, no_server=False):
     return process
 
 
+def _ensure_root_node_modules(project_root: str) -> None:
+    """Install the repo-root node_modules used by the sandbox's Node.js
+    subprocess. ``@urban-toolkit/autk-db`` is declared in the root
+    ``package.json``; the Autark grammar's data section is compiled to
+    autk-db JavaScript and executed server-side (see
+    ``utk_curio/sandbox/app/worker.py`` ``execute_js_code``). ``check_install_build``
+    only manages the *frontend* node_modules under
+    ``utk_curio/frontend/urban-workflows/``, so without this step a fresh
+    checkout fails Autark data nodes with ``ERR_MODULE_NOT_FOUND``.
+    """
+    root_modules = os.path.join(project_root, "node_modules")
+    # Gate on the package actually being resolved, not just node_modules existing —
+    # a partial/interrupted install or an unrelated node_modules would otherwise
+    # skip the install and leave Autark backend data nodes failing with
+    # ERR_MODULE_NOT_FOUND with no self-healing.
+    if os.path.isdir(os.path.join(root_modules, "@urban-toolkit", "autk-db")):
+        return
+    if shutil.which("npm") is None:
+        log_warning(
+            "[Sandbox] npm not found in PATH; skipping root npm install. "
+            "Autark grammar data nodes will fail with ERR_MODULE_NOT_FOUND "
+            "until 'npm install' is run at the repo root."
+        )
+        return
+    log_info(
+        "[Sandbox] Root node_modules not found. Running 'npm install' at "
+        f"{project_root} to provide @urban-toolkit/autk-db...",
+        COLOR_SANDBOX, 0,
+    )
+    try:
+        subprocess.run(
+            ["npm", "install", "--no-audit", "--no-fund"],
+            check=True, cwd=project_root, shell=shell_required,
+        )
+    except subprocess.CalledProcessError as e:
+        log_error(
+            f"[Sandbox] Root 'npm install' failed (exit code {e.returncode}). "
+            f"Autark data nodes will fail; install manually at {project_root}."
+        )
+    except Exception as e:
+        log_error(f"[Sandbox] Failed to run root 'npm install': {e}")
+
+
 def start_sandbox(host, port):
     _kill_port(int(port))
     log_info(f"Starting sandbox on {host}:{port}...", COLOR_SANDBOX, 0)
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(script_dir, ".."))
+    _ensure_root_node_modules(project_root)
     # sandbox_server = os.path.join(script_dir, "sandbox", "server.py")
     env = os.environ.copy()
     env = {**os.environ, "PYTHONPATH": project_root + os.pathsep + env.get("PYTHONPATH", "")}

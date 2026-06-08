@@ -259,5 +259,90 @@ describe('Lifecycle hooks — NodeLifecycleHook contract conformance', () => {
       assertValidLifecycleResult(result.current);
       expect(result.current.defaultValueOverride).toBeUndefined();
     });
+
+    test('data-only node runs the data section in the backend and emits the DuckDB artifact ref', async () => {
+      const interpretCode = jest.fn(
+        (_unresolved, _code, _input, _inputTypes, cb) =>
+          cb({ stdout: [], stderr: '', output: { path: 'art-1', dataType: 'list' } }),
+      );
+      const outputCallback = jest.fn();
+      const result = await callLifecycle(useAutkGrammarLifecycle, {
+        outputCallback,
+        jsInterpreter: { interpretCode } as any,
+      });
+
+      await act(async () => {
+        await result.current.applyGrammar!(JSON.stringify({
+          data: [{
+            type: 'geojson',
+            geojsonObject: { type: 'FeatureCollection', features: [] },
+            outputTableName: 't',
+          }],
+          // no map / plot => data-only node
+        }));
+      });
+
+      // The authored data section was sent to the backend sandbox …
+      expect(interpretCode).toHaveBeenCalledTimes(1);
+      // … and the node emits the DuckDB artifact reference downstream (DB-backed,
+      // like a normal code node), not an in-memory layer array.
+      expect(outputCallback).toHaveBeenCalledWith('node-1', { path: 'art-1', dataType: 'list' });
+    });
+
+    test('render node loads data in the backend, then runs the grammar in the browser', async () => {
+      const { fetchData } = require('../../../services/api');
+      const { AutkGrammar } = require('@urban-toolkit/autk-grammar');
+      // Capture the spec handed to grammar.run so we can assert the backend layer
+      // actually survives the DuckDB round-trip into spec.data.
+      let runSpec: any = null;
+      (AutkGrammar as jest.Mock).mockReset();
+      (AutkGrammar as jest.Mock).mockImplementation(() => ({
+        run: jest.fn((s: any) => { runSpec = s; return Promise.resolve(); }),
+        data: {},
+      }));
+      // Mock fetchData with the REAL /get shape: parseOutput wraps the 'list'
+      // artifact AND each element, so a backend layer array round-trips as
+      // {dataType:'list', data:[{dataType:'dict', data:{name,type,geojson}}]}.
+      // (The earlier bare-array mock masked a layer-dropping bug in asFc.)
+      (fetchData as jest.Mock).mockResolvedValueOnce({
+        dataType: 'list',
+        data: [
+          { dataType: 'dict', data: { name: 't', type: 'points', geojson: { type: 'FeatureCollection', features: [] } } },
+        ],
+      });
+
+      const interpretCode = jest.fn(
+        (_unresolved, _code, _input, _inputTypes, cb) =>
+          cb({ stdout: [], stderr: '', output: { path: 'art-2', dataType: 'list' } }),
+      );
+      const result = await callLifecycle(useAutkGrammarLifecycle, {
+        jsInterpreter: { interpretCode } as any,
+      });
+
+      await act(async () => {
+        await result.current.applyGrammar!(JSON.stringify({
+          data: [{
+            type: 'geojson',
+            geojsonObject: { type: 'FeatureCollection', features: [] },
+            outputTableName: 't',
+          }],
+          map: { layerRefs: [{ dataRef: 't' }] },
+        }));
+      });
+
+      // Data ran in the backend …
+      expect(interpretCode).toHaveBeenCalledTimes(1);
+      // … the layers were fetched back from DuckDB …
+      expect(fetchData).toHaveBeenCalledWith('art-2');
+      // … and compute/map/plot ran in the browser via AutkGrammar.
+      expect(AutkGrammar).toHaveBeenCalledTimes(1);
+      // … and the backend layer was injected as a geojson source the map can
+      // reference (this fails if asFc drops the parseOutput-wrapped layer).
+      expect(runSpec).toBeTruthy();
+      const injected = (runSpec.data || []).find((s: any) => s.outputTableName === 't');
+      expect(injected).toBeTruthy();
+      expect(injected.geojsonObject?.type).toBe('FeatureCollection');
+      expect(injected.coordinateFormat).toBe('EPSG:3395');
+    });
   });
 });
