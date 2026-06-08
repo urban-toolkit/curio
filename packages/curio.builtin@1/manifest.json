@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v3.json",
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
   "compatibility": {
     "curioRuntime": ">=0.5.0",
     "major": 1
@@ -40,7 +40,7 @@
       "id": "data-loading",
       "inputPorts": [],
       "label": "Data Loading",
-      "lifecycle": "code",
+      "behavior": "code",
       "outputPorts": [
         {
           "cardinality": "[1,n]",
@@ -75,7 +75,7 @@
         }
       ],
       "label": "Data Export",
-      "lifecycle": "data-export",
+      "behavior": "data-export",
       "outputPorts": [],
       "paletteOrder": 1
     },
@@ -100,7 +100,7 @@
         }
       ],
       "label": "Data Transformation",
-      "lifecycle": "code",
+      "behavior": "code",
       "outputPorts": [
         {
           "cardinality": "[1,2]",
@@ -135,7 +135,7 @@
         }
       ],
       "label": "Data Pool",
-      "lifecycle": "data-pool",
+      "behavior": "data-pool",
       "outputPorts": [
         {
           "cardinality": "1",
@@ -172,7 +172,7 @@
         }
       ],
       "label": "Python Computation",
-      "lifecycle": "code",
+      "behavior": "code",
       "outputPorts": [
         {
           "cardinality": "[1,n]",
@@ -209,7 +209,7 @@
         }
       ],
       "label": "Data Summary",
-      "lifecycle": "data-summary",
+      "behavior": "data-summary",
       "outputPorts": [
         {
           "cardinality": "1",
@@ -244,7 +244,7 @@
         }
       ],
       "label": "JS Computation",
-      "lifecycle": "code",
+      "behavior": "code",
       "outputPorts": [
         {
           "cardinality": "[0,1]",
@@ -284,7 +284,7 @@
         }
       ],
       "label": "Vega-Lite",
-      "lifecycle": "vega",
+      "behavior": "vega",
       "outputPorts": [
         {
           "cardinality": "1",
@@ -323,7 +323,7 @@
         }
       ],
       "label": "Simple View",
-      "lifecycle": "simple-vis",
+      "behavior": "simple-vis",
       "outputPorts": [
         {
           "cardinality": "1",
@@ -365,7 +365,7 @@
         }
       ],
       "label": "Autark",
-      "lifecycle": "autk-grammar",
+      "behavior": "autk-grammar",
       "outputPorts": [
         {
           "cardinality": "[0,1]",
@@ -405,7 +405,7 @@
         }
       ],
       "label": "Spatial Join",
-      "lifecycle": "spatial-join",
+      "behavior": "spatial-join",
       "outputPorts": [
         {
           "cardinality": "1",
@@ -443,7 +443,7 @@
         }
       ],
       "label": "Merge Flow",
-      "lifecycle": "merge-flow",
+      "behavior": "merge-flow",
       "outputPorts": [
         {
           "cardinality": "1",

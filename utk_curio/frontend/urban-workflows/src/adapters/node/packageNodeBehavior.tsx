@@ -1,7 +1,7 @@
 /**
- * Lifecycle hook for package-registered code nodes.
+ * Behavior hook for package-registered code nodes.
  *
- * Built-in code nodes use the no-op `useCodeNodeLifecycle`: the user is
+ * Built-in code nodes use the no-op `useCodeNodeBehavior`: the user is
  * expected to pick a preset from the Templates dropdown before running.
  *
  * Package nodes optionally ship a `source` field in the manifest. Reference package:
@@ -36,7 +36,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStarterContext } from '../../providers/StarterProvider';
 import { tryGetNodeDescriptor } from '../../registry/nodeRegistry';
-import type { NodeLifecycleHook } from '../../registry/types';
+import type { NodeBehaviorHook } from '../../registry/types';
 
 function sourceDisplayName(sourcePath: string | undefined): string | undefined {
   if (!sourcePath) return undefined;
@@ -48,13 +48,13 @@ function sourceDisplayName(sourcePath: string | undefined): string | undefined {
   return stem.replace(/_/g, ' ');
 }
 
-export const usePackageNodeLifecycle: NodeLifecycleHook = (data, nodeState) => {
+export const usePackageNodeBehavior: NodeBehaviorHook = (data, nodeState) => {
   const { getStarters } = useStarterContext();
   const descriptor = tryGetNodeDescriptor(data.nodeType);
 
   // `data.code` is a runtime mutation that `useNodeState` performs (see
   // `hook/useNodeState.ts` → `useEffect(() => { data.code = code; ... })`).
-  // It is not part of the typed `NodeLifecycleData` surface, so we read it
+  // It is not part of the typed `NodeBehaviorData` surface, so we read it
   // through a narrow cast — we only care whether it was *defined* at mount.
   const initialCodeRef = useRef<unknown>((data as { code?: unknown }).code);
   const hasInjectedRef = useRef(false);

@@ -1,5 +1,5 @@
 import React, { useCallback, useState, useEffect, useMemo, useRef } from 'react';
-import { NodeLifecycleHook } from '../../registry/types';
+import { NodeBehaviorHook } from '../../registry/types';
 import { NodeType, VisInteractionType } from '../../constants';
 import { useProvenanceContext } from '../../providers/ProvenanceProvider';
 import { useFlowContext } from '../../providers/FlowProvider';
@@ -53,7 +53,7 @@ function getMode(input: any): SimpleVisMode {
   return 'text';
 }
 
-export const useSimpleVisLifecycle: NodeLifecycleHook = (data, nodeState) => {
+export const useSimpleVisBehavior: NodeBehaviorHook = (data, nodeState) => {
   // Lazy init: if input is already present on mount (e.g. in tests) seed the
   // mode so the first render already produces a contentComponent. The effect
   // will overwrite this once it fetches any path reference.

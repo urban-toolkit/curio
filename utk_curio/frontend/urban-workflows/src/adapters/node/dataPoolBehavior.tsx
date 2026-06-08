@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { NodeLifecycleHook } from '../../registry/types';
+import { NodeBehaviorHook } from '../../registry/types';
 import useTableData from '../../hook/useTableData';
 import { ICodeData, ICodeDataContent } from '../../types';
 import { IPropagation } from '../../providers/FlowProvider';
 import DataPoolContent from './components/DataPoolContent';
 import { ResolutionType, VisInteractionType, NodeType } from '../../constants';
 
-export const useDataPoolLifecycle: NodeLifecycleHook = (data, nodeState) => {
+export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
   const [output, setOutput] = useState<ICodeData>({ code: '', content: '' });
   const [plotResolutionMode, setPlotResolutionMode] = useState<string>(ResolutionType.OVERWRITE);// how interaction conflicts are solved in the context of one plot
   const [resolutionMode, setResolutionMode] = useState<string>(ResolutionType.OVERWRITE);// how interaction conflicts between plots are resolved
@@ -49,7 +49,7 @@ export const useDataPoolLifecycle: NodeLifecycleHook = (data, nodeState) => {
   // only triggers once children's data.input is set. In the common Play All
   // path, the data-input effect above has already published a promise on
   // inflightRef before this callback runs (effects fire in declaration order
-  // and the lifecycle hook is registered before UniversalNode's triggerExec
+  // and the behavior hook is registered before UniversalNode's triggerExec
   // effect), so we just await it. Falls through to a fresh fetch when
   // triggered without a data-input change (e.g. a second Play All click).
   const sendCodeOverride = useCallback(async () => {

@@ -240,7 +240,7 @@ def serve_launch_cwd_file(filename: str):
       Grammar spec:  pbfFileUrl: 'docs/examples/data/file.pbf'
 
     The frontend prepends ``BACKEND_URL`` + ``/file/`` to the relative path at
-    run time (see resolveDataSourceUrls in autkGrammarLifecycle.tsx).
+    run time (see resolveDataSourceUrls in autkGrammarBehavior.tsx).
 
     safe_join blocks path-traversal payloads from escaping CURIO_LAUNCH_CWD.
     """

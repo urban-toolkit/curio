@@ -32,8 +32,8 @@ export interface PackageTemplatePayload {
   icon: string | null;
   /** "<source>:<icon-id>" key resolved through iconRegistry. */
   iconRef: string | null;
-  /** String key into the lifecycleRegistry. */
-  lifecycle: string | null;
+  /** String key into the behaviorRegistry. */
+  behavior: string | null;
   /** Sort order in the palette; null means built-in default ordering. */
   paletteOrder: number | null;
   editor: "code" | "widgets" | "grammar" | "none";

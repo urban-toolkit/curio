@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { NodeLifecycleHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
+import { NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
 
 /**
- * HuggingFace CV Inference lifecycle.
+ * HuggingFace CV Inference behavior.
  *
  * Receives a GEODATAFRAME of image points (each feature carrying
  * `image_url`, plus optional `latitude` / `longitude` / `pano_id`) from
@@ -13,11 +13,11 @@ import { NodeLifecycleHook } from '../../../utk_curio/frontend/urban-workflows/s
  *
  * Model + class config UI adapted from the model-selection and class-picker
  * sections of
- *   utk_curio/frontend/urban-workflows/src/adapters/node/streetVisionLifecycle.tsx
+ *   utk_curio/frontend/urban-workflows/src/adapters/node/streetVisionBehavior.tsx
  * in ManeeshJupalle/curio (feat/street-vision-cv-analysis, #120).
  */
 
-// See streetViewFetcherLifecycle for the rationale on runtime URL resolution.
+// See streetViewFetcherBehavior for the rationale on runtime URL resolution.
 const API_BASE = `${(typeof window !== 'undefined' && (window as any).curio?.backendUrl) || ''}/api/streetvision`;
 
 type ModelType = 'segmentation' | 'detection';
@@ -130,7 +130,7 @@ function extractImages(input: any): Array<{ image_id?: string; image_url?: strin
   return [];
 }
 
-export const useHfCvInferenceLifecycle: NodeLifecycleHook = (data, nodeState) => {
+export const useHfCvInferenceBehavior: NodeBehaviorHook = (data, nodeState) => {
   // ── Health ──────────────────────────────────────────────────────────
   const [backendUp, setBackendUp] = useState(false);
   useEffect(() => {
@@ -235,7 +235,7 @@ export const useHfCvInferenceLifecycle: NodeLifecycleHook = (data, nodeState) =>
     reader.readAsText(file);
   };
 
-  // ── Job lifecycle ──────────────────────────────────────────────────
+  // ── Job behavior ──────────────────────────────────────────────────
   const [view, setView] = useState<View>('config');
   const [jobId, setJobId] = useState<string | null>(null);
   const [processed, setProcessed] = useState(0);

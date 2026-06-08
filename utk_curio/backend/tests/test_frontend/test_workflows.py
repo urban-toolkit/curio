@@ -81,7 +81,7 @@ class TestWorkflowCanvas:
         and dump the captured browser console/pageerror log alongside it.
 
         The browser log is the only window into autk's caught exceptions
-        (autkLifecycleFactory swallows them into React state without ever
+        (autkBehaviorFactory swallows them into React state without ever
         calling ``console.error``), so we always write it — not just on
         failure — while we're debugging the rendering issue.
         """
@@ -207,10 +207,10 @@ class TestWorkflowCanvas:
         """Return the error message text from a code node's inline output
         area. Returns ``None`` if it cannot be read.
 
-        Works for both autk lifecycle nodes and Python/JS code nodes:
+        Works for both autk behavior nodes and Python/JS code nodes:
         CodeEditor renders any output (success or error) into the same
         ``.nowheel.nodrag`` div with the ``[N]:`` counter (CodeEditor.tsx
-        ~200-219). For autk, ``autkLifecycleFactory``'s catch block sets
+        ~200-219). For autk, ``autkBehaviorFactory``'s catch block sets
         ``output = { code: 'error', content: err.message }``; for
         COMPUTATION_ANALYSIS / DATA_LOADING / DATA_TRANSFORMATION the
         sandbox's stderr/exception traceback is routed there too. We
@@ -341,7 +341,7 @@ class TestWorkflowCanvas:
         ``BoxStyles`` swaps the play SVG for a Bootstrap Spinner the moment
         ``isLoading`` flips to true (see styles.tsx:740-768) and the
         ``CodeEditor`` updates its inline counter from ``[ ]:`` to
-        ``[*]:`` once the lifecycle reports ``output.code === 'exec'``.
+        ``[*]:`` once the behavior reports ``output.code === 'exec'``.
         Either signal proves the click was honoured.
 
         We don't use ``play_btn.click(force=True)`` — ``force=True`` skips
@@ -587,7 +587,7 @@ class TestWorkflowCanvas:
             )
 
             # verify the inline output area shows a Jupyter-style counter (code nodes only).
-            # All autk lifecycle nodes (JS_CODE_TYPES) render via
+            # All autk behavior nodes (JS_CODE_TYPES) render via
             # ``contentComponent`` and NodeEditor auto-switches to the output
             # tab on success, hiding the code editor (and its inline counter).
             # Their successful execution is already proven by the Done span above.
@@ -757,7 +757,7 @@ class TestWorkflowCanvas:
                             f"  Actual   (snippet): {actual[:120]}"
                         )
 
-                    # autark nodes also expose an output tab (their lifecycle
+                    # autark nodes also expose an output tab (their behavior
                     # factory provides a contentComponent). Switch back to it
                     # so the screenshot captures the rendered canvas/widget
                     # rather than the Monaco editor we just verified.
@@ -916,7 +916,7 @@ class TestWorkflowCanvas:
                 # tab – the execution result is shown inline inside CodeEditor as
                 # a ".nowheel.nodrag" div with a Jupyter-style "[N]:" counter.
                 # All JS_CODE_TYPES nodes (AUTK_DB / AUTK_MAP / AUTK_PLOT /
-                # AUTK_COMPUTE) are exceptions: their lifecycles declare a
+                # AUTK_COMPUTE) are exceptions: their behaviors declare a
                 # ``contentComponent``, so NodeEditor auto-switches to the
                 # output tab on success and the inline counter is no longer
                 # the visible result. Done span (above) is sufficient proof.

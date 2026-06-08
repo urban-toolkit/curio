@@ -1110,7 +1110,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     // Non-serializable callbacks on ``node.data`` (outputCallback,
     // interactionsCallback, propagationCallback, interpreters) are
     // re-attached on the receive side because socket.io strips functions
-    // during JSON serialisation. Without this, downstream lifecycle
+    // during JSON serialisation. Without this, downstream behavior
     // adapters would call ``data.outputCallback(...)`` against undefined
     // (caught now by the defensive ``typeof`` guards in
     // ``adapters/node/*``, but never producing visible output).

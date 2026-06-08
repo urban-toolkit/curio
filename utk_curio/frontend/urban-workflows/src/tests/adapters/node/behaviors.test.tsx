@@ -1,6 +1,6 @@
 import React from 'react';
 import { renderHook, act } from '@testing-library/react';
-import type { NodeLifecycleHook, NodeLifecycleData, UseNodeStateReturn, LifecycleResult } from '../../../registry/types';
+import type { NodeBehaviorHook, NodeBehaviorData, UseNodeStateReturn, NodeBehaviorResult } from '../../../registry/types';
 
 jest.setTimeout(15000);
 
@@ -62,15 +62,15 @@ jest.mock('../../../utils/formatters', () => ({
 
 jest.mock('@urban-toolkit/autk-grammar', () => ({ AutkGrammar: jest.fn().mockImplementation(() => ({ run: jest.fn().mockResolvedValue(undefined), data: {} })) }), { virtual: true });
 
-import { useCodeNodeLifecycle } from '../../../adapters/node/codeNodeLifecycle';
-import { useDataExportLifecycle } from '../../../adapters/node/dataExportLifecycle';
-import { useVegaLifecycle } from '../../../adapters/node/vegaLifecycle';
-import { useSimpleVisLifecycle } from '../../../adapters/node/simpleVisLifecycle';
-import { useMergeFlowLifecycle } from '../../../adapters/node/mergeFlowLifecycle';
-import { useDataPoolLifecycle } from '../../../adapters/node/dataPoolLifecycle';
-import { useAutkGrammarLifecycle, attachMapInteractionZoomFix } from '../../../adapters/node/autkGrammarLifecycle';
+import { useCodeNodeBehavior } from '../../../adapters/node/codeNodeBehavior';
+import { useDataExportBehavior } from '../../../adapters/node/dataExportBehavior';
+import { useVegaBehavior } from '../../../adapters/node/vegaBehavior';
+import { useSimpleVisBehavior } from '../../../adapters/node/simpleVisBehavior';
+import { useMergeFlowBehavior } from '../../../adapters/node/mergeFlowBehavior';
+import { useDataPoolBehavior } from '../../../adapters/node/dataPoolBehavior';
+import { useAutkGrammarBehavior, attachMapInteractionZoomFix } from '../../../adapters/node/autkGrammarBehavior';
 
-function makeMockData(overrides: Partial<NodeLifecycleData> = {}): NodeLifecycleData {
+function makeMockData(overrides: Partial<NodeBehaviorData> = {}): NodeBehaviorData {
   return {
     nodeId: 'node-1',
     nodeType: 'DATA_LOADING',
@@ -105,7 +105,7 @@ function makeMockNodeState(overrides: Partial<UseNodeStateReturn> = {}): UseNode
   } as unknown as UseNodeStateReturn;
 }
 
-const LIFECYCLE_RESULT_KEYS: (keyof LifecycleResult)[] = [
+const BEHAVIOR_RESULT_KEYS: (keyof NodeBehaviorResult)[] = [
   'applyGrammar',
   'customWidgetsCallback',
   'defaultValueOverride',
@@ -121,20 +121,20 @@ const LIFECYCLE_RESULT_KEYS: (keyof LifecycleResult)[] = [
   'handlesOverride',
 ];
 
-function assertValidLifecycleResult(result: LifecycleResult) {
+function assertValidBehaviorResult(result: NodeBehaviorResult) {
   for (const key of Object.keys(result)) {
-    expect(LIFECYCLE_RESULT_KEYS).toContain(key);
+    expect(BEHAVIOR_RESULT_KEYS).toContain(key);
   }
 }
 
-async function callLifecycle(
-  hook: NodeLifecycleHook,
-  data?: Partial<NodeLifecycleData>,
+async function callBehavior(
+  hook: NodeBehaviorHook,
+  data?: Partial<NodeBehaviorData>,
   nodeState?: Partial<UseNodeStateReturn>,
 ) {
   const stableData = makeMockData(data);
   const stableNodeState = makeMockNodeState(nodeState);
-  let hookResult: { current: LifecycleResult };
+  let hookResult: { current: NodeBehaviorResult };
   await act(async () => {
     const rendered = renderHook(() =>
       hook(stableData, stableNodeState),
@@ -144,19 +144,19 @@ async function callLifecycle(
   return hookResult!;
 }
 
-describe('Lifecycle hooks — NodeLifecycleHook contract conformance', () => {
-  describe('useCodeNodeLifecycle', () => {
-    test('returns empty lifecycle (output is inline in CodeEditor)', async () => {
-      const result = await callLifecycle(useCodeNodeLifecycle);
-      assertValidLifecycleResult(result.current);
+describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
+  describe('useCodeNodeBehavior', () => {
+    test('returns empty behavior (output is inline in CodeEditor)', async () => {
+      const result = await callBehavior(useCodeNodeBehavior);
+      assertValidBehaviorResult(result.current);
       expect(result.current.contentComponent).toBeUndefined();
     });
   });
 
-  describe('useDataExportLifecycle', () => {
+  describe('useDataExportBehavior', () => {
     test('returns expected fields', async () => {
-      const result = await callLifecycle(useDataExportLifecycle);
-      assertValidLifecycleResult(result.current);
+      const result = await callBehavior(useDataExportBehavior);
+      assertValidBehaviorResult(result.current);
       expect(typeof result.current.sendCodeOverride).toBe('function');
       expect(typeof result.current.setSendCodeCallbackOverride).toBe('function');
       expect(typeof result.current.customWidgetsCallback).toBe('function');
@@ -164,47 +164,47 @@ describe('Lifecycle hooks — NodeLifecycleHook contract conformance', () => {
     });
   });
 
-  describe('useVegaLifecycle', () => {
+  describe('useVegaBehavior', () => {
     test('returns applyGrammar', async () => {
-      const result = await callLifecycle(useVegaLifecycle);
-      assertValidLifecycleResult(result.current);
+      const result = await callBehavior(useVegaBehavior);
+      assertValidBehaviorResult(result.current);
       expect(typeof result.current.applyGrammar).toBe('function');
     });
   });
 
-  describe('useSimpleVisLifecycle', () => {
+  describe('useSimpleVisBehavior', () => {
     test('renders table for tabular input', async () => {
-      const result = await callLifecycle(useSimpleVisLifecycle, {
+      const result = await callBehavior(useSimpleVisBehavior, {
         input: { dataType: 'dataframe', data: {} } as any,
       });
-      assertValidLifecycleResult(result.current);
+      assertValidBehaviorResult(result.current);
       expect(result.current.contentComponent).toBeDefined();
       expect(typeof result.current.setSendCodeCallbackOverride).toBe('function');
     });
 
     test('renders image grid for image DataFrame input', async () => {
-      const result = await callLifecycle(useSimpleVisLifecycle, {
+      const result = await callBehavior(useSimpleVisBehavior, {
         input: { dataType: 'dataframe', data: { image_id: {}, image_content: {} } } as any,
       });
-      assertValidLifecycleResult(result.current);
+      assertValidBehaviorResult(result.current);
       expect(result.current.contentComponent).toBeDefined();
       expect(typeof result.current.setSendCodeCallbackOverride).toBe('function');
     });
 
     test('returns no contentComponent for non-tabular input (text/value mode)', async () => {
-      const result = await callLifecycle(useSimpleVisLifecycle, {
+      const result = await callBehavior(useSimpleVisBehavior, {
         input: { dataType: 'value', data: 42 } as any,
       });
-      assertValidLifecycleResult(result.current);
+      assertValidBehaviorResult(result.current);
       expect(result.current.contentComponent).toBeUndefined();
       expect(typeof result.current.setSendCodeCallbackOverride).toBe('function');
     });
   });
 
-  describe('useMergeFlowLifecycle', () => {
+  describe('useMergeFlowBehavior', () => {
     test('returns handlesOverride and setOutputCallbackOverride', async () => {
-      const result = await callLifecycle(useMergeFlowLifecycle);
-      assertValidLifecycleResult(result.current);
+      const result = await callBehavior(useMergeFlowBehavior);
+      assertValidBehaviorResult(result.current);
       expect(Array.isArray(result.current.handlesOverride)).toBe(true);
       // 5 input slots + 1 output handle (fully replaces adapter.handles).
       expect(result.current.handlesOverride!.length).toBe(6);
@@ -212,7 +212,7 @@ describe('Lifecycle hooks — NodeLifecycleHook contract conformance', () => {
     });
 
     test('handles override has correct ids and positions', async () => {
-      const result = await callLifecycle(useMergeFlowLifecycle);
+      const result = await callBehavior(useMergeFlowBehavior);
       const handles = result.current.handlesOverride!;
 
       const inputs = handles.slice(0, 5);
@@ -229,10 +229,10 @@ describe('Lifecycle hooks — NodeLifecycleHook contract conformance', () => {
     });
   });
 
-  describe('useDataPoolLifecycle', () => {
+  describe('useDataPoolBehavior', () => {
     test('returns contentComponent, customWidgetsCallback, overrides', async () => {
-      const result = await callLifecycle(useDataPoolLifecycle);
-      assertValidLifecycleResult(result.current);
+      const result = await callBehavior(useDataPoolBehavior);
+      assertValidBehaviorResult(result.current);
       expect(result.current.contentComponent).toBeDefined();
       expect(typeof result.current.customWidgetsCallback).toBe('function');
       expect(typeof result.current.setOutputCallbackOverride).toBe('function');
@@ -243,20 +243,20 @@ describe('Lifecycle hooks — NodeLifecycleHook contract conformance', () => {
     });
   });
 
-  describe('useAutkGrammarLifecycle', () => {
+  describe('useAutkGrammarBehavior', () => {
     test('returns applyGrammar, contentComponent, and default spec', async () => {
-      const result = await callLifecycle(useAutkGrammarLifecycle);
-      assertValidLifecycleResult(result.current);
+      const result = await callBehavior(useAutkGrammarBehavior);
+      assertValidBehaviorResult(result.current);
       expect(typeof result.current.applyGrammar).toBe('function');
       expect(result.current.contentComponent).toBeDefined();
       expect(typeof result.current.defaultValueOverride).toBe('string');
     });
 
     test('omits defaultValueOverride when node already has code', async () => {
-      const result = await callLifecycle(useAutkGrammarLifecycle, {
+      const result = await callBehavior(useAutkGrammarBehavior, {
         defaultCode: '{"map":{}}',
       } as any);
-      assertValidLifecycleResult(result.current);
+      assertValidBehaviorResult(result.current);
       expect(result.current.defaultValueOverride).toBeUndefined();
     });
 
@@ -266,7 +266,7 @@ describe('Lifecycle hooks — NodeLifecycleHook contract conformance', () => {
           cb({ stdout: [], stderr: '', output: { path: 'art-1', dataType: 'list' } }),
       );
       const outputCallback = jest.fn();
-      const result = await callLifecycle(useAutkGrammarLifecycle, {
+      const result = await callBehavior(useAutkGrammarBehavior, {
         outputCallback,
         jsInterpreter: { interpretCode } as any,
       });
@@ -315,7 +315,7 @@ describe('Lifecycle hooks — NodeLifecycleHook contract conformance', () => {
         (_unresolved, _code, _input, _inputTypes, cb) =>
           cb({ stdout: [], stderr: '', output: { path: 'art-2', dataType: 'list' } }),
       );
-      const result = await callLifecycle(useAutkGrammarLifecycle, {
+      const result = await callBehavior(useAutkGrammarBehavior, {
         jsInterpreter: { interpretCode } as any,
       });
 
@@ -351,7 +351,7 @@ describe('Lifecycle hooks — NodeLifecycleHook contract conformance', () => {
   // its renderer from offsetWidth (pre-scale). attachMapInteractionZoomFix
   // re-dispatches picking (double-click), wheel-zoom, and drag-pan events with
   // coordinates corrected back into unscaled CSS space so they match the cursor.
-  // See autkGrammarLifecycle.attachMapInteractionZoomFix.
+  // See autkGrammarBehavior.attachMapInteractionZoomFix.
   describe('attachMapInteractionZoomFix (map interaction under React Flow zoom)', () => {
     let dispose: (() => void) | null = null;
 

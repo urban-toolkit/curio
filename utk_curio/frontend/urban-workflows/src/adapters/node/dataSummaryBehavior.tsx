@@ -6,7 +6,7 @@ import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Paper from '@mui/material/Paper';
-import { NodeLifecycleHook } from '../../registry/types';
+import { NodeBehaviorHook } from '../../registry/types';
 import OutputContent from '../../components/editing/OutputContent';
 import { fetchData } from '../../services/api';
 
@@ -155,9 +155,9 @@ summary = {
 return summary
 `;
 
-// ── Lifecycle hook ─────────────────────────────────────────────────────────
+// ── Behavior hook ─────────────────────────────────────────────────────────
 
-export const useDataSummaryLifecycle: NodeLifecycleHook = (data, nodeState) => {
+export const useDataSummaryBehavior: NodeBehaviorHook = (data, nodeState) => {
   const [summaryData, setSummaryData] = useState<any>(null);
 
   // Pre-populate the editor on first drop; respect code already saved in the workflow.

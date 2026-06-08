@@ -18,7 +18,7 @@ from typing import Iterator, List, Optional
 from . import cache
 
 # Cityscapes-style color palette. Keep in sync with the frontend's CLASS_COLORS
-# in cvGalleryLifecycle.tsx so the overlay PNGs match the gallery legend.
+# in cvGalleryBehavior.tsx so the overlay PNGs match the gallery legend.
 CITYSCAPES_COLORS = {
     0: (74, 144, 217), 1: (231, 76, 139), 2: (46, 204, 113), 3: (189, 195, 199),
     4: (155, 89, 182), 5: (0, 188, 212), 6: (241, 196, 15), 7: (241, 196, 15),

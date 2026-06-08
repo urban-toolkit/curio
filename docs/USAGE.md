@@ -258,7 +258,7 @@ To open the drawer: in the **Tools panel** on the left edge of the canvas, find 
 - Import a `.curio.zip` archive from the footer.
 - Author your own package directly from the canvas: build the node, click the cog on its header, then **Save as pack node…**. Edit per-package metadata later via the pencil button next to the export icon in the **Packages** dropdown.
 
-The full walkthrough — concepts, the Save-As flow, the per-package metadata editor, exporting / importing, versioning, and fork lineage — is in [docs/CATALOG.md](CATALOG.md). The manifest format is specified in [docs/schemas/node-package.v3.json](schemas/node-package.v3.json), and the committed package catalog lives at `<repo_root>/packages/`.
+The full walkthrough — concepts, the Save-As flow, the per-package metadata editor, exporting / importing, versioning, and fork lineage — is in [docs/CATALOG.md](CATALOG.md). The manifest format is specified in [docs/schemas/node-package.v4.json](schemas/node-package.v4.json), and the committed package catalog lives at `<repo_root>/packages/`.
 
 ## Real-time collaboration
 

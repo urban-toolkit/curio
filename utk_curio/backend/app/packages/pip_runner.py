@@ -1,7 +1,7 @@
 """Per-package Python dependency installation via ``pip``.
 
 A package's ``manifest.dependencies.python`` declares the libraries the
-package's lifecycle hooks need at runtime. The catalog install flow calls
+package's behavior hooks need at runtime. The catalog install flow calls
 :func:`install_python_deps` after copying the package files; uninstall
 walks every other installed package's manifest and pip-uninstalls deps
 that no remaining package still declares.

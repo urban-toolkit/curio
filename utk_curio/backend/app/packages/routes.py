@@ -128,7 +128,7 @@ def _manifest_to_payload(manifest: PackageManifest, *, package_mtime_path: Path 
                 "description": tpl.description,
                 "icon": tpl.icon,
                 "iconRef": tpl.icon_ref,
-                "lifecycle": tpl.lifecycle,
+                "behavior": tpl.behavior,
                 "paletteOrder": tpl.palette_order,
                 "editor": tpl.editor,
                 "hasCode": tpl.has_code,
@@ -166,7 +166,7 @@ def _manifest_to_payload(manifest: PackageManifest, *, package_mtime_path: Path 
         "channel": manifest.channel,
         **({"readOnly": True} if manifest.read_only else {}),
         "createdAtMs": manifest.created_at_ms,
-        **({"lifecycleScript": manifest.lifecycle_script} if manifest.lifecycle_script else {}),
+        **({"behaviorScript": manifest.behavior_script} if manifest.behavior_script else {}),
     }
     if manifest.created_at_iso:
         payload["createdAt"] = manifest.created_at_iso
@@ -630,8 +630,8 @@ def download_packageage_archive(dir_name: str):
 # GET /api/packages/<dir_name>/file/<path:filename>
 # ---------------------------------------------------------------------------
 # Serves a static file from a user's installed copy of a package. Used by the
-# dynamic-lifecycle loader on the frontend to fetch each package's compiled
-# `lifecycles.js` bundle (declared in the manifest via `lifecycleScript`).
+# dynamic-behavior loader on the frontend to fetch each package's compiled
+# `behaviors.js` bundle (declared in the manifest via `behaviorScript`).
 # Path resolution flows through `safe_join` so traversal payloads can't escape
 # the package directory, and the result is always rooted in the user's own
 # `<instance>/.curio/users/<user_key>/packages/<dir>/` tree.
@@ -660,9 +660,9 @@ def get_package_file(dir_name: str, filename: str):
     """Serve a static file from the user's installed copy of ``<dir_name>``.
 
     Mounted at ``GET /api/packages/<dir_name>/file/<path:filename>``. The
-    frontend's dynamic lifecycle loader hits this to fetch each package's
-    compiled ``lifecycles.js`` bundle (when its manifest declares
-    ``lifecycleScript``). Any package-shipped asset (overlay imagery,
+    frontend's dynamic behavior loader hits this to fetch each package's
+    compiled ``behaviors.js`` bundle (when its manifest declares
+    ``behaviorScript``). Any package-shipped asset (overlay imagery,
     starter source, …) can be retrieved via the same route.
     """
     from utk_curio.backend.app.common.safe_paths import (

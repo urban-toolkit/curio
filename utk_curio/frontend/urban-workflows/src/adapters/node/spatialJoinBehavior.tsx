@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useEdges, Position } from 'reactflow';
-import { NodeLifecycleHook, HandleDef } from '../../registry/types';
+import { NodeBehaviorHook, HandleDef } from '../../registry/types';
 
 /**
- * Spatial Join lifecycle — tag each point with the polygon it falls in.
+ * Spatial Join behavior — tag each point with the polygon it falls in.
  *
  * Backs the generic `spatial-join` node in curio.builtin@1. The node ships
  * with `containerStyle.noContent: true` (matching Merge Flow), so it renders
@@ -50,7 +50,7 @@ function unwrap(value: any): any {
   return value;
 }
 
-export const useSpatialJoinLifecycle: NodeLifecycleHook = (data, nodeState) => {
+export const useSpatialJoinBehavior: NodeBehaviorHook = (data, nodeState) => {
   const [slots, setSlots] = useState<[any | undefined, any | undefined]>([undefined, undefined]);
   const edges = useEdges();
 

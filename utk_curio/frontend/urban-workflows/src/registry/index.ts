@@ -1,18 +1,18 @@
-import './builtinLifecycles';
+import './builtinBehaviors';
 import './iconRegistry';
 import '../adapters/vegaLiteAdapter';
 
 // ── Dynamic-package globals ────────────────────────────────────────────
 //
-// Packages declaring `manifest.lifecycleScript` ship a pre-built
-// `lifecycles.js` that gets loaded via <script> injection at boot
-// (see `packageRegistryBootstrap.loadPackageLifecycleScripts`). That
-// bundle externalises React, ReactFlow, and a `registerLifecycle`
+// Packages declaring `manifest.behaviorScript` ship a pre-built
+// `behaviors.js` that gets loaded via <script> injection at boot
+// (see `packageRegistryBootstrap.loadPackageBehaviorScripts`). That
+// bundle externalises React, ReactFlow, and a `registerBehavior`
 // function — we expose them on `window` so the package bundle's
 // `const React = window.React` (etc.) replaces resolve at runtime,
 // distinct bundles share Curio's React instance (essential for
 // rules-of-hooks), and the bundle's side-effect can register against
-// the same lifecycle registry the built-ins use.
+// the same behavior registry the built-ins use.
 //
 // Pending registrations: if a package's <script> loads before this
 // module runs (race during first paint), it pushes a callback into
@@ -20,7 +20,7 @@ import '../adapters/vegaLiteAdapter';
 // completes deterministically.
 import * as ReactNS from 'react';
 import * as ReactFlowNS from 'reactflow';
-import { registerLifecycle } from './lifecycleRegistry';
+import { registerBehavior } from './behaviorRegistry';
 
 if (typeof window !== 'undefined') {
   const w = window as any;
@@ -33,10 +33,10 @@ if (typeof window !== 'undefined') {
   // deployment that doesn't match the build host.
   w.curio = {
     ...(w.curio ?? {}),
-    registerLifecycle,
+    registerBehavior,
     backendUrl: process.env.BACKEND_URL ?? '',
   };
-  const pending: Array<(c: { registerLifecycle: typeof registerLifecycle }) => void> =
+  const pending: Array<(c: { registerBehavior: typeof registerBehavior }) => void> =
     Array.isArray(w.__curioPendingPackages__) ? w.__curioPendingPackages__ : [];
   for (const fn of pending) {
     try {
@@ -67,10 +67,10 @@ export {
 } from './grammarAdapter';
 
 export {
-  registerLifecycle,
-  getLifecycle,
-  getAllLifecycleNames,
-} from './lifecycleRegistry';
+  registerBehavior,
+  getBehavior,
+  getAllBehaviorNames,
+} from './behaviorRegistry';
 
 export type {
   NodeDescriptor,
@@ -81,9 +81,9 @@ export type {
   EditorConfig,
   ContainerConfig,
   NodeAdapter,
-  NodeLifecycleHook,
-  NodeLifecycleData,
-  LifecycleResult,
+  NodeBehaviorHook,
+  NodeBehaviorData,
+  NodeBehaviorResult,
   UseNodeStateReturn,
 } from './types';
 

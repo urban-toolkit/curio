@@ -1,13 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 import { FeatureCollection } from 'geojson';
-import { NodeLifecycleHook } from '../../registry/types';
+import { NodeBehaviorHook } from '../../registry/types';
 import { fetchData } from '../../services/api';
 import { useToastContext } from '../../providers/ToastProvider';
 import { autkGrammarAdapter } from '../../adapters/autkGrammarAdapter';
 import { VisInteractionType, NodeType } from '../../constants';
 import { JavaScriptInterpreter } from '../../JavaScriptInterpreter';
 
-export const useAutkGrammarLifecycle: NodeLifecycleHook = (data, nodeState) => {
+export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
     const { showToast } = useToastContext();
     const wrapperRef = useRef<HTMLDivElement>(null);
 

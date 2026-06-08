@@ -413,7 +413,7 @@ def parseOutput(output):
         geojson_dict = json.loads(gdf.to_json())
         # geopandas ≥1.0 removed the non-standard 'crs' key from to_json() output
         # (deprecated since 0.9, following RFC 7946). Re-inject it so that
-        # JavaScript consumers (e.g. the autk-grammar lifecycle) can determine
+        # JavaScript consumers (e.g. the autk-grammar behavior) can determine
         # the coordinate reference system without guessing from coordinate values.
         if output.crs is not None:
             epsg = output.crs.to_epsg()

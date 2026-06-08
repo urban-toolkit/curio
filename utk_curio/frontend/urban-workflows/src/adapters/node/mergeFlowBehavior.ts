@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useEdges, Edge, Position } from 'reactflow';
-import { NodeLifecycleHook, HandleDef } from '../../registry/types';
+import { NodeBehaviorHook, HandleDef } from '../../registry/types';
 import { NodeType } from '../../constants';
 import { Starter, useStarterContext } from '../../providers/StarterProvider';
 
 const MERGE_SLOT_COUNT = 5;
 
-export const useMergeFlowLifecycle: NodeLifecycleHook = (data, _nodeState) => {
+export const useMergeFlowBehavior: NodeBehaviorHook = (data, _nodeState) => {
   // Read live edges from React Flow's store. This was previously done via a
   // manual `useStoreApi().subscribe`, but `store.subscribe` only fires on
   // *future* state changes — not the current state. So on first mount the

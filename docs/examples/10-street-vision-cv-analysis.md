@@ -2,7 +2,7 @@
 
 This example pulls Google Street View imagery for a chosen neighborhood, runs a HuggingFace segmentation model on every panorama, tags each result with the city neighborhood it falls in via a spatial join, and renders the output as a polygon-shaded map + a per-neighborhood bar chart. The use case is *urban greenery audits* — see which neighborhoods are visually leafy vs. paved — but the same pipeline works for any per-pixel class you can find a model for (sidewalks, traffic signs, advertising, building facade material, …).
 
-This example doubles as the worked example in [EXTENDING.md](../EXTENDING.md) — if you're a developer reading code, the manifest entries, lifecycle hooks, and Flask blueprint that ship these nodes are walked through there.
+This example doubles as the worked example in [EXTENDING.md](../EXTENDING.md) — if you're a developer reading code, the manifest entries, behavior hooks, and Flask blueprint that ship these nodes are walked through there.
 
 > [!NOTE]
 > **Setup required**

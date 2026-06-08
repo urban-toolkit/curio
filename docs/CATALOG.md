@@ -9,7 +9,7 @@ This guide is in four parts, plus a developer appendix:
 - [3. Creating a new package from a canvas node](#3-creating-a-new-package-from-a-canvas-node) — the **Save as pack node** flow plus the per-package metadata editor.
 - [4. Packaging and sharing](#4-packaging-and-sharing) — exporting an archive and importing one.
 - [Operator notes](#operator-notes) — env vars and CLI flags that gate Publish.
-- [Appendix: adding a new lifecycle or icon (developer-only)](#appendix-adding-a-new-lifecycle-or-icon-developer-only) — code-level extensions when a new node needs runtime behavior the built-in lifecycles don't cover.
+- [Appendix: adding a new behavior or icon (developer-only)](#appendix-adding-a-new-behavior-or-icon-developer-only) — code-level extensions when a new node needs runtime behavior the built-in behaviors don't cover.
 
 ---
 
@@ -151,7 +151,7 @@ Developers can still publish a draft into the repo's local catalog (`<repo_root>
 
 ### The manifest schema
 
-Every manifest is validated against [`docs/schemas/node-package.v3.json`](schemas/node-package.v3.json) (JSON Schema Draft 2020-12). The schema is the source of truth for what fields a package can declare. The repo's catalog packages (`packages/curio.builtin@1/`, `packages/ai.urbanlab.uhvi@1/`, `packages/curio.weather@1/`) are the canonical examples.
+Every manifest is validated against [`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json) (JSON Schema Draft 2020-12). The schema is the source of truth for what fields a package can declare. The repo's catalog packages (`packages/curio.builtin@1/`, `packages/ai.urbanlab.uhvi@1/`, `packages/curio.weather@1/`) are the canonical examples.
 
 ---
 
@@ -215,19 +215,19 @@ Projects saved before the lockfile became load-bearing have an empty `dataflow.p
 
 ---
 
-## Appendix: adding a new lifecycle or icon (developer-only)
+## Appendix: adding a new behavior or icon (developer-only)
 
-Authoring a package via **Save as pack node** or by hand-editing a `manifest.json` covers ~90% of "I want a new node" — the manifest schema already exposes every knob the runtime understands. The remaining 10% is when a kind needs **runtime behavior** that none of the built-in lifecycles provides (e.g. a new visualization library, a node that talks to a custom data source). These are code changes, not package changes.
+Authoring a package via **Save as pack node** or by hand-editing a `manifest.json` covers ~90% of "I want a new node" — the manifest schema already exposes every knob the runtime understands. The remaining 10% is when a kind needs **runtime behavior** that none of the built-in behaviors provides (e.g. a new visualization library, a node that talks to a custom data source). These are code changes, not package changes.
 
-### Adding a new lifecycle hook
+### Adding a new behavior hook
 
-The lifecycles a manifest can reference live in [`src/registry/lifecycleRegistry.ts`](../utk_curio/frontend/urban-workflows/src/registry/lifecycleRegistry.ts); the 11 built-ins are registered in [`src/registry/builtinLifecycles.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinLifecycles.ts). To add a new one:
+The behaviors a manifest can reference live in [`src/registry/behaviorRegistry.ts`](../utk_curio/frontend/urban-workflows/src/registry/behaviorRegistry.ts); the 11 built-ins are registered in [`src/registry/builtinBehaviors.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinBehaviors.ts). To add a new one:
 
-1. Implement the hook under [`src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/) — it must conform to the `NodeLifecycleHook` type in [`src/registry/types.ts`](../utk_curio/frontend/urban-workflows/src/registry/types.ts). Look at `useCodeNodeLifecycle` and `useVegaLifecycle` as references.
-2. Register it in `builtinLifecycles.ts`: `registerLifecycle("my-key", useMyHook);`
-3. Reference it from a package manifest: `"lifecycle": "my-key"` on each kind that wants the new behavior.
+1. Implement the hook under [`src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/) — it must conform to the `NodeBehaviorHook` type in [`src/registry/types.ts`](../utk_curio/frontend/urban-workflows/src/registry/types.ts). Look at `useCodeNodeBehavior` and `useVegaBehavior` as references.
+2. Register it in `builtinBehaviors.ts`: `registerBehavior("my-key", useMyHook);`
+3. Reference it from a package manifest: `"behavior": "my-key"` on each kind that wants the new behavior.
 
-Third-party packages can use any key registered at startup. There's no per-package lifecycle code today — manifests can't carry JS.
+Third-party packages can use any key registered at startup. There's no per-package behavior code today — manifests can't carry JS.
 
 ### Adding a new icon
 
@@ -248,5 +248,5 @@ Same pattern, [`src/registry/grammarAdapter.ts`](../utk_curio/frontend/urban-wor
 ## See also
 
 - [`docs/USAGE.md`](USAGE.md) — installation and operating Curio.
-- [`docs/schemas/node-package.v3.json`](schemas/node-package.v3.json) — manifest JSON Schema.
+- [`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json) — manifest JSON Schema.
 - [`packages/curio.builtin@1/manifest.json`](../packages/curio.builtin@1/manifest.json) — the built-in package, used as the canonical example throughout this guide.

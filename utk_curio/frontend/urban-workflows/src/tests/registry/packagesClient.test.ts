@@ -11,7 +11,7 @@
  *   - container overrides (merge-flow)
  *   - editor === 'none' → adapter.editor must be null
  *   - 'N' icon for [1,n] cardinality (data-loading output)
- *   - badge passthrough (vega), lifecycle/icon registry lookups
+ *   - badge passthrough (vega), behavior/icon registry lookups
  */
 
 import {
@@ -26,7 +26,7 @@ import {
 jest.mock('vega', () => ({}), { virtual: true });
 jest.mock('vega-lite', () => ({}), { virtual: true });
 
-import '../../registry/builtinLifecycles'; // side-effect: registers the 11 built-in lifecycles
+import '../../registry/builtinBehaviors'; // side-effect: registers the 11 built-in behaviors
 import '../../registry/iconRegistry'; // side-effect: registers FA icons used by the fixture
 import { registerPackageTemplates } from '../../registry/packagesClient';
 import { clearPackageNodes } from '../../registry/nodeRegistry';
@@ -51,7 +51,7 @@ const FIXTURE_PACK = {
       description: '',
       icon: null,
       iconRef: 'fa-solid:upload',
-      lifecycle: 'code',
+      behavior: 'code',
       paletteOrder: 0,
       editor: 'code' as const,
       hasCode: true,
@@ -76,7 +76,7 @@ const FIXTURE_PACK = {
       description: '',
       icon: null,
       iconRef: 'fa-solid:chart-line',
-      lifecycle: 'vega',
+      behavior: 'vega',
       paletteOrder: 7,
       editor: 'grammar' as const,
       hasCode: false,
@@ -101,7 +101,7 @@ const FIXTURE_PACK = {
       description: '',
       icon: null,
       iconRef: 'fa-solid:code-merge',
-      lifecycle: 'merge-flow',
+      behavior: 'merge-flow',
       paletteOrder: 9,
       editor: 'none' as const,
       hasCode: false,

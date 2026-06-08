@@ -1,8 +1,8 @@
-import { NodeLifecycleHook } from '../../registry/types';
+import { NodeBehaviorHook } from '../../registry/types';
 import { useVega } from '../../hook/useVega';
 import { useToastContext } from '../../providers/ToastProvider';
 
-export const useVegaLifecycle: NodeLifecycleHook = (data, nodeState) => {
+export const useVegaBehavior: NodeBehaviorHook = (data, nodeState) => {
   const { showToast } = useToastContext();
   const { handleCompileGrammar } = useVega({ data, code: nodeState.code });
 

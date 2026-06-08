@@ -12,15 +12,15 @@ return /******/ (() => { // webpackBootstrap
 /******/ 	"use strict";
 /******/ 	var __webpack_modules__ = ({
 
-/***/ "../../../packages/curio.streetvision@1/sources/cvGalleryLifecycle.tsx"
-/*!*****************************************************************************!*\
-  !*** ../../../packages/curio.streetvision@1/sources/cvGalleryLifecycle.tsx ***!
-  \*****************************************************************************/
+/***/ "../../../packages/curio.streetvision@1/sources/cvGalleryBehavior.tsx"
+/*!****************************************************************************!*\
+  !*** ../../../packages/curio.streetvision@1/sources/cvGalleryBehavior.tsx ***!
+  \****************************************************************************/
 (__unused_webpack_module, __webpack_exports__, __webpack_require__) {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   useCvGalleryLifecycle: () => (/* binding */ useCvGalleryLifecycle)
+/* harmony export */   useCvGalleryBehavior: () => (/* binding */ useCvGalleryBehavior)
 /* harmony export */ });
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! react */ "react");
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
@@ -43,7 +43,7 @@ function _iterableToArrayLimit(r, l) { var t = null == r ? null : "undefined" !=
 function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
 
 /**
- * CV Gallery lifecycle.
+ * CV Gallery behavior.
  *
  * Receives the inference results JSON emitted by HF CV Inference upstream
  * (shape: `{type:'street_vision_results', results: ResultItem[], ...}`).
@@ -52,7 +52,7 @@ function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
  * downstream nodes (Spatial Join, Vega-Lite, AUTK Map, …) consume it cleanly.
  *
  * Adapted from
- *   utk_curio/frontend/urban-workflows/src/adapters/node/cvAnalysisLifecycle.tsx
+ *   utk_curio/frontend/urban-workflows/src/adapters/node/cvAnalysisBehavior.tsx
  * in ManeeshJupalle/curio (feat/street-vision-cv-analysis, #120). The
  * neighborhood-enrichment + Vega-Lite-template parts of the original have
  * been factored out — neighborhood tagging is now the separate generic
@@ -60,7 +60,7 @@ function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
  * live in the user-facing docs example.
  */
 
-// See streetViewFetcherLifecycle for the rationale on runtime URL resolution.
+// See streetViewFetcherBehavior for the rationale on runtime URL resolution.
 var API_BASE = "".concat(typeof window !== 'undefined' && ((_curio = window.curio) === null || _curio === void 0 ? void 0 : _curio.backendUrl) || '', "/api/streetvision");
 // Cityscapes-flavored palette; kept in sync with the inference service's
 // overlay PNG palette so colors in the gallery match colors in the overlays.
@@ -328,7 +328,7 @@ function buildFeatureCollection(results) {
     }
   };
 }
-var useCvGalleryLifecycle = function useCvGalleryLifecycle(data, nodeState) {
+var useCvGalleryBehavior = function useCvGalleryBehavior(data, nodeState) {
   var _inspectedItem$longit;
   var _useState = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)('waiting'),
     _useState2 = _slicedToArray(_useState, 2),
@@ -965,15 +965,15 @@ var useCvGalleryLifecycle = function useCvGalleryLifecycle(data, nodeState) {
 
 /***/ },
 
-/***/ "../../../packages/curio.streetvision@1/sources/hfCvInferenceLifecycle.tsx"
-/*!*********************************************************************************!*\
-  !*** ../../../packages/curio.streetvision@1/sources/hfCvInferenceLifecycle.tsx ***!
-  \*********************************************************************************/
+/***/ "../../../packages/curio.streetvision@1/sources/hfCvInferenceBehavior.tsx"
+/*!********************************************************************************!*\
+  !*** ../../../packages/curio.streetvision@1/sources/hfCvInferenceBehavior.tsx ***!
+  \********************************************************************************/
 (__unused_webpack_module, __webpack_exports__, __webpack_require__) {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   useHfCvInferenceLifecycle: () => (/* binding */ useHfCvInferenceLifecycle)
+/* harmony export */   useHfCvInferenceBehavior: () => (/* binding */ useHfCvInferenceBehavior)
 /* harmony export */ });
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! react */ "react");
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
@@ -1001,7 +1001,7 @@ function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
 function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) { return typeof o; } : function (o) { return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o; }, _typeof(o); }
 
 /**
- * HuggingFace CV Inference lifecycle.
+ * HuggingFace CV Inference behavior.
  *
  * Receives a GEODATAFRAME of image points (each feature carrying
  * `image_url`, plus optional `latitude` / `longitude` / `pano_id`) from
@@ -1012,11 +1012,11 @@ function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == 
  *
  * Model + class config UI adapted from the model-selection and class-picker
  * sections of
- *   utk_curio/frontend/urban-workflows/src/adapters/node/streetVisionLifecycle.tsx
+ *   utk_curio/frontend/urban-workflows/src/adapters/node/streetVisionBehavior.tsx
  * in ManeeshJupalle/curio (feat/street-vision-cv-analysis, #120).
  */
 
-// See streetViewFetcherLifecycle for the rationale on runtime URL resolution.
+// See streetViewFetcherBehavior for the rationale on runtime URL resolution.
 var API_BASE = "".concat(typeof window !== 'undefined' && ((_curio = window.curio) === null || _curio === void 0 ? void 0 : _curio.backendUrl) || '', "/api/streetvision");
 var CLASS_SUGGESTIONS = ['building', 'road', 'sidewalk', 'vegetation', 'pole', 'fence', 'wall', 'traffic sign'];
 var S = {
@@ -1201,7 +1201,7 @@ function extractImages(input) {
   }
   return [];
 }
-var useHfCvInferenceLifecycle = function useHfCvInferenceLifecycle(data, nodeState) {
+var useHfCvInferenceBehavior = function useHfCvInferenceBehavior(data, nodeState) {
   // ── Health ──────────────────────────────────────────────────────────
   var _useState = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false),
     _useState2 = _slicedToArray(_useState, 2),
@@ -1413,7 +1413,7 @@ var useHfCvInferenceLifecycle = function useHfCvInferenceLifecycle(data, nodeSta
     reader.readAsText(file);
   };
 
-  // ── Job lifecycle ──────────────────────────────────────────────────
+  // ── Job behavior ──────────────────────────────────────────────────
   var _useState21 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)('config'),
     _useState22 = _slicedToArray(_useState21, 2),
     view = _useState22[0],
@@ -1949,15 +1949,15 @@ var useHfCvInferenceLifecycle = function useHfCvInferenceLifecycle(data, nodeSta
 
 /***/ },
 
-/***/ "../../../packages/curio.streetvision@1/sources/streetViewFetcherLifecycle.tsx"
-/*!*************************************************************************************!*\
-  !*** ../../../packages/curio.streetvision@1/sources/streetViewFetcherLifecycle.tsx ***!
-  \*************************************************************************************/
+/***/ "../../../packages/curio.streetvision@1/sources/streetViewFetcherBehavior.tsx"
+/*!************************************************************************************!*\
+  !*** ../../../packages/curio.streetvision@1/sources/streetViewFetcherBehavior.tsx ***!
+  \************************************************************************************/
 (__unused_webpack_module, __webpack_exports__, __webpack_require__) {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   useStreetViewFetcherLifecycle: () => (/* binding */ useStreetViewFetcherLifecycle)
+/* harmony export */   useStreetViewFetcherBehavior: () => (/* binding */ useStreetViewFetcherBehavior)
 /* harmony export */ });
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! react */ "react");
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
@@ -1980,7 +1980,7 @@ function _iterableToArrayLimit(r, l) { var t = null == r ? null : "undefined" !=
 function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
 
 /**
- * Street View Fetcher lifecycle.
+ * Street View Fetcher behavior.
  *
  * Owns the *acquisition* half of what was once the monolithic Street Vision
  * node in PR #120: geocode a place name, estimate Street View coverage in
@@ -1989,7 +1989,7 @@ function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
  * Inference, Spatial Join, or anything else) can use the imagery directly.
  *
  * Place-search + coverage-estimate UI adapted from
- *   utk_curio/frontend/urban-workflows/src/adapters/node/streetVisionLifecycle.tsx
+ *   utk_curio/frontend/urban-workflows/src/adapters/node/streetVisionBehavior.tsx
  * in ManeeshJupalle/curio (feat/street-vision-cv-analysis, #120).
  */
 
@@ -2115,7 +2115,7 @@ var S = {
     fontSize: 11
   }
 };
-var useStreetViewFetcherLifecycle = function useStreetViewFetcherLifecycle(data, nodeState) {
+var useStreetViewFetcherBehavior = function useStreetViewFetcherBehavior(data, nodeState) {
   var _useState = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false),
     _useState2 = _slicedToArray(_useState, 2),
     backendUp = _useState2[0],
@@ -2606,22 +2606,22 @@ var __webpack_exports__ = {};
   !*** ../../../packages/curio.streetvision@1/sources/index.tsx ***!
   \****************************************************************/
 __webpack_require__.r(__webpack_exports__);
-/* harmony import */ var _streetViewFetcherLifecycle__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./streetViewFetcherLifecycle */ "../../../packages/curio.streetvision@1/sources/streetViewFetcherLifecycle.tsx");
-/* harmony import */ var _hfCvInferenceLifecycle__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./hfCvInferenceLifecycle */ "../../../packages/curio.streetvision@1/sources/hfCvInferenceLifecycle.tsx");
-/* harmony import */ var _cvGalleryLifecycle__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./cvGalleryLifecycle */ "../../../packages/curio.streetvision@1/sources/cvGalleryLifecycle.tsx");
+/* harmony import */ var _streetViewFetcherBehavior__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./streetViewFetcherBehavior */ "../../../packages/curio.streetvision@1/sources/streetViewFetcherBehavior.tsx");
+/* harmony import */ var _hfCvInferenceBehavior__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./hfCvInferenceBehavior */ "../../../packages/curio.streetvision@1/sources/hfCvInferenceBehavior.tsx");
+/* harmony import */ var _cvGalleryBehavior__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./cvGalleryBehavior */ "../../../packages/curio.streetvision@1/sources/cvGalleryBehavior.tsx");
 /**
- * Entry point for the curio.streetvision@1 dynamic lifecycle bundle.
+ * Entry point for the curio.streetvision@1 dynamic behavior bundle.
  *
- * Webpack builds this into `../scripts/lifecycles.js` (under the package
+ * Webpack builds this into `../scripts/behaviors.js` (under the package
  * directory). The `scripts/` subdir is one of the archive validator's
  * allowed top-level dirs, so the bundle survives the catalog install
  * round-trip. When the frontend fetches the installed package list and
- * sees `manifest.lifecycleScript: "scripts/lifecycles.js"`, it loads this
+ * sees `manifest.behaviorScript: "scripts/behaviors.js"`, it loads this
  * bundle via a `<script>` tag injection. The side-effect calls below
- * register each lifecycle against the global registry exposed on
+ * register each behavior against the global registry exposed on
  * `window.curio` at app boot.
  *
- * React, ReactFlow, and the `registerLifecycle` function are externalized
+ * React, ReactFlow, and the `registerBehavior` function are externalized
  * — they live on `window` so this bundle stays small and shares Curio's
  * own React instance (so hooks work correctly).
  */
@@ -2630,19 +2630,19 @@ __webpack_require__.r(__webpack_exports__);
 
 
 
-// `window.curio.registerLifecycle` is exposed by Curio's main bundle at boot
+// `window.curio.registerBehavior` is exposed by Curio's main bundle at boot
 // (src/registry/index.ts). We avoid a `declare global` for portability —
 // babel-preset-typescript outside the host tsconfig refuses ambient
 // declarations.
 
 function registerAll(curio) {
-  curio.registerLifecycle('street-view-fetcher', _streetViewFetcherLifecycle__WEBPACK_IMPORTED_MODULE_0__.useStreetViewFetcherLifecycle);
-  curio.registerLifecycle('hf-cv-inference', _hfCvInferenceLifecycle__WEBPACK_IMPORTED_MODULE_1__.useHfCvInferenceLifecycle);
-  curio.registerLifecycle('cv-gallery', _cvGalleryLifecycle__WEBPACK_IMPORTED_MODULE_2__.useCvGalleryLifecycle);
+  curio.registerBehavior('street-view-fetcher', _streetViewFetcherBehavior__WEBPACK_IMPORTED_MODULE_0__.useStreetViewFetcherBehavior);
+  curio.registerBehavior('hf-cv-inference', _hfCvInferenceBehavior__WEBPACK_IMPORTED_MODULE_1__.useHfCvInferenceBehavior);
+  curio.registerBehavior('cv-gallery', _cvGalleryBehavior__WEBPACK_IMPORTED_MODULE_2__.useCvGalleryBehavior);
 }
 if (typeof window !== 'undefined') {
   var w = window;
-  if (w.curio && typeof w.curio.registerLifecycle === 'function') {
+  if (w.curio && typeof w.curio.registerBehavior === 'function') {
     registerAll(w.curio);
   } else {
     var _w$__curioPendingPack;
@@ -2658,4 +2658,4 @@ if (typeof window !== 'undefined') {
 /******/ })()
 ;
 });
-//# sourceMappingURL=lifecycles.js.map
+//# sourceMappingURL=behaviors.js.map

@@ -350,7 +350,7 @@ def workflow_page(browser):
     """Class-scoped page: one browser tab shared by every test method.
 
     Attaches ``console`` and ``pageerror`` listeners that append to
-    ``page._curio_browser_log``. autkLifecycleFactory's catch block stores
+    ``page._curio_browser_log``. autkBehaviorFactory's catch block stores
     the autk error message into React state but never calls
     ``console.error``, so without these listeners the JS-side reason for
     an AUTK Error badge is invisible to pytest. test_workflows.py reads

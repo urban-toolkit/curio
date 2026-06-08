@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { NodeLifecycleHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
+import { NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
 
 /**
- * Street View Fetcher lifecycle.
+ * Street View Fetcher behavior.
  *
  * Owns the *acquisition* half of what was once the monolithic Street Vision
  * node in PR #120: geocode a place name, estimate Street View coverage in
@@ -11,7 +11,7 @@ import { NodeLifecycleHook } from '../../../utk_curio/frontend/urban-workflows/s
  * Inference, Spatial Join, or anything else) can use the imagery directly.
  *
  * Place-search + coverage-estimate UI adapted from
- *   utk_curio/frontend/urban-workflows/src/adapters/node/streetVisionLifecycle.tsx
+ *   utk_curio/frontend/urban-workflows/src/adapters/node/streetVisionBehavior.tsx
  * in ManeeshJupalle/curio (feat/street-vision-cv-analysis, #120).
  */
 
@@ -56,7 +56,7 @@ const S: Record<string, React.CSSProperties> = {
   err: { color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: '6px 8px', fontSize: 11 },
 };
 
-export const useStreetViewFetcherLifecycle: NodeLifecycleHook = (data, nodeState) => {
+export const useStreetViewFetcherBehavior: NodeBehaviorHook = (data, nodeState) => {
   const [backendUp, setBackendUp] = useState(false);
 
   // Per-session API key. Held in React state only — not persisted to the

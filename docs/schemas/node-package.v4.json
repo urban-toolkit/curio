@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v3.json",
-  "title": "Curio Node Package Manifest (v3)",
+  "$id": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
+  "title": "Curio Node Package Manifest (v4)",
   "description": "Schema for a Curio node-package manifest.json. A package ships in a directory named '<packageId>@<major>' containing this manifest, an optional README.md / LICENSE, an optional sources/ directory with one starter file per kind, and (after install) an integrity.json with SHA-256 hashes of every shipped file. The pre-installed 'curio.builtin' package ships with the app and provides the default 14 node kinds; third-party packages install via the catalog drawer or by importing a `.curio.zip` archive.",
   "type": "object",
   "required": ["id", "version", "name", "publisher", "compatibility", "templates"],
@@ -154,9 +154,9 @@
           "enum": ["python", "javascript"],
           "description": "Execution engine for the source code."
         },
-        "lifecycle": {
+        "behavior": {
           "type": "string",
-          "description": "Key into the frontend lifecycleRegistry (e.g. 'code', 'vega', 'merge-flow'). See packages/curio.builtin@1/manifest.json for the canonical set."
+          "description": "Key into the frontend behaviorRegistry (e.g. 'code', 'vega', 'merge-flow'). See packages/curio.builtin@1/manifest.json for the canonical set."
         },
         "iconRef": {
           "type": "string",

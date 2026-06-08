@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v3.json",
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
   "compatibility": {
     "curioRuntime": ">=0.5.0",
     "major": 1
@@ -18,7 +18,7 @@
   "description": "Street-level computer vision nodes: fetch Google Street View imagery, run HuggingFace segmentation/detection models on the panoramas, and inspect the results in a rich gallery. The catalog install will pip-install torch/transformers/ultralytics on first install. Users paste their Google Maps API key directly into the Street View Fetcher node.",
   "id": "curio.streetvision",
   "license": "MIT",
-  "lifecycleScript": "scripts/lifecycles.js",
+  "behaviorScript": "scripts/behaviors.js",
   "name": "Street Vision",
   "permissions": [],
   "publisher": "Curio",
@@ -36,7 +36,7 @@
       "id": "street-view-fetcher",
       "inputPorts": [],
       "label": "Street View Fetcher",
-      "lifecycle": "street-view-fetcher",
+      "behavior": "street-view-fetcher",
       "outputPorts": [
         {
           "cardinality": "1",
@@ -62,7 +62,7 @@
         }
       ],
       "label": "HF CV Inference",
-      "lifecycle": "hf-cv-inference",
+      "behavior": "hf-cv-inference",
       "outputPorts": [
         {
           "cardinality": "1",
@@ -88,7 +88,7 @@
         }
       ],
       "label": "CV Gallery",
-      "lifecycle": "cv-gallery",
+      "behavior": "cv-gallery",
       "outputPorts": [
         {
           "cardinality": "1",

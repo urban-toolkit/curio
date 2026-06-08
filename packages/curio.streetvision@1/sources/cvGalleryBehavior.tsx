@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { NodeLifecycleHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
+import { NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
 
 /**
- * CV Gallery lifecycle.
+ * CV Gallery behavior.
  *
  * Receives the inference results JSON emitted by HF CV Inference upstream
  * (shape: `{type:'street_vision_results', results: ResultItem[], ...}`).
@@ -11,7 +11,7 @@ import { NodeLifecycleHook } from '../../../utk_curio/frontend/urban-workflows/s
  * downstream nodes (Spatial Join, Vega-Lite, AUTK Map, …) consume it cleanly.
  *
  * Adapted from
- *   utk_curio/frontend/urban-workflows/src/adapters/node/cvAnalysisLifecycle.tsx
+ *   utk_curio/frontend/urban-workflows/src/adapters/node/cvAnalysisBehavior.tsx
  * in ManeeshJupalle/curio (feat/street-vision-cv-analysis, #120). The
  * neighborhood-enrichment + Vega-Lite-template parts of the original have
  * been factored out — neighborhood tagging is now the separate generic
@@ -19,7 +19,7 @@ import { NodeLifecycleHook } from '../../../utk_curio/frontend/urban-workflows/s
  * live in the user-facing docs example.
  */
 
-// See streetViewFetcherLifecycle for the rationale on runtime URL resolution.
+// See streetViewFetcherBehavior for the rationale on runtime URL resolution.
 const API_BASE = `${(typeof window !== 'undefined' && (window as any).curio?.backendUrl) || ''}/api/streetvision`;
 
 interface ResultItem {
@@ -141,7 +141,7 @@ function buildFeatureCollection(results: ResultItem[]): any {
   };
 }
 
-export const useCvGalleryLifecycle: NodeLifecycleHook = (data, nodeState) => {
+export const useCvGalleryBehavior: NodeBehaviorHook = (data, nodeState) => {
   const [view, setView] = useState<View>('waiting');
   const [payload, setPayload] = useState<IncomingPayload | null>(null);
   const [results, setResults] = useState<ResultItem[]>([]);

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v3.json",
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
   "compatibility": {
     "curioRuntime": ">=0.5.0",
     "major": 1
@@ -34,7 +34,7 @@
       "id": "mrt-load",
       "inputPorts": [],
       "label": "Milan MRT Loader",
-      "lifecycle": "code",
+      "behavior": "code",
       "outputPorts": [
         {
           "cardinality": "1",
@@ -57,7 +57,7 @@
       "id": "weather-load",
       "inputPorts": [],
       "label": "ERA5 Milan Weather",
-      "lifecycle": "code",
+      "behavior": "code",
       "outputPorts": [
         {
           "cardinality": "1",
@@ -80,7 +80,7 @@
       "id": "census-load",
       "inputPorts": [],
       "label": "Milan Census Polygons",
-      "lifecycle": "code",
+      "behavior": "code",
       "outputPorts": [
         {
           "cardinality": "1",
@@ -111,7 +111,7 @@
         }
       ],
       "label": "UTCI from raster + weather",
-      "lifecycle": "code",
+      "behavior": "code",
       "outputPorts": [
         {
           "cardinality": "1",
@@ -143,7 +143,7 @@
         }
       ],
       "label": "UTCI Zonal Mean",
-      "lifecycle": "code",
+      "behavior": "code",
       "outputPorts": [
         {
           "cardinality": "1",
@@ -173,7 +173,7 @@
         }
       ],
       "label": "Reproject census to EPSG:3395",
-      "lifecycle": "code",
+      "behavior": "code",
       "outputPorts": [
         {
           "cardinality": "1",
@@ -203,7 +203,7 @@
         }
       ],
       "label": "Project gt_65 column",
-      "lifecycle": "code",
+      "behavior": "code",
       "outputPorts": [
         {
           "cardinality": "1",

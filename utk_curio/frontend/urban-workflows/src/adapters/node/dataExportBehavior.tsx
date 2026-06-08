@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { NodeLifecycleHook } from '../../registry/types';
+import { NodeBehaviorHook } from '../../registry/types';
 import { fetchData } from '../../services/api';
 import OutputContent from '../../components/editing/OutputContent';
 
-export const useDataExportLifecycle: NodeLifecycleHook = (data, nodeState) => {
+export const useDataExportBehavior: NodeBehaviorHook = (data, nodeState) => {
   const [downloadFormat, setDownloadFormat] = useState<string>('csv');
 
   const sendCodeOverride = async () => {
