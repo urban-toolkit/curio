@@ -4,17 +4,13 @@ Before you begin, please read our [usage guide](USAGE.md).
 
 ## Creating a barchart
 
-In this tutorial, we are going to learn how Curio can easily help with visualizing a simple dataset using a Vega-Lite barchart. 
+In this tutorial, we are going to learn how Curio can easily help with visualizing a simple dataset using a Vega-Lite barchart.
 
-After initializing Curio, we can see a blank canvas like this:
+After initializing Curio, you will see a blank canvas. The left sidebar contains icons for each built-in node type — drag any of them onto the canvas to instantiate a node.
 
-![Blank canvas](images/blank.png?raw=true)
+Start by dragging a `Data Loading` node onto the canvas. Inside the node, switch to the `Code` view and enter the following snippet:
 
-The icons on the left-hand side can be used to instantiate different nodes, including visualization ones. Let's start by instantiating a `Data Loading` node (1) and changing its view to `Code` (2). External files can be referenced through regular Python file handling functions, given that the file was uploaded to the server. However, for simplicity's sake, we will use the following synthetic dataset (3):
-
-![Data loading](images/data_loading.png?raw=true)
-
-```console
+```python
 import pandas as pd
 
 d = {'a': ["A", "B", "C", "D", "E", "F", "G", "H", "I"], 'b': [28, 55, 43, 91, 81, 53, 19, 87, 52]}
@@ -23,27 +19,23 @@ df = pd.DataFrame(data=d)
 return df
 ```
 
-After hitting run (4). The Python `return` will output `df` for the next node.
+Hit **Run**. The Python `return` outputs `df` for the next node.
 
-We can now proceed and create a `Vega-Lite` node (1) that will be connected to the first box (2) and render the barchart. This time, we are going to use the `Grammar` view (3) to create the Vega-Lite specification:
+Next, drag a `Vega-Lite` node onto the canvas and connect its input handle to the output of the `Data Loading` node. Switch to the `Grammar` view and enter the following Vega-Lite specification:
 
-![Vega lite](images/vega_lite.png?raw=true)
-
-```console
+```json
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-  "description": "A simple bar chart with embedded data.",
   "mark": "bar",
   "encoding": {
     "x": {"field": "a", "type": "nominal", "axis": {"labelAngle": 0}},
-    "y": {"field": "b", "type": "quantitative"}
+    "y": {"field": "b", "type": "quantitative", "stack": null}
   }
 }
 ```
 
-Curio handles the dataflow and `Vega-Lite` has access to the DataFrame outputed by the previous box. After hitting run, we can see that a barchart was created:
+Hit **Run**. Curio handles the dataflow and `Vega-Lite` has access to the DataFrame output by the previous node. You should see a barchart like this:
 
 ![Final result](images/final_result.png?raw=true)
 
 Congratulations! You created your first data-flow using Curio :)
-

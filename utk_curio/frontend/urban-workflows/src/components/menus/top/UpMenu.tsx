@@ -316,15 +316,11 @@ export default function UpMenu({
                 },
                 {
                     element: "#step-analysis",
-                    intro: "This is a Data Analysis Node. Use it to perform calculations and operations on your dataset, preparing it for visualization.",
+                    intro: "This is a Python Computation Node. Use it to perform calculations and operations on your dataset, preparing it for visualization.",
                 },
                 {
                     element: "#step-transformation",
                     intro: "The Data Transformation Node allows you to filter, segment, or restructure your data.",
-                },
-                {
-                    element: "#step-cleaning",
-                    intro: "This is a Data Cleaning Node. Use it to refine your dataset by handling missing values, removing outliers, and generating identifiers for data quality purposes.",
                 },
                 {
                     element: "#step-pool",
@@ -340,7 +336,7 @@ export default function UpMenu({
                 },
                 {
                     element: "#step-image",
-                    intro: "The Image Node displays a gallery of images.",
+                    intro: "This is a Simple View Node. It displays a table for DataFrames, an image grid for image DataFrames, or passes through other values.",
                 },
                 {
                     element: "#step-merge",
