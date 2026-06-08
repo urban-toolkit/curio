@@ -68,7 +68,7 @@ import { useVegaLifecycle } from '../../../adapters/node/vegaLifecycle';
 import { useSimpleVisLifecycle } from '../../../adapters/node/simpleVisLifecycle';
 import { useMergeFlowLifecycle } from '../../../adapters/node/mergeFlowLifecycle';
 import { useDataPoolLifecycle } from '../../../adapters/node/dataPoolLifecycle';
-import { useAutkGrammarLifecycle } from '../../../adapters/node/autkGrammarLifecycle';
+import { useAutkGrammarLifecycle, attachMapInteractionZoomFix } from '../../../adapters/node/autkGrammarLifecycle';
 
 function makeMockData(overrides: Partial<NodeLifecycleData> = {}): NodeLifecycleData {
   return {
@@ -343,6 +343,81 @@ describe('Lifecycle hooks — NodeLifecycleHook contract conformance', () => {
       expect(injected).toBeTruthy();
       expect(injected.geojsonObject?.type).toBe('FeatureCollection');
       expect(injected.coordinateFormat).toBe('EPSG:3395');
+    });
+  });
+
+  // The map canvas renders inside React Flow's CSS-scaled viewport, but autk-map
+  // reads pointer positions from getBoundingClientRect() (post-scale) while sizing
+  // its renderer from offsetWidth (pre-scale). attachMapInteractionZoomFix
+  // re-dispatches picking (double-click), wheel-zoom, and drag-pan events with
+  // coordinates corrected back into unscaled CSS space so they match the cursor.
+  // See autkGrammarLifecycle.attachMapInteractionZoomFix.
+  describe('attachMapInteractionZoomFix (map interaction under React Flow zoom)', () => {
+    let dispose: (() => void) | null = null;
+
+    // Build a canvas whose layout size (offsetWidth/Height) and on-screen rect
+    // differ by `scale`, mimicking React Flow's `transform: scale(zoom)`.
+    function makeCanvas(opts: { layoutW: number; layoutH: number; left: number; top: number; scale: number }) {
+      const canvas = document.createElement('canvas');
+      document.body.appendChild(canvas);
+      Object.defineProperty(canvas, 'offsetWidth', { value: opts.layoutW, configurable: true });
+      Object.defineProperty(canvas, 'offsetHeight', { value: opts.layoutH, configurable: true });
+      const width = opts.layoutW * opts.scale;
+      const height = opts.layoutH * opts.scale;
+      canvas.getBoundingClientRect = () => ({
+        left: opts.left, top: opts.top, width, height,
+        right: opts.left + width, bottom: opts.top + height,
+        x: opts.left, y: opts.top, toJSON: () => {},
+      }) as DOMRect;
+      return canvas;
+    }
+
+    // attach() also captures the disposer so afterEach removes the window listeners.
+    function attach(canvas: HTMLCanvasElement) { dispose = attachMapInteractionZoomFix(canvas); }
+
+    afterEach(() => { dispose?.(); dispose = null; document.body.innerHTML = ''; });
+
+    test('corrects double-click picking into unscaled CSS space at zoom 0.5', () => {
+      const canvas = makeCanvas({ layoutW: 800, layoutH: 600, left: 100, top: 50, scale: 0.5 });
+      attach(canvas);
+
+      // Stand-in for autk-map's own (registration-order: later) dblclick handler.
+      const received: Array<{ x: number; y: number }> = [];
+      canvas.addEventListener('dblclick', (e) => received.push({ x: e.clientX, y: e.clientY }));
+
+      // Click at the rendered canvas's midpoint (rect spans x:100..500, y:50..350).
+      canvas.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, clientX: 300, clientY: 200 }));
+
+      // The handler must see exactly one event, in unscaled CSS coordinates: the
+      // midpoint click maps to (400,300) past the rect origin → clientX/Y 500/350.
+      expect(received).toEqual([{ x: 500, y: 350 }]);
+    });
+
+    test('corrects wheel-zoom coordinates (zoom center) at zoom 0.5', () => {
+      const canvas = makeCanvas({ layoutW: 800, layoutH: 600, left: 100, top: 50, scale: 0.5 });
+      attach(canvas);
+
+      const received: Array<{ x: number; y: number; deltaY: number }> = [];
+      // autk-map binds 'wheel' on the canvas; mirror that to capture what it sees.
+      canvas.addEventListener('wheel', (e) => received.push({ x: e.clientX, y: e.clientY, deltaY: e.deltaY }));
+
+      canvas.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, clientX: 300, clientY: 200, deltaY: 120 }));
+
+      // Same midpoint correction as picking, with the scroll delta preserved.
+      expect(received).toEqual([{ x: 500, y: 350, deltaY: 120 }]);
+    });
+
+    test('passes the event through untouched when there is no zoom (scale 1)', () => {
+      const canvas = makeCanvas({ layoutW: 800, layoutH: 600, left: 0, top: 0, scale: 1 });
+      attach(canvas);
+
+      const received: Array<{ x: number; y: number }> = [];
+      canvas.addEventListener('dblclick', (e) => received.push({ x: e.clientX, y: e.clientY }));
+
+      canvas.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, clientX: 300, clientY: 200 }));
+
+      // No re-dispatch, original coordinates preserved.
+      expect(received).toEqual([{ x: 300, y: 200 }]);
     });
   });
 });

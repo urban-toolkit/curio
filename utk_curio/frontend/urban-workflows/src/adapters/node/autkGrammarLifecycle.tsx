@@ -18,6 +18,9 @@ export const useAutkGrammarLifecycle: NodeLifecycleHook = (data, nodeState) => {
     // Unsubscribe functions returned by grammar.interactions.on(); cleared and
     // re-populated on every applyGrammar call and on unmount.
     const interactionOffRef = useRef<Array<() => void>>([]);
+    // Disposer for the map interaction zoom-fix listeners (window-bound), cleared
+    // and re-populated on each applyGrammar run with a map, and on unmount.
+    const pickFixCleanupRef = useRef<(() => void) | null>(null);
     // Always-current ref to data so grammar event callbacks never close over a
     // stale data object (grammar subscriptions outlive individual renders).
     const dataRef = useRef(data);
@@ -50,12 +53,17 @@ export const useAutkGrammarLifecycle: NodeLifecycleHook = (data, nodeState) => {
         // is the only way to prevent context leaks across re-runs.
         const wrapper = wrapperRef.current;
         if (wrapper) {
+            // Dispose the previous run's interaction-zoom-fix listeners (they live on
+            // window, so they'd leak and fire for the now-stale canvas otherwise).
+            pickFixCleanupRef.current?.();
+            pickFixCleanupRef.current = null;
             while (wrapper.firstChild) wrapper.removeChild(wrapper.firstChild);
             if (hasMaps) {
                 const canvas = document.createElement('canvas');
                 canvas.id = mapCanvasId;
                 canvas.style.cssText = 'display:block;width:100%;height:100%;';
                 wrapper.appendChild(canvas);
+                pickFixCleanupRef.current = attachMapInteractionZoomFix(canvas);
             } else if (hasPlot) {
                 const plotDiv = document.createElement('div');
                 plotDiv.id = plotDivId;
@@ -275,27 +283,63 @@ export const useAutkGrammarLifecycle: NodeLifecycleHook = (data, nodeState) => {
     }, [data.input]);
 
     // Forward parent container resizes to AutkMap via a synthetic window.resize.
-    // AutkMap binds only to window.resize, so node-handle drags are otherwise silent.
+    // AutkMap binds only to window.resize (and exposes no per-instance resize API),
+    // so node-handle drags are otherwise silent — but that dispatch is expensive and
+    // fragile: each one makes *every* AutkMap on the page rebuild its WebGPU textures
+    // and reconfigure its swapchain. Doing that every frame during a drag stalls the
+    // canvas, and reconfiguring mid-render races AutkMap's render loop (its
+    // getCurrentTexture() ends up invalidated) — which its render-error latch then
+    // swallows, leaving the map blank/white.
+    //
+    // So: keep the *cheap* CSS sizing on every tick (the width/height:100% canvas
+    // stretches to fill the node during the drag), but fire the *expensive*
+    // window.resize only once the size has settled, and on a macrotask (setTimeout)
+    // rather than rAF — outside AutkMap's render window — so the GPU rebuild happens
+    // exactly once, cleanly, and the canvas snaps crisp.
     useEffect(() => {
         const wrapper = wrapperRef.current;
         const target = wrapper?.parentElement;
         if (!wrapper || !target || typeof ResizeObserver === 'undefined') return;
-        const sync = () => {
-            const w = target.clientWidth;
-            const h = target.clientHeight;
+
+        let lastW = -1, lastH = -1;
+        let timer: ReturnType<typeof setTimeout> | null = null;
+
+        const commit = () => {
+            timer = null;
+            const w = target.clientWidth, h = target.clientHeight;
             if (w <= 0 || h <= 0) return;
-            wrapper.style.width = w + 'px';
-            wrapper.style.height = h + 'px';
+            // No-op guard: a same-size commit would still rebuild every map's GPU
+            // textures, so drop it.
+            if (w === lastW && h === lastH) return;
+            lastW = w; lastH = h;
             window.dispatchEvent(new Event('resize'));
         };
-        sync();
-        const ro = new ResizeObserver(sync);
+
+        const onResize = () => {
+            // Cheap: track the parent every tick so the 100% canvas fills the node.
+            const w = target.clientWidth, h = target.clientHeight;
+            if (w > 0 && h > 0) { wrapper.style.width = w + 'px'; wrapper.style.height = h + 'px'; }
+            // Expensive: debounce the GPU rebuild until the drag settles.
+            if (timer) clearTimeout(timer);
+            timer = setTimeout(commit, 150);
+        };
+
+        // Mount: size immediately and do one initial GPU resize.
+        const w0 = target.clientWidth, h0 = target.clientHeight;
+        if (w0 > 0 && h0 > 0) { wrapper.style.width = w0 + 'px'; wrapper.style.height = h0 + 'px'; }
+        commit();
+
+        const ro = new ResizeObserver(onResize);
         ro.observe(target);
-        return () => ro.disconnect();
+        return () => { ro.disconnect(); if (timer) clearTimeout(timer); };
     }, []);
 
-    // Unsubscribe grammar event listeners when the node is removed from the canvas.
-    useEffect(() => () => { interactionOffRef.current.forEach(f => f()); }, []);
+    // Unsubscribe grammar event listeners and remove the interaction zoom-fix
+    // window listeners when the node is removed from the canvas.
+    useEffect(() => () => {
+        interactionOffRef.current.forEach(f => f());
+        pickFixCleanupRef.current?.();
+    }, []);
 
     // Stable JSX reference across incidental re-renders, but identity changes
     // on run completion so NodeEditor switches to the output tab automatically.
@@ -331,6 +375,161 @@ export const useAutkGrammarLifecycle: NodeLifecycleHook = (data, nodeState) => {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// Flag stamped on the synthetic events we re-dispatch, so the interceptor
+// recognizes its own event and lets it through to autk-map untouched.
+const ZOOM_FIX_CORRECTED = '__curioMapZoomCorrected';
+
+// PointerEvent isn't constructable in every test DOM; fall back to MouseEvent
+// (autk-map reads only MouseEvent-level fields — clientX/Y, buttons, target — off
+// the pointer events it handles).
+const PointerEventCtor: typeof MouseEvent =
+    typeof PointerEvent !== 'undefined' ? (PointerEvent as unknown as typeof MouseEvent) : MouseEvent;
+
+// Correct autk-map's pointer math for the React Flow viewport scale.
+//
+// Each node renders inside React Flow's viewport, which is CSS-scaled by the
+// current zoom (`transform: scale(zoom)`). autk-map reads pointer positions from
+// getBoundingClientRect() — which is *post*-scale — but feeds them to camera /
+// picking math sized from the canvas's *unscaled* offsetWidth/offsetHeight (its
+// renderer resizes from offsetWidth). At any zoom != 1 the two disagree by the
+// zoom factor, so:
+//   • picking (double-click) lands toward the canvas's top-left corner,
+//   • wheel-zoom recenters on the wrong point,
+//   • drag-pan moves the map too slowly — all by the zoom factor.
+//
+// Curio owns this canvas element, so intercept the relevant events in the capture
+// phase on `window` (above autk-map's document/canvas listeners), suppress the
+// mis-scaled native event, and re-dispatch an equivalent one *on the canvas* whose
+// client coordinates are mapped back into the canvas's unscaled CSS space — exactly
+// what autk-map's math assumes (the conversion is the same for all three: each
+// divides a screen-space delta by the unscaled cssWidth, so each needs the delta
+// un-scaled first). `scale` is read straight off the DOM (rect.width / offsetWidth),
+// so this tracks any ancestor transform without needing React Flow's zoom value.
+// (The real fix belongs upstream in autk-map's coordinate conversion; this is the
+// in-Curio compensation until then.)
+//
+// Returns a disposer that removes the window listeners — they outlive the canvas,
+// so the caller must call it before replacing the canvas and on unmount.
+export function attachMapInteractionZoomFix(canvas: HTMLCanvasElement): () => void {
+    // Mirrors autk-map's drag state so pointermove/up that wander off the canvas
+    // mid-drag stay corrected (autk-map keeps dragging via its document listeners
+    // regardless of the event target).
+    let dragging = false;
+
+    // The CSS scale ancestors apply to the canvas (React Flow zoom), or null when
+    // there's nothing to correct (no layout yet, or scale ~ 1).
+    const measure = (): { rect: DOMRect; sx: number; sy: number } | null => {
+        const rect = canvas.getBoundingClientRect();
+        const lw = canvas.offsetWidth, lh = canvas.offsetHeight;
+        if (lw <= 0 || lh <= 0) return null;
+        const sx = rect.width / lw, sy = rect.height / lh;
+        if (Math.abs(sx - 1) < 0.001 && Math.abs(sy - 1) < 0.001) return null;
+        return { rect, sx, sy };
+    };
+
+    // Map a client coordinate from rendered (scaled) space back to the unscaled CSS
+    // space autk-map expects.
+    const cx = (rect: DOMRect, sx: number, clientX: number) => rect.left + (clientX - rect.left) / sx;
+    const cy = (rect: DOMRect, sy: number, clientY: number) => rect.top + (clientY - rect.top) / sy;
+
+    const mine = (e: Event) => (e as any)[ZOOM_FIX_CORRECTED] === true;
+
+    const onDblClick = (e: MouseEvent) => {
+        if (mine(e) || e.target !== canvas) return;
+        const m = measure();
+        if (!m) return;
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        const corrected = new MouseEvent('dblclick', {
+            bubbles: true, cancelable: true, view: window,
+            button: e.button, buttons: e.buttons,
+            clientX: cx(m.rect, m.sx, e.clientX),
+            clientY: cy(m.rect, m.sy, e.clientY),
+        });
+        (corrected as any)[ZOOM_FIX_CORRECTED] = true;
+        canvas.dispatchEvent(corrected);
+    };
+
+    const onWheel = (e: WheelEvent) => {
+        if (mine(e) || e.target !== canvas) return;
+        const m = measure();
+        if (!m) return;
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        const corrected = new WheelEvent('wheel', {
+            bubbles: true, cancelable: true, view: window,
+            deltaX: e.deltaX, deltaY: e.deltaY, deltaZ: e.deltaZ, deltaMode: e.deltaMode,
+            ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey,
+            button: e.button, buttons: e.buttons,
+            clientX: cx(m.rect, m.sx, e.clientX),
+            clientY: cy(m.rect, m.sy, e.clientY),
+        });
+        (corrected as any)[ZOOM_FIX_CORRECTED] = true;
+        canvas.dispatchEvent(corrected);
+    };
+
+    const redispatchPointer = (e: PointerEvent, m: { rect: DOMRect; sx: number; sy: number }) => {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        const init: any = {
+            bubbles: true, cancelable: true, view: window,
+            button: e.button, buttons: e.buttons,
+            ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: e.metaKey,
+            clientX: cx(m.rect, m.sx, e.clientX),
+            clientY: cy(m.rect, m.sy, e.clientY),
+            // Pointer-specific fields (ignored by the MouseEvent fallback).
+            pointerId: e.pointerId, pointerType: e.pointerType, isPrimary: e.isPrimary,
+        };
+        const corrected = new PointerEventCtor(e.type, init);
+        (corrected as any)[ZOOM_FIX_CORRECTED] = true;
+        canvas.dispatchEvent(corrected);
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+        if (mine(e)) return;
+        if (e.target === canvas && (e.button === 0 || e.button === 1)) dragging = true;
+        if (!dragging) return;
+        const m = measure();
+        if (!m) return; // scale ~ 1: leave the native event alone (drag still tracked)
+        redispatchPointer(e, m);
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+        if (mine(e)) return;
+        // Mirror autk-map's alternate drag-start (button already held on entry).
+        if (!dragging && e.target === canvas && (e.buttons === 1 || e.buttons === 4)) dragging = true;
+        if (!dragging) return;
+        const m = measure();
+        if (!m) return;
+        redispatchPointer(e, m);
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+        if (mine(e)) return;
+        // autk-map's pointerup/cancel use no coordinates; just clear our mirrored
+        // state and let the native event through so autk-map ends the drag.
+        dragging = false;
+    };
+
+    const cap: AddEventListenerOptions = { capture: true };
+    const wheelCap: AddEventListenerOptions = { capture: true, passive: false };
+    window.addEventListener('dblclick', onDblClick as EventListener, cap);
+    window.addEventListener('wheel', onWheel as EventListener, wheelCap);
+    window.addEventListener('pointerdown', onPointerDown as EventListener, cap);
+    window.addEventListener('pointermove', onPointerMove as EventListener, cap);
+    window.addEventListener('pointerup', onPointerUp as EventListener, cap);
+    window.addEventListener('pointercancel', onPointerUp as EventListener, cap);
+
+    return () => {
+        window.removeEventListener('dblclick', onDblClick as EventListener, cap);
+        window.removeEventListener('wheel', onWheel as EventListener, wheelCap);
+        window.removeEventListener('pointerdown', onPointerDown as EventListener, cap);
+        window.removeEventListener('pointermove', onPointerMove as EventListener, cap);
+        window.removeEventListener('pointerup', onPointerUp as EventListener, cap);
+        window.removeEventListener('pointercancel', onPointerUp as EventListener, cap);
+    };
+}
 
 // Compile a grammar `data` section into autk-db JavaScript to run in the backend
 // Node.js sandbox. The single top-level `import` is rewritten to `await import()`
