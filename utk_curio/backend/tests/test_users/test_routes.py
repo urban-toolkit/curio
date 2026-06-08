@@ -157,6 +157,8 @@ class TestPublicConfig:
         assert "curio_no_project" in data
         assert "skip_project_page" in data
         assert "shared_guest_username" in data
+        assert "default_save_node_output" in data
+        assert isinstance(data["default_save_node_output"], bool)
         assert "enable_user_auth" not in data
 
 

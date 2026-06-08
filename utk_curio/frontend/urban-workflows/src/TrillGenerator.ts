@@ -170,6 +170,9 @@ export class TrillGenerator {
                 trill_node.dashboardHeight = node.data.dashboardHeight;
             }
 
+            if(typeof node.data.saveOutputDataset === "boolean")
+                trill_node.saveOutputDataset = node.data.saveOutputDataset;
+
             if(node.data.code != undefined){
                 trill_node.content = node.data.code;
             }

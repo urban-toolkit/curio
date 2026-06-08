@@ -21,7 +21,7 @@ import {
   notifyDatasetCatalogRefresh,
   useDatasetCatalog,
 } from "../../../services/datasetCatalog";
-import { flowOutputRefFromRaw } from "../../../utils/flowOutputRef";
+import { buildSaveableLiveOutputs } from "../../../utils/saveOutputDataset";
 import { dataflowRefFromCatalogItem } from "./dataflowDatasetRef";
 import type { DrawerTab } from "./datasetCatalogDrawerTypes";
 import { tabOrigin } from "./datasetCatalogDrawerTypes";
@@ -29,7 +29,7 @@ import { tabOrigin } from "./datasetCatalogDrawerTypes";
 export function useDatasetCatalogDrawer(presented: boolean) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importInFlightRef = useRef(false);
-  const { projectId, saveCurrentProject, setDataflowDatasets, outputs } = useFlowContext();
+  const { projectId, saveCurrentProject, setDataflowDatasets, outputs, nodes, defaultSaveOutputDataset } = useFlowContext();
   const { showToast } = useToastContext();
   const [tab, setTab] = useState<DrawerTab>("browse");
   const [search, setSearch] = useState("");
@@ -42,11 +42,9 @@ export function useDatasetCatalogDrawer(presented: boolean) {
   const [, startUiTransition] = useTransition();
 
   const liveOutputs = useMemo(() => {
-    if (!presented || !outputs || outputs.length === 0) return undefined;
-    return outputs
-      .map((o) => flowOutputRefFromRaw(o?.nodeId ?? "", o?.output))
-      .filter((r): r is NonNullable<typeof r> => r !== null);
-  }, [presented, outputs]);
+    if (!presented) return undefined;
+    return buildSaveableLiveOutputs(outputs, nodes, defaultSaveOutputDataset);
+  }, [presented, outputs, nodes, defaultSaveOutputDataset]);
 
   useEffect(() => {
     const handle = window.setTimeout(() => setDebouncedSearch(search), 280);

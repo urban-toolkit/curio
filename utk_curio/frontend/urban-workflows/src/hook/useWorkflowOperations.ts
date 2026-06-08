@@ -25,6 +25,7 @@ import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
 import { TrillGenerator } from "../TrillGenerator";
 import { projectsApi, OutputRef } from "../api/projectsApi";
 import { flowOutputRefFromRaw } from "../utils/flowOutputRef";
+import { resolveSaveOutputDataset } from "../utils/saveOutputDataset";
 import { notifyDatasetCatalogRefresh } from "../services/datasetCatalog/datasetCatalogApi";
 import {
     getCurrentProjectPackagesList,
@@ -53,6 +54,9 @@ export interface WorkflowOperationsDeps {
     onNodesChange: (changes: NodeChange[]) => void;
     onConnect: (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean) => void;
     addNode: (node: Node, customWorkflowName?: string, provenance?: boolean) => void;
+    // Workflow-wide default for the per-node "Save output dataset" toggle,
+    // sourced from the backend (CURIO_DEFAULT_SAVE_NODE_OUTPUT) via FlowProvider.
+    defaultSaveOutputDataset: boolean;
 }
 
 export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
@@ -67,6 +71,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         workflowDescriptionRef,
         onEdgesDelete, onNodesDelete, onNodesChange,
         onConnect, addNode,
+        defaultSaveOutputDataset,
     } = deps;
 
     const reactFlow = useReactFlow();
@@ -532,10 +537,25 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
      * anything that isn't a single safe string segment, so we coerce here at
      * the serialization boundary and drop refs we can't normalize.
      */
-    const buildOutputRefs = (): OutputRef[] =>
-        deps.outputsRef.current
+    const buildOutputRefs = (): OutputRef[] => {
+        // Honor the per-node "Save output dataset" toggle (which itself defaults
+        // to CURIO_DEFAULT_SAVE_NODE_OUTPUT). Only nodes with saving enabled get
+        // their output persisted as a computed dataset on project save. Without
+        // this gate the backend's _auto_install_computed_outputs would install
+        // every node output regardless of the setting — the toggle would only
+        // gate the per-run install, not the save-time one.
+        const saveByNodeId = new Map<string, boolean>();
+        for (const node of reactFlow.getNodes()) {
+            const enabled = resolveSaveOutputDataset(node.data as any, defaultSaveOutputDataset);
+            saveByNodeId.set(node.id, enabled);
+            const dataNodeId = (node.data as any)?.nodeId;
+            if (typeof dataNodeId === "string") saveByNodeId.set(dataNodeId, enabled);
+        }
+        return deps.outputsRef.current
+            .filter((o: any) => saveByNodeId.get(o?.nodeId ?? "") === true)
             .map((o: any) => flowOutputRefFromRaw(o?.nodeId ?? "", o?.output))
             .filter((r: OutputRef | null): r is OutputRef => r !== null);
+    };
 
     const syncDatasetsFromSavedSpec = useCallback(
         (spec: Record<string, unknown> | null | undefined) => {
@@ -608,7 +628,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             setCurrentProject(detail.id, Array.isArray(seededPackages) ? seededPackages : []);
             return detail;
         }
-    }, [projectId, projectName, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode, syncDatasetsFromSavedSpec]);
+    }, [projectId, projectName, workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, viewerMode, syncDatasetsFromSavedSpec, defaultSaveOutputDataset]);
 
     // Auto-save every 30 seconds when a project has been explicitly saved at least once
     useEffect(() => {
@@ -650,7 +670,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setProjectDirty(false);
         setViewerMode("owner");
         return detail;
-    }, [workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, syncDatasetsFromSavedSpec]);
+    }, [workflowNameRef, reactFlow, deps.outputsRef, blockGuestSaves, syncDatasetsFromSavedSpec, defaultSaveOutputDataset]);
 
     const loadProject = useCallback(async (id: string) => {
         const result = await projectsApi.get(id);

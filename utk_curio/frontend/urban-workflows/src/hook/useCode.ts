@@ -169,6 +169,9 @@ export function useCode(): IUseCode {
                 nodeMeta.dashboardHeight = node.dashboardHeight;
             }
 
+            if(typeof node.saveOutputDataset === "boolean")
+                nodeMeta.saveOutputDataset = node.saveOutputDataset;
+
             if(suggestionType != undefined)
                 nodeMeta.suggestionType = suggestionType;
 

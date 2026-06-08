@@ -22,7 +22,7 @@ import {
   useDatasetCatalog,
   prefetchDatasetCatalog,
 } from "../../../../services/datasetCatalog";
-import { flowOutputRefFromRaw } from "../../../../utils/flowOutputRef";
+import { buildSaveableLiveOutputs } from "../../../../utils/saveOutputDataset";
 import styles from "./DatasetsPaletteDropdown.module.css";
 
 function formatAbbreviation(dataset: DatasetCatalogItem): string {
@@ -100,14 +100,12 @@ function DatasetRow({ dataset }: { dataset: DatasetCatalogItem }) {
 export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const { projectId, outputs } = useFlowContext();
+  const { projectId, outputs, nodes, defaultSaveOutputDataset } = useFlowContext();
   const { openDatasetCatalogDrawer, isDatasetCatalogDrawerOpen } = useDatasetCatalogDrawer();
-  const liveOutputs = useMemo(() => {
-    if (!outputs || outputs.length === 0) return undefined;
-    return outputs
-      .map((o) => flowOutputRefFromRaw(o?.nodeId ?? "", o?.output))
-      .filter((r): r is NonNullable<typeof r> => r !== null);
-  }, [outputs]);
+  const liveOutputs = useMemo(
+    () => buildSaveableLiveOutputs(outputs, nodes, defaultSaveOutputDataset),
+    [outputs, nodes, defaultSaveOutputDataset],
+  );
 
   const catalog = useDatasetCatalog({
     dataflowId: projectId,

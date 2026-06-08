@@ -40,6 +40,7 @@ import { useCollab } from "./CollaborationProvider";
 import { pythonInterpreter, jsInterpreter } from "../hook/useCode";
 import { normalizeFlowInput } from "../utils/flowOutputRef";
 import { DEFAULT_SAVE_OUTPUT_DATASET } from "../utils/saveOutputDataset";
+import { authApi } from "../utils/authApi";
 
 
 export interface IOutput {
@@ -319,6 +320,28 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const [defaultSaveOutputDataset, setDefaultSaveOutputDataset] = useState(
         DEFAULT_SAVE_OUTPUT_DATASET,
     );
+
+    // The backend (CURIO_DEFAULT_SAVE_NODE_OUTPUT) is the authoritative source
+    // for the workflow-wide default. Read it once from /api/config/public so
+    // the per-node "Save output dataset" default (and the save-time gate in
+    // buildOutputRefs) matches the deployment's runtime setting rather than the
+    // build-time env baked into the bundle. Mirrors CollaborationProvider.
+    useEffect(() => {
+        let cancelled = false;
+        authApi
+            .getPublicConfig()
+            .then((cfg) => {
+                if (!cancelled && typeof cfg?.default_save_node_output === "boolean") {
+                    setDefaultSaveOutputDataset(cfg.default_save_node_output);
+                }
+            })
+            .catch(() => {
+                /* keep build-time DEFAULT_SAVE_OUTPUT_DATASET fallback */
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     // Collaboration broadcasters. The provider may be a no-op (when
     // --collab is off or no project is loaded), in which case every
@@ -1291,6 +1314,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         workflowDescriptionRef,
         onEdgesDelete, onNodesDelete, onNodesChange,
         onConnect, addNode,
+        defaultSaveOutputDataset,
     });
 
     markNodeExecutedRef.current = workflowOps.markNodeExecuted;

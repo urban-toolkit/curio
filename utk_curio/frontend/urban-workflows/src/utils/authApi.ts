@@ -71,6 +71,7 @@ export interface PublicConfig {
   curio_env: string;
   shared_guest_username: string;
   enable_collab: boolean;
+  default_save_node_output: boolean;
 }
 
 export const authApi = {
