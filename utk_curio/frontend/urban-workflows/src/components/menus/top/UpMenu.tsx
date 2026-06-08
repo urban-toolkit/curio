@@ -537,16 +537,6 @@ export default function UpMenu({
                             <div
                                 className={styles.dropDownRow}
                                 onClick={() => {
-                                    navigate("/catalog/data");
-                                    setActiveMenu(null);
-                                }}
-                            >
-                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faTableColumns} />
-                                <button className={styles.noStyleButton}>Data Catalog</button>
-                            </div>
-                            <div
-                                className={styles.dropDownRow}
-                                onClick={() => {
                                     setPackagesOpen(true);
                                     setActiveMenu(null);
                                 }}
