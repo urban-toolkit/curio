@@ -85,12 +85,19 @@ export function DatasetCatalogDrawerProvider({ children }: { children: React.Rea
     window.requestAnimationFrame(() => setPresented(true));
   }, [clearExitTimer, prefersReducedMotion]);
 
-  // Warm catalog cache while the user works on the canvas (drawer default query).
+  // Warm the catalog cache at startup so both surfaces are ready before the
+  // user interacts with them: the drawer default query (includeHub) and the
+  // dataset palette query (no hub) that drives the trigger counter.
   useEffect(() => {
     if (!projectId) return;
     prefetchDatasetCatalog({
       dataflowId: projectId,
       includeHub: true,
+      sort: "recent",
+    });
+    prefetchDatasetCatalog({
+      dataflowId: projectId,
+      includeHub: false,
       sort: "recent",
     });
   }, [projectId]);

@@ -113,8 +113,13 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
     dataflowId: projectId,
     includeHub: false,
     sort: "recent",
-    liveOutputs,
-    enabled: open,
+    // Only fold live session outputs into the query while the palette is open;
+    // when closed the base catalog still drives the counter without refetching
+    // every time node outputs change.
+    liveOutputs: open ? liveOutputs : undefined,
+    // Load at startup so the trigger counter is populated before the user opens
+    // the palette, and the list is instantly available on open.
+    enabled: true,
   });
 
   useEffect(() => {
