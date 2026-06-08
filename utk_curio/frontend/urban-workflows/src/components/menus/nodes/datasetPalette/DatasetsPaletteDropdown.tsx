@@ -101,7 +101,7 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const { projectId, outputs } = useFlowContext();
-  const { openDatasetCatalogDrawer } = useDatasetCatalogDrawer();
+  const { openDatasetCatalogDrawer, isDatasetCatalogDrawerOpen } = useDatasetCatalogDrawer();
   const liveOutputs = useMemo(() => {
     if (!outputs || outputs.length === 0) return undefined;
     return outputs
@@ -131,21 +131,26 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
   useEffect(() => {
     if (!open) return;
     const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === "Escape") setOpen(false);
+      // Let the drawer own Escape while it is open so the palette stays open
+      // behind it (e.g. after installing from the Data Catalog).
+      if (ev.key === "Escape" && !isDatasetCatalogDrawerOpen) setOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+  }, [open, isDatasetCatalogDrawerOpen]);
 
   useEffect(() => {
     if (!open) return;
     const onDocMouseDown = (ev: MouseEvent) => {
+      // Keep the palette open while the Data Catalog drawer is open so the
+      // newly installed dataset is visible once the drawer is dismissed.
+      if (isDatasetCatalogDrawerOpen) return;
       if (rootRef.current?.contains(ev.target as Node)) return;
       setOpen(false);
     };
     document.addEventListener("mousedown", onDocMouseDown, true);
     return () => document.removeEventListener("mousedown", onDocMouseDown, true);
-  }, [open]);
+  }, [open, isDatasetCatalogDrawerOpen]);
 
   const rows = useMemo(
     () => catalog.items.filter((item) => item.origin === "imported" || item.origin === "hub" || item.origin === "computed"),

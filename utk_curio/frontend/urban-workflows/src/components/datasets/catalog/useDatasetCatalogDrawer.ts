@@ -18,6 +18,7 @@ import {
   DatasetSortMode,
   DATASET_CATALOG_REFRESH_EVENT,
   datasetCatalogApi,
+  notifyDatasetCatalogRefresh,
   useDatasetCatalog,
 } from "../../../services/datasetCatalog";
 import { flowOutputRefFromRaw } from "../../../utils/flowOutputRef";
@@ -155,6 +156,9 @@ export function useDatasetCatalogDrawer(presented: boolean) {
           return [...next, dataflowRefFromCatalogItem(installed)];
         });
         await catalog.reload();
+        // Let the dataset palette (and any other catalog listeners) refresh so
+        // the newly installed dataset shows up immediately.
+        notifyDatasetCatalogRefresh();
         showToast(`Installed ${dataset.title}.`, "success");
       } catch (err) {
         showToast((err as Error)?.message || "Could not install dataset.", "error");
@@ -176,6 +180,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
           prev.filter((row) => (row?.datasetId || row?.id) !== dataset.id),
         );
         await catalog.reload();
+        notifyDatasetCatalogRefresh();
         showToast(`Removed ${dataset.title} from this dataflow.`, "success");
       } catch (err) {
         showToast((err as Error)?.message || "Could not remove dataset.", "error");
