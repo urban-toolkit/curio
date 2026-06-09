@@ -179,8 +179,22 @@ const useTableData = ({ data }: { data: INodeData }) => {
         })
       );
 
-      // Filter out nulls
-      let tabd = fetched.filter((x) => x != null) as any[];
+      // Filter out nulls, then expand any nested `outputs` envelopes so each
+      // layer becomes its own tab. autk-grammar persists a multi-layer wrapper
+      // to the backend as a single artifact whose payload is
+      // `{dataType:'outputs', data:[layer,...]}`, so its `data.input` is one
+      // ref — `wrappers.length === 1` — but downstream we want one tab per
+      // layer (same as a merge node). Without this expansion, `createTableData`
+      // has no branch for `outputs` and the tab renders empty.
+      let tabd: any[] = [];
+      for (const x of fetched) {
+        if (x == null) continue;
+        if (x.dataType === 'outputs' && Array.isArray(x.data)) {
+          for (const item of x.data) if (item) tabd.push(item);
+        } else {
+          tabd.push(x);
+        }
+      }
 
       tabd = tabd.map ((item) => {
         console.log(item);

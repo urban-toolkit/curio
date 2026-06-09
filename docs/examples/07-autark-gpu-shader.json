@@ -4,8 +4,8 @@
       {
         "id": "sh-data",
         "type": "curio.builtin/autk-grammar",
-        "x": 100,
-        "y": 400,
+        "x": -318.9986752504269,
+        "y": 414.70958059065583,
         "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/chicago_loop.osm.pbf\",\n      \"queryArea\": {\n        \"geocodeArea\": \"Chicago\",\n        \"areas\": [\n          \"Loop\"\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"surface\",\n          \"parks\",\n          \"water\",\n          \"roads\",\n          \"buildings\"\n        ],\n        \"dropOsmTable\": true\n      }\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -17,12 +17,25 @@
       {
         "id": "sh-compute",
         "type": "curio.builtin/autk-grammar",
-        "x": 650,
-        "y": 400,
-        "content": "{\n  \"compute\": [\n    {\n      \"dataRef\": \"table_osm_roads\",\n      \"attributes\": {\n        \"seg\": \"geometry.coordinates\"\n      },\n      \"attributeMatrices\": {\n        \"seg\": {\n          \"rows\": \"auto\",\n          \"cols\": 2\n        }\n      },\n      \"uniforms\": {\n        \"bld_height\": 81.0,\n        \"doy\": 172\n      },\n      \"uniformMatrices\": {\n        \"ring\": {\n          \"data\": [\n            [\n              -9755494.1,\n              5115958.66\n            ],\n            [\n              -9755443.43,\n              5115959.66\n            ],\n            [\n              -9755442.63,\n              5115919.57\n            ],\n            [\n              -9755493.29,\n              5115918.57\n            ],\n            [\n              -9755494.1,\n              5115958.66\n            ]\n          ],\n          \"cols\": 2\n        }\n      },\n      \"outputColumnName\": \"shadow\",\n      \"wglsFunction\": \"\\nlet pi      = 3.14159265359;\\nlet lat_rad = 0.73027;\\nlet lon_ref = -75.0;\\nlet lon_loc = -87.65;\\n\\nlet dec_rad = -0.40928 * cos(2.0 * pi / 365.0 * (doy + 10.0));\\n\\nlet ax = seg[0u]; let ay = seg[1u];\\nlet bx = seg[2u]; let by = seg[3u];\\n\\nvar accumulated: f32 = 0.0;\\nfor (var hour = 7i; hour <= 19i; hour++) {\\n    let solar_time = f32(hour) + (lon_ref - lon_loc) / 15.0;\\n    let h_rad = (solar_time - 12.0) * pi / 12.0;\\n    let sin_alt = sin(lat_rad) * sin(dec_rad) + cos(lat_rad) * cos(dec_rad) * cos(h_rad);\\n    let alt_rad = asin(clamp(sin_alt, -1.0, 1.0));\\n    if alt_rad <= 0.0 { continue; }\\n\\n    let az_rad = atan2(sin(h_rad), sin(lat_rad) * cos(h_rad) - cos(lat_rad) * tan(dec_rad)) + pi;\\n    let sdx = -sin(az_rad);\\n    let sdy = -cos(az_rad);\\n    let shadow_len = bld_height / tan(alt_rad);\\n\\n    let perp_x = sdy;\\n    let perp_y = -sdx;\\n\\n    var u_lo: f32 =  1e30; var u_hi: f32 = -1e30;\\n    var v_lo: f32 =  1e30; var v_hi: f32 = -1e30;\\n    for (var ri = 0u; ri < ring_rows; ri++) {\\n        let rx = ring[ri * 2u];\\n        let ry = ring[ri * 2u + 1u];\\n        let ru = rx * perp_x + ry * perp_y;\\n        let rv = rx * sdx + ry * sdy;\\n        u_lo = min(u_lo, ru); u_hi = max(u_hi, ru);\\n        v_lo = min(v_lo, rv); v_hi = max(v_hi, rv);\\n    }\\n    let v_hi_shadow = v_hi + shadow_len;\\n\\n    let au = ax * perp_x + ay * perp_y; let av = ax * sdx + ay * sdy;\\n    let bu = bx * perp_x + by * perp_y; let bv = bx * sdx + by * sdy;\\n\\n    var hit = false;\\n    if au >= u_lo && au <= u_hi && av >= v_lo && av <= v_hi_shadow { hit = true; }\\n    else if bu >= u_lo && bu <= u_hi && bv >= v_lo && bv <= v_hi_shadow { hit = true; }\\n    else if !(max(au, bu) < u_lo || min(au, bu) > u_hi) &&\\n            !(max(av, bv) < v_lo || min(av, bv) > v_hi_shadow) {\\n        let du = bu - au;\\n        let dv = bv - av;\\n        if abs(du) > 0.001 {\\n            let t0 = (u_lo - au) / du;\\n            let t1 = (u_hi - au) / du;\\n            let t_enter = max(min(t0, t1), 0.0);\\n            let t_exit  = min(max(t0, t1), 1.0);\\n            if t_enter <= t_exit {\\n                let v_enter = av + t_enter * dv;\\n                let v_exit  = av + t_exit  * dv;\\n                if max(v_enter, v_exit) >= v_lo && min(v_enter, v_exit) <= v_hi_shadow {\\n                    hit = true;\\n                }\\n            }\\n        } else {\\n            if max(av, bv) >= v_lo && min(av, bv) <= v_hi_shadow { hit = true; }\\n        }\\n    }\\n    if hit { accumulated += 60.0; }\\n}\\n\\nreturn accumulated;\\n\"\n    }\n  ]\n}",
+        "x": 343.33440690641385,
+        "y": 412.5068119891008,
+        "content": "{\n  \"compute\": [\n    {\n      \"dataRef\": \"table_osm_roads\",\n      \"attributes\": {\n        \"seg\": \"geometry.coordinates\"\n      },\n      \"attributeMatrices\": {\n        \"seg\": {\n          \"rows\": \"auto\",\n          \"cols\": 2\n        }\n      },\n      \"uniforms\": {\n        \"bld_height\": {\n          \"fromFeature\": {\n            \"layer\": \"table_osm_buildings\",\n            \"iterate\": \"batched\",\n            \"path\": \"properties.height\",\n            \"required\": true\n          }\n        },\n        \"doy\": 172\n      },\n      \"uniformMatrices\": {\n        \"ring\": {\n          \"fromFeature\": {\n            \"layer\": \"table_osm_buildings\",\n            \"iterate\": \"batched\",\n            \"path\": \"geometry.coordinates.0\"\n          },\n          \"cols\": 2\n        }\n      },\n      \"outputColumnName\": \"sunlight\",\n      \"wglsFunction\": [\n        \"let pi      = 3.14159265359;\",\n        \"let lat_rad = 0.73027;\",\n        \"let lon_ref = -75.0;\",\n        \"let lon_loc = -87.65;\",\n        \"\",\n        \"let dec_rad = -0.40928 * cos(2.0 * pi / 365.0 * (doy + 10.0));\",\n        \"\",\n        \"let ax = seg[0u]; let ay = seg[1u];\",\n        \"let bx = seg[2u]; let by = seg[3u];\",\n        \"\",\n        \"let n_buildings: u32 = u32(num_features);\",\n        \"\",\n        \"var sunlight: f32 = 0.0;\",\n        \"for (var hour = 7i; hour <= 19i; hour++) {\",\n        \"    let solar_time = f32(hour) + (lon_ref - lon_loc) / 15.0;\",\n        \"    let h_rad = (solar_time - 12.0) * pi / 12.0;\",\n        \"    let sin_alt = sin(lat_rad) * sin(dec_rad) + cos(lat_rad) * cos(dec_rad) * cos(h_rad);\",\n        \"    let alt_rad = asin(clamp(sin_alt, -1.0, 1.0));\",\n        \"    if alt_rad <= 0.0 { continue; }\",\n        \"\",\n        \"    let az_rad = atan2(sin(h_rad), sin(lat_rad) * cos(h_rad) - cos(lat_rad) * tan(dec_rad)) + pi;\",\n        \"    let sdx = -sin(az_rad);\",\n        \"    let sdy = -cos(az_rad);\",\n        \"    let perp_x = sdy;\",\n        \"    let perp_y = -sdx;\",\n        \"\",\n        \"    let au = ax * perp_x + ay * perp_y;\",\n        \"    let av = ax * sdx + ay * sdy;\",\n        \"    let bu = bx * perp_x + by * perp_y;\",\n        \"    let bv = bx * sdx + by * sdy;\",\n        \"\",\n        \"    var any_hit = false;\",\n        \"    for (var bi = 0u; bi < n_buildings; bi++) {\",\n        \"        let height = bld_height[bi];\",\n        \"        let shadow_len = height / tan(alt_rad);\",\n        \"        let base = bi * 8u;\",\n        \"\",\n        \"        var u_lo: f32 =  1e30; var u_hi: f32 = -1e30;\",\n        \"        var v_lo: f32 =  1e30; var v_hi: f32 = -1e30;\",\n        \"        for (var ci = 0u; ci < 4u; ci++) {\",\n        \"            let rx = ring[base + ci * 2u];\",\n        \"            let ry = ring[base + ci * 2u + 1u];\",\n        \"            let ru = rx * perp_x + ry * perp_y;\",\n        \"            let rv = rx * sdx + ry * sdy;\",\n        \"            u_lo = min(u_lo, ru); u_hi = max(u_hi, ru);\",\n        \"            v_lo = min(v_lo, rv); v_hi = max(v_hi, rv);\",\n        \"        }\",\n        \"        let v_hi_shadow = v_hi + shadow_len;\",\n        \"\",\n        \"        var hit = false;\",\n        \"        if au >= u_lo && au <= u_hi && av >= v_lo && av <= v_hi_shadow { hit = true; }\",\n        \"        else if bu >= u_lo && bu <= u_hi && bv >= v_lo && bv <= v_hi_shadow { hit = true; }\",\n        \"        else if !(max(au, bu) < u_lo || min(au, bu) > u_hi) &&\",\n        \"                !(max(av, bv) < v_lo || min(av, bv) > v_hi_shadow) {\",\n        \"            let du = bu - au;\",\n        \"            let dv = bv - av;\",\n        \"            if abs(du) > 0.001 {\",\n        \"                let t0 = (u_lo - au) / du;\",\n        \"                let t1 = (u_hi - au) / du;\",\n        \"                let t_enter = max(min(t0, t1), 0.0);\",\n        \"                let t_exit  = min(max(t0, t1), 1.0);\",\n        \"                if t_enter <= t_exit {\",\n        \"                    let v_enter = av + t_enter * dv;\",\n        \"                    let v_exit  = av + t_exit  * dv;\",\n        \"                    if max(v_enter, v_exit) >= v_lo && min(v_enter, v_exit) <= v_hi_shadow {\",\n        \"                        hit = true;\",\n        \"                    }\",\n        \"                }\",\n        \"            } else {\",\n        \"                if max(av, bv) >= v_lo && min(av, bv) <= v_hi_shadow { hit = true; }\",\n        \"            }\",\n        \"        }\",\n        \"        if hit { any_hit = true; break; }\",\n        \"    }\",\n        \"\",\n        \"    if !any_hit { sunlight += 60.0; }\",\n        \"}\",\n        \"\",\n        \"return sunlight;\"\n      ]\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Run WGSL shadow-accumulation shader per road segment — sum minutes of shadow cast by one building over the June solstice (07:00–19:00).",
+        "goal": "Run a batched WGSL shader once per road: for every daylight hour, check every loaded Chicago Loop building's AABB shadow projection against the road segment; accumulate 60 minutes of sunlight only when no building shades the segment that hour. Buildings without an OSM `height` tag are skipped so they don't get a synthetic default height that would over-extrude their shadow.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "sh-pool",
+        "type": "curio.builtin/data-pool",
+        "x": 991.3277850146596,
+        "y": 416.9912158166809,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Fan augmented roads (plus context layers) out to map and plot; route brush selections on roads back from plot to map.",
         "metadata": {
           "keywords": []
         }
@@ -30,12 +43,14 @@
       {
         "id": "sh-map",
         "type": "curio.builtin/autk-grammar",
-        "x": 1250,
-        "y": 150,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_surface\"\n      },\n      {\n        \"dataRef\": \"table_osm_parks\"\n      },\n      {\n        \"dataRef\": \"table_osm_water\"\n      },\n      {\n        \"dataRef\": \"table_osm_buildings\"\n      },\n      {\n        \"dataRef\": \"table_osm_roads\",\n        \"isPick\": true,\n        \"getFnv\": \"shadow\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 0\n      }\n    ]\n  }\n}",
+        "x": 1622.8331005169368,
+        "y": -32.65557002931938,
+        "width": 759,
+        "height": 640,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_surface\"\n      },\n      {\n        \"dataRef\": \"table_osm_parks\"\n      },\n      {\n        \"dataRef\": \"table_osm_water\"\n      },\n      {\n        \"dataRef\": \"table_osm_buildings\"\n      },\n      {\n        \"dataRef\": \"table_osm_roads\",\n        \"isPick\": true,\n        \"isColorMap\": true,\n        \"getFnv\": \"sunlight\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 0\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Render the full layer stack in 3D with roads coloured by shadow minutes.",
+        "goal": "Render the full layer stack in 3D with roads coloured by minutes of sunlight.",
         "metadata": {
           "keywords": []
         }
@@ -43,12 +58,14 @@
       {
         "id": "sh-plot",
         "type": "curio.builtin/autk-grammar",
-        "x": 1250,
-        "y": 650,
-        "content": "{\n  \"plot\": {\n    \"dataRef\": \"table_osm_roads\",\n    \"mark\": \"bar\",\n    \"axis\": [\n      \"shadow\",\n      \"@transform\"\n    ],\n    \"title\": \"Minutes of shadow per Chicago Loop road segment\",\n    \"transform\": {\n      \"preset\": \"binning-1d\",\n      \"options\": {\n        \"bins\": 13\n      }\n    },\n    \"events\": [\n      \"brushX\"\n    ]\n  }\n}",
+        "x": 1631.3287084252768,
+        "y": 709.4692553583831,
+        "width": 770,
+        "height": 577,
+        "content": "{\n  \"plot\": {\n    \"dataRef\": \"table_osm_roads\",\n    \"mark\": \"bar\",\n    \"axis\": [\n      \"sunlight\",\n      \"@transform\"\n    ],\n    \"title\": \"Minutes of sunlight per Chicago Loop road segment\",\n    \"transform\": {\n      \"preset\": \"binning-1d\",\n      \"options\": {\n        \"bins\": 13\n      }\n    },\n    \"events\": [\n      \"brushX\"\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Show a brushable shadow-minutes histogram; brushing highlights roads on the 3D map.",
+        "goal": "Show a brushable sunlight-minutes histogram; brushing routes through the pool to highlight roads on the 3D map.",
         "metadata": {
           "keywords": []
         }
@@ -56,32 +73,43 @@
     ],
     "edges": [
       {
-        "id": "e-sh-data-sh-compute",
+        "id": "reactflow__edge-sh-dataout-sh-computein",
         "source": "sh-data",
         "target": "sh-compute"
       },
       {
-        "id": "e-sh-compute-sh-map",
+        "id": "reactflow__edge-sh-computeout-sh-poolin",
         "source": "sh-compute",
+        "target": "sh-pool"
+      },
+      {
+        "id": "reactflow__edge-sh-poolout-sh-mapin",
+        "source": "sh-pool",
         "target": "sh-map"
       },
       {
-        "id": "e-sh-compute-sh-plot",
-        "source": "sh-compute",
+        "id": "reactflow__edge-sh-poolout-sh-plotin",
+        "source": "sh-pool",
         "target": "sh-plot"
       },
       {
-        "id": "e-interact-sh-plot-sh-map",
         "type": "Interaction",
-        "source": "sh-plot",
+        "id": "reactflow__edge-sh-poolin/out-sh-plotin/out",
+        "source": "sh-pool",
+        "target": "sh-plot"
+      },
+      {
+        "type": "Interaction",
+        "id": "reactflow__edge-sh-poolin/out-sh-mapin/out",
+        "source": "sh-pool",
         "target": "sh-map"
       }
     ],
     "name": "Autark GPU shader",
     "task": "",
-    "timestamp": 1748990000000,
-    "provenance_id": "shadow-analysis",
+    "timestamp": 1780980029492,
+    "provenance_id": "Autark GPU shader",
     "packages": [],
-    "description": "WebGPU compute via AutkGrammar: a per-road shadow-accumulation shader sums how many minutes of shadow one Chicago Loop building casts onto each road segment, hour by hour from 07:00 to 19:00 on the June solstice. Roads are coloured by the result and linked to a brushable histogram. The shader runs inside the grammar's compute block; the casting building's footprint is supplied as a uniform matrix."
+    "description": "WebGPU compute via AutkGrammar: a per-road sunlight-accumulation shader checks every loaded Chicago Loop building's shadow projection at each daylight hour on the June solstice. A road segment earns 60 minutes of sunlight for an hour only when NO building shades it that hour. The shader runs in one dispatch, looping over buildings inside the WGSL via uniform arrays packed by the autk-grammar runtime."
   }
 }

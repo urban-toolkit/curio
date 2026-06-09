@@ -193,6 +193,17 @@ export default function DataPoolContent({ activeTab, onSelectTab, tabData, table
     return [data.input];
   })();
 
+  // Tabs derived from expanding a single artifact (autk-grammar's multi-layer
+  // wrapper persists as one `dict`-kind ref whose payload is an `outputs`
+  // envelope — see useTableData.processDataAsync) have no 1:1 wrapper ref:
+  // wrappers.length === 1 but tabData.length === N. Don't pipe wrappers[0]
+  // into tab 0 in that case — its preview fetch round-trips the whole
+  // multi-MB outputs payload only to fall back to outputTable (the artifact's
+  // dataType is `dict`, which has no previewable shape), so tab 0 lags while
+  // every other tab is instant. Force-empty input on all tabs makes them
+  // uniformly use outputTable, which already holds the active layer's data.
+  const expandedFromSingleRef = wrappers.length === 1 && tabData.length > 1;
+
   return (
     <Tabs
       id="data-tabs"
@@ -201,11 +212,20 @@ export default function DataPoolContent({ activeTab, onSelectTab, tabData, table
       className="mb-3"
     >
       {Array.isArray(tabData) && tabData.length > 0 ? (
-        tabData.map((_, index) => (
-          <Tab eventKey={index.toString()} title={`Tab ${index + 1}`} key={index}>
-            <ContentComponent outputTable={tableData} data={{ ...data, input: wrappers[index] ?? '' }} />
-          </Tab>
-        ))
+        tabData.map((entry, index) => {
+          // Prefer the layer name when present (autk-grammar multi-layer
+          // wrappers stamp `layerName` on each entry) so the user can tell
+          // which layer they're looking at instead of "Tab 1 / Tab 2 / …".
+          const title = entry && typeof entry === 'object' && entry.layerName
+            ? String(entry.layerName)
+            : `Tab ${index + 1}`;
+          const tabInput = expandedFromSingleRef ? '' : (wrappers[index] ?? '');
+          return (
+            <Tab eventKey={index.toString()} title={title} key={index}>
+              <ContentComponent outputTable={tableData} data={{ ...data, input: tabInput }} />
+            </Tab>
+          );
+        })
       ) : (
         <Tab eventKey="0" title="No Data">
           <div style={{ padding: '10px', textAlign: 'center' }}>No data available.</div>

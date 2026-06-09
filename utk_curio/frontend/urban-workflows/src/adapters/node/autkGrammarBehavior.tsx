@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { FeatureCollection } from 'geojson';
+import { Feature, FeatureCollection } from 'geojson';
 import { NodeBehaviorHook } from '../../registry/types';
 import { fetchData } from '../../services/api';
 import { useToastContext } from '../../providers/ToastProvider';
@@ -932,6 +932,204 @@ function normalizeAttrPath(p: string): string {
     return `properties.${p}`;
 }
 
+// Read a value out of a feature using a dot-path — same semantics autk-compute
+// uses for its `variableMapping` attributes. Kept local rather than re-imported
+// from autk-core because the grammar runtime here has no other dependency on it.
+function valueAtPath(item: any, path: string): any {
+    return path.split('.').reduce<any>((acc, key) => {
+        if (acc == null || typeof acc !== 'object') return undefined;
+        return acc[key];
+    }, item);
+}
+
+// Resolve `fromFeature` directives in a `compute.uniforms` / `compute.uniformMatrices`
+// config against the upstream layer array. Each entry in the config can be:
+//   - a plain value (passed through unchanged)
+//   - an object with a `fromFeature: { layer, index?, iterate?, path }` directive,
+//     optionally carrying a `cols` field (signalling a matrix uniform) and/or a
+//     `default` to fall back to when the path can't be resolved.
+//
+// `iterateIndex`, when defined, overrides the directive's own `index` for entries
+// that opt into iteration via `iterate: 'all'`. This is how the per-feature
+// iteration loop below drives the same spec over N source features.
+function resolveFromFeatures(
+    config: Record<string, any> | undefined,
+    layers: Array<{ name: string; type?: string; geojson: FeatureCollection }>,
+    iterateIndex?: number,
+): Record<string, any> | undefined {
+    if (!config) return config;
+    const out: Record<string, any> = {};
+    for (const [key, val] of Object.entries(config)) {
+        if (val && typeof val === 'object' && (val as any).fromFeature) {
+            const ff = (val as any).fromFeature;
+            const layer = layers.find((l) => l.name === ff.layer);
+            const idx = iterateIndex !== undefined && ff.iterate === 'all'
+                ? iterateIndex
+                : (ff.index ?? 0);
+            const feature = layer?.geojson?.features?.[idx];
+            const resolved = feature ? valueAtPath(feature, ff.path) : undefined;
+            const hasCols = 'cols' in (val as any);
+            if (resolved === undefined || resolved === null) {
+                if ('default' in (val as any)) {
+                    const def = (val as any).default;
+                    out[key] = hasCols ? { ...(val as any), data: def, fromFeature: undefined } : def;
+                }
+                // No default → drop the entry; ComputeGpgpu will surface the error.
+                continue;
+            }
+            const { fromFeature: _ff, default: _def, ...rest } = (val as any);
+            out[key] = hasCols ? { ...rest, data: resolved } : resolved;
+        } else {
+            out[key] = val;
+        }
+    }
+    return out;
+}
+
+// Walk the spec and return the iterate-source layer name + mode, or null when
+// no entry opts into per-feature iteration. Two modes are supported:
+//   - 'all'     → run the shader once per source feature and accumulate output
+//                 columns (sum over features). Slow but trivial WGSL.
+//   - 'batched' → pack every source feature's values into uniform arrays and
+//                 run the shader exactly once; the WGSL loops over features
+//                 inside. Fast and lets the shader express per-hour union /
+//                 complement semantics across features.
+// All iterating entries must share the same source layer; the first one wins
+// (a tensor product over independent sources isn't a use case we need here).
+function findIterateSource(
+    ...configs: Array<Record<string, any> | undefined>
+): { mode: 'all' | 'batched'; layer: string } | null {
+    for (const cfg of configs) {
+        if (!cfg) continue;
+        for (const v of Object.values(cfg)) {
+            const ff = v && typeof v === 'object' ? (v as any).fromFeature : undefined;
+            if (ff && (ff.iterate === 'all' || ff.iterate === 'batched')) {
+                return { mode: ff.iterate, layer: ff.layer };
+            }
+        }
+    }
+    return null;
+}
+
+// Hard cap on batched source features. ComputeGpgpu exposes uniformArrays via
+// WebGPU uniform buffers, which DX12 limits to 64 KB. Each matrix entry packs
+// 8 floats per source feature (the AABB's four corners, see below), so 2048
+// features = exactly 64 KB; the cap is a margin below that.
+const MAX_BATCHED_FEATURES = 1500;
+
+// For the `batched` iteration mode, pack every source feature's resolved value
+// into flat typed arrays exposed via ComputeGpgpu.uniformArrays:
+//   - scalar uniforms become a length-N array under their original name
+//   - matrix entries become a length-(8 × N) array under their original name,
+//     holding each source feature's *axis-aligned bounding box* as four corners
+//     [xmin,ymin, xmax,ymin, xmax,ymax, xmin,ymax]. Full polygon outlines blow
+//     past the uniform buffer cap on Chicago-Loop-scale data; the AABB is a
+//     correct conservative envelope (slightly over-estimates the projected
+//     shadow for non-axis-aligned buildings, never under-estimates).
+//   - a `num_features` uniform exposes the loop bound
+// Non-batched entries in the same spec (e.g. `doy: 172`) pass through unchanged.
+function buildBatchedUniforms(
+    uniforms: Record<string, any> | undefined,
+    uniformMatrices: Record<string, any> | undefined,
+    sources: Feature<any, any>[],
+): { uniforms: Record<string, number>; uniformArrays: Record<string, number[]> } {
+    const outUniforms: Record<string, number> = {};
+    const outUniformArrays: Record<string, number[]> = {};
+
+    // Drop source features whose required batched paths can't resolve. A path
+    // is required when any of its batched `fromFeature` directives carries
+    // `required: true` — in 07 the building height is required, so OSM
+    // buildings without a `properties.height` tag don't get a fake default
+    // height that would over-extrude their shadow. The filter runs once,
+    // upfront, so every batched entry sees the same surviving feature list.
+    const requiredPaths: string[] = [];
+    for (const cfg of [uniforms, uniformMatrices]) {
+        if (!cfg) continue;
+        for (const val of Object.values(cfg)) {
+            const ff = val && typeof val === 'object' ? (val as any).fromFeature : undefined;
+            if (ff && ff.iterate === 'batched' && ff.required && ff.path) {
+                requiredPaths.push(ff.path);
+            }
+        }
+    }
+    if (requiredPaths.length > 0) {
+        const before = sources.length;
+        sources = sources.filter((f) =>
+            requiredPaths.every((p) => {
+                const v = valueAtPath(f, p);
+                return v !== undefined && v !== null
+                    && !(typeof v === 'number' && !Number.isFinite(v));
+            }),
+        );
+        if (sources.length < before) {
+            console.info(
+                `[autk-grammar] batched compute filtered ${before - sources.length} source` +
+                ` feature(s) missing required path(s): ${requiredPaths.join(', ')}`,
+            );
+        }
+    }
+
+    if (sources.length > MAX_BATCHED_FEATURES) {
+        console.warn(
+            `[autk-grammar] batched compute capped at ${MAX_BATCHED_FEATURES} source features` +
+            ` (got ${sources.length}); excess features ignored.`,
+        );
+        sources = sources.slice(0, MAX_BATCHED_FEATURES);
+    }
+
+    for (const [key, val] of Object.entries(uniforms ?? {})) {
+        const ff = val && typeof val === 'object' ? (val as any).fromFeature : undefined;
+        if (ff && ff.iterate === 'batched') {
+            const fallback = (val as any).default;
+            const arr: number[] = [];
+            for (const f of sources) {
+                const v = valueAtPath(f, ff.path);
+                const num = Number(v ?? fallback);
+                arr.push(Number.isFinite(num) ? num : 0);
+            }
+            outUniformArrays[key] = arr;
+        } else if (typeof val === 'number') {
+            outUniforms[key] = val;
+        }
+    }
+
+    for (const [key, val] of Object.entries(uniformMatrices ?? {})) {
+        const ff = val && typeof val === 'object' ? (val as any).fromFeature : undefined;
+        if (ff && ff.iterate === 'batched') {
+            const data: number[] = [];
+            for (const f of sources) {
+                const ring = valueAtPath(f, ff.path);
+                let xmin =  Infinity, ymin =  Infinity;
+                let xmax = -Infinity, ymax = -Infinity;
+                if (Array.isArray(ring)) {
+                    for (const coord of ring) {
+                        if (Array.isArray(coord) && coord.length >= 2) {
+                            const x = Number(coord[0]);
+                            const y = Number(coord[1]);
+                            if (Number.isFinite(x) && Number.isFinite(y)) {
+                                if (x < xmin) xmin = x;
+                                if (y < ymin) ymin = y;
+                                if (x > xmax) xmax = x;
+                                if (y > ymax) ymax = y;
+                            }
+                        }
+                    }
+                }
+                if (!Number.isFinite(xmin)) {
+                    // Degenerate feature — emit a zero-area AABB at (0,0) so the
+                    // shader's loop still runs but contributes nothing.
+                    xmin = 0; ymin = 0; xmax = 0; ymax = 0;
+                }
+                data.push(xmin, ymin, xmax, ymin, xmax, ymax, xmin, ymax);
+            }
+            outUniformArrays[key] = data;
+        }
+    }
+
+    outUniforms.num_features = sources.length;
+    return { uniforms: outUniforms, uniformArrays: outUniformArrays };
+}
+
 // Apply a grammar `compute` section to an array of named GeoJSON layers,
 // returning a new array where each block's target layer has been replaced by a
 // FeatureCollection enriched with the WGSL output under `feature.properties.compute.<col>`.
@@ -959,27 +1157,85 @@ async function applyComputeBlocks(
         for (const [k, v] of Object.entries(block.attributes ?? {})) {
             variableMapping[k] = normalizeAttrPath(String(v));
         }
+        // Accept the wglsFunction as either a single string (existing form) or
+        // an array of lines. The array form keeps the WGSL readable inside the
+        // JSON file — JSON has no multi-line strings, but an array of one-line
+        // strings is just as valid and far easier to author / review than one
+        // long `\n`-escaped blob.
+        const wgslBody: string = Array.isArray(block.wglsFunction)
+            ? block.wglsFunction.join('\n')
+            : String(block.wglsFunction ?? '');
         const params: any = {
             collection: result[idx].geojson,
             variableMapping,
-            wgslBody: block.wglsFunction,
+            wgslBody,
         };
         if (block.attributeArrays) params.attributeArrays = block.attributeArrays;
         if (block.attributeMatrices) params.attributeMatrices = block.attributeMatrices;
-        if (block.uniforms) params.uniforms = block.uniforms;
         if (block.uniformArrays) params.uniformArrays = block.uniformArrays;
-        if (block.uniformMatrices) params.uniformMatrices = block.uniformMatrices;
         if (block.outputColumnName) params.resultField = block.outputColumnName;
         if (block.outputColumns) params.outputColumns = block.outputColumns;
+        const outCols: string[] = block.outputColumns ?? (block.outputColumnName ? [block.outputColumnName] : []);
         try {
             const gpgpu = new ComputeGpgpu();
-            const augmented = await gpgpu.run(params);
+            // Compute spec iteration modes — see `findIterateSource` for the full
+            // semantics:
+            //   - 'batched' → single dispatch; flat per-feature arrays exposed
+            //                 as uniformArrays; WGSL loops over features.
+            //   - 'all'     → N dispatches, runtime sums output columns.
+            //   - undefined → single dispatch, plain spec (today's behaviour).
+            const iterSource = findIterateSource(block.uniforms, block.uniformMatrices);
+            let augmented: FeatureCollection;
+            if (iterSource?.mode === 'batched') {
+                const iterLayer = result.find((l) => l.name === iterSource.layer);
+                const sources = iterLayer?.geojson?.features ?? [];
+                const { uniforms: uf, uniformArrays: ua } = buildBatchedUniforms(
+                    block.uniforms, block.uniformMatrices, sources as Feature<any, any>[],
+                );
+                params.uniforms = uf;
+                params.uniformArrays = { ...(params.uniformArrays ?? {}), ...ua };
+                // `uniformMatrices` were already absorbed into uniformArrays above.
+                delete params.uniformMatrices;
+                augmented = await gpgpu.run(params);
+            } else if (iterSource?.mode === 'all') {
+                const iterLayer = result.find((l) => l.name === iterSource.layer);
+                const sources = iterLayer?.geojson?.features ?? [];
+                augmented = JSON.parse(JSON.stringify(result[idx].geojson));
+                for (const f of augmented.features) {
+                    const p: any = (f.properties = f.properties ?? {});
+                    const c: any = (p.compute = p.compute ?? {});
+                    for (const col of outCols) c[col] = 0;
+                }
+                for (let i = 0; i < sources.length; i++) {
+                    const stepUniforms = resolveFromFeatures(block.uniforms, result, i);
+                    const stepMatrices = resolveFromFeatures(block.uniformMatrices, result, i);
+                    const stepParams: any = {
+                        ...params,
+                        collection: augmented,
+                    };
+                    if (stepUniforms) stepParams.uniforms = stepUniforms;
+                    if (stepMatrices) stepParams.uniformMatrices = stepMatrices;
+                    const oneShot = await gpgpu.run(stepParams);
+                    for (let j = 0; j < augmented.features.length; j++) {
+                        const dst = (augmented.features[j].properties as any)?.compute;
+                        const src = (oneShot.features[j]?.properties as any)?.compute;
+                        if (!dst || !src) continue;
+                        for (const col of outCols) {
+                            const inc = Number(src[col]);
+                            if (Number.isFinite(inc)) dst[col] += inc;
+                        }
+                    }
+                }
+            } else {
+                if (block.uniforms) params.uniforms = resolveFromFeatures(block.uniforms, result);
+                if (block.uniformMatrices) params.uniformMatrices = resolveFromFeatures(block.uniformMatrices, result);
+                augmented = await gpgpu.run(params);
+            }
             // ComputeGpgpu writes outputs under properties.compute.<col>. Also lift them
             // to top-level properties so downstream nodes can reference the column by
             // its bare name (e.g. `height_m`) without worrying about whether the nested
             // `compute` object round-trips through AutkDb's DuckDB storage. Both
             // `compute.<col>` and `<col>` dot-paths then resolve.
-            const outCols: string[] = block.outputColumns ?? (block.outputColumnName ? [block.outputColumnName] : []);
             if (outCols.length > 0 && augmented?.features) {
                 for (const f of augmented.features) {
                     const p: any = f?.properties;
