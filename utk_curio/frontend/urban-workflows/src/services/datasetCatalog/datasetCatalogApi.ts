@@ -217,14 +217,14 @@ export const datasetCatalogApi = {
     let filename = match
       ? decodeURIComponent(match[1])
       : datasetId.replace(/\./g, "_");
-    // Guarantee the data-format extension is present even if the server name or
-    // CORS-exposed header omitted it. Prefer the known dataset format, then fall
-    // back to the response Content-Type (a CORS-safelisted, always-readable
-    // header).
+    // Guarantee the extension is present even if the server name or CORS-exposed
+    // header omitted it. Prefer the response Content-Type (the actual exported
+    // bytes — e.g. a parquet dataset is exported as csv/geojson), then fall back
+    // to the nominal dataset format.
     const contentType = (blob.type || "").split(";")[0].trim().toLowerCase();
     const ext =
-      DATASET_FORMAT_EXTENSIONS[opts.format ?? ""] ||
       MIME_EXTENSIONS[contentType] ||
+      DATASET_FORMAT_EXTENSIONS[opts.format ?? ""] ||
       "";
     if (ext && !filename.toLowerCase().endsWith(ext)) {
       filename += ext;

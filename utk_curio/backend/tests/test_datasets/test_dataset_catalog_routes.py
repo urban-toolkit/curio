@@ -111,8 +111,8 @@ def test_download_name_preserves_friendly_title():
     )
 
 
-def test_download_parquet_exports_deserialized_data(tmp_path):
-    """Parquet export re-serializes the deserialized table shown in the preview."""
+def test_download_tabular_parquet_exports_as_csv(tmp_path):
+    """A plain-DataFrame parquet is exported as CSV, not parquet."""
     import io
 
     import pandas as pd
@@ -133,12 +133,49 @@ def test_download_parquet_exports_deserialized_data(tmp_path):
     }
 
     target = service.download_target("ds")
-    assert target["download_name"] == "My Output.parquet"
-    assert target["mimetype"] == "application/vnd.apache.parquet"
+    assert target["download_name"] == "My Output.csv"
+    assert target["mimetype"] == "text/csv"
     assert "path" not in target
 
-    exported = pd.read_parquet(io.BytesIO(target["data"]))
-    pd.testing.assert_frame_equal(exported.reset_index(drop=True), frame)
+    exported = pd.read_csv(io.BytesIO(target["data"]))
+    pd.testing.assert_frame_equal(exported, frame)
+
+
+def test_download_geo_parquet_exports_as_geojson(tmp_path):
+    """A GeoParquet dataset is exported as GeoJSON."""
+    import json
+
+    import geopandas as gpd
+    from shapely.geometry import Point
+
+    from utk_curio.backend.app.datasets.service import DatasetCatalogService
+
+    artifact = tmp_path / "geo_artifact"  # no suffix
+    gdf = gpd.GeoDataFrame(
+        {"name": ["a", "b"]},
+        geometry=[Point(0, 0), Point(1, 1)],
+        crs="EPSG:4326",
+    )
+    gdf.to_parquet(artifact)
+
+    service = DatasetCatalogService(user=None)
+    service.get_dataset = lambda *a, **k: {  # type: ignore[assignment]
+        "id": "ds",
+        "title": "Geo Output",
+        "format": "parquet",
+        "path": str(artifact),
+        "uri": str(artifact),
+    }
+
+    target = service.download_target("ds")
+    assert target["download_name"] == "Geo Output.geojson"
+    assert target["mimetype"] == "application/geo+json"
+    assert "path" not in target
+
+    payload = json.loads(target["data"])
+    assert payload["type"] == "FeatureCollection"
+    assert len(payload["features"]) == 2
+    assert payload["features"][0]["geometry"]["type"] == "Point"
 
 
 def test_download_missing_dataset_returns_404(client, user_and_token, tmp_path, monkeypatch):

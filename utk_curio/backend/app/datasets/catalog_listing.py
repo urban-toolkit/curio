@@ -229,26 +229,31 @@ class CatalogListingMixin(CatalogPathMixin):
 
         path = Path(resolved)
         fmt = item.get("format")
-        extension = _download_extension(path, fmt)
-        download_name = _download_name(item.get("title") or dataset_id, extension)
-        target: dict[str, Any] = {
-            "download_name": download_name,
-            "mimetype": _DOWNLOAD_MIMETYPES.get(extension),
-        }
+        title = item.get("title") or dataset_id
+
         if fmt == "parquet":
-            # Export the deserialized table (the same data the table preview
-            # shows), re-serialized as a clean standard parquet — not the raw
-            # stored artifact.
+            # Parquet is an internal storage format. Export the deserialized data
+            # in the type it represents (GeoJSON for geospatial data, CSV for
+            # plain tabular data) so it matches the table/map preview.
             try:
-                target["data"] = _reserialize_parquet(path)
+                data, extension, mimetype = _serialize_parquet_for_export(path)
             except Exception as exc:  # noqa: BLE001
                 raise DatasetCatalogError(
                     f"Could not serialize parquet dataset for export: {exc}",
                     500,
                 ) from exc
-        else:
-            target["path"] = resolved
-        return target
+            return {
+                "download_name": _download_name(title, extension),
+                "mimetype": mimetype,
+                "data": data,
+            }
+
+        extension = _download_extension(path, fmt)
+        return {
+            "download_name": _download_name(title, extension),
+            "mimetype": _DOWNLOAD_MIMETYPES.get(extension),
+            "path": resolved,
+        }
 
 
 _DOWNLOAD_MIMETYPES: dict[str, str] = {
@@ -273,22 +278,33 @@ _FORMAT_EXTENSIONS: dict[str, str] = {
 }
 
 
-def _reserialize_parquet(path: Path) -> bytes:
-    """Read the stored parquet via the preview deserializer and re-write it as a
-    clean standard (geo)parquet, so the export matches the table preview."""
-    import io
+def _serialize_parquet_for_export(path: Path) -> tuple[bytes, str, str]:
+    """Deserialize a stored parquet dataset and re-serialize it to the data type
+    it represents — GeoJSON for geospatial data, CSV for plain tabular data.
 
-    from utk_curio.sandbox.util.tabular_preview import load_parquet_frame
+    Parquet is an internal storage format; exports should match what the user
+    sees in the preview, so a GeoDataFrame round-trips to GeoJSON and a plain
+    DataFrame to CSV.
 
-    frame, _total = load_parquet_frame(path)
-    buffer = io.BytesIO()
+    Returns ``(payload_bytes, extension, mimetype)``.
+    """
+    import pandas as pd
+
+    # GeoParquet carries geo metadata; ``gpd.read_parquet`` succeeds only for
+    # geospatial data and decodes the geometry column to real shapely geometries.
+    geo_frame = None
     try:
-        frame.to_parquet(buffer, index=False)
-    except TypeError:
-        # Some GeoDataFrame/pyarrow versions do not accept the ``index`` kwarg.
-        buffer = io.BytesIO()
-        frame.to_parquet(buffer)
-    return buffer.getvalue()
+        import geopandas as gpd
+
+        geo_frame = gpd.read_parquet(path)
+    except Exception:  # noqa: BLE001 — not geospatial / no geo metadata
+        geo_frame = None
+
+    if geo_frame is not None:
+        return geo_frame.to_json().encode("utf-8"), ".geojson", "application/geo+json"
+
+    frame = pd.read_parquet(path)
+    return frame.to_csv(index=False).encode("utf-8"), ".csv", "text/csv"
 
 
 def _download_extension(path: Path, fmt: str | None) -> str:
