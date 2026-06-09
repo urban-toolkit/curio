@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from utk_curio.backend.app.datasets.catalog_listing import CatalogListingMixin
-from utk_curio.backend.app.datasets.catalog_mutations import CatalogMutationsMixin
+from utk_curio.backend.app.datasets.services.catalog_listing import CatalogListingMixin
+from utk_curio.backend.app.datasets.services.catalog_mutations import CatalogMutationsMixin
 from utk_curio.backend.app.datasets.computed_indexer import ComputedDatasetIndexer
 from utk_curio.backend.app.datasets.installed_repository import InstalledDatasetRepository
 from utk_curio.backend.app.datasets.local_repository import LocalDatasetRepository
-from utk_curio.backend.app.datasets.preview_service import DatasetPreviewService
+from utk_curio.backend.app.datasets.services.preview_service import DatasetPreviewService
 from utk_curio.backend.app.datasets.registry_repository import DatasetRegistryRepository
 
 

@@ -12,7 +12,7 @@ from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
 from utk_curio.backend.app.datasets.catalog_items import item_from_manifest, loader_snippet
-from utk_curio.backend.app.datasets.catalog_paths import CatalogPathMixin
+from utk_curio.backend.app.datasets.services.catalog_paths import CatalogPathMixin
 from utk_curio.backend.app.datasets.catalog_utils import catalog_id_from_title, iso_from_timestamp
 from utk_curio.backend.app.datasets.constants import SUPPORTED_SUFFIXES
 from utk_curio.backend.app.datasets.errors import DatasetCatalogError

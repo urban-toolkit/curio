@@ -9,12 +9,12 @@ from typing import Any
 
 from utk_curio.backend.app.datasets.catalog_dedup import catalog_facets, dedupe_items
 from utk_curio.backend.app.datasets.catalog_items import loader_snippet
-from utk_curio.backend.app.datasets.catalog_paths import CatalogPathMixin
+from utk_curio.backend.app.datasets.services.catalog_paths import CatalogPathMixin
 from utk_curio.backend.app.datasets.computed_indexer import ComputedDatasetIndexer
 from utk_curio.backend.app.datasets.constants import SUPPORTED_SUFFIXES
 from utk_curio.backend.app.datasets.errors import DatasetCatalogError
 from utk_curio.backend.app.datasets.installed_repository import InstalledDatasetRepository
-from utk_curio.backend.app.datasets.preview_service import DatasetPreviewService
+from utk_curio.backend.app.datasets.services.preview_service import DatasetPreviewService
 from utk_curio.backend.app.datasets.provenance import catalog_item_is_computed_provenance
 from utk_curio.backend.app.datasets.registry_repository import DatasetRegistryRepository
 
