@@ -490,20 +490,15 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     ) => {
         if (sourceHandle == "in/out" && targetHandle == "in/out") return;
 
-        let getOutput = outId;
-        let setInput = inId;
-
-        let output = "";
-
-        setOutputs((opts: any) =>
-            opts.map((opt: any) => {
-                if (opt.nodeId == getOutput) {
-                    output = opt.output;
-                }
-
-                return opt;
-            })
-        );
+        // Why: previously this read `outputs` via a side effect inside a
+        // setOutputs reducer. React Flow's setNodes (zustand) flushes its
+        // reducer immediately, but React's useState setOutputs queues its
+        // reducer for later — so setNodes ran first with `output = ""` and
+        // wrote an empty data.input, then setOutputs ran and mutated
+        // `output` after no one was reading it. Read synchronously from
+        // outputsRef instead.
+        const sourceEntry = outputsRef.current.find((opt: any) => opt.nodeId === outId);
+        const output = sourceEntry?.output ?? "";
 
         setNodes((nds: any) =>
             nds.map((node: any) => {
@@ -856,16 +851,6 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             }
         }
         ancestorIds.add(targetNodeId);
-
-        // Also include degree-0 nodes (no directed edges at all)
-        const directedEdgeNodeIds = new Set<string>();
-        for (const e of directedEdges) {
-            directedEdgeNodeIds.add(e.source);
-            directedEdgeNodeIds.add(e.target);
-        }
-        for (const n of currentNodes) {
-            if (!directedEdgeNodeIds.has(n.id)) ancestorIds.add(n.id);
-        }
 
         // Skip ancestors that already ran successfully; always keep the target
         const subgraphNodes = currentNodes.filter(n =>
