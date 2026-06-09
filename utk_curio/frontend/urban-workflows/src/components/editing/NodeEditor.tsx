@@ -296,7 +296,7 @@ function NodeEditor({
                                 {(outputId != undefined || contentComponent != undefined) ? (
                                     <Tab.Pane
                                         eventKey="output"
-                                        style={{ height: "100%", overflowY: "auto" }}
+                                        style={{ height: "100%", overflow: "hidden" }}
                                     >
                                         {outputId != undefined ? (
                                             <div
