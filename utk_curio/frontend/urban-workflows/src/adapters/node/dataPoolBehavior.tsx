@@ -26,6 +26,9 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
   // before the pool's async fetch has propagated output to its children, and
   // downstream code nodes crash on `arg=None`.
   const inflightRef = useRef<Promise<any> | null>(null);
+  // True once any feature has been marked interacted="1" so that a subsequent
+  // "clear brush" (UNDETERMINED signal) still resets features to "0".
+  const anyInteractedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,6 +70,22 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
   useEffect(() => {
     if (output.content != "" && data.interactions != undefined) {
 
+      // Skip purely initialising/empty signals (e.g. Vega's UNDETERMINED emit on
+      // setup) when no features are currently marked, so the O(n) marking loop
+      // and clone don't run on every mount. If features were previously marked
+      // interacted="1" we still need to process to reset them to "0" (clear brush).
+      const hasRealInteraction = data.interactions.some((interaction: any) => {
+        const details = interaction?.details;
+        if (!details) return false;
+        return Object.values(details).some((detail: any) => {
+          if (detail.type === VisInteractionType.UNDETERMINED) return false;
+          if (detail.type === VisInteractionType.POINT) return (detail.data?.length ?? 0) > 0;
+          if (detail.type === VisInteractionType.INTERVAL) return Object.keys(detail.data ?? {}).length > 0;
+          return false;
+        });
+      });
+      if (!hasRealInteraction && !anyInteractedRef.current) return;
+
       // Group incoming interactions by the layer they target so multi-layer
       // wrappers can route a brush on (say) roads to the roads features only,
       // not surface. Interactions without a `layerRef` — Vega, plain Python
@@ -99,6 +118,8 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
           nodeId: data.nodeId,
           propagation: {},
       };
+
+      let anyInteractedThisEvent = false;
 
       for (let layerIdx = 0; layerIdx < layers.length; layerIdx++) {
       const parsedInput = layers[layerIdx];
@@ -308,6 +329,10 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
 
           interactedList = Array.from(auxSet) as number[];
       }
+
+      // O(1) lookup replaces O(n) Array.includes inside the marking loop below.
+      const interactedSet = new Set<number>(interactedList);
+
       parsedInput.data.interacted = {};
 
       let objectsCounter = 0;
@@ -328,8 +353,7 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
 
       if (!buildingsLayer) {
           for (let i = 0; i < objectsCounter; i++) {
-              // console.log(interactedList);
-              if (interactedList.includes(i)) {
+              if (interactedSet.has(i)) {
                   if (parsedInput.dataType == "dataframe") {
                       parsedInput.data.interacted[dfIndices[i]] = "1"; // 1 -> interacted with
 
@@ -376,20 +400,51 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
                   uniqueBuildingIndex += 1;
               }
 
-              if (interactedList.includes(uniqueBuildingIndex)) {
+              if (interactedSet.has(uniqueBuildingIndex)) {
                   feature.properties.interacted = "1"; // 1 -> interacted with
               } else {
                   feature.properties.interacted = "0"; // 0 -> not interacted with
               }
           }
       }
+
+      if (interactedList.length > 0) anyInteractedThisEvent = true;
       }  // for layerIdx
+
+      anyInteractedRef.current = anyInteractedThisEvent;
 
       // Re-emit the full wrapper so sibling layers in an `outputs` envelope
       // survive the round-trip — historically the pool only cloned the targeted
       // layer and dropped the rest, which made multi-layer chains lose their
       // unaugmented context layers (surface/parks/water for road brushes).
-      const clonedOutput = JSON.parse(JSON.stringify(output.content));
+      //
+      // Shallow-clone the structure so React detects a new reference without
+      // serialising the geometry coordinate arrays (which can be multi-MB for a
+      // large geodataframe). Geometry is never mutated — only
+      // feature.properties.interacted is touched above — so sharing it by
+      // reference across the old and new state objects is safe.
+      const rawContent = output.content as any;
+      const cloneLayer = (layer: any): any => {
+        if (!layer) return layer;
+        if (layer.dataType === 'geodataframe' && layer.data?.features) {
+          return {
+            ...layer,
+            data: {
+              ...layer.data,
+              features: layer.data.features.map((f: any) => ({
+                ...f,
+                properties: { ...f.properties },
+              })),
+            },
+          };
+        }
+        // dataframe: interacted values mutated in-place on data.interacted —
+        // a shallow copy of data picks them up without copying column arrays.
+        return { ...layer, data: { ...layer.data } };
+      };
+      const clonedOutput = isOutputsWrapper
+        ? { ...rawContent, data: rawContent.data.map(cloneLayer) }
+        : cloneLayer(rawContent);
       setOutput({ code: "success", content: clonedOutput });
       if (typeof data.outputCallback === 'function') {
         data.outputCallback(data.nodeId, clonedOutput);

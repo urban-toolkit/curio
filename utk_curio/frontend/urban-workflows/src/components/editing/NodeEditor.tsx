@@ -301,6 +301,7 @@ function NodeEditor({
                                         {outputId != undefined ? (
                                             <div
                                                 id={outputId}
+                                                className="nodrag"
                                                 style={{
                                                     textAlign: "center",
                                                     width: "100%",

@@ -84,7 +84,7 @@
         "type": "curio.builtin/computation-analysis",
         "x": 1991.353978193783,
         "y": 39.842547821528576,
-        "content": "# Step 5 â€” Zonal Statistics\n\nfrom rasterstats import zonal_stats\nimport numpy as np\n\ndataset = arg[0]\nutci_list = arg[1][0]\nutci_shape = arg[1][1]\ngdf = arg[2]\n\nutci = np.asarray(utci_list, dtype=float)\nshape = utci_shape\n\nif utci.ndim != 2:\n    raise ValueError(f\"Expected 2D UTCI array, got shape={utci.shape}, ndim={utci.ndim}\")\n\ntransform = dataset.transform * dataset.transform.scale(\n    (dataset.width / shape[0]),\n    (dataset.height / shape[1]),\n)\n\n# Avoid nodata warning and make nodata explicit\nnodata_value = -999.0\nutci_for_stats = np.where(np.isnan(utci), nodata_value, utci)\n\njoined = zonal_stats(\n    gdf,\n    utci_for_stats,\n    stats=[\"min\", \"max\", \"mean\", \"median\"],\n    affine=transform,\n    nodata=nodata_value,\n)\n\ngdf[\"mean\"] = [d[\"mean\"] for d in joined]\nresult = gdf.loc[:, [gdf.geometry.name, \"mean\", \"gt_65\"]]\n\n\nreturn result",
+        "content": "# Step 5 - Zonal Statistics\r\n\r\nfrom rasterstats import zonal_stats\r\nimport numpy as np\r\n\r\ndataset = arg[0]\r\nutci_list = arg[1][0]\r\nutci_shape = arg[1][1]\r\ngdf = arg[2]\r\n\r\nutci = np.asarray(utci_list, dtype=float)\r\nshape = utci_shape\r\n\r\nif utci.ndim != 2:\r\n    raise ValueError(f\"Expected 2D UTCI array, got shape={utci.shape}, ndim={utci.ndim}\")\r\n\r\ntransform = dataset.transform * dataset.transform.scale(\r\n    (dataset.width / shape[0]),\r\n    (dataset.height / shape[1]),\r\n)\r\n\r\n# Avoid nodata warning and make nodata explicit\r\nnodata_value = -999.0\r\nutci_for_stats = np.where(np.isnan(utci), nodata_value, utci)\r\n\r\njoined = zonal_stats(\r\n    gdf,\r\n    utci_for_stats,\r\n    stats=[\"min\", \"max\", \"mean\", \"median\"],\r\n    affine=transform,\r\n    nodata=nodata_value,\r\n)\r\n\r\ngdf[\"mean\"] = [d[\"mean\"] for d in joined]\r\nresult = gdf.loc[:, [gdf.geometry.name, \"mean\", \"gt_65\"]]\r\n\r\n\r\nreturn result",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -136,7 +136,7 @@
         "type": "curio.builtin/autk-grammar",
         "x": 4009.1411683828164,
         "y": -38.90265429297569,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"upstream\",\n        \"getFnv\": \"mean\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 0,\n        \"isPick\": true\n      }\n    ]\n  }\n}",
+        "content": "{\r\n  \"map\": {\r\n    \"layerRefs\": [\r\n      {\r\n        \"dataRef\": \"upstream\",\r\n        \"getFnv\": \"mean\",\r\n        \"getFnvType\": \"quantitative\",\r\n        \"defaultFnv\": 0,\r\n        \"isPick\": true,\r\n        \"isColorMap\": true\r\n      }\r\n    ]\r\n  }\r\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Render Milan census polygons coloured by mean UTCI value.",
@@ -252,7 +252,7 @@
     ],
     "name": "Heterogeneous data + linked views",
     "task": "",
-    "timestamp": 1781039427896,
+    "timestamp": 1781043243132,
     "provenance_id": "Heterogeneous data + linked views",
     "packages": []
   }

@@ -225,7 +225,6 @@ const useTableData = ({ data }: { data: INodeData }) => {
       }
 
       tabd = tabd.map ((item) => {
-        console.log(item);
         let parsedInput = Object.assign({}, item);
         if(parsedInput.dataType == "dataframe") {
           let columns = Object.keys(parsedInput.data);

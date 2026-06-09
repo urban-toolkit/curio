@@ -882,25 +882,30 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             }
         }
 
-        setNodes((nds: any) =>
-            nds.map((node: any) => {
-                if (!nodesAffected.includes(node.id)) return node;
+        // Skip setNodes entirely when nothing downstream needs updating — an
+        // empty map still returns a new array reference which causes every node
+        // component to re-render (Data Pool table, autk-grammar, etc.).
+        if (nodesAffected.length > 0) {
+            setNodes((nds: any) =>
+                nds.map((node: any) => {
+                    if (!nodesAffected.includes(node.id)) return node;
 
-                if (getFlowNodeCanonicalType(node) == NodeType.MERGE_FLOW) {
-                    const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
-                    const sourceIndex = sourceList.findIndex((s: any) => s === newOutput.nodeId);
-                    if (sourceIndex >= 0) {
-                        inputList[sourceIndex] = newOutput.output;
+                    if (getFlowNodeCanonicalType(node) == NodeType.MERGE_FLOW) {
+                        const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
+                        const sourceIndex = sourceList.findIndex((s: any) => s === newOutput.nodeId);
+                        if (sourceIndex >= 0) {
+                            inputList[sourceIndex] = newOutput.output;
+                        }
+                        return { ...node, data: { ...node.data, input: inputList, source: sourceList } };
                     }
-                    return { ...node, data: { ...node.data, input: inputList, source: sourceList } };
-                }
 
-                if (newOutput.output == undefined) {
-                    return { ...node, data: { ...node.data, input: "", source: "" } };
-                }
-                return { ...node, data: { ...node.data, input: newOutput.output, source: newOutput.nodeId } };
-            })
-        );
+                    if (newOutput.output == undefined) {
+                        return { ...node, data: { ...node.data, input: "", source: "" } };
+                    }
+                    return { ...node, data: { ...node.data, input: newOutput.output, source: newOutput.nodeId } };
+                })
+            );
+        }
 
         setOutputs((opts: any) => {
             let added = false;
