@@ -6,10 +6,10 @@
         "type": "curio.builtin/autk-grammar",
         "x": -300,
         "y": 400,
-        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/back_bay.osm.pbf\",\n      \"queryArea\": {\n        \"geocodeArea\": \"Boston\",\n        \"areas\": [\n          \"Back Bay\"\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"surface\",\n          \"parks\",\n          \"buildings\"\n        ],\n        \"dropOsmTable\": true\n      }\n    }\n  ]\n}",
+        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/back_bay.osm.pbf\",\n      \"queryArea\": {\n        \"geocodeArea\": \"Boston\",\n        \"areas\": [\n          \"Back Bay\"\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"surface\",\n          \"parks\",\n          \"water\",\n          \"roads\",\n          \"buildings\"\n        ],\n        \"dropOsmTable\": true\n      }\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Load Back Bay OSM layers (surface, parks, buildings) from a local PBF.",
+        "goal": "Load Back Bay OSM layers (surface, parks, water, roads, buildings) from a local PBF.",
         "metadata": {
           "keywords": []
         }
@@ -17,12 +17,25 @@
       {
         "id": "whatif-pool",
         "type": "curio.builtin/data-pool",
-        "x": 300,
+        "x": 250,
         "y": 400,
         "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Fan the loaded layers out to the baseline render and the modified compute branch.",
+        "goal": "Fan the loaded layers out to the baseline and modified shadow-compute branches so the PBF is parsed once.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "whatif-baseline-compute",
+        "type": "curio.builtin/autk-grammar",
+        "x": 700,
+        "y": 80,
+        "content": "{\n  \"compute\": [\n    {\n      \"dataRef\": \"table_osm_roads\",\n      \"attributes\": {\n        \"seg\": \"geometry.coordinates\"\n      },\n      \"attributeMatrices\": {\n        \"seg\": {\n          \"rows\": \"auto\",\n          \"cols\": 2\n        }\n      },\n      \"uniforms\": {\n        \"bld_height\": {\n          \"fromFeature\": {\n            \"layer\": \"table_osm_buildings\",\n            \"iterate\": \"batched\",\n            \"path\": \"properties.height\",\n            \"required\": true\n          }\n        },\n        \"doy\": 172\n      },\n      \"uniformMatrices\": {\n        \"ring\": {\n          \"fromFeature\": {\n            \"layer\": \"table_osm_buildings\",\n            \"iterate\": \"batched\",\n            \"path\": \"geometry.coordinates.0\"\n          },\n          \"cols\": 2\n        }\n      },\n      \"outputColumnName\": \"sunlight\",\n      \"wglsFunction\": [\n        \"let pi      = 3.14159265359;\",\n        \"let lat_rad = 0.7393;\",\n        \"let lon_ref = -75.0;\",\n        \"let lon_loc = -71.06;\",\n        \"\",\n        \"let dec_rad = -0.40928 * cos(2.0 * pi / 365.0 * (doy + 10.0));\",\n        \"\",\n        \"let ax = seg[0u]; let ay = seg[1u];\",\n        \"let bx = seg[2u]; let by = seg[3u];\",\n        \"\",\n        \"let n_buildings: u32 = u32(num_features);\",\n        \"\",\n        \"var sunlight: f32 = 0.0;\",\n        \"for (var hour = 7i; hour <= 19i; hour++) {\",\n        \"    let solar_time = f32(hour) + (lon_ref - lon_loc) / 15.0;\",\n        \"    let h_rad = (solar_time - 12.0) * pi / 12.0;\",\n        \"    let sin_alt = sin(lat_rad) * sin(dec_rad) + cos(lat_rad) * cos(dec_rad) * cos(h_rad);\",\n        \"    let alt_rad = asin(clamp(sin_alt, -1.0, 1.0));\",\n        \"    if alt_rad <= 0.0 { continue; }\",\n        \"\",\n        \"    let az_rad = atan2(sin(h_rad), sin(lat_rad) * cos(h_rad) - cos(lat_rad) * tan(dec_rad)) + pi;\",\n        \"    let sdx = -sin(az_rad);\",\n        \"    let sdy = -cos(az_rad);\",\n        \"    let perp_x = sdy;\",\n        \"    let perp_y = -sdx;\",\n        \"\",\n        \"    let au = ax * perp_x + ay * perp_y;\",\n        \"    let av = ax * sdx + ay * sdy;\",\n        \"    let bu = bx * perp_x + by * perp_y;\",\n        \"    let bv = bx * sdx + by * sdy;\",\n        \"\",\n        \"    var any_hit = false;\",\n        \"    for (var bi = 0u; bi < n_buildings; bi++) {\",\n        \"        let height = bld_height[bi];\",\n        \"        let shadow_len = height / tan(alt_rad);\",\n        \"        let base = bi * 8u;\",\n        \"\",\n        \"        var u_lo: f32 =  1e30; var u_hi: f32 = -1e30;\",\n        \"        var v_lo: f32 =  1e30; var v_hi: f32 = -1e30;\",\n        \"        for (var ci = 0u; ci < 4u; ci++) {\",\n        \"            let rx = ring[base + ci * 2u];\",\n        \"            let ry = ring[base + ci * 2u + 1u];\",\n        \"            let ru = rx * perp_x + ry * perp_y;\",\n        \"            let rv = rx * sdx + ry * sdy;\",\n        \"            u_lo = min(u_lo, ru); u_hi = max(u_hi, ru);\",\n        \"            v_lo = min(v_lo, rv); v_hi = max(v_hi, rv);\",\n        \"        }\",\n        \"        let v_hi_shadow = v_hi + shadow_len;\",\n        \"\",\n        \"        var hit = false;\",\n        \"        if au >= u_lo && au <= u_hi && av >= v_lo && av <= v_hi_shadow { hit = true; }\",\n        \"        else if bu >= u_lo && bu <= u_hi && bv >= v_lo && bv <= v_hi_shadow { hit = true; }\",\n        \"        else if !(max(au, bu) < u_lo || min(au, bu) > u_hi) &&\",\n        \"                !(max(av, bv) < v_lo || min(av, bv) > v_hi_shadow) {\",\n        \"            let du = bu - au;\",\n        \"            let dv = bv - av;\",\n        \"            if abs(du) > 0.001 {\",\n        \"                let t0 = (u_lo - au) / du;\",\n        \"                let t1 = (u_hi - au) / du;\",\n        \"                let t_enter = max(min(t0, t1), 0.0);\",\n        \"                let t_exit  = min(max(t0, t1), 1.0);\",\n        \"                if t_enter <= t_exit {\",\n        \"                    let v_enter = av + t_enter * dv;\",\n        \"                    let v_exit  = av + t_exit  * dv;\",\n        \"                    if max(v_enter, v_exit) >= v_lo && min(v_enter, v_exit) <= v_hi_shadow {\",\n        \"                        hit = true;\",\n        \"                    }\",\n        \"                }\",\n        \"            } else {\",\n        \"                if max(av, bv) >= v_lo && min(av, bv) <= v_hi_shadow { hit = true; }\",\n        \"            }\",\n        \"        }\",\n        \"        if hit { any_hit = true; break; }\",\n        \"    }\",\n        \"\",\n        \"    if !any_hit { sunlight += 60.0; }\",\n        \"}\",\n        \"\",\n        \"return sunlight;\"\n      ]\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Baseline shadow study — per road segment, accumulate minutes of June-solstice sunlight using each Back Bay building's REAL OSM height as the shadow caster.",
         "metadata": {
           "keywords": []
         }
@@ -30,25 +43,27 @@
       {
         "id": "whatif-baseline-map",
         "type": "curio.builtin/autk-grammar",
-        "x": 900,
-        "y": 100,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_surface\"\n      },\n      {\n        \"dataRef\": \"table_osm_parks\"\n      },\n      {\n        \"dataRef\": \"table_osm_buildings\",\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 10\n      }\n    ]\n  }\n}",
+        "x": 1300,
+        "y": 80,
+        "width": 759,
+        "height": 640,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_surface\"\n      },\n      {\n        \"dataRef\": \"table_osm_parks\"\n      },\n      {\n        \"dataRef\": \"table_osm_water\"\n      },\n      {\n        \"dataRef\": \"table_osm_buildings\"\n      },\n      {\n        \"dataRef\": \"table_osm_roads\",\n        \"isPick\": true,\n        \"isColorMap\": true,\n        \"getFnv\": \"sunlight\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 0\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Baseline — Back Bay buildings coloured by their original OSM height (no compute on this branch).",
+        "goal": "Baseline render — roads coloured by minutes of sunlight under real building heights.",
         "metadata": {
           "keywords": []
         }
       },
       {
-        "id": "whatif-compute",
+        "id": "whatif-modified-compute",
         "type": "curio.builtin/autk-grammar",
-        "x": 900,
-        "y": 700,
-        "content": "{\n  \"compute\": [\n    {\n      \"dataRef\": \"table_osm_buildings\",\n      \"attributes\": {\n        \"ring\": \"geometry.coordinates.0\",\n        \"h\": \"height\"\n      },\n      \"attributeMatrices\": {\n        \"ring\": {\n          \"rows\": \"auto\",\n          \"cols\": 2\n        }\n      },\n      \"outputColumnName\": \"height_mod\",\n      \"wglsFunction\": \"var area: f32 = 0.0;\\nlet nrows = ring_rows;\\nif (nrows >= 3u) {\\n  for (var i: u32 = 0u; i < nrows; i = i + 1u) {\\n    let j = (i + 1u) % nrows;\\n    let xi = ring[i * 2u]; let yi = ring[i * 2u + 1u];\\n    let xj = ring[j * 2u]; let yj = ring[j * 2u + 1u];\\n    area = area + (xi * yj - xj * yi);\\n  }\\n  area = abs(area) * 0.5;\\n}\\n// Back Bay buildings load in EPSG:3395, so `area` is in m^2. Tall = footprint > 200 m^2.\\nlet base = select(h, 10.0, h <= 0.0);\\nif (area > 200.0) { return base * 3.0; }\\nreturn base;\\n\"\n    }\n  ]\n}",
+        "x": 700,
+        "y": 720,
+        "content": "{\n  \"compute\": [\n    {\n      \"dataRef\": \"table_osm_roads\",\n      \"attributes\": {\n        \"seg\": \"geometry.coordinates\"\n      },\n      \"attributeMatrices\": {\n        \"seg\": {\n          \"rows\": \"auto\",\n          \"cols\": 2\n        }\n      },\n      \"uniforms\": {\n        \"bld_height\": {\n          \"fromFeature\": {\n            \"layer\": \"table_osm_buildings\",\n            \"iterate\": \"batched\",\n            \"path\": \"properties.height\",\n            \"required\": true\n          }\n        },\n        \"doy\": 172\n      },\n      \"uniformMatrices\": {\n        \"ring\": {\n          \"fromFeature\": {\n            \"layer\": \"table_osm_buildings\",\n            \"iterate\": \"batched\",\n            \"path\": \"geometry.coordinates.0\"\n          },\n          \"cols\": 2\n        }\n      },\n      \"outputColumnName\": \"sunlight\",\n      \"wglsFunction\": [\n        \"let pi      = 3.14159265359;\",\n        \"let lat_rad = 0.7393;\",\n        \"let lon_ref = -75.0;\",\n        \"let lon_loc = -71.06;\",\n        \"\",\n        \"let dec_rad = -0.40928 * cos(2.0 * pi / 365.0 * (doy + 10.0));\",\n        \"\",\n        \"let ax = seg[0u]; let ay = seg[1u];\",\n        \"let bx = seg[2u]; let by = seg[3u];\",\n        \"\",\n        \"let n_buildings: u32 = u32(num_features);\",\n        \"\",\n        \"var sunlight: f32 = 0.0;\",\n        \"for (var hour = 7i; hour <= 19i; hour++) {\",\n        \"    let solar_time = f32(hour) + (lon_ref - lon_loc) / 15.0;\",\n        \"    let h_rad = (solar_time - 12.0) * pi / 12.0;\",\n        \"    let sin_alt = sin(lat_rad) * sin(dec_rad) + cos(lat_rad) * cos(dec_rad) * cos(h_rad);\",\n        \"    let alt_rad = asin(clamp(sin_alt, -1.0, 1.0));\",\n        \"    if alt_rad <= 0.0 { continue; }\",\n        \"\",\n        \"    let az_rad = atan2(sin(h_rad), sin(lat_rad) * cos(h_rad) - cos(lat_rad) * tan(dec_rad)) + pi;\",\n        \"    let sdx = -sin(az_rad);\",\n        \"    let sdy = -cos(az_rad);\",\n        \"    let perp_x = sdy;\",\n        \"    let perp_y = -sdx;\",\n        \"\",\n        \"    let au = ax * perp_x + ay * perp_y;\",\n        \"    let av = ax * sdx + ay * sdy;\",\n        \"    let bu = bx * perp_x + by * perp_y;\",\n        \"    let bv = bx * sdx + by * sdy;\",\n        \"\",\n        \"    var any_hit = false;\",\n        \"    for (var bi = 0u; bi < n_buildings; bi++) {\",\n        \"        // What-if: every building is 2x taller, so its shadow doubles too.\",\n        \"        let height = 2.0 * bld_height[bi];\",\n        \"        let shadow_len = height / tan(alt_rad);\",\n        \"        let base = bi * 8u;\",\n        \"\",\n        \"        var u_lo: f32 =  1e30; var u_hi: f32 = -1e30;\",\n        \"        var v_lo: f32 =  1e30; var v_hi: f32 = -1e30;\",\n        \"        for (var ci = 0u; ci < 4u; ci++) {\",\n        \"            let rx = ring[base + ci * 2u];\",\n        \"            let ry = ring[base + ci * 2u + 1u];\",\n        \"            let ru = rx * perp_x + ry * perp_y;\",\n        \"            let rv = rx * sdx + ry * sdy;\",\n        \"            u_lo = min(u_lo, ru); u_hi = max(u_hi, ru);\",\n        \"            v_lo = min(v_lo, rv); v_hi = max(v_hi, rv);\",\n        \"        }\",\n        \"        let v_hi_shadow = v_hi + shadow_len;\",\n        \"\",\n        \"        var hit = false;\",\n        \"        if au >= u_lo && au <= u_hi && av >= v_lo && av <= v_hi_shadow { hit = true; }\",\n        \"        else if bu >= u_lo && bu <= u_hi && bv >= v_lo && bv <= v_hi_shadow { hit = true; }\",\n        \"        else if !(max(au, bu) < u_lo || min(au, bu) > u_hi) &&\",\n        \"                !(max(av, bv) < v_lo || min(av, bv) > v_hi_shadow) {\",\n        \"            let du = bu - au;\",\n        \"            let dv = bv - av;\",\n        \"            if abs(du) > 0.001 {\",\n        \"                let t0 = (u_lo - au) / du;\",\n        \"                let t1 = (u_hi - au) / du;\",\n        \"                let t_enter = max(min(t0, t1), 0.0);\",\n        \"                let t_exit  = min(max(t0, t1), 1.0);\",\n        \"                if t_enter <= t_exit {\",\n        \"                    let v_enter = av + t_enter * dv;\",\n        \"                    let v_exit  = av + t_exit  * dv;\",\n        \"                    if max(v_enter, v_exit) >= v_lo && min(v_enter, v_exit) <= v_hi_shadow {\",\n        \"                        hit = true;\",\n        \"                    }\",\n        \"                }\",\n        \"            } else {\",\n        \"                if max(av, bv) >= v_lo && min(av, bv) <= v_hi_shadow { hit = true; }\",\n        \"            }\",\n        \"        }\",\n        \"        if hit { any_hit = true; break; }\",\n        \"    }\",\n        \"\",\n        \"    if !any_hit { sunlight += 60.0; }\",\n        \"}\",\n        \"\",\n        \"return sunlight;\"\n      ]\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Apply the what-if multiplier on the GPU: footprint area > 200 m^2 → height * 3, written to height_mod.",
+        "goal": "What-if shadow study — same shader as the baseline but every building's height is doubled inside the shadow loop, so shadows extend 2x and roads collect less sunlight near tall structures.",
         "metadata": {
           "keywords": []
         }
@@ -56,12 +71,14 @@
       {
         "id": "whatif-modified-map",
         "type": "curio.builtin/autk-grammar",
-        "x": 1500,
-        "y": 700,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_surface\"\n      },\n      {\n        \"dataRef\": \"table_osm_parks\"\n      },\n      {\n        \"dataRef\": \"table_osm_buildings\",\n        \"getFnv\": \"compute.height_mod\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 10\n      }\n    ]\n  }\n}",
+        "x": 1300,
+        "y": 720,
+        "width": 759,
+        "height": 640,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_surface\"\n      },\n      {\n        \"dataRef\": \"table_osm_parks\"\n      },\n      {\n        \"dataRef\": \"table_osm_water\"\n      },\n      {\n        \"dataRef\": \"table_osm_buildings\"\n      },\n      {\n        \"dataRef\": \"table_osm_roads\",\n        \"isPick\": true,\n        \"isColorMap\": true,\n        \"getFnv\": \"sunlight\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 0\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Modified — buildings coloured by the GPU-computed height_mod.",
+        "goal": "Modified render — same map layout as the baseline; roads coloured by the doubled-height sunlight result, side-by-side for visual comparison.",
         "metadata": {
           "keywords": []
         }
@@ -74,18 +91,23 @@
         "target": "whatif-pool"
       },
       {
-        "id": "reactflow__edge-whatif-poolout-whatif-baseline-mapin",
+        "id": "reactflow__edge-whatif-poolout-whatif-baseline-computein",
         "source": "whatif-pool",
+        "target": "whatif-baseline-compute"
+      },
+      {
+        "id": "reactflow__edge-whatif-baseline-computeout-whatif-baseline-mapin",
+        "source": "whatif-baseline-compute",
         "target": "whatif-baseline-map"
       },
       {
-        "id": "reactflow__edge-whatif-poolout-whatif-computein",
+        "id": "reactflow__edge-whatif-poolout-whatif-modified-computein",
         "source": "whatif-pool",
-        "target": "whatif-compute"
+        "target": "whatif-modified-compute"
       },
       {
-        "id": "reactflow__edge-whatif-computeout-whatif-modified-mapin",
-        "source": "whatif-compute",
+        "id": "reactflow__edge-whatif-modified-computeout-whatif-modified-mapin",
+        "source": "whatif-modified-compute",
         "target": "whatif-modified-map"
       }
     ],
@@ -94,6 +116,6 @@
     "timestamp": 1748990000000,
     "provenance_id": "DefaultWorkflow",
     "packages": [],
-    "description": "Criterion-driven what-if for Boston's Back Bay split into a modular autk-grammar chain: a shared data node loads the PBF once and fans out through a data-pool to (a) a baseline map rendered directly from the loaded layers (no compute) and (b) a GPU compute node that flags buildings with footprint > 200 m^2 and writes height_mod, which a second map renders side-by-side with the baseline."
+    "description": "What-if shadow study for Boston's Back Bay built on Example 7's per-road sunlight shader. A shared data node loads the PBF once and a data-pool fans the layers out to two parallel branches: a baseline branch runs the shadow shader with each building's real OSM height, and a modified branch runs the same shader but doubles every building's height inside the shadow loop. Two side-by-side maps render roads coloured by accumulated June-solstice sunlight, so the visual diff is the loss of road sunlight when every building gets twice as tall."
   }
 }

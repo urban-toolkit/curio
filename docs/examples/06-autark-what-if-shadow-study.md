@@ -1,11 +1,10 @@
 # Example: What-if shadow study with Autark
 
-In this example we walk through a what-if dataflow that flags "tall" buildings in Boston's Back Bay
-(footprint area > 200 m²), raises their heights by a fixed multiplier, and renders the modified scenario
-side-by-side with the baseline. The pipeline is split into a modular `autk-grammar` chain so that the
-heavy work happens only on the branch that needs it: the **baseline** branch is render-only — no compute —
-and the **modified** branch is the one that runs the GPU shader. Building **height** is the what-if proxy
-that's directly visible on the rendered map.
+This example reuses the per-road sunlight shader from
+[Example 7](07-autark-gpu-shader.md) and runs it twice — once with each Back Bay building's real
+OSM height as the shadow caster, and once with every building's height **doubled** inside the
+shadow loop. Two side-by-side maps then render the roads coloured by accumulated June-solstice
+sunlight, so the visual diff is the loss of road sunlight when every building gets twice as tall.
 
 > [!NOTE]
 > **WebGPU required**
@@ -18,29 +17,26 @@ that's directly visible on the rendered map.
 flowchart LR
   D["data · autk-grammar<br/>load Back Bay PBF"]
   P["data-pool"]
-  BM["baseline · autk-grammar<br/>map by height"]
-  C["compute · autk-grammar<br/>WGSL area > 200 → height_mod"]
-  MM["modified · autk-grammar<br/>map by height_mod"]
+  BC["baseline · autk-grammar<br/>shadow WGSL (real heights)"]
+  BM["baseline · autk-grammar<br/>map · roads by sunlight"]
+  MC["modified · autk-grammar<br/>shadow WGSL (heights × 2)"]
+  MM["modified · autk-grammar<br/>map · roads by sunlight"]
   D --> P
-  P --> BM
-  P --> C
-  C --> MM
+  P --> BC --> BM
+  P --> MC --> MM
 ```
 
-A single `data` node loads the PBF once and fans out through a `data-pool` to two branches: the baseline
-map renders straight from the loaded layers (no compute), while the modified branch runs a GPU compute
-and feeds a second map. Place the two maps side by side to compare the scenarios.
+A single `data` node loads the PBF once and fans out through a `data-pool` to two parallel
+shader branches. The two branches are identical except for one WGSL line — the modified branch
+multiplies each building's height by `2.0` before computing its shadow.
 
 ## Data
 
 `docs/examples/data/back_bay.osm.pbf` — OSM extract for Boston's Back Bay (regenerate with
-`scripts/build_example_pbfs.py`).
-
-## Step 1: Load physical layers from a PBF (`data` node)
-
-The `data` node loads Back Bay's buildings, surface, and parks from the local PBF — DuckDB-WASM parses it
-in the browser, so there's no Overpass call at run time. autk-db materializes the layers in EPSG:3395
-(metric), which is what the footprint-area math in Step 3 assumes.
+`scripts/build_example_pbfs.py`). The data node requests the layers the shader needs:
+`surface`, `parks`, `water`, `roads`, and `buildings`. Anything missing from the PBF is skipped
+quietly; everything present materialises in EPSG:3395 (metric), which is what the shadow math
+expects.
 
 ```json
 "data": [{
@@ -48,64 +44,89 @@ in the browser, so there's no Overpass call at run time. autk-db materializes th
   "pbfFileUrl": "docs/examples/data/back_bay.osm.pbf",
   "queryArea": { "geocodeArea": "Boston", "areas": ["Back Bay"] },
   "outputTableName": "table_osm",
-  "autoLoadLayers": { "layers": ["surface", "parks", "buildings"], "dropOsmTable": true }
+  "autoLoadLayers": {
+    "layers": ["surface", "parks", "water", "roads", "buildings"],
+    "dropOsmTable": true
+  }
 }]
 ```
 
-## Step 2: Fan out through a `data-pool`
+## Compute (baseline and modified)
 
-The data-pool sits between the loader and the two consumers, so the PBF is loaded once and the resulting
-`table_osm_*` layers are available to both branches without re-parsing.
-
-## Step 3: Baseline render (`map` node — no compute)
-
-The baseline branch is just a `map` block. It renders the loaded layers and colours buildings by their
-original `height` column. There is no compute on this branch — that's the point of splitting the pipeline.
-
-```json
-"map": { "layerRefs": [
-  { "dataRef": "table_osm_surface" },
-  { "dataRef": "table_osm_parks" },
-  { "dataRef": "table_osm_buildings", "getFnv": "height", "getFnvType": "quantitative", "defaultFnv": 10 }
-]}
-```
-
-## Step 4: GPU footprint-area criterion + multiplier (`compute` node, modified branch only)
-
-The modified branch's `compute` block binds each building's **outer ring** as a per-feature matrix
-(`attributes.ring` = `geometry.coordinates.0`, `attributeMatrices.ring`) and the `height` attribute, then
-runs a WGSL shoelace sum to get the footprint **area** in m². Buildings over 200 m² get `height × 3`;
-everything else keeps its height. The result is written to the `height_mod` output column.
+Both compute nodes share the same spec — only the `wglsFunction` body differs by a single line.
+The shader iterates `batched` over every building (so the building ring and height are packed as
+uniform arrays the WGSL can loop over once per dispatch), and runs per road segment:
 
 ```json
 "compute": [{
-  "dataRef": "table_osm_buildings",
-  "attributes": { "ring": "geometry.coordinates.0", "h": "height" },
-  "attributeMatrices": { "ring": { "rows": "auto", "cols": 2 } },
-  "outputColumnName": "height_mod",
-  "wglsFunction": "... shoelace area over the ring; if area > 200 return h*3 else h ..."
+  "dataRef": "table_osm_roads",
+  "attributes":       { "seg": "geometry.coordinates" },
+  "attributeMatrices":{ "seg": { "rows": "auto", "cols": 2 } },
+  "uniforms": {
+    "bld_height": {
+      "fromFeature": {
+        "layer": "table_osm_buildings",
+        "iterate": "batched",
+        "path": "properties.height",
+        "required": true
+      }
+    },
+    "doy": 172
+  },
+  "uniformMatrices": {
+    "ring": {
+      "fromFeature": {
+        "layer": "table_osm_buildings",
+        "iterate": "batched",
+        "path": "geometry.coordinates.0"
+      },
+      "cols": 2
+    }
+  },
+  "outputColumnName": "sunlight",
+  "wglsFunction": [ "...solar-time + AABB shadow projection; see Example 7 for the full body..." ]
 }]
 ```
 
-The WGSL walks the ring vertices (`ring[i*2]`, `ring[i*2+1]`) accumulating the signed cross-products, halves
-the absolute sum for the area, and applies the multiplier. The full body lives in the example JSON.
+For each road segment, for every daylight hour on the June solstice (`doy = 172`), the shader
+projects every building's footprint AABB along the sun direction by `shadow_len = height / tan(alt)`
+and checks whether the road segment intersects that shadow rectangle. If no building shades the
+segment for that hour, the segment earns 60 minutes of sunlight. Boston coordinates: `lat_rad = 0.7393`
+(≈ 42.36 °N), `lon_loc = -71.06`.
 
-## Step 5: Modified render (`map` node, coloured by the computed column)
+### The single-line difference
 
-The second `map` node sits at the end of the compute branch and colours buildings by `compute.height_mod`.
-Surface and parks render underneath for context, same as the baseline.
+Inside the per-building shadow loop:
+
+| Branch    | WGSL line for the casting height       |
+| --------- | -------------------------------------- |
+| Baseline  | `let height = bld_height[bi];`         |
+| Modified  | `let height = 2.0 * bld_height[bi];`   |
+
+Doubling `height` doubles `shadow_len` for that hour, so the modified branch's shadows project
+roughly twice as far down-sun.
+
+## Render
+
+Both maps render the full layer stack with roads as the colour-map / pick layer, coloured by the
+shader's `sunlight` output column. They use identical layout so the user can compare the two
+scenarios side by side:
 
 ```json
 "map": { "layerRefs": [
   { "dataRef": "table_osm_surface" },
   { "dataRef": "table_osm_parks" },
-  { "dataRef": "table_osm_buildings", "getFnv": "compute.height_mod", "getFnvType": "quantitative", "defaultFnv": 10 }
+  { "dataRef": "table_osm_water" },
+  { "dataRef": "table_osm_buildings" },
+  { "dataRef": "table_osm_roads",
+    "isPick": true, "isColorMap": true,
+    "getFnv": "sunlight", "getFnvType": "quantitative", "defaultFnv": 0 }
 ]}
 ```
 
 ## Final result
 
-Two maps of Back Bay: the baseline coloured by original height and the modified scenario with footprints
-larger than 200 m² raised 3×. Because only the modified branch runs the shader, swapping the WGSL (e.g.
-for the full shadow shader from [Example 7](07-autark-gpu-shader.md)) only touches that one node — the
-shared `data` load and the baseline render stay untouched.
+Two maps of Back Bay's road network, coloured by minutes of June-solstice sunlight. The baseline
+shows today's shadow conditions; the modified map shows the same network under a "what-if every
+building were twice as tall" world. Streets near tall structures lose the most sunlight in the
+modified scenario — that delta is the point of the comparison.
