@@ -58,6 +58,19 @@ def _worker_init():
     import warnings
     warnings.filterwarnings('ignore')
 
+    # pyproj bundles a proj.db that can lag behind the system PROJ runtime
+    # (e.g. conda proj 9.7+ uses layout 1.6 while pyproj 3.7.2's bundled
+    # copy is layout 1.4).  set_data_dir() is pyproj's public API for this;
+    # it is priority-1 in get_data_dir() and overrides the stale bundled
+    # path.  The guard ensures this only fires when the conda-style directory
+    # actually exists, so non-conda installs are unaffected.
+    import pathlib as _pathlib
+    import sys as _sys
+    import pyproj.datadir as _pyproj_datadir
+    _system_proj = _pathlib.Path(_sys.prefix) / "Library" / "share" / "proj"
+    if (_system_proj / "proj.db").exists():
+        _pyproj_datadir.set_data_dir(str(_system_proj))
+
     import rasterio
     import geopandas as gpd
     import pandas as pd

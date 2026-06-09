@@ -171,5 +171,89 @@ class TestSandbox(unittest.TestCase):
         self.assertEqual(len(layer['geojson']['features']), 1)
 
 
+class TestProjDataDir(unittest.TestCase):
+    """Regression test for pyproj 'no database context' on CRS-bearing GeoJSON.
+
+    pyproj bundles a proj.db that can lag behind the system PROJ runtime
+    (conda proj 9.7+ uses layout 1.6, pyproj 3.7.2's bundled copy is 1.4).
+    _worker_init() calls pyproj.datadir.set_data_dir() to redirect pyproj at
+    the system database before any CRS operation.  This test ensures that
+    gpd.read_file() on a GeoJSON with an embedded EPSG:32632 CRS succeeds.
+    """
+
+    _CENSUS_GJ = os.path.join(
+        _REPO_ROOT, "docs", "examples", "data", "09-milan_census.geojson"
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        from utk_curio.sandbox.app.worker import _worker_init
+        _worker_init()
+
+    @unittest.skipUnless(
+        os.path.exists(os.path.join(
+            _REPO_ROOT, "docs", "examples", "data", "09-milan_census.geojson"
+        )),
+        "09-milan_census.geojson not present — skipping",
+    )
+    def test_census_load_resolves_epsg_32632(self):
+        """execute_code() must load the census GeoJSON without a CRS error."""
+        from utk_curio.sandbox.app.worker import execute_code
+
+        code = (
+            "    import geopandas as gpd\n"
+            f"    gdf = gpd.read_file(r'{self._CENSUS_GJ}')\n"
+            "    return gdf\n"
+        )
+        result = execute_code(
+            code,
+            file_path='',
+            node_type='DATA_LOADING',
+            data_type='',
+            launch_dir=_REPO_ROOT,
+            session_id=None,
+        )
+
+        self.assertEqual(result['stderr'], '', msg=result['stderr'])
+        self.assertNotEqual(result['output']['path'], '')
+        self.assertEqual(result['output']['dataType'], 'geodataframe')
+
+    @unittest.skipUnless(
+        os.path.exists(os.path.join(
+            _REPO_ROOT, "docs", "examples", "data", "09-milan_census.geojson"
+        )),
+        "09-milan_census.geojson not present — skipping",
+    )
+    def test_reproject_epsg_3395(self):
+        """set_crs(32632).to_crs(3395) must not raise after _worker_init()."""
+        from utk_curio.sandbox.app.worker import execute_code
+
+        # First produce the census GeoDataFrame as an artifact.
+        load_code = (
+            "    import geopandas as gpd\n"
+            f"    gdf = gpd.read_file(r'{self._CENSUS_GJ}')\n"
+            "    return gdf\n"
+        )
+        load_result = execute_code(
+            load_code, '', 'DATA_LOADING', '', launch_dir=_REPO_ROOT, session_id=None,
+        )
+        self.assertEqual(load_result['stderr'], '', msg=load_result['stderr'])
+
+        reproject_code = (
+            "    gdf = arg\n"
+            "    return gdf.set_crs(32632).to_crs(3395)\n"
+        )
+        reproject_result = execute_code(
+            reproject_code,
+            file_path=load_result['output']['path'],
+            node_type='DATA_TRANSFORMATION',
+            data_type='geodataframe',
+            launch_dir=_REPO_ROOT,
+            session_id=None,
+        )
+        self.assertEqual(reproject_result['stderr'], '', msg=reproject_result['stderr'])
+        self.assertNotEqual(reproject_result['output']['path'], '')
+
+
 if __name__ == "__main__":
     unittest.main()

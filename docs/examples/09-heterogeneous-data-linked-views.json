@@ -45,7 +45,7 @@
         "type": "curio.builtin/computation-analysis",
         "x": 999.7112510818503,
         "y": 276.4050298362549,
-        "content": "# Step 4 â€” Compute UTCI\n\nimport numpy as np\nfrom pythermalcomfort import models\nfrom rasterio.warp import Resampling\n\nsrc = arg[0]\nsensor = arg[1]\n\ntimestamp = 12\n\n# Bundled raster is already at the working resolution; no further downsample needed.\nupscale_factor = 1.0\ndataset = src\ndata = dataset.read(\n    out_shape=(\n        dataset.count,\n        int(dataset.height * upscale_factor),\n        int(dataset.width * upscale_factor),\n    ),\n    resampling=Resampling.nearest,\n    masked=True,\n)\ndata = data.astype(float).filled(np.nan)\n\nsensor_filtered = sensor[sensor[\"it\"] == timestamp]\ntdb = float(sensor_filtered[\"Td\"].values[0])\nv = float(sensor_filtered[\"Wind\"].values[0])\nrh = float(sensor_filtered[\"RH\"].values[0])\n\n# `limit_inputs=False` keeps UTCI valid for tr - tdb > 30 (common at noon in Milan).\nutci_result = models.utci(tdb=tdb, tr=data[0], v=v, rh=rh, units=\"SI\", limit_inputs=False)\nutci_grid = np.asarray(getattr(utci_result, \"utci\", utci_result), dtype=float)\n\nif utci_grid.ndim == 3 and utci_grid.shape[0] == 1:\n    utci_grid = utci_grid[0]\nif utci_grid.ndim != 2:\n    raise ValueError(f\"UTCI must be 2D, got shape={utci_grid.shape}, ndim={utci_grid.ndim}\")\n\nutci_list = utci_grid.tolist()\nutci_shape = [utci_grid.shape[1], utci_grid.shape[0]]\n\nreturn (utci_list, utci_shape)\n",
+        "content": "# Step 4 - Compute UTCI\r\n\r\nimport numpy as np\r\nfrom pythermalcomfort import models\r\nfrom rasterio.warp import Resampling\r\n\r\nsrc = arg[0]\r\nsensor = arg[1]\r\n\r\ntimestamp = 12\r\n\r\n# Bundled raster is already at the working resolution; no further downsample needed.\r\nupscale_factor = 1.0\r\ndataset = src\r\ndata = dataset.read(\r\n    out_shape=(\r\n        dataset.count,\r\n        int(dataset.height * upscale_factor),\r\n        int(dataset.width * upscale_factor),\r\n    ),\r\n    resampling=Resampling.nearest,\r\n    masked=True,\r\n)\r\ndata = data.astype(float).filled(np.nan)\r\n\r\nsensor_filtered = sensor[sensor[\"it\"] == timestamp]\r\ntdb = float(sensor_filtered[\"Td\"].values[0])\r\nv = float(sensor_filtered[\"Wind\"].values[0])\r\nrh = float(sensor_filtered[\"RH\"].values[0])\r\n\r\n# `limit_inputs=False` keeps UTCI valid for tr - tdb > 30 (common at noon in Milan).\r\nutci_result = models.utci(tdb=tdb, tr=data[0], v=v, rh=rh, units=\"SI\", limit_inputs=False)\r\nutci_grid = np.asarray(getattr(utci_result, \"utci\", utci_result), dtype=float)\r\n\r\nif utci_grid.ndim == 3 and utci_grid.shape[0] == 1:\r\n    utci_grid = utci_grid[0]\r\nif utci_grid.ndim != 2:\r\n    raise ValueError(f\"UTCI must be 2D, got shape={utci_grid.shape}, ndim={utci_grid.ndim}\")\r\n\r\nutci_list = utci_grid.tolist()\r\nutci_shape = [utci_grid.shape[1], utci_grid.shape[0]]\r\n\r\nreturn (utci_list, utci_shape)\r\n",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "",
@@ -252,7 +252,7 @@
     ],
     "name": "Heterogeneous data + linked views",
     "task": "",
-    "timestamp": 1778306678524,
+    "timestamp": 1781039427896,
     "provenance_id": "Heterogeneous data + linked views",
     "packages": []
   }
