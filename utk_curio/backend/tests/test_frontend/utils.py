@@ -541,15 +541,17 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
     sandbox_port = int(os.environ.get('FLASK_SANDBOX_PORT', '2000'))
     sandbox_url = f'http://{sandbox_host}:{sandbox_port}'
 
-    from .workflow_spec import JS_CODE_TYPES
+    from .workflow_spec import JS_CODE_TYPES, PY_CODE_TYPES
 
     outputs: dict[str, dict] = {}   # node_id → {"path": artifact_id, "dataType": ...}
     expected: dict[str, dict] = {}  # node_id → eager-loaded artifact dict (see fix below)
 
     for node in spec.topo_sorted_nodes():
-        # Non-code nodes — and JS-code nodes whose source the Python sandbox
-        # cannot parse — propagate upstream output without execution.
-        if node.category != "code" or node.type in JS_CODE_TYPES:
+        # Non-code nodes — and code nodes whose content is JavaScript
+        # (JS_COMPUTATION, legacy autk-style JS_CODE_TYPES) — propagate
+        # upstream output without execution: the Python-exec path below
+        # would parse-error on JS source.
+        if node.category != "code" or node.type not in PY_CODE_TYPES:
             upstreams = spec.upstream_nodes(node.id)
             if len(upstreams) == 1 and upstreams[0] in outputs:
                 outputs[node.id] = outputs[upstreams[0]]
@@ -588,7 +590,11 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
             json={
                 "code": indented_code,
                 "file_path": file_path,
-                "nodeType": node.type,
+                # Send the on-the-wire namespaced id (`curio.builtin/...`)
+                # so the sandbox's checkIOType matches what the browser
+                # frontend posts; otherwise the programmatic runner would
+                # enable IO validation that the browser path silently skips.
+                "nodeType": node.raw_type,
                 "dataType": data_type,
             },
             timeout=120,

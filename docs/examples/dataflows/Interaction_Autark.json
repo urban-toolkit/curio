@@ -4,8 +4,8 @@
       {
         "id": "ia-data",
         "type": "curio.builtin/autk-grammar",
-        "x": 100,
-        "y": 400,
+        "x": -310.7004185099229,
+        "y": 398.96132351532975,
         "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/chicago_loop.osm.pbf\",\n      \"queryArea\": {\n        \"geocodeArea\": \"Chicago\",\n        \"areas\": [\n          \"Loop\"\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"buildings\"\n        ],\n        \"dropOsmTable\": true\n      }\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
@@ -17,12 +17,27 @@
       {
         "id": "ia-compute",
         "type": "curio.builtin/autk-grammar",
-        "x": 650,
-        "y": 400,
+        "x": 316.08796292088846,
+        "y": 402.2989004634889,
         "content": "{\n  \"compute\": [\n    {\n      \"dataRef\": \"table_osm_buildings\",\n      \"attributes\": {\n        \"h\": \"height\"\n      },\n      \"outputColumnName\": \"height_m\",\n      \"wglsFunction\": \"if (h <= 0.0) { return 10.0; } return h;\"\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Normalise building heights via GPU — clamp zeros to 10 m.",
+        "goal": "Normalise building heights via GPU — clamp zeros to 10 m. Output lands at feature.properties.compute.height_m (also lifted to feature.properties.height_m).",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "ia-pool",
+        "type": "curio.builtin/data-pool",
+        "x": 951.3514726379926,
+        "y": 395.40219907302225,
+        "width": 517,
+        "height": 381,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Fan augmented buildings out to map and plot; route brush selections back from plot to map.",
         "metadata": {
           "keywords": []
         }
@@ -30,9 +45,9 @@
       {
         "id": "ia-map",
         "type": "curio.builtin/autk-grammar",
-        "x": 1250,
-        "y": 150,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_buildings\",\n        \"isPick\": true,\n        \"getFnv\": \"height_m\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 10\n      }\n    ]\n  }\n}",
+        "x": 1691.569060210493,
+        "y": -14.597613805295744,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_buildings\",\n        \"isPick\": true,\n        \"isColorMap\": true,\n        \"getFnv\": \"height_m\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 10\n      }\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Render buildings in 3D coloured by normalised height.",
@@ -43,12 +58,14 @@
       {
         "id": "ia-plot",
         "type": "curio.builtin/autk-grammar",
-        "x": 1250,
-        "y": 650,
+        "x": 1714.0929442049016,
+        "y": 719.304258444335,
+        "width": 794,
+        "height": 594,
         "content": "{\n  \"plot\": {\n    \"dataRef\": \"table_osm_buildings\",\n    \"mark\": \"bar\",\n    \"axis\": [\n      \"height_m\",\n      \"@transform\"\n    ],\n    \"title\": \"Chicago Loop building heights\",\n    \"transform\": {\n      \"preset\": \"binning-1d\",\n      \"options\": {\n        \"bins\": 15\n      }\n    },\n    \"events\": [\n      \"brushX\"\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Show a brushable height histogram; brushing highlights buildings on the 3D map.",
+        "goal": "Show a brushable histogram of normalised heights; brushing routes through the pool to highlight buildings on the 3D map.",
         "metadata": {
           "keywords": []
         }
@@ -56,30 +73,41 @@
     ],
     "edges": [
       {
-        "id": "e-ia-data-ia-compute",
+        "id": "reactflow__edge-ia-dataout-ia-computein",
         "source": "ia-data",
         "target": "ia-compute"
       },
       {
-        "id": "e-ia-compute-ia-map",
+        "id": "reactflow__edge-ia-computeout-ia-poolin",
         "source": "ia-compute",
+        "target": "ia-pool"
+      },
+      {
+        "id": "reactflow__edge-ia-poolout-ia-mapin",
+        "source": "ia-pool",
         "target": "ia-map"
       },
       {
-        "id": "e-ia-compute-ia-plot",
-        "source": "ia-compute",
+        "id": "reactflow__edge-ia-poolout-ia-plotin",
+        "source": "ia-pool",
         "target": "ia-plot"
       },
       {
-        "id": "e-interact-ia-plot-ia-map",
         "type": "Interaction",
-        "source": "ia-plot",
+        "id": "reactflow__edge-ia-poolin/out-ia-mapin/out",
+        "source": "ia-pool",
         "target": "ia-map"
+      },
+      {
+        "type": "Interaction",
+        "id": "reactflow__edge-ia-poolin/out-ia-plotin/out",
+        "source": "ia-pool",
+        "target": "ia-plot"
       }
     ],
     "name": "Interaction_Autark",
     "task": "",
-    "timestamp": 1778039391471,
+    "timestamp": 1780969751416,
     "provenance_id": "Interaction_Autark",
     "packages": []
   }

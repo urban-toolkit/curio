@@ -140,17 +140,42 @@ const useTableData = ({ data }: { data: INodeData }) => {
         }
       }
 
-      // Fetch each wrapper by filename or path
+      // Known application-level shapes the rest of this hook handles directly.
+      // Anything else (e.g. the sandbox's generic 'dict'/'list' envelope wrap on
+      // a persisted artifact) is peeled until we reach one of these.
+      const KNOWN_TYPES = new Set(["geodataframe", "dataframe", "outputs"]);
+      const unwrapToKnown = (v: any): any => {
+        while (
+          v && typeof v === "object" &&
+          typeof v.dataType === "string" &&
+          !KNOWN_TYPES.has(v.dataType) &&
+          "data" in v
+        ) {
+          v = v.data;
+        }
+        return v;
+      };
+
+      // Fetch each wrapper by filename or path. After fetch, unwrap generic
+      // envelopes the sandbox adds around persisted artifacts so the downstream
+      // dataframe/geodataframe processing reads a recognized shape. Wrappers
+      // that already carry their content inline (no filename/path) — e.g. the
+      // safety-net path in autk-grammar when the JS interpreter is unavailable
+      // — are passed through untouched.
       const fetched = await Promise.all(
         wrappers.map(async (w) => {
-          const fileId = w.filename ?? w.path;
-          if (!fileId) return null;
-          try {
-            return await fetchData(fileId);
-          } catch (err) {
-            console.error("Fetch failed for", fileId, err);
-            return null;
+          const fileId = w?.filename ?? w?.path;
+          if (fileId) {
+            try {
+              const raw = await fetchData(fileId);
+              return unwrapToKnown(raw);
+            } catch (err) {
+              console.error("Fetch failed for", fileId, err);
+              return null;
+            }
           }
+          if (w && KNOWN_TYPES.has(w.dataType)) return w;
+          return null;
         })
       );
 

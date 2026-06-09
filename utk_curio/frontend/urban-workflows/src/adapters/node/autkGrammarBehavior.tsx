@@ -233,10 +233,36 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     const out = backendRef ?? backendLayers;
                     if (data.outputCallback) data.outputCallback(data.nodeId, out);
                 } else {
-                    // No authored data: preserve the upstream-passthrough behavior —
-                    // normalize the injected geojson via AutkDb in-browser and emit.
-                    const layers = await loadSpecLayers({ ...spec, data: upstreamSources });
-                    if (data.outputCallback) data.outputCallback(data.nodeId, layers);
+                    // Compute-only node: skip the extra AutkDb round-trip — upstream layers
+                    // (from backend, or the in-browser fallback) are already normalized and
+                    // exploded. Re-loading them through DuckDB + the buildings clusterer can
+                    // strip custom per-feature properties. Apply WGSL blocks directly so the
+                    // outputs (feature.properties.compute.<col>) reach downstream untouched.
+                    const upstream = await resolveUpstreamLayers(data.input);
+                    let layers = upstream.map((u) => ({
+                        name: u.name,
+                        type: u.layerType ?? 'polygons',
+                        geojson: u.fc,
+                    }));
+                    if (Array.isArray(spec.compute) && spec.compute.length > 0) {
+                        layers = await applyComputeBlocks(layers, spec.compute);
+                    }
+                    // Build the pool-compatible wrapper and persist it to the
+                    // backend sandbox so downstream nodes see a `{path, dataType}`
+                    // ref — same shape `ia-data` emits, so the Data Pool's normal
+                    // fetch path handles it without a special case. Fall back to
+                    // inline emit only when no JS interpreter is available or the
+                    // persist call fails.
+                    const wrapper = layersToPoolWrapper(layers);
+                    let out: any = wrapper;
+                    if (wrapper && data.jsInterpreter) {
+                        try {
+                            out = await persistLayersToBackend(data.jsInterpreter, wrapper, data.nodeId);
+                        } catch (e) {
+                            console.warn('[autk-grammar] backend persist failed; emitting inline wrapper', e);
+                        }
+                    }
+                    if (data.outputCallback) data.outputCallback(data.nodeId, out ?? layers);
                 }
             }
 
@@ -539,12 +565,29 @@ export function attachMapInteractionZoomFix(canvas: HTMLCanvasElement): () => vo
 // in the sandbox's scope). The function returns Array<{name, type, geojson}>,
 // which the sandbox persists to DuckDB.
 function compileDataSpecToAutkDbJs(dataSources: any[]): string {
-    return `import { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } from '@urban-toolkit/autk-db';
+    return `import * as __autkDbMod from '@urban-toolkit/autk-db';
+// v2.0 frontend builds export AutkDb; the older root-level install of the same
+// version still exports AutkSpatialDb. Accept either so the backend sandbox
+// (which may be on the older shape) does not throw "AutkDb is not a constructor".
+const AutkDb = __autkDbMod.AutkDb || __autkDbMod.AutkSpatialDb;
+// Old AutkSpatialDb does NOT export DEFAULT_WORKSPACE_COORDINATE_FORMAT — fall
+// back to the hardcoded workspace CRS so the coordinateFormat injection below
+// still gets a real value when the destructure resolves to undefined.
+const DEFAULT_WORKSPACE_COORDINATE_FORMAT = __autkDbMod.DEFAULT_WORKSPACE_COORDINATE_FORMAT || 'EPSG:3395';
+if (typeof AutkDb !== 'function') throw new Error('@urban-toolkit/autk-db: neither AutkDb nor AutkSpatialDb is exported');
 const __sources = ${JSON.stringify(dataSources)};
 const db = new AutkDb();
 await db.init();
 for (const source of __sources) {
   const { type, ...rest } = source ?? {};
+  // Old AutkSpatialDb (root-level v2.0.1 install) dereferences
+  // \`autoLoadLayers.coordinateFormat\` unconditionally — the spec must carry it
+  // or loadOsm fails silently inside our try/catch and getLayerTables()
+  // returns an empty list. Inject the workspace default when the spec omits it
+  // so both export-name shapes work.
+  if (type === 'osm' && rest.autoLoadLayers && !rest.autoLoadLayers.coordinateFormat) {
+    rest.autoLoadLayers = { ...rest.autoLoadLayers, coordinateFormat: DEFAULT_WORKSPACE_COORDINATE_FORMAT };
+  }
   try {
     if (type === 'osm') await db.loadOsm(rest);
     else if (type === 'geojson') await db.loadGeojson(rest);
@@ -735,11 +778,24 @@ function explodeBuildingParts(features: any[]): any[] {
 // (The grammar engine itself never exposes the loaded DB — createEngine returns
 // no `context` — so we drive the same AutkDb the grammar uses internally.)
 async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: string; geojson: FeatureCollection }>> {
-    const { AutkDb, DEFAULT_WORKSPACE_COORDINATE_FORMAT } = await import('@urban-toolkit/autk-db');
-    const db: any = new AutkDb();
+    const mod: any = await import('@urban-toolkit/autk-db');
+    // Accept both the v2.0 frontend export (AutkDb) and the older root-level
+    // install (AutkSpatialDb). Same dual-name handling as the backend sandbox JS.
+    const AutkDbCtor = mod.AutkDb || mod.AutkSpatialDb;
+    if (typeof AutkDbCtor !== 'function') {
+        throw new Error('@urban-toolkit/autk-db: neither AutkDb nor AutkSpatialDb is exported');
+    }
+    // Old AutkSpatialDb does not export this; fall back to the workspace default.
+    const DEFAULT_WORKSPACE_COORDINATE_FORMAT = mod.DEFAULT_WORKSPACE_COORDINATE_FORMAT || 'EPSG:3395';
+    const db: any = new AutkDbCtor();
     await db.init();
     for (const source of (spec?.data ?? [])) {
         const { type, ...rest } = source ?? {};
+        // Old AutkSpatialDb.loadOsm dereferences autoLoadLayers.coordinateFormat
+        // unconditionally — inject the default when the spec omits it.
+        if (type === 'osm' && rest.autoLoadLayers && !rest.autoLoadLayers.coordinateFormat) {
+            rest.autoLoadLayers = { ...rest.autoLoadLayers, coordinateFormat: DEFAULT_WORKSPACE_COORDINATE_FORMAT };
+        }
         try {
             if (type === 'osm') await db.loadOsm(rest);
             else if (type === 'geojson') await db.loadGeojson(rest);
@@ -777,6 +833,149 @@ async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: st
     );
 }
 
+// Persist a pool-compatible wrapper (output of `layersToPoolWrapper`) to the
+// backend sandbox so a downstream Data Pool can ingest it via its normal
+// `{path, dataType}` fetch path — the same convention `ia-data` uses. The
+// augmented FC was computed in the browser (WGSL needs a GPU); this just
+// ships the result to the backend for persistence, so every downstream node
+// sees a DuckDB artifact reference instead of an inline payload.
+function persistLayersToBackend(
+    jsInterpreter: JavaScriptInterpreter,
+    wrapper: any,
+    nodeId: string,
+): Promise<{ path: string; dataType: string }> {
+    // The sandbox JS just inlines the wrapper as a literal and returns it; the
+    // sandbox wraps return values into a `{path, dataType}` artifact ref.
+    const code = `const __wrapper = ${JSON.stringify(wrapper)};\nreturn __wrapper;`;
+    return new Promise((resolve, reject) => {
+        jsInterpreter.interpretCode(
+            code, code, '', [],
+            (json: any) => {
+                if (!json || !json.output || !json.output.path) {
+                    reject(new Error(json?.stderr || 'Backend persist returned no path.'));
+                    return;
+                }
+                resolve(json.output);
+            },
+            NodeType.AUTK_GRAMMAR,
+            nodeId, '', () => {},
+        );
+    });
+}
+
+// Convert an autk-db-style layer array into a Curio Data Pool-compatible wrapper.
+// The pool's `processDataAsync` recognizes `dataType: 'geodataframe'` (single layer)
+// and `dataType: 'outputs'` (multi-layer envelope) — but not bare layer arrays. So
+// when a compute-only or data-only autk-grammar node feeds a Data Pool, we wrap
+// the output in a shape the pool can ingest, carrying `layerName`/`layerType`
+// metadata at the wrapper level so downstream `resolveUpstreamLayers` can restore
+// the original layer identity (e.g. `dataRef: "table_osm_buildings"`).
+function layersToPoolWrapper(
+    layers: Array<{ name: string; type: string; geojson: FeatureCollection }>,
+): any {
+    if (!Array.isArray(layers) || layers.length === 0) return null;
+    if (layers.length === 1) {
+        return {
+            dataType: 'geodataframe',
+            data: layers[0].geojson,
+            layerName: layers[0].name,
+            layerType: layers[0].type,
+        };
+    }
+    return {
+        dataType: 'outputs',
+        data: layers.map((l) => ({
+            dataType: 'geodataframe',
+            data: l.geojson,
+            layerName: l.name,
+            layerType: l.type,
+        })),
+    };
+}
+
+// Normalize an attribute path used by `compute.attributes` into a dot-path
+// `ComputeGpgpu` can resolve via `valueAtPath(feature, path)`. The grammar
+// engine accepts bare property names like `"height"` and auto-prefixes them;
+// `ComputeGpgpu` does not — it reads paths directly off the raw Feature,
+// where `height` would be undefined but `properties.height` resolves. So
+// prepend `properties.` for everything except paths the engine already
+// understands as feature-root (`geometry.*` and explicit `properties.*`).
+function normalizeAttrPath(p: string): string {
+    if (typeof p !== 'string') return p;
+    if (p === 'geometry' || p === 'properties') return p;
+    if (p.startsWith('geometry.') || p.startsWith('properties.')) return p;
+    return `properties.${p}`;
+}
+
+// Apply a grammar `compute` section to an array of named GeoJSON layers,
+// returning a new array where each block's target layer has been replaced by a
+// FeatureCollection enriched with the WGSL output under `feature.properties.compute.<col>`.
+// This is what makes a compute-only autk-grammar node useful: the grammar engine
+// only runs compute when it's part of a render pipeline (map/plot), so without
+// this helper, a node whose spec contains *only* a `compute` block would pass
+// upstream through unchanged. We instead invoke `ComputeGpgpu` ourselves, which
+// is the same GPGPU runner the grammar engine drives internally.
+//
+// A block whose `dataRef` doesn't match any upstream layer is skipped quietly:
+// chained compute nodes can target different layers, and a no-op block is far
+// less surprising than aborting the whole pipeline.
+async function applyComputeBlocks(
+    layers: Array<{ name: string; type: string; geojson: FeatureCollection }>,
+    computeBlocks: any[],
+): Promise<Array<{ name: string; type: string; geojson: FeatureCollection }>> {
+    if (!Array.isArray(computeBlocks) || computeBlocks.length === 0) return layers;
+    const { ComputeGpgpu } = await import('@urban-toolkit/autk-compute');
+    let result = layers;
+    for (const block of computeBlocks) {
+        if (!block || !block.dataRef || !block.wglsFunction) continue;
+        const idx = result.findIndex((l) => l.name === block.dataRef);
+        if (idx < 0) continue;
+        const variableMapping: Record<string, string> = {};
+        for (const [k, v] of Object.entries(block.attributes ?? {})) {
+            variableMapping[k] = normalizeAttrPath(String(v));
+        }
+        const params: any = {
+            collection: result[idx].geojson,
+            variableMapping,
+            wgslBody: block.wglsFunction,
+        };
+        if (block.attributeArrays) params.attributeArrays = block.attributeArrays;
+        if (block.attributeMatrices) params.attributeMatrices = block.attributeMatrices;
+        if (block.uniforms) params.uniforms = block.uniforms;
+        if (block.uniformArrays) params.uniformArrays = block.uniformArrays;
+        if (block.uniformMatrices) params.uniformMatrices = block.uniformMatrices;
+        if (block.outputColumnName) params.resultField = block.outputColumnName;
+        if (block.outputColumns) params.outputColumns = block.outputColumns;
+        try {
+            const gpgpu = new ComputeGpgpu();
+            const augmented = await gpgpu.run(params);
+            // ComputeGpgpu writes outputs under properties.compute.<col>. Also lift them
+            // to top-level properties so downstream nodes can reference the column by
+            // its bare name (e.g. `height_m`) without worrying about whether the nested
+            // `compute` object round-trips through AutkDb's DuckDB storage. Both
+            // `compute.<col>` and `<col>` dot-paths then resolve.
+            const outCols: string[] = block.outputColumns ?? (block.outputColumnName ? [block.outputColumnName] : []);
+            if (outCols.length > 0 && augmented?.features) {
+                for (const f of augmented.features) {
+                    const p: any = f?.properties;
+                    const c = p?.compute;
+                    if (!p || !c) continue;
+                    for (const col of outCols) {
+                        if (col in c && !(col in p)) p[col] = c[col];
+                    }
+                }
+            }
+            // Re-attach the source crs hint so downstream re-loads keep coords aligned.
+            const sourceCrs = (result[idx].geojson as any)?.crs;
+            if (sourceCrs && augmented) (augmented as any).crs = sourceCrs;
+            result = result.map((l, i) => (i === idx ? { ...l, geojson: augmented } : l));
+        } catch (e) {
+            console.warn(`[autk-grammar] compute block on '${block.dataRef}' failed`, e);
+        }
+    }
+    return result;
+}
+
 // Resolve an upstream input into named GeoJSON layers.
 //  - a single frame (e.g. a Python GeoDataFrame) -> one layer named "upstream"
 //  - a multi-layer array from an upstream grammar node -> one layer per element,
@@ -792,6 +991,34 @@ async function resolveUpstreamLayers(raw: any): Promise<Array<{ name: string; fc
         arg = (await fetchData(arg.path)) ?? null;
     }
     if (!arg) return [];
+
+    // Curio Data Pool wrapper round-trip: recognise the pool-compatible
+    // shape produced by `layersToPoolWrapper` (and re-emitted by the pool
+    // with `interacted` flags applied) before the generic envelope unwrap
+    // strips the layerName/layerType metadata that lives at the wrapper level.
+    if (typeof arg === 'object' && arg && arg.dataType === 'outputs' && Array.isArray(arg.data)) {
+        const out: Array<{ name: string; fc: FeatureCollection; layerType?: string }> = [];
+        arg.data.forEach((item: any, i: number) => {
+            if (item && item.dataType === 'geodataframe' && item.data?.type === 'FeatureCollection') {
+                out.push({
+                    name: item.layerName ?? `upstream_${i}`,
+                    fc: item.data as FeatureCollection,
+                    layerType: item.layerType,
+                });
+            }
+        });
+        if (out.length > 0) return out;
+    }
+    if (typeof arg === 'object' && arg && arg.dataType === 'geodataframe' && arg.data) {
+        const fc = arg.data;
+        if (fc.type === 'FeatureCollection') {
+            return [{
+                name: arg.layerName ?? 'upstream',
+                fc: fc as FeatureCollection,
+                layerType: arg.layerType,
+            }];
+        }
+    }
 
     // Unwrap {dataType, data} envelope
     if (typeof arg === 'object' && 'dataType' in arg && 'data' in arg) {

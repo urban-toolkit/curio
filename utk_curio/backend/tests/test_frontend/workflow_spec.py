@@ -22,11 +22,15 @@ def _merge_edge_handle_index(edge_id: str) -> int | None:
 
 GRAMMAR_TYPES = {"VIS_VEGA", "AUTK_GRAMMAR"}
 JS_CODE_TYPES: set[str] = set()   # old AUTK_MAP/PLOT/COMPUTE/DB nodes removed
-CODE_TYPES = {
+# Python-content code nodes — the only ones that can be Python-seeded /
+# Python-exec'd by the programmatic runner. JS_COMPUTATION is a CODE node
+# but its content is JavaScript, so it must be excluded from this set.
+PY_CODE_TYPES = {
     "DATA_LOADING", "DATA_TRANSFORMATION",
     "DATA_EXPORT", "COMPUTATION_ANALYSIS", "CONSTANTS",
     "FLOW_SWITCH",
-} | JS_CODE_TYPES
+}
+CODE_TYPES = PY_CODE_TYPES | JS_CODE_TYPES | {"JS_COMPUTATION"}
 
 # Subset of CODE_TYPES whose frontend component passes ``code={true}``
 # to ``NodeEditor``, meaning they render a "code" tab with a Monaco editor.
@@ -35,7 +39,35 @@ CODE_TYPES = {
 CODE_EDITOR_TYPES = {
     "DATA_LOADING", "DATA_TRANSFORMATION",
     "COMPUTATION_ANALYSIS", "FLOW_SWITCH",
+    "JS_COMPUTATION",
 } | JS_CODE_TYPES
+
+
+# Map from package-namespaced node-type ids (the format every workflow JSON
+# has used since commit f787905 migrated built-ins onto the curio.builtin@1
+# manifest) back to the legacy uppercase identifiers this test module
+# classifies and dispatches against. Without this, `classify_node` returns
+# `"passive"` for every node and `_execute_all_playable_nodes` silently
+# skips the entire workflow, turning the suite into a render-only smoke test.
+# Legacy uppercase ids that already appear in JSON pass through unchanged.
+NAMESPACED_TO_LEGACY: dict[str, str] = {
+    "curio.builtin/data-loading":         "DATA_LOADING",
+    "curio.builtin/data-transformation":  "DATA_TRANSFORMATION",
+    "curio.builtin/data-export":          "DATA_EXPORT",
+    "curio.builtin/computation-analysis": "COMPUTATION_ANALYSIS",
+    "curio.builtin/data-summary":         "DATA_SUMMARY",
+    "curio.builtin/js-computation":       "JS_COMPUTATION",
+    "curio.builtin/vis-vega":             "VIS_VEGA",
+    "curio.builtin/vis-simple":           "VIS_SIMPLE",
+    "curio.builtin/data-pool":            "DATA_POOL",
+    "curio.builtin/merge-flow":           "MERGE_FLOW",
+    "curio.builtin/autk-grammar":         "AUTK_GRAMMAR",
+}
+
+
+def normalize_type(node_type: str) -> str:
+    """Return the legacy uppercase id for *node_type*, or pass-through."""
+    return NAMESPACED_TO_LEGACY.get(node_type, node_type)
 
 
 def classify_node(node_type: str) -> str:
@@ -61,7 +93,8 @@ def classify_node(node_type: str) -> str:
 class NodeSpec:
     """Expected properties of a single node parsed from the workflow JSON."""
     id: str
-    type: str            # e.g. "DATA_LOADING", "VIS_VEGA"
+    type: str            # legacy uppercase id, e.g. "DATA_LOADING", "VIS_VEGA"
+    raw_type: str        # original on-the-wire id, e.g. "curio.builtin/data-loading"
     x: float
     y: float
     content: str         # raw content string (may be empty for DataPool)
@@ -208,14 +241,20 @@ def parse_workflow(filepath: str) -> WorkflowSpec:
 
     nodes = [
         NodeSpec(
+            # Normalize at parse time so the rest of the test module can
+            # keep comparing against canonical legacy ids (e.g.
+            # `node.type == "DATA_POOL"`). The raw namespaced string is
+            # preserved on `raw_type` for any sandbox-facing callsite that
+            # needs the on-the-wire id.
             id=n["id"],
-            type=n["type"],
+            type=normalize_type(n["type"]),
+            raw_type=n["type"],
             x=float(n.get("x", 0)),
             y=float(n.get("y", 0)),
             content=n.get("content", ""),
             in_type=n.get("in", "DEFAULT"),
             out_type=n.get("out", "DEFAULT"),
-            category=classify_node(n["type"]),
+            category=classify_node(normalize_type(n["type"])),
         )
         for n in dataflow["nodes"]
     ]
