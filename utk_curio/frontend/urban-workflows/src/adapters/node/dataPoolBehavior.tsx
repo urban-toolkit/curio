@@ -67,15 +67,67 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
   useEffect(() => {
     if (output.content != "" && data.interactions != undefined) {
 
-      // output.content is always the fetched data object (matching original DataPoolNode).
-      // For multi-input it is the {dataType:"outputs", data:[...]} wrapper; interactions
-      // currently operate on the first item in that case.
-      let parsedInput: ICodeDataContent;
-      if (typeof output.content === 'object' && (output.content as any).dataType === 'outputs') {
-        parsedInput = (output.content as any).data[0];
-      } else {
-        parsedInput = output.content as ICodeDataContent;
+      // Group incoming interactions by the layer they target so multi-layer
+      // wrappers can route a brush on (say) roads to the roads features only,
+      // not surface. Interactions without a `layerRef` — Vega, plain Python
+      // dataframes — go to the `undefined` bucket and fall back to the legacy
+      // first-layer behavior so existing single-layer flows are unaffected.
+      const interactionsByLayer = new Map<string | undefined, any[]>();
+      for (const interaction of data.interactions) {
+        const sel = interaction?.details?.autk_selection;
+        const layerRef: string | undefined = sel?.layerRef;
+        const bucket = interactionsByLayer.get(layerRef) ?? [];
+        bucket.push(interaction);
+        interactionsByLayer.set(layerRef, bucket);
       }
+
+      // For multi-layer `outputs` wrappers, process each layer independently;
+      // for single-layer wrappers (geodataframe / dataframe), there's just one
+      // pass and the behavior matches the pre-multilayer code exactly.
+      const isOutputsWrapper =
+        typeof output.content === 'object' &&
+        (output.content as any).dataType === 'outputs' &&
+        Array.isArray((output.content as any).data);
+      const layers: ICodeDataContent[] = isOutputsWrapper
+        ? (output.content as any).data
+        : [output.content as ICodeDataContent];
+
+      // Propagation accumulates across all processed layers — historically a
+      // dataframe-only feature that other pools downstream consume via
+      // applyNewPropagation, so its shape doesn't change here.
+      let propagationObj: IPropagation = {
+          nodeId: data.nodeId,
+          propagation: {},
+      };
+
+      for (let layerIdx = 0; layerIdx < layers.length; layerIdx++) {
+      const parsedInput = layers[layerIdx];
+      const layerName = (parsedInput as any).layerName;
+
+      // Pick which interactions apply to this layer.
+      //
+      // Single-layer wrapper: there's only one place the interactions can land,
+      // so route every interaction to it regardless of whether the autk-grammar
+      // emit used a "upstream" alias dataRef (Vega/Python flows) or the actual
+      // table name (single-layer autk compute). This keeps Interaction_Vega_Autark
+      // and Interaction_Autark working without per-example dataRef alignment.
+      //
+      // Multi-layer wrapper: match interactions to layers by name. Interactions
+      // whose layerRef doesn't match any layer in the wrapper are dropped (the
+      // source explicitly named a target that isn't here). No-layerRef
+      // interactions still fall through to data[0] so existing Vega flows are
+      // unaffected even when promoted to a multi-layer wrapper later.
+      let interactionsForLayer: any[];
+      if (layers.length === 1) {
+        interactionsForLayer = data.interactions;
+      } else {
+        interactionsForLayer = interactionsByLayer.get(layerName) ?? [];
+        if (layerIdx === 0) {
+          const fallback = interactionsByLayer.get(undefined);
+          if (fallback) interactionsForLayer = [...interactionsForLayer, ...fallback];
+        }
+      }
+      if (interactionsForLayer.length === 0) continue;
 
       let interactedIndices: any = []; // between visualizations
 
@@ -87,7 +139,7 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
           dfIndices = Object.keys(parsedInput.data[columns[0]]);
       }
       // console.log(data.interactions);
-      for (const interaction of data.interactions) {
+      for (const interaction of interactionsForLayer) {
           let localInteractedIndices: any = [];
 
           let details = interaction.details;
@@ -258,11 +310,6 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
       }
       parsedInput.data.interacted = {};
 
-      let propagationObj: IPropagation = {
-          nodeId: data.nodeId,
-          propagation: {},
-      };
-
       let objectsCounter = 0;
 
       let buildingsLayer = false;
@@ -336,13 +383,13 @@ export const useDataPoolBehavior: NodeBehaviorHook = (data, nodeState) => {
               }
           }
       }
+      }  // for layerIdx
 
-      // parsedInput.data = JSON.stringify(parsedInput.data);
-      // let newOutput = JSON.stringify(parsedInput); // new output after applying interactions
-      // parsedInput.data = parsedInput.data;
-      let newOutput = parsedInput; // new output after applying interactions
-
-      const clonedOutput = JSON.parse(JSON.stringify(newOutput));
+      // Re-emit the full wrapper so sibling layers in an `outputs` envelope
+      // survive the round-trip — historically the pool only cloned the targeted
+      // layer and dropped the rest, which made multi-layer chains lose their
+      // unaugmented context layers (surface/parks/water for road brushes).
+      const clonedOutput = JSON.parse(JSON.stringify(output.content));
       setOutput({ code: "success", content: clonedOutput });
       if (typeof data.outputCallback === 'function') {
         data.outputCallback(data.nodeId, clonedOutput);

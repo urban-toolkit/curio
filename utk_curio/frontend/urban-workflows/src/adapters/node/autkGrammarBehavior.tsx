@@ -202,7 +202,18 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                 // the Curio interaction bus so connected nodes (data-pool, Vega) react.
                 // Guard against older package versions that pre-date the interactions API.
                 if (grammar.interactions) {
-                    const emitInteraction = (selection: number[]) => {
+                    // Capture which layer each interaction comes from so a downstream
+                    // Data Pool can target the right layer in a multi-layer wrapper —
+                    // otherwise the pool's legacy path operates on data[0] and a brush
+                    // on (say) roads ends up marking surface features. The picked map
+                    // layer is the one with isPick:true; the plot's source is its
+                    // dataRef. Both are resolved once here and closed over below.
+                    const pickedLayerRef: string | undefined =
+                        spec.map?.layerRefs?.find?.((l: any) => l.isPick)?.dataRef
+                        ?? spec.map?.layerRefs?.[0]?.dataRef;
+                    const plotLayerRef: string | undefined = spec.plot?.dataRef;
+
+                    const emitInteraction = (selection: number[], layerRef: string | undefined) => {
                         const d = dataRef.current;
                         d.interactionsCallback?.({
                             autk_selection: {
@@ -210,12 +221,13 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                                 data: selection,
                                 priority: 1,
                                 source: NodeType.AUTK_GRAMMAR,
+                                layerRef,
                             },
                         }, d.nodeId);
                     };
 
-                    const off1 = grammar.interactions.on('map:picking', ({ selection }) => emitInteraction(selection));
-                    const off2 = grammar.interactions.on('plot:selection', ({ selection }) => emitInteraction(selection));
+                    const off1 = grammar.interactions.on('map:picking',    ({ selection }) => emitInteraction(selection, pickedLayerRef));
+                    const off2 = grammar.interactions.on('plot:selection', ({ selection }) => emitInteraction(selection, plotLayerRef));
                     interactionOffRef.current = [off1, off2];
                 }
 
@@ -278,33 +290,46 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
     // after resolving interactions, then sends updated data via outputCallback.
     // When data.input changes here, read those flags and apply highlights so
     // the grammar map/plot stays in sync with whatever the Data Pool resolved.
+    //
+    // Multi-layer wrappers carry interacted flags on whichever layer the source
+    // brush/pick was for; the others have all-zero flags. Read each layer's flags
+    // independently and dispatch the highlight per layer name so a roads-only
+    // brush only lights up roads even when surface/parks/water are riding along.
     useEffect(() => {
         const grammar = grammarRef.current;
         const spec    = specRef.current;
         if (!grammar || !spec || !data.input) return;
 
         (async () => {
-            const fc = await resolveUpstreamAsGeoJson(data.input);
-            if (!fc) return;
+            const layers = await resolveUpstreamLayers(data.input);
+            if (layers.length === 0) return;
 
-            const selectedIndices = fc.features.reduce<number[]>((acc, f, i) => {
-                if (f.properties?.interacted === '1') acc.push(i);
-                return acc;
-            }, []);
+            const indicesByLayer = new Map<string, number[]>();
+            for (const { name, fc } of layers) {
+                const sel = fc.features.reduce<number[]>((acc, f, i) => {
+                    if (f.properties?.interacted === '1') acc.push(i);
+                    return acc;
+                }, []);
+                indicesByLayer.set(name, sel);
+            }
 
             const maps  = spec.map  ? (Array.isArray(spec.map)  ? spec.map  : [spec.map])  : [];
             const plots = spec.plot ? (Array.isArray(spec.plot) ? spec.plot : [spec.plot]) : [];
 
-            for (const mapSpec of maps)
-                for (const lr of mapSpec.layerRefs)
-                    selectedIndices.length === 0
+            for (const mapSpec of maps) {
+                for (const lr of mapSpec.layerRefs) {
+                    const sel = indicesByLayer.get(lr.dataRef) ?? [];
+                    sel.length === 0
                         ? grammar.clearHighlightOnMap?.(lr.dataRef)
-                        : grammar.highlightOnMap?.(lr.dataRef, selectedIndices);
-
-            for (const plotSpec of plots)
-                selectedIndices.length === 0
+                        : grammar.highlightOnMap?.(lr.dataRef, sel);
+                }
+            }
+            for (const plotSpec of plots) {
+                const sel = indicesByLayer.get(plotSpec.dataRef) ?? [];
+                sel.length === 0
                     ? grammar.clearHighlightOnPlot?.(plotSpec.dataRef)
-                    : grammar.setPlotSelection?.(plotSpec.dataRef, selectedIndices);
+                    : grammar.setPlotSelection?.(plotSpec.dataRef, sel);
+            }
         })();
     }, [data.input]);
 
