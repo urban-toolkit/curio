@@ -28,6 +28,21 @@ export const useDataPoolLifecycle: NodeLifecycleHook = (data, nodeState) => {
   const inflightRef = useRef<Promise<any> | null>(null);
 
   useEffect(() => {
+    const hasInput = (() => {
+      if (data.input == null || data.input === "") return false;
+      if (typeof data.input !== "object") return true;
+      const input = data.input as { dataType?: string; data?: unknown[] };
+      if (input.dataType === "outputs") {
+        return Array.isArray(input.data) && input.data.length > 0;
+      }
+      return Object.keys(input).length > 0;
+    })();
+
+    if (!hasInput) {
+      setOutput({ code: "", content: "" });
+      return;
+    }
+
     let cancelled = false;
     const p = processDataAsync();
     inflightRef.current = p;

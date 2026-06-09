@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt curio.py ./
 COPY scripts/ scripts/
 COPY packages/ packages/
+COPY datasets/ datasets/
 COPY docs/examples/ docs/examples/
 COPY docs/schemas/ docs/schemas/
 COPY utk_curio/ utk_curio/

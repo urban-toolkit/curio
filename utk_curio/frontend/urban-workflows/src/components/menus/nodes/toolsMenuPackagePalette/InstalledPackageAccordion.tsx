@@ -5,6 +5,7 @@ import { packagesApi } from "../../../../api/packagesApi";
 import { useToastContext } from "../../../../providers/ToastProvider";
 import { CatalogPublishPill } from "../../../packages/CatalogPublishPill";
 import { PackageMetadataModal } from "../../../packages/editing";
+import { PaletteAccordion } from "../paletteAccordion";
 import type { PackagePaletteGroup } from "./model";
 import { PackageTemplateRow } from "./PackagePaletteRows";
 import packageStyles from "./ToolsMenuPackagePalette.module.css";
@@ -56,82 +57,77 @@ export const InstalledPackageAccordion = memo(function InstalledPackageAccordion
         },
         [group.key, showToast],
     );
+    const actions = (
+        <>
+            <button
+                type="button"
+                className={packageStyles.packageSummaryExportBtn}
+                title="Export package"
+                aria-label={`Export ${group.name} as a .curio.zip archive`}
+                data-curio-package-palette-node-action="true"
+                onMouseDown={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                }}
+                onClick={(e) => void onExportClick(e)}
+            >
+                <FontAwesomeIcon icon={faDownload} aria-hidden />
+            </button>
+            {!isReadOnly ? (
+                <button
+                    type="button"
+                    className={packageStyles.packageSummaryExportBtn}
+                    title="Edit package metadata"
+                    aria-label={`Edit metadata for ${group.name}`}
+                    data-curio-package-palette-node-action="true"
+                    onMouseDown={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                    }}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        setMetadataOpen(true);
+                    }}
+                >
+                    <FontAwesomeIcon icon={faPenToSquare} aria-hidden />
+                </button>
+            ) : null}
+            {catalogMetadataLoaded && showCatalogPublishInSummary ? (
+                <CatalogPublishPill
+                    variant="dock"
+                    dirName={group.key}
+                    published={isCatalogPublished}
+                    allowPublish={catalogPublishAllowed}
+                    busy={publishingPackageKey === group.key}
+                    onPublish={onPublishToCatalog}
+                />
+            ) : null}
+        </>
+    );
+
     return (
-        <details
-            className={`${packageStyles.packageDetails} ${group.key === activePackageKey ? packageStyles.packageDetailsSelected : ""}`}
+        <PaletteAccordion
+            title={rowTitle}
+            titleTooltip={group.label !== rowTitle ? `${rowTitle} — ${group.label}` : rowTitle}
+            count={group.descriptors.length}
+            actions={actions}
+            selected={group.key === activePackageKey}
+            onSummaryClick={() => setActivePackageKey(group.key)}
         >
-            <summary className={packageStyles.packageSummary} onClick={() => setActivePackageKey(group.key)}>
-                <div className={packageStyles.packageSummaryRow}>
-                    <div className={packageStyles.packageSummaryTitleCluster}>
-                        <span
-                            className={packageStyles.packageSummaryTitle}
-                            title={group.label !== rowTitle ? `${rowTitle} — ${group.label}` : rowTitle}
-                        >
-                            {rowTitle}
-                        </span>
-                        <button
-                            type="button"
-                            className={packageStyles.packageSummaryExportBtn}
-                            title="Export package"
-                            aria-label={`Export ${group.name} as a .curio.zip archive`}
-                            data-curio-package-palette-node-action="true"
-                            onMouseDown={(e) => {
-                                e.stopPropagation();
-                                e.preventDefault();
-                            }}
-                            onClick={(e) => void onExportClick(e)}
-                        >
-                            <FontAwesomeIcon icon={faDownload} aria-hidden />
-                        </button>
-                        {!isReadOnly ? (
-                            <button
-                                type="button"
-                                className={packageStyles.packageSummaryExportBtn}
-                                title="Edit package metadata"
-                                aria-label={`Edit metadata for ${group.name}`}
-                                data-curio-package-palette-node-action="true"
-                                onMouseDown={(e) => {
-                                    e.stopPropagation();
-                                    e.preventDefault();
-                                }}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    e.preventDefault();
-                                    setMetadataOpen(true);
-                                }}
-                            >
-                                <FontAwesomeIcon icon={faPenToSquare} aria-hidden />
-                            </button>
-                        ) : null}
-                        {catalogMetadataLoaded && showCatalogPublishInSummary ? (
-                            <CatalogPublishPill
-                                variant="dock"
-                                dirName={group.key}
-                                published={isCatalogPublished}
-                                allowPublish={catalogPublishAllowed}
-                                busy={publishingPackageKey === group.key}
-                                onPublish={onPublishToCatalog}
-                            />
-                        ) : null}
-                    </div>
-                    <span className={packageStyles.packageSummaryCount}>{group.descriptors.length}</span>
-                </div>
-            </summary>
-            <div className={packageStyles.packageKindGrid}>
-                {group.descriptors.map((desc) => (
-                    <PackageTemplateRow
-                        key={desc.id}
-                        desc={desc}
-                        tooltipPlacement="right"
-                    />
-                ))}
-            </div>
+            {group.descriptors.map((desc) => (
+                <PackageTemplateRow
+                    key={desc.id}
+                    desc={desc}
+                    tooltipPlacement="right"
+                />
+            ))}
             {metadataOpen ? (
                 <PackageMetadataModal
                     dirName={group.key}
                     onClose={() => setMetadataOpen(false)}
                 />
             ) : null}
-        </details>
+        </PaletteAccordion>
     );
 });

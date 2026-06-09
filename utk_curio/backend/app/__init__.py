@@ -13,6 +13,9 @@ CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type,Authorization",
     "Access-Control-Allow-Methods": "GET,PUT,POST,PATCH,DELETE,OPTIONS",
+    # Expose Content-Disposition so cross-origin clients (e.g. dataset export)
+    # can read the friendly download filename returned by send_file.
+    "Access-Control-Expose-Headers": "Content-Disposition",
     "Access-Control-Max-Age": "600",
 }
 
@@ -54,6 +57,9 @@ def create_app(config_class=config_class):
 
     from utk_curio.backend.app.packages import packages_bp, seed_dev_packageages
     app.register_blueprint(packages_bp)
+
+    from utk_curio.backend.app.datasets import datasets_bp
+    app.register_blueprint(datasets_bp)
 
     from utk_curio.backend.app.streetvision import bp as streetvision_bp
     app.register_blueprint(streetvision_bp, url_prefix="/api/streetvision")

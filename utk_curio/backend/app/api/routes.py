@@ -63,6 +63,7 @@ import uuid
 import os
 import time
 from utk_curio.backend.config import (
+    CURIO_DEFAULT_SAVE_NODE_OUTPUT,
     GUEST_LLM_API_TYPE,
     GUEST_LLM_BASE_URL,
     GUEST_LLM_API_KEY,
@@ -355,7 +356,14 @@ def process_python_code():
 
     code = request.json['code']
     nodeType = request.json['nodeType']
+    node_id = request.json.get('nodeId') or None
     input = _parse_input_ref(request.json.get('input'))
+
+    save_output_dataset = request.json.get(
+        'saveOutputDataset', CURIO_DEFAULT_SAVE_NODE_OUTPUT,
+    )
+    if isinstance(save_output_dataset, str):
+        save_output_dataset = save_output_dataset.strip().lower() not in ('0', 'false', 'no')
 
     session_id = get_current_token()
     t1 = _time.perf_counter()
@@ -368,6 +376,7 @@ def process_python_code():
             "nodeType": nodeType,
             "dataType": input['dataType'],
             "session_id": session_id,
+            "save_dataset": bool(save_output_dataset),
         }),
         headers={"Content-Type": "application/json"},
     )
@@ -402,7 +411,31 @@ def process_python_code():
         flush=True,
     )
 
-    return {'stdout': stdout, 'stderr': stderr, 'input': input, 'output': output}
+    # Auto-install into the user store (not the public Data Catalog).
+    from utk_curio.backend.app.datasets.auto_install import auto_install_node_output
+
+    installed_dataset = None
+    if save_output_dataset and isinstance(output, dict) and node_id:
+        installed_dataset = auto_install_node_output(
+            user=getattr(g, "user", None),
+            node_id=node_id,
+            sandbox_output=output,
+            dataflow_id=request.json.get("dataflowId") or None,
+        )
+        if installed_dataset:
+            print(
+                f"[processPythonCode] auto-installed dataset "
+                f"{installed_dataset.get('id')} for node {node_id}",
+                flush=True,
+            )
+
+    return {
+        'stdout': stdout,
+        'stderr': stderr,
+        'input': input,
+        'output': output,
+        'installedDataset': installed_dataset,
+    }
 
 
 @bp.route('/processJavaScriptCode', methods=['POST'])
@@ -413,7 +446,14 @@ def process_javascript_code():
 
     code = request.json['code']
     nodeType = request.json['nodeType']
+    node_id = request.json.get('nodeId') or None
     input = _parse_input_ref(request.json.get('input'))
+
+    save_output_dataset = request.json.get(
+        'saveOutputDataset', CURIO_DEFAULT_SAVE_NODE_OUTPUT,
+    )
+    if isinstance(save_output_dataset, str):
+        save_output_dataset = save_output_dataset.strip().lower() not in ('0', 'false', 'no')
 
     session_id = get_current_token()
     t1 = _time.perf_counter()
@@ -426,6 +466,7 @@ def process_javascript_code():
             "nodeType": nodeType,
             "dataType": input['dataType'],
             "session_id": session_id,
+            "save_dataset": bool(save_output_dataset),
         }),
         headers={"Content-Type": "application/json"},
     )
@@ -460,7 +501,24 @@ def process_javascript_code():
         flush=True,
     )
 
-    return {'stdout': stdout, 'stderr': stderr, 'input': input, 'output': output}
+    from utk_curio.backend.app.datasets.auto_install import auto_install_node_output
+
+    installed_dataset = None
+    if save_output_dataset and isinstance(output, dict) and node_id:
+        installed_dataset = auto_install_node_output(
+            user=getattr(g, "user", None),
+            node_id=node_id,
+            sandbox_output=output,
+            dataflow_id=request.json.get("dataflowId") or None,
+        )
+
+    return {
+        'stdout': stdout,
+        'stderr': stderr,
+        'input': input,
+        'output': output,
+        'installedDataset': installed_dataset,
+    }
 
 
 @bp.route('/installPackages', methods=['POST'])
@@ -502,10 +560,9 @@ def check_db():
 
 @bp.route('/datasets', methods=['GET'])
 def list_datasets():
-    response = requests.get(api_address+":"+str(api_port)+"/datasets", timeout=30)
-    response.raise_for_status()
-    files = response.json()
-    return jsonify(files)
+    from utk_curio.backend.app.datasets.service import DatasetCatalogService
+
+    return jsonify(DatasetCatalogService().legacy_dataset_paths())
 
 
 @bp.route("/starters", methods=["GET"])

@@ -1,61 +1,55 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useCallback } from 'react';
 import { useEdges, Edge, Position } from 'reactflow';
 import { NodeLifecycleHook, HandleDef } from '../../registry/types';
-import { NodeType } from '../../constants';
-import { Starter, useStarterContext } from '../../providers/StarterProvider';
+import { buildMergeOutputArray, connectedMergeSlotIndices } from '../../utils/mergeFlowUtils';
 
 const MERGE_SLOT_COUNT = 5;
 
-export const useMergeFlowLifecycle: NodeLifecycleHook = (data, _nodeState) => {
-  // Read live edges from React Flow's store. This was previously done via a
-  // manual `useStoreApi().subscribe`, but `store.subscribe` only fires on
-  // *future* state changes — not the current state. So on first mount the
-  // local `edges` state stayed `[]`, `connectedCount` stayed `0`, and the
-  // output effect below never satisfied its `connectedCount > 0` guard, so
-  // `outputCallback` was never called. Downstream nodes (e.g. a package code
-  // node wired through this merge) then saw `data.input === ""` and ran
-  // their user code with `arg = None`. `useEdges()` is the canonical React
-  // Flow hook for this and gives a value on the very first render.
+export const useMergeFlowLifecycle: NodeLifecycleHook = (data, nodeState) => {
+  // `useEdges()` reads the current graph on the first render. A manual
+  // `useStoreApi().subscribe` only fires on *future* updates, so `connectedCount`
+  // stayed 0 on mount and the merge never called `outputCallback`.
   const edges = useEdges();
-  const [inputValues, setInputValues] = useState<any[]>(Array(MERGE_SLOT_COUNT).fill(undefined));
 
   const connectedCount = useMemo(
-    () => edges.filter(e => e.target === data.nodeId && e.targetHandle?.startsWith('in_')).length,
-    [edges, data.nodeId]
+    () => connectedMergeSlotIndices(edges, data.nodeId).length,
+    [edges, data.nodeId],
   );
 
-  useEffect(() => {
-    const outArr = inputValues.filter(v => v !== undefined);
+  const tryEmitMergedOutput = useCallback(() => {
+    const outArr = buildMergeOutputArray(data.input, edges, data.nodeId);
     if (connectedCount > 0 && outArr.length === connectedCount) {
       if (typeof data.outputCallback === 'function') {
         data.outputCallback(data.nodeId, { data: outArr, dataType: 'outputs' });
       }
+      return true;
     }
-  }, [inputValues, connectedCount, data.nodeId, data.outputCallback]);
+    return false;
+  }, [data.input, data.outputCallback, data.nodeId, connectedCount, edges]);
 
+  // Manual run / upstream completion: propagate when every wired slot is filled.
   useEffect(() => {
-    if (Array.isArray(data.input)) {
-      setInputValues(prev => {
-        const cp = Array.isArray(prev) ? [...prev] : Array(MERGE_SLOT_COUNT).fill(undefined);
-        data.input!.forEach((val: any, i: number) => {
-          if (i < cp.length) cp[i] = val;
-        });
-        return cp;
-      });
-    }
-  }, [data.input]);
+    tryEmitMergedOutput();
+  }, [tryEmitMergedOutput]);
 
-  const setOutputCallbackOverride = (val: any, idx = 0) =>
-    setInputValues(prev => {
-      const cp = Array.isArray(prev) ? [...prev] : Array(MERGE_SLOT_COUNT).fill(undefined);
-      cp[idx] = val;
-      return cp;
+  // Play-All / triggerExec: emit synchronously so the downstream node receives
+  // `data.input` before Play All advances past this merge level.
+  const sendCodeOverride = useCallback((_code?: string) => {
+    if (tryEmitMergedOutput()) return;
+    const outArr = buildMergeOutputArray(data.input, edges, data.nodeId);
+    nodeState.setOutput({
+      code: 'error',
+      content:
+        `Merge Flow: ${outArr.length} of ${connectedCount} inputs are ready. ` +
+        `Run all upstream nodes before using Play All.`,
     });
+  }, [tryEmitMergedOutput, data.input, edges, data.nodeId, connectedCount, nodeState.setOutput]);
 
-  // Build the 5 input slot handles + the single output handle, fully replacing
-  // `adapter.handles`. We use `handlesOverride` rather than `dynamicHandles`
-  // so the default `standardInOut()` "in" handle (which sits at top:50%) is
-  // suppressed — otherwise it leaks through and overlays slot 3.
+  const setOutputCallbackOverride = useCallback((_val: unknown, _idx = 0) => {
+    // Slot-indexed hook kept for parity with spatial-join; merge data flows
+    // through FlowProvider `data.input` + `tryEmitMergedOutput` above.
+  }, []);
+
   const inputHandles: HandleDef[] = Array.from({ length: MERGE_SLOT_COUNT }).map((_, idx) => {
     const handleId = `in_${idx}`;
     const connected = edges.some(e => e.target === data.nodeId && e.targetHandle === handleId);
@@ -87,5 +81,7 @@ export const useMergeFlowLifecycle: NodeLifecycleHook = (data, _nodeState) => {
   return {
     handlesOverride,
     setOutputCallbackOverride,
+    sendCodeOverride,
+    disablePlay: true,
   };
-}
+};

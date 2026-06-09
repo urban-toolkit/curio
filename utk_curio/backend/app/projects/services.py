@@ -53,6 +53,86 @@ def _assert_guest_can_save(user) -> None:
         raise ProjectError("Guest users cannot save projects", 403)
 
 
+def _auto_install_computed_outputs(
+    user_key: str,
+    output_refs: List[OutputRef],
+    spec: Optional[dict],
+) -> Optional[dict]:
+    """Install each newly computed output as ``computed.x{hash}@1/`` and add lean
+    refs to *spec* so the catalog can resolve them without live_outputs.
+
+    Returns the (possibly updated) spec dict, or the original spec unchanged if
+    nothing new was installed.  Errors for individual files are swallowed so a
+    single bad output never blocks the whole save.
+    """
+    if not output_refs or not spec:
+        return spec
+
+    from utk_curio.backend.app.datasets.bundle import install_node_output
+    from utk_curio.backend.app.datasets.storage import DATASET_DIR_RE
+
+    dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+    if not isinstance(dataflow, dict):
+        return spec
+
+    datasets_refs: list[dict] = list(dataflow.get("datasets") or [])
+
+    changed = False
+    for ref in output_refs:
+        filename = ref.filename
+        node_id = ref.node_id
+        data_type = getattr(ref, "data_type", None)
+
+        try:
+            result = install_node_output(
+                user_key,
+                node_id=node_id,
+                path_ref=filename,
+                data_type=data_type,
+            )
+        except Exception:  # noqa: BLE001 – best-effort; don't block save
+            continue
+        if result is None:
+            continue
+
+        dataset_id = result.manifest.id   # "computed.<sanitized_node_id>"
+        dir_name = result.manifest.dir_name  # "computed.<sanitized_node_id>@1"
+
+        # Validate the generated dir_name before writing it to the spec – if
+        # somehow it's invalid we'd rather skip than persist a broken ref.
+        if not DATASET_DIR_RE.match(dir_name):
+            continue
+
+        # Replace any existing ref for this producer node or add a new one.
+        updated = False
+        for existing_ref in datasets_refs:
+            if existing_ref.get("producerNodeId") == node_id:
+                existing_ref.update({
+                    "datasetId": dataset_id,
+                    "dirName": dir_name,
+                    "origin": "computed",
+                })
+                updated = True
+                changed = True
+                break
+        if not updated:
+            datasets_refs.append({
+                "datasetId": dataset_id,
+                "dirName": dir_name,
+                "origin": "computed",
+                "producerNodeId": node_id,
+                "consumerNodeIds": [],
+            })
+            changed = True
+
+    if not changed:
+        return spec
+
+    new_spec = dict(spec)
+    new_spec["dataflow"] = {**dataflow, "datasets": datasets_refs}
+    return new_spec
+
+
 def _extract_graph_preview(spec: Optional[dict]) -> Optional[dict]:
     if not spec:
         return None
@@ -115,11 +195,22 @@ def _to_detail(p, spec=None, outputs=None) -> ProjectDetail:
     )
 
 
+def _output_ref_dict(ref: OutputRef) -> dict:
+    entry = {"node_id": ref.node_id, "filename": ref.filename}
+    if ref.data_type:
+        entry["data_type"] = ref.data_type
+    return entry
+
+
 def _output_refs_from_manifest(manifest: Optional[dict]) -> List[OutputRef]:
     if not manifest:
         return []
     return [
-        OutputRef(node_id=o["node_id"], filename=o["filename"])
+        OutputRef(
+            node_id=o["node_id"],
+            filename=o["filename"],
+            data_type=o.get("data_type"),
+        )
         for o in manifest.get("outputs", [])
     ]
 
@@ -158,15 +249,18 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
     data.spec = seed_spec_with_defaults(ukey, data.spec)
 
     storage.write_spec(ukey, project_id, data.spec)
-    copied = storage.copy_outputs(ukey, project_id, data.outputs)
-    storage.write_manifest(ukey, project_id, project.spec_revision, copied,
+    output_refs = list(data.outputs)
+    effective_spec = _auto_install_computed_outputs(ukey, output_refs, data.spec) or data.spec
+    if effective_spec is not data.spec:
+        storage.write_spec(ukey, project_id, effective_spec)
+    storage.write_manifest(ukey, project_id, project.spec_revision, output_refs,
         name=data.name,
         description=data.description,
         thumbnail_accent=data.thumbnail_accent or "peach",
     )
 
     db.session.commit()
-    return _to_detail(project, spec=data.spec, outputs=copied)
+    return _to_detail(project, spec=effective_spec, outputs=output_refs)
 
 
 def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
@@ -187,13 +281,21 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
     )
 
     effective_spec = data.spec if data.spec is not None else existing_spec
-    if data.spec is not None:
-        storage.write_spec(ukey, project_id, data.spec)
-
     if data.outputs is not None:
-        output_refs = storage.copy_outputs(ukey, project_id, data.outputs)
+        output_refs = list(data.outputs)
+        # Install into users/<user>/datasets/ and register lean refs in the spec.
+        # Do not copy artifacts into project/data/ — that folder is legacy-only.
+        updated_spec = _auto_install_computed_outputs(ukey, output_refs, effective_spec)
+        if updated_spec is not None and updated_spec is not effective_spec:
+            effective_spec = updated_spec
+            storage.write_spec(ukey, project_id, effective_spec)
     else:
         output_refs = _output_refs_from_manifest(existing_manifest)
+    if data.spec is not None and effective_spec is not data.spec:
+        # spec was already written above by auto_install; nothing to do.
+        pass
+    elif data.spec is not None:
+        storage.write_spec(ukey, project_id, data.spec)
 
     storage.write_manifest(ukey, project_id, project.spec_revision, output_refs,
         name=project.name,
@@ -227,17 +329,21 @@ def load_project(user, project_id: str) -> dict:
     output_refs: List[OutputRef] = []
     if manifest and "outputs" in manifest:
         output_refs = [
-            OutputRef(node_id=o["node_id"], filename=o["filename"])
+            OutputRef(
+                node_id=o["node_id"],
+                filename=o["filename"],
+                data_type=o.get("data_type"),
+            )
             for o in manifest["outputs"]
         ]
 
-    hydrated = storage.hydrate_outputs(ukey, project_id, output_refs)
+    hydrated = storage.hydrate_outputs(ukey, project_id, output_refs, spec=spec)
 
     db.session.commit()
     return {
         "project": _to_detail(project, spec=spec, outputs=hydrated),
         "spec": spec,
-        "outputs": [{"node_id": r.node_id, "filename": r.filename} for r in hydrated],
+        "outputs": [_output_ref_dict(r) for r in hydrated],
     }
 
 
@@ -267,11 +373,15 @@ def load_shared_project(project_id: str) -> dict:
     output_refs: List[OutputRef] = []
     if manifest and "outputs" in manifest:
         output_refs = [
-            OutputRef(node_id=o["node_id"], filename=o["filename"])
+            OutputRef(
+                node_id=o["node_id"],
+                filename=o["filename"],
+                data_type=o.get("data_type"),
+            )
             for o in manifest["outputs"]
         ]
 
-    hydrated = storage.hydrate_outputs(ukey, project_id, output_refs)
+    hydrated = storage.hydrate_outputs(ukey, project_id, output_refs, spec=spec)
 
     detail = _to_detail(project, spec=spec, outputs=hydrated)
     # Don't leak server filesystem layout to shared-link visitors.
@@ -280,7 +390,7 @@ def load_shared_project(project_id: str) -> dict:
     return {
         "project": detail,
         "spec": spec,
-        "outputs": [{"node_id": r.node_id, "filename": r.filename} for r in hydrated],
+        "outputs": [_output_ref_dict(r) for r in hydrated],
     }
 
 
@@ -436,7 +546,11 @@ def duplicate_project(user, project_id: str) -> ProjectDetail:
     output_refs: List[OutputRef] = []
     if manifest and "outputs" in manifest:
         output_refs = [
-            OutputRef(node_id=o["node_id"], filename=o["filename"])
+            OutputRef(
+                node_id=o["node_id"],
+                filename=o["filename"],
+                data_type=o.get("data_type"),
+            )
             for o in manifest["outputs"]
         ]
 

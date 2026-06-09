@@ -1,0 +1,277 @@
+/* Vertical browse card for node packages — tokens inherited from .page (CatalogBrowseLayout). */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  border: 1.5px solid transparent;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
+  cursor: pointer;
+  outline: none;
+  transition: box-shadow 0.15s, border-color 0.15s;
+  box-sizing: border-box;
+  min-height: var(--catalogBrowseCardMinHeight, 268px);
+  height: auto;
+  align-self: stretch;
+}
+
+.card:hover,
+.card:focus-visible {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.cardActive {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.cardStrip {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  flex-shrink: 0;
+}
+
+.strip_warm {
+  background: #fb8f6a;
+}
+
+.strip_cool {
+  background: #3b6fd4;
+}
+
+.strip_violet {
+  background: #7a4bd1;
+}
+
+.cardActive.card_warm {
+  border-color: #fb8f6a;
+}
+
+.cardActive.card_cool {
+  border-color: #3b6fd4;
+}
+
+.cardActive.card_violet {
+  border-color: #7a4bd1;
+}
+
+.selectedDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.selectedDot::after {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #ffffff;
+}
+
+.kindBadge {
+  height: 16px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+  padding: 0 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  display: inline-flex;
+  align-items: center;
+}
+
+.stripBadge {
+  height: 16px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+  padding: 0 8px;
+  font-size: 9px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+}
+
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 0 var(--catalogBrowseCardBodyPadX, 16px) var(--catalogBrowseCardBodyPadBottom, 8px);
+}
+
+.cardTitle {
+  margin: 14px 0 2px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e1f23;
+  line-height: 1.3;
+}
+
+.publisher {
+  margin: 0;
+  font-size: 11px;
+  color: #888888;
+}
+
+.cardDescription {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #1e1f23;
+  line-height: var(--catalogBrowseCardDescLineHeight, 1.4);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: calc(var(--catalogBrowseCardDescLines, 2) * var(--catalogBrowseCardDescLineHeight, 1.4) * 1em);
+  flex-shrink: 0;
+}
+
+.tagRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--catalogBrowseCardTagGap, 5px);
+  margin: 0;
+  margin-top: auto;
+  padding-top: 10px;
+  min-height: 22px;
+  align-content: flex-end;
+}
+
+.tag {
+  height: 16px;
+  border-radius: 8px;
+  background: #f0f0f0;
+  color: #555555;
+  padding: 0 7px;
+  font-size: 9px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.tagAccent {
+  background: #fff0dc;
+  color: #996300;
+}
+
+.tagUpdate {
+  background: #ffe8e0;
+  color: #c45a2a;
+}
+
+.cardMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 0;
+  margin-top: 4px;
+  padding: var(--catalogBrowseCardMetaPadTop, 10px) var(--catalogBrowseCardBodyPadX, 16px) 0;
+  border-top: 1px solid #f0f0f0;
+  font-size: 10px;
+  color: #888888;
+  flex-shrink: 0;
+}
+
+.metaLeft {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metaRight {
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+.cardActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+  min-height: var(--catalogBrowseCardActionsMinH, 44px);
+  padding: var(--catalogBrowseCardActionsPadY, 8px) var(--catalogBrowseCardBodyPadX, 16px) 10px;
+  border-top: 1px solid #f0f0f0;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.cardActionsLeft {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cardActionsRight {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.installButton {
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  background: #1e1f23;
+  color: #ffffff;
+  padding: 0 16px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.installButton:hover:not(:disabled) {
+  background: #2a2b30;
+}
+
+.installButton:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.updateButton {
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  background: #fbaa69;
+  color: #1e1f23;
+  padding: 0 16px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.updateButton:hover:not(:disabled) {
+  background: #e99a5a;
+}
+
+.updateButton:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.installedHint {
+  font-size: 11px;
+  font-weight: 600;
+  color: #2f8f4a;
+}

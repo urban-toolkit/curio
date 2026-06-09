@@ -1,0 +1,665 @@
+/* Dataset detail inspector — layout aligned with 02_dataset_detail.svg */
+
+.pageRoot {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.modalRoot {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: #f0f0f0;
+}
+
+.inspector {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  font-family: var(--curio-font-family, Rubik, Inter, system-ui, sans-serif);
+  color: #1e1f23;
+}
+
+.pageHeader {
+  flex-shrink: 0;
+  background: #fafafa;
+  border-bottom: 1px solid #e5e5e5;
+  padding: 16px 24px 0;
+}
+
+.modalRoot .pageHeader {
+  padding-top: 48px;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: #888;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.breadcrumb strong {
+  color: #1e1f23;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.backButton {
+  min-height: 28px;
+  margin: 8px 0 0;
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+  background: transparent;
+  color: #555;
+  padding: 0 12px 0 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.headerMain {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 12px 0 8px;
+}
+
+.titleBlock {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.datasetIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.icon_mint {
+  background: #dff2e1;
+  color: #2f8f4a;
+}
+
+.icon_sky {
+  background: #dce8ff;
+  color: #3b6fd4;
+}
+
+.icon_lilac {
+  background: #eadcfb;
+  color: #7a4bd1;
+}
+
+.inspectorHeader h1,
+.titleBlock h1 {
+  margin: 0 0 6px;
+  color: #1e1f23;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.2;
+}
+
+.inspectorMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: #555;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.metaDot {
+  color: #d0d0d0;
+  font-weight: 400;
+}
+
+.formatChip,
+.installedBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  border-radius: 10px;
+  padding: 2px 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.formatChip {
+  background: #e9eef3;
+  color: #415363;
+}
+
+.format_geojson { background: #dff2e1; color: #2f8f4a; }
+.format_csv { background: #edf0fb; color: #405da4; }
+/* Match DatasetCard / catalog rail: JSON = purple, Parquet = amber */
+.format_json { background: #ece4f8; color: #5c3fa0; }
+.format_parquet { background: #fdf0dc; color: #a06a10; }
+.format_geotiff { background: #e3f1f3; color: #2e6874; }
+.format_shp { background: #f0e5ec; color: #7a4865; }
+.format_bundle { background: #f3ebe0; color: #8a4f1a; }
+
+.installedBadge {
+  background: #1e1f23;
+  color: #fff;
+}
+
+.inspectorActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  padding-top: 4px;
+}
+
+.publishButton,
+.exportButton,
+.unpublishButton {
+  min-height: 34px;
+  border-radius: 7px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.publishButton {
+  border: 0;
+  background: #1e1f23;
+  color: #fff;
+}
+
+.exportButton {
+  border: 1px solid #e5e5e5;
+  background: transparent;
+  color: #555;
+  font-weight: 600;
+}
+
+.unpublishButton {
+  border: 1px solid #e7c9c2;
+  background: #fff6f4;
+  color: #9f3f3f;
+  font-weight: 600;
+}
+
+.publishButton:disabled,
+.exportButton:disabled,
+.unpublishButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.inspectorTabs {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 36px;
+  margin-top: 4px;
+}
+
+.inspectorTabs button {
+  align-self: stretch;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: #777;
+  padding: 0 2px 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.inspectorTabActive {
+  color: #1e1f23 !important;
+  font-weight: 700 !important;
+  border-bottom-color: #1e1f23 !important;
+}
+
+/* Three-column split body (schema | main content | info+lineage) */
+.inspectorBody {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(240px, 20.6%) minmax(0, 1fr) minmax(280px, 27.8%);
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Focused tabs (Schema / Table Preview / Lineage) hide the schema column. */
+.inspectorBodyTwoCol {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 27.8%);
+}
+
+.schemaColumn,
+.centerColumn,
+.infoColumn {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+}
+
+.schemaColumn > * {
+  flex: 1;
+  min-height: 0;
+}
+
+.centerColumn {
+  border-left: 1px solid #e5e5e5;
+  border-right: 1px solid #e5e5e5;
+  overflow-y: auto;
+}
+
+.inspectorBodyTwoCol .centerColumn {
+  border-left: 0;
+}
+
+.previewSection {
+  flex-shrink: 0;
+}
+
+.previewSubtab {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  background: #fafafa;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.previewSubtabActive {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e1f23;
+  padding-bottom: 8px;
+  border-bottom: 3px solid #1e1f23;
+}
+
+/* Expanded lineage view (center column, Lineage tab) */
+.lineageSection {
+  flex: 1;
+  min-height: 180px;
+  background: #fafafa;
+  padding: 16px 20px 24px;
+}
+
+.lineageHeader h2 {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e1f23;
+}
+
+.liveBadge {
+  border-radius: 9px;
+  background: #f0faf2;
+  color: #2f8f4a;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.lineageHeader p {
+  margin: 6px 0 0;
+  color: #777;
+  font-size: 11px;
+}
+
+/* Compact lineage summary + states (right sidebar) */
+.lineageSummary {
+  margin: 0 0 10px;
+  color: #1e1f23;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lineagePartialNote {
+  margin: 0 0 10px;
+  border: 1px solid #f5e3c2;
+  border-radius: 6px;
+  background: #fdf6ec;
+  color: #8a5b16;
+  padding: 8px 10px;
+  font-size: 11px;
+}
+
+.lineageEmpty {
+  margin: 4px 0 8px;
+  color: #777;
+  font-size: 11px;
+}
+
+.lineageGroup {
+  margin: 0 0 10px;
+}
+
+.lineageGroupSummary {
+  cursor: pointer;
+  list-style-position: outside;
+  margin: 0 0 8px;
+  color: #999;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.statusPill {
+  align-self: center;
+  border-radius: 9px;
+  padding: 1px 8px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.statusActive {
+  background: #f0faf2;
+  color: #2f8f4a;
+}
+
+.statusStale {
+  background: #fdf6ec;
+  color: #a06a10;
+}
+
+.statusBroken {
+  background: #fdecec;
+  color: #9f3f3f;
+}
+
+.lineageLabel {
+  margin: 18px 0 8px;
+  color: #999;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.lineageCard,
+.originCard,
+.consumedCard {
+  position: relative;
+  display: grid;
+  grid-template-columns: 4px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 54px;
+  margin-bottom: 8px;
+  border: 1px solid #ebebeb;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px 12px 10px 0;
+  overflow: hidden;
+}
+
+.originCard,
+.consumedCard {
+  grid-template-columns: 4px minmax(0, 1fr) auto;
+  min-height: 44px;
+  padding: 8px 12px 8px 0;
+}
+
+.lineageCardAccentWarm,
+.lineageCardAccentMuted,
+.lineageCardAccentBlue {
+  align-self: stretch;
+  border-radius: 2px;
+  margin-left: 0;
+}
+
+.lineageCardAccentWarm { background: #fbaa69; }
+.lineageCardAccentMuted { background: #6b6b76; }
+.lineageCardAccentBlue { background: #3b6fd4; }
+
+.lineageCardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.lineageCardBody strong,
+.originCard strong,
+.consumedCard strong {
+  color: #1e1f23;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.lineageNodeBadge,
+.lineageNodeBadgeMuted {
+  align-self: flex-start;
+  border-radius: 7px;
+  padding: 1px 7px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.lineageNodeBadge {
+  background: #fdf0e8;
+  color: #fbaa69;
+}
+
+.lineageNodeBadgeMuted {
+  background: #f1f5f9;
+  color: #6b6b76;
+}
+
+.lineageFlowName,
+.originCard span,
+.consumedCard span {
+  color: #777;
+  font-size: 11px;
+}
+
+
+/* Right info column */
+.infoColumn {
+  overflow-y: auto;
+}
+
+.infoHeader {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  background: #fafafa;
+  border-bottom: 1px solid #ebebeb;
+  flex-shrink: 0;
+}
+
+.infoHeader h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e1f23;
+}
+
+.infoSection {
+  padding: 16px 20px;
+  border-bottom: 1px solid #ebebeb;
+}
+
+.infoSectionLabel {
+  margin: 0 0 12px;
+  color: #999;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.infoRows {
+  margin: 0;
+}
+
+.infoRows > div {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) minmax(0, 1.2fr);
+  gap: 12px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #f5f5f5;
+  font-size: 13px;
+}
+
+.infoRows > div:last-child {
+  border-bottom: 0;
+}
+
+.infoRows dt {
+  margin: 0;
+  color: #555;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.infoRows dd {
+  margin: 0;
+  color: #1e1f23;
+  font-weight: 400;
+  text-align: right;
+}
+
+.originCard > div:last-child,
+.consumedCard > div:nth-child(2) {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hubSourceCard {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid #dff2e1;
+  border-radius: 8px;
+  background: #f8fdf9;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hubSourceCard strong {
+  color: #2f8f4a;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.hubSourceCard span {
+  color: #777;
+  font-size: 11px;
+}
+
+.tagList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tagChip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  border-radius: 11px;
+  background: #f0f0f0;
+  color: #555;
+  padding: 0 12px;
+  font-size: 11px;
+}
+
+.loading,
+.error {
+  margin: 0;
+  padding: 24px;
+  text-align: center;
+  color: #777;
+  font-size: 13px;
+}
+
+.error {
+  color: #9f3f3f;
+}
+
+@media (max-width: 1100px) {
+  .inspectorBody {
+    grid-template-columns: minmax(200px, 28%) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .inspectorBodyTwoCol {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .schemaColumn {
+    grid-row: 1 / span 2;
+  }
+
+  .infoColumn {
+    grid-column: 2;
+  }
+
+  .inspectorBodyTwoCol .infoColumn {
+    grid-column: 1;
+  }
+
+  .centerColumn {
+    border-right: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .headerMain {
+    flex-direction: column;
+  }
+
+  .inspectorBody {
+    display: block;
+    overflow: auto;
+  }
+
+  .schemaColumn,
+  .centerColumn,
+  .infoColumn {
+    min-height: 320px;
+    border: 0;
+    border-bottom: 1px solid #e5e5e5;
+  }
+}

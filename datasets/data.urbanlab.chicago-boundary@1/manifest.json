@@ -1,0 +1,24 @@
+{
+  "id": "data.urbanlab.chicago-boundary",
+  "name": "Chicago Boundary",
+  "version": "1.0.0",
+  "format": "geojson",
+  "description": "GeoJSON boundary geometry for the City of Chicago.",
+  "publisher": "Data Catalog",
+  "license": "Open Data",
+  "tags": [
+    "boundary",
+    "geojson",
+    "chicago"
+  ],
+  "dataFile": "data/chicago.geojson",
+  "compatibility": {
+    "major": 1
+  },
+  "sourceLabel": "Data Catalog",
+  "createdAt": "2026-06-01T00:00:00Z",
+  "updatedAt": "2026-06-01T00:00:00Z",
+  "featureCount": 61,
+  "rowCount": null,
+  "schema": null
+}

@@ -39,6 +39,9 @@ type CreateCodeNodeOptions = {
     dashboardY?: number;
     dashboardWidth?: number;
     dashboardHeight?: number;
+    datasetRefs?: string[];
+    appliedDatasets?: Record<string, unknown>;
+    saveOutputDataset?: boolean;
 };
 
 interface IUseCode {
@@ -47,7 +50,15 @@ interface IUseCode {
 }
 
 export function useCode(): IUseCode {
-    const { addNode, setOutputs, setInteractions, applyNewPropagation, applyNewOutput, loadParsedTrill } = useFlowContext();
+    const {
+        addNode,
+        setOutputs,
+        setInteractions,
+        applyNewPropagation,
+        applyNewOutput,
+        loadParsedTrill,
+        defaultSaveOutputDataset,
+    } = useFlowContext();
     const { loadNodeProvenance } = useProvenanceContext();
     const { getPosition } = usePosition();
 
@@ -136,6 +147,9 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && node.metadata.keywords != undefined)
                 nodeMeta.keywords = node.metadata.keywords;
 
+            if(node.metadata != undefined && Array.isArray(node.metadata.datasetRefs))
+                nodeMeta.datasetRefs = node.metadata.datasetRefs;
+
             if(typeof parsedWidth === "number")
                 nodeMeta.nodeWidth = parsedWidth;
 
@@ -154,6 +168,9 @@ export function useCode(): IUseCode {
                 nodeMeta.dashboardWidth = node.dashboardWidth;
                 nodeMeta.dashboardHeight = node.dashboardHeight;
             }
+
+            if(typeof node.saveOutputDataset === "boolean")
+                nodeMeta.saveOutputDataset = node.saveOutputDataset;
 
             if(suggestionType != undefined)
                 nodeMeta.suggestionType = suggestionType;
@@ -208,14 +225,14 @@ export function useCode(): IUseCode {
             // Reverting to a historical version: preserve the current provenance graph.
             // latestTrill was already set to the target version by switchProvenanceTrill.
             const savedProv = TrillGenerator.getSerializableDataflowProvenance();
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, false, trill.dataflow.packages || [], trill.dataflow.description || "");
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || []);
             TrillGenerator.loadDataflowProvenance(savedProv);
         } else if(suggestionType == undefined) {
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "");
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || [], trill.dataflow.description || "", trill.dataflow.datasets || []);
             if (trill.nodeProvenance) loadNodeProvenance(trill.nodeProvenance);
             if (trill.dataflowProvenance) TrillGenerator.loadDataflowProvenance(trill.dataflowProvenance);
         } else {
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, true, undefined, trill.dataflow.description || "");
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, true, undefined, trill.dataflow.description || "", trill.dataflow.datasets || []);
         }
 
     }
@@ -243,6 +260,9 @@ export function useCode(): IUseCode {
             dashboardY = undefined,
             dashboardWidth = undefined,
             dashboardHeight = undefined,
+            datasetRefs = undefined,
+            appliedDatasets = undefined,
+            saveOutputDataset = undefined,
         } = options;
 
         const node: Node = {
@@ -273,6 +293,12 @@ export function useCode(): IUseCode {
                 dashboardY,
                 dashboardWidth,
                 dashboardHeight,
+                datasetRefs,
+                appliedDatasets,
+                saveOutputDataset:
+                    saveOutputDataset !== undefined
+                        ? saveOutputDataset
+                        : defaultSaveOutputDataset,
                 input: "",
                 inputTypes: [],
                 keywords,
@@ -284,7 +310,7 @@ export function useCode(): IUseCode {
 
         return node;
 
-    }, [addNode, outputCallback, getPosition]);
+    }, [addNode, outputCallback, getPosition, defaultSaveOutputDataset]);
 
     const createCodeNode = useCallback((nodeType: string, options: CreateCodeNodeOptions = {}) => {
         let node = generateCodeNode(nodeType, options);

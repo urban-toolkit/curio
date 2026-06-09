@@ -75,6 +75,7 @@ def _worker_init():
         save_to_duckdb,
         detect_kind,
         checkIOType,
+        save_dataset_parquet,
     )
 
     _globals_cache = {
@@ -95,10 +96,11 @@ def _worker_init():
         'save_to_duckdb': save_to_duckdb,
         'detect_kind': detect_kind,
         'checkIOType': checkIOType,
+        'save_dataset_parquet': save_dataset_parquet,
     }
 
 
-def execute_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None):
+def execute_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None, save_dataset=True):
     """
     Execute user code in-process using pre-loaded library globals.
 
@@ -119,6 +121,7 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
     save_to_duckdb   = _globals_cache['save_to_duckdb']
     detect_kind      = _globals_cache['detect_kind']
     checkIOType      = _globals_cache['checkIOType']
+    save_dataset_parquet = _globals_cache['save_dataset_parquet']
 
     # _exec_lock serializes sys.stdout mutation and os.chdir.
     with _exec_lock:
@@ -199,7 +202,14 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
 
                 # Save output to DuckDB, tagged with the session that produced it.
                 result_path = save_to_duckdb(output, node_id=node_type, session_id=session_id)
+
+                dataset_file = None
+                if save_dataset:
+                    dataset_file = save_dataset_parquet(output, out_kind)
+
                 result = {'path': result_path, 'dataType': out_kind}
+                if dataset_file:
+                    result['dataset'] = dataset_file
                 t_save = time.perf_counter()
 
         except BaseException:
@@ -207,6 +217,10 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
 
         finally:
             os.chdir(original_dir)
+            # Drop the sandbox write lock so the backend can open read-only
+            # DuckDB (catalog, auto-install) as soon as this request returns.
+            from utk_curio.sandbox.util.db import release_connection
+            release_connection()
             t1 = time.perf_counter()
             print(
                 f"[exec] load={t_load-t0:.3f}s  code={t_code-t_load:.3f}s"
@@ -431,3 +445,6 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
                 'output': {'path': '', 'dataType': 'str'}}
     except Exception:
         return {'stdout': [], 'stderr': traceback.format_exc(), 'output': {'path': '', 'dataType': 'str'}}
+    finally:
+        from utk_curio.sandbox.util.db import release_connection
+        release_connection()

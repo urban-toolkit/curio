@@ -54,6 +54,37 @@ def test_hydrate_outputs(tmp_curio):
     assert (shared / "out.data").read_bytes() == b"world"
 
 
+def test_hydrate_outputs_from_user_dataset_store(tmp_curio):
+    from utk_curio.backend.app.datasets.installer import install_computed_file_for_node
+
+    user_key = "1"
+    node_id = "node-hydrate"
+    install_computed_file_for_node(
+        user_key,
+        b"city,count\nChicago,10\n",
+        "hydrate_out.csv",
+        "csv",
+        node_id=node_id,
+    )
+
+    spec = {
+        "dataflow": {
+            "datasets": [{
+                "datasetId": "computed.node-hydrate",
+                "dirName": "computed.node-hydrate@1",
+                "origin": "computed",
+                "producerNodeId": node_id,
+            }],
+        },
+    }
+    refs = [OutputRef(node_id=node_id, filename="hydrate_out.csv")]
+    hydrated = storage.hydrate_outputs("1", "proj-hydrate", refs, spec=spec)
+    assert len(hydrated) == 1
+
+    shared = storage._shared_data_dir()
+    assert (shared / "hydrate_out.csv").read_text(encoding="utf-8").startswith("city,count")
+
+
 def test_path_traversal_blocked(tmp_curio):
     with pytest.raises(PermissionError, match="traversal"):
         storage.project_dir("1", "../../etc")

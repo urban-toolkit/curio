@@ -27,16 +27,25 @@ import { NodeType, EdgeType } from "../constants";
 import { getFlowNodeCanonicalType } from "../utils/flowNodeCanonicalType";
 import { TrillGenerator } from "../TrillGenerator";
 import { applyDashboardLayout } from "../utils/dashboardLayout";
-import { ensureMergeArrays, parseHandleIndex, setMergeSlot, clearMergeSlot } from "../utils/mergeFlowUtils";
+import {
+    ensureMergeArrays,
+    parseHandleIndex,
+    setMergeSlot,
+    clearMergeSlot,
+    mergeSlotForSource,
+} from "../utils/mergeFlowUtils";
 import { useWorkflowOperations } from "../hook/useWorkflowOperations";
 import { useToastContext } from "./ToastProvider";
 import { useCollab } from "./CollaborationProvider";
 import { pythonInterpreter, jsInterpreter } from "../hook/useCode";
+import { normalizeFlowInput } from "../utils/flowOutputRef";
+import { DEFAULT_SAVE_OUTPUT_DATASET } from "../utils/saveOutputDataset";
+import { authApi } from "../utils/authApi";
 
 
 export interface IOutput {
     nodeId: string;
-    output: string;
+    output: unknown;
 }
 
 export interface IInteraction {
@@ -62,6 +71,7 @@ interface PlayAllState {
 interface FlowContextProps {
     nodes: Node[];
     edges: Edge[];
+    outputs: IOutput[];
     setOutputs: (updateFn: (outputs: IOutput[]) => IOutput[]) => void;
     setInteractions: (updateFn: (interactions: IInteraction[]) => IInteraction[]) => void;
     applyNewPropagation: (propagation: IPropagation) => void;
@@ -98,11 +108,13 @@ interface FlowContextProps {
     loading: boolean;
 
     applyRemoveChanges: (changes: NodeRemoveChange[]) => void;
-    loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[], description?: string) => void;
+    loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[], description?: string, datasets?: any[]) => void;
     packages: string[];
     setPackages: (pkgs: string[]) => void;
     addPackage: (pkg: string) => void;
     removePackage: (pkg: string) => void;
+    dataflowDatasets: any[];
+    setDataflowDatasets: React.Dispatch<React.SetStateAction<any[]>>;
     updateDataNode: (nodeId: string, newData: any) => void;
     updateWarnings: (trill_spec: any) => void;
     updateDefaultCode: (nodeId: string, content: string) => void;
@@ -133,6 +145,8 @@ interface FlowContextProps {
     playAllNodes: () => void;
     playNodesUpTo: (targetNodeId: string) => void;
     signalNodeExecDone: (nodeId: string) => void;
+    defaultSaveOutputDataset: boolean;
+    setDefaultSaveOutputDataset: (value: boolean) => void;
 }
 
 // Stable context for NodeContainer — only updates when goal/minimized change, NOT on node drag
@@ -173,6 +187,7 @@ export const useNodeActionsContext = () => useContext(NodeActionsContext);
 export const FlowContext = createContext<FlowContextProps>({
     nodes: [],
     edges: [],
+    outputs: [],
     setOutputs: () => { },
     setInteractions: () => { },
     applyNewPropagation: () => { },
@@ -223,6 +238,8 @@ export const FlowContext = createContext<FlowContextProps>({
     setPackages: () => {},
     addPackage: () => {},
     removePackage: () => {},
+    dataflowDatasets: [],
+    setDataflowDatasets: () => {},
 
     // Project defaults
     projectId: null,
@@ -242,6 +259,8 @@ export const FlowContext = createContext<FlowContextProps>({
     playAllNodes: () => {},
     playNodesUpTo: () => {},
     signalNodeExecDone: () => {},
+    defaultSaveOutputDataset: false,
+    setDefaultSaveOutputDataset: () => {},
 });
 
 function computeTopologicalLevels(nodes: Node[], edges: Edge[]): string[][] {
@@ -298,6 +317,31 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const markNodeExecutedRef = useRef<(nodeId: string) => void>(() => {});
     const markNodeStaleRef = useRef<(nodeId: string) => void>(() => {});
     const markDirtyRef = useRef<() => void>(() => {});
+    const [defaultSaveOutputDataset, setDefaultSaveOutputDataset] = useState(
+        DEFAULT_SAVE_OUTPUT_DATASET,
+    );
+
+    // The backend (CURIO_DEFAULT_SAVE_NODE_OUTPUT) is the authoritative source
+    // for the workflow-wide default. Read it once from /api/config/public so
+    // the per-node "Save output dataset" default (and the save-time gate in
+    // buildOutputRefs) matches the deployment's runtime setting rather than the
+    // build-time env baked into the bundle. Mirrors CollaborationProvider.
+    useEffect(() => {
+        let cancelled = false;
+        authApi
+            .getPublicConfig()
+            .then((cfg) => {
+                if (!cancelled && typeof cfg?.default_save_node_output === "boolean") {
+                    setDefaultSaveOutputDataset(cfg.default_save_node_output);
+                }
+            })
+            .catch(() => {
+                /* keep build-time DEFAULT_SAVE_OUTPUT_DATASET fallback */
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     // Collaboration broadcasters. The provider may be a no-op (when
     // --collab is off or no project is loaded), in which case every
@@ -480,6 +524,47 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         [setNodes]
     );
 
+    // Push a source node's cached output to every direct downstream consumer.
+    const propagateDownstreamInputs = (sourceId: string, rawOutput: unknown) => {
+        const currentEdges = reactFlow.getEdges();
+        const nodesAffected: string[] = [];
+        for (const edge of currentEdges) {
+            if (edge.sourceHandle == "in/out" && edge.targetHandle == "in/out") continue;
+            if (sourceId == edge.source) {
+                nodesAffected.push(edge.target);
+            }
+        }
+        if (!nodesAffected.length) return;
+
+        const normalized = normalizeFlowInput(rawOutput);
+        const inputPayload = normalized === "" ? "" : normalized;
+
+        setNodes((nds: any) =>
+            nds.map((node: any) => {
+                if (!nodesAffected.includes(node.id)) return node;
+
+                if (getFlowNodeCanonicalType(node) == NodeType.MERGE_FLOW) {
+                    const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
+                    const sourceIndex = mergeSlotForSource(
+                        currentEdges,
+                        node.id,
+                        sourceId,
+                        sourceList,
+                    );
+                    if (sourceIndex >= 0) {
+                        setMergeSlot(inputList, sourceList, sourceIndex, inputPayload, sourceId);
+                    }
+                    return { ...node, data: { ...node.data, input: inputList, source: sourceList } };
+                }
+
+                if (inputPayload === "") {
+                    return { ...node, data: { ...node.data, input: "", source: "" } };
+                }
+                return { ...node, data: { ...node.data, input: inputPayload, source: sourceId } };
+            })
+        );
+    };
+
     // updates a single box with the new input (new connections)
     const applyOutput = (
         inNodeType: NodeType,
@@ -490,20 +575,10 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     ) => {
         if (sourceHandle == "in/out" && targetHandle == "in/out") return;
 
-        let getOutput = outId;
-        let setInput = inId;
-
-        let output = "";
-
-        setOutputs((opts: any) =>
-            opts.map((opt: any) => {
-                if (opt.nodeId == getOutput) {
-                    output = opt.output;
-                }
-
-                return opt;
-            })
-        );
+        const entry = outputsRef.current.find((opt) => opt.nodeId === outId);
+        const raw = entry?.output;
+        const normalized =
+            raw != null && raw !== "" ? normalizeFlowInput(raw) : "";
 
         setNodes((nds: any) =>
             nds.map((node: any) => {
@@ -513,12 +588,12 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                     const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
                     const handleIndex = parseHandleIndex(targetHandle);
                     if (handleIndex >= 0) {
-                        setMergeSlot(inputList, sourceList, handleIndex, output, outId);
+                        setMergeSlot(inputList, sourceList, handleIndex, normalized, outId);
                     }
                     return { ...node, data: { ...node.data, input: inputList, source: sourceList } };
                 }
 
-                return { ...node, data: { ...node.data, input: output, source: outId } };
+                return { ...node, data: { ...node.data, input: normalized, source: outId } };
             })
         );
     };
@@ -688,6 +763,9 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                     showToast("Input and output types of these boxes are not compatible", "warning");
                 }
 
+                // Resolve merge target handle before validation / applyOutput. Imported
+                // trills set `in_0`/`in_1` explicitly; manual drags may omit it.
+                let resolvedConnection: Connection = connection;
                 if (inNodeType === NodeType.MERGE_FLOW && allowConnection) {
                     const availableHandles = Array(5).fill(1).map((_, i) => `in_${i}`);
                     const usedHandles = new Set(
@@ -699,13 +777,35 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                             .map((edge: Edge) => edge.targetHandle)
                     );
 
+                    let targetHandle = connection.targetHandle;
+                    if (!targetHandle || targetHandle === "in" || parseHandleIndex(targetHandle) < 0) {
+                        const nextFree = availableHandles.find((h) => !usedHandles.has(h));
+                        if (!nextFree) {
+                            showToast(
+                                "Connection limit reached. Merge nodes can only accept up to 5 input connections.",
+                                "warning",
+                            );
+                            allowConnection = false;
+                        } else {
+                            targetHandle = nextFree;
+                            resolvedConnection = { ...connection, targetHandle };
+                        }
+                    }
 
-                    if (usedHandles.size > 7) {
-                        showToast("Connection limit reached. Merge nodes can only accept up to 7 input connections.", "warning");
-                        allowConnection = false;
-                    } else if (usedHandles.has(connection.targetHandle)) {
-                        showToast("This input already has a connection. Each input handle can only accept one connection.", "warning");
-                        allowConnection = false;
+                    if (allowConnection) {
+                        if (usedHandles.size >= availableHandles.length) {
+                            showToast(
+                                "Connection limit reached. Merge nodes can only accept up to 5 input connections.",
+                                "warning",
+                            );
+                            allowConnection = false;
+                        } else if (usedHandles.has(resolvedConnection.targetHandle)) {
+                            showToast(
+                                "This input already has a connection. Each input handle can only accept one connection.",
+                                "warning",
+                            );
+                            allowConnection = false;
+                        }
                     }
                 }
 
@@ -722,18 +822,19 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 }
 
                 if (allowConnection) {
-                    markNodeStaleRef.current(connection.target as string);
+                    const conn = inNodeType === NodeType.MERGE_FLOW ? resolvedConnection : connection;
+                    markNodeStaleRef.current(conn.target as string);
                     applyOutput(
                         inNodeType as NodeType,
-                        connection.target as string,
-                        connection.source as string,
-                        connection.sourceHandle as string,
-                        connection.targetHandle as string
+                        conn.target as string,
+                        conn.source as string,
+                        conn.sourceHandle as string,
+                        conn.targetHandle as string
                     );
 
                     setEdges((eds) => {
                         let customConnection: any = {
-                            ...connection,
+                            ...conn,
                             markerEnd: { type: MarkerType.ArrowClosed },
                         };
 
@@ -741,15 +842,15 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                         // connections arrive as Connection (no id); addEdge assigns one later
                         // but addNewVersionProvenance is called before that.
                         if (!customConnection.id) {
-                            customConnection.id = `reactflow__edge-${connection.source}${connection.sourceHandle || ''}-${connection.target}${connection.targetHandle || ''}`;
+                            customConnection.id = `reactflow__edge-${conn.source}${conn.sourceHandle || ''}-${conn.target}${conn.targetHandle || ''}`;
                         }
 
                         if (customConnection.data == undefined)
                             customConnection.data = {};
 
                         if (
-                            connection.sourceHandle == "in/out" &&
-                            connection.targetHandle == "in/out"
+                            conn.sourceHandle == "in/out" &&
+                            conn.targetHandle == "in/out"
                         ) {
                             customConnection.markerStart = {
                                 type: MarkerType.ArrowClosed,
@@ -772,7 +873,17 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                             edge: customConnection,
                         });
 
-                        return addEdge(customConnection, eds);
+                        const nextEdges = addEdge(customConnection, eds);
+                        const sourceId = conn.source as string;
+                        const cached = outputsRef.current.find((o) => o.nodeId === sourceId);
+                        if (cached?.output != null && cached.output !== "") {
+                            // Edge is in the graph now — fan out to all downstream nodes
+                            // (merge slots, multiple pools) using the live edge list.
+                            queueMicrotask(() => {
+                                propagateDownstreamInputs(sourceId, cached.output);
+                            });
+                        }
+                        return nextEdges;
                     });
                 }
             }
@@ -886,36 +997,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
     // a box generated a new output. Propagate it to directly connected boxes
     const applyNewOutput = (newOutput: IOutput) => {
-        const currentEdges = reactFlow.getEdges();
-
-        // Find which nodes are directly downstream of the output source
-        const nodesAffected: string[] = [];
-        for (const edge of currentEdges) {
-            if (edge.sourceHandle == "in/out" && edge.targetHandle == "in/out") continue;
-            if (newOutput.nodeId == edge.source) {
-                nodesAffected.push(edge.target);
-            }
-        }
-
-        setNodes((nds: any) =>
-            nds.map((node: any) => {
-                if (!nodesAffected.includes(node.id)) return node;
-
-                if (getFlowNodeCanonicalType(node) == NodeType.MERGE_FLOW) {
-                    const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
-                    const sourceIndex = sourceList.findIndex((s: any) => s === newOutput.nodeId);
-                    if (sourceIndex >= 0) {
-                        inputList[sourceIndex] = newOutput.output;
-                    }
-                    return { ...node, data: { ...node.data, input: inputList, source: sourceList } };
-                }
-
-                if (newOutput.output == undefined) {
-                    return { ...node, data: { ...node.data, input: "", source: "" } };
-                }
-                return { ...node, data: { ...node.data, input: newOutput.output, source: newOutput.nodeId } };
-            })
-        );
+        propagateDownstreamInputs(newOutput.nodeId, newOutput.output);
 
         setOutputs((opts: any) => {
             let added = false;
@@ -1232,6 +1314,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         workflowDescriptionRef,
         onEdgesDelete, onNodesDelete, onNodesChange,
         onConnect, addNode,
+        defaultSaveOutputDataset,
     });
 
     markNodeExecutedRef.current = workflowOps.markNodeExecuted;
@@ -1274,6 +1357,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             value={{
                 nodes,
                 edges,
+                outputs,
                 setOutputs,
                 setInteractions,
                 applyNewPropagation,
@@ -1306,6 +1390,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 loading,
 
                 ...workflowOps,
+                defaultSaveOutputDataset,
+                setDefaultSaveOutputDataset,
 
             }}
         >

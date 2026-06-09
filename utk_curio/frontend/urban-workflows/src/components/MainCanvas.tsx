@@ -39,6 +39,11 @@ import FloatingPanel from "./FloatingPanel";
 import WorkflowGoal from "./menus/top/WorkflowGoal";
 import { DashboardPanel } from "./DashboardPanel";
 import { CollaborationSidePanel } from "./collab/CollaborationSidePanel";
+import {
+    buildDatasetLoaderNodeOptions,
+    hasDatasetDrag,
+    readDatasetDragPayload,
+} from "../services/datasetCatalog";
 
 const CANVAS_EXTENT: [[number, number], [number, number]] = [[-2000, -2000], [6000, 6000]];
 
@@ -276,17 +281,34 @@ export function MainCanvas() {
 
     const handleDragOver = useCallback((event: React.DragEvent) => {
         event.preventDefault();
-        event.dataTransfer.dropEffect = "move";
+        // Dataset drags use effectAllowed="copy"; "move" blocks the drop in browsers.
+        event.dataTransfer.dropEffect = hasDatasetDrag(event.dataTransfer) ? "copy" : "move";
     }, []);
 
+    const handleCanvasDrop = useCallback((event: React.DragEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const dataset = readDatasetDragPayload(event.dataTransfer);
+        if (dataset) {
+            const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+            createCodeNode(NodeType.DATA_LOADING, buildDatasetLoaderNodeOptions(dataset, position));
+            showToast(`Created a Data Loading node for ${dataset.title}.`, "success");
+            markDirty();
+        }
+    }, [screenToFlowPosition, createCodeNode, markDirty, showToast]);
+
     const handleDrop = useCallback((event: React.DragEvent) => {
+        if (hasDatasetDrag(event.dataTransfer)) {
+            handleCanvasDrop(event);
+            return;
+        }
         event.preventDefault();
         const type = event.dataTransfer.getData("application/reactflow") as NodeType;
         if (!type) return;
         const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
         createCodeNode(type, { position });
         markDirty();
-    }, [screenToFlowPosition, createCodeNode, markDirty]);
+    }, [screenToFlowPosition, createCodeNode, markDirty, handleCanvasDrop]);
 
     const handleNodesChange = useCallback((changes: NodeChange[]) => {
         const allowedChanges: NodeChange[] = [];
@@ -471,11 +493,15 @@ export function MainCanvas() {
             {!dashboardOn && <CollaborationSidePanel />}
 
             {dashboardOn && <DashboardPanel />}
+            <div
+                className="curio-canvas-drop-target"
+                style={{ width: "100%", height: "100%" }}
+                onDragOver={!dashboardOn && !isSharedView ? handleDragOver : undefined}
+                onDrop={!dashboardOn && !isSharedView ? handleDrop : undefined}
+            >
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
-                onDragOver={!dashboardOn && !isSharedView ? handleDragOver : undefined}
-                onDrop={!dashboardOn && !isSharedView ? handleDrop : undefined}
                 onNodesChange={handleNodesChange}
                 onNodeDragStop={handleNodeDragStop}
                 onEdgesChange={handleEdgesChange}
@@ -507,6 +533,7 @@ export function MainCanvas() {
                 {AIModeRef.current ? <WorkflowGoal /> : null}
                 {AIModeRef.current ? <LLMChat /> : null}
             </ReactFlow>
+            </div>
             {isComponentsSelected ? (
                 <button
                     id={"explainButton"}

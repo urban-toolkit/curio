@@ -16,6 +16,8 @@ def _slugify(name: str) -> str:
 class OutputRef:
     node_id: str
     filename: str
+    # Sandbox ``dataType`` (e.g. raster, dataframe) for extensionless DuckDB paths.
+    data_type: Optional[str] = None
 
 
 @dataclass

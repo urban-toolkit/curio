@@ -15,6 +15,7 @@ import {
     paletteDescriptorBootstrapKey,
     type ToolsMenuTooltipSide,
 } from "./toolsMenuPackagePalette";
+import { DatasetsPaletteDropdown } from "./datasetPalette";
 import styles from "./ToolsMenu.module.css";
 
 const DraggableTool = memo(function DraggableTool({
@@ -127,10 +128,19 @@ const ToolsMenu = memo(function ToolsMenu() {
                         </Fragment>
                     ))}
                 </div>
-                <button className={styles.playAllButton} onClick={playAllNodes} title="Run all nodes">
-                    <FontAwesomeIcon icon={faForwardStep} />
-                </button>
+                <div className={styles.playAllRow}>
+                    <button
+                        type="button"
+                        className={styles.playAllButton}
+                        onClick={playAllNodes}
+                        title="Run all nodes"
+                        aria-label="Run all nodes"
+                    >
+                        <FontAwesomeIcon icon={faForwardStep} />
+                    </button>
+                </div>
             </div>
+            <DatasetsPaletteDropdown />
             <PackagesPaletteDropdown groups={packageGroups} />
         </div>
     );

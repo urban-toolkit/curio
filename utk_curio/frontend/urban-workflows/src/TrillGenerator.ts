@@ -116,7 +116,7 @@ export class TrillGenerator {
         TrillGenerator.list_of_trills = data.versions || {};
     }
 
-    static generateTrill(nodes: any, edges: any, name: string, task: string = "", packages: string[] = [], description: string = ""){
+    static generateTrill(nodes: any, edges: any, name: string, task: string = "", packages: string[] = [], description: string = "", datasets: any[] = []){
 
         let trill: any = {
             dataflow: {
@@ -131,6 +131,12 @@ export class TrillGenerator {
         }
         if (description) {
             trill.dataflow.description = description;
+        }
+
+        const datasetRefs = new Map<string, any>();
+        for (const dataset of datasets || []) {
+            const id = dataset?.datasetId || dataset?.id;
+            if (id) datasetRefs.set(id, dataset);
         }
 
         for(const node of nodes){
@@ -164,6 +170,9 @@ export class TrillGenerator {
                 trill_node.dashboardHeight = node.data.dashboardHeight;
             }
 
+            if(typeof node.data.saveOutputDataset === "boolean")
+                trill_node.saveOutputDataset = node.data.saveOutputDataset;
+
             if(node.data.code != undefined){
                 trill_node.content = node.data.code;
             }
@@ -184,7 +193,26 @@ export class TrillGenerator {
                 trill_node.metadata.keywords = node.data.keywords;
             }
 
+            if(Array.isArray(node.data.datasetRefs) && node.data.datasetRefs.length > 0){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.datasetRefs = node.data.datasetRefs;
+            }
+
+            if(node.data.appliedDatasets != undefined){
+                for(const dataset of Object.values(node.data.appliedDatasets)){
+                    const id = (dataset as any)?.datasetId || (dataset as any)?.id;
+                    if(id && !datasetRefs.has(id))
+                        datasetRefs.set(id, dataset);
+                }
+            }
+
             trill.dataflow.nodes.push(trill_node)
+        }
+
+        if(datasetRefs.size > 0){
+            trill.dataflow.datasets = Array.from(datasetRefs.values());
         }
 
         for(const edge of edges){

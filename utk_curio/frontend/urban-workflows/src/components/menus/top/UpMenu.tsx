@@ -40,6 +40,9 @@ import { useNavigate } from "react-router-dom";
 import { useUserContext } from "../../../providers/UserProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
 import { useNodeCatalogDrawer } from "../../../providers/NodeCatalogDrawerProvider";
+import { useDatasetCatalogDrawer } from "../../../providers/datasetCatalog";
+import { prefetchDatasetCatalog } from "../../../services/datasetCatalog";
+import { getCurrentProjectPackagesList } from "../../../registry/projectPackagesStore";
 
 export default function UpMenu({
     setDashBoardMode,
@@ -98,6 +101,7 @@ export default function UpMenu({
     const { loadTrill } = useCode();
     const { showToast } = useToastContext();
     const { openNodeCatalogDrawer } = useNodeCatalogDrawer();
+    const { openDatasetCatalogDrawer } = useDatasetCatalogDrawer();
 
     const toggleMenu = (menu: string) => {
         setActiveMenu((prev) => (prev === menu ? null : menu));
@@ -210,7 +214,7 @@ export default function UpMenu({
             edges,
             workflowNameRef.current,
             "",
-            packages,
+            getCurrentProjectPackagesList(),
         );
         const content = JSON.stringify(trillSpec, null, 2);
         const url = URL.createObjectURL(new Blob([content], { type: "application/json" }));
@@ -510,6 +514,25 @@ export default function UpMenu({
                             >
                                 <FontAwesomeIcon className={styles.dropDownIcon} icon={faStore} />
                                 <button className={styles.noStyleButton}>Node Catalog</button>
+                            </div>
+                            <div
+                                className={styles.dropDownRow}
+                                onMouseEnter={() => {
+                                    if (projectId) {
+                                        prefetchDatasetCatalog({
+                                            dataflowId: projectId,
+                                            includeHub: true,
+                                            sort: "recent",
+                                        });
+                                    }
+                                }}
+                                onClick={() => {
+                                    openDatasetCatalogDrawer();
+                                    setActiveMenu(null);
+                                }}
+                            >
+                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faDatabase} />
+                                <button className={styles.noStyleButton}>Data Catalog</button>
                             </div>
                             <div
                                 className={styles.dropDownRow}

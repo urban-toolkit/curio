@@ -45,12 +45,14 @@ def test_metadata_only_update_preserves_spec_and_outputs(
         outputs=[OutputRef(node_id="n1", filename="kept.data")],
     )
     detail = services.save_project(user, original)
+    # save_project auto-installs outputs and adds lean dataset refs to the spec.
+    saved_spec = detail.spec
 
     updated = services.update_project(user, detail.id, ProjectUpdate(name="Renamed"))
     loaded = services.load_project(user, detail.id)
 
     assert updated.name == "Renamed"
-    assert loaded["spec"] == _make_spec("keep-me")
+    assert loaded["spec"] == saved_spec
     assert loaded["outputs"] == [{"node_id": "n1", "filename": "kept.data"}]
 
 

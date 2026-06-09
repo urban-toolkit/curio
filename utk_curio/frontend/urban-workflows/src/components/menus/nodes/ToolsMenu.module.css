@@ -76,13 +76,32 @@
     color: #fbfcf6;
 }
 
+.playAllRow {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  width: 100%;
+}
+
+.playAllRow .toolbar {
+  flex: 1 1 auto;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  background-color: #1E1F23;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
 .playAllButton {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    width: 100%;
-    margin-top: 6px;
-    padding: 8px 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 8px 0;
     background-color: #1E1F23;
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 5px;

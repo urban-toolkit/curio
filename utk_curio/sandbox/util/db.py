@@ -25,6 +25,7 @@ class _NonClosingConn:
 
 
 _connection: '_NonClosingConn | None' = None
+_connection_path: str | None = None
 _initialized: bool = False
 
 
@@ -57,10 +58,17 @@ def get_connection() -> '_NonClosingConn':
     Return the shared persistent DuckDB connection for this process.
     Opens it on first call; subsequent calls return the same object.
     close() on the returned wrapper is a no-op.
+
+    Reopens when ``CURIO_LAUNCH_CWD`` / ``CURIO_SHARED_DATA`` change — e.g.
+    pytest switches per-test workspaces while reusing the same process.
     """
-    global _connection
+    global _connection, _connection_path
+    path = get_db_path()
+    if _connection is not None and _connection_path != path:
+        release_connection()
     if _connection is None:
-        _connection = _NonClosingConn(duckdb.connect(get_db_path()))
+        _connection = _NonClosingConn(duckdb.connect(path))
+        _connection_path = path
     return _connection
 
 
@@ -84,10 +92,11 @@ def release_connection() -> None:
     Call this when the current process is done with DuckDB and another
     process (e.g., the sandbox subprocess) needs write access to the file.
     """
-    global _connection, _initialized
+    global _connection, _connection_path, _initialized
     if _connection is not None:
         object.__getattribute__(_connection, '_con').close()
         _connection = None
+    _connection_path = None
     _initialized = False
 
 

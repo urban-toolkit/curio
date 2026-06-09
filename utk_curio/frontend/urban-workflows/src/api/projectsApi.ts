@@ -3,6 +3,8 @@ import { apiFetch } from "../utils/authApi";
 export interface OutputRef {
   node_id: string;
   filename: string;
+  /** Sandbox dataType (e.g. raster, dataframe) for extensionless artifact paths. */
+  data_type?: string;
 }
 
 export interface GraphPreviewNode {

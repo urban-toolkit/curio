@@ -274,10 +274,16 @@ def exec():
     node_type  = request.json['nodeType']
     data_type  = request.json['dataType']
     session_id = request.json.get('session_id') or None
+    save_dataset = request.json.get('save_dataset', True)
+    if isinstance(save_dataset, str):
+        save_dataset = save_dataset.strip().lower() not in ('0', 'false', 'no', 'off')
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
 
     print(f"[sandbox /exec] received  node={node_type}", file=sys.stderr, flush=True)
-    result = execute_code(code, str(file_path), str(node_type), str(data_type), launch_dir, session_id=session_id)
+    result = execute_code(
+        code, str(file_path), str(node_type), str(data_type), launch_dir,
+        session_id=session_id, save_dataset=bool(save_dataset),
+    )
 
     print(f"[sandbox /exec] finished  total={time.perf_counter()-t0:.3f}s  node={node_type}", file=sys.stderr, flush=True)
     return jsonify(result)

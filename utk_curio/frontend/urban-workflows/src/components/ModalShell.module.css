@@ -29,6 +29,20 @@
   max-height: none;
 }
 
+.xlarge {
+  width: min(1200px, max(320px, calc(100vw - 452px)));
+  height: calc(100vh - 32px);
+  max-width: none;
+  max-height: none;
+  background: #f7f7f4;
+}
+
+/* Center in the canvas area left of the dataset catalog drawer (~420px). */
+.xlargeOverlay {
+  left: max(16px, calc((100vw - 420px) / 2));
+  transform: translate(-50%, -50%);
+}
+
 .backdropOverlay {
   z-index: 10054;
 }

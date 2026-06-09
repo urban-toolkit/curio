@@ -33,6 +33,8 @@ shutdown_flag = threading.Event()
 processes = []
 file_logger = None
 verbosity = 1
+logger = logging.getLogger(__name__)
+
 
 def setup_logging():
     log_dir = Path(".curio")
@@ -451,11 +453,56 @@ def _kill_port(port: int) -> None:
             out = subprocess.check_output(
                 ["lsof", "-t", f"-i:{port}"], text=True, stderr=subprocess.DEVNULL
             )
+            pids = []
             for pid_str in out.strip().splitlines():
                 pid = int(pid_str.strip())
                 if pid:
                     log_warning(f"[Backend] Port {port} in use by PID {pid}. Terminating stale process.")
-                    os.kill(pid, _signal.SIGTERM)
+                    try:
+                        os.kill(pid, _signal.SIGTERM)
+                        pids.append(pid)
+                    except ProcessLookupError:
+                        # PID exited between lsof and SIGTERM; nothing to wait for.
+                        logger.debug(
+                            "PID %s exited before SIGTERM on port %s; skipping wait list",
+                            pid,
+                            port,
+                            exc_info=True,
+                        )
+
+            # Wait up to 3 s for the processes to exit; escalate to SIGKILL if needed.
+            if pids:
+                deadline = time.time() + 3.0
+                remaining = list(pids)
+                while remaining and time.time() < deadline:
+                    time.sleep(0.1)
+                    still_alive = []
+                    for pid in remaining:
+                        try:
+                            os.kill(pid, 0)   # 0 = probe only
+                            still_alive.append(pid)
+                        except ProcessLookupError:
+                            # PID exited between checks; treat as no longer alive.
+                            logger.debug(
+                                "PID %s no longer alive while waiting for port %s",
+                                pid,
+                                port,
+                                exc_info=True,
+                            )
+                    remaining = still_alive
+                for pid in remaining:
+                    try:
+                        log_warning(f"[Backend] PID {pid} still alive after SIGTERM; sending SIGKILL.")
+                        os.kill(pid, _signal.SIGKILL)
+                    except ProcessLookupError:
+                        logger.debug(
+                            "PID %s exited before SIGKILL on port %s",
+                            pid,
+                            port,
+                            exc_info=True,
+                        )
+                # Brief pause to let the kernel release the port after SIGKILL.
+                time.sleep(0.2)
     except subprocess.CalledProcessError:
         pass
     except Exception as e:
