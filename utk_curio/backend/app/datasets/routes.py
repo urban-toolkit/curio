@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import json
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, g, jsonify, request, send_file
 
 from utk_curio.backend.app.datasets.service import DatasetCatalogError, DatasetCatalogService
 from utk_curio.backend.app.projects.repositories import NotFoundError
@@ -137,6 +137,38 @@ def preview_dataset(dataset_id: str):
     except NotFoundError:
         return _error("Dataflow not found", 404)
     return jsonify(payload), 200
+
+
+@datasets_bp.route("/datasets/<dataset_id>/download", methods=["GET"])
+@require_auth
+def download_dataset(dataset_id: str):
+    try:
+        target = _service().download_target(
+            dataset_id,
+            dataflow_id=_dataflow_id_from_request(),
+            live_outputs=_parse_live_outputs(request.args.get("liveOutputs")),
+        )
+    except (DatasetCatalogError, ProjectError) as exc:
+        return _error(str(exc), getattr(exc, "status", 400))
+    except NotFoundError:
+        return _error("Dataflow not found", 404)
+
+    data = target.get("data")
+    if data is not None:
+        from io import BytesIO
+
+        return send_file(
+            BytesIO(data),
+            as_attachment=True,
+            download_name=target["download_name"],
+            mimetype=target.get("mimetype") or "application/octet-stream",
+        )
+    return send_file(
+        target["path"],
+        as_attachment=True,
+        download_name=target["download_name"],
+        mimetype=target.get("mimetype"),
+    )
 
 
 @datasets_bp.route("/datasets/import", methods=["POST"])

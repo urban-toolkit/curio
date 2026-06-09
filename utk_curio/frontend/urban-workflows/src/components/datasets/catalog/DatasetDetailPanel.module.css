@@ -175,7 +175,8 @@
 }
 
 .publishButton,
-.exportButton {
+.exportButton,
+.unpublishButton {
   min-height: 34px;
   border-radius: 7px;
   padding: 0 14px;
@@ -195,6 +196,20 @@
   background: transparent;
   color: #555;
   font-weight: 600;
+}
+
+.unpublishButton {
+  border: 1px solid #e7c9c2;
+  background: #fff6f4;
+  color: #9f3f3f;
+  font-weight: 600;
+}
+
+.publishButton:disabled,
+.exportButton:disabled,
+.unpublishButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .inspectorTabs {

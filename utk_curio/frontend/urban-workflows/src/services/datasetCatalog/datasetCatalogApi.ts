@@ -4,11 +4,31 @@ import {
   DatasetCatalogItem,
   DatasetCatalogQuery,
   DatasetCatalogResponse,
+  DatasetFormat,
   DatasetPreviewQuery,
   DatasetPreviewResponse,
 } from "./datasetCatalogTypes";
 
 const BACKEND_URL = process.env.BACKEND_URL || "";
+
+/** Canonical file extension per dataset format (mirror of the backend map). */
+const DATASET_FORMAT_EXTENSIONS: Record<string, string> = {
+  csv: ".csv",
+  geojson: ".geojson",
+  json: ".json",
+  parquet: ".parquet",
+  geotiff: ".tif",
+  shp: ".shp",
+};
+
+/** MIME type → extension, used as a last-resort fallback for the export name. */
+const MIME_EXTENSIONS: Record<string, string> = {
+  "text/csv": ".csv",
+  "application/json": ".json",
+  "application/geo+json": ".geojson",
+  "application/vnd.apache.parquet": ".parquet",
+  "image/tiff": ".tif",
+};
 
 /** Dispatched after a node auto-installs a computed dataset so open drawers reload. */
 export const DATASET_CATALOG_REFRESH_EVENT = "curio:dataset-catalog-refresh";
@@ -154,5 +174,69 @@ export const datasetCatalogApi = {
     return apiFetch(`/api/datasets/publish/${encodeURIComponent(datasetId)}${qs}`, {
       method: "DELETE",
     });
+  },
+
+  /**
+   * Export the dataset's serialized data file. Streams the raw file (parquet
+   * stays parquet, csv stays csv, etc.) and triggers a browser download.
+   */
+  async downloadDataset(
+    datasetId: string,
+    opts: {
+      dataflowId?: string | null;
+      liveOutputs?: Array<{ node_id: string; filename: string; data_type?: string }>;
+      format?: DatasetFormat | "";
+    } = {},
+  ): Promise<void> {
+    const params = new URLSearchParams();
+    if (opts.dataflowId) params.set("dataflowId", opts.dataflowId);
+    if (opts.liveOutputs && opts.liveOutputs.length > 0) {
+      params.set("liveOutputs", btoa(JSON.stringify(opts.liveOutputs)));
+    }
+    const raw = params.toString();
+    const token = getToken();
+    const res = await fetch(
+      `${BACKEND_URL}/api/datasets/${encodeURIComponent(datasetId)}/download${raw ? `?${raw}` : ""}`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
+    );
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const err = new Error(body.error || `HTTP ${res.status}`);
+      (err as { status?: number }).status = res.status;
+      throw err;
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get("Content-Disposition") || "";
+    // Prefer RFC 5987 filename* (UTF-8) then the plain filename token.
+    const extMatch = /filename\*=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
+    const plainMatch = /filename="?([^";]+)"?/i.exec(disposition);
+    const match = extMatch || plainMatch;
+    // Fallback: dataset ids can contain dots (e.g. "computed.n13…"), which the
+    // OS treats as an extension. Reserve the dot for a real extension by
+    // replacing dots in the fallback stem with underscores.
+    let filename = match
+      ? decodeURIComponent(match[1])
+      : datasetId.replace(/\./g, "_");
+    // Guarantee the data-format extension is present even if the server name or
+    // CORS-exposed header omitted it. Prefer the known dataset format, then fall
+    // back to the response Content-Type (a CORS-safelisted, always-readable
+    // header).
+    const contentType = (blob.type || "").split(";")[0].trim().toLowerCase();
+    const ext =
+      DATASET_FORMAT_EXTENSIONS[opts.format ?? ""] ||
+      MIME_EXTENSIONS[contentType] ||
+      "";
+    if (ext && !filename.toLowerCase().endsWith(ext)) {
+      filename += ext;
+    }
+
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
   },
 };

@@ -2,8 +2,12 @@ import React, { useState } from "react";
 import {
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
+  datasetCatalogApi,
   datasetProvenanceLabel,
+  isDatasetPublishedToCatalog,
+  notifyDatasetCatalogRefresh,
 } from "../../../services/datasetCatalog";
+import { useToastContext } from "../../../providers/ToastProvider";
 import {
   formatNodeTypeLabel,
   lineageUsageSummary,
@@ -198,6 +202,8 @@ export interface DatasetDetailPanelProps {
   dataflowId?: string | null;
   liveOutputs?: Array<{ node_id: string; filename: string; data_type?: string }>;
   onBack?: () => void;
+  /** Called after publish/unpublish so the parent can refetch the dataset. */
+  onMutated?: () => void;
 }
 
 export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
@@ -208,8 +214,12 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
   dataflowId = null,
   liveOutputs,
   onBack,
+  onMutated,
 }) => {
+  const { showToast } = useToastContext();
   const [activeTab, setActiveTab] = useState<(typeof TABS)[number]>("Overview");
+  const [exporting, setExporting] = useState(false);
+  const [publishBusy, setPublishBusy] = useState(false);
   // The standalone catalog page renders without a canvas, so live usage
   // cannot be resolved there and lineage is flagged as partial.
   const canvasAvailable = variant === "modal";
@@ -241,6 +251,61 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
   const countLabel = datasetCount(dataset);
   const tags = dataset.tags.length > 0 ? dataset.tags : [dataset.format];
   const { consumingNodes } = lineage.downstream;
+  const published = isDatasetPublishedToCatalog(dataset);
+  // Bundles are multi-part and have no single serialized file to export.
+  const canExport = dataset.format !== "bundle";
+  const activeDataset = dataset;
+
+  const handleExport = async () => {
+    if (exporting || !canExport) return;
+    setExporting(true);
+    try {
+      await datasetCatalogApi.downloadDataset(activeDataset.id, {
+        dataflowId,
+        liveOutputs,
+        format: activeDataset.format,
+      });
+    } catch (err) {
+      showToast((err as Error)?.message || "Could not export dataset.", "error");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handlePublish = async () => {
+    if (publishBusy) return;
+    setPublishBusy(true);
+    try {
+      await datasetCatalogApi.publishDataset(activeDataset.id, { dataflowId, liveOutputs });
+      notifyDatasetCatalogRefresh();
+      showToast("Dataset published to the Data Catalog.", "success");
+      onMutated?.();
+    } catch (err) {
+      showToast((err as Error)?.message || "Could not publish dataset.", "error");
+    } finally {
+      setPublishBusy(false);
+    }
+  };
+
+  const handleUnpublish = async () => {
+    if (publishBusy) return;
+    const confirmed = window.confirm(
+      `Unpublish ${activeDataset.title} from the Data Catalog?\n\nThis removes the catalog listing. Installed copies in dataflows are not removed.`,
+    );
+    if (!confirmed) return;
+    setPublishBusy(true);
+    try {
+      await datasetCatalogApi.unpublishDataset(activeDataset.id, { dataflowId });
+      notifyDatasetCatalogRefresh();
+      showToast(`${activeDataset.title} unpublished from the Data Catalog.`, "success");
+      onMutated?.();
+    } catch (err) {
+      showToast((err as Error)?.message || "Could not unpublish dataset.", "error");
+    } finally {
+      setPublishBusy(false);
+    }
+  };
+
   const showSchemaColumn = activeTab === "Overview";
   const bodyClass = showSchemaColumn
     ? styles.inspectorBody
@@ -297,8 +362,38 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
             </div>
           </div>
           <div className={styles.inspectorActions}>
-            <button className={styles.publishButton} type="button">Publish to Catalog</button>
-            <button className={styles.exportButton} type="button">Export</button>
+            {published ? (
+              <button
+                className={styles.unpublishButton}
+                type="button"
+                onClick={handleUnpublish}
+                disabled={publishBusy}
+              >
+                {publishBusy ? "Working…" : "Unpublish"}
+              </button>
+            ) : (
+              <button
+                className={styles.publishButton}
+                type="button"
+                onClick={handlePublish}
+                disabled={publishBusy}
+              >
+                {publishBusy ? "Publishing…" : "Publish to Catalog"}
+              </button>
+            )}
+            <button
+              className={styles.exportButton}
+              type="button"
+              onClick={handleExport}
+              disabled={exporting || !canExport}
+              title={
+                canExport
+                  ? undefined
+                  : "Multi-part (bundle) datasets cannot be exported as a single file."
+              }
+            >
+              {exporting ? "Exporting…" : "Export"}
+            </button>
           </div>
         </div>
 

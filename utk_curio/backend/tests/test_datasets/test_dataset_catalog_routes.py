@@ -55,6 +55,101 @@ def test_install_hub_dataset_copies_to_user_store(client, user_and_token, tmp_pa
     assert copied, "hub install should copy payload into the user dataset store"
 
 
+def test_download_hub_dataset_streams_data_file(client, user_and_token, tmp_path, monkeypatch):
+    _, token = user_and_token
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+
+    catalog = client.get("/api/datasets/catalog", headers=_auth(token)).get_json()
+    dataset = next(item for item in catalog["items"] if item["title"] == "Chicago Community Areas")
+
+    resp = client.get(f"/api/datasets/{dataset['id']}/download", headers=_auth(token))
+
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    disposition = resp.headers.get("Content-Disposition", "")
+    assert "attachment" in disposition
+    assert ".geojson" in disposition
+    assert len(resp.get_data()) > 0
+
+
+def test_download_name_falls_back_to_format_extension(tmp_path):
+    """A resolved file without an extension still gets the format's extension."""
+    from utk_curio.backend.app.datasets.service import DatasetCatalogService
+
+    artifact = tmp_path / "abc123_artifact"  # no suffix, like a computed output id
+    artifact.write_text("a,b\n1,2\n")
+
+    service = DatasetCatalogService(user=None)
+    service.get_dataset = lambda *a, **k: {  # type: ignore[assignment]
+        "id": "ds",
+        "title": "My Output",
+        "format": "csv",
+        "path": str(artifact),
+        "uri": str(artifact),
+    }
+
+    target = service.download_target("ds")
+    assert target["download_name"] == "My Output.csv"
+    assert target["mimetype"] == "text/csv"
+    assert target["path"] == str(artifact)
+
+
+def test_download_name_preserves_friendly_title():
+    """The export name keeps the readable title, only stripping illegal chars."""
+    from utk_curio.backend.app.datasets.catalog_listing import _download_name
+
+    assert _download_name("Chicago Community Areas", ".geojson") == (
+        "Chicago Community Areas.geojson"
+    )
+    # Reserved/path characters collapse to spaces; whitespace is normalized.
+    assert _download_name("Traffic / Speed: 2026", ".csv") == "Traffic Speed 2026.csv"
+    # An empty/whitespace title falls back to a sensible default.
+    assert _download_name("   ", ".parquet") == "dataset.parquet"
+    # Dots in the title are stripped so the only dot is the extension separator.
+    assert _download_name("export.csv", ".csv") == "export csv.csv"
+    assert _download_name("computed.n13351a78-885b", ".parquet") == (
+        "computed n13351a78-885b.parquet"
+    )
+
+
+def test_download_parquet_exports_deserialized_data(tmp_path):
+    """Parquet export re-serializes the deserialized table shown in the preview."""
+    import io
+
+    import pandas as pd
+
+    from utk_curio.backend.app.datasets.service import DatasetCatalogService
+
+    artifact = tmp_path / "abc123_artifact"  # no suffix, like a computed output id
+    frame = pd.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    frame.to_parquet(artifact)
+
+    service = DatasetCatalogService(user=None)
+    service.get_dataset = lambda *a, **k: {  # type: ignore[assignment]
+        "id": "ds",
+        "title": "My Output",
+        "format": "parquet",
+        "path": str(artifact),
+        "uri": str(artifact),
+    }
+
+    target = service.download_target("ds")
+    assert target["download_name"] == "My Output.parquet"
+    assert target["mimetype"] == "application/vnd.apache.parquet"
+    assert "path" not in target
+
+    exported = pd.read_parquet(io.BytesIO(target["data"]))
+    pd.testing.assert_frame_equal(exported.reset_index(drop=True), frame)
+
+
+def test_download_missing_dataset_returns_404(client, user_and_token, tmp_path, monkeypatch):
+    _, token = user_and_token
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+
+    resp = client.get("/api/datasets/does-not-exist/download", headers=_auth(token))
+
+    assert resp.status_code == 404
+
+
 def test_hub_dataset_preview_reads_catalog_payload(client, user_and_token, tmp_path, monkeypatch):
     _, token = user_and_token
     monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))

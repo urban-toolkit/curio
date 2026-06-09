@@ -199,3 +199,122 @@ class CatalogListingMixin(CatalogPathMixin):
         if resolved:
             item["path"] = resolved
         return self.preview_service.preview(item, row_limit=row_limit, offset=offset)
+
+    def download_target(
+        self,
+        dataset_id: str,
+        *,
+        dataflow_id: str | None = None,
+        live_outputs: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Resolve a dataset's data file for download/export.
+
+        Returns the absolute filesystem path plus a suggested attachment name
+        and mimetype. The serialized file is streamed as-is, so a parquet
+        dataset exports the parquet binary, a CSV exports the CSV, etc.
+        """
+        item = deepcopy(self.get_dataset(
+            dataset_id,
+            dataflow_id=dataflow_id,
+            live_outputs=live_outputs,
+        ))
+        if item.get("format") == "bundle":
+            raise DatasetCatalogError(
+                "Multi-part (bundle) datasets cannot be exported as a single file.",
+                400,
+            )
+        resolved = self._resolve_item_path(item)
+        if not resolved or not Path(resolved).is_file():
+            raise DatasetCatalogError("Dataset file is not available for export.", 404)
+
+        path = Path(resolved)
+        fmt = item.get("format")
+        extension = _download_extension(path, fmt)
+        download_name = _download_name(item.get("title") or dataset_id, extension)
+        target: dict[str, Any] = {
+            "download_name": download_name,
+            "mimetype": _DOWNLOAD_MIMETYPES.get(extension),
+        }
+        if fmt == "parquet":
+            # Export the deserialized table (the same data the table preview
+            # shows), re-serialized as a clean standard parquet — not the raw
+            # stored artifact.
+            try:
+                target["data"] = _reserialize_parquet(path)
+            except Exception as exc:  # noqa: BLE001
+                raise DatasetCatalogError(
+                    f"Could not serialize parquet dataset for export: {exc}",
+                    500,
+                ) from exc
+        else:
+            target["path"] = resolved
+        return target
+
+
+_DOWNLOAD_MIMETYPES: dict[str, str] = {
+    ".csv": "text/csv",
+    ".json": "application/json",
+    ".geojson": "application/geo+json",
+    ".parquet": "application/vnd.apache.parquet",
+    ".tif": "image/tiff",
+    ".tiff": "image/tiff",
+    ".shp": "application/octet-stream",
+}
+
+# Catalog ``DatasetFormat`` → canonical file extension. Used when the resolved
+# data file has no suffix on disk (e.g. computed/artifact outputs).
+_FORMAT_EXTENSIONS: dict[str, str] = {
+    "csv": ".csv",
+    "geojson": ".geojson",
+    "json": ".json",
+    "parquet": ".parquet",
+    "geotiff": ".tif",
+    "shp": ".shp",
+}
+
+
+def _reserialize_parquet(path: Path) -> bytes:
+    """Read the stored parquet via the preview deserializer and re-write it as a
+    clean standard (geo)parquet, so the export matches the table preview."""
+    import io
+
+    from utk_curio.sandbox.util.tabular_preview import load_parquet_frame
+
+    frame, _total = load_parquet_frame(path)
+    buffer = io.BytesIO()
+    try:
+        frame.to_parquet(buffer, index=False)
+    except TypeError:
+        # Some GeoDataFrame/pyarrow versions do not accept the ``index`` kwarg.
+        buffer = io.BytesIO()
+        frame.to_parquet(buffer)
+    return buffer.getvalue()
+
+
+def _download_extension(path: Path, fmt: str | None) -> str:
+    """Prefer the real file extension; fall back to the dataset format's."""
+    suffix = path.suffix.lower()
+    if suffix in _DOWNLOAD_MIMETYPES:
+        return suffix
+    if suffix:
+        return suffix
+    return _FORMAT_EXTENSIONS.get(fmt or "", "")
+
+
+def _download_name(title: str, extension: str) -> str:
+    """Build a friendly, filesystem-safe download filename from the dataset's
+    display title plus the canonical extension.
+
+    Preserves the human-readable title (spaces and casing) so the exported file
+    matches the name shown in the catalog, only stripping characters that are
+    illegal in filenames.
+    """
+    import re
+
+    # Replace path separators, reserved characters, and dots with a space, then
+    # collapse whitespace. Dots are stripped from the stem so the only dot in the
+    # final filename is the one separating the extension.
+    cleaned = re.sub(r'[\\/:*?"<>|.\x00-\x1f]+', " ", title.strip())
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
+    stem = cleaned or "dataset"
+    return f"{stem}{extension}"

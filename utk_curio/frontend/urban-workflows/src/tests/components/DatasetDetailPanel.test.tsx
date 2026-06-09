@@ -6,6 +6,9 @@ import "@testing-library/jest-dom";
 jest.mock("../../services/datasetLineage/useDatasetLineage", () => ({
   useDatasetLineage: jest.fn(),
 }));
+jest.mock("../../providers/ToastProvider", () => ({
+  useToastContext: () => ({ showToast: jest.fn() }),
+}));
 jest.mock("../../components/datasets/catalog/useDatasetResolvedSchema", () => ({
   useDatasetResolvedSchema: jest.fn(() => ({
     fields: [
@@ -96,6 +99,41 @@ function renderPanel(lineage: DatasetLineage, dataset = catalogItem()) {
     <DatasetDetailPanel dataset={dataset} variant="modal" dataflowId="flow-1" />,
   );
 }
+
+describe("DatasetDetailPanel header actions", () => {
+  beforeEach(() => {
+    mockUseDatasetLineage.mockReset();
+  });
+
+  it("shows Unpublish (not Publish) for an already-published dataset", () => {
+    renderPanel(lineageFixture(), catalogItem({ origin: "hub", installed: true }));
+    expect(screen.getByRole("button", { name: "Unpublish" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Publish to Catalog" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows Publish to Catalog for an unpublished dataset", () => {
+    renderPanel(
+      lineageFixture(),
+      catalogItem({ origin: "computed", installed: false, publishedToHub: false }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Publish to Catalog" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Unpublish" })).not.toBeInTheDocument();
+  });
+
+  it("disables Export for multi-part bundle datasets", () => {
+    renderPanel(lineageFixture(), catalogItem({ format: "bundle" }));
+    expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
+  });
+
+  it("enables Export for a regular dataset", () => {
+    renderPanel(lineageFixture(), catalogItem({ format: "parquet" }));
+    expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
+  });
+});
 
 describe("DatasetDetailPanel lineage", () => {
   beforeEach(() => {

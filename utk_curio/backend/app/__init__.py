@@ -13,6 +13,9 @@ CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type,Authorization",
     "Access-Control-Allow-Methods": "GET,PUT,POST,PATCH,DELETE,OPTIONS",
+    # Expose Content-Disposition so cross-origin clients (e.g. dataset export)
+    # can read the friendly download filename returned by send_file.
+    "Access-Control-Expose-Headers": "Content-Disposition",
     "Access-Control-Max-Age": "600",
 }
 

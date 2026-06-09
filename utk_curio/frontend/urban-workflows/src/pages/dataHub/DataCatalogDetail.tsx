@@ -20,6 +20,7 @@ export const DataCatalogDetail: React.FC = () => {
         error={catalog.error}
         variant="page"
         onBack={() => navigate("/catalog/data")}
+        onMutated={() => catalog.reload()}
       />
     </div>
   );

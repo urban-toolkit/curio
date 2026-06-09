@@ -21,6 +21,7 @@ export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
   const [dataset, setDataset] = useState<DatasetCatalogItem | null>(fallbackDataset);
   const [loading, setLoading] = useState(!fallbackDataset);
   const [error, setError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,7 +45,7 @@ export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [dataflowId, datasetId, liveOutputs]);
+  }, [dataflowId, datasetId, liveOutputs, reloadToken]);
 
   return (
     <ModalShell onClose={onClose} size="xlarge" layer="overlay">
@@ -55,6 +56,7 @@ export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
         variant="modal"
         dataflowId={dataflowId}
         liveOutputs={liveOutputs}
+        onMutated={() => setReloadToken((token) => token + 1)}
       />
     </ModalShell>
   );
