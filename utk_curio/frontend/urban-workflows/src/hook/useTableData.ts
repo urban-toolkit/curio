@@ -179,18 +179,46 @@ const useTableData = ({ data }: { data: INodeData }) => {
         })
       );
 
-      // Filter out nulls, then expand any nested `outputs` envelopes so each
-      // layer becomes its own tab. autk-grammar persists a multi-layer wrapper
-      // to the backend as a single artifact whose payload is
-      // `{dataType:'outputs', data:[layer,...]}`, so its `data.input` is one
-      // ref — `wrappers.length === 1` — but downstream we want one tab per
-      // layer (same as a merge node). Without this expansion, `createTableData`
-      // has no branch for `outputs` and the tab renders empty.
+      // Filter out nulls, then expand multi-layer envelopes into one tab per
+      // layer. autk-grammar has two emit shapes the pool must accept:
+      //   - compute-only / data+compute: `layersToPoolWrapper` →
+      //     `{dataType:'outputs', data:[{dataType:'geodataframe', data:FC, layerName, layerType}, ...]}`
+      //   - data-only: `compileDataSpecToAutkDbJs` returns `[{name, type, geojson}, ...]`,
+      //     which the sandbox stores as `kind='list'`. After unwrap, fetched[i]
+      //     is a plain JS array of layer records (each wrapped in `{dataType:'dict', data:{...}}`
+      //     by parseOutput's list traversal).
+      // Without expansion, `tabd = [theWholeWrapper]` and `createTableData`
+      // has no branch for either → empty table. Normalise both shapes to
+      // individual geodataframe entries so the downstream code stays uniform.
       let tabd: any[] = [];
       for (const x of fetched) {
         if (x == null) continue;
         if (x.dataType === 'outputs' && Array.isArray(x.data)) {
           for (const item of x.data) if (item) tabd.push(item);
+        } else if (Array.isArray(x)) {
+          for (const item of x) {
+            if (!item) continue;
+            // parseOutput on a `list` recursively wraps each dict element
+            // as `{dataType:'dict', data:{...}}`; peel any non-known envelope
+            // until we reach the underlying layer record.
+            let rec: any = item;
+            while (
+              rec && typeof rec === 'object' &&
+              typeof rec.dataType === 'string' &&
+              !KNOWN_TYPES.has(rec.dataType) &&
+              'data' in rec
+            ) {
+              rec = rec.data;
+            }
+            if (rec && rec.geojson?.type === 'FeatureCollection') {
+              tabd.push({
+                dataType: 'geodataframe',
+                data: rec.geojson,
+                layerName: rec.name,
+                layerType: rec.type,
+              });
+            }
+          }
         } else {
           tabd.push(x);
         }

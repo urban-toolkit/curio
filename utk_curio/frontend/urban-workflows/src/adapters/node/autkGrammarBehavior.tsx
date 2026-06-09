@@ -1273,6 +1273,28 @@ async function resolveUpstreamLayers(raw: any): Promise<Array<{ name: string; fc
     }
     if (!arg) return [];
 
+    // Peel any generic envelope (`dict`, `list`, …) the sandbox adds around a
+    // persisted artifact until we reach a recognised application-level shape
+    // (`outputs` / `geodataframe`) or a non-envelope value. This must happen
+    // BEFORE the outputs/geodataframe checks below, because a multi-layer
+    // wrapper persisted via `persistLayersToBackend` arrives as
+    //   { dataType:'dict', data:{ dataType:'outputs', data:[…] } }
+    // and the previous single-step unwrap would skip the outputs check and
+    // fall through to the asFc fallback — which would silently collapse the
+    // whole multi-layer wrapper to its FIRST layer (renamed 'upstream'),
+    // losing every other layer (including the one a downstream compute block
+    // had targeted).
+    const KNOWN_SHAPES = new Set(['outputs', 'geodataframe']);
+    while (
+        arg && typeof arg === 'object' &&
+        typeof arg.dataType === 'string' &&
+        !KNOWN_SHAPES.has(arg.dataType) &&
+        'data' in arg
+    ) {
+        arg = arg.data;
+    }
+    if (!arg) return [];
+
     // Curio Data Pool wrapper round-trip: recognise the pool-compatible
     // shape produced by `layersToPoolWrapper` (and re-emitted by the pool
     // with `interacted` flags applied) before the generic envelope unwrap
@@ -1300,12 +1322,6 @@ async function resolveUpstreamLayers(raw: any): Promise<Array<{ name: string; fc
             }];
         }
     }
-
-    // Unwrap {dataType, data} envelope
-    if (typeof arg === 'object' && 'dataType' in arg && 'data' in arg) {
-        arg = arg.data;
-    }
-    if (!arg) return [];
 
     // Strip Curio's {dataType, data} envelope. The sandbox's parseOutput (run by
     // GET /get) wraps every artifact, and for a 'list' it ALSO wraps each element,
