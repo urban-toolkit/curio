@@ -1,10 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
-import {
-  DatasetCatalogItem,
-  DatasetSchemaField,
-  datasetCatalogApi,
-} from "../../../services/datasetCatalog";
-import { defaultSchemaFields } from "./datasetDetailHelpers";
+import React, { useMemo, useState } from "react";
 import {
   fieldIconGlyph,
   fieldIconKind,
@@ -12,6 +6,7 @@ import {
   normalizeFieldType,
   schemaStats,
 } from "./schemaFieldMeta";
+import type { ResolvedDatasetSchema } from "./useDatasetResolvedSchema";
 import styles from "./DatasetSchemaPanel.module.css";
 
 const ICON_CLASS: Record<ReturnType<typeof fieldIconKind>, string> = {
@@ -23,75 +18,12 @@ const ICON_CLASS: Record<ReturnType<typeof fieldIconKind>, string> = {
 };
 
 export interface DatasetSchemaPanelProps {
-  dataset: DatasetCatalogItem;
-  dataflowId?: string | null;
-  liveOutputs?: Array<{ node_id: string; filename: string; data_type?: string }>;
+  schema: ResolvedDatasetSchema;
 }
 
-export const DatasetSchemaPanel: React.FC<DatasetSchemaPanelProps> = ({
-  dataset,
-  dataflowId = null,
-  liveOutputs,
-}) => {
+export const DatasetSchemaPanel: React.FC<DatasetSchemaPanelProps> = ({ schema }) => {
+  const { fields, geometryType, fetching, unsupportedMessage } = schema;
   const [filter, setFilter] = useState("");
-  const [fields, setFields] = useState<DatasetSchemaField[]>(
-    dataset.schema?.fields?.length ? dataset.schema.fields : defaultSchemaFields(dataset),
-  );
-  const [geometryType, setGeometryType] = useState<string | null | undefined>(dataset.schema?.geometryType);
-  const [fetching, setFetching] = useState(!dataset.schema?.fields?.length);
-  const [unsupportedMessage, setUnsupportedMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    setFilter("");
-    if (dataset.schema?.fields?.length) {
-      setFields(dataset.schema.fields);
-      setGeometryType(dataset.schema.geometryType);
-      setUnsupportedMessage(null);
-      setFetching(false);
-      return;
-    }
-
-    let cancelled = false;
-    setFetching(true);
-    void datasetCatalogApi
-      .preview(dataset.id, { dataflowId, liveOutputs, offset: 0, rowLimit: 1 })
-      .then((response) => {
-        if (cancelled) return;
-        if (response.unsupported) {
-          setFields(defaultSchemaFields(dataset));
-          setUnsupportedMessage(response.message || null);
-          return;
-        }
-        const bundleParts = response.schema?.bundleParts as
-          | Array<{ label?: string; format?: string; kind?: string }>
-          | undefined;
-        const previewFields = bundleParts?.length
-          ? bundleParts.map((part, index) => ({
-              name: part.label || `Part ${index + 1}`,
-              type: (part.format || "json").toUpperCase(),
-              nullable: true,
-            }))
-          : response.schema?.fields?.length
-            ? response.schema.fields
-            : defaultSchemaFields(dataset);
-        setFields(previewFields);
-        setGeometryType(response.schema?.geometryType ?? dataset.schema?.geometryType);
-        setUnsupportedMessage(null);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setFields(defaultSchemaFields(dataset));
-          setUnsupportedMessage(null);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setFetching(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [dataflowId, dataset.id, dataset.schema?.fields, liveOutputs]);
 
   const filteredFields = useMemo(() => {
     const needle = filter.trim().toLowerCase();
@@ -119,6 +51,9 @@ export const DatasetSchemaPanel: React.FC<DatasetSchemaPanelProps> = ({
       {fetching && fields.length === 0 ? (
         <div className={styles.state}>Loading schema...</div>
       ) : null}
+      {!fetching && unsupportedMessage && fields.length === 0 ? (
+        <div className={styles.state}>{unsupportedMessage}</div>
+      ) : null}
 
       <div className={`${styles.tableWrap} ${fetching ? styles.panelRefreshing : ""}`}>
         <div className={styles.headRow}>
@@ -145,14 +80,13 @@ export const DatasetSchemaPanel: React.FC<DatasetSchemaPanelProps> = ({
             </div>
           );
         })}
-        {filteredFields.length === 0 ? (
+        {fields.length > 0 && filteredFields.length === 0 ? (
           <div className={styles.state}>No fields match the current filter.</div>
         ) : null}
       </div>
 
       <div className={styles.footer}>
         {stats.fieldCount} fields · {stats.nullableCount} nullable · {stats.geometryCount} geometry
-        {unsupportedMessage ? ` · ${unsupportedMessage}` : ""}
       </div>
     </section>
   );

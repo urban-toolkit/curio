@@ -1,7 +1,9 @@
 /* Shell for /catalog — header + master tabs + scrollable outlet */
 
 .pageShell {
-  min-height: 100vh;
+  /* Bounded height: html/body never scroll (overflow:hidden in MainCanvas.css),
+     so each region must own its scroll within the viewport. */
+  height: 100vh;
   display: flex;
   flex-direction: column;
   font-family: Rubik, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif;

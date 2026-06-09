@@ -50,16 +50,6 @@ export function formatDatasetLocation(dataset: DatasetCatalogItem): string {
   return dataset.path || dataset.uri || DATASET_ORIGIN_LABEL[dataset.origin];
 }
 
-export function defaultSchemaFields(dataset?: DatasetCatalogItem | null) {
-  return [
-    { name: "geometry", type: dataset?.format === "geojson" ? "GEOMETRY" : "STRING", nullable: false },
-    { name: "id", type: "INTEGER", nullable: false },
-    { name: "name", type: "STRING", nullable: true },
-    { name: "source", type: "STRING", nullable: true },
-    { name: "updated_at", type: "DATETIME", nullable: true },
-  ];
-}
-
 export function formatClass(format: DatasetFormat, styles: Record<string, string>): string {
   return `${styles.formatChip} ${styles[`format_${format}`] || ""}`;
 }

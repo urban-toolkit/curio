@@ -224,13 +224,18 @@
   border-bottom-color: #1e1f23 !important;
 }
 
-/* Three-column split body (schema | preview+lineage | info) */
+/* Three-column split body (schema | main content | info+lineage) */
 .inspectorBody {
   flex: 1;
   display: grid;
   grid-template-columns: minmax(240px, 20.6%) minmax(0, 1fr) minmax(280px, 27.8%);
   min-height: 0;
   overflow: hidden;
+}
+
+/* Focused tabs (Schema / Table Preview / Lineage) hide the schema column. */
+.inspectorBodyTwoCol {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 27.8%);
 }
 
 .schemaColumn,
@@ -251,6 +256,11 @@
 .centerColumn {
   border-left: 1px solid #e5e5e5;
   border-right: 1px solid #e5e5e5;
+  overflow-y: auto;
+}
+
+.inspectorBodyTwoCol .centerColumn {
+  border-left: 0;
 }
 
 .previewSection {
@@ -274,12 +284,11 @@
   border-bottom: 3px solid #1e1f23;
 }
 
+/* Expanded lineage view (center column, Lineage tab) */
 .lineageSection {
   flex: 1;
   min-height: 180px;
-  overflow: auto;
   background: #fafafa;
-  border-top: 1px solid #e5e5e5;
   padding: 16px 20px 24px;
 }
 
@@ -304,11 +313,76 @@
   text-transform: uppercase;
 }
 
-.lineageHeader p,
-.lineageFooter {
+.lineageHeader p {
   margin: 6px 0 0;
   color: #777;
   font-size: 11px;
+}
+
+/* Compact lineage summary + states (right sidebar) */
+.lineageSummary {
+  margin: 0 0 10px;
+  color: #1e1f23;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lineagePartialNote {
+  margin: 0 0 10px;
+  border: 1px solid #f5e3c2;
+  border-radius: 6px;
+  background: #fdf6ec;
+  color: #8a5b16;
+  padding: 8px 10px;
+  font-size: 11px;
+}
+
+.lineageEmpty {
+  margin: 4px 0 8px;
+  color: #777;
+  font-size: 11px;
+}
+
+.lineageGroup {
+  margin: 0 0 10px;
+}
+
+.lineageGroupSummary {
+  cursor: pointer;
+  list-style-position: outside;
+  margin: 0 0 8px;
+  color: #999;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.statusPill {
+  align-self: center;
+  border-radius: 9px;
+  padding: 1px 8px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.statusActive {
+  background: #f0faf2;
+  color: #2f8f4a;
+}
+
+.statusStale {
+  background: #fdf6ec;
+  color: #a06a10;
+}
+
+.statusBroken {
+  background: #fdecec;
+  color: #9f3f3f;
 }
 
 .lineageLabel {
@@ -399,26 +473,6 @@
   font-size: 11px;
 }
 
-.lineageViewLink,
-.lineageGraphLink {
-  border: 0;
-  background: transparent;
-  color: #2f8f4a;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  padding: 0;
-  white-space: nowrap;
-}
-
-.lineageGraphLink {
-  margin-top: 8px;
-}
-
-.consumedArrow {
-  color: #6b6b76;
-  font-size: 10px;
-}
 
 /* Right info column */
 .infoColumn {
@@ -496,11 +550,6 @@
   min-width: 0;
 }
 
-.originCard .lineageViewLink {
-  align-self: flex-start;
-  margin-top: 2px;
-}
-
 .hubSourceCard {
   margin-top: 8px;
   padding: 10px 12px;
@@ -559,12 +608,21 @@
     grid-template-rows: minmax(0, 1fr) auto;
   }
 
+  .inspectorBodyTwoCol {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
   .schemaColumn {
     grid-row: 1 / span 2;
   }
 
   .infoColumn {
     grid-column: 2;
+  }
+
+  .inspectorBodyTwoCol .infoColumn {
+    grid-column: 1;
   }
 
   .centerColumn {
