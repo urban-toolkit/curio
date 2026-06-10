@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useEdges, Edge, Position } from 'reactflow';
 import { NodeBehaviorHook, HandleDef } from '../../registry/types';
 import { NodeType } from '../../constants';
@@ -6,7 +6,7 @@ import { Starter, useStarterContext } from '../../providers/StarterProvider';
 
 const MERGE_SLOT_COUNT = 5;
 
-export const useMergeFlowBehavior: NodeBehaviorHook = (data, _nodeState) => {
+export const useMergeFlowBehavior: NodeBehaviorHook = (data, nodeState) => {
   // Read live edges from React Flow's store. This was previously done via a
   // manual `useStoreApi().subscribe`, but `store.subscribe` only fires on
   // *future* state changes — not the current state. So on first mount the
@@ -24,14 +24,43 @@ export const useMergeFlowBehavior: NodeBehaviorHook = (data, _nodeState) => {
     [edges, data.nodeId]
   );
 
-  useEffect(() => {
-    const outArr = inputValues.filter(v => v !== undefined);
-    if (connectedCount > 0 && outArr.length === connectedCount) {
-      if (typeof data.outputCallback === 'function') {
-        data.outputCallback(data.nodeId, { data: outArr, dataType: 'outputs' });
-      }
+  // Bundle the connected slots and emit them as a single 'outputs' value — but
+  // ONLY once every connected slot holds a REAL upstream output. On connect
+  // (during a fresh load) `applyOutput` seeds each slot with the empty-string
+  // placeholder `""` (FlowProvider: `sourceEntry?.output ?? ""`) before the
+  // source node has executed. Counting only non-`undefined` slots let those `""`
+  // placeholders through, so the merge emitted `{data:["",""], dataType:'outputs'}`
+  // prematurely — and a downstream code node then crashed in the sandbox on
+  // `""['path']`. Treat ""/null as not-yet-produced so the merge emits only once
+  // every input is a real ref.
+  const emitIfReady = useCallback((slots: any[]) => {
+    const isReady = (v: any) => v !== undefined && v !== null && v !== "";
+    const outArr = (Array.isArray(slots) ? slots : []).filter(isReady);
+    if (connectedCount > 0 && outArr.length === connectedCount
+        && typeof data.outputCallback === 'function') {
+      data.outputCallback(data.nodeId, { data: outArr, dataType: 'outputs' });
     }
-  }, [inputValues, connectedCount, data.nodeId, data.outputCallback]);
+  }, [connectedCount, data.nodeId, data.outputCallback]);
+
+  // Reactive emit: fire as soon as the last slot fills (live editing).
+  useEffect(() => {
+    emitIfReady(inputValues);
+  }, [inputValues, emitIfReady]);
+
+  // Run-All path: a merge has no user code, so by default `UniversalNode` sees
+  // no `sendCode` and calls `signalNodeExecDone` the instant `triggerExec` bumps
+  // at the merge's scheduler level — advancing the run to the downstream node
+  // BEFORE this merge's output has propagated, so that node executes with a null
+  // input (`arg=None`). Exposing `sendCodeOverride` makes `UniversalNode` treat
+  // the merge as a code node and skip that premature signal; `signalNodeExecDone`
+  // then fires from `FlowProvider.applyNewOutput` only AFTER the emit below has
+  // set the downstream node's `data.input`. Read the live slots straight from
+  // `data.input` (set synchronously by `applyNewOutput` as upstream nodes
+  // finish). This mirrors the Data Pool's `sendCodeOverride` for its async fetch.
+  const sendCodeOverride = useCallback(async () => {
+    emitIfReady(Array.isArray(data.input) ? data.input : inputValues);
+    nodeState.setOutput({ code: 'success', content: '' });
+  }, [emitIfReady, data.input, inputValues, nodeState]);
 
   useEffect(() => {
     if (Array.isArray(data.input)) {
@@ -87,5 +116,6 @@ export const useMergeFlowBehavior: NodeBehaviorHook = (data, _nodeState) => {
   return {
     handlesOverride,
     setOutputCallbackOverride,
+    sendCodeOverride,
   };
 }

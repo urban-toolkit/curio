@@ -4,25 +4,51 @@
       {
         "id": "niteroi-osm",
         "type": "curio.builtin/autk-grammar",
-        "x": 120,
-        "y": 300,
-        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/niteroi.osm.pbf\",\n      \"queryArea\": {\n        \"geocodeArea\": \"Rio de Janeiro\",\n        \"areas\": [\n          \"Niterói\"\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"surface\",\n          \"parks\",\n          \"water\",\n          \"roads\"\n        ],\n        \"dropOsmTable\": true\n      }\n    }\n  ]\n}",
+        "x": -646.8257819682668,
+        "y": 38.463978207393204,
+        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/niteroi.osm.pbf\",\n      \"queryArea\": {\n        \"geocodeArea\": \"Rio de Janeiro\",\n        \"areas\": [\n          \"Niterói\"\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"coordinateFormat\": \"EPSG:4326\",\n        \"dropOsmTable\": true,\n        \"layers\": [\n          \"surface\",\n          \"parks\",\n          \"water\",\n          \"roads\"\n        ]\n      }\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Load Niterói roads (+ surface/parks/water) from the local PBF and emit them downstream.",
+        "goal": "Load Niterói OSM surface, parks, water, and roads from the local PBF in EPSG:4326 and emit the layer array downstream.",
         "metadata": {
           "keywords": []
         }
       },
       {
-        "id": "niteroi-lst",
-        "type": "curio.builtin/computation-analysis",
-        "x": 460,
-        "y": 300,
-        "content": "import io\nimport requests\nimport numpy as np\nimport geopandas as gpd\nfrom rasterio.io import MemoryFile\nfrom rasterstats import zonal_stats\n\n# `arg` is the layer array emitted by the upstream autk-grammar (data-only) node:\n#   [{ \"name\": \"table_osm_roads\", \"type\": ..., \"geojson\": {...} }, ...]\n# The grammar loads OSM in EPSG:3395 (its default workspace CRS).\nlayers = arg if isinstance(arg, list) else [arg]\nroads_layer = next(l for l in layers if l.get(\"name\") == \"table_osm_roads\")\nroads = gpd.GeoDataFrame.from_features(roads_layer[\"geojson\"][\"features\"])\nroads = roads.set_crs(\"EPSG:3395\", allow_override=True)\n\n# 24-band Niteroi land-surface-temperature raster (summers 2001-2024).\nurl = \"https://raw.githubusercontent.com/urban-toolkit/autark/main/usecases/public/data/niteroi_lst_verao_2001_2024.tif\"\nresp = requests.get(url, timeout=180)\nresp.raise_for_status()\n\nwith MemoryFile(resp.content) as mf:\n    with mf.open() as src:\n        nbands = src.count\n        affine = src.transform\n        nod = src.nodata\n        # 1 km buffer around each road, in metric EPSG:3395, then to the raster CRS for sampling.\n        buf = gpd.GeoSeries(roads.geometry.buffer(1000), crs=\"EPSG:3395\").to_crs(src.crs)\n        series = [[] for _ in range(len(buf))]\n        for b in range(1, nbands + 1):\n            band = src.read(b).astype(\"float64\")\n            stats = zonal_stats(buf, band, affine=affine, stats=\"mean\", nodata=nod)\n            for i, s in enumerate(stats):\n                m = s.get(\"mean\")\n                series[i].append(float(m) if m is not None else 0.0)\n\n# Per-road yearly LST series consumed by the downstream grammar OLS compute as an array attribute.\nroads[\"lst_timeseries\"] = series\nroads = roads.set_crs(\"EPSG:3395\", allow_override=True)\nroads.metadata = {\"name\": \"niteroi_roads_lst\"}\nreturn roads\n",
+        "id": "niteroi-raster",
+        "type": "curio.builtin/data-loading",
+        "x": -644.7489808786365,
+        "y": 451.3087901933269,
+        "content": "import base64\nimport requests\nimport geopandas as gpd\nfrom shapely.geometry import Point\n\n# Fetch the Niterói land surface temperature raster (24 yearly bands,\n# 2001–2024) and embed the bytes as base64 inside a single-row\n# GeoDataFrame so the downstream join can reuse them without refetching.\nurl = 'https://raw.githubusercontent.com/urban-toolkit/autark/main/usecases/public/data/niteroi_lst_verao_2001_2024.tif'\nresp = requests.get(url, timeout=120)\nresp.raise_for_status()\ngeotiff_b64 = base64.b64encode(resp.content).decode('ascii')\n\ngdf = gpd.GeoDataFrame(\n    {'geotiff_b64': [geotiff_b64], 'band_count': [24]},\n    geometry=[Point(0, 0)],\n    crs='EPSG:4326',\n)\nreturn gdf",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Fetch the 24-band LST raster and attach each road's per-year mean LST within 1 km as lst_timeseries.",
+        "goal": "Fetch the 24-band LST GeoTIFF (2001–2024) for Niterói and carry its bytes downstream as base64.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "niteroi-merge",
+        "type": "curio.builtin/merge-flow",
+        "x": 170,
+        "y": 275,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Bundle the OSM layers and the raster bytes row into a single 2-element input for the spatial join.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "niteroi-join",
+        "type": "curio.builtin/js-computation",
+        "x": 314.4709619698908,
+        "y": 207.6737554748899,
+        "content": "import { AutkSpatialDb } from '@urban-toolkit/autk-db';\n\n// The merge delivers [osmLayers, rasterFc]:\n//   arg[0] = OSM layer array (EPSG:4326) from niteroi-osm\n//   arg[1] = single-row FeatureCollection carrying the GeoTIFF bytes (base64)\n// Depending on how the merge output was resolved it can also arrive as a\n// { data: [...] } 'outputs' wrapper — accept either, and if it is neither,\n// throw an error that reports the ACTUAL shape so the pipeline is debuggable.\nconst __shape = (v) => v == null ? ('' + v)\n  : Array.isArray(v) ? ('array[' + v.length + ']')\n  : (typeof v === 'object') ? ('object{' + Object.keys(v).slice(0, 8).join(',') + '}')\n  : typeof v;\nlet __parts = (arg && !Array.isArray(arg) && Array.isArray(arg.data)) ? arg.data : arg;\nif (!Array.isArray(__parts)) {\n    throw new Error('[join] expected a 2-element merge array, got arg=' + __shape(arg)\n        + (arg && typeof arg === 'object' && 'dataType' in arg ? ' dataType=' + arg.dataType : ''));\n}\nconst [osmLayers, rasterFc] = __parts;\nif (!Array.isArray(osmLayers)) {\n    throw new Error('[join] osmLayers is not an array — arg=' + __shape(arg)\n        + ' parts[0]=' + __shape(__parts[0])\n        + (__parts[0] && typeof __parts[0] === 'object' && 'dataType' in __parts[0]\n            ? ' (a ref: dataType=' + __parts[0].dataType + ') — the sandbox did not resolve the merge refs; restart the sandbox so the worker.py fix is live'\n            : ''));\n}\nconst geotiffB64 = rasterFc?.features?.[0]?.properties?.geotiff_b64;\nif (!geotiffB64) throw new Error('geotiff_b64 missing from upstream raster row');\n\n// Decode the base64-embedded raster bytes back into a clean ArrayBuffer\n// (slicing off any Buffer prefix so loadGeoTiff sees just the raster).\nconst nodeBuf = Buffer.from(geotiffB64, 'base64');\nconst geotiffArrayBuffer = nodeBuf.buffer.slice(\n    nodeBuf.byteOffset,\n    nodeBuf.byteOffset + nodeBuf.byteLength,\n);\n\nconst BAND_COUNT = 24;\n\nconst db = new AutkSpatialDb();\nawait db.init();\n\n// Re-ingest each OSM layer (already in EPSG:4326) as a custom table and\n// project to EPSG:3395 so the metric NEAR distance works.\nfor (const layer of osmLayers) {\n    await db.loadCustomLayer({\n        geojsonObject: layer.geojson,\n        outputTableName: layer.name,\n        coordinateFormat: 'EPSG:3395',\n        layerType: layer.type,\n    });\n}\n\n// Reuse the bytes the Python DataLoading node already fetched — no second\n// HTTP request, no URL needed here.\nawait db.loadGeoTiff({\n    geotiffArrayBuffer,\n    outputTableName: 'lst',\n    sourceCrs: 'EPSG:4326',\n    coordinateFormat: 'EPSG:3395',\n});\n\n// Spatial join: average each LST band within 1 km of every road segment.\nawait db.spatialQuery({\n    tableRootName: 'table_osm_roads',\n    tableJoinName: 'lst',\n    spatialPredicate: 'NEAR',\n    nearDistance: 1000,\n    output: { type: 'MODIFY_ROOT' },\n    joinType: 'LEFT',\n    groupBy: {\n        selectColumns: Array.from({ length: BAND_COUNT }, (_, i) => ({\n            tableName: 'lst',\n            column: `band_${i + 1}`,\n            aggregateFn: 'avg',\n            aggregateFnResultColumnName: `band_${i + 1}`,\n        })),\n    },\n});\n\n// Reshape per-band averages into a single lst_timeseries array per road.\nconst bandSelects = Array.from({ length: BAND_COUNT }, (_, i) =>\n    `COALESCE(json_extract(properties, '$.sjoin.avg.band_${i + 1}')::DOUBLE, 0)`\n).join(', ');\n\nawait db.rawQuery({\n    query: `\n        SELECT\n            geometry,\n            json_merge_patch(\n                COALESCE(CAST(properties AS JSON), '{}'::JSON),\n                json_object('lst_timeseries', [${bandSelects}])\n            ) AS properties\n        FROM table_osm_roads\n    `,\n    output: { type: 'CREATE_TABLE', tableName: 'table_osm_roads', source: 'osm', tableType: 'roads' },\n});\n\n// Rebuild the layer array uniformly from the local db (all in EPSG:3395)\n// so the downstream map gets a consistent CRS across surface/parks/water/roads.\n// The LST raster is intentionally not re-emitted: it is only needed for the\n// join above, the map skips it, and its non-FeatureCollection shape would be\n// dropped by the grammar resolver anyway.\nconst layers = [];\nfor (const layer of osmLayers) {\n    layers.push({\n        name: layer.name,\n        type: layer.type,\n        geojson: await db.getLayer(layer.name),\n    });\n}\n\nreturn layers;",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Re-ingest the OSM layers, load the LST raster, then spatially join LST band averages to roads within 1 km.",
         "metadata": {
           "keywords": []
         }
@@ -30,9 +56,9 @@
       {
         "id": "niteroi-compute",
         "type": "curio.builtin/autk-grammar",
-        "x": 800,
-        "y": 300,
-        "content": "{\n  \"compute\": [\n    {\n      \"dataRef\": \"upstream\",\n      \"attributes\": {\n        \"bands\": \"lst_timeseries\"\n      },\n      \"attributeArrays\": {\n        \"bands\": 24\n      },\n      \"outputColumns\": [\n        \"angle\",\n        \"intercept\"\n      ],\n      \"wglsFunction\": \"\\n  var n = f32(bands_length);\\n  var sum_x  = 0.0;\\n  var sum_y  = 0.0;\\n  var sum_xy = 0.0;\\n  var sum_x2 = 0.0;\\n\\n  for (var i = 0u; i < bands_length; i++) {\\n    let x   = f32(i);\\n    let y   = bands[i];\\n    sum_x  += x;\\n    sum_y  += y;\\n    sum_xy += x * y;\\n    sum_x2 += x * x;\\n  }\\n\\n  let denom = n * sum_x2 - sum_x * sum_x;\\n  var slope     = 0.0;\\n  var intercept = 0.0;\\n  if (denom != 0.0) {\\n    slope     = (n * sum_xy - sum_x * sum_y) / denom;\\n    intercept = (sum_y - slope * sum_x) / n;\\n  }\\n\\n  var out: OutputArray;\\n  out[0] = atan(slope) * (180.0 / 3.14159265358979);\\n  out[1] = intercept;\\n  return out;\\n\"\n    }\n  ]\n}",
+        "x": 940,
+        "y": 205,
+        "content": "{\n  \"compute\": [\n    {\n      \"dataRef\": \"table_osm_roads\",\n      \"attributes\": {\n        \"bands\": \"lst_timeseries\"\n      },\n      \"attributeArrays\": {\n        \"bands\": 24\n      },\n      \"outputColumns\": [\n        \"angle\",\n        \"intercept\"\n      ],\n      \"wglsFunction\": \"\\n  var n = f32(bands_length);\\n  var sum_x  = 0.0;\\n  var sum_y  = 0.0;\\n  var sum_xy = 0.0;\\n  var sum_x2 = 0.0;\\n\\n  for (var i = 0u; i < bands_length; i++) {\\n    let x   = f32(i);\\n    let y   = bands[i];\\n    sum_x  += x;\\n    sum_y  += y;\\n    sum_xy += x * y;\\n    sum_x2 += x * x;\\n  }\\n\\n  let denom = n * sum_x2 - sum_x * sum_x;\\n  var slope     = 0.0;\\n  var intercept = 0.0;\\n  if (denom != 0.0) {\\n    slope     = (n * sum_xy - sum_x * sum_y) / denom;\\n    intercept = (sum_y - slope * sum_x) / n;\\n  }\\n\\n  var out: OutputArray;\\n  out[0] = atan(slope) * (180.0 / 3.14159265358979);\\n  out[1] = intercept;\\n  return out;\\n\"\n    }\n  ]\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
         "goal": "Per-road OLS regression of the 24-year LST series on the GPU — output warming angle and intercept.",
@@ -41,14 +67,29 @@
         }
       },
       {
-        "id": "niteroi-map",
-        "type": "curio.builtin/autk-grammar",
-        "x": 1200,
-        "y": 150,
-        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"upstream\",\n        \"isPick\": true,\n        \"getFnv\": \"angle\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 0\n      }\n    ]\n  }\n}",
+        "id": "niteroi-pool",
+        "type": "curio.builtin/data-pool",
+        "x": 1520.6816947978398,
+        "y": 200.4623923725876,
+        "content": "",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Colour roads by warming angle in 3D.",
+        "goal": "Fan augmented roads (plus context layers) out to map and plot; route brush selections on roads back from plot to map.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "niteroi-map",
+        "type": "curio.builtin/autk-grammar",
+        "x": 2182.3586320912623,
+        "y": -143.840054481517,
+        "width": 759,
+        "height": 640,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_surface\"\n      },\n      {\n        \"dataRef\": \"table_osm_parks\"\n      },\n      {\n        \"dataRef\": \"table_osm_water\"\n      },\n      {\n        \"dataRef\": \"table_osm_roads\",\n        \"isPick\": true,\n        \"isColorMap\": true,\n        \"getFnv\": \"angle\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 0\n      }\n    ]\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Render the Niterói layer stack in 3D with roads coloured by warming angle.",
         "metadata": {
           "keywords": []
         }
@@ -56,12 +97,14 @@
       {
         "id": "niteroi-plot",
         "type": "curio.builtin/autk-grammar",
-        "x": 1200,
-        "y": 450,
-        "content": "{\n  \"plot\": {\n    \"dataRef\": \"upstream\",\n    \"mark\": \"scatter\",\n    \"axis\": [\n      \"intercept\",\n      \"angle\"\n    ],\n    \"title\": \"LST regression — warming angle vs baseline (Niterói roads)\",\n    \"events\": [\n      \"brush\"\n    ]\n  }\n}",
+        "x": 2206.8962397186747,
+        "y": 662.0768010896303,
+        "width": 770,
+        "height": 577,
+        "content": "{\n  \"plot\": {\n    \"dataRef\": \"table_osm_roads\",\n    \"mark\": \"scatter\",\n    \"axis\": [\n      \"intercept\",\n      \"angle\"\n    ],\n    \"title\": \"LST regression — warming angle vs baseline (Niterói roads)\",\n    \"events\": [\n      \"brush\"\n    ]\n  }\n}",
         "out": "DEFAULT",
         "in": "DEFAULT",
-        "goal": "Brushable scatter of warming angle vs LST baseline; brushing highlights roads on the 3D map.",
+        "goal": "Brushable scatter of warming angle vs LST baseline; brushing routes through the pool to highlight roads on the 3D map.",
         "metadata": {
           "keywords": []
         }
@@ -69,37 +112,57 @@
     ],
     "edges": [
       {
-        "id": "e-osm-lst",
+        "id": "reactflow__edge-niteroi-osmout-niteroi-mergein_0",
         "source": "niteroi-osm",
-        "target": "niteroi-lst"
+        "target": "niteroi-merge"
       },
       {
-        "id": "e-lst-compute",
-        "source": "niteroi-lst",
+        "id": "reactflow__edge-niteroi-rasterout-niteroi-mergein_1",
+        "source": "niteroi-raster",
+        "target": "niteroi-merge"
+      },
+      {
+        "id": "reactflow__edge-niteroi-mergeout-niteroi-joinin",
+        "source": "niteroi-merge",
+        "target": "niteroi-join"
+      },
+      {
+        "id": "reactflow__edge-niteroi-joinout-niteroi-computein",
+        "source": "niteroi-join",
         "target": "niteroi-compute"
       },
       {
-        "id": "e-compute-map",
+        "id": "reactflow__edge-niteroi-computeout-niteroi-poolin",
         "source": "niteroi-compute",
+        "target": "niteroi-pool"
+      },
+      {
+        "id": "reactflow__edge-niteroi-poolout-niteroi-mapin",
+        "source": "niteroi-pool",
         "target": "niteroi-map"
       },
       {
-        "id": "e-compute-plot",
-        "source": "niteroi-compute",
+        "id": "reactflow__edge-niteroi-poolout-niteroi-plotin",
+        "source": "niteroi-pool",
         "target": "niteroi-plot"
       },
       {
-        "id": "e-interact-plot-map",
         "type": "Interaction",
-        "source": "niteroi-plot",
+        "id": "reactflow__edge-niteroi-poolin/out-niteroi-mapin/out",
+        "source": "niteroi-pool",
         "target": "niteroi-map"
+      },
+      {
+        "type": "Interaction",
+        "id": "reactflow__edge-niteroi-poolin/out-niteroi-plotin/out",
+        "source": "niteroi-pool",
+        "target": "niteroi-plot"
       }
     ],
     "name": "Autark spatial join + regression",
     "task": "",
-    "timestamp": 1748990500000,
-    "provenance_id": "Regression",
-    "packages": [],
-    "description": "Per-road warming trend in Niterói: a grammar node loads roads from a local PBF, a Python node samples a 24-band (2001-2024) land-surface-temperature raster to build each road's yearly mean-LST series within 1 km, and a second grammar node fits an OLS regression per road on the GPU (warming angle + intercept), rendering a thematic map linked to a brushable scatter. The raster sampling stays in Python (the grammar has no raster source); the regression runs in the grammar's compute block."
+    "timestamp": 1781048622492,
+    "provenance_id": "Autark spatial join + regression",
+    "packages": []
   }
 }

@@ -111,6 +111,50 @@ def _worker_init():
     }
 
 
+def _outputs_elem_path(elem):
+    """Resolve one element of a merge-flow 'outputs' list to a DuckDB artifact path.
+
+    A merge ('outputs') input bundles one entry per connected upstream slot.
+    Each entry is normally a live `{path, dataType}` reference, but a project
+    restored from persisted outputs (ProjectLoader seeds `output = o.filename`)
+    delivers a bare artifact-id/filename string instead. Accept both so the
+    merge keeps working across a save/reload, not just within a live session.
+    """
+    return elem['path'] if isinstance(elem, dict) else elem
+
+
+def _expand_outputs_wrapper(input_data, session_id=None):
+    """Resolve a merge ('outputs') input to the per-slot list user code expects.
+
+    A merge output reaches a code node in one of two shapes:
+      * live  — an inline list of {path,dataType} refs, already expanded by the
+        caller's `data_type == 'outputs'` branch; passed through here untouched.
+      * reloaded — when the upstream merge output was persisted (project save, or
+        the JS-node I/O round-trip through DuckDB), the node receives a single ref
+        to it. `_parse_input_ref` remaps that ref's 'outputs' dataType to a plain
+        load, so `load_from_duckdb` hands back the whole
+        `{dataType:'outputs', data:[refs]}` wrapper dict. Without this, user code
+        gets the wrapper object (e.g. `const [a,b] = arg` → "arg is not iterable").
+    In the reloaded case, resolve each inner ref so `arg` is the same list as live.
+    """
+    if (isinstance(input_data, dict)
+            and input_data.get('dataType') == 'outputs'
+            and isinstance(input_data.get('data'), list)):
+        from utk_curio.sandbox.util.parsers import load_from_duckdb
+        resolved = []
+        for elem in input_data['data']:
+            if isinstance(elem, str):
+                resolved.append(load_from_duckdb(elem, session_id=session_id))
+            elif isinstance(elem, dict) and 'path' in elem and 'dataType' in elem:
+                resolved.append(load_from_duckdb(elem['path'], session_id=session_id))
+            else:
+                # Already-resolved data (e.g. an inline layer array) — keep as-is;
+                # _to_js_value() downstream handles any further conversion.
+                resolved.append(elem)
+        return resolved
+    return input_data
+
+
 def execute_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None):
     """
     Execute user code in-process using pre-loaded library globals.
@@ -157,9 +201,10 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 input_data = ''
                 if data_type == 'outputs':
                     file_path_list = eval(file_path, {'__builtins__': {}})
-                    input_data = [load_from_duckdb(elem['path'], session_id=session_id) for elem in file_path_list]
+                    input_data = [load_from_duckdb(_outputs_elem_path(elem), session_id=session_id) for elem in file_path_list]
                 elif file_path:
                     input_data = load_from_duckdb(file_path, session_id=session_id)
+                input_data = _expand_outputs_wrapper(input_data, session_id=session_id)
                 t_load = time.perf_counter()
 
                 # Validate and prepare input.
@@ -294,10 +339,11 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
         input_data = None
         if data_type == 'outputs' and file_path:
             file_path_list = eval(file_path, {'__builtins__': {}})
-            input_data = [load_from_duckdb(elem['path'], session_id=session_id)
+            input_data = [load_from_duckdb(_outputs_elem_path(elem), session_id=session_id)
                           for elem in file_path_list]
         elif file_path:
             input_data = load_from_duckdb(file_path, session_id=session_id)
+        input_data = _expand_outputs_wrapper(input_data, session_id=session_id)
 
         # Resolve bare package specifiers (e.g. '@urban-toolkit/autk-db') to an
         # ABSOLUTE file URL under the repo-root node_modules so the dynamic ESM
