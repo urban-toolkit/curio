@@ -500,13 +500,6 @@ def _ensure_root_node_modules(project_root: str) -> None:
     ``utk_curio/frontend/urban-workflows/``, so without this step a fresh
     checkout fails Autark data nodes with ``ERR_MODULE_NOT_FOUND``.
     """
-    root_modules = os.path.join(project_root, "node_modules")
-    # Gate on the package actually being resolved, not just node_modules existing —
-    # a partial/interrupted install or an unrelated node_modules would otherwise
-    # skip the install and leave Autark backend data nodes failing with
-    # ERR_MODULE_NOT_FOUND with no self-healing.
-    if os.path.isdir(os.path.join(root_modules, "@urban-toolkit", "autk-db")):
-        return
     if shutil.which("npm") is None:
         log_warning(
             "[Sandbox] npm not found in PATH; skipping root npm install. "
@@ -514,9 +507,16 @@ def _ensure_root_node_modules(project_root: str) -> None:
             "until 'npm install' is run at the repo root."
         )
         return
+    # Run npm install unconditionally (mirrors the frontend's check_install_build):
+    # it's idempotent and fast when the lockfile is already satisfied, and it
+    # self-heals when the root package.json bumps @urban-toolkit/autk-db. Gating
+    # on the autk-db directory merely *existing* (the previous behavior) skipped
+    # the update and left the sandbox on a stale version whose API differs —
+    # e.g. 2.0.1 exports AutkSpatialDb and lacks loadGeojson, while 2.1.2 exports
+    # AutkDb — silently breaking server-side data loading.
     log_info(
-        "[Sandbox] Root node_modules not found. Running 'npm install' at "
-        f"{project_root} to provide @urban-toolkit/autk-db...",
+        "[Sandbox] Ensuring root node_modules (@urban-toolkit/autk-db) at "
+        f"{project_root}...",
         COLOR_SANDBOX, 0,
     )
     try:

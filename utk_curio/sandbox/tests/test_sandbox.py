@@ -139,7 +139,14 @@ class TestSandbox(unittest.TestCase):
         _worker_init()
 
         code = (
-            "import { AutkDb } from '@urban-toolkit/autk-db';\n"
+            "import * as __autkDbMod from '@urban-toolkit/autk-db';\n"
+            # Mirror compileDataSpecToAutkDbJs: the v2.0 frontend build exports
+            # AutkDb, but the older root-level install the sandbox resolves
+            # exports AutkSpatialDb. Accept either so the snippet matches the
+            # real emit and doesn't throw "AutkDb is not a constructor".
+            "const AutkDb = __autkDbMod.AutkDb || __autkDbMod.AutkSpatialDb;\n"
+            "if (typeof AutkDb !== 'function') throw new Error("
+            "'@urban-toolkit/autk-db: neither AutkDb nor AutkSpatialDb is exported');\n"
             "const __sources = [{ type: 'geojson', geojsonObject: { type: 'FeatureCollection', "
             "features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [-87.63, 41.88] }, "
             "properties: { name: 'a' } }] }, outputTableName: 'probe_pts' }];\n"
