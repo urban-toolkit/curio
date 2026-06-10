@@ -58,6 +58,19 @@ def _worker_init():
     import warnings
     warnings.filterwarnings('ignore')
 
+    # pyproj bundles a proj.db that can lag behind the system PROJ runtime
+    # (e.g. conda proj 9.7+ uses layout 1.6 while pyproj 3.7.2's bundled
+    # copy is layout 1.4).  set_data_dir() is pyproj's public API for this;
+    # it is priority-1 in get_data_dir() and overrides the stale bundled
+    # path.  The guard ensures this only fires when the conda-style directory
+    # actually exists, so non-conda installs are unaffected.
+    import pathlib as _pathlib
+    import sys as _sys
+    import pyproj.datadir as _pyproj_datadir
+    _system_proj = _pathlib.Path(_sys.prefix) / "Library" / "share" / "proj"
+    if (_system_proj / "proj.db").exists():
+        _pyproj_datadir.set_data_dir(str(_system_proj))
+
     import rasterio
     import geopandas as gpd
     import pandas as pd
@@ -96,6 +109,53 @@ def _worker_init():
         'detect_kind': detect_kind,
         'checkIOType': checkIOType,
     }
+
+
+def _resolve_outputs_elem(elem, session_id=None):
+    """Resolve one element of an 'outputs' bundle to its concrete Python value.
+
+    An 'outputs' input — from a Merge Flow, or a Data Pool's multi-layer wrapper —
+    bundles one entry per connected slot / layer. An entry is one of:
+      * a DuckDB reference: a `{'path', ...}` dict, or a bare artifact-id/filename
+        string (a project restored from persisted outputs seeds the latter) —
+        loaded from DuckDB;
+      * an inline `{'dataType', 'data'}` envelope — e.g. a Data Pool layer
+        `{'dataType':'geodataframe','data':<FeatureCollection>,'layerName':...}`
+        wired straight into a code node — reconstructed with `parseInput`;
+      * any other already-concrete value, used as-is.
+    Distinguishing on the keys keeps refs loading while letting inline values flow
+    through instead of raising KeyError('path').
+    """
+    from utk_curio.sandbox.util.parsers import load_from_duckdb, parseInput
+    if isinstance(elem, str):
+        return load_from_duckdb(elem, session_id=session_id)
+    if isinstance(elem, dict):
+        if 'path' in elem:
+            return load_from_duckdb(elem['path'], session_id=session_id)
+        if 'dataType' in elem and 'data' in elem:
+            return parseInput(elem)
+    return elem
+
+
+def _expand_outputs_wrapper(input_data, session_id=None):
+    """Resolve a merge ('outputs') input to the per-slot list user code expects.
+
+    A merge output reaches a code node in one of two shapes:
+      * live  — an inline list of refs, already expanded by the caller's
+        `data_type == 'outputs'` branch; passed through here untouched.
+      * reloaded — when the upstream merge output was persisted (project save, or
+        the JS-node I/O round-trip through DuckDB), the node receives a single ref
+        to it. `_parse_input_ref` remaps that ref's 'outputs' dataType to a plain
+        load, so `load_from_duckdb` hands back the whole
+        `{dataType:'outputs', data:[refs]}` wrapper dict. Without this, user code
+        gets the wrapper object (e.g. `const [a,b] = arg` → "arg is not iterable").
+    In the reloaded case, resolve each inner element so `arg` matches the live list.
+    """
+    if (isinstance(input_data, dict)
+            and input_data.get('dataType') == 'outputs'
+            and isinstance(input_data.get('data'), list)):
+        return [_resolve_outputs_elem(elem, session_id=session_id) for elem in input_data['data']]
+    return input_data
 
 
 def execute_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None):
@@ -144,9 +204,10 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 input_data = ''
                 if data_type == 'outputs':
                     file_path_list = eval(file_path, {'__builtins__': {}})
-                    input_data = [load_from_duckdb(elem['path'], session_id=session_id) for elem in file_path_list]
+                    input_data = [_resolve_outputs_elem(elem, session_id=session_id) for elem in file_path_list]
                 elif file_path:
                     input_data = load_from_duckdb(file_path, session_id=session_id)
+                input_data = _expand_outputs_wrapper(input_data, session_id=session_id)
                 t_load = time.perf_counter()
 
                 # Validate and prepare input.
@@ -281,10 +342,62 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
         input_data = None
         if data_type == 'outputs' and file_path:
             file_path_list = eval(file_path, {'__builtins__': {}})
-            input_data = [load_from_duckdb(elem['path'], session_id=session_id)
+            input_data = [_resolve_outputs_elem(elem, session_id=session_id)
                           for elem in file_path_list]
         elif file_path:
             input_data = load_from_duckdb(file_path, session_id=session_id)
+        input_data = _expand_outputs_wrapper(input_data, session_id=session_id)
+
+        # Resolve bare package specifiers (e.g. '@urban-toolkit/autk-db') to an
+        # ABSOLUTE file URL under the repo-root node_modules so the dynamic ESM
+        # import() below resolves regardless of the Node subprocess cwd. Node's ESM
+        # resolver does NOT consult NODE_PATH and resolves a bare specifier only by
+        # walking node_modules up from the importing module — which fails when
+        # CURIO_LAUNCH_CWD is outside the repo. Rewriting only the top-level
+        # specifier is enough: the package's own internal imports still resolve
+        # relative to its installed location.
+        repo_root = pathlib.Path(__file__).resolve().parents[3]
+        root_node_modules = repo_root / 'node_modules'
+
+        def _resolve_pkg_entry_url(specifier):
+            # Only bare specifiers (not relative / absolute / URL / node: builtin).
+            if not specifier or specifier[0] in './' or ':' in specifier:
+                return None
+            seg = specifier.split('/')
+            pkg = '/'.join(seg[:2]) if specifier.startswith('@') else seg[0]
+            pkg_dir = root_node_modules / pkg
+            pj = pkg_dir / 'package.json'
+            if not pj.is_file():
+                return None
+            try:
+                meta = json.loads(pj.read_text(encoding='utf-8'))
+            except Exception:
+                return None
+            entry = None
+            exp = meta.get('exports')
+            if isinstance(exp, str):
+                entry = exp
+            elif isinstance(exp, dict):
+                dot = exp.get('.', exp)
+                if isinstance(dot, str):
+                    entry = dot
+                elif isinstance(dot, dict):
+                    entry = (dot.get('import') or dot.get('module') or dot.get('node')
+                             or dot.get('default') or dot.get('require'))
+            entry = entry or meta.get('module') or meta.get('main') or 'index.js'
+            try:
+                entry_path = (pkg_dir / entry).resolve()
+            except Exception:
+                return None
+            if not entry_path.is_file() or root_node_modules not in entry_path.parents:
+                return None
+            return entry_path.as_uri()
+
+        def _resolved_source(quoted_source):
+            # quoted_source keeps its surrounding quotes, e.g. "'@urban-toolkit/autk-db'".
+            spec = quoted_source[1:-1]
+            url = _resolve_pkg_entry_url(spec)
+            return f"'{url}'" if url else quoted_source
 
         # Rewrite static `import` statements to dynamic `await import()` calls
         # so user code runs inside a CJS IIFE (--input-type=commonjs), which
@@ -297,7 +410,7 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
         dynamic_import_lines: list[str] = []
 
         def _rewrite_named(m):
-            specs, source = m.group(1).strip(), m.group(2)
+            specs, source = m.group(1).strip(), _resolved_source(m.group(2))
             if specs.startswith('* as '):
                 return f'  const {specs[5:].strip()} = await import({source});'
             if specs.startswith('{'):
@@ -315,7 +428,7 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
             return ''
 
         def _collect_bare(m):
-            dynamic_import_lines.append(f'  await import({m.group(1)});')
+            dynamic_import_lines.append(f'  await import({_resolved_source(m.group(1))});')
             return ''
 
         clean_code = bare_re.sub(_collect_bare, code)
@@ -336,11 +449,25 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
 
         print(f"[execJs] starting Node.js  node={node_type}", file=_sys.stderr, flush=True)
 
+        # NODE_PATH is consulted only by the CommonJS require() resolver (not ESM),
+        # so it does NOT resolve the top-level autk-db ESM import — that is handled
+        # by rewriting it to an absolute file URL above. We still point NODE_PATH at
+        # the repo-root node_modules as a belt-and-braces aid for any CJS require()
+        # autk-db's worker threads perform. cwd stays launch_dir so other JS nodes'
+        # relative file reads keep working.
+        node_env = {**os.environ}
+        if root_node_modules.is_dir():
+            existing = node_env.get('NODE_PATH', '')
+            node_env['NODE_PATH'] = (
+                str(root_node_modules) + (os.pathsep + existing if existing else '')
+            )
+
         proc = subprocess.Popen(
             ['node', '--input-type=commonjs'],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding='utf-8', errors='replace', cwd=cwd,
+            env=node_env,
         )
 
         stdout_lines: list[str] = []

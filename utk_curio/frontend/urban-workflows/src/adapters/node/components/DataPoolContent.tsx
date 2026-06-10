@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
-import Tabs from 'react-bootstrap/Tabs';
-import Tab from 'react-bootstrap/Tab';
+import Nav from 'react-bootstrap/Nav';
 // mui
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
@@ -101,14 +100,21 @@ const ContentComponent = ({
   return (
       <div
           className="nowheel"
-          style={{ overflowY: "auto", height: "100%" }}
+          style={{ flex: 1, minHeight: 0, minWidth: 0, display: "flex", flexDirection: "column" }}
       >
           {isLoadingPreview && (
               <div style={{ padding: "10px", textAlign: "center", color: "#666" }}>
                   Loading preview...
               </div>
           )}
-          <TableContainer component={Paper}>
+          {/* Scroll on the TableContainer (not the outer div) so the horizontal
+              scrollbar sits at the table's own bottom edge — otherwise it ends
+              up at the bottom of the scroll viewport and is only reachable
+              after scrolling all the way down. */}
+          <TableContainer
+              component={Paper}
+              sx={{ flex: 1, minHeight: 0, minWidth: 0, overflow: "auto" }}
+          >
               <Table aria-label="simple table">
                   {displayTable.length > 0 ? (
                       <TableHead>
@@ -193,24 +199,70 @@ export default function DataPoolContent({ activeTab, onSelectTab, tabData, table
     return [data.input];
   })();
 
+  // Tabs derived from expanding a single artifact (autk-grammar's multi-layer
+  // wrapper persists as one `dict`-kind ref whose payload is an `outputs`
+  // envelope — see useTableData.processDataAsync) have no 1:1 wrapper ref:
+  // wrappers.length === 1 but tabData.length === N. Don't pipe wrappers[0]
+  // into tab 0 in that case — its preview fetch round-trips the whole
+  // multi-MB outputs payload only to fall back to outputTable (the artifact's
+  // dataType is `dict`, which has no previewable shape), so tab 0 lags while
+  // every other tab is instant. Force-empty input on all tabs makes them
+  // uniformly use outputTable, which already holds the active layer's data.
+  const expandedFromSingleRef = wrappers.length === 1 && tabData.length > 1;
+
+  // Render only the active tab's content directly instead of via Tab.Pane —
+  // react-bootstrap's .tab-pane has display:none/block CSS that fights any
+  // attempt to make it a flex child, which broke height propagation to the
+  // inner scroll div. Manual rendering keeps a clean flex chain:
+  // outer flex column → flex:1 content area → ContentComponent's overflow:auto.
+  const hasData = Array.isArray(tabData) && tabData.length > 0;
+  const activeIndex = parseInt(activeTab) || 0;
+  const activeTabInput = hasData && !expandedFromSingleRef ? (wrappers[activeIndex] ?? '') : '';
+
   return (
-    <Tabs
-      id="data-tabs"
-      activeKey={activeTab}
-      onSelect={(k) => onSelectTab(k || '0')}
-      className="mb-3"
-    >
-      {Array.isArray(tabData) && tabData.length > 0 ? (
-        tabData.map((_, index) => (
-          <Tab eventKey={index.toString()} title={`Tab ${index + 1}`} key={index}>
-            <ContentComponent outputTable={tableData} data={{ ...data, input: wrappers[index] ?? '' }} />
-          </Tab>
-        ))
-      ) : (
-        <Tab eventKey="0" title="No Data">
+    // overflow:hidden + height:100% pin this component to the parent's box, so
+    // only the inner scroll engages — without this clamp, the outer NodeEditor
+    // Tab.Pane (overflowY:auto) would scroll the whole node including the tab strip.
+    // paddingBottom keeps the table's horizontal scrollbar clear of the play
+    // button and NodeEditor's bottom tab nav (both occupy ~25px below NodeEditor's
+    // outer div via marginTop:-25px / overflow:visible).
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, minWidth: 0, paddingBottom: 25 }}>
+      <Nav
+        variant="tabs"
+        activeKey={activeTab}
+        onSelect={(k) => onSelectTab(k || '0')}
+        className="mb-3"
+        style={{ flexShrink: 0 }}
+        data-testid="data-pool-tabs"
+      >
+        {hasData ? (
+          tabData.map((entry, index) => {
+            const title = entry && typeof entry === 'object' && entry.layerName
+              ? String(entry.layerName)
+              : `Tab ${index + 1}`;
+            return (
+              <Nav.Item key={index}>
+                <Nav.Link eventKey={index.toString()}>{title}</Nav.Link>
+              </Nav.Item>
+            );
+          })
+        ) : (
+          <Nav.Item>
+            <Nav.Link eventKey="0">No Data</Nav.Link>
+          </Nav.Item>
+        )}
+      </Nav>
+      <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        {hasData ? (
+          <ContentComponent
+            key={activeIndex}
+            outputTable={tableData}
+            data={{ ...data, input: activeTabInput }}
+          />
+        ) : (
           <div style={{ padding: '10px', textAlign: 'center' }}>No data available.</div>
-        </Tab>
-      )}
-    </Tabs>
+        )}
+      </div>
+    </div>
   );
 }

@@ -8,30 +8,20 @@ This example is intentionally large; the markdown shows the *shape* of each data
 
 ```mermaid
 flowchart LR
-  subgraph "Dataflow 1: by building type"
-    L1[DATA_LOADING] --> C1[DATA_TRANSFORMATION<br/>clean]
-    C1 --> M1[DATA_TRANSFORMATION<br/>melt KWH + THERMS] --> H1[VIS_VEGA<br/>heatmap]
-    M1 --> H2[VIS_VEGA<br/>dot plot]
-    C1 --> G1[DATA_TRANSFORMATION<br/>avg gas per type] --> H3[VIS_VEGA<br/>bar]
-  end
+  L1[DATA_LOADING<br/>CSV root] --> C1[DATA_TRANSFORMATION<br/>clean]
+  C1 --> M1[DATA_TRANSFORMATION<br/>melt KWH + THERMS] --> H1[VIS_VEGA<br/>heatmap]
+  M1 --> H2[VIS_VEGA<br/>dot plot]
+  C1 --> G1[DATA_TRANSFORMATION<br/>avg gas per type] --> H3[VIS_VEGA<br/>bar]
 
-  subgraph "Dataflow 2: community + scatter"
-    L2[DATA_LOADING] --> C2[DATA_TRANSFORMATION<br/>clean] --> T2a[DATA_TRANSFORMATION<br/>top-10 communities] --> V2a[VIS_VEGA<br/>bar]
-    C2 --> T2b[DATA_TRANSFORMATION<br/>scatter prep] --> V2b[VIS_VEGA<br/>scatter log-log]
-    C2 --> T2c[DATA_TRANSFORMATION<br/>strip prep]    --> V2c[VIS_VEGA<br/>strip plot]
-  end
+  L2[DATA_LOADING<br/>CSV root] --> C2[DATA_TRANSFORMATION<br/>clean] --> T2a[DATA_TRANSFORMATION<br/>top-10 communities] --> V2a[VIS_VEGA<br/>bar]
+  C2 --> T2b[DATA_TRANSFORMATION<br/>scatter prep] --> V2b[VIS_VEGA<br/>scatter log-log]
+  C2 --> T2c[DATA_TRANSFORMATION<br/>strip prep] --> V2c[VIS_VEGA<br/>strip plot]
 
-  subgraph "Dataflow 3: monthly trend with click filter"
-    L3[DATA_LOADING] --> C3[DATA_TRANSFORMATION<br/>KWH long] --> T3[DATA_TRANSFORMATION<br/>top-20 communities] --> V3[VIS_VEGA<br/>line + bar concat]
-  end
+  L3[DATA_LOADING<br/>CSV root] --> C3[DATA_TRANSFORMATION<br/>KWH long] --> T3[DATA_TRANSFORMATION<br/>top-20 communities] --> V3[VIS_VEGA<br/>line + bar concat]
 
-  subgraph "Dataflow 4: monthly bar with brush filter"
-    L4[DATA_LOADING] --> C4[DATA_TRANSFORMATION<br/>KWH long] --> T4[DATA_TRANSFORMATION<br/>top-20 communities] --> V4[VIS_VEGA<br/>bar + bar concat]
-  end
+  L4[DATA_LOADING<br/>CSV root] --> C4[DATA_TRANSFORMATION<br/>KWH long] --> T4[DATA_TRANSFORMATION<br/>top-20 communities] --> V4[VIS_VEGA<br/>bar + bar concat]
 
-  subgraph "Dataflow 5: age x stories"
-    L5[DATA_LOADING] --> C5[DATA_TRANSFORMATION<br/>age + story brackets] --> M5[DATA_TRANSFORMATION<br/>long] --> V5[VIS_VEGA<br/>boxplot + line concat]
-  end
+  L5[DATA_LOADING<br/>CSV root] --> C5[DATA_TRANSFORMATION<br/>age + story brackets] --> M5[DATA_TRANSFORMATION<br/>long] --> V5[VIS_VEGA<br/>boxplot + line concat]
 ```
 
 ## Data
@@ -40,7 +30,7 @@ flowchart LR
 
 Paths in the code below are relative to the directory you launched Curio from — run `curio start` from the repo root.
 
-## Dataflow 1: Energy split by building type
+## Step 1: Energy split by building type (`DATA_LOADING` → `DATA_TRANSFORMATION` → `VIS_VEGA`)
 
 Load the CSV → run a `clean()` step that drops missing rows, fills medians, removes IQR outliers, and standardises community names → `melt` electricity (KWH) and gas (THERMS) totals into a long format with a per-building-type percentage. Three views consume this:
 
@@ -62,7 +52,7 @@ Load the CSV → run a `clean()` step that drops missing rows, fills medians, re
 }
 ```
 
-## Dataflow 2: Community-level rank and scatter
+## Step 2: Community-level rank and scatter (`DATA_LOADING` → `DATA_TRANSFORMATION` → `VIS_VEGA`)
 
 A second `DATA_LOADING` node re-reads the CSV (Curio caches the file read) and a fresh `DATA_TRANSFORMATION` cleans it, this time keeping `COMMUNITY AREA NAME`. Three branches off the cleaned table produce:
 
@@ -70,7 +60,7 @@ A second `DATA_LOADING` node re-reads the CSV (Curio caches the file read) and a
 - A log-log **scatter plot** of `TOTAL KWH` vs `TOTAL THERMS`, coloured by building type, to show whether high electricity consumers are also high gas consumers.
 - A **strip plot** of `TOTAL THERMS` per building type (with a `< 500_000` filter to keep the axis readable).
 
-## Dataflow 3: Monthly KWH trend by community (interactive line chart)
+## Step 3: Monthly KWH trend by community (`DATA_LOADING` → `DATA_TRANSFORMATION` → `VIS_VEGA`)
 
 Reshape the dataset's wide monthly KWH columns (`KWH JANUARY 2010`, … `KWH DECEMBER 2010`) into long form, narrow to the top 20 communities by mean KWH, then render a `vconcat` of a line chart (one line per community, click to highlight via a `commPick` param) and a horizontal bar chart of the selected community's monthly average — a classic *focus + context* drill-down.
 
@@ -90,11 +80,11 @@ Reshape the dataset's wide monthly KWH columns (`KWH JANUARY 2010`, … `KWH DEC
 }
 ```
 
-## Dataflow 4: Monthly bar with brushable filter
+## Step 4: Monthly bar with brushable filter (`DATA_LOADING` → `DATA_TRANSFORMATION` → `VIS_VEGA`)
 
-Same long-form reshape as Dataflow 3, but the Vega-Lite spec is a different `vconcat`: a top monthly-average bar chart with an `interval` brush along `x`, and a bottom community bar chart filtered by the brush. Brushing months at the top reveals which communities dominate consumption *within those months*.
+Same long-form reshape as Step 3, but the Vega-Lite spec is a different `vconcat`: a top monthly-average bar chart with an `interval` brush along `x`, and a bottom community bar chart filtered by the brush. Brushing months at the top reveals which communities dominate consumption *within those months*.
 
-## Dataflow 5: Energy use by building age × stories
+## Step 5: Energy use by building age × stories (`DATA_LOADING` → `DATA_TRANSFORMATION` → `VIS_VEGA`)
 
 Load the CSV → categorise `AVERAGE STORIES` into `1 / 2 / 3-5 / 6-10 / 11+ stories` and `AVERAGE BUILDING AGE` into `0-20 / 21-40 / 41-60 / 61-80 / 81+ yrs` → reshape monthly KWH columns into long form. The view is a `vconcat` of a boxplot (Total KWH per age bracket) and a line chart (monthly KWH average per age bracket), both filtered by a `storySelect` dropdown bound to story brackets.
 
@@ -114,4 +104,4 @@ Load the CSV → categorise `AVERAGE STORIES` into `1 / 2 / 3-5 / 6-10 / 11+ sto
 
 ## Final result
 
-The five dataflows give the analyst five independent entry points into the same dataset. Because each is a self-contained branch, an analyst exploring building-age effects (Dataflow 5) can re-run only that branch without disturbing the community-level views (Dataflows 2-4) — Curio's per-node caching means the source CSV reads only once per Python process. Adding a sixth axis (e.g. by ZIP code) is one more `DATA_LOADING` → `DATA_TRANSFORMATION` → `VIS_VEGA` chain, isolated from the others.
+The five dataflows give the analyst five independent entry points into the same dataset. Because each is a self-contained branch, an analyst exploring building-age effects (Step 5) can re-run only that branch without disturbing the community-level views (Steps 2-4) — Curio's per-node caching means the source CSV reads only once per Python process. Adding a sixth axis (e.g. by ZIP code) is one more `DATA_LOADING` → `DATA_TRANSFORMATION` → `VIS_VEGA` chain, isolated from the others.

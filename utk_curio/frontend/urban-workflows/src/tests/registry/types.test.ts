@@ -1,8 +1,8 @@
 import { Position } from 'reactflow';
 import type {
-  NodeLifecycleHook,
-  NodeLifecycleData,
-  LifecycleResult,
+  NodeBehaviorHook,
+  NodeBehaviorData,
+  NodeBehaviorResult,
   NodeAdapter,
   HandleDef,
   EditorConfig,
@@ -30,7 +30,7 @@ const mockNodeState = {
   setSendCodeCallback: jest.fn(),
 } as unknown as UseNodeStateReturn;
 
-const mockData: NodeLifecycleData = {
+const mockData: NodeBehaviorData = {
   nodeId: 'test-node-1',
   nodeType: 'DATA_LOADING',
   outputCallback: jest.fn(),
@@ -38,15 +38,15 @@ const mockData: NodeLifecycleData = {
   interactionsCallback: jest.fn(),
 };
 
-describe('NodeLifecycleHook contract', () => {
-  test('a no-op lifecycle satisfies the contract', () => {
-    const hook: NodeLifecycleHook = (_data, _nodeState) => ({});
+describe('NodeBehaviorHook contract', () => {
+  test('a no-op behavior satisfies the contract', () => {
+    const hook: NodeBehaviorHook = (_data, _nodeState) => ({});
     const result = hook(mockData, mockNodeState);
     expect(result).toEqual({});
   });
 
-  test('a lifecycle returning all fields satisfies the contract', () => {
-    const hook: NodeLifecycleHook = (_data, _nodeState) => ({
+  test('a behavior returning all fields satisfies the contract', () => {
+    const hook: NodeBehaviorHook = (_data, _nodeState) => ({
       applyGrammar: async () => {},
       customWidgetsCallback: () => {},
       defaultValueOverride: 'code here',
@@ -64,15 +64,15 @@ describe('NodeLifecycleHook contract', () => {
     expect(result.dynamicHandles).toHaveLength(1);
   });
 
-  test('LifecycleResult fields are all optional', () => {
-    const partial: LifecycleResult = { contentComponent: null };
+  test('NodeBehaviorResult fields are all optional', () => {
+    const partial: NodeBehaviorResult = { contentComponent: null };
     expect(partial.applyGrammar).toBeUndefined();
     expect(partial.showLoading).toBeUndefined();
     expect(partial.dynamicHandles).toBeUndefined();
   });
 });
 
-describe('NodeLifecycleData', () => {
+describe('NodeBehaviorData', () => {
   test('contains required INodeData fields', () => {
     expect(mockData.nodeId).toBe('test-node-1');
     expect(mockData.nodeType).toBe('DATA_LOADING');
@@ -91,17 +91,17 @@ describe('NodeLifecycleData', () => {
 });
 
 describe('NodeAdapter', () => {
-  test('useLifecycle field accepts a NodeLifecycleHook', () => {
-    const lifecycle: NodeLifecycleHook = () => ({});
+  test('useNodeBehavior field accepts a NodeBehaviorHook', () => {
+    const behavior: NodeBehaviorHook = () => ({});
     const adapter: NodeAdapter = {
       handles: [],
       editor: { code: true, grammar: false, widgets: false },
       container: {},
-      useLifecycle: lifecycle,
+      useNodeBehavior: behavior,
     };
 
-    expect(adapter.useLifecycle).toBe(lifecycle);
-    expect(adapter.useLifecycle(mockData, mockNodeState)).toEqual({});
+    expect(adapter.useNodeBehavior).toBe(behavior);
+    expect(adapter.useNodeBehavior(mockData, mockNodeState)).toEqual({});
   });
 
   test('editor can be null for non-editor nodes', () => {
@@ -109,7 +109,7 @@ describe('NodeAdapter', () => {
       handles: [],
       editor: null,
       container: { noContent: true },
-      useLifecycle: () => ({}),
+      useNodeBehavior: () => ({}),
     };
     expect(adapter.editor).toBeNull();
   });

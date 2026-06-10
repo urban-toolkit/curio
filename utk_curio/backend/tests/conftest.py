@@ -203,12 +203,12 @@ def browser_type_launch_args(browser_type_launch_args):
     and continued launching bundled Chromium; ``executable_path``
     bypasses channel resolution.
 
-    Falls back to bundled Chromium when Chrome cannot be found, in
-    which case AUTK_MAP/PLOT/COMPUTE will hit
-    ``_tolerate_webgpu_error`` and skip with a warning rather than
-    failing the suite. All GitHub-hosted runners
-    (``ubuntu-latest`` / ``windows-latest`` / ``macos-latest``) have
-    Chrome preinstalled.
+    Falls back to bundled Chromium when Chrome cannot be found. There is
+    no WebGPU tolerance in the suite, so in that fallback the
+    ``AUTK_GRAMMAR`` examples fail (their map/plot can't initialise)
+    rather than silently skipping — run on a host with real Chrome. All
+    GitHub-hosted runners (``ubuntu-latest`` / ``windows-latest`` /
+    ``macos-latest``) have Chrome preinstalled.
 
     Flag set is intentionally minimal: ``--enable-unsafe-webgpu`` lets
     Dawn expose adapters in non-secure contexts and on unstable

@@ -27,12 +27,15 @@ class TestConfig:
 
 
 @pytest.fixture()
-def tmp_curio(tmp_path):
+def tmp_curio(tmp_path, monkeypatch):
     data_dir = tmp_path / ".curio" / "data"
     data_dir.mkdir(parents=True)
-    os.environ["CURIO_LAUNCH_CWD"] = str(tmp_path)
+    # Use monkeypatch so the session-level CURIO_LAUNCH_CWD (set in the root
+    # conftest) is *restored* on teardown rather than deleted — a bare
+    # ``os.environ.pop`` here clobbers it for every later test that reads it
+    # (e.g. test_routes::test_file_route_serves_relative_to_launch_cwd).
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
     yield tmp_path
-    os.environ.pop("CURIO_LAUNCH_CWD", None)
 
 
 @pytest.fixture(autouse=True)

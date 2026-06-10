@@ -6,11 +6,11 @@ import {
   getPaletteNodeTypes,
   clearPackageNodes,
 } from '../../registry/nodeRegistry';
-import { NodeDescriptor, NodeLifecycleHook } from '../../registry/types';
+import { NodeDescriptor, NodeBehaviorHook } from '../../registry/types';
 import { faCircle } from '@fortawesome/free-solid-svg-icons';
 import { Position } from 'reactflow';
 
-const noopLifecycle: NodeLifecycleHook = () => ({});
+const noopBehavior: NodeBehaviorHook = () => ({});
 
 function makeDescriptor(overrides: Partial<NodeDescriptor> = {}): NodeDescriptor {
   return {
@@ -31,7 +31,7 @@ function makeDescriptor(overrides: Partial<NodeDescriptor> = {}): NodeDescriptor
       handles: [{ id: 'out', type: 'source', position: Position.Right }],
       editor: { code: true, grammar: false, widgets: false },
       container: {},
-      useLifecycle: noopLifecycle,
+      useNodeBehavior: noopBehavior,
     },
     ...overrides,
   };

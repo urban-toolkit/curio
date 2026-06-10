@@ -316,15 +316,11 @@ export default function UpMenu({
                 },
                 {
                     element: "#step-analysis",
-                    intro: "This is a Data Analysis Node. Use it to perform calculations and operations on your dataset, preparing it for visualization.",
+                    intro: "This is a Python Computation Node. Use it to perform calculations and operations on your dataset, preparing it for visualization.",
                 },
                 {
                     element: "#step-transformation",
                     intro: "The Data Transformation Node allows you to filter, segment, or restructure your data.",
-                },
-                {
-                    element: "#step-cleaning",
-                    intro: "This is a Data Cleaning Node. Use it to refine your dataset by handling missing values, removing outliers, and generating identifiers for data quality purposes.",
                 },
                 {
                     element: "#step-pool",
@@ -332,7 +328,7 @@ export default function UpMenu({
                 },
                 {
                     element: "#step-utk",
-                    intro: "This is an Autark Map Node. It renders your data in an interactive 3D environment using Autark (autk-map).",
+                    intro: "This is an Autark Node. Write a declarative UrbanSpec to load data (OSM, CSV, GeoJSON), run GPU compute, and render maps or plots — all in the browser.",
                 },
                 {
                     element: "#step-vega",
@@ -340,14 +336,13 @@ export default function UpMenu({
                 },
                 {
                     element: "#step-image",
-                    intro: "The Image Node displays a gallery of images.",
+                    intro: "This is a Simple View Node. It displays a table for DataFrames, an image grid for image DataFrames, or passes through other values.",
                 },
                 {
                     element: "#step-merge",
                     intro: "This is a Merge Flow Node. It allows you to combine multiple data streams into a single dataset. Red handles indicate a missing connection, while green handles show that a connection has been established. Note: each handle can only connect to one edge.",
                 },
                 {
-                    element: "#step-final",
                     intro: "That's it! Drag and drop nodes into your workspace and begin exploring your data with Curio.",
                 },
             ],
@@ -396,7 +391,7 @@ export default function UpMenu({
                             toggleMenu("file");
                         }}
                     >
-                        File▾
+                        File ⏷
                     </button>
                     {activeMenu === "file" && (
                         <div className={styles.dropDownMenu} onClick={(e) => e.stopPropagation()}>

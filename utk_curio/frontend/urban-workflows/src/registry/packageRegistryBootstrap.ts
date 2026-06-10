@@ -42,7 +42,7 @@ function notifyTemplatesAfterPackageRefresh(): void {
 /**
  * Fetch installed packages, register descriptors, push merged port shapes, then
  * reload ``/starters`` so package default bodies appear in ``StarterProvider``
- * (required for {@link usePackageNodeLifecycle} injection on new kinds).
+ * (required for {@link usePackageNodeBehavior} injection on new kinds).
  *
  * The palette is intersected with the current project's lockfile (via
  * ``projectPackagesStore``) when a project is loaded; on the projects-list /

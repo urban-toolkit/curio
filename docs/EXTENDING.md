@@ -1,14 +1,14 @@
 # Extending Curio with new node packages
 
-Curio nodes are defined by **packages**, not by code. A package is a directory under [`packages/`](../packages/) that ships a `manifest.json` declaring one or more node *templates*. Each template references a **lifecycle key** that resolves to a React hook implementing the node's behaviour. Optionally, a package can ship a backend Flask blueprint for endpoints the lifecycle hook calls.
+Curio nodes are defined by **packages**, not by code. A package is a directory under [`packages/`](../packages/) that ships a `manifest.json` declaring one or more node *templates*. Each template references a **behavior key** that resolves to a React hook implementing the node's behaviour. Optionally, a package can ship a backend Flask blueprint for endpoints the behavior hook calls.
 
-This guide walks through adding a new node package end-to-end, using the recent [`curio.streetvision@1`](../packages/curio.streetvision@1/) package — which adds three CV nodes plus a generic Spatial Join — as the worked example. The merge that introduced it is a fairly involved case: it spans the manifest, four lifecycle hooks, a Flask blueprint with eight endpoints, per-package Python dependencies declared in `manifest.dependencies.python`, and a user-facing docs example. Easier packages can skip several of the steps below.
+This guide walks through adding a new node package end-to-end, using the recent [`curio.streetvision@1`](../packages/curio.streetvision@1/) package — which adds three CV nodes plus a generic Spatial Join — as the worked example. The merge that introduced it is a fairly involved case: it spans the manifest, four behavior hooks, a Flask blueprint with eight endpoints, per-package Python dependencies declared in `manifest.dependencies.python`, and a user-facing docs example. Easier packages can skip several of the steps below.
 
 ## 1. Anatomy of a package
 
 ```
 packages/<packageId>@<major>/
-├── manifest.json   ← declares templates, ports, lifecycle keys, deps
+├── manifest.json   ← declares templates, ports, behavior keys, deps
 ├── integrity.json  ← sha256 of every other file (regen on every edit)
 ├── README.md       ← shown in the catalog UI
 └── sources/        ← optional Python / JS template starters per template
@@ -18,12 +18,12 @@ A `template` inside `manifest.json` declares one node kind. It carries:
 
 - `id` + `label` + `description` + `iconRef` — palette presentation
 - `category` (`data` | `computation` | `vis_grammar` | `vis_simple` | `flow`) — palette sectioning
-- `inputPorts` + `outputPorts` — port types and cardinalities (see [`docs/schemas/node-package.v3.json`](schemas/node-package.v3.json))
+- `inputPorts` + `outputPorts` — port types and cardinalities (see [`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json))
 - `editor` (`code` | `widgets` | `grammar` | `none`) — what editor surface to mount
-- `lifecycle` — string key resolved through [`registry/lifecycleRegistry`](../utk_curio/frontend/urban-workflows/src/registry/lifecycleRegistry.ts) to the React hook that implements the node's behaviour
+- `behavior` — string key resolved through [`registry/behaviorRegistry`](../utk_curio/frontend/urban-workflows/src/registry/behaviorRegistry.ts) to the React hook that implements the node's behaviour
 - `engine` (`python` | `javascript`) — if the node runs user code, which sandbox executes it
 
-The frontend's package loader at [`registry/packagesClient.ts`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) reads every installed package, calls `buildDescriptor()` per template, and registers them in the canvas's node-type registry. Adding a node is therefore *adding a manifest entry plus a lifecycle hook* — there is no monolithic switch-case anywhere.
+The frontend's package loader at [`registry/packagesClient.ts`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) reads every installed package, calls `buildDescriptor()` per template, and registers them in the canvas's node-type registry. Adding a node is therefore *adding a manifest entry plus a behavior hook* — there is no monolithic switch-case anywhere.
 
 ## 2. When you do — and don't — need a backend blueprint
 
@@ -31,8 +31,8 @@ Three patterns cover essentially every node Curio ships:
 
 | Pattern | Examples | Backend? |
 |---|---|---|
-| **Pure-frontend** | `vis-vega`, `vis-simple`, `autk-map`, `autk-plot`, `cv-gallery` | None. The lifecycle hook does its work in the browser. |
-| **Sandbox-Python** | `data-loading`, `data-transformation`, `computation-analysis`, `data-summary` | Reuses Curio's existing code sandbox at [`utk_curio/sandbox/`](../utk_curio/sandbox/) via the `code` lifecycle. User-provided Python runs out-of-process. |
+| **Pure-frontend** | `vis-vega`, `vis-simple`, `autk-grammar`, `cv-gallery` | None. The behavior hook does its work in the browser. |
+| **Sandbox-Python** | `data-loading`, `data-transformation`, `computation-analysis`, `data-summary` | Reuses Curio's existing code sandbox at [`utk_curio/sandbox/`](../utk_curio/sandbox/) via the `code` behavior. User-provided Python runs out-of-process. |
 | **Custom blueprint** | `streetvision` (calls Google Street View + HuggingFace + runs `torch` inference), `spatial-join` (shapely STRtree) | A new Flask blueprint under [`utk_curio/backend/app/<feature>/`](../utk_curio/backend/app/). Right call when the node needs external APIs, long-running jobs, persistent state, or heavy native dependencies that the sandbox can't reasonably ship. |
 
 Pure-frontend is the right default; reach for the sandbox before a blueprint, and only stand up a blueprint when neither covers it.
@@ -43,19 +43,19 @@ Most non-trivial node packages need to call a third-party API. The Street Vision
 
 ### 3.1 Always proxy through the backend
 
-Never call third-party APIs from the lifecycle hook directly:
+Never call third-party APIs from the behavior hook directly:
 
 1. **API keys leak.** Anything built into the frontend bundle — even read-at-runtime values — is visible in DevTools' network tab.
 2. **CORS.** Most public APIs (Google, Nominatim) reject browser-origin requests.
 3. **Rate-limit hygiene.** Centralising in the backend lets you add caching, retries, and per-user quota in one place.
 
-The lifecycle hook hits `${BACKEND_URL}/api/<feature>/...`; the Flask handler in turn calls the upstream service. See [`streetvision/routes.py`](../utk_curio/backend/app/streetvision/routes.py) for the pattern.
+The behavior hook hits `${BACKEND_URL}/api/<feature>/...`; the Flask handler in turn calls the upstream service. See [`streetvision/routes.py`](../utk_curio/backend/app/streetvision/routes.py) for the pattern.
 
 ### 3.2 API keys: per-session input on the node (preferred) vs env vars
 
 Curio supports two patterns for third-party API keys; pick by who the key belongs to:
 
-- **Per-user secrets** (Google Maps, Mapbox, OpenAI personal keys, …) → make it a **text input on the node itself**, held in React state for the session. The lifecycle hook passes it to the backend as a request-body field. Never persist to the dataflow spec (it would leak when shared) or to `localStorage` (it would survive logout). The Street View Fetcher node is the worked example — see [`streetViewFetcherLifecycle.tsx`](../packages/curio.streetvision@1/sources/streetViewFetcherLifecycle.tsx) and the `api_key` body field in [`streetvision/routes.py`](../utk_curio/backend/app/streetvision/routes.py).
+- **Per-user secrets** (Google Maps, Mapbox, OpenAI personal keys, …) → make it a **text input on the node itself**, held in React state for the session. The behavior hook passes it to the backend as a request-body field. Never persist to the dataflow spec (it would leak when shared) or to `localStorage` (it would survive logout). The Street View Fetcher node is the worked example — see [`streetViewFetcherBehavior.tsx`](../packages/curio.streetvision@1/sources/streetViewFetcherBehavior.tsx) and the `api_key` body field in [`streetvision/routes.py`](../utk_curio/backend/app/streetvision/routes.py).
 
 - **Operator-wide secrets** that every user of a deployment shares (an internal data-source token, a back-of-house HuggingFace token) → keep using `os.environ.get(...)` at the backend, read at request time so editing `.env` + restart picks it up without rebuilding. The Street Vision blueprint still does this for `HUGGINGFACE_TOKEN` because gated-model access is the operator's concern, not the user's.
 
@@ -104,10 +104,10 @@ def streetview_coverage():
     # ... call streetview.fetch_panorama(..., api_key=api_key)
 ```
 
-The lifecycle hook holds the key in React state and sends it in the request body:
+The behavior hook holds the key in React state and sends it in the request body:
 
 ```tsx
-// streetViewFetcherLifecycle.tsx
+// streetViewFetcherBehavior.tsx
 const [apiKey, setApiKey] = useState('');
 // ... <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} />
 fetch(`${API_BASE}/data/streetview/coverage`, {
@@ -125,7 +125,7 @@ Inference, batch downloads, or any external call that takes more than a few seco
 
 1. `POST /inference/run` returns `{ job_id }` immediately and spawns a `threading.Thread` that does the work and writes progress into a module-level dict guarded by a lock.
 2. The frontend polls `GET /inference/results/<job_id>` every ~2 s, reads `{ status, processed, total_images, results }`, and renders a progress bar.
-3. On `status === "completed"`, the lifecycle hook pulls the results and pushes them downstream via `data.outputCallback(...)`.
+3. On `status === "completed"`, the behavior hook pulls the results and pushes them downstream via `data.outputCallback(...)`.
 
 The job store is in-memory. Restarting Curio loses any in-flight jobs — fine for typical interactive use, document it in the package README. If you genuinely need durability (multi-hour jobs, multi-process workers), reach for SQLite or Redis, but most node packages don't.
 
@@ -139,7 +139,7 @@ The job store is in-memory. Restarting Curio loses any in-flight jobs — fine f
 
 ### 3.7 The error contract back to the frontend
 
-| HTTP | Meaning | Lifecycle reaction |
+| HTTP | Meaning | Behavior reaction |
 |---|---|---|
 | `200` | OK | Render the result |
 | `400` | Bad input (missing field, malformed body) | Surface inline message |
@@ -203,23 +203,23 @@ The merge of [PR #120](https://github.com/urban-toolkit/curio/pull/120) decompos
 
 ```jsonc
 "templates": [
-  { "id": "street-view-fetcher", "lifecycle": "street-view-fetcher",
+  { "id": "street-view-fetcher", "behavior": "street-view-fetcher",
     "inputPorts": [],                                                  "outputPorts": [{"types":["GEODATAFRAME"]}] },
-  { "id": "hf-cv-inference",     "lifecycle": "hf-cv-inference",
+  { "id": "hf-cv-inference",     "behavior": "hf-cv-inference",
     "inputPorts": [{"types":["GEODATAFRAME","JSON"]}],                 "outputPorts": [{"types":["JSON"]}] },
-  { "id": "cv-gallery",          "lifecycle": "cv-gallery",
+  { "id": "cv-gallery",          "behavior": "cv-gallery",
     "inputPorts": [{"types":["JSON"]}],                                "outputPorts": [{"types":["GEODATAFRAME"]}] }
 ]
 ```
 
-Each entry names a *lifecycle key* (a string), not a JS module path — the same key can be implemented by an entirely different package and still work, which is how forks / overrides happen.
+Each entry names a *behavior key* (a string), not a JS module path — the same key can be implemented by an entirely different package and still work, which is how forks / overrides happen.
 
 ### 4.2 Plus a fourth template in [`packages/curio.builtin@1/manifest.json`](../packages/curio.builtin@1/manifest.json)
 
 A generic Spatial Join that takes points + polygons and tags each point with the containing polygon's properties:
 
 ```jsonc
-{ "id": "spatial-join", "lifecycle": "spatial-join",
+{ "id": "spatial-join", "behavior": "spatial-join",
   "inputPorts": [
     {"types":["GEODATAFRAME"]},   // points (handle 0 — top of node)
     {"types":["GEODATAFRAME"]}    // polygons (handle 1 — bottom of node)
@@ -230,23 +230,23 @@ A generic Spatial Join that takes points + polygons and tags each point with the
 
 This one belongs in `curio.builtin@1`, not `curio.streetvision@1`, because it's reusable for any spatial workflow. Generally: if a capability is reusable outside the package's narrow theme, factor it out into builtin.
 
-### 4.3 Four lifecycle hooks in [`utk_curio/frontend/urban-workflows/src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/)
+### 4.3 Four behavior hooks in [`utk_curio/frontend/urban-workflows/src/adapters/node/`](../utk_curio/frontend/urban-workflows/src/adapters/node/)
 
-- [`streetViewFetcherLifecycle.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/streetViewFetcherLifecycle.tsx) — place picker + bbox preview + fetch button. Hits `/api/streetvision/data/streetview/{search_place,coverage,fetch}`, emits a GEODATAFRAME via `data.outputCallback`.
-- [`hfCvInferenceLifecycle.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/hfCvInferenceLifecycle.tsx) — reads upstream image points from `data.input`, runs an inference job, polls `/api/streetvision/inference/results/<id>`. Demonstrates the long-running job pattern from §3.5.
-- [`cvGalleryLifecycle.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/cvGalleryLifecycle.tsx) — pure frontend node. Gallery + per-image inspector + aggregate stats; re-emits the results as a GEODATAFRAME.
-- [`spatialJoinLifecycle.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/spatialJoinLifecycle.tsx) — the only node here with two distinct input handles, mounted via `dynamicHandles` (the same mechanism Merge Flow uses). Worth reading if you ever need a 2-input node.
+- [`streetViewFetcherBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/streetViewFetcherBehavior.tsx) — place picker + bbox preview + fetch button. Hits `/api/streetvision/data/streetview/{search_place,coverage,fetch}`, emits a GEODATAFRAME via `data.outputCallback`.
+- [`hfCvInferenceBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/hfCvInferenceBehavior.tsx) — reads upstream image points from `data.input`, runs an inference job, polls `/api/streetvision/inference/results/<id>`. Demonstrates the long-running job pattern from §3.5.
+- [`cvGalleryBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/cvGalleryBehavior.tsx) — pure frontend node. Gallery + per-image inspector + aggregate stats; re-emits the results as a GEODATAFRAME.
+- [`spatialJoinBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/spatialJoinBehavior.tsx) — the only node here with two distinct input handles, mounted via `dynamicHandles` (the same mechanism Merge Flow uses). Worth reading if you ever need a 2-input node.
 
-Each is registered as a global lifecycle key in [`registry/builtinLifecycles.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinLifecycles.ts):
+Each is registered as a global behavior key in [`registry/builtinBehaviors.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinBehaviors.ts):
 
 ```typescript
-registerLifecycle('street-view-fetcher', useStreetViewFetcherLifecycle);
-registerLifecycle('hf-cv-inference',     useHfCvInferenceLifecycle);
-registerLifecycle('cv-gallery',          useCvGalleryLifecycle);
-registerLifecycle('spatial-join',        useSpatialJoinLifecycle);
+registerBehavior('street-view-fetcher', useStreetViewFetcherBehavior);
+registerBehavior('hf-cv-inference',     useHfCvInferenceBehavior);
+registerBehavior('cv-gallery',          useCvGalleryBehavior);
+registerBehavior('spatial-join',        useSpatialJoinBehavior);
 ```
 
-Even though three of those templates live in a separate (non-built-in) package, their lifecycle hooks are registered globally — packages reference lifecycle keys by name, not by import.
+Even though three of those templates live in a separate (non-built-in) package, their behavior hooks are registered globally — packages reference behavior keys by name, not by import.
 
 ### 4.4 The backend Flask blueprint at [`utk_curio/backend/app/streetvision/`](../utk_curio/backend/app/streetvision/)
 
@@ -281,21 +281,21 @@ The Street Vision package is bundled in-repo under [`packages/`](../packages/) b
 - **Bundled-and-installable** → optional first-party packages like `curio.streetvision@1`, `ai.urbanlab.uhvi@1`. Visible in the catalog without a remote registry roundtrip.
 - **Remote** → publishing through Curio's catalog endpoint, for third-party packages. Same manifest schema.
 
-### 4.6 How lifecycle distribution works (and why)
+### 4.6 How behavior distribution works (and why)
 
-When you install a package that ships its own custom node UIs, Curio needs to find a way to load the lifecycle JavaScript without rebuilding the main app. The mechanism in place today:
+When you install a package that ships its own custom node UIs, Curio needs to find a way to load the behavior JavaScript without rebuilding the main app. The mechanism in place today:
 
-1. **The package directory contains both the manifest *and* a pre-built `scripts/lifecycles.js`.** For first-party packages (in-repo), `npm run build` produces that JS via [`webpack.packages.config.js`](../utk_curio/frontend/urban-workflows/webpack.packages.config.js). Third-party authors compile their own. The bundle lives under `scripts/` because that subdirectory is one of the archive validator's allowed top-level dirs (see [`installer.py::_ALLOWED_TOP_DIRS`](../utk_curio/backend/app/packages/installer.py)), so the bundle survives the catalog install round-trip.
-2. **The manifest declares the bundle via `lifecycleScript: "scripts/lifecycles.js"`** (a top-level field, not per-template). The path is relative to the package directory; any allowed-subdirectory location works.
-3. **At app boot, the frontend's `loadInstalledPackages` fetches `/api/packages/<dirName>/file/scripts/lifecycles.js` with the user's Bearer token and injects the response body as an inline `<script>` BEFORE building descriptors**. (A plain `<script src>` can't carry an `Authorization` header, so Firefox's OpaqueResponseBlocking would reject the `require_auth` 401 response — the inline-injection path bypasses that.) The bundle's top-level side-effect calls `window.curio.registerLifecycle(...)` for each lifecycle hook it ships. By the time `buildDescriptor` looks up `getLifecycle('street-view-fetcher')`, the key is registered.
+1. **The package directory contains both the manifest *and* a pre-built `scripts/behaviors.js`.** For first-party packages (in-repo), `npm run build` produces that JS via [`webpack.packages.config.js`](../utk_curio/frontend/urban-workflows/webpack.packages.config.js). Third-party authors compile their own. The bundle lives under `scripts/` because that subdirectory is one of the archive validator's allowed top-level dirs (see [`installer.py::_ALLOWED_TOP_DIRS`](../utk_curio/backend/app/packages/installer.py)), so the bundle survives the catalog install round-trip.
+2. **The manifest declares the bundle via `behaviorScript: "scripts/behaviors.js"`** (a top-level field, not per-template). The path is relative to the package directory; any allowed-subdirectory location works.
+3. **At app boot, the frontend's `loadInstalledPackages` fetches `/api/packages/<dirName>/file/scripts/behaviors.js` with the user's Bearer token and injects the response body as an inline `<script>` BEFORE building descriptors**. (A plain `<script src>` can't carry an `Authorization` header, so Firefox's OpaqueResponseBlocking would reject the `require_auth` 401 response — the inline-injection path bypasses that.) The bundle's top-level side-effect calls `window.curio.registerBehavior(...)` for each behavior hook it ships. By the time `buildDescriptor` looks up `getBehavior('street-view-fetcher')`, the key is registered.
 
    The bundle reads its backend URL at runtime from `window.curio.backendUrl` (exposed by Curio's main bundle in [`src/registry/index.ts`](../utk_curio/frontend/urban-workflows/src/registry/index.ts)) instead of relying on a build-time `process.env.BACKEND_URL`. This keeps catalog-published bundles portable across deployments — the published bundle doesn't bake in the build host's URL.
-4. **The lifecycle bundle externalises React, ReactDOM, ReactFlow, and `registerLifecycle`** so it shares Curio's instances at runtime. Curio's main bundle exposes them as `window.React`, `window.ReactDOM`, `window.ReactFlow`, `window.curio.registerLifecycle` ([`src/registry/index.ts`](../utk_curio/frontend/urban-workflows/src/registry/index.ts)). Without this, distinct React copies would break rules-of-hooks.
-5. **If the bundle fails to load** (network error, hash mismatch, parse error), the package's templates fall back to `usePackageNodeLifecycle` (a generic code-editor). The palette still renders; the user just gets the default UI instead of the package's custom UI.
+4. **The behavior bundle externalises React, ReactDOM, ReactFlow, and `registerBehavior`** so it shares Curio's instances at runtime. Curio's main bundle exposes them as `window.React`, `window.ReactDOM`, `window.ReactFlow`, `window.curio.registerBehavior` ([`src/registry/index.ts`](../utk_curio/frontend/urban-workflows/src/registry/index.ts)). Without this, distinct React copies would break rules-of-hooks.
+5. **If the bundle fails to load** (network error, hash mismatch, parse error), the package's templates fall back to `usePackageNodeBehavior` (a generic code-editor). The palette still renders; the user just gets the default UI instead of the package's custom UI.
 
-This means *adding a new package to a running Curio instance does not require rebuilding Curio* — the package's `scripts/lifecycles.js` is loaded dynamically. Authors bundle once; deployments stay decoupled.
+This means *adding a new package to a running Curio instance does not require rebuilding Curio* — the package's `scripts/behaviors.js` is loaded dynamically. Authors bundle once; deployments stay decoupled.
 
-The lifecycles in `curio.builtin@1` (`code`, `vega`, `merge-flow`, `spatial-join`, `data-pool`, …) are an exception — they live in Curio's main bundle because they must be registered before *any* package registry exists.
+The behaviors in `curio.builtin@1` (`code`, `vega`, `merge-flow`, `spatial-join`, `data-pool`, …) are an exception — they live in Curio's main bundle because they must be registered before *any* package registry exists.
 
 ## 5. Recipe: add a Flask blueprint
 
@@ -361,14 +361,14 @@ When your node needs server-side capabilities the sandbox can't provide (externa
 
 ## 6. Recipe: ship a node package
 
-The smallest possible package adds one template plus its lifecycle hook. Use this when you have a new node kind to introduce.
+The smallest possible package adds one template plus its behavior hook. Use this when you have a new node kind to introduce.
 
-1. **Create the package directory.** `packages/<publisher>.<name>@<major>/`. Pick a `major` integer; bump it on breaking changes to existing templates (lifecycle keys, port types) — additive changes (new templates, new fields) don't need a bump.
+1. **Create the package directory.** `packages/<publisher>.<name>@<major>/`. Pick a `major` integer; bump it on breaking changes to existing templates (behavior keys, port types) — additive changes (new templates, new fields) don't need a bump.
 
-2. **Author the manifest.** `packages/<publisher>.<name>@<major>/manifest.json` — the schema is at [`docs/schemas/node-package.v3.json`](schemas/node-package.v3.json). Minimum viable:
+2. **Author the manifest.** `packages/<publisher>.<name>@<major>/manifest.json` — the schema is at [`docs/schemas/node-package.v4.json`](schemas/node-package.v4.json). Minimum viable:
    ```json
    {
-     "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v3.json",
+     "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
      "id": "<publisher>.<name>",
      "name": "Human-readable Package Name",
      "publisher": "Your Org",
@@ -384,7 +384,7 @@ The smallest possible package adds one template plus its lifecycle hook. Use thi
          "description": "What this node does — shown in the palette tooltip.",
          "category": "computation",
          "editor": "none",
-         "lifecycle": "my-node",
+         "behavior": "my-node",
          "iconRef": "fa-solid:cube",
          "inputPorts":  [{ "cardinality": "1", "types": ["GEODATAFRAME"] }],
          "outputPorts": [{ "cardinality": "1", "types": ["GEODATAFRAME"] }],
@@ -394,10 +394,10 @@ The smallest possible package adds one template plus its lifecycle hook. Use thi
    }
    ```
 
-3. **Write the lifecycle hook inside the package directory.** Put it under `packages/<publisher>.<name>@<major>/sources/myNodeLifecycle.tsx`. The hook must satisfy `NodeLifecycleHook` from `registry/types`:
+3. **Write the behavior hook inside the package directory.** Put it under `packages/<publisher>.<name>@<major>/sources/myNodeBehavior.tsx`. The hook must satisfy `NodeBehaviorHook` from `registry/types`:
    ```tsx
-   import { NodeLifecycleHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
-   export const useMyNodeLifecycle: NodeLifecycleHook = (data, nodeState) => {
+   import { NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
+   export const useMyNodeBehavior: NodeBehaviorHook = (data, nodeState) => {
      // Read `data.input` from upstream, push downstream via `data.outputCallback`.
      // Return `{ contentComponent: <YourUI /> }` to render a body, or omit for
      //   icon-only nodes (also set `containerStyle.noContent: true` in the
@@ -409,29 +409,29 @@ The smallest possible package adds one template plus its lifecycle hook. Use thi
 
 4. **Add a registration entry-point** at `packages/<publisher>.<name>@<major>/sources/index.tsx`:
    ```tsx
-   import { useMyNodeLifecycle } from './myNodeLifecycle';
+   import { useMyNodeBehavior } from './myNodeBehavior';
 
-   type CurioGlobal = { registerLifecycle: (key: string, hook: any) => void };
+   type CurioGlobal = { registerBehavior: (key: string, hook: any) => void };
    function registerAll(curio: CurioGlobal) {
-     curio.registerLifecycle('my-node', useMyNodeLifecycle);
+     curio.registerBehavior('my-node', useMyNodeBehavior);
    }
    if (typeof window !== 'undefined') {
      const w = window as any;
-     if (w.curio?.registerLifecycle) registerAll(w.curio);
+     if (w.curio?.registerBehavior) registerAll(w.curio);
      else (w.__curioPendingPackages__ ??= []).push(registerAll);
    }
    ```
-   This file is what gets compiled into the package's runtime bundle. Its side-effect is calling `window.curio.registerLifecycle(...)` for each lifecycle the package ships. The pending-callbacks fallback handles the race where the bundle loads before Curio's main bundle finishes initialising the global registry.
+   This file is what gets compiled into the package's runtime bundle. Its side-effect is calling `window.curio.registerBehavior(...)` for each behavior the package ships. The pending-callbacks fallback handles the race where the bundle loads before Curio's main bundle finishes initialising the global registry.
 
 5. **Declare the bundle in the manifest** so Curio knows to load it. Add at the top-level (not per-template):
    ```json
    {
      "id": "<publisher>.<name>",
-     "lifecycleScript": "scripts/lifecycles.js",
+     "behaviorScript": "scripts/behaviors.js",
      ...
    }
    ```
-   `lifecycleScript` is a path relative to the package directory. The archive validator only accepts a small set of top-level dirs (see [`installer.py::_ALLOWED_TOP_DIRS`](../utk_curio/backend/app/packages/installer.py): `sources`, `starters`, `grammars`, `widgets`, `icons`, `scripts`); the bundle goes under `scripts/` so it survives the catalog round-trip. Curio's package registry bootstrap fetches the file with the user's Bearer token and injects the response body as an inline `<script>` BEFORE building descriptors, so the lifecycle keys are registered by the time `getLifecycle('my-node')` looks them up.
+   `behaviorScript` is a path relative to the package directory. The archive validator only accepts a small set of top-level dirs (see [`installer.py::_ALLOWED_TOP_DIRS`](../utk_curio/backend/app/packages/installer.py): `sources`, `starters`, `grammars`, `widgets`, `icons`, `scripts`); the bundle goes under `scripts/` so it survives the catalog round-trip. Curio's package registry bootstrap fetches the file with the user's Bearer token and injects the response body as an inline `<script>` BEFORE building descriptors, so the behavior keys are registered by the time `getBehavior('my-node')` looks them up.
 
 6. **Wire up the build for first-party packages.** Add an entry to [`utk_curio/frontend/urban-workflows/webpack.packages.config.js`](../utk_curio/frontend/urban-workflows/webpack.packages.config.js)'s `PACKAGE_ENTRIES` list:
    ```js
@@ -441,9 +441,9 @@ The smallest possible package adds one template plus its lifecycle hook. Use thi
      outputDir: path.resolve(__dirname, "../../../packages/<publisher>.<name>@<major>/scripts"),
    },
    ```
-   Then `npm run build` (which now chains `npm run build:packages`) compiles `sources/index.tsx` into `<package-dir>/scripts/lifecycles.js` — UMD output, externalizing React / ReactDOM / ReactFlow so the bundle shares Curio's instances at runtime (essential for rules-of-hooks).
+   Then `npm run build` (which now chains `npm run build:packages`) compiles `sources/index.tsx` into `<package-dir>/scripts/behaviors.js` — UMD output, externalizing React / ReactDOM / ReactFlow so the bundle shares Curio's instances at runtime (essential for rules-of-hooks).
 
-   **Third-party packages** ship their own pre-built `scripts/lifecycles.js` and don't need a row in this file — Curio loads any `lifecycleScript` it finds in an installed package regardless of who built it.
+   **Third-party packages** ship their own pre-built `scripts/behaviors.js` and don't need a row in this file — Curio loads any `behaviorScript` it finds in an installed package regardless of who built it.
 
 7. **(If a custom icon)** register it in [`registry/iconRegistry.ts`](../utk_curio/frontend/urban-workflows/src/registry/iconRegistry.ts):
    ```ts
@@ -470,16 +470,16 @@ The smallest possible package adds one template plus its lifecycle hook. Use thi
 10. **Validate end-to-end** by booting Curio and checking that:
    - The package shows up in `/catalog` for installation.
    - After install, your node appears in the palette under its declared `category`.
-   - Dragging it to the canvas mounts your lifecycle hook (open dev tools → check for warnings).
+   - Dragging it to the canvas mounts your behavior hook (open dev tools → check for warnings).
 
 ## 7. Checklist for a new node package
 
-- [ ] `packages/<id>@<major>/manifest.json` — templates with lifecycle keys, port shapes, palette ordering.
+- [ ] `packages/<id>@<major>/manifest.json` — templates with behavior keys, port shapes, palette ordering.
 - [ ] `packages/<id>@<major>/integrity.json` — sha256 of every other file. Regenerate on every edit (a small script is sufficient — see `regen-integrity` helpers in the existing packages).
 - [ ] `packages/<id>@<major>/README.md` — shown in the catalog. Cover setup, env vars, costs.
-- [ ] Lifecycle hooks under `utk_curio/frontend/urban-workflows/src/adapters/node/`.
+- [ ] Behavior hooks under `utk_curio/frontend/urban-workflows/src/adapters/node/`.
 - [ ] Export them from [`adapters/node/index.ts`](../utk_curio/frontend/urban-workflows/src/adapters/node/index.ts).
-- [ ] Register lifecycle keys in [`registry/builtinLifecycles.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinLifecycles.ts).
+- [ ] Register behavior keys in [`registry/builtinBehaviors.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinBehaviors.ts).
 - [ ] *(If backend)* New Flask blueprint under `utk_curio/backend/app/<feature>/`.
 - [ ] *(If backend)* Register the blueprint in [`utk_curio/backend/app/__init__.py`](../utk_curio/backend/app/__init__.py).
 - [ ] *(If new Python deps)* Add them to the package's `manifest.dependencies.python` (catalog install pip-installs them automatically; see §3.8); lazy-import in the route layer so a broken install returns 503 instead of crashing startup.

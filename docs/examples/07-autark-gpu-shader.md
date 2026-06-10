@@ -1,157 +1,215 @@
 # Example: Per-feature GPU shader with Autark
 
-In this example we use Curio's Autark integration to run a WGSL shader through `AUTK_COMPUTE` and visualise the per-feature output through linked `AUTK_MAP` and `AUTK_PLOT` nodes. The driving question is "how many minutes of shadow does a single Chicago Loop building cast onto each surrounding road segment over the course of a June day?" — the shader answers it per road segment in one GPU pass. The dataflow has five nodes: load OSM, run the shader, filter to the shadowed subset, render a thematic map, and plot a brushable histogram. The shadow study is the example data, but the same `AUTK_DB → AUTK_COMPUTE → AUTK_MAP + AUTK_PLOT` topology works for any per-feature GPU computation.
+In this example an `autk-grammar` chain runs a WGSL sunlight-accumulation shader on the GPU and renders
+the result as a thematic map linked to a brushable histogram. The driving question: *how many minutes of
+sunlight does each Chicago Loop road segment receive over the course of a June day, given the shadows
+cast by every building around it?* The shader answers it per road segment in **one** GPU dispatch — it
+loops over all buildings inside WGSL so each daylight hour earns 60 minutes only when no building shades
+the road. The `data`, `compute`, `map`, and `plot` blocks live in five connected nodes wired through a
+`data-pool` so brush selections on the histogram light up matching roads on the map.
 
-It is a stripped-down translation of the upstream Autark use case at [github.com/urban-toolkit/autark/tree/main/usecases/src/shadows](https://github.com/urban-toolkit/autark/tree/main/usecases/src/shadows). The upstream version supports per-month variants, ground-truth baselines, and live picking; this example deliberately omits all of those to keep the focus on the GPU compute step.
+It is a translation of the upstream Autark shadow use case at
+[github.com/urban-toolkit/autark/tree/main/usecases/src/shadows](https://github.com/urban-toolkit/autark/tree/main/usecases/src/shadows).
 
-!!! note "WebGPU required"
-    Autark relies on WebGPU. Run this example in a Chromium-based browser (Chrome / Edge) on a machine with a working GPU stack.
+> [!NOTE]
+> **WebGPU required**
+> Autark relies on WebGPU. Run this example in a Chromium-based browser (Chrome / Edge) on a machine
+> with a working GPU stack.
 
 ## Pipeline overview
 
 ```mermaid
 flowchart LR
-  DB[AUTK_DB<br/>Chicago Loop OSM] --> SH[AUTK_COMPUTE<br/>WGSL shadow shader]
-  SH --> M[AUTK_MAP<br/>thematic shadow]
-  SH --> F[AUTK_COMPUTE<br/>filter shadowed roads] --> H[AUTK_PLOT<br/>brushable histogram]
-  M <-. Interaction .-> H
+  D[sh-data<br/>Chicago Loop PBF] --> C[sh-compute<br/>WGSL sunlight shader<br/>batched over buildings]
+  C --> Pool[sh-pool<br/>data-pool]
+  Pool --> M[sh-map<br/>roads by minutes of sunlight]
+  Pool --> P[sh-plot<br/>brushable histogram]
+  M <-. brush .-> Pool
+  P <-. brush .-> Pool
 ```
 
-The graph forks at `shadow-shader`: the **map** wants the full road network for context (so unshadowed roads remain visible), while the **histogram** wants only the segments that were actually shadowed (otherwise the zero-bin dominates the chart). The Interaction edge between map and histogram keeps brushing in sync.
+`sh-data` loads OSM from a local PBF and emits the layers as a `{path, dataType}` artifact. `sh-compute`
+runs the sunlight shader in a single dispatch and writes a `sunlight` column onto every road. `sh-pool`
+fans the augmented layers out to the renderers; the Interaction edges back from `sh-map` / `sh-plot`
+route brushes through the pool to the matching roads.
 
-## Step 1: Load OSM (`AUTK_DB`)
+## Data
 
-The DB node fetches Chicago Loop layers via the Overpass API and returns them as Autark layer objects.
+`docs/examples/data/chicago_loop.osm.pbf` — OSM extract for the Chicago Loop (regenerate with
+`scripts/build_example_pbfs.py`).
 
-```javascript
-import { AutkSpatialDb } from '@urban-toolkit/autk-db';
+## Step 1: Load OSM from a PBF (`sh-data`)
 
-const db = new AutkSpatialDb();
-await db.init();
+The `data` block loads the Chicago Loop layers from `docs/examples/data/chicago_loop.osm.pbf` — DuckDB-WASM
+parses the PBF in the browser, so there is no Overpass call at run time. autk-db materializes the layers in
+EPSG:3395 (metric), which is what the shader's geometry math assumes.
 
-await db.loadOsm({
-    queryArea: { geocodeArea: 'Chicago', areas: ['Loop'] },
-    outputTableName: 'table_osm',
-    autoLoadLayers: {
-        coordinateFormat: 'EPSG:3395',
-        layers: ['surface', 'parks', 'water', 'roads', 'buildings'],
-        dropOsmTable: true,
+```json
+"data": [{
+  "type": "osm",
+  "pbfFileUrl": "docs/examples/data/chicago_loop.osm.pbf",
+  "queryArea": { "geocodeArea": "Chicago", "areas": ["Loop"] },
+  "outputTableName": "table_osm",
+  "autoLoadLayers": { "layers": ["surface", "parks", "water", "roads", "buildings"], "dropOsmTable": true }
+}]
+```
+
+## Step 2: Batched GPU sunlight shader (`sh-compute`)
+
+The `compute` block binds each road's geometry as a per-feature matrix (`attributes.seg` =
+`geometry.coordinates`, `attributeMatrices.seg`) and pulls every building's footprint and height from the
+upstream `table_osm_buildings` layer via a `fromFeature` directive with `iterate: "batched"`. The runtime
+packs each building's **AABB** (4 corners × 2 floats = 8 f32 per building) into a flat array exposed as
+`uniformArrays.ring`, packs the height array as `uniformArrays.bld_height`, and runs the shader **once** —
+not once per building. A `num_features` uniform tells the WGSL how many buildings are in the pack.
+`required: true` on `bld_height` tells the runtime to drop any OSM building that has no `properties.height`
+tag rather than substitute a synthetic default and over-extrude its shadow.
+
+```json
+"compute": [{
+  "dataRef": "table_osm_roads",
+  "attributes": { "seg": "geometry.coordinates" },
+  "attributeMatrices": { "seg": { "rows": "auto", "cols": 2 } },
+  "uniforms": {
+    "bld_height": {
+      "fromFeature": {
+        "layer": "table_osm_buildings",
+        "iterate": "batched",
+        "path": "properties.height",
+        "required": true
+      }
     },
-});
-
-const layers = [];
-for (const layer of db.getLayerTables()) {
-    layers.push({ name: layer.name, type: layer.type, geojson: await db.getLayer(layer.name) });
-}
-return layers;
-```
-
-## Step 2: GPU shadow shader (`AUTK_COMPUTE`)
-
-The shader node grabs the first OSM building, extracts its outer ring, and runs a WGSL shader that walks daylight hours 07:00–19:00 on the June solstice. For each hour it computes the sun azimuth and altitude, projects the building footprint into shadow-aligned coordinates to form an oriented bounding box, and tests every road segment against that box. Each hit contributes 60 minutes to the segment's accumulated shadow.
-
-The output replaces the roads layer in the array; every road feature now carries `properties.compute.shadow` (minutes).
-
-```javascript
-function getRing(feature) {
-    let g = feature.geometry;
-    if (g.type === 'GeometryCollection') {
-        g = g.geometries.find(x => x.type === 'Polygon' || x.type === 'MultiPolygon');
+    "doy": 172
+  },
+  "uniformMatrices": {
+    "ring": {
+      "fromFeature": { "layer": "table_osm_buildings", "iterate": "batched", "path": "geometry.coordinates.0" },
+      "cols": 2
     }
-    if (!g) return null;
-    if (g.type === 'Polygon') return g.coordinates[0];
-    if (g.type === 'MultiPolygon') return g.coordinates[0][0];
-    return null;
-}
+  },
+  "outputColumnName": "sunlight",
+  "wglsFunction": "... the batched sunlight shader ..."
+}]
+```
 
-const buildings = arg.find(l => l.name === 'table_osm_buildings').geojson;
-const roads     = arg.find(l => l.name === 'table_osm_roads').geojson;
+### `iterate: "batched"` vs `"all"`
 
-const feature = buildings.features[0];
-const footprint = getRing(feature);
-const height = parseFloat(feature.properties?.height) || 30;
+Two iteration modes are supported on the same `fromFeature` shape:
 
-const SHADOW_WGSL = `
-let pi      = 3.14159265359;
-let lat_rad = 0.73027;
-let lon_ref = -75.0;
-let lon_loc = -87.65;
+- `"all"` — the runtime dispatches `ComputeGpgpu.run()` once per source feature and **sums** the per-run
+  output columns. Trivial to write but it scales linearly in dispatch count and overcounts when multiple
+  source features affect the same target row (e.g. two buildings shading the same road at noon both add 60).
+- `"batched"` — the runtime stacks every source feature's values into uniform arrays and dispatches
+  exactly once. The WGSL is responsible for looping over `num_features` and combining contributions
+  however the analysis requires (here: per-hour union of shadows → boolean "any shadow", then accumulate
+  sunlight only when none). One dispatch, correct semantics, ~100× faster on Loop-scale data.
 
+For the sunlight question, `"batched"` is the right mode — the shader needs to answer "is *any* building
+shading this road right now" per hour, which is a union the runtime can't compute by post-summation.
+
+### AABB simplification & feature cap
+
+Each batched matrix entry is reduced to a per-source AABB before being packed (4 corners × 2 floats = 8
+f32 per source feature), not the full polygon outline. Full outlines on Chicago-Loop-scale data exceed
+WebGPU's 64 KB uniform buffer cap on DX12; AABBs fit ~2 KB per 1000 buildings and project to a conservative
+shadow envelope (correct for axis-aligned buildings, a slight over-estimate for rotated/irregular ones).
+
+The runtime also caps the source feature count at **1500** to stay well under the uniform buffer limit. If
+the source layer has more, the excess is dropped (in source order) with a console warning. Combined with
+the `required: true` filter on `bld_height`, the surviving features are the OSM buildings that both have a
+tagged height and fit in the cap — the ones whose shadows actually matter for the analysis.
+
+### Shader sketch
+
+The WGSL the example ships is (formatted):
+
+```wgsl
 let dec_rad = -0.40928 * cos(2.0 * pi / 365.0 * (doy + 10.0));
-// ... project the building ring into shadow-aligned coords,
-//     form an OBB, and test each road segment against it.
-return accumulated;
-`;
+let ax = seg[0u]; let ay = seg[1u];
+let bx = seg[2u]; let by = seg[3u];
 
-const compute = new ComputeGpgpu();
-const computedRoads = await compute.run({
-    collection: roads,
-    variableMapping: { seg: 'geometry.coordinates' },
-    attributeMatrices: { seg: { rows: 'auto', cols: 2 } },
-    uniforms: { bld_height: height, doy: 172 },
-    uniformMatrices: { ring: { data: footprint, cols: 2 } },
-    outputColumns: ['shadow'],
-    wgslBody: SHADOW_WGSL,
-});
+var sunlight: f32 = 0.0;
+for (var hour = 7i; hour <= 19i; hour++) {
+    // solar altitude/azimuth for this hour in Chicago, June solstice
+    let alt_rad = asin(clamp(sin_alt, -1.0, 1.0));
+    if alt_rad <= 0.0 { continue; }  // sun below horizon
 
-return arg.map(l => l.name === 'table_osm_roads' ? { ...l, geojson: computedRoads } : l);
-```
+    let az_rad = atan2(...);
+    let sdx = -sin(az_rad); let sdy = -cos(az_rad);  // shadow direction
+    let perp_x = sdy; let perp_y = -sdx;             // perpendicular axis
 
-The full WGSL body in the seeded example contains the OBB intersection logic — the snippet above abbreviates it. `doy: 172` is the day-of-year for the June solstice; change it to `265` for September or `355` for December.
+    // project this road segment's endpoints into the (perp, shadow) basis
+    let au = ax * perp_x + ay * perp_y; let av = ax * sdx + ay * sdy;
+    let bu = bx * perp_x + by * perp_y; let bv = bx * sdx + by * sdy;
 
-## Step 3: Filter to the shadowed subset (`AUTK_COMPUTE`)
+    let n_buildings: u32 = u32(num_features);
+    var any_hit = false;
+    for (var bi = 0u; bi < n_buildings; bi++) {
+        let height     = bld_height[bi];
+        let shadow_len = height / tan(alt_rad);
+        let base       = bi * 8u;   // 4 AABB corners × 2 floats per building
 
-A separate node trims the roads layer down to only the segments whose `compute.shadow > 0`. We keep this as its own node because it is a real data transformation, and because the **map** and **histogram** want different shapes of the same upstream data — making the fork explicit in the graph is clearer than burying a `.filter()` inside the plot node.
+        // project the four AABB corners into the (perp, shadow) basis and take
+        // the min/max along each axis to get this building's projected bbox
+        var u_lo = 1e30; var u_hi = -1e30;
+        var v_lo = 1e30; var v_hi = -1e30;
+        for (var ci = 0u; ci < 4u; ci++) {
+            let rx = ring[base + ci * 2u];
+            let ry = ring[base + ci * 2u + 1u];
+            // ... update bbox ...
+        }
+        let v_hi_shadow = v_hi + shadow_len;
 
-```javascript
-const ROADS_LAYER = 'table_osm_roads';
-const roads = arg.find(l => l.name === ROADS_LAYER).geojson;
+        // endpoint / segment intersection check against the bbox
+        var hit = false;
+        // ... if au/bu/av/bv inside [u_lo..u_hi, v_lo..v_hi_shadow], hit = true ...
 
-const shaded = {
-    type: 'FeatureCollection',
-    features: roads.features.filter(f => (f.properties?.compute?.shadow ?? 0) > 0),
-};
-
-return arg.map(l => l.name === ROADS_LAYER ? { ...l, geojson: shaded } : l);
-```
-
-## Step 4: Thematic map (`AUTK_MAP`)
-
-The map node consumes the **full** layer array straight from `shadow-shader` and colours every road by `properties.compute.shadow`. Unshaded roads paint at the low end of the colour ramp, so the user still sees them as context around the building's shadow path.
-
-```javascript
-const map = new AutkMap(container);
-await map.init();
-for (const layer of arg) {
-    map.loadCollection(layer.name, { collection: layer.geojson, type: layer.type });
+        if hit { any_hit = true; break; }
+    }
+    if !any_hit { sunlight += 60.0; }
 }
-map.updateRenderInfo('table_osm_roads', { isPick: true, isColorMap: true });
-map.updateThematic('table_osm_roads', {
-    collection: arg.find(l => l.name === 'table_osm_roads').geojson,
-    property: 'properties.compute.shadow',
-});
-map.draw();
-return map;
+return sunlight;
 ```
 
-## Step 5: Brushable histogram (`AUTK_PLOT`)
+Set `uniforms.doy` to `265` (September) or `355` (December) to change the season.
 
-The histogram consumes the **filtered** layer array from `shadow-shaded-roads`, so the bins describe the distribution across roads the building actually shadowed. Brushing the chart highlights matching segments on the map via the Interaction edge.
+## Step 3: Thematic map (`sh-map`)
 
-```javascript
-const roads = arg.find(l => l.name === 'table_osm_roads')?.geojson ?? arg[0]?.geojson;
-return new AutkPlot(container, {
-    type: 'barchart',
-    collection: roads,
-    attributes: { axis: ['compute.shadow', '@transform'] },
-    labels: { axis: ['Minutes of shadow', '#Shaded road segments'], title: 'Shadow distribution' },
-    width: 600,
-    height: 380,
-    events: ['brushX'],
-    transform: { preset: 'binning-1d', options: { bins: 13 } },
-});
+The `map` block renders the full layer stack and colours roads by `sunlight`. The runtime lifts the compute
+output to both `properties.compute.sunlight` and top-level `properties.sunlight`, so `getFnv: "sunlight"`
+resolves directly. `isPick` turns on selection so the pool can route the histogram brush back to matching
+segments; `isColorMap` shows the colour ramp at load.
+
+```json
+"map": { "layerRefs": [
+  { "dataRef": "table_osm_surface" },
+  { "dataRef": "table_osm_parks" },
+  { "dataRef": "table_osm_water" },
+  { "dataRef": "table_osm_buildings" },
+  { "dataRef": "table_osm_roads", "isPick": true, "isColorMap": true,
+    "getFnv": "sunlight", "getFnvType": "quantitative", "defaultFnv": 0 }
+]}
+```
+
+## Step 4: Brushable histogram (`sh-plot`)
+
+The `plot` block bins `sunlight` into a 13-bucket histogram (0–780 minutes is the physical range). Brushing
+the chart (`brushX`) fires an `autk_selection` carrying the plot's `dataRef` as its `layerRef`; the pool's
+multi-layer routing applies the brush to roads only, leaving surface/parks/water/buildings untouched, and
+re-emits the wrapper so the map highlights the matching roads.
+
+```json
+"plot": {
+  "dataRef": "table_osm_roads", "mark": "bar", "axis": ["sunlight", "@transform"],
+  "title": "Minutes of sunlight per Chicago Loop road segment",
+  "transform": { "preset": "binning-1d", "options": { "bins": 13 } },
+  "events": ["brushX"]
+}
 ```
 
 ## Going further
 
-The minimal version above keeps things linear so the GPU shader stays the focus. The upstream Autark example layers on more capability — picking-driven recompute against any clicked building, monthly variants, and ground-truth baselines from a CSV — and is a good next step once the basics are clear: see [main.ts](https://github.com/urban-toolkit/autark/blob/main/usecases/src/shadows/main.ts) and [shadow.wgsl](https://github.com/urban-toolkit/autark/blob/main/usecases/src/shadows/shadow.wgsl) upstream.
+The upstream Autark example layers on more capability — picking-driven recompute against any clicked
+building, monthly variants, and ground-truth baselines from a CSV: see
+[main.ts](https://github.com/urban-toolkit/autark/blob/main/usecases/src/shadows/main.ts) and
+[shadow.wgsl](https://github.com/urban-toolkit/autark/blob/main/usecases/src/shadows/shadow.wgsl) upstream.

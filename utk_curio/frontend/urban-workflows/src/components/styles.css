@@ -3,7 +3,7 @@
     height: 200px;
     border: 1px solid #ccc;
     resize: both;
-    overflow: auto;
+    overflow: hidden;
     position: relative;
     cursor: pointer;
 }
