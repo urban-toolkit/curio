@@ -143,7 +143,17 @@ fi
 if [[ $USE_EXISTING -eq 0 ]]; then
   echo "==> Starting Curio services..."
   trap cleanup EXIT INT TERM
-  CURIO_NO_OPEN=1 FLASK_USE_RELOADER=0 python "$REPO_ROOT/curio.py" start &
+  # Pin CURIO_LAUNCH_CWD to the repo root so the sandbox resolves data files
+  # referenced by relative path (e.g. DATA_LOADING reading
+  # docs/examples/data/*.geojson) regardless of where test.sh was invoked
+  # from. curio.py start falls back to os.getcwd() otherwise (main.py).
+  #
+  # CURIO_DEV=1 serves the frontend via the webpack dev server (compiled from
+  # source) rather than the prebuilt static dist/, so the E2E suite always
+  # tests the current frontend — matching how the e2e curio_servers fixture
+  # boots. Without it a stale dist/ hides in-tree frontend changes.
+  CURIO_NO_OPEN=1 FLASK_USE_RELOADER=0 CURIO_DEV=1 CURIO_LAUNCH_CWD="$REPO_ROOT" \
+    python "$REPO_ROOT/curio.py" start &
   CURIO_PID=$!
 
   wait_for_port "backend"  5002

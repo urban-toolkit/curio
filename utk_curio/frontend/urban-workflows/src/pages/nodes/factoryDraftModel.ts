@@ -39,8 +39,8 @@ export interface TemplateDraft {
   hasGrammar: boolean;
   inputPorts: PortDraft[];
   outputPorts: PortDraft[];
-  /** Manifest fields surfaced from `curio.builtin@1` lifecycle/icon registries. Optional for new kinds. */
-  lifecycle?: string;
+  /** Manifest fields surfaced from `curio.builtin@1` behavior/icon registries. Optional for new kinds. */
+  behavior?: string;
   iconRef?: string;
   paletteOrder?: number;
   /** Package-relative source filename, e.g. "uhvi-load.py" or "chart.vl.json". Empty when the kind ships no starter. */
@@ -98,7 +98,7 @@ export function makeTemplate(templateId: string = "demo-template"): TemplateDraf
     hasGrammar: false,
     inputPorts: [],
     outputPorts: [{ id: factoryUiMakeId(), types: "JSON", cardinality: "1" }],
-    lifecycle: "code",
+    behavior: "code",
     sourceFilename: `${templateId}.py`,
     sourceCode: STARTER_CODE,
   };
@@ -186,7 +186,7 @@ export function toApiPayload(d: Draft): {
           cardinality: p.cardinality,
         })),
       };
-      if (k.lifecycle) entry.lifecycle = k.lifecycle;
+      if (k.behavior) entry.behavior = k.behavior;
       if (k.iconRef) entry.iconRef = k.iconRef;
       if (typeof k.paletteOrder === "number") entry.paletteOrder = k.paletteOrder;
       if (k.sourceFilename) entry.source = `sources/${k.sourceFilename}`;

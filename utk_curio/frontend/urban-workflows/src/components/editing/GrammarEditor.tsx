@@ -62,7 +62,21 @@ export default function GrammarEditor({
         c.requestCodeChange(nodeId, baseline, local, "grammar");
     };
 
-    const handleEditorMount = (editor: any, _monaco: Monaco) => {
+    const handleEditorMount = (editor: any, monaco: Monaco) => {
+        // Vega-Lite specs carry `$schema: "https://.../v6.json"` (~2 MB). Monaco's
+        // built-in JSON support will fetch and validate against that URL on first
+        // tab-switch into the editor, which freezes the main thread while it
+        // resolves the schema graph. Disable URL fetching and clear the schema
+        // list so Monaco only does the cheap structural JSON parse.
+        try {
+            monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
+                validate: true,
+                enableSchemaRequest: false,
+                schemas: [],
+            });
+        } catch {
+            // Defensive: older Monaco builds without languages.json — no-op.
+        }
         editor.onDidBlurEditorText(proposeOnBlur);
     };
 

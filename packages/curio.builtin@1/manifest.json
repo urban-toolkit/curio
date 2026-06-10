@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v3.json",
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
   "compatibility": {
     "curioRuntime": ">=0.5.0",
     "major": 1
@@ -9,15 +9,16 @@
     "js": {},
     "packages": {},
     "python": {
-      "pandas": "==3.0.2",
-      "geopandas": "==1.1.3",
+      "pandas": ">=3.0.2",
+      "geopandas": ">=1.1.3",
+      "pyproj": ">=3.7.2",
       "shapely": ">=2.0",
       "numpy": "",
-      "pyarrow": "==24.0.0",
-      "rasterio": "==1.5.0",
+      "pyarrow": ">=24.0.0",
+      "rasterio": ">=1.5.0",
       "duckdb": ">=1.5.0",
-      "fiona": "==1.10.1",
-      "pillow": "==12.2.0"
+      "fiona": ">=1.10.1",
+      "pillow": ">=12.2.0"
     }
   },
   "description": "The default set of nodes that ships with Curio. Auto-installed for every user; provides Data Loading/Export/Transformation, Computation, Visualization, AUTK integrations, and flow control.",
@@ -40,7 +41,7 @@
       "id": "data-loading",
       "inputPorts": [],
       "label": "Data Loading",
-      "lifecycle": "code",
+      "behavior": "code",
       "outputPorts": [
         {
           "cardinality": "[1,n]",
@@ -75,7 +76,7 @@
         }
       ],
       "label": "Data Export",
-      "lifecycle": "data-export",
+      "behavior": "data-export",
       "outputPorts": [],
       "paletteOrder": 1
     },
@@ -100,7 +101,7 @@
         }
       ],
       "label": "Data Transformation",
-      "lifecycle": "code",
+      "behavior": "code",
       "outputPorts": [
         {
           "cardinality": "[1,2]",
@@ -135,7 +136,7 @@
         }
       ],
       "label": "Data Pool",
-      "lifecycle": "data-pool",
+      "behavior": "data-pool",
       "outputPorts": [
         {
           "cardinality": "1",
@@ -172,7 +173,7 @@
         }
       ],
       "label": "Python Computation",
-      "lifecycle": "code",
+      "behavior": "code",
       "outputPorts": [
         {
           "cardinality": "[1,n]",
@@ -209,7 +210,7 @@
         }
       ],
       "label": "Data Summary",
-      "lifecycle": "data-summary",
+      "behavior": "data-summary",
       "outputPorts": [
         {
           "cardinality": "1",
@@ -244,7 +245,7 @@
         }
       ],
       "label": "JS Computation",
-      "lifecycle": "code",
+      "behavior": "code",
       "outputPorts": [
         {
           "cardinality": "[0,1]",
@@ -284,7 +285,7 @@
         }
       ],
       "label": "Vega-Lite",
-      "lifecycle": "vega",
+      "behavior": "vega",
       "outputPorts": [
         {
           "cardinality": "1",
@@ -323,7 +324,7 @@
         }
       ],
       "label": "Simple View",
-      "lifecycle": "simple-vis",
+      "behavior": "simple-vis",
       "outputPorts": [
         {
           "cardinality": "1",
@@ -343,135 +344,42 @@
     {
       "badge": "AUTK",
       "bidirectional": true,
-      "category": "vis_simple",
-      "description": "Renders charts using autk-plot. Supports scatterplot, barchart, linechart, heatmatrix, parallel-coordinates, and table. Bidirectional brushing with AutkMap when linked.",
-      "editor": "code",
-      "engine": "javascript",
-      "hasCode": true,
-      "hasGrammar": false,
-      "hasWidgets": false,
-      "iconRef": "fa-solid:chart-column",
-      "id": "autk-plot",
-      "inputPorts": [
-        {
-          "cardinality": "1",
-          "types": [
-            "LIST",
-            "JSON",
-            "GEODATAFRAME",
-            "DATAFRAME"
-          ]
-        }
-      ],
-      "label": "AutkPlot",
-      "lifecycle": "autk-plot",
-      "outputPorts": [
-        {
-          "cardinality": "[0,1]",
-          "types": [
-            "LIST",
-            "JSON",
-            "GEODATAFRAME",
-            "DATAFRAME"
-          ]
-        }
-      ],
-      "paletteOrder": 10
-    },
-    {
-      "badge": "AUTK",
-      "bidirectional": true,
-      "category": "vis_simple",
-      "description": "Renders urban 3D map layers using autk-map. Accepts an Autark layer array, a FeatureCollection, or a GeoDataFrame. Bidirectional brushing with AutkPlot when linked.",
-      "editor": "code",
-      "engine": "javascript",
-      "hasCode": true,
-      "hasGrammar": false,
-      "hasWidgets": false,
+      "category": "vis_grammar",
+      "description": "Grammar-driven urban analytics. Write an UrbanSpec (JSON) covering data loading (OSM, CSV, GeoJSON), GPU compute, map rendering, and/or plot rendering in one declarative spec. Runs entirely in the browser via WebGPU + DuckDB-WASM.",
+      "editor": "grammar",
+      "engine": "python",
+      "grammarId": "autk-grammar",
+      "hasCode": false,
+      "hasGrammar": true,
+      "hasWidgets": true,
       "iconRef": "fa-solid:city",
-      "id": "autk-map",
+      "id": "autk-grammar",
       "inputPorts": [
         {
-          "cardinality": "1",
+          "cardinality": "[0,1]",
           "types": [
             "LIST",
             "JSON",
-            "GEODATAFRAME"
+            "GEODATAFRAME",
+            "DATAFRAME"
           ]
         }
       ],
-      "label": "AutkMap",
-      "lifecycle": "autk-map",
+      "label": "Autark",
+      "behavior": "autk-grammar",
       "outputPorts": [
         {
           "cardinality": "[0,1]",
           "types": [
             "LIST",
             "JSON",
-            "GEODATAFRAME"
+            "GEODATAFRAME",
+            "DATAFRAME"
           ]
         }
       ],
-      "paletteOrder": 9
-    },
-    {
-      "badge": "AUTK",
-      "category": "computation",
-      "description": "GPU compute on urban layers via autk-compute. Receives a layer array, returns a transformed layer array. Runs on a hidden offscreen canvas.",
-      "editor": "code",
-      "engine": "javascript",
-      "hasCode": true,
-      "hasGrammar": false,
-      "hasWidgets": false,
-      "iconRef": "fa-solid:cubes",
-      "id": "autk-compute",
-      "inputPorts": [
-        {
-          "cardinality": "1",
-          "types": [
-            "LIST",
-            "JSON",
-            "GEODATAFRAME"
-          ]
-        }
-      ],
-      "label": "AutkCompute",
-      "lifecycle": "autk-compute",
-      "outputPorts": [
-        {
-          "cardinality": "1",
-          "types": [
-            "LIST",
-            "JSON",
-            "GEODATAFRAME"
-          ]
-        }
-      ],
-      "paletteOrder": 12
-    },
-    {
-      "badge": "AUTK",
-      "category": "data",
-      "description": "Server-side spatial database via autk-db. Loads OSM data through Overpass and emits a layer array downstream.",
-      "editor": "code",
-      "engine": "javascript",
-      "hasCode": true,
-      "hasGrammar": false,
-      "hasWidgets": false,
-      "iconRef": "fa-solid:map-location-dot",
-      "id": "autk-db",
-      "inputPorts": [],
-      "label": "AutkDB",
-      "lifecycle": "autk-db",
-      "outputPorts": [
-        {
-          "cardinality": "1",
-          "types": [
-            "LIST"
-          ]
-        }
-      ],
-      "paletteOrder": 5
+      "paletteOrder": 6,
+      "tutorialId": "step-utk"
     },
     {
       "category": "data",
@@ -499,7 +407,7 @@
         }
       ],
       "label": "Spatial Join",
-      "lifecycle": "spatial-join",
+      "behavior": "spatial-join",
       "outputPorts": [
         {
           "cardinality": "1",
@@ -537,7 +445,7 @@
         }
       ],
       "label": "Merge Flow",
-      "lifecycle": "merge-flow",
+      "behavior": "merge-flow",
       "outputPorts": [
         {
           "cardinality": "1",

@@ -140,25 +140,109 @@ const useTableData = ({ data }: { data: INodeData }) => {
         }
       }
 
-      // Fetch each wrapper by filename or path
+      // Known application-level shapes the rest of this hook handles directly.
+      // Anything else (e.g. the sandbox's generic 'dict'/'list' envelope wrap on
+      // a persisted artifact) is peeled until we reach one of these.
+      const KNOWN_TYPES = new Set(["geodataframe", "dataframe", "outputs"]);
+      const unwrapToKnown = (v: any): any => {
+        while (
+          v && typeof v === "object" &&
+          typeof v.dataType === "string" &&
+          !KNOWN_TYPES.has(v.dataType) &&
+          "data" in v
+        ) {
+          v = v.data;
+        }
+        return v;
+      };
+
+      // Fetch each wrapper by filename or path. After fetch, unwrap generic
+      // envelopes the sandbox adds around persisted artifacts so the downstream
+      // dataframe/geodataframe processing reads a recognized shape. Wrappers
+      // that already carry their content inline (no filename/path) — e.g. the
+      // safety-net path in autk-grammar when the JS interpreter is unavailable
+      // — are passed through untouched.
       const fetched = await Promise.all(
         wrappers.map(async (w) => {
-          const fileId = w.filename ?? w.path;
-          if (!fileId) return null;
-          try {
-            return await fetchData(fileId);
-          } catch (err) {
-            console.error("Fetch failed for", fileId, err);
-            return null;
+          const fileId = w?.filename ?? w?.path;
+          if (fileId) {
+            try {
+              const raw = await fetchData(fileId);
+              return unwrapToKnown(raw);
+            } catch (err) {
+              console.error("Fetch failed for", fileId, err);
+              return null;
+            }
           }
+          if (w && KNOWN_TYPES.has(w.dataType)) return w;
+          return null;
         })
       );
 
-      // Filter out nulls
-      let tabd = fetched.filter((x) => x != null) as any[];
+      // Filter out nulls, then expand multi-layer envelopes into one tab per
+      // layer. autk-grammar has two emit shapes the pool must accept:
+      //   - compute-only / data+compute: `layersToPoolWrapper` →
+      //     `{dataType:'outputs', data:[{dataType:'geodataframe', data:FC, layerName, layerType}, ...]}`
+      //   - data-only: `compileDataSpecToAutkDbJs` returns `[{name, type, geojson}, ...]`,
+      //     which the sandbox stores as `kind='list'`. After unwrap, fetched[i]
+      //     is a plain JS array of layer records (each wrapped in `{dataType:'dict', data:{...}}`
+      //     by parseOutput's list traversal).
+      // Without expansion, `tabd = [theWholeWrapper]` and `createTableData`
+      // has no branch for either → empty table. Normalise both shapes to
+      // individual geodataframe entries so the downstream code stays uniform.
+      let tabd: any[] = [];
+      for (const x of fetched) {
+        if (x == null) continue;
+        if (x.dataType === 'outputs' && Array.isArray(x.data)) {
+          for (const item of x.data) if (item) tabd.push(item);
+        } else if (Array.isArray(x)) {
+          for (const item of x) {
+            if (!item) continue;
+            // parseOutput on a `list` recursively wraps each dict element
+            // as `{dataType:'dict', data:{...}}`; peel any non-known envelope
+            // until we reach the underlying layer record.
+            let rec: any = item;
+            while (
+              rec && typeof rec === 'object' &&
+              typeof rec.dataType === 'string' &&
+              !KNOWN_TYPES.has(rec.dataType) &&
+              'data' in rec
+            ) {
+              rec = rec.data;
+            }
+            if (rec && rec.geojson?.type === 'FeatureCollection') {
+              tabd.push({
+                dataType: 'geodataframe',
+                data: rec.geojson,
+                layerName: rec.name,
+                layerType: rec.type,
+              });
+            }
+          }
+        } else {
+          tabd.push(x);
+        }
+      }
+
+      // Drop layers with no rows/features. autk-db 2.1.2 can hand the pool an
+      // empty or null-feature layer (e.g. a PBF area with no parks); the
+      // geodataframe branch below iterates `data.features`, which throws on
+      // null ("can't access property Symbol.iterator"), and an empty layer
+      // would otherwise show as a blank tab. 2.0.1 created empty tables that
+      // rendered nothing — keep that behavior by skipping empties here.
+      tabd = tabd.filter((item: any) => {
+        if (!item) return false;
+        if (item.dataType === 'geodataframe') {
+          return Array.isArray(item.data?.features) && item.data.features.length > 0;
+        }
+        if (item.dataType === 'dataframe') {
+          const cols = item.data ? Object.keys(item.data) : [];
+          return cols.length > 0 && Object.keys(item.data[cols[0]] ?? {}).length > 0;
+        }
+        return true;
+      });
 
       tabd = tabd.map ((item) => {
-        console.log(item);
         let parsedInput = Object.assign({}, item);
         if(parsedInput.dataType == "dataframe") {
           let columns = Object.keys(parsedInput.data);

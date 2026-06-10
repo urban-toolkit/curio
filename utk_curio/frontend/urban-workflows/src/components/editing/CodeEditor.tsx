@@ -3,6 +3,16 @@ import React, { useState, useEffect, useRef } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
 import { NodeType } from "../../constants";
 import { NodeTemplateId } from "../../registry/types";
+import { splitCanonicalNodeType } from "../../registry/packageKeys";
+
+// Resolve a node type to its unversioned `<packageId>/<templateId>` form so
+// comparisons against the NodeType enum (which is unversioned) line up even
+// when the registry handed us the canonical `…@<major>` id. Without this,
+// JS_COMPUTATION nodes route to the Python interpreter and the sandbox
+// raises a SyntaxError on JS source.
+function unversionedNodeType(nodeType: string): string {
+    return splitCanonicalNodeType(nodeType)?.unversioned ?? nodeType;
+}
 
 // Editor
 import Editor, { Monaco } from "@monaco-editor/react";
@@ -179,7 +189,7 @@ function CodeEditor({
             setOutputCallback({ code: "error", content: "No code to execute" });
             return;
         }
-        const isJsNode = nodeType === NodeType.JS_COMPUTATION || nodeType === NodeType.AUTK_DB;
+        const isJsNode = unversionedNodeType(nodeType) === NodeType.JS_COMPUTATION;
         const interpreter = (isJsNode && data.jsInterpreter)
             ? data.jsInterpreter
             : data.pythonInterpreter;
@@ -338,7 +348,7 @@ function CodeEditor({
             <div style={{ flex: 2, minHeight: 0 }}>
                 <Editor
                     height="100%"
-                    language={(nodeType === NodeType.JS_COMPUTATION || nodeType === NodeType.AUTK_DB) ? "javascript" : "python"}
+                    language={unversionedNodeType(nodeType) === NodeType.JS_COMPUTATION ? "javascript" : "python"}
                     theme="vs"
                     value={code}
                     onChange={handleCodeChange}

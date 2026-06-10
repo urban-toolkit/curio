@@ -16,10 +16,7 @@ const NODE_COLORS: Record<string, string> = {
   "curio.builtin/js-computation": "#8e44ad",
   "curio.builtin/vis-vega": "#1abc9c",
   "curio.builtin/vis-simple": "#1abc9c",
-  "curio.builtin/autk-map": "#1abc9c",
-  "curio.builtin/autk-plot": "#1abc9c",
-  "curio.builtin/autk-compute": "#8e44ad",
-  "curio.builtin/autk-db": "#3498db",
+  "curio.builtin/autk-grammar": "#1abc9c",
 };
 
 const FALLBACK_COLOR = "#95a5a6";

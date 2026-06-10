@@ -21,7 +21,7 @@ from .utils import (
     seed_node_code,
     stub_login_and_enter_workflow,
 )
-from .workflow_spec import CODE_TYPES, JS_CODE_TYPES
+from .workflow_spec import PY_CODE_TYPES, normalize_type
 
 
 # ---------------------------------------------------------------------------
@@ -350,7 +350,7 @@ def workflow_page(browser):
     """Class-scoped page: one browser tab shared by every test method.
 
     Attaches ``console`` and ``pageerror`` listeners that append to
-    ``page._curio_browser_log``. autkLifecycleFactory's catch block stores
+    ``page._curio_browser_log``. autkBehaviorFactory's catch block stores
     the autk error message into React state but never calls
     ``console.error``, so without these listeners the JS-side reason for
     an AUTK Error badge is invisible to pytest. test_workflows.py reads
@@ -454,6 +454,8 @@ def loaded_workflow(
     """
     from .workflow_spec import parse_workflow
 
+    # Example 10 (street-vision) is skipped at collection time by
+    # ``pytest_generate_tests`` (needs external services); see conftest.py.
     workflow_file = request.param
     spec = parse_workflow(workflow_file)
 
@@ -465,8 +467,12 @@ def loaded_workflow(
         wf_data = json.load(f)
     for node_json in wf_data["dataflow"]["nodes"]:
         content = node_json.get("content", "")
-        node_type = node_json.get("type")
-        if content.strip() and node_type in CODE_TYPES and node_type not in JS_CODE_TYPES:
+        # Normalize the raw namespaced type to its legacy uppercase form so
+        # PY_CODE_TYPES — keyed on the legacy ids — actually matches. Before
+        # this normalization the check silently fell through to False for
+        # every node and no workflow content was ever seeded.
+        node_type = normalize_type(node_json.get("type", ""))
+        if content.strip() and node_type in PY_CODE_TYPES:
             node_json["content"] = seed_node_code(content)
     seeded_tmp = tempfile.NamedTemporaryFile(
         suffix=".json", delete=False, mode="w", encoding="utf-8",

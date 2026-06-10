@@ -249,7 +249,7 @@ If `GUEST_LLM_API_KEY` is not set, the LLM Assistant will return an error for gu
 
 ## Node Catalog
 
-Curio's nodes ship as **packages** — small, self-contained folders with a `manifest.json` declaring the node kinds inside. The built-in nodes (Data Loading, Vega-Lite, AutkMap, etc.) live in a pre-installed package called `curio.builtin@1`; you can install more via the **Node Catalog** drawer.
+Curio's nodes ship as **packages** — small, self-contained folders with a `manifest.json` declaring the node kinds inside. The built-in nodes (Data Loading, Vega-Lite, Autark, etc.) live in a pre-installed package called `curio.builtin@1`; you can install more via the **Node Catalog** drawer.
 
 To open the drawer: in the **Tools panel** on the left edge of the canvas, find the **Packages** dropdown (cube icon) and open it; the **Get more packages +** button sits in the dropdown's footer. From there you can:
 
@@ -258,7 +258,7 @@ To open the drawer: in the **Tools panel** on the left edge of the canvas, find 
 - Import a `.curio.zip` archive from the footer.
 - Author your own package directly from the canvas: build the node, click the cog on its header, then **Save as pack node…**. Edit per-package metadata later via the pencil button next to the export icon in the **Packages** dropdown.
 
-The full walkthrough — concepts, the Save-As flow, the per-package metadata editor, exporting / importing, versioning, and fork lineage — is in [docs/CATALOG.md](CATALOG.md). The manifest format is specified in [docs/schemas/node-package.v3.json](schemas/node-package.v3.json), and the committed package catalog lives at `<repo_root>/packages/`.
+The full walkthrough — concepts, the Save-As flow, the per-package metadata editor, exporting / importing, versioning, and fork lineage — is in [docs/CATALOG.md](CATALOG.md). The manifest format is specified in [docs/schemas/node-package.v4.json](schemas/node-package.v4.json), and the committed package catalog lives at `<repo_root>/packages/`.
 
 ## Real-time collaboration
 

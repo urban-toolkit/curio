@@ -16,7 +16,7 @@ import './Node.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 // When the canvas node's `data.nodeType` changes (e.g. after Save-As rebinds
-// the node to a new package kind), the descriptor's `useLifecycle` hook function
+// the node to a new package kind), the descriptor's `useNodeBehavior` hook function
 // can change. Calling a *different* hook at the same call site violates
 // React's rules of hooks and corrupts the state slots ("baseQueue is undefined").
 // Keying the inner body by `data.nodeType` forces an unmount/remount so the
@@ -60,15 +60,15 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const { adapter } = descriptor;
 
   const nodeState = useNodeState(data, descriptor.id);
-  const lifecycle = adapter.useLifecycle(data, nodeState);
+  const behavior = adapter.useNodeBehavior(data, nodeState);
   const edges = useEdges();
 
-  const sendCode = lifecycle.sendCodeOverride ?? nodeState.sendCode;
-  const setSendCodeCallback = lifecycle.setSendCodeCallbackOverride ?? nodeState.setSendCodeCallback;
-  const setOutputCallback = lifecycle.setOutputCallbackOverride ?? nodeState.setOutput;
-  const output = lifecycle.outputOverride ?? nodeState.output
-  const showLoading = lifecycle.showLoading ?? false;
-  const disablePlay = lifecycle.disablePlay ?? adapter.container.disablePlay ?? false;
+  const sendCode = behavior.sendCodeOverride ?? nodeState.sendCode;
+  const setSendCodeCallback = behavior.setSendCodeCallbackOverride ?? nodeState.setSendCodeCallback;
+  const setOutputCallback = behavior.setOutputCallbackOverride ?? nodeState.setOutput;
+  const output = behavior.outputOverride ?? nodeState.output
+  const showLoading = behavior.showLoading ?? false;
+  const disablePlay = behavior.disablePlay ?? adapter.container.disablePlay ?? false;
 
   const { signalNodeExecDone, dashboardOn } = useFlowContext();
   const collab = useCollab();
@@ -131,13 +131,13 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
     };
   }, []);
   const defaultValue =
-    lifecycle.defaultValueOverride ??
+    behavior.defaultValueOverride ??
     (nodeState.templateData.code ? nodeState.templateData.code : data.defaultCode);
   const readOnly =
     nodeState.templateData.custom != undefined && nodeState.templateData.custom === false;
 
-  const allHandles = lifecycle.handlesOverride
-    ?? [...adapter.handles, ...(lifecycle.dynamicHandles ?? [])];
+  const allHandles = behavior.handlesOverride
+    ?? [...adapter.handles, ...(behavior.dynamicHandles ?? [])];
   const kindConfig = readCanvasTemplateConfig({ data });
   const editorTabs = resolveEditorTabFlags(descriptor, kindConfig);
 
@@ -227,7 +227,7 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
 
         {adapter.editor ? (
           <NodeEditor
-            outputId={lifecycle.outputIdOverride ?? adapter.editor.outputId?.(data.nodeId)}
+            outputId={behavior.outputIdOverride ?? adapter.editor.outputId?.(data.nodeId)}
             setSendCodeCallback={setSendCodeCallback}
             code={editorTabs.code}
             grammar={editorTabs.grammar}
@@ -239,22 +239,22 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
             data={data}
             output={output}
             nodeType={descriptor.id}
-            applyGrammar={lifecycle.applyGrammar}
-            customWidgetsCallback={lifecycle.customWidgetsCallback}
+            applyGrammar={behavior.applyGrammar}
+            customWidgetsCallback={behavior.customWidgetsCallback}
             defaultValue={defaultValue}
             readOnly={readOnly || lockedByOther}
             floatCode={nodeState.setCode}
-            contentComponent={lifecycle.contentComponent}
+            contentComponent={behavior.contentComponent}
           />
         ) : (
           // ``editor: "none"`` in the manifest means there's no tabbed editor
-          // surface — but the lifecycle hook can still inject custom UI via
+          // surface — but the behavior hook can still inject custom UI via
           // ``contentComponent`` (the streetvision place-picker, etc.).
           // Without this branch that UI would be silently dropped because
           // ``contentComponent`` is otherwise only rendered inside NodeEditor's
           // output tab. ``noContent`` containers (merge-flow, spatial-join)
           // legitimately return ``undefined`` here — they're icon-only.
-          lifecycle.contentComponent ?? null
+          behavior.contentComponent ?? null
         )}
 
         {!dashboardOn && adapter.outputIconType && <OutputIcon type={adapter.outputIconType as TIconCardinality} />}

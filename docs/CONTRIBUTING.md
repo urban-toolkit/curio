@@ -73,7 +73,7 @@ curio/
 └── requirements.txt                # Curio framework dependencies (data-ops libs live in each package's manifest.dependencies.python)
 ```
 
-For how nodes are added — most users via the Node Factory wizard, advanced users via a hand-authored `manifest.json` or a new lifecycle hook — see [CATALOG.md](CATALOG.md). For a deep dive into how the system is structured (nodes, data flow, execution pipeline, provenance) see [ARCHITECTURE.md](ARCHITECTURE.md).
+For how nodes are added — most users via the Node Factory wizard, advanced users via a hand-authored `manifest.json` or a new behavior hook — see [CATALOG.md](CATALOG.md). For a deep dive into how the system is structured (nodes, data flow, execution pipeline, provenance) see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Installation Options
 

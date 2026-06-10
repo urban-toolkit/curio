@@ -490,20 +490,15 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     ) => {
         if (sourceHandle == "in/out" && targetHandle == "in/out") return;
 
-        let getOutput = outId;
-        let setInput = inId;
-
-        let output = "";
-
-        setOutputs((opts: any) =>
-            opts.map((opt: any) => {
-                if (opt.nodeId == getOutput) {
-                    output = opt.output;
-                }
-
-                return opt;
-            })
-        );
+        // Why: previously this read `outputs` via a side effect inside a
+        // setOutputs reducer. React Flow's setNodes (zustand) flushes its
+        // reducer immediately, but React's useState setOutputs queues its
+        // reducer for later — so setNodes ran first with `output = ""` and
+        // wrote an empty data.input, then setOutputs ran and mutated
+        // `output` after no one was reading it. Read synchronously from
+        // outputsRef instead.
+        const sourceEntry = outputsRef.current.find((opt: any) => opt.nodeId === outId);
+        const output = sourceEntry?.output ?? "";
 
         setNodes((nds: any) =>
             nds.map((node: any) => {
@@ -857,16 +852,6 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         }
         ancestorIds.add(targetNodeId);
 
-        // Also include degree-0 nodes (no directed edges at all)
-        const directedEdgeNodeIds = new Set<string>();
-        for (const e of directedEdges) {
-            directedEdgeNodeIds.add(e.source);
-            directedEdgeNodeIds.add(e.target);
-        }
-        for (const n of currentNodes) {
-            if (!directedEdgeNodeIds.has(n.id)) ancestorIds.add(n.id);
-        }
-
         // Skip ancestors that already ran successfully; always keep the target
         const subgraphNodes = currentNodes.filter(n =>
             ancestorIds.has(n.id) &&
@@ -897,25 +882,30 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             }
         }
 
-        setNodes((nds: any) =>
-            nds.map((node: any) => {
-                if (!nodesAffected.includes(node.id)) return node;
+        // Skip setNodes entirely when nothing downstream needs updating — an
+        // empty map still returns a new array reference which causes every node
+        // component to re-render (Data Pool table, autk-grammar, etc.).
+        if (nodesAffected.length > 0) {
+            setNodes((nds: any) =>
+                nds.map((node: any) => {
+                    if (!nodesAffected.includes(node.id)) return node;
 
-                if (getFlowNodeCanonicalType(node) == NodeType.MERGE_FLOW) {
-                    const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
-                    const sourceIndex = sourceList.findIndex((s: any) => s === newOutput.nodeId);
-                    if (sourceIndex >= 0) {
-                        inputList[sourceIndex] = newOutput.output;
+                    if (getFlowNodeCanonicalType(node) == NodeType.MERGE_FLOW) {
+                        const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
+                        const sourceIndex = sourceList.findIndex((s: any) => s === newOutput.nodeId);
+                        if (sourceIndex >= 0) {
+                            inputList[sourceIndex] = newOutput.output;
+                        }
+                        return { ...node, data: { ...node.data, input: inputList, source: sourceList } };
                     }
-                    return { ...node, data: { ...node.data, input: inputList, source: sourceList } };
-                }
 
-                if (newOutput.output == undefined) {
-                    return { ...node, data: { ...node.data, input: "", source: "" } };
-                }
-                return { ...node, data: { ...node.data, input: newOutput.output, source: newOutput.nodeId } };
-            })
-        );
+                    if (newOutput.output == undefined) {
+                        return { ...node, data: { ...node.data, input: "", source: "" } };
+                    }
+                    return { ...node, data: { ...node.data, input: newOutput.output, source: newOutput.nodeId } };
+                })
+            );
+        }
 
         setOutputs((opts: any) => {
             let added = false;
@@ -1110,7 +1100,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     // Non-serializable callbacks on ``node.data`` (outputCallback,
     // interactionsCallback, propagationCallback, interpreters) are
     // re-attached on the receive side because socket.io strips functions
-    // during JSON serialisation. Without this, downstream lifecycle
+    // during JSON serialisation. Without this, downstream behavior
     // adapters would call ``data.outputCallback(...)`` against undefined
     // (caught now by the defensive ``typeof`` guards in
     // ``adapters/node/*``, but never producing visible output).

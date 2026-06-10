@@ -119,7 +119,7 @@ function ensurePorts(desc: NodeDescriptor): { inP: TemplateDraft["inputPorts"]; 
   return { inP: inputPorts, outP: outputPortsRaw };
 }
 
-/** Maps manifest default template paths to dropdown names (see `packageNodeLifecycle.tsx`). */
+/** Maps manifest default template paths to dropdown names (see `packageNodeBehavior.tsx`). */
 function sourceDisplayName(sourcePath: string | undefined): string | undefined {
   if (!sourcePath) return undefined;
   const basename = sourcePath.split("/").pop() ?? "";
@@ -246,7 +246,7 @@ function packageTemplatePayloadToTemplateDraft(template: PackageTemplatePayload,
     hasGrammar: !!template.hasGrammar,
     inputPorts,
     outputPorts: outputPortsRaw,
-    lifecycle: template.lifecycle ?? undefined,
+    behavior: template.behavior ?? undefined,
     iconRef: template.iconRef ?? undefined,
     paletteOrder: typeof template.paletteOrder === "number" ? template.paletteOrder : undefined,
     sourceFilename,

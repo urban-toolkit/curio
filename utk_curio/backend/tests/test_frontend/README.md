@@ -21,9 +21,11 @@ CURIO_E2E_USE_EXISTING=1 pytest utk_curio/backend/tests/test_frontend/
 
 ### AUTK / WebGPU note
 
-Autark (`AUTK_MAP` / `AUTK_COMPUTE` / `AUTK_PLOT` / `AUTK_DB`) renders via WebGPU. The `browser_type_launch_args` fixture in `conftest.py` passes `--enable-unsafe-webgpu` and a platform-appropriate ANGLE backend (`--use-angle=metal` on macOS, `--use-angle=d3d11` on Windows, `--use-gl=swiftshader` on Linux) so WebGPU is available in headless Chromium just as in autark's own Playwright tests.
+Autark workflows use the single `AUTK_GRAMMAR` node type, which renders its map/plot via WebGPU. The `browser_type_launch_args` fixture in the **parent** [`../conftest.py`](../conftest.py) points `executable_path` at the system-installed Google Chrome and passes a minimal flag set (`--enable-unsafe-webgpu --enable-unsafe-swiftshader`). This is deliberate: Playwright's bundled Chromium on Windows ships without a working Dawn/WebGPU runtime (`requestAdapter()` returns null), whereas real Chrome 113+ returns an adapter. When Chrome can't be found it falls back to bundled Chromium.
 
-AUTK_ nodes are classified as `"code"` nodes and exercise the full test matrix (`test_node_type_and_content` checks the Monaco editor; `test_node_execution` verifies each node reaches **Done**). Their JavaScript code is excluded from the Python random-seed injection used by other `CODE_TYPES` nodes.
+There is **no WebGPU tolerance**: an `AUTK_GRAMMAR` node that errors (including because WebGPU is unavailable) is a hard test failure. To run the autk examples you need a browser that provides WebGPU — which the system-Chrome `executable_path` above ensures. `_webgpu_diagnostics` still probes adapter/device state once per session and attaches it to the failure dump for debugging.
+
+`AUTK_GRAMMAR` is a `"grammar"` node (grammar/JSON editor + output tab) and exercises the full matrix: `test_node_type_and_content` checks the grammar editor; `test_node_execution` verifies each node reaches **Done**. Its grammar content (and any JavaScript/WGSL compute blocks) is excluded from the Python random-seed injection used by Python `CODE_TYPES` nodes.
 
 ## Test database contract
 

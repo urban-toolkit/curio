@@ -153,10 +153,7 @@ _node_type_registry: dict = {
     "DATA_POOL":             {"inputTypes": ["DATAFRAME", "GEODATAFRAME"],                                 "outputTypes": ["DATAFRAME", "GEODATAFRAME"]},
     "MERGE_FLOW":            {"inputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"],        "outputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"]},
     "DATA_SUMMARY":          {"inputTypes": ["DATAFRAME", "GEODATAFRAME"],                                 "outputTypes": ["JSON"]},
-    "AUTK_DB":               {"inputTypes": [],                                                             "outputTypes": ["LIST"]},
-    "AUTK_COMPUTE":          {"inputTypes": ["LIST", "JSON", "GEODATAFRAME"],                              "outputTypes": ["LIST", "JSON", "GEODATAFRAME"]},
-    "AUTK_MAP":              {"inputTypes": ["LIST", "JSON", "GEODATAFRAME"],                              "outputTypes": ["LIST", "JSON", "GEODATAFRAME"]},
-    "AUTK_PLOT":             {"inputTypes": ["LIST", "JSON", "GEODATAFRAME", "DATAFRAME"],                 "outputTypes": ["LIST", "JSON", "GEODATAFRAME", "DATAFRAME"]},
+    "AUTK_GRAMMAR":          {"inputTypes": ["LIST", "JSON", "GEODATAFRAME", "DATAFRAME"],                 "outputTypes": ["LIST", "JSON", "GEODATAFRAME", "DATAFRAME"]},
 }
 
 def get_output_types(node_type: str) -> list:
@@ -232,6 +229,35 @@ def launchCwd():
 @bp.route('/sharedDataPath')
 def sharedDataPath():
     return os.environ["CURIO_SHARED_DATA"]
+
+@bp.route('/file/<path:filename>', methods=['GET'])
+def serve_launch_cwd_file(filename: str):
+    """Serve a file by its path *relative to CURIO_LAUNCH_CWD* so browser-side
+    nodes (e.g. autk-grammar) can fetch binary assets (PBF, GeoTIFF, …) the
+    same way Python sandbox nodes read them from disk — one shared root, one
+    relative-path convention:
+      Python node:   rasterio.open('docs/examples/data/file.tif')
+      Grammar spec:  pbfFileUrl: 'docs/examples/data/file.pbf'
+
+    The frontend prepends ``BACKEND_URL`` + ``/file/`` to the relative path at
+    run time (see resolveDataSourceUrls in autkGrammarBehavior.tsx).
+
+    safe_join blocks path-traversal payloads from escaping CURIO_LAUNCH_CWD.
+    """
+    from flask import send_from_directory
+    from utk_curio.backend.app.common.safe_paths import PathTraversalError, safe_join
+
+    launch_cwd = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
+    # ``filename`` is a multi-segment relative path (e.g. docs/examples/data/x.pbf).
+    # Use validate=False (like /get) so the containment guard alone runs: real data
+    # filenames routinely contain spaces or leading '.'/'_'/'-' that the per-segment
+    # charset would reject, and is_within already prevents escaping CURIO_LAUNCH_CWD.
+    parts = [p for p in filename.split('/') if p]
+    try:
+        safe_join(launch_cwd, *parts, validate=False)
+    except PathTraversalError:
+        abort(403)
+    return send_from_directory(launch_cwd, filename)
 
 @bp.route('/upload', methods=['POST'])
 @require_auth

@@ -1,7 +1,7 @@
 """Per-package Python dependency installation via ``pip``.
 
 A package's ``manifest.dependencies.python`` declares the libraries the
-package's lifecycle hooks need at runtime. The catalog install flow calls
+package's behavior hooks need at runtime. The catalog install flow calls
 :func:`install_python_deps` after copying the package files; uninstall
 walks every other installed package's manifest and pip-uninstalls deps
 that no remaining package still declares.
@@ -86,19 +86,33 @@ def _spec_argv(name: str, spec: str) -> str:
 
 
 def _is_satisfied(name: str, spec: str) -> bool:
-    """Return True if *name* is importable AND its version matches *spec*.
+    """Return True if *name* is installed at a version that satisfies *spec*.
 
-    The check is best-effort — we don't parse full PEP 440 specifiers; we
-    just confirm the package is installed at all if the spec is empty,
-    and otherwise let pip do the real comparison. Pip's own dependency
-    resolver is the authoritative source of truth; this just skips the
-    subprocess when nothing could possibly need doing.
+    Uses ``packaging.specifiers`` so the version constraint is actually
+    evaluated — not just whether the package is importable. Falls back to
+    True (let pip decide) if the installed version string can't be parsed.
     """
+    from packaging.specifiers import SpecifierSet
+    from packaging.version import Version, InvalidVersion
+
     try:
-        installed_version(name)
+        ver_str = installed_version(name)
     except PackageNotFoundError:
         return False
-    return True
+
+    spec = (spec or "").strip()
+    if not spec or spec == "*":
+        return True
+
+    # Derive the PEP 440 specifier string from the manifest spec the same
+    # way _spec_argv does, then strip the package name prefix.
+    full = _spec_argv(name, spec)        # e.g. "pyproj>=3.7.3" or "pandas==3.0.2"
+    pep440 = full[len(name):]            # e.g. ">=3.7.3"  or  "==3.0.2"
+
+    try:
+        return Version(ver_str) in SpecifierSet(pep440)
+    except (InvalidVersion, Exception):
+        return True  # unparseable — let pip be the authority
 
 
 def install_python_deps(

@@ -16,7 +16,7 @@ import { IPropagation } from '../providers/FlowProvider';
  *   `/processPythonCode` all dispatch on.
  *
  * See ``docs/CATALOG.md`` for the user-facing overview and
- * ``docs/schemas/node-package.v3.json`` for the manifest schema.
+ * ``docs/schemas/node-package.v4.json`` for the manifest schema.
  */
 export type NodeTemplateId = NodeType | string;
 
@@ -104,17 +104,17 @@ export interface ContainerConfig {
   styles?: React.CSSProperties;
 }
 
-/* ── Node Lifecycle Contract ───────────────────────────────────────── */
+/* ── Node Behavior Contract ───────────────────────────────────────── */
 
 export type UseNodeStateReturn = ReturnType<typeof import('../hook/useNodeState').useNodeState>;
 
 /**
- * Runtime data passed to every lifecycle hook by UniversalNode.
+ * Runtime data passed to every behavior hook by UniversalNode.
  *
  * Extends the persisted `INodeData` with FlowProvider runtime callbacks
  * that are injected when the node is mounted on the canvas.
  */
-export interface NodeLifecycleData extends INodeData {
+export interface NodeBehaviorData extends INodeData {
   /** FlowProvider callback — push this node's output to downstream nodes. */
   outputCallback: (nodeId: string, output: any) => void;
   /** FlowProvider callback — propagate interaction resolution data. */
@@ -128,13 +128,13 @@ export interface NodeLifecycleData extends INodeData {
 }
 
 /**
- * The return value of a lifecycle hook.
+ * The return value of a behavior hook.
  *
  * Every field is optional. UniversalNode applies defaults from `useNodeState`
- * for any field the lifecycle does not override. A no-op lifecycle may
+ * for any field the behavior does not override. A no-op behavior may
  * return `{}`.
  */
-export interface LifecycleResult {
+export interface NodeBehaviorResult {
   /** Compile a grammar spec and render the result (grammar-viz boxes). */
   applyGrammar?: (spec: string) => Promise<void>;
   /** Populate the widgets panel with custom DOM controls. */
@@ -155,7 +155,7 @@ export interface LifecycleResult {
   /** Extra handles appended to `adapter.handles` at render time (MergeFlow dynamic inputs). */
   dynamicHandles?: HandleDef[];
   /**
-   * Fully replaces `adapter.handles` at render time. Used by lifecycles that
+   * Fully replaces `adapter.handles` at render time. Used by behaviors that
    * want exact control over handle ids / positions (e.g. multi-input nodes
    * like Spatial Join or MergeFlow where the default `standardInOut()` "in"
    * handle would leak through and render an unwanted gray circle at top:50%).
@@ -165,31 +165,31 @@ export interface LifecycleResult {
   /** When `true`, the play button is disabled. */
   disablePlay?: boolean;
   /**
-   * DOM id for the editor's output container, computed at lifecycle time.
+   * DOM id for the editor's output container, computed at behavior time.
    * Replaces the static `adapter.editor.outputId(nodeId)` form so a manifest
    * can declare a grammar-mode kind without carrying executable JS — the
-   * lifecycle hook owns the convention (e.g. Vega uses `"vega" + nodeId`).
+   * behavior hook owns the convention (e.g. Vega uses `"vega" + nodeId`).
    */
   outputIdOverride?: string;
 }
 
 /**
- * Contract type for node lifecycle hooks.
+ * Contract type for node behavior hooks.
  *
- * Every lifecycle implementation **must** satisfy this signature.
+ * Every behavior implementation **must** satisfy this signature.
  * The hook is called by `UniversalNode` on every render — it receives
  * the node's runtime `data` and the shared `nodeState` from `useNodeState`,
- * and returns a `LifecycleResult` whose fields selectively override
+ * and returns a `NodeBehaviorResult` whose fields selectively override
  * defaults.
  *
  * **Rules:**
  * 1. Must be a valid React custom hook (may call `useState`, `useEffect`, etc.).
  * 2. Must be deterministic in its hook call order (React rules of hooks).
- * 3. Must return a `LifecycleResult` — omit fields to accept defaults.
+ * 3. Must return a `NodeBehaviorResult` — omit fields to accept defaults.
  * 4. Must not call `nodeState.setSendCodeCallback` directly — return
  *    `setSendCodeCallbackOverride` instead so UniversalNode can wire it.
  */
-export type NodeLifecycleHook = (data: NodeLifecycleData, nodeState: UseNodeStateReturn) => LifecycleResult;
+export type NodeBehaviorHook = (data: NodeBehaviorData, nodeState: UseNodeStateReturn) => NodeBehaviorResult;
 
 /* ── Full adapter for a node type ──────────────────────────────────── */
 
@@ -199,7 +199,7 @@ export interface NodeAdapter {
   container: ContainerConfig;
   inputIconType?: string;
   outputIconType?: string;
-  useLifecycle: NodeLifecycleHook;
+  useNodeBehavior: NodeBehaviorHook;
 }
 
 /* ── Descriptor ────────────────────────────────────────────────────── */

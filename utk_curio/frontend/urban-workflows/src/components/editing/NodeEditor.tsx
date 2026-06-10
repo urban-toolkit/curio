@@ -87,8 +87,27 @@ function NodeEditor({
 
     const contentComponentBypass = useRef(false);
 
+    const sendReplacedCode = (code: string) => {
+        if ((fullscreen == "" || fullscreen == undefined) && (outputId != undefined || contentComponent != undefined)) setActiveTab("output");
+        setReplacedCode(code);
+        setReplacedCodeDirty((prev: boolean) => {
+            return !prev;
+        });
+    };
+
     const sendCodeToWidgets = (code: string) => {
         setUserCode(code);
+        if (!widgets) {
+            // Why: WidgetsEditor is the bridge that resolves widget markers and
+            // hands the result to CodeEditor (via sendReplacedCode). It only
+            // mounts when the widgets tab is enabled, so for code nodes with
+            // hasWidgets=false (e.g. js-computation) the markersDirty toggle
+            // has no listener and CodeEditor's interpretCode is never reached
+            // — the play spinner spins forever. Forward the code straight to
+            // CodeEditor here so the play flow completes without a widgets tab.
+            sendReplacedCode(code);
+            return;
+        }
         setMarkersDirty((prev: boolean) => {
             return !prev;
         });
@@ -109,14 +128,6 @@ function NodeEditor({
 
         contentComponentBypass.current = true;
     }, [contentComponent]);
-
-    const sendReplacedCode = (code: string) => {
-        if ((fullscreen == "" || fullscreen == undefined) && (outputId != undefined || contentComponent != undefined)) setActiveTab("output");
-        setReplacedCode(code);
-        setReplacedCodeDirty((prev: boolean) => {
-            return !prev;
-        });
-    };
 
     useEffect(() => {
         setDefaultCode(defaultValue);
@@ -285,11 +296,12 @@ function NodeEditor({
                                 {(outputId != undefined || contentComponent != undefined) ? (
                                     <Tab.Pane
                                         eventKey="output"
-                                        style={{ height: "100%", overflowY: "auto" }}
+                                        style={{ height: "100%", overflow: "hidden" }}
                                     >
                                         {outputId != undefined ? (
                                             <div
                                                 id={outputId}
+                                                className="nodrag"
                                                 style={{
                                                     textAlign: "center",
                                                     width: "100%",

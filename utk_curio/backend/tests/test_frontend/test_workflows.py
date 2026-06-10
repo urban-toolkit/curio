@@ -1,7 +1,6 @@
 import os
 import re
 import json
-import time
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
@@ -20,12 +19,9 @@ from .utils import (
     get_shared_data_dir,
     load_artifact_as_dict,
     execute_workflow_programmatically,
-    dot_data_to_vega_values,
-    save_expected_svg,
-    compare_svg_structure,
     dump_browser_log,
 )
-from .workflow_spec import NodeSpec, CODE_EDITOR_TYPES, JS_CODE_TYPES
+from .workflow_spec import NodeSpec, CODE_EDITOR_TYPES
 
 """
 This test file is to test the loading of workflow files in the frontend.
@@ -52,9 +48,9 @@ def test_load_workflow_files(workflow_files):
             edges_count = len(workflow_data['dataflow']['edges'])
 
             print(f"{os.path.basename(workflow_file)}: {nodes_count} nodes, {edges_count} edges")
-            # add assertion to check that the workflow file has at least 1 node and 1 edge
+            # Edges are not required: single-node autk-grammar workflows are
+            # self-contained and have zero edges by design.
             assert nodes_count > 0, f"Workflow file {workflow_file} has no nodes"
-            assert edges_count > 0, f"Workflow file {workflow_file} has no edges"
 
 
 
@@ -81,7 +77,7 @@ class TestWorkflowCanvas:
         and dump the captured browser console/pageerror log alongside it.
 
         The browser log is the only window into autk's caught exceptions
-        (autkLifecycleFactory swallows them into React state without ever
+        (autkBehaviorFactory swallows them into React state without ever
         calling ``console.error``), so we always write it — not just on
         failure — while we're debugging the rendering issue.
         """
@@ -103,40 +99,22 @@ class TestWorkflowCanvas:
                 webgpu_diagnostics=webgpu_diag,
             )
 
-    # AUTK nodes that render via WebGPU. AUTK_DB is the only JS_CODE_TYPES
-    # member that does not need WebGPU (it talks to the Node.js sandbox and
-    # Overpass), so its "Error" status — if it occurs — is a real failure,
-    # not a missing-GPU side-effect.
-    _WEBGPU_REQUIRED_TYPES = JS_CODE_TYPES - {"AUTK_DB"}
-
-    # How many times to click Play on a node flagged
-    # ``_tolerate_external_service_error`` (currently AUTK_DB / Overpass)
-    # before giving up and falling through to the tolerance branch. The
-    # public Overpass endpoint rate-limits per-IP and individual
-    # requests intermittently come back with 0 elements; re-issuing the
-    # request after the throttle clears typically succeeds.
-    _EXTERNAL_SERVICE_RETRIES = 5
-
-    # Base + cap for exponential backoff between retries on
-    # ``_tolerate_external_service_error`` nodes. Schedule is
-    # ``base * 2^(attempt-2)`` clamped to ``cap`` — i.e. for 5 attempts:
-    # 15s, 30s, 60s, 60s. Overpass throttle windows sometimes run a minute+,
-    # so a fixed short backoff hammers the rate-limit while a runaway
-    # exponential would let a fully-down service stall the suite for many
-    # minutes. The cap keeps the worst case bounded.
-    _EXTERNAL_SERVICE_RETRY_BACKOFF_S = 15
-    _EXTERNAL_SERVICE_RETRY_BACKOFF_CAP_S = 60
+    # AUTK_GRAMMAR nodes render via WebGPU when they carry a map/plot. The data
+    # section runs in the backend sandbox (autk-db over local PBF). There is no
+    # WebGPU tolerance: an autk node that errors is a hard failure. The browser
+    # must provide WebGPU (the parent ``tests/conftest.py`` points
+    # ``executable_path`` at system Chrome precisely so it does).
+    _WEBGPU_DIAGNOSTIC_TYPES = {"AUTK_GRAMMAR"}
 
     def _webgpu_diagnostics(self) -> dict:
         """Return a verbose dump of the browser's WebGPU state — adapter
         info, features, fallback flag, and the result of actually creating
         a device. Cached on the class so it runs once per browser session.
 
-        The earlier ``_webgpu_available`` returned only a bool, which hid
-        the difference between *no adapter* and *adapter exists but device
-        creation fails* — both surface as AUTK Errors but need different
-        fixes. We log this dict once per session so the failure mode is
-        visible in pytest output.
+        Purely diagnostic: it distinguishes *no adapter* from *adapter exists
+        but device creation fails* — both surface as AUTK Errors but need
+        different fixes. We log this dict once per session and attach it to
+        the failure dump so the failure mode is visible in pytest output.
         """
         cached = getattr(self.__class__, "_webgpu_diagnostics_cache", None)
         if cached is not None:
@@ -198,30 +176,14 @@ class TestWorkflowCanvas:
             self.page._curio_webgpu_diagnostics = diagnostics  # type: ignore[attr-defined]
         return diagnostics
 
-    def _webgpu_available(self) -> bool:
-        """Whether the browser can both obtain an adapter AND create a
-        device. Both are required by autk-map's ``await map.init()``.
-        Backed by ``_webgpu_diagnostics`` so we log the verbose dump once
-        even when callers only need the bool.
-        """
-        cached = getattr(self.__class__, "_webgpu_available_cache", None)
-        if cached is not None:
-            return cached
-        diag = self._webgpu_diagnostics()
-        adapter = diag.get("adapter") if isinstance(diag, dict) else None
-        device = diag.get("device") if isinstance(diag, dict) else None
-        available = bool(adapter) and isinstance(device, dict) and device.get("ok") is True
-        self.__class__._webgpu_available_cache = available
-        return available
-
     def _read_code_node_error_text(self, node_el) -> str | None:
         """Return the error message text from a code node's inline output
         area. Returns ``None`` if it cannot be read.
 
-        Works for both autk lifecycle nodes and Python/JS code nodes:
+        Works for both autk behavior nodes and Python/JS code nodes:
         CodeEditor renders any output (success or error) into the same
         ``.nowheel.nodrag`` div with the ``[N]:`` counter (CodeEditor.tsx
-        ~200-219). For autk, ``autkLifecycleFactory``'s catch block sets
+        ~200-219). For autk, ``autkBehaviorFactory``'s catch block sets
         ``output = { code: 'error', content: err.message }``; for
         COMPUTATION_ANALYSIS / DATA_LOADING / DATA_TRANSFORMATION the
         sandbox's stderr/exception traceback is routed there too. We
@@ -253,8 +215,21 @@ class TestWorkflowCanvas:
         """Print the autk error text to pytest output and stash it on the
         class so the post-test screenshot helper can include it in the
         browser log file.
+
+        Grammar nodes have no readable error tab (the behavior's catch only
+        toasts and sets node state), so the literal err.message reaches us via
+        the ``console.error('[autk-grammar] node error: …')`` the behavior
+        emits — scan the captured browser console for it as well.
         """
         text = self._read_code_node_error_text(node_el)
+        if not text:
+            log_entries = getattr(self.page, "_curio_browser_log", None) or []
+            console_errors = [
+                e.get("text", "") for e in log_entries
+                if e.get("type") == "error" or e.get("kind") == "pageerror"
+            ]
+            if console_errors:
+                text = " | ".join(console_errors[-5:])
         store = getattr(self.__class__, "_autk_error_texts", None)
         if store is None:
             store = {}
@@ -265,84 +240,21 @@ class TestWorkflowCanvas:
             f"{text or '(could not read error tab)'}"
         )
 
-    def _tolerate_webgpu_error(self, node: NodeSpec) -> bool:
-        """``True`` when an AUTK_MAP/PLOT/COMPUTE node errored only because
-        the headless browser has no WebGPU adapter."""
-        return (
-            node.type in self._WEBGPU_REQUIRED_TYPES
-            and not self._webgpu_available()
-        )
-
-    def _tolerate_external_service_error(self, node: NodeSpec) -> bool:
-        """``True`` for nodes whose execution depends on a flaky external
-        service the test cannot stub.
-
-        AUTK_DB calls Overpass via ``db.loadOsm({ queryArea: ... })``. The
-        public Overpass instance throttles aggressively when the suite hits
-        it back-to-back from the same host, so a single test run will
-        intermittently see Overpass timeouts (no Done within budget) or
-        Overpass HTTP errors (autk-db rejects → node Error). Manual
-        single-shot use works fine because nothing else is hammering the
-        service. We tolerate both outcomes with a warning rather than
-        failing the suite on environmental flakiness.
-        """
-        return node.type == "AUTK_DB"
-
-    def _mark_tolerated(self, node: NodeSpec) -> None:
-        """Record that a node's failure was tolerated in
-        ``_execute_all_playable_nodes`` so downstream per-node assertions in
-        ``test_node_execution`` know to skip it."""
-        tolerated = getattr(self.__class__, "_tolerated_node_ids", None)
-        if tolerated is None:
-            tolerated = set()
-            self.__class__._tolerated_node_ids = tolerated
-        tolerated.add(node.id)
-
-    def _was_tolerated(self, node: NodeSpec) -> bool:
-        tolerated = getattr(self.__class__, "_tolerated_node_ids", None)
-        return tolerated is not None and node.id in tolerated
-
-    def _upstream_was_tolerated(self, node: NodeSpec) -> bool:
-        """``True`` if any *transitive* data-flow upstream of *node* was
-        tolerated.
-
-        Topological iteration guarantees upstreams are processed first, so
-        by the time we reach a downstream node the tolerated set is
-        already populated. We walk the upstream subgraph (BFS) because
-        passive nodes like ``MERGE_FLOW`` have no play button and never
-        get into the tolerated set themselves — but their inputs do —
-        and the autk-compute / autk-map nodes downstream of them
-        otherwise wouldn't see the tolerance and would error on
-        "roads layer missing from upstream" or similar.
-        """
-        tolerated = getattr(self.__class__, "_tolerated_node_ids", None)
-        if not tolerated:
-            return False
-        seen: set[str] = set()
-        frontier: list[str] = list(self.spec.upstream_nodes(node.id))
-        while frontier:
-            uid = frontier.pop()
-            if uid in seen:
-                continue
-            seen.add(uid)
-            if uid in tolerated:
-                return True
-            frontier.extend(self.spec.upstream_nodes(uid))
-        return False
-
     def _node_execution_timeout_ms(self, node: NodeSpec) -> int:
         """Return a generous timeout for nodes that execute heavy data ops.
 
-        AUTK_DB gets the largest budget because its default code does a live
-        Overpass HTTP fetch (``db.loadOsm({ queryArea: { geocodeArea: ... }
-        })``), and Overpass latency varies wildly when the suite hits it
-        repeatedly from the same IP. ``_tolerate_external_service_error``
-        catches the case where Overpass errors out outright; this just buys
-        autk-db enough time to finish on the slow-but-eventually-OK path.
+        AUTK_GRAMMAR shares the data-node budget: a node with a `data` section
+        runs it in the backend sandbox — autk-db parses a local OSM PBF
+        (multi-MB) via DuckDB-WASM in Node and round-trips the layers back over
+        HTTP. This is deterministic and fast now that the data is local: a
+        1.6 MB PBF (171k features) parses in ~12 s including cold-start WASM
+        init, and the largest bundled PBF is ~6 MB, so 2 min is ~2.5x the
+        worst case. The old 5-min budget dated from the Overpass era (a remote,
+        throttled OSM endpoint), which has since been removed — a node that now
+        runs past this budget is hung, not slow, so fail it.
         """
-        if node.type == "AUTK_DB":
-            return 300000  # 5 min — Overpass is the bottleneck, not us
         if node.type in {
+            "AUTK_GRAMMAR",
             "DATA_LOADING",
             "DATA_TRANSFORMATION",
             "COMPUTATION_ANALYSIS",
@@ -356,7 +268,7 @@ class TestWorkflowCanvas:
         ``BoxStyles`` swaps the play SVG for a Bootstrap Spinner the moment
         ``isLoading`` flips to true (see styles.tsx:740-768) and the
         ``CodeEditor`` updates its inline counter from ``[ ]:`` to
-        ``[*]:`` once the lifecycle reports ``output.code === 'exec'``.
+        ``[*]:`` once the behavior reports ``output.code === 'exec'``.
         Either signal proves the click was honoured.
 
         We don't use ``play_btn.click(force=True)`` — ``force=True`` skips
@@ -423,11 +335,11 @@ class TestWorkflowCanvas:
         share the same class-scoped page)."""
         if getattr(self.__class__, '_executed_workflow', None) == self.spec.filepath:
             return
-        # Fire WebGPU diagnostics once per session so the dump appears even
-        # on workflows that complete without an AUTK Error (e.g. they only
-        # have AUTK_DB, or all autk nodes happened to recover). The probe
-        # is cached on the class.
-        if any(n.type in JS_CODE_TYPES for n in self.spec.nodes):
+        # Fire WebGPU diagnostics once per session for any autk-grammar
+        # workflow so the adapter/device dump is in the log whether or not a
+        # node later errors. Diagnostic only — there is no tolerance; an autk
+        # node that errors fails the test. The probe is cached on the class.
+        if any(n.type in self._WEBGPU_DIAGNOSTIC_TYPES for n in self.spec.nodes):
             self._webgpu_diagnostics()
         # Give React a chance to bind onClick handlers on every play button
         # before we start firing clicks. ``loaded_workflow`` only waits for
@@ -442,32 +354,25 @@ class TestWorkflowCanvas:
             node_el = self._node_locator(node)
             node_el.scroll_into_view_if_needed()
 
-            # if Pool node activate output tab then wait for data table to show
+            # if Pool node, wait for its data table to show
             if node.type == "DATA_POOL":
                 # DATA_POOL's table lives inside the NodeEditor output tab pane.
-                # Click the output nav button first so the pane becomes visible.
-                # Skip the table assertion when an upstream was tolerated
-                # (e.g. AUTK_DB Overpass throttle) — the pool will never
-                # receive data, so waiting 30s for a row is just a hang.
-                # Mark the pool tolerated so its own downstreams skip their
-                # data-dependent checks too.
-                if self._upstream_was_tolerated(node):
-                    import warnings
-                    warnings.warn(
-                        f"DataPool {node.id} skipped — an upstream node was "
-                        f"tolerated, so the pool has no data to display."
-                    )
-                    self._mark_tolerated(node)
-                    continue
+                # The pool auto-switches NodeEditor to that pane (NodeEditor sets
+                # activeTab="output" when contentComponent is defined), so the
+                # DataPoolContent is already mounted and active. We don't wait
+                # for the output nav-link to be "visible" — the data-pool scroll
+                # refactor (commit 76326a8) renders the tiny tab strip clipped,
+                # which Playwright reports as not visible even though the pane is
+                # shown. Best-effort dispatch a click to force the pane active
+                # (dispatch_event doesn't require visibility), then wait for the
+                # table that appears once the upstream output has propagated.
                 output_tab = node_el.locator(
                     '.nav-link[data-rr-ui-event-key="output"]'
-                )
-                output_tab.first.wait_for(state="visible", timeout=10000)
-                is_active = "active" in (
-                    output_tab.first.get_attribute("class") or ""
-                )
-                if not is_active:
-                    output_tab.first.click(force=True)
+                ).first
+                try:
+                    output_tab.dispatch_event("click")
+                except Exception:
+                    pass
                 data_table = node_el.locator("td.MuiTableCell-root")
                 data_table.first.wait_for(state="visible", timeout=30000)
                 assert data_table.count() >= 1, (
@@ -478,113 +383,32 @@ class TestWorkflowCanvas:
             if not node.has_play_button:
                 continue
 
-            # If any upstream was tolerated (failed/timed out), this node
-            # has no input data and can't succeed. Skip it transitively so
-            # the tolerance propagates down the graph (e.g. AUTK_COMPUTE /
-            # AUTK_MAP after a tolerated AUTK_DB).
-            if self._upstream_was_tolerated(node):
-                import warnings
-                warnings.warn(
-                    f"Node {node.id} ({node.type}) skipped — an upstream "
-                    f"node was tolerated, so this node has no input data."
+            self._click_play_until_started(node, node_el)
+
+            # Wait until either "Done" or "Error" is visible. A node that
+            # never settles is a hard timeout failure — there is no
+            # tolerance and no retry (all data is local/deterministic).
+            result_span = node_el.locator("span").filter(
+                has_text=re.compile(r"^(Done|Error)$")
+            ).first
+            try:
+                result_span.wait_for(
+                    state="visible",
+                    timeout=self._node_execution_timeout_ms(node),
                 )
-                self._mark_tolerated(node)
-                continue
-
-            # For nodes whose tolerance is driven by a flaky external
-            # service (currently just AUTK_DB / Overpass), retry up to
-            # ``_EXTERNAL_SERVICE_RETRIES`` times if the first attempt
-            # errors or times out before falling through to the
-            # tolerance branch. Overpass throttles aggressively and a
-            # single 0-result response shouldn't fail a whole workflow
-            # when re-issuing the request typically succeeds.
-            is_retryable = self._tolerate_external_service_error(node)
-            max_attempts = self._EXTERNAL_SERVICE_RETRIES if is_retryable else 1
-            timed_out = False
-            result_text = ""
-            for attempt in range(1, max_attempts + 1):
-                if attempt > 1:
-                    backoff_s = min(
-                        self._EXTERNAL_SERVICE_RETRY_BACKOFF_S
-                        * (2 ** (attempt - 2)),
-                        self._EXTERNAL_SERVICE_RETRY_BACKOFF_CAP_S,
-                    )
-                    import warnings
-                    warnings.warn(
-                        f"Node {node.id} ({node.type}) attempt "
-                        f"{attempt}/{max_attempts} after transient "
-                        f"external-service failure; sleeping "
-                        f"{backoff_s}s "
-                        f"to let the rate-limit window clear, then "
-                        f"clicking Play again."
-                    )
-                    time.sleep(backoff_s)
-                self._click_play_until_started(node, node_el)
-
-                # Wait until either "Done" or "Error" is visible
-                result_span = node_el.locator("span").filter(
-                    has_text=re.compile(r"^(Done|Error)$")
-                ).first
-                try:
-                    result_span.wait_for(
-                        state="visible",
-                        timeout=self._node_execution_timeout_ms(node),
-                    )
-                except PlaywrightTimeoutError:
-                    timed_out = True
-                    if attempt == max_attempts:
-                        break
-                    timed_out = False  # retrying
-                    continue
-                result_text = result_span.text_content() or ""
-                if "Error" not in result_text:
-                    break
-                if attempt == max_attempts:
-                    break
-                # else: errored but retries remain — loop will click Play again
-
-            if timed_out:
-                if is_retryable:
-                    import warnings
-                    warnings.warn(
-                        f"Node {node.id} ({node.type}) did not finish within "
-                        f"{self._node_execution_timeout_ms(node)} ms across "
-                        f"{max_attempts} attempts — likely an Overpass "
-                        f"throttle. Tolerating; the suite hits Overpass in "
-                        f"rapid succession which the public endpoint "
-                        f"rate-limits."
-                    )
-                    self._mark_tolerated(node)
-                    continue
+            except PlaywrightTimeoutError:
                 raise PlaywrightTimeoutError(
                     f"Node {node.id} ({node.type}) timed out after "
                     f"{self._node_execution_timeout_ms(node)} ms"
                 )
-            if "Error" in result_text and node.type in JS_CODE_TYPES:
-                # Always read the autk Error tab text, regardless of whether
-                # we're going to tolerate it. The user is debugging *why*
-                # autk fails, so we need the literal err.message.
-                self._capture_autk_error(node, node_el)
-            if "Error" in result_text and self._tolerate_webgpu_error(node):
-                import warnings
-                warnings.warn(
-                    f"Node {node.id} ({node.type}) errored — WebGPU is "
-                    f"unavailable in this headless session. Tolerating; "
-                    f"run with --headed to actually exercise the renderer."
-                )
-                self._mark_tolerated(node)
-                continue
-            if "Error" in result_text and self._tolerate_external_service_error(node):
-                import warnings
-                warnings.warn(
-                    f"Node {node.id} ({node.type}) errored — likely an "
-                    f"Overpass HTTP failure (autk-db rejected the layer "
-                    f"load). Tolerating; this is environmental, not a code "
-                    f"regression."
-                )
-                self._mark_tolerated(node)
-                continue
+            result_text = result_span.text_content() or ""
+
             if "Error" in result_text:
+                # Capture the autk Error tab text (and the once-per-session
+                # WebGPU diagnostics) so the failure dump shows the literal
+                # err.message — the usual reason an autk node fails.
+                if node.type == "AUTK_GRAMMAR":
+                    self._capture_autk_error(node, node_el)
                 # Surface the inline output text so the failure message says
                 # *why* it errored.
                 detail = (
@@ -601,12 +425,12 @@ class TestWorkflowCanvas:
                 f"Node {node.id} ({node.type}) did not produce 'Done'"
             )
 
-            # verify the inline output area shows a Jupyter-style counter (code nodes only).
-            # All autk lifecycle nodes (JS_CODE_TYPES) render via
-            # ``contentComponent`` and NodeEditor auto-switches to the output
-            # tab on success, hiding the code editor (and its inline counter).
-            # Their successful execution is already proven by the Done span above.
-            if node.category == "code" and node.type not in JS_CODE_TYPES:
+            # verify the inline output area shows a Jupyter-style counter.
+            # Grammar nodes (VIS_VEGA / AUTK_GRAMMAR) render their result via a
+            # ``contentComponent`` / output tab rather than the inline code
+            # counter, so this only applies to "code" category nodes (their
+            # success is already proven by the Done span above).
+            if node.category == "code":
                 output_area = node_el.locator(".nowheel.nodrag").filter(
                     has_text=re.compile(r"\[\d+\]:")
                 ).first
@@ -772,38 +596,6 @@ class TestWorkflowCanvas:
                             f"  Actual   (snippet): {actual[:120]}"
                         )
 
-                    # autark nodes also expose an output tab (their lifecycle
-                    # factory provides a contentComponent). Switch back to it
-                    # so the screenshot captures the rendered canvas/widget
-                    # rather than the Monaco editor we just verified.
-                    if node.type in JS_CODE_TYPES:
-                        output_tab = node_el.locator(
-                            '.nav-link[data-rr-ui-event-key="output"]'
-                        )
-                        assert output_tab.count() >= 1, (
-                            f"Autark node {node.id} ({node.type}) is missing "
-                            f"its output tab"
-                        )
-                        is_active = "active" in (
-                            output_tab.get_attribute("class") or ""
-                        )
-                        if not is_active:
-                            output_tab.click(force=True)
-                        self.page.wait_for_function(
-                            """({ nodeId }) => {
-                                const nodeEl = document.querySelector(
-                                    `.react-flow__node[data-id="${nodeId}"]`
-                                );
-                                if (!nodeEl) return false;
-                                const tab = nodeEl.querySelector(
-                                    '.nav-link[data-rr-ui-event-key="output"]'
-                                );
-                                return !!tab && tab.classList.contains("active");
-                            }""",
-                            arg={"nodeId": node.id},
-                            timeout=15000,
-                        )
-
             elif node.category == "grammar":
                 # 1. Check if the output tab is present
                 output_tab = node_el.locator(
@@ -867,10 +659,14 @@ class TestWorkflowCanvas:
                 # Grammar editor renders a JSONEditorReact component.
 
             elif node.category == "datapool":
-                data_tabs = node_el.locator("#data-tabs-tab-0")
+                # DataPoolContent renders a custom <Nav variant="tabs"> tagged
+                # with data-testid="data-pool-tabs" inside the NodeEditor output
+                # pane (the old react-bootstrap "#data-tabs-tab-0" auto-id was
+                # removed in the data-pool refactor, commit 76326a8).
+                data_tabs = node_el.locator('[data-testid="data-pool-tabs"]')
                 assert data_tabs.count() >= 1, (
                     f"DataPool node {node.id} ({node.type}) is missing "
-                    f"#data-tabs"
+                    f"its data-pool tabs"
                 )
 
             else:
@@ -903,14 +699,6 @@ class TestWorkflowCanvas:
             if not node.has_play_button:
                 continue
 
-            # ``_execute_all_playable_nodes`` already tolerated this node's
-            # Error/timeout (WebGPU unavailable, or Overpass rate-limited it).
-            # It will never reach Done in this session, so skip the rest of
-            # the per-node assertions. Successful AUTK_DB nodes still flow
-            # through the Done check below.
-            if self._was_tolerated(node):
-                continue
-
             node_el = self._node_locator(node)
             # wait for the done span to be visible
             done_span = node_el.locator("span").filter(
@@ -926,15 +714,13 @@ class TestWorkflowCanvas:
             # Check output area (inline for code nodes; output tab for grammar)
             # ---------------------------------------------------------------
 
-            if node.category == "code" and node.type not in JS_CODE_TYPES:
+            if node.category == "code":
                 # Since commit d8050b0 code nodes no longer have a separate output
                 # tab – the execution result is shown inline inside CodeEditor as
                 # a ".nowheel.nodrag" div with a Jupyter-style "[N]:" counter.
-                # All JS_CODE_TYPES nodes (AUTK_DB / AUTK_MAP / AUTK_PLOT /
-                # AUTK_COMPUTE) are exceptions: their lifecycles declare a
-                # ``contentComponent``, so NodeEditor auto-switches to the
-                # output tab on success and the inline counter is no longer
-                # the visible result. Done span (above) is sufficient proof.
+                # This covers every code node (DATA_LOADING, DATA_TRANSFORMATION,
+                # COMPUTATION_ANALYSIS, JS_COMPUTATION, …); autk nodes are
+                # category "grammar" and handled in the branch below.
                 output_area = node_el.locator(".nowheel.nodrag").filter(
                     has_text=re.compile(r"\[\d+\]:")
                 )
@@ -970,33 +756,6 @@ class TestWorkflowCanvas:
                                 f"does not match programmatic execution. "
                                 f"Differing top-level keys: {diff_keys}"
                             )
-
-                # autark nodes render their visualization in the output tab via
-                # a contentComponent (canvas or div wrapper). NodeEditor
-                # auto-switches on contentComponent change, but force the tab
-                # explicitly so the post-execution screenshot deterministically
-                # captures the rendered output instead of the code editor.
-                if node.type in JS_CODE_TYPES:
-                    output_tab = node_el.locator(
-                        '.nav-link[data-rr-ui-event-key="output"]'
-                    )
-                    output_tab.first.wait_for(state="visible", timeout=10000)
-                    is_active = "active" in (
-                        output_tab.get_attribute("class") or ""
-                    )
-                    if not is_active:
-                        output_tab.click(force=True)
-                    active_pane = node_el.locator(".tab-pane.active")
-                    active_pane.first.wait_for(state="visible", timeout=5000)
-                    # AUTK_DB uses ``container: 'hidden'`` (display:none wrapper
-                    # around an offscreen 1×1 canvas) — no visible rendering by
-                    # design. The other AUTK types render into a visible
-                    # canvas/div.
-                    if node.type != "AUTK_DB":
-                        canvas_or_div = active_pane.locator(
-                            "canvas, .nodrag.nopan.nowheel"
-                        )
-                        canvas_or_div.first.wait_for(state="visible", timeout=10000)
 
             elif node.category == "grammar":
                 # Grammar nodes (VIS_VEGA) keep a dedicated output tab
@@ -1074,114 +833,71 @@ class TestWorkflowCanvas:
                         load_artifact_as_dict(artifact_id)
 
                     # ----------------------------------------------------------
-                    # Test created SVG Vega-Lite visualizations
+                    # Test created Vega-Lite visualizations (canvas renderer)
                     # ----------------------------------------------------------
+                    # Vega-Lite renders to a <canvas> (commit 3a2a14a switched the
+                    # renderer from SVG to canvas for performance). A canvas is a
+                    # bitmap with no DOM structure to compare, so instead of the
+                    # old SVG structural diff we verify the chart actually
+                    # rendered: the canvas exists, has a non-zero backing size,
+                    # and drew non-blank content (the upstream data turned into
+                    # marks). Visual regressions are still caught by the per-node
+                    # screenshot comparison in ``_save_screenshot``.
                     if node.type == "VIS_VEGA":
                         vega_container_id = f"vega{node.id}"
 
-                        # A -- Verify SVG exists and is non-empty
-                        svg_locator = node_el.locator(f"#{vega_container_id} svg")
-                        svg_locator.first.wait_for(state="visible", timeout=15000)
-                        assert svg_locator.count() >= 1, (
+                        canvas_locator = node_el.locator(
+                            f"#{vega_container_id} canvas"
+                        )
+                        canvas_locator.first.wait_for(
+                            state="visible", timeout=15000
+                        )
+                        assert canvas_locator.count() >= 1, (
                             f"Grammar node {node.id} ({node.type}) is missing "
-                            f"its rendered SVG inside #{vega_container_id}"
+                            f"its rendered canvas inside #{vega_container_id}"
                         )
 
-                        # B -- Re-compile the spec programmatically and save
-                        #      the expected SVG (mirrors .data baseline pattern)
-                        spec_json = json.loads(
-                            node.content.replace("\r\n", "\n").replace("\r", "\n")
-                        )
-
-                        upstream_ids = self.spec.upstream_nodes(node.id)
-                        vega_values: list[dict] = []
-                        for uid in upstream_ids:
-                            candidate = uid
-                            visited: set[str] = set()
-                            while candidate and candidate not in expected_map:
-                                visited.add(candidate)
-                                parents = self.spec.upstream_nodes(candidate)
-                                candidate = next(
-                                    (p for p in parents if p not in visited),
-                                    None,
-                                )
-                            if candidate and candidate in expected_map:
-                                upstream_data = expected_map[candidate]
-                                vega_values = dot_data_to_vega_values(upstream_data)
-                                break
-
-                        assert vega_values, (
-                            f"VIS_VEGA node {node.id}: no upstream data found in "
-                            f"expected_map — searched upstream ids: {upstream_ids}"
-                        )
-
-                        container_dims = self.page.evaluate(
+                        canvas_info = self.page.evaluate(
                             """(containerId) => {
                                 const el = document.getElementById(containerId);
                                 if (!el) return null;
-                                return {
-                                    width: el.clientWidth,
-                                    height: el.clientHeight
-                                };
+                                const canvas = el.querySelector('canvas');
+                                if (!canvas) return null;
+                                const w = canvas.width, h = canvas.height;
+                                if (!w || !h) return { width: w, height: h, nonBlank: false };
+                                let nonBlank = false;
+                                try {
+                                    const ctx = canvas.getContext('2d');
+                                    const { data } = ctx.getImageData(0, 0, w, h);
+                                    for (let i = 0; i < data.length; i += 4) {
+                                        const r = data[i], g = data[i + 1],
+                                              b = data[i + 2], a = data[i + 3];
+                                        // any opaque, non-white pixel means a mark was drawn
+                                        if (a !== 0 && !(r === 255 && g === 255 && b === 255)) {
+                                            nonBlank = true;
+                                            break;
+                                        }
+                                    }
+                                } catch (e) {
+                                    // getImageData throws on a tainted canvas —
+                                    // treat as drawn rather than failing.
+                                    nonBlank = true;
+                                }
+                                return { width: w, height: h, nonBlank };
                             }""",
                             vega_container_id,
                         )
-
-                        expected_svg = self.page.evaluate(
-                            """({ spec, values, dims }) => {
-                                const vega = window.__curio_vega;
-                                const lite = window.__curio_vegaLite;
-                                if (!vega || !lite) return null;
-                                spec.data = { values: values, name: 'data' };
-                                spec.width = dims ? dims.width : 300;
-                                spec.height = dims ? dims.height : 200;
-                                const vegaSpec = lite.compile(spec).spec;
-                                const view = new vega.View(vega.parse(vegaSpec))
-                                    .renderer('svg')
-                                    .initialize(document.createElement('div'));
-                                return view.runAsync().then(() => view.toSVG());
-                            }""",
-                            {
-                                "spec": spec_json,
-                                "values": vega_values,
-                                "dims": container_dims,
-                            },
+                        assert canvas_info is not None, (
+                            f"Grammar node {node.id} ({node.type}): could not "
+                            f"find a canvas inside #{vega_container_id}"
                         )
-                        assert expected_svg is not None, (
-                            f"Grammar node {node.id} ({node.type}): "
-                            f"programmatic Vega-Lite re-compilation returned null "
-                            f"(window.__curio_vega / __curio_vegaLite missing?)"
+                        assert canvas_info["width"] > 0 and canvas_info["height"] > 0, (
+                            f"VIS_VEGA node {node.id}: canvas has zero backing "
+                            f"size ({canvas_info['width']}x{canvas_info['height']})"
                         )
-
-                        dataflow_name = os.path.splitext(
-                            os.path.basename(self.spec.filepath)
-                        )[0]
-                        save_expected_svg(dataflow_name, node.id, expected_svg)
-
-                        # C -- Extract the actual SVG from the DOM
-                        actual_svg = self.page.evaluate(
-                            """(containerId) => {
-                                const el = document.getElementById(containerId);
-                                if (!el) return null;
-                                const svg = el.querySelector('svg');
-                                return svg ? svg.outerHTML : null;
-                            }""",
-                            vega_container_id,
-                        )
-                        assert actual_svg is not None, (
-                            f"Grammar node {node.id} ({node.type}): "
-                            f"could not extract SVG from #{vega_container_id}"
-                        )
-
-                        # D -- Structural comparison
-                        diffs = compare_svg_structure(
-                            actual_svg,
-                            expected_svg,
-                        )
-                        assert not diffs, (
-                            f"Grammar node {node.id} ({node.type}) SVG "
-                            f"structural mismatch:\n"
-                            + "\n".join(f"  - {d}" for d in diffs)
+                        assert canvas_info["nonBlank"], (
+                            f"VIS_VEGA node {node.id}: canvas rendered blank — "
+                            f"no chart marks drawn from the upstream data"
                         )
 
         # ---- VIS_SIMPLE content verification -----------------------------------
