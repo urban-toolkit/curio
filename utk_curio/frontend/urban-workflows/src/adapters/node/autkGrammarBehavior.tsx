@@ -713,6 +713,12 @@ for (const source of __sources) {
     else if (type === 'geojson') await db.loadGeojson(rest);
     else if (type === 'csv') await db.loadCsv(rest);
     else if (type === 'json') await db.loadJson(rest);
+    // In-grammar spatial join between already-loaded tables (sources run in
+    // spec order, so the join must come after the tables it references).
+    // 2.1.2 option shapes: near: { distance } in workspace meters, groupBy
+    // as an array of column specs.
+    else if (type === 'join' && typeof db.spatialQuery === 'function') await db.spatialQuery(rest);
+    else console.log('[autk-grammar] unsupported data source type "' + type + '" - skipped');
   } catch (e) {
     console.log('[autk-grammar] data load failed for source type "' + type + '": ' + (e && e.message));
   }
@@ -937,6 +943,11 @@ async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: st
             else if (type === 'geojson') await db.loadGeojson(rest);
             else if (type === 'csv') await db.loadCsv(rest);
             else if (type === 'json') await db.loadJson(rest);
+            // In-grammar spatial join between already-loaded tables (sources
+            // run in spec order, so the join must come after the tables it
+            // references). Mirrors the sandbox emit in compileDataSpecToAutkDbJs.
+            else if (type === 'join' && typeof db.spatialQuery === 'function') await db.spatialQuery(rest);
+            else console.warn(`[autk-grammar] unsupported data source type "${type}" — skipped`);
         } catch (e) {
             // Skip a source that fails to load; others may still produce layers.
             console.warn(`[autk-grammar] data-only load failed for source type "${type}"`, e);
