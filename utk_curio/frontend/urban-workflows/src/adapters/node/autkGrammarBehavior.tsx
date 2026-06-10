@@ -188,6 +188,15 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     }));
                     dataSectionSources = [...upstreamSources, ...backendAsSources];
                 }
+                // autk-db 2.1.2's loadGeojson throws on an empty FeatureCollection
+                // (2.0.1 silently tolerated it). Drop empty geojson layers before
+                // handing them to the grammar — e.g. a PBF area with no parks yields
+                // an empty `parks` layer — so the map/plot render doesn't fail on a
+                // layer that has nothing to draw anyway.
+                dataSectionSources = dataSectionSources.filter(
+                    (s: any) => s?.type !== 'geojson'
+                        || (s?.geojsonObject?.features?.length ?? 0) > 0
+                );
                 spec = { ...spec, data: dataSectionSources };
 
                 const { AutkGrammar } = await import('@urban-toolkit/autk-grammar');

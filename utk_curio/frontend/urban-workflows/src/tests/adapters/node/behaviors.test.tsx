@@ -304,10 +304,14 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       // artifact AND each element, so a backend layer array round-trips as
       // {dataType:'list', data:[{dataType:'dict', data:{name,type,geojson}}]}.
       // (The earlier bare-array mock masked a layer-dropping bug in asFc.)
+      // Layer carries one feature: the behavior drops empty-FeatureCollection
+      // layers before handing them to the grammar (autk-db 2.1.2's loadGeojson
+      // throws on an empty FC), so a non-empty layer is needed to verify the
+      // backend layer is injected (and that asFc doesn't drop the wrapped layer).
       (fetchData as jest.Mock).mockResolvedValueOnce({
         dataType: 'list',
         data: [
-          { dataType: 'dict', data: { name: 't', type: 'points', geojson: { type: 'FeatureCollection', features: [] } } },
+          { dataType: 'dict', data: { name: 't', type: 'points', geojson: { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [0, 0] }, properties: {} }] } } },
         ],
       });
 
