@@ -346,7 +346,10 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       const injected = (runSpec.data || []).find((s: any) => s.outputTableName === 't');
       expect(injected).toBeTruthy();
       expect(injected.geojsonObject?.type).toBe('FeatureCollection');
-      expect(injected.coordinateFormat).toBe('EPSG:3395');
+      // coordinateFormat reflects the coordinates as loaded (autk-db 2.1.2
+      // keeps tables in EPSG:4326; 2.0.1 projected to EPSG:3395). The mock
+      // layer's Point sits at (0,0) degrees, so detection yields WGS84.
+      expect(injected.coordinateFormat).toBe('EPSG:4326');
     });
   });
 

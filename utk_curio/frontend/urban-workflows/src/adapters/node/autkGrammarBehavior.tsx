@@ -179,25 +179,92 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         const resolvedForFrontend = resolveDataSourceUrls({ data: specDataSources }, false).data;
                         layers = await loadSpecLayers({ data: resolvedForFrontend });
                     }
+                    // coordinateFormat must reflect the coordinates as loaded:
+                    // autk-db 2.0.1 projected to EPSG:3395 at load, 2.1.2 keeps
+                    // EPSG:4326 — the layers carry a crs stamp set by the loader,
+                    // which detectCoordinateFormat reads (falling back to the
+                    // coordinate-magnitude heuristic).
                     const backendAsSources = layers.map((l) => ({
                         type: 'geojson',
                         geojsonObject: l.geojson,
                         outputTableName: l.name,
-                        coordinateFormat: 'EPSG:3395',
+                        coordinateFormat: detectCoordinateFormat(l.geojson as any),
                         ...(l.type && l.type !== 'polygons' ? { layerType: l.type } : {}),
                     }));
                     dataSectionSources = [...upstreamSources, ...backendAsSources];
                 }
-                // autk-db 2.1.2's loadGeojson throws on an empty FeatureCollection
-                // (2.0.1 silently tolerated it). Drop empty geojson layers before
-                // handing them to the grammar — e.g. a PBF area with no parks yields
-                // an empty `parks` layer — so the map/plot render doesn't fail on a
-                // layer that has nothing to draw anyway.
-                dataSectionSources = dataSectionSources.filter(
-                    (s: any) => s?.type !== 'geojson'
-                        || (s?.geojsonObject?.features?.length ?? 0) > 0
+                // autk-db 2.1.2's loadGeojson throws on an empty FeatureCollection,
+                // where 2.0.1 created an empty table that refs could still resolve
+                // against. Two consequences for sparse data (e.g. a PBF area with no
+                // parks, or a join that empties a layer):
+                //   1. an empty geojson source must be dropped before grammar.run,
+                //   2. a map/plot ref to a table that is empty — or that an upstream
+                //      node already dropped, so it never arrives here — dangles and
+                //      fails grammar.run with "Table <name> not found".
+                // Drop empty sources, then keep only refs that point at a table this
+                // node can actually create. Net effect mirrors 2.0.1: layers with
+                // data render; empty/absent ones contribute nothing. Each drop is
+                // logged — a silently stripped layer otherwise reads as a blank map.
+                const emptySources = dataSectionSources.filter(
+                    (s: any) => s?.type === 'geojson'
+                        && (s?.geojsonObject?.features?.length ?? 0) === 0,
                 );
+                if (emptySources.length > 0) {
+                    console.warn(
+                        '[autk-grammar] dropping empty geojson source(s): '
+                        + emptySources.map((s: any) => s?.outputTableName ?? '(unnamed)').join(', '),
+                    );
+                    dataSectionSources = dataSectionSources.filter(
+                        (s: any) => !emptySources.includes(s),
+                    );
+                }
                 spec = { ...spec, data: dataSectionSources };
+                if (dataSectionSources.length === 0 && (hasMaps || hasPlot)) {
+                    console.warn(
+                        '[autk-grammar] render node has no data sources left — the '
+                        + 'grammar engine will produce no data context and the '
+                        + 'map/plot will render blank. Check the upstream nodes.',
+                    );
+                }
+                if (dataSectionSources.length > 0) {
+                    const availableNames = new Set<string>(
+                        dataSectionSources
+                            .map((s: any) => s?.outputTableName)
+                            .filter(Boolean),
+                    );
+                    if (spec.map && Array.isArray(spec.map.layerRefs)) {
+                        const dangling = spec.map.layerRefs.filter(
+                            (r: any) => r?.dataRef && !availableNames.has(r.dataRef),
+                        );
+                        if (dangling.length > 0) {
+                            console.warn(
+                                '[autk-grammar] dropping map layerRef(s) to unavailable table(s): '
+                                + dangling.map((r: any) => r.dataRef).join(', ')
+                                + ' — available: ' + [...availableNames].join(', '),
+                            );
+                            spec.map = {
+                                ...spec.map,
+                                layerRefs: spec.map.layerRefs.filter(
+                                    (r: any) => !dangling.includes(r),
+                                ),
+                            };
+                        }
+                    }
+                    // A plot bound to an unavailable layer has nothing to draw —
+                    // drop it rather than fail resolving the missing table.
+                    if (spec.plot && (
+                        (spec.plot.dataRef && !availableNames.has(spec.plot.dataRef))
+                        || (spec.plot.mapRef && !availableNames.has(spec.plot.mapRef))
+                    )) {
+                        console.warn(
+                            '[autk-grammar] dropping plot bound to unavailable table: '
+                            + (spec.plot.dataRef ?? spec.plot.mapRef)
+                            + ' — available: ' + [...availableNames].join(', '),
+                        );
+                        const { plot, ...rest } = spec;
+                        spec = rest;
+                    }
+                }
 
                 const { AutkGrammar } = await import('@urban-toolkit/autk-grammar');
                 const grammar = new AutkGrammar(targets);
@@ -265,6 +332,21 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                         type: u.layerType ?? 'polygons',
                         geojson: u.fc,
                     }));
+                    // Drop empty layers (autk-db 2.1.2 throws on an empty
+                    // FeatureCollection, and an empty layer would surface as a
+                    // blank tab in the downstream Data Pool). Mirrors 2.0.1's
+                    // empty-table tolerance; the compute below then only runs on
+                    // layers that have features.
+                    const emptyLayers = layers.filter(
+                        (l) => ((l.geojson as any)?.features?.length ?? 0) === 0,
+                    );
+                    if (emptyLayers.length > 0) {
+                        console.warn(
+                            '[autk-grammar] compute node dropping empty upstream layer(s): '
+                            + emptyLayers.map((l) => l.name).join(', '),
+                        );
+                        layers = layers.filter((l) => !emptyLayers.includes(l));
+                    }
                     if (Array.isArray(spec.compute) && spec.compute.length > 0) {
                         layers = await applyComputeBlocks(layers, spec.compute);
                     }
@@ -290,6 +372,10 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
             nodeState.setOutput({ code: 'success', content: '' });
         } catch (err: any) {
             const msg = err?.message ?? String(err);
+            // The toast is transient and the node UI has no error tab, so
+            // also log to console — it's the only durable place tooling
+            // (and the e2e browser-log dump) can read the failure from.
+            console.error('[autk-grammar] node error:', msg);
             nodeState.setOutput({ code: 'error', content: msg });
             showToast(msg, 'error');
         }
@@ -632,7 +718,23 @@ for (const source of __sources) {
   }
 }
 const __epsg = String(DEFAULT_WORKSPACE_COORDINATE_FORMAT).match(/(\\d+)/)?.[1] ?? '3395';
-const __crs = { type: 'name', properties: { name: 'urn:ogc:def:crs:EPSG::' + __epsg } };
+// Tag each layer with the CRS its coordinates are ACTUALLY in. autk-db 2.0.1
+// projected tables to the workspace CRS (EPSG:3395 meters) at load; 2.1.2
+// keeps them in EPSG:4326 degrees. A wrong tag silently breaks downstream
+// consumers (the map renderer reads degree values as meters near the origin
+// and shows a blank view), so detect by coordinate magnitude per layer.
+const __layerEpsg = (geojson) => {
+  const feats = (geojson && geojson.features) || [];
+  for (let i = 0; i < Math.min(feats.length, 5); i++) {
+    let c = feats[i] && feats[i].geometry && feats[i].geometry.coordinates;
+    while (Array.isArray(c) && Array.isArray(c[0])) c = c[0];
+    if (Array.isArray(c) && Number.isFinite(c[0]) && Number.isFinite(c[1])) {
+      return (Math.abs(c[0]) <= 180 && Math.abs(c[1]) <= 90) ? '4326' : __epsg;
+    }
+  }
+  return __epsg;
+};
+const __crsFor = (geojson) => ({ type: 'name', properties: { name: 'urn:ogc:def:crs:EPSG::' + __layerEpsg(geojson) } });
 const __flattenToMultiPolygon = (geom) => {
   const polys = [];
   const collect = (g) => {
@@ -692,7 +794,7 @@ for (const t of (db.getLayerTables ? db.getLayerTables() : [])) {
     }
     geojson.features = __exploded;
   }
-  if (geojson && typeof geojson === 'object') geojson.crs = __crs;
+  if (geojson && typeof geojson === 'object') geojson.crs = __crsFor(geojson);
   __out.push({ name: t.name, type, geojson });
 }
 return __out;`;
@@ -840,12 +942,14 @@ async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: st
             console.warn(`[autk-grammar] data-only load failed for source type "${type}"`, e);
         }
     }
-    // getLayer() returns geometry already projected into the workspace CRS
-    // (DEFAULT_WORKSPACE_COORDINATE_FORMAT, EPSG:3395). Tag each layer with that
-    // CRS so a downstream grammar node injects it with the right coordinateFormat
-    // instead of mis-detecting it as WGS84 and re-projecting it into garbage.
-    const epsg = String(DEFAULT_WORKSPACE_COORDINATE_FORMAT).match(/(\d+)/)?.[1] ?? '3395';
-    const crs = { type: 'name', properties: { name: `urn:ogc:def:crs:EPSG::${epsg}` } };
+    // Tag each layer with the CRS its coordinates are ACTUALLY in, so a
+    // downstream grammar node injects it with the right coordinateFormat.
+    // autk-db 2.0.1's getLayer() returned geometry projected to the workspace
+    // CRS (EPSG:3395 meters); 2.1.2 keeps it in EPSG:4326 degrees. Assuming
+    // the workspace CRS (the old behavior here) makes the renderer read
+    // degree values as meters near the origin — a silently blank map — so
+    // detect by coordinate magnitude. Strip any pre-existing crs field first:
+    // detectCoordinateFormat trusts it over the heuristic.
     const tables = (db.getLayerTables ? db.getLayerTables() : []) as Array<{ name: string; type?: string }>;
     return Promise.all(
         tables.map(async (t) => {
@@ -861,7 +965,14 @@ async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: st
             if (type === 'buildings' && Array.isArray(geojson?.features)) {
                 geojson.features = explodeBuildingParts(geojson.features);
             }
-            if (geojson && typeof geojson === 'object') geojson.crs = crs;
+            if (geojson && typeof geojson === 'object') {
+                delete geojson.crs;
+                const fmt = detectCoordinateFormat(geojson as FeatureCollection);
+                const epsg = fmt.match(/(\d+)/)?.[1]
+                    ?? String(DEFAULT_WORKSPACE_COORDINATE_FORMAT).match(/(\d+)/)?.[1]
+                    ?? '3395';
+                geojson.crs = { type: 'name', properties: { name: `urn:ogc:def:crs:EPSG::${epsg}` } };
+            }
             return { name: t.name, type, geojson: geojson as FeatureCollection };
         }),
     );
@@ -1023,8 +1134,9 @@ function findIterateSource(
 // Hard cap on batched source features. ComputeGpgpu exposes uniformArrays via
 // WebGPU uniform buffers, which DX12 limits to 64 KB. Each matrix entry packs
 // 8 floats per source feature (the AABB's four corners, see below), so 2048
-// features = exactly 64 KB; the cap is a margin below that.
-const MAX_BATCHED_FEATURES = 1500;
+// features = exactly 64 KB; 2000 × 32 B = 64,000 B keeps a small margin while
+// covering real OSM extracts (e.g. back_bay's 1556 buildings in example 06).
+const MAX_BATCHED_FEATURES = 2000;
 
 // For the `batched` iteration mode, pack every source feature's resolved value
 // into flat typed arrays exposed via ComputeGpgpu.uniformArrays:

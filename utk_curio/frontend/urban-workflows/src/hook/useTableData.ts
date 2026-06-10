@@ -224,6 +224,24 @@ const useTableData = ({ data }: { data: INodeData }) => {
         }
       }
 
+      // Drop layers with no rows/features. autk-db 2.1.2 can hand the pool an
+      // empty or null-feature layer (e.g. a PBF area with no parks); the
+      // geodataframe branch below iterates `data.features`, which throws on
+      // null ("can't access property Symbol.iterator"), and an empty layer
+      // would otherwise show as a blank tab. 2.0.1 created empty tables that
+      // rendered nothing — keep that behavior by skipping empties here.
+      tabd = tabd.filter((item: any) => {
+        if (!item) return false;
+        if (item.dataType === 'geodataframe') {
+          return Array.isArray(item.data?.features) && item.data.features.length > 0;
+        }
+        if (item.dataType === 'dataframe') {
+          const cols = item.data ? Object.keys(item.data) : [];
+          return cols.length > 0 && Object.keys(item.data[cols[0]] ?? {}).length > 0;
+        }
+        return true;
+      });
+
       tabd = tabd.map ((item) => {
         let parsedInput = Object.assign({}, item);
         if(parsedInput.dataType == "dataframe") {

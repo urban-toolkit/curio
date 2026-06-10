@@ -215,8 +215,21 @@ class TestWorkflowCanvas:
         """Print the autk error text to pytest output and stash it on the
         class so the post-test screenshot helper can include it in the
         browser log file.
+
+        Grammar nodes have no readable error tab (the behavior's catch only
+        toasts and sets node state), so the literal err.message reaches us via
+        the ``console.error('[autk-grammar] node error: …')`` the behavior
+        emits — scan the captured browser console for it as well.
         """
         text = self._read_code_node_error_text(node_el)
+        if not text:
+            log_entries = getattr(self.page, "_curio_browser_log", None) or []
+            console_errors = [
+                e.get("text", "") for e in log_entries
+                if e.get("type") == "error" or e.get("kind") == "pageerror"
+            ]
+            if console_errors:
+                text = " | ".join(console_errors[-5:])
         store = getattr(self.__class__, "_autk_error_texts", None)
         if store is None:
             store = {}
