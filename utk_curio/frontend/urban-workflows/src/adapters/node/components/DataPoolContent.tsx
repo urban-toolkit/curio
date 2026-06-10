@@ -233,6 +233,7 @@ export default function DataPoolContent({ activeTab, onSelectTab, tabData, table
         onSelect={(k) => onSelectTab(k || '0')}
         className="mb-3"
         style={{ flexShrink: 0 }}
+        data-testid="data-pool-tabs"
       >
         {hasData ? (
           tabData.map((entry, index) => {

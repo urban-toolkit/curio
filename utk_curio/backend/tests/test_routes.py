@@ -42,13 +42,20 @@ def test_app_routes(app):
 def test_file_route_serves_relative_to_launch_cwd(app):
     """GET /file/<path> serves a file resolved relative to CURIO_LAUNCH_CWD."""
     launch_cwd = os.environ["CURIO_LAUNCH_CWD"]
-    rel = os.path.join("data", "file_route_probe.txt")
-    abs_path = os.path.join(launch_cwd, rel)
+    # The URL path is always forward-slash separated (that's what the frontend
+    # sends). Build the filesystem path separately with os.path.join — using
+    # os.path.join for the URL would emit a backslash on Windows, and the route
+    # splits on '/', so it would 404.
+    url_rel = "data/file_route_probe.txt"
+    abs_path = os.path.join(launch_cwd, "data", "file_route_probe.txt")
     os.makedirs(os.path.dirname(abs_path), exist_ok=True)
     with open(abs_path, "wb") as f:
         f.write(b"curio-file-route-ok")
     try:
-        resp = app.test_client().get(f"/file/{rel}")
+        # buffered=True so werkzeug reads the body and closes send_file's file
+        # handle before returning — otherwise os.remove below raises
+        # PermissionError on Windows (the file is still held open).
+        resp = app.test_client().get(f"/file/{url_rel}", buffered=True)
         assert resp.status_code == 200
         assert resp.data == b"curio-file-route-ok"
     finally:

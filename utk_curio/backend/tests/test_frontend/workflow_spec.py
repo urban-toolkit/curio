@@ -21,7 +21,6 @@ def _merge_edge_handle_index(edge_id: str) -> int | None:
 # ---------------------------------------------------------------------------
 
 GRAMMAR_TYPES = {"VIS_VEGA", "AUTK_GRAMMAR"}
-JS_CODE_TYPES: set[str] = set()   # old AUTK_MAP/PLOT/COMPUTE/DB nodes removed
 # Python-content code nodes — the only ones that can be Python-seeded /
 # Python-exec'd by the programmatic runner. JS_COMPUTATION is a CODE node
 # but its content is JavaScript, so it must be excluded from this set.
@@ -30,7 +29,7 @@ PY_CODE_TYPES = {
     "DATA_EXPORT", "COMPUTATION_ANALYSIS", "CONSTANTS",
     "FLOW_SWITCH",
 }
-CODE_TYPES = PY_CODE_TYPES | JS_CODE_TYPES | {"JS_COMPUTATION"}
+CODE_TYPES = PY_CODE_TYPES | {"JS_COMPUTATION"}
 
 # Subset of CODE_TYPES whose frontend component passes ``code={true}``
 # to ``NodeEditor``, meaning they render a "code" tab with a Monaco editor.
@@ -40,7 +39,7 @@ CODE_EDITOR_TYPES = {
     "DATA_LOADING", "DATA_TRANSFORMATION",
     "COMPUTATION_ANALYSIS", "FLOW_SWITCH",
     "JS_COMPUTATION",
-} | JS_CODE_TYPES
+}
 
 
 # Map from package-namespaced node-type ids (the format every workflow JSON

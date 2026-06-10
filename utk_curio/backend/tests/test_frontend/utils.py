@@ -541,16 +541,15 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
     sandbox_port = int(os.environ.get('FLASK_SANDBOX_PORT', '2000'))
     sandbox_url = f'http://{sandbox_host}:{sandbox_port}'
 
-    from .workflow_spec import JS_CODE_TYPES, PY_CODE_TYPES
+    from .workflow_spec import PY_CODE_TYPES
 
     outputs: dict[str, dict] = {}   # node_id → {"path": artifact_id, "dataType": ...}
     expected: dict[str, dict] = {}  # node_id → eager-loaded artifact dict (see fix below)
 
     for node in spec.topo_sorted_nodes():
         # Non-code nodes — and code nodes whose content is JavaScript
-        # (JS_COMPUTATION, legacy autk-style JS_CODE_TYPES) — propagate
-        # upstream output without execution: the Python-exec path below
-        # would parse-error on JS source.
+        # (JS_COMPUTATION) — propagate upstream output without execution: the
+        # Python-exec path below would parse-error on JS source.
         if node.category != "code" or node.type not in PY_CODE_TYPES:
             upstreams = spec.upstream_nodes(node.id)
             if len(upstreams) == 1 and upstreams[0] in outputs:
@@ -616,11 +615,10 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
         outputs[node.id] = {"path": out['path'], "dataType": out['dataType']}
         # Load the artifact contents *now* and stash them — the artifact may be
         # invisible later when the browser run uses a different session_id, or
-        # may have been overwritten/evicted from DuckDB by then. Only Python
-        # code nodes get inline data-content comparison in the test, so other
-        # kinds don't need eager loading.
-        if node.category == "code" and node.type not in JS_CODE_TYPES:
-            expected[node.id] = load_artifact_as_dict(out['path'])
+        # may have been overwritten/evicted from DuckDB by then. Every node that
+        # reaches here is a PY_CODE_TYPES node (the only ones Python-exec'd), and
+        # those are exactly the ones that get inline data-content comparison.
+        expected[node.id] = load_artifact_as_dict(out['path'])
 
     return expected
 

@@ -454,6 +454,8 @@ def loaded_workflow(
     """
     from .workflow_spec import parse_workflow
 
+    # Example 10 (street-vision) is skipped at collection time by
+    # ``pytest_generate_tests`` (needs external services); see conftest.py.
     workflow_file = request.param
     spec = parse_workflow(workflow_file)
 
