@@ -28,6 +28,36 @@ This test file is to test the loading of workflow files in the frontend.
 To watch the browser (see the menu open): run with --headed, e.g.
 """
 
+# Probe shared by the wait_for_function poll and the final evaluate in the
+# VIS_VEGA canvas check; returns {width, height, nonBlank} or null.
+_VEGA_CANVAS_PROBE_JS = """(containerId) => {
+    const el = document.getElementById(containerId);
+    if (!el) return null;
+    const canvas = el.querySelector('canvas');
+    if (!canvas) return null;
+    const w = canvas.width, h = canvas.height;
+    if (!w || !h) return { width: w, height: h, nonBlank: false };
+    let nonBlank = false;
+    try {
+        const ctx = canvas.getContext('2d');
+        const { data } = ctx.getImageData(0, 0, w, h);
+        for (let i = 0; i < data.length; i += 4) {
+            const r = data[i], g = data[i + 1],
+                  b = data[i + 2], a = data[i + 3];
+            // any opaque, non-white pixel means a mark was drawn
+            if (a !== 0 && !(r === 255 && g === 255 && b === 255)) {
+                nonBlank = true;
+                break;
+            }
+        }
+    } catch (e) {
+        // getImageData throws on a tainted canvas —
+        // treat as drawn rather than failing.
+        nonBlank = true;
+    }
+    return { width: w, height: h, nonBlank };
+}"""
+
 def test_load_workflow_files(workflow_files):
     """
     This test is to check that the workflow files can be loaded from the /tests folder,
@@ -857,35 +887,30 @@ class TestWorkflowCanvas:
                             f"its rendered canvas inside #{vega_container_id}"
                         )
 
+                        # Vega paints asynchronously after the canvas becomes
+                        # visible — on a slow CI runner the canvas can be
+                        # attached and sized before any marks are drawn, so a
+                        # single pixel sample races the paint. Poll the probe
+                        # until it reports drawn content; on timeout fall
+                        # through to one final sample so the asserts below
+                        # still produce the detailed failure message.
+                        try:
+                            self.page.wait_for_function(
+                                "(containerId) => {"
+                                f" const probe = {_VEGA_CANVAS_PROBE_JS};"
+                                "  const info = probe(containerId);"
+                                "  return !!(info && info.width > 0"
+                                "        && info.height > 0 && info.nonBlank);"
+                                "}",
+                                arg=vega_container_id,
+                                timeout=30000,
+                                polling=500,
+                            )
+                        except PlaywrightTimeoutError:
+                            pass
+
                         canvas_info = self.page.evaluate(
-                            """(containerId) => {
-                                const el = document.getElementById(containerId);
-                                if (!el) return null;
-                                const canvas = el.querySelector('canvas');
-                                if (!canvas) return null;
-                                const w = canvas.width, h = canvas.height;
-                                if (!w || !h) return { width: w, height: h, nonBlank: false };
-                                let nonBlank = false;
-                                try {
-                                    const ctx = canvas.getContext('2d');
-                                    const { data } = ctx.getImageData(0, 0, w, h);
-                                    for (let i = 0; i < data.length; i += 4) {
-                                        const r = data[i], g = data[i + 1],
-                                              b = data[i + 2], a = data[i + 3];
-                                        // any opaque, non-white pixel means a mark was drawn
-                                        if (a !== 0 && !(r === 255 && g === 255 && b === 255)) {
-                                            nonBlank = true;
-                                            break;
-                                        }
-                                    }
-                                } catch (e) {
-                                    // getImageData throws on a tainted canvas —
-                                    // treat as drawn rather than failing.
-                                    nonBlank = true;
-                                }
-                                return { width: w, height: h, nonBlank };
-                            }""",
-                            vega_container_id,
+                            _VEGA_CANVAS_PROBE_JS, vega_container_id
                         )
                         assert canvas_info is not None, (
                             f"Grammar node {node.id} ({node.type}): could not "

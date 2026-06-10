@@ -12,6 +12,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
+# Repo-root node_modules for the sandbox's Node.js subprocess
+# (@urban-toolkit/autk-db — see utk_curio/sandbox/app/worker.py).
+# Early layer: only rebuilds when the root lockfile changes; the
+# npm install in main.py::_ensure_root_node_modules at container
+# start then becomes a fast idempotent no-op.
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
 COPY requirements.txt curio.py ./
 COPY scripts/ scripts/
 COPY packages/ packages/

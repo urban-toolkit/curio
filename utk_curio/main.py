@@ -631,6 +631,18 @@ def install_framework_requirements() -> None:
     )
 
 
+# Catalog packages (beyond curio.builtin) whose python deps the seeded
+# example workflows exercise via INLINE imports — e.g.
+# docs/examples/09-heterogeneous-data-linked-views.json does
+# ``from pythermalcomfort import models`` inside a curio.builtin
+# computation node, so neither the workflow's ``dataflow.packages``
+# lockfile (it is []) nor any node type references curio.weather.
+# Deliberately a curated allowlist, NOT a full-catalog walk:
+# curio.streetvision declares torch/transformers/ultralytics, which
+# would drag multi-GB wheels into every --with-examples / deploy boot.
+EXAMPLE_DEP_PACKAGE_IDS = ("curio.weather",)
+
+
 def install_manifest_dependencies() -> None:
     """Walk every installed package manifest — catalog source-of-truth at
     ``<repo>/packages/`` PLUS every user store under
@@ -673,21 +685,30 @@ def install_manifest_dependencies() -> None:
     per_pkg: list[tuple[str, dict[str, str]]] = []
     seen: set[str] = set()  # dir_name dedupe across users
 
-    # Catalog walk is scoped to ``curio.builtin@*`` only — the catalog
-    # lists every *available* package, but only the built-in is
+    # Catalog walk is scoped to ``curio.builtin@*`` by default — the
+    # catalog lists every *available* package, but only the built-in is
     # auto-seeded for every user. Other catalog entries (UHVI,
     # weather, streetvision, …) are opt-in via the /catalog drawer;
     # their deps come along when the user installs them, via the
-    # per-user-store walk below.
+    # per-user-store walk below. When example seeding is on
+    # (--with-examples / --deploy => CURIO_SEED_EXAMPLES=1), also walk
+    # the allowlisted packages the seeded examples need (see
+    # EXAMPLE_DEP_PACKAGE_IDS above for why this is not a full walk).
+    catalog_globs = ["curio.builtin@*"]
+    if os.environ.get("CURIO_SEED_EXAMPLES") == "1":
+        catalog_globs += [f"{pid}@*" for pid in EXAMPLE_DEP_PACKAGE_IDS]
     if catalog.is_dir():
-        for pkg_dir in catalog.glob("curio.builtin@*"):
-            try:
-                m = load_packageage_manifest(pkg_dir)
-            except ManifestError:
-                continue
-            seen.add(m.dir_name)
-            if m.python_deps:
-                per_pkg.append((m.dir_name, dict(m.python_deps)))
+        for pattern in catalog_globs:
+            for pkg_dir in sorted(catalog.glob(pattern)):
+                try:
+                    m = load_packageage_manifest(pkg_dir)
+                except ManifestError:
+                    continue
+                if m.dir_name in seen:
+                    continue
+                seen.add(m.dir_name)
+                if m.python_deps:
+                    per_pkg.append((m.dir_name, dict(m.python_deps)))
 
     # Per-user store walk — every package any user has actually installed.
     if users.is_dir():

@@ -9,12 +9,22 @@ on:
       - 'utk_curio/**'
       - 'Dockerfile'
       - '.github/workflows/docker-compose.yml'
+      # Baked into the image (see Dockerfile runtime_base COPYs):
+      - 'package.json'
+      - 'package-lock.json'
+      - 'packages/**'
+      - 'docs/examples/**'
   pull_request:
     branches: [ main ]
     paths:
       - 'utk_curio/**'
       - 'Dockerfile'
       - '.github/workflows/docker-compose.yml'
+      # Baked into the image (see Dockerfile runtime_base COPYs):
+      - 'package.json'
+      - 'package-lock.json'
+      - 'packages/**'
+      - 'docs/examples/**'
   # workflow_dispatch:  # Run manually from Actions tab or: gh workflow run docker-compose.yml
 
 jobs:
