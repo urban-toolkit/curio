@@ -111,47 +111,50 @@ def _worker_init():
     }
 
 
-def _outputs_elem_path(elem):
-    """Resolve one element of a merge-flow 'outputs' list to a DuckDB artifact path.
+def _resolve_outputs_elem(elem, session_id=None):
+    """Resolve one element of an 'outputs' bundle to its concrete Python value.
 
-    A merge ('outputs') input bundles one entry per connected upstream slot.
-    Each entry is normally a live `{path, dataType}` reference, but a project
-    restored from persisted outputs (ProjectLoader seeds `output = o.filename`)
-    delivers a bare artifact-id/filename string instead. Accept both so the
-    merge keeps working across a save/reload, not just within a live session.
+    An 'outputs' input — from a Merge Flow, or a Data Pool's multi-layer wrapper —
+    bundles one entry per connected slot / layer. An entry is one of:
+      * a DuckDB reference: a `{'path', ...}` dict, or a bare artifact-id/filename
+        string (a project restored from persisted outputs seeds the latter) —
+        loaded from DuckDB;
+      * an inline `{'dataType', 'data'}` envelope — e.g. a Data Pool layer
+        `{'dataType':'geodataframe','data':<FeatureCollection>,'layerName':...}`
+        wired straight into a code node — reconstructed with `parseInput`;
+      * any other already-concrete value, used as-is.
+    Distinguishing on the keys keeps refs loading while letting inline values flow
+    through instead of raising KeyError('path').
     """
-    return elem['path'] if isinstance(elem, dict) else elem
+    from utk_curio.sandbox.util.parsers import load_from_duckdb, parseInput
+    if isinstance(elem, str):
+        return load_from_duckdb(elem, session_id=session_id)
+    if isinstance(elem, dict):
+        if 'path' in elem:
+            return load_from_duckdb(elem['path'], session_id=session_id)
+        if 'dataType' in elem and 'data' in elem:
+            return parseInput(elem)
+    return elem
 
 
 def _expand_outputs_wrapper(input_data, session_id=None):
     """Resolve a merge ('outputs') input to the per-slot list user code expects.
 
     A merge output reaches a code node in one of two shapes:
-      * live  — an inline list of {path,dataType} refs, already expanded by the
-        caller's `data_type == 'outputs'` branch; passed through here untouched.
+      * live  — an inline list of refs, already expanded by the caller's
+        `data_type == 'outputs'` branch; passed through here untouched.
       * reloaded — when the upstream merge output was persisted (project save, or
         the JS-node I/O round-trip through DuckDB), the node receives a single ref
         to it. `_parse_input_ref` remaps that ref's 'outputs' dataType to a plain
         load, so `load_from_duckdb` hands back the whole
         `{dataType:'outputs', data:[refs]}` wrapper dict. Without this, user code
         gets the wrapper object (e.g. `const [a,b] = arg` → "arg is not iterable").
-    In the reloaded case, resolve each inner ref so `arg` is the same list as live.
+    In the reloaded case, resolve each inner element so `arg` matches the live list.
     """
     if (isinstance(input_data, dict)
             and input_data.get('dataType') == 'outputs'
             and isinstance(input_data.get('data'), list)):
-        from utk_curio.sandbox.util.parsers import load_from_duckdb
-        resolved = []
-        for elem in input_data['data']:
-            if isinstance(elem, str):
-                resolved.append(load_from_duckdb(elem, session_id=session_id))
-            elif isinstance(elem, dict) and 'path' in elem and 'dataType' in elem:
-                resolved.append(load_from_duckdb(elem['path'], session_id=session_id))
-            else:
-                # Already-resolved data (e.g. an inline layer array) — keep as-is;
-                # _to_js_value() downstream handles any further conversion.
-                resolved.append(elem)
-        return resolved
+        return [_resolve_outputs_elem(elem, session_id=session_id) for elem in input_data['data']]
     return input_data
 
 
@@ -201,7 +204,7 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 input_data = ''
                 if data_type == 'outputs':
                     file_path_list = eval(file_path, {'__builtins__': {}})
-                    input_data = [load_from_duckdb(_outputs_elem_path(elem), session_id=session_id) for elem in file_path_list]
+                    input_data = [_resolve_outputs_elem(elem, session_id=session_id) for elem in file_path_list]
                 elif file_path:
                     input_data = load_from_duckdb(file_path, session_id=session_id)
                 input_data = _expand_outputs_wrapper(input_data, session_id=session_id)
@@ -339,7 +342,7 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
         input_data = None
         if data_type == 'outputs' and file_path:
             file_path_list = eval(file_path, {'__builtins__': {}})
-            input_data = [load_from_duckdb(_outputs_elem_path(elem), session_id=session_id)
+            input_data = [_resolve_outputs_elem(elem, session_id=session_id)
                           for elem in file_path_list]
         elif file_path:
             input_data = load_from_duckdb(file_path, session_id=session_id)

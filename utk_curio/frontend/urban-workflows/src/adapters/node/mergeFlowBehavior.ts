@@ -74,12 +74,27 @@ export const useMergeFlowBehavior: NodeBehaviorHook = (data, nodeState) => {
     }
   }, [data.input]);
 
-  const setOutputCallbackOverride = (val: any, idx = 0) =>
+  const setOutputCallbackOverride = (val: any, idx = 0) => {
+    // UniversalNode wires this same override in as the node's STATUS setter
+    // (`setOutputCallback = behavior.setOutputCallbackOverride ?? nodeState.setOutput`)
+    // and calls `setOutputCallback({ code: 'exec', content: '' })` right before it
+    // runs `sendCode` (UniversalNode.tsx). Now that the merge exposes
+    // `sendCodeOverride`, that path fires — and without this guard it would land
+    // the {code,content} status object in slot 0, so a downstream code node then
+    // executes with the status as its input (e.g. `arg[0]` = {code:'exec'} →
+    // "'dict' object has no attribute 'read'"). Real slot values are data refs
+    // (path/dataType/data), never status objects, so drop anything status-shaped.
+    if (val && typeof val === 'object'
+        && 'code' in val && 'content' in val
+        && !('path' in val) && !('dataType' in val) && !('data' in val)) {
+      return;
+    }
     setInputValues(prev => {
       const cp = Array.isArray(prev) ? [...prev] : Array(MERGE_SLOT_COUNT).fill(undefined);
       cp[idx] = val;
       return cp;
     });
+  };
 
   // Build the 5 input slot handles + the single output handle, fully replacing
   // `adapter.handles`. We use `handlesOverride` rather than `dynamicHandles`
