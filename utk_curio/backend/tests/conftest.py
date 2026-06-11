@@ -247,22 +247,44 @@ def browser_type_launch_args(browser_type_launch_args):
     headless = browser_type_launch_args.get("headless", True)
 
     if sys.platform.startswith("linux"):
-        # Software WebGPU recipe for the GPU-less Linux CI runner. Only
-        # take effect when running truly headless (CI / no DISPLAY);
-        # a developer on a real Linux desktop with a GPU keeps the
-        # hardware path. Force *new* headless and Chrome's SwiftShader
-        # software adapter (Dawn over SwiftShader's Vulkan ICD).
+        # Linux headless WebGPU. The backend is selected by
+        # ``CURIO_WEBGPU_BACKEND`` (default ``swiftshader``):
+        #
+        #   hardware   — the self-hosted GPU runner on ``utk`` (NVIDIA). Let
+        #     Dawn pick the real hardware Vulkan adapter; do NOT pass any
+        #     SwiftShader flag (that would force the software adapter and
+        #     defeat the point). The compute examples 06/07 only run here.
+        #
+        #   swiftshader (default) — a GPU-less host (local dev). Force Chrome's
+        #     bundled SwiftShader software adapter so the *map* examples still
+        #     render; the compute examples crash software WebGPU and are not
+        #     expected to run on this path.
+        #
+        # In both cases force *new* headless (Playwright's default
+        # ``headless=True`` launches Chrome's old headless, which has no WebGPU
+        # at all). ``headless`` is set to ``False`` so Playwright does not
+        # inject the old ``--headless``; ``--headless=new`` drives it instead.
         if headless:
             headless = False  # prevent Playwright's old --headless
-            base_args = [
-                "--headless=new",
-                "--enable-unsafe-webgpu",
-                "--enable-unsafe-swiftshader",
-                "--use-webgpu-adapter=swiftshader",
-                "--use-angle=swiftshader",
-                "--enable-features=Vulkan",
-                "--ignore-gpu-blocklist",
-            ]
+            backend = os.environ.get("CURIO_WEBGPU_BACKEND", "swiftshader")
+            if backend == "hardware":
+                base_args = [
+                    "--headless=new",
+                    "--enable-unsafe-webgpu",
+                    "--ignore-gpu-blocklist",
+                    "--enable-features=Vulkan",
+                    "--use-angle=vulkan",
+                ]
+            else:
+                base_args = [
+                    "--headless=new",
+                    "--enable-unsafe-webgpu",
+                    "--enable-unsafe-swiftshader",
+                    "--use-webgpu-adapter=swiftshader",
+                    "--use-angle=swiftshader",
+                    "--enable-features=Vulkan",
+                    "--ignore-gpu-blocklist",
+                ]
 
     launch_args = {
         **browser_type_launch_args,
