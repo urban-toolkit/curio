@@ -167,11 +167,7 @@ jobs:
 
       - name: 🎭 Run e2e tests (full matrix, hardware WebGPU)
         run: |
-          # TEMPORARY: scoped to the 5 examples that failed the first hardware
-          # run (4 data-pool timeouts + 08 spatial-join). Remove --workflows to
-          # restore the full 01-11 matrix once these are green.
           bash scripts/test.sh --e2e-only --use-existing \
-            --workflows 08-autark-spatial-join-regression.json \
             --allure-dir "$GITHUB_WORKSPACE/allure-results"
 
       - name: 📊 Install Allure CLI
