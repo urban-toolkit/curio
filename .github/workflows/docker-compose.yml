@@ -137,7 +137,11 @@ jobs:
           ) &
           SAMPLER_PID=$!
           trap "kill $SAMPLER_PID 2>/dev/null || true" EXIT
+          # DIAGNOSTIC (temporary): scope to two light autark workflows so the
+          # run finishes without the full-matrix accumulation OOM and flushes
+          # the WebGPU diagnostics + Allure log. Revert before merging to main.
           bash scripts/test.sh --e2e-only --use-existing \
+            --workflows AutkMap.json,07-autark-gpu-shader.json \
             --allure-dir "$GITHUB_WORKSPACE/allure-results"
 
       - name: 📈 Resource snapshot (after e2e)
