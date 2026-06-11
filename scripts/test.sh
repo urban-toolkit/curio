@@ -153,7 +153,7 @@ if [[ $USE_EXISTING -eq 0 ]]; then
   # tests the current frontend — matching how the e2e curio_servers fixture
   # boots. Without it a stale dist/ hides in-tree frontend changes.
   CURIO_NO_OPEN=1 FLASK_USE_RELOADER=0 CURIO_DEV=1 CURIO_LAUNCH_CWD="$REPO_ROOT" \
-    python "$REPO_ROOT/curio.py" start &
+    python "$REPO_ROOT/curio.py" start --with-examples &
   CURIO_PID=$!
 
   wait_for_port "backend"  5002
