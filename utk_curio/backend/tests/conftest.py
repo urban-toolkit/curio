@@ -210,13 +210,14 @@ def browser_type_launch_args(browser_type_launch_args):
     GitHub-hosted runners (``ubuntu-latest`` / ``windows-latest`` /
     ``macos-latest``) have Chrome preinstalled.
 
-    Flag set is intentionally minimal: ``--enable-unsafe-webgpu`` lets
-    Dawn expose adapters in non-secure contexts and on unstable
-    configs, ``--enable-unsafe-swiftshader`` lets Dawn fall back to a
-    software adapter on hosts without a hardware GPU (e.g. CI
-    runners). We deliberately do *not* pass
-    ``--use-angle=*`` or ``--enable-features=Vulkan,VulkanFromANGLE,
-    DefaultANGLEVulkan,WebGPUService``: those are the flags
+    Flag set is platform-conditional.
+
+    On **Windows / macOS** it is intentionally minimal:
+    ``--enable-unsafe-webgpu`` lets Dawn expose adapters in non-secure
+    contexts and on unstable configs, ``--enable-unsafe-swiftshader``
+    lets Dawn fall back to a software adapter on hosts without a
+    hardware GPU. We deliberately do *not* pass ``--use-angle=*`` or
+    ``--enable-features=Vulkan,...`` there: those are the flags
     urban-toolkit/autark uses on macOS to force Metal/Vulkan paths,
     but on Windows they make Dawn ask for a Vulkan adapter the host
     doesn't have and ``requestAdapter()`` returns null. Real Chrome on
@@ -224,13 +225,50 @@ def browser_type_launch_args(browser_type_launch_args):
     Verified empirically on Chrome 148 / Windows 11 against
     https://example.com — adapter is created with the minimal flags
     and disappears the moment either of the autark flags is added.
+
+    On **Linux** (the GPU-less CI runner) those flags are not enough:
+    the runner has no hardware GPU, and Playwright's default
+    ``headless=True`` launches Chrome's *old* headless mode which has
+    no WebGPU at all, so ``requestAdapter()`` returns null and the
+    ``AUTK_GRAMMAR`` map/plot nodes crash in ``createShaderModule``.
+    We instead opt into Chrome's *new* headless (which shares the full
+    browser/GPU stack) and explicitly select Chrome's bundled
+    SwiftShader as the software WebGPU adapter, so autark nodes render
+    for real rather than being skipped. ``headless`` is set to ``False``
+    so Playwright does not inject the WebGPU-less old ``--headless``;
+    ``--headless=new`` then drives true headless. The page is served
+    from ``http://localhost:8080`` (a secure context), satisfying
+    WebGPU's secure-context requirement.
     """
+    base_args = [
+        "--enable-unsafe-webgpu",
+        "--enable-unsafe-swiftshader",
+    ]
+    headless = browser_type_launch_args.get("headless", True)
+
+    if sys.platform.startswith("linux"):
+        # Software WebGPU recipe for the GPU-less Linux CI runner. Only
+        # take effect when running truly headless (CI / no DISPLAY);
+        # a developer on a real Linux desktop with a GPU keeps the
+        # hardware path. Force *new* headless and Chrome's SwiftShader
+        # software adapter (Dawn over SwiftShader's Vulkan ICD).
+        if headless:
+            headless = False  # prevent Playwright's old --headless
+            base_args = [
+                "--headless=new",
+                "--enable-unsafe-webgpu",
+                "--enable-unsafe-swiftshader",
+                "--use-webgpu-adapter=swiftshader",
+                "--use-angle=swiftshader",
+                "--enable-features=Vulkan",
+                "--ignore-gpu-blocklist",
+            ]
+
     launch_args = {
         **browser_type_launch_args,
-        "headless": browser_type_launch_args.get("headless", True),
+        "headless": headless,
         "args": [
-            "--enable-unsafe-webgpu",
-            "--enable-unsafe-swiftshader",
+            *base_args,
             *browser_type_launch_args.get("args", []),
         ],
     }
