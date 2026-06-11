@@ -70,22 +70,16 @@ jobs:
           swapon --show
           free -h
 
-      - name: 🌋 Install Mesa lavapipe (software Vulkan)
+      - name: 🧪 Install Chrome Dev channel (newer SwiftShader)
         run: |
-          # Chrome's bundled SwiftShader renders maps but its GPU process
-          # crashes on the WebGPU compute passes in examples 06/07. Mesa
-          # lavapipe is a more conformant software Vulkan; point the host
-          # Chrome's Dawn/Vulkan backend at it (CURIO_WEBGPU_BACKEND=vulkan,
-          # VK_ICD_FILENAMES pins the loader to lavapipe) to run those
-          # compute shaders for real on the GPU-less runner.
-          sudo apt-get update
-          sudo apt-get install -y mesa-vulkan-drivers vulkan-tools
-          ICD=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json 2>/dev/null | head -1)
-          echo "lavapipe ICD: ${ICD:-NOT FOUND}"
-          echo "VK_ICD_FILENAMES=$ICD" >> "$GITHUB_ENV"
-          echo "CURIO_WEBGPU_BACKEND=vulkan" >> "$GITHUB_ENV"
-          VK_ICD_FILENAMES="$ICD" vulkaninfo --summary 2>/dev/null \
-            | grep -iE "deviceName|driverName|apiVersion|GPU id" | head || true
+          # The runner's stock Chrome (stable) bundles a SwiftShader whose GPU
+          # process crashes on the WebGPU compute passes in examples 06/07.
+          # The Dev channel ships a newer SwiftShader/Dawn that may run them.
+          # Point the e2e host Chrome at it via CURIO_CHROME_PATH.
+          wget -q https://dl.google.com/linux/direct/google-chrome-unstable_current_amd64.deb
+          sudo apt-get install -y ./google-chrome-unstable_current_amd64.deb
+          echo "CURIO_CHROME_PATH=/usr/bin/google-chrome-unstable" >> "$GITHUB_ENV"
+          /usr/bin/google-chrome-unstable --version || true
 
       - name: 🔨 Build all service images in parallel
         run: docker compose -p curio build --parallel

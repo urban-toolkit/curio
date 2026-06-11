@@ -149,7 +149,16 @@ def _find_system_chrome() -> str | None:
 
     Returns ``None`` when Chrome is not found, in which case the
     caller falls back to bundled Chromium.
+
+    ``CURIO_CHROME_PATH`` overrides discovery entirely — used in CI to
+    test a specific Chrome build (e.g. the Dev channel, whose newer
+    SwiftShader/Dawn may handle software-WebGPU compute that the stable
+    build crashes on).
     """
+    override = os.environ.get("CURIO_CHROME_PATH")
+    if override and os.path.isfile(override):
+        return override
+
     candidates: list[str] = []
     if sys.platform == "win32":
         program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
