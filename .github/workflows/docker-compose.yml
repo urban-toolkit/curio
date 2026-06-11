@@ -203,16 +203,25 @@ jobs:
           docker build --target frontend_builder -t curio-frontend-test .
           docker run --rm curio-frontend-test npm test
 
-      - name: 📋 Capture container logs (sandbox/backend autk-db errors)
+      - name: 📋 Capture sandbox/backend logs (autk-db errors)
         if: always()
-        run: docker compose -p curio-ci logs --no-color --tail=8000 > "$GITHUB_WORKSPACE/container-logs.txt" 2>&1 || true
+        run: |
+          docker compose -p curio-ci logs --no-color --tail=8000 > "$GITHUB_WORKSPACE/container-logs.txt" 2>&1 || true
+          # The real autk-db worker stderr ([execJs] ...) goes to
+          # .curio/messages.log (root-owned, on the mounted workspace); read it
+          # out via a root container so the runner user can upload it.
+          docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+            'echo "=== .curio/messages.log ==="; cat .curio/messages.log 2>/dev/null; echo; echo "=== per-session messages.log ==="; find .curio -name messages.log -exec sh -c "echo \"--- {} ---\"; cat {}" \; 2>/dev/null' \
+            > "$GITHUB_WORKSPACE/curio-messages.txt" 2>&1 || true
 
-      - name: 📤 Upload container logs
+      - name: 📤 Upload sandbox logs
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: container-logs
-          path: container-logs.txt
+          path: |
+            container-logs.txt
+            curio-messages.txt
           retention-days: 7
 
       - name: 🧹 Tear down containers
