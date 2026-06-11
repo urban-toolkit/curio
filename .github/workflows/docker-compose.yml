@@ -78,12 +78,14 @@ jobs:
 
     steps:
       # On the persistent self-hosted runner, the previous run's container
-      # writes .curio/ into the workspace as root, which the runner user
-      # (deploy) cannot delete — that breaks actions/checkout's clean. Reclaim
-      # it via a throwaway root container BEFORE checkout runs. (Runs in the
-      # leftover workspace from the prior run; a no-op on a fresh checkout.)
+      # writes files into the workspace as root (.curio/, instance/*.db, ...),
+      # which the runner user (deploy) cannot delete — that fatally breaks
+      # actions/checkout's clean. Chown the whole workspace back to the runner
+      # user via a throwaway root container BEFORE checkout runs, so it can
+      # clean any container-created artifact. (Runs in the leftover workspace
+      # from the prior run; a no-op on a fresh runner.)
       - name: 🧹 Reclaim root-owned workspace files (self-hosted)
-        run: docker run --rm -v "$PWD:/w" -w /w alpine rm -rf /w/.curio 2>/dev/null || true
+        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
 
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
@@ -198,6 +200,7 @@ jobs:
         if: always()
         run: |
           docker compose -p curio-ci down -v --remove-orphans || true
-          # Hand the container-written (root-owned) .curio/ back so it doesn't
-          # accumulate root-owned; the pre-checkout step is the real safety net.
-          docker run --rm -v "$PWD:/w" -w /w alpine rm -rf /w/.curio 2>/dev/null || true
+          # Hand the container-written (root-owned) files back to the runner
+          # user so they don't accumulate; the pre-checkout step is the real
+          # safety net for the next run.
+          docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
