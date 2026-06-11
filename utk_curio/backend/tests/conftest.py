@@ -196,8 +196,14 @@ def _find_system_chrome() -> str | None:
 
 
 @pytest.fixture(scope="session")
-def browser_type_launch_args(browser_type_launch_args):
+def browser_type_launch_args(browser_type_launch_args, browser_type):
     """Configure browser launch options.
+
+    Firefox path (CI experiment): Firefox's WebGPU is ``wgpu`` (Rust) over
+    the *system* Vulkan loader, so it can use Mesa lavapipe (installed in
+    CI, pinned via ``VK_ICD_FILENAMES``) for the software *compute* passes
+    that Chrome's bundled SwiftShader crashes on. We just enable the API
+    via prefs and skip all the Chrome-specific flags / ``executable_path``.
 
     Points ``executable_path`` at the system Google Chrome instead of
     Playwright's bundled Chromium. Playwright's bundled Chromium on
@@ -249,6 +255,19 @@ def browser_type_launch_args(browser_type_launch_args):
     from ``http://localhost:8080`` (a secure context), satisfying
     WebGPU's secure-context requirement.
     """
+    if browser_type.name == "firefox":
+        return {
+            **browser_type_launch_args,
+            "headless": browser_type_launch_args.get("headless", True),
+            "firefox_user_prefs": {
+                "dom.webgpu.enabled": True,
+                "gfx.webgpu.force-enabled": True,
+                "gfx.webgpu.ignore-blocklist": True,
+                # Allow wgpu to pick a software (lavapipe) Vulkan adapter.
+                "gfx.webrender.all": True,
+            },
+        }
+
     base_args = [
         "--enable-unsafe-webgpu",
         "--enable-unsafe-swiftshader",

@@ -70,16 +70,21 @@ jobs:
           swapon --show
           free -h
 
-      - name: 🧪 Install Chrome Dev channel (newer SwiftShader)
+      - name: 🦊 Set up Firefox + lavapipe for WebGPU compute (DIAG)
         run: |
-          # The runner's stock Chrome (stable) bundles a SwiftShader whose GPU
-          # process crashes on the WebGPU compute passes in examples 06/07.
-          # The Dev channel ships a newer SwiftShader/Dawn that may run them.
-          # Point the e2e host Chrome at it via CURIO_CHROME_PATH.
-          wget -q https://dl.google.com/linux/direct/google-chrome-unstable_current_amd64.deb
-          sudo apt-get install -y ./google-chrome-unstable_current_amd64.deb
-          echo "CURIO_CHROME_PATH=/usr/bin/google-chrome-unstable" >> "$GITHUB_ENV"
-          /usr/bin/google-chrome-unstable --version || true
+          # Chrome's bundled SwiftShader crashes on the compute passes in
+          # 06/07. Firefox's WebGPU is wgpu (Rust) over the *system* Vulkan
+          # loader, so it can run them on Mesa lavapipe (more conformant
+          # software Vulkan). Install lavapipe + Playwright Firefox and route
+          # the e2e suite through Firefox (PYTEST_ADDOPTS=--browser firefox).
+          sudo apt-get update
+          sudo apt-get install -y mesa-vulkan-drivers vulkan-tools
+          ICD=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json 2>/dev/null | head -1)
+          echo "lavapipe ICD: ${ICD:-NOT FOUND}"
+          echo "VK_ICD_FILENAMES=$ICD" >> "$GITHUB_ENV"
+          echo "PYTEST_ADDOPTS=--browser firefox" >> "$GITHUB_ENV"
+          VK_ICD_FILENAMES="$ICD" vulkaninfo --summary 2>/dev/null \
+            | grep -iE "deviceName|driverName" | head || true
 
       - name: 🔨 Build all service images in parallel
         run: docker compose -p curio build --parallel
@@ -182,12 +187,12 @@ jobs:
           ) &
           SAMPLER_PID=$!
           trap "kill $SAMPLER_PID 2>/dev/null || true" EXIT
-          # DIAGNOSTIC (temporary): scope to the 3 GPU-compute examples that
-          # fail with "device lost: external Instance" to test whether
-          # --disable-gpu-watchdog lets slow software compute complete.
-          # Revert to the full matrix once confirmed.
+          # DIAGNOSTIC (temporary): Firefox + lavapipe on the 2 GPU-compute
+          # examples (06/07) that crash Chrome's SwiftShader. Install the
+          # Firefox browser here (playwright pip is available at this point).
+          python -m playwright install --with-deps firefox
           bash scripts/test.sh --e2e-only --use-existing \
-            --workflows 06-autark-what-if-shadow-study.json \
+            --workflows 06-autark-what-if-shadow-study.json,07-autark-gpu-shader.json \
             --allure-dir "$GITHUB_WORKSPACE/allure-results"
 
       - name: 📈 Resource snapshot (after e2e)
