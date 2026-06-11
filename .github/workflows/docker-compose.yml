@@ -171,7 +171,12 @@ jobs:
           ) &
           SAMPLER_PID=$!
           trap "kill $SAMPLER_PID 2>/dev/null || true" EXIT
+          # DIAGNOSTIC (temporary): scope to the 3 GPU-compute examples that
+          # fail with "device lost: external Instance" to test whether
+          # --disable-gpu-watchdog lets slow software compute complete.
+          # Revert to the full matrix once confirmed.
           bash scripts/test.sh --e2e-only --use-existing \
+            --workflows 06-autark-what-if-shadow-study.json,07-autark-gpu-shader.json,Interaction_Vega_Autark.json \
             --allure-dir "$GITHUB_WORKSPACE/allure-results"
 
       - name: 📈 Resource snapshot (after e2e)

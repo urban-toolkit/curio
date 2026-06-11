@@ -266,6 +266,15 @@ def browser_type_launch_args(browser_type_launch_args):
                 # spill its shared memory to /tmp (disk) instead so the
                 # SwiftShader software-WebGPU buffers don't pin RAM toward OOM.
                 "--disable-dev-shm-usage",
+                # SwiftShader software *compute* (e.g. the shadow/road-table
+                # passes in examples 06/07) is far slower than hardware and
+                # overruns Chrome's GPU watchdog, which then kills the GPU
+                # process mid-compute -> "device lost: external Instance" and a
+                # renderer that can't re-acquire an adapter. Disable the
+                # watchdog so slow software compute runs to completion, and
+                # don't let Chrome give up respawning the GPU process.
+                "--disable-gpu-watchdog",
+                "--disable-gpu-process-crash-limit",
             ]
 
     launch_args = {
