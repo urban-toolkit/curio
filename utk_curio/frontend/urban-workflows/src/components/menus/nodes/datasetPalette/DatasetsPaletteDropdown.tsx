@@ -199,7 +199,7 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
       {open ? (
         <div className={styles.panel} role="region" aria-label="Dataset palette">
           <div className={styles.panelHeader}>
-            <div className={styles.title}>Dataset Palette</div>
+            <div className={styles.title}>Datasets</div>
           </div>
           <div className={styles.scroll}>
             {catalog.loading && rows.length === 0 ? <div className={styles.empty}>Loading datasets...</div> : null}
@@ -211,17 +211,8 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
             <PaletteAccordion
               title="Installed datasets"
               count={installedRows.length}
-              actions={(
-                <button
-                  type="button"
-                  className={styles.downloadButton}
-                  aria-label="Install datasets"
-                  onMouseDown={stopAccordionToggle}
-                  onClick={stopAccordionToggle}
-                >
-                  <FontAwesomeIcon icon={faDownload} aria-hidden />
-                </button>
-              )}
+              selected
+              defaultOpen
             >
               {installedRows.length > 0 ? (
                 installedRows.map((dataset) => <DatasetRow key={`${dataset.origin}:${dataset.id}`} dataset={dataset} />)
@@ -230,29 +221,16 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
               )}
             </PaletteAccordion>
 
-            <PaletteAccordion
+            {/* <PaletteAccordion
               title="Project datasets"
               count={projectRows.length}
-              selected
-              defaultOpen
-              actions={(
-                <button
-                  type="button"
-                  className={styles.downloadButton}
-                  aria-label="Import into this project"
-                  onMouseDown={stopAccordionToggle}
-                  onClick={stopAccordionToggle}
-                >
-                  <FontAwesomeIcon icon={faDownload} aria-hidden />
-                </button>
-              )}
             >
               {projectRows.length > 0 ? (
                 projectRows.map((dataset) => <DatasetRow key={`${dataset.origin}:${dataset.id}`} dataset={dataset} />)
               ) : (
                 <div className={styles.sectionEmpty}>No live session outputs yet.</div>
               )}
-            </PaletteAccordion>
+            </PaletteAccordion> */}
           </div>
           <div className={styles.footer}>
             <button
