@@ -149,7 +149,16 @@ def _find_system_chrome() -> str | None:
 
     Returns ``None`` when Chrome is not found, in which case the
     caller falls back to bundled Chromium.
+
+    ``CURIO_CHROME_PATH`` overrides discovery entirely — used in CI to
+    test a specific Chrome build (e.g. the Dev channel, whose newer
+    SwiftShader/Dawn may handle software-WebGPU compute that the stable
+    build crashes on).
     """
+    override = os.environ.get("CURIO_CHROME_PATH")
+    if override and os.path.isfile(override):
+        return override
+
     candidates: list[str] = []
     if sys.platform == "win32":
         program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
@@ -187,8 +196,14 @@ def _find_system_chrome() -> str | None:
 
 
 @pytest.fixture(scope="session")
-def browser_type_launch_args(browser_type_launch_args):
+def browser_type_launch_args(browser_type_launch_args, browser_type):
     """Configure browser launch options.
+
+    Firefox path (CI experiment): Firefox's WebGPU is ``wgpu`` (Rust) over
+    the *system* Vulkan loader, so it can use Mesa lavapipe (installed in
+    CI, pinned via ``VK_ICD_FILENAMES``) for the software *compute* passes
+    that Chrome's bundled SwiftShader crashes on. We just enable the API
+    via prefs and skip all the Chrome-specific flags / ``executable_path``.
 
     Points ``executable_path`` at the system Google Chrome instead of
     Playwright's bundled Chromium. Playwright's bundled Chromium on
@@ -240,6 +255,19 @@ def browser_type_launch_args(browser_type_launch_args):
     from ``http://localhost:8080`` (a secure context), satisfying
     WebGPU's secure-context requirement.
     """
+    if browser_type.name == "firefox":
+        return {
+            **browser_type_launch_args,
+            "headless": browser_type_launch_args.get("headless", True),
+            "firefox_user_prefs": {
+                "dom.webgpu.enabled": True,
+                "gfx.webgpu.force-enabled": True,
+                "gfx.webgpu.ignore-blocklist": True,
+                # Allow wgpu to pick a software (lavapipe) Vulkan adapter.
+                "gfx.webrender.all": True,
+            },
+        }
+
     base_args = [
         "--enable-unsafe-webgpu",
         "--enable-unsafe-swiftshader",
@@ -254,15 +282,47 @@ def browser_type_launch_args(browser_type_launch_args):
         # software adapter (Dawn over SwiftShader's Vulkan ICD).
         if headless:
             headless = False  # prevent Playwright's old --headless
-            base_args = [
+            # Flags common to both software backends.
+            common = [
                 "--headless=new",
                 "--enable-unsafe-webgpu",
-                "--enable-unsafe-swiftshader",
-                "--use-webgpu-adapter=swiftshader",
-                "--use-angle=swiftshader",
-                "--enable-features=Vulkan",
                 "--ignore-gpu-blocklist",
+                # The runner's /dev/shm is RAM-backed and small; let Chrome
+                # spill its shared memory to /tmp (disk) instead so the
+                # software-WebGPU buffers don't pin RAM toward OOM.
+                "--disable-dev-shm-usage",
+                # Software compute (e.g. the shadow/road-table passes in
+                # examples 06/07) is far slower than hardware; keep the GPU
+                # watchdog from killing the process mid-compute, and don't let
+                # Chrome give up respawning the GPU process on a crash.
+                "--disable-gpu-watchdog",
+                "--disable-gpu-process-crash-limit",
+                "--enable-features=Vulkan",
+                # On Chrome Dev, 06's compute now *completes*, but the WebGPU
+                # device is torn down at the compute->map boundary and the
+                # software adapter doesn't come back ("device lost: external
+                # Instance" -> requestAdapter() null on the map node). Running
+                # the GPU in-process removes the separate GPU process whose
+                # teardown invalidates the adapter, so a destroyed device no
+                # longer kills WebGPU for the rest of the page.
+                "--in-process-gpu",
             ]
+            # Two software-WebGPU backends, selected by CURIO_WEBGPU_BACKEND:
+            #   swiftshader (default) — Chrome's bundled SwiftShader Vulkan.
+            #     Renders maps fine but its GPU process crashes on the compute
+            #     shaders in 06/07 ("device lost: external Instance").
+            #   vulkan — Mesa lavapipe system Vulkan (installed in CI, pinned
+            #     via VK_ICD_FILENAMES). A more conformant software Vulkan that
+            #     should survive the compute passes SwiftShader crashes on.
+            backend = os.environ.get("CURIO_WEBGPU_BACKEND", "swiftshader")
+            if backend == "vulkan":
+                base_args = common + ["--use-angle=vulkan"]
+            else:
+                base_args = common + [
+                    "--enable-unsafe-swiftshader",
+                    "--use-webgpu-adapter=swiftshader",
+                    "--use-angle=swiftshader",
+                ]
 
     launch_args = {
         **browser_type_launch_args,
