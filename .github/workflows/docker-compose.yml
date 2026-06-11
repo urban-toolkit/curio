@@ -70,26 +70,16 @@ jobs:
           swapon --show
           free -h
 
-      - name: 🦊 Set up Firefox + lavapipe for WebGPU compute (DIAG)
+      - name: 🧪 Install Chrome Dev channel (newer SwiftShader)
         run: |
-          # Chrome's bundled SwiftShader crashes on the compute passes in
-          # 06/07. Firefox's WebGPU is wgpu (Rust) over the *system* Vulkan
-          # loader, so it can run them on Mesa lavapipe (more conformant
-          # software Vulkan). Install lavapipe + Playwright Firefox and route
-          # the e2e suite through Firefox (PYTEST_ADDOPTS=--browser firefox).
-          sudo apt-get update
-          sudo apt-get install -y mesa-vulkan-drivers vulkan-tools
-          ICD=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json 2>/dev/null | head -1)
-          echo "lavapipe ICD: ${ICD:-NOT FOUND}"
-          echo "VK_ICD_FILENAMES=$ICD" >> "$GITHUB_ENV"
-          echo "PYTEST_ADDOPTS=--browser firefox" >> "$GITHUB_ENV"
-          # Firefox runs WebGPU in a sandboxed GPU process that strips env vars,
-          # so VK_ICD_FILENAMES never reaches wgpu and requestAdapter() returns
-          # null. Disabling the GPU sandbox lets the process inherit the Vulkan
-          # ICD path and enumerate the lavapipe adapter.
-          echo "MOZ_DISABLE_GPU_SANDBOX=1" >> "$GITHUB_ENV"
-          VK_ICD_FILENAMES="$ICD" vulkaninfo --summary 2>/dev/null \
-            | grep -iE "deviceName|driverName" | head || true
+          # The stock Chrome (stable) bundles a SwiftShader whose GPU process
+          # crashes on 06/07's compute. Chrome Dev ships a newer SwiftShader
+          # that runs 06's compute to completion (the failure then moves to a
+          # post-compute device loss on the map node, attacked via flags).
+          wget -q https://dl.google.com/linux/direct/google-chrome-unstable_current_amd64.deb
+          sudo apt-get install -y ./google-chrome-unstable_current_amd64.deb
+          echo "CURIO_CHROME_PATH=/usr/bin/google-chrome-unstable" >> "$GITHUB_ENV"
+          /usr/bin/google-chrome-unstable --version || true
 
       - name: 🔨 Build all service images in parallel
         run: docker compose -p curio build --parallel
@@ -192,9 +182,11 @@ jobs:
           ) &
           SAMPLER_PID=$!
           trap "kill $SAMPLER_PID 2>/dev/null || true" EXIT
-          # DIAGNOSTIC (temporary): Firefox + lavapipe on the 2 GPU-compute
-          # examples (06/07) that crash Chrome's SwiftShader. test.sh installs
-          # the Firefox browser itself (playwright pip is available there).
+          # DIAGNOSTIC (temporary): Chrome Dev + --in-process-gpu on the 2
+          # GPU-compute examples (06/07), with a generous AUTK timeout so the
+          # slow software compute finishes. Tests whether in-process GPU keeps
+          # the WebGPU adapter alive across the compute->map device teardown.
+          export CURIO_E2E_AUTK_TIMEOUT_MS=600000
           bash scripts/test.sh --e2e-only --use-existing \
             --workflows 06-autark-what-if-shadow-study.json,07-autark-gpu-shader.json \
             --allure-dir "$GITHUB_WORKSPACE/allure-results"

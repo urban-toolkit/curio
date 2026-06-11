@@ -298,6 +298,14 @@ def browser_type_launch_args(browser_type_launch_args, browser_type):
                 "--disable-gpu-watchdog",
                 "--disable-gpu-process-crash-limit",
                 "--enable-features=Vulkan",
+                # On Chrome Dev, 06's compute now *completes*, but the WebGPU
+                # device is torn down at the compute->map boundary and the
+                # software adapter doesn't come back ("device lost: external
+                # Instance" -> requestAdapter() null on the map node). Running
+                # the GPU in-process removes the separate GPU process whose
+                # teardown invalidates the adapter, so a destroyed device no
+                # longer kills WebGPU for the rest of the page.
+                "--in-process-gpu",
             ]
             # Two software-WebGPU backends, selected by CURIO_WEBGPU_BACKEND:
             #   swiftshader (default) — Chrome's bundled SwiftShader Vulkan.
