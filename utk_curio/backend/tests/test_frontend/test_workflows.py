@@ -450,7 +450,14 @@ class TestWorkflowCanvas:
                 except Exception:
                     pass
                 data_table = node_el.locator("td.MuiTableCell-root")
-                data_table.first.wait_for(state="visible", timeout=30000)
+                # The pool shows data from an upstream node; for autk-grammar
+                # examples that data section parses city-scale PBFs server-side,
+                # which can run well past the default 30s on a busy host.
+                # Env-tunable so the GPU runner can grant a larger budget.
+                data_table.first.wait_for(
+                    state="visible",
+                    timeout=int(os.environ.get("CURIO_E2E_DATAPOOL_TIMEOUT_MS", "30000")),
+                )
                 assert data_table.count() >= 1, (
                     f"DataPool node {node.id} ({node.type}) is missing its "
                     f"data table"
