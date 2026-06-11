@@ -183,8 +183,7 @@
 }
 
 .button,
-.secondaryButton,
-.importButton {
+.secondaryButton {
   min-height: 30px;
   border-radius: 4px;
   padding: 0 10px;
@@ -206,8 +205,7 @@
   background: #fff;
 }
 
-.button:disabled,
-.importButton:disabled {
+.button:disabled {
   cursor: progress;
   opacity: 0.7;
 }
@@ -275,27 +273,7 @@
   border-color: #ecc8c0;
 }
 
-.footer {
-  flex-shrink: 0;
-  padding: 12px 16px 14px;
-  border-top: 1px solid #dedcd6;
-  background: #fbfbf8;
-}
-
-.fileInput {
-  display: none;
-}
-
-.importButton {
-  width: 100%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  border: 0;
-  background: #24252a;
-  color: #fbfcf6;
-}
+/* Footer is rendered by the shared DrawerFooter (packages/publishing). */
 
 @media (max-width: 640px) {
   .drawer {

@@ -1,6 +1,7 @@
 import React, { useCallback, useRef } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faFileImport, faMagnifyingGlass } from "@fortawesome/free-solid-svg-icons";
+import { faFileImport } from "@fortawesome/free-solid-svg-icons";
+import { DrawerFooter } from "../../packages/publishing/DrawerFooter";
 import { DrawerHeader } from "../../packages/publishing/DrawerHeader";
 import tabStyles from "../../packages/publishing/DrawerTabs.module.css";
 import { DatasetCard } from "./DatasetCard";
@@ -25,7 +26,6 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
 }) => {
   const drawerRef = useRef<HTMLElement>(null);
   const {
-    fileInputRef,
     projectId,
     tab,
     setTab,
@@ -229,27 +229,17 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
             </div> */}
           </main>
 
-          <footer className={styles.footer}>
-            <input
-              ref={fileInputRef}
-              className={styles.fileInput}
-              type="file"
-              onChange={(event) => {
-                const file = event.currentTarget.files?.[0];
-                if (file) void onPickImport(file);
-                event.currentTarget.value = "";
-              }}
-            />
-            <button
-              type="button"
-              className={styles.importButton}
-              disabled={busyId === "import"}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <FontAwesomeIcon icon={faFileImport} />{" "}
-              {busyId === "import" ? "Importing..." : "Import dataset"}
-            </button>
-          </footer>
+          <DrawerFooter
+            busy={busyId === "import"}
+            accept={null}
+            label={
+              <>
+                <FontAwesomeIcon icon={faFileImport} />{" "}
+                {busyId === "import" ? "Importing..." : "Import dataset"}
+              </>
+            }
+            onSideload={(file) => void onPickImport(file)}
+          />
         </aside>
       </div>
 
