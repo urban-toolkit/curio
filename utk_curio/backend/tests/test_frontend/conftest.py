@@ -1,4 +1,7 @@
 import os
+import shutil
+import subprocess
+import sys
 
 import pytest
 from playwright.sync_api import Browser, BrowserType
@@ -20,6 +23,41 @@ from .fixtures import _clean_db
 # Re-launching Chromium between workflow classes drops it back to baseline
 # at the cost of ~5 s × workflow_count of startup overhead.
 
+
+def _reap_orphaned_chrome() -> None:
+    """Best-effort kill of Chrome child processes left after ``close()``.
+
+    Under Chrome's *new* headless on the GPU-less Linux CI runner (see the
+    Linux WebGPU branch in the root conftest), software WebGPU runs in a
+    separate **GPU process** that holds the SwiftShader render/compute
+    buffers. ``browser.close()`` tears down the browser process but does
+    not always reap that GPU process (nor the utility/crashpad helpers),
+    so across the ~25 workflow classes their buffers accumulate and the
+    runner OOM-kills the pytest process mid-suite. Reaping the orphans
+    after each class returns the host to baseline.
+
+    CI-only and Linux-only: gated on ``CI`` so it never touches a
+    developer's desktop Chrome. Best-effort — failures are ignored.
+    """
+    if not sys.platform.startswith("linux"):
+        return
+    if not os.environ.get("CI"):
+        return
+    if not shutil.which("pkill"):
+        return
+    for pattern in (
+        "--type=gpu-process",
+        "--type=utility",
+        "chrome_crashpad_handler",
+    ):
+        subprocess.run(
+            ["pkill", "-9", "-f", pattern],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+
 @pytest.fixture(scope="class")
 def browser(
     browser_type: "BrowserType",
@@ -28,6 +66,7 @@ def browser(
     launched = browser_type.launch(**browser_type_launch_args)
     yield launched
     launched.close()
+    _reap_orphaned_chrome()
 
 # ------------------------------------------------------------------ #
 # Workflow scenario discovery

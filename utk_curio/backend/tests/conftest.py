@@ -262,6 +262,10 @@ def browser_type_launch_args(browser_type_launch_args):
                 "--use-angle=swiftshader",
                 "--enable-features=Vulkan",
                 "--ignore-gpu-blocklist",
+                # The runner's /dev/shm is RAM-backed and small; let Chrome
+                # spill its shared memory to /tmp (disk) instead so the
+                # SwiftShader software-WebGPU buffers don't pin RAM toward OOM.
+                "--disable-dev-shm-usage",
             ]
 
     launch_args = {
