@@ -1,1 +1,20 @@
+# Code owners. Last matching pattern wins. Enforced on PRs to branches with
+# "Require review from Code Owners" enabled (see the main branch protection rule).
+
+# Default: any maintainer may approve.
 * @fabio-miranda @GMMULLER
+
+# CI / deploy workflows (docker-compose.yml + deploy.yml) — @fabio-miranda only.
+/.github/workflows/                                          @fabio-miranda
+
+# The CODEOWNERS file itself — so ownership can't be changed without sign-off.
+/.github/CODEOWNERS                                          @fabio-miranda
+
+# Test harness entry points (DB/browser wiring, the workflow e2e suite).
+/utk_curio/backend/tests/conftest.py                         @fabio-miranda
+/utk_curio/backend/tests/test_frontend/test_workflows.py     @fabio-miranda
+
+# Build / compose stack — prod + CI isolation depend on these.
+/docker-compose.yml                                          @fabio-miranda
+/docker-compose.deploy.yml                                   @fabio-miranda
+/Dockerfile                                                  @fabio-miranda
