@@ -131,8 +131,8 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
       <button
         type="button"
         className={`${styles.cardAvatar} ${formatAvatarClass(dataset.format)} ${styles.cardAvatarButton}`}
-        title={`View ${dataset.title} details`}
-        aria-label={`View ${dataset.title} details`}
+        title={`View ${dataset.title} (${FORMAT_ABBR[dataset.format]}) details`}
+        aria-label={`View ${dataset.title} (${FORMAT_ABBR[dataset.format]}) details`}
         onClick={() => onOpenDetails?.(dataset)}
       >
         {/* {FORMAT_ABBR[dataset.format]} */}
@@ -141,7 +141,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
           className={`${styles.cardIcon} ${formatAvatarClass(dataset.format)} `}
           kind="dataset"
           size="md"
-          title="Dataset" 
+          title={`View ${dataset.title} (${FORMAT_ABBR[dataset.format]}) details`}
         />
       </button>
 
