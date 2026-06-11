@@ -103,7 +103,8 @@ export const PackageCard: React.FC<PackageCardProps> = ({
           ) : null}
         </div>
       </div>
-
+      
+      {/* Actions */}
       <div className={styles.cardAction}>
         {!isInstalled ? (
           <button

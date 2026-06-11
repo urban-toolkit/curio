@@ -51,6 +51,58 @@
     color: var(--curio-text-muted);
 }
 
+.cardSource {
+    margin: 0;
+    font-size: 11px;
+    color: var(--curio-text-muted, #86878c);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.versionBadge {
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--curio-text-muted, #86878c);
+    background: var(--curio-surface-alt, #f0efeb);
+    border-radius: 4px;
+    padding: 0 4px;
+    line-height: 16px;
+}
+
+.cardMetaRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 16px;
+    margin-top: 2px;
+}
+
+.cardMetaText {
+    font-size: 11px;
+    color: var(--curio-text-muted, #86878c);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.connBadge {
+    flex-shrink: 0;
+    border-radius: 8px;
+    background: #f0efeb;
+    color: #74757b;
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+}
+  
 .tagRow {
     display: flex;
     flex-wrap: wrap;

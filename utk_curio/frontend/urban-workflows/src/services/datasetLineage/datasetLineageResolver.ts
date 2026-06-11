@@ -198,7 +198,7 @@ export function selectDatasetUpstreamLineage(
     generatingNode,
     sourceDatasets: [],
     origin: dataset.origin,
-    originLabel: datasetProvenanceLabel(dataset.origin),
+    originLabel: datasetProvenanceLabel(dataset.origin, dataset.format),
   };
 }
 
@@ -273,5 +273,5 @@ export function upstreamOriginCaption(
   dataset: Pick<DatasetCatalogItem, "origin" | "format">,
 ): string {
   const formatLabel = DATASET_FORMAT_LABEL[dataset.format] || dataset.format;
-  return `${datasetProvenanceLabel(dataset.origin)} · ${formatLabel}`;
+  return `${datasetProvenanceLabel(dataset.origin, dataset.format)} · ${formatLabel}`;
 }

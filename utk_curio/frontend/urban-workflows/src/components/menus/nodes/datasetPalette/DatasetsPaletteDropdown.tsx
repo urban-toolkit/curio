@@ -83,7 +83,9 @@ function DatasetRow({ dataset }: { dataset: DatasetCatalogItem }) {
         </div>
 
         <div className={styles.rowMeta}>
-          <span className={styles.typePill}>{datasetProvenanceLabel(dataset.origin)}</span>
+          <span className={styles.typePill}>
+            {datasetProvenanceLabel(dataset.origin, dataset.format)}
+          </span>
 
           {metaParts ? <span className={styles.rowMetaText}>{metaParts}</span> : null}
           {hasConnections ? (

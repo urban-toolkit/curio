@@ -2,20 +2,36 @@ import React from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faThumbtack, faXmark } from "@fortawesome/free-solid-svg-icons";
 import { CatalogKindIcon } from "../../catalog/CatalogKindVisuals";
+import type { CatalogItemKind } from "../../catalog/CatalogKindVisuals";
 import styles from "./DrawerHeader.module.css";
 
 export interface DrawerHeaderProps {
   pinned: boolean;
   onPinToggle: () => void;
   onClose: () => void;
+  /** Catalog item kind shown as the type icon. Defaults to the Node catalog. */
+  kind?: CatalogItemKind;
+  title?: string;
+  titleId?: string;
+  subtitle?: string;
+  closeAriaLabel?: string;
 }
 
 /**
- * Top bar + subtitle block for the Node Catalog drawer.
- * Renders the pin/close controls, the drawer title, a one-line subtitle,
- * and the "compatible with this dataflow" pill.
+ * Top bar + subtitle block shared by the Node Catalog and Data Catalog drawers.
+ * Renders the pin/close controls, the drawer title with its kind icon, and a
+ * one-line subtitle.
  */
-export const DrawerHeader: React.FC<DrawerHeaderProps> = ({ pinned, onPinToggle, onClose }) => (
+export const DrawerHeader: React.FC<DrawerHeaderProps> = ({
+  pinned,
+  onPinToggle,
+  onClose,
+  kind = "package",
+  title = "Node catalog",
+  titleId = "node-catalog-drawer-title",
+  subtitle = "Discover and install nodes that extend Curio.",
+  closeAriaLabel = "Close node catalog drawer",
+}) => (
   <>
     <header className={styles.topBar}>
       <button
@@ -30,16 +46,16 @@ export const DrawerHeader: React.FC<DrawerHeaderProps> = ({ pinned, onPinToggle,
       </button>
 
       <div className={styles.drawerTitleRow}>
-        <CatalogKindIcon kind="package" size="sm" title="Node package catalog" />
-        <h2 id="node-catalog-drawer-title" className={styles.drawerTitle}>
-          Node catalog
+        <CatalogKindIcon kind={kind} size="sm" />
+        <h2 id={titleId} className={styles.drawerTitle}>
+          {title}
         </h2>
       </div>
 
       <button
         type="button"
         className={styles.iconBtn}
-        aria-label="Close node catalog drawer"
+        aria-label={closeAriaLabel}
         onClick={onClose}
       >
         <FontAwesomeIcon icon={faXmark} aria-hidden />
@@ -47,12 +63,7 @@ export const DrawerHeader: React.FC<DrawerHeaderProps> = ({ pinned, onPinToggle,
     </header>
 
     <div className={styles.subtitleBlock}>
-      <p className={styles.subtitle}>Discover and install nodes that extend Curio.</p>
-      {/* <span className={styles.compatPill}>
-        <span className={styles.compatDot} aria-hidden />
-        Compatible with this Curio dataflow
-      </span> */}
+      <p className={styles.subtitle}>{subtitle}</p>
     </div>
   </>
 );
-

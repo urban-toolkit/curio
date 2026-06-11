@@ -74,7 +74,7 @@ function InstalledDatasetRow({
         <span className={styles.installedMeta}>
           {DATASET_FORMAT_LABEL[dataset.format]}
           {" · "}
-          {datasetProvenanceLabel(dataset.origin)}
+          {datasetProvenanceLabel(dataset.origin, dataset.format)}
           {isPublished ? " · Published" : ""}
         </span>
       </div>

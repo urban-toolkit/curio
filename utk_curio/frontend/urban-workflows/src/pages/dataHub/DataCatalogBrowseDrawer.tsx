@@ -125,7 +125,9 @@ export function DataCatalogBrowseDrawer({
         </div>
         <div className={styles.infoRow}>
           <span className={styles.infoRowLabel}>Origin</span>
-          <span className={styles.infoRowValue}>{datasetProvenanceLabel(dataset.origin)}</span>
+          <span className={styles.infoRowValue}>
+            {datasetProvenanceLabel(dataset.origin, dataset.format)}
+          </span>
         </div>
       </div>
 

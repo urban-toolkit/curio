@@ -134,12 +134,21 @@ export const DATASET_ORIGIN_LABEL: Record<DatasetOrigin, string> = {
 /** Binary provenance for chips and filters (maps hub/source_node → imported). */
 export type DatasetProvenanceKind = "computed" | "imported";
 
-export function datasetProvenanceKind(origin: DatasetOrigin): DatasetProvenanceKind {
+export function datasetProvenanceKind(
+  origin: DatasetOrigin,
+  format?: DatasetFormat,
+): DatasetProvenanceKind {
+  // Parquet files only ever exist as node outputs, so they are always
+  // computed even when the catalog entry was installed (imported/hub origin).
+  if (format === "parquet") return "computed";
   return origin === "computed" ? "computed" : "imported";
 }
 
-export function datasetProvenanceLabel(origin: DatasetOrigin): string {
-  return datasetProvenanceKind(origin) === "computed" ? "Computed" : "Imported";
+export function datasetProvenanceLabel(
+  origin: DatasetOrigin,
+  format?: DatasetFormat,
+): string {
+  return datasetProvenanceKind(origin, format) === "computed" ? "Computed" : "Imported";
 }
 
 /** True when the dataset is listed in the committed catalog (``hub``) or marked published from a project. */
@@ -177,7 +186,7 @@ export function sanitizePublisherLabel(raw: string | null | undefined): string {
 
 /** Subtitle under the title on dataset cards / browse rows — only Imported vs Computed. */
 export function datasetListSourceCaption(dataset: DatasetCatalogItem): string {
-  return datasetProvenanceLabel(dataset.origin);
+  return datasetProvenanceLabel(dataset.origin, dataset.format);
 }
 
 export const DATASET_FORMAT_LABEL: Record<DatasetFormat, string> = {

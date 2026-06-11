@@ -7,9 +7,10 @@ import {
 import {
   CatalogFormatBadge,
   CatalogItemRowHeader,
+  CatalogKindIcon,
 } from "../../catalog/CatalogKindVisuals";
 import { CatalogPublishPill } from "../../packages/CatalogPublishPill";
-import styles from "./DatasetCard.module.css";
+import styles from "../../packages/publishing/PackageCard.module.css";
 
 // ── Version helper ───────────────────────────────────────────────────────────
 
@@ -106,14 +107,17 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
   const tags = dataset.tags.length > 0 ? dataset.tags.slice(0, 2) : [];
 
   return (
-    <article
-      className={`${styles.card} ${draggable ? styles.cardDraggable : ""}`}
+    <article className={styles.card}
       draggable={draggable}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
     >
       {/* Left accent bar */}
-      <div className={`${styles.cardAccent} ${formatAccentClass(dataset.format)}`} />
+      {/*<div className={`${styles.cardAccent} ${formatAccentClass(dataset.format)}`} />*/}
+
+      <div className={styles.cardIcon}>
+        <CatalogKindIcon kind="dataset" size="md" title="Dataset" />
+      </div>
 
       {/* Body */}
       <div className={styles.cardBody}>

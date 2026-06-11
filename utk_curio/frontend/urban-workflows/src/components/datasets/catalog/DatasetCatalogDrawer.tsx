@@ -1,14 +1,16 @@
 import React, { useCallback, useRef } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faFileImport, faThumbtack, faXmark } from "@fortawesome/free-solid-svg-icons";
-import { CatalogKindIcon } from "../../catalog/CatalogKindVisuals";
-import type { DatasetSortMode } from "../../../services/datasetCatalog";
+import { faFileImport, faMagnifyingGlass } from "@fortawesome/free-solid-svg-icons";
+import { DrawerHeader } from "../../packages/publishing/DrawerHeader";
+import tabStyles from "../../packages/publishing/DrawerTabs.module.css";
 import { DatasetCard } from "./DatasetCard";
 import { DatasetDetailModal } from "./DatasetDetailModal";
 import { InstalledDatasetsList } from "./InstalledDatasetsList";
 import { TAB_LABEL } from "./datasetCatalogDrawerTypes";
 import { useDatasetCatalogDrawer } from "./useDatasetCatalogDrawer";
 import styles from "./DatasetCatalogDrawer.module.css";
+import { PackageSearchRow } from "components/packages/publishing/PackageSearchRow";
+import { SortMode } from "components/packages/publishing/packageTypes";
 
 export interface DatasetCatalogDrawerProps {
   presented: boolean;
@@ -86,83 +88,66 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
           tabIndex={-1}
           onTransitionEnd={handleDrawerTransitionEnd}
         >
-          <header className={styles.header}>
+          <DrawerHeader
+            pinned={pinned}
+            onPinToggle={() => setPinned((v) => !v)}
+            onClose={onRequestClose}
+            kind="dataset"
+            title="Data Catalog"
+            titleId="dataset-catalog-title"
+            subtitle="Datasets available to this dataflow."
+            closeAriaLabel="Close data catalog drawer"
+          />
+
+          <PackageSearchRow
+            search={search}
+            sort={sort as SortMode}
+            onSearchChange={(value) => startUiTransition(() => setSearch(value))}
+            onSortChange={setSort as (value: SortMode) => void}
+          />
+
+          <nav className={tabStyles.tabs} aria-label="Data catalog sections">
             <button
               type="button"
-              className={`${styles.pinButton} ${pinned ? styles.pinButtonActive : ""}`}
-              aria-label={pinned ? "Unpin drawer" : "Pin drawer open"}
-              aria-pressed={pinned}
-              title={pinned ? "Unpin drawer" : "Pin drawer (scrim won't close)"}
-              onClick={() => setPinned((v) => !v)}
-            >
-              <FontAwesomeIcon icon={faThumbtack} aria-hidden />
-            </button>
-            <div className={styles.titleBlock}>
-              <div className={styles.titleHeading}>
-                <CatalogKindIcon kind="dataset" size="sm" title="Dataset catalog" />
-                <h2 id="dataset-catalog-title" className={styles.title}>
-                  Data Catalog
-                </h2>
-              </div>
-              <p className={styles.subtitle}>Datasets available to this dataflow.</p>
-            </div>
-            <button className={styles.closeButton} type="button" onClick={onRequestClose} aria-label="Close">
-              <FontAwesomeIcon icon={faXmark} />
-            </button>
-          </header>
-
-          <div className={styles.searchBar}>
-            <input
-              className={styles.searchInput}
-              type="search"
-              placeholder="Search datasets, sources..."
-              value={search}
-              onChange={(event) => {
-                const value = event.target.value;
-                startUiTransition(() => setSearch(value));
-              }}
-            />
-            <select
-              className={styles.sortSelect}
-              value={sort}
-              aria-label="Sort datasets"
-              onChange={(event) => setSort(event.target.value as DatasetSortMode)}
-            >
-              <option value="recent">Sort: New</option>
-              <option value="name">Sort: Name</option>
-            </select>
-          </div>
-
-          <div className={styles.tabs}>
-            <button
-              type="button"
-              className={`${styles.tab} ${tab === "featured" ? styles.tabActive : ""}`}
+              className={`${tabStyles.tab} ${tab === "featured" ? tabStyles.tabActive : ""}`}
               onClick={() => startUiTransition(() => setTab("featured"))}
             >
               Featured
             </button>
             <button
               type="button"
-              className={`${styles.tab} ${tab === "browse" ? styles.tabActive : ""}`}
+              className={`${tabStyles.tab} ${tab === "browse" ? tabStyles.tabActive : ""}`}
               onClick={() => startUiTransition(() => setTab("browse"))}
             >
               Browse all
             </button>
             <button
               type="button"
-              className={`${styles.tab} ${tab === "installed" ? styles.tabActive : ""}`}
+              className={`${tabStyles.tab} ${tab === "installed" ? tabStyles.tabActive : ""}`}
               onClick={() => startUiTransition(() => setTab("installed"))}
             >
-              Installed <span>{tabInstalledCount}</span>
+              Installed
+              {tabInstalledCount > 0 ? (
+                <span className={`${tabStyles.tabBadge} ${tabStyles.tabBadgeDark}`}>
+                  {tabInstalledCount}
+                </span>
+              ) : null}
             </button>
             <button
               type="button"
-              className={`${styles.tab} ${tab === "computed" ? styles.tabActive : ""}`}
+              className={`${tabStyles.tab} ${tab === "computed" ? tabStyles.tabActive : ""} ${
+                tabComputedCount === 0 ? tabStyles.tabMuted : ""
+              }`}
               onClick={() => startUiTransition(() => setTab("computed"))}
             >
-              Computed <span>{tabComputedCount}</span>
+              Computed
+              {tabComputedCount > 0 ? (
+                <span className={`${tabStyles.tabBadge} ${tabStyles.tabBadgeDark}`}>
+                  {tabComputedCount}
+                </span>
+              ) : null}
             </button>
-          </div>
+          </nav>
 
           <main className={styles.content}>
             {catalog.error ? <div className={styles.error}>{catalog.error}</div> : null}
@@ -235,13 +220,13 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
                 </div>
               </>
             )}
-            <div className={styles.assistNote}>
+            {/* <div className={styles.assistNote}>
               <strong>Shared dataflow environment</strong>
               <span>
                 Drag a dataset onto a loader node to fill path, schema, ports, and required loader
                 code.
               </span>
-            </div>
+            </div> */}
           </main>
 
           <footer className={styles.footer}>

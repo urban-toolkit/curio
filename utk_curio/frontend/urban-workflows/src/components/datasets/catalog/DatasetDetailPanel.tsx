@@ -129,7 +129,7 @@ const UpstreamCards: React.FC<{
         <div className={styles.hubSourceCard}>
           <strong>Installed from Data Catalog</strong>
           <span>
-            {dataset.sourceLabel || datasetProvenanceLabel(dataset.origin)} · v1
+            {dataset.sourceLabel || datasetProvenanceLabel(dataset.origin, dataset.format)} · v1
           </span>
         </div>
       ) : null}
@@ -336,7 +336,9 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
               <h1>{dataset.title}</h1>
               <div className={styles.inspectorMeta}>
                 <span className={styles.installedBadge}>
-                  {dataset.installed ? "Installed" : datasetProvenanceLabel(dataset.origin)}
+                  {dataset.installed
+                    ? "Installed"
+                    : datasetProvenanceLabel(dataset.origin, dataset.format)}
                 </span>
                 <span className={formatClass(dataset.format, styles)}>{DATASET_FORMAT_LABEL[dataset.format]}</span>
                 {countLabel ? <span>{countLabel}</span> : null}
