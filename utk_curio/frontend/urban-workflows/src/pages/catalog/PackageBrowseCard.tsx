@@ -1,5 +1,6 @@
 import React from "react";
 import { PackagePayload } from "../../api/packagesApi";
+import { CatalogItemStripHeader } from "../../components/catalog/CatalogKindVisuals";
 import { CatalogPublishPill } from "../../components/packages/CatalogPublishPill";
 import { primaryCategory } from "../../components/packages/publishing/packageUtils";
 import styles from "./PackageBrowseCard.module.css";
@@ -79,11 +80,16 @@ export const PackageBrowseCard: React.FC<PackageBrowseCardProps> = ({
       }}
     >
       <div className={`${styles.cardStrip} ${styles[`strip_${strip}`]}`}>
-        <span className={styles.kindBadge}>{cat}</span>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {isInstalled && <span className={styles.stripBadge}>✓ DEFAULTS</span>}
-          {selected ? <span className={styles.selectedDot} /> : null}
-        </div>
+        <CatalogItemStripHeader
+          kind="package"
+          badge={<span className={styles.kindBadge}>{cat}</span>}
+          trailing={
+            <>
+              {isInstalled ? <span className={styles.stripBadge}>✓ DEFAULTS</span> : null}
+              {selected ? <span className={styles.selectedDot} /> : null}
+            </>
+          }
+        />
       </div>
 
       <div className={styles.cardBody}>

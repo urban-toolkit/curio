@@ -208,7 +208,7 @@
 
 .titleRow {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 12px;
   margin-bottom: 12px;
 }
@@ -500,11 +500,10 @@
 
 /* Colored top strip */
 .cardStrip {
-  height: 28px;
+  min-height: 32px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 12px;
+  padding: 4px 12px;
   flex-shrink: 0;
 }
 
@@ -782,7 +781,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 50px;
+  gap: 12px;
+  min-height: 50px;
   background: #FAFAFA;
   border-bottom: 1px solid #EBEBEB;
   padding: 0 20px;
@@ -794,6 +794,17 @@
   font-size: 13px;
   font-weight: 700;
   color: #1E1F23;
+}
+
+.drawerKindHero {
+  margin: 16px 20px 0;
+  height: 112px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f5f6f8;
+  flex-shrink: 0;
 }
 
 .drawerClose {

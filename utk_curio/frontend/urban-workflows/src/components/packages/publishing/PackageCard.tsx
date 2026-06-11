@@ -1,23 +1,13 @@
 import React from "react";
 import { PackagePayload } from "../../../api/packagesApi";
+import {
+  CatalogCategoryBadge,
+  CatalogItemRowHeader,
+  CatalogKindIcon,
+} from "../../catalog/CatalogKindVisuals";
 import { CatalogPublishPill } from "../CatalogPublishPill";
-import { packageInitial, primaryCategory } from "./packageUtils";
+import { primaryCategory } from "./packageUtils";
 import styles from "./PackageCard.module.css";
-
-/** CSS class variants cycled deterministically per package dirName. */
-const CARD_ICON_VARIANTS = [
-  styles.cardIconWarm,
-  styles.cardIconCool,
-  styles.cardIconViolet,
-] as const;
-
-function iconVariantForPack(dirName: string): string {
-  let hash = 0;
-  for (let i = 0; i < dirName.length; i++) {
-    hash = (hash + dirName.charCodeAt(i)) % CARD_ICON_VARIANTS.length;
-  }
-  return CARD_ICON_VARIANTS[hash]!;
-}
 
 export interface PackageCardProps {
   pkg: PackagePayload;
@@ -78,13 +68,19 @@ export const PackageCard: React.FC<PackageCardProps> = ({
   //     package isn't read-only — show the "Publish" button.
   const showPublishPill = isPublished === true || showPublishButton;
 
+  const cat = primaryCategory(pkg);
+
   return (
     <article className={styles.card}>
-      <div className={`${styles.cardIcon} ${iconVariantForPack(pkg.dirName)}`}>
-        {packageInitial(pkg.name)}
+      <div className={styles.cardIcon}>
+        <CatalogKindIcon kind="package" size="md" title="Node package" />
       </div>
 
       <div className={styles.cardBody}>
+        <CatalogItemRowHeader
+          kind="package"
+          badge={<CatalogCategoryBadge label={cat} />}
+        />
         <h3 className={styles.cardTitle}>{pkg.name}</h3>
         <p className={styles.cardMeta}>
           {pkg.publisher || pkg.packageId} · v{pkg.version}
@@ -94,7 +90,7 @@ export const PackageCard: React.FC<PackageCardProps> = ({
           <span className={styles.tag}>
             {pkg.templates.length} node{pkg.templates.length === 1 ? "" : "s"}
           </span>
-          <span className={styles.tag}>{primaryCategory(pkg)}</span>
+          <span className={styles.tag}>{cat}</span>
           {(pkg.channel ?? "stable") !== "stable" ? (
             <span className={`${styles.tag} ${styles.tagChannel}`} title={`Release channel: ${pkg.channel}`}>
               {pkg.channel}

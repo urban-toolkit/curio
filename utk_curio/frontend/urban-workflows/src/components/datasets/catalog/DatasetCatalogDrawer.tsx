@@ -1,6 +1,7 @@
 import React, { useCallback, useRef } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faFileImport, faThumbtack, faXmark } from "@fortawesome/free-solid-svg-icons";
+import { CatalogKindIcon } from "../../catalog/CatalogKindVisuals";
 import type { DatasetSortMode } from "../../../services/datasetCatalog";
 import { DatasetCard } from "./DatasetCard";
 import { DatasetDetailModal } from "./DatasetDetailModal";
@@ -97,9 +98,12 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
               <FontAwesomeIcon icon={faThumbtack} aria-hidden />
             </button>
             <div className={styles.titleBlock}>
-              <h2 id="dataset-catalog-title" className={styles.title}>
-                Data Catalog
-              </h2>
+              <div className={styles.titleHeading}>
+                <CatalogKindIcon kind="dataset" size="sm" title="Dataset catalog" />
+                <h2 id="dataset-catalog-title" className={styles.title}>
+                  Data Catalog
+                </h2>
+              </div>
               <p className={styles.subtitle}>Datasets available to this dataflow.</p>
             </div>
             <button className={styles.closeButton} type="button" onClick={onRequestClose} aria-label="Close">

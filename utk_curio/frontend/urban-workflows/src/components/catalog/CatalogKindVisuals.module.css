@@ -1,0 +1,186 @@
+/* Shared type icons — aligned with palette menus (faDatabase / faCube). */
+
+.kindIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 8px;
+  line-height: 1;
+}
+
+.kindIcon_dataset,
+.kindIcon_package {
+  background: #eceef2;
+  color: #1e1f23;
+}
+
+.size_sm {
+  width: 22px;
+  height: 22px;
+  font-size: 11px;
+  border-radius: 6px;
+}
+
+.size_md {
+  width: 36px;
+  height: 36px;
+  font-size: 16px;
+}
+
+.size_lg {
+  width: 48px;
+  height: 48px;
+  font-size: 22px;
+  border-radius: 10px;
+}
+
+/* Colored card strip header (browse cards) */
+.stripRoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.stripLeading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.stripTypeIcon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.stripKindLabel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.92);
+  flex-shrink: 0;
+}
+
+.stripDivider {
+  width: 1px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.28);
+  flex-shrink: 0;
+}
+
+.stripBadgeSlot {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.stripTrailing {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Drawer / inline title row with kind icon */
+.titleWithKind {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.drawerTitleText {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e1f23;
+}
+
+/* Compact list-row header (drawer cards, installed rows — palette row parity) */
+.rowHeader {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.rowHeaderButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.rowHeaderButton:hover .formatBadge {
+  box-shadow: 0 0 0 1px rgba(47, 48, 52, 0.12);
+}
+
+.formatBadge {
+  flex-shrink: 0;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+}
+
+.formatBadge_geojson {
+  background: #e3f4eb;
+  color: #2d7a4f;
+}
+
+.formatBadge_csv {
+  background: #e0eaf8;
+  color: #2a5fa0;
+}
+
+.formatBadge_json {
+  background: #ece4f8;
+  color: #5c3fa0;
+}
+
+.formatBadge_parquet {
+  background: #fdf0dc;
+  color: #a06a10;
+}
+
+.formatBadge_geotiff {
+  background: #ddf4f6;
+  color: #1a8a9a;
+}
+
+.formatBadge_shp {
+  background: #f0e8e2;
+  color: #7a4f30;
+}
+
+.categoryBadge {
+  flex-shrink: 0;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: #eceef2;
+  color: #1e1f23;
+  line-height: 1.3;
+}

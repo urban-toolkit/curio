@@ -31,20 +31,20 @@
   cursor: grabbing;
 }
 
-.installedDot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--curio-accent-mint-fg, #2f8f4a);
-  flex-shrink: 0;
-}
-
 .installedBody {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.installedHeader {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
 }
 
 .installedName {

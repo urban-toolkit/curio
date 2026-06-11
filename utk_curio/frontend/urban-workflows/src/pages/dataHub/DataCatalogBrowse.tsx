@@ -15,6 +15,7 @@ import {
 } from "../../services/datasetCatalog";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { useToastContext } from "../../providers/ToastProvider";
+import { CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
 import { DataCatalogBrowseCard } from "./DataCatalogBrowseCard";
 import { DataCatalogBrowseDrawer } from "./DataCatalogBrowseDrawer";
 import {
@@ -142,6 +143,7 @@ export const DataCatalogBrowse: React.FC = () => {
         <section className={styles.browseHeader}>
           <p className={styles.crumb}>Data Catalog</p>
           <div className={styles.titleRow}>
+            <CatalogKindIcon kind="dataset" size="md" title="Dataset catalog" />
             <h1>Data Catalog</h1>
             <span className={styles.titleCount}>{catalog.items.length}</span>
           </div>

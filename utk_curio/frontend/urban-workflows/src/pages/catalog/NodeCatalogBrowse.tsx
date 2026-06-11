@@ -4,6 +4,7 @@
 import React from "react";
 import { InstallPermissionsDialog } from "../../components/packages/publishing/InstallPermissionsDialog";
 import type { SortMode } from "../../components/packages/publishing/packageTypes";
+import { CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
 import browseStyles from "./CatalogBrowseLayout.module.css";
 import { PackageBrowseCard } from "./PackageBrowseCard";
 import { PackageBrowseDrawer } from "./PackageBrowseDrawer";
@@ -102,6 +103,7 @@ export const NodeCatalogBrowse: React.FC = () => {
         <section className={browseStyles.browseHeader}>
           <p className={browseStyles.crumb}>Node catalog</p>
           <div className={browseStyles.titleRow}>
+            <CatalogKindIcon kind="package" size="md" title="Node package catalog" />
             <h1>Node catalog</h1>
             <span className={browseStyles.titleCount}>{filtered.length}</span>
           </div>

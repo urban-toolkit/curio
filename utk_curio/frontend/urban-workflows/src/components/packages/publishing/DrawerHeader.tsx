@@ -1,6 +1,7 @@
 import React from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faThumbtack, faXmark } from "@fortawesome/free-solid-svg-icons";
+import { CatalogKindIcon } from "../../catalog/CatalogKindVisuals";
 import styles from "./DrawerHeader.module.css";
 
 export interface DrawerHeaderProps {
@@ -28,9 +29,12 @@ export const DrawerHeader: React.FC<DrawerHeaderProps> = ({ pinned, onPinToggle,
         <FontAwesomeIcon icon={faThumbtack} aria-hidden />
       </button>
 
-      <h2 id="node-catalog-drawer-title" className={styles.drawerTitle}>
-        Node catalog
-      </h2>
+      <div className={styles.drawerTitleRow}>
+        <CatalogKindIcon kind="package" size="sm" title="Node package catalog" />
+        <h2 id="node-catalog-drawer-title" className={styles.drawerTitle}>
+          Node catalog
+        </h2>
+      </div>
 
       <button
         type="button"

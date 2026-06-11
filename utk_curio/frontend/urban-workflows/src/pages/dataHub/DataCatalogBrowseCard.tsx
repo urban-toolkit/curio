@@ -1,4 +1,5 @@
 import React from "react";
+import { CatalogItemStripHeader } from "../../components/catalog/CatalogKindVisuals";
 import { CatalogPublishPill } from "../../components/packages/CatalogPublishPill";
 import { formatDatasetLocation } from "../../components/datasets/catalog/datasetDetailHelpers";
 import {
@@ -50,11 +51,22 @@ export function DataCatalogBrowseCard({
       }}
     >
       <div className={`${styles.cardStrip} ${styles[`strip_${dataset.format}`] || ""}`}>
-        <span className={styles.cardFormatBadge}>{DATASET_FORMAT_LABEL[dataset.format]}</span>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {dataset.installed && <span className={styles.stripBadgePopular}>✓ INSTALLED</span>}
-          {selected && <span className={styles.selectedDot} />}
-        </div>
+        <CatalogItemStripHeader
+          kind="dataset"
+          badge={
+            <span className={styles.cardFormatBadge}>
+              {DATASET_FORMAT_LABEL[dataset.format]}
+            </span>
+          }
+          trailing={
+            <>
+              {dataset.installed ? (
+                <span className={styles.stripBadgePopular}>✓ INSTALLED</span>
+              ) : null}
+              {selected ? <span className={styles.selectedDot} /> : null}
+            </>
+          }
+        />
       </div>
 
       <div className={styles.cardBody}>

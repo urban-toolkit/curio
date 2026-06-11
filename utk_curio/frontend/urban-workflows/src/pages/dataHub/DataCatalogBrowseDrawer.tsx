@@ -1,4 +1,5 @@
 import React from "react";
+import { CatalogDrawerTitle } from "../../components/catalog/CatalogKindVisuals";
 import { formatDatasetLocation } from "../../components/datasets/catalog/datasetDetailHelpers";
 import {
   DATASET_FORMAT_LABEL,
@@ -25,7 +26,7 @@ export function DataCatalogBrowseDrawer({
     return (
       <aside className={styles.browseDrawer}>
         <div className={styles.drawerHeader}>
-          <p className={styles.drawerTitle}>Dataset Details</p>
+          <CatalogDrawerTitle kind="dataset" title="Dataset details" />
           <button className={styles.drawerClose} type="button">
             ✕
           </button>
@@ -43,7 +44,7 @@ export function DataCatalogBrowseDrawer({
   return (
     <aside className={styles.browseDrawer}>
       <div className={styles.drawerHeader}>
-        <p className={styles.drawerTitle}>Dataset Details</p>
+        <CatalogDrawerTitle kind="dataset" title="Dataset details" />
         <button className={styles.drawerClose} type="button" aria-label="Close">
           ✕
         </button>

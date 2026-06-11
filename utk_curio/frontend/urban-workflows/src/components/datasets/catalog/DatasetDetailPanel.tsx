@@ -17,10 +17,9 @@ import {
   type DatasetLineageNodeUsageRef,
   type LineageStatus,
 } from "../../../services/datasetLineage";
+import { CatalogKindIcon } from "../../catalog/CatalogKindVisuals";
 import {
   datasetCount,
-  datasetIconVariant,
-  datasetInitials,
   formatBytes,
   formatClass,
   relativeTime,
@@ -247,7 +246,6 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
     return <p className={styles.loading}>Dataset not found.</p>;
   }
 
-  const iconVariant = datasetIconVariant(dataset);
   const countLabel = datasetCount(dataset);
   const tags = dataset.tags.length > 0 ? dataset.tags : [dataset.format];
   const { consumingNodes } = lineage.downstream;
@@ -333,9 +331,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
 
         <div className={styles.headerMain}>
           <div className={styles.titleBlock}>
-            <span className={`${styles.datasetIcon} ${styles[`icon_${iconVariant}`]}`}>
-              {datasetInitials(dataset.title)}
-            </span>
+            <CatalogKindIcon kind="dataset" size="md" title="Dataset" />
             <div>
               <h1>{dataset.title}</h1>
               <div className={styles.inspectorMeta}>

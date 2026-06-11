@@ -6,6 +6,10 @@ import {
   DatasetCatalogItem,
   datasetProvenanceLabel,
 } from "../../../services/datasetCatalog";
+import {
+  CatalogFormatBadge,
+  CatalogItemRowHeader,
+} from "../../catalog/CatalogKindVisuals";
 import { CatalogPublishPill } from "../../packages/CatalogPublishPill";
 import styles from "./InstalledDatasetsList.module.css";
 
@@ -54,9 +58,19 @@ function InstalledDatasetRow({
       onDragStart={(event) => onDragStart?.(dataset, event)}
       onDragEnd={() => onDragEnd?.()}
     >
-      <span className={styles.installedDot} aria-hidden />
       <div className={styles.installedBody}>
-        <span className={styles.installedName}>{dataset.title}</span>
+        <div className={styles.installedHeader}>
+          <CatalogItemRowHeader
+            kind="dataset"
+            badge={
+              <CatalogFormatBadge
+                label={DATASET_FORMAT_LABEL[dataset.format]}
+                formatKey={dataset.format}
+              />
+            }
+          />
+          <span className={styles.installedName}>{dataset.title}</span>
+        </div>
         <span className={styles.installedMeta}>
           {DATASET_FORMAT_LABEL[dataset.format]}
           {" · "}

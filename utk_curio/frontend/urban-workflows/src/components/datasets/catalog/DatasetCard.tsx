@@ -1,9 +1,13 @@
 import React from "react";
 import {
+  DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
-  DatasetFormat,
   datasetListSourceCaption,
 } from "../../../services/datasetCatalog";
+import {
+  CatalogFormatBadge,
+  CatalogItemRowHeader,
+} from "../../catalog/CatalogKindVisuals";
 import { CatalogPublishPill } from "../../packages/CatalogPublishPill";
 import styles from "./DatasetCard.module.css";
 
@@ -18,20 +22,7 @@ function datasetVersion(dirName?: string | null): string | null {
 
 // ── Format helpers ───────────────────────────────────────────────────────────
 
-const FORMAT_ABBR: Record<DatasetFormat, string> = {
-  geojson: "GeoJSON",
-  csv: "CSV",
-  json: "JSON",
-  parquet: "Parquet",
-  geotiff: "GeoTIFF",
-  shp: "SHP",
-};
-
-function formatAvatarClass(format: DatasetFormat): string {
-  return styles[`avatar_${format}` as keyof typeof styles] ?? "";
-}
-
-function formatAccentClass(format: DatasetFormat): string {
+function formatAccentClass(format: DatasetCatalogItem["format"]): string {
   return styles[`accent_${format}` as keyof typeof styles] ?? "";
 }
 
@@ -124,19 +115,19 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
       {/* Left accent bar */}
       <div className={`${styles.cardAccent} ${formatAccentClass(dataset.format)}`} />
 
-      {/* Format avatar */}
-      <button
-        type="button"
-        className={`${styles.cardAvatar} ${formatAvatarClass(dataset.format)} ${styles.cardAvatarButton}`}
-        title={`View ${dataset.title} details`}
-        aria-label={`View ${dataset.title} details`}
-        onClick={() => onOpenDetails?.(dataset)}
-      >
-        {FORMAT_ABBR[dataset.format]}
-      </button>
-
       {/* Body */}
       <div className={styles.cardBody}>
+        <CatalogItemRowHeader
+          kind="dataset"
+          badge={
+            <CatalogFormatBadge
+              label={DATASET_FORMAT_LABEL[dataset.format]}
+              formatKey={dataset.format}
+            />
+          }
+          onClick={onOpenDetails ? () => onOpenDetails(dataset) : undefined}
+          buttonLabel={`View ${dataset.title} details`}
+        />
         <h3 className={styles.cardTitle}>{dataset.title}</h3>
 
         {sourceCaption ? (

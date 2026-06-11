@@ -1,7 +1,8 @@
 import React from "react";
 import { PackagePayload } from "../../api/packagesApi";
+import { CatalogDrawerTitle, CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
 import { CatalogPublishPill } from "../../components/packages/CatalogPublishPill";
-import { packageInitial, primaryCategory } from "../../components/packages/publishing/packageUtils";
+import { primaryCategory } from "../../components/packages/publishing/packageUtils";
 import browseStyles from "./CatalogBrowseLayout.module.css";
 
 function relativeFromMs(ms?: number): string {
@@ -46,7 +47,7 @@ export const PackageBrowseDrawer: React.FC<PackageBrowseDrawerProps> = ({
     return (
       <aside className={browseStyles.browseDrawer}>
         <div className={browseStyles.drawerHeader}>
-          <p className={browseStyles.drawerTitle}>Package details</p>
+          <CatalogDrawerTitle kind="package" title="Package details" />
           <button className={browseStyles.drawerClose} type="button">✕</button>
         </div>
         <div className={browseStyles.drawerEmpty}>Select a package to see details</div>
@@ -61,26 +62,12 @@ export const PackageBrowseDrawer: React.FC<PackageBrowseDrawerProps> = ({
   return (
     <aside className={browseStyles.browseDrawer}>
       <div className={browseStyles.drawerHeader}>
-        <p className={browseStyles.drawerTitle}>Package details</p>
+        <CatalogDrawerTitle kind="package" title="Package details" />
         <button className={browseStyles.drawerClose} type="button" aria-label="Close">✕</button>
       </div>
 
-      <div
-        style={{
-          margin: "16px 20px 0",
-          height: 112,
-          borderRadius: 8,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 36,
-          fontWeight: 700,
-          color: "#1E1F23",
-          background: "#F0F0F0",
-          flexShrink: 0,
-        }}
-      >
-        {packageInitial(pkg.name)}
+      <div className={browseStyles.drawerKindHero}>
+        <CatalogKindIcon kind="package" size="lg" title="Node package" />
       </div>
 
       <div className={browseStyles.drawerDatasetName}>
