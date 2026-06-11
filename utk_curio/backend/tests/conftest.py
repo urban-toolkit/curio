@@ -254,28 +254,39 @@ def browser_type_launch_args(browser_type_launch_args):
         # software adapter (Dawn over SwiftShader's Vulkan ICD).
         if headless:
             headless = False  # prevent Playwright's old --headless
-            base_args = [
+            # Flags common to both software backends.
+            common = [
                 "--headless=new",
                 "--enable-unsafe-webgpu",
-                "--enable-unsafe-swiftshader",
-                "--use-webgpu-adapter=swiftshader",
-                "--use-angle=swiftshader",
-                "--enable-features=Vulkan",
                 "--ignore-gpu-blocklist",
                 # The runner's /dev/shm is RAM-backed and small; let Chrome
                 # spill its shared memory to /tmp (disk) instead so the
-                # SwiftShader software-WebGPU buffers don't pin RAM toward OOM.
+                # software-WebGPU buffers don't pin RAM toward OOM.
                 "--disable-dev-shm-usage",
-                # SwiftShader software *compute* (e.g. the shadow/road-table
-                # passes in examples 06/07) is far slower than hardware and
-                # overruns Chrome's GPU watchdog, which then kills the GPU
-                # process mid-compute -> "device lost: external Instance" and a
-                # renderer that can't re-acquire an adapter. Disable the
-                # watchdog so slow software compute runs to completion, and
-                # don't let Chrome give up respawning the GPU process.
+                # Software compute (e.g. the shadow/road-table passes in
+                # examples 06/07) is far slower than hardware; keep the GPU
+                # watchdog from killing the process mid-compute, and don't let
+                # Chrome give up respawning the GPU process on a crash.
                 "--disable-gpu-watchdog",
                 "--disable-gpu-process-crash-limit",
+                "--enable-features=Vulkan",
             ]
+            # Two software-WebGPU backends, selected by CURIO_WEBGPU_BACKEND:
+            #   swiftshader (default) — Chrome's bundled SwiftShader Vulkan.
+            #     Renders maps fine but its GPU process crashes on the compute
+            #     shaders in 06/07 ("device lost: external Instance").
+            #   vulkan — Mesa lavapipe system Vulkan (installed in CI, pinned
+            #     via VK_ICD_FILENAMES). A more conformant software Vulkan that
+            #     should survive the compute passes SwiftShader crashes on.
+            backend = os.environ.get("CURIO_WEBGPU_BACKEND", "swiftshader")
+            if backend == "vulkan":
+                base_args = common + ["--use-angle=vulkan"]
+            else:
+                base_args = common + [
+                    "--enable-unsafe-swiftshader",
+                    "--use-webgpu-adapter=swiftshader",
+                    "--use-angle=swiftshader",
+                ]
 
     launch_args = {
         **browser_type_launch_args,
