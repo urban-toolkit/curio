@@ -59,6 +59,29 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(30, 31, 35, 0.18) transparent;
+}
+
+.tableWrap::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.tableWrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tableWrap::-webkit-scrollbar-thumb {
+  background: rgba(30, 31, 35, 0.18);
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+.tableWrap:hover::-webkit-scrollbar-thumb {
+  background: rgba(30, 31, 35, 0.28);
+  background-clip: padding-box;
 }
 
 .headRow,
