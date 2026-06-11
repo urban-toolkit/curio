@@ -188,9 +188,8 @@ jobs:
           SAMPLER_PID=$!
           trap "kill $SAMPLER_PID 2>/dev/null || true" EXIT
           # DIAGNOSTIC (temporary): Firefox + lavapipe on the 2 GPU-compute
-          # examples (06/07) that crash Chrome's SwiftShader. Install the
-          # Firefox browser here (playwright pip is available at this point).
-          python -m playwright install --with-deps firefox
+          # examples (06/07) that crash Chrome's SwiftShader. test.sh installs
+          # the Firefox browser itself (playwright pip is available there).
           bash scripts/test.sh --e2e-only --use-existing \
             --workflows 06-autark-what-if-shadow-study.json,07-autark-gpu-shader.json \
             --allure-dir "$GITHUB_WORKSPACE/allure-results"

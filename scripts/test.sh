@@ -203,6 +203,11 @@ if [[ $RUN_E2E -eq 1 ]]; then
   echo ""
   echo "==> Installing Playwright browser..."
   python -m playwright install chromium
+  # DIAG: also install Firefox when the suite is routed through it, to test
+  # WebGPU compute on Firefox's wgpu (over system Vulkan / lavapipe).
+  if [[ "${PYTEST_ADDOPTS:-}" == *"--browser firefox"* ]]; then
+    python -m playwright install --with-deps firefox
+  fi
 
   PYTEST_ARGS="-v"
   [[ $HEADED -eq 1 ]]    && PYTEST_ARGS="$PYTEST_ARGS --headed"
