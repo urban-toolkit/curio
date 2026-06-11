@@ -165,10 +165,6 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
     () => rows.filter((item) => isUserInstalledDataset(item)),
     [rows],
   );
-  const projectRows = useMemo(
-    () => rows.filter((item) => isProjectSessionDataset(item)),
-    [rows],
-  );
 
   const total = rows.length;
 
@@ -220,17 +216,6 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
                 <div className={styles.sectionEmpty}>No installed datasets yet.</div>
               )}
             </PaletteAccordion>
-
-            {/* <PaletteAccordion
-              title="Project datasets"
-              count={projectRows.length}
-            >
-              {projectRows.length > 0 ? (
-                projectRows.map((dataset) => <DatasetRow key={`${dataset.origin}:${dataset.id}`} dataset={dataset} />)
-              ) : (
-                <div className={styles.sectionEmpty}>No live session outputs yet.</div>
-              )}
-            </PaletteAccordion> */}
           </div>
           <div className={styles.footer}>
             <button
