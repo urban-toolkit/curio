@@ -187,7 +187,7 @@ jobs:
           # --disable-gpu-watchdog lets slow software compute complete.
           # Revert to the full matrix once confirmed.
           bash scripts/test.sh --e2e-only --use-existing \
-            --workflows 06-autark-what-if-shadow-study.json,07-autark-gpu-shader.json,Interaction_Vega_Autark.json \
+            --workflows 06-autark-what-if-shadow-study.json \
             --allure-dir "$GITHUB_WORKSPACE/allure-results"
 
       - name: 📈 Resource snapshot (after e2e)

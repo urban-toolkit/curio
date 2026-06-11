@@ -282,9 +282,18 @@ class TestWorkflowCanvas:
         worst case. The old 5-min budget dated from the Overpass era (a remote,
         throttled OSM endpoint), which has since been removed — a node that now
         runs past this budget is hung, not slow, so fail it.
+
+        AUTK_GRAMMAR is the exception: a node may also run a WebGPU *compute*
+        section (e.g. example 06's shadow/sunlight passes). On a real GPU that
+        finishes in seconds, but on the GPU-less CI runner it falls back to
+        Chrome's software WebGPU (SwiftShader), where the same compute is
+        legitimately slow -- not hung. So it gets a generous, env-tunable
+        ceiling (CURIO_E2E_AUTK_TIMEOUT_MS); the high default costs nothing on
+        dev hosts where the node finishes fast.
         """
+        if node.type == "AUTK_GRAMMAR":
+            return int(os.environ.get("CURIO_E2E_AUTK_TIMEOUT_MS", "600000"))
         if node.type in {
-            "AUTK_GRAMMAR",
             "DATA_LOADING",
             "DATA_TRANSFORMATION",
             "COMPUTATION_ANALYSIS",
