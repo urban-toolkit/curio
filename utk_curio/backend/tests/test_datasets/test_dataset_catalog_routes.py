@@ -143,8 +143,6 @@ def test_download_tabular_parquet_exports_as_csv(tmp_path):
 
 def test_download_geo_parquet_exports_as_geojson(tmp_path):
     """A GeoParquet dataset is exported as GeoJSON."""
-    import json
-
     import geopandas as gpd
     from shapely.geometry import Point
 

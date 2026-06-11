@@ -22,6 +22,18 @@ function datasetVersion(dirName?: string | null): string | null {
 }
 
 // ── Format helpers ───────────────────────────────────────────────────────────
+const FORMAT_ABBR: Record<DatasetCatalogItem["format"], string> = {
+  geojson: "GeoJSON",
+  csv: "CSV",
+  json: "JSON",
+  parquet: "Parquet",
+  geotiff: "GeoTIFF",
+  shp: "SHP",
+};
+
+function formatAvatarClass(format: DatasetCatalogItem["format"]): string {
+  return styles[`avatar_${format}` as keyof typeof styles] ?? "";
+}
 
 function formatAccentClass(format: DatasetCatalogItem["format"]): string {
   return styles[`accent_${format}` as keyof typeof styles] ?? "";
@@ -104,7 +116,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
 
   const sourceCaption = datasetListSourceCaption(dataset);
 
-  const tags = dataset.tags.length > 0 ? dataset.tags.slice(0, 2) : [];
+  const tags = dataset.tags.length > 0 ? dataset.tags.slice(0, 2) : [sourceCaption];
 
   return (
     <article className={styles.card}
@@ -113,11 +125,25 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
       onDragEnd={onDragEnd}
     >
       {/* Left accent bar */}
-      {/*<div className={`${styles.cardAccent} ${formatAccentClass(dataset.format)}`} />*/}
+      <div className={`${styles.cardAccent} ${formatAccentClass(dataset.format)}`} />
 
-      <div className={styles.cardIcon}>
-        <CatalogKindIcon kind="dataset" size="md" title="Dataset" />
-      </div>
+      {/* Format avatar */}
+      <button
+        type="button"
+        className={`${styles.cardAvatar} ${formatAvatarClass(dataset.format)} ${styles.cardAvatarButton}`}
+        title={`View ${dataset.title} details`}
+        aria-label={`View ${dataset.title} details`}
+        onClick={() => onOpenDetails?.(dataset)}
+      >
+        {/* {FORMAT_ABBR[dataset.format]} */}
+
+        <CatalogKindIcon 
+          className={`${styles.cardIcon} ${formatAvatarClass(dataset.format)} `}
+          kind="dataset"
+          size="md"
+          title="Dataset" 
+        />
+      </button>
 
       {/* Body */}
       <div className={styles.cardBody}>

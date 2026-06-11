@@ -1,6 +1,7 @@
 /* ── Package card ─────────────────────────────────────────────────────────── */
 
 .card {
+    position: relative;
     display: grid;
     grid-template-columns: 72px 1fr auto;
     gap: 16px;
@@ -205,3 +206,80 @@
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+/* ── Draggable card  ─────────────────────────────────────────────────────────── */
+.cardDraggable {
+  cursor: grab;
+}
+
+.cardDraggable:active {
+  cursor: grabbing;
+}
+
+/* ── Left accent bar ─────────────────────────────────────────────────────────── */
+
+
+.cardAccent {
+  position: absolute;
+  border: 1px solid var(--curio-border);
+  border-radius: var(--curio-radius-lg) 0 0 var(--curio-radius-lg);
+  width: 5px;
+  height: 100%;
+  flex-shrink: 0;
+  background: #d9d7d1;
+}
+
+.accent_geojson  { background: #4caf72; }
+.accent_csv      { background: #5b9bd5; }
+.accent_json     { background: #9b7fda; }
+.accent_parquet  { background: #f5a623; }
+.accent_geotiff  { background: #26c6da; }
+.accent_shp      { background: #a0836a; }
+
+/* ── Format avatar ───────────────────────────────────────────────────────────── */
+
+.cardAvatar {
+  flex-shrink: 0;
+  width: 72px;
+  height: 72px;
+  align-self: center;
+  margin: 10px 0 10px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--curio-radius-md, 5px);
+  padding: 6px 4px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  line-height: 1.2;
+  text-align: center;
+  text-transform: uppercase;
+  word-break: break-all;
+  /* default fallback */
+  background: #f0efeb;
+  color: #5a5b60;
+}
+
+.cardAvatarButton {
+  border: none;
+  cursor: pointer;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+
+.cardAvatarButton:hover {
+  box-shadow: 0 0 0 2px rgba(47, 48, 52, 0.14);
+}
+
+.cardAvatarButton:active {
+  transform: scale(0.97);
+}
+
+/* Format-specific avatar colours (light surface) */
+.avatar_geojson  { background: #e3f4eb !important; color: #2d7a4f; }
+.avatar_csv      { background: #e0eaf8 !important; color: #2a5fa0; }
+.avatar_json     { background: #ece4f8 !important; color: #5c3fa0; }
+.avatar_parquet  { background: #fdf0dc !important; color: #a06a10; }
+.avatar_geotiff  { background: #ddf4f6 !important; color: #1a8a9a; }
+.avatar_shp      { background: #f0e8e2 !important; color: #7a4f30; }
+
