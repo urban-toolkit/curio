@@ -134,14 +134,8 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
         />
         <h3 className={styles.cardTitle}>{dataset.title}</h3>
 
-        {sourceCaption ? (
-          <p className={styles.cardSource}>
-            {sourceCaption}
-            {version ? <span className={styles.versionBadge}>{version}</span> : null}
-          </p>
-        ) : null}
-
         <div className={styles.cardMetaRow}>
+          
           {metaParts ? (
             <span className={styles.cardMetaText}>{metaParts}</span>
           ) : null}
@@ -152,6 +146,9 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
 
         {tags.length > 0 ? (
           <div className={styles.tagRow}>
+            {version ? (
+              <span className={styles.versionBadge}>{version}</span> 
+            ) : null}
             {tags.map((tag) => (
               <span key={tag} className={styles.tag}>{tag}</span>
             ))}

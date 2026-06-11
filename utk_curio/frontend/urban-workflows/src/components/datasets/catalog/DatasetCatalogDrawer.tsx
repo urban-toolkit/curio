@@ -9,9 +9,9 @@ import { DatasetDetailModal } from "./DatasetDetailModal";
 import { InstalledDatasetsList } from "./InstalledDatasetsList";
 import { TAB_LABEL } from "./datasetCatalogDrawerTypes";
 import { useDatasetCatalogDrawer } from "./useDatasetCatalogDrawer";
-import styles from "./DatasetCatalogDrawer.module.css";
 import { PackageSearchRow } from "components/packages/publishing/PackageSearchRow";
 import { SortMode } from "components/packages/publishing/packageTypes";
+import styles from "./DatasetCatalogDrawer.module.css";
 
 export interface DatasetCatalogDrawerProps {
   presented: boolean;
@@ -220,13 +220,6 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
                 </div>
               </>
             )}
-            {/* <div className={styles.assistNote}>
-              <strong>Shared dataflow environment</strong>
-              <span>
-                Drag a dataset onto a loader node to fill path, schema, ports, and required loader
-                code.
-              </span>
-            </div> */}
           </main>
 
           <DrawerFooter

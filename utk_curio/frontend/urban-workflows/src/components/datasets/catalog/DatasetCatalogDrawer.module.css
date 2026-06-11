@@ -25,15 +25,15 @@
 .drawer {
   position: relative;
   z-index: 1;
-  width: min(420px, 100vw);
+  width: min(520px, 100vw);
   height: 100%;
+  background: var(--curio-page-bg);
+  border-left: 1px solid var(--curio-border);
+  box-shadow: var(--curio-shadow-modal);
   display: flex;
   flex-direction: column;
-  color: var(--curio-text-primary, #2f3034);
-  background: #f7f7f4;
-  border-left: 1px solid #d9d7d1;
-  box-shadow: -8px 0 30px rgba(35, 36, 40, 0.18);
-  font-family: var(--curio-font-family, Inter, system-ui, sans-serif);
+  font-family: var(--curio-font-family);
+  color: var(--curio-text-primary);
   outline: none;
   transform: translate3d(100%, 0, 0);
   transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
@@ -72,165 +72,6 @@
   gap: 10px;
 }
 
-.card {
-  display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
-  gap: 10px;
-  border: 1px solid #dedcd6;
-  border-radius: 6px;
-  background: #fff;
-  box-shadow: 0 1px 0 rgba(20, 20, 20, 0.03);
-  padding: 12px;
-  cursor: grab;
-}
-
-.card:active {
-  cursor: grabbing;
-}
-
-.avatar {
-  width: 36px;
-  height: 36px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: #24252a;
-  color: #fbfcf6;
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.cardBody {
-  min-width: 0;
-}
-
-.cardHeader {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.cardTitle {
-  margin: 0 0 3px;
-  color: #313237;
-  font-size: 14px;
-  font-weight: 850;
-  letter-spacing: 0;
-}
-
-.cardSource {
-  margin: 0;
-  color: #86878c;
-  font-size: 11px;
-  line-height: 1.28;
-}
-
-.formatChip {
-  flex-shrink: 0;
-  border-radius: 4px;
-  background: #edf0f4;
-  color: #4f5965;
-  padding: 4px 6px;
-  font-size: 10px;
-  font-weight: 900;
-}
-
-.description {
-  margin: 9px 0 8px;
-  color: #5d5e64;
-  font-size: 12px;
-  line-height: 1.36;
-}
-
-.metaRow,
-.tagRow {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  color: #84858a;
-  font-size: 11px;
-}
-
-.dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #2f8f4a;
-}
-
-.tagRow {
-  margin-top: 8px;
-}
-
-.tagRow span {
-  border-radius: 4px;
-  background: #f0efeb;
-  color: #67686d;
-  padding: 3px 6px;
-  font-size: 10px;
-  font-weight: 800;
-}
-
-.actions {
-  display: flex;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 10px;
-}
-
-.button,
-.secondaryButton {
-  min-height: 30px;
-  border-radius: 4px;
-  padding: 0 10px;
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 850;
-  cursor: pointer;
-}
-
-.button {
-  border: 0;
-  color: #24252a;
-  background: #fbaa69;
-}
-
-.secondaryButton {
-  border: 1px solid #d9d7d1;
-  color: #3f4045;
-  background: #fff;
-}
-
-.button:disabled {
-  cursor: progress;
-  opacity: 0.7;
-}
-
-.assistNote {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 12px;
-  border: 1px solid #d9d7d1;
-  border-radius: 6px;
-  background: #fbfbf8;
-  padding: 12px;
-}
-
-.assistNote strong {
-  color: #34353a;
-  font-size: 12px;
-}
-
-.assistNote span {
-  color: #74757b;
-  font-size: 12px;
-  line-height: 1.38;
-}
 
 .skeletonList {
   display: flex;
