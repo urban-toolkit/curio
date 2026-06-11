@@ -19,18 +19,14 @@ import { InstalledPackageAccordion } from "./InstalledPackageAccordion";
 import { PaletteForkFamily } from "./PaletteForkFamily";
 import { visiblePaletteTriggerPackagesCount, type PackagePaletteGroup } from "./model";
 import { paletteDescriptorBootstrapKey } from "./registryBootstrap";
+import {
+    isToolsPaletteDismissOutsideClick,
+    TOOLS_PALETTE_DROPDOWN_ATTR,
+} from "../toolsPaletteDismiss";
 import packageStyles from "./ToolsMenuPackagePalette.module.css";
 
 function escapeCssAttrToken(coord: string): string {
     return typeof CSS !== "undefined" && typeof CSS.escape === "function" ? CSS.escape(coord) : coord;
-}
-
-/** Clicks on package node header actions should not collapse the open palette panel. */
-function isPackagePaletteDismissOutsideClick(target: EventTarget | null): boolean {
-    if (!(target instanceof Element)) return true;
-    if (target.closest('[data-curio-node-catalog-drawer="true"]')) return false;
-    if (target.closest('[data-curio-package-palette-node-action="true"]')) return false;
-    return true;
 }
 
 export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ groups }: { groups: PackagePaletteGroup[] }) {
@@ -91,7 +87,7 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
         if (!open) return;
         const onDocMouseDown = (ev: MouseEvent) => {
             if (rootRef.current?.contains(ev.target as Node)) return;
-            if (!isPackagePaletteDismissOutsideClick(ev.target)) return;
+            if (!isToolsPaletteDismissOutsideClick(ev.target)) return;
             close();
         };
         document.addEventListener("mousedown", onDocMouseDown, true);
@@ -207,7 +203,12 @@ export const PackagesPaletteDropdown = memo(function PackagesPaletteDropdown({ g
     );
 
     return (
-        <div id="packages-palette" className={packageStyles.packagePaletteRoot} ref={rootRef}>
+        <div
+            id="packages-palette"
+            className={packageStyles.packagePaletteRoot}
+            ref={rootRef}
+            {...{ [TOOLS_PALETTE_DROPDOWN_ATTR]: "true" }}
+        >
             <div className={packageStyles.packagePaletteColumn}>
                 <button
                     type="button"

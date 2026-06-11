@@ -23,6 +23,10 @@ import {
   prefetchDatasetCatalog,
 } from "../../../../services/datasetCatalog";
 import { buildSaveableLiveOutputs } from "../../../../utils/saveOutputDataset";
+import {
+  isToolsPaletteDismissOutsideClick,
+  TOOLS_PALETTE_DROPDOWN_ATTR,
+} from "../toolsPaletteDismiss";
 import styles from "./DatasetsPaletteDropdown.module.css";
 
 function formatAbbreviation(dataset: DatasetCatalogItem): string {
@@ -146,6 +150,7 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
       // newly installed dataset is visible once the drawer is dismissed.
       if (isDatasetCatalogDrawerOpen) return;
       if (rootRef.current?.contains(ev.target as Node)) return;
+      if (!isToolsPaletteDismissOutsideClick(ev.target)) return;
       setOpen(false);
     };
     document.addEventListener("mousedown", onDocMouseDown, true);
@@ -168,7 +173,12 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
   const total = rows.length;
 
   return (
-    <div className={styles.root} ref={rootRef}>
+    <div
+      id="datasets-palette"
+      className={styles.root}
+      ref={rootRef}
+      {...{ [TOOLS_PALETTE_DROPDOWN_ATTR]: "true" }}
+    >
       <div className={styles.column}>
         <button
           type="button"
