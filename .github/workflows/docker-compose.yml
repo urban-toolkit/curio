@@ -36,6 +36,40 @@ jobs:
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
+      - name: 🧹 Reclaim runner disk headroom
+        run: |
+          # Free the large preinstalled toolchains we never use so the 24 GB
+          # swapfile (next step) and the docker build cache have ample disk.
+          # NB: do NOT touch /opt/hostedtoolcache — setup-python lives there.
+          echo "=== before ==="; df -h /
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /usr/local/lib/android \
+            /opt/ghc \
+            /usr/local/share/boost \
+            /usr/local/share/powershell \
+            /usr/share/swift \
+            /opt/hostedtoolcache/CodeQL 2>/dev/null || true
+          sudo docker image prune -af 2>/dev/null || true
+          echo "=== after ==="; df -h /
+
+      - name: 💾 Add swap space
+        run: |
+          # Software WebGPU (SwiftShader) rendering of the heaviest example
+          # (09-heterogeneous-data-linked-views) peaks ~12 GB in the browser
+          # plus a ~6 GB sandbox compute spike, exceeding the 16 GB runner and
+          # tripping the OOM killer. A large swapfile lets the peak survive on
+          # disk (slower, but the 120 min job timeout absorbs it). Replaces the
+          # runner's stock ~4 GB swap with 24 GB → ~40 GB total virtual memory.
+          sudo swapoff -a || true
+          sudo fallocate -l 24G /swapfile \
+            || sudo dd if=/dev/zero of=/swapfile bs=1M count=24576
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          swapon --show
+          free -h
+
       - name: 🔨 Build all service images in parallel
         run: docker compose -p curio build --parallel
 
