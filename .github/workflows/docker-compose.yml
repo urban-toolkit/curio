@@ -154,7 +154,11 @@ jobs:
 
       - name: 🎭 Run e2e tests (full matrix, hardware WebGPU)
         run: |
+          # TEMPORARY: first run scoped to the GPU-compute example 07 to verify
+          # hardware WebGPU works on the runner before the full ~30 min matrix.
+          # Remove --workflows once 07 passes to run the full 01-11 matrix.
           bash scripts/test.sh --e2e-only --use-existing \
+            --workflows 07-autark-gpu-shader.json \
             --allure-dir "$GITHUB_WORKSPACE/allure-results"
 
       - name: 📊 Install Allure CLI
