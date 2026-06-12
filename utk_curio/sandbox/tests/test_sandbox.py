@@ -197,7 +197,7 @@ class TestSandbox(unittest.TestCase):
         from utk_curio.sandbox.app.worker import _worker_init
         from utk_curio.sandbox.util.parsers import save_to_duckdb, load_from_duckdb
         from utk_curio.sandbox.util.db import init_db
-        """ This tests the isolation of sessions. Can one session grab information from another?"""
+        """This tests the isolation of sessions. Can one session grab information from another?"""
         _worker_init()
         init_db()
 
@@ -210,17 +210,7 @@ class TestSandbox(unittest.TestCase):
         # Different session id's cannot accsess information from eachother
         with self.assertRaises(KeyError):
             load_from_duckdb(artifact_id, session_id='1678x145-221f-72fg-rfg2-444333abf2wq')
-
-        # Edge cases may not be nessecary
-        # A session without an id cannot accsess information from a session with an id
-        # with self.assertRaises(KeyError):
-        #     load_from_duckdb(artifact_id, session_id=None)
-
-        # A session with an id cannot accsess information from a session without one
-        # artifact_id = save_to_duckdb(10, 'COMPUTATION_ANALYSIS', session_id=None)
-        # with self.assertRaises(KeyError):
-        #     load_from_duckdb(artifact_id, session_id='1678x145-221f-72fg-rfg2-444333abf2wq')
-
+            
 
 
     @_SKIP_NO_NODE

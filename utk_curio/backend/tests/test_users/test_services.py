@@ -10,6 +10,7 @@ from utk_curio.backend.app.users.services import (
     signin_password,
     signin_shared_guest,
     signup,
+    signin_google,
 )
 
 
@@ -159,3 +160,29 @@ class TestGuestLogin:
         with app.app_context():
             with pytest.raises(AuthError, match="not available"):
                 signin_guest(allowed=False)
+
+
+class TestGoogleSignIn:
+    def test_invalid_google_token_raises(self, app, monkeypatch):
+        """Tests if signin_google gaurds against invalid tokens"""
+        with app.app_context():
+            # The verify_token function of services.GoogleOAuth will return None within this context
+            monkeypatch.setattr(services.GoogleOAuth, "verify_token", lambda self, auth_code: None)
+            with pytest.raises(AuthError, match="Invalid Google token."):
+                signin_google("Invalid Auth Code")
+    
+    def test_google_user_signin(self, app, monkeypatch):
+        with app.app_context():
+            monkeypatch.setattr(
+                services.GoogleOAuth, 
+                "verify_token", 
+                lambda self, code :{
+                    "uid": "google-uid-123",
+                    "email":"alice@example.com",
+                    "name": "Alice"
+                },
+            )
+            result = signin_google("New Auth Token")
+            assert result.user.username == "alice"
+            assert result.token          
+

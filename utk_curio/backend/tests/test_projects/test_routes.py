@@ -165,9 +165,38 @@ def test_ownership_isolation(client, user_and_token, db, tmp_curio):
     db.session.add(s)
     db.session.commit()
 
-    resp = client.get(f"/api/projects/{pid}", headers=_auth("bob-token"))
-    assert resp.status_code == 404
+    read_resp = client.get(f"/api/projects/{pid}", headers=_auth("bob-token"))
+    update_resp = client.put(f"/api/projects/{pid}", data = json.dumps({"name": "Bob's project"}), headers=_auth("bob-token"))
+    delete_resp = client.delete(f"/api/projects/{pid}", headers=_auth("bob-token"))
 
+    assert read_resp.status_code == 404,    f"GET does not respect ownership isolation"
+    assert update_resp.status_code == 404,  f"PUT does not respect ownership isolation"
+    assert delete_resp.status_code == 404,  f"DELETE does not respect ownership isolation"
+
+# Curiously enough, when you add something isn't test to the front of the function name, the test won't run. Why is that?
+def test_put_delete_duplicate_for_missing_project(client, user_and_token, tmp_curio):
+    """Updating, Deleting, or Duplicating a Non-Existant project will return a 404 Error"""
+    _, token = user_and_token
+
+    post_resp = client.put(
+        "/api/projects/00000000-0000-0000-0000-000000000000",
+        data = json.dumps({"name": "Updating the name of a Non-Existant project"}),
+        headers=_auth(token)
+    )
+
+    delete_resp = client.delete(
+        "/api/projects/00000000-0000-0000-0000-000000000000",
+        headers=_auth(token)
+    )
+
+    duplicate_resp = client.post(
+        "/api/projects/00000000-0000-0000-0000-000000000000/duplicate",
+        headers=_auth(token)
+    )
+
+    assert post_resp.status_code == 404, f"The PUT method does not handle non-existent projects as intended"
+    assert delete_resp.status_code == 404, f"The DELETE method does not handle non-existent projects as intended"
+    assert duplicate_resp.status_code == 404, f"The duplicate route does not handle non-existent projects as intended"
 
 # ---------------------------------------------------------------------------
 # /shared — link-based public read
