@@ -6,8 +6,24 @@ import {
   CatalogKindIcon,
 } from "../../catalog/CatalogKindVisuals";
 import { CatalogPublishPill } from "../CatalogPublishPill";
-import { primaryCategory } from "./packageUtils";
+import { packageInitial,primaryCategory } from "./packageUtils";
 import styles from "./PackageCard.module.css";
+
+/** CSS class variants cycled deterministically per package dirName. */
+const CARD_ICON_VARIANTS = [
+  styles.cardIconWarm,
+  styles.cardIconCool,
+  styles.cardIconViolet,
+] as const;
+
+function iconVariantForPack(dirName: string): string {
+  let hash = 0;
+  for (let i = 0; i < dirName.length; i++) {
+    hash = (hash + dirName.charCodeAt(i)) % CARD_ICON_VARIANTS.length;
+  }
+  return CARD_ICON_VARIANTS[hash]!;
+}
+
 
 export interface PackageCardProps {
   pkg: PackagePayload;
@@ -72,8 +88,17 @@ export const PackageCard: React.FC<PackageCardProps> = ({
 
   return (
     <article className={styles.card}>
-      <div className={styles.cardIcon}>
-        <CatalogKindIcon kind="package" size="md" title="Node package" />
+      <div className={`${styles.cardIcon}`}>
+        <CatalogKindIcon
+          className={`${styles.cardIcon} ${styles.cardIconPackage} ${iconVariantForPack(pkg.dirName)} `}
+          kind="package" 
+          size="md"
+          title="Node package" 
+        >
+          <span className={styles.cardIconText}>
+            {packageInitial(pkg.name)}
+          </span>
+        </CatalogKindIcon>
       </div>
 
       <div className={styles.cardBody}>

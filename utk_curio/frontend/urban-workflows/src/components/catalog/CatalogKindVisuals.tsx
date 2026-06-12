@@ -32,6 +32,7 @@ export interface CatalogKindIconProps {
   size?: CatalogKindIconSize;
   className?: string;
   title?: string;
+  children?: React.ReactNode;
 }
 
 export const CatalogKindIcon: React.FC<CatalogKindIconProps> = ({
@@ -39,6 +40,7 @@ export const CatalogKindIcon: React.FC<CatalogKindIconProps> = ({
   size = "md",
   className,
   title,
+  children,
 }) => {
   const meta = CATALOG_KIND_META[kind];
   return (
@@ -54,6 +56,7 @@ export const CatalogKindIcon: React.FC<CatalogKindIconProps> = ({
       title={title ?? meta.label}
       aria-hidden={title ? undefined : true}
     >
+      {children}
       <FontAwesomeIcon icon={meta.icon} />
     </span>
   );

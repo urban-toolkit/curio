@@ -32,6 +32,26 @@
     background: var(--curio-page-bg);
 }
 
+.cardIconWarm {
+    background: var(--curio-accent-peach-bg);
+    color: var(--curio-accent-peach-fg);
+}
+
+.cardIconCool {
+    background: var(--curio-accent-sky-bg);
+    color: var(--curio-accent-sky-fg);
+}
+
+.cardIconViolet {
+    background: var(--curio-accent-lilac-bg);
+    color: var(--curio-accent-lilac-fg);
+}
+
+.cardIconText {
+    font-size: 1.375rem;
+    font-weight: 700;
+}
+
 /* Body */
 
 .cardBody {
