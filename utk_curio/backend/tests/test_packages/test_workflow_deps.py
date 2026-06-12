@@ -1,29 +1,39 @@
 """Integration tests for /api/packages/workflow-deps/{check,install}.
 
-These power the load-time "this dataflow needs X, Y — installing" toast:
-the frontend posts the loaded spec's nodes + lockfile to ``/check`` and
-pipes the reported missing deps into ``/install``. The inline AST scan is
-the part that matters for the bundled examples — e.g. example 09 imports
-pythermalcomfort inside curio.builtin code nodes, so its ``dataflow.packages``
-lockfile is empty and lockfile resolution alone can't see the need.
+A dataflow declares the catalog packages it depends on in its
+``dataflow.packages`` lockfile. On load the frontend posts that lockfile to
+/check to learn which declared packages aren't ready, then installs them via
+/install — installing a package provisions its nodes and its declared python
+libraries. (e.g. example 09 declares ``curio.weather@1``, which brings
+rasterio / pythermalcomfort / rasterstats.)
 """
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
-from utk_curio.backend.app.packages import pip_runner
+from utk_curio.backend.app.packages import routes as packages_routes
+from utk_curio.backend.app.packages import services as packages_services
 
 
 def _auth(token):
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
-def _check(client, token, nodes=None, packages=None):
+def _check(client, token, packages):
     return client.post(
         "/api/packages/workflow-deps/check",
         headers=_auth(token),
-        data=json.dumps({"nodes": nodes or [], "packages": packages or []}),
+        data=json.dumps({"packages": packages}),
+    )
+
+
+def _install(client, token, packages):
+    return client.post(
+        "/api/packages/workflow-deps/install",
+        headers=_auth(token),
+        data=json.dumps({"packages": packages}),
     )
 
 
@@ -31,79 +41,55 @@ def _check(client, token, nodes=None, packages=None):
 # POST /workflow-deps/check
 # ---------------------------------------------------------------------------
 
-def test_check_reports_missing_inline_import(client, user_and_token, tmp_curio):
-    """A node importing a nonexistent module lands in ``missing``; one
-    importing a framework lib (flask is always present — the backend runs
-    on it) lands in ``satisfied``; stdlib imports are filtered out."""
+def test_check_flags_declared_package_not_in_store(client, user_and_token, tmp_curio):
+    """A declared package absent from the user's store needs installing."""
     _, token = user_and_token
-    nodes = [
-        {"content": "import zzz_not_a_real_package_qq\nreturn 1"},
-        {"content": "import flask\nimport os\nreturn 2"},
-    ]
-    resp = _check(client, token, nodes=nodes)
+    resp = _check(client, token, ["curio.weather@1"])
     assert resp.status_code == 200
-    body = resp.get_json()
-    missing_names = {m["name"] for m in body["missing"]}
-    assert "zzz_not_a_real_package_qq" in missing_names
-    assert "flask" in body["satisfied"]
-    assert "os" not in missing_names and "os" not in body["satisfied"]
+    assert resp.get_json()["packages"] == ["curio.weather@1"]
 
 
-def test_check_skips_non_python_content(client, user_and_token, tmp_curio):
-    """JS node sources fail the Python AST parse and contribute nothing."""
+def test_check_skips_invalid_dirnames(client, user_and_token, tmp_curio):
     _, token = user_and_token
-    nodes = [{"content": "import * as lib from '@urban-toolkit/autk-db';\nreturn 1;"}]
-    resp = _check(client, token, nodes=nodes)
+    resp = _check(client, token, ["not a dirname", "curio.weather@1"])
     assert resp.status_code == 200
-    body = resp.get_json()
-    assert body["missing"] == []
-    assert body["satisfied"] == []
+    assert resp.get_json()["packages"] == ["curio.weather@1"]
 
 
-def test_check_treats_importable_alias_dist_as_satisfied(client, user_and_token, tmp_curio):
-    """An inline import whose import name differs from its PyPI distribution
-    name (dateutil -> python-dateutil) must NOT be reported missing — the
-    importability fallback keeps it off the auto-install path. python-dateutil
-    is a transitive dep of pandas, so it is always present in the env."""
-    _, token = user_and_token
-    nodes = [{"content": "import dateutil\nreturn 1"}]
-    resp = _check(client, token, nodes=nodes)
-    assert resp.status_code == 200
-    body = resp.get_json()
-    assert "dateutil" in body["satisfied"]
-    assert all(m["name"] != "dateutil" for m in body["missing"])
-
-
-def test_check_merges_lockfile_deps_with_ranged_specs(
+def test_check_omits_installed_package_with_satisfied_deps(
     client, user_and_token, tmp_curio, monkeypatch
 ):
-    """Lockfile packages contribute their manifests' ranged specs, which
-    win over the bare inline names."""
+    """In the store + every declared dep present → not flagged."""
     _, token = user_and_token
-
-    class _FakeResult:
-        python_deps = {"zzz_not_a_real_package_qq": ">=9.9"}
-
-    from utk_curio.backend.app.packages import routes as packages_routes
     monkeypatch.setattr(
-        packages_routes, "resolve_for_project", lambda *a, **k: _FakeResult()
+        packages_routes, "list_user_packageages",
+        lambda uk: [Path("curio.weather@1")],
     )
-
-    nodes = [{"content": "import zzz_not_a_real_package_qq"}]
-    resp = _check(client, token, nodes=nodes, packages=["curio.weather@1"])
+    monkeypatch.setattr(
+        packages_services, "_read_python_deps",
+        lambda uk, dn: {"flask": ""},  # flask is always present (backend runs on it)
+    )
+    resp = _check(client, token, ["curio.weather@1"])
     assert resp.status_code == 200
-    body = resp.get_json()
-    assert {"name": "zzz_not_a_real_package_qq", "spec": ">=9.9"} in body["missing"]
+    assert resp.get_json()["packages"] == []
 
 
-def test_check_tolerates_lockfile_resolution_failure(client, user_and_token, tmp_curio):
-    """A bogus lockfile entry must not block the inline scan (best-effort)."""
+def test_check_flags_installed_package_with_missing_dep(
+    client, user_and_token, tmp_curio, monkeypatch
+):
+    """In the store but a declared dep was pip-uninstalled → flagged (repair)."""
     _, token = user_and_token
-    nodes = [{"content": "import zzz_not_a_real_package_qq"}]
-    resp = _check(client, token, nodes=nodes, packages=["no.such.package@1"])
+    monkeypatch.setattr(
+        packages_routes, "list_user_packageages",
+        lambda uk: [Path("curio.weather@1")],
+    )
+    monkeypatch.setattr(
+        packages_services, "_read_python_deps",
+        lambda uk, dn: {"zzz_not_a_real_package_qq": ">=1"},
+    )
+    resp = _check(client, token, ["curio.weather@1"])
     assert resp.status_code == 200
-    missing_names = {m["name"] for m in resp.get_json()["missing"]}
-    assert "zzz_not_a_real_package_qq" in missing_names
+    assert resp.get_json()["packages"] == ["curio.weather@1"]
 
 
 def test_check_rejects_malformed_body(client, user_and_token, tmp_curio):
@@ -111,7 +97,7 @@ def test_check_rejects_malformed_body(client, user_and_token, tmp_curio):
     resp = client.post(
         "/api/packages/workflow-deps/check",
         headers=_auth(token),
-        data=json.dumps({"nodes": "not-a-list"}),
+        data=json.dumps({"packages": "not-a-list"}),
     )
     assert resp.status_code == 400
 
@@ -120,73 +106,46 @@ def test_check_rejects_malformed_body(client, user_and_token, tmp_curio):
 # POST /workflow-deps/install
 # ---------------------------------------------------------------------------
 
-def test_install_batches_through_pip_runner(client, user_and_token, tmp_curio, monkeypatch):
-    captured: dict = {}
-
-    # Mirror the real InstallReport shape: ``installed`` holds pip argv specs,
-    # ``skipped`` holds bare names. The route passes the report through verbatim.
-    def _fake_install(deps, **kwargs):
-        captured.update(deps)
-        return pip_runner.InstallReport(
-            installed=["pythermalcomfort~=3.9"], skipped=["rasterstats"]
-        )
-
-    monkeypatch.setattr(pip_runner, "install_python_deps", _fake_install)
-    _, token = user_and_token
-    resp = client.post(
-        "/api/packages/workflow-deps/install",
-        headers=_auth(token),
-        data=json.dumps({"deps": {"pythermalcomfort": "^3.9", "rasterstats": ""}}),
+def test_install_installs_each_package_to_store(client, user_and_token, tmp_curio, monkeypatch):
+    calls: list[str] = []
+    monkeypatch.setattr(
+        packages_services, "install_to_store",
+        lambda uk, dn: calls.append(dn) or True,
     )
+    _, token = user_and_token
+    resp = _install(client, token, ["curio.weather@1"])
     assert resp.status_code == 200
-    body = resp.get_json()
-    assert body["installed"] == ["pythermalcomfort~=3.9"]
-    assert body["skipped"] == ["rasterstats"]
-    # The route forwards the cleaned deps dict unchanged to pip_runner.
-    assert captured == {"pythermalcomfort": "^3.9", "rasterstats": ""}
+    assert resp.get_json()["installedPackages"] == ["curio.weather@1"]
+    assert calls == ["curio.weather@1"]
 
 
-def test_install_rejects_flag_smuggling_names(client, user_and_token, tmp_curio, monkeypatch):
-    """Names are validated so a hostile spec can't become a pip flag."""
-    called = False
-
-    def _fake_install(deps, **kwargs):
-        nonlocal called
-        called = True
-        return pip_runner.InstallReport(installed=[], skipped=[])
-
-    monkeypatch.setattr(pip_runner, "install_python_deps", _fake_install)
+def test_install_rejects_empty_packages(client, user_and_token, tmp_curio):
     _, token = user_and_token
-    for bad in ("--index-url=https://evil", "name with spaces", ""):
-        resp = client.post(
-            "/api/packages/workflow-deps/install",
-            headers=_auth(token),
-            data=json.dumps({"deps": {bad: ""}}),
-        )
-        assert resp.status_code == 400, bad
-    assert not called
-
-
-def test_install_rejects_empty_deps(client, user_and_token, tmp_curio):
-    _, token = user_and_token
-    resp = client.post(
-        "/api/packages/workflow-deps/install",
-        headers=_auth(token),
-        data=json.dumps({"deps": {}}),
-    )
+    resp = _install(client, token, [])
     assert resp.status_code == 400
 
 
-def test_install_surfaces_pip_failure_as_502(client, user_and_token, tmp_curio, monkeypatch):
-    def _fail(deps, **kwargs):
-        raise pip_runner.PipInstallError("pip install failed (exit 1): boom")
+def test_install_rejects_invalid_dirname(client, user_and_token, tmp_curio, monkeypatch):
+    called = False
 
-    monkeypatch.setattr(pip_runner, "install_python_deps", _fail)
+    def _fake(uk, dn):
+        nonlocal called
+        called = True
+        return True
+
+    monkeypatch.setattr(packages_services, "install_to_store", _fake)
     _, token = user_and_token
-    resp = client.post(
-        "/api/packages/workflow-deps/install",
-        headers=_auth(token),
-        data=json.dumps({"deps": {"numpy": ""}}),
-    )
+    resp = _install(client, token, ["--evil", "curio.weather@1"])
+    assert resp.status_code == 400
+    assert not called
+
+
+def test_install_surfaces_service_error(client, user_and_token, tmp_curio, monkeypatch):
+    def _fail(uk, dn):
+        raise packages_services.PackageServiceError("boom", 502)
+
+    monkeypatch.setattr(packages_services, "install_to_store", _fail)
+    _, token = user_and_token
+    resp = _install(client, token, ["curio.weather@1"])
     assert resp.status_code == 502
     assert "boom" in resp.get_json()["error"]

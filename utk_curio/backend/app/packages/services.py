@@ -197,6 +197,41 @@ def _write_lockfile(user_key: str, project_id: str, dirs: Iterable[str]) -> dict
 # Install/uninstall — per-project (drawer)
 # ---------------------------------------------------------------------------
 
+def install_to_store(user_key: str, dir_name: str) -> bool:
+    """Install *dir_name* into the user's package store (+ its python deps),
+    without touching any project lockfile.
+
+    Used by the workflow-deps auto-install: a freshly loaded/imported
+    dataflow has no project to scope a lockfile to, but installing the
+    owning package into the store is enough to make it show as installed
+    (catalog drawer / libraries menu key off the store) and to provision
+    its libraries + nodes. Returns ``True`` if a copy was performed,
+    ``False`` if it was already in the store. Raises
+    :class:`PackageServiceError` on failure (catalog miss, pip failure).
+
+    If the package is already in the store, its declared python deps are
+    re-ensured (idempotent pip run) — this repairs the case where a lib was
+    pip-uninstalled out from under an installed package.
+    """
+    if not PACKAGE_DIR_RE.match(dir_name):
+        raise PackageServiceError(f"invalid dirName: {dir_name!r}")
+    will_install = not _is_installed_in_user_store(user_key, dir_name)
+    if will_install:
+        _ensure_user_store_install(user_key, dir_name)
+        return True
+    # Already in the store — repair any declared dep that isn't present.
+    deps = _read_python_deps(user_key, dir_name)
+    if deps:
+        from utk_curio.backend.app.packages.pip_runner import (
+            PipInstallError, install_python_deps,
+        )
+        try:
+            install_python_deps(deps)
+        except PipInstallError as exc:
+            raise PackageServiceError(f"pip install failed: {exc}", 502) from exc
+    return False
+
+
 def install_to_project(
     user_key: str, project_id: str, dir_name: str,
 ) -> dict:

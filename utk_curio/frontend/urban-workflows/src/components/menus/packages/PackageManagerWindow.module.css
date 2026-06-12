@@ -180,6 +180,16 @@
   font-size: 11px;
   font-family: monospace;
 }
+/* A package declares this dep but it isn't actually present in the
+   interpreter (never installed, or pip-uninstalled later). */
+.notInstalled {
+  margin-left: 6px;
+  color: #92400e;
+  background: #fef3c7;
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 11px;
+}
 
 /* ── Per-row status cell + indeterminate progress bar ──────────────── */
 

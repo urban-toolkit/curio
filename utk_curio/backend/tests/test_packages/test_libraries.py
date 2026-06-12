@@ -75,6 +75,24 @@ def test_package_derived_reads_installed_manifests(
     assert all(e.source.startswith("ai.test.pyheavy@") for e in derived if e.kind == "python")
 
 
+def test_package_derived_reports_real_install_state(
+    tmp_curio, install_packageage, manifest_dict,
+):
+    """A package can declare a dep that isn't actually installed — the entry
+    must report ``installed`` truthfully (flask present, a bogus name absent),
+    so the modal stops showing declared-but-missing libs as installed."""
+    install_packageage(
+        "guest",
+        manifest=manifest_dict(
+            package_id="ai.test.realstate",
+            python_deps={"flask": "", "zzz_not_a_real_package_qq": ">=1"},
+        ),
+    )
+    derived = {e.name: e for e in libs.package_derived("guest") if e.kind == "python"}
+    assert derived["flask"].installed is True
+    assert derived["zzz_not_a_real_package_qq"].installed is False
+
+
 def test_aggregate_combines_standalone_and_package(
     tmp_curio, install_packageage, manifest_dict,
 ):

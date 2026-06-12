@@ -32,6 +32,10 @@ type Row = {
   spec: string;
   kind: Kind;
   source: string; // "standalone" or "<package>@<major>"
+  // For package-declared python deps: whether it is actually present in the
+  // interpreter (a package can declare a dep that was never installed or was
+  // later pip-uninstalled). undefined/null for standalone + js rows.
+  installed?: boolean | null;
 };
 
 type Status =
@@ -340,6 +344,12 @@ export default function PackageManagerWindow({
                           <span className={styles.sourceStandalone}>standalone</span>
                         ) : (
                           <span className={styles.sourcePackage}>{r.source}</span>
+                        )}
+                        {r.installed === false && (
+                          <span
+                            className={styles.notInstalled}
+                            title="Declared by this package but not currently installed in the environment"
+                          >not installed</span>
                         )}
                       </td>
                       <td>{renderStatusCell(r.kind, fullSpec)}</td>

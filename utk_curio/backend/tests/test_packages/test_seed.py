@@ -158,6 +158,19 @@ def seed_examples_flag():
     packages_seed.CURIO_SEED_EXAMPLES = original
 
 
+def test_example_dep_package_ids_derived_from_lockfiles():
+    """The example-dep package set is derived from the bundled examples'
+    ``dataflow.packages`` lockfiles — example 09 declares curio.weather, and
+    heavy packages (curio.streetvision) stay out because no example's
+    lockfile declares them."""
+    from utk_curio.backend.app.packages.seed import example_dep_package_ids
+
+    ids = example_dep_package_ids()
+    assert "curio.weather" in ids
+    assert "curio.streetvision" not in ids
+    assert "curio.builtin" not in ids  # always-installed, never an example dep
+
+
 def test_examples_flag_seeds_weather(tmp_curio, real_fixtures_root, seed_examples_flag):
     seed_dev_packageages(user_key="guest")
     installed = _installed_names()

@@ -28,7 +28,6 @@ collision report. A **separate remote package-registry** service is still future
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 
@@ -1029,145 +1028,89 @@ def resolve_deps():
 
 
 # ---------------------------------------------------------------------------
-# /workflow-deps — load-time dependency check + auto-install
+# /workflow-deps — install a dataflow's declared package dependencies on load
 # ---------------------------------------------------------------------------
 #
-# When the canvas loads a dataflow, the frontend posts the spec's nodes and
-# lockfile here to learn which Python libraries the workflow needs but the
-# interpreter doesn't have, warns the user, and then auto-installs them via
-# the /install route below. The inline scan matters because example
-# workflows import libraries inside curio.builtin code nodes — their
-# ``dataflow.packages`` lockfile is empty, so lockfile resolution alone
-# can't see those needs.
-
-# PEP 508-ish project name. Names are validated before being handed to pip
-# so a hostile spec can't smuggle a pip flag (argv entries start with the
-# name, so a leading '-' is the only injection vector).
-_DEP_NAME_RE = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$")
-# Manifest-style version spec: empty/'*', PEP 440 comparators, npm caret,
-# or a bare version. pip_runner._spec_argv canonicalizes it.
-_DEP_SPEC_RE = re.compile(r"^[A-Za-z0-9.,<>=!~^* +-]*$")
-
-
-def _is_importable(module_name: str) -> bool:
-    """True if *module_name* resolves to an installed module.
-
-    ``is_satisfied`` keys off ``importlib.metadata`` (distribution names),
-    so an inline import whose import name differs from its PyPI
-    distribution name — ``dateutil`` (python-dateutil), ``dotenv``
-    (python-dotenv), ``osgeo`` (GDAL) — would otherwise be reported
-    perpetually "missing" and trigger a pointless (or wrong) auto-install
-    on every load. Falling back to import resolution closes that gap for
-    bare inline names. Only used when no version range is attached (a
-    lockfile dep carries a real distribution name + range and stays on the
-    version-aware ``is_satisfied`` path).
-    """
-    import importlib.util
-
-    try:
-        return importlib.util.find_spec(module_name) is not None
-    except (ImportError, ValueError):
-        return False
+# A dataflow declares the catalog packages it depends on in its
+# ``dataflow.packages`` lockfile. When the canvas loads one, the frontend
+# posts that lockfile to /check to learn which declared packages aren't ready
+# (not installed, or installed-but-with-a-missing-dep), warns the user, and
+# auto-installs them via /install. Installing the package provisions both its
+# nodes and its declared python libraries — a dataflow depends on packages,
+# and the libraries follow.
 
 
 @packages_bp.route("/workflow-deps/check", methods=["POST"])
 @require_auth
 def check_workflow_deps():
-    """Report which Python deps a workflow needs that aren't installed.
+    """Report which of a dataflow's declared packages aren't ready.
 
-    Body: ``{"nodes": [{"content": "<node source>"}, ...],
-    "packages": ["<dirName>", ...]}`` — the loaded spec's dataflow nodes
-    and lockfile. Inline imports are AST-scanned out of each node's
-    ``content`` (non-Python content is skipped by the scanner); lockfile
-    packages contribute their manifests' ranged specs, which win over the
-    bare inline names. Returns ``{"missing": [{"name", "spec"}, ...],
-    "satisfied": [<name>, ...]}``.
+    Body: ``{"packages": ["<dirName>", ...]}`` — the loaded spec's
+    ``dataflow.packages`` lockfile. A dataflow declares the catalog packages
+    it depends on there; loading it should install any that aren't present.
+    A package is "needed" if it isn't in the user's store, OR it is but some
+    of its declared python deps aren't actually installed (e.g. a lib was
+    pip-uninstalled out from under it). Response::
+
+        {"packages": ["<dirName>", ...]}   # need installing, sorted
     """
-    from utk_curio.backend.app.packages.dependency_scanner import scan_python_imports
     from utk_curio.backend.app.packages.pip_runner import is_satisfied
 
     user_key = _user_dir_key(g.user)
     body = request.get_json(silent=True) or {}
-    nodes = body.get("nodes") or []
     packages = body.get("packages") or []
-    if not isinstance(nodes, list) or not isinstance(packages, list):
-        return _error("body must be {'nodes': [{'content': ...}], 'packages': [<dirName>, ...]}")
+    if not isinstance(packages, list):
+        return _error("body must be {'packages': [<dirName>, ...]}")
 
-    deps: dict[str, str] = {}
-    for node in nodes:
-        content = node.get("content") if isinstance(node, dict) else None
-        if not isinstance(content, str) or not content.strip():
+    from utk_curio.backend.app.packages.storage import PACKAGE_DIR_RE
+
+    in_store = {p.name for p in list_user_packageages(user_key)}
+    need: set[str] = set()
+    for dir_name in packages:
+        if not isinstance(dir_name, str) or not PACKAGE_DIR_RE.match(dir_name):
             continue
-        for name in scan_python_imports(content):
-            deps.setdefault(name, "")
-
-    # Best-effort: a lockfile resolution error must not block the
-    # load-time check — the inline scan above already covers code nodes.
-    if packages and all(isinstance(p, str) for p in packages):
-        try:
-            result = resolve_for_project(
-                user_key, packages,
-                overrides=_resolver_overrides_for(user_key, packages),
-            )
-            deps.update(result.python_deps)
-        except (ResolverError, PackageIdError) as exc:
-            log.warning("workflow-deps check: lockfile resolution failed: %s", exc)
-
-    missing: list[dict[str, str]] = []
-    satisfied: list[str] = []
-    for name, spec in sorted(deps.items()):
-        if not _DEP_NAME_RE.match(name):
+        if dir_name not in in_store:
+            need.add(dir_name)
             continue
-        # A bare inline import (no version range) counts as satisfied if it
-        # resolves as a module even when its distribution name is unknown to
-        # importlib.metadata; a ranged lockfile dep must pass is_satisfied.
-        if is_satisfied(name, spec) or (not spec and _is_importable(name)):
-            satisfied.append(name)
-        else:
-            missing.append({"name": name, "spec": spec})
-    return jsonify({"missing": missing, "satisfied": satisfied}), 200
+        # Installed in the store — flag only if a declared dep went missing.
+        deps = packages_services._read_python_deps(user_key, dir_name)
+        if any(not is_satisfied(n, s) for n, s in deps.items()):
+            need.add(dir_name)
+    return jsonify({"packages": sorted(need)}), 200
 
 
 @packages_bp.route("/workflow-deps/install", methods=["POST"])
 @require_auth
 def install_workflow_deps():
-    """Pip-install the deps reported missing by ``/workflow-deps/check``.
+    """Install the catalog packages a dataflow declares it depends on.
 
-    Body: ``{"deps": {"<name>": "<spec>", ...}}``. Installs in one batched
-    pip run into the shared interpreter, so the sandbox picks the libs up
-    on the next node execution. Deliberately NOT recorded in the user's
-    standalone ``installed-libraries.json`` — workflow deps are derivable
-    by re-scanning, and recording them would distort uninstall
-    ref-counting for catalog packages.
+    Body: ``{"packages": ["<dirName>", ...]}``. Each is installed into the
+    user's store via :func:`services.install_to_store`, which copies the
+    package (if missing) and pip-installs its declared python deps — so the
+    package's libraries and nodes both become available. A dataflow depends
+    on *packages*, not loose libraries; the libraries follow from the package.
 
-    Response ``{"installed": [...], "skipped": [...]}`` mirrors
-    :class:`pip_runner.InstallReport`: ``installed`` holds the pip argv
-    specs actually passed to pip (e.g. ``"rasterio>=1.5.0"``), while
-    ``skipped`` holds the bare names that were already satisfied.
+    Response: ``{"installedPackages": ["<dirName>", ...]}``.
     """
-    from utk_curio.backend.app.packages.pip_runner import (
-        PipInstallError, install_python_deps,
-    )
+    from utk_curio.backend.app.packages.storage import PACKAGE_DIR_RE
 
+    user_key = _user_dir_key(g.user)
     body = request.get_json(silent=True) or {}
-    deps = body.get("deps")
-    if not isinstance(deps, dict) or not deps:
-        return _error("body must be {'deps': {'<name>': '<spec>'}}")
-    clean: dict[str, str] = {}
-    for name, spec in deps.items():
-        if not isinstance(name, str) or not _DEP_NAME_RE.match(name):
-            return _error(f"invalid dependency name: {name!r}")
-        if not isinstance(spec, str) or not _DEP_SPEC_RE.match(spec.strip()):
-            return _error(f"invalid version spec for {name}: {spec!r}")
-        clean[name] = spec.strip()
-    try:
-        report = install_python_deps(clean)
-    except PipInstallError as exc:
-        return _error(f"pip install failed: {exc}", 502)
-    return jsonify({
-        "installed": list(report.installed),
-        "skipped": list(report.skipped),
-    }), 200
+    pkg_dirs = body.get("packages") or []
+    if not isinstance(pkg_dirs, list) or not pkg_dirs:
+        return _error("body must be {'packages': [<dirName>, ...]}")
+    for dir_name in pkg_dirs:
+        if not isinstance(dir_name, str) or not PACKAGE_DIR_RE.match(dir_name):
+            return _error(f"invalid package dirName: {dir_name!r}")
+
+    installed_packages: list[str] = []
+    for dir_name in pkg_dirs:
+        try:
+            packages_services.install_to_store(user_key, dir_name)
+            installed_packages.append(dir_name)
+        except packages_services.PackageServiceError as exc:
+            return _error(f"failed to install {dir_name}: {exc}", exc.status)
+    return jsonify({"installedPackages": installed_packages}), 200
 
 
 # ---------------------------------------------------------------------------
@@ -1290,7 +1233,8 @@ def list_libraries_route():
     return jsonify({
         "standalone": agg.standalone,
         "fromPackages": [
-            {"name": e.name, "spec": e.spec, "kind": e.kind, "source": e.source}
+            {"name": e.name, "spec": e.spec, "kind": e.kind, "source": e.source,
+             "installed": e.installed}
             for e in agg.from_packages
         ],
     }), 200

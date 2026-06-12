@@ -666,7 +666,7 @@ def install_manifest_dependencies() -> None:
         PipInstallError,
         install_python_deps,
     )
-    from utk_curio.backend.app.packages.seed import EXAMPLE_DEP_PACKAGE_IDS
+    from utk_curio.backend.app.packages.seed import example_dep_package_ids
 
     repo_root = Path(__file__).resolve().parent.parent
     launch_cwd = Path(os.environ.get("CURIO_LAUNCH_CWD") or os.getcwd())
@@ -682,15 +682,16 @@ def install_manifest_dependencies() -> None:
     # weather, streetvision, …) are opt-in via the /catalog drawer;
     # their deps come along when the user installs them, via the
     # per-user-store walk below. When example seeding is on
-    # (--with-examples / --deploy => CURIO_SEED_EXAMPLES=1), also walk
-    # the allowlisted packages the seeded examples need (see
-    # EXAMPLE_DEP_PACKAGE_IDS in backend/app/packages/seed.py for why
-    # this is not a full walk). This first-boot walk matters because it
-    # runs BEFORE the backend seeds those packages into the user store;
-    # on later starts the user-store walk below covers them.
+    # (--with-examples / --deploy => CURIO_SEED_EXAMPLES=1), also walk the
+    # packages the bundled examples declare as dependencies — derived from
+    # their dataflow.packages lockfiles (see example_dep_package_ids in
+    # backend/app/packages/seed.py), NOT a full catalog walk. This
+    # first-boot walk matters because it runs BEFORE the backend seeds those
+    # packages into the user store; on later starts the user-store walk
+    # below covers them.
     catalog_globs = ["curio.builtin@*"]
     if os.environ.get("CURIO_SEED_EXAMPLES") == "1":
-        catalog_globs += [f"{pid}@*" for pid in EXAMPLE_DEP_PACKAGE_IDS]
+        catalog_globs += [f"{pid}@*" for pid in example_dep_package_ids()]
     if catalog.is_dir():
         for pattern in catalog_globs:
             for pkg_dir in sorted(catalog.glob(pattern)):

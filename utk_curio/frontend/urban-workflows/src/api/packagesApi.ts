@@ -196,17 +196,15 @@ export interface InstallDepsResponse {
 
 /** Response from `POST /api/packages/workflow-deps/check`. */
 export interface WorkflowDepsCheckResponse {
-  /** Python deps the workflow needs but the interpreter is missing. */
-  missing: Array<{ name: string; spec: string }>;
-  satisfied: string[];
+  /** Declared dependency packages (dirNames) that aren't installed yet, or
+   *  are installed but missing one of their declared python deps. */
+  packages: string[];
 }
 
 /** Response from `POST /api/packages/workflow-deps/install`. */
 export interface WorkflowDepsInstallResponse {
-  /** pip argv specs actually installed (e.g. `"rasterio>=1.5.0"`), not bare names. */
-  installed: string[];
-  /** Bare names that were already satisfied — nothing was downloaded for these. */
-  skipped: string[];
+  /** Catalog package dirNames installed into the user store. */
+  installedPackages: string[];
 }
 
 /** Response from project-scoped install / uninstall and `GET /projects/<id>`. */
@@ -440,26 +438,23 @@ export const packagesApi = {
   },
 
   /**
-   * Load-time dependency probe: the backend AST-scans the spec's node
-   * sources for inline imports (plus the lockfile packages' manifest
-   * deps) and reports which Python libraries the interpreter is missing.
+   * Load-time dependency probe: given the dataflow's declared package
+   * lockfile (`dataflow.packages`), report which packages aren't ready
+   * (not installed, or installed but missing a declared python dep).
    */
-  checkWorkflowDeps(
-    nodes: Array<{ content: string }>, packages: string[],
-  ): Promise<WorkflowDepsCheckResponse> {
+  checkWorkflowDeps(packages: string[]): Promise<WorkflowDepsCheckResponse> {
     return apiFetch("/api/packages/workflow-deps/check", {
       method: "POST",
-      body: JSON.stringify({ nodes, packages }),
+      body: JSON.stringify({ packages }),
     });
   },
 
-  /** Batch pip-install the deps reported missing by `checkWorkflowDeps`. */
-  installWorkflowDeps(
-    deps: Record<string, string>,
-  ): Promise<WorkflowDepsInstallResponse> {
+  /** Install the dataflow's declared dependency packages into the user store
+   *  (each brings its nodes + declared python libraries). */
+  installWorkflowDeps(packages: string[]): Promise<WorkflowDepsInstallResponse> {
     return apiFetch("/api/packages/workflow-deps/install", {
       method: "POST",
-      body: JSON.stringify({ deps }),
+      body: JSON.stringify({ packages }),
     });
   },
 
@@ -509,10 +504,18 @@ export const packagesApi = {
   // Per-user "Installed libraries" (Python + JS)
   // --------------------------------------------------------------
 
-  /** Standalone + package-derived libraries in one payload. */
+  /** Standalone + package-derived libraries in one payload.
+   *  ``installed`` reports whether a package-declared python dep is actually
+   *  present in the interpreter (null for js — no runtime check). */
   listLibraries(): Promise<{
     standalone: { python: string[]; js: string[] };
-    fromPackages: Array<{ name: string; spec: string; kind: "python" | "js"; source: string }>;
+    fromPackages: Array<{
+      name: string;
+      spec: string;
+      kind: "python" | "js";
+      source: string;
+      installed?: boolean | null;
+    }>;
   }> {
     return apiFetch("/api/packages/libraries");
   },

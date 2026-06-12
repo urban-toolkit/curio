@@ -9,6 +9,7 @@ import {
     useNodeActionsContext,
 } from "../../../providers/FlowProvider";
 import { useCode } from "../../../hook/useCode";
+import { useEnsureWorkflowDeps } from "../../../hook/useEnsureWorkflowDeps";
 import { useCollab } from "../../../providers/CollaborationProvider";
 import { TrillGenerator } from "../../../TrillGenerator";
 import { trillToNotebook, serializeNotebook } from "../../../NotebookConvertor";
@@ -97,6 +98,7 @@ export default function UpMenu({
     } = useNodeActionsContext();
     const { loadTrill } = useCode();
     const { showToast } = useToastContext();
+    const ensureWorkflowDeps = useEnsureWorkflowDeps();
     const { openNodeCatalogDrawer } = useNodeCatalogDrawer();
 
     const toggleMenu = (menu: string) => {
@@ -234,6 +236,10 @@ export default function UpMenu({
                 try {
                     const jsonContent = JSON.parse(event.target?.result as string);
                     loadTrill(jsonContent);
+                    // Importing a workflow file is a deliberate user action, so
+                    // warn + auto-install its Python deps the same way opening
+                    // your own project does.
+                    ensureWorkflowDeps(jsonContent);
                 } catch (err) {
                     console.error("Invalid JSON file:", err);
                 } finally {
