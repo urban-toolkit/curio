@@ -4,7 +4,6 @@ import {
   faChevronDown,
   faChevronUp,
   faDatabase,
-  faDownload,
 } from "@fortawesome/free-solid-svg-icons";
 import { useFlowContext } from "../../../../providers/FlowProvider";
 import { useDatasetCatalogDrawer } from "../../../../providers/datasetCatalog";
@@ -17,7 +16,6 @@ import {
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
   datasetProvenanceLabel,
-  isProjectSessionDataset,
   isUserInstalledDataset,
   useDatasetCatalog,
   prefetchDatasetCatalog,
