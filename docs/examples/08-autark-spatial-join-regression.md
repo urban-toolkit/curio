@@ -66,7 +66,9 @@ metric `EPSG:3395`).
 The data-only grammar node persists the layer array (`table_osm_surface` / `_parks` / `_water` / `_roads`)
 to the backend and emits a DuckDB reference. The downstream `js-computation` join receives it as the plain
 `[{ name, type, geojson }]` array — the Curio sandbox resolves the reference automatically before the join's
-`arg` is built, so no manual fetch is needed.
+`arg` is built, so no manual fetch is needed. Downstream autark nodes reference these layers by name
+(`"dataRef": "table_osm_roads"`) — the named-layer case of
+[Referencing Upstream Data in Autark Nodes](../ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
 
 ## Step 2: Reference the LST raster (`data-loading`)
 

@@ -17,7 +17,8 @@ This document describes the internal architecture of Curio for contributors who 
   * [UniversalNode: One Component for All Types](#universalnode-one-component-for-all-types)
 * [Data Between Nodes](#data-between-nodes)
   * [Supported Data Types](#supported-data-types)
-  * [File-Based Data Transfer](#file-based-data-transfer)
+  * [DuckDB-Based Data Transfer](#duckdb-based-data-transfer)
+  * [Referencing Upstream Data in Autark Nodes](#referencing-upstream-data-in-autark-nodes)
   * [Connection Validation](#connection-validation)
 * [Execution Pipeline](#execution-pipeline)
   * [Step-by-Step: Running a Node](#step-by-step-running-a-node)
@@ -310,6 +311,28 @@ CREATE TABLE artifacts (
 4. The frontend stores the artifact ID in `FlowProvider.outputs` and passes it as `INodeData.input` to downstream nodes.
 5. When a downstream node executes, it sends the artifact ID to the sandbox, which calls `load_from_duckdb(id)` to reconstruct the Python object — no re-serialization of the original data needed.
 6. For previewing data in the UI, the frontend fetches via `GET /get-preview?fileName=<artifact_id>`, which loads the artifact and returns only the first 100 rows as JSON.
+
+### Referencing Upstream Data in Autark Nodes
+
+The `autk-grammar` node consumes upstream data differently from Python nodes: its UrbanSpec refers to data **by name**, through `dataRef` strings in `map.layerRefs[]`, `plot.dataRef` (and `plot.mapRef`), `compute[].dataRef`, and `fromFeature.layer` inside compute uniforms. Before the grammar runs, the behavior hook ([`autkGrammarBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkGrammarBehavior.tsx)) resolves whatever arrived on the input edge and injects it as named `geojson` sources the spec can reference. Upstream geojson is data the browser already holds, so it stays client-side — only the spec's own authored `data` sources (OSM / PBF / CSV / …) run in the backend sandbox. There are two cases:
+
+**1. Single frame — the `upstream` keyword.** A single upstream frame (e.g. a Python GeoDataFrame from a computation node, or one routed through a Data Pool) is injected as one source named `upstream`:
+
+```json
+"map": { "layerRefs": [{ "dataRef": "upstream", "getFnv": "mean", "getFnvType": "quantitative" }] }
+```
+
+**2. Layer array — named layer references.** A multi-layer array (emitted by an upstream data-only `autk-grammar` node, e.g. one whose `data` block loads an OSM/PBF stack with `autoLoadLayers`) exposes each layer under its own table name, so the spec can target layers individually:
+
+```json
+"map": { "layerRefs": [{ "dataRef": "table_osm_buildings" }, { "dataRef": "table_osm_roads" }] }
+```
+
+When a layer array arrives, `upstream` is additionally kept as an alias for the **first** layer, so a single-layer spec keeps working when its upstream node starts emitting an array. New multi-layer specs should use the real layer names.
+
+A `dataRef` that names an unavailable table — an empty layer, a layer that was never loaded, or one dropped by an upstream node — does not fail the run. The behavior drops the dangling `map.layerRefs` entry or `plot` block before the grammar executes and logs a console warning listing the table names that *are* available; a `compute` block whose `dataRef` matches no layer is skipped. The visible symptom of a typo'd reference is therefore a missing layer plus a DevTools warning, not an error.
+
+[Example 09](examples/09-heterogeneous-data-linked-views.md) demonstrates the `upstream` keyword; [Example 11](examples/11-autark-pbf-loading.md) demonstrates named layer references.
 
 ### Connection Validation
 

@@ -42,7 +42,9 @@ route brushes through the pool to the matching roads.
 
 The `data` block loads the Chicago Loop layers from `docs/examples/data/chicago_loop.osm.pbf` — DuckDB-WASM
 parses the PBF in the browser, so there is no Overpass call at run time. autk-db materializes the layers in
-EPSG:3395 (metric), which is what the shader's geometry math assumes.
+EPSG:3395 (metric), which is what the shader's geometry math assumes. The downstream compute and render
+nodes reference these layers by name (`table_osm_roads`, `table_osm_buildings`) — the named-layer case of
+[Referencing Upstream Data in Autark Nodes](../ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
 
 ```json
 "data": [{
