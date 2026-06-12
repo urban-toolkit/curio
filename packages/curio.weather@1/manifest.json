@@ -9,11 +9,12 @@
     "js": {},
     "packages": {},
     "python": {
-      "pythermalcomfort": "^2.10",
+      "pythermalcomfort": "^3.9",
+      "rasterio": ">=1.5.0",
       "rasterstats": "^0.20"
     }
   },
-  "description": "Nodes for weather data ingestion and thermal-comfort analysis. Provides ERA5 meteorological loading, UTCI computation via pythermalcomfort, raster zonal statistics via rasterstats, and census/polygon reprojection. Used by the 'Heterogeneous data + linked views' example workflow.",
+  "description": "Nodes for weather data ingestion and thermal-comfort analysis. Provides ERA5 meteorological loading, UTCI computation via pythermalcomfort, raster I/O via rasterio, raster zonal statistics via rasterstats, and census/polygon reprojection. Used by the 'Heterogeneous data + linked views' example workflow.",
   "id": "curio.weather",
   "license": "MIT",
   "name": "Weather Analysis",
@@ -215,5 +216,5 @@
       "source": "sources/gt65-projection.py"
     }
   ],
-  "version": "1.0.0"
+  "version": "1.1.0"
 }

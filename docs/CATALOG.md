@@ -31,7 +31,7 @@ Two kinds of packages ship with Curio:
 | Package | What it provides |
 |---|---|
 | `curio.builtin@1` | The default 12 node kinds (Data Loading, Python/JS Computation, Vega-Lite, Autark, etc.). Auto-installed for every user; **read-only** (you can save edits as a new package but can't overwrite the originals) and can't be uninstalled. |
-| `ai.urbanlab.uhvi@1`, `curio.weather@1` | Example packages you can install from the catalog drawer to see the package workflow end-to-end. |
+| `ai.urbanlab.uhvi@1`, `curio.weather@1` | Example packages you can install from the catalog drawer to see the package workflow end-to-end. `curio.weather@1` is also auto-seeded (still uninstallable) when Curio starts with `--with-examples` / `--deploy`, because the seeded example workflows need its Python deps (rasterio, pythermalcomfort, rasterstats). |
 
 You can install any number of additional packages — your own creations or archives shared by others.
 

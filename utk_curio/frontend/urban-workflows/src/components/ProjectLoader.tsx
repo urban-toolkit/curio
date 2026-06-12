@@ -9,7 +9,9 @@ import React, { useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { useFlowContext, IOutput } from "../providers/FlowProvider";
 import { useCode } from "../hook/useCode";
+import { useToastContext } from "../providers/ToastProvider";
 import { TrillGenerator } from "../TrillGenerator";
+import { packagesApi } from "../api/packagesApi";
 import { refreshPackageRegistry } from "../registry/packageRegistryBootstrap";
 import {
   clearCurrentProject,
@@ -40,6 +42,69 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
     projectId,
   } = useFlowContext();
   const { loadTrill } = useCode();
+  const { showToast } = useToastContext();
+
+  // Fire-and-forget: warn about Python libs the loaded dataflow needs but
+  // the interpreter is missing (inline node imports + lockfile manifest
+  // deps), then auto-install them. Non-blocking — the canvas stays usable
+  // while pip runs; nodes executed before it finishes fail with a normal
+  // ModuleNotFoundError and succeed on re-run.
+  //
+  // SECURITY: only ever called for the OWNER's own project. The package
+  // names come from node source the loader can't vet, and installing an
+  // sdist runs setup.py server-side — so we never auto-install for a
+  // foreign/shared spec (see the loadSharedProject path below, which is a
+  // read-only public link the visitor can't execute nodes on anyway).
+  const ensureWorkflowDeps = (spec: {
+    dataflow: { nodes: unknown[]; packages?: unknown };
+  }) => {
+    const nodes = spec.dataflow.nodes
+      .map((n) => ({
+        content:
+          n && typeof (n as { content?: unknown }).content === "string"
+            ? ((n as { content: string }).content)
+            : "",
+      }))
+      .filter((n) => n.content.trim() !== "");
+    const packages = Array.isArray(spec.dataflow.packages)
+      ? (spec.dataflow.packages as unknown[]).filter(
+          (p): p is string => typeof p === "string"
+        )
+      : [];
+    if (nodes.length === 0 && packages.length === 0) return;
+    void (async () => {
+      // The check is best-effort: a failure here (older backend without the
+      // route, a transient dev-reloader restart) must stay silent — like the
+      // refreshPackageRegistry catches below — and never assert an install
+      // failure for deps that may not even be missing.
+      let missing: Array<{ name: string; spec: string }>;
+      try {
+        const probe = await packagesApi.checkWorkflowDeps(nodes, packages);
+        missing = probe.missing;
+      } catch (err) {
+        console.error("Workflow dependency check failed:", err);
+        return;
+      }
+      if (!missing.length) return;
+      const names = missing.map((m) => m.name).join(", ");
+      showToast(
+        `This dataflow needs Python packages that are not installed: ${names} — installing them now…`,
+        "warning"
+      );
+      try {
+        const deps: Record<string, string> = {};
+        for (const m of missing) deps[m.name] = m.spec || "";
+        await packagesApi.installWorkflowDeps(deps);
+        showToast(`Installed ${names}.`, "success");
+      } catch (err) {
+        console.error("Workflow dependency install failed:", err);
+        showToast(
+          `Could not install ${names} — nodes may fail until these are installed manually.`,
+          "error"
+        );
+      }
+    })();
+  };
 
   useEffect(() => {
     if (id === "new") {
@@ -60,7 +125,10 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
     // package set via setPackages → projectPackagesStore.
     setCurrentProject(id, []);
 
-    const applyResult = (result: { spec: unknown; outputs?: Array<{ node_id: string; filename: string }> }) => {
+    const applyResult = (
+      result: { spec: unknown; outputs?: Array<{ node_id: string; filename: string }> },
+      { trusted }: { trusted: boolean }
+    ) => {
       const { spec, outputs } = result;
 
       if (spec) {
@@ -70,6 +138,9 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
           );
         }
         loadTrill(spec);
+        // Auto-install missing deps only for the owner's own project — never
+        // for a foreign shared spec (see ensureWorkflowDeps' SECURITY note).
+        if (trusted) ensureWorkflowDeps(spec);
       }
 
       if (outputs && outputs.length > 0) {
@@ -108,16 +179,18 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
       }
       try {
         const result = await loadProject(id);
-        applyResult(result);
+        applyResult(result, { trusted: true });
       } catch (err) {
         // 404 from the owner-scoped endpoint means either the project doesn't
         // exist or the current user isn't its owner. Try the shared (link-based)
         // endpoint before giving up — it's how share URLs work for visitors.
+        // trusted=false: the shared spec is foreign content, so we render it
+        // but never auto-install its declared deps.
         const status = (err as { status?: number })?.status;
         if (status === 404) {
           try {
             const result = await loadSharedProject(id);
-            applyResult(result);
+            applyResult(result, { trusted: false });
           } catch (sharedErr) {
             console.error("Failed to load shared project:", sharedErr);
           }

@@ -614,7 +614,7 @@ def _run_pip(cmd: list[str], failure_label: str) -> None:
 def install_framework_requirements() -> None:
     """``pip install -r requirements.txt`` for Curio's framework deps —
     the libraries the backend + sandbox Flask apps need at module load.
-    Data-ops libs (pandas, geopandas, rasterio, …) live in each node
+    Data-ops libs (pandas, geopandas, …) live in each node
     package's manifest and get installed by
     ``install_manifest_dependencies`` below.
 
@@ -631,18 +631,6 @@ def install_framework_requirements() -> None:
     )
 
 
-# Catalog packages (beyond curio.builtin) whose python deps the seeded
-# example workflows exercise via INLINE imports — e.g.
-# docs/examples/09-heterogeneous-data-linked-views.json does
-# ``from pythermalcomfort import models`` inside a curio.builtin
-# computation node, so neither the workflow's ``dataflow.packages``
-# lockfile (it is []) nor any node type references curio.weather.
-# Deliberately a curated allowlist, NOT a full-catalog walk:
-# curio.streetvision declares torch/transformers/ultralytics, which
-# would drag multi-GB wheels into every --with-examples / deploy boot.
-EXAMPLE_DEP_PACKAGE_IDS = ("curio.weather",)
-
-
 def install_manifest_dependencies() -> None:
     """Walk every installed package manifest — catalog source-of-truth at
     ``<repo>/packages/`` PLUS every user store under
@@ -652,11 +640,13 @@ def install_manifest_dependencies() -> None:
     through ``pip_runner.install_python_deps``.
 
     Why this lives in the launcher: the sandbox process imports
-    ``pandas`` / ``geopandas`` / ``rasterio`` at module load
-    (``sandbox/app/api.py``, ``worker.py::_worker_init``), so those libs
-    must already be present in the shared interpreter before the
-    sandbox's ``Popen`` lands. Running here — synchronously, sequenced
-    before ``start_sandbox`` — is the simplest race-free order.
+    ``pandas`` / ``geopandas`` at module load (``sandbox/app/api.py``
+    triggers ``worker.py::_worker_init``), so those libs must already be
+    present in the shared interpreter before the sandbox's ``Popen``
+    lands. Running here — synchronously, sequenced before
+    ``start_sandbox`` — is the simplest race-free order. (rasterio is
+    optional: provided by raster-capable packages like curio.weather and
+    imported lazily by the sandbox's raster code paths.)
 
     All helpers are reused from the backend:
     - ``manifest.load_packageage_manifest`` to parse each
@@ -676,6 +666,7 @@ def install_manifest_dependencies() -> None:
         PipInstallError,
         install_python_deps,
     )
+    from utk_curio.backend.app.packages.seed import EXAMPLE_DEP_PACKAGE_IDS
 
     repo_root = Path(__file__).resolve().parent.parent
     launch_cwd = Path(os.environ.get("CURIO_LAUNCH_CWD") or os.getcwd())
@@ -693,7 +684,10 @@ def install_manifest_dependencies() -> None:
     # per-user-store walk below. When example seeding is on
     # (--with-examples / --deploy => CURIO_SEED_EXAMPLES=1), also walk
     # the allowlisted packages the seeded examples need (see
-    # EXAMPLE_DEP_PACKAGE_IDS above for why this is not a full walk).
+    # EXAMPLE_DEP_PACKAGE_IDS in backend/app/packages/seed.py for why
+    # this is not a full walk). This first-boot walk matters because it
+    # runs BEFORE the backend seeds those packages into the user store;
+    # on later starts the user-store walk below covers them.
     catalog_globs = ["curio.builtin@*"]
     if os.environ.get("CURIO_SEED_EXAMPLES") == "1":
         catalog_globs += [f"{pid}@*" for pid in EXAMPLE_DEP_PACKAGE_IDS]

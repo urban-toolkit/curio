@@ -456,7 +456,7 @@ Curio's Python deps live in two places:
 "dependencies": {
   "python": {
     "pandas": "==3.0.2", "geopandas": "==1.1.3", "shapely": ">=2.0",
-    "numpy": "", "pyarrow": "==24.0.0", "rasterio": "==1.5.0",
+    "numpy": "", "pyarrow": "==24.0.0",
     "duckdb": ">=1.5.0", "fiona": "==1.10.1", "pillow": "==12.2.0"
   }
 }

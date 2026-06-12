@@ -6,6 +6,10 @@ This example combines three different data sources — a high-resolution thermal
 > **WebGPU required**
 > The `autk-grammar` map step in this dataflow needs WebGPU. Run this example in a Chromium-based browser (Chrome / Edge) on a machine with a working GPU stack.
 
+> [!NOTE]
+> **Python dependencies**
+> The code nodes import `rasterio`, `pythermalcomfort`, and `rasterstats`, which are provided by the `curio.weather` package — installed automatically when Curio starts with `--with-examples` (or `--deploy`), or on demand from the catalog drawer ("Weather Analysis"). Opening the seeded example project also triggers an automatic check that warns about and installs any of these that are missing in your own workspace.
+
 ## Pipeline overview
 
 ```mermaid

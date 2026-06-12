@@ -71,7 +71,6 @@ def _worker_init():
     if (_system_proj / "proj.db").exists():
         _pyproj_datadir.set_data_dir(str(_system_proj))
 
-    import rasterio
     import geopandas as gpd
     import pandas as pd
     import json
@@ -93,7 +92,6 @@ def _worker_init():
     _globals_cache = {
         '__builtins__': __builtins__,
         'warnings': warnings,
-        'rasterio': rasterio,
         'gpd': gpd,
         'pd': pd,
         'json': json,

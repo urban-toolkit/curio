@@ -194,6 +194,21 @@ export interface InstallDepsResponse {
   pipRequirements?: string[];
 }
 
+/** Response from `POST /api/packages/workflow-deps/check`. */
+export interface WorkflowDepsCheckResponse {
+  /** Python deps the workflow needs but the interpreter is missing. */
+  missing: Array<{ name: string; spec: string }>;
+  satisfied: string[];
+}
+
+/** Response from `POST /api/packages/workflow-deps/install`. */
+export interface WorkflowDepsInstallResponse {
+  /** pip argv specs actually installed (e.g. `"rasterio>=1.5.0"`), not bare names. */
+  installed: string[];
+  /** Bare names that were already satisfied — nothing was downloaded for these. */
+  skipped: string[];
+}
+
 /** Response from project-scoped install / uninstall and `GET /projects/<id>`. */
 export interface ProjectPackagesResponse {
   /** Sorted dirNames in the project's lockfile (`spec.dataflow.packages`). */
@@ -421,6 +436,30 @@ export const packagesApi = {
     return apiFetch("/api/packages/install-deps", {
       method: "POST",
       body: JSON.stringify({ packages }),
+    });
+  },
+
+  /**
+   * Load-time dependency probe: the backend AST-scans the spec's node
+   * sources for inline imports (plus the lockfile packages' manifest
+   * deps) and reports which Python libraries the interpreter is missing.
+   */
+  checkWorkflowDeps(
+    nodes: Array<{ content: string }>, packages: string[],
+  ): Promise<WorkflowDepsCheckResponse> {
+    return apiFetch("/api/packages/workflow-deps/check", {
+      method: "POST",
+      body: JSON.stringify({ nodes, packages }),
+    });
+  },
+
+  /** Batch pip-install the deps reported missing by `checkWorkflowDeps`. */
+  installWorkflowDeps(
+    deps: Record<string, string>,
+  ): Promise<WorkflowDepsInstallResponse> {
+    return apiFetch("/api/packages/workflow-deps/install", {
+      method: "POST",
+      body: JSON.stringify({ deps }),
     });
   },
 

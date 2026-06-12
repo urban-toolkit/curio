@@ -150,7 +150,7 @@ Always return JSON bodies with `{ "error": "...", "hint": "..." }` for non-200 r
 
 ### 3.8 Per-package Python dependencies
 
-Curio's `requirements.txt` / `pyproject.toml::dependencies` carries **only** the framework — what the backend + sandbox Flask apps need at module load (Flask, SQLAlchemy, requests, the LLM SDKs, etc.). **Every node package** ships its own data-ops libs in its manifest's `dependencies.python` — including the bundled `curio.builtin@1` (pandas, geopandas, rasterio, etc.) and the optional `curio.streetvision@1` (torch, transformers, ...). The `curio start` launcher walks every installed manifest at startup, merges them into a single conflict-aware union, and pip-installs the result before booting the subprocesses. See [`main.py::install_manifest_dependencies`](../utk_curio/main.py) for the walker.
+Curio's `requirements.txt` / `pyproject.toml::dependencies` carries **only** the framework — what the backend + sandbox Flask apps need at module load (Flask, SQLAlchemy, requests, the LLM SDKs, etc.). **Every node package** ships its own data-ops libs in its manifest's `dependencies.python` — including the bundled `curio.builtin@1` (pandas, geopandas, etc.) and optional packages like `curio.weather@1` (rasterio, pythermalcomfort, rasterstats) and `curio.streetvision@1` (torch, transformers, ...). The `curio start` launcher walks every installed manifest at startup, merges them into a single conflict-aware union, and pip-installs the result before booting the subprocesses. See [`main.py::install_manifest_dependencies`](../utk_curio/main.py) for the walker.
 
 Declare your package's deps in `manifest.dependencies.python`:
 

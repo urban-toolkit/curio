@@ -141,3 +141,55 @@ def test_corrupt_state_file_does_not_block_startup(tmp_curio, real_fixtures_root
     finally:
         packages_seed.CURIO_RESEED_PACKAGES = original
     assert json.loads(state_path.read_text(encoding="utf-8"))["version"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Example-dep packages (CURIO_SEED_EXAMPLES): seeded alongside builtin so
+# their python deps persist via the launcher's user-store walk, but an
+# explicit uninstall still sticks (unlike builtin's force path).
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def seed_examples_flag():
+    from utk_curio.backend.app.packages import seed as packages_seed
+    original = packages_seed.CURIO_SEED_EXAMPLES
+    packages_seed.CURIO_SEED_EXAMPLES = True
+    yield
+    packages_seed.CURIO_SEED_EXAMPLES = original
+
+
+def test_examples_flag_seeds_weather(tmp_curio, real_fixtures_root, seed_examples_flag):
+    seed_dev_packageages(user_key="guest")
+    installed = _installed_names()
+    assert "curio.weather@1" in installed
+    assert any(name.startswith("curio.builtin@") for name in installed)
+    # Still an allowlist, not a full-catalog walk.
+    assert "ai.urbanlab.uhvi@1" not in installed
+
+
+def test_no_examples_flag_keeps_weather_out(tmp_curio, real_fixtures_root):
+    seed_dev_packageages(user_key="guest")
+    assert "curio.weather@1" not in _installed_names()
+
+
+def test_weather_uninstall_is_sticky_under_examples_flag(
+    tmp_curio, real_fixtures_root, seed_examples_flag
+):
+    seed_dev_packageages(user_key="guest")
+    assert "curio.weather@1" in _installed_names()
+
+    uninstall_packageage("guest", "curio.weather@1")
+    seed_dev_packageages(user_key="guest")
+    assert "curio.weather@1" not in _installed_names(), (
+        "an explicit uninstall must not be resurrected by example seeding"
+    )
+
+    # CURIO_RESEED_PACKAGES=1 stays the documented escape hatch.
+    from utk_curio.backend.app.packages import seed as packages_seed
+    original = packages_seed.CURIO_RESEED_PACKAGES
+    packages_seed.CURIO_RESEED_PACKAGES = True
+    try:
+        seed_dev_packageages(user_key="guest")
+    finally:
+        packages_seed.CURIO_RESEED_PACKAGES = original
+    assert "curio.weather@1" in _installed_names()
