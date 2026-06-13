@@ -19,6 +19,26 @@ def test_save_new_project(app, db, user_and_token, tmp_curio):
     assert detail.spec_revision == 1
     assert storage.read_spec(services._user_dir_key(user), detail.id) == _make_spec()
 
+def test_rename_project(app, db, user_and_token, tmp_curio):
+    from utk_curio.backend.app.projects.schemas import _slugify
+
+    user, _ = user_and_token
+    data = ProjectCreate(name="Old Name", spec=_make_spec(), outputs=[])
+    detail = services.save_project(user, data)
+    assert detail.name == "Old Name"
+
+    # Verifying the change
+    summary = services.rename_project(user, detail.id, "New Name")
+    assert summary.name == "New Name", "Did not return as expected"
+    assert summary.id == detail.id, "Did not return as expected"
+    assert summary.slug == _slugify("New Name"), "Did not return as expected"
+
+    # Verifying that the change persisted
+    db.session.expire_all()
+    result = services.load_project(user, detail.id)
+    assert result["project"].name == "New Name", "Failed the persistence check or didn't load properly"
+    assert result["project"].slug == _slugify("New Name"), "Failed the persistence check or didn't load properly"
+
 
 def test_update_project_bumps_revision(app, db, user_and_token, tmp_curio):
     user, _ = user_and_token
@@ -71,6 +91,31 @@ def test_load_project(app, db, user_and_token, tmp_curio):
     assert result["spec"] is not None
     assert len(result["outputs"]) == 1
     assert result["outputs"][0]["node_id"] == "n1"
+
+
+def test_load_shared_project(app, db, user_and_token, tmp_curio):
+    user, _ = user_and_token
+    shared = storage._shared_data_dir()
+    shared.mkdir(parents=True, exist_ok=True)
+    (shared / "data1.data").write_bytes(b"payload")
+
+    data = ProjectCreate(
+        name="Load Shared Test",
+        spec=_make_spec("Shared Project"),
+        outputs=[OutputRef(node_id="n1", filename="data1.data")],
+    )
+    detail = services.save_project(user, data)
+
+    result = services.load_shared_project(detail.id)
+    assert result["spec"] == _make_spec("Shared Project"), f"{result["spec"]} does not equal {_make_spec("Shared Project")}"
+    assert len(result["outputs"]) == 1
+    assert result["outputs"][0]["node_id"] == "n1"
+
+    assert result["project"].folder_path == ""
+
+    from utk_curio.backend.app.projects import repositories as repo
+    db_project = repo.get_for_user(detail.id, user.id)
+    assert db_project.last_opened_at is None
 
 
 def test_list_projects(app, db, user_and_token, tmp_curio):

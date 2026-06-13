@@ -475,7 +475,6 @@ def process_javascript_code():
     stdout = response_json['stdout']
     stderr = response_json['stderr']
     output = response_json['output']
-
     t3 = _time.perf_counter()
     print(
         f"[backend /processJavaScriptCode] parse={t1-t0:.3f}s"

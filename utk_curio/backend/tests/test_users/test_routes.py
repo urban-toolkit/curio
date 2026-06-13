@@ -4,6 +4,7 @@ import json
 
 from utk_curio.backend.app.projects import tasks
 from utk_curio.backend.app.users import routes
+from utk_curio.backend.app.services.google_oauth import GoogleOAuth
 
 def _post(client, path, data=None):
     return client.post(
@@ -63,6 +64,28 @@ class TestSigninRoute:
             {"identifier": "alice", "password": "wrong"},
         )
         assert resp.status_code == 401
+
+class TestGoogleSignInRoute:
+    def test_signin_google_returns_200(self, client, monkeypatch):
+        """Test for Simple Google Sign In"""
+        monkeypatch.setattr(GoogleOAuth, "verify_token", lambda self, code: {
+            "uid": "google-uid-123",
+            "email": "alice@example.com",
+            "name": "Alice",
+        })
+        resp = _post(client, "/api/auth/signin/google", {"code": "valid_uid"})
+
+        assert resp.status_code == 200
+        assert resp.get_json()["token"]
+        assert resp.get_json()["user"]["email"] == "alice@example.com"
+
+    def test_invalid_token_returns_401(self, client, monkeypatch):
+        """Test for invalid token"""
+        monkeypatch.setattr(GoogleOAuth, "verify_token", lambda self, code: None)
+        resp = _post(client, "/api/auth/signin/google", {"code": "invalid_uid"})
+
+        assert resp.status_code == 401
+        assert resp.get_json()["error"] == "Invalid Google token.", f"Actual = {resp.get_json()["error"]}"
 
 
 class TestMeRoute:
