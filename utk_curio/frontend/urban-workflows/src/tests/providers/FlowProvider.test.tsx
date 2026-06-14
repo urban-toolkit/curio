@@ -1,3 +1,8 @@
+/**
+ * this is for individual functions testing
+ * testings the whole dataflow require E2E testing which is not this
+ */
+
 import React from "react";
 import { renderHook, act } from '@testing-library/react';
 import { NodeType, ResolutionType } from '../../constants';
@@ -11,18 +16,19 @@ import { NodeType, ResolutionType } from '../../constants';
  */
 let mockInitialNode: any[] = [];
 let mockEdges: any[] = [];
+
 jest.mock('reactflow', () => {
   const actualReact = require('react');
   return {
     useNodesState: () => {
       const [nodes, setNodes] = actualReact.useState(mockInitialNode);
-      return [nodes, setNodes, jest.fn()]
+      return [nodes, setNodes, jest.fn()];
     },
     useEdgesState: () => {
       const [edges, setEdges] = actualReact.useState(mockEdges);
       return [edges, setEdges, jest.fn()];
     },
-    useReactFlow: () => ({
+    useReactFlow: () => ({  
       getNodes: () => mockInitialNode,
       getEdges: () => mockEdges,
       getNode: (id: any) => mockInitialNode.find((n: any) => n.id == id)
@@ -32,8 +38,6 @@ jest.mock('reactflow', () => {
     MarkerType: { ArrowClosed: 'arrowclosed' },
   }
 });
-
-
 
 jest.mock('../../providers/ToastProvider', () => ({
   useToastContext: () => ({ showToast: jest.fn() })
@@ -76,6 +80,8 @@ import FlowProvider, { useFlowContext } from "../../providers/FlowProvider";
 const wrapper = ({ children }: { children: React.ReactNode }) => 
   React.createElement(FlowProvider, null, children)
 
+
+//helper function, make a node  with the type computation analysis
 const makeNode = (id: string, extraData: any = {}) => ({
   id,
   type: "__curioUniversalNode",
@@ -85,6 +91,7 @@ const makeNode = (id: string, extraData: any = {}) => ({
   }
 });
 
+//helper function, make a merge Node
 const makeMergeNode = (id: string, extraData: any = {}) => ({
   id,
   type: '__curioUniversalNode',
@@ -96,6 +103,7 @@ const makeMergeNode = (id: string, extraData: any = {}) => ({
   },
 });
 
+//make a single edge between source and target,
 const makeEdge = (source: string, target: string, sourceHandle = 'out', targetHandle = 'in_0') => ({
   id: `${source}-${target}`,
   source,
@@ -105,7 +113,18 @@ const makeEdge = (source: string, target: string, sourceHandle = 'out', targetHa
 });
 
 
+//helper function, make a linear chain a -> b -> c
+const makeLinearChain = () => {
+  mockInitialNode = [makeNode('a'), makeNode('b'), makeNode('c')];
+  mockEdges = [makeEdge('a', 'b'), makeEdge('b', 'c')]
+}
+
 describe('FlowProviderTest', () => {
+  //refresh the nodes and edges after each test
+  beforeEach(() => {
+    mockInitialNode = [];   // keys for each node: {id position data}
+    mockEdges = [];         // keys for each edge: {id source target sourceHandle targetHandle}
+  })
   describe('testing onConnect function', () => {
     /**
      *  create two connection:  a->merge and b->merge
@@ -150,13 +169,122 @@ describe('FlowProviderTest', () => {
     });
   })
 
-  //applyNewOutput takes an { nodeId, output } parameter, finds downstream nodes via edges, and sets their data.input.
-  describe('testing ApplyNewOutput function', () => {
-    //refresh the nodes and edges after each test
-    beforeEach(() => {
-      mockInitialNode = [];   // keys for each node: {id position data}
-      mockEdges = [];         // keys for each edge: {id source target sourceHandle targetHandle}
+  describe('testing playAllNodes function', () => {
+    it('playAllNodes trigger the first node exec only', () => {
+      makeLinearChain(); // a -> b -> c
+      
+      const { result } = renderHook(() => useFlowContext(), { wrapper });
+      act(() => { result.current.playAllNodes() });
+
+      const nodeA = result.current.nodes.find((node: any) => node.id == 'a');
+      const nodeB = result.current.nodes.find((node: any) => node.id == 'b');
+
+      expect(nodeA?.data.triggerExec).toBe(1);
+      expect(nodeB?.data.triggerExec ?? 0).toBe(0);
     })
+
+    it('playAllNodes trigger the first node and advances to the next level of node', () => {
+      makeLinearChain();  // a -> b -> c
+
+      const { result } = renderHook(() => useFlowContext(), { wrapper });
+      act(() => { result.current.playAllNodes(); });
+      act(() => { result.current.signalNodeExecDone('a'); });  //the first node is done now move to the second node
+      
+      const nodeA = result.current.nodes.find((node: any) => node.id == 'a');
+      const nodeB = result.current.nodes.find((node: any) => node.id == 'b');
+      
+      expect(nodeA?.data.triggerExec).toBe(1);
+      expect(nodeB?.data.triggerExec).toBe(1);
+    })
+
+    it('playAllNodes guard against playAllStateRef', () => {
+      makeLinearChain(); // a -> b -> c
+      
+      const { result } = renderHook(() => useFlowContext(), { wrapper });
+      act(() => { result.current.playAllNodes() });
+
+      const triggerAfterFirst = result.current.nodes.find((node: any) => node.id == 'a');
+      act(() => { result.current.playAllNodes() });
+      const triggerAfterSecond = result.current.nodes.find((node: any) => node.id == 'a');
+
+      expect(triggerAfterSecond).toBe(triggerAfterFirst); 
+    })
+
+    it('does not trigger nodes on an empty canvas', () => {
+      mockInitialNode = [];
+      mockEdges = [];
+      const { result } = renderHook(() => useFlowContext(), { wrapper });
+
+      // Should not throw
+      expect(() => {
+        act(() => { result.current.playAllNodes(); });
+      }).not.toThrow();
+    });
+    
+    it('clear after the last level complete', () => {
+      mockInitialNode = [makeNode('onlyNode')];
+      mockEdges = [];
+
+      const { result } = renderHook(() => useFlowContext(), { wrapper });
+      act(() => { result.current.playAllNodes() });
+      act(() => { result.current.signalNodeExecDone('onlyNode') });
+      act(() => { result.current.playAllNodes() });
+      //now the second playAllNodes should be playable
+      //the onlyNode.triggerExec should be = 2
+      const onlyNode = result.current.nodes.find((node: any) => node.id == 'onlyNode');
+      expect(onlyNode?.data.triggerExec).toBe(2);
+    })
+  })
+
+
+  describe('playNodesUpTo', () => {
+
+    // sanity test for playNodesUpTo function
+    it('triggers only the ancestors and the target node, not unrelated nodes', () => {
+      // a -> b -> c    and standalone d
+      mockInitialNode = [makeNode('a'), makeNode('b'), makeNode('c'), makeNode('d')];
+      mockEdges = [
+        makeEdge('a','b') ,
+        makeEdge('b', 'c')
+      ];
+
+      const { result } = renderHook(() => useFlowContext(), { wrapper });
+
+      act(() => { result.current.playNodesUpTo('c'); });
+
+      const nodeA = result.current.nodes.find((n: any) => n.id === 'a');
+      const nodeD = result.current.nodes.find((n: any) => n.id === 'd');
+
+      // a is an ancestor of c — should be triggered
+      expect(nodeA?.data.triggerExec).toBeGreaterThan(0);
+      // d is unrelated — must NOT be triggered
+      expect(nodeD?.data.triggerExec ?? 0).toBe(0);
+    });
+
+    //during playAllNodes state, playNodesUpTo shouldn't play
+    //playNodesUpTo also shouldnt overwrite the ref
+
+    it('playNodesUpTo does nothing while playAllNode is playing', () => {
+      makeLinearChain(); // a -> b -> c
+      const { result } = renderHook(() => useFlowContext(), { wrapper });
+
+      act(() => result.current.playAllNodes());
+      const nodeA_before_playNodesUpTo = result.current.nodes.find((node: any) => node.id == 'a');
+      const nodeB_before_playNodesUpTo = result.current.nodes.find((node: any) => node.id == 'b');
+
+      act(() => result.current.playNodesUpTo('c'));
+      const nodeA_after_playNodesUpTo = result.current.nodes.find((node: any) => node.id == 'a');
+      const nodeB_after_playNodesUpTo = result.current.nodes.find((node: any) => node.id == 'b');
+
+      expect(nodeA_after_playNodesUpTo).toBe(nodeA_after_playNodesUpTo);
+      expect(nodeB_after_playNodesUpTo).toBe(nodeB_after_playNodesUpTo);
+    })
+  
+});
+
+
+  //applyNewOutput takes an { nodeId, output } parameter, finds downstream nodes via edges, and sets their data.input
+  describe('testing ApplyNewOutput function', () => {
     //testing if it actually send output downstream
     //making a -> b edge, test if b.data.input == a.data.output and b.data.source == a after calling applyNewOutput
     //also testing if the 'b' data is overwritten
@@ -314,6 +442,7 @@ describe('FlowProviderTest', () => {
 
       act(() => { result.current.applyNewOutput({ nodeId: 'a', output: 'outputFromA' }); });
       act(() => { result.current.applyNewOutput({ nodeId: 'b', output: 'outputFromB' }); });
+      act(() => { result.current.applyNewOutput({ nodeId: 'merge', output: 'outputFromMerge?' }); });
 
       const nodeC = result.current.nodes.find((n: any) => n.id === 'c');
       const nodeMerge = result.current.nodes.find((n: any) => n.id === 'merge');
@@ -322,9 +451,8 @@ describe('FlowProviderTest', () => {
       expect(nodeMerge?.data.input[0]).toBe('outputFromA');
       expect(nodeMerge?.data.input[1]).toBe('outputFromB');
 
-      // THIS IS THE BUG — c should have received the merged data, but it hasn't
-      expect(nodeC?.data.input).toBeDefined();   // will FAIL — input is undefined
-      expect(nodeC?.data.source).toBe('merge');  // will FAIL — source is undefined
+      expect(nodeC?.data.input).toBeDefined();   
+      expect(nodeC?.data.source).toBe('merge');  
     });
   })
 })
