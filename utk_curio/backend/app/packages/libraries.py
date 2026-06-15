@@ -50,6 +50,11 @@ class LibraryEntry:
     spec: str  # PEP 440 / npm-ish spec, or "" for "latest"
     kind: str  # "python" or "js"
     source: str  # "standalone" or "<packageId>@<major>"
+    # Whether the library is actually present in the interpreter at the
+    # declared spec. ``None`` for ``js`` (no runtime check). A package can
+    # *declare* a dep that was never installed (or was later pip-uninstalled),
+    # so the modal must distinguish "declared" from "actually installed".
+    installed: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -135,6 +140,7 @@ def package_derived(user_key: str) -> list[LibraryEntry]:
         ManifestError,
         load_packageage_manifest,
     )
+    from utk_curio.backend.app.packages.pip_runner import is_satisfied
 
     out: list[LibraryEntry] = []
     for package_path in list_user_packageages(user_key):
@@ -144,7 +150,12 @@ def package_derived(user_key: str) -> list[LibraryEntry]:
             continue
         source = package_path.name
         for name, spec in (m.python_deps or {}).items():
-            out.append(LibraryEntry(name=name, spec=spec, kind="python", source=source))
+            # A package can declare a dep that isn't actually present (never
+            # installed, or pip-uninstalled later) — surface real state.
+            out.append(LibraryEntry(
+                name=name, spec=spec, kind="python", source=source,
+                installed=is_satisfied(name, spec),
+            ))
         for name, spec in (m.js_deps or {}).items():
             out.append(LibraryEntry(name=name, spec=spec, kind="js", source=source))
     return out

@@ -36,7 +36,9 @@ multiplies each building's height by `2.0` before computing its shadow.
 `scripts/build_example_pbfs.py`). The data node requests the layers the shader needs:
 `surface`, `parks`, `water`, `roads`, and `buildings`. Anything missing from the PBF is skipped
 quietly; everything present materialises in EPSG:3395 (metric), which is what the shadow math
-expects.
+expects. The downstream compute and map nodes reference these layers by name (`table_osm_roads`,
+`table_osm_buildings`) — the named-layer case of
+[Referencing Upstream Data in Autark Nodes](../ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
 
 ```json
 "data": [{

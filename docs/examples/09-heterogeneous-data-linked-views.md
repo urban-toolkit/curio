@@ -6,6 +6,10 @@ This example combines three different data sources — a high-resolution thermal
 > **WebGPU required**
 > The `autk-grammar` map step in this dataflow needs WebGPU. Run this example in a Chromium-based browser (Chrome / Edge) on a machine with a working GPU stack.
 
+> [!NOTE]
+> **Python dependencies**
+> The code nodes import `rasterio`, `pythermalcomfort`, and `rasterstats`, which are provided by the `curio.weather` package — installed automatically when Curio starts with `--with-examples` (or `--deploy`), or on demand from the catalog drawer ("Weather Analysis"). Opening the seeded example project also triggers an automatic check that warns about and installs any of these that are missing in your own workspace.
+
 ## Pipeline overview
 
 ```mermaid
@@ -176,7 +180,9 @@ The pool keeps the joined `census` table in shared memory so the next three view
 The map is an `autk-grammar` node with just a `map` block. The census polygons routed in from the Data
 Pool are auto-injected as the `upstream` source; the layer is coloured by the UTCI `mean` column and
 picking is enabled so the linked scatterplot can highlight selected tracts. No JavaScript and no explicit
-data block — the grammar reads the upstream GeoDataFrame directly.
+data block — the grammar reads the upstream GeoDataFrame directly. This is the single-frame case of
+Autark's two upstream-referencing mechanisms — see
+[Referencing Upstream Data in Autark Nodes](../ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
 
 ```json
 {

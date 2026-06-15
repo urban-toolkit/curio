@@ -1,10 +1,12 @@
 # Curio framework dependencies — the libraries the backend + sandbox
 # Flask apps and the LLM helper layer need at module load. Data-ops libs
-# used by individual node packages (pandas, geopandas, rasterio, …) are
+# used by individual node packages (pandas, geopandas, …) are
 # NOT listed here; they live in each package's
 # ``manifest.json::dependencies.python`` and are pip-installed by the
 # launcher at ``curio start`` after walking every installed manifest.
-# See packages/curio.builtin@1/manifest.json for the worked example.
+# See packages/curio.builtin@1/manifest.json for the worked example
+# (and packages/curio.weather@1 for an optional package's deps, e.g.
+# rasterio).
 requests==2.33.1
 python-dotenv==1.2.2
 Flask==3.1.3

@@ -9,6 +9,7 @@ import React, { useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { useFlowContext, IOutput } from "../providers/FlowProvider";
 import { useCode } from "../hook/useCode";
+import { useEnsureWorkflowDeps } from "../hook/useEnsureWorkflowDeps";
 import { TrillGenerator } from "../TrillGenerator";
 import { refreshPackageRegistry } from "../registry/packageRegistryBootstrap";
 import {
@@ -40,6 +41,11 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
     projectId,
   } = useFlowContext();
   const { loadTrill } = useCode();
+  // Warn + auto-install missing Python deps. SECURITY: only called for the
+  // OWNER's own project below — never for a foreign/shared spec, since the
+  // package names come from node source the loader can't vet and installing
+  // an sdist runs setup.py server-side (see the hook's doc comment).
+  const ensureWorkflowDeps = useEnsureWorkflowDeps();
 
   useEffect(() => {
     if (id === "new") {
@@ -60,7 +66,10 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
     // package set via setPackages → projectPackagesStore.
     setCurrentProject(id, []);
 
-    const applyResult = (result: { spec: unknown; outputs?: Array<{ node_id: string; filename: string }> }) => {
+    const applyResult = (
+      result: { spec: unknown; outputs?: Array<{ node_id: string; filename: string }> },
+      { trusted }: { trusted: boolean }
+    ) => {
       const { spec, outputs } = result;
 
       if (spec) {
@@ -70,6 +79,9 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
           );
         }
         loadTrill(spec);
+        // Auto-install missing deps only for the owner's own project — never
+        // for a foreign shared spec (see ensureWorkflowDeps' SECURITY note).
+        if (trusted) ensureWorkflowDeps(spec);
       }
 
       if (outputs && outputs.length > 0) {
@@ -108,16 +120,18 @@ export const ProjectLoader: React.FC<{ children: React.ReactNode }> = ({ childre
       }
       try {
         const result = await loadProject(id);
-        applyResult(result);
+        applyResult(result, { trusted: true });
       } catch (err) {
         // 404 from the owner-scoped endpoint means either the project doesn't
         // exist or the current user isn't its owner. Try the shared (link-based)
         // endpoint before giving up — it's how share URLs work for visitors.
+        // trusted=false: the shared spec is foreign content, so we render it
+        // but never auto-install its declared deps.
         const status = (err as { status?: number })?.status;
         if (status === 404) {
           try {
             const result = await loadSharedProject(id);
-            applyResult(result);
+            applyResult(result, { trusted: false });
           } catch (sharedErr) {
             console.error("Failed to load shared project:", sharedErr);
           }

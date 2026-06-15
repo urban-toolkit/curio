@@ -194,6 +194,19 @@ export interface InstallDepsResponse {
   pipRequirements?: string[];
 }
 
+/** Response from `POST /api/packages/workflow-deps/check`. */
+export interface WorkflowDepsCheckResponse {
+  /** Declared dependency packages (dirNames) that aren't installed yet, or
+   *  are installed but missing one of their declared python deps. */
+  packages: string[];
+}
+
+/** Response from `POST /api/packages/workflow-deps/install`. */
+export interface WorkflowDepsInstallResponse {
+  /** Catalog package dirNames installed into the user store. */
+  installedPackages: string[];
+}
+
 /** Response from project-scoped install / uninstall and `GET /projects/<id>`. */
 export interface ProjectPackagesResponse {
   /** Sorted dirNames in the project's lockfile (`spec.dataflow.packages`). */
@@ -424,6 +437,27 @@ export const packagesApi = {
     });
   },
 
+  /**
+   * Load-time dependency probe: given the dataflow's declared package
+   * lockfile (`dataflow.packages`), report which packages aren't ready
+   * (not installed, or installed but missing a declared python dep).
+   */
+  checkWorkflowDeps(packages: string[]): Promise<WorkflowDepsCheckResponse> {
+    return apiFetch("/api/packages/workflow-deps/check", {
+      method: "POST",
+      body: JSON.stringify({ packages }),
+    });
+  },
+
+  /** Install the dataflow's declared dependency packages into the user store
+   *  (each brings its nodes + declared python libraries). */
+  installWorkflowDeps(packages: string[]): Promise<WorkflowDepsInstallResponse> {
+    return apiFetch("/api/packages/workflow-deps/install", {
+      method: "POST",
+      body: JSON.stringify({ packages }),
+    });
+  },
+
   // --------------------------------------------------------------
   // Per-project lockfile + per-user defaults (see docs/CATALOG.md)
   // --------------------------------------------------------------
@@ -470,10 +504,18 @@ export const packagesApi = {
   // Per-user "Installed libraries" (Python + JS)
   // --------------------------------------------------------------
 
-  /** Standalone + package-derived libraries in one payload. */
+  /** Standalone + package-derived libraries in one payload.
+   *  ``installed`` reports whether a package-declared python dep is actually
+   *  present in the interpreter (null for js — no runtime check). */
   listLibraries(): Promise<{
     standalone: { python: string[]; js: string[] };
-    fromPackages: Array<{ name: string; spec: string; kind: "python" | "js"; source: string }>;
+    fromPackages: Array<{
+      name: string;
+      spec: string;
+      kind: "python" | "js";
+      source: string;
+      installed?: boolean | null;
+    }>;
   }> {
     return apiFetch("/api/packages/libraries");
   },

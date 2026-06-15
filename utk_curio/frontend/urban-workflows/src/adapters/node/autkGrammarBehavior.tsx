@@ -1566,7 +1566,18 @@ function resolveDataSourceUrls(spec: any, forBackend = false): any {
     // section runs there), force the loopback host to 127.0.0.1 — node's fetch
     // can stall on `localhost` resolving to IPv6 ::1. The /file/ route is
     // unauthenticated, so the node fetch needs no token.
-    if (forBackend) backendUrl = backendUrl.replace(/:\/\/localhost(:|\/|$)/, '://127.0.0.1$1');
+    if (forBackend) {
+        backendUrl = backendUrl.replace(/:\/\/localhost(:|\/|$)/, '://127.0.0.1$1');
+        // The sandbox is co-located with the backend in the SAME container, so
+        // it reaches it on the backend's fixed *internal* port (5002). Any host
+        // port remapping (e.g. CI on a shared host publishes 5002 as 5022 to
+        // avoid colliding with another stack) does NOT apply inside the
+        // container — fetching the host-mapped port from in-container yields
+        // "fetch failed" and the OSM/PBF data load comes back empty. Force the
+        // internal port for a loopback backend; a public BACKEND_URL (prod) has
+        // no 127.0.0.1 host and is left unchanged.
+        backendUrl = backendUrl.replace(/^(https?:\/\/127\.0\.0\.1):\d+/, '$1:5002');
+    }
     const urlFields = ['pbfFileUrl', 'csvFileUrl', 'jsonFileUrl', 'geojsonFileUrl'];
     const isAbsolute = (url: string) => /^[a-z][a-z\d+\-.]*:/i.test(url);
 

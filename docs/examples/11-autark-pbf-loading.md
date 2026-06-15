@@ -23,7 +23,9 @@ flowchart LR
 
 The loader is a grammar node with only a `data` block, so it emits its tables as a layer array. The
 visualization node receives those layers as named upstream sources (`table_osm_surface`,
-`table_osm_buildings`, …) and references them directly in its `map` and `plot` blocks.
+`table_osm_buildings`, …) and references them directly in its `map` and `plot` blocks. This is the
+named-layer case of Autark's two upstream-referencing mechanisms — see
+[Referencing Upstream Data in Autark Nodes](../ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
 
 ## Data
 

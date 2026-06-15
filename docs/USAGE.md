@@ -251,6 +251,8 @@ If `GUEST_LLM_API_KEY` is not set, the LLM Assistant will return an error for gu
 
 Curio's nodes ship as **packages** — small, self-contained folders with a `manifest.json` declaring the node kinds inside. The built-in nodes (Data Loading, Vega-Lite, Autark, etc.) live in a pre-installed package called `curio.builtin@1`; you can install more via the **Node Catalog** drawer.
 
+One Autark-specific note: an Autark node's spec references incoming data by name — a single upstream frame is auto-injected as the `upstream` source, while a layer array from an upstream Autark node exposes each layer under its own table name. See [Referencing Upstream Data in Autark Nodes](ARCHITECTURE.md#referencing-upstream-data-in-autark-nodes).
+
 To open the drawer: in the **Tools panel** on the left edge of the canvas, find the **Packages** dropdown (cube icon) and open it; the **Get more packages +** button sits in the dropdown's footer. From there you can:
 
 - Browse the catalog and install new packages.

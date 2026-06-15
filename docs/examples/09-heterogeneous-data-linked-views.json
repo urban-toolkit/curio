@@ -254,6 +254,8 @@
     "task": "",
     "timestamp": 1781043243132,
     "provenance_id": "Heterogeneous data + linked views",
-    "packages": []
+    "packages": [
+      "curio.weather@1"
+    ]
   }
 }

@@ -115,6 +115,12 @@ def _is_satisfied(name: str, spec: str) -> bool:
         return True  # unparseable — let pip be the authority
 
 
+def is_satisfied(name: str, spec: str) -> bool:
+    """Public wrapper over :func:`_is_satisfied` for callers outside this
+    module (e.g. the ``/api/packages/workflow-deps/check`` route)."""
+    return _is_satisfied(name, spec)
+
+
 def install_python_deps(
     deps: Mapping[str, str],
     *,

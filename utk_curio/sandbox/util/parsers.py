@@ -1,10 +1,10 @@
-import rasterio
 import geopandas as gpd
 import pandas as pd
 import json
 import mmap
 import zlib
 import os
+import sys
 import time
 import hashlib
 import ast
@@ -207,6 +207,9 @@ def parse_geodataframe(data_value):
     return gdf
 
 def parse_raster(data_value):
+    # rasterio is optional — provided by raster-capable packages
+    # (curio.weather, ai.urbanlab.uhvi), not by curio.builtin.
+    import rasterio
     return rasterio.open(data_value)
 
 # Parsing Functions
@@ -428,7 +431,9 @@ def parseOutput(output):
             parsed_geojson = json_output['data']
             parsed_geojson['metadata'] = {'name': output.metadata['name']}
             json_output['data'] = parsed_geojson
-    elif isinstance(output, rasterio.io.DatasetReader):
+    # A DatasetReader can only exist if user code already imported rasterio,
+    # so the sys.modules guard is exact without importing the optional lib.
+    elif 'rasterio' in sys.modules and isinstance(output, sys.modules['rasterio'].io.DatasetReader):
         json_output['data'] = output.name
         json_output['dataType'] = 'raster'
     elif isinstance(output, tuple):
@@ -653,7 +658,7 @@ def save_to_duckdb(value, node_id=None, session_id=None):
                 [art_id, node_id, 'dataframe', rel_path, meta_json]
             )
 
-        elif isinstance(value, rasterio.io.DatasetReader):
+        elif 'rasterio' in sys.modules and isinstance(value, sys.modules['rasterio'].io.DatasetReader):
             con.execute(
                 "INSERT INTO artifacts (id, node_id, kind, value_str) VALUES (?, ?, ?, ?)",
                 [art_id, node_id, 'raster', value.name]
@@ -742,6 +747,7 @@ def load_from_duckdb(art_id, session_id=None):
             if frame_meta:
                 result.__dict__['metadata'] = frame_meta
         elif kind == 'raster':
+            import rasterio  # optional dep — see parse_raster
             result = rasterio.open(v_str)
         elif kind == 'list_of_ids':
             child_ids = json.loads(v_json)
@@ -865,6 +871,6 @@ def detect_kind(obj):
     # GeoDataFrame MUST come before DataFrame
     if isinstance(obj, gpd.GeoDataFrame): return 'geodataframe'
     if isinstance(obj, pd.DataFrame): return 'dataframe'
-    if isinstance(obj, rasterio.io.DatasetReader): return 'raster'
+    if 'rasterio' in sys.modules and isinstance(obj, sys.modules['rasterio'].io.DatasetReader): return 'raster'
     if isinstance(obj, tuple): return 'outputs'
     return 'unknown'

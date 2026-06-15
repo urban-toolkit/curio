@@ -1028,6 +1028,92 @@ def resolve_deps():
 
 
 # ---------------------------------------------------------------------------
+# /workflow-deps — install a dataflow's declared package dependencies on load
+# ---------------------------------------------------------------------------
+#
+# A dataflow declares the catalog packages it depends on in its
+# ``dataflow.packages`` lockfile. When the canvas loads one, the frontend
+# posts that lockfile to /check to learn which declared packages aren't ready
+# (not installed, or installed-but-with-a-missing-dep), warns the user, and
+# auto-installs them via /install. Installing the package provisions both its
+# nodes and its declared python libraries — a dataflow depends on packages,
+# and the libraries follow.
+
+
+@packages_bp.route("/workflow-deps/check", methods=["POST"])
+@require_auth
+def check_workflow_deps():
+    """Report which of a dataflow's declared packages aren't ready.
+
+    Body: ``{"packages": ["<dirName>", ...]}`` — the loaded spec's
+    ``dataflow.packages`` lockfile. A dataflow declares the catalog packages
+    it depends on there; loading it should install any that aren't present.
+    A package is "needed" if it isn't in the user's store, OR it is but some
+    of its declared python deps aren't actually installed (e.g. a lib was
+    pip-uninstalled out from under it). Response::
+
+        {"packages": ["<dirName>", ...]}   # need installing, sorted
+    """
+    from utk_curio.backend.app.packages.pip_runner import is_satisfied
+
+    user_key = _user_dir_key(g.user)
+    body = request.get_json(silent=True) or {}
+    packages = body.get("packages") or []
+    if not isinstance(packages, list):
+        return _error("body must be {'packages': [<dirName>, ...]}")
+
+    from utk_curio.backend.app.packages.storage import PACKAGE_DIR_RE
+
+    in_store = {p.name for p in list_user_packageages(user_key)}
+    need: set[str] = set()
+    for dir_name in packages:
+        if not isinstance(dir_name, str) or not PACKAGE_DIR_RE.match(dir_name):
+            continue
+        if dir_name not in in_store:
+            need.add(dir_name)
+            continue
+        # Installed in the store — flag only if a declared dep went missing.
+        deps = packages_services._read_python_deps(user_key, dir_name)
+        if any(not is_satisfied(n, s) for n, s in deps.items()):
+            need.add(dir_name)
+    return jsonify({"packages": sorted(need)}), 200
+
+
+@packages_bp.route("/workflow-deps/install", methods=["POST"])
+@require_auth
+def install_workflow_deps():
+    """Install the catalog packages a dataflow declares it depends on.
+
+    Body: ``{"packages": ["<dirName>", ...]}``. Each is installed into the
+    user's store via :func:`services.install_to_store`, which copies the
+    package (if missing) and pip-installs its declared python deps — so the
+    package's libraries and nodes both become available. A dataflow depends
+    on *packages*, not loose libraries; the libraries follow from the package.
+
+    Response: ``{"installedPackages": ["<dirName>", ...]}``.
+    """
+    from utk_curio.backend.app.packages.storage import PACKAGE_DIR_RE
+
+    user_key = _user_dir_key(g.user)
+    body = request.get_json(silent=True) or {}
+    pkg_dirs = body.get("packages") or []
+    if not isinstance(pkg_dirs, list) or not pkg_dirs:
+        return _error("body must be {'packages': [<dirName>, ...]}")
+    for dir_name in pkg_dirs:
+        if not isinstance(dir_name, str) or not PACKAGE_DIR_RE.match(dir_name):
+            return _error(f"invalid package dirName: {dir_name!r}")
+
+    installed_packages: list[str] = []
+    for dir_name in pkg_dirs:
+        try:
+            packages_services.install_to_store(user_key, dir_name)
+            installed_packages.append(dir_name)
+        except packages_services.PackageServiceError as exc:
+            return _error(f"failed to install {dir_name}: {exc}", exc.status)
+    return jsonify({"installedPackages": installed_packages}), 200
+
+
+# ---------------------------------------------------------------------------
 # Per-project lockfile + per-user defaults
 # ---------------------------------------------------------------------------
 #
@@ -1147,7 +1233,8 @@ def list_libraries_route():
     return jsonify({
         "standalone": agg.standalone,
         "fromPackages": [
-            {"name": e.name, "spec": e.spec, "kind": e.kind, "source": e.source}
+            {"name": e.name, "spec": e.spec, "kind": e.kind, "source": e.source,
+             "installed": e.installed}
             for e in agg.from_packages
         ],
     }), 200

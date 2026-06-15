@@ -25,36 +25,93 @@ on:
       - 'package-lock.json'
       - 'packages/**'
       - 'docs/examples/**'
-  # workflow_dispatch:  # Run manually from Actions tab or: gh workflow run docker-compose.yml
+  workflow_dispatch:  # Run manually from the Actions tab or: gh workflow run docker-compose.yml
+
+# Least privilege: the job needs only to read the checked-out code. It must
+# NOT have access to deploy/Tailscale secrets (see deploy.yml).
+permissions:
+  contents: read
+
+# The self-hosted runner on `utk` shares one GPU and a fixed set of CI ports.
+# Never let two runs execute concurrently or they fight over the GPU/ports.
+concurrency:
+  group: utk-ci
+  cancel-in-progress: false
 
 jobs:
-  test-compose:
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
+  test-gpu:
+    # Runs on the self-hosted runner on `utk` (NVIDIA GPU), registered with
+    # these labels. There is no GitHub-hosted fallback: the WebGPU compute
+    # examples (06/07) require real hardware WebGPU, which a GPU-less
+    # ubuntu-latest runner cannot provide.
+    runs-on: [self-hosted, linux, gpu, curio]
+    timeout-minutes: 90
+
+    # SECURITY (public repo + self-hosted): fork PRs must never execute on
+    # `utk`. Run only for push / workflow_dispatch / same-repo PRs. Fork PRs
+    # are skipped entirely (they get no CI; a maintainer pushes the branch).
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+
+    env:
+      # Hardware WebGPU path (see conftest.py browser_type_launch_args).
+      CURIO_WEBGPU_BACKEND: hardware
+      CURIO_REQUIRE_HARDWARE_WEBGPU: "1"
+      # autk-grammar data pools parse city-scale PBFs server-side; give the
+      # data-table render a larger budget than the 30s default on this host.
+      CURIO_E2E_DATAPOOL_TIMEOUT_MS: "120000"
+      # Isolation from prod on the same host: distinct compose project
+      # (-p curio-ci below) + remapped host ports so the CI stack never
+      # collides with prod `curio` (2000/5002/8080) or `curio-dev`
+      # (2010/5012/8090). docker-compose.yml honors these env vars.
+      CURIO_CONTAINER_NAME: curio-ci
+      CURIO_PORT_2000: "2020"
+      CURIO_PORT_5002: "5022"
+      CURIO_PORT_8080: "8100"
+      BACKEND_URL: "http://localhost:5022"
+      # Host-side Playwright targets the remapped ports (utils.py
+      # e2e_existing_servers / _backend_base_url_for_config read these).
+      CURIO_E2E_HOST: localhost
+      CURIO_E2E_BACKEND_PORT: "5022"
+      CURIO_E2E_SANDBOX_PORT: "2020"
+      CURIO_E2E_FRONTEND_PORT: "8100"
+      FLASK_SANDBOX_HOST: localhost
+      FLASK_SANDBOX_PORT: "2020"
 
     steps:
+      # On the persistent self-hosted runner, the previous run's container
+      # writes files into the workspace as root (.curio/, instance/*.db, ...),
+      # which the runner user (deploy) cannot delete — that fatally breaks
+      # actions/checkout's clean. Chown the whole workspace back to the runner
+      # user via a throwaway root container BEFORE checkout runs, so it can
+      # clean any container-created artifact. (Runs in the leftover workspace
+      # from the prior run; a no-op on a fresh runner.)
+      - name: 🧹 Reclaim root-owned workspace files (self-hosted)
+        run: docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true
+
       - name: 📥 Checkout repository
         uses: actions/checkout@v6
 
       - name: 🔨 Build all service images in parallel
-        run: docker compose -p curio build --parallel
+        run: docker compose -p curio-ci build --parallel
 
       - name: ▶️ Start containers
-        run: docker compose -p curio up -d
+        run: docker compose -p curio-ci up -d
 
       - name: 🧪 Wait for services to become healthy
         shell: bash
         run: |
           set -euo pipefail
-          echo "Waiting for curio to be healthy..."
+          echo "Waiting for curio-ci to be healthy..."
 
           timeout 240 bash -euo pipefail -c '
             while true; do
-              cid="$(docker compose -p curio ps -a -q curio | head -n1 || true)"
+              cid="$(docker compose -p curio-ci ps -a -q curio | head -n1 || true)"
 
               if [[ -z "${cid}" ]]; then
-                echo "Still waiting... (curio container not created yet)"
-                docker compose -p curio ps -a || true
+                echo "Still waiting... (curio-ci container not created yet)"
+                docker compose -p curio-ci ps -a || true
                 sleep 2
                 continue
               fi
@@ -63,20 +120,20 @@ jobs:
               health="$(docker inspect --format "{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}" "${cid}" 2>/dev/null || true)"
 
               if [[ "${health}" == "healthy" ]]; then
-                echo "curio is healthy."
+                echo "curio-ci is healthy."
                 break
               fi
 
               # If there is no Docker HEALTHCHECK, accept "running"
               if [[ "${health}" == "no-healthcheck" && "${state}" == "running" ]]; then
-                echo "curio is running (no healthcheck)."
+                echo "curio-ci is running (no healthcheck)."
                 break
               fi
 
               # If it crashed, fail fast with logs
               if [[ "${state}" == "exited" ]]; then
-                echo "curio exited. Logs:"
-                docker compose -p curio logs --no-color --tail=200 curio || true
+                echo "curio-ci exited. Logs:"
+                docker compose -p curio-ci logs --no-color --tail=200 curio || true
                 exit 1
               fi
 
@@ -87,12 +144,12 @@ jobs:
 
       - name: 🧪 Run backend unit tests
         run: |
-          docker compose -p curio exec curio \
+          docker compose -p curio-ci exec -T curio \
             bash scripts/test.sh --backend-only --use-existing
 
       - name: 🧪 Run sandbox unit tests
         run: |
-          docker compose -p curio exec curio \
+          docker compose -p curio-ci exec -T curio \
             bash scripts/test.sh --sandbox-only --use-existing
 
       - name: 🐍 Set up Python (for e2e)
@@ -102,55 +159,16 @@ jobs:
 
       - name: 🔧 Give .curio/ permissions for host-side tests
         run: |
-          # Docker creates .curio/ as root; the host runner needs write
-          # access to create .curio/playwright/expected/ for programmatic
-          # ground-truth data.
-          sudo chmod -R a+rwx .curio/ 2>/dev/null || mkdir -p .curio/playwright/expected
+          # Docker creates .curio/ as root; the host runner needs write access
+          # to create .curio/playwright/expected/. The runner user (deploy) has
+          # no sudo, so fix perms via a throwaway container (deploy.yml pattern).
+          docker run --rm -v "$PWD/.curio:/c" alpine chmod -R a+rwx /c \
+            || mkdir -p .curio/playwright/expected
 
-      - name: 📈 Resource snapshot (before e2e)
+      - name: 🎭 Run e2e tests (full matrix, hardware WebGPU)
         run: |
-          echo "=== free -h ==="
-          free -h
-          echo "=== df -h ==="
-          df -h
-          echo "=== docker system df ==="
-          docker system df || true
-          echo "=== docker stats (no-stream) ==="
-          docker stats --no-stream || true
-          echo "=== top (snapshot) ==="
-          top -bn1 | head -30 || true
-
-      - name: 🎭 Run e2e tests
-        run: |
-          # Background sampler: streams a resource snapshot every 30 s to the
-          # step log so we can see RAM/disk trajectory if the runner dies
-          # mid-step (the failing run lost step-10 logs entirely after the
-          # runner went silent).
-          (
-            while true; do
-              echo "=== SAMPLER $(date -u +%H:%M:%S) ==="
-              free -h | sed -n '1,3p'
-              df -h / | tail -1
-              docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}' 2>/dev/null || true
-              sleep 30
-            done
-          ) &
-          SAMPLER_PID=$!
-          trap "kill $SAMPLER_PID 2>/dev/null || true" EXIT
           bash scripts/test.sh --e2e-only --use-existing \
             --allure-dir "$GITHUB_WORKSPACE/allure-results"
-
-      - name: 📈 Resource snapshot (after e2e)
-        if: always()
-        run: |
-          echo "=== free -h ==="
-          free -h
-          echo "=== df -h ==="
-          df -h
-          echo "=== docker system df ==="
-          docker system df || true
-          echo "=== docker stats (no-stream) ==="
-          docker stats --no-stream || true
 
       - name: 📊 Install Allure CLI
         if: always()
@@ -174,12 +192,39 @@ jobs:
 
       - name: Check frontend availability
         run: |
-          curl --fail http://localhost:8080 || (echo "Frontend not reachable" && exit 1)
+          curl --fail http://localhost:8100 || (echo "Frontend not reachable" && exit 1)
 
       - name: Jest frontend unit tests
         run: |
           docker build --target frontend_builder -t curio-frontend-test .
           docker run --rm curio-frontend-test npm test
 
+      - name: 📋 Capture sandbox/backend logs (autk-db errors)
+        if: always()
+        run: |
+          docker compose -p curio-ci logs --no-color --tail=8000 > "$GITHUB_WORKSPACE/container-logs.txt" 2>&1 || true
+          # The real autk-db worker stderr ([execJs] ...) goes to
+          # .curio/messages.log (root-owned, on the mounted workspace); read it
+          # out via a root container so the runner user can upload it.
+          docker run --rm -v "$PWD:/w" -w /w alpine sh -c \
+            'echo "=== .curio/messages.log ==="; cat .curio/messages.log 2>/dev/null; echo; echo "=== per-session messages.log ==="; find .curio -name messages.log -exec sh -c "echo \"--- {} ---\"; cat {}" \; 2>/dev/null' \
+            > "$GITHUB_WORKSPACE/curio-messages.txt" 2>&1 || true
+
+      - name: 📤 Upload sandbox logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: container-logs
+          path: |
+            container-logs.txt
+            curio-messages.txt
+          retention-days: 7
+
       - name: 🧹 Tear down containers
-        run: docker compose -p curio down
+        if: always()
+        run: |
+          docker compose -p curio-ci down -v --remove-orphans || true
+          # Hand the container-written (root-owned) files back to the runner
+          # user so they don't accumulate; the pre-checkout step is the real
+          # safety net for the next run.
+          docker run --rm -v "$PWD:/w" -w /w alpine chown -R "$(id -u):$(id -g)" /w 2>/dev/null || true

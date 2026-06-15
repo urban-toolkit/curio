@@ -6,7 +6,6 @@
 import warnings
 warnings.filterwarnings('ignore')
 
-import rasterio
 import geopandas as gpd
 import pandas as pd
 import json

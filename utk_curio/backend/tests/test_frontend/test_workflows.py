@@ -165,12 +165,17 @@ class TestWorkflowCanvas:
                             out.adapter = null;
                             return out;
                         }
-                        let info = null;
-                        try {
-                            info = adapter.requestAdapterInfo
-                                ? await adapter.requestAdapterInfo()
-                                : null;
-                        } catch (e) { info = { error: String(e) }; }
+                        // Prefer the synchronous `adapter.info` property
+                        // (populated in current Chrome); fall back to the
+                        // deprecated requestAdapterInfo() for older builds.
+                        let info = adapter.info || null;
+                        if (!info) {
+                            try {
+                                info = adapter.requestAdapterInfo
+                                    ? await adapter.requestAdapterInfo()
+                                    : null;
+                            } catch (e) { info = { error: String(e) }; }
+                        }
                         out.adapter = {
                             info: info ? {
                                 vendor: info.vendor,
@@ -204,7 +209,48 @@ class TestWorkflowCanvas:
             self.__class__._webgpu_diagnostics_logged = True
             # Stash on the page so dump_browser_log can include it.
             self.page._curio_webgpu_diagnostics = diagnostics  # type: ignore[attr-defined]
+        self._assert_hardware_webgpu(diagnostics)
         return diagnostics
+
+    @staticmethod
+    def _assert_hardware_webgpu(diagnostics: dict) -> None:
+        """When ``CURIO_REQUIRE_HARDWARE_WEBGPU=1`` (the self-hosted GPU
+        runner), fail fast if the browser did not get a *real hardware*
+        WebGPU adapter — so a misconfigured runner (e.g. a stray
+        ``VK_ICD_FILENAMES`` pinning Mesa lavapipe, or a missing NVIDIA Vulkan
+        ICD) can't silently run the 06/07 compute examples on software and
+        pass for the wrong reason. The hardware launch path
+        (``CURIO_WEBGPU_BACKEND=hardware``) passes no SwiftShader flag, so a
+        GPU-less host yields a *null* adapter here rather than a software one.
+        """
+        if os.environ.get("CURIO_REQUIRE_HARDWARE_WEBGPU") != "1":
+            return
+        adapter = diagnostics.get("adapter")
+        info = (adapter or {}).get("info") or {}
+        desc = " ".join(
+            str(info.get(k, "")) for k in ("vendor", "architecture", "device", "description")
+        ).lower()
+        is_software = any(s in desc for s in ("llvmpipe", "swiftshader", "lavapipe", "software"))
+        device = diagnostics.get("device")
+        device_ok = isinstance(device, dict) and device.get("ok") is True
+        dump = json.dumps(diagnostics)
+        assert adapter is not None, (
+            "CURIO_REQUIRE_HARDWARE_WEBGPU=1 but requestAdapter() returned no adapter "
+            f"(WebGPU unavailable on the GPU runner). Diagnostics: {dump}"
+        )
+        assert adapter.get("isFallbackAdapter") is not True, (
+            "CURIO_REQUIRE_HARDWARE_WEBGPU=1 but the WebGPU adapter is a software "
+            f"fallback (isFallbackAdapter=true). Diagnostics: {dump}"
+        )
+        assert not is_software, (
+            "CURIO_REQUIRE_HARDWARE_WEBGPU=1 but the WebGPU adapter looks like a software "
+            f"renderer ({desc!r}). Ensure VK_ICD_FILENAMES is unset and the NVIDIA Vulkan "
+            f"ICD is installed. Diagnostics: {dump}"
+        )
+        assert device_ok, (
+            "CURIO_REQUIRE_HARDWARE_WEBGPU=1 but requestDevice() did not succeed. "
+            f"Diagnostics: {dump}"
+        )
 
     def _read_code_node_error_text(self, node_el) -> str | None:
         """Return the error message text from a code node's inline output
@@ -404,7 +450,14 @@ class TestWorkflowCanvas:
                 except Exception:
                     pass
                 data_table = node_el.locator("td.MuiTableCell-root")
-                data_table.first.wait_for(state="visible", timeout=30000)
+                # The pool shows data from an upstream node; for autk-grammar
+                # examples that data section parses city-scale PBFs server-side,
+                # which can run well past the default 30s on a busy host.
+                # Env-tunable so the GPU runner can grant a larger budget.
+                data_table.first.wait_for(
+                    state="visible",
+                    timeout=int(os.environ.get("CURIO_E2E_DATAPOOL_TIMEOUT_MS", "30000")),
+                )
                 assert data_table.count() >= 1, (
                     f"DataPool node {node.id} ({node.type}) is missing its "
                     f"data table"
