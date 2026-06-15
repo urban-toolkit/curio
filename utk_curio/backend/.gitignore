@@ -4,3 +4,4 @@ instance/
 logs/
 
 flask_cache/
+.env

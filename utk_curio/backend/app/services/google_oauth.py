@@ -1,35 +1,45 @@
-import requests as internal_requests
-from google.oauth2 import id_token
-from google.auth.transport import requests
 import os
+
+import requests as internal_requests
 from dotenv import load_dotenv
+from google.auth.transport import requests
+from google.oauth2 import id_token
 
-load_dotenv()
+_basedir = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
+)
+load_dotenv(os.path.join(_basedir, '.env'))
+load_dotenv(os.path.join(_basedir, '.flaskenv'))
 
-REDIRECT_URI = os.getenv('REDIRECT_URI', 'http://localhost:8080')
+REDIRECT_URI = os.getenv('REDIRECT_URI', 'postmessage')
+CLIENT_ID = os.environ.get('CLIENT_ID', '')
+CLIENT_SECRET = os.environ.get('CLIENT_SECRET', '')
 
-if 'CLIENT_ID' in os.environ:
-    CLIENT_ID = os.environ['CLIENT_ID']
 
-if 'CLIENT_SECRET' in os.environ:
-    CLIENT_SECRET = os.environ['CLIENT_SECRET']
 class GoogleOAuth:
     def verify_token(self, auth_code):
+        if not CLIENT_ID or not CLIENT_SECRET:
+            print('Google OAuth is not configured (CLIENT_ID / CLIENT_SECRET missing)')
+            return None
+
         token_data = {
             'code': auth_code,
             'client_id': CLIENT_ID,
             'client_secret': CLIENT_SECRET,
-            'redirect_uri': [REDIRECT_URI],
+            'redirect_uri': REDIRECT_URI,
             'grant_type': 'authorization_code',
         }
         token_url = 'https://oauth2.googleapis.com/token'
-        
+
         token = None
         try:
             token_response = internal_requests.post(token_url, data=token_data)
             token_response_json = token_response.json()
-            
+
             token = token_response_json.get('id_token')
+            if not token:
+                print(token_response_json.get('error_description') or token_response_json)
+                return None
         except Exception as e:
             print(e)
             return None
