@@ -882,7 +882,6 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             }
         }
 
-        // console.log("applying new output from ", nodesAffected, " and ", currentEdges);
 
 
         // Skip setNodes entirely when nothing downstream needs updating — an
