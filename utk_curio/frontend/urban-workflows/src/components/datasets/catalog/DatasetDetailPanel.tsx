@@ -200,6 +200,7 @@ export interface DatasetDetailPanelProps {
   variant?: "page" | "modal";
   dataflowId?: string | null;
   liveOutputs?: Array<{ node_id: string; filename: string; data_type?: string }>;
+  initialTab?: (typeof TABS)[number];
   onBack?: () => void;
   /** Called after publish/unpublish so the parent can refetch the dataset. */
   onMutated?: () => void;
@@ -212,11 +213,12 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
   variant = "modal",
   dataflowId = null,
   liveOutputs,
+  initialTab = "Overview",
   onBack,
   onMutated,
 }) => {
   const { showToast } = useToastContext();
-  const [activeTab, setActiveTab] = useState<(typeof TABS)[number]>("Overview");
+  const [activeTab, setActiveTab] = useState<(typeof TABS)[number]>(initialTab);
   const [exporting, setExporting] = useState(false);
   const [publishBusy, setPublishBusy] = useState(false);
   // The standalone catalog page renders without a canvas, so live usage

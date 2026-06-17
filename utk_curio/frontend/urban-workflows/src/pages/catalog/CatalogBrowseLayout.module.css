@@ -851,6 +851,55 @@
   z-index: 1;
 }
 
+.geoPreviewStatus {
+  position: relative;
+  z-index: 1;
+  font-size: 10px;
+  color: #666666;
+  padding: 0 12px 8px;
+  text-align: center;
+}
+
+.drawerPreviewTableWrap {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.94);
+  padding: 6px 8px;
+  box-sizing: border-box;
+}
+
+.drawerPreviewTable {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 9px;
+  line-height: 1.25;
+}
+
+.drawerPreviewTable th,
+.drawerPreviewTable td {
+  padding: 2px 4px;
+  border-bottom: 1px solid #ebebeb;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.drawerPreviewTable th {
+  color: #888888;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.drawerPreviewTable td {
+  color: #333333;
+}
+
 /* Dataset name */
 .drawerDatasetName {
   padding: 14px 20px 0;

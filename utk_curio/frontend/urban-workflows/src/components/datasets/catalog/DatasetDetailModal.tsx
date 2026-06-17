@@ -8,6 +8,7 @@ export interface DatasetDetailModalProps {
   dataflowId?: string | null;
   liveOutputs?: DatasetCatalogQuery["liveOutputs"];
   fallbackDataset?: DatasetCatalogItem | null;
+  initialTab?: "Overview" | "Schema" | "Table Preview" | "Lineage";
   onClose: () => void;
 }
 
@@ -16,6 +17,7 @@ export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
   dataflowId = null,
   liveOutputs,
   fallbackDataset = null,
+  initialTab = "Overview",
   onClose,
 }) => {
   const [dataset, setDataset] = useState<DatasetCatalogItem | null>(fallbackDataset);
@@ -56,6 +58,7 @@ export const DatasetDetailModal: React.FC<DatasetDetailModalProps> = ({
         variant="modal"
         dataflowId={dataflowId}
         liveOutputs={liveOutputs}
+        initialTab={initialTab}
         onMutated={() => setReloadToken((token) => token + 1)}
       />
     </ModalShell>

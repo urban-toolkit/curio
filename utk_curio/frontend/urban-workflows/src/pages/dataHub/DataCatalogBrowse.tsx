@@ -18,6 +18,7 @@ import { useToastContext } from "../../providers/ToastProvider";
 import { CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
 import { DataCatalogBrowseCard } from "./DataCatalogBrowseCard";
 import { DataCatalogBrowseDrawer } from "./DataCatalogBrowseDrawer";
+import { DatasetDetailModal } from "../../components/datasets/catalog/DatasetDetailModal";
 import {
   FORMAT_FILTERS,
   ORIGIN_FILTERS,
@@ -34,6 +35,8 @@ export const DataCatalogBrowse: React.FC = () => {
   const [origin, setOrigin] = useState<DatasetOrigin | "">("");
   const [format, setFormat] = useState<DatasetFormat | "">("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [drawerDismissed, setDrawerDismissed] = useState(false);
+  const [sampleDatasetId, setSampleDatasetId] = useState<string | null>(null);
   const [publishingId, setPublishingId] = useState<string | null>(null);
   const [catalogPublishAllowed, setCatalogPublishAllowed] = useState(false);
   const catalog = useDatasetCatalog({ search, sort, origin, format, includeHub: true });
@@ -52,6 +55,11 @@ export const DataCatalogBrowse: React.FC = () => {
   const selected = useMemo(
     () => catalog.items.find((item) => item.id === selectedId) || catalog.items[0] || null,
     [catalog.items, selectedId],
+  );
+  const drawerDataset = drawerDismissed ? null : selected;
+  const sampleDataset = useMemo(
+    () => (sampleDatasetId ? catalog.items.find((item) => item.id === sampleDatasetId) ?? null : null),
+    [catalog.items, sampleDatasetId],
   );
 
   const catalogFacetDatasetTotal = useMemo(
@@ -238,7 +246,10 @@ export const DataCatalogBrowse: React.FC = () => {
               key={`${dataset.origin}:${dataset.id}`}
               dataset={dataset}
               selected={selected?.id === dataset.id}
-              onSelect={() => setSelectedId(dataset.id)}
+              onSelect={() => {
+                setSelectedId(dataset.id);
+                setDrawerDismissed(false);
+              }}
               onViewDetails={() => navigate(`/catalog/data/${encodeURIComponent(dataset.id)}`)}
               publishingId={publishingId}
               onPublish={handlePublish}
@@ -249,10 +260,21 @@ export const DataCatalogBrowse: React.FC = () => {
       </main>
 
       <DataCatalogBrowseDrawer
-        dataset={selected}
+        dataset={drawerDataset}
         publishingId={publishingId}
         onPublish={handlePublish}
+        onClose={() => setDrawerDismissed(true)}
+        onViewSample={(dataset) => setSampleDatasetId(dataset.id)}
       />
+
+      {sampleDatasetId ? (
+        <DatasetDetailModal
+          datasetId={sampleDatasetId}
+          fallbackDataset={sampleDataset}
+          initialTab="Table Preview"
+          onClose={() => setSampleDatasetId(null)}
+        />
+      ) : null}
     </div>
   );
 };

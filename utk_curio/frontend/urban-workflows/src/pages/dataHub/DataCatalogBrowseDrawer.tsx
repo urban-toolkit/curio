@@ -15,19 +15,23 @@ export interface DataCatalogBrowseDrawerProps {
   dataset: DatasetCatalogItem | null;
   publishingId: string | null;
   onPublish: (dataset: DatasetCatalogItem) => void;
+  onClose: () => void;
+  onViewSample: (dataset: DatasetCatalogItem) => void;
 }
 
 export function DataCatalogBrowseDrawer({
   dataset,
   publishingId,
   onPublish,
+  onClose,
+  onViewSample,
 }: DataCatalogBrowseDrawerProps) {
   if (!dataset) {
     return (
       <aside className={styles.browseDrawer}>
         <div className={styles.drawerHeader}>
           <CatalogDrawerTitle kind="dataset" title="Dataset details" />
-          <button className={styles.drawerClose} type="button">
+          <button className={styles.drawerClose} type="button" aria-label="Close" onClick={onClose}>
             ✕
           </button>
         </div>
@@ -45,12 +49,12 @@ export function DataCatalogBrowseDrawer({
     <aside className={styles.browseDrawer}>
       <div className={styles.drawerHeader}>
         <CatalogDrawerTitle kind="dataset" title="Dataset details" />
-        <button className={styles.drawerClose} type="button" aria-label="Close">
+        <button className={styles.drawerClose} type="button" aria-label="Close" onClick={onClose}>
           ✕
         </button>
       </div>
 
-      <DataCatalogGeoPreview format={dataset.format} />
+      <DataCatalogGeoPreview dataset={dataset} />
 
       <div className={styles.drawerDatasetName}>
         <h2>{dataset.title}</h2>
@@ -159,7 +163,11 @@ export function DataCatalogBrowseDrawer({
             Publish
           </button>
         )}
-        <button className={styles.viewSampleBtn} type="button">
+        <button
+          className={styles.viewSampleBtn}
+          type="button"
+          onClick={() => onViewSample(dataset)}
+        >
           View sample data
         </button>
       </div>
