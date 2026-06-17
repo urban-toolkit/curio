@@ -1,0 +1,44 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "pbf-load",
+        "type": "curio.builtin/autk-grammar",
+        "x": 200,
+        "y": 300,
+        "content": "{\n  \"data\": [\n    {\n      \"type\": \"osm\",\n      \"pbfFileUrl\": \"docs/examples/data/lower_mnt.osm.pbf\",\n      \"queryArea\": {\n        \"geocodeArea\": \"New York\",\n        \"areas\": [\n          \"Battery Park City\",\n          \"Financial District\"\n        ]\n      },\n      \"outputTableName\": \"table_osm\",\n      \"autoLoadLayers\": {\n        \"layers\": [\n          \"surface\",\n          \"parks\",\n          \"water\",\n          \"roads\",\n          \"buildings\"\n        ],\n        \"dropOsmTable\": true\n      }\n    }\n  ]\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Load the Lower Manhattan OSM layer stack from a local PBF and emit it downstream.",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "pbf-viz",
+        "type": "curio.builtin/autk-grammar",
+        "x": 801.2257142857144,
+        "y": 300,
+        "content": "{\n  \"map\": {\n    \"layerRefs\": [\n      {\n        \"dataRef\": \"table_osm_surface\"\n      },\n      {\n        \"dataRef\": \"table_osm_parks\"\n      },\n      {\n        \"dataRef\": \"table_osm_water\"\n      },\n      {\n        \"dataRef\": \"table_osm_buildings\",\n        \"isPick\": true,\n        \"getFnv\": \"height\",\n        \"getFnvType\": \"quantitative\",\n        \"defaultFnv\": 10\n      },\n      {\n        \"dataRef\": \"table_osm_roads\"\n      }\n    ]\n  },\n  \"plot\": {\n    \"dataRef\": \"table_osm_buildings\",\n    \"mark\": \"bar\",\n    \"axis\": [\n      \"height\",\n      \"@transform\"\n    ],\n    \"title\": \"Lower Manhattan building heights (m)\",\n    \"transform\": {\n      \"preset\": \"binning-1d\",\n      \"options\": {\n        \"bins\": 12\n      }\n    },\n    \"events\": [\n      \"brushX\"\n    ],\n    \"mapRef\": \"table_osm_buildings\"\n  }\n}",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "Render the layer stack, colour buildings by height, and link a brushable height histogram.",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-load-viz",
+        "source": "pbf-load",
+        "target": "pbf-viz"
+      }
+    ],
+    "name": "Autark PBF loading",
+    "task": "",
+    "timestamp": 1780885972204,
+    "provenance_id": "Autark PBF loading",
+    "packages": []
+  }
+}

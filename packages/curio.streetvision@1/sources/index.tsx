@@ -1,41 +1,41 @@
 /**
- * Entry point for the curio.streetvision@1 dynamic lifecycle bundle.
+ * Entry point for the curio.streetvision@1 dynamic behavior bundle.
  *
- * Webpack builds this into `../scripts/lifecycles.js` (under the package
+ * Webpack builds this into `../scripts/behaviors.js` (under the package
  * directory). The `scripts/` subdir is one of the archive validator's
  * allowed top-level dirs, so the bundle survives the catalog install
  * round-trip. When the frontend fetches the installed package list and
- * sees `manifest.lifecycleScript: "scripts/lifecycles.js"`, it loads this
+ * sees `manifest.behaviorScript: "scripts/behaviors.js"`, it loads this
  * bundle via a `<script>` tag injection. The side-effect calls below
- * register each lifecycle against the global registry exposed on
+ * register each behavior against the global registry exposed on
  * `window.curio` at app boot.
  *
- * React, ReactFlow, and the `registerLifecycle` function are externalized
+ * React, ReactFlow, and the `registerBehavior` function are externalized
  * — they live on `window` so this bundle stays small and shares Curio's
  * own React instance (so hooks work correctly).
  */
 
-import { useStreetViewFetcherLifecycle } from './streetViewFetcherLifecycle';
-import { useHfCvInferenceLifecycle } from './hfCvInferenceLifecycle';
-import { useCvGalleryLifecycle } from './cvGalleryLifecycle';
+import { useStreetViewFetcherBehavior } from './streetViewFetcherBehavior';
+import { useHfCvInferenceBehavior } from './hfCvInferenceBehavior';
+import { useCvGalleryBehavior } from './cvGalleryBehavior';
 
-// `window.curio.registerLifecycle` is exposed by Curio's main bundle at boot
+// `window.curio.registerBehavior` is exposed by Curio's main bundle at boot
 // (src/registry/index.ts). We avoid a `declare global` for portability —
 // babel-preset-typescript outside the host tsconfig refuses ambient
 // declarations.
 type CurioGlobal = {
-  registerLifecycle: (key: string, hook: any) => void;
+  registerBehavior: (key: string, hook: any) => void;
 };
 
 function registerAll(curio: CurioGlobal) {
-  curio.registerLifecycle('street-view-fetcher', useStreetViewFetcherLifecycle);
-  curio.registerLifecycle('hf-cv-inference', useHfCvInferenceLifecycle);
-  curio.registerLifecycle('cv-gallery', useCvGalleryLifecycle);
+  curio.registerBehavior('street-view-fetcher', useStreetViewFetcherBehavior);
+  curio.registerBehavior('hf-cv-inference', useHfCvInferenceBehavior);
+  curio.registerBehavior('cv-gallery', useCvGalleryBehavior);
 }
 
 if (typeof window !== 'undefined') {
   const w = window as any;
-  if (w.curio && typeof w.curio.registerLifecycle === 'function') {
+  if (w.curio && typeof w.curio.registerBehavior === 'function') {
     registerAll(w.curio);
   } else {
     // Host hasn't published its registry yet. Stash a callback so the boot

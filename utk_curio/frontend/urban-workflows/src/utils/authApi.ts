@@ -67,7 +67,6 @@ export interface PublicConfig {
   curio_no_auth: boolean;
   curio_no_project: boolean;
   skip_project_page: boolean;
-  google_client_id: string;
   curio_env: string;
   shared_guest_username: string;
   enable_collab: boolean;
@@ -94,13 +93,6 @@ export const authApi = {
     return apiFetch("/api/auth/signin", {
       method: "POST",
       body: JSON.stringify(data),
-    });
-  },
-
-  signinGoogle(code: string): Promise<AuthResponse> {
-    return apiFetch("/api/auth/signin/google", {
-      method: "POST",
-      body: JSON.stringify({ code }),
     });
   },
 

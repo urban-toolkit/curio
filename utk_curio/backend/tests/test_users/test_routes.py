@@ -139,11 +139,6 @@ class TestGuestRoute:
             "/api/auth/signin",
             {"identifier": "alice", "password": "password123"},
         ).status_code == 403
-        assert _post(
-            client,
-            "/api/auth/signin/google",
-            {"code": "fake"},
-        ).status_code == 403
         assert _post(client, "/api/auth/signin/guest").status_code == 403
 
 

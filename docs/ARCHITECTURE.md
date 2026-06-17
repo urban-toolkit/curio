@@ -1,6 +1,6 @@
 # Curio Architecture
 
-This document describes the internal architecture of Curio for contributors who need to understand how the system is structured and how data moves through it. For setup instructions see [USAGE.md](USAGE.md), for contributing guidelines see [CONTRIBUTING.md](CONTRIBUTING.md), for how nodes and packages work — including how to add a new lifecycle hook or icon — see [CATALOG.md](CATALOG.md), and for an end-to-end walkthrough of adding a new node package (manifest + lifecycle hook + optional Flask blueprint + optional dependency extras) see [EXTENDING.md](EXTENDING.md).
+This document describes the internal architecture of Curio for contributors who need to understand how the system is structured and how data moves through it. For setup instructions see [USAGE.md](USAGE.md), for contributing guidelines see [CONTRIBUTING.md](CONTRIBUTING.md), for how nodes and packages work — including how to add a new behavior hook or icon — see [CATALOG.md](CATALOG.md), and for an end-to-end walkthrough of adding a new node package (manifest + behavior hook + optional Flask blueprint + optional dependency extras) see [EXTENDING.md](EXTENDING.md).
 
 ## Table of Contents
 
@@ -13,11 +13,12 @@ This document describes the internal architecture of Curio for contributors who 
   * [Node Packages and Manifests](#node-packages-and-manifests)
   * [NodeDescriptor: Static Metadata](#nodedescriptor-static-metadata)
   * [NodeAdapter: Runtime Wiring](#nodeadapter-runtime-wiring)
-  * [Lifecycle Hooks](#lifecycle-hooks)
+  * [Behavior Hooks](#behavior-hooks)
   * [UniversalNode: One Component for All Types](#universalnode-one-component-for-all-types)
 * [Data Between Nodes](#data-between-nodes)
   * [Supported Data Types](#supported-data-types)
-  * [File-Based Data Transfer](#file-based-data-transfer)
+  * [DuckDB-Based Data Transfer](#duckdb-based-data-transfer)
+  * [Referencing Upstream Data in Autark Nodes](#referencing-upstream-data-in-autark-nodes)
   * [Connection Validation](#connection-validation)
 * [Execution Pipeline](#execution-pipeline)
   * [Step-by-Step: Running a Node](#step-by-step-running-a-node)
@@ -127,8 +128,8 @@ packages/
     integrity.json        # SHA-256 of every file (verified on install)
   curio.streetvision@1/   # optional package, install from /catalog
     manifest.json
-    sources/*.tsx         # custom lifecycle hooks (Street View Fetcher, …)
-    scripts/lifecycles.js # pre-built bundle that registers those hooks at boot
+    sources/*.tsx         # custom behavior hooks (Street View Fetcher, …)
+    scripts/behaviors.js # pre-built bundle that registers those hooks at boot
     integrity.json
 ```
 
@@ -138,7 +139,7 @@ A manifest's `templates[*]` entry maps cleanly to a `NodeDescriptor`:
 {
   "id": "data-loading",
   "category": "data",
-  "lifecycle": "code",
+  "behavior": "code",
   "engine": "python",
   "editor": "code",
   "inputPorts": [],
@@ -152,10 +153,10 @@ Built-in templates (in `curio.builtin@1/manifest.json`) currently cover:
 
 | Category | Templates |
 |---|---|
-| Data | `data-loading`, `data-transformation`, `data-summary`, `data-export`, `data-pool`, `autk-db` |
-| Computation | `computation-analysis`, `js-computation`, `merge-flow`, `autk-compute`, `spatial-join` |
-| Map visualization | `autk-map` |
-| Chart/table visualization | `vis-vega`, `vis-simple`, `autk-plot` |
+| Data | `data-loading`, `data-transformation`, `data-summary`, `data-export`, `data-pool` |
+| Computation | `computation-analysis`, `js-computation`, `merge-flow`, `spatial-join` |
+| Grammar (Autark) | `autk-grammar` — one node whose UrbanSpec unifies OSM/PBF loading, GPU `compute`, and `map` + `plot` rendering |
+| Chart/table visualization | `vis-vega`, `vis-simple` |
 
 Third-party packages (or first-party optional ones, like `curio.streetvision@1`) install via the **catalog drawer** in the canvas, which copies the package directory into the user's store at `.curio/users/<user>/packages/`.
 
@@ -190,19 +191,19 @@ interface NodeAdapter {
   handles: HandleDef[];           // connection points (in/out ports)
   editor: EditorConfig;           // which editors to show (code, grammar, widgets)
   container: ContainerConfig;     // visual appearance and layout
-  useLifecycle: NodeLifecycleHook; // custom hook (see below)
+  useBehavior: NodeBehaviorHook; // custom hook (see below)
 }
 ```
 
-### Lifecycle Hooks
+### Behavior Hooks
 
-Every template in a manifest references a **lifecycle key** (the `lifecycle` field — `"code"`, `"vega"`, `"data-pool"`, `"street-view-fetcher"`, …). A lifecycle is a React custom hook that runs inside `UniversalNode` and controls the node's behaviour:
+Every template in a manifest references a **behavior key** (the `behavior` field — `"code"`, `"vega"`, `"data-pool"`, `"street-view-fetcher"`, …). A behavior is a React custom hook that runs inside `UniversalNode` and controls the node's behaviour:
 
 ```typescript
-type NodeLifecycleHook = (
-  data: NodeLifecycleData,
+type NodeBehaviorHook = (
+  data: NodeBehaviorData,
   nodeState: UseNodeStateReturn,
-) => LifecycleResult;
+) => NodeBehaviorResult;
 ```
 
 The hook can return:
@@ -214,25 +215,25 @@ The hook can return:
 | `defaultValueOverride` | Override the initial code shown in the editor |
 | `dynamicHandles` / `handlesOverride` | Add or replace connection handles at runtime |
 
-Lifecycles register against a single global registry — [`lifecycleRegistry.ts::registerLifecycle(name, hook)`](../utk_curio/frontend/urban-workflows/src/registry/lifecycleRegistry.ts) — and the manifest's `lifecycle` key looks them up by name. Two distribution channels:
+Behaviors register against a single global registry — [`behaviorRegistry.ts::registerBehavior(name, hook)`](../utk_curio/frontend/urban-workflows/src/registry/behaviorRegistry.ts) — and the manifest's `behavior` key looks them up by name. Two distribution channels:
 
-**1. Built-in (ships with Curio's main bundle).** [`builtinLifecycles.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinLifecycles.ts) calls `registerLifecycle(...)` at import time for the hooks every install needs — `useCodeNodeLifecycle`, `useVegaLifecycle`, the AUTK family, `useDataPoolLifecycle`, `useMergeFlowLifecycle`, `useSpatialJoinLifecycle`, etc. These power `curio.builtin@1`'s templates.
+**1. Built-in (ships with Curio's main bundle).** [`builtinBehaviors.ts`](../utk_curio/frontend/urban-workflows/src/registry/builtinBehaviors.ts) calls `registerBehavior(...)` at import time for the hooks every install needs — `useCodeNodeBehavior`, `useVegaBehavior`, `useAutkGrammarBehavior`, `useDataPoolBehavior`, `useMergeFlowBehavior`, `useSpatialJoinBehavior`, etc. These power `curio.builtin@1`'s templates.
 
-**2. Per-package (dynamic, loaded at boot).** A package whose templates need custom UI can declare `"lifecycleScript": "scripts/lifecycles.js"` in its manifest and ship a pre-built JS bundle alongside the manifest. At boot, [`packagesClient.ts::loadPackageLifecycleScripts`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) fetches each installed package's bundle with the user's Bearer token and injects the response body as an inline `<script>` *before* descriptors are built. The bundle's top-level side-effect calls `window.curio.registerLifecycle(...)` for each hook it ships.
+**2. Per-package (dynamic, loaded at boot).** A package whose templates need custom UI can declare `"behaviorScript": "scripts/behaviors.js"` in its manifest and ship a pre-built JS bundle alongside the manifest. At boot, [`packagesClient.ts::loadPackageBehaviorScripts`](../utk_curio/frontend/urban-workflows/src/registry/packagesClient.ts) fetches each installed package's bundle with the user's Bearer token and injects the response body as an inline `<script>` *before* descriptors are built. The bundle's top-level side-effect calls `window.curio.registerBehavior(...)` for each hook it ships.
 
-**Worked example — `curio.streetvision@1`** ships three custom lifecycles:
+**Worked example — `curio.streetvision@1`** ships three custom behaviors:
 
-| Lifecycle key | Hook | Purpose |
+| Behavior key | Hook | Purpose |
 |---|---|---|
-| `street-view-fetcher` | `useStreetViewFetcherLifecycle` | Place geocoding, bbox preview, Google Street View image batch fetch |
-| `hf-cv-inference` | `useHfCvInferenceLifecycle` | HuggingFace model picker + segmentation/detection job polling |
-| `cv-gallery` | `useCvGalleryLifecycle` | Per-image gallery + overlay inspection UI |
+| `street-view-fetcher` | `useStreetViewFetcherBehavior` | Place geocoding, bbox preview, Google Street View image batch fetch |
+| `hf-cv-inference` | `useHfCvInferenceBehavior` | HuggingFace model picker + segmentation/detection job polling |
+| `cv-gallery` | `useCvGalleryBehavior` | Per-image gallery + overlay inspection UI |
 
-Each sits in `packages/curio.streetvision@1/sources/*.tsx`, webpack-bundles them into `scripts/lifecycles.js` (UMD + React/ReactFlow externalized to share Curio's instances at runtime), and the manifest's `lifecycle` field maps each template to one. The catalog install copies the package directory; boot loads the bundle; the user gets three custom-rendered nodes without rebuilding Curio. See [EXTENDING.md §4](EXTENDING.md) for the recipe.
+Each sits in `packages/curio.streetvision@1/sources/*.tsx`, webpack-bundles them into `scripts/behaviors.js` (UMD + React/ReactFlow externalized to share Curio's instances at runtime), and the manifest's `behavior` field maps each template to one. The catalog install copies the package directory; boot loads the bundle; the user gets three custom-rendered nodes without rebuilding Curio. See [EXTENDING.md §4](EXTENDING.md) for the recipe.
 
 ### UniversalNode: One Component for All Types
 
-`src/components/UniversalNode.tsx` is the single React component that renders every node type. At mount time it reads the descriptor from the registry and calls the node's lifecycle hook. This means adding a new node type does **not** require a new React component, only a descriptor entry and a lifecycle hook.
+`src/components/UniversalNode.tsx` is the single React component that renders every node type. At mount time it reads the descriptor from the registry and calls the node's behavior hook. This means adding a new node type does **not** require a new React component, only a descriptor entry and a behavior hook.
 
 Node instance data is stored in the React Flow node's `data` field as `INodeData`:
 
@@ -311,13 +312,35 @@ CREATE TABLE artifacts (
 5. When a downstream node executes, it sends the artifact ID to the sandbox, which calls `load_from_duckdb(id)` to reconstruct the Python object — no re-serialization of the original data needed.
 6. For previewing data in the UI, the frontend fetches via `GET /get-preview?fileName=<artifact_id>`, which loads the artifact and returns only the first 100 rows as JSON.
 
+### Referencing Upstream Data in Autark Nodes
+
+The `autk-grammar` node consumes upstream data differently from Python nodes: its UrbanSpec refers to data **by name**, through `dataRef` strings in `map.layerRefs[]`, `plot.dataRef` (and `plot.mapRef`), `compute[].dataRef`, and `fromFeature.layer` inside compute uniforms. Before the grammar runs, the behavior hook ([`autkGrammarBehavior.tsx`](../utk_curio/frontend/urban-workflows/src/adapters/node/autkGrammarBehavior.tsx)) resolves whatever arrived on the input edge and injects it as named `geojson` sources the spec can reference. Upstream geojson is data the browser already holds, so it stays client-side — only the spec's own authored `data` sources (OSM / PBF / CSV / …) run in the backend sandbox. There are two cases:
+
+**1. Single frame — the `upstream` keyword.** A single upstream frame (e.g. a Python GeoDataFrame from a computation node, or one routed through a Data Pool) is injected as one source named `upstream`:
+
+```json
+"map": { "layerRefs": [{ "dataRef": "upstream", "getFnv": "mean", "getFnvType": "quantitative" }] }
+```
+
+**2. Layer array — named layer references.** A multi-layer array (emitted by an upstream data-only `autk-grammar` node, e.g. one whose `data` block loads an OSM/PBF stack with `autoLoadLayers`) exposes each layer under its own table name, so the spec can target layers individually:
+
+```json
+"map": { "layerRefs": [{ "dataRef": "table_osm_buildings" }, { "dataRef": "table_osm_roads" }] }
+```
+
+When a layer array arrives, `upstream` is additionally kept as an alias for the **first** layer, so a single-layer spec keeps working when its upstream node starts emitting an array. New multi-layer specs should use the real layer names.
+
+A `dataRef` that names an unavailable table — an empty layer, a layer that was never loaded, or one dropped by an upstream node — does not fail the run. The behavior drops the dangling `map.layerRefs` entry or `plot` block before the grammar executes and logs a console warning listing the table names that *are* available; a `compute` block whose `dataRef` matches no layer is skipped. The visible symptom of a typo'd reference is therefore a missing layer plus a DevTools warning, not an error.
+
+[Example 09](examples/09-heterogeneous-data-linked-views.md) demonstrates the `upstream` keyword; [Example 11](examples/11-autark-pbf-loading.md) demonstrates named layer references.
+
 ### Connection Validation
 
 `src/utils/ConnectionValidator.ts` enforces rules when the user draws an edge:
 
 - Source port type must be compatible with target port type.
 - Port cardinality is respected (e.g., a `'1'` input port rejects a second incoming edge).
-- `MERGE_FLOW` and `FLOW_SWITCH` nodes have special cardinality rules handled by their lifecycle hooks via `dynamicHandles`.
+- `MERGE_FLOW` and `FLOW_SWITCH` nodes have special cardinality rules handled by their behavior hooks via `dynamicHandles`.
 
 ---
 
@@ -386,7 +409,7 @@ The sandbox runs as a completely separate Flask process. It:
 
 ## Interactions and Propagation
 
-Visualization nodes (`AUTK_MAP`, `AUTK_PLOT`, `VIS_VEGA`, `VIS_SIMPLE`) can emit user interactions (selections, filters, brushes) that flow **upstream** through the dataflow graph, causing upstream nodes to re-execute with the filtered subset.
+Visualization nodes (`AUTK_GRAMMAR`, `VIS_VEGA`, `VIS_SIMPLE`) can emit user interactions (selections, filters, brushes) that flow **upstream** through the dataflow graph, causing upstream nodes to re-execute with the filtered subset.
 
 ### IInteraction
 
@@ -433,7 +456,7 @@ Curio's Python deps live in two places:
 "dependencies": {
   "python": {
     "pandas": "==3.0.2", "geopandas": "==1.1.3", "shapely": ">=2.0",
-    "numpy": "", "pyarrow": "==24.0.0", "rasterio": "==1.5.0",
+    "numpy": "", "pyarrow": "==24.0.0",
     "duckdb": ">=1.5.0", "fiona": "==1.10.1", "pillow": "==12.2.0"
   }
 }
@@ -492,7 +515,7 @@ The backend is a Flask application in `utk_curio/backend/`. All routes are defin
 | `/api/packages/projects/<id>` | GET | Read a project's per-project lockfile |
 | `/api/packages/projects/<id>/install` | POST | Install a package into a project (copies files, pip-installs `manifest.dependencies.python`) |
 | `/api/packages/projects/<id>/<dirName>` | DELETE | Uninstall a package from a project (ref-counted prune + pip uninstall of unique deps) |
-| `/api/packages/<dirName>/file/<path>` | GET | Serve a static file from the user's installed copy (lifecycle bundles, icons, …) |
+| `/api/packages/<dirName>/file/<path>` | GET | Serve a static file from the user's installed copy (behavior bundles, icons, …) |
 | `/api/packages/defaults` | GET/POST | Per-user "always installed" set (drives the catalog page's Installed badge) |
 | `/api/packages/libraries` | GET/POST/DELETE | Per-user "Installed libraries" surface — list / add / remove standalone pip libs alongside manifest-derived ones |
 
@@ -507,7 +530,11 @@ The backend is a Flask application in `utk_curio/backend/`. All routes are defin
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/signin` | POST | Google OAuth sign-in |
+| `/api/auth/signup` | POST | Create an account (username + password) |
+| `/api/auth/signin` | POST | Username/password sign-in |
+| `/api/auth/signin/guest` | POST | Guest sign-in (when enabled) |
+| `/api/auth/signout` | POST | Invalidate the session token |
+| `/api/auth/me` | GET/PATCH | Current user profile |
 
 ---
 
@@ -522,14 +549,14 @@ The backend is a Flask application in `utk_curio/backend/`. All routes are defin
 | `src/providers/ProvenanceProvider.tsx` | In-memory per-node execution history (saved with the workflow JSON) |
 | `src/components/UniversalNode.tsx` | Single React component that renders all node types |
 | `src/registry/packagesClient.ts` | Fetch installed manifests → build `NodeDescriptor`s → register against `nodeRegistry` |
-| `src/registry/builtinLifecycles.ts` | `registerLifecycle()` calls for the built-in lifecycle hooks |
-| `src/registry/lifecycleRegistry.ts` | `lifecycle` key → hook lookup (built-in + package-shipped) |
+| `src/registry/builtinBehaviors.ts` | `registerBehavior()` calls for the built-in behavior hooks |
+| `src/registry/behaviorRegistry.ts` | `behavior` key → hook lookup (built-in + package-shipped) |
 | `src/registry/nodeRegistry.ts` | Singleton store of all `NodeDescriptor`s; subscribed by the palette + canvas |
-| `src/registry/packageRegistryBootstrap.ts` | Boot-time orchestration: load installed packages, inject lifecycle bundles, build descriptors |
-| `src/registry/index.ts` | Exposes `window.curio.registerLifecycle` + `window.curio.backendUrl` for package bundles |
-| `src/registry/types.ts` | TypeScript interfaces for descriptors, adapters, lifecycle hooks |
+| `src/registry/packageRegistryBootstrap.ts` | Boot-time orchestration: load installed packages, inject behavior bundles, build descriptors |
+| `src/registry/index.ts` | Exposes `window.curio.registerBehavior` + `window.curio.backendUrl` for package bundles |
+| `src/registry/types.ts` | TypeScript interfaces for descriptors, adapters, behavior hooks |
 | `src/constants.ts` | `SupportedType`, `EdgeType` enums (node types live in manifests now) |
-| `src/adapters/node/` | Built-in lifecycle hook implementations (code, vega, autk family, …) |
+| `src/adapters/node/` | Built-in behavior hook implementations (code, vega, autk family, …) |
 | `src/utils/ConnectionValidator.ts` | Edge validation logic |
 | `src/api/` | API client wrappers (`packagesApi`, `projectsApi`, `authApi`) |
 | `src/components/packages/publishing/NodeCatalogDrawer.tsx` | The canvas drawer that installs node packages from the catalog |

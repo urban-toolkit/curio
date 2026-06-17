@@ -115,14 +115,13 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
       .remove(() => true)
       .insert(values);
 
-    setCurrentView((prevView: any) => {
+    const prevView = currentViewRef.current;
+    if (prevView) {
       prevView.change("data", changeset).runAsync().then(() => {
         const map = buildVgsidMap(prevView);
         if (map.size > 0) vgsidToIndexRef.current = map;
       });
-
-      return prevView;
-    });
+    }
 
   };
 
@@ -137,15 +136,15 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
 
 
   useEffect(() => {
-    const ro = new ResizeObserver((entries) => {
-      for (let entry of entries) {
-        if (currentViewRef.current != undefined) {
-          window.dispatchEvent(new Event("resize"));
-        }
+    const ro = new ResizeObserver(() => {
+      if (currentViewRef.current != null) {
+        currentViewRef.current.resize().runAsync();
       }
     });
 
-    ro.observe(document.getElementById("vega" + data.nodeId) as HTMLElement);
+    const el = document.getElementById("vega" + data.nodeId);
+    if (el) ro.observe(el);
+    return () => ro.disconnect();
   }, []);
 
 
@@ -170,23 +169,6 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
 
     let typesOuput: string[] = [...typesInput];
 
-    let dfStringIN = "";
-    let dfStringOUT = "";
-
-    if (data.input !== "") {
-      let parsedIncome = data.input;
-
-      let df = parsedIncome["data"];
-      dfStringIN = JSON.stringify(df);
-    }
-
-    if (data.output) {
-      let parsedIncome = data.output;
-
-      let df = parsedIncome["data"];
-      dfStringOUT = JSON.stringify(df);
-    }
-
     nodeExecProv(
       startTime,
       endTime,
@@ -194,9 +176,7 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
       NodeType.VIS_VEGA + "-" + data.nodeId,
       mapTypes(typesInput),
       mapTypes(typesOuput),
-      code,
-      dfStringIN,
-      dfStringOUT
+      code
     );
 
   };
@@ -213,23 +193,72 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
 
     let view = new vega.View(vega.parse(vegaspec))
       .logLevel(vega.Warn) // set view logging level
-      .renderer("svg")
+      .renderer("canvas")
       .initialize("#vega" + data.nodeId)
       .hover();
 
-    view.runAsync().then(() => {
-      const map = buildVgsidMap(view);
-      if (map.size > 0) vgsidToIndexRef.current = map;
+    // Vega's point.js computes coordinates as `clientX - getBoundingClientRect().left`,
+    // both in screen pixels. But ReactFlow applies a CSS zoom transform to its viewport,
+    // so getBoundingClientRect() returns scaled (screen) dimensions while Vega's internal
+    // coordinate system is in CSS pixels. event.offsetX gives the correct CSS-pixel
+    // position within the canvas, ignoring parent transforms (per CSSOM spec).
+    // Intercept events before Vega sees them and replace clientX/Y so that
+    // Vega's subtraction gives offsetX — the correct CSS-pixel position.
+    const vegaEl = document.getElementById("vega" + data.nodeId);
+    const vegaCanvas = vegaEl?.querySelector('canvas') as HTMLCanvasElement | null;
+    if (vegaCanvas) {
+      const FIXED = '__curio_coord_fixed';
+      const PATCH_TYPES = [
+        'mousemove', 'mousedown', 'mouseup', 'click',
+        'pointermove', 'pointerdown', 'pointerup', 'pointerover', 'pointerout',
+        'mouseover', 'mouseout',
+      ];
+      PATCH_TYPES.forEach(type => {
+        vegaCanvas.addEventListener(type, (evt: Event) => {
+          const me = evt as MouseEvent;
+          if ((me as any)[FIXED]) return;
+          me.stopImmediatePropagation();
+          const rect = vegaCanvas.getBoundingClientRect();
+          const synth = new MouseEvent(type, {
+            bubbles: me.bubbles,
+            cancelable: me.cancelable,
+            view: me.view,
+            detail: me.detail,
+            clientX: rect.left + me.offsetX,
+            clientY: rect.top + me.offsetY,
+            screenX: me.screenX,
+            screenY: me.screenY,
+            ctrlKey: me.ctrlKey,
+            shiftKey: me.shiftKey,
+            altKey: me.altKey,
+            metaKey: me.metaKey,
+            button: me.button,
+            buttons: me.buttons,
+            relatedTarget: me.relatedTarget,
+            movementX: me.movementX,
+            movementY: me.movementY,
+          });
+          (synth as any)[FIXED] = true;
+          vegaCanvas.dispatchEvent(synth);
+        }, { capture: true });
+      });
+    }
 
+    view.runAsync().then(() => {
       const container = document.getElementById("vega" + data.nodeId);
       const parentContainer = container?.parentElement;
       if (parentContainer) {
-        // Check if the container has any elements with the class 'vega-bind'
         const hasBindings = container.querySelector(".vega-bind") !== null;
-
-        // Dynamically adjust the padding of the parent container based on the presence of bindings
         parentContainer.style.paddingBottom = hasBindings ? "25px" : "";
       }
+      // Canvas pixel dimensions are fixed at initialization time. If the node
+      // hasn't finished layout by then the coordinates will be wrong. Resize
+      // after the first render so the canvas matches the actual container size
+      // before the user can interact.
+      return view.resize().runAsync();
+    }).then(() => {
+      const map = buildVgsidMap(view);
+      if (map.size > 0) vgsidToIndexRef.current = map;
     });
 
     setCurrentView(view);

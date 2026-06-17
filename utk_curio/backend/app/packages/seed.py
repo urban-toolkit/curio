@@ -5,6 +5,14 @@ package there is not an option. Instead we keep the source-of-truth package
 at ``<repo_root>/packages/<dirname>/`` and copy it into the
 guest user's package store at backend startup.
 
+Besides ``curio.builtin`` (always seeded), the packages the bundled examples
+declare as dependencies (see :func:`example_dep_package_ids`) are seeded too
+when example projects are being seeded (``CURIO_SEED_EXAMPLES=1``, i.e.
+``--with-examples`` / ``--deploy``). Once they land in the user store, the
+launcher's per-user manifest walk re-installs their python deps on every
+subsequent start — so seeded examples keep working across plain
+``curio start`` runs.
+
 Each seed/uninstall decision is recorded in
 ``<user>/packages/.seed-state.json`` (see :mod:`.seed_state`). That marker
 file is what lets us tell "the user uninstalled this package" apart from
@@ -23,6 +31,7 @@ want a tombstoned package back.
 
 from __future__ import annotations
 
+import json
 import logging
 import shutil
 from pathlib import Path
@@ -32,7 +41,7 @@ from utk_curio.backend.app.packages.storage import (
     PACKAGE_DIR_RE,
     user_packageages_dir,
 )
-from utk_curio.backend.config import CURIO_RESEED_PACKAGES
+from utk_curio.backend.config import CURIO_RESEED_PACKAGES, CURIO_SEED_EXAMPLES
 
 log = logging.getLogger(__name__)
 
@@ -45,16 +54,47 @@ def _catalog_root() -> Path:
 BUILTIN_PACKAGE_ID = "curio.builtin"
 
 
-def _latest_builtin_dir(catalog_root: Path) -> Path | None:
-    """Return the highest-major ``curio.builtin@<X>/`` directory in *catalog_root*.
+def example_dep_package_ids() -> tuple[str, ...]:
+    """Package IDs the seeded example dataflows declare as dependencies.
 
-    Built-in is always installed as the latest available major — re-installs
-    on every login so users can never end up without the default kinds.
+    Scans ``docs/examples/*.json`` and unions each spec's
+    ``dataflow.packages`` lockfile, returning the package IDs (major
+    stripped, sorted) — so the launcher (their python deps) and this seeder
+    (copy into the user store) provision exactly the packages the examples
+    depend on, with no hardcoded allowlist to keep in sync.
+
+    A heavy package (e.g. ``curio.streetvision`` → torch/transformers) stays
+    out of every ``--with-examples`` / ``--deploy`` boot simply by not being
+    declared in any example's lockfile; users install it from the catalog
+    drawer when they want it. Shared source of truth: the launcher's catalog
+    dep walk (``utk_curio/main.py::install_manifest_dependencies``) calls
+    this too.
     """
+    repo_root = Path(__file__).resolve().parents[4]
+    examples_dir = repo_root / "docs" / "examples"
+    ids: set[str] = set()
+    if not examples_dir.is_dir():
+        return ()
+    for json_path in sorted(examples_dir.glob("*.json")):
+        try:
+            spec = json.loads(json_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+        declared = dataflow.get("packages") if isinstance(dataflow, dict) else None
+        if isinstance(declared, list):
+            for dir_name in declared:
+                if isinstance(dir_name, str) and "@" in dir_name:
+                    ids.add(dir_name.split("@", 1)[0])
+    return tuple(sorted(ids))
+
+
+def _latest_package_dir(catalog_root: Path, package_id: str) -> Path | None:
+    """Return the highest-major ``<package_id>@<X>/`` directory in *catalog_root*."""
     candidates: list[tuple[int, Path]] = []
     if not catalog_root.is_dir():
         return None
-    prefix = f"{BUILTIN_PACKAGE_ID}@"
+    prefix = f"{package_id}@"
     for entry in catalog_root.iterdir():
         if not entry.is_dir() or not entry.name.startswith(prefix):
             continue
@@ -66,6 +106,15 @@ def _latest_builtin_dir(catalog_root: Path) -> Path | None:
         return None
     candidates.sort()
     return candidates[-1][1]
+
+
+def _latest_builtin_dir(catalog_root: Path) -> Path | None:
+    """Return the highest-major ``curio.builtin@<X>/`` directory in *catalog_root*.
+
+    Built-in is always installed as the latest available major — re-installs
+    on every login so users can never end up without the default kinds.
+    """
+    return _latest_package_dir(catalog_root, BUILTIN_PACKAGE_ID)
 
 
 def _max_mtime(root: Path) -> float:
@@ -131,16 +180,26 @@ def seed_dev_packageages(*, user_key: str = "guest") -> list[str]:
             except OSError as exc:
                 log.warning("Failed to prune old builtin %s: %s", old, exc)
 
+    # Only auto-install the built-in package — plus, when example projects
+    # are being seeded, the packages those examples declare as dependencies
+    # (derived from their dataflow.packages lockfiles). Other catalog
+    # packages remain in <repo_root>/packages/ but the user must install them
+    # explicitly via the catalog drawer. (No prune-older-majors sweep for
+    # example packages: only one major of each exists.)
+    keep_names: set[str] = {keep_builtin_name} if keep_builtin_name else set()
+    if CURIO_SEED_EXAMPLES:
+        for pid in example_dep_package_ids():
+            pkg_dir = _latest_package_dir(src_root, pid)
+            if pkg_dir is not None:
+                keep_names.add(pkg_dir.name)
+
     seeded: list[str] = []
     for src in sorted(src_root.iterdir()):
         if not src.is_dir():
             continue
         if not PACKAGE_DIR_RE.match(src.name):
             continue
-        # Only auto-install the built-in package. Third-party catalog packages
-        # remain in <repo_root>/packages/ but the user must install them
-        # explicitly via the catalog drawer.
-        if src.name != keep_builtin_name:
+        if src.name not in keep_names:
             continue
         dest = dest_base / src.name
         fixture_mtime = _max_mtime(src)

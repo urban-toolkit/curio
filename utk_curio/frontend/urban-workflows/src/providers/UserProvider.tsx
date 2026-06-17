@@ -23,7 +23,6 @@ interface UserProviderProps {
   skipProjectPage: boolean;
   allowGuest: boolean;
   sharedGuestUsername: string;
-  googleClientId: string;
   signup: (data: {
     name: string;
     username: string;
@@ -32,7 +31,6 @@ interface UserProviderProps {
   }) => Promise<UserData | null>;
   signin: (identifier: string, password: string) => Promise<UserData | null>;
   signinGuest: () => Promise<UserData | null>;
-  signinWithGoogle: (code: string) => Promise<UserData | null>;
   signout: () => Promise<void>;
   updateProfile: (data: {
     name?: string;
@@ -46,7 +44,6 @@ interface UserProviderProps {
     model?: string;
   }) => Promise<void>;
   saveUserType: (newType: "programmer" | "expert") => Promise<void>;
-  googleSignIn: (googleCode: string) => Promise<UserData | null>;
   logout: () => void;
 }
 
@@ -58,16 +55,13 @@ export const UserContext = createContext<UserProviderProps>({
   skipProjectPage: false,
   allowGuest: false,
   sharedGuestUsername: "guest_shared",
-  googleClientId: process.env.VITE_GOOGLE_OAUTH_CLIENT_ID || "",
   signup: async () => null,
   signin: async () => null,
   signinGuest: async () => null,
-  signinWithGoogle: async () => null,
   signout: async () => {},
   updateProfile: async () => {},
   updateLlmConfig: async () => {},
   saveUserType: async () => {},
-  googleSignIn: async () => null,
   logout: () => {},
 });
 
@@ -79,9 +73,6 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
   const [allowGuest, setAllowGuest] = useState<boolean>(false);
   const [sharedGuestUsername, setSharedGuestUsername] =
     useState<string>("guest_shared");
-  const [googleClientId, setGoogleClientId] = useState<string>(
-    process.env.VITE_GOOGLE_OAUTH_CLIENT_ID || ""
-  );
 
   const applyUser = useCallback((nextUser: UserData) => {
     setUser(nextUser);
@@ -130,9 +121,6 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
         setSkipProjectPage(projectPageSkipped);
         setAllowGuest(Boolean(authEnabled && cfg?.allow_guest_login));
         setSharedGuestUsername(sharedGuestUsername);
-        if (cfg?.google_client_id) {
-          setGoogleClientId(cfg.google_client_id);
-        }
 
         const token = getToken();
 
@@ -236,22 +224,6 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
     [handleAuth]
   );
 
-  const signinWithGoogle = useCallback(
-    async (code: string) => {
-      setLoading(true);
-      try {
-        const res = await authApi.signinGoogle(code);
-        return handleAuth(res);
-      } catch (e) {
-        console.error(e);
-        return null;
-      } finally {
-        setLoading(false);
-      }
-    },
-    [handleAuth]
-  );
-
   const signinGuest = useCallback(async () => {
     setLoading(true);
     try {
@@ -321,16 +293,13 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
         skipProjectPage,
         allowGuest,
         sharedGuestUsername,
-        googleClientId,
         signup,
         signin,
         signinGuest,
-        signinWithGoogle,
         signout,
         updateProfile,
         updateLlmConfig,
         saveUserType,
-        googleSignIn: signinWithGoogle,
         logout: signout,
       }}
     >

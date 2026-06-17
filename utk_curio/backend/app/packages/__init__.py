@@ -10,7 +10,7 @@ code MUST NOT reference ``<CURIO_LAUNCH_CWD>/templates/`` or any other path
 outside its own package directory; that built-in folder is reserved for built-in
 ``NodeType`` presets.
 
-See ``docs/schemas/node-package.v3.json`` for the package manifest schema and
+See ``docs/schemas/node-package.v4.json`` for the package manifest schema and
 ``docs/CATALOG.md`` for the user-facing overview.
 """
 

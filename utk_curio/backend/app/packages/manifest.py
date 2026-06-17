@@ -1,7 +1,7 @@
 """Package-manifest reader and validator.
 
 Implements the supported subset of the v2 manifest schema (canonical
-spec: ``docs/schemas/node-package.v3.json``). This is what the palette,
+spec: ``docs/schemas/node-package.v4.json``). This is what the palette,
 installer, and resolver consume.
 
 User-facing overview: ``docs/CATALOG.md``.
@@ -155,7 +155,7 @@ class TemplateManifest:
     description: str
     icon: str | None  # legacy free-form icon string (rare; iconRef preferred)
     icon_ref: str | None  # "<source>:<icon-id>" key for the frontend iconRegistry
-    lifecycle: str | None  # key into the frontend lifecycleRegistry (e.g. "code", "vega")
+    behavior: str | None  # key into the frontend behaviorRegistry (e.g. "code", "vega")
     palette_order: int | None
     input_ports: list[PortDef]
     output_ports: list[PortDef]
@@ -192,9 +192,9 @@ class TemplateManifest:
         out_ports_raw = raw.get("outputPorts", [])
         if not isinstance(in_ports_raw, list) or not isinstance(out_ports_raw, list):
             raise ManifestError(f"{where}.inputPorts/outputPorts must be lists")
-        lifecycle_raw = raw.get("lifecycle")
-        if lifecycle_raw is not None and not (isinstance(lifecycle_raw, str) and lifecycle_raw):
-            raise ManifestError(f"{where}.lifecycle must be a non-empty string when present")
+        behavior_raw = raw.get("behavior")
+        if behavior_raw is not None and not (isinstance(behavior_raw, str) and behavior_raw):
+            raise ManifestError(f"{where}.behavior must be a non-empty string when present")
         palette_order_raw = raw.get("paletteOrder")
         if palette_order_raw is not None and not isinstance(palette_order_raw, int):
             raise ManifestError(f"{where}.paletteOrder must be an integer when present")
@@ -212,7 +212,7 @@ class TemplateManifest:
             description=str(raw.get("description", "")),
             icon=raw.get("icon") if isinstance(raw.get("icon"), str) else None,
             icon_ref=raw.get("iconRef") if isinstance(raw.get("iconRef"), str) else None,
-            lifecycle=lifecycle_raw,
+            behavior=behavior_raw,
             palette_order=palette_order_raw,
             input_ports=[PortDef.from_json(p, where=f"{where}.inputPorts[{i}]")
                          for i, p in enumerate(in_ports_raw)],
@@ -254,11 +254,11 @@ class PackageManifest:
     created_at_iso: str | None = None
     created_at_ms: int = 0
     # Optional path (relative to package dir) of a pre-built JS bundle that
-    # registers this package's lifecycle hooks against `window.curio` at
+    # registers this package's behavior hooks against `window.curio` at
     # load time. When set, the frontend injects a <script src=...> for it
     # before building descriptors. See docs/EXTENDING.md §5 for the
     # contract package authors follow.
-    lifecycle_script: str | None = None
+    behavior_script: str | None = None
 
     @property
     def dir_name(self) -> str:
@@ -353,11 +353,11 @@ def load_packageage_manifest(package_dir_path: Path) -> PackageManifest:
         raw.get("createdAt"), where=f"{manifest_path}"
     )
 
-    lifecycle_script_raw = raw.get("lifecycleScript")
-    if lifecycle_script_raw is not None and not isinstance(lifecycle_script_raw, str):
-        raise ManifestError(f"{manifest_path}.lifecycleScript must be a string when present")
-    lifecycle_script = (
-        lifecycle_script_raw.strip() if isinstance(lifecycle_script_raw, str) else None
+    behavior_script_raw = raw.get("behaviorScript")
+    if behavior_script_raw is not None and not isinstance(behavior_script_raw, str):
+        raise ManifestError(f"{manifest_path}.behaviorScript must be a string when present")
+    behavior_script = (
+        behavior_script_raw.strip() if isinstance(behavior_script_raw, str) else None
     ) or None
 
     return PackageManifest(
@@ -378,7 +378,7 @@ def load_packageage_manifest(package_dir_path: Path) -> PackageManifest:
         read_only=read_only,
         created_at_iso=created_at_iso,
         created_at_ms=created_at_ms,
-        lifecycle_script=lifecycle_script,
+        behavior_script=behavior_script,
     )
 
 

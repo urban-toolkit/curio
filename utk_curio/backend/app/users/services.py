@@ -13,7 +13,6 @@ from utk_curio.backend.app.users.schemas import (
 )
 from utk_curio.backend.app.users import repositories as repo
 from utk_curio.backend.app.users import security
-from utk_curio.backend.app.services.google_oauth import GoogleOAuth
 from utk_curio.backend.config import (
     CURIO_SHARED_GUEST_NAME,
     CURIO_SHARED_GUEST_USERNAME,
@@ -107,33 +106,6 @@ def signin_password(data: SignInIn) -> AuthOut:
     if not security.verify_password(user.password_hash, data.password):
         raise AuthError("Invalid credentials.", 401)
 
-    return _auth_out(user)
-
-
-def signin_google(auth_code: str) -> AuthOut:
-    oauth = GoogleOAuth()
-    user_data = oauth.verify_token(auth_code)
-    if not user_data:
-        raise AuthError("Invalid Google token.", 401)
-
-    user = repo.user_by_provider_uid(user_data["uid"])
-    if not user:
-        username = user_data["email"].split("@")[0]
-        base = username
-        counter = 2
-        while repo.user_by_identifier(username):
-            username = f"{base}_{counter}"
-            counter += 1
-
-        user = repo.create_user(
-            username=username,
-            email=user_data["email"],
-            name=user_data["name"],
-            profile_image=user_data.get("picture"),
-            type="programmer",
-            provider="google",
-            provider_uid=user_data["uid"],
-        )
     return _auth_out(user)
 
 

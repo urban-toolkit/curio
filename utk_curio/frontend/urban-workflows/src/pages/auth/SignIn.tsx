@@ -5,8 +5,7 @@ import { SignInForm } from "../../components/AuthForm/SignInForm";
 import { useUserContext } from "../../providers/UserProvider";
 
 const SignIn: React.FC = () => {
-  const { user, loading, enableUserAuth, skipProjectPage, googleClientId } =
-    useUserContext();
+  const { user, loading, enableUserAuth, skipProjectPage } = useUserContext();
   const entryRoute = skipProjectPage ? "/dataflow" : "/projects";
 
   if (!loading && (user || !enableUserAuth)) {
@@ -15,7 +14,7 @@ const SignIn: React.FC = () => {
 
   return (
     <AuthFormWrapper>
-      <SignInForm googleClientId={googleClientId} />
+      <SignInForm />
     </AuthFormWrapper>
   );
 };

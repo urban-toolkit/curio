@@ -26,17 +26,14 @@ EXPECTED_TEMPLATE_IDS: frozenset[str] = frozenset({
     "js-computation",
     "vis-vega",
     "vis-simple",
-    "autk-plot",
-    "autk-map",
-    "autk-compute",
-    "autk-db",
+    "autk-grammar",
     "merge-flow",
     "spatial-join",
 })
 
-EXPECTED_LIFECYCLES: frozenset[str] = frozenset({
+EXPECTED_BEHAVIORS: frozenset[str] = frozenset({
     "code", "data-export", "data-pool", "data-summary", "vega",
-    "simple-vis", "autk-plot", "autk-map", "autk-compute", "autk-db",
+    "simple-vis", "autk-grammar",
     "merge-flow", "spatial-join",
 })
 
@@ -60,11 +57,11 @@ def test_builtin_packageage_manifest_loads(builtin_packageage_dir: Path):
     assert template_ids == EXPECTED_TEMPLATE_IDS
 
 
-def test_builtin_packageage_every_template_has_lifecycle_and_icon(builtin_packageage_dir: Path):
+def test_builtin_packageage_every_template_has_behavior_and_icon(builtin_packageage_dir: Path):
     manifest = load_packageage_manifest(builtin_packageage_dir)
     for template in manifest.templates:
-        assert template.lifecycle in EXPECTED_LIFECYCLES, (
-            f"template {template.template_id} declares unknown lifecycle {template.lifecycle!r}"
+        assert template.behavior in EXPECTED_BEHAVIORS, (
+            f"template {template.template_id} declares unknown behavior {template.behavior!r}"
         )
         assert template.icon_ref, f"template {template.template_id} is missing iconRef"
         assert template.palette_order is not None, (
@@ -85,11 +82,11 @@ def test_builtin_packageage_ships_no_sources(builtin_packageage_dir: Path):
 
 
 def test_every_catalog_packageage_validates_against_schema():
-    """Every manifest in ``packages/`` must satisfy ``docs/schemas/node-package.v3.json``."""
+    """Every manifest in ``packages/`` must satisfy ``docs/schemas/node-package.v4.json``."""
     import json
     from jsonschema import Draft202012Validator
 
-    schema_path = _catalog_root().parent / "docs" / "schemas" / "node-package.v3.json"
+    schema_path = _catalog_root().parent / "docs" / "schemas" / "node-package.v4.json"
     assert schema_path.is_file(), f"schema not found at {schema_path}"
     validator = Draft202012Validator(json.loads(schema_path.read_text()))
 
@@ -109,17 +106,18 @@ def test_builtin_packageage_payload_passthrough(builtin_packageage_dir: Path):
     payload = _manifest_to_payload(manifest)
     templates_by_id = {t["templateId"]: t for t in payload["templates"]}
     vega = templates_by_id["vis-vega"]
-    assert vega["lifecycle"] == "vega"
+    assert vega["behavior"] == "vega"
     assert vega["iconRef"] == "fa-solid:chart-line"
     assert vega["badge"] == "VEGA"
     assert vega["grammarId"] == "vega-lite"
     assert vega["source"] is None
 
-    autk_map = templates_by_id["autk-map"]
-    assert autk_map["lifecycle"] == "autk-map"
-    assert autk_map["badge"] == "AUTK"
+    autk_grammar = templates_by_id["autk-grammar"]
+    assert autk_grammar["behavior"] == "autk-grammar"
+    assert autk_grammar["badge"] == "AUTK"
+    assert autk_grammar["grammarId"] == "autk-grammar"
 
     data_loading = templates_by_id["data-loading"]
-    assert data_loading["lifecycle"] == "code"
+    assert data_loading["behavior"] == "code"
     assert data_loading["iconRef"] == "fa-solid:upload"
     assert data_loading["badge"] is None

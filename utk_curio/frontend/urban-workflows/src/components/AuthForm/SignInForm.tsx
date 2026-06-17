@@ -5,10 +5,8 @@ import { AuthFormHeading } from "./AuthFormHeading";
 import { AltAuthBox } from "./AltAuthBox";
 import { useNavigate, Link } from "react-router-dom";
 
-export const SignInForm: React.FC<{
-  googleClientId: string;
-}> = ({ googleClientId }) => {
-  const { signin, signinWithGoogle, signinGuest, allowGuest, skipProjectPage } =
+export const SignInForm: React.FC = () => {
+  const { signin, signinGuest, allowGuest, skipProjectPage } =
     useUserContext();
   const entryRoute = skipProjectPage ? "/dataflow" : "/projects";
   const navigate = useNavigate();
@@ -29,11 +27,6 @@ export const SignInForm: React.FC<{
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const handleGoogle = async (code: string) => {
-    const user = await signinWithGoogle(code);
-    if (user) navigate(entryRoute);
   };
 
   const handleGuest = async () => {
@@ -82,12 +75,7 @@ export const SignInForm: React.FC<{
         </button>
       </form>
 
-      <AltAuthBox
-        googleClientId={googleClientId}
-        onGoogleSuccess={handleGoogle}
-        showGuest={allowGuest}
-        onGuest={handleGuest}
-      />
+      <AltAuthBox showGuest={allowGuest} onGuest={handleGuest} />
 
       <p style={footerStyle}>
         Don't have an account?{" "}

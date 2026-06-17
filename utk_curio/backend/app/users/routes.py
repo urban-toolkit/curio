@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-
 from flask import Blueprint, g, jsonify, request
 
 from utk_curio.backend.config import (
@@ -22,7 +20,6 @@ from utk_curio.backend.app.users.services import (
     get_me,
     patch_me,
     signin_shared_guest,
-    signin_google,
     signin_guest,
     signin_password,
     signout,
@@ -90,21 +87,6 @@ def signin_route():
         return jsonify(result.to_dict()), 200
     except AuthError as e:
         rate_limit.record_attempt(_ip(), identifier, success=False)
-        return jsonify({"error": e.message}), e.status
-
-
-@auth_bp.route("/signin/google", methods=["POST"])
-def signin_google_route():
-    if CURIO_NO_AUTH:
-        return _auth_disabled_response()
-    body = request.get_json(silent=True) or {}
-    code = body.get("code", "")
-    if not code:
-        return jsonify({"error": "Authorization code is required."}), 400
-    try:
-        result = signin_google(code)
-        return jsonify(result.to_dict()), 200
-    except AuthError as e:
         return jsonify({"error": e.message}), e.status
 
 
@@ -178,7 +160,6 @@ def public_config_route():
             "curio_no_auth": CURIO_NO_AUTH,
             "curio_no_project": CURIO_NO_PROJECT,
             "skip_project_page": CURIO_NO_PROJECT,
-            "google_client_id": os.environ.get("CLIENT_ID", ""),
             "curio_env": CURIO_ENV,
             "shared_guest_username": CURIO_SHARED_GUEST_USERNAME,
             "enable_collab": ENABLE_COLLAB,

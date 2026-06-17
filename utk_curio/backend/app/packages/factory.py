@@ -24,7 +24,7 @@ A draft looks like::
             "category": "data",
             "engine": "python",
             "editor": "code",
-            "lifecycle": "code",
+            "behavior": "code",
             "iconRef": "fa-solid:upload",
             "inputPorts": [],
             "outputPorts": [{"types": ["RASTER"], "cardinality": "1"}],

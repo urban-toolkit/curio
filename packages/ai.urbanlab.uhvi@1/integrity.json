@@ -1,7 +1,7 @@
 {
   "sha256": {
-    "README.md": "ed7f0dad374b18d007184f6633c6b2edaaddeafc507d97aa389b324a661b5dbc",
-    "manifest.json": "a0860937bc951e184596cb4ea5a3ac542086dd18549d550a6454ddc31a703ce4",
+    "README.md": "74e5c75cbffeb9b9f6c2b2d6ac0cf01bf14678ec476483a5fbbf3bd320f9ac70",
+    "manifest.json": "208673c05e6808f6279c8e0254c8c00b44b3c5295953855c8039074dd23bb372",
     "sources/uhvi-load.py": "0930ea0ea2904c389399a02af39a7e53846e570fb4867669e7f850c631bc4107",
     "sources/uhvi-zonal.py": "c0cffef597368fe7cc5f6d932899b7faeaed4ef4068de8c28753a45d8ad89c51",
     "sources/uhvi-zones.py": "b91b8e658317f01c84bfd559736c4f3b9d6b69016837a07bbb38692814967c2e"

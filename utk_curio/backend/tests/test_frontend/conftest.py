@@ -65,17 +65,28 @@ WORKFLOW_FILES = [
 
     "docs/examples/dataflows/Regression.json",
 
-    # Curated examples shown in docs/README.md
-    # Only run these tests locally for now to avoid overwhelming the CI runner
-    # "docs/examples/01-vega-lite-chained-transforms.json",
-    # "docs/examples/02-vega-lite-spatial-density.json",
-    # "docs/examples/03-vega-lite-linked-temporal-charts.json",
-    # "docs/examples/04-vega-lite-multi-flow-dashboard.json",
-    # "docs/examples/05-vega-lite-multi-view-drilldown.json",
-    # "docs/examples/06-autark-what-if-shadow-study.json",
-    # "docs/examples/07-autark-gpu-shader.json",
-    # "docs/examples/08-autark-spatial-join-regression.json",
-    # "docs/examples/09-heterogeneous-data-linked-views.json",
+    # Curated examples shown in docs/README.md. These are the showcase
+    # workflows — including the modular autk-grammar GPU/compute chains — so
+    # they belong in the browser matrix, not just the structural checks in
+    # test_examples.py. The class-scoped ``browser`` fixture above re-launches
+    # Chromium per workflow class to keep memory bounded across the suite.
+    "docs/examples/01-vega-lite-chained-transforms.json",
+    "docs/examples/02-vega-lite-spatial-density.json",
+    "docs/examples/03-vega-lite-linked-temporal-charts.json",
+    "docs/examples/04-vega-lite-multi-flow-dashboard.json",
+    "docs/examples/05-vega-lite-multi-view-drilldown.json",
+    "docs/examples/06-autark-what-if-shadow-study.json",
+    "docs/examples/07-autark-gpu-shader.json",
+    "docs/examples/08-autark-spatial-join-regression.json",
+    "docs/examples/09-heterogeneous-data-linked-views.json",
+    # Example 10 depends on external services (HuggingFace CV inference +
+    # street-view APIs) and the non-builtin curio.streetvision package, so it
+    # can't run offline/deterministically. It is listed here (so it stays
+    # selectable via CURIO_E2E_WORKFLOWS) but the ``loaded_workflow`` fixture
+    # skips it with a reason unless CURIO_E2E_EXTERNAL=1 — a visible, reasoned
+    # skip rather than a silent omission.
+    "docs/examples/10-street-vision-cv-analysis.json",
+    "docs/examples/11-autark-pbf-loading.json",
 ]
 
 
@@ -140,9 +151,22 @@ def pytest_generate_tests(metafunc):
     """
     if "loaded_workflow" in metafunc.fixturenames:
         files = load_workflow_files_from_folder()
-        metafunc.parametrize(
-            "loaded_workflow",
-            files,
-            indirect=True,
-            ids=[os.path.basename(f) for f in files],
-        )
+        # Example 10 (street-vision) drives external services — HuggingFace CV
+        # inference + street-view APIs via the non-builtin curio.streetvision
+        # package — so it can't run offline/deterministically. Skip it at
+        # collection time (before any browser/server fixture setup) with a
+        # visible reason unless CURIO_E2E_EXTERNAL=1, rather than silently
+        # dropping it from the matrix.
+        external = os.environ.get("CURIO_E2E_EXTERNAL") == "1"
+        params = []
+        for f in files:
+            basename = os.path.basename(f)
+            marks = []
+            if basename.startswith("10-") and not external:
+                marks = [pytest.mark.skip(reason=(
+                    "example 10 (street-vision) needs external HuggingFace "
+                    "inference + street-view APIs and the curio.streetvision "
+                    "package; set CURIO_E2E_EXTERNAL=1 to run it"
+                ))]
+            params.append(pytest.param(f, marks=marks, id=basename))
+        metafunc.parametrize("loaded_workflow", params, indirect=True)

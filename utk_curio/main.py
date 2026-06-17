@@ -194,12 +194,10 @@ def check_install_build(dir, force_rebuild=False):
     
     if force_rebuild:
         log_info(f"[Frontend] Force rebuilding in {dir}...", COLOR_FRONTEND)
-        if os.path.exists("node_modules"):
-            subprocess.run(["rm", "-rf", "node_modules"], check=True)
-        if os.path.exists("dist"):
-            subprocess.run(["rm", "-rf", "dist"], check=True)
-        if os.path.exists("build"):
-            subprocess.run(["rm", "-rf", "build"], check=True)
+        for subdir in ("node_modules", "dist", "build"):
+            full_path = os.path.join(abs_dir, subdir)
+            if os.path.exists(full_path):
+                shutil.rmtree(full_path)
     
     if shutil.which("npm") is None:
         log_error("[Frontend] npm not found in PATH. Install Node.js 24 from https://nodejs.org, or via conda ('conda install -c conda-forge nodejs=24'), and make sure 'npm' is available in your terminal, then retry.")
@@ -232,19 +230,20 @@ def check_install_build(dir, force_rebuild=False):
         clean_shutdown()
         return
 
-    # Check if node_modules exist, if not, run npm install
-    if not os.path.exists("node_modules"):
-        log_info(f"[Frontend] node_modules not found. Running npm install...", COLOR_FRONTEND, 0)
-        try:
-            subprocess.run(["npm", "install"], check=True, shell=shell_required)
-        except subprocess.CalledProcessError as e:
-            log_error(f"[Frontend] 'npm install' failed (exit code {e.returncode}). Check the output above for details.")
-            clean_shutdown()
-        except Exception as e:
-            log_error(f"[Frontend] Failed to run 'npm install': {e}")
-            clean_shutdown()
-    else:
-        log_info(f"[Frontend] node_modules directory already exists. Skipping npm install.", COLOR_FRONTEND, 0)
+    # Run npm install unconditionally. It's idempotent and fast (~1 s) when
+    # the lockfile is already satisfied, and it self-heals when package.json
+    # gains a new dep that node_modules/ doesn't have yet — gating on
+    # ``node_modules`` existing would skip the install and leave the new dep
+    # missing, failing the webpack build with "Module not found".
+    log_info(f"[Frontend] Ensuring npm deps are installed...", COLOR_FRONTEND, 0)
+    try:
+        subprocess.run(["npm", "install"], check=True, shell=shell_required)
+    except subprocess.CalledProcessError as e:
+        log_error(f"[Frontend] 'npm install' failed (exit code {e.returncode}). Check the output above for details.")
+        clean_shutdown()
+    except Exception as e:
+        log_error(f"[Frontend] Failed to run 'npm install': {e}")
+        clean_shutdown()
 
     # Check if dist/build directory exists (depending on your setup)
     build_dir = "dist" if os.path.exists("dist") else "build"
@@ -540,27 +539,31 @@ def start_backend(host, port, no_server=False):
 
 def _ensure_root_node_modules(project_root: str) -> None:
     """Install the repo-root node_modules used by the sandbox's Node.js
-    subprocess. The Autark family (``@urban-toolkit/autk-db``,
-    ``autk-compute``, ``autk-map``, ``autk-plot``) is declared in the root
-    ``package.json``; AUTK_DB / AUTK_COMPUTE workflows import from this
-    location at runtime via ESM. ``check_install_build`` only manages the
-    *frontend* node_modules under ``utk_curio/frontend/urban-workflows/``,
-    so without this step a fresh checkout fails AUTK examples with
-    ``ERR_MODULE_NOT_FOUND``.
+    subprocess. ``@urban-toolkit/autk-db`` is declared in the root
+    ``package.json``; the Autark grammar's data section is compiled to
+    autk-db JavaScript and executed server-side (see
+    ``utk_curio/sandbox/app/worker.py`` ``execute_js_code``). ``check_install_build``
+    only manages the *frontend* node_modules under
+    ``utk_curio/frontend/urban-workflows/``, so without this step a fresh
+    checkout fails Autark data nodes with ``ERR_MODULE_NOT_FOUND``.
     """
-    root_modules = os.path.join(project_root, "node_modules")
-    if os.path.exists(root_modules):
-        return
     if shutil.which("npm") is None:
         log_warning(
             "[Sandbox] npm not found in PATH; skipping root npm install. "
-            "AUTK_DB / AUTK_COMPUTE workflows will fail with "
-            "ERR_MODULE_NOT_FOUND until 'npm install' is run at the repo root."
+            "Autark grammar data nodes will fail with ERR_MODULE_NOT_FOUND "
+            "until 'npm install' is run at the repo root."
         )
         return
+    # Run npm install unconditionally (mirrors the frontend's check_install_build):
+    # it's idempotent and fast when the lockfile is already satisfied, and it
+    # self-heals when the root package.json bumps @urban-toolkit/autk-db. Gating
+    # on the autk-db directory merely *existing* (the previous behavior) skipped
+    # the update and left the sandbox on a stale version whose API differs —
+    # e.g. 2.0.1 exports AutkSpatialDb and lacks loadGeojson, while 2.1.2 exports
+    # AutkDb — silently breaking server-side data loading.
     log_info(
-        "[Sandbox] Root node_modules not found. Running 'npm install' at "
-        f"{project_root} to provide @urban-toolkit/autk-* packages...",
+        "[Sandbox] Ensuring root node_modules (@urban-toolkit/autk-db) at "
+        f"{project_root}...",
         COLOR_SANDBOX, 0,
     )
     try:
@@ -571,7 +574,7 @@ def _ensure_root_node_modules(project_root: str) -> None:
     except subprocess.CalledProcessError as e:
         log_error(
             f"[Sandbox] Root 'npm install' failed (exit code {e.returncode}). "
-            f"AUTK examples will fail; install manually at {project_root}."
+            f"Autark data nodes will fail; install manually at {project_root}."
         )
     except Exception as e:
         log_error(f"[Sandbox] Failed to run root 'npm install': {e}")
@@ -658,7 +661,7 @@ def _run_pip(cmd: list[str], failure_label: str) -> None:
 def install_framework_requirements() -> None:
     """``pip install -r requirements.txt`` for Curio's framework deps —
     the libraries the backend + sandbox Flask apps need at module load.
-    Data-ops libs (pandas, geopandas, rasterio, …) live in each node
+    Data-ops libs (pandas, geopandas, …) live in each node
     package's manifest and get installed by
     ``install_manifest_dependencies`` below.
 
@@ -684,11 +687,13 @@ def install_manifest_dependencies() -> None:
     through ``pip_runner.install_python_deps``.
 
     Why this lives in the launcher: the sandbox process imports
-    ``pandas`` / ``geopandas`` / ``rasterio`` at module load
-    (``sandbox/app/api.py``, ``worker.py::_worker_init``), so those libs
-    must already be present in the shared interpreter before the
-    sandbox's ``Popen`` lands. Running here — synchronously, sequenced
-    before ``start_sandbox`` — is the simplest race-free order.
+    ``pandas`` / ``geopandas`` at module load (``sandbox/app/api.py``
+    triggers ``worker.py::_worker_init``), so those libs must already be
+    present in the shared interpreter before the sandbox's ``Popen``
+    lands. Running here — synchronously, sequenced before
+    ``start_sandbox`` — is the simplest race-free order. (rasterio is
+    optional: provided by raster-capable packages like curio.weather and
+    imported lazily by the sandbox's raster code paths.)
 
     All helpers are reused from the backend:
     - ``manifest.load_packageage_manifest`` to parse each
@@ -708,6 +713,7 @@ def install_manifest_dependencies() -> None:
         PipInstallError,
         install_python_deps,
     )
+    from utk_curio.backend.app.packages.seed import example_dep_package_ids
 
     repo_root = Path(__file__).resolve().parent.parent
     launch_cwd = Path(os.environ.get("CURIO_LAUNCH_CWD") or os.getcwd())
@@ -717,21 +723,34 @@ def install_manifest_dependencies() -> None:
     per_pkg: list[tuple[str, dict[str, str]]] = []
     seen: set[str] = set()  # dir_name dedupe across users
 
-    # Catalog walk is scoped to ``curio.builtin@*`` only — the catalog
-    # lists every *available* package, but only the built-in is
+    # Catalog walk is scoped to ``curio.builtin@*`` by default — the
+    # catalog lists every *available* package, but only the built-in is
     # auto-seeded for every user. Other catalog entries (UHVI,
-    # milan-heat, streetvision, …) are opt-in via the /catalog drawer;
+    # weather, streetvision, …) are opt-in via the /catalog drawer;
     # their deps come along when the user installs them, via the
-    # per-user-store walk below.
+    # per-user-store walk below. When example seeding is on
+    # (--with-examples / --deploy => CURIO_SEED_EXAMPLES=1), also walk the
+    # packages the bundled examples declare as dependencies — derived from
+    # their dataflow.packages lockfiles (see example_dep_package_ids in
+    # backend/app/packages/seed.py), NOT a full catalog walk. This
+    # first-boot walk matters because it runs BEFORE the backend seeds those
+    # packages into the user store; on later starts the user-store walk
+    # below covers them.
+    catalog_globs = ["curio.builtin@*"]
+    if os.environ.get("CURIO_SEED_EXAMPLES") == "1":
+        catalog_globs += [f"{pid}@*" for pid in example_dep_package_ids()]
     if catalog.is_dir():
-        for pkg_dir in catalog.glob("curio.builtin@*"):
-            try:
-                m = load_packageage_manifest(pkg_dir)
-            except ManifestError:
-                continue
-            seen.add(m.dir_name)
-            if m.python_deps:
-                per_pkg.append((m.dir_name, dict(m.python_deps)))
+        for pattern in catalog_globs:
+            for pkg_dir in sorted(catalog.glob(pattern)):
+                try:
+                    m = load_packageage_manifest(pkg_dir)
+                except ManifestError:
+                    continue
+                if m.dir_name in seen:
+                    continue
+                seen.add(m.dir_name)
+                if m.python_deps:
+                    per_pkg.append((m.dir_name, dict(m.python_deps)))
 
     # Per-user store walk — every package any user has actually installed.
     if users.is_dir():

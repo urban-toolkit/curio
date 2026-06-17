@@ -5,8 +5,7 @@ import { SignUpForm } from "../../components/AuthForm/SignUpForm";
 import { useUserContext } from "../../providers/UserProvider";
 
 const SignUp: React.FC = () => {
-  const { user, loading, enableUserAuth, skipProjectPage, googleClientId } =
-    useUserContext();
+  const { user, loading, enableUserAuth, skipProjectPage } = useUserContext();
   const entryRoute = skipProjectPage ? "/dataflow" : "/projects";
 
   if (!loading && (user || !enableUserAuth)) {
@@ -15,7 +14,7 @@ const SignUp: React.FC = () => {
 
   return (
     <AuthFormWrapper>
-      <SignUpForm googleClientId={googleClientId} />
+      <SignUpForm />
     </AuthFormWrapper>
   );
 };

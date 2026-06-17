@@ -2,10 +2,11 @@
 
 This example pulls Google Street View imagery for a chosen neighborhood, runs a HuggingFace segmentation model on every panorama, tags each result with the city neighborhood it falls in via a spatial join, and renders the output as a polygon-shaded map + a per-neighborhood bar chart. The use case is *urban greenery audits* — see which neighborhoods are visually leafy vs. paved — but the same pipeline works for any per-pixel class you can find a model for (sidewalks, traffic signs, advertising, building facade material, …).
 
-This example doubles as the worked example in [EXTENDING.md](../EXTENDING.md) — if you're a developer reading code, the manifest entries, lifecycle hooks, and Flask blueprint that ship these nodes are walked through there.
+This example doubles as the worked example in [EXTENDING.md](../EXTENDING.md) — if you're a developer reading code, the manifest entries, behavior hooks, and Flask blueprint that ship these nodes are walked through there.
 
-!!! note "Setup required"
-    Install the **Street Vision** package from Curio's `/catalog` page; the first install pip-installs the package's ML stack (`torch`, `transformers`, `ultralytics`, `huggingface_hub`) declared in its manifest — a ~3 GB download on a cold env. Have a Google Maps API key ready to paste into the Street View Fetcher node (the key lives in the node UI for the current session only — never written to disk or saved with the dataflow). The Spatial Join node is built-in and needs no separate install.
+> [!NOTE]
+> **Setup required**
+> Install the **Street Vision** package from Curio's `/catalog` page; the first install pip-installs the package's ML stack (`torch`, `transformers`, `ultralytics`, `huggingface_hub`) declared in its manifest — a ~3 GB download on a cold env. Have a Google Maps API key ready to paste into the Street View Fetcher node (the key lives in the node UI for the current session only — never written to disk or saved with the dataflow). The Spatial Join node is built-in and needs no separate install.
 
 ## Pipeline overview
 

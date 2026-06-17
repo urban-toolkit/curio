@@ -128,7 +128,7 @@ def _manifest_to_payload(manifest: PackageManifest, *, package_mtime_path: Path 
                 "description": tpl.description,
                 "icon": tpl.icon,
                 "iconRef": tpl.icon_ref,
-                "lifecycle": tpl.lifecycle,
+                "behavior": tpl.behavior,
                 "paletteOrder": tpl.palette_order,
                 "editor": tpl.editor,
                 "hasCode": tpl.has_code,
@@ -166,7 +166,7 @@ def _manifest_to_payload(manifest: PackageManifest, *, package_mtime_path: Path 
         "channel": manifest.channel,
         **({"readOnly": True} if manifest.read_only else {}),
         "createdAtMs": manifest.created_at_ms,
-        **({"lifecycleScript": manifest.lifecycle_script} if manifest.lifecycle_script else {}),
+        **({"behaviorScript": manifest.behavior_script} if manifest.behavior_script else {}),
     }
     if manifest.created_at_iso:
         payload["createdAt"] = manifest.created_at_iso
@@ -630,8 +630,8 @@ def download_packageage_archive(dir_name: str):
 # GET /api/packages/<dir_name>/file/<path:filename>
 # ---------------------------------------------------------------------------
 # Serves a static file from a user's installed copy of a package. Used by the
-# dynamic-lifecycle loader on the frontend to fetch each package's compiled
-# `lifecycles.js` bundle (declared in the manifest via `lifecycleScript`).
+# dynamic-behavior loader on the frontend to fetch each package's compiled
+# `behaviors.js` bundle (declared in the manifest via `behaviorScript`).
 # Path resolution flows through `safe_join` so traversal payloads can't escape
 # the package directory, and the result is always rooted in the user's own
 # `<instance>/.curio/users/<user_key>/packages/<dir>/` tree.
@@ -660,9 +660,9 @@ def get_package_file(dir_name: str, filename: str):
     """Serve a static file from the user's installed copy of ``<dir_name>``.
 
     Mounted at ``GET /api/packages/<dir_name>/file/<path:filename>``. The
-    frontend's dynamic lifecycle loader hits this to fetch each package's
-    compiled ``lifecycles.js`` bundle (when its manifest declares
-    ``lifecycleScript``). Any package-shipped asset (overlay imagery,
+    frontend's dynamic behavior loader hits this to fetch each package's
+    compiled ``behaviors.js`` bundle (when its manifest declares
+    ``behaviorScript``). Any package-shipped asset (overlay imagery,
     starter source, …) can be retrieved via the same route.
     """
     from utk_curio.backend.app.common.safe_paths import (
@@ -1028,6 +1028,92 @@ def resolve_deps():
 
 
 # ---------------------------------------------------------------------------
+# /workflow-deps — install a dataflow's declared package dependencies on load
+# ---------------------------------------------------------------------------
+#
+# A dataflow declares the catalog packages it depends on in its
+# ``dataflow.packages`` lockfile. When the canvas loads one, the frontend
+# posts that lockfile to /check to learn which declared packages aren't ready
+# (not installed, or installed-but-with-a-missing-dep), warns the user, and
+# auto-installs them via /install. Installing the package provisions both its
+# nodes and its declared python libraries — a dataflow depends on packages,
+# and the libraries follow.
+
+
+@packages_bp.route("/workflow-deps/check", methods=["POST"])
+@require_auth
+def check_workflow_deps():
+    """Report which of a dataflow's declared packages aren't ready.
+
+    Body: ``{"packages": ["<dirName>", ...]}`` — the loaded spec's
+    ``dataflow.packages`` lockfile. A dataflow declares the catalog packages
+    it depends on there; loading it should install any that aren't present.
+    A package is "needed" if it isn't in the user's store, OR it is but some
+    of its declared python deps aren't actually installed (e.g. a lib was
+    pip-uninstalled out from under it). Response::
+
+        {"packages": ["<dirName>", ...]}   # need installing, sorted
+    """
+    from utk_curio.backend.app.packages.pip_runner import is_satisfied
+
+    user_key = _user_dir_key(g.user)
+    body = request.get_json(silent=True) or {}
+    packages = body.get("packages") or []
+    if not isinstance(packages, list):
+        return _error("body must be {'packages': [<dirName>, ...]}")
+
+    from utk_curio.backend.app.packages.storage import PACKAGE_DIR_RE
+
+    in_store = {p.name for p in list_user_packageages(user_key)}
+    need: set[str] = set()
+    for dir_name in packages:
+        if not isinstance(dir_name, str) or not PACKAGE_DIR_RE.match(dir_name):
+            continue
+        if dir_name not in in_store:
+            need.add(dir_name)
+            continue
+        # Installed in the store — flag only if a declared dep went missing.
+        deps = packages_services._read_python_deps(user_key, dir_name)
+        if any(not is_satisfied(n, s) for n, s in deps.items()):
+            need.add(dir_name)
+    return jsonify({"packages": sorted(need)}), 200
+
+
+@packages_bp.route("/workflow-deps/install", methods=["POST"])
+@require_auth
+def install_workflow_deps():
+    """Install the catalog packages a dataflow declares it depends on.
+
+    Body: ``{"packages": ["<dirName>", ...]}``. Each is installed into the
+    user's store via :func:`services.install_to_store`, which copies the
+    package (if missing) and pip-installs its declared python deps — so the
+    package's libraries and nodes both become available. A dataflow depends
+    on *packages*, not loose libraries; the libraries follow from the package.
+
+    Response: ``{"installedPackages": ["<dirName>", ...]}``.
+    """
+    from utk_curio.backend.app.packages.storage import PACKAGE_DIR_RE
+
+    user_key = _user_dir_key(g.user)
+    body = request.get_json(silent=True) or {}
+    pkg_dirs = body.get("packages") or []
+    if not isinstance(pkg_dirs, list) or not pkg_dirs:
+        return _error("body must be {'packages': [<dirName>, ...]}")
+    for dir_name in pkg_dirs:
+        if not isinstance(dir_name, str) or not PACKAGE_DIR_RE.match(dir_name):
+            return _error(f"invalid package dirName: {dir_name!r}")
+
+    installed_packages: list[str] = []
+    for dir_name in pkg_dirs:
+        try:
+            packages_services.install_to_store(user_key, dir_name)
+            installed_packages.append(dir_name)
+        except packages_services.PackageServiceError as exc:
+            return _error(f"failed to install {dir_name}: {exc}", exc.status)
+    return jsonify({"installedPackages": installed_packages}), 200
+
+
+# ---------------------------------------------------------------------------
 # Per-project lockfile + per-user defaults
 # ---------------------------------------------------------------------------
 #
@@ -1147,7 +1233,8 @@ def list_libraries_route():
     return jsonify({
         "standalone": agg.standalone,
         "fromPackages": [
-            {"name": e.name, "spec": e.spec, "kind": e.kind, "source": e.source}
+            {"name": e.name, "spec": e.spec, "kind": e.kind, "source": e.source,
+             "installed": e.installed}
             for e in agg.from_packages
         ],
     }), 200

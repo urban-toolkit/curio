@@ -22,7 +22,7 @@ Assumed setup: a Linux server with the hostname already pointing at it, Docker +
 
 ## 1. Configure the stack
 
-This step lays down the source tree and the configuration file that tells Docker which ports to use, where the public site will live, and how to reach Google OAuth. Everything Curio runs in production is driven from `/srv/curio/.env`, so getting this right up front saves a rebuild later.
+This step lays down the source tree and the configuration file that tells Docker which ports to use and where the public site will live. Everything Curio runs in production is driven from `/srv/curio/.env`, so getting this right up front saves a rebuild later.
 
 Clone and create the data directories:
 
@@ -46,11 +46,6 @@ PUBLIC_PATH=/curio/
 # Public URL the bundle uses to reach the backend.
 # No trailing slash, frontend code does `${BACKEND_URL}/live` etc.
 BACKEND_URL=https://lab-name.your-uni.edu/curio/api
-
-# Google OAuth (only if you want users to log in).
-REDIRECT_URI=postmessage
-CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
-CLIENT_SECRET=your-google-oauth-client-secret
 ```
 
 The four directories you created are bind-mounted into the container and persist across recreates: `instance/` holds the SQLite DB (users, projects, sessions, **back this up**), `data/` holds workflow artifacts (**back this up**), `.curio/` holds logs and sandbox files, `templates/` holds workflow templates exposed in the UI.
@@ -174,5 +169,4 @@ Pushing to `main` triggers the dev deploy. Stable runs manually via Actions → 
 - Set a real `SECRET_KEY` if running with auth.
 - `.env` is gitignored, but verify with `git status` after creating it.
 - Back up `instance/urban_workflow.db` and `data/` regularly.
-- Google OAuth client's authorized redirect URIs match your hostname.
 

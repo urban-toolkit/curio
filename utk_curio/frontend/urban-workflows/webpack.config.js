@@ -1,4 +1,5 @@
 const path = require("path");
+const webpack = require("webpack");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
 const Dotenv = require("dotenv-webpack");
 
@@ -35,6 +36,16 @@ module.exports = {
   resolve: {
     extensions: [".tsx", ".ts", ".js"],
     modules: [path.resolve(__dirname, 'src'), 'node_modules'],
+    // After NormalModuleReplacementPlugin strips "node:" prefix, these bare names
+    // are stubbed out with empty modules (never executed in the browser).
+    fallback: {
+      path: false,
+      module: false,
+      worker_threads: false,
+      fs: false,
+      os: false,
+      crypto: false,
+    },
     alias: {
       // vega v6 packages are ESM-only with no "main" field — webpack ignores "exports"
       // when an alias targets a directory, so we point directly to the built ESM files.
@@ -99,6 +110,12 @@ module.exports = {
     ],
   },
   plugins: [
+    // @urban-toolkit/autk-db uses node:path / node:module / node:worker_threads.
+    // Webpack 5 treats "node:" as an unhandled URI scheme before resolve.fallback runs.
+    // Strip the prefix here so the bare names hit the fallback stubs above.
+    new webpack.NormalModuleReplacementPlugin(/^node:/, (resource) => {
+      resource.request = resource.request.replace(/^node:/, '');
+    }),
     new HtmlWebpackPlugin({
       template: "./src/index.html",
       favicon: './src/assets/favicon.ico'

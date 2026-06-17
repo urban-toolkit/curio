@@ -29,6 +29,33 @@ name: Deploy
 #        CURIO_PORT_2000=2010
 #        CURIO_PORT_5002=5012
 #        CURIO_PORT_8080=8090
+#
+#   6. Self-hosted GPU CI runner (for .github/workflows/docker-compose.yml,
+#      which runs ONLY on this box — the WebGPU compute examples 06/07 need
+#      real hardware WebGPU that GitHub-hosted runners lack). On `utk`:
+#        a. Verify the NVIDIA GPU is usable headless:
+#             lspci | grep -E 'VGA|3D'; ls -l /dev/dri; nvidia-smi
+#             vulkaninfo --summary   # must name the NVIDIA device, NOT llvmpipe
+#        b. Install GPU userspace + browser (as root):
+#             apt-get install -y vulkan-tools   # plus the NVIDIA driver + ICD
+#             # google-chrome-stable — the e2e suite uses real system Chrome
+#             # (conftest.py _find_system_chrome), not bundled Chromium.
+#        c. Ensure the `deploy` user's env does NOT set VK_ICD_FILENAMES
+#           (it would pin Mesa lavapipe -> software WebGPU and the run would
+#           fail the CURIO_REQUIRE_HARDWARE_WEBGPU assertion).
+#        d. Install the Actions runner as `deploy`, registered to this repo
+#           with labels `gpu,curio`, in a runner group scoped to THIS repo
+#           only, under systemd (recommended --ephemeral):
+#             sudo -iu deploy
+#             mkdir ~/actions-runner && cd ~/actions-runner
+#             # download + ./config.sh --url https://github.com/urban-toolkit/curio \
+#             #   --token <repo runner token> --labels gpu,curio --ephemeral
+#        e. SECURITY (public repo + self-hosted): Settings -> Actions -> require
+#           approval for ALL outside-collaborator/fork PRs; scope the runner
+#           group to this repo. The workflow's `if:` guard already prevents the
+#           job from running on fork PRs, so untrusted code never executes here.
+#      The CI stack runs as `docker compose -p curio-ci` on remapped ports
+#      (2020/5022/8100), fully isolated from the prod curio/curio-dev stacks.
 
 on:
   push:

@@ -11,11 +11,6 @@ services:
     stdin_open: true
     environment:
       - PYTHONUNBUFFERED=1
-      # Google OAuth — read by utk_curio/backend/app/services/google_oauth.py.
-      # Values come from the per-stack .env file alongside this compose file.
-      - REDIRECT_URI=${REDIRECT_URI:-}
-      - CLIENT_ID=${CLIENT_ID:-}
-      - CLIENT_SECRET=${CLIENT_SECRET:-}
     ports:
       - "${CURIO_PORT_2000:-2000}:2000"
       - "${CURIO_PORT_5002:-5002}:5002"

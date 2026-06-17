@@ -1,11 +1,11 @@
 /**
- * Webpack config for building each first-party package's `lifecycles.js`
+ * Webpack config for building each first-party package's `behaviors.js`
  * bundle.
  *
  * Each entry compiles a package's `sources/index.tsx` into a self-contained
  * UMD bundle that lands back in the package directory at
- * `scripts/lifecycles.js`. The bundle externalizes React, ReactFlow, and
- * Curio's `registerLifecycle` — they live as globals on `window` and the
+ * `scripts/behaviors.js`. The bundle externalizes React, ReactFlow, and
+ * Curio's `registerBehavior` — they live as globals on `window` and the
  * bundle calls into them at load time. The `scripts/` subdirectory is one
  * of the package archive's allowed top-level dirs (see
  * `utk_curio/backend/app/packages/installer.py::_ALLOWED_TOP_DIRS`), so
@@ -22,7 +22,7 @@ const path = require("path");
 // One entry per first-party package with a `sources/index.tsx`. To add a new
 // one, drop a directory at `packages/<id>@<major>/sources/` and add a row
 // here. Authors of THIRD-party packages would pre-build their own
-// `scripts/lifecycles.js` and ship it inside the package directory — no
+// `scripts/behaviors.js` and ship it inside the package directory — no
 // entry here.
 const PACKAGE_ENTRIES = [
   {
@@ -32,7 +32,7 @@ const PACKAGE_ENTRIES = [
   },
 ];
 
-// React, ReactFlow, and Curio's lifecycle-registry function are shared with
+// React, ReactFlow, and Curio's behavior-registry function are shared with
 // the host page. Mapping them to `window.*` globals keeps each package
 // bundle small and (crucially) reuses Curio's React instance — distinct
 // React copies break the rules-of-hooks invariant and crash every hook.
@@ -47,7 +47,7 @@ module.exports = PACKAGE_ENTRIES.map(({ id, entry, outputDir }) => ({
   entry,
   output: {
     path: outputDir,
-    filename: "lifecycles.js",
+    filename: "behaviors.js",
     library: {
       // UMD lets the same bundle run as a global side-effect script
       // (the loader path we use today) or be re-bundled by a future
@@ -65,8 +65,8 @@ module.exports = PACKAGE_ENTRIES.map(({ id, entry, outputDir }) => ({
   resolve: {
     extensions: [".tsx", ".ts", ".js"],
     // Lets the package's sources import from Curio's own src tree via
-    // relative paths (used by streetvision lifecycle files for the
-    // `NodeLifecycleHook` type import — erased at runtime).
+    // relative paths (used by streetvision behavior files for the
+    // `NodeBehaviorHook` type import — erased at runtime).
     modules: [path.resolve(__dirname, "node_modules")],
   },
   module: {

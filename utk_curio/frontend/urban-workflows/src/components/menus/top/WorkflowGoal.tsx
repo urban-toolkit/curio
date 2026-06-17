@@ -5,6 +5,7 @@ import { useToastContext } from "../../../providers/ToastProvider";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { TrillGenerator } from "../../../TrillGenerator";
 import { useCode } from "../../../hook/useCode";
+import { useEnsureWorkflowDeps } from "../../../hook/useEnsureWorkflowDeps";
 import "./WorkflowGoal.css";
 
 export default function WorkflowGoal({ }: { }) {
@@ -12,6 +13,7 @@ export default function WorkflowGoal({ }: { }) {
     const { llmRequest, setCurrentEventPipeline } = useLLMContext();
     const { nodes, edges, workflowNameRef, suggestionsLeft, workflowGoal, updateWarnings, updateSubtasks, setWorkflowGoal, eraseWorkflowSuggestions, flagBasedOnKeyword, cleanCanvas, updateKeywords } = useFlowContext();
     const { loadTrill } = useCode();
+    const ensureWorkflowDeps = useEnsureWorkflowDeps();
     const [isEditing, setIsEditing] = useState(false);
     const [segments, setSegments] = useState<any>([]);
     const [highlights, setHighlights] = useState<any>({});
@@ -88,6 +90,7 @@ export default function WorkflowGoal({ }: { }) {
                 parsed_result.dataflow.name = workflowNameRef.current;
     
                 loadTrill(parsed_result, "workflow");
+                ensureWorkflowDeps(parsed_result);
             } catch (error) {
                 console.error("Error communicating with LLM", error);
                 showToast("Error communicating with LLM", "error");

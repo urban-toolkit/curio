@@ -14,8 +14,8 @@
  *   - `package` carries the package-provenance metadata used by the palette to
  *     section Built-in vs PACKAGES.
  *
- * Each kind manifest's `lifecycle` string is resolved through
- * {@link getLifecycle}; `iconRef` through {@link resolveIconRef}. The
+ * Each kind manifest's `behavior` string is resolved through
+ * {@link getBehavior}; `iconRef` through {@link resolveIconRef}. The
  * pre-installed `curio.builtin@1` package rides these registries so its
  * kinds behave identically to the legacy hard-coded descriptors.
  */
@@ -27,14 +27,14 @@ import {
   inputOnly,
   outputOnly,
   standardInOut,
-  useCodeNodeLifecycle,
-  usePackageNodeLifecycle,
+  useCodeNodeBehavior,
+  usePackageNodeBehavior,
   withBidirectional,
 } from '../adapters/node';
 import { packagesApi } from 'api/packagesApi';
 import { getToken } from '../utils/authApi';
 
-import { getLifecycle } from './lifecycleRegistry';
+import { getBehavior } from './behaviorRegistry';
 import { resolveIconRef } from './iconRegistry';
 import {
   clearPackageNodes,
@@ -56,7 +56,7 @@ interface RawPackageTemplate {
   description: string;
   icon: string | null;
   iconRef: string | null;
-  lifecycle: string | null;
+  behavior: string | null;
   paletteOrder: number | null;
   editor: 'code' | 'widgets' | 'grammar' | 'none';
   hasCode: boolean;
@@ -90,9 +90,9 @@ interface RawPackage {
   permissions: string[];
   templates: RawPackageTemplate[];
   /** Path (relative to package dir) of a pre-built JS bundle to load before
-   *  descriptor build. Registers this package's lifecycle hooks via
-   *  `window.curio.registerLifecycle`. See docs/EXTENDING.md §5. */
-  lifecycleScript?: string;
+   *  descriptor build. Registers this package's behavior hooks via
+   *  `window.curio.registerBehavior`. See docs/EXTENDING.md §5. */
+  behaviorScript?: string;
   /** Server-side dirname (`<packageId>@<major>`). Used for static-asset
    *  URLs like `/api/packages/<dirName>/file/<...>`. */
   dirName?: string;
@@ -177,9 +177,9 @@ function buildDescriptor(pkg: RawPackage, template: RawPackageTemplate, order: n
   if (template.bidirectional) handles = withBidirectional(handles);
 
   const isBuiltin = pkg.packageId === BUILTIN_PACKAGE_ID;
-  const lookedUpLifecycle = template.lifecycle ? getLifecycle(template.lifecycle) : undefined;
-  const lifecycle = lookedUpLifecycle
-    ?? (isBuiltin ? useCodeNodeLifecycle : usePackageNodeLifecycle);
+  const lookedUpBehavior = template.behavior ? getBehavior(template.behavior) : undefined;
+  const behavior = lookedUpBehavior
+    ?? (isBuiltin ? useCodeNodeBehavior : usePackageNodeBehavior);
   const icon = resolveIconRef(template.iconRef) ?? faCube;
   const paletteOrder = typeof template.paletteOrder === 'number'
     ? template.paletteOrder
@@ -251,7 +251,7 @@ function buildDescriptor(pkg: RawPackage, template: RawPackageTemplate, order: n
       container,
       inputIconType: portCardinalityIconType(inputPorts),
       outputIconType: portCardinalityIconType(outputPorts),
-      useLifecycle: lifecycle,
+      useNodeBehavior: behavior,
     },
   };
 }
@@ -286,25 +286,25 @@ export function registerPackageTemplates(packages: RawPackage[]): NodeDescriptor
  * swallowed so app boot never blocks on package discovery.
  */
 /**
- * Loads a package's pre-built `lifecycleScript` bundle by injecting a
+ * Loads a package's pre-built `behaviorScript` bundle by injecting a
  * <script> tag pointed at `/api/packages/<dirName>/file/<script>`. The
- * bundle's top-level side-effect calls `window.curio.registerLifecycle`
- * for each lifecycle hook it ships, so by the time the returned Promise
- * resolves the lifecycle keys declared in the package's templates are
+ * bundle's top-level side-effect calls `window.curio.registerBehavior`
+ * for each behavior hook it ships, so by the time the returned Promise
+ * resolves the behavior keys declared in the package's templates are
  * registered and `buildDescriptor`'s lookup will succeed.
  *
  * Errors are swallowed (and logged) — one broken package's bundle
  * shouldn't take the whole canvas down. The descriptors for its
- * templates will fall back to `usePackageNodeLifecycle` (generic code
+ * templates will fall back to `usePackageNodeBehavior` (generic code
  * editor) so the palette still renders.
  */
-async function loadPackageLifecycleScripts(packages: RawPackage[]): Promise<void> {
+async function loadPackageBehaviorScripts(packages: RawPackage[]): Promise<void> {
   const base = process.env.BACKEND_URL ?? '';
-  const targets = packages.filter((p) => p.lifecycleScript && p.dirName);
+  const targets = packages.filter((p) => p.behaviorScript && p.dirName);
   if (targets.length === 0) return;
   const token = getToken();
   // Sequential, not Promise.all, so each bundle's top-level
-  // `registerLifecycle` side-effect runs before the next bundle's does —
+  // `registerBehavior` side-effect runs before the next bundle's does —
   // matches the deterministic order the old `<script async={false}>` chain
   // guaranteed.
   for (const p of targets) {
@@ -312,7 +312,7 @@ async function loadPackageLifecycleScripts(packages: RawPackage[]): Promise<void
     // even if refreshPackageRegistry runs again.
     const existing = document.querySelector(`script[data-curio-package="${p.packageId}@${p.major}"]`);
     if (existing) continue;
-    const url = `${base}/api/packages/${encodeURIComponent(p.dirName!)}/file/${p.lifecycleScript}`;
+    const url = `${base}/api/packages/${encodeURIComponent(p.dirName!)}/file/${p.behaviorScript}`;
     try {
       // ``<script src>`` cannot carry an Authorization header, and the
       // file-serving endpoint is under ``@require_auth``. Firefox's ORB
@@ -331,7 +331,7 @@ async function loadPackageLifecycleScripts(packages: RawPackage[]): Promise<void
       const res = await fetch(url, { headers, cache: 'no-store' });
       if (!res.ok) {
         console.warn(
-          `[curio] failed to load lifecycle script for ${p.packageId}@${p.major}: HTTP ${res.status}`,
+          `[curio] failed to load behavior script for ${p.packageId}@${p.major}: HTTP ${res.status}`,
         );
         continue;
       }
@@ -341,7 +341,7 @@ async function loadPackageLifecycleScripts(packages: RawPackage[]): Promise<void
       s.textContent = code;
       document.head.appendChild(s);
     } catch (err) {
-      console.warn(`[curio] failed to load lifecycle script for ${p.packageId}@${p.major}:`, err);
+      console.warn(`[curio] failed to load behavior script for ${p.packageId}@${p.major}:`, err);
       // never throw — descriptor build still proceeds (with code-editor fallback)
     }
   }
@@ -359,12 +359,12 @@ export async function loadInstalledPackages(
             projectFilter.has(`${p.packageId}@${p.major}`),
         )
       : (packages ?? []);
-    // Inject and await any `lifecycleScript` bundles BEFORE descriptor
-    // build so the lifecycle keys referenced in the templates are
-    // actually registered against the global lifecycle registry. Without
-    // this step, `getLifecycle()` returns undefined and packages with
-    // custom lifecycles soft-fail to the package code editor.
-    await loadPackageLifecycleScripts(filtered);
+    // Inject and await any `behaviorScript` bundles BEFORE descriptor
+    // build so the behavior keys referenced in the templates are
+    // actually registered against the global behavior registry. Without
+    // this step, `getBehavior()` returns undefined and packages with
+    // custom behaviors soft-fail to the package code editor.
+    await loadPackageBehaviorScripts(filtered);
     // Replace package-derived kinds wholesale — `registerNode` only adds/overwrites,
     // so without this pass, uninstalled packages would leave stale palette entries.
     // Notify subscribers only after clear + register so React Flow keeps package node types wired.

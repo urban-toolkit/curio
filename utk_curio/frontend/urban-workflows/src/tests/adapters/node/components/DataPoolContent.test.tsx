@@ -59,6 +59,11 @@ describe('DataPoolContent', () => {
     render(
       <DataPoolContent
         {...defaultProps}
+        // Single tab matching the single input wrapper. A multi-tab tabData
+        // with one wrapper triggers `expandedFromSingleRef`, which blanks the
+        // tab input (the autk-grammar multi-layer dict envelope isn't
+        // previewable) and intentionally skips the fetch — see DataPoolContent.
+        tabData={[{ col: 1 }]}
         data={{ nodeId: 'test-node', input: { filename: 'artifact_id' } }}
       />
     );

@@ -1,0 +1,12 @@
+{
+  "sha256": {
+    "manifest.json": "4312a4a500687b68621c8f1a731420cf9fff474eb805e78cbad2a338c281dfb5",
+    "sources/census-load.py": "717c18b81d433b896c7d5488bc5ac2cab6921e282789007adc055d577d48f5ed",
+    "sources/census-reproject.py": "49eac77a6a3b408487308998bb4c7959e1cf1ad63ab0df21768f60db7508ec91",
+    "sources/gt65-projection.py": "6761c9dad8b10ab56980a9988a10055d34b71f80e8e025b003f2e2da53a3f2c5",
+    "sources/mrt-load.py": "2305937e3909c731c85b67f491299a6aa1517a6e2e12adc8ddaf77116fdd8d1a",
+    "sources/utci-compute.py": "ec4951b3a1a19db50848cc610d4a450d8d9fd4bf18606eef4148f6610aff0c33",
+    "sources/utci-zonal.py": "9697255e5a4d374620d5c549dde88cdb46a1f8e5541d84d97d392043e468e57e",
+    "sources/weather-load.py": "25d0b734e36fed590885db502adc7afa878c54cabb809a61f0729c3b8c89e371"
+  }
+}
