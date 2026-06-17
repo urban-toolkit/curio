@@ -52,11 +52,6 @@ function datasetCount(dataset: DatasetCatalogItem): string | null {
   return null;
 }
 
-function stopAccordionToggle(event: React.MouseEvent<HTMLButtonElement>) {
-  event.preventDefault();
-  event.stopPropagation();
-}
-
 function DatasetRow({ dataset }: { dataset: DatasetCatalogItem }) {
   const count = datasetCount(dataset);
   const time = relativeTime(dataset.updatedAt);
