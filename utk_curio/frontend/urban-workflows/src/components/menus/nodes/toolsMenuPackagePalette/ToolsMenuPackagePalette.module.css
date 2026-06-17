@@ -6,6 +6,11 @@
     align-items: flex-start;
     gap: 8px;
     flex-shrink: 0;
+    pointer-events: none;
+}
+
+.packagePaletteRoot > * {
+    pointer-events: auto;
 }
 
 .packagePaletteColumn {

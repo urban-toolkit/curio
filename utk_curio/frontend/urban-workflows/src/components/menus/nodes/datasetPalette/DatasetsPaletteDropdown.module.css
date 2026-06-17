@@ -4,6 +4,11 @@
   align-items: flex-start;
   gap: 8px;
   flex-shrink: 0;
+  pointer-events: none;
+}
+
+.root > * {
+  pointer-events: auto;
 }
 
 .column {
