@@ -48,20 +48,38 @@ def rows_from_parse_output(parsed: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def load_parquet_frame(path: Path) -> tuple[Any, int]:
-    """Load a parquet file as DataFrame or GeoDataFrame and return total row count."""
+    """Load a parquet file and return ``(frame, total_row_count)``.
+
+    GeoParquet stores geometry as binary WKB. Reading it with plain pandas leaves
+    the geometry column as raw bytes, which the preview later renders as unreadable
+    replacement characters. We therefore read with geopandas (decoding WKB into
+    shapely geometries) and convert geometry columns to human-readable WKT
+    (e.g. ``POLYGON ((...))``) before serialization.
+    """
     import geopandas as gpd
 
-    frame = pd.read_parquet(path)
-    if "geometry" in frame.columns:
-        try:
-            frame = gpd.GeoDataFrame(frame, geometry="geometry")
-        except (ValueError, TypeError):
-            # Geometry column is not valid GeoDataFrame geometry; keep as DataFrame.
-            logger.debug(
-                "GeoDataFrame conversion failed for %s; using plain DataFrame",
-                path,
-                exc_info=True,
-            )
+    try:
+        frame = gpd.read_parquet(path)
+    except Exception:
+        # Not a GeoParquet file (no geo metadata); read as a plain DataFrame.
+        logger.debug(
+            "gpd.read_parquet failed for %s; reading as plain parquet",
+            path,
+            exc_info=True,
+        )
+        frame = pd.read_parquet(path)
+        return frame, len(frame)
+
+    geometry_columns = [
+        column for column in frame.columns if str(frame[column].dtype) == "geometry"
+    ]
+    if geometry_columns:
+        # Drop GeoDataFrame typing and emit WKT strings so parseOutput serializes
+        # the geometry as readable text instead of binary WKB.
+        frame = pd.DataFrame(frame).copy()
+        for column in geometry_columns:
+            frame[column] = gpd.GeoSeries(frame[column]).to_wkt()
+
     return frame, len(frame)
 
 

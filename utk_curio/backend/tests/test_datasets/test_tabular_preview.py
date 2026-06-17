@@ -26,6 +26,36 @@ def test_preview_parquet_file_paginates(tmp_path: Path):
     assert rows == [{"id": 2, "label": "b"}, {"id": 3, "label": "c"}]
 
 
+def test_preview_parquet_file_geometry_renders_as_wkt(tmp_path: Path):
+    """GeoParquet geometry must render as readable WKT, not raw WKB bytes (#138)."""
+    import geopandas as gpd
+    from shapely.geometry import Point, Polygon
+
+    path = tmp_path / "geo.parquet"
+    gpd.GeoDataFrame(
+        {
+            "name": ["A", "B", "C"],
+            "geometry": [
+                Polygon([(0, 0), (1, 0), (1, 1), (0, 0)]),
+                Point(2, 3),
+                None,
+            ],
+        },
+        crs="EPSG:4326",
+    ).to_parquet(path)
+
+    rows, total, _ = preview_parquet_file(path, row_limit=10, offset=0)
+
+    assert total == 3
+    assert rows[0] == {"name": "A", "geometry": "POLYGON ((0 0, 1 0, 1 1, 0 0))"}
+    assert rows[1] == {"name": "B", "geometry": "POINT (2 3)"}
+    assert rows[2]["name"] == "C"
+    # No cell should contain raw WKB bytes / replacement characters.
+    for row in rows:
+        geom = row.get("geometry")
+        assert geom is None or "\ufffd" not in str(geom)
+
+
 def test_dataset_preview_service_parquet(tmp_path: Path):
     path = tmp_path / "output.parquet"
     pd.DataFrame({"gid": ["x1"], "name": ["Loop"]}).to_parquet(path, index=False)
