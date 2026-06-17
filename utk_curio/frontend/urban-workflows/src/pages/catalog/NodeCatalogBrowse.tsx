@@ -1,7 +1,7 @@
 /**
  * Global node catalog under /catalog/nodes (see docs/CATALOG.md).
  */
-import React from "react";
+import React, { useState } from "react";
 import { InstallPermissionsDialog } from "../../components/packages/publishing/InstallPermissionsDialog";
 import type { SortMode } from "../../components/packages/publishing/packageTypes";
 import { CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
@@ -11,6 +11,7 @@ import { PackageBrowseDrawer } from "./PackageBrowseDrawer";
 import { useNodeCatalogBrowse } from "./useNodeCatalogBrowse";
 
 export const NodeCatalogBrowse: React.FC = () => {
+  const [drawerSlotOpen, setDrawerSlotOpen] = useState(false);
   const {
     search,
     setSearch,
@@ -49,7 +50,7 @@ export const NodeCatalogBrowse: React.FC = () => {
   } = useNodeCatalogBrowse();
 
   return (
-    <div className={browseStyles.page}>
+    <div className={[browseStyles.page, drawerSlotOpen ? browseStyles.pageWithDrawer : ""].filter(Boolean).join(" ")}>
       <aside className={browseStyles.categoryRail}>
         <p className={browseStyles.railLabel}>By status</p>
         <button
@@ -300,6 +301,8 @@ export const NodeCatalogBrowse: React.FC = () => {
             ? onPublish
             : undefined
         }
+        onClose={() => setSelectedDirName(null)}
+        onLayoutChange={setDrawerSlotOpen}
       />
 
       {installCandidate ? (

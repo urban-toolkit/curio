@@ -1,5 +1,6 @@
 import React from "react";
 import { CatalogDrawerTitle } from "../../components/catalog/CatalogKindVisuals";
+import { CatalogBrowseDrawerShell } from "../catalog/CatalogBrowseDrawerShell";
 import { formatDatasetLocation } from "../../components/datasets/catalog/datasetDetailHelpers";
 import {
   DATASET_FORMAT_LABEL,
@@ -17,6 +18,7 @@ export interface DataCatalogBrowseDrawerProps {
   onPublish: (dataset: DatasetCatalogItem) => void;
   onClose: () => void;
   onViewSample: (dataset: DatasetCatalogItem) => void;
+  onLayoutChange?: (slotOpen: boolean) => void;
 }
 
 export function DataCatalogBrowseDrawer({
@@ -25,28 +27,45 @@ export function DataCatalogBrowseDrawer({
   onPublish,
   onClose,
   onViewSample,
+  onLayoutChange,
 }: DataCatalogBrowseDrawerProps) {
-  if (!dataset) {
-    return (
-      <aside className={styles.browseDrawer}>
-        <div className={styles.drawerHeader}>
-          <CatalogDrawerTitle kind="dataset" title="Dataset details" />
-          <button className={styles.drawerClose} type="button" aria-label="Close" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-        <div className={styles.drawerEmpty}>Select a dataset to see details</div>
-      </aside>
-    );
-  }
+  return (
+    <CatalogBrowseDrawerShell presented={dataset != null} onLayoutChange={onLayoutChange}>
+      {dataset ? (
+        <DataCatalogBrowseDrawerContent
+          dataset={dataset}
+          publishingId={publishingId}
+          onPublish={onPublish}
+          onClose={onClose}
+          onViewSample={onViewSample}
+        />
+      ) : null}
+    </CatalogBrowseDrawerShell>
+  );
+}
 
+interface DataCatalogBrowseDrawerContentProps {
+  dataset: DatasetCatalogItem;
+  publishingId: string | null;
+  onPublish: (dataset: DatasetCatalogItem) => void;
+  onClose: () => void;
+  onViewSample: (dataset: DatasetCatalogItem) => void;
+}
+
+function DataCatalogBrowseDrawerContent({
+  dataset,
+  publishingId,
+  onPublish,
+  onClose,
+  onViewSample,
+}: DataCatalogBrowseDrawerContentProps) {
   const fresh = isFresh(dataset.updatedAt);
   const left = metaLeft(dataset);
   const crs = dataset.schema?.crs ?? null;
   const published = isDatasetPublishedToCatalog(dataset);
 
   return (
-    <aside className={styles.browseDrawer}>
+    <>
       <div className={styles.drawerHeader}>
         <CatalogDrawerTitle kind="dataset" title="Dataset details" />
         <button className={styles.drawerClose} type="button" aria-label="Close" onClick={onClose}>
@@ -177,6 +196,6 @@ export function DataCatalogBrowseDrawer({
         <br />
         Last updated: {relativeTime(dataset.updatedAt)}
       </p>
-    </aside>
+    </>
   );
 }

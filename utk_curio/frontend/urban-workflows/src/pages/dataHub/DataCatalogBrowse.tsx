@@ -34,8 +34,8 @@ export const DataCatalogBrowse: React.FC = () => {
   const [sort, setSort] = useState<DatasetSortMode>("recent");
   const [origin, setOrigin] = useState<DatasetOrigin | "">("");
   const [format, setFormat] = useState<DatasetFormat | "">("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [drawerDismissed, setDrawerDismissed] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null | undefined>(undefined);
+  const [drawerSlotOpen, setDrawerSlotOpen] = useState(false);
   const [sampleDatasetId, setSampleDatasetId] = useState<string | null>(null);
   const [publishingId, setPublishingId] = useState<string | null>(null);
   const [catalogPublishAllowed, setCatalogPublishAllowed] = useState(false);
@@ -52,11 +52,23 @@ export const DataCatalogBrowse: React.FC = () => {
       });
   }, []);
 
-  const selected = useMemo(
-    () => catalog.items.find((item) => item.id === selectedId) || catalog.items[0] || null,
-    [catalog.items, selectedId],
-  );
-  const drawerDataset = drawerDismissed ? null : selected;
+  useEffect(() => {
+    if (catalog.items.length === 0) {
+      setSelectedId(undefined);
+      return;
+    }
+    if (selectedId === null) return;
+    if (selectedId != null && catalog.items.some((item) => item.id === selectedId)) return;
+    setSelectedId(undefined);
+  }, [catalog.items, selectedId]);
+
+  const drawerDataset = useMemo(() => {
+    if (selectedId === null) return null;
+    if (selectedId != null) {
+      return catalog.items.find((item) => item.id === selectedId) ?? null;
+    }
+    return catalog.items[0] ?? null;
+  }, [catalog.items, selectedId]);
   const sampleDataset = useMemo(
     () => (sampleDatasetId ? catalog.items.find((item) => item.id === sampleDatasetId) ?? null : null),
     [catalog.items, sampleDatasetId],
@@ -87,7 +99,7 @@ export const DataCatalogBrowse: React.FC = () => {
   );
 
   return (
-    <div className={styles.page}>
+    <div className={[styles.page, drawerSlotOpen ? styles.pageWithDrawer : ""].filter(Boolean).join(" ")}>
       <aside className={styles.categoryRail}>
         <p className={styles.railLabel}>By format</p>
 
@@ -245,11 +257,8 @@ export const DataCatalogBrowse: React.FC = () => {
             <DataCatalogBrowseCard
               key={`${dataset.origin}:${dataset.id}`}
               dataset={dataset}
-              selected={selected?.id === dataset.id}
-              onSelect={() => {
-                setSelectedId(dataset.id);
-                setDrawerDismissed(false);
-              }}
+              selected={drawerDataset?.id === dataset.id}
+              onSelect={() => setSelectedId(dataset.id)}
               onViewDetails={() => navigate(`/catalog/data/${encodeURIComponent(dataset.id)}`)}
               publishingId={publishingId}
               onPublish={handlePublish}
@@ -263,8 +272,9 @@ export const DataCatalogBrowse: React.FC = () => {
         dataset={drawerDataset}
         publishingId={publishingId}
         onPublish={handlePublish}
-        onClose={() => setDrawerDismissed(true)}
+        onClose={() => setSelectedId(null)}
         onViewSample={(dataset) => setSampleDatasetId(dataset.id)}
+        onLayoutChange={setDrawerSlotOpen}
       />
 
       {sampleDatasetId ? (

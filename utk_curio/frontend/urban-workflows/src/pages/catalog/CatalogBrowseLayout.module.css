@@ -9,8 +9,9 @@
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 212px minmax(0, 1fr) 320px;
+  grid-template-columns: 212px minmax(0, 1fr) 0px;
   grid-template-rows: minmax(0, 1fr);
+  transition: grid-template-columns 300ms cubic-bezier(0.32, 0.72, 0, 1);
   /* Shared browse cards (Data + Nodes tabs; inherited by nested cards) */
   --catalogBrowseCardMinHeight: 268px;
   --catalogBrowseCardGridGap: 20px;
@@ -27,6 +28,16 @@
   --catalogBrowseCardGridScrollbarThumb: rgba(30, 31, 35, 0.22);
   --catalogBrowseCardGridScrollbarThumbHover: rgba(30, 31, 35, 0.35);
   --catalogBrowseCardGridScrollbarTrack: rgba(30, 31, 35, 0.06);
+}
+
+.pageWithDrawer {
+  grid-template-columns: 212px minmax(0, 1fr) 320px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page {
+    transition: none;
+  }
 }
 
 .detailPage {
@@ -763,18 +774,38 @@
 /* ══════════════════════════════════════════
    RIGHT DETAIL DRAWER
    ══════════════════════════════════════════ */
-.browseDrawer {
+/* Grid cell that clips the sliding drawer as the column expands / collapses. */
+.browseDrawerColumn {
   grid-column: 3;
   grid-row: 1;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Entire drawer panel — slides in from / out to the right as one unit. */
+.browseDrawer {
+  width: 320px;
+  height: 100%;
   background: #FFFFFF;
   border-left: 1px solid #E0E0E0;
+  box-shadow: -4px 0 10px rgba(0,0,0,0.09);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  position: sticky;
-  top: 0;
-  max-height: calc(100vh - 120px);
-  box-shadow: -4px 0 10px rgba(0,0,0,0.09);
+  transform: translate3d(100%, 0, 0);
+  transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
+  will-change: transform;
+}
+
+.browseDrawerOpen {
+  transform: translate3d(0, 0, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .browseDrawer {
+    transition: none;
+  }
 }
 
 .drawerHeader {
@@ -1425,7 +1456,7 @@
 
 @media (max-width: 1100px) {
   .page { grid-template-columns: 212px minmax(0, 1fr); }
-  .browseDrawer { display: none; }
+  .browseDrawerColumn { display: none; }
   .cardGrid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
 }
 

@@ -1,6 +1,7 @@
 import React from "react";
 import { PackagePayload } from "../../api/packagesApi";
 import { CatalogDrawerTitle, CatalogKindIcon } from "../../components/catalog/CatalogKindVisuals";
+import { CatalogBrowseDrawerShell } from "./CatalogBrowseDrawerShell";
 import { CatalogPublishPill } from "../../components/packages/CatalogPublishPill";
 import { primaryCategory } from "../../components/packages/publishing/packageUtils";
 import browseStyles from "./CatalogBrowseLayout.module.css";
@@ -28,9 +29,26 @@ export interface PackageBrowseDrawerProps {
   showPublish: boolean;
   onInstall: (pkg: PackagePayload) => void;
   onPublish?: (dirName: string) => void;
+  onClose: () => void;
+  onLayoutChange?: (slotOpen: boolean) => void;
 }
 
 export const PackageBrowseDrawer: React.FC<PackageBrowseDrawerProps> = ({
+  pkg,
+  onClose,
+  onLayoutChange,
+  ...rest
+}) => (
+  <CatalogBrowseDrawerShell presented={pkg != null} onLayoutChange={onLayoutChange}>
+    {pkg ? <PackageBrowseDrawerContent pkg={pkg} onClose={onClose} {...rest} /> : null}
+  </CatalogBrowseDrawerShell>
+);
+
+type PackageBrowseDrawerContentProps = Omit<PackageBrowseDrawerProps, "pkg"> & {
+  pkg: PackagePayload;
+};
+
+const PackageBrowseDrawerContent: React.FC<PackageBrowseDrawerContentProps> = ({
   pkg,
   isInstalled,
   hasUpdate,
@@ -42,28 +60,19 @@ export const PackageBrowseDrawer: React.FC<PackageBrowseDrawerProps> = ({
   showPublish,
   onInstall,
   onPublish,
+  onClose,
 }) => {
-  if (!pkg) {
-    return (
-      <aside className={browseStyles.browseDrawer}>
-        <div className={browseStyles.drawerHeader}>
-          <CatalogDrawerTitle kind="package" title="Package details" />
-          <button className={browseStyles.drawerClose} type="button">✕</button>
-        </div>
-        <div className={browseStyles.drawerEmpty}>Select a package to see details</div>
-      </aside>
-    );
-  }
-
   const cat = primaryCategory(pkg);
   const isAuthorable = pkg.readOnly !== true;
   const showPublishPill = isPublished === true || (onPublish != null && catalogPublishAllowed && isAuthorable);
 
   return (
-    <aside className={browseStyles.browseDrawer}>
+    <>
       <div className={browseStyles.drawerHeader}>
         <CatalogDrawerTitle kind="package" title="Package details" />
-        <button className={browseStyles.drawerClose} type="button" aria-label="Close">✕</button>
+        <button className={browseStyles.drawerClose} type="button" aria-label="Close" onClick={onClose}>
+          ✕
+        </button>
       </div>
 
       <div className={browseStyles.drawerKindHero}>
@@ -169,6 +178,6 @@ export const PackageBrowseDrawer: React.FC<PackageBrowseDrawerProps> = ({
           </div>
         ) : null}
       </div>
-    </aside>
+    </>
   );
 };

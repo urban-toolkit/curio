@@ -23,7 +23,7 @@ export function useNodeCatalogBrowse() {
   const [sort, setSort] = useState<SortMode>("new");
   const [filter, setFilter] = useState<NodeCatalogFilterTab>("all");
   const [categoryFilter, setCategoryFilter] = useState("");
-  const [selectedDirName, setSelectedDirName] = useState<string | null>(null);
+  const [selectedDirName, setSelectedDirName] = useState<string | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [catalogPublishAllowed, setCatalogPublishAllowed] = useState(false);
@@ -127,18 +127,21 @@ export function useNodeCatalogBrowse() {
 
   useEffect(() => {
     if (filtered.length === 0) {
-      setSelectedDirName(null);
+      setSelectedDirName(undefined);
       return;
     }
-    if (selectedDirName == null || !filtered.some((p) => p.dirName === selectedDirName)) {
-      setSelectedDirName(filtered[0]!.dirName);
-    }
+    if (selectedDirName === null) return;
+    if (selectedDirName != null && filtered.some((p) => p.dirName === selectedDirName)) return;
+    setSelectedDirName(undefined);
   }, [filtered, selectedDirName]);
 
-  const selectedPkg = useMemo(
-    () => filtered.find((p) => p.dirName === selectedDirName) ?? filtered[0] ?? null,
-    [filtered, selectedDirName],
-  );
+  const selectedPkg = useMemo(() => {
+    if (selectedDirName === null) return null;
+    if (selectedDirName != null) {
+      return filtered.find((p) => p.dirName === selectedDirName) ?? null;
+    }
+    return filtered[0] ?? null;
+  }, [filtered, selectedDirName]);
 
   const onInstall = useCallback(
     async (pkg: PackagePayload) => {
