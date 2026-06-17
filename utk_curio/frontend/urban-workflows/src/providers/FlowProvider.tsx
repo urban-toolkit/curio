@@ -826,6 +826,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     }
 
     function playNodesUpTo(targetNodeId: string) {
+        if (playAllStateRef.current != null) return;    //guard if play all state is happening 
         const currentNodes = reactFlow.getNodes();
         const currentEdges = reactFlow.getEdges();
 
@@ -872,7 +873,6 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     // a box generated a new output. Propagate it to directly connected boxes
     const applyNewOutput = (newOutput: IOutput) => {
         const currentEdges = reactFlow.getEdges();
-
         // Find which nodes are directly downstream of the output source
         const nodesAffected: string[] = [];
         for (const edge of currentEdges) {
@@ -881,6 +881,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 nodesAffected.push(edge.target);
             }
         }
+
+
 
         // Skip setNodes entirely when nothing downstream needs updating — an
         // empty map still returns a new array reference which causes every node

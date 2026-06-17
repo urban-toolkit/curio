@@ -5,6 +5,8 @@ dist/
 .DS_Store
 *.log
 
+.venv/
+
 __pycache__/
 *.py[cod]
 *$py.class
