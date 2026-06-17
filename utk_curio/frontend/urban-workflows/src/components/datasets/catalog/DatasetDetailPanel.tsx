@@ -4,6 +4,7 @@ import {
   DatasetCatalogItem,
   datasetCatalogApi,
   datasetProvenanceLabel,
+  isDatasetInstalledFromCatalog,
   isDatasetPublishedToCatalog,
   notifyDatasetCatalogRefresh,
 } from "../../../services/datasetCatalog";
@@ -125,7 +126,7 @@ const UpstreamCards: React.FC<{
           )}
         </div>
       </article>
-      {dataset.origin === "hub" || dataset.installed ? (
+      {isDatasetInstalledFromCatalog(dataset) ? (
         <div className={styles.hubSourceCard}>
           <strong>Installed from Data Catalog</strong>
           <span>

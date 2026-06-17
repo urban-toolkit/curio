@@ -161,6 +161,26 @@ export function isUserInstalledDataset(dataset: DatasetCatalogItem): boolean {
   return dataset.installed === true && !isDatasetPublishedToCatalog(dataset);
 }
 
+/**
+ * True when the dataset actually originated from the Data Catalog — either the
+ * canonical ``hub`` entry or a copy installed into the project (``imported``).
+ * Computed node outputs always keep ``origin="computed"`` (even after auto-install
+ * or publishing), so they are excluded here and must not be labelled as installed
+ * from the catalog.
+ */
+export function isDatasetFromCatalog(dataset: DatasetCatalogItem): boolean {
+  return dataset.origin === "hub" || dataset.origin === "imported";
+}
+
+/**
+ * True only when the dataset was genuinely *installed* into the project from the
+ * Data Catalog. A catalog entry that is merely browsable (``installed`` falsy,
+ * Availability "Available") must not be described as installed.
+ */
+export function isDatasetInstalledFromCatalog(dataset: DatasetCatalogItem): boolean {
+  return dataset.installed === true && isDatasetFromCatalog(dataset);
+}
+
 /** Live node output in the current session that is not yet in the user dataset store. */
 export function isProjectSessionDataset(dataset: DatasetCatalogItem): boolean {
   return dataset.origin === "computed" && dataset.installed !== true;
