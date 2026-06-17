@@ -301,7 +301,15 @@ def _serialize_parquet_for_export(path: Path) -> tuple[bytes, str, str]:
         geo_frame = None
 
     if geo_frame is not None:
-        return geo_frame.to_json().encode("utf-8"), ".geojson", "application/geo+json"
+        # ``to_json`` serializes feature properties via ``json.dumps``, which
+        # can't natively encode pandas/numpy temporal values (e.g. Timestamp).
+        # Forward ``default=str`` so those fall back to their string form rather
+        # than raising "Object of type Timestamp is not JSON serializable".
+        return (
+            geo_frame.to_json(default=str).encode("utf-8"),
+            ".geojson",
+            "application/geo+json",
+        )
 
     frame = pd.read_parquet(path)
     return frame.to_csv(index=False).encode("utf-8"), ".csv", "text/csv"

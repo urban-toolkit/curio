@@ -56,6 +56,45 @@ def test_resolve_item_path_delegates_for_computed(app):
     assert result.endswith("scores.csv")
 
 
+def test_resolve_item_path_installed_computed_uses_absolute_path(app, tmp_path):
+    """Installed/published computed datasets resolve via their absolute path.
+
+    Once a computed dataset is installed it carries a ``curio://datasets/{dir}``
+    URI and an absolute store path instead of ``curio://outputs/``.  Export must
+    still locate the file (regression for the 404-on-export bug).
+    """
+    from utk_curio.backend.app.datasets.service import DatasetCatalogService
+
+    data_file = tmp_path / "computed_output.parquet"
+    data_file.write_bytes(b"PAR1")
+
+    svc = DatasetCatalogService()
+    item = {
+        "origin": "computed",
+        "uri": "curio://datasets/computed.node-abc@1",
+        "path": data_file.as_posix(),
+        "dirName": "computed.node-abc@1",
+        "installed": True,
+    }
+    result = svc._resolve_item_path(item)
+    assert result == data_file.as_posix()
+
+
+def test_resolve_item_path_computed_missing_absolute_path_returns_none(app):
+    """A computed item whose absolute path no longer exists resolves to None."""
+    from utk_curio.backend.app.datasets.service import DatasetCatalogService
+
+    svc = DatasetCatalogService()
+    item = {
+        "origin": "computed",
+        "uri": "curio://datasets/computed.node-gone@1",
+        "path": "/nonexistent/store/computed_output.parquet",
+        "dirName": "computed.node-gone@1",
+        "installed": True,
+    }
+    assert svc._resolve_item_path(item) is None
+
+
 def test_dedupe_prefers_installed_copy_over_live_output(tmp_path):
     """When the same computed id appears as an installed folder and a live
     output row, dedupe must keep the installed record (dirName + user path)."""

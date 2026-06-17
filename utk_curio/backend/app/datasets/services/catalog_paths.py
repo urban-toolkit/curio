@@ -106,6 +106,19 @@ class CatalogPathMixin:
             resolved = self._resolve_computed_output_path(item)
             if resolved:
                 return resolved
+            # Installed/published computed datasets carry an absolute path into
+            # the user dataset store and a ``curio://datasets/{dir}`` URI (not
+            # ``curio://outputs/``), so the shared-data resolver above can't see
+            # them.  Fall back to the concrete path when it points at a real
+            # file so export works regardless of whether the computed dataset
+            # has been installed or published.
+            path_value = item.get("path")
+            if (
+                path_value
+                and not str(path_value).startswith("curio://")
+                and Path(str(path_value)).is_file()
+            ):
+                return str(path_value)
             return None
 
         path_value = item.get("path")

@@ -176,6 +176,49 @@ def test_download_geo_parquet_exports_as_geojson(tmp_path):
     assert payload["features"][0]["geometry"]["type"] == "Point"
 
 
+def test_download_geo_parquet_with_timestamp_exports_as_geojson(tmp_path):
+    """GeoParquet carrying datetime columns exports to GeoJSON.
+
+    Regression: ``to_json`` serializes properties via ``json.dumps`` and used
+    to raise "Object of type Timestamp is not JSON serializable" for temporal
+    columns.
+    """
+    import geopandas as gpd
+    import pandas as pd
+    from shapely.geometry import Point
+
+    from utk_curio.backend.app.datasets.service import DatasetCatalogService
+
+    artifact = tmp_path / "geo_ts_artifact"  # no suffix
+    gdf = gpd.GeoDataFrame(
+        {
+            "name": ["a", "b"],
+            "created": pd.to_datetime(["2026-06-17 13:51:00", "2026-06-17 14:00:00"]),
+        },
+        geometry=[Point(0, 0), Point(1, 1)],
+        crs="EPSG:4326",
+    )
+    gdf.to_parquet(artifact)
+
+    service = DatasetCatalogService(user=None)
+    service.get_dataset = lambda *a, **k: {  # type: ignore[assignment]
+        "id": "ds",
+        "title": "Geo Output",
+        "format": "parquet",
+        "path": str(artifact),
+        "uri": str(artifact),
+    }
+
+    target = service.download_target("ds")
+    assert target["download_name"] == "Geo Output.geojson"
+    assert target["mimetype"] == "application/geo+json"
+
+    payload = json.loads(target["data"])
+    assert payload["type"] == "FeatureCollection"
+    assert len(payload["features"]) == 2
+    assert payload["features"][0]["properties"]["created"] == "2026-06-17 13:51:00"
+
+
 def test_download_missing_dataset_returns_404(client, user_and_token, tmp_path, monkeypatch):
     _, token = user_and_token
     monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
