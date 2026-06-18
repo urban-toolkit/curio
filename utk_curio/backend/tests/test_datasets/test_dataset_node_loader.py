@@ -163,7 +163,7 @@ def test_bundle_loader_rebuilds_tuple_of_parts(tmp_path):
 
 
 def test_bundle_loader_preserves_part_order(tmp_path):
-    pd = pytest.importorskip("pandas")
+    pytest.importorskip("pandas")
     parts_dir = tmp_path / "computed.node_x@1" / "data" / "parts"
 
     # Define parts out of order in the manifest; loader must sort by index.

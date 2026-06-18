@@ -2,6 +2,7 @@ import React from "react";
 import { CatalogDrawerTitle } from "../../components/catalog/CatalogKindVisuals";
 import { CatalogBrowseDrawerShell } from "../catalog/CatalogBrowseDrawerShell";
 import { formatDatasetLocation } from "../../components/datasets/catalog/datasetDetailHelpers";
+import { DatasetDataflowUsageSection } from "../../components/datasets/catalog/DatasetDataflowUsage";
 import {
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
@@ -166,6 +167,11 @@ function DataCatalogBrowseDrawerContent({
           </div>
         </div>
       )}
+
+      {/* Dataflows that consume this dataset (resolved from saved specs by the
+          backend, so it works on this canvas-less browse page). Renders nothing
+          when the dataset isn't used anywhere. */}
+      <DatasetDataflowUsageSection datasetId={dataset.id} />
 
       <div className={styles.drawerCtas}>
         {published ? (

@@ -8,6 +8,7 @@ import {
   isDatasetPublishedToCatalog,
   notifyDatasetCatalogRefresh,
 } from "../../../services/datasetCatalog";
+import { DatasetDataflowUsageSection } from "./DatasetDataflowUsage";
 import { useToastContext } from "../../../providers/ToastProvider";
 import {
   formatNodeTypeLabel,
@@ -190,6 +191,10 @@ const LineageMainSection: React.FC<{
           No nodes or dataflows are currently using this dataset.
         </p>
       )}
+
+      {/* Cross-dataflow usage (resolved from saved specs by the backend, so it
+          works even without a live canvas). */}
+      <DatasetDataflowUsageSection datasetId={dataset.id} />
     </div>
   );
 };
@@ -486,6 +491,10 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
               <summary className={styles.lineageGroupSummary}>Upstream</summary>
               <UpstreamCards dataset={dataset} lineage={lineage} />
             </details>
+
+            {/* Cross-dataflow usage — resolved from saved specs by the backend,
+                so it works on the canvas-less standalone catalog page too. */}
+            <DatasetDataflowUsageSection datasetId={dataset.id} />
           </div>
 
           <div className={styles.infoSection}>

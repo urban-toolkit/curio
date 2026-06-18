@@ -19,10 +19,13 @@ import {
   DatasetLineageNodeUsageRef,
   DatasetUpstreamLineage,
   LineageStatus,
+  LineageUsageType,
 } from "./datasetLineageTypes";
 
 /** Minimal shape of a canvas node the resolver needs (subset of ReactFlow INode). */
 export interface LineageCanvasNode {
+  /** ReactFlow node id (used for edge matching); usually equal to data.nodeId. */
+  id?: string;
   data?: {
     nodeId?: string;
     nodeType?: string;
@@ -33,6 +36,14 @@ export interface LineageCanvasNode {
       { id?: string; datasetId?: string; title?: string } | null | undefined
     > | null;
   } | null;
+}
+
+/** Minimal shape of a canvas edge the resolver needs (subset of ReactFlow Edge). */
+export interface LineageCanvasEdge {
+  source?: string | null;
+  target?: string | null;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
 }
 
 export type NodeExecStatusMap = Record<string, "stale" | "executed">;
@@ -79,6 +90,15 @@ export interface DownstreamUsageParams {
   persistedConsumerNodeIds?: string[];
   nodeExecStatus?: NodeExecStatusMap;
   resolveNodeLabel?: NodeLabelResolver;
+  /** Canvas edges — used to resolve graph-connected consumers of a computed dataset. */
+  edges?: LineageCanvasEdge[];
+  /**
+   * Producer node of a computed dataset. Its directly-connected downstream
+   * nodes consume the dataset through ``data.input`` (a graph edge), not through
+   * a ``datasetRefs``/``appliedDatasets`` binding, so they must be resolved from
+   * ``edges`` rather than node bindings.
+   */
+  producerNodeId?: string | null;
 }
 
 /**
@@ -97,10 +117,35 @@ export function selectDatasetDownstreamUsage(
     persistedConsumerNodeIds = [],
     nodeExecStatus = {},
     resolveNodeLabel,
+    edges = [],
+    producerNodeId = null,
   } = params;
 
   const consumingNodes: DatasetLineageNodeUsageRef[] = [];
   const seenNodeIds = new Set<string>();
+
+  const nodeId_ = (node: LineageCanvasNode): string | undefined =>
+    node?.data?.nodeId ?? node?.id ?? undefined;
+  const describeConsumer = (
+    targetId: string,
+    node: LineageCanvasNode | undefined,
+    usageType: LineageUsageType,
+  ): DatasetLineageNodeUsageRef => {
+    const nodeType = node?.data?.nodeType;
+    return {
+      nodeId: targetId,
+      nodeName: node
+        ? resolveNodeLabel?.(nodeType) ||
+          node.data?.templateName ||
+          formatNodeTypeLabel(nodeType)
+        : undefined,
+      nodeType,
+      dataflowId,
+      dataflowName,
+      usageType,
+      status: nodeExecStatus[targetId] === "stale" ? "stale" : "active",
+    };
+  };
 
   for (const node of nodes || []) {
     const nodeId = node?.data?.nodeId;
@@ -123,6 +168,27 @@ export function selectDatasetDownstreamUsage(
       usageType: node.data?.appliedDatasets?.[datasetId] ? "input" : "parameter",
       status,
     });
+  }
+
+  // A computed dataset is consumed by nodes wired directly downstream of its
+  // producer — they read its output via ``data.input`` (a graph edge), not via
+  // a dataset binding. Resolve those from the edges so the dataset's lineage
+  // lists its real consumers (#141 / computed-dataset downstream item).
+  if (producerNodeId) {
+    const nodeById = new Map<string, LineageCanvasNode>();
+    for (const node of nodes || []) {
+      const id = nodeId_(node);
+      if (id) nodeById.set(id, node);
+    }
+    for (const edge of edges || []) {
+      if (!edge || edge.source !== producerNodeId) continue;
+      // Skip bidirectional interaction/sync edges — not data consumption.
+      if (edge.sourceHandle === "in/out" && edge.targetHandle === "in/out") continue;
+      const targetId = edge.target;
+      if (!targetId || seenNodeIds.has(targetId)) continue;
+      seenNodeIds.add(targetId);
+      consumingNodes.push(describeConsumer(targetId, nodeById.get(targetId), "input"));
+    }
   }
 
   for (const persistedId of persistedConsumerNodeIds) {
@@ -205,6 +271,7 @@ export function selectDatasetUpstreamLineage(
 export interface DatasetLineageParams {
   dataset: DatasetCatalogItem;
   nodes: LineageCanvasNode[];
+  edges?: LineageCanvasEdge[];
   dataflowId?: string | null;
   dataflowName?: string | null;
   nodeExecStatus?: NodeExecStatusMap;
@@ -220,6 +287,7 @@ export function selectDatasetLineage(params: DatasetLineageParams): DatasetLinea
   const {
     dataset,
     nodes,
+    edges = [],
     dataflowId = null,
     dataflowName = null,
     nodeExecStatus,
@@ -230,6 +298,8 @@ export function selectDatasetLineage(params: DatasetLineageParams): DatasetLinea
   const downstream = selectDatasetDownstreamUsage({
     datasetId: dataset.id,
     nodes,
+    edges,
+    producerNodeId: dataset.producerNodeId || null,
     dataflowId,
     dataflowName,
     persistedConsumerNodeIds: dataset.consumerNodeIds || [],

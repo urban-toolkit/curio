@@ -256,6 +256,114 @@ class CatalogListingMixin(CatalogPathMixin):
             "path": resolved,
         }
 
+    def dataset_usage(self, dataset_id: str) -> list[dict[str, Any]]:
+        """Dataflows across the user's projects that use *dataset_id*.
+
+        Powers the standalone catalog detail page, which has no live canvas:
+        a dataflow "uses" a dataset when its persisted spec references it via a
+        ``dataflow.datasets`` ref, a node's ``metadata.datasetRefs`` binding, or
+        the node that produced it (computed datasets are consumed by their
+        downstream nodes through edges). Returns
+        ``[{dataflowId, dataflowName, nodeCount, nodes: [{nodeId, nodeType}]}]``
+        sorted by name.
+        """
+        if self.user is None:
+            raise DatasetCatalogError("Authorization required", 401)
+        from utk_curio.backend.app.projects import repositories as projects_repo
+        from utk_curio.backend.app.projects import storage as project_storage
+
+        user_key = self._user_key()
+        usages: list[dict[str, Any]] = []
+        for project in projects_repo.list_for_user(self.user.id):
+            spec = project_storage.read_spec(user_key, project.id) or {}
+            consumers = _dataset_consumer_nodes_in_spec(spec, dataset_id)
+            if consumers is None:
+                continue
+            usages.append({
+                "dataflowId": project.id,
+                "dataflowName": project.name,
+                "nodeCount": len(consumers),
+                "nodes": consumers,
+            })
+        usages.sort(key=lambda u: (u["dataflowName"] or "").casefold())
+        return usages
+
+
+def _producer_node_id_for(nodes: list, dataset_id: str) -> str | None:
+    """The node id whose computed output is ``dataset_id`` (``computed.<seg>``)."""
+    if not dataset_id.startswith("computed."):
+        return None
+    from utk_curio.backend.app.datasets.installer import sanitize_node_id_segment
+
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        nid = node.get("id")
+        if nid and f"computed.{sanitize_node_id_segment(nid)}" == dataset_id:
+            return nid
+    return None
+
+
+def _dataset_consumer_nodes_in_spec(
+    spec: dict[str, Any], dataset_id: str
+) -> list[dict[str, Any]] | None:
+    """Consumer node refs (``[{nodeId, nodeType}]``) if *spec*'s dataflow uses
+    *dataset_id*, else ``None``. An empty list means the dataflow uses/owns the
+    dataset (e.g. produced or installed) but no node consumes it downstream.
+
+    Mirrors the frontend lineage resolver: dataset bindings on nodes plus the
+    edges directly downstream of a computed dataset's producer.
+    """
+    if not isinstance(spec, dict):
+        return None
+    dataflow = spec.get("dataflow")
+    if not isinstance(dataflow, dict):
+        return None
+
+    nodes = dataflow.get("nodes") or []
+    edges = dataflow.get("edges") or []
+    datasets = dataflow.get("datasets") or []
+
+    node_type_by_id = {
+        node["id"]: node.get("type")
+        for node in nodes
+        if isinstance(node, dict) and node.get("id")
+    }
+
+    uses = False
+    consumer_ids: list[str] = []
+    seen: set[str] = set()
+
+    def add_consumer(nid: str | None) -> None:
+        if nid and nid not in seen:
+            seen.add(nid)
+            consumer_ids.append(nid)
+
+    for ref in datasets:
+        if isinstance(ref, dict) and dataset_id in (ref.get("datasetId"), ref.get("id")):
+            uses = True
+
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        refs = (node.get("metadata") or {}).get("datasetRefs") or []
+        if dataset_id in refs:
+            uses = True
+            add_consumer(node.get("id"))
+
+    producer_id = _producer_node_id_for(nodes, dataset_id)
+    if producer_id is not None:
+        uses = True
+        for edge in edges:
+            if not isinstance(edge, dict) or edge.get("type") == "Interaction":
+                continue
+            if edge.get("source") == producer_id and edge.get("target"):
+                add_consumer(edge["target"])
+
+    if not uses:
+        return None
+    return [{"nodeId": nid, "nodeType": node_type_by_id.get(nid)} for nid in consumer_ids]
+
 
 _DOWNLOAD_MIMETYPES: dict[str, str] = {
     ".csv": "text/csv",

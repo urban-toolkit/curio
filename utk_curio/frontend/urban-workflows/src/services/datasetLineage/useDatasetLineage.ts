@@ -3,6 +3,7 @@ import { FlowContext } from "../../providers/FlowProvider";
 import { tryGetNodeDescriptor } from "../../registry/nodeRegistry";
 import type { DatasetCatalogItem } from "../datasetCatalog";
 import {
+  LineageCanvasEdge,
   LineageCanvasNode,
   selectDatasetLineage,
 } from "./datasetLineageResolver";
@@ -32,7 +33,7 @@ export function useDatasetLineage(
   options: UseDatasetLineageOptions = {},
 ): DatasetLineage | null {
   const { dataflowId = null, canvasAvailable = true } = options;
-  const { nodes, nodeExecStatus, projectName, workflowNameRef } =
+  const { nodes, edges, nodeExecStatus, projectName, workflowNameRef } =
     useContext(FlowContext);
 
   return useMemo(() => {
@@ -40,11 +41,12 @@ export function useDatasetLineage(
     return selectDatasetLineage({
       dataset,
       nodes: (nodes || []) as LineageCanvasNode[],
+      edges: (edges || []) as LineageCanvasEdge[],
       dataflowId,
       dataflowName: projectName || workflowNameRef?.current || null,
       nodeExecStatus,
       resolveNodeLabel: registryNodeLabel,
       canvasAvailable,
     });
-  }, [dataset, nodes, nodeExecStatus, dataflowId, projectName, workflowNameRef, canvasAvailable]);
+  }, [dataset, nodes, edges, nodeExecStatus, dataflowId, projectName, workflowNameRef, canvasAvailable]);
 }

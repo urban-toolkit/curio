@@ -51,7 +51,7 @@ export interface WorkflowOperationsDeps {
     onEdgesDelete: (connections: Edge[]) => void;
     onNodesDelete: (changes: NodeChange[]) => void;
     onNodesChange: (changes: NodeChange[]) => void;
-    onConnect: (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean) => void;
+    onConnect: (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean, skipValidation?: boolean) => void;
     addNode: (node: Node, customWorkflowName?: string, provenance?: boolean) => void;
     // Workflow-wide default for the per-node "Save output dataset" toggle,
     // sourced from the backend (CURIO_DEFAULT_SAVE_NODE_OUTPUT) via FlowProvider.
@@ -250,15 +250,18 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
 
         console.log("loadParsedTrill second");
         setNodes((prevNodes: any) => {
+            // skipValidation=true: these edges come from a saved/imported trill and
+            // were validated when created. Re-validating on load races the async
+            // node-descriptor registry and would drop valid edges + toast mid-render.
             if (merge) {
                 for (const edge of loaded_edges) {
                     if (!currentEdgeIds.has(edge.id)) {
-                        onConnect(edge, prevNodes, undefined, workflowName, provenance);
+                        onConnect(edge, prevNodes, undefined, workflowName, provenance, true);
                     }
                 }
             } else {
                 for (const edge of loaded_edges) {
-                    onConnect(edge, prevNodes, [], workflowName, provenance);
+                    onConnect(edge, prevNodes, [], workflowName, provenance, true);
                 }
             }
 

@@ -28,6 +28,7 @@ import {
   datasetCountCompact as datasetCount,
   relativeTimeOrEmpty as relativeTime,
 } from "../../../datasets/catalog/datasetDetailHelpers";
+import { useDatasetLineage } from "../../../../services/datasetLineage";
 import styles from "./DatasetsPaletteDropdown.module.css";
 
 function formatAbbreviation(dataset: DatasetCatalogItem): string {
@@ -42,8 +43,12 @@ function DatasetRow({ dataset }: { dataset: DatasetCatalogItem }) {
   const count = datasetCount(dataset);
   const time = relativeTime(dataset.updatedAt);
   const metaParts = [count, time].filter(Boolean).join(" · ");
-  const upCount = dataset.producerNodeId ? 1 : 0;
-  const downCount = dataset.consumerNodeIds?.length ?? 0;
+  // Connection counts come from the live lineage (same source as the dataset
+  // detail panel) so the downstream-consumer badge reflects graph edges
+  // immediately, not the persisted ``consumerNodeIds`` which lags until save.
+  const lineage = useDatasetLineage(dataset);
+  const upCount = lineage?.upstream.generatingNode ? 1 : 0;
+  const downCount = lineage?.downstream.consumingNodes.length ?? 0;
   const hasConnections = upCount > 0 || downCount > 0;
 
   return (

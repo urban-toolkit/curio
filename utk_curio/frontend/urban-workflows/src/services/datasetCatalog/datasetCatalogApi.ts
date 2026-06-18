@@ -4,6 +4,7 @@ import {
   DatasetCatalogItem,
   DatasetCatalogQuery,
   DatasetCatalogResponse,
+  DatasetDataflowUsageRef,
   DatasetFormat,
   DatasetPreviewQuery,
   DatasetPreviewResponse,
@@ -113,6 +114,14 @@ export const datasetCatalogApi = {
 
   preview(datasetId: string, query: DatasetPreviewQuery = {}): Promise<DatasetPreviewResponse> {
     return apiFetch(`/api/datasets/${encodeURIComponent(datasetId)}/preview${previewQueryString(query)}`);
+  },
+
+  /** Dataflows (across the user's projects) that use this dataset. */
+  async datasetUsage(datasetId: string): Promise<DatasetDataflowUsageRef[]> {
+    const res = await apiFetch<{ dataflows?: DatasetDataflowUsageRef[] }>(
+      `/api/datasets/${encodeURIComponent(datasetId)}/usage`,
+    );
+    return res?.dataflows ?? [];
   },
 
   async importDataset(

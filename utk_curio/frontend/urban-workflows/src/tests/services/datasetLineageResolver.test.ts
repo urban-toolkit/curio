@@ -154,6 +154,64 @@ describe("selectDatasetDownstreamUsage", () => {
     });
     expect(usage.consumingNodes[0].nodeName).toBe("Spatial Filter");
   });
+
+  it("resolves a computed dataset's downstream consumer from a graph edge (#141)", () => {
+    // Producer "node-1" generates the dataset; "node-2" is wired downstream and
+    // consumes it via data.input — no datasetRefs binding exists.
+    const usage = selectDatasetDownstreamUsage({
+      datasetId: DATASET_ID,
+      producerNodeId: "node-1",
+      nodes: [
+        canvasNode({ nodeId: "node-1" }),
+        canvasNode({ nodeId: "node-2", nodeType: "COMPUTE_ANALYSIS" }),
+      ],
+      edges: [{ source: "node-1", target: "node-2" }],
+    });
+    expect(usage.consumingNodes).toHaveLength(1);
+    expect(usage.consumingNodes[0]).toMatchObject({
+      nodeId: "node-2",
+      nodeName: "Compute Analysis",
+      usageType: "input",
+      status: "active",
+    });
+  });
+
+  it("ignores bidirectional interaction (in/out) edges as consumers", () => {
+    const usage = selectDatasetDownstreamUsage({
+      datasetId: DATASET_ID,
+      producerNodeId: "node-1",
+      nodes: [canvasNode({ nodeId: "node-1" }), canvasNode({ nodeId: "node-2" })],
+      edges: [
+        { source: "node-1", target: "node-2", sourceHandle: "in/out", targetHandle: "in/out" },
+      ],
+    });
+    expect(usage.consumingNodes).toEqual([]);
+  });
+
+  it("does not duplicate an edge consumer that also has a dataset binding", () => {
+    const usage = selectDatasetDownstreamUsage({
+      datasetId: DATASET_ID,
+      producerNodeId: "node-1",
+      nodes: [
+        canvasNode({ nodeId: "node-1" }),
+        canvasNode({ nodeId: "node-2", datasetRefs: [DATASET_ID] }),
+      ],
+      edges: [{ source: "node-1", target: "node-2" }],
+    });
+    expect(usage.consumingNodes).toHaveLength(1);
+    expect(usage.consumingNodes[0].nodeId).toBe("node-2");
+  });
+
+  it("marks an edge consumer stale from nodeExecStatus", () => {
+    const usage = selectDatasetDownstreamUsage({
+      datasetId: DATASET_ID,
+      producerNodeId: "node-1",
+      nodes: [canvasNode({ nodeId: "node-1" }), canvasNode({ nodeId: "node-2" })],
+      edges: [{ source: "node-1", target: "node-2" }],
+      nodeExecStatus: { "node-2": "stale" },
+    });
+    expect(usage.consumingNodes[0].status).toBe("stale");
+  });
 });
 
 describe("selectDatasetUpstreamLineage", () => {
@@ -221,6 +279,19 @@ describe("selectDatasetLineage", () => {
   it("reports hasLineage false for an unused imported dataset", () => {
     const lineage = selectDatasetLineage({ dataset: catalogItem(), nodes: [] });
     expect(lineage.status.hasLineage).toBe(false);
+  });
+
+  it("includes graph-connected consumers of a computed dataset end-to-end (#141)", () => {
+    const lineage = selectDatasetLineage({
+      dataset: catalogItem({ origin: "computed", producerNodeId: "node-1" }),
+      nodes: [
+        canvasNode({ nodeId: "node-1", nodeType: "PYTHON_COMPUTATION" }),
+        canvasNode({ nodeId: "node-2", nodeType: "VEGA" }),
+      ],
+      edges: [{ source: "node-1", target: "node-2" }],
+    });
+    expect(lineage.downstream.consumingNodes.map((n) => n.nodeId)).toContain("node-2");
+    expect(lineage.status.hasLineage).toBe(true);
   });
 });
 

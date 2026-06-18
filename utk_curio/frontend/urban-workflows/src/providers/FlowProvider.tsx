@@ -78,7 +78,7 @@ interface FlowContextProps {
     addNode: (node: Node, customWorkflowName?: string, provenance?: boolean) => void;
     onNodesChange: (changes: NodeChange[]) => void;
     onEdgesChange: (changes: EdgeChange[]) => void;
-    onConnect: (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean) => void;
+    onConnect: (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean, skipValidation?: boolean) => void;
     isValidConnection: (connection: Connection) => boolean;
     onEdgesDelete: (connections: Edge[]) => void;
     onNodesDelete: (changes: NodeChange[]) => void;
@@ -686,7 +686,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     );
 
     const onConnect = useCallback(
-        (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean) => {
+        (connection: Connection, custom_nodes?: any, custom_edges?: any, custom_workflow?: string, provenance?: boolean, skipValidation?: boolean) => {
             console.log(
                 "onConnect triggered:",
                 connection.source,
@@ -761,10 +761,16 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                     }
                 }
 
-                let allowConnection = ConnectionValidator.checkBoxCompatibility(
-                    outNodeType,
-                    inNodeType
-                );
+                // Edges reconstructed when loading a saved dataflow were already
+                // validated when the user created them. Re-running the type check
+                // here is wrong on load: the node-descriptor registry may not be
+                // populated yet (package bootstrap is async), so
+                // ``checkBoxCompatibility`` would return false and silently drop a
+                // valid edge — and the toast would fire mid-render (setState on
+                // ToastProvider during FlowProvider render). Trust persisted edges.
+                let allowConnection = skipValidation
+                    ? true
+                    : ConnectionValidator.checkBoxCompatibility(outNodeType, inNodeType);
 
                 if (!allowConnection) {
                     showToast("Input and output types of these boxes are not compatible", "warning");

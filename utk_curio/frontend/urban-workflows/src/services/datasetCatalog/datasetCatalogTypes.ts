@@ -4,6 +4,15 @@ export type DatasetFormat = "csv" | "geojson" | "json" | "parquet" | "geotiff" |
 
 export type DatasetSortMode = "recent" | "name";
 
+/** A dataflow that uses a dataset, as returned by ``GET /datasets/<id>/usage``. */
+export interface DatasetDataflowUsageRef {
+  dataflowId: string;
+  dataflowName: string | null;
+  nodeCount: number;
+  /** Consumer nodes within this dataflow (downstream of the dataset). */
+  nodes?: Array<{ nodeId: string; nodeType?: string | null }>;
+}
+
 export interface DatasetSchemaField {
   name: string;
   type: string;

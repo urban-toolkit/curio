@@ -139,6 +139,19 @@ def preview_dataset(dataset_id: str):
     return jsonify(payload), 200
 
 
+@datasets_bp.route("/datasets/<dataset_id>/usage", methods=["GET"])
+@require_auth
+def dataset_usage(dataset_id: str):
+    """Dataflows (across the user's projects) that use this dataset."""
+    try:
+        dataflows = _service().dataset_usage(dataset_id)
+    except (DatasetCatalogError, ProjectError) as exc:
+        return _error(str(exc), getattr(exc, "status", 400))
+    except NotFoundError:
+        return _error("Dataflow not found", 404)
+    return jsonify({"dataflows": dataflows}), 200
+
+
 @datasets_bp.route("/datasets/<dataset_id>/download", methods=["GET"])
 @require_auth
 def download_dataset(dataset_id: str):
