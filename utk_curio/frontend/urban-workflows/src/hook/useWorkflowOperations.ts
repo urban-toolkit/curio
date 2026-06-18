@@ -24,8 +24,7 @@ import { updateNodeData, updateNodesByMap, updateEdgesByMap, extractNodeFieldMap
 import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
 import { TrillGenerator } from "../TrillGenerator";
 import { projectsApi, OutputRef } from "../api/projectsApi";
-import { flowOutputRefFromRaw } from "../utils/flowOutputRef";
-import { resolveSaveOutputDataset } from "../utils/saveOutputDataset";
+import { buildSaveableLiveOutputs } from "../utils/saveOutputDataset";
 import { notifyDatasetCatalogRefresh } from "../services/datasetCatalog/datasetCatalogApi";
 import {
     getCurrentProjectPackagesList,
@@ -537,25 +536,17 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
      * anything that isn't a single safe string segment, so we coerce here at
      * the serialization boundary and drop refs we can't normalize.
      */
-    const buildOutputRefs = (): OutputRef[] => {
-        // Honor the per-node "Save output dataset" toggle (which itself defaults
-        // to CURIO_DEFAULT_SAVE_NODE_OUTPUT). Only nodes with saving enabled get
-        // their output persisted as a computed dataset on project save. Without
-        // this gate the backend's _auto_install_computed_outputs would install
-        // every node output regardless of the setting — the toggle would only
-        // gate the per-run install, not the save-time one.
-        const saveByNodeId = new Map<string, boolean>();
-        for (const node of reactFlow.getNodes()) {
-            const enabled = resolveSaveOutputDataset(node.data as any, defaultSaveOutputDataset);
-            saveByNodeId.set(node.id, enabled);
-            const dataNodeId = (node.data as any)?.nodeId;
-            if (typeof dataNodeId === "string") saveByNodeId.set(dataNodeId, enabled);
-        }
-        return deps.outputsRef.current
-            .filter((o: any) => saveByNodeId.get(o?.nodeId ?? "") === true)
-            .map((o: any) => flowOutputRefFromRaw(o?.nodeId ?? "", o?.output))
-            .filter((r: OutputRef | null): r is OutputRef => r !== null);
-    };
+    const buildOutputRefs = (): OutputRef[] =>
+        // Honor the per-node "Save output dataset" toggle (defaults to
+        // CURIO_DEFAULT_SAVE_NODE_OUTPUT): only saving-enabled nodes persist
+        // their output as a computed dataset. Shared with the catalog's live
+        // discovery via ``buildSaveableLiveOutputs`` so the save-time and
+        // listing-time filters can never drift apart.
+        buildSaveableLiveOutputs(
+            deps.outputsRef.current,
+            reactFlow.getNodes(),
+            defaultSaveOutputDataset,
+        ) ?? [];
 
     const syncDatasetsFromSavedSpec = useCallback(
         (spec: Record<string, unknown> | null | undefined) => {

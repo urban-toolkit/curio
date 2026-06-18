@@ -30,6 +30,29 @@ export function datasetCount(dataset?: DatasetCatalogItem | null): string | null
   return null;
 }
 
+/** Compact ``datasetCount`` (``"feat."`` abbreviation) for tight UIs — dataset
+ * cards, the dataset palette, and the data-hub browse rows. */
+export function datasetCountCompact(dataset?: DatasetCatalogItem | null): string | null {
+  if (!dataset) return null;
+  if (dataset.featureCount != null) return `${dataset.featureCount.toLocaleString()} feat.`;
+  if (dataset.rowCount != null) return `${dataset.rowCount.toLocaleString()} rows`;
+  return null;
+}
+
+/** ``relativeTime`` variant that renders ``""`` (not ``"recently"``) for a
+ * missing or future timestamp — used by compact card/palette rows that hide an
+ * empty time rather than show a placeholder. */
+export function relativeTimeOrEmpty(iso?: string | null): string {
+  if (!iso) return "";
+  const delta = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(delta) || delta < 0) return "";
+  const minutes = Math.max(1, Math.round(delta / 60_000));
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
 export function datasetIconVariant(dataset: DatasetCatalogItem): "mint" | "sky" | "lilac" {
   let hash = 0;
   for (let i = 0; i < dataset.id.length; i++) {

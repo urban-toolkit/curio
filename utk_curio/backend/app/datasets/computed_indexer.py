@@ -7,10 +7,7 @@ from typing import Any
 
 from utk_curio.backend.app.datasets.catalog_items import base_item
 from utk_curio.backend.app.datasets.catalog_utils import iso_from_timestamp, stable_id
-from utk_curio.backend.app.datasets.provenance import (
-    computed_output_format,
-    is_catalogable_output,
-)
+from utk_curio.backend.app.datasets.provenance import computed_output_format
 
 class ComputedDatasetIndexer:
     def list_items(
@@ -48,8 +45,8 @@ class ComputedDatasetIndexer:
                 continue
             raw = str(filename)
             data_type = output.get("data_type") or output.get("dataType")
-            if not is_catalogable_output(data_type):
-                continue
+            # Every sandbox output kind is catalogable (including tuple bundles),
+            # so there is no kind filter here.
             fmt = computed_output_format(raw, data_type)
             # Use the same stable node-based ID that install_computed_file_for_node
             # writes to the manifest so that the live-output item and the

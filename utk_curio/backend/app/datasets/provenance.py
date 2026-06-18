@@ -34,11 +34,6 @@ def catalog_item_is_computed_provenance(item: dict[str, Any]) -> bool:
     return False
 
 
-def is_catalogable_output(data_type: str | None) -> bool:
-    """All sandbox output kinds may be installed (including tuple bundles)."""
-    return True
-
-
 def computed_output_format(filename: str, data_type: str | None = None) -> str:
     """Resolve catalog format from filename suffix and/or sandbox dataType."""
     suffix_fmt = SUPPORTED_SUFFIXES.get(Path(filename).suffix.lower())

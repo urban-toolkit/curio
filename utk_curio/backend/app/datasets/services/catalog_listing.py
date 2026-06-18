@@ -173,12 +173,13 @@ class CatalogListingMixin(CatalogPathMixin):
         return {"items": items, "facets": facets}
 
     def get_dataset(self, dataset_id: str, *, dataflow_id: str | None = None, live_outputs: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-        for include_hub in (True, False):
-            result = self.list_catalog(dataflow_id=dataflow_id, include_hub=include_hub, live_outputs=live_outputs)
-
-            for item in result["items"]:
-                if item["id"] == dataset_id:
-                    return item
+        # ``include_hub=True`` is a strict superset of ``include_hub=False`` (it
+        # only *adds* the hub registry items), so a single pass finds any id —
+        # no need for the historical two-pass scan.
+        result = self.list_catalog(dataflow_id=dataflow_id, include_hub=True, live_outputs=live_outputs)
+        for item in result["items"]:
+            if item["id"] == dataset_id:
+                return item
         raise DatasetCatalogError("Dataset not found", 404)
 
     def preview(

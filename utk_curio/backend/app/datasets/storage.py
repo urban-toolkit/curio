@@ -35,9 +35,12 @@ from utk_curio.backend.app.common.safe_paths import (
 )
 
 
-DATASET_DIR_RE = re.compile(
-    r"^[a-z][a-z0-9-]{0,62}(?:\.[a-z][a-z0-9-]{0,62}){1,5}@(?:0|[1-9][0-9]{0,3})$"
-)
+# Shared dataset-id grammar: dotted lowercase segments (e.g. ``computed.node-x``,
+# ``it.urbanlab.milan-heat``). Reused for both the bare id and the
+# ``<id>@<major>`` directory name so callers validate against one source.
+_DATASET_ID_PATTERN = r"[a-z][a-z0-9-]{0,62}(?:\.[a-z][a-z0-9-]{0,62}){1,5}"
+DATASET_ID_RE = re.compile(rf"^{_DATASET_ID_PATTERN}$")
+DATASET_DIR_RE = re.compile(rf"^{_DATASET_ID_PATTERN}@(?:0|[1-9][0-9]{{0,3}})$")
 
 
 class DatasetIdError(ValueError):

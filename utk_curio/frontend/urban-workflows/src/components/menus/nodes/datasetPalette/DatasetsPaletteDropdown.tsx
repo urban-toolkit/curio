@@ -24,6 +24,10 @@ import {
   isToolsPaletteDismissOutsideClick,
   TOOLS_PALETTE_DROPDOWN_ATTR,
 } from "../toolsPaletteDismiss";
+import {
+  datasetCountCompact as datasetCount,
+  relativeTimeOrEmpty as relativeTime,
+} from "../../../datasets/catalog/datasetDetailHelpers";
 import styles from "./DatasetsPaletteDropdown.module.css";
 
 function formatAbbreviation(dataset: DatasetCatalogItem): string {
@@ -32,23 +36,6 @@ function formatAbbreviation(dataset: DatasetCatalogItem): string {
   if (dataset.format === "geotiff") return "GeoTIFF";
   if (dataset.format === "bundle") return "Bundle";
   return DATASET_FORMAT_LABEL[dataset.format].toUpperCase();
-}
-
-function relativeTime(iso?: string | null): string {
-  if (!iso) return "";
-  const delta = Date.now() - new Date(iso).getTime();
-  if (!Number.isFinite(delta) || delta < 0) return "";
-  const minutes = Math.max(1, Math.round(delta / 60_000));
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 48) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}
-
-function datasetCount(dataset: DatasetCatalogItem): string | null {
-  if (dataset.featureCount != null) return `${dataset.featureCount.toLocaleString()} feat.`;
-  if (dataset.rowCount != null) return `${dataset.rowCount.toLocaleString()} rows`;
-  return null;
 }
 
 function DatasetRow({ dataset }: { dataset: DatasetCatalogItem }) {

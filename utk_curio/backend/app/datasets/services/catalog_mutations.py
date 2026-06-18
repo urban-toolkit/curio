@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import shutil
 from copy import deepcopy
 from pathlib import Path
@@ -18,6 +17,7 @@ from utk_curio.backend.app.datasets.constants import SUPPORTED_SUFFIXES
 from utk_curio.backend.app.datasets.errors import DatasetCatalogError
 from utk_curio.backend.app.datasets.file_meta import count_file, patch_manifest_file, write_file_meta
 from utk_curio.backend.app.datasets.installed_repository import InstalledDatasetRepository
+from utk_curio.backend.app.datasets.storage import DATASET_ID_RE
 
 
 class CatalogMutationsMixin(CatalogPathMixin):
@@ -110,7 +110,7 @@ class CatalogMutationsMixin(CatalogPathMixin):
         # ── Write to the local catalog ────────────────────────────────────────
         catalog_id = item.get("id", "")
         # Convert file-hash IDs (e.g. "file-abc123") to a valid catalog id
-        if not re.match(r"^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*){1,5}$", catalog_id):
+        if not DATASET_ID_RE.match(catalog_id):
             catalog_id = catalog_id_from_title(str(item.get("title") or "dataset"))
             item["id"] = catalog_id
 

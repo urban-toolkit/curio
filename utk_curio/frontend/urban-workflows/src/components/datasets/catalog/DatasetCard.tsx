@@ -10,6 +10,10 @@ import {
   CatalogKindIcon,
 } from "../../catalog/CatalogKindVisuals";
 import { CatalogPublishPill } from "../../packages/CatalogPublishPill";
+import {
+  datasetCountCompact as datasetCount,
+  relativeTimeOrEmpty as relativeTime,
+} from "./datasetDetailHelpers";
 import styles from "../../packages/publishing/PackageCard.module.css";
 
 // ── Version helper ───────────────────────────────────────────────────────────
@@ -37,25 +41,6 @@ function formatAvatarClass(format: DatasetCatalogItem["format"]): string {
 
 function formatAccentClass(format: DatasetCatalogItem["format"]): string {
   return styles[`accent_${format}` as keyof typeof styles] ?? "";
-}
-
-// ── Count / time helpers ─────────────────────────────────────────────────────
-
-function datasetCount(dataset: DatasetCatalogItem): string | null {
-  if (dataset.featureCount != null) return `${dataset.featureCount.toLocaleString()} feat.`;
-  if (dataset.rowCount != null) return `${dataset.rowCount.toLocaleString()} rows`;
-  return null;
-}
-
-function relativeTime(iso?: string | null): string {
-  if (!iso) return "";
-  const delta = Date.now() - new Date(iso).getTime();
-  if (!Number.isFinite(delta) || delta < 0) return "";
-  const minutes = Math.max(1, Math.round(delta / 60_000));
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 48) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
 }
 
 // ── Props ────────────────────────────────────────────────────────────────────
