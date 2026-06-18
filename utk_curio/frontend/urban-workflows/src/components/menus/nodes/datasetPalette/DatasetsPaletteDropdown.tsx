@@ -20,7 +20,6 @@ import {
   useDatasetCatalog,
   prefetchDatasetCatalog,
 } from "../../../../services/datasetCatalog";
-import { buildSaveableLiveOutputs } from "../../../../utils/saveOutputDataset";
 import {
   isToolsPaletteDismissOutsideClick,
   TOOLS_PALETTE_DROPDOWN_ATTR,
@@ -99,23 +98,19 @@ function DatasetRow({ dataset }: { dataset: DatasetCatalogItem }) {
 export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const { projectId, outputs, nodes, defaultSaveOutputDataset } = useFlowContext();
+  const { projectId } = useFlowContext();
   const { openDatasetCatalogDrawer, isDatasetCatalogDrawerOpen } = useDatasetCatalogDrawer();
-  const liveOutputs = useMemo(
-    () => buildSaveableLiveOutputs(outputs, nodes, defaultSaveOutputDataset),
-    [outputs, nodes, defaultSaveOutputDataset],
-  );
 
   const catalog = useDatasetCatalog({
     dataflowId: projectId,
     includeHub: false,
     sort: "recent",
-    // Only fold live session outputs into the query while the palette is open;
-    // when closed the base catalog still drives the counter without refetching
-    // every time node outputs change.
-    liveOutputs: open ? liveOutputs : undefined,
-    // Load at startup so the trigger counter is populated before the user opens
-    // the palette, and the list is instantly available on open.
+    // The palette lists installed/saved datasets only — these come from the
+    // base catalog (persisted spec refs + user store) and are surfaced after an
+    // install/save via DATASET_CATALOG_REFRESH_EVENT. Deliberately do NOT fold
+    // ephemeral session `liveOutputs` into the query: they are never `installed`
+    // (so never appear in the list below) yet would churn the fetch key on every
+    // node execution, making the counter flicker and computed rows blink out.
     enabled: true,
   });
 
@@ -159,7 +154,10 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
     [rows],
   );
 
-  const total = rows.length;
+  // Count what the palette actually shows (installed/saved datasets) so the
+  // trigger badge stays consistent with the list instead of also counting
+  // hub/ephemeral rows that never render here.
+  const total = installedRows.length;
 
   return (
     <div

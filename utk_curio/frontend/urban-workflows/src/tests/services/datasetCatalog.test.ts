@@ -38,6 +38,18 @@ const parquetDataset: DatasetCatalogItem = {
   tags: ["parquet"],
 };
 
+const bundleDataset: DatasetCatalogItem = {
+  id: "computed.node_x",
+  title: "Node output (3 parts)",
+  origin: "computed",
+  format: "bundle",
+  uri: "curio://datasets/computed.node_x@1",
+  path: "/data/computed.node_x@1/data/bundle.json",
+  consumerNodeIds: [],
+  updatedAt: "2026-06-10T00:00:00Z",
+  tags: ["bundle", "computed"],
+};
+
 test("buildDatasetLoaderCode creates CSV imports and loader", () => {
   expect(buildDatasetLoaderCode(dataset)).toContain("import pandas as pd");
   expect(buildDatasetLoaderCode(dataset)).toContain('dataset_path = "/tmp/blocks.csv"');
@@ -49,10 +61,25 @@ test("buildDatasetLoaderCode includes return statement for CSV", () => {
   expect(code).toContain("return df");
 });
 
-test("buildDatasetLoaderCode includes return statement for parquet", () => {
+test("buildDatasetLoaderCode reads parquet as a GeoDataFrame first, then falls back", () => {
   const code = buildDatasetLoaderCode(parquetDataset);
+  // GeoParquet-aware read so a computed geo dataset reloads with the same
+  // (geo)dataframe type/schema the producing node emitted.
+  expect(code).toContain("import geopandas as gpd");
+  expect(code).toContain("gpd.read_parquet(dataset_path)");
   expect(code).toContain("pd.read_parquet(dataset_path)");
   expect(code).toContain("return df");
+});
+
+test("buildDatasetLoaderCode rebuilds a bundle into a tuple of parts", () => {
+  const code = buildDatasetLoaderCode(bundleDataset);
+  // Reads the bundle manifest and returns the parts as a tuple so the sandbox
+  // re-detects the same `outputs` envelope the producing node emitted.
+  expect(code).toContain('bundle_path = "/data/computed.node_x@1/data/bundle.json"');
+  expect(code).toContain("spec.get(\"parts\", [])");
+  expect(code).toContain("gpd.read_parquet(file_path)");
+  expect(code).toContain("return tuple(items)");
+  expect(code).toContain("return bundle");
 });
 
 test("buildDatasetLoaderNodeOptions builds a new Data Loading node payload", () => {

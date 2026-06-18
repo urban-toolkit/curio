@@ -11,6 +11,48 @@ function datasetPath(dataset: DatasetLike): string {
   return dataset.path || dataset.uri || "<dataset-path>";
 }
 
+/**
+ * Loader body for ``format: bundle`` datasets (multi-output / tuple node
+ * results). Reads ``data/bundle.json`` + ``data/parts/*`` and returns the parts
+ * as a tuple so the sandbox re-detects the same ``outputs`` envelope the
+ * producing node emitted.
+ */
+function bundleLoaderCode(path: string): string {
+  return [
+    `bundle_path = "${path}"`,
+    "def _curio_load_bundle(path):",
+    "    base = os.path.dirname(os.path.dirname(path))",
+    "    with open(path) as f:",
+    "        spec = json.load(f)",
+    "    items = []",
+    '    for part in sorted(spec.get("parts", []), key=lambda p: p.get("index", 0)):',
+    '        fmt, kind = part.get("format"), part.get("kind")',
+    '        file_path = os.path.join(base, part["file"]) if part.get("file") else None',
+    '        if fmt == "parquet":',
+    "            try:",
+    "                value = gpd.read_parquet(file_path)",
+    "            except Exception:",
+    "                value = pd.read_parquet(file_path)",
+    '        elif fmt == "csv":',
+    "            value = pd.read_csv(file_path)",
+    '        elif fmt in ("geojson", "shp"):',
+    "            value = gpd.read_file(file_path)",
+    '        elif fmt == "geotiff":',
+    "            import rasterio",
+    "            value = rasterio.open(file_path)",
+    "        else:",
+    "            with open(file_path) as part_file:",
+    "                loaded = json.load(part_file)",
+    '            if kind in ("int", "float", "bool", "str", "null") and isinstance(loaded, dict) and "value" in loaded:',
+    '                value = loaded["value"]',
+    "            else:",
+    "                value = loaded",
+    "        items.append(value)",
+    "    return tuple(items)",
+    "bundle = _curio_load_bundle(bundle_path)",
+  ].join("\n");
+}
+
 function snippetForFormat(format: DatasetFormat, path: string): DatasetLoaderSnippet {
   if (format === "csv") {
     return {
@@ -48,12 +90,36 @@ function snippetForFormat(format: DatasetFormat, path: string): DatasetLoaderSni
       returnVariable: "src",
     };
   }
-  if (format === "parquet") {
+  if (format === "bundle") {
+    // A bundle is a multi-output (tuple / `outputs`) node result, stored as
+    // `data/bundle.json` + `data/parts/*` under the dataset dir. Rebuild each
+    // part with the reader matching its kind and return them as a tuple, so the
+    // sandbox re-detects an `outputs` envelope identical to the one the
+    // producing node emitted (same parts, order, and types/schema).
     return {
       language: "python",
-      imports: ["import pandas as pd"],
+      imports: [
+        "import json",
+        "import os",
+        "import pandas as pd",
+        "import geopandas as gpd",
+      ],
+      pathVariable: "bundle_path",
+      code: bundleLoaderCode(path),
+      returnVariable: "bundle",
+    };
+  }
+  if (format === "parquet") {
+    // Computed GeoDataFrames are stored as GeoParquet (geometry + CRS
+    // preserved); plain DataFrames as ordinary parquet. Read with
+    // `gpd.read_parquet` first so a geo dataset reloads as a GeoDataFrame —
+    // matching the output type/schema of the node that produced it — and fall
+    // back to `pd.read_parquet` for non-geo tables.
+    return {
+      language: "python",
+      imports: ["import pandas as pd", "import geopandas as gpd"],
       pathVariable: "dataset_path",
-      code: `dataset_path = "${path}"\ndf = pd.read_parquet(dataset_path)`,
+      code: `dataset_path = "${path}"\ntry:\n    df = gpd.read_parquet(dataset_path)\nexcept Exception:\n    df = pd.read_parquet(dataset_path)`,
       returnVariable: "df",
     };
   }

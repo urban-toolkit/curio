@@ -15,6 +15,44 @@ def format_for_path(path: Path) -> str | None:
     return SUPPORTED_SUFFIXES.get(path.suffix.lower())
 
 
+# Loader body for ``format: bundle`` datasets (multi-output / tuple node results).
+# Reads ``data/bundle.json`` + ``data/parts/*`` and returns the parts as a tuple so
+# the sandbox re-detects the same ``outputs`` envelope the producing node emitted.
+# Note: the only ``{}`` here is the ``{bundle_path}`` placeholder (no dict literals),
+# so ``str.format`` is safe.
+_BUNDLE_LOADER_CODE = '''bundle_path = "{bundle_path}"
+def _curio_load_bundle(path):
+    base = os.path.dirname(os.path.dirname(path))
+    with open(path) as f:
+        spec = json.load(f)
+    items = []
+    for part in sorted(spec.get("parts", []), key=lambda p: p.get("index", 0)):
+        fmt, kind = part.get("format"), part.get("kind")
+        file_path = os.path.join(base, part["file"]) if part.get("file") else None
+        if fmt == "parquet":
+            try:
+                value = gpd.read_parquet(file_path)
+            except Exception:
+                value = pd.read_parquet(file_path)
+        elif fmt == "csv":
+            value = pd.read_csv(file_path)
+        elif fmt in ("geojson", "shp"):
+            value = gpd.read_file(file_path)
+        elif fmt == "geotiff":
+            import rasterio
+            value = rasterio.open(file_path)
+        else:
+            with open(file_path) as part_file:
+                loaded = json.load(part_file)
+            if kind in ("int", "float", "bool", "str", "null") and isinstance(loaded, dict) and "value" in loaded:
+                value = loaded["value"]
+            else:
+                value = loaded
+        items.append(value)
+    return tuple(items)
+bundle = _curio_load_bundle(bundle_path)'''
+
+
 def loader_snippet(fmt: str, path: str | None) -> dict[str, Any]:
     dataset_path = path or "<dataset-path>"
     if fmt == "csv":
@@ -34,11 +72,22 @@ def loader_snippet(fmt: str, path: str | None) -> dict[str, Any]:
             "returnVariable": "gdf",
         }
     if fmt == "parquet":
+        # Computed GeoDataFrames are stored as GeoParquet (geometry + CRS
+        # preserved); plain DataFrames as ordinary parquet. Read with
+        # ``gpd.read_parquet`` first so a geo dataset reloads as a GeoDataFrame
+        # — matching the output type/schema of the node that produced it — and
+        # fall back to ``pd.read_parquet`` for non-geo tables.
         return {
             "language": "python",
-            "imports": ["import pandas as pd"],
+            "imports": ["import pandas as pd", "import geopandas as gpd"],
             "pathVariable": "dataset_path",
-            "code": f'dataset_path = "{dataset_path}"\ndf = pd.read_parquet(dataset_path)',
+            "code": (
+                f'dataset_path = "{dataset_path}"\n'
+                "try:\n"
+                "    df = gpd.read_parquet(dataset_path)\n"
+                "except Exception:\n"
+                "    df = pd.read_parquet(dataset_path)"
+            ),
             "returnVariable": "df",
         }
     if fmt == "json":
@@ -56,6 +105,24 @@ def loader_snippet(fmt: str, path: str | None) -> dict[str, Any]:
             "pathVariable": "dataset_path",
             "code": f'dataset_path = "{dataset_path}"\nsrc = rasterio.open(dataset_path)',
             "returnVariable": "src",
+        }
+    if fmt == "bundle":
+        # A bundle is a multi-output (tuple / ``outputs``) node result, stored as
+        # ``data/bundle.json`` + ``data/parts/*`` under the dataset dir. Rebuild
+        # each part with the reader matching its kind and return them as a tuple,
+        # so the sandbox re-detects an ``outputs`` envelope identical to the one
+        # the producing node emitted (same parts, order, and types/schema).
+        return {
+            "language": "python",
+            "imports": [
+                "import json",
+                "import os",
+                "import pandas as pd",
+                "import geopandas as gpd",
+            ],
+            "pathVariable": "bundle_path",
+            "code": _BUNDLE_LOADER_CODE.format(bundle_path=dataset_path),
+            "returnVariable": "bundle",
         }
     return {
         "language": "python",

@@ -133,6 +133,75 @@ def _auto_install_computed_outputs(
     return new_spec
 
 
+def _preserve_persisted_computed_refs(
+    user_key: str,
+    new_spec: Optional[dict],
+    existing_spec: Optional[dict],
+) -> Optional[dict]:
+    """Carry forward already-saved computed dataset refs across a save.
+
+    A computed dataset becomes "saved" once it has been auto-installed into the
+    user store (``computed.<node>@1/``). Disabling the per-node "Save output
+    dataset" toggle must only affect *future* outputs — it must never remove a
+    dataset that was already saved. The only way to remove one is an explicit
+    uninstall from the Data Catalog (which deletes the dataset directory).
+
+    The client save always rewrites ``dataflow.datasets`` from its own state,
+    which can omit refs the client never learned about (e.g. outputs installed
+    by a Play-All run, or refs hidden once the toggle is off). To keep those
+    persisted, we treat the on-disk dataset directory as the source of truth:
+    any computed ref present in the previously-saved spec is re-added when its
+    directory still exists and it isn't already in the incoming spec.
+    """
+    if not isinstance(new_spec, dict) or not isinstance(existing_spec, dict):
+        return new_spec
+
+    old_dataflow = existing_spec.get("dataflow")
+    if not isinstance(old_dataflow, dict):
+        return new_spec
+    preserved = [
+        ref
+        for ref in (old_dataflow.get("datasets") or [])
+        if isinstance(ref, dict) and ref.get("origin") == "computed" and ref.get("dirName")
+    ]
+    if not preserved:
+        return new_spec
+
+    from utk_curio.backend.app.datasets.storage import dataset_dir
+
+    new_dataflow = new_spec.get("dataflow")
+    if not isinstance(new_dataflow, dict):
+        new_dataflow = {}
+    new_refs: list[dict] = [r for r in (new_dataflow.get("datasets") or []) if isinstance(r, dict)]
+    existing_ids = {r.get("datasetId") for r in new_refs}
+    existing_producers = {r.get("producerNodeId") for r in new_refs if r.get("producerNodeId")}
+
+    changed = False
+    for ref in preserved:
+        if ref.get("datasetId") in existing_ids:
+            continue
+        producer = ref.get("producerNodeId")
+        if producer and producer in existing_producers:
+            continue
+        # Only carry forward datasets that are still installed on disk. An
+        # explicit uninstall deletes the directory, so a missing dir means the
+        # user intentionally removed it and it should stay gone.
+        try:
+            if not (dataset_dir(user_key, ref["dirName"]) / "manifest.json").is_file():
+                continue
+        except Exception:  # noqa: BLE001 – defensive; a bad ref shouldn't block save
+            continue
+        new_refs.append(ref)
+        changed = True
+
+    if not changed:
+        return new_spec
+
+    result = dict(new_spec)
+    result["dataflow"] = {**new_dataflow, "datasets": new_refs}
+    return result
+
+
 def _extract_graph_preview(spec: Optional[dict]) -> Optional[dict]:
     if not spec:
         return None
@@ -281,6 +350,7 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
     )
 
     effective_spec = data.spec if data.spec is not None else existing_spec
+    spec_dirty = False
     if data.outputs is not None:
         output_refs = list(data.outputs)
         # Install into users/<user>/datasets/ and register lean refs in the spec.
@@ -288,14 +358,20 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
         updated_spec = _auto_install_computed_outputs(ukey, output_refs, effective_spec)
         if updated_spec is not None and updated_spec is not effective_spec:
             effective_spec = updated_spec
-            storage.write_spec(ukey, project_id, effective_spec)
+            spec_dirty = True
     else:
         output_refs = _output_refs_from_manifest(existing_manifest)
-    if data.spec is not None and effective_spec is not data.spec:
-        # spec was already written above by auto_install; nothing to do.
-        pass
-    elif data.spec is not None:
-        storage.write_spec(ukey, project_id, data.spec)
+
+    if data.spec is not None:
+        # A normal save rewrites the whole spec from the client, which may omit
+        # computed dataset refs the client never learned about. Carry forward
+        # any still-installed computed datasets so disabling "Save output
+        # dataset" (or a Play-All install) never silently removes one.
+        effective_spec = _preserve_persisted_computed_refs(ukey, effective_spec, existing_spec)
+        storage.write_spec(ukey, project_id, effective_spec)
+    elif spec_dirty:
+        # outputs-only update whose auto-install changed the spec.
+        storage.write_spec(ukey, project_id, effective_spec)
 
     storage.write_manifest(ukey, project_id, project.spec_revision, output_refs,
         name=project.name,
