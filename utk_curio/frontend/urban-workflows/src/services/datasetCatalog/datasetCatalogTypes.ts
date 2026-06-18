@@ -156,9 +156,14 @@ export function isDatasetPublishedToCatalog(dataset: DatasetCatalogItem): boolea
   return dataset.origin === "hub" || dataset.publishedToHub === true;
 }
 
-/** User installation: computed / imported / hub-copy in the project, not yet published. */
+/** Installed into the current project/dataflow — computed, imported, or a
+ * hub copy — and usable as a dataset node. Publishing a dataset to the Data
+ * Catalog does NOT uninstall its local copy, so published-and-installed
+ * datasets still count here (the bug in #140 was excluding them). Ephemeral
+ * live outputs and merely-browsable hub entries have ``installed`` falsy and
+ * are excluded. */
 export function isUserInstalledDataset(dataset: DatasetCatalogItem): boolean {
-  return dataset.installed === true && !isDatasetPublishedToCatalog(dataset);
+  return dataset.installed === true;
 }
 
 /**

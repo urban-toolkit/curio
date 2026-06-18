@@ -586,6 +586,49 @@ def test_installed_bundle_loader_returns_tuple(client, user_and_token, monkeypat
     assert "bundle.json" in (snippet.get("code") or "")
 
 
+def test_published_computed_dataset_stays_installed_in_dataflow_catalog(
+    client, user_and_token
+):
+    """Publishing a computed dataset must not uninstall its local copy: the
+    dataflow catalog still reports it ``installed`` (origin computed,
+    publishedToHub), which is the state the dataset palette filters on (#140).
+    """
+    import os
+    from pathlib import Path
+
+    from utk_curio.backend.app.datasets.installer import sanitize_node_id_segment
+
+    _, token = user_and_token
+    project_id = create_project(client, token, name="Publish keeps install")
+    node_id = "node-pub"
+    dataset_id = f"computed.{sanitize_node_id_segment(node_id)}"
+
+    shared = Path(os.environ["CURIO_SHARED_DATA"])
+    (shared / "pub_me.csv").write_text("c\n1\n", encoding="utf-8")
+    save_project_with_output(client, token, project_id, "pub_me.csv", node_id=node_id)
+
+    before = _computed_catalog_item(client, token, project_id, dataset_id)
+    assert before is not None and before.get("installed") is True
+    assert not before.get("publishedToHub")
+
+    # Simulate publish: the dataflow ref gains publishedToHub (the dataset dir is
+    # untouched). This mirrors what publishDataset persists, without writing into
+    # the repo's committed catalog root.
+    published_ref = {
+        "datasetId": dataset_id,
+        "dirName": f"{dataset_id}@1",
+        "origin": "computed",
+        "producerNodeId": node_id,
+        "publishedToHub": True,
+    }
+    _save_spec(client, token, project_id, datasets=[published_ref], outputs=[])
+
+    after = _computed_catalog_item(client, token, project_id, dataset_id)
+    assert after is not None, "published computed dataset vanished from the dataflow catalog"
+    assert after.get("installed") is True, "published dataset must stay installed"
+    assert after.get("publishedToHub") is True
+
+
 
 
 

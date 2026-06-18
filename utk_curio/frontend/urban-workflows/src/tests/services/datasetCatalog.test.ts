@@ -6,11 +6,46 @@ import {
   createDatasetDragPayload,
   endDatasetDrag,
   readDatasetDragPayload,
+  isUserInstalledDataset,
   DATASET_DRAG_MIME,
   DatasetCatalogItem,
 } from "../../services/datasetCatalog";
 import { mergeDatasetLoaderCode } from "../../services/datasetCatalog/datasetLoaderSnippets";
 import { NodeType } from "../../constants";
+
+function makeDataset(overrides: Partial<DatasetCatalogItem>): DatasetCatalogItem {
+  return {
+    id: "computed.node-x",
+    title: "Node Output",
+    origin: "computed",
+    format: "parquet",
+    uri: "curio://datasets/computed.node-x@1",
+    path: "/store/computed.node-x@1/data/out.parquet",
+    consumerNodeIds: [],
+    updatedAt: "2026-06-18T00:00:00Z",
+    tags: ["computed"],
+    ...overrides,
+  } as DatasetCatalogItem;
+}
+
+describe("isUserInstalledDataset (palette 'Installed datasets' filter)", () => {
+  test("includes an installed computed dataset", () => {
+    expect(isUserInstalledDataset(makeDataset({ installed: true }))).toBe(true);
+  });
+
+  test("still includes it after it is published to the Data Catalog (issue #140)", () => {
+    // Publishing does not uninstall the local copy, so it must remain in the
+    // palette's installed list.
+    expect(
+      isUserInstalledDataset(makeDataset({ installed: true, publishedToHub: true })),
+    ).toBe(true);
+  });
+
+  test("excludes ephemeral live outputs / browsable entries (installed falsy)", () => {
+    expect(isUserInstalledDataset(makeDataset({ installed: false }))).toBe(false);
+    expect(isUserInstalledDataset(makeDataset({}))).toBe(false);
+  });
+});
 
 const dataset: DatasetCatalogItem = {
   id: "file-123",
