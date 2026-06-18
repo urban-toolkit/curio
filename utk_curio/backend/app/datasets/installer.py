@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -15,6 +16,7 @@ from utk_curio.backend.app.datasets.manifest import (
     load_dataset_manifest,
     write_manifest,
 )
+from utk_curio.backend.app.datasets.catalog_utils import title_from_filename
 from utk_curio.backend.app.datasets.storage import catalog_root, dataset_dir
 
 logger = logging.getLogger(__name__)
@@ -108,14 +110,30 @@ def _sanitize_node_id_segment(node_id: str) -> str:
 sanitize_node_id_segment = _sanitize_node_id_segment
 
 
+def _link_or_copy(src: Path, dest: Path) -> None:
+    """Materialize *dest* from *src* cheaply.
+
+    Hard-links when ``src`` and ``dest`` share a filesystem — avoiding a
+    full-file byte copy on the synchronous install path. Computed outputs are
+    write-once, so a shared inode is safe and actually keeps the dataset alive
+    if the shared-data source is later garbage-collected. Falls back to a copy
+    across filesystems or when linking is unsupported (e.g. some Windows setups).
+    """
+    try:
+        os.link(src, dest)
+    except OSError:
+        shutil.copy2(src, dest)
+
+
 def install_computed_file_for_node(
     user_key: str,
-    file_bytes: bytes,
+    file_bytes: bytes | None,
     safe_filename: str,
     fmt: str,
     *,
     node_id: str,
     title: str | None = None,
+    source_path: Path | None = None,
 ) -> InstallResult:
     """Save a node-computed output into the user's dataset store keyed by *node_id*.
 
@@ -123,6 +141,10 @@ def install_computed_file_for_node(
     replaces the same dataset folder, keeping a stable dataset identity across
     multiple executions.  The destination is always (re-)written — no fast-path
     skip — so that the latest execution's file is always reflected.
+
+    Provide *source_path* to materialize the data file by hard-linking the
+    on-disk artifact (no full-file copy / no read into memory); *file_bytes* is
+    used otherwise. Exactly one must be supplied.
     """
     seg = _sanitize_node_id_segment(node_id)
     dataset_id = f"computed.{seg}"
@@ -137,13 +159,15 @@ def install_computed_file_for_node(
     (dest / "data").mkdir(exist_ok=True)
 
     data_path = dest / "data" / safe_filename
-    data_path.write_bytes(file_bytes)
+    if source_path is not None:
+        _link_or_copy(source_path, data_path)
+    elif file_bytes is not None:
+        data_path.write_bytes(file_bytes)
+    else:
+        raise InstallerError("install_computed_file_for_node requires file_bytes or source_path")
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    display_title = title or (
-        Path(safe_filename).stem.replace("_", " ").replace("-", " ").strip().title()
-        or safe_filename
-    )
+    display_title = title or title_from_filename(safe_filename)
     manifest_obj = DatasetManifest(
         id=dataset_id,
         name=display_title,
@@ -221,10 +245,7 @@ def install_computed_file(
     data_path.write_bytes(file_bytes)
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    display_title = title or (
-        Path(safe_filename).stem.replace("_", " ").replace("-", " ").strip().title()
-        or safe_filename
-    )
+    display_title = title or title_from_filename(safe_filename)
     manifest_obj = DatasetManifest(
         id=dataset_id,
         name=display_title,
@@ -299,10 +320,7 @@ def install_imported_file(
     data_path.write_bytes(file_bytes)
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    display_title = title or (
-        Path(safe_filename).stem.replace("_", " ").replace("-", " ").strip().title()
-        or safe_filename
-    )
+    display_title = title or title_from_filename(safe_filename)
     manifest_obj = DatasetManifest(
         id=dataset_id,
         name=display_title,

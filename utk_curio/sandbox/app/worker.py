@@ -278,6 +278,14 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
             os.chdir(original_dir)
             # Drop the sandbox write lock so the backend can open read-only
             # DuckDB (catalog, auto-install) as soon as this request returns.
+            #
+            # NOTE: this teardown-per-exec is REQUIRED, not wasteful — DuckDB
+            # allows only a single cross-process writer, so the sandbox cannot
+            # hold the R/W handle open between requests or the backend's
+            # read-only opens would fail. The reopen is lazy (``get_connection``
+            # only runs when the next exec actually touches DuckDB), so an exec
+            # that never loads/saves pays nothing. Do not "optimize" by keeping
+            # the connection alive across execs.
             from utk_curio.sandbox.util.db import release_connection
             release_connection()
             t1 = time.perf_counter()

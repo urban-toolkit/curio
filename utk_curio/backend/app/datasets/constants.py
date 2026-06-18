@@ -13,6 +13,9 @@ SUPPORTED_SUFFIXES = {
 }
 
 # Curio sandbox ``detect_kind`` strings → catalog ``DatasetFormat`` values.
+# Single source of truth for the kind→format mapping (do not duplicate per
+# module — bundle part installation and computed-output formatting both read
+# this).
 SANDBOX_DATATYPE_TO_FORMAT: dict[str, str] = {
     "raster": "geotiff",
     "geodataframe": "parquet",
@@ -27,4 +30,16 @@ SANDBOX_DATATYPE_TO_FORMAT: dict[str, str] = {
     "null": "json",
     "unknown": "json",
     "outputs": "bundle",
+}
+
+# Catalog ``DatasetFormat`` → canonical single-file extension. The inverse of
+# ``SUPPORTED_SUFFIXES`` is ambiguous for geotiff (.tif/.tiff), so the forward
+# map is declared explicitly. ``bundle`` is intentionally absent (multi-file).
+FORMAT_TO_EXTENSION: dict[str, str] = {
+    "csv": ".csv",
+    "geojson": ".geojson",
+    "json": ".json",
+    "parquet": ".parquet",
+    "geotiff": ".tif",
+    "shp": ".shp",
 }

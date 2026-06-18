@@ -20,21 +20,11 @@ from utk_curio.backend.app.datasets.manifest import (
     load_dataset_manifest,
     write_manifest,
 )
+from utk_curio.backend.app.datasets.constants import (
+    FORMAT_TO_EXTENSION,
+    SANDBOX_DATATYPE_TO_FORMAT,
+)
 from utk_curio.backend.app.datasets.storage import dataset_dir
-
-KIND_TO_FORMAT: dict[str, str] = {
-    "raster": "geotiff",
-    "geodataframe": "parquet",
-    "dataframe": "parquet",
-    "dict": "json",
-    "list": "json",
-    "str": "json",
-    "int": "json",
-    "float": "json",
-    "bool": "json",
-    "null": "json",
-    "unknown": "json",
-}
 
 
 @dataclass(frozen=True)
@@ -67,7 +57,7 @@ def _part_label(index: int, kind: str) -> str:
 def _resolve_artifact_source(art_id: str, kind: str, value_str: str | None) -> Path | None:
     from utk_curio.backend.app.datasets.output_paths import resolve_shared_output_path
 
-    mapped = KIND_TO_FORMAT.get(kind)
+    mapped = SANDBOX_DATATYPE_TO_FORMAT.get(kind)
     resolved = resolve_shared_output_path(art_id, data_type=kind if mapped else None)
     if resolved is not None and resolved.is_file():
         return resolved
@@ -168,7 +158,7 @@ def resolve_output_bundle_parts(parent_art_id: str) -> list[BundlePart]:
                 if not child:
                     continue
                 kind = child[0] or "unknown"
-                fmt = KIND_TO_FORMAT.get(kind, "json")
+                fmt = SANDBOX_DATATYPE_TO_FORMAT.get(kind, "json")
                 src = _resolve_artifact_source(str(child_id), kind, child[1])
                 parts.append(
                     BundlePart(
@@ -218,14 +208,7 @@ def install_computed_bundle_for_node(
     }
 
     for part in parts:
-        suffix = {
-            "parquet": ".parquet",
-            "geotiff": ".tif",
-            "csv": ".csv",
-            "geojson": ".geojson",
-            "json": ".json",
-            "shp": ".shp",
-        }.get(part.format, ".json")
+        suffix = FORMAT_TO_EXTENSION.get(part.format, ".json")
         safe_kind = part.kind.replace("_", "-")[:24] or "part"
         filename = f"{part.index:02d}_{safe_kind}{suffix}"
         dest_file = parts_dir / filename
@@ -333,10 +316,13 @@ def install_node_output(
         return None
     fmt = computed_output_format(src.name, data_type)
     store_name = src.name if src.suffix else path_ref
+    # Hard-link the shared artifact into the dataset store instead of reading it
+    # into memory and re-writing it on the synchronous /processPythonCode path.
     return install_computed_file_for_node(
         user_key,
-        src.read_bytes(),
+        None,
         store_name,
         fmt,
         node_id=node_id,
+        source_path=src,
     )

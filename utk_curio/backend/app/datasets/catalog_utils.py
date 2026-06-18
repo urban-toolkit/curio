@@ -5,6 +5,16 @@ from __future__ import annotations
 import hashlib
 import re
 from datetime import datetime, timezone
+from pathlib import Path
+
+
+def title_from_filename(name: str) -> str:
+    """Human-friendly display title from a file/artifact name.
+
+    Drops the extension, turns ``_``/``-`` separators into spaces, Title-Cases
+    the result, and falls back to the raw name when the stem is empty.
+    """
+    return Path(name).stem.replace("_", " ").replace("-", " ").strip().title() or name
 
 
 def iso_from_timestamp(ts: float | None = None) -> str:

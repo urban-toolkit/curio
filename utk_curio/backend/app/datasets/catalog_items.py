@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from utk_curio.backend.app.datasets.catalog_utils import iso_from_timestamp, stable_id
+from utk_curio.backend.app.datasets.catalog_utils import iso_from_timestamp, stable_id, title_from_filename
 from utk_curio.backend.app.datasets.constants import SUPPORTED_SUFFIXES
 from utk_curio.backend.app.datasets.file_meta import read_file_meta
 from utk_curio.backend.app.datasets.manifest import DatasetManifest
@@ -183,7 +183,7 @@ def item_from_file(path: Path, *, source_label: str, origin: str = "imported") -
         return None
     stat = path.stat()
     file_path = path.as_posix()
-    title = path.stem.replace("_", " ").replace("-", " ").strip().title() or path.name
+    title = title_from_filename(path.name)
     row_count, feature_count = read_file_meta(path)
     return base_item(
         id=stable_id("file", str(path.resolve())),

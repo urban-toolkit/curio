@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from utk_curio.backend.app.datasets.catalog_items import base_item
-from utk_curio.backend.app.datasets.catalog_utils import iso_from_timestamp, stable_id
+from utk_curio.backend.app.datasets.catalog_utils import iso_from_timestamp, stable_id, title_from_filename
 from utk_curio.backend.app.datasets.provenance import computed_output_format
 
 class ComputedDatasetIndexer:
@@ -58,7 +57,7 @@ class ComputedDatasetIndexer:
                 item_id = stable_id("computed", f"{node_id}:{raw}")
             items.append(base_item(
                 id=item_id,
-                title=Path(raw).stem.replace("_", " ").replace("-", " ").title() or raw,
+                title=title_from_filename(raw),
                 description="Dataset produced by a node output.",
                 origin="computed",
                 format=fmt,

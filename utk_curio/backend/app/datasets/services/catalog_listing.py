@@ -11,7 +11,7 @@ from utk_curio.backend.app.datasets.catalog_dedup import catalog_facets, dedupe_
 from utk_curio.backend.app.datasets.catalog_items import loader_snippet
 from utk_curio.backend.app.datasets.services.catalog_paths import CatalogPathMixin
 from utk_curio.backend.app.datasets.computed_indexer import ComputedDatasetIndexer
-from utk_curio.backend.app.datasets.constants import SUPPORTED_SUFFIXES
+from utk_curio.backend.app.datasets.constants import FORMAT_TO_EXTENSION, SUPPORTED_SUFFIXES
 from utk_curio.backend.app.datasets.errors import DatasetCatalogError
 from utk_curio.backend.app.datasets.installed_repository import InstalledDatasetRepository
 from utk_curio.backend.app.datasets.services.preview_service import DatasetPreviewService
@@ -267,18 +267,6 @@ _DOWNLOAD_MIMETYPES: dict[str, str] = {
     ".shp": "application/octet-stream",
 }
 
-# Catalog ``DatasetFormat`` → canonical file extension. Used when the resolved
-# data file has no suffix on disk (e.g. computed/artifact outputs).
-_FORMAT_EXTENSIONS: dict[str, str] = {
-    "csv": ".csv",
-    "geojson": ".geojson",
-    "json": ".json",
-    "parquet": ".parquet",
-    "geotiff": ".tif",
-    "shp": ".shp",
-}
-
-
 def _serialize_parquet_for_export(path: Path) -> tuple[bytes, str, str]:
     """Deserialize a stored parquet dataset and re-serialize it to the data type
     it represents — GeoJSON for geospatial data, CSV for plain tabular data.
@@ -323,7 +311,7 @@ def _download_extension(path: Path, fmt: str | None) -> str:
         return suffix
     if suffix:
         return suffix
-    return _FORMAT_EXTENSIONS.get(fmt or "", "")
+    return FORMAT_TO_EXTENSION.get(fmt or "", "")
 
 
 def _download_name(title: str, extension: str) -> str:
