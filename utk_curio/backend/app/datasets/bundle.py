@@ -214,7 +214,15 @@ def install_computed_bundle_for_node(
         dest_file = parts_dir / filename
 
         if part.source_path is not None and part.source_path.is_file():
-            shutil.copy2(part.source_path, dest_file)
+            if part.source_path.name.endswith(".json.zlib"):
+                # list/dict artifacts are stored zlib-compressed, but the bundle
+                # part is declared as plain .json — decompress into the part file
+                # so preview/loader json.load gets real JSON, not compressed bytes.
+                import zlib
+
+                dest_file.write_bytes(zlib.decompress(part.source_path.read_bytes()))
+            else:
+                shutil.copy2(part.source_path, dest_file)
         elif part.kind in {"int", "float", "bool", "str", "null"}:
             _serialize_scalar_part(dest_file, part.kind, part.artifact_id)
         else:
