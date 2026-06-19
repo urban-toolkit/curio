@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from utk_curio.backend.app.common.safe_paths import is_within
+
 
 def _shared_data_dir() -> Path:
     from utk_curio.backend.app.projects.storage import _shared_data_dir as _sd
@@ -67,24 +69,36 @@ def resolve_shared_output_path(
     *,
     data_type: str | None = None,
 ) -> Path | None:
-    """Return a readable file for a node output ref filename, or None."""
+    """Return a readable file for a node output ref filename, or None.
+
+    A node-output ref filename is a single flat segment. Reject any path
+    separator / traversal so an untrusted ``liveOutputs`` entry (e.g.
+    ``../../../../etc/passwd``) can't be resolved to a file outside the shared
+    output dir and streamed back to the client. Containment is also asserted on
+    the resolved path as a second line of defence.
+    """
     if not filename or not str(filename).strip():
         return None
 
     name = str(filename).strip()
+    if "/" in name or "\\" in name or "\x00" in name or name in (".", ".."):
+        return None
+
     shared = _shared_data_dir()
 
     direct = shared / name
-    if direct.is_file():
+    if direct.is_file() and is_within(direct, shared):
         return direct
 
     if "." not in Path(name).name:
         artifact_parquet = shared / "artifacts" / f"{name}.parquet"
-        if artifact_parquet.is_file():
+        if artifact_parquet.is_file() and is_within(artifact_parquet, shared):
             return artifact_parquet
 
         duckdb_path = _resolve_duckdb_artifact_path(name)
-        if duckdb_path is not None:
+        if duckdb_path is not None and (
+            is_within(duckdb_path, shared) or is_within(duckdb_path, _launch_dir())
+        ):
             return duckdb_path
 
     return None

@@ -229,6 +229,11 @@ class CatalogMutationsMixin(CatalogPathMixin):
         source_item: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         item = deepcopy(source_item or self.get_dataset(dataset_id, dataflow_id=dataflow_id))
+        # A client-supplied ``sourceItem`` may omit ``id``; the route-validated
+        # ``dataset_id`` is authoritative, so backfill it rather than KeyError
+        # (500) later when building the dataflow ref.
+        if not item.get("id"):
+            item["id"] = dataset_id
         if item.get("origin") == "hub":
             dir_name = item.get("dirName")
             if not dir_name:
@@ -450,7 +455,10 @@ class CatalogMutationsMixin(CatalogPathMixin):
                 changed = False
                 for ref in refs:
                     ref_id = ref.get("datasetId") or ref.get("id")
-                    if ref_id == dataset_id or ref.get("dirName", "").split("@")[0] == dataset_id:
+                    # ``dirName`` can be a present-but-null legacy field; ``or ""``
+                    # guards ``None.split`` so one bad ref doesn't abort the whole
+                    # spec reconciliation.
+                    if ref_id == dataset_id or (ref.get("dirName") or "").split("@")[0] == dataset_id:
                         # Computed datasets keep origin="computed"; only clear the publishedToHub flag.
                         # Non-computed datasets revert to "imported".
                         if ref.get("origin") == "computed" or ref.get("producerNodeId"):

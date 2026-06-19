@@ -16,8 +16,23 @@ from utk_curio.backend.app.datasets.manifest import (
     load_dataset_manifest,
     write_manifest,
 )
+from utk_curio.backend.app.common.safe_paths import PathTraversalError, validate_component
 from utk_curio.backend.app.datasets.catalog_utils import title_from_filename
 from utk_curio.backend.app.datasets.storage import catalog_root, dataset_dir
+
+
+def _validate_store_filename(safe_filename: str) -> str:
+    """Reject an output/store filename that isn't a single safe path segment.
+
+    The data file is written to ``<dataset dir>/data/<safe_filename>``; an
+    untrusted node-output ref (e.g. ``../../../../etc/foo``) must never escape
+    the user's datasets dir. Maps a traversal attempt to ``InstallerError`` so
+    callers surface a clean 4xx / skip the bad output rather than 500.
+    """
+    try:
+        return validate_component(safe_filename, field="output filename")
+    except PathTraversalError as exc:
+        raise InstallerError(str(exc)) from exc
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +173,7 @@ def install_computed_file_for_node(
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "data").mkdir(exist_ok=True)
 
+    safe_filename = _validate_store_filename(safe_filename)
     data_path = dest / "data" / safe_filename
     if source_path is not None:
         _link_or_copy(source_path, data_path)
@@ -241,6 +257,7 @@ def install_computed_file(
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "data").mkdir(exist_ok=True)
 
+    safe_filename = _validate_store_filename(safe_filename)
     data_path = dest / "data" / safe_filename
     data_path.write_bytes(file_bytes)
 

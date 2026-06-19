@@ -274,7 +274,11 @@ class DatasetPreviewService:
             "schema": {
                 "fields": schema_fields,
                 "geometryType": geometry_type or (item.get("schema") or {}).get("geometryType"),
-                "crs": data.get("crs", {}).get("properties", {}).get("name") if isinstance(data, dict) else None,
+                # ``crs`` is optional and may be present-but-null in RFC-7946
+                # GeoJSON; ``or {}`` at each hop avoids ``None.get`` (500).
+                "crs": ((data.get("crs") or {}).get("properties") or {}).get("name")
+                if isinstance(data, dict)
+                else None,
             },
             "rows": rows,
             "rowLimit": row_limit,
