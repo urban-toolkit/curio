@@ -73,14 +73,14 @@ def test_usage_lists_dataflows_for_computed_dataset_with_downstream(client, user
 
 
 def test_usage_lists_dataflow_for_node_bound_dataset(client, user_and_token):
-    """A dataset dragged onto a node (metadata.datasetRefs) counts as usage."""
+    """A dataset dragged onto a (non-loading) node counts that node as a consumer."""
     _, token = user_and_token
     dataset_id = "it.urbanlab.example"
     flow = _create_project(client, token, "Bound", {
         "dataflow": {
             "name": "Bound",
             "nodes": [
-                {"id": "loader", "type": "DATA_LOADING", "x": 0, "y": 0,
+                {"id": "viz", "type": "VEGA", "x": 0, "y": 0,
                  "metadata": {"datasetRefs": [dataset_id]}},
             ],
             "edges": [],
@@ -92,6 +92,44 @@ def test_usage_lists_dataflow_for_node_bound_dataset(client, user_and_token):
     by_id = {f["dataflowId"]: f for f in flows}
     assert flow in by_id
     assert by_id[flow]["nodeCount"] == 1
+
+
+def test_usage_excludes_unconnected_data_loading_box(client, user_and_token):
+    """Dropping a dataset's Data Loading box (a carrier, not a consumer) lists the
+    dataflow but reports 0 consumers until the loader is wired downstream."""
+    _, token = user_and_token
+    dataset_id = "it.urbanlab.example"
+
+    # Loader alone → dataflow uses the dataset, but no downstream consumer.
+    flow_alone = _create_project(client, token, "Loader Only", {
+        "dataflow": {
+            "name": "Loader Only",
+            "nodes": [
+                {"id": "loader", "type": "curio.builtin/data-loading", "x": 0, "y": 0,
+                 "metadata": {"datasetRefs": [dataset_id]}},
+            ],
+            "edges": [],
+            "datasets": [],
+        }
+    })
+    # Loader wired to a downstream node → that node is the consumer.
+    flow_wired = _create_project(client, token, "Loader Wired", {
+        "dataflow": {
+            "name": "Loader Wired",
+            "nodes": [
+                {"id": "loader", "type": "curio.builtin/data-loading", "x": 0, "y": 0,
+                 "metadata": {"datasetRefs": [dataset_id]}},
+                {"id": "viz", "type": "VEGA", "x": 0, "y": 0},
+            ],
+            "edges": [{"id": "e1", "source": "loader", "target": "viz"}],
+            "datasets": [],
+        }
+    })
+
+    by_id = {f["dataflowId"]: f for f in _usage(client, token, dataset_id)}
+    assert by_id[flow_alone]["nodeCount"] == 0  # unconnected loader → no consumers
+    assert by_id[flow_wired]["nodeCount"] == 1
+    assert by_id[flow_wired]["nodes"] == [{"nodeId": "viz", "nodeType": "VEGA"}]
 
 
 def test_usage_empty_for_unused_dataset(client, user_and_token):

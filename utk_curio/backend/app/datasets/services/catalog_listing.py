@@ -311,8 +311,12 @@ def _dataset_consumer_nodes_in_spec(
     *dataset_id*, else ``None``. An empty list means the dataflow uses/owns the
     dataset (e.g. produced or installed) but no node consumes it downstream.
 
-    Mirrors the frontend lineage resolver: dataset bindings on nodes plus the
-    edges directly downstream of a computed dataset's producer.
+    Mirrors the frontend lineage resolver: the dataset enters the flow through
+    *carrier* nodes — the computed producer and any Data Loading node that
+    (re)loads it — and is consumed by the nodes wired downstream of those
+    carriers. A carrier's own binding is NOT consumption, so a dropped-but-
+    unconnected loader registers no downstream usage. A non-loading node with
+    the dataset applied (a binding) is a genuine consumer.
     """
     if not isinstance(spec, dict):
         return None
@@ -330,12 +334,23 @@ def _dataset_consumer_nodes_in_spec(
         if isinstance(node, dict) and node.get("id")
     }
 
+    def _is_data_loading(node_type: Any) -> bool:
+        return isinstance(node_type, str) and (
+            node_type == "DATA_LOADING" or "data-loading" in node_type
+        )
+
     uses = False
     consumer_ids: list[str] = []
     seen: set[str] = set()
+    carrier_ids: set[str] = set()
+
+    producer_id = _producer_node_id_for(nodes, dataset_id)
+    if producer_id is not None:
+        uses = True
+        carrier_ids.add(producer_id)
 
     def add_consumer(nid: str | None) -> None:
-        if nid and nid not in seen:
+        if nid and nid not in seen and nid not in carrier_ids:
             seen.add(nid)
             consumer_ids.append(nid)
 
@@ -349,15 +364,18 @@ def _dataset_consumer_nodes_in_spec(
         refs = (node.get("metadata") or {}).get("datasetRefs") or []
         if dataset_id in refs:
             uses = True
-            add_consumer(node.get("id"))
+            nid = node.get("id")
+            if _is_data_loading(node.get("type")):
+                if nid:
+                    carrier_ids.add(nid)  # loader = source/carrier, not a consumer
+            else:
+                add_consumer(nid)  # dataset applied to a node → genuine consumer
 
-    producer_id = _producer_node_id_for(nodes, dataset_id)
-    if producer_id is not None:
-        uses = True
+    if carrier_ids:
         for edge in edges:
             if not isinstance(edge, dict) or edge.get("type") == "Interaction":
                 continue
-            if edge.get("source") == producer_id and edge.get("target"):
+            if edge.get("source") in carrier_ids and edge.get("target"):
                 add_consumer(edge["target"])
 
     if not uses:

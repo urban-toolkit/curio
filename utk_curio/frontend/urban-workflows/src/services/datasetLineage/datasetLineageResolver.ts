@@ -64,6 +64,14 @@ export function formatNodeTypeLabel(nodeType: string | undefined): string {
     .join(" ");
 }
 
+/** True for a Data Loading node (``curio.builtin/data-loading`` or the legacy
+ * ``DATA_LOADING``) — the node a dataset drag-drop creates. It is the dataset's
+ * *source* in the flow, not a downstream consumer of it. */
+function isDataLoadingNodeType(nodeType: string | undefined): boolean {
+  if (!nodeType) return false;
+  return nodeType === "DATA_LOADING" || nodeType.includes("data-loading");
+}
+
 /** All dataset ids referenced by a node (datasetRefs ∪ appliedDatasets keys/values). */
 function datasetIdsForNode(node: LineageCanvasNode): Set<string> {
   const ids = new Set<string>();
@@ -151,6 +159,11 @@ export function selectDatasetDownstreamUsage(
     const nodeId = node?.data?.nodeId;
     if (!nodeId || seenNodeIds.has(nodeId)) continue;
     if (!datasetIdsForNode(node).has(datasetId)) continue;
+    // A Data Loading node that references the dataset is the dataset's source
+    // (its "box" dropped on the canvas), not a downstream consumer. Skip it —
+    // dropping a loader must not, on its own, register a downstream usage. Its
+    // real consumers are the nodes wired to its output (the carrier pass below).
+    if (isDataLoadingNodeType(node.data?.nodeType)) continue;
     seenNodeIds.add(nodeId);
 
     const nodeType = node.data?.nodeType;
@@ -170,22 +183,31 @@ export function selectDatasetDownstreamUsage(
     });
   }
 
-  // A computed dataset is consumed by nodes wired directly downstream of its
-  // producer — they read its output via ``data.input`` (a graph edge), not via
-  // a dataset binding. Resolve those from the edges so the dataset's lineage
-  // lists its real consumers (#141 / computed-dataset downstream item).
-  if (producerNodeId) {
-    const nodeById = new Map<string, LineageCanvasNode>();
-    for (const node of nodes || []) {
-      const id = nodeId_(node);
-      if (id) nodeById.set(id, node);
+  // The dataset enters the flow through "carrier" nodes — the computed
+  // producer and any Data Loading node that (re)loads it — and is *consumed* by
+  // the nodes wired directly downstream of those carriers (they read it via
+  // ``data.input``, a graph edge, not a dataset binding). Resolving consumers
+  // from edges (not from the carrier's own binding) means a freshly-dropped,
+  // unconnected loader registers no downstream usage, while connecting it later
+  // surfaces its real consumers (#141 / computed-dataset downstream item).
+  const carrierIds = new Set<string>();
+  if (producerNodeId) carrierIds.add(producerNodeId);
+  const nodeById = new Map<string, LineageCanvasNode>();
+  for (const node of nodes || []) {
+    const id = nodeId_(node);
+    if (!id) continue;
+    nodeById.set(id, node);
+    if (isDataLoadingNodeType(node.data?.nodeType) && datasetIdsForNode(node).has(datasetId)) {
+      carrierIds.add(id);
     }
+  }
+  if (carrierIds.size) {
     for (const edge of edges || []) {
-      if (!edge || edge.source !== producerNodeId) continue;
+      if (!edge || !edge.source || !carrierIds.has(edge.source)) continue;
       // Skip bidirectional interaction/sync edges — not data consumption.
       if (edge.sourceHandle === "in/out" && edge.targetHandle === "in/out") continue;
       const targetId = edge.target;
-      if (!targetId || seenNodeIds.has(targetId)) continue;
+      if (!targetId || carrierIds.has(targetId) || seenNodeIds.has(targetId)) continue;
       seenNodeIds.add(targetId);
       consumingNodes.push(describeConsumer(targetId, nodeById.get(targetId), "input"));
     }

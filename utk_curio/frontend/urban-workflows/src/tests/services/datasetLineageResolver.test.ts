@@ -15,7 +15,11 @@ function canvasNode(overrides: Partial<NonNullable<LineageCanvasNode["data"]>> =
   return {
     data: {
       nodeId: "node-1",
-      nodeType: "DATA_LOADING",
+      // A generic *consumer* node by default. Data Loading nodes are the
+      // dataset's source (carrier), not consumers, so tests that exercise the
+      // binding-consumer path use a non-loading type; loader tests set
+      // ``nodeType`` to a data-loading id explicitly.
+      nodeType: "COMPUTE_ANALYSIS",
       ...overrides,
     },
   };
@@ -211,6 +215,41 @@ describe("selectDatasetDownstreamUsage", () => {
       nodeExecStatus: { "node-2": "stale" },
     });
     expect(usage.consumingNodes[0].status).toBe("stale");
+  });
+
+  it("does NOT count the dataset's own Data Loading box as a consumer when it is not connected", () => {
+    // Dragging a dataset onto the canvas creates a DATA_LOADING node bound to it.
+    // That node is the dataset's source, not a downstream consumer — an
+    // unconnected loader must register zero downstream usage.
+    const usage = selectDatasetDownstreamUsage({
+      datasetId: DATASET_ID,
+      producerNodeId: "producer-x", // computed dataset, producer not on this canvas
+      nodes: [
+        canvasNode({
+          nodeId: "loader",
+          nodeType: "curio.builtin/data-loading",
+          datasetRefs: [DATASET_ID],
+        }),
+      ],
+      edges: [],
+    });
+    expect(usage.consumingNodes).toEqual([]);
+  });
+
+  it("counts a node wired downstream of a dropped Data Loading box", () => {
+    const usage = selectDatasetDownstreamUsage({
+      datasetId: DATASET_ID,
+      nodes: [
+        canvasNode({
+          nodeId: "loader",
+          nodeType: "curio.builtin/data-loading",
+          datasetRefs: [DATASET_ID],
+        }),
+        canvasNode({ nodeId: "viz", nodeType: "VEGA" }),
+      ],
+      edges: [{ source: "loader", target: "viz" }],
+    });
+    expect(usage.consumingNodes.map((u) => u.nodeId)).toEqual(["viz"]);
   });
 });
 
