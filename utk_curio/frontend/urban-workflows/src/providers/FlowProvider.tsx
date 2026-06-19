@@ -32,7 +32,7 @@ import {
     parseHandleIndex,
     setMergeSlot,
     clearMergeSlot,
-    mergeSlotForSource,
+    mergeSlotsForSource,
 } from "../utils/mergeFlowUtils";
 import { useWorkflowOperations } from "../hook/useWorkflowOperations";
 import { useToastContext } from "./ToastProvider";
@@ -545,13 +545,15 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
                 if (getFlowNodeCanonicalType(node) == NodeType.MERGE_FLOW) {
                     const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
-                    const sourceIndex = mergeSlotForSource(
+                    // Fill EVERY slot this source feeds — one source can be wired
+                    // to multiple slots of the same merge node.
+                    const sourceIndices = mergeSlotsForSource(
                         currentEdges,
                         node.id,
                         sourceId,
                         sourceList,
                     );
-                    if (sourceIndex >= 0) {
+                    for (const sourceIndex of sourceIndices) {
                         setMergeSlot(inputList, sourceList, sourceIndex, inputPayload, sourceId);
                     }
                     return { ...node, data: { ...node.data, input: inputList, source: sourceList } };

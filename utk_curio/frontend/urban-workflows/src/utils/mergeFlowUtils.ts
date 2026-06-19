@@ -73,16 +73,36 @@ export function buildMergeOutputArray(
  * Resolve which merge slot an upstream node feeds, using edges when
  * `sourceList` was not populated at connect time (common for manual wiring).
  */
+export function mergeSlotsForSource(
+    edges: Array<{ source?: string | null; target?: string | null; targetHandle?: string | null }>,
+    mergeNodeId: string,
+    sourceNodeId: string,
+    sourceList: unknown[],
+): number[] {
+    // A single source can feed MORE THAN ONE slot of the same merge node, so
+    // collect every slot it occupies — by prior assignment (sourceList) and by
+    // current wiring (edge target handles). findIndex/find would stop at the
+    // first and silently drop the rest.
+    const slots = new Set<number>();
+    sourceList.forEach((s, i) => {
+        if (s === sourceNodeId) slots.add(i);
+    });
+    for (const edge of edges) {
+        if (edge.target !== mergeNodeId || edge.source !== sourceNodeId) continue;
+        const i = parseHandleIndex(edge.targetHandle);
+        if (i >= 0) slots.add(i);
+    }
+    return Array.from(slots).sort((a, b) => a - b);
+}
+
 export function mergeSlotForSource(
     edges: Array<{ source?: string | null; target?: string | null; targetHandle?: string | null }>,
     mergeNodeId: string,
     sourceNodeId: string,
     sourceList: unknown[],
 ): number {
-    const fromSourceList = sourceList.findIndex((s) => s === sourceNodeId);
-    if (fromSourceList >= 0) return fromSourceList;
-    const edge = edges.find((e) => e.target === mergeNodeId && e.source === sourceNodeId);
-    return parseHandleIndex(edge?.targetHandle);
+    const slots = mergeSlotsForSource(edges, mergeNodeId, sourceNodeId, sourceList);
+    return slots.length > 0 ? slots[0] : -1;
 }
 
 /**
