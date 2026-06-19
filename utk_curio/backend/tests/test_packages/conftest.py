@@ -1,41 +1,27 @@
 """Shared fixtures for package tests.
 
-Mirrors ``test_projects/conftest.py`` so the same auth/DB fixtures work
-here, plus helpers for building in-memory ``.curio.zip`` zips and
-for materialising synthetic packages in the user's package store.
+Reuses the common app/DB/auth fixtures from
+``utk_curio.backend.tests._unit_fixtures`` (same as test_projects), plus
+helpers for building in-memory ``.curio.zip`` zips, stubbing pip, and
+materialising synthetic packages in the user's package store.
 """
 from __future__ import annotations
 
 import io
 import json
-import os
 import zipfile
 
 import pytest
 
-from utk_curio.backend.app import create_app
 from utk_curio.backend.app.packages.storage import user_packageages_dir
-from utk_curio.backend.extensions import db as _db
-
-
-class TestConfig:
-    TESTING = True
-    SQLALCHEMY_DATABASE_URI = "sqlite://"
-    SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SECRET_KEY = "test-secret"
-    WTF_CSRF_ENABLED = False
-
-
-@pytest.fixture()
-def tmp_curio(tmp_path, monkeypatch):
-    data_dir = tmp_path / ".curio" / "data"
-    data_dir.mkdir(parents=True)
-    # Use monkeypatch so the session-level CURIO_LAUNCH_CWD (set in the root
-    # conftest) is *restored* on teardown rather than deleted — a bare
-    # ``os.environ.pop`` here clobbers it for every later test that reads it
-    # (e.g. test_routes::test_file_route_serves_relative_to_launch_cwd).
-    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
-    yield tmp_path
+from utk_curio.backend.tests._unit_fixtures import (  # noqa: F401
+    TestConfig,
+    app,
+    client,
+    db,
+    tmp_curio,
+    user_and_token,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -60,38 +46,6 @@ def _stub_pip_runner(monkeypatch):
         pip_runner, "uninstall_python_deps",
         lambda names: UninstallReport(removed=list(names), kept=[]),
     )
-
-
-@pytest.fixture()
-def app(tmp_curio):
-    application = create_app(TestConfig)
-    with application.app_context():
-        _db.create_all()
-        yield application
-        _db.session.remove()
-        _db.drop_all()
-
-
-@pytest.fixture()
-def client(app):
-    return app.test_client()
-
-
-@pytest.fixture()
-def db(app):
-    return _db
-
-
-@pytest.fixture()
-def user_and_token(app, db):
-    from utk_curio.backend.app.users.models import User, UserSession
-    u = User(username="alice", name="Alice", email="alice@test.com")
-    db.session.add(u)
-    db.session.flush()
-    s = UserSession(user_id=u.id, token="alice-token-123")
-    db.session.add(s)
-    db.session.commit()
-    return u, "alice-token-123"
 
 
 # ---------------------------------------------------------------------------

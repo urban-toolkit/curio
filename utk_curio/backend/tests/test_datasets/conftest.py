@@ -1,4 +1,10 @@
-"""Shared fixtures for the dataset catalog tests."""
+"""Shared fixtures for the dataset catalog tests.
+
+Reuses the common ``TestConfig``/``client``/``db``/``user_and_token`` fixtures
+from ``utk_curio.backend.tests._unit_fixtures`` and overrides only ``app`` —
+dataset tests additionally wire ``CURIO_SHARED_DATA`` and bracket the test with
+``release_connection()`` so the sandbox DuckDB handle never leaks across tests.
+"""
 from __future__ import annotations
 
 import os
@@ -6,14 +12,12 @@ import pytest
 
 from utk_curio.backend.app import create_app
 from utk_curio.backend.extensions import db as _db
-
-
-class TestConfig:
-    TESTING = True
-    SQLALCHEMY_DATABASE_URI = "sqlite://"
-    SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SECRET_KEY = "test-secret"
-    WTF_CSRF_ENABLED = False
+from utk_curio.backend.tests._unit_fixtures import (  # noqa: F401
+    TestConfig,
+    client,
+    db,
+    user_and_token,
+)
 
 
 @pytest.fixture()
@@ -47,28 +51,4 @@ def app(tmp_path):
         os.environ["CURIO_SHARED_DATA"] = prev_shared
     else:
         os.environ.pop("CURIO_SHARED_DATA", None)
-
-
-@pytest.fixture()
-def client(app):
-    return app.test_client()
-
-
-@pytest.fixture()
-def db(app):
-    return _db
-
-
-@pytest.fixture()
-def user_and_token(app, db):
-    """Create a regular test user and return ``(user, token)``."""
-    from utk_curio.backend.app.users.models import User, UserSession
-
-    u = User(username="alice", name="Alice", email="alice@test.com")
-    db.session.add(u)
-    db.session.flush()
-    s = UserSession(user_id=u.id, token="alice-token-123")
-    db.session.add(s)
-    db.session.commit()
-    return u, "alice-token-123"
 
