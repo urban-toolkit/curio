@@ -73,6 +73,22 @@ export function applyInstalledDatasetToProject(
   notifyDatasetCatalogRefresh();
 }
 
+/**
+ * Base64-encode a string as UTF-8 bytes, matching the backend's
+ * ``base64.b64decode(raw).decode("utf-8")``. Plain ``btoa`` is Latin1-only: it
+ * throws on code points > 0xFF (CJK, emoji) and mis-encodes 0x80–0xFF, so a
+ * live-output filename/data_type with such characters would break the whole
+ * catalog/preview/download request.
+ */
+function base64Utf8(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 1) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
 function queryString(query: DatasetCatalogQuery = {}): string {
   const params = new URLSearchParams();
   if (query.dataflowId) params.set("dataflowId", query.dataflowId);
@@ -82,7 +98,7 @@ function queryString(query: DatasetCatalogQuery = {}): string {
   if (query.sort) params.set("sort", query.sort);
   if (query.includeHub !== undefined) params.set("includeHub", String(query.includeHub));
   if (query.liveOutputs && query.liveOutputs.length > 0) {
-    params.set("liveOutputs", btoa(JSON.stringify(query.liveOutputs)));
+    params.set("liveOutputs", base64Utf8(JSON.stringify(query.liveOutputs)));
   }
   const raw = params.toString();
   return raw ? `?${raw}` : "";
@@ -92,7 +108,7 @@ function previewQueryString(query: DatasetPreviewQuery = {}): string {
   const params = new URLSearchParams();
   if (query.dataflowId) params.set("dataflowId", query.dataflowId);
   if (query.liveOutputs && query.liveOutputs.length > 0) {
-    params.set("liveOutputs", btoa(JSON.stringify(query.liveOutputs)));
+    params.set("liveOutputs", base64Utf8(JSON.stringify(query.liveOutputs)));
   }
   if (query.offset != null) params.set("offset", String(query.offset));
   if (query.rowLimit != null) params.set("rowLimit", String(query.rowLimit));
