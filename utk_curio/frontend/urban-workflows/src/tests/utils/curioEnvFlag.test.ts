@@ -25,9 +25,9 @@ describe('defaultSaveOutputDatasetFromEnv', () => {
     }
   });
 
-  test('defaults to false when unset', () => {
+  test('defaults to true when unset', () => {
     delete process.env.CURIO_DEFAULT_SAVE_NODE_OUTPUT;
-    expect(defaultSaveOutputDatasetFromEnv()).toBe(false);
+    expect(defaultSaveOutputDatasetFromEnv()).toBe(true);
   });
 
   test('reads CURIO_DEFAULT_SAVE_NODE_OUTPUT', () => {

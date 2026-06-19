@@ -578,12 +578,6 @@ def check_db():
     db.session.execute(db.text('SELECT 1'))
     return "OK", 200
 
-@bp.route('/datasets', methods=['GET'])
-def list_datasets():
-    from utk_curio.backend.app.datasets.service import DatasetCatalogService
-
-    return jsonify(DatasetCatalogService().legacy_dataset_paths())
-
 
 @bp.route("/starters", methods=["GET"])
 def get_starters():

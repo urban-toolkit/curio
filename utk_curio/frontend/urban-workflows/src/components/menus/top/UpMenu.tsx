@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
-    DatasetsWindow,
     PackageManagerWindow,
     TrillProvenanceWindow,
 } from "components/menus";
@@ -59,7 +58,6 @@ export default function UpMenu({
     const [isEditing, setIsEditing] = useState(false);
     const [trillProvenanceOpen, setTrillProvenanceOpen] = useState(false);
     const [tutorialOpen, setTutorialOpen] = useState(false);
-    const [datasetsOpen, setDatasetsOpen] = useState(false);
     const [packagesOpen, setPackagesOpen] = useState(false);
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
@@ -115,15 +113,6 @@ export default function UpMenu({
 
     const openTrillProvenanceModal = () => {
         setTrillProvenanceOpen(true);
-        setActiveMenu(null);
-    };
-
-    const closeDatasetsModal = () => {
-        setDatasetsOpen(false);
-    };
-
-    const openDatasetsModal = () => {
-        setDatasetsOpen(true);
         setActiveMenu(null);
     };
 
@@ -545,10 +534,6 @@ export default function UpMenu({
                                 <FontAwesomeIcon className={styles.dropDownIcon} icon={faCubes} />
                                 <button className={styles.noStyleButton}>Installed libraries</button>
                             </div>
-                            <div className={styles.dropDownRow} onClick={openDatasetsModal}>
-                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faDatabase} />
-                                <button className={styles.noStyleButton}>Datasets</button>
-                            </div>
                         </div>
                     )}
                 </div>
@@ -700,7 +685,6 @@ export default function UpMenu({
                 closeModal={closeTrillProvenanceModal}
                 workflowName={workflowNameRef.current}
             />
-            <DatasetsWindow open={datasetsOpen} closeModal={closeDatasetsModal} />
             <PackageManagerWindow
                 open={packagesOpen}
                 closeModal={() => setPackagesOpen(false)}

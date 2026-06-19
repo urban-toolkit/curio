@@ -21,8 +21,3 @@ class DatasetCatalogService(CatalogListingMixin, CatalogMutationsMixin):
         self.installed = InstalledDatasetRepository(user)
         self.computed = ComputedDatasetIndexer()
         self.preview_service = DatasetPreviewService()
-
-    def legacy_dataset_paths(self) -> list[str]:
-        """Return paths for backwards-compatible /datasets route."""
-        items = self.registry.list_items()
-        return [item["path"] for item in items if item.get("path")]

@@ -15,9 +15,10 @@ export function readCurioEnvFlag(
 
 /**
  * Global default for the per-node **Save** toggle (catalog parquet on run).
- * Set ``CURIO_DEFAULT_SAVE_NODE_OUTPUT=1`` (or ``true``/``yes``/``on``) to enable
- * by default; omitted or ``0``/``false`` keeps it off.
+ * ON by default (mirrors backend ``CURIO_DEFAULT_SAVE_NODE_OUTPUT``) so node
+ * outputs persist as Computed datasets; set ``CURIO_DEFAULT_SAVE_NODE_OUTPUT=0``
+ * (or ``false``/``no``/``off``) to keep saving off unless toggled per node.
  */
 export function defaultSaveOutputDatasetFromEnv(): boolean {
-  return readCurioEnvFlag(process.env.CURIO_DEFAULT_SAVE_NODE_OUTPUT, false);
+  return readCurioEnvFlag(process.env.CURIO_DEFAULT_SAVE_NODE_OUTPUT, true);
 }
