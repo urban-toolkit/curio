@@ -126,8 +126,18 @@ class CatalogMutationsMixin(CatalogPathMixin):
             raise DatasetCatalogError(
                 "Cannot publish a dataset whose data file is not available on disk"
             )
-        dest_data = dest / "data" / local_path.name
-        shutil.copy2(local_path, dest_data)
+        if str(item.get("format")) == "bundle":
+            # A bundle's data file is data/bundle.json plus a data/parts/* subtree.
+            # Copy the whole data/ dir so the published entry's parts resolve;
+            # copying only bundle.json leaves the parts it references missing.
+            for child in local_path.parent.iterdir():
+                target = dest / "data" / child.name
+                if child.is_dir():
+                    shutil.copytree(child, target, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(child, target)
+        else:
+            shutil.copy2(local_path, dest / "data" / local_path.name)
         data_file = f"data/{local_path.name}"
 
         # ── Write manifest.json with all fields ───────────────────────────────
