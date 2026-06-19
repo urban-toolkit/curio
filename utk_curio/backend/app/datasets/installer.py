@@ -323,6 +323,9 @@ def install_imported_file(
     dir_name = f"{dataset_id}@1"
 
     dest = dataset_dir(user_key, dir_name)
+    # Whether a prior install existed at entry — this is the real "replaced"
+    # signal. (dest.exists() at the end is always True: we just created it.)
+    existed_before = dest.exists()
 
     # Fast path: already fully installed and no replacement requested.
     if dest.exists() and not replace:
@@ -377,6 +380,6 @@ def install_imported_file(
         shutil.rmtree(dest, ignore_errors=True)
         raise InstallerError(f"Failed to create imported dataset manifest: {exc}") from exc
 
-    return InstallResult(manifest=manifest, dest=dest, replaced=dest.exists())
+    return InstallResult(manifest=manifest, dest=dest, replaced=existed_before)
 
 
