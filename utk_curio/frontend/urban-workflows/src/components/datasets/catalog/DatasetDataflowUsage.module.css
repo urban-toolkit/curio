@@ -1,5 +1,6 @@
 .section {
   margin-top: 16px;
+  padding: 12px 20px;
 }
 
 .label {
@@ -35,6 +36,7 @@
   font-weight: 600;
   color: #3b6fd4;
   text-decoration: none;
+  word-break: break-all;
 }
 
 .link:hover {

@@ -14,7 +14,7 @@ import {
   datasetCountCompact as datasetCount,
   relativeTimeOrEmpty as relativeTime,
 } from "./datasetDetailHelpers";
-import { useDatasetLineage } from "../../../services/datasetLineage";
+import { DatasetConnectionBadge } from "./DatasetConnectionBadge";
 import styles from "../../packages/publishing/PackageCard.module.css";
 
 // ── Version helper ───────────────────────────────────────────────────────────
@@ -92,17 +92,6 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
   const version = datasetVersion(dataset.dirName);
   const metaParts = [count, time].filter(Boolean).join(" · ");
 
-  // Live lineage (same source as the detail panel) so the downstream-consumer
-  // badge reflects graph edges immediately, not the persisted consumerNodeIds.
-  const lineage = useDatasetLineage(dataset);
-  const upCount = lineage?.upstream.generatingNode ? 1 : 0;
-  const downCount = lineage?.downstream.consumingNodes.length ?? 0;
-  const hasConnections = upCount > 0 || downCount > 0;
-  const connLabel = [
-    upCount > 0 ? `${upCount}\u2191` : "",
-    downCount > 0 ? `${downCount}\u2193` : "",
-  ].filter(Boolean).join(" ");
-
   const sourceCaption = datasetListSourceCaption(dataset);
 
   const tags = dataset.tags.length > 0 ? dataset.tags.slice(0, 2) : [sourceCaption];
@@ -154,9 +143,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
           {metaParts ? (
             <span className={styles.cardMetaText}>{metaParts}</span>
           ) : null}
-          {hasConnections ? (
-            <span className={styles.connBadge}>{connLabel}</span>
-          ) : null}
+          <DatasetConnectionBadge dataset={dataset} className={styles.connBadge} />
         </div>
 
         {tags.length > 0 ? (
