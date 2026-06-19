@@ -62,8 +62,8 @@ def _auto_install_computed_outputs(
     refs to *spec* so the catalog can resolve them without live_outputs.
 
     Returns the (possibly updated) spec dict, or the original spec unchanged if
-    nothing new was installed.  Errors for individual files are swallowed so a
-    single bad output never blocks the whole save.
+    nothing new was installed.  Errors for individual files are swallowed (and
+    logged) so a single bad output never blocks the whole save.
     """
     if not output_refs or not spec:
         return spec
@@ -91,6 +91,14 @@ def _auto_install_computed_outputs(
                 data_type=data_type,
             )
         except Exception:  # noqa: BLE001 – best-effort; don't block save
+            # Swallowed so one bad output never blocks the whole save, but log it
+            # so a silently-dropped dataset is diagnosable instead of invisible.
+            logger.exception(
+                "Auto-install of computed output failed for node %s (file %r); "
+                "this dataset will not be persisted",
+                node_id,
+                filename,
+            )
             continue
         if result is None:
             continue
