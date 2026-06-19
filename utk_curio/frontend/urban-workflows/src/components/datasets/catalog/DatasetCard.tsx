@@ -34,6 +34,7 @@ const FORMAT_ABBR: Record<DatasetCatalogItem["format"], string> = {
   parquet: "Parquet",
   geotiff: "GeoTIFF",
   shp: "SHP",
+  bundle: "Bundle",
 };
 
 function formatAvatarClass(format: DatasetCatalogItem["format"]): string {

@@ -74,11 +74,10 @@ def test_listing_reads_counts_from_sidecar_not_full_file(tmp_path, monkeypatch):
     from the ``.meta.json`` sidecar; it must never re-scan the full file."""
     import utk_curio.backend.app.datasets.file_meta as file_meta
     from utk_curio.backend.app.datasets.catalog_items import item_from_file
-    from utk_curio.backend.app.datasets.file_meta import write_file_meta
 
     csv = tmp_path / "blocks.csv"
     csv.write_text("a,b\n1,2\n3,4\n", encoding="utf-8")
-    write_file_meta(csv, 99, None)  # sidecar precomputed (import/first-touch time)
+    file_meta.write_file_meta(csv, 99, None)  # sidecar precomputed (import/first-touch time)
 
     def _boom(*args, **kwargs):  # pragma: no cover - must not be called
         raise AssertionError("count_file must not run on the listing path")

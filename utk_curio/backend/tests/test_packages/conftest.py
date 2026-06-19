@@ -15,7 +15,6 @@ import pytest
 
 from utk_curio.backend.app.packages.storage import user_packageages_dir
 from utk_curio.backend.tests._unit_fixtures import (  # noqa: F401
-    TestConfig,
     app,
     client,
     db,

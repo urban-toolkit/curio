@@ -65,7 +65,7 @@ export const DatasetSchemaPanel: React.FC<DatasetSchemaPanelProps> = ({ schema }
           const kind = fieldIconKind(field.type);
           const sourceIndex = fields.findIndex((item) => item.name === field.name);
           return (
-            <div className={styles.fieldRow} key={field.name}>
+            <div className={styles.fieldRow} key={`${field.name}::${index}`}>
               <div className={styles.fieldCell}>
                 <span className={`${styles.typeIcon} ${ICON_CLASS[kind]}`}>
                   {fieldIconGlyph(kind)}

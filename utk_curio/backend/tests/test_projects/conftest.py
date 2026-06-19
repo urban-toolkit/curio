@@ -3,7 +3,6 @@
 Common app/DB/auth fixtures live in ``utk_curio.backend.tests._unit_fixtures``.
 """
 from utk_curio.backend.tests._unit_fixtures import (  # noqa: F401
-    TestConfig,
     app,
     client,
     db,

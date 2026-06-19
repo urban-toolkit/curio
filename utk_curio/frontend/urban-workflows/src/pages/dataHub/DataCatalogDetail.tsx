@@ -9,8 +9,11 @@ export const DataCatalogDetail: React.FC = () => {
   const { datasetId } = useParams<{ datasetId: string }>();
   const catalog = useDatasetCatalog({ includeHub: true });
   const decodedDatasetId = datasetId ? decodeURIComponent(datasetId) : "";
+  // Resolve by id only — never fall back to items[0], which would silently show
+  // an unrelated dataset for a bad/stale id. A miss yields null, which the panel
+  // renders as a "Dataset not found." state.
   const dataset =
-    catalog.items.find((item) => item.id === decodedDatasetId) || catalog.items[0] || null;
+    catalog.items.find((item) => item.id === decodedDatasetId) || null;
 
   return (
     <div className={styles.detailPage}>

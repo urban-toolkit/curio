@@ -89,7 +89,9 @@ def dedupe_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def catalog_facets(items: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
     facets = {
         "origin": {"source_node": 0, "computed": 0, "imported": 0, "hub": 0},
-        "format": {fmt: 0 for fmt in sorted(set(SUPPORTED_SUFFIXES.values()))},
+        # ``bundle`` is a synthetic multi-output format with no file suffix, so it
+        # isn't in ``SUPPORTED_SUFFIXES``; seed it explicitly so bundles are counted.
+        "format": {fmt: 0 for fmt in sorted(set(SUPPORTED_SUFFIXES.values()) | {"bundle"})},
     }
     for item in items:
         fmt = item.get("format")

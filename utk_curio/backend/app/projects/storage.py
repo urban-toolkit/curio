@@ -157,7 +157,9 @@ def _installed_file_for_node(
             manifest = load_dataset_manifest(installed_dir)
             return resolve_installed_data_path(user_key, manifest)
         except (ManifestError, InstallerError, ValueError):
-            return None
+            # A stale/broken ref for this producer shouldn't abort the search —
+            # a later ref (e.g. a freshly re-installed output) may still resolve.
+            continue
     return None
 
 
