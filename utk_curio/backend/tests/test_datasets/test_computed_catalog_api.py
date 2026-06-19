@@ -633,3 +633,44 @@ def test_published_computed_dataset_stays_installed_in_dataflow_catalog(
 
 
 
+
+
+def test_install_computed_dataset_carries_decode_sidecar(client, user_and_token):
+    """Manual install must copy the <file>.decode.json object-column decode
+    sidecar into the user store (review finding B8). The install always replaces
+    the dataset dir via the file_bytes branch, so the final sidecar is present
+    only if the install path copies it."""
+    import json
+    import os
+    from pathlib import Path
+
+    import pandas as pd
+
+    _, token = user_and_token
+    project_id = create_project(client, token, name="Install sidecar")
+    shared = Path(os.environ["CURIO_SHARED_DATA"])
+    shared.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame({"a": [1, 2], "tags": ['["x"]', '["y"]']}).to_parquet(shared / "withobj.parquet")
+    (shared / "withobj.parquet.decode.json").write_text(
+        json.dumps({"encoded_object_columns": ["tags"]}), encoding="utf-8"
+    )
+
+    save_project_with_output(client, token, project_id, "withobj.parquet", node_id="node-obj")
+
+    catalog = client.get(
+        f"/api/datasets/catalog?includeHub=false&dataflowId={project_id}",
+        headers=auth_headers(token),
+    ).get_json()
+    computed = next(i for i in catalog["items"] if i["origin"] == "computed")
+
+    resp = client.post(
+        f"/api/dataflows/{project_id}/datasets/install",
+        data=json.dumps({"datasetId": computed["id"]}),
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+
+    launch_cwd = Path(os.environ["CURIO_LAUNCH_CWD"])
+    user_store = launch_cwd / ".curio" / "users"
+    sidecars = list(user_store.rglob("withobj.parquet.decode.json"))
+    assert sidecars, "manual install should copy the decode sidecar into the user store"

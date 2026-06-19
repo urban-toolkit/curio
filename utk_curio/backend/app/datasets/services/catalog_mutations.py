@@ -340,6 +340,18 @@ class CatalogMutationsMixin(CatalogPathMixin):
 
                 inst_data_path = resolve_installed_data_path(user_key, result.manifest)
 
+                # Carry the parquet object-column decode sidecar (if any) so a
+                # manual install round-trips dict/list columns, matching the
+                # auto-install (source_path) path. The file_bytes install branch
+                # doesn't copy it, so do it here where both paths converge.
+                from utk_curio.sandbox.util.parsers import PARQUET_DECODE_SIDECAR_SUFFIX
+                src_sidecar = data_path.with_name(data_path.name + PARQUET_DECODE_SIDECAR_SUFFIX)
+                if src_sidecar.is_file():
+                    shutil.copy2(
+                        src_sidecar,
+                        inst_data_path.with_name(inst_data_path.name + PARQUET_DECODE_SIDECAR_SUFFIX),
+                    )
+
                 # Compute row/feature counts and patch the sidecar.
                 row_count, feature_count = count_file(inst_data_path, fmt)
                 if (result.manifest.row_count is None and row_count is not None) or (
