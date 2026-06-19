@@ -79,14 +79,23 @@ def loader_snippet(fmt: str, path: str | None) -> dict[str, Any]:
         # fall back to ``pd.read_parquet`` for non-geo tables.
         return {
             "language": "python",
-            "imports": ["import pandas as pd", "import geopandas as gpd"],
+            "imports": ["import os", "import json", "import pandas as pd", "import geopandas as gpd"],
             "pathVariable": "dataset_path",
             "code": (
                 f'dataset_path = "{dataset_path}"\n'
                 "try:\n"
                 "    df = gpd.read_parquet(dataset_path)\n"
                 "except Exception:\n"
-                "    df = pd.read_parquet(dataset_path)"
+                "    df = pd.read_parquet(dataset_path)\n"
+                "# Restore object columns (dict/list cells) that were JSON-encoded\n"
+                "# on save; the column list lives in a <file>.meta.json sidecar.\n"
+                "_meta_path = dataset_path + \".meta.json\"\n"
+                "if os.path.exists(_meta_path):\n"
+                "    with open(_meta_path) as _meta_file:\n"
+                "        _encoded_cols = json.load(_meta_file).get(\"encoded_object_columns\", [])\n"
+                "    for _col in _encoded_cols:\n"
+                "        if _col in df.columns:\n"
+                "            df[_col] = df[_col].apply(lambda _v: json.loads(_v) if isinstance(_v, str) and _v else _v)"
             ),
             "returnVariable": "df",
         }

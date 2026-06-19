@@ -368,6 +368,39 @@ def _restore_frame_from_parquet(frame, encoded_object_columns, geometry_col=None
     return frame
 
 
+def load_dataset_parquet(path):
+    """Read a dataset parquet written by :func:`save_dataset_parquet`, restoring
+    any JSON-encoded object columns recorded in the ``<file>.meta.json`` sidecar.
+
+    Reads as a GeoDataFrame when the file is GeoParquet, otherwise a plain
+    DataFrame. The inverse of :func:`save_dataset_parquet`.
+    """
+    import os
+
+    try:
+        frame = gpd.read_parquet(path)
+        geometry_col = frame.geometry.name
+    except Exception:
+        frame = pd.read_parquet(path)
+        geometry_col = None
+
+    meta_path = str(path) + ".meta.json"
+    if os.path.exists(meta_path):
+        with open(meta_path, encoding="utf-8") as handle:
+            frame_metadata, encoded_object_columns = _parse_parquet_meta(handle.read())
+        if encoded_object_columns:
+            frame = _restore_frame_from_parquet(
+                frame, encoded_object_columns, geometry_col=geometry_col
+            )
+        if frame_metadata is not None:
+            try:
+                frame.metadata = frame_metadata
+            except Exception:  # noqa: BLE001 - metadata is best-effort
+                pass
+
+    return frame
+
+
 def normalize_dataframe_for_json(df):
     """Convert DataFrame cells to JSON-safe Python values."""
     normalized = df.copy()
@@ -904,10 +937,26 @@ def save_dataset_parquet(output, kind):
     try:
         if isinstance(output, gpd.GeoDataFrame):
             # GeoParquet preserves CRS and geometry column automatically.
-            prepared, _ = _prepare_frame_for_parquet(output, geometry_col=output.geometry.name)
+            prepared, encoded_object_columns = _prepare_frame_for_parquet(
+                output, geometry_col=output.geometry.name
+            )
             prepared.to_parquet(full_path)
+            meta_json = _serialize_parquet_meta(
+                frame_metadata=getattr(output, 'metadata', None),
+                encoded_object_columns=encoded_object_columns,
+            )
         else:
-            _write_dataframe_parquet(output, full_path)
+            prepared, encoded_object_columns = _prepare_frame_for_parquet(output)
+            _write_dataframe_parquet(prepared, full_path)
+            meta_json = _serialize_parquet_meta(
+                encoded_object_columns=encoded_object_columns,
+            )
+        # Object columns (dict/list cells) are JSON-encoded for parquet; the artifacts
+        # path stashes the decode list in DuckDB, but a named dataset file has no such
+        # row, so persist it in a ``<file>.meta.json`` sidecar instead. Without it the
+        # columns reload as JSON strings instead of the original objects.
+        if meta_json:
+            (data_dir / (filename + ".meta.json")).write_text(meta_json, encoding="utf-8")
         return filename
     except Exception as exc:
         print(f"[save_dataset_parquet] Could not save dataset file: {exc}", file=sys.stderr)

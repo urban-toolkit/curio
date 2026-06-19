@@ -48,6 +48,15 @@ def test_parquet_snippet_prefers_geoparquet_with_fallback():
     assert snippet["returnVariable"] == "df"
 
 
+def test_parquet_snippet_restores_object_columns_from_sidecar():
+    snippet = loader_snippet("parquet", "/data/output.parquet")
+    # Reads the decode sidecar and re-hydrates the encoded object columns.
+    assert ".meta.json" in snippet["code"]
+    assert "encoded_object_columns" in snippet["code"]
+    assert "import os" in snippet["imports"]
+    assert "import json" in snippet["imports"]
+
+
 def test_bundle_snippet_shape():
     snippet = loader_snippet("bundle", "/data/computed.node_x@1/data/bundle.json")
     assert snippet["returnVariable"] == "bundle"
@@ -111,6 +120,25 @@ def test_parquet_loader_reloads_plain_dataframe(tmp_path):
     assert isinstance(result, pd.DataFrame)
     assert not result.__class__.__name__ == "GeoDataFrame"
     assert list(result["a"]) == [1, 2]
+
+
+def test_parquet_loader_restores_object_columns_via_sidecar(tmp_path, monkeypatch):
+    pd = pytest.importorskip("pandas")
+    from utk_curio.sandbox.util import parsers
+
+    # save_dataset_parquet writes the parquet + ``<file>.meta.json`` sidecar here.
+    monkeypatch.setattr(parsers, "_shared_data_dir", lambda: tmp_path)
+    filename = parsers.save_dataset_parquet(
+        pd.DataFrame({"name": ["a", "b"], "payload": [{"x": 1}, ["y", "z"]]}),
+        "dataframe",
+    )
+    assert filename is not None
+
+    result = _run_loader(loader_snippet("parquet", str(tmp_path / filename)))
+
+    # The generated loader decoded the JSON-encoded object column back to objects.
+    assert result["payload"].tolist()[0] == {"x": 1}
+    assert result["payload"].tolist()[1] == ["y", "z"]
 
 
 def _write_bundle(tmp_path, parts):
