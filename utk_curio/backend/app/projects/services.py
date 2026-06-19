@@ -112,8 +112,13 @@ def _auto_install_computed_outputs(
             continue
 
         # Replace any existing ref for this producer node or add a new one.
+        # ``datasets_refs`` derives from the client-supplied spec, so an entry
+        # may not be a dict — skip those rather than AttributeError out of the
+        # try and 500 the whole save (matches merge_dataflow_dataset_ref).
         updated = False
         for existing_ref in datasets_refs:
+            if not isinstance(existing_ref, dict):
+                continue
             if existing_ref.get("producerNodeId") == node_id:
                 existing_ref.update({
                     "datasetId": dataset_id,

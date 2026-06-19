@@ -168,3 +168,20 @@ def test_non_guest_can_save_and_update(app, db, user_and_token, tmp_curio):
 
     updated = services.update_project(user, detail.id, ProjectUpdate(name="Renamed"))
     assert updated.name == "Renamed"
+
+
+def test_auto_install_skips_non_dict_dataset_refs(app, tmp_curio):
+    """A non-dict entry in client-supplied dataflow.datasets must not 500 the
+    save (review finding B3)."""
+    shared = storage._shared_data_dir()
+    shared.mkdir(parents=True, exist_ok=True)
+    (shared / "b3_out.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+
+    spec = {"dataflow": {"datasets": ["junk", None, 123]}}
+    refs = [OutputRef(node_id="b3node", filename="b3_out.csv")]
+
+    # Must not raise AttributeError on the non-dict refs.
+    result = services._auto_install_computed_outputs("1", refs, spec)
+
+    ds = result["dataflow"]["datasets"]
+    assert any(isinstance(r, dict) and r.get("producerNodeId") == "b3node" for r in ds)
