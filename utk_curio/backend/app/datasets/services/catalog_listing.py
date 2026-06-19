@@ -415,7 +415,14 @@ def _serialize_parquet_for_export(path: Path) -> tuple[bytes, str, str]:
     except Exception:  # noqa: BLE001 — not geospatial / no geo metadata
         geo_frame = None
 
+    from utk_curio.sandbox.util.parsers import restore_parquet_sidecar
+
     if geo_frame is not None:
+        # Decode JSON-encoded object columns (the <file>.meta.json sidecar) so
+        # list/dict properties export as real values, not double-encoded strings.
+        geo_frame = restore_parquet_sidecar(
+            geo_frame, path, geometry_col=geo_frame.geometry.name
+        )
         # ``to_json`` serializes feature properties via ``json.dumps``, which
         # can't natively encode pandas/numpy temporal values (e.g. Timestamp).
         # Forward ``default=str`` so those fall back to their string form rather
@@ -427,6 +434,7 @@ def _serialize_parquet_for_export(path: Path) -> tuple[bytes, str, str]:
         )
 
     frame = pd.read_parquet(path)
+    frame = restore_parquet_sidecar(frame, path)
     return frame.to_csv(index=False).encode("utf-8"), ".csv", "text/csv"
 
 

@@ -72,11 +72,19 @@ def load_parquet_frame(path: Path) -> tuple[Any, int]:
             exc_info=True,
         )
         frame = pd.read_parquet(path)
+        from utk_curio.sandbox.util.parsers import restore_parquet_sidecar
+        frame = restore_parquet_sidecar(frame, path)
         return frame, len(frame)
+
+    from utk_curio.sandbox.util.parsers import restore_parquet_sidecar
 
     geometry_columns = [
         column for column in frame.columns if str(frame[column].dtype) == "geometry"
     ]
+    geometry_col = geometry_columns[0] if geometry_columns else None
+    # Decode JSON-encoded object columns from the <file>.meta.json sidecar so
+    # list/dict columns render as real objects, not raw JSON text.
+    frame = restore_parquet_sidecar(frame, path, geometry_col=geometry_col)
     if geometry_columns:
         # Drop GeoDataFrame typing and emit WKT strings so parseOutput serializes
         # the geometry as readable text instead of binary WKB.

@@ -368,6 +368,34 @@ def _restore_frame_from_parquet(frame, encoded_object_columns, geometry_col=None
     return frame
 
 
+def _read_parquet_sidecar_meta(path):
+    """Return ``(frame_metadata, encoded_object_columns)`` from a parquet file's
+    ``<file>.meta.json`` decode sidecar, or ``(None, [])`` when it's absent."""
+    import os
+
+    meta_path = str(path) + ".meta.json"
+    if not os.path.exists(meta_path):
+        return None, []
+    with open(meta_path, encoding="utf-8") as handle:
+        return _parse_parquet_meta(handle.read())
+
+
+def restore_parquet_sidecar(frame, path, *, geometry_col=None):
+    """Decode JSON-encoded object columns recorded in a parquet file's
+    ``<file>.meta.json`` sidecar (written by :func:`save_dataset_parquet`).
+
+    No-op when the sidecar is absent or records no encoded columns — so it never
+    touches columns that weren't encoded. Used by the preview and export paths
+    so they show/emit real objects instead of raw JSON strings.
+    """
+    _frame_metadata, encoded_object_columns = _read_parquet_sidecar_meta(path)
+    if encoded_object_columns:
+        frame = _restore_frame_from_parquet(
+            frame, encoded_object_columns, geometry_col=geometry_col
+        )
+    return frame
+
+
 def load_dataset_parquet(path):
     """Read a dataset parquet written by :func:`save_dataset_parquet`, restoring
     any JSON-encoded object columns recorded in the ``<file>.meta.json`` sidecar.
@@ -375,8 +403,6 @@ def load_dataset_parquet(path):
     Reads as a GeoDataFrame when the file is GeoParquet, otherwise a plain
     DataFrame. The inverse of :func:`save_dataset_parquet`.
     """
-    import os
-
     try:
         frame = gpd.read_parquet(path)
         geometry_col = frame.geometry.name
@@ -384,19 +410,13 @@ def load_dataset_parquet(path):
         frame = pd.read_parquet(path)
         geometry_col = None
 
-    meta_path = str(path) + ".meta.json"
-    if os.path.exists(meta_path):
-        with open(meta_path, encoding="utf-8") as handle:
-            frame_metadata, encoded_object_columns = _parse_parquet_meta(handle.read())
-        if encoded_object_columns:
-            frame = _restore_frame_from_parquet(
-                frame, encoded_object_columns, geometry_col=geometry_col
-            )
-        if frame_metadata is not None:
-            try:
-                frame.metadata = frame_metadata
-            except Exception:  # noqa: BLE001 - metadata is best-effort
-                pass
+    frame_metadata, _encoded = _read_parquet_sidecar_meta(path)
+    frame = restore_parquet_sidecar(frame, path, geometry_col=geometry_col)
+    if frame_metadata is not None:
+        try:
+            frame.metadata = frame_metadata
+        except Exception:  # noqa: BLE001 - metadata is best-effort
+            pass
 
     return frame
 
