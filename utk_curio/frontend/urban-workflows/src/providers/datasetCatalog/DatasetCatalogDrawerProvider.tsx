@@ -58,6 +58,10 @@ export function DatasetCatalogDrawerProvider({ children }: { children: React.Rea
     exitSettledRef.current = true;
     clearExitTimer();
     setPresented(false);
+    // Unmount the portal once the exit settles. Without this `mounted` stays
+    // true forever after the first open, leaking the drawer's effects and the
+    // DATASET_CATALOG_REFRESH_EVENT listener (and stacking duplicates on reopen).
+    setMounted(false);
     const el = preOpenFocusRef.current;
     preOpenFocusRef.current = null;
     queueMicrotask(() => el?.focus?.());
