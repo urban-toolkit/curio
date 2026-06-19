@@ -13,9 +13,15 @@ from __future__ import annotations
 import json
 import os
 import shutil
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
+
+try:  # POSIX advisory file locking; unavailable on Windows.
+    import fcntl
+except ImportError:  # pragma: no cover - non-POSIX fallback
+    fcntl = None
 
 from utk_curio.backend.app.common.safe_paths import safe_join, validate_component
 from utk_curio.backend.app.projects.schemas import OutputRef
@@ -86,6 +92,30 @@ def read_spec(user_key: str, project_id: str) -> Optional[dict]:
     if not p.exists():
         return None
     return json.loads(p.read_text(encoding="utf-8"))
+
+
+@contextmanager
+def spec_write_lock(user_key: str, project_id: str):
+    """Serialize read-modify-write of a project's spec across processes.
+
+    Two concurrent saves that both upsert into ``dataflow.datasets`` would
+    otherwise race — each reads the spec, mutates its own copy, and the last
+    writer clobbers the other's ref (lost update). An exclusive ``flock`` on a
+    per-project lock file makes the read+merge+write critical section atomic.
+
+    On platforms without ``fcntl`` (Windows) this degrades to a no-op.
+    """
+    d = ensure_project_dir(user_key, project_id)
+    lock_path = d / ".spec.lock"
+    if fcntl is None:
+        yield
+        return
+    with open(lock_path, "w") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 # ---------------------------------------------------------------------------
@@ -252,29 +282,36 @@ def merge_dataflow_dataset_ref(
 
     Returns True when the spec was updated, False when the project spec is missing.
     """
-    spec = read_spec(user_key, project_id)
-    if not spec:
+    # Cheap existence check first so we don't create a project dir (and lock
+    # file) for a project that doesn't exist.
+    if not (project_dir(user_key, project_id) / "spec.trill.json").exists():
         return False
-    dataflow = spec.setdefault("dataflow", {})
-    refs: list[dict] = list(dataflow.get("datasets") or [])
-    dataset_id = ref.get("datasetId")
-    producer = ref.get("producerNodeId")
-    updated = False
-    for index, existing in enumerate(refs):
-        if not isinstance(existing, dict):
-            continue
-        if (
-            (dataset_id and existing.get("datasetId") == dataset_id)
-            or (producer and existing.get("producerNodeId") == producer)
-        ):
-            refs[index] = {**existing, **ref}
-            updated = True
-            break
-    if not updated:
-        refs.append(ref)
-    dataflow["datasets"] = refs
-    write_spec(user_key, project_id, spec)
-    return True
+    # Hold the per-project lock across read+merge+write so a concurrent upsert
+    # can't clobber the ref we're adding (lost update).
+    with spec_write_lock(user_key, project_id):
+        spec = read_spec(user_key, project_id)
+        if not spec:
+            return False
+        dataflow = spec.setdefault("dataflow", {})
+        refs: list[dict] = list(dataflow.get("datasets") or [])
+        dataset_id = ref.get("datasetId")
+        producer = ref.get("producerNodeId")
+        updated = False
+        for index, existing in enumerate(refs):
+            if not isinstance(existing, dict):
+                continue
+            if (
+                (dataset_id and existing.get("datasetId") == dataset_id)
+                or (producer and existing.get("producerNodeId") == producer)
+            ):
+                refs[index] = {**existing, **ref}
+                updated = True
+                break
+        if not updated:
+            refs.append(ref)
+        dataflow["datasets"] = refs
+        write_spec(user_key, project_id, spec)
+        return True
 
 
 def read_manifest(

@@ -104,3 +104,58 @@ def test_delete_tree(tmp_curio):
     assert d.exists()
     storage.delete_tree("1", "proj-ggg")
     assert not d.exists()
+
+
+# ── merge_dataflow_dataset_ref (#144c) ──────────────────────────────────────
+
+def test_merge_dataflow_dataset_ref_missing_project(tmp_curio):
+    # No spec on disk → False, and no project dir is created as a side effect.
+    assert storage.merge_dataflow_dataset_ref("1", "proj-none", {"datasetId": "x"}) is False
+    assert not storage.project_dir("1", "proj-none").exists()
+
+
+def test_merge_dataflow_dataset_ref_upsert_and_append(tmp_curio):
+    storage.write_spec("1", "proj-merge", {"dataflow": {"datasets": []}})
+
+    # Append a new ref.
+    assert storage.merge_dataflow_dataset_ref(
+        "1", "proj-merge",
+        {"datasetId": "computed.a", "producerNodeId": "na", "dirName": "computed.a@1"},
+    ) is True
+    # Upsert (same datasetId) merges fields rather than duplicating.
+    assert storage.merge_dataflow_dataset_ref(
+        "1", "proj-merge",
+        {"datasetId": "computed.a", "producerNodeId": "na", "publishedToHub": True},
+    ) is True
+
+    refs = storage.read_spec("1", "proj-merge")["dataflow"]["datasets"]
+    assert len(refs) == 1
+    assert refs[0]["dirName"] == "computed.a@1"
+    assert refs[0]["publishedToHub"] is True
+
+
+def test_merge_dataflow_dataset_ref_concurrent_no_lost_update(tmp_curio):
+    """Concurrent upserts of distinct refs must all survive (no lost update)."""
+    import threading
+
+    storage.write_spec("1", "proj-conc", {"dataflow": {"datasets": []}})
+
+    n = 24
+    barrier = threading.Barrier(n)
+
+    def worker(i: int) -> None:
+        barrier.wait()  # maximize overlap of the read-modify-write windows
+        storage.merge_dataflow_dataset_ref(
+            "1", "proj-conc",
+            {"datasetId": f"computed.{i}", "producerNodeId": f"n{i}"},
+        )
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    refs = storage.read_spec("1", "proj-conc")["dataflow"]["datasets"]
+    ids = {r["datasetId"] for r in refs}
+    assert ids == {f"computed.{i}" for i in range(n)}
