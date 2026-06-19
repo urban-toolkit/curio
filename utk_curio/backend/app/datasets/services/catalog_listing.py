@@ -418,7 +418,7 @@ def _serialize_parquet_for_export(path: Path) -> tuple[bytes, str, str]:
     from utk_curio.sandbox.util.parsers import restore_parquet_sidecar
 
     if geo_frame is not None:
-        # Decode JSON-encoded object columns (the <file>.meta.json sidecar) so
+        # Decode JSON-encoded object columns (the <file>.decode.json sidecar) so
         # list/dict properties export as real values, not double-encoded strings.
         geo_frame = restore_parquet_sidecar(
             geo_frame, path, geometry_col=geo_frame.geometry.name

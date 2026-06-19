@@ -62,7 +62,7 @@ def test_dataset_parquet_round_trips_object_columns(tmp_path, monkeypatch):
     filename = parsers.save_dataset_parquet(df, "dataframe")
     assert filename is not None
     # The decode sidecar is written next to the parquet.
-    assert (tmp_path / (filename + ".meta.json")).is_file()
+    assert (tmp_path / (filename + ".decode.json")).is_file()
 
     restored = parsers.load_dataset_parquet(tmp_path / filename)
     assert restored["payload"].tolist()[0] == {"a": 1}

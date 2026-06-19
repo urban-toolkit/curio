@@ -368,12 +368,18 @@ def _restore_frame_from_parquet(frame, encoded_object_columns, geometry_col=None
     return frame
 
 
+# Suffix for the parquet object-column decode sidecar. Distinct from
+# ``file_meta``'s ``<file>.meta.json`` counts sidecar — they live next to the
+# same data file and must not clobber each other.
+PARQUET_DECODE_SIDECAR_SUFFIX = ".decode.json"
+
+
 def _read_parquet_sidecar_meta(path):
     """Return ``(frame_metadata, encoded_object_columns)`` from a parquet file's
-    ``<file>.meta.json`` decode sidecar, or ``(None, [])`` when it's absent."""
+    ``<file>.decode.json`` decode sidecar, or ``(None, [])`` when it's absent."""
     import os
 
-    meta_path = str(path) + ".meta.json"
+    meta_path = str(path) + PARQUET_DECODE_SIDECAR_SUFFIX
     if not os.path.exists(meta_path):
         return None, []
     with open(meta_path, encoding="utf-8") as handle:
@@ -382,7 +388,7 @@ def _read_parquet_sidecar_meta(path):
 
 def restore_parquet_sidecar(frame, path, *, geometry_col=None):
     """Decode JSON-encoded object columns recorded in a parquet file's
-    ``<file>.meta.json`` sidecar (written by :func:`save_dataset_parquet`).
+    ``<file>.decode.json`` sidecar (written by :func:`save_dataset_parquet`).
 
     No-op when the sidecar is absent or records no encoded columns — so it never
     touches columns that weren't encoded. Used by the preview and export paths
@@ -398,7 +404,7 @@ def restore_parquet_sidecar(frame, path, *, geometry_col=None):
 
 def load_dataset_parquet(path):
     """Read a dataset parquet written by :func:`save_dataset_parquet`, restoring
-    any JSON-encoded object columns recorded in the ``<file>.meta.json`` sidecar.
+    any JSON-encoded object columns recorded in the ``<file>.decode.json`` sidecar.
 
     Reads as a GeoDataFrame when the file is GeoParquet, otherwise a plain
     DataFrame. The inverse of :func:`save_dataset_parquet`.
@@ -973,10 +979,13 @@ def save_dataset_parquet(output, kind):
             )
         # Object columns (dict/list cells) are JSON-encoded for parquet; the artifacts
         # path stashes the decode list in DuckDB, but a named dataset file has no such
-        # row, so persist it in a ``<file>.meta.json`` sidecar instead. Without it the
-        # columns reload as JSON strings instead of the original objects.
+        # row, so persist it in a ``<file>.decode.json`` sidecar instead. Without it the
+        # columns reload as JSON strings instead of the original objects. (Distinct
+        # from file_meta's ``.meta.json`` counts sidecar so neither clobbers the other.)
         if meta_json:
-            (data_dir / (filename + ".meta.json")).write_text(meta_json, encoding="utf-8")
+            (data_dir / (filename + PARQUET_DECODE_SIDECAR_SUFFIX)).write_text(
+                meta_json, encoding="utf-8"
+            )
         return filename
     except Exception as exc:
         print(f"[save_dataset_parquet] Could not save dataset file: {exc}", file=sys.stderr)

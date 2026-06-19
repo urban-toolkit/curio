@@ -51,7 +51,7 @@ def test_parquet_snippet_prefers_geoparquet_with_fallback():
 def test_parquet_snippet_restores_object_columns_from_sidecar():
     snippet = loader_snippet("parquet", "/data/output.parquet")
     # Reads the decode sidecar and re-hydrates the encoded object columns.
-    assert ".meta.json" in snippet["code"]
+    assert ".decode.json" in snippet["code"]
     assert "encoded_object_columns" in snippet["code"]
     assert "import os" in snippet["imports"]
     assert "import json" in snippet["imports"]
@@ -126,7 +126,7 @@ def test_parquet_loader_restores_object_columns_via_sidecar(tmp_path, monkeypatc
     pd = pytest.importorskip("pandas")
     from utk_curio.sandbox.util import parsers
 
-    # save_dataset_parquet writes the parquet + ``<file>.meta.json`` sidecar here.
+    # save_dataset_parquet writes the parquet + ``<file>.decode.json`` sidecar here.
     monkeypatch.setattr(parsers, "_shared_data_dir", lambda: tmp_path)
     filename = parsers.save_dataset_parquet(
         pd.DataFrame({"name": ["a", "b"], "payload": [{"x": 1}, ["y", "z"]]}),

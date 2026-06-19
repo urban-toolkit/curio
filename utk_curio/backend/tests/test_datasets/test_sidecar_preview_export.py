@@ -1,5 +1,5 @@
 """Regression tests for review finding B6 — preview/export must honor the
-parquet object-column decode sidecar (<file>.meta.json), not show/emit raw JSON.
+parquet object-column decode sidecar (<file>.decode.json), not show/emit raw JSON.
 """
 from __future__ import annotations
 

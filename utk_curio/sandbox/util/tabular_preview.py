@@ -82,7 +82,7 @@ def load_parquet_frame(path: Path) -> tuple[Any, int]:
         column for column in frame.columns if str(frame[column].dtype) == "geometry"
     ]
     geometry_col = geometry_columns[0] if geometry_columns else None
-    # Decode JSON-encoded object columns from the <file>.meta.json sidecar so
+    # Decode JSON-encoded object columns from the <file>.decode.json sidecar so
     # list/dict columns render as real objects, not raw JSON text.
     frame = restore_parquet_sidecar(frame, path, geometry_col=geometry_col)
     if geometry_columns:

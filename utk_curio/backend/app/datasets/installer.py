@@ -178,10 +178,15 @@ def install_computed_file_for_node(
     if source_path is not None:
         _link_or_copy(source_path, data_path)
         # Carry the parquet object-column decode sidecar (if any) alongside the
-        # data file so the installed dataset round-trips object columns.
-        src_sidecar = source_path.with_name(source_path.name + ".meta.json")
+        # data file so the installed dataset round-trips object columns. Distinct
+        # suffix from file_meta's ``.meta.json`` counts sidecar (see parsers).
+        from utk_curio.sandbox.util.parsers import PARQUET_DECODE_SIDECAR_SUFFIX
+        src_sidecar = source_path.with_name(source_path.name + PARQUET_DECODE_SIDECAR_SUFFIX)
         if src_sidecar.is_file():
-            _link_or_copy(src_sidecar, data_path.with_name(data_path.name + ".meta.json"))
+            _link_or_copy(
+                src_sidecar,
+                data_path.with_name(data_path.name + PARQUET_DECODE_SIDECAR_SUFFIX),
+            )
     elif file_bytes is not None:
         data_path.write_bytes(file_bytes)
     else:
