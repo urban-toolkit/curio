@@ -87,3 +87,29 @@ def test_listing_reads_counts_from_sidecar_not_full_file(tmp_path, monkeypatch):
     item = item_from_file(csv, source_label="Workspace data")
     assert item is not None
     assert item["rowCount"] == 99  # served from the sidecar, not a fresh count
+
+
+def test_merge_does_not_resurrect_publishedtohub_after_unpublish():
+    """A just-unpublished ref (publishedToHub=False) must not be flipped back to
+    True by a lingering hub row during dedup (notable review item)."""
+    from utk_curio.backend.app.datasets.catalog_dedup import merge_catalog_items
+
+    project_ref = {
+        "id": "data.x.thing", "origin": "computed", "installed": True,
+        "publishedToHub": False, "producerNodeId": "n1", "dirName": "data.x.thing@1",
+    }
+    hub_row = {"id": "data.x.thing", "origin": "hub"}
+
+    for a, b in ((project_ref, hub_row), (hub_row, project_ref)):
+        merged = merge_catalog_items(a, b)
+        assert merged.get("publishedToHub") is False, merged
+
+
+def test_merge_still_marks_published_when_hub_row_present():
+    """Without an explicit unpublish, a hub row still marks the row published."""
+    from utk_curio.backend.app.datasets.catalog_dedup import merge_catalog_items
+
+    project_ref = {"id": "data.x.thing", "origin": "computed", "installed": True,
+                   "producerNodeId": "n1", "dirName": "data.x.thing@1"}
+    hub_row = {"id": "data.x.thing", "origin": "hub"}
+    assert merge_catalog_items(project_ref, hub_row).get("publishedToHub") is True

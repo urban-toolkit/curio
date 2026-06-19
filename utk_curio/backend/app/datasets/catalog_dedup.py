@@ -41,7 +41,15 @@ def merge_catalog_items(existing: dict[str, Any], incoming: dict[str, Any]) -> d
     # Hub registry rows do not carry ``publishedToHub``; merge must still reflect
     # that the dataset is listed in the committed Data Catalog when the same id
     # appears as a project ``computed`` / live row (or publish ran without ref sync).
-    if winner.get("origin") == "hub" or loser.get("origin") == "hub":
+    # But never resurrect it over an explicit ``publishedToHub == False`` (a
+    # just-unpublished ref): a lingering hub row would otherwise keep a stale
+    # "Published" badge until the next full refresh.
+    explicitly_unpublished = (
+        winner.get("publishedToHub") is False or loser.get("publishedToHub") is False
+    )
+    if not explicitly_unpublished and (
+        winner.get("origin") == "hub" or loser.get("origin") == "hub"
+    ):
         merged["publishedToHub"] = True
     # Prefer project provenance when the same id appears as hub (registry) + installed copy.
     win_o, los_o = winner.get("origin"), loser.get("origin")
