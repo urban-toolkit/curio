@@ -1,6 +1,41 @@
 import duckdb
 import os
+import time
 from pathlib import Path
+
+
+# DuckDB allows a single read-write connection across processes. The sandbox
+# holds a read-write connection during node execution while the backend opens
+# short-lived read-only connections (catalog, auto-install, output resolution).
+# Those opens can briefly collide and raise a "Conflicting lock"/"Could not set
+# lock" error. Rather than surface that as a flaky node failure, retry the open
+# with a short backoff — the conflicting connection is always released quickly.
+_LOCK_RETRY_ATTEMPTS = 12
+_LOCK_RETRY_BASE_DELAY = 0.05  # seconds; total worst-case wait ~3.9s
+
+
+def _is_lock_conflict(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return (
+        "lock" in msg
+        or "conflicting" in msg
+        or "resource temporarily unavailable" in msg
+    )
+
+
+def _connect_with_retry(path: str, *, read_only: bool = False):
+    """Open a DuckDB connection, retrying transient cross-process lock conflicts."""
+    last_exc: Exception | None = None
+    for attempt in range(_LOCK_RETRY_ATTEMPTS):
+        try:
+            return duckdb.connect(path, read_only=read_only)
+        except Exception as exc:  # noqa: BLE001 - re-raised below if not a lock conflict
+            if not _is_lock_conflict(exc):
+                raise
+            last_exc = exc
+            time.sleep(_LOCK_RETRY_BASE_DELAY * (attempt + 1))
+    assert last_exc is not None
+    raise last_exc
 
 
 class _NonClosingConn:
@@ -67,7 +102,7 @@ def get_connection() -> '_NonClosingConn':
     if _connection is not None and _connection_path != path:
         release_connection()
     if _connection is None:
-        _connection = _NonClosingConn(duckdb.connect(path))
+        _connection = _NonClosingConn(_connect_with_retry(path))
         _connection_path = path
     return _connection
 
@@ -83,7 +118,7 @@ def get_read_connection():
     """
     if _connection is not None:
         return _connection
-    return duckdb.connect(get_db_path(), read_only=True)
+    return _connect_with_retry(get_db_path(), read_only=True)
 
 
 def release_connection() -> None:
