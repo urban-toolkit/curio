@@ -362,29 +362,35 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
         project_id=project_id,
     )
 
-    effective_spec = data.spec if data.spec is not None else existing_spec
-    spec_dirty = False
-    if data.outputs is not None:
-        output_refs = list(data.outputs)
-        # Install into users/<user>/datasets/ and register lean refs in the spec.
-        # Do not copy artifacts into project/data/ — that folder is legacy-only.
-        updated_spec = _auto_install_computed_outputs(ukey, output_refs, effective_spec)
-        if updated_spec is not None and updated_spec is not effective_spec:
-            effective_spec = updated_spec
-            spec_dirty = True
-    else:
-        output_refs = _output_refs_from_manifest(existing_manifest)
+    # Serialize the spec read-modify-write so a concurrent dataset auto-install
+    # (merge_dataflow_dataset_ref) or Play-All can't clobber freshly-installed
+    # refs. Re-read existing_spec INSIDE the lock so we merge/preserve against
+    # the latest on-disk spec, not the snapshot read before the lock.
+    with storage.spec_write_lock(ukey, project_id):
+        existing_spec = storage.read_spec(ukey, project_id)
+        effective_spec = data.spec if data.spec is not None else existing_spec
+        spec_dirty = False
+        if data.outputs is not None:
+            output_refs = list(data.outputs)
+            # Install into users/<user>/datasets/ and register lean refs in the spec.
+            # Do not copy artifacts into project/data/ — that folder is legacy-only.
+            updated_spec = _auto_install_computed_outputs(ukey, output_refs, effective_spec)
+            if updated_spec is not None and updated_spec is not effective_spec:
+                effective_spec = updated_spec
+                spec_dirty = True
+        else:
+            output_refs = _output_refs_from_manifest(existing_manifest)
 
-    if data.spec is not None:
-        # A normal save rewrites the whole spec from the client, which may omit
-        # computed dataset refs the client never learned about. Carry forward
-        # any still-installed computed datasets so disabling "Save output
-        # dataset" (or a Play-All install) never silently removes one.
-        effective_spec = _preserve_persisted_computed_refs(ukey, effective_spec, existing_spec)
-        storage.write_spec(ukey, project_id, effective_spec)
-    elif spec_dirty:
-        # outputs-only update whose auto-install changed the spec.
-        storage.write_spec(ukey, project_id, effective_spec)
+        if data.spec is not None:
+            # A normal save rewrites the whole spec from the client, which may omit
+            # computed dataset refs the client never learned about. Carry forward
+            # any still-installed computed datasets so disabling "Save output
+            # dataset" (or a Play-All install) never silently removes one.
+            effective_spec = _preserve_persisted_computed_refs(ukey, effective_spec, existing_spec)
+            storage.write_spec(ukey, project_id, effective_spec)
+        elif spec_dirty:
+            # outputs-only update whose auto-install changed the spec.
+            storage.write_spec(ukey, project_id, effective_spec)
 
     storage.write_manifest(ukey, project_id, project.spec_revision, output_refs,
         name=project.name,

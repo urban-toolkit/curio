@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,6 +23,24 @@ try:  # POSIX advisory file locking; unavailable on Windows.
     import fcntl
 except ImportError:  # pragma: no cover - non-POSIX fallback
     fcntl = None
+
+
+# Per-(user, project) in-process locks. flock guards cross-PROCESS contention but
+# is a no-op on Windows; this threading lock serializes same-process threads
+# (the common Flask-threaded case) on every platform, so a concurrent spec
+# read-modify-write doesn't lost-update even where fcntl is absent.
+_spec_locks: "Dict[str, threading.Lock]" = {}
+_spec_locks_guard = threading.Lock()
+
+
+def _spec_thread_lock(user_key: str, project_id: str) -> "threading.Lock":
+    key = f"{user_key}/{project_id}"
+    with _spec_locks_guard:
+        lock = _spec_locks.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _spec_locks[key] = lock
+        return lock
 
 from utk_curio.backend.app.common.safe_paths import safe_join, validate_component
 from utk_curio.backend.app.projects.schemas import OutputRef
@@ -103,19 +122,26 @@ def spec_write_lock(user_key: str, project_id: str):
     writer clobbers the other's ref (lost update). An exclusive ``flock`` on a
     per-project lock file makes the read+merge+write critical section atomic.
 
-    On platforms without ``fcntl`` (Windows) this degrades to a no-op.
+    Serialization has two layers: an in-process threading lock (all platforms,
+    same-process threads) and a POSIX ``flock`` (cross-process). On Windows
+    ``flock`` is unavailable, so only the in-process layer applies there.
     """
     d = ensure_project_dir(user_key, project_id)
     lock_path = d / ".spec.lock"
-    if fcntl is None:
-        yield
-        return
-    with open(lock_path, "w") as handle:
-        fcntl.flock(handle, fcntl.LOCK_EX)
-        try:
+    thread_lock = _spec_thread_lock(user_key, project_id)
+    thread_lock.acquire()
+    try:
+        if fcntl is None:
             yield
-        finally:
-            fcntl.flock(handle, fcntl.LOCK_UN)
+            return
+        with open(lock_path, "w") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+    finally:
+        thread_lock.release()
 
 
 # ---------------------------------------------------------------------------
