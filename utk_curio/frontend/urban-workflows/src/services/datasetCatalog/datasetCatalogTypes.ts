@@ -145,11 +145,12 @@ export type DatasetProvenanceKind = "computed" | "imported";
 
 export function datasetProvenanceKind(
   origin: DatasetOrigin,
-  format?: DatasetFormat,
+  _format?: DatasetFormat,
 ): DatasetProvenanceKind {
-  // Parquet files only ever exist as node outputs, so they are always
-  // computed even when the catalog entry was installed (imported/hub origin).
-  if (format === "parquet") return "computed";
+  // Provenance is authoritative from ``origin`` (mirrors the backend facet and
+  // DATASET_ORIGIN_LABEL). Don't infer from format: ``.parquet`` is also an
+  // accepted *import* format, so a user-imported parquet (origin "imported")
+  // must read "Imported", not "Computed".
   return origin === "computed" ? "computed" : "imported";
 }
 

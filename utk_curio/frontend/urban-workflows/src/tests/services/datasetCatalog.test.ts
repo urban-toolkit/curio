@@ -197,3 +197,13 @@ test("mergeDatasetLoaderCode/buildDatasetLoaderCode escape backslashes and quote
   // raw `\U`/`\b` escape and the literal isn't terminated early.
   expect(code).toContain('dataset_path = "C:\\\\Users\\\\me\\\\data\\\\blocks.csv"');
 });
+
+test("datasetProvenanceLabel is origin-based, not format-based (B14)", () => {
+  const { datasetProvenanceLabel } = require("../../services/datasetCatalog/datasetCatalogTypes");
+  // An imported parquet must read "Imported", not "Computed".
+  expect(datasetProvenanceLabel("imported", "parquet")).toBe("Imported");
+  expect(datasetProvenanceLabel("hub", "parquet")).toBe("Imported");
+  // A computed dataset stays "Computed".
+  expect(datasetProvenanceLabel("computed", "parquet")).toBe("Computed");
+  expect(datasetProvenanceLabel("computed", "csv")).toBe("Computed");
+});
