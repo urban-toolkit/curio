@@ -117,7 +117,11 @@ class DatasetPreviewService:
                 "message": f"Could not read bundle manifest: {exc}",
             }
 
-        root = bundle_path.parent
+        # ``part['file']`` is stored relative to the dataset dir (e.g.
+        # ``data/parts/00_x.parquet``), and ``bundle_path`` is
+        # ``<id>@1/data/bundle.json`` — so resolve against the dataset dir
+        # (two levels up), matching the loader snippet's dirname(dirname(path)).
+        root = bundle_path.parent.parent
         parts_payload: list[dict[str, Any]] = []
         for part in spec.get("parts") or []:
             if not isinstance(part, dict):
