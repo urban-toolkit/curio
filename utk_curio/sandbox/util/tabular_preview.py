@@ -56,12 +56,16 @@ def load_parquet_frame(path: Path) -> tuple[Any, int]:
     shapely geometries) and convert geometry columns to human-readable WKT
     (e.g. ``POLYGON ((...))``) before serialization.
     """
-    import geopandas as gpd
-
     try:
+        # Import inside the try so a deployment without geopandas still previews
+        # plain parquet via the pandas fallback below (an unguarded import would
+        # break previews of EVERY parquet, even non-geo ones).
+        import geopandas as gpd
+
         frame = gpd.read_parquet(path)
     except Exception:
-        # Not a GeoParquet file (no geo metadata); read as a plain DataFrame.
+        # Not a GeoParquet file (no geo metadata), or geopandas is unavailable;
+        # read as a plain DataFrame.
         logger.debug(
             "gpd.read_parquet failed for %s; reading as plain parquet",
             path,
