@@ -175,3 +175,25 @@ test("mergeDatasetLoaderCode on empty code includes return", () => {
   expect(merged).toContain("return df");
 });
 
+
+test("mergeDatasetLoaderCode indents the loader block to match an indented return (B4)", () => {
+  const existing = ["if cond:", "    x = compute()", "    return x"].join("\n");
+  const merged = mergeDatasetLoaderCode(existing, dataset);
+  // No line of the inserted loader may sit at column 0 between the indented
+  // code and the indented return — that would be a Python IndentationError.
+  expect(merged).toContain("    df = pd.read_csv(dataset_path)");
+  expect(merged).toContain("    return df");
+  expect(merged).not.toMatch(/\ndf = pd\.read_csv/);
+});
+
+test("mergeDatasetLoaderCode/buildDatasetLoaderCode escape backslashes and quotes in the path (B11)", () => {
+  const winDataset = makeDataset({
+    format: "csv",
+    path: "C:\\Users\\me\\data\\blocks.csv",
+    uri: "file:///c/blocks.csv",
+  });
+  const code = buildDatasetLoaderCode(winDataset);
+  // The path must be a valid Python string literal: backslashes escaped, so no
+  // raw `\U`/`\b` escape and the literal isn't terminated early.
+  expect(code).toContain('dataset_path = "C:\\\\Users\\\\me\\\\data\\\\blocks.csv"');
+});

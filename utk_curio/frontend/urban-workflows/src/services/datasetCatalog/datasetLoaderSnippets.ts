@@ -19,7 +19,7 @@ function datasetPath(dataset: DatasetLike): string {
  */
 function bundleLoaderCode(path: string): string {
   return [
-    `bundle_path = "${path}"`,
+    `bundle_path = ${JSON.stringify(path)}`,
     "def _curio_load_bundle(path):",
     "    base = os.path.dirname(os.path.dirname(path))",
     "    with open(path) as f:",
@@ -59,7 +59,7 @@ function snippetForFormat(format: DatasetFormat, path: string): DatasetLoaderSni
       language: "python",
       imports: ["import pandas as pd"],
       pathVariable: "dataset_path",
-      code: `dataset_path = "${path}"\ndf = pd.read_csv(dataset_path)`,
+      code: `dataset_path = ${JSON.stringify(path)}\ndf = pd.read_csv(dataset_path)`,
       returnVariable: "df",
     };
   }
@@ -68,7 +68,7 @@ function snippetForFormat(format: DatasetFormat, path: string): DatasetLoaderSni
       language: "python",
       imports: ["import geopandas as gpd"],
       pathVariable: "dataset_path",
-      code: `dataset_path = "${path}"\ngdf = gpd.read_file(dataset_path)`,
+      code: `dataset_path = ${JSON.stringify(path)}\ngdf = gpd.read_file(dataset_path)`,
       returnVariable: "gdf",
     };
   }
@@ -77,7 +77,7 @@ function snippetForFormat(format: DatasetFormat, path: string): DatasetLoaderSni
       language: "python",
       imports: ["import json"],
       pathVariable: "dataset_path",
-      code: `dataset_path = "${path}"\nwith open(dataset_path) as f:\n    data = json.load(f)`,
+      code: `dataset_path = ${JSON.stringify(path)}\nwith open(dataset_path) as f:\n    data = json.load(f)`,
       returnVariable: "data",
     };
   }
@@ -86,7 +86,7 @@ function snippetForFormat(format: DatasetFormat, path: string): DatasetLoaderSni
       language: "python",
       imports: ["import rasterio"],
       pathVariable: "dataset_path",
-      code: `dataset_path = "${path}"\nsrc = rasterio.open(dataset_path)`,
+      code: `dataset_path = ${JSON.stringify(path)}\nsrc = rasterio.open(dataset_path)`,
       returnVariable: "src",
     };
   }
@@ -119,7 +119,7 @@ function snippetForFormat(format: DatasetFormat, path: string): DatasetLoaderSni
       language: "python",
       imports: ["import pandas as pd", "import geopandas as gpd"],
       pathVariable: "dataset_path",
-      code: `dataset_path = "${path}"\ntry:\n    df = gpd.read_parquet(dataset_path)\nexcept Exception:\n    df = pd.read_parquet(dataset_path)`,
+      code: `dataset_path = ${JSON.stringify(path)}\ntry:\n    df = gpd.read_parquet(dataset_path)\nexcept Exception:\n    df = pd.read_parquet(dataset_path)`,
       returnVariable: "df",
     };
   }
@@ -127,7 +127,7 @@ function snippetForFormat(format: DatasetFormat, path: string): DatasetLoaderSni
     language: "python",
     imports: [],
     pathVariable: "dataset_path",
-    code: `dataset_path = "${path}"`,
+    code: `dataset_path = ${JSON.stringify(path)}`,
     returnVariable: null,
   };
 }
@@ -170,13 +170,19 @@ export function mergeDatasetLoaderCode(currentCode: string | undefined, dataset:
   if (returnLineMatch && snippet.returnVariable) {
     const beforeReturn = returnLineMatch[1].trimEnd();
     const returnIndent = returnLineMatch[3];
+    // The existing return may sit inside an if/for/with (non-empty indent). Emit
+    // the loader block at the SAME indent as the return, or column-0 lines would
+    // land between indented code and an indented return → IndentationError.
+    const indentedBlock = returnIndent
+      ? block.split("\n").map((line) => (line ? returnIndent + line : line)).join("\n")
+      : block;
     const newReturn = `${returnIndent}return ${snippet.returnVariable}`;
     return [
       ...missingImports,
       missingImports.length > 0 ? "" : null,
       beforeReturn,
       "",
-      block,
+      indentedBlock,
       newReturn,
     ].filter((part): part is string => part !== null).join("\n");
   }
