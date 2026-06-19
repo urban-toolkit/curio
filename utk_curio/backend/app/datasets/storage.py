@@ -85,7 +85,18 @@ def _user_key_segment(user_key: str) -> str:
 
 
 def catalog_root() -> Path:
-    """Return ``<repo_root>/datasets/`` — committed Data Catalog root."""
+    """Return the committed Data Catalog root (hub read + publish target).
+
+    Defaults to ``<repo_root>/datasets/`` (the install source, like
+    ``packages/``). Anchoring on the package dir is fine when the launch CWD is
+    the repo root, but on a pip install it resolves under ``site-packages``
+    (read-only; publish fails) and in Docker it isn't persisted across restarts.
+    Set ``CURIO_CATALOG_ROOT`` to relocate the hub/publish target to a writable,
+    persistent path in those deployments.
+    """
+    override = os.environ.get("CURIO_CATALOG_ROOT")
+    if override and override.strip():
+        return Path(override).expanduser().resolve()
     # storage.py -> datasets/ -> app/ -> backend/ -> utk_curio/ -> repo_root/datasets/
     return Path(__file__).resolve().parents[4] / "datasets"
 
