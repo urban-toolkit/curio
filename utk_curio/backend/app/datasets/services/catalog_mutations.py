@@ -118,12 +118,17 @@ class CatalogMutationsMixin(CatalogPathMixin):
         dest = catalog_root() / dir_name
         (dest / "data").mkdir(parents=True, exist_ok=True)
 
-        # Copy data file into the catalog data/ subdirectory
-        data_file = "data/data." + str(item.get("format", "csv"))
-        if local_path is not None:
-            dest_data = dest / "data" / local_path.name
-            shutil.copy2(local_path, dest_data)
-            data_file = f"data/{local_path.name}"
+        # Copy data file into the catalog data/ subdirectory. A publishable
+        # dataset must have a resolvable on-disk file — otherwise we'd write a
+        # manifest pointing at a nonexistent path that lists fine but fails on
+        # any later install/preview.
+        if local_path is None:
+            raise DatasetCatalogError(
+                "Cannot publish a dataset whose data file is not available on disk"
+            )
+        dest_data = dest / "data" / local_path.name
+        shutil.copy2(local_path, dest_data)
+        data_file = f"data/{local_path.name}"
 
         # ── Write manifest.json with all fields ───────────────────────────────
         from utk_curio.backend.app.datasets.manifest import DatasetManifest, write_manifest
