@@ -240,3 +240,18 @@ def test_hub_dataset_preview_reads_catalog_payload(client, user_and_token, tmp_p
     body = resp.get_json()
     assert body["rows"][0]["tract_id"] == "17031010100"
     assert body.get("unsupported") is not True
+
+
+def test_catalog_surfaces_workspace_data_without_dataflow(client, user_and_token, tmp_path, monkeypatch):
+    """Workspace data (<launch>/data) must appear in the browse catalog even with
+    no open dataflow (review #145a / dead LocalDatasetRepository)."""
+    _, token = user_and_token
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+    (tmp_path / "data").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "data" / "workspace_blocks.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+
+    resp = client.get("/api/datasets/catalog", headers=_auth(token))
+    assert resp.status_code == 200
+    body = resp.get_json()
+    workspace = [i for i in body["items"] if i.get("sourceLabel") == "Workspace data"]
+    assert any("blocks" in (i.get("title") or "").lower() for i in workspace), body["items"]

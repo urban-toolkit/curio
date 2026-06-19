@@ -14,6 +14,7 @@ from utk_curio.backend.app.datasets.computed_indexer import ComputedDatasetIndex
 from utk_curio.backend.app.datasets.constants import FORMAT_TO_EXTENSION, SUPPORTED_SUFFIXES
 from utk_curio.backend.app.datasets.errors import DatasetCatalogError
 from utk_curio.backend.app.datasets.installed_repository import InstalledDatasetRepository
+from utk_curio.backend.app.datasets.local_repository import LocalDatasetRepository
 from utk_curio.backend.app.datasets.services.preview_service import DatasetPreviewService
 from utk_curio.backend.app.datasets.provenance import catalog_item_is_computed_provenance
 from utk_curio.backend.app.datasets.registry_repository import DatasetRegistryRepository
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 class CatalogListingMixin(CatalogPathMixin):
     registry: DatasetRegistryRepository
     installed: InstalledDatasetRepository
+    local: LocalDatasetRepository
     computed: ComputedDatasetIndexer
     preview_service: DatasetPreviewService
 
@@ -41,6 +43,11 @@ class CatalogListingMixin(CatalogPathMixin):
         items: list[dict[str, Any]] = []
         if include_hub:
             items.extend(self.registry.list_items())
+            # Workspace data (``<launch>/data``) and bundled sample data are
+            # global, browsable sources like the hub — surface them in the
+            # browse view so a dataset imported without an open dataflow (and
+            # the shipped samples) are visible, not silently dropped.
+            items.extend(self.local.list_items())
         if dataflow_id:
             items.extend(self.installed.list_items(dataflow_id))
             items.extend(self.computed.list_items(
