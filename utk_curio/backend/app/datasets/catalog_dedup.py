@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from utk_curio.backend.app.datasets.constants import SUPPORTED_SUFFIXES
+from utk_curio.backend.app.datasets.constants import JUNK_SOURCE_LABELS, SUPPORTED_SUFFIXES
 from utk_curio.backend.app.datasets.provenance import catalog_item_is_computed_provenance
 
 def catalog_item_rank(item: dict[str, Any]) -> int:
@@ -69,13 +69,10 @@ def merge_catalog_items(existing: dict[str, Any], incoming: dict[str, Any]) -> d
         if pid:
             merged["producerNodeId"] = pid
         chosen_sl = None
-        bad_sl = frozenset(
-            {"data catalog", "data hub", "current dataflow", "current workflow"},
-        )
         for cand in (winner, loser):
             if cand.get("origin") == "computed" or cand.get("producerNodeId"):
                 lab = (cand.get("sourceLabel") or "").strip()
-                if lab and lab.lower() not in bad_sl:
+                if lab and lab.lower() not in JUNK_SOURCE_LABELS:
                     chosen_sl = cand.get("sourceLabel")
                     break
         merged["sourceLabel"] = chosen_sl or "Computed"

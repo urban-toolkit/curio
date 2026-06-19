@@ -43,3 +43,14 @@ FORMAT_TO_EXTENSION: dict[str, str] = {
     "geotiff": ".tif",
     "shp": ".shp",
 }
+
+# Generic/auto-generated source labels that must never be persisted as a
+# computed dataset's ``sourceLabel`` (they'd read as the global catalog subtitle
+# instead of the producing context). Compared case-insensitively. Shared by the
+# publish path and catalog dedup so the denylist lives in one place.
+JUNK_SOURCE_LABELS: frozenset[str] = frozenset({
+    "data catalog",
+    "data hub",
+    "current dataflow",
+    "current workflow",
+})

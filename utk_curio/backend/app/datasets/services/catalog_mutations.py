@@ -13,7 +13,7 @@ from werkzeug.utils import secure_filename
 from utk_curio.backend.app.datasets.catalog_items import item_from_manifest, loader_snippet
 from utk_curio.backend.app.datasets.services.catalog_paths import CatalogPathMixin
 from utk_curio.backend.app.datasets.catalog_utils import catalog_id_from_title, iso_from_timestamp
-from utk_curio.backend.app.datasets.constants import SUPPORTED_SUFFIXES
+from utk_curio.backend.app.datasets.constants import JUNK_SOURCE_LABELS, SUPPORTED_SUFFIXES
 from utk_curio.backend.app.datasets.errors import DatasetCatalogError
 from utk_curio.backend.app.datasets.file_meta import count_file, patch_manifest_file, write_file_meta
 from utk_curio.backend.app.datasets.installed_repository import InstalledDatasetRepository
@@ -171,8 +171,7 @@ class CatalogMutationsMixin(CatalogPathMixin):
             item["producerNodeId"] = prior_producer_node_id
             item["publishedToHub"] = True
             sl = (prior_source_label or "").strip()
-            bad = ("data catalog", "data hub", "current dataflow", "current workflow")
-            if sl and sl.lower() not in bad:
+            if sl and sl.lower() not in JUNK_SOURCE_LABELS:
                 item["sourceLabel"] = prior_source_label
             else:
                 item["sourceLabel"] = "Computed"
