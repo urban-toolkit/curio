@@ -171,6 +171,7 @@ def _installed_file_for_node(
         InstallerError,
         resolve_installed_data_path,
     )
+    from utk_curio.backend.app.common.safe_paths import PathTraversalError
     from utk_curio.backend.app.datasets.manifest import ManifestError, load_dataset_manifest
     from utk_curio.backend.app.datasets.storage import dataset_dir
 
@@ -186,9 +187,11 @@ def _installed_file_for_node(
             installed_dir = dataset_dir(user_key, dir_name)
             manifest = load_dataset_manifest(installed_dir)
             return resolve_installed_data_path(user_key, manifest)
-        except (ManifestError, InstallerError, ValueError):
-            # A stale/broken ref for this producer shouldn't abort the search —
-            # a later ref (e.g. a freshly re-installed output) may still resolve.
+        except (ManifestError, InstallerError, ValueError, PathTraversalError):
+            # A stale/broken/crafted ref for this producer shouldn't abort the
+            # search (or 500 the whole project load) — a later ref (e.g. a
+            # freshly re-installed output) may still resolve. PathTraversalError
+            # is a PermissionError, so it must be named explicitly here.
             continue
     return None
 

@@ -159,3 +159,13 @@ def test_merge_dataflow_dataset_ref_concurrent_no_lost_update(tmp_curio):
     refs = storage.read_spec("1", "proj-conc")["dataflow"]["datasets"]
     ids = {r["datasetId"] for r in refs}
     assert ids == {f"computed.{i}" for i in range(n)}
+
+
+def test_installed_file_for_node_swallows_path_traversal(tmp_curio):
+    """A crafted dirName that resolves outside the base must not 500 the load
+    (review finding B12) — PathTraversalError is a PermissionError, not ValueError."""
+    spec = {"dataflow": {"datasets": [
+        {"producerNodeId": "n", "dirName": "../../../../etc/passwd"},
+    ]}}
+    # Must return None rather than raising PathTraversalError out of load_project.
+    assert storage._installed_file_for_node("1", spec, "n") is None
