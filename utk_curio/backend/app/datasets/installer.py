@@ -342,6 +342,9 @@ def install_imported_file(
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "data").mkdir(exist_ok=True)
 
+    # Validate at the write boundary even though the sole caller pre-sanitizes
+    # (secure_filename) — keep the "validate at every write boundary" invariant.
+    safe_filename = _validate_store_filename(safe_filename)
     # Write the data file.
     data_path = dest / "data" / safe_filename
     data_path.write_bytes(file_bytes)
