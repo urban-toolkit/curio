@@ -91,6 +91,38 @@ def dedupe_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [*by_id.values(), *anonymous]
 
 
+def collapse_computed_by_file(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collapse computed datasets that resolve to the SAME data file.
+
+    Two different producer nodes can end up installing the same underlying
+    output (e.g. both auto-installing one shared artifact, or the same output
+    installed under two node ids). Each is a distinct ``computed.<node>`` id, so
+    ``dedupe_items`` keeps both — and since the title is derived from the file
+    name they render as duplicate, identically-named palette entries. Keep only
+    the richest record per data file (by ``catalog_item_rank``).
+
+    Only ``computed`` rows are collapsed, and only when a concrete file path is
+    known; everything else passes through untouched and order is preserved.
+    """
+    result: list[dict[str, Any]] = []
+    index_by_file: dict[str, int] = {}
+    for item in items:
+        path_val = item.get("path") or ""
+        key = Path(path_val).name if (item.get("origin") == "computed" and path_val) else None
+        if key is None:
+            result.append(item)
+            continue
+        existing_idx = index_by_file.get(key)
+        if existing_idx is None:
+            index_by_file[key] = len(result)
+            result.append(item)
+        elif catalog_item_rank(item) > catalog_item_rank(result[existing_idx]):
+            # Prefer the richer record (installed/published/absolute path) but
+            # keep the original position so ordering stays stable.
+            result[existing_idx] = item
+    return result
+
+
 def catalog_facets(items: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
     facets = {
         "origin": {"source_node": 0, "computed": 0, "imported": 0, "hub": 0},

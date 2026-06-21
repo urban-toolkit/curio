@@ -674,3 +674,37 @@ def test_install_computed_dataset_carries_decode_sidecar(client, user_and_token)
     user_store = launch_cwd / ".curio" / "users"
     sidecars = list(user_store.rglob("withobj.parquet.decode.json"))
     assert sidecars, "manual install should copy the decode sidecar into the user store"
+
+
+def test_two_nodes_sharing_output_file_collapse_in_catalog(client, user_and_token):
+    """Two producer nodes whose outputs resolve to the SAME file must surface as
+    ONE catalog entry, not duplicate identically-named palette rows."""
+    import os
+    from pathlib import Path
+
+    _, token = user_and_token
+    project_id = create_project(client, token, name="Shared output")
+    shared = Path(os.environ["CURIO_SHARED_DATA"])
+    shared.mkdir(parents=True, exist_ok=True)
+    fn = "1781903321396_c8572ee7.parquet"
+    (shared / fn).write_bytes(b"PAR1")
+
+    # Two distinct nodes report the same output file.
+    resp = client.put(
+        f"/api/projects/{project_id}",
+        data=json.dumps({"outputs": [
+            {"node_id": "11111111-aaaa-0001", "filename": fn},
+            {"node_id": "22222222-bbbb-0002", "filename": fn},
+        ]}),
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+
+    catalog = client.get(
+        f"/api/datasets/catalog?includeHub=false&dataflowId={project_id}",
+        headers=auth_headers(token),
+    ).get_json()
+    computed = [i for i in catalog["items"] if i.get("origin") == "computed"]
+    titles = [i.get("title") for i in computed]
+    assert len(titles) == len(set(titles)), f"duplicate computed names: {titles}"
+    assert len(computed) == 1

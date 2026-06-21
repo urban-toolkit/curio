@@ -7,7 +7,11 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from utk_curio.backend.app.datasets.catalog_dedup import catalog_facets, dedupe_items
+from utk_curio.backend.app.datasets.catalog_dedup import (
+    catalog_facets,
+    collapse_computed_by_file,
+    dedupe_items,
+)
 from utk_curio.backend.app.datasets.catalog_items import loader_snippet
 from utk_curio.backend.app.datasets.services.catalog_paths import CatalogPathMixin
 from utk_curio.backend.app.datasets.computed_indexer import ComputedDatasetIndexer
@@ -143,6 +147,11 @@ class CatalogListingMixin(CatalogPathMixin):
                     if not path_val or not Path(path_val).is_absolute():
                         item["path"] = None
                         item["loaderSnippet"] = loader_snippet(item["format"], None)
+
+        # Paths are now resolved, so collapse computed datasets that point at the
+        # same data file (two producer nodes installing one shared output) — they
+        # otherwise render as duplicate, identically-named palette entries.
+        items = collapse_computed_by_file(items)
 
         if q:
             needle = q.casefold()

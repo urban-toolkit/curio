@@ -113,3 +113,35 @@ def test_merge_still_marks_published_when_hub_row_present():
                    "producerNodeId": "n1", "dirName": "data.x.thing@1"}
     hub_row = {"id": "data.x.thing", "origin": "hub"}
     assert merge_catalog_items(project_ref, hub_row).get("publishedToHub") is True
+
+
+def test_collapse_computed_by_file_keeps_richest():
+    """Two computed datasets (different producer nodes) pointing at the SAME
+    data file collapse to one — the richer (installed) record — so the palette
+    doesn't show duplicate, identically-named entries."""
+    from utk_curio.backend.app.datasets.catalog_dedup import collapse_computed_by_file
+
+    a = {"id": "computed.nodeA", "origin": "computed", "producerNodeId": "A",
+         "path": "/store/computed.nodeA@1/data/1781903321396_c8572ee7.parquet",
+         "dirName": "computed.nodeA@1", "installed": True}
+    b = {"id": "computed.nodeB", "origin": "computed", "producerNodeId": "B",
+         "path": "/store/computed.nodeB@1/data/1781903321396_c8572ee7.parquet"}
+    hub = {"id": "data.x.thing", "origin": "hub", "path": "/cat/data.x.thing@1/data/thing.csv"}
+
+    out = collapse_computed_by_file([b, a, hub])
+    # One computed row (the richer 'a'), plus the untouched hub row.
+    computed = [i for i in out if i["origin"] == "computed"]
+    assert len(computed) == 1
+    assert computed[0]["id"] == "computed.nodeA"  # richer record wins
+    assert any(i["id"] == "data.x.thing" for i in out)
+
+
+def test_collapse_computed_by_file_keeps_distinct_files():
+    """Distinct files (the normal case) are never collapsed."""
+    from utk_curio.backend.app.datasets.catalog_dedup import collapse_computed_by_file
+
+    items = [
+        {"id": "computed.a", "origin": "computed", "path": "/s/a@1/data/1_aaaa_output.parquet"},
+        {"id": "computed.b", "origin": "computed", "path": "/s/b@1/data/2_bbbb_output.parquet"},
+    ]
+    assert len(collapse_computed_by_file(items)) == 2
