@@ -145,3 +145,26 @@ def test_collapse_computed_by_file_keeps_distinct_files():
         {"id": "computed.b", "origin": "computed", "path": "/s/b@1/data/2_bbbb_output.parquet"},
     ]
     assert len(collapse_computed_by_file(items)) == 2
+
+
+def test_merge_prefers_live_computed_name_over_stale_published():
+    """When a published hub copy (stale name) and the live/local computed record
+    (current name) share an id, the merged row shows the CURRENT name — so the
+    palette and drawer agree instead of showing the stale published name."""
+    from utk_curio.backend.app.datasets.catalog_dedup import merge_catalog_items
+
+    # Hub-registry copy captured at publish time (richer rank: dirName + path).
+    hub = {"id": "computed.nodeX", "origin": "hub", "title": "OLD published name",
+           "dirName": "computed.nodeX@1", "path": "/cat/computed.nodeX@1/data/old.parquet",
+           "publishedToHub": True, "updatedAt": "2026-06-01T00:00:00Z"}
+    # Live re-execution of the same node (current output name).
+    live = {"id": "computed.nodeX", "origin": "computed", "title": "NEW current name",
+            "producerNodeId": "nodeX", "path": "1782_new.parquet",
+            "updatedAt": "2026-06-21T00:00:00Z"}
+
+    for a, b in ((hub, live), (live, hub)):
+        merged = merge_catalog_items(a, b)
+        assert merged["title"] == "NEW current name", merged
+        assert merged["updatedAt"] == "2026-06-21T00:00:00Z"
+        assert merged["origin"] == "computed"
+        assert merged.get("publishedToHub") is True

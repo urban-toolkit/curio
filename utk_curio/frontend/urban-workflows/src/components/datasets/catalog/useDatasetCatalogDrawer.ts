@@ -91,7 +91,12 @@ export function useDatasetCatalogDrawer(presented: boolean) {
     if (tab === "featured") {
       list = list.filter((item) => item.origin === "hub" || item.installed).slice(0, 6);
     } else if (tab === "installed") {
-      list = list.filter((item) => item.origin !== "hub" || item.installed);
+      // Only genuinely-installed datasets — matches the palette's
+      // isUserInstalledDataset (installed === true). The old `origin !== "hub"`
+      // proxy also showed never-installed and just-uninstalled computed/imported
+      // rows, so an uninstalled dataset lingered here until a page refresh
+      // flipped its origin back to "hub".
+      list = list.filter((item) => item.installed === true);
     } else if (tab === "computed") {
       list = list.filter((item) => item.origin === "computed" || Boolean(item.producerNodeId));
     }
@@ -99,7 +104,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
   }, [catalogItems, tab, debouncedSearch]);
 
   const installedCount = useMemo(
-    () => catalogItems.filter((item) => item.origin !== "hub" || item.installed).length,
+    () => catalogItems.filter((item) => item.installed === true).length,
     [catalogItems],
   );
 
@@ -177,7 +182,9 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         setDataflowDatasets((prev) =>
           prev.filter((row) => (row?.datasetId || row?.id) !== dataset.id),
         );
-        await catalog.reload();
+        // Bust the cache so the drawer's own list refetches the post-uninstall
+        // state immediately rather than re-reading the stale cached response.
+        await catalog.reload({ bustCache: true });
         notifyDatasetCatalogRefresh();
         showToast(`Removed ${dataset.title} from this dataflow.`, "success");
       } catch (err) {

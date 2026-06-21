@@ -76,6 +76,20 @@ def merge_catalog_items(existing: dict[str, Any], incoming: dict[str, Any]) -> d
                     chosen_sl = cand.get("sourceLabel")
                     break
         merged["sourceLabel"] = chosen_sl or "Computed"
+        # When a computed dataset was published, its hub-registry copy keeps the
+        # node id and a stale name captured at publish time. On re-execution the
+        # live/local record (origin "computed") carries the CURRENT output name —
+        # prefer it so the palette and drawer show the same, current name instead
+        # of the stale published one merely because the hub copy outranked it.
+        live_cand = next(
+            (c for c in (winner, loser) if c.get("origin") == "computed"),
+            None,
+        )
+        if live_cand is not None:
+            if live_cand.get("title"):
+                merged["title"] = live_cand["title"]
+            if live_cand.get("updatedAt"):
+                merged["updatedAt"] = live_cand["updatedAt"]
     return merged
 
 def dedupe_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
