@@ -1,0 +1,12 @@
+.formatBadge {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  padding: 1px 3px;
+  border-radius: 3px;
+  line-height: 1;
+  pointer-events: none;
+}

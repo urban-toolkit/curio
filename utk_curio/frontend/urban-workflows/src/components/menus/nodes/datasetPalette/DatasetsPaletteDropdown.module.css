@@ -258,13 +258,11 @@
 }
 
 .rowMeta {
-  display: grid;
-  grid-template-columns: 1fr 2fr 1fr;
+  display: flex;
   align-items: center;
-  justify-items: baseline;
-  gap: 2px;
-  min-height: 16px;
-  padding-left: 66px;
+  width: 100%;
+  justify-content: space-between;
+  gap: 5px;
 }
 
 .rowMetaText {

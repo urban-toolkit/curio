@@ -168,3 +168,32 @@ def test_merge_prefers_live_computed_name_over_stale_published():
         assert merged["updatedAt"] == "2026-06-21T00:00:00Z"
         assert merged["origin"] == "computed"
         assert merged.get("publishedToHub") is True
+        # The merged row must point at the CURRENT (live) file, not the stale
+        # hub file — otherwise the file-based collapse keys on the wrong basename.
+        assert merged["path"] == "1782_new.parquet"
+
+
+def test_published_node_collapses_with_same_file_twin_in_drawer():
+    """A published node (hub copy holds a STALE file) and its same-file twin must
+    still collapse to ONE row. Regression for the drawer showing 2 extra rows
+    because the published node's merged path pointed at the stale hub file."""
+    from utk_curio.backend.app.datasets.catalog_dedup import (
+        collapse_computed_by_file,
+        dedupe_items,
+    )
+
+    # Drawer (includeHub=true) item set for ONE current output file shared by two
+    # nodes, where node A was published (hub copy has an OLD file).
+    hub_a = {"id": "computed.a", "origin": "hub", "title": "A", "installed": True,
+             "dirName": "computed.a@1", "path": "/cat/computed.a@1/data/STALE.parquet",
+             "publishedToHub": True}
+    inst_a = {"id": "computed.a", "origin": "computed", "title": "A", "installed": True,
+              "producerNodeId": "a", "dirName": "computed.a@1",
+              "path": "/user/computed.a@1/data/CURRENT.parquet"}
+    inst_b = {"id": "computed.b", "origin": "computed", "title": "A", "installed": True,
+              "producerNodeId": "b", "dirName": "computed.b@1",
+              "path": "/user/computed.b@1/data/CURRENT.parquet"}
+
+    deduped = dedupe_items([hub_a, inst_a, inst_b])
+    collapsed = collapse_computed_by_file(deduped)
+    assert len(collapsed) == 1, [i["id"] for i in collapsed]

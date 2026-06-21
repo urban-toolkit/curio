@@ -69,6 +69,18 @@ export function useDatasetCatalogDrawer(presented: boolean) {
     window.addEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
     return () => window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
   }, [catalog.reload, presented]);
+  // Ephemeral "live outputs" — a node's freshly-computed output that hasn't been
+  // installed/saved — surface as computed items with `installed` falsy because
+  // the drawer query folds in session liveOutputs. They're transient and clutter
+  // every list, so drop them from the drawer entirely; installed computed
+  // datasets (installed === true) and hub/imported datasets are kept.
+  const visibleItems = useMemo(
+    () =>
+      catalogItems.filter(
+        (item) => !(item.origin === "computed" && item.installed !== true),
+      ),
+    [catalogItems],
+  );
 
   const items = useMemo(() => {
     const needle = debouncedSearch.trim().toLowerCase();
@@ -87,7 +99,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
       return haystack.includes(needle);
     };
 
-    let list = catalogItems;
+    let list = visibleItems;
     if (tab === "featured") {
       list = list.filter((item) => item.origin === "hub" || item.installed).slice(0, 6);
     } else if (tab === "installed") {

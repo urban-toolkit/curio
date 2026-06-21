@@ -48,3 +48,26 @@ describe('buildSaveableLiveOutputs', () => {
     expect(buildSaveableLiveOutputs([], [], true)).toBeUndefined();
   });
 });
+
+describe('buildSaveableLiveOutputs sink-node exclusion', () => {
+  test('vis nodes (which pass input through) never produce a saveable dataset', () => {
+    const outputs = [
+      { nodeId: 'transform', output: '1782_3d8f71d7_output.parquet' },
+      { nodeId: 'visnode', output: '1782_3d8f71d7_output.parquet' }, // passthrough of input
+    ];
+    const nodes = [
+      { id: 'transform', type: 'curio.builtin/data-transformation', data: { nodeId: 'transform' } },
+      { id: 'visnode', type: 'curio.builtin/vis-vega', data: { nodeId: 'visnode' } },
+    ];
+    const refs = buildSaveableLiveOutputs(outputs, nodes, true) ?? [];
+    const ids = refs.map((r) => r.node_id);
+    expect(ids).toContain('transform');
+    expect(ids).not.toContain('visnode'); // the vis node's passthrough is not saved
+  });
+
+  test('vis-simple is also excluded', () => {
+    const outputs = [{ nodeId: 'v', output: 'x.parquet' }];
+    const nodes = [{ id: 'v', type: 'curio.builtin/vis-simple', data: { nodeId: 'v' } }];
+    expect(buildSaveableLiveOutputs(outputs, nodes, true)).toBeUndefined();
+  });
+});

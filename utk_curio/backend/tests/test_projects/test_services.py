@@ -185,3 +185,49 @@ def test_auto_install_skips_non_dict_dataset_refs(app, tmp_curio):
 
     ds = result["dataflow"]["datasets"]
     assert any(isinstance(r, dict) and r.get("producerNodeId") == "b3node" for r in ds)
+
+
+def test_prune_sink_node_dataset_refs(app, tmp_curio):
+    """Dataset refs keyed on a visualization/sink node are pruned on save and
+    their orphaned user-store dir is removed; the real producer's ref stays."""
+    from utk_curio.backend.app.datasets.installer import install_computed_file_for_node
+    from utk_curio.backend.app.datasets.storage import dataset_dir
+
+    # Install two computed datasets: a transform (producer) and a vis node
+    # (passthrough duplicate, same data).
+    install_computed_file_for_node("1", b"a,b\n1,2\n", "out.csv", "csv", node_id="transform-x")
+    install_computed_file_for_node("1", b"a,b\n1,2\n", "out.csv", "csv", node_id="visnode-y")
+    vis_dir = dataset_dir("1", "computed.visnode-y@1")
+    assert vis_dir.exists()
+
+    spec = {
+        "dataflow": {
+            "nodes": [
+                {"id": "transform-x", "type": "curio.builtin/data-transformation"},
+                {"id": "visnode-y", "type": "curio.builtin/vis-vega"},
+            ],
+            "datasets": [
+                {"datasetId": "computed.transform-x", "dirName": "computed.transform-x@1",
+                 "origin": "computed", "producerNodeId": "transform-x"},
+                {"datasetId": "computed.visnode-y", "dirName": "computed.visnode-y@1",
+                 "origin": "computed", "producerNodeId": "visnode-y"},
+            ],
+        }
+    }
+
+    pruned = services._prune_sink_node_dataset_refs("1", spec)
+
+    ds = pruned["dataflow"]["datasets"]
+    producers = {r["producerNodeId"] for r in ds}
+    assert producers == {"transform-x"}, producers       # vis ref pruned
+    assert not vis_dir.exists()                            # orphaned dir removed
+    assert spec["dataflow"]["datasets"] != ds              # original not mutated in place
+
+
+def test_prune_sink_node_dataset_refs_noop_without_sink(app, tmp_curio):
+    """No sink nodes → spec returned unchanged (same object)."""
+    spec = {"dataflow": {
+        "nodes": [{"id": "t", "type": "curio.builtin/data-transformation"}],
+        "datasets": [{"datasetId": "computed.t", "producerNodeId": "t", "dirName": "computed.t@1"}],
+    }}
+    assert services._prune_sink_node_dataset_refs("1", spec) is spec

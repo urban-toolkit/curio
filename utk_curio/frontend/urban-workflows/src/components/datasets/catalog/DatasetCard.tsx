@@ -137,10 +137,10 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
           onClick={onOpenDetails ? () => onOpenDetails(dataset) : undefined}
           buttonLabel={`View ${dataset.title} details`}
         />
-        <h3 className={styles.cardTitle}>{dataset.title}</h3>
+        <h3 className={styles.cardTitle}>{dataset.dirName}</h3>
 
         <div className={styles.cardMetaRow}>
-          
+          <span className={styles.cardMetaText}>{dataset.title}</span>
           {metaParts ? (
             <span className={styles.cardMetaText}>{metaParts}</span>
           ) : null}

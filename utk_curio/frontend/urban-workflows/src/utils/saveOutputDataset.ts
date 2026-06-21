@@ -1,5 +1,19 @@
+import { NodeType } from "../constants";
 import { defaultSaveOutputDatasetFromEnv } from "./curioEnvFlag";
 import { flowOutputRefFromRaw, FlowOutputRef } from "./flowOutputRef";
+import { getFlowNodeCanonicalType } from "./flowNodeCanonicalType";
+
+/**
+ * Visualization "sink" node types. They consume a dataframe to render a chart
+ * and pass their INPUT straight through as their output (outputCallback(nodeId,
+ * data.input)) so they can sit mid-chain — they never produce a NEW dataset.
+ * Saving their passthrough would auto-install a redundant computed dataset that
+ * just duplicates the upstream node's output (same file, different node id).
+ */
+const NON_PRODUCING_NODE_TYPES: ReadonlySet<string> = new Set([
+  NodeType.VIS_VEGA,
+  NodeType.VIS_SIMPLE,
+]);
 
 /** Workflow-wide default when a node has no explicit ``saveOutputDataset`` (env + UI). */
 export const DEFAULT_SAVE_OUTPUT_DATASET = defaultSaveOutputDatasetFromEnv();
@@ -22,7 +36,8 @@ interface SaveableOutput {
 
 interface SaveableNode {
   id?: string;
-  data?: { nodeId?: string; saveOutputDataset?: boolean } | null;
+  type?: string | null;
+  data?: { nodeId?: string; nodeType?: string | null; saveOutputDataset?: boolean } | null;
 }
 
 /**
@@ -40,7 +55,10 @@ export function buildSaveableLiveOutputs(
 
   const saveByNodeId = new Map<string, boolean>();
   for (const node of nodes || []) {
-    const enabled = resolveSaveOutputDataset(node?.data, defaultSave);
+    // Visualization/sink nodes never produce a new dataset — they pass their
+    // input through — so never save them, regardless of the per-node toggle.
+    const isSink = NON_PRODUCING_NODE_TYPES.has(getFlowNodeCanonicalType(node));
+    const enabled = !isSink && resolveSaveOutputDataset(node?.data, defaultSave);
     if (typeof node?.id === "string") saveByNodeId.set(node.id, enabled);
     const dataNodeId = node?.data?.nodeId;
     if (typeof dataNodeId === "string") saveByNodeId.set(dataNodeId, enabled);

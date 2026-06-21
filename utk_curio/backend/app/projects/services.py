@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import shutil
-from typing import List, Optional
+from typing import Dict, List, Optional
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,68 @@ class ProjectError(Exception):
     def __init__(self, message: str, status: int = 400):
         super().__init__(message)
         self.status = status
+
+
+# Visualization "sink" node types: they consume a dataframe to render and pass
+# their INPUT straight through as their output, so they never produce a new
+# dataset. A computed dataset ref keyed on such a node is always a duplicate of
+# the upstream producer's output (same file, different node id) — pruned on save.
+_SINK_NODE_TYPES = frozenset({
+    "curio.builtin/vis-vega",
+    "curio.builtin/vis-simple",
+})
+
+
+def _prune_sink_node_dataset_refs(user_key: str, spec: Optional[dict]) -> Optional[dict]:
+    """Drop ``dataflow.datasets`` refs whose producer is a visualization/sink node.
+
+    Returns *spec* unchanged when there's nothing to prune; otherwise a new spec
+    dict with the offending refs removed. The orphaned user-store dataset dir for
+    each pruned ref is deleted best-effort so the duplicate doesn't linger or get
+    re-discovered on the next listing.
+    """
+    if not isinstance(spec, dict):
+        return spec
+    dataflow = spec.get("dataflow")
+    if not isinstance(dataflow, dict):
+        return spec
+    refs = dataflow.get("datasets")
+    if not isinstance(refs, list) or not refs:
+        return spec
+
+    node_types: Dict[str, Optional[str]] = {}
+    for node in dataflow.get("nodes") or []:
+        if isinstance(node, dict) and node.get("id"):
+            node_types[node["id"]] = node.get("type")
+
+    kept: List[dict] = []
+    pruned: List[dict] = []
+    for ref in refs:
+        producer = ref.get("producerNodeId") if isinstance(ref, dict) else None
+        if producer and node_types.get(producer) in _SINK_NODE_TYPES:
+            pruned.append(ref)
+        else:
+            kept.append(ref)
+
+    if not pruned:
+        return spec
+
+    # Best-effort: remove the orphaned dataset dir for each pruned ref.
+    from utk_curio.backend.app.datasets.storage import dataset_dir
+    for ref in pruned:
+        dir_name = ref.get("dirName")
+        if not dir_name:
+            continue
+        try:
+            target = dataset_dir(user_key, dir_name)
+            if target.exists():
+                shutil.rmtree(target, ignore_errors=True)
+        except Exception:  # noqa: BLE001 - bad/crafted dirName must not block save
+            logger.debug("Could not remove pruned sink-node dataset dir %r", dir_name, exc_info=True)
+
+    new_spec = dict(spec)
+    new_spec["dataflow"] = {**dataflow, "datasets": kept}
+    return new_spec
 
 
 def _is_shared_guest(user) -> bool:
@@ -333,6 +395,8 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
     storage.write_spec(ukey, project_id, data.spec)
     output_refs = list(data.outputs)
     effective_spec = _auto_install_computed_outputs(ukey, output_refs, data.spec) or data.spec
+    # Drop dataset refs keyed on visualization/sink nodes (passthrough duplicates).
+    effective_spec = _prune_sink_node_dataset_refs(ukey, effective_spec)
     if effective_spec is not data.spec:
         storage.write_spec(ukey, project_id, effective_spec)
     storage.write_manifest(ukey, project_id, project.spec_revision, output_refs,
@@ -387,9 +451,17 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
             # any still-installed computed datasets so disabling "Save output
             # dataset" (or a Play-All install) never silently removes one.
             effective_spec = _preserve_persisted_computed_refs(ukey, effective_spec, existing_spec)
-            storage.write_spec(ukey, project_id, effective_spec)
-        elif spec_dirty:
-            # outputs-only update whose auto-install changed the spec.
+
+        # Prune dataset refs keyed on visualization/sink nodes — their output is a
+        # passthrough of their input, so the ref just duplicates the upstream
+        # producer's dataset. Runs AFTER preserve so carried-forward stale refs
+        # are cleaned too; may dirty the spec even on an outputs-only update.
+        pruned_spec = _prune_sink_node_dataset_refs(ukey, effective_spec)
+        if pruned_spec is not effective_spec:
+            effective_spec = pruned_spec
+            spec_dirty = True
+
+        if data.spec is not None or spec_dirty:
             storage.write_spec(ukey, project_id, effective_spec)
 
     storage.write_manifest(ukey, project_id, project.spec_revision, output_refs,

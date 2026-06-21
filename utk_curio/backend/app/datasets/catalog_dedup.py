@@ -77,19 +77,21 @@ def merge_catalog_items(existing: dict[str, Any], incoming: dict[str, Any]) -> d
                     break
         merged["sourceLabel"] = chosen_sl or "Computed"
         # When a computed dataset was published, its hub-registry copy keeps the
-        # node id and a stale name captured at publish time. On re-execution the
-        # live/local record (origin "computed") carries the CURRENT output name —
-        # prefer it so the palette and drawer show the same, current name instead
-        # of the stale published one merely because the hub copy outranked it.
+        # node id and a STALE file/name captured at publish time. On re-execution
+        # the live/local record (origin "computed") carries the CURRENT output —
+        # prefer its identity fields so the palette and drawer show the same,
+        # current dataset. Critically, prefer its ``path`` too: otherwise the
+        # merged row points at the stale hub file, and the file-based collapse
+        # (collapse_computed_by_file) keys on the wrong basename and fails to
+        # collapse the published node against its same-file twin → drawer dupes.
         live_cand = next(
             (c for c in (winner, loser) if c.get("origin") == "computed"),
             None,
         )
         if live_cand is not None:
-            if live_cand.get("title"):
-                merged["title"] = live_cand["title"]
-            if live_cand.get("updatedAt"):
-                merged["updatedAt"] = live_cand["updatedAt"]
+            for field in ("title", "updatedAt", "path", "dirName", "uri", "loaderSnippet"):
+                if live_cand.get(field):
+                    merged[field] = live_cand[field]
     return merged
 
 def dedupe_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -9,13 +9,7 @@ import { useFlowContext } from "../../../../providers/FlowProvider";
 import { useDatasetCatalogDrawer } from "../../../../providers/datasetCatalog";
 import { PaletteAccordion } from "../paletteAccordion";
 import {
-  beginDatasetDrag,
-  endDatasetDrag,
-  writeDatasetDragData,
   DATASET_CATALOG_REFRESH_EVENT,
-  DATASET_FORMAT_LABEL,
-  DatasetCatalogItem,
-  datasetProvenanceLabel,
   isUserInstalledDataset,
   useDatasetCatalog,
   prefetchDatasetCatalog,
@@ -24,57 +18,8 @@ import {
   isToolsPaletteDismissOutsideClick,
   TOOLS_PALETTE_DROPDOWN_ATTR,
 } from "../toolsPaletteDismiss";
-import {
-  datasetCountCompact as datasetCount,
-  relativeTimeOrEmpty as relativeTime,
-} from "../../../datasets/catalog/datasetDetailHelpers";
-import { DatasetConnectionBadge } from "../../../datasets/catalog/DatasetConnectionBadge";
+import { DatasetRow } from "./DatasetPaletteRows";
 import styles from "./DatasetsPaletteDropdown.module.css";
-
-function formatAbbreviation(dataset: DatasetCatalogItem): string {
-  if (dataset.format === "geojson") return "GeoJSON";
-  if (dataset.format === "json") return "JSON";
-  if (dataset.format === "geotiff") return "GeoTIFF";
-  if (dataset.format === "bundle") return "Bundle";
-  return DATASET_FORMAT_LABEL[dataset.format].toUpperCase();
-}
-
-function DatasetRow({ dataset }: { dataset: DatasetCatalogItem }) {
-  const count = datasetCount(dataset);
-  const time = relativeTime(dataset.updatedAt);
-  const metaParts = [count, time].filter(Boolean).join(" · ");
-
-  return (
-    <div
-      className={`${styles.row} ${styles[`fmt_${dataset.format}` as keyof typeof styles] ?? ""}`}
-      draggable
-      onDragStart={(event) => {
-        writeDatasetDragData(event.dataTransfer, beginDatasetDrag(dataset));
-      }}
-      onDragEnd={() => endDatasetDrag()}
-    >
-      {/*<div className={styles.rowAccent} />*/}
-      <div className={styles.rowBody}>
-        <div className={styles.rowTop}>
-          <FontAwesomeIcon icon={faDatabase} className={styles.triggerIcon} />
-          <span className={`${styles.formatChip} ${styles.iconBadge} ${styles[`chip_${dataset.format}` as keyof typeof styles] ?? ""}`}>
-            {formatAbbreviation(dataset)}
-          </span>
-          <span className={styles.rowTitle}>{dataset.title}</span>
-        </div>
-
-        <div className={styles.rowMeta}>
-          <span className={styles.typePill}>
-            {datasetProvenanceLabel(dataset.origin, dataset.format)}
-          </span>
-
-          {metaParts ? <span className={styles.rowMetaText}>{metaParts}</span> : null}
-          <DatasetConnectionBadge dataset={dataset} className={styles.connBadge} />
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
   const [open, setOpen] = useState(false);
