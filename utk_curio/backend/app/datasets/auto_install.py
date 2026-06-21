@@ -19,11 +19,24 @@ def auto_install_node_output(
     if user is None or not node_id or not isinstance(sandbox_output, dict):
         return None
 
-    path_ref = sandbox_output.get("dataset") or sandbox_output.get("path")
+    data_type = sandbox_output.get("dataType") or sandbox_output.get("data_type")
+
+    # Only auto-install a genuinely SAVED dataset or a multi-output bundle:
+    #   * ``output['dataset']`` is the parquet a node deliberately saved
+    #     (save_dataset_parquet); its filename is unique per output.
+    #   * a bundle (``dataType == "outputs"``) is keyed by the parent artifact
+    #     id in ``output['path']``.
+    # Do NOT fall back to ``output['path']`` for an ordinary output: that turns a
+    # node's raw intermediate artifact into a "computed dataset", and two nodes
+    # referencing the same artifact then surface as duplicate, identically-named
+    # palette entries (the data file the catalog collapse step has to clean up).
+    is_bundle = str(data_type or "").strip().lower() == "outputs"
+    if is_bundle:
+        path_ref = sandbox_output.get("path")
+    else:
+        path_ref = sandbox_output.get("dataset")
     if not path_ref:
         return None
-
-    data_type = sandbox_output.get("dataType") or sandbox_output.get("data_type")
 
     try:
         from datetime import datetime as _dt, timezone as _tz

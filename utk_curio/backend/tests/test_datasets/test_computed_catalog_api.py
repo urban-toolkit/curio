@@ -708,3 +708,41 @@ def test_two_nodes_sharing_output_file_collapse_in_catalog(client, user_and_toke
     titles = [i.get("title") for i in computed]
     assert len(titles) == len(set(titles)), f"duplicate computed names: {titles}"
     assert len(computed) == 1
+
+
+def test_process_python_code_no_auto_install_without_saved_dataset(client, user_and_token, monkeypatch):
+    """With save ON but no output['dataset'] (a non-tabular / not-saved result),
+    auto-install must NOT install the raw artifact as a computed dataset — that
+    fallback is what produced redundant, duplicate-named computed datasets."""
+    from unittest.mock import MagicMock
+
+    _, token = user_and_token
+    project_id = create_project(client, token, name="No dataset emitted")
+
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "stdout": "",
+        "stderr": "",
+        # dataType is a plain scalar/list-ish single output, NOT a bundle, and no
+        # 'dataset' key — only the raw artifact id in 'path'.
+        "output": {"path": "1781903321396_c8572ee7", "dataType": "dataframe"},
+    }
+    monkeypatch.setattr(
+        "utk_curio.backend.app.api.routes._sandbox_call",
+        lambda *args, **kwargs: mock_response,
+    )
+
+    resp = client.post(
+        "/processPythonCode",
+        data=json.dumps({
+            "code": "    return df\n",
+            "nodeType": "PYTHON_COMPUTATION",
+            "nodeId": "node-no-dataset",
+            "dataflowId": project_id,
+            "input": {"path": "", "dataType": "str"},
+            "saveOutputDataset": True,
+        }),
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert resp.get_json().get("installedDataset") is None
