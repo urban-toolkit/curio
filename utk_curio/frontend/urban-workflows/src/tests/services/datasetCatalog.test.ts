@@ -7,6 +7,8 @@ import {
   endDatasetDrag,
   readDatasetDragPayload,
   isUserInstalledDataset,
+  isDatasetPaletteNode,
+  getDatasetSourceId,
   DATASET_DRAG_MIME,
   DatasetCatalogItem,
 } from "../../services/datasetCatalog";
@@ -128,6 +130,38 @@ test("buildDatasetLoaderNodeOptions builds a new Data Loading node payload", () 
     title: "Blocks",
     format: "csv",
   });
+});
+
+test("buildDatasetLoaderNodeOptions stamps the datasetSource linkage marker", () => {
+  const options = buildDatasetLoaderNodeOptions(dataset, { x: 0, y: 0 });
+  expect(options.datasetSource).toEqual({
+    datasetId: "file-123",
+    title: "Blocks",
+    format: "csv",
+    origin: "imported",
+  });
+});
+
+test("createDatasetDragPayload carries origin so the linkage survives a drag", () => {
+  expect(createDatasetDragPayload(dataset).origin).toBe("imported");
+  const options = buildDatasetLoaderNodeOptions(createDatasetDragPayload(dataset), { x: 0, y: 0 });
+  expect(options.datasetSource.origin).toBe("imported");
+});
+
+test("isDatasetPaletteNode / getDatasetSourceId reflect the marker", () => {
+  const paletteNode = buildDatasetLoaderNodeOptions(dataset, { x: 0, y: 0 });
+  expect(isDatasetPaletteNode(paletteNode)).toBe(true);
+  expect(getDatasetSourceId(paletteNode)).toBe("file-123");
+
+  // A plain code node that merely references a dataset is NOT a palette node.
+  const applied = applyDatasetToNodeData(
+    { nodeId: "n", nodeType: NodeType.DATA_LOADING },
+    "print('x')",
+    createDatasetDragPayload(dataset),
+  );
+  expect(isDatasetPaletteNode(applied.data)).toBe(false);
+  expect(getDatasetSourceId(applied.data)).toBeNull();
+  expect(isDatasetPaletteNode(undefined)).toBe(false);
 });
 
 test("readDatasetDragPayload uses active drag session when getData is empty", () => {

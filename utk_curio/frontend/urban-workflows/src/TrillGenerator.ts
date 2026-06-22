@@ -200,6 +200,13 @@ export class TrillGenerator {
                 trill_node.metadata.datasetRefs = node.data.datasetRefs;
             }
 
+            if(node.data.datasetSource != undefined && node.data.datasetSource.datasetId != undefined){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.datasetSource = node.data.datasetSource;
+            }
+
             if(node.data.appliedDatasets != undefined){
                 for(const dataset of Object.values(node.data.appliedDatasets)){
                     const id = (dataset as any)?.datasetId || (dataset as any)?.id;

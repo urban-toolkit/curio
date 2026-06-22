@@ -152,6 +152,9 @@ export function useCode(): IUseCode {
             if(node.metadata != undefined && Array.isArray(node.metadata.datasetRefs))
                 nodeMeta.datasetRefs = node.metadata.datasetRefs;
 
+            if(node.metadata != undefined && node.metadata.datasetSource != undefined)
+                nodeMeta.datasetSource = node.metadata.datasetSource;
+
             if(typeof parsedWidth === "number")
                 nodeMeta.nodeWidth = parsedWidth;
 

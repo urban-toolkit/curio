@@ -10,6 +10,12 @@ describe('resolveSaveOutputDataset', () => {
     expect(resolveSaveOutputDataset({ saveOutputDataset: true })).toBe(true);
     expect(resolveSaveOutputDataset({ saveOutputDataset: false }, true)).toBe(false);
   });
+
+  test('force-disables saving on dataset-palette nodes regardless of toggle/default', () => {
+    const datasetNode: any = { saveOutputDataset: true, datasetSource: { datasetId: 'd1' } };
+    expect(resolveSaveOutputDataset(datasetNode)).toBe(false);
+    expect(resolveSaveOutputDataset(datasetNode, true)).toBe(false);
+  });
 });
 
 describe('buildSaveableLiveOutputs', () => {
@@ -46,6 +52,15 @@ describe('buildSaveableLiveOutputs', () => {
 
   test('returns undefined when there are no outputs', () => {
     expect(buildSaveableLiveOutputs([], [], true)).toBeUndefined();
+  });
+
+  test('excludes dataset-palette nodes even when the default is on', () => {
+    const nodes = [
+      { id: 'a', data: { nodeId: 'a' } },
+      { id: 'b', data: { nodeId: 'b', datasetSource: { datasetId: 'd1' } } },
+    ];
+    const refs = buildSaveableLiveOutputs(outputs, nodes, true);
+    expect(refs).toEqual([{ node_id: 'a', filename: 'art_a', data_type: 'dataframe' }]);
   });
 });
 
