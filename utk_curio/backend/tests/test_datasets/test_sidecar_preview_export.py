@@ -3,10 +3,7 @@ parquet object-column decode sidecar (<file>.decode.json), not show/emit raw JSO
 """
 from __future__ import annotations
 
-import json
-
 import pandas as pd
-import pytest
 
 from utk_curio.sandbox.util import parsers
 

@@ -16,12 +16,11 @@ import {
 } from "../../../datasets/catalog/datasetDetailHelpers";
 import packageStyles from "../toolsMenuPackagePalette/ToolsMenuPackagePalette.module.css";
 import { OVERLAY_TRIGGER_DELAY_PROPS, type ToolsMenuTooltipSide } from "../toolsMenuPackagePalette";
-import paletteStyles from "./DatasetsPaletteDropdown.module.css";
 import rowStyles from "./DatasetPaletteRows.module.css";
 import packageCardStyles from "../../../packages/publishing/PackageCard.module.css";
 
 import { DatasetConnectionBadge } from "../../../datasets/catalog/DatasetConnectionBadge";
-import datasetRowStyles from "./DatasetsPaletteDropdown.module.css";
+
 
 function formatAbbreviation(dataset: DatasetCatalogItem): string {
   if (dataset.format === "geojson") return "GeoJSON";
@@ -43,7 +42,7 @@ export const DatasetRow = memo(function DatasetRow({
   const metaParts = [count, time].filter(Boolean).join(" · ");
   const tooltipParts = [dataset.title, metaParts].filter(Boolean);
   const formatChipClass =
-    paletteStyles[`chip_${dataset.format}` as keyof typeof paletteStyles] ?? paletteStyles.formatChip;
+    rowStyles[`chip_${dataset.format}` as keyof typeof rowStyles] ?? rowStyles.formatChip;
 
   return (
     <OverlayTrigger
@@ -53,15 +52,18 @@ export const DatasetRow = memo(function DatasetRow({
     >
       <div className={packageStyles.packageKindRow}>
         <div
-          className={packageStyles.packageKindRowDrag}
+          className={`${packageStyles.packageKindRowDrag} ${rowStyles.datasetRowDrag}`}
           draggable
           onDragStart={(event) => {
             writeDatasetDragData(event.dataTransfer, beginDatasetDrag(dataset));
           }}
           onDragEnd={() => endDatasetDrag()}
         >
-          <FontAwesomeIcon icon={faDatabase} className={packageStyles.packageKindDragIcon} />
-          <span className={`${rowStyles.formatBadge} ${formatChipClass}`}>
+          <FontAwesomeIcon
+            icon={faDatabase}
+            className={`${packageStyles.packageKindDragIcon} ${rowStyles.datasetDragIcon}`}
+          />
+          <span className={`${rowStyles.iconBadge} ${formatChipClass}`}>
             {formatAbbreviation(dataset)}
           </span>
         </div>
@@ -69,15 +71,14 @@ export const DatasetRow = memo(function DatasetRow({
           <span className={packageStyles.packageKindRowLabel}>{dataset.dirName}</span>
           <span className={packageCardStyles.cardMetaText}>{dataset.title}</span>
 
-          <div className={datasetRowStyles.rowMeta}>
+          <div className={rowStyles.rowMeta}>
             <span className={packageStyles.packageKindCategoryChip}>
               {datasetProvenanceLabel(dataset.origin, dataset.format)}
             </span>
 
-            {metaParts ? <span className={datasetRowStyles.rowMetaText}>{metaParts}</span> : null}
-            <DatasetConnectionBadge dataset={dataset} className={datasetRowStyles.connBadge} />
+            {metaParts ? <span className={rowStyles.rowMetaText}>{metaParts}</span> : null}
+            <DatasetConnectionBadge dataset={dataset} className={rowStyles.connBadge} />
           </div>
-
         </div>
       </div>
     </OverlayTrigger>

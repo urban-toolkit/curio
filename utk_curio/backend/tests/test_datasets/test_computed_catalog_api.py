@@ -629,18 +629,11 @@ def test_published_computed_dataset_stays_installed_in_dataflow_catalog(
     assert after.get("publishedToHub") is True
 
 
-
-
-
-
-
-
 def test_install_computed_dataset_carries_decode_sidecar(client, user_and_token):
     """Manual install must copy the <file>.decode.json object-column decode
     sidecar into the user store (review finding B8). The install always replaces
     the dataset dir via the file_bytes branch, so the final sidecar is present
     only if the install path copies it."""
-    import json
     import os
     from pathlib import Path
 
