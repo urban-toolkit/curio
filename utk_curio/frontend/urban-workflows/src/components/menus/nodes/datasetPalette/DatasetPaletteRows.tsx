@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import React, { memo, useCallback } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faDatabase } from "@fortawesome/free-solid-svg-icons";
 import { Tooltip, OverlayTrigger } from "react-bootstrap";
@@ -20,6 +20,10 @@ import rowStyles from "./DatasetPaletteRows.module.css";
 import packageCardStyles from "../../../packages/publishing/PackageCard.module.css";
 
 import { DatasetConnectionBadge } from "../../../datasets/catalog/DatasetConnectionBadge";
+import { useReactFlow } from "reactflow";
+import { getDatasetSourceId } from "../../../../services/datasetCatalog";
+import { fitViewWithMenuOffset } from "../../../../utils/fitViewWithMenuOffset";
+import { useToastContext } from "../../../../providers/ToastProvider";
 
 
 function formatAbbreviation(dataset: DatasetCatalogItem): string {
@@ -44,6 +48,37 @@ export const DatasetRow = memo(function DatasetRow({
   const formatChipClass =
     rowStyles[`chip_${dataset.format}` as keyof typeof rowStyles] ?? rowStyles.formatChip;
 
+  const reactFlow = useReactFlow();
+  const { showToast } = useToastContext();
+
+  const selectOnCanvas = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      // Linkage is the datasetSource marker stamped on palette-created nodes —
+      // not datasetRefs (which also covers datasets merely dropped onto a node).
+      const matches = reactFlow
+        .getNodes()
+        .filter((n) => getDatasetSourceId(n.data) === dataset.id);
+      if (matches.length === 0) {
+        showToast("No nodes on the canvas use this dataset", "info");
+        return;
+      }
+      reactFlow.setNodes((nds) =>
+        nds.map((n) => ({
+          ...n,
+          selected: getDatasetSourceId(n.data) === dataset.id,
+        })),
+      );
+      fitViewWithMenuOffset(reactFlow, {
+        nodes: matches.map((n) => ({ id: n.id })),
+        duration: 300,
+        padding: 0.3,
+      });
+    },
+    [dataset.id, reactFlow, showToast],
+  );
+
   return (
     <OverlayTrigger
       placement={tooltipPlacement}
@@ -67,7 +102,7 @@ export const DatasetRow = memo(function DatasetRow({
             {formatAbbreviation(dataset)}
           </span>
         </div>
-        <div className={packageStyles.packageKindRowMeta}>
+        <button type="button" className={packageStyles.packageKindRowMeta} onClick={selectOnCanvas}>
           <span className={packageStyles.packageKindRowLabel}>
             {dataset.format == "parquet" ? dataset.dirName : dataset.title}
           </span>
@@ -83,7 +118,7 @@ export const DatasetRow = memo(function DatasetRow({
             {metaParts ? <span className={rowStyles.rowMetaText}>{metaParts}</span> : null}
             <DatasetConnectionBadge dataset={dataset} className={rowStyles.connBadge} />
           </div>
-        </div>
+        </button>
       </div>
     </OverlayTrigger>
   );
