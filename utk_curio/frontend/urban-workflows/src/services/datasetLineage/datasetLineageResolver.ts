@@ -91,6 +91,31 @@ export function lineageNodesFromDataflowUsage(
   return nodes;
 }
 
+/**
+ * Build a full downstream-usage view from the backend cross-dataflow usage, so
+ * the canvas-less fallback populates BOTH the consumer nodes and the consuming
+ * dataflows (otherwise the summary reads "Used by N nodes in 0 dataflows").
+ * Only dataflows that actually list consumer nodes count as consuming.
+ */
+export function downstreamFromDataflowUsage(
+  usage: DatasetDataflowUsageRef[],
+): DatasetDownstreamUsage {
+  const consumingDataflows: DatasetLineageDataflowUsageRef[] = usage
+    .filter((flow) => (flow.nodes?.length ?? 0) > 0)
+    .map((flow) => ({
+      dataflowId: flow.dataflowId,
+      dataflowName: flow.dataflowName ?? null,
+      nodeIds: (flow.nodes ?? []).map((node) => node.nodeId),
+      usageCount: flow.nodes?.length ?? 0,
+      status: "active",
+    }));
+  return {
+    consumingNodes: lineageNodesFromDataflowUsage(usage),
+    consumingDataflows,
+    derivedDatasets: [],
+  };
+}
+
 /** True for a Data Loading node (``curio.builtin/data-loading`` or the legacy
  * ``DATA_LOADING``) — the node a dataset drag-drop creates. It is the dataset's
  * *source* in the flow, not a downstream consumer of it. */

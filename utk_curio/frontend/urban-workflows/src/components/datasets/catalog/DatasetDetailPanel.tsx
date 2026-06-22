@@ -11,8 +11,8 @@ import {
 import { DatasetDataflowUsageSection, useDatasetDataflowUsage } from "./DatasetDataflowUsage";
 import { useToastContext } from "../../../providers/ToastProvider";
 import {
+  downstreamFromDataflowUsage,
   formatNodeTypeLabel,
-  lineageNodesFromDataflowUsage,
   lineageUsageSummary,
   upstreamOriginCaption,
   useDatasetLineage,
@@ -152,11 +152,13 @@ const LineageStates: React.FC<{
       </p>
     );
   }
-  if (!canvasAvailable) {
+  // On canvas-less surfaces we show usage resolved from saved dataflow specs.
+  // Only prompt to open a dataflow when there's nothing resolved to show —
+  // otherwise the note contradicts the usage listed right below it.
+  if (!canvasAvailable && lineage.downstream.consumingNodes.length === 0) {
     return (
       <p className={styles.lineagePartialNote}>
-        Lineage is computed from the open dataflow. Open this dataset from a
-        dataflow to see live usage.
+        Open this dataset from a dataflow to see live usage.
       </p>
     );
   }
@@ -236,8 +238,8 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
   // the downstream-nodes list on canvas-less surfaces (the standalone catalog/
   // browse page) where live lineage resolves no consumer nodes.
   const dataflowUsage = useDatasetDataflowUsage(dataset?.id);
-  const backendConsumingNodes = useMemo(
-    () => lineageNodesFromDataflowUsage(dataflowUsage),
+  const backendDownstream = useMemo(
+    () => downstreamFromDataflowUsage(dataflowUsage),
     [dataflowUsage],
   );
   // Shared schema resolution so the header/info counts match the schema panel.
@@ -268,13 +270,10 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
   // Prefer live-canvas consumers; fall back to backend usage when the canvas
   // resolved none (e.g. the standalone catalog page has no open dataflow).
   const liveConsumingNodes = lineage.downstream.consumingNodes;
-  const effectiveLineage: DatasetLineage =
-    liveConsumingNodes.length > 0
-      ? lineage
-      : {
-          ...lineage,
-          downstream: { ...lineage.downstream, consumingNodes: backendConsumingNodes },
-        };
+  const usingBackendUsage = liveConsumingNodes.length === 0;
+  const effectiveLineage: DatasetLineage = usingBackendUsage
+    ? { ...lineage, downstream: backendDownstream }
+    : lineage;
   const { consumingNodes } = effectiveLineage.downstream;
   const published = isDatasetPublishedToCatalog(dataset);
   // Bundles are multi-part and have no single serialized file to export.

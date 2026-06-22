@@ -1,4 +1,5 @@
 import {
+  downstreamFromDataflowUsage,
   formatNodeTypeLabel,
   lineageNodesFromDataflowUsage,
   lineageUsageSummary,
@@ -400,5 +401,31 @@ describe("lineageNodesFromDataflowUsage (canvas-less fallback)", () => {
     ];
     expect(lineageNodesFromDataflowUsage(usage)).toEqual([]);
     expect(lineageNodesFromDataflowUsage([])).toEqual([]);
+  });
+
+  it("builds a downstream view with both nodes and dataflows, so the summary reads correctly", () => {
+    const usage: DatasetDataflowUsageRef[] = [
+      {
+        dataflowId: "flow-1",
+        dataflowName: "Flow One",
+        nodeCount: 2,
+        nodes: [
+          { nodeId: "node-a", nodeType: "DATA_TRANSFORMATION" },
+          { nodeId: "node-b", nodeType: "VIS_VEGA" },
+        ],
+      },
+      // A dataflow that only produced the dataset (no consumer nodes) is not counted.
+      { dataflowId: "flow-2", dataflowName: "Producer only", nodeCount: 0 },
+    ];
+    const downstream = downstreamFromDataflowUsage(usage);
+    expect(downstream.consumingNodes).toHaveLength(2);
+    expect(downstream.consumingDataflows).toHaveLength(1);
+    expect(downstream.consumingDataflows[0]).toMatchObject({
+      dataflowId: "flow-1",
+      nodeIds: ["node-a", "node-b"],
+      usageCount: 2,
+      status: "active",
+    });
+    expect(lineageUsageSummary(downstream)).toBe("Used by 2 nodes in 1 dataflow");
   });
 });
