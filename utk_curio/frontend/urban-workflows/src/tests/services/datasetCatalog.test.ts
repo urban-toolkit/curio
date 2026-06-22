@@ -9,6 +9,7 @@ import {
   isUserInstalledDataset,
   isDatasetPaletteNode,
   getDatasetSourceId,
+  installedComputedByProducer,
   DATASET_DRAG_MIME,
   DatasetCatalogItem,
 } from "../../services/datasetCatalog";
@@ -240,4 +241,34 @@ test("datasetProvenanceLabel is origin-based, not format-based (B14)", () => {
   // A computed dataset stays "Computed".
   expect(datasetProvenanceLabel("computed", "parquet")).toBe("Computed");
   expect(datasetProvenanceLabel("computed", "csv")).toBe("Computed");
+});
+
+describe("installedComputedByProducer (producer↔palette linkage)", () => {
+  test("maps producerNodeId → installed computed dataset", () => {
+    const items = [
+      makeDataset({ id: "computed.node-a", producerNodeId: "node-a", installed: true }),
+      makeDataset({ id: "computed.node-b", producerNodeId: "node-b", installed: true }),
+    ];
+    const map = installedComputedByProducer(items);
+    expect(map.get("node-a")?.id).toBe("computed.node-a");
+    expect(map.get("node-b")?.id).toBe("computed.node-b");
+    expect(map.size).toBe(2);
+  });
+
+  test("excludes non-installed, non-computed, and producer-less items", () => {
+    const items = [
+      makeDataset({ id: "computed.live", producerNodeId: "node-x", installed: false }),
+      makeDataset({ id: "imported.file", origin: "imported", producerNodeId: "node-y", installed: true }),
+      makeDataset({ id: "computed.orphan", producerNodeId: null, installed: true }),
+    ];
+    expect(installedComputedByProducer(items).size).toBe(0);
+  });
+
+  test("first match wins when a node produced several (recent-sorted) items", () => {
+    const items = [
+      makeDataset({ id: "computed.recent", producerNodeId: "node-a", installed: true }),
+      makeDataset({ id: "computed.older", producerNodeId: "node-a", installed: true }),
+    ];
+    expect(installedComputedByProducer(items).get("node-a")?.id).toBe("computed.recent");
+  });
 });
