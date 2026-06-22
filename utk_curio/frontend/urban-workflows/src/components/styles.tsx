@@ -3,7 +3,7 @@ import CSS from "csstype";
 import { Dropdown, Spinner } from "react-bootstrap";
 
 import { useFlowContext } from "../providers/FlowProvider";
-import { NodeRemoveChange, useReactFlow } from "reactflow";
+import { NodeRemoveChange, useReactFlow, useStore } from "reactflow";
 
 import { CommentsList, IComment } from "./comments/CommentsList";
 
@@ -157,6 +157,9 @@ export const NodeContainer = ({
     // producer nodes keep their save toggle.
     const { installedComputedByProducer: producerByNode } = useDatasetPalette();
     const producerDataset = producerByNode.get(nodeId);
+    // Whether this node is selected on the canvas — drives a more vibrant dataset
+    // chip. Read reactively from the React Flow store so it updates on selection.
+    const isNodeSelected = useStore((s) => !!s.nodeInternals.get(nodeId)?.selected);
     const { getNodes, getEdges } = useReactFlow();
     const { getStarters, deleteStarter, fetchStarters } = useStarterContext();
     const { createCodeNode, loadTrill } = useCode();
@@ -801,6 +804,7 @@ export const NodeContainer = ({
                             <DatasetMetaHeader
                                 source={data.datasetSource}
                                 variant="consumer"
+                                selected={isNodeSelected}
                                 suggestionActive={suggestionActive}
                             />
                         ) : null}
@@ -814,6 +818,7 @@ export const NodeContainer = ({
                                     origin: producerDataset.origin,
                                 }}
                                 variant="producer"
+                                selected={isNodeSelected}
                                 suggestionActive={suggestionActive}
                             />
                         ) : null}

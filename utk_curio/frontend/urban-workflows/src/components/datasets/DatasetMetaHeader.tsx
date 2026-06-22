@@ -15,6 +15,8 @@ export interface DatasetMetaHeaderProps {
   /** ``consumer`` — node loads this dataset (palette-created loader; pill reads
    * "DATASET"). ``producer`` — node generated this dataset (pill reads "OUTPUT"). */
   variant?: "consumer" | "producer";
+  /** When the owning node is selected on the canvas, render a more vibrant pill. */
+  selected?: boolean;
   suggestionActive?: boolean;
 }
 
@@ -28,11 +30,13 @@ export interface DatasetMetaHeaderProps {
 export function DatasetMetaHeader({
   source,
   variant = "consumer",
+  selected = false,
   suggestionActive = false,
 }: DatasetMetaHeaderProps) {
   const { setDatasetRevealId } = useDatasetPalette();
   const isProducer = variant === "producer";
   const label = isProducer ? "OUTPUT" : "DATASET";
+  const badgeClassName = `${styles.datasetBadge} ${selected ? styles.datasetBadgeSelected : ""}`;
 
   const tooltip = useMemo(() => {
     const lines = [source.title];
@@ -59,7 +63,7 @@ export function DatasetMetaHeader({
     <div className={styles.pills} style={suggestionActive ? { pointerEvents: "none" } : undefined}>
       <button
         type="button"
-        className={styles.datasetBadge}
+        className={badgeClassName}
         title={tooltip}
         aria-label={`Reveal ${isProducer ? "output" : "dataset"} ${source.title} in the dataset palette`}
         {...badgeClick}

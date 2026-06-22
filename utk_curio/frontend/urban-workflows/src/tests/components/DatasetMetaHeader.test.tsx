@@ -47,6 +47,13 @@ describe("DatasetMetaHeader", () => {
     expect(mockSetDatasetRevealId).toHaveBeenCalledWith("computed.node-a");
   });
 
+  test("applies the vibrant class only when the node is selected", () => {
+    const { rerender } = render(<DatasetMetaHeader source={source} />);
+    expect(screen.getByRole("button").className).not.toContain("datasetBadgeSelected");
+    rerender(<DatasetMetaHeader source={source} selected />);
+    expect(screen.getByRole("button").className).toContain("datasetBadgeSelected");
+  });
+
   test("does not reveal while a suggestion is active", () => {
     render(<DatasetMetaHeader source={source} suggestionActive />);
     clickBadge(screen.getByRole("button"));
