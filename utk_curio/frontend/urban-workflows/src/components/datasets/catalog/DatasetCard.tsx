@@ -116,7 +116,6 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
         onClick={() => onOpenDetails?.(dataset)}
       >
         {/* {FORMAT_ABBR[dataset.format]} */}
-
         <CatalogKindIcon
           className={`${styles.cardIcon} ${formatAvatarClass(dataset.format)} `}
           kind="dataset"
@@ -139,12 +138,12 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
           buttonLabel={`View ${dataset.title} details`}
         />
         <h3 className={styles.cardTitle}>
-          {dataset.format == "parquet" ? dataset.dirName : dataset.title}
+          {dataset.origin == "computed" ? dataset.dirName : dataset.title}
         </h3>
 
         <div className={styles.cardMetaRow}>
           <span className={styles.cardMetaText}>
-            {dataset.format == "parquet" ? dataset.title : dataset.dirName}
+            {dataset.origin == "computed" ? dataset.title : dataset.dirName}
           </span>
           {metaParts ? <span className={styles.cardMetaText}>{metaParts}</span> : null}
           <DatasetConnectionBadge dataset={dataset} className={styles.connBadge} />

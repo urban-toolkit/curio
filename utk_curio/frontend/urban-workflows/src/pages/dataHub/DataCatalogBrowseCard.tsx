@@ -68,10 +68,10 @@ export function DataCatalogBrowseCard({
 
       <div className={styles.cardBody}>
         <h2 className={styles.cardTitle}>
-          {dataset.format == "parquet" ? dataset.dirName : dataset.title}
+          {dataset.origin == "computed" ? dataset.dirName : dataset.title}
         </h2>
         <p className={styles.publisher}>
-          {dataset.format == "parquet" ? dataset.title : dataset.dirName}
+          {dataset.origin == "computed" ? dataset.title : dataset.dirName}
           {/*{formatDatasetLocation(dataset)} · v1.0.0*/}
         </p>
         <p

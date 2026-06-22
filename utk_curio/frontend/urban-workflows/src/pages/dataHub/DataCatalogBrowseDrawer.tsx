@@ -77,7 +77,7 @@ function DataCatalogBrowseDrawerContent({
       <DataCatalogGeoPreview dataset={dataset} />
 
       <div className={styles.drawerDatasetName}>
-        <h2>{dataset.format == "parquet" ? dataset.dirName : dataset.title}</h2>
+        <h2>{dataset.origin == "computed" ? dataset.dirName : dataset.title}</h2>
         <div className={styles.drawerBadgesRow}>
           <span className={`${styles.drawerFormatBadge} ${styles[`dfmt_${dataset.format}`] || ""}`}>
             {DATASET_FORMAT_LABEL[dataset.format]}
@@ -97,7 +97,7 @@ function DataCatalogBrowseDrawerContent({
 
       <div className={styles.drawerPublisher}>
         <span className={styles.drawerPublisherText}>
-          {dataset.format == "parquet" ? dataset.title : dataset.dirName}
+          {dataset.origin == "computed" ? dataset.title : dataset.dirName}
         </span>
         <span className={styles.verifiedBadge}>
           <span className={styles.verifiedCircle}>✓</span>

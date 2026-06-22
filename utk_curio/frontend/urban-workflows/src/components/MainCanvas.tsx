@@ -534,7 +534,7 @@ export function MainCanvas() {
                 {AIModeRef.current ? <LLMChat /> : null}
             </ReactFlow>
             </div>
-            {isComponentsSelected ? (
+            {/*{isComponentsSelected ? (
                 <button
                     id={"explainButton"}
                     style={{
@@ -572,7 +572,7 @@ export function MainCanvas() {
                 >
                     Debug
                 </button>
-            ) : null}
+            ) : null}*/}
             <input hidden type="file" name="file" id="file" />
 
         </div> : loadingAnimation() }
