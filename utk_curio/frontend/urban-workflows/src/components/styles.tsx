@@ -75,6 +75,7 @@ import { SaveOutputToggle } from "./nodes/SaveOutputToggle";
 import { resolveSaveOutputDataset } from "../utils/saveOutputDataset";
 import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
 import { DatasetMetaHeader } from "./datasets/DatasetMetaHeader";
+import { useDatasetPalette } from "../providers/DatasetPaletteContext";
 
 const MIN_NODE_WIDTH = 200;
 const MIN_NODE_HEIGHT = 150;
@@ -150,6 +151,12 @@ export const NodeContainer = ({
     // Nodes created from the dataset palette load an installed listing and can't
     // regenerate a dataset — hide the save toggle and show the dataset chip instead.
     const datasetPaletteNode = isDatasetPaletteNode(data);
+    // Producer linkage: if this node generated an installed computed dataset, show
+    // an OUTPUT chip linking to its palette row. Derived from the catalog (not
+    // stamped) so it tracks install/uninstall. Distinct from the save-lock above —
+    // producer nodes keep their save toggle.
+    const { installedComputedByProducer: producerByNode } = useDatasetPalette();
+    const producerDataset = producerByNode.get(nodeId);
     const { getNodes, getEdges } = useReactFlow();
     const { getStarters, deleteStarter, fetchStarters } = useStarterContext();
     const { createCodeNode, loadTrill } = useCode();
@@ -788,11 +795,25 @@ export const NodeContainer = ({
                             />
                         ) : null}
 
-                        {/* Dataset linkage pill — independent of the PACKAGE pill;
-                            both may render on the same node. */}
+                        {/* Dataset linkage pills — independent of the PACKAGE pill
+                            and of each other; any combination may render. */}
                         {datasetPaletteNode && data.datasetSource ? (
                             <DatasetMetaHeader
                                 source={data.datasetSource}
+                                variant="consumer"
+                                suggestionActive={suggestionActive}
+                            />
+                        ) : null}
+
+                        {producerDataset ? (
+                            <DatasetMetaHeader
+                                source={{
+                                    datasetId: producerDataset.id,
+                                    title: producerDataset.title,
+                                    format: producerDataset.format,
+                                    origin: producerDataset.origin,
+                                }}
+                                variant="producer"
                                 suggestionActive={suggestionActive}
                             />
                         ) : null}

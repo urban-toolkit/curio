@@ -55,11 +55,13 @@ export const DatasetRow = memo(function DatasetRow({
     (e: React.MouseEvent) => {
       e.stopPropagation();
       e.preventDefault();
-      // Linkage is the datasetSource marker stamped on palette-created nodes —
-      // not datasetRefs (which also covers datasets merely dropped onto a node).
-      const matches = reactFlow
-        .getNodes()
-        .filter((n) => getDatasetSourceId(n.data) === dataset.id);
+      // Two linkage directions:
+      //  - consumer: node created from the palette, stamped datasetSource (not
+      //    datasetRefs, which also covers datasets merely dropped onto a node);
+      //  - producer: node that generated this computed dataset (producerNodeId).
+      const isLinked = (n: { id: string; data: any }) =>
+        getDatasetSourceId(n.data) === dataset.id || n.id === dataset.producerNodeId;
+      const matches = reactFlow.getNodes().filter(isLinked);
       if (matches.length === 0) {
         showToast("No nodes on the canvas use this dataset", "info");
         return;
@@ -67,7 +69,7 @@ export const DatasetRow = memo(function DatasetRow({
       reactFlow.setNodes((nds) =>
         nds.map((n) => ({
           ...n,
-          selected: getDatasetSourceId(n.data) === dataset.id,
+          selected: isLinked(n),
         })),
       );
       fitViewWithMenuOffset(reactFlow, {
@@ -76,7 +78,7 @@ export const DatasetRow = memo(function DatasetRow({
         padding: 0.3,
       });
     },
-    [dataset.id, reactFlow, showToast],
+    [dataset.id, dataset.producerNodeId, reactFlow, showToast],
   );
 
   return (
@@ -104,10 +106,10 @@ export const DatasetRow = memo(function DatasetRow({
         </div>
         <button type="button" className={packageStyles.packageKindRowMeta} onClick={selectOnCanvas}>
           <span className={packageStyles.packageKindRowLabel}>
-            {dataset.format == "parquet" ? dataset.dirName : dataset.title}
+            {dataset.origin == "computed" ? dataset.dirName : dataset.title}
           </span>
           <span className={packageCardStyles.cardMetaText}>
-            {dataset.format == "parquet" ? dataset.title : dataset.dirName}
+            {dataset.origin == "computed" ? dataset.title : dataset.dirName}
           </span>
 
           <div className={rowStyles.rowMeta}>
