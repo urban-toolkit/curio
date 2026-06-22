@@ -2,6 +2,7 @@ import { NodeType } from "../../constants";
 import {
   DatasetCatalogItem,
   DatasetDragPayload,
+  DatasetNodeSource,
 } from "./datasetCatalogTypes";
 import { buildDatasetLoaderCode, mergeDatasetLoaderCode } from "./datasetLoaderSnippets";
 
@@ -10,14 +11,31 @@ export type DatasetLoaderNodeOptions = {
   code: string;
   datasetRefs: string[];
   appliedDatasets: Record<string, { id: string; title: string; uri: string; path?: string | null; format: string }>;
+  /** Linkage marker — present only on palette-created nodes (see ``DatasetNodeSource``). */
+  datasetSource: DatasetNodeSource;
 };
+
+function datasetIdOf(dataset: DatasetLike): string {
+  return "datasetId" in dataset ? dataset.datasetId : dataset.id;
+}
+
+/** Build the linkage marker for a node created from the dataset palette. */
+function buildDatasetSource(dataset: DatasetLike): DatasetNodeSource {
+  return {
+    datasetId: datasetIdOf(dataset),
+    title: dataset.title,
+    format: dataset.format,
+    // Drag payloads created before ``origin`` was carried fall back to "imported".
+    origin: dataset.origin ?? "imported",
+  };
+}
 
 /** Options for ``createCodeNode(NodeType.DATA_LOADING, …)`` after a dataset drop. */
 export function buildDatasetLoaderNodeOptions(
   dataset: DatasetLike,
   position: { x: number; y: number },
 ): DatasetLoaderNodeOptions {
-  const datasetId = "datasetId" in dataset ? dataset.datasetId : dataset.id;
+  const datasetId = datasetIdOf(dataset);
   return {
     position,
     code: buildDatasetLoaderCode(dataset),
@@ -31,7 +49,18 @@ export function buildDatasetLoaderNodeOptions(
         format: dataset.format,
       },
     },
+    datasetSource: buildDatasetSource(dataset),
   };
+}
+
+/** True when a node was created from the dataset palette (carries the linkage marker). */
+export function isDatasetPaletteNode(data: any): boolean {
+  return !!data?.datasetSource?.datasetId;
+}
+
+/** The installed-dataset id a palette node is linked to, or ``null``. */
+export function getDatasetSourceId(data: any): string | null {
+  return data?.datasetSource?.datasetId ?? null;
 }
 
 export const DATASET_DRAG_MIME = "application/x-curio-dataset";
@@ -49,6 +78,7 @@ export function createDatasetDragPayload(dataset: DatasetCatalogItem): DatasetDr
     uri: dataset.uri,
     path: dataset.path,
     format: dataset.format,
+    origin: dataset.origin,
     loaderSnippet: dataset.loaderSnippet,
   };
 }

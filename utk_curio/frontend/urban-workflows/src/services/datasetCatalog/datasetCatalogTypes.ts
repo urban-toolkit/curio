@@ -129,7 +129,22 @@ export interface DatasetDragPayload {
   uri: string;
   path?: string | null;
   format: DatasetFormat;
+  origin?: DatasetOrigin;
   loaderSnippet?: DatasetLoaderSnippet | null;
+}
+
+/**
+ * Origin marker stamped on a canvas node that was *created* from the dataset
+ * palette (drag-to-create). It is the linkage back to the installed dataset
+ * listing and is what distinguishes a dataset-palette node from a plain code
+ * node that merely references a dataset (``applyDatasetToNodeData``). Present
+ * only on palette-created nodes — never set by drop-onto-existing-node.
+ */
+export interface DatasetNodeSource {
+  datasetId: string;
+  title: string;
+  format: DatasetFormat;
+  origin: DatasetOrigin;
 }
 
 /** User-facing provenance: only Imported vs Computed (API still uses hub/source_node). */

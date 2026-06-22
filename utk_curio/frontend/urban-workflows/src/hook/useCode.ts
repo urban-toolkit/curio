@@ -9,6 +9,7 @@ import { JavaScriptInterpreter } from "../JavaScriptInterpreter";
 import { TrillGenerator } from "../TrillGenerator";
 import { usePosition } from "./usePosition";
 import { AccessLevelType, EdgeType, CURIO_UNIVERSAL_NODE_TYPE } from "../constants";
+import { DatasetNodeSource } from "../services/datasetCatalog";
 
 // Module-level singletons so every node shares the same interpreter
 // connection pool. Exported so collaboration's remote-graph handler can
@@ -41,6 +42,7 @@ type CreateCodeNodeOptions = {
     dashboardHeight?: number;
     datasetRefs?: string[];
     appliedDatasets?: Record<string, unknown>;
+    datasetSource?: DatasetNodeSource;
     saveOutputDataset?: boolean;
 };
 
@@ -262,6 +264,7 @@ export function useCode(): IUseCode {
             dashboardHeight = undefined,
             datasetRefs = undefined,
             appliedDatasets = undefined,
+            datasetSource = undefined,
             saveOutputDataset = undefined,
         } = options;
 
@@ -295,6 +298,7 @@ export function useCode(): IUseCode {
                 dashboardHeight,
                 datasetRefs,
                 appliedDatasets,
+                datasetSource,
                 saveOutputDataset:
                     saveOutputDataset !== undefined
                         ? saveOutputDataset
