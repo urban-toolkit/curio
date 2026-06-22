@@ -16,6 +16,14 @@ describe('resolveSaveOutputDataset', () => {
     expect(resolveSaveOutputDataset(datasetNode)).toBe(false);
     expect(resolveSaveOutputDataset(datasetNode, true)).toBe(false);
   });
+
+  test('does NOT force-off a producer node (no datasetSource) — it must keep saving', () => {
+    // Producer linkage is derived from the catalog, never stamped as datasetSource,
+    // so a node that generates a dataset keeps its save toggle.
+    const producerNode: any = { saveOutputDataset: true };
+    expect(resolveSaveOutputDataset(producerNode)).toBe(true);
+    expect(resolveSaveOutputDataset({}, true)).toBe(true);
+  });
 });
 
 describe('buildSaveableLiveOutputs', () => {
