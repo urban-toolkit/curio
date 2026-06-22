@@ -74,6 +74,7 @@ import { ICodeData } from "types";
 import { SaveOutputToggle } from "./nodes/SaveOutputToggle";
 import { resolveSaveOutputDataset } from "../utils/saveOutputDataset";
 import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
+import { DatasetMetaHeader } from "./datasets/DatasetMetaHeader";
 
 const MIN_NODE_WIDTH = 200;
 const MIN_NODE_HEIGHT = 150;
@@ -783,6 +784,15 @@ export const NodeContainer = ({
                             <PackageMetaHeader
                                 pkg={packageDescriptor.package}
                                 category={packageDescriptor.category}
+                                suggestionActive={suggestionActive}
+                            />
+                        ) : null}
+
+                        {/* Dataset linkage pill — independent of the PACKAGE pill;
+                            both may render on the same node. */}
+                        {datasetPaletteNode && data.datasetSource ? (
+                            <DatasetMetaHeader
+                                source={data.datasetSource}
                                 suggestionActive={suggestionActive}
                             />
                         ) : null}

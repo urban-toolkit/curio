@@ -75,6 +75,7 @@ import { DatasetCatalogDrawerProvider } from "./providers/datasetCatalog";
 import { BackendHealthBanner } from "./providers/BackendHealthBanner";
 import { MainCanvas } from "./components/MainCanvas";
 import { PackagePaletteProvider } from "./providers/PackagePaletteContext";
+import { DatasetPaletteProvider } from "./providers/DatasetPaletteContext";
 import { ReactFlowProvider } from "reactflow";
 import ProvenanceProvider from "./providers/ProvenanceProvider";
 import LLMProvider from "./providers/LLMProvider";
@@ -111,7 +112,9 @@ const MainCanvasRoute: React.FC = () => (
             <StarterProvider>
               <ProjectLoader>
                 <PackagePaletteProvider>
-                  <MainCanvas />
+                  <DatasetPaletteProvider>
+                    <MainCanvas />
+                  </DatasetPaletteProvider>
                 </PackagePaletteProvider>
               </ProjectLoader>
             </StarterProvider>

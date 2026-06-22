@@ -231,3 +231,20 @@
   outline: 2px solid rgba(251, 170, 105, 0.85);
   outline-offset: 2px;
 }
+
+/* Transient highlight applied to a row revealed from a node's DATASET chip. */
+.revealPulse {
+  animation: datasetRevealPulse 1.4s ease-out;
+  border-radius: 6px;
+}
+
+@keyframes datasetRevealPulse {
+  0% {
+    box-shadow: 0 0 0 2px rgba(47, 143, 74, 0.9);
+    background-color: rgba(47, 143, 74, 0.22);
+  }
+  100% {
+    box-shadow: 0 0 0 2px rgba(47, 143, 74, 0);
+    background-color: transparent;
+  }
+}

@@ -85,7 +85,7 @@ export const DatasetRow = memo(function DatasetRow({
       delay={OVERLAY_TRIGGER_DELAY_PROPS}
       overlay={<Tooltip>{tooltipParts.join(" · ")}</Tooltip>}
     >
-      <div className={packageStyles.packageKindRow}>
+      <div className={packageStyles.packageKindRow} data-dataset-id={dataset.id}>
         <div
           className={`${packageStyles.packageKindRowDrag} ${rowStyles.datasetRowDrag}`}
           draggable

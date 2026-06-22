@@ -7,6 +7,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import { useFlowContext } from "../../../../providers/FlowProvider";
 import { useDatasetCatalogDrawer } from "../../../../providers/datasetCatalog";
+import { useDatasetPalette } from "../../../../providers/DatasetPaletteContext";
 import { PaletteAccordion } from "../paletteAccordion";
 import {
   DATASET_CATALOG_REFRESH_EVENT,
@@ -24,8 +25,10 @@ import styles from "./DatasetsPaletteDropdown.module.css";
 export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const { projectId } = useFlowContext();
   const { openDatasetCatalogDrawer, isDatasetCatalogDrawerOpen } = useDatasetCatalogDrawer();
+  const { datasetRevealId, setDatasetRevealId } = useDatasetPalette();
 
   const catalog = useDatasetCatalog({
     dataflowId: projectId,
@@ -85,6 +88,54 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
   // hub/ephemeral rows that never render here.
   const total = installedRows.length;
 
+  // A node's DATASET chip requests a reveal: open the palette, then scroll the
+  // matching row into view and pulse it. Mirrors the package palette behaviour.
+  useEffect(() => {
+    if (datasetRevealId) setOpen(true);
+  }, [datasetRevealId]);
+
+  useEffect(() => {
+    if (!open || !datasetRevealId) return undefined;
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 48;
+    let pulseTimer: number | undefined;
+
+    const tryReveal = (): void => {
+      if (cancelled) return;
+      const scrollEl = scrollRef.current;
+      const anchor = scrollEl
+        ? Array.from(scrollEl.querySelectorAll<HTMLElement>("[data-dataset-id]")).find(
+            (el) => el.dataset.datasetId === datasetRevealId,
+          )
+        : undefined;
+      attempts++;
+      if (!anchor) {
+        if (attempts < maxAttempts) window.requestAnimationFrame(tryReveal);
+        else setDatasetRevealId(null);
+        return;
+      }
+      anchor.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+      anchor.classList.add(styles.revealPulse);
+      pulseTimer = window.setTimeout(() => anchor.classList.remove(styles.revealPulse), 1400);
+      setDatasetRevealId(null);
+    };
+
+    const rafId = window.requestAnimationFrame(tryReveal);
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(rafId);
+      if (pulseTimer !== undefined) window.clearTimeout(pulseTimer);
+    };
+  }, [open, datasetRevealId, setDatasetRevealId, installedRows]);
+
+  // Drop a pending reveal when the palette is closed (true→false only).
+  const prevOpenRef = useRef(false);
+  useEffect(() => {
+    if (prevOpenRef.current && !open) setDatasetRevealId(null);
+    prevOpenRef.current = open;
+  }, [open, setDatasetRevealId]);
+
   return (
     <div
       id="datasets-palette"
@@ -114,7 +165,7 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
           <div className={styles.panelHeader}>
             <div className={styles.title}>Datasets</div>
           </div>
-          <div className={styles.scroll}>
+          <div className={styles.scroll} ref={scrollRef}>
             {catalog.loading && rows.length === 0 ? <div className={styles.empty}>Loading datasets...</div> : null}
             {!catalog.loading && !catalog.refreshing && total === 0 ? (
               <div className={styles.empty}>
