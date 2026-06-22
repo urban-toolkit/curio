@@ -22,7 +22,7 @@ import packageCardStyles from "../../../packages/publishing/PackageCard.module.c
 import { DatasetConnectionBadge } from "../../../datasets/catalog/DatasetConnectionBadge";
 import { useReactFlow } from "reactflow";
 import { getDatasetSourceId } from "../../../../services/datasetCatalog";
-import { fitViewWithMenuOffset } from "../../../../utils/fitViewWithMenuOffset";
+import { focusLinkedNodes } from "../../../../utils/focusDatasetNodes";
 import { useToastContext } from "../../../../providers/ToastProvider";
 
 
@@ -61,22 +61,9 @@ export const DatasetRow = memo(function DatasetRow({
       //  - producer: node that generated this computed dataset (producerNodeId).
       const isLinked = (n: { id: string; data: any }) =>
         getDatasetSourceId(n.data) === dataset.id || n.id === dataset.producerNodeId;
-      const matches = reactFlow.getNodes().filter(isLinked);
-      if (matches.length === 0) {
+      if (focusLinkedNodes(reactFlow, isLinked) === 0) {
         showToast("No nodes on the canvas use this dataset", "info");
-        return;
       }
-      reactFlow.setNodes((nds) =>
-        nds.map((n) => ({
-          ...n,
-          selected: isLinked(n),
-        })),
-      );
-      fitViewWithMenuOffset(reactFlow, {
-        nodes: matches.map((n) => ({ id: n.id })),
-        duration: 300,
-        padding: 0.3,
-      });
     },
     [dataset.id, dataset.producerNodeId, reactFlow, showToast],
   );

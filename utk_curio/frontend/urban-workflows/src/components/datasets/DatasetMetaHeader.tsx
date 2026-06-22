@@ -1,13 +1,16 @@
 import React, { useCallback, useMemo } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faDatabase } from "@fortawesome/free-solid-svg-icons";
+import { useReactFlow } from "reactflow";
 import {
   DatasetNodeSource,
   DATASET_FORMAT_LABEL,
   datasetProvenanceLabel,
+  getDatasetSourceId,
 } from "../../services/datasetCatalog";
 import { useDatasetPalette } from "../../providers/DatasetPaletteContext";
 import { useHeaderIconDragClick } from "../../utils/headerIconDragClick";
+import { focusLinkedNodes } from "../../utils/focusDatasetNodes";
 import styles from "./DatasetMetaHeader.module.css";
 
 export interface DatasetMetaHeaderProps {
@@ -33,7 +36,8 @@ export function DatasetMetaHeader({
   selected = false,
   suggestionActive = false,
 }: DatasetMetaHeaderProps) {
-  const { setDatasetRevealId } = useDatasetPalette();
+  const { setDatasetRevealId, installedComputedByProducer } = useDatasetPalette();
+  const reactFlow = useReactFlow();
   const isProducer = variant === "producer";
   const label = isProducer ? "OUTPUT" : "DATASET";
   const badgeClassName = `${styles.datasetBadge} ${selected ? styles.datasetBadgeSelected : ""}`;
@@ -54,8 +58,14 @@ export function DatasetMetaHeader({
 
   const revealInPalette = useCallback(() => {
     if (suggestionActive) return;
+    // Highlight every node linked to the same dataset row (consumer via
+    // datasetSource, producer via the catalog producer map), then reveal the row.
+    const isLinked = (n: { id: string; data: any }) =>
+      getDatasetSourceId(n.data) === source.datasetId ||
+      installedComputedByProducer.get(n.id)?.id === source.datasetId;
+    focusLinkedNodes(reactFlow, isLinked);
     setDatasetRevealId(source.datasetId);
-  }, [source.datasetId, setDatasetRevealId, suggestionActive]);
+  }, [source.datasetId, setDatasetRevealId, installedComputedByProducer, reactFlow, suggestionActive]);
 
   const badgeClick = useHeaderIconDragClick(revealInPalette);
 
