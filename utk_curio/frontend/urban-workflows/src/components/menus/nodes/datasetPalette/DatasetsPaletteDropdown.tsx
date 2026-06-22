@@ -19,6 +19,7 @@ import {
   isToolsPaletteDismissOutsideClick,
   TOOLS_PALETTE_DROPDOWN_ATTR,
 } from "../toolsPaletteDismiss";
+import { buildSaveableLiveOutputs } from "../../../../utils/saveOutputDataset";
 import { DatasetRow } from "./DatasetPaletteRows";
 import styles from "./DatasetsPaletteDropdown.module.css";
 
@@ -26,20 +27,31 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { projectId } = useFlowContext();
+  const { projectId, outputs, nodes, defaultSaveOutputDataset } = useFlowContext();
   const { openDatasetCatalogDrawer, isDatasetCatalogDrawerOpen } = useDatasetCatalogDrawer();
   const { datasetRevealId, setDatasetRevealId } = useDatasetPalette();
+
+  // Saveable session outputs — a node's freshly-computed-and-auto-installed dataset
+  // isn't in the project manifest yet (no save), so the backend only surfaces it as
+  // a computed item when these are passed (then marks it installed from the user
+  // store). Without them, just-generated installed computed datasets are invisible
+  // here even though the Data Catalog drawer (which passes them) shows them.
+  // buildSaveableLiveOutputs returns undefined when nothing is saveable, so the
+  // common default-off workflow keeps a stable fetch key and never churns.
+  const liveOutputs = useMemo(
+    () => buildSaveableLiveOutputs(outputs, nodes, defaultSaveOutputDataset),
+    [outputs, nodes, defaultSaveOutputDataset],
+  );
 
   const catalog = useDatasetCatalog({
     dataflowId: projectId,
     includeHub: false,
     sort: "recent",
-    // The palette lists installed/saved datasets only — these come from the
-    // base catalog (persisted spec refs + user store) and are surfaced after an
-    // install/save via DATASET_CATALOG_REFRESH_EVENT. Deliberately do NOT fold
-    // ephemeral session `liveOutputs` into the query: they are never `installed`
-    // (so never appear in the list below) yet would churn the fetch key on every
-    // node execution, making the counter flicker and computed rows blink out.
+    // Pass saveable live outputs so genuinely-installed computed datasets appear
+    // immediately. The list still filters to installed===true (isUserInstalledDataset),
+    // so ephemeral non-installed outputs never show — only the counter/list churns
+    // when a saveable output actually lands.
+    liveOutputs,
     enabled: true,
   });
 
