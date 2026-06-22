@@ -2,6 +2,7 @@ import { NodeType } from "../constants";
 import { defaultSaveOutputDatasetFromEnv } from "./curioEnvFlag";
 import { flowOutputRefFromRaw, FlowOutputRef } from "./flowOutputRef";
 import { getFlowNodeCanonicalType } from "./flowNodeCanonicalType";
+import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
 
 /**
  * Visualization "sink" node types. They consume a dataframe to render a chart
@@ -23,6 +24,13 @@ export function resolveSaveOutputDataset(
   data: { saveOutputDataset?: boolean } | null | undefined,
   defaultSave: boolean = DEFAULT_SAVE_OUTPUT_DATASET,
 ): boolean {
+  // A dataset-palette node just loads an already-installed listing — it must
+  // never regenerate a dataset, so saving is force-disabled regardless of the
+  // per-node toggle or workflow default. buildSaveableLiveOutputs routes through
+  // here, so this also keeps "Play all" from auto-installing these nodes.
+  if (isDatasetPaletteNode(data)) {
+    return false;
+  }
   if (data && typeof data.saveOutputDataset === "boolean") {
     return data.saveOutputDataset;
   }

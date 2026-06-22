@@ -73,6 +73,7 @@ import { TrillGenerator } from "TrillGenerator";
 import { ICodeData } from "types";
 import { SaveOutputToggle } from "./nodes/SaveOutputToggle";
 import { resolveSaveOutputDataset } from "../utils/saveOutputDataset";
+import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
 
 const MIN_NODE_WIDTH = 200;
 const MIN_NODE_HEIGHT = 150;
@@ -145,6 +146,9 @@ export const NodeContainer = ({
         defaultSaveOutputDataset,
     } = useFlowContext();
     const saveOutputDataset = resolveSaveOutputDataset(data, defaultSaveOutputDataset);
+    // Nodes created from the dataset palette load an installed listing and can't
+    // regenerate a dataset — hide the save toggle and show the dataset chip instead.
+    const datasetPaletteNode = isDatasetPaletteNode(data);
     const { getNodes, getEdges } = useReactFlow();
     const { getStarters, deleteStarter, fetchStarters } = useStarterContext();
     const { createCodeNode, loadTrill } = useCode();
@@ -865,7 +869,7 @@ export const NodeContainer = ({
                                     )}
                                 </Col> : null
                             }
-                            {!disablePlay ? (
+                            {!disablePlay && !datasetPaletteNode ? (
                                 <Col md="auto" style={{ padding: 0, display: "flex", alignItems: "center" }}>
                                     <SaveOutputToggle
                                         variant="node"
