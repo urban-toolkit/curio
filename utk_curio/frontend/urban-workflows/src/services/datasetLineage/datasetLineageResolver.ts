@@ -10,6 +10,7 @@
 import {
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
+  DatasetDataflowUsageRef,
   datasetProvenanceLabel,
 } from "../datasetCatalog";
 import {
@@ -62,6 +63,32 @@ export function formatNodeTypeLabel(nodeType: string | undefined): string {
     .split(/\s+/)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(" ");
+}
+
+/**
+ * Convert the backend cross-dataflow usage (``GET /datasets/<id>/usage``) into
+ * downstream node usages. Used as a fallback on canvas-less surfaces (the
+ * standalone catalog/browse page), where live lineage resolves no nodes because
+ * there is no open canvas — the backend resolves consumers from saved specs.
+ * References are treated as ``active``: they exist in persisted dataflows.
+ */
+export function lineageNodesFromDataflowUsage(
+  usage: DatasetDataflowUsageRef[],
+): DatasetLineageNodeUsageRef[] {
+  const nodes: DatasetLineageNodeUsageRef[] = [];
+  for (const flow of usage) {
+    for (const node of flow.nodes ?? []) {
+      nodes.push({
+        nodeId: node.nodeId,
+        nodeType: node.nodeType ?? undefined,
+        dataflowId: flow.dataflowId,
+        dataflowName: flow.dataflowName ?? null,
+        usageType: "input",
+        status: "active",
+      });
+    }
+  }
+  return nodes;
 }
 
 /** True for a Data Loading node (``curio.builtin/data-loading`` or the legacy

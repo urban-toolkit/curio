@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
@@ -8,10 +8,11 @@ import {
   isDatasetPublishedToCatalog,
   notifyDatasetCatalogRefresh,
 } from "../../../services/datasetCatalog";
-import { DatasetDataflowUsageSection } from "./DatasetDataflowUsage";
+import { DatasetDataflowUsageSection, useDatasetDataflowUsage } from "./DatasetDataflowUsage";
 import { useToastContext } from "../../../providers/ToastProvider";
 import {
   formatNodeTypeLabel,
+  lineageNodesFromDataflowUsage,
   lineageUsageSummary,
   upstreamOriginCaption,
   useDatasetLineage,
@@ -231,6 +232,14 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
   // cannot be resolved there and lineage is flagged as partial.
   const canvasAvailable = variant === "modal";
   const lineage = useDatasetLineage(dataset, { dataflowId, canvasAvailable });
+  // Backend cross-dataflow usage (resolved from saved specs) — used to populate
+  // the downstream-nodes list on canvas-less surfaces (the standalone catalog/
+  // browse page) where live lineage resolves no consumer nodes.
+  const dataflowUsage = useDatasetDataflowUsage(dataset?.id);
+  const backendConsumingNodes = useMemo(
+    () => lineageNodesFromDataflowUsage(dataflowUsage),
+    [dataflowUsage],
+  );
   // Shared schema resolution so the header/info counts match the schema panel.
   const resolvedSchema = useDatasetResolvedSchema(dataset, dataflowId, liveOutputs);
   const fields = resolvedSchema.fields;
@@ -256,7 +265,17 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
 
   const countLabel = datasetCount(dataset);
   const tags = dataset.tags.length > 0 ? dataset.tags : [dataset.format];
-  const { consumingNodes } = lineage.downstream;
+  // Prefer live-canvas consumers; fall back to backend usage when the canvas
+  // resolved none (e.g. the standalone catalog page has no open dataflow).
+  const liveConsumingNodes = lineage.downstream.consumingNodes;
+  const effectiveLineage: DatasetLineage =
+    liveConsumingNodes.length > 0
+      ? lineage
+      : {
+          ...lineage,
+          downstream: { ...lineage.downstream, consumingNodes: backendConsumingNodes },
+        };
+  const { consumingNodes } = effectiveLineage.downstream;
   const published = isDatasetPublishedToCatalog(dataset);
   // Bundles are multi-part and have no single serialized file to export.
   const canExport = dataset.format !== "bundle";
@@ -430,7 +449,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
           ) : activeTab === "Lineage" ? (
             <LineageMainSection
               dataset={dataset}
-              lineage={lineage}
+              lineage={effectiveLineage}
               canvasAvailable={canvasAvailable}
             />
           ) : (
@@ -469,10 +488,10 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
               Lineage <span className={styles.liveBadge}>live</span>
             </p>
             <p className={styles.lineageSummary}>
-              {lineageUsageSummary(lineage.downstream)}
+              {lineageUsageSummary(effectiveLineage.downstream)}
             </p>
 
-            <LineageStates lineage={lineage} canvasAvailable={canvasAvailable} />
+            <LineageStates lineage={effectiveLineage} canvasAvailable={canvasAvailable} />
 
             <details className={styles.lineageGroup} open>
               <summary className={styles.lineageGroupSummary}>
@@ -489,7 +508,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
 
             <details className={styles.lineageGroup} open>
               <summary className={styles.lineageGroupSummary}>Upstream</summary>
-              <UpstreamCards dataset={dataset} lineage={lineage} />
+              <UpstreamCards dataset={dataset} lineage={effectiveLineage} />
             </details>
 
             {/* Cross-dataflow usage — resolved from saved specs by the backend,

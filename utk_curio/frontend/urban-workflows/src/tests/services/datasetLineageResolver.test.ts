@@ -1,5 +1,6 @@
 import {
   formatNodeTypeLabel,
+  lineageNodesFromDataflowUsage,
   lineageUsageSummary,
   selectDatasetDownstreamUsage,
   selectDatasetLineage,
@@ -7,7 +8,7 @@ import {
   upstreamOriginCaption,
   type LineageCanvasNode,
 } from "../../services/datasetLineage/datasetLineageResolver";
-import type { DatasetCatalogItem } from "../../services/datasetCatalog";
+import type { DatasetCatalogItem, DatasetDataflowUsageRef } from "../../services/datasetCatalog";
 
 const DATASET_ID = "ds-1";
 
@@ -365,5 +366,39 @@ describe("formatting helpers", () => {
     expect(upstreamOriginCaption(catalogItem({ origin: "hub", format: "geojson" }))).toBe(
       "Imported · GeoJSON",
     );
+  });
+});
+
+describe("lineageNodesFromDataflowUsage (canvas-less fallback)", () => {
+  it("flattens backend usage into active downstream node usages", () => {
+    const usage: DatasetDataflowUsageRef[] = [
+      {
+        dataflowId: "flow-1",
+        dataflowName: "Flow One",
+        nodeCount: 2,
+        nodes: [
+          { nodeId: "node-a", nodeType: "DATA_TRANSFORMATION" },
+          { nodeId: "node-b", nodeType: "VIS_VEGA" },
+        ],
+      },
+    ];
+    const nodes = lineageNodesFromDataflowUsage(usage);
+    expect(nodes).toHaveLength(2);
+    expect(nodes[0]).toMatchObject({
+      nodeId: "node-a",
+      nodeType: "DATA_TRANSFORMATION",
+      dataflowId: "flow-1",
+      dataflowName: "Flow One",
+      usageType: "input",
+      status: "active",
+    });
+  });
+
+  it("returns nothing when no dataflow lists consumer nodes", () => {
+    const usage: DatasetDataflowUsageRef[] = [
+      { dataflowId: "flow-1", dataflowName: "Producer only", nodeCount: 0 },
+    ];
+    expect(lineageNodesFromDataflowUsage(usage)).toEqual([]);
+    expect(lineageNodesFromDataflowUsage([])).toEqual([]);
   });
 });
