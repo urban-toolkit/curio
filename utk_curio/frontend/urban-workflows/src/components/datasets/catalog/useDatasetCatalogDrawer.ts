@@ -170,9 +170,10 @@ export function useDatasetCatalogDrawer(presented: boolean) {
           const next = prev.filter((row) => (row?.datasetId || row?.id) !== installed.id);
           return [...next, dataflowRefFromCatalogItem(installed)];
         });
-        await catalog.reload();
-        // Let the dataset palette (and any other catalog listeners) refresh so
-        // the newly installed dataset shows up immediately.
+        // Bust the cache so the drawer refetches fresh rather than re-reading
+        // the stale cached response, then let the palette (and other catalog
+        // listeners) refresh so the newly installed dataset shows up immediately.
+        await catalog.reload({ bustCache: true });
         notifyDatasetCatalogRefresh();
         showToast(`Installed ${dataset.title}.`, "success");
       } catch (err) {
@@ -234,7 +235,8 @@ export function useDatasetCatalogDrawer(presented: boolean) {
           if (published.producerNodeId) ref.producerNodeId = published.producerNodeId;
           return [...next, ref];
         });
-        await catalog.reload();
+        await catalog.reload({ bustCache: true });
+        notifyDatasetCatalogRefresh();
         showToast("Dataset published to Data Catalog.", "success");
       } catch (err) {
         showToast((err as Error)?.message || "Could not publish dataset.", "error");
@@ -266,7 +268,8 @@ export function useDatasetCatalogDrawer(presented: boolean) {
             return { ...row, origin: "imported", publishedToHub: false };
           }),
         );
-        await catalog.reload();
+        await catalog.reload({ bustCache: true });
+        notifyDatasetCatalogRefresh();
         showToast(`${dataset.title} unpublished from the Data Catalog.`, "success");
       } catch (err) {
         showToast((err as Error)?.message || "Could not unpublish dataset.", "error");
