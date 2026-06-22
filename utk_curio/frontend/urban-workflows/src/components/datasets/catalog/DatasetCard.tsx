@@ -98,7 +98,8 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
   const tags = dataset.tags.length > 0 ? dataset.tags.slice(0, 2) : [sourceCaption];
 
   return (
-    <article className={styles.card}
+    <article
+      className={styles.card}
       draggable={draggable}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
@@ -116,7 +117,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
       >
         {/* {FORMAT_ABBR[dataset.format]} */}
 
-        <CatalogKindIcon 
+        <CatalogKindIcon
           className={`${styles.cardIcon} ${formatAvatarClass(dataset.format)} `}
           kind="dataset"
           size="md"
@@ -137,23 +138,25 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
           onClick={onOpenDetails ? () => onOpenDetails(dataset) : undefined}
           buttonLabel={`View ${dataset.title} details`}
         />
-        <h3 className={styles.cardTitle}>{dataset.dirName}</h3>
+        <h3 className={styles.cardTitle}>
+          {dataset.format == "parquet" ? dataset.dirName : dataset.title}
+        </h3>
 
         <div className={styles.cardMetaRow}>
-          <span className={styles.cardMetaText}>{dataset.title}</span>
-          {metaParts ? (
-            <span className={styles.cardMetaText}>{metaParts}</span>
-          ) : null}
+          <span className={styles.cardMetaText}>
+            {dataset.format == "parquet" ? dataset.title : dataset.dirName}
+          </span>
+          {metaParts ? <span className={styles.cardMetaText}>{metaParts}</span> : null}
           <DatasetConnectionBadge dataset={dataset} className={styles.connBadge} />
         </div>
 
         {tags.length > 0 ? (
           <div className={styles.tagRow}>
-            {version ? (
-              <span className={styles.versionBadge}>{version}</span> 
-            ) : null}
+            {version ? <span className={styles.versionBadge}>{version}</span> : null}
             {tags.map((tag) => (
-              <span key={tag} className={styles.tag}>{tag}</span>
+              <span key={tag} className={styles.tag}>
+                {tag}
+              </span>
             ))}
           </div>
         ) : null}

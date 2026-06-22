@@ -1,7 +1,6 @@
 import React from "react";
 import { CatalogItemStripHeader } from "../../components/catalog/CatalogKindVisuals";
 import { CatalogPublishPill } from "../../components/packages/CatalogPublishPill";
-import { formatDatasetLocation } from "../../components/datasets/catalog/datasetDetailHelpers";
 import {
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
@@ -54,9 +53,7 @@ export function DataCatalogBrowseCard({
         <CatalogItemStripHeader
           kind="dataset"
           badge={
-            <span className={styles.cardFormatBadge}>
-              {DATASET_FORMAT_LABEL[dataset.format]}
-            </span>
+            <span className={styles.cardFormatBadge}>{DATASET_FORMAT_LABEL[dataset.format]}</span>
           }
           trailing={
             <>
@@ -70,8 +67,13 @@ export function DataCatalogBrowseCard({
       </div>
 
       <div className={styles.cardBody}>
-        <h2 className={styles.cardTitle}>{dataset.title}</h2>
-        <p className={styles.publisher}>{formatDatasetLocation(dataset)} · v1.0.0</p>
+        <h2 className={styles.cardTitle}>
+          {dataset.format == "parquet" ? dataset.dirName : dataset.title}
+        </h2>
+        <p className={styles.publisher}>
+          {dataset.format == "parquet" ? dataset.title : dataset.dirName}
+          {/*{formatDatasetLocation(dataset)} · v1.0.0*/}
+        </p>
         <p
           className={styles.cardDescription}
           {...(!dataset.description ? { "aria-hidden": true } : {})}
@@ -93,7 +95,9 @@ export function DataCatalogBrowseCard({
       <div className={styles.cardMeta}>
         <span className={styles.metaLeft}>{left}</span>
         <span className={styles.metaRight}>
-          <span className={`${styles.liveDot} ${fresh ? styles.liveDotGreen : styles.liveDotGray}`} />
+          <span
+            className={`${styles.liveDot} ${fresh ? styles.liveDotGreen : styles.liveDotGray}`}
+          />
           <span>{relativeTime(dataset.updatedAt)}</span>
         </span>
       </div>

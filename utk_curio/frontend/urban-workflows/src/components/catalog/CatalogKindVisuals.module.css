@@ -184,3 +184,18 @@
   color: #1e1f23;
   line-height: 1.3;
 }
+
+.categoryBadge_warm {
+  background: var(--curio-accent-peach-bg);
+  color: var(--curio-accent-peach-fg);
+}
+
+.categoryBadge_cool {
+  background: var(--curio-accent-sky-bg);
+  color: var(--curio-accent-sky-fg);
+}
+
+.categoryBadge_violet {
+  background: var(--curio-accent-lilac-bg);
+  color: var(--curio-accent-lilac-fg);
+}

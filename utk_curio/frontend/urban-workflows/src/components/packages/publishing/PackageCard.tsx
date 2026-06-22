@@ -9,19 +9,26 @@ import { CatalogPublishPill } from "../CatalogPublishPill";
 import { packageInitial,primaryCategory } from "./packageUtils";
 import styles from "./PackageCard.module.css";
 
-/** CSS class variants cycled deterministically per package dirName. */
-const CARD_ICON_VARIANTS = [
-  styles.cardIconWarm,
-  styles.cardIconCool,
-  styles.cardIconViolet,
-] as const;
+/** Accent keys cycled deterministically per package dirName. */
+const PACK_ACCENT_KEYS = ["warm", "cool", "violet"] as const;
+type PackAccentKey = (typeof PACK_ACCENT_KEYS)[number];
 
-function iconVariantForPack(dirName: string): string {
+const CARD_ICON_VARIANTS: Record<PackAccentKey, string> = {
+  warm: styles.cardIconWarm,
+  cool: styles.cardIconCool,
+  violet: styles.cardIconViolet,
+};
+
+function packAccentKey(dirName: string): PackAccentKey {
   let hash = 0;
   for (let i = 0; i < dirName.length; i++) {
-    hash = (hash + dirName.charCodeAt(i)) % CARD_ICON_VARIANTS.length;
+    hash = (hash + dirName.charCodeAt(i)) % PACK_ACCENT_KEYS.length;
   }
-  return CARD_ICON_VARIANTS[hash]!;
+  return PACK_ACCENT_KEYS[hash]!;
+}
+
+function iconVariantForPack(dirName: string): string {
+  return CARD_ICON_VARIANTS[packAccentKey(dirName)];
 }
 
 
@@ -104,7 +111,7 @@ export const PackageCard: React.FC<PackageCardProps> = ({
       <div className={styles.cardBody}>
         <CatalogItemRowHeader
           kind="package"
-          badge={<CatalogCategoryBadge label={cat} />}
+          badge={<CatalogCategoryBadge label={cat} accentKey={packAccentKey(pkg.dirName)} />}
         />
         <h3 className={styles.cardTitle}>{pkg.name}</h3>
         <p className={styles.cardMeta}>

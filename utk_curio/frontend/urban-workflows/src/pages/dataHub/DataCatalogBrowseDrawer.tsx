@@ -77,7 +77,7 @@ function DataCatalogBrowseDrawerContent({
       <DataCatalogGeoPreview dataset={dataset} />
 
       <div className={styles.drawerDatasetName}>
-        <h2>{dataset.title}</h2>
+        <h2>{dataset.format == "parquet" ? dataset.dirName : dataset.title}</h2>
         <div className={styles.drawerBadgesRow}>
           <span className={`${styles.drawerFormatBadge} ${styles[`dfmt_${dataset.format}`] || ""}`}>
             {DATASET_FORMAT_LABEL[dataset.format]}
@@ -88,14 +88,16 @@ function DataCatalogBrowseDrawerContent({
             <span className={styles.drawerPublishStatusUnpublished}>Unpublished</span>
           )}
           {dataset.installed && (
-            <span className={`${styles.drawerFormatBadge} ${styles.dfmt_geojson}`}>✓ Installed</span>
+            <span className={`${styles.drawerFormatBadge} ${styles.dfmt_geojson}`}>
+              ✓ Installed
+            </span>
           )}
         </div>
       </div>
 
       <div className={styles.drawerPublisher}>
         <span className={styles.drawerPublisherText}>
-          {formatDatasetLocation(dataset)} · v1.0.0
+          {dataset.format == "parquet" ? dataset.title : dataset.dirName}
         </span>
         <span className={styles.verifiedBadge}>
           <span className={styles.verifiedCircle}>✓</span>
@@ -106,7 +108,9 @@ function DataCatalogBrowseDrawerContent({
       <div className={styles.drawerMeta}>
         <span>{left}</span>
         <span className={styles.drawerMetaRight}>
-          <span className={`${styles.liveDot} ${fresh ? styles.liveDotGreen : styles.liveDotGray}`} />
+          <span
+            className={`${styles.liveDot} ${fresh ? styles.liveDotGreen : styles.liveDotGray}`}
+          />
           <span>{relativeTime(dataset.updatedAt)}</span>
         </span>
       </div>
@@ -175,7 +179,11 @@ function DataCatalogBrowseDrawerContent({
 
       <div className={styles.drawerCtas}>
         {published ? (
-          <div className={styles.drawerPublishedPrimary} role="status" aria-label="Published to Data Catalog">
+          <div
+            className={styles.drawerPublishedPrimary}
+            role="status"
+            aria-label="Published to Data Catalog"
+          >
             Published
           </div>
         ) : (

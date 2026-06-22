@@ -68,8 +68,12 @@ export const DatasetRow = memo(function DatasetRow({
           </span>
         </div>
         <div className={packageStyles.packageKindRowMeta}>
-          <span className={packageStyles.packageKindRowLabel}>{dataset.dirName}</span>
-          <span className={packageCardStyles.cardMetaText}>{dataset.title}</span>
+          <span className={packageStyles.packageKindRowLabel}>
+            {dataset.format == "parquet" ? dataset.dirName : dataset.title}
+          </span>
+          <span className={packageCardStyles.cardMetaText}>
+            {dataset.format == "parquet" ? dataset.title : dataset.dirName}
+          </span>
 
           <div className={rowStyles.rowMeta}>
             <span className={packageStyles.packageKindCategoryChip}>

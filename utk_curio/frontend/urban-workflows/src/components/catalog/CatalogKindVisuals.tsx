@@ -121,10 +121,17 @@ export const CatalogFormatBadge: React.FC<CatalogFormatBadgeProps> = ({ label, f
 
 export interface CatalogCategoryBadgeProps {
   label: string;
+  accentKey?: string;
 }
 
-export const CatalogCategoryBadge: React.FC<CatalogCategoryBadgeProps> = ({ label }) => (
-  <span className={styles.categoryBadge}>{label}</span>
+export const CatalogCategoryBadge: React.FC<CatalogCategoryBadgeProps> = ({ label, accentKey }) => (
+  <span
+    className={[styles.categoryBadge, accentKey && styles[`categoryBadge_${accentKey}`]]
+      .filter(Boolean)
+      .join(" ")}
+  >
+    {label}
+  </span>
 );
 
 export interface CatalogItemRowHeaderProps {
