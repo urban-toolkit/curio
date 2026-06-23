@@ -5,8 +5,32 @@ from __future__ import annotations
 import csv
 import json
 import math
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
+
+@lru_cache(maxsize=2)
+def _load_json_cached(path_str: str, mtime_ns: int, size: int) -> Any:
+    """Parse a JSON file, memoized by (path, mtime, size).
+
+    ``_preview_json`` only needs a single page, but JSON has no row index — the
+    whole array must be parsed to slice it and to count total rows. Paging a large
+    list part (e.g. a multi-hundred-MB matrix) would otherwise re-parse the entire
+    file on every page request. Keying on mtime+size means an edited/regenerated
+    file misses the cache and reloads, so stale data is impossible.
+
+    Callers MUST treat the result as read-only (slice, never mutate) — the same
+    object is shared across requests. ``maxsize=2`` bounds resident memory to at
+    most two parsed files; a third distinct file evicts the least-recently-used.
+    """
+    with open(path_str, "r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def _load_json_file(path: Path) -> Any:
+    stat = path.stat()
+    return _load_json_cached(str(path), stat.st_mtime_ns, stat.st_size)
 
 
 def _json_safe(value: Any) -> Any:
@@ -305,8 +329,7 @@ class DatasetPreviewService:
         }
 
     def _preview_json(self, path: Path, row_limit: int, offset: int, item: dict[str, Any]) -> dict[str, Any]:
-        with path.open("r", encoding="utf-8") as handle:
-            data = json.load(handle)
+        data = _load_json_file(path)  # cached: page navigation never re-parses the file
         rows = data if isinstance(data, list) else [data] if isinstance(data, dict) else [{"value": data}]
         total_rows = len(rows)
         page = rows[offset : offset + row_limit]
@@ -356,8 +379,7 @@ class DatasetPreviewService:
         }
 
     def _preview_geojson(self, path: Path, row_limit: int, offset: int, item: dict[str, Any]) -> dict[str, Any]:
-        with path.open("r", encoding="utf-8") as handle:
-            data = json.load(handle)
+        data = _load_json_file(path)  # cached: page navigation never re-parses the file
         features = data.get("features", []) if isinstance(data, dict) else []
         total_rows = len(features)
         rows = []

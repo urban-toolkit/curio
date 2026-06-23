@@ -143,3 +143,28 @@ def test_bundle_part_pagination_out_of_range(tmp_path):
     assert missing["unsupported"] is True
     assert missing["partIndex"] == 5
     assert missing["rows"] == []
+
+
+def test_json_part_load_is_cached_until_file_changes(tmp_path):
+    """Paging a JSON part must not re-parse the file each page. The loader is
+    memoized by (path, mtime, size) so repeated reads return the same object, and a
+    regenerated file (different size/mtime) misses the cache and reloads."""
+    from utk_curio.backend.app.datasets.services.preview_service import (
+        _load_json_cached,
+        _load_json_file,
+    )
+
+    _load_json_cached.cache_clear()
+    f = tmp_path / "list.json"
+    f.write_text("[1, 2, 3]", encoding="utf-8")
+
+    first = _load_json_file(f)
+    second = _load_json_file(f)
+    assert first is second  # served from cache — not re-parsed
+    assert _load_json_cached.cache_info().hits >= 1
+
+    # A regenerated file (different size) invalidates the cache and reloads.
+    f.write_text("[1, 2, 3, 4, 5]", encoding="utf-8")
+    reloaded = _load_json_file(f)
+    assert reloaded == [1, 2, 3, 4, 5]
+    assert reloaded is not first
