@@ -1,0 +1,35 @@
+{
+  "$schema": "https://raw.githubusercontent.com/urban-toolkit/curio/main/docs/schemas/node-package.v4.json",
+  "id": "curio.softartifact",
+  "name": "Soft Artifact",
+  "publisher": "Curio",
+  "compatibility": { "curioRuntime": ">=0.5.0", "major": 1 },
+  "description": "Upload PDF/transcript for cited inform/explain/transform/expand",
+  "license": "MIT",
+  "readOnly": false,
+  "dependencies": { "js": {}, "packages": {}, "python": {} },
+  "behaviorScript": "scripts/behaviors.js",
+  "templates": [
+    {
+      "id": "soft-artifact",
+      "label": "Soft Artifact",
+      "category": "data",
+      "description": "One document on the canvas (PDF or transcript)",
+      "editor": "none",
+      "engine": "python",
+      "hasCode": false,
+      "hasGrammar": false,
+      "hasWidgets": false,
+      "behavior": "soft-artifact",
+      "inputPorts": [],
+      "outputPorts": [{ "cardinality": "1", "types": ["JSON"] }],
+      "containerStyle": {
+        "nodeWidth": 320,
+        "nodeHeight": 280,
+        "disablePlay": true
+      },
+      "paletteOrder": 0
+    }
+  ],
+  "version": "0.0.1"
+}
