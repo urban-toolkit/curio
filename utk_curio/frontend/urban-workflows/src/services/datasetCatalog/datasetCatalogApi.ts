@@ -112,6 +112,7 @@ function previewQueryString(query: DatasetPreviewQuery = {}): string {
   }
   if (query.offset != null) params.set("offset", String(query.offset));
   if (query.rowLimit != null) params.set("rowLimit", String(query.rowLimit));
+  if (query.part != null) params.set("part", String(query.part));
   const raw = params.toString();
   return raw ? `?${raw}` : "";
 }

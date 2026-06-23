@@ -49,6 +49,11 @@
   overflow: hidden;
 }
 
+.tableRefreshing {
+  opacity: 0.6;
+  transition: opacity 120ms ease;
+}
+
 .partNote {
   margin: 8px 12px 10px;
   font-size: 11px;

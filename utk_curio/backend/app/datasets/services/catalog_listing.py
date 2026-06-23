@@ -206,6 +206,7 @@ class CatalogListingMixin(CatalogPathMixin):
         live_outputs: list[dict[str, Any]] | None = None,
         row_limit: int = 50,
         offset: int = 0,
+        part_index: int | None = None,
     ) -> dict[str, Any]:
         item = deepcopy(self.get_dataset(
             dataset_id,
@@ -215,7 +216,9 @@ class CatalogListingMixin(CatalogPathMixin):
         resolved = self._resolve_item_path(item)
         if resolved:
             item["path"] = resolved
-        return self.preview_service.preview(item, row_limit=row_limit, offset=offset)
+        return self.preview_service.preview(
+            item, row_limit=row_limit, offset=offset, part_index=part_index
+        )
 
     def download_target(
         self,

@@ -4,11 +4,55 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 from pathlib import Path
 from typing import Any
 
+
+def _json_safe(value: Any) -> Any:
+    """Recursively replace JSON-invalid floats (NaN, +Inf, -Inf) with ``None``.
+
+    Python's ``json``/Flask's ``jsonify`` emit ``NaN``/``Infinity`` literals by
+    default, which are *not* valid JSON: the browser's strict ``Response.json()``
+    rejects them with ``Unexpected token 'N' ... is not valid JSON`` and the whole
+    preview response fails to parse. Preview rows can carry non-finite floats from
+    two raw-``json.load`` sources (``_preview_json``/``_preview_geojson``) and from
+    list/dict artifacts that were serialized with ``allow_nan=True`` — so sanitize
+    the entire payload at the service boundary before it leaves for the frontend.
+    """
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {key: _json_safe(sub) for key, sub in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(sub) for sub in value]
+    return value
+
+
 class DatasetPreviewService:
-    def preview(self, item: dict[str, Any], *, row_limit: int = 50, offset: int = 0) -> dict[str, Any]:
+    def preview(
+        self,
+        item: dict[str, Any],
+        *,
+        row_limit: int = 50,
+        offset: int = 0,
+        part_index: int | None = None,
+    ) -> dict[str, Any]:
+        # Paginated payloads are small (<= row_limit rows per part), so sanitizing
+        # the whole result is cheap and guarantees no non-finite float escapes to
+        # the strict browser JSON parser, regardless of which format handler ran.
+        return _json_safe(
+            self._dispatch(item, row_limit=row_limit, offset=offset, part_index=part_index)
+        )
+
+    def _dispatch(
+        self,
+        item: dict[str, Any],
+        *,
+        row_limit: int = 50,
+        offset: int = 0,
+        part_index: int | None = None,
+    ) -> dict[str, Any]:
         path_value = item.get("path")
         if not path_value or str(path_value).startswith("curio://"):
             return {
@@ -37,6 +81,11 @@ class DatasetPreviewService:
 
         fmt = item.get("format")
         if fmt == "bundle":
+            # A ``part_index`` request paginates a single part (its own offset),
+            # returning that part's table preview so each tab can page through all
+            # of its rows. Without it, return every part's first page for the tabs.
+            if part_index is not None:
+                return self._preview_bundle_part(path, part_index, row_limit, offset, item)
             return self._preview_bundle(path, row_limit, offset, item)
         if fmt == "csv":
             return self._preview_csv(path, row_limit, offset, item)
@@ -126,48 +175,9 @@ class DatasetPreviewService:
         for part in spec.get("parts") or []:
             if not isinstance(part, dict):
                 continue
-            label = str(part.get("label") or f"Part {part.get('index', 0)}")
-            fmt = str(part.get("format") or "json")
-            rel = part.get("file")
-            part_path = (root / rel).resolve() if rel else None
-            sub_item = {**item, "format": fmt}
-            if part_path is not None and part_path.is_file():
-                if fmt == "csv":
-                    part_preview = self._preview_csv(part_path, row_limit, 0, sub_item)
-                elif fmt == "parquet":
-                    part_preview = self._preview_parquet(part_path, row_limit, 0, sub_item)
-                elif fmt == "geojson":
-                    part_preview = self._preview_geojson(part_path, row_limit, 0, sub_item)
-                elif fmt == "geotiff":
-                    part_preview = {
-                        "schema": {"fields": []},
-                        "rows": [],
-                        "rowLimit": row_limit,
-                        "offset": 0,
-                        "totalRows": 0,
-                        "truncated": False,
-                        "unsupported": True,
-                        "message": "Raster preview is not available in the catalog yet.",
-                    }
-                else:
-                    part_preview = self._preview_json(part_path, row_limit, 0, sub_item)
-            else:
-                part_preview = {
-                    "schema": {"fields": []},
-                    "rows": [],
-                    "rowLimit": row_limit,
-                    "offset": 0,
-                    "totalRows": 0,
-                    "truncated": False,
-                    "unsupported": True,
-                    "message": "Part file is not available on disk.",
-                }
-            parts_payload.append({
-                "label": label,
-                "format": fmt,
-                "kind": part.get("kind"),
-                **part_preview,
-            })
+            # First page only (offset 0) — the tab bar just needs each part's
+            # label, format and totalRows; deeper pages are fetched per part.
+            parts_payload.append(self._preview_one_part(part, root, row_limit, 0, item))
 
         part_count = len(parts_payload)
         schema = item.get("schema") or {
@@ -187,6 +197,91 @@ class DatasetPreviewService:
             "bundle": True,
             "parts": parts_payload,
         }
+
+    def _preview_one_part(
+        self, part: dict[str, Any], root: Path, row_limit: int, offset: int, item: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Preview a single bundle part at ``offset``, tagged with its label/format/kind.
+
+        Shared by the bundle overview (offset 0 for every part) and per-part
+        pagination (a single part at an arbitrary offset).
+        """
+        label = str(part.get("label") or f"Part {part.get('index', 0)}")
+        fmt = str(part.get("format") or "json")
+        rel = part.get("file")
+        part_path = (root / rel).resolve() if rel else None
+        sub_item = {**item, "format": fmt}
+        if part_path is not None and part_path.is_file():
+            if fmt == "csv":
+                part_preview = self._preview_csv(part_path, row_limit, offset, sub_item)
+            elif fmt == "parquet":
+                part_preview = self._preview_parquet(part_path, row_limit, offset, sub_item)
+            elif fmt == "geojson":
+                part_preview = self._preview_geojson(part_path, row_limit, offset, sub_item)
+            elif fmt == "geotiff":
+                part_preview = {
+                    "schema": {"fields": []},
+                    "rows": [],
+                    "rowLimit": row_limit,
+                    "offset": offset,
+                    "totalRows": 0,
+                    "truncated": False,
+                    "unsupported": True,
+                    "message": "Raster preview is not available in the catalog yet.",
+                }
+            else:
+                part_preview = self._preview_json(part_path, row_limit, offset, sub_item)
+        else:
+            part_preview = {
+                "schema": {"fields": []},
+                "rows": [],
+                "rowLimit": row_limit,
+                "offset": offset,
+                "totalRows": 0,
+                "truncated": False,
+                "unsupported": True,
+                "message": "Part file is not available on disk.",
+            }
+        return {
+            "label": label,
+            "format": fmt,
+            "kind": part.get("kind"),
+            **part_preview,
+        }
+
+    def _preview_bundle_part(
+        self, bundle_path: Path, part_index: int, row_limit: int, offset: int, item: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Paginate one part of a bundle. Returns that part's table preview (the
+        same shape as a single-file preview) so a bundle tab can page through all
+        of its rows, with ``partIndex``/``bundle`` echoed so the client can route it."""
+        not_found = {
+            "schema": {"fields": []},
+            "rows": [],
+            "rowLimit": row_limit,
+            "offset": offset,
+            "totalRows": 0,
+            "truncated": False,
+            "bundle": True,
+            "partIndex": part_index,
+            "unsupported": True,
+            "message": "No such bundle part.",
+        }
+        try:
+            spec = json.loads(bundle_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return {**not_found, "message": f"Could not read bundle manifest: {exc}"}
+
+        parts = spec.get("parts") or []
+        if not isinstance(parts, list) or part_index < 0 or part_index >= len(parts):
+            return not_found
+        part = parts[part_index]
+        if not isinstance(part, dict):
+            return not_found
+
+        root = bundle_path.parent.parent
+        preview = self._preview_one_part(part, root, row_limit, offset, item)
+        return {**preview, "bundle": True, "partIndex": part_index}
 
     def _preview_csv(self, path: Path, row_limit: int, offset: int, item: dict[str, Any]) -> dict[str, Any]:
         total_rows = self._count_csv_rows(path)

@@ -110,6 +110,8 @@ export interface DatasetPreviewQuery {
   liveOutputs?: DatasetCatalogQuery["liveOutputs"];
   offset?: number;
   rowLimit?: number;
+  /** Bundle datasets only: paginate a single part (its rows at ``offset``). */
+  part?: number;
 }
 
 export interface DatasetCatalogQuery {

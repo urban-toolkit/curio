@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { TabularPreviewTable } from "../../tables/TabularPreviewTable";
 import { DatasetBundlePreview } from "./DatasetBundlePreview";
+import { PreviewPagination } from "./PreviewPagination";
 import {
   DatasetCatalogItem,
   DatasetPreviewResponse,
@@ -78,10 +79,13 @@ export const DatasetTablePreview: React.FC<DatasetTablePreviewProps> = ({
   const startRow = totalRows === 0 ? 0 : displayOffset + 1;
   const endRow = totalRows === 0 ? 0 : Math.min(displayOffset + rowCount, totalRows);
   const totalPages = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
-  const rangeLabel = totalRows === 0
-    ? "No rows to preview"
-    : `Showing rows ${startRow}-${endRow} of ${formatTotal(totalRows)}`;
   const isBundle = preview?.bundle === true && (preview.parts?.length ?? 0) > 0;
+  const partCount = preview?.parts?.length ?? 0;
+  const rangeLabel = isBundle
+    ? `${partCount} ${partCount === 1 ? "part" : "parts"}`
+    : totalRows === 0
+      ? "No rows to preview"
+      : `Showing rows ${startRow}-${endRow} of ${formatTotal(totalRows)}`;
   const showTable = preview != null && !preview.unsupported && !error && !isBundle;
 
   return (
@@ -100,7 +104,13 @@ export const DatasetTablePreview: React.FC<DatasetTablePreviewProps> = ({
       ) : null}
 
       {!isInitialLoad && isBundle && preview ? (
-        <DatasetBundlePreview preview={preview} datasetId={dataset.id} pageSize={PAGE_SIZE} />
+        <DatasetBundlePreview
+          preview={preview}
+          datasetId={dataset.id}
+          dataflowId={dataflowId}
+          liveOutputs={liveOutputs}
+          pageSize={PAGE_SIZE}
+        />
       ) : null}
 
       {showTable ? (
@@ -115,46 +125,15 @@ export const DatasetTablePreview: React.FC<DatasetTablePreviewProps> = ({
             />
           </div>
 
-          <div className={styles.pagination}>
-            <span className={styles.paginationNote}>
-              {totalRows === 0 ? "Showing 0 of 0" : `Showing ${startRow}-${endRow} of ${formatTotal(totalRows)}`}
-            </span>
-            <div className={styles.paginationControls}>
-              <button
-                type="button"
-                className={styles.pageButton}
-                disabled={page <= 1 || isRefreshing}
-                aria-label="Previous page"
-                onClick={() => setPage((current) => Math.max(1, current - 1))}
-              >
-                -
-              </button>
-              {Array.from({ length: Math.min(totalPages, 3) }, (_, index) => {
-                const pageNumber = page <= 2 ? index + 1 : page - 1 + index;
-                if (pageNumber > totalPages) return null;
-                return (
-                  <button
-                    key={pageNumber}
-                    type="button"
-                    className={`${styles.pageButton} ${pageNumber === page ? styles.pageButtonActive : ""}`}
-                    disabled={isRefreshing}
-                    onClick={() => setPage(pageNumber)}
-                  >
-                    {pageNumber}
-                  </button>
-                );
-              })}
-              <button
-                type="button"
-                className={styles.pageButton}
-                disabled={page >= totalPages || isRefreshing || totalRows === 0}
-                aria-label="Next page"
-                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-              >
-                +
-              </button>
-            </div>
-          </div>
+          <PreviewPagination
+            page={page}
+            totalPages={totalPages}
+            totalRows={totalRows}
+            startRow={startRow}
+            endRow={endRow}
+            disabled={isRefreshing}
+            onPageChange={setPage}
+          />
           {error ? <div className={styles.inlineError}>{error}</div> : null}
         </>
       ) : null}

@@ -122,16 +122,19 @@ def get_dataset(dataset_id: str):
 def preview_dataset(dataset_id: str):
     row_limit = request.args.get("rowLimit", "50")
     offset = request.args.get("offset", "0")
+    part = request.args.get("part")
     try:
+        part_index = max(0, int(part)) if part is not None else None
         payload = _service().preview(
             dataset_id,
             dataflow_id=_dataflow_id_from_request(),
             live_outputs=_parse_live_outputs(request.args.get("liveOutputs")),
             row_limit=max(1, min(int(row_limit), 500)),
             offset=max(0, int(offset)),
+            part_index=part_index,
         )
     except ValueError:
-        return _error("rowLimit and offset must be integers")
+        return _error("rowLimit, offset and part must be integers")
     except (DatasetCatalogError, ProjectError) as exc:
         return _error(str(exc), getattr(exc, "status", 400))
     except NotFoundError:

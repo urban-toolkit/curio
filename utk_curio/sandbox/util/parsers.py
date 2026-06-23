@@ -1,6 +1,7 @@
 import geopandas as gpd
 import pandas as pd
 import json
+import math
 import mmap
 import zlib
 import os
@@ -545,8 +546,35 @@ def _json_artifact_rel_path(art_id):
     return f"artifacts/{art_id}.json.zlib"
 
 
+def _json_safe_value(value):
+    """Recursively replace JSON-invalid floats (NaN, +Inf, -Inf) with ``None``.
+
+    ``json.dumps`` defaults to ``allow_nan=True``, which emits bare ``NaN`` /
+    ``Infinity`` tokens — accepted by Python's lenient ``json.loads`` on the
+    round-trip back, but *invalid* JSON that the browser's strict parser (and any
+    other conformant reader, e.g. a published bundle part) rejects. Scrub the
+    value here so artifacts are always valid JSON at rest. ``np.float64`` is a
+    ``float`` subclass so it is covered; ``np.float32`` and friends are caught via
+    the explicit ``np.floating`` check.
+    """
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, np.floating):
+        return float(value) if np.isfinite(value) else None
+    if isinstance(value, dict):
+        return {key: _json_safe_value(sub) for key, sub in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe_value(sub) for sub in value]
+    return value
+
+
 def _write_json_artifact(art_id, value):
-    payload = json.dumps(value, ensure_ascii=False).encode("utf-8")
+    # allow_nan=False makes invalid floats a hard error instead of silently
+    # emitting bare NaN/Infinity tokens; _json_safe_value scrubs them to null
+    # first so a legitimate non-finite value persists as null rather than raising.
+    payload = json.dumps(
+        _json_safe_value(value), ensure_ascii=False, allow_nan=False
+    ).encode("utf-8")
     rel_path = _json_artifact_rel_path(art_id)
     full_path = _resolve_stored_artifact_path(rel_path, create_parent=True)
     full_path.write_bytes(zlib.compress(payload))
@@ -950,7 +978,6 @@ def save_dataset_parquet(output, kind):
         str: The bare filename (e.g. ``1718123456789_ab12cd34_output.parquet``), or
              ``None`` if saving failed or the kind is not tabular.
     """
-    import sys
     if kind not in ('dataframe', 'geodataframe'):
         return None
 
