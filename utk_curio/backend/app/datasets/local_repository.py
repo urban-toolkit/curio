@@ -10,7 +10,7 @@ from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
 from utk_curio.backend.app.datasets.catalog_items import format_for_path, item_from_file
-from utk_curio.backend.app.datasets.constants import SUPPORTED_SUFFIXES
+from utk_curio.backend.app.datasets.constants import SIDECAR_SUFFIXES, SUPPORTED_SUFFIXES
 from utk_curio.backend.app.datasets.errors import DatasetCatalogError
 from utk_curio.backend.app.datasets.file_meta import count_file, meta_path, write_file_meta
 
@@ -30,6 +30,12 @@ class LocalDatasetRepository:
             if not root.exists() or not root.is_dir():
                 continue
             for path in sorted(root.iterdir()):
+                # Skip our own sidecars (<file>.meta.json, <file>.decode.json):
+                # they end in .json so they'd otherwise be cataloged as JSON
+                # datasets, and meta_path() would append another .meta.json each
+                # refresh, growing <file>.meta.json.meta.json... without bound.
+                if path.name.endswith(SIDECAR_SUFFIXES):
+                    continue
                 fmt = format_for_path(path)
                 if fmt is None:
                     continue

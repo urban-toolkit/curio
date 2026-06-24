@@ -12,6 +12,13 @@ SUPPORTED_SUFFIXES = {
     ".shp": "shp",
 }
 
+# Sidecar files written next to dataset files: the row/feature counts cache from
+# ``file_meta`` (``<file>.meta.json``) and the parquet object-column decode map
+# from ``parsers`` (``<file>.decode.json``). Both end in ``.json``, so a naive
+# suffix scan would catalog them as standalone JSON datasets — directory scans
+# must skip any filename ending in one of these.
+SIDECAR_SUFFIXES = (".meta.json", ".decode.json")
+
 # Curio sandbox ``detect_kind`` strings → catalog ``DatasetFormat`` values.
 # Single source of truth for the kind→format mapping (do not duplicate per
 # module — bundle part installation and computed-output formatting both read
