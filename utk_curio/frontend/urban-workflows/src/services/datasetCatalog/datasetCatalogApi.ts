@@ -89,6 +89,19 @@ function base64Utf8(value: string): string {
   return btoa(binary);
 }
 
+/**
+ * Encode a ``liveOutputs`` array into the UTF-8-safe base64 the backend decodes
+ * with ``base64.b64decode(raw).decode("utf-8")``. Centralized so the catalog,
+ * preview and download requests all encode identically: a call site that
+ * hand-rolled ``btoa`` would throw (or mis-encode) on a non-Latin1
+ * filename/data_type and 404 on the backend (issue #139). Exported for tests.
+ */
+export function encodeLiveOutputsParam(
+  liveOutputs: Array<{ node_id: string; filename: string; data_type?: string }>,
+): string {
+  return base64Utf8(JSON.stringify(liveOutputs));
+}
+
 function queryString(query: DatasetCatalogQuery = {}): string {
   const params = new URLSearchParams();
   if (query.dataflowId) params.set("dataflowId", query.dataflowId);
@@ -98,7 +111,7 @@ function queryString(query: DatasetCatalogQuery = {}): string {
   if (query.sort) params.set("sort", query.sort);
   if (query.includeHub !== undefined) params.set("includeHub", String(query.includeHub));
   if (query.liveOutputs && query.liveOutputs.length > 0) {
-    params.set("liveOutputs", base64Utf8(JSON.stringify(query.liveOutputs)));
+    params.set("liveOutputs", encodeLiveOutputsParam(query.liveOutputs));
   }
   const raw = params.toString();
   return raw ? `?${raw}` : "";
@@ -108,7 +121,7 @@ function previewQueryString(query: DatasetPreviewQuery = {}): string {
   const params = new URLSearchParams();
   if (query.dataflowId) params.set("dataflowId", query.dataflowId);
   if (query.liveOutputs && query.liveOutputs.length > 0) {
-    params.set("liveOutputs", base64Utf8(JSON.stringify(query.liveOutputs)));
+    params.set("liveOutputs", encodeLiveOutputsParam(query.liveOutputs));
   }
   if (query.offset != null) params.set("offset", String(query.offset));
   if (query.rowLimit != null) params.set("rowLimit", String(query.rowLimit));
@@ -217,7 +230,7 @@ export const datasetCatalogApi = {
     const params = new URLSearchParams();
     if (opts.dataflowId) params.set("dataflowId", opts.dataflowId);
     if (opts.liveOutputs && opts.liveOutputs.length > 0) {
-      params.set("liveOutputs", btoa(JSON.stringify(opts.liveOutputs)));
+      params.set("liveOutputs", encodeLiveOutputsParam(opts.liveOutputs));
     }
     const raw = params.toString();
     const token = getToken();
