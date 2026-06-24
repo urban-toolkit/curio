@@ -6,9 +6,13 @@ malicious & malformed input.
 (c) unpublish 500 on a legacy ``dirName: null`` ref
 (d) install 500 on a ``sourceItem`` without ``id``
 (e) GeoJSON preview 500 on ``"crs": null``
+(f) arbitrary file read via an absolute ``liveOutputs`` filename that bypasses
+    ``resolve_shared_output_path`` and reaches the ``_resolve_item_path``
+    fallback / preview path directly (#143 follow-up).
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
 from pathlib import Path
@@ -142,3 +146,79 @@ def test_geojson_preview_handles_null_crs(app, tmp_path):
     preview = svc._preview_geojson(geojson, 50, 0, {})
     assert preview["schema"]["crs"] is None
     assert preview["rows"][0]["name"] == "A"
+
+
+# ── (f) arbitrary file READ via an absolute liveOutputs filename ─────────────
+#
+# ``resolve_shared_output_path`` rejects path separators, but a ``liveOutputs``
+# entry whose ``filename`` is an absolute path (e.g. ``/etc/passwd``) is copied
+# verbatim into ``item["path"]`` by ``ComputedDatasetIndexer`` and would, before
+# the fix, be returned by the ``_resolve_item_path`` computed fallback (and kept
+# by the preview path) — streaming the file's contents back to the client.
+
+_SECRET = "TOP-SECRET-DO-NOT-LEAK"
+
+
+def _live_outputs_param(node_id: str, abs_filename: str) -> str:
+    payload = json.dumps([
+        {"node_id": node_id, "filename": abs_filename, "data_type": "csv"}
+    ])
+    return base64.b64encode(payload.encode()).decode()
+
+
+def _secret_outside_roots(name: str) -> Path:
+    # ``CURIO_LAUNCH_CWD`` itself is outside every allowed read root (shared
+    # data, workspace ``data/``, user store, catalog, sample data all sit under
+    # subdirectories of it), so a file dropped here is a faithful stand-in for
+    # ``/etc/passwd`` without depending on host files.
+    secret = Path(os.environ["CURIO_LAUNCH_CWD"]) / name
+    secret.write_text(_SECRET, encoding="utf-8")
+    return secret
+
+
+def test_resolve_item_path_rejects_out_of_root_absolute_path(app, user_and_token):
+    """The computed fallback must not return a path outside the allowed roots."""
+    from utk_curio.backend.app.datasets.service import DatasetCatalogService
+
+    user, _ = user_and_token
+    secret = _secret_outside_roots("secret_unit.txt")
+
+    svc = DatasetCatalogService(user)
+    item = {
+        "origin": "computed",
+        # URI filename carries a separator → shared resolver returns None,
+        # forcing the absolute-path fallback that used to leak the file.
+        "uri": f"curio://outputs/{secret.as_posix()}",
+        "path": secret.as_posix(),
+    }
+    assert svc._resolve_item_path(item) is None
+
+
+def test_preview_does_not_leak_file_from_live_outputs(client, user_and_token):
+    _, token = user_and_token
+    secret = _secret_outside_roots("secret_preview.txt")
+
+    resp = client.get(
+        f"/api/datasets/computed.atk/preview"
+        f"?liveOutputs={_live_outputs_param('atk', secret.as_posix())}",
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    body = resp.get_json()
+    assert body.get("rows") == []
+    assert body.get("unsupported") is True
+    assert _SECRET not in resp.get_data(as_text=True)
+
+
+def test_download_does_not_stream_file_from_live_outputs(client, user_and_token):
+    _, token = user_and_token
+    secret = _secret_outside_roots("secret_download.txt")
+
+    resp = client.get(
+        f"/api/datasets/computed.atk2/download"
+        f"?liveOutputs={_live_outputs_param('atk2', secret.as_posix())}",
+        headers=auth_headers(token),
+    )
+    # The file must not be streamed; export reports it unavailable instead.
+    assert resp.status_code == 404, resp.get_data(as_text=True)
+    assert _SECRET not in resp.get_data(as_text=True)

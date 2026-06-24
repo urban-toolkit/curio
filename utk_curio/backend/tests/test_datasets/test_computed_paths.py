@@ -56,16 +56,23 @@ def test_resolve_item_path_delegates_for_computed(app):
     assert result.endswith("scores.csv")
 
 
-def test_resolve_item_path_installed_computed_uses_absolute_path(app, tmp_path):
+def test_resolve_item_path_installed_computed_uses_absolute_path(app):
     """Installed/published computed datasets resolve via their absolute path.
 
     Once a computed dataset is installed it carries a ``curio://datasets/{dir}``
     URI and an absolute store path instead of ``curio://outputs/``.  Export must
     still locate the file (regression for the 404-on-export bug).
+
+    The store path lives under an allowed read root in production (the user's
+    dataset store); the shared-data dir is used here as a stand-in root so the
+    containment check (#143) still passes.
     """
+    import os
+    from pathlib import Path
+
     from utk_curio.backend.app.datasets.service import DatasetCatalogService
 
-    data_file = tmp_path / "computed_output.parquet"
+    data_file = Path(os.environ["CURIO_SHARED_DATA"]) / "computed_output.parquet"
     data_file.write_bytes(b"PAR1")
 
     svc = DatasetCatalogService()

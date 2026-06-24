@@ -213,9 +213,12 @@ class CatalogListingMixin(CatalogPathMixin):
             dataflow_id=dataflow_id,
             live_outputs=live_outputs,
         ))
-        resolved = self._resolve_item_path(item)
-        if resolved:
-            item["path"] = resolved
+        # Always replace ``path`` with the resolved, containment-checked path.
+        # A ``None`` result means the stored path could not be safely resolved
+        # (e.g. an attacker-supplied absolute path like ``/etc/passwd`` injected
+        # via ``liveOutputs``); the preview service then reports the dataset as
+        # unavailable instead of reading the raw path off disk.
+        item["path"] = self._resolve_item_path(item)
         return self.preview_service.preview(
             item, row_limit=row_limit, offset=offset, part_index=part_index
         )

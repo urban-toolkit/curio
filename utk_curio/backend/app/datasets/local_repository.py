@@ -14,13 +14,25 @@ from utk_curio.backend.app.datasets.constants import SIDECAR_SUFFIXES, SUPPORTED
 from utk_curio.backend.app.datasets.errors import DatasetCatalogError
 from utk_curio.backend.app.datasets.file_meta import count_file, meta_path, write_file_meta
 
+
+def data_root_dirs() -> list[Path]:
+    """Browsable file-data roots: bundled sample data and workspace data.
+
+    Single source of truth shared by catalog listing (``LocalDatasetRepository``)
+    and the path-containment check in ``catalog_paths`` — both must agree on
+    exactly which directories hold legitimately readable data files.
+    """
+    launch_dir = Path(os.environ.get("CURIO_LAUNCH_CWD", os.getcwd()))
+    package_data = Path(__file__).resolve().parents[3] / "data"
+    return [package_data, launch_dir / "data"]
+
+
 class LocalDatasetRepository:
     def _roots(self) -> list[tuple[str, Path]]:
-        launch_dir = Path(os.environ.get("CURIO_LAUNCH_CWD", os.getcwd()))
-        package_data = Path(__file__).resolve().parents[3] / "data"
+        package_data, workspace_data = data_root_dirs()
         return [
             ("Curio sample data", package_data),
-            ("Workspace data", launch_dir / "data"),
+            ("Workspace data", workspace_data),
         ]
 
     def list_items(self) -> list[dict[str, Any]]:

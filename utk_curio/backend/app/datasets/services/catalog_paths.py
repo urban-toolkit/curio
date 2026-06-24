@@ -8,6 +8,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+from utk_curio.backend.app.common.safe_paths import is_within
 from utk_curio.backend.app.datasets.catalog_items import loader_snippet
 from utk_curio.backend.app.datasets.errors import DatasetCatalogError
 from utk_curio.backend.app.datasets.installed_repository import InstalledDatasetRepository
@@ -98,6 +99,45 @@ class CatalogPathMixin:
                 if live_name and installed_name and live_name != installed_name:
                     item["needsReinstall"] = True
 
+    def _allowed_read_roots(self) -> list[Path]:
+        """Trusted base directories under which a catalog data file may live.
+
+        Any *concrete* filesystem path that :meth:`_resolve_item_path` hands
+        back is consumed unsafely downstream — preview opens it and download
+        streams it via ``send_file``. The ``path`` on a catalog item is not
+        trustworthy: a malicious ``liveOutputs`` entry has its ``filename``
+        copied verbatim into ``item["path"]`` (see
+        ``ComputedDatasetIndexer.list_items``), so an entry like
+        ``{"filename": "/etc/passwd"}`` would otherwise be streamed straight
+        back to the client. Confining every concrete return to these roots is
+        the single chokepoint that closes that arbitrary-file-read.
+        """
+        from utk_curio.backend.app.datasets.local_repository import data_root_dirs
+        from utk_curio.backend.app.datasets.storage import catalog_root, user_datasets_dir
+        from utk_curio.backend.app.projects.storage import _shared_data_dir
+
+        roots = [_shared_data_dir(), catalog_root(), *data_root_dirs()]
+        if self.user is not None:
+            # Installed/published datasets live in the *current* user's store.
+            roots.append(user_datasets_dir(self._user_key()))
+        return roots
+
+    def _contained_path(self, path_value: str) -> str | None:
+        """Return ``path_value`` iff it resolves inside an allowed read root.
+
+        Last line of defence for a path taken from an item field (which may be
+        attacker-controlled). Returns ``None`` — logged — when the path escapes
+        every trusted root, so the caller treats the dataset as unavailable
+        rather than reading a file outside Curio's sandbox.
+        """
+        candidate = Path(path_value)
+        if any(is_within(candidate, root) for root in self._allowed_read_roots()):
+            return path_value
+        logger.warning(
+            "Refusing catalog item path outside allowed data roots: %r", path_value
+        )
+        return None
+
     def _resolve_item_path(self, item: dict[str, Any]) -> str | None:
         # ── Computed datasets must be resolved via the shared-data directory
         # first, regardless of what the ``path`` field says (it is just the
@@ -118,7 +158,7 @@ class CatalogPathMixin:
                 and not str(path_value).startswith("curio://")
                 and Path(str(path_value)).is_file()
             ):
-                return str(path_value)
+                return self._contained_path(str(path_value))
             return None
 
         path_value = item.get("path")
@@ -135,7 +175,7 @@ class CatalogPathMixin:
             return None  # artifact gone – caller will show unsupported preview
 
         if path_value and not str(path_value).startswith("curio://"):
-            return str(path_value)
+            return self._contained_path(str(path_value))
 
         dir_name = item.get("dirName")
         if not dir_name:

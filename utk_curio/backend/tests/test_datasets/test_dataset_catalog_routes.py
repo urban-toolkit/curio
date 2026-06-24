@@ -71,10 +71,13 @@ def test_download_hub_dataset_streams_data_file(client, user_and_token, tmp_path
     assert len(resp.get_data()) > 0
 
 
-def test_download_name_falls_back_to_format_extension(tmp_path):
+def test_download_name_falls_back_to_format_extension(tmp_path, monkeypatch):
     """A resolved file without an extension still gets the format's extension."""
     from utk_curio.backend.app.datasets.service import DatasetCatalogService
 
+    # The resolved path must sit under an allowed read root (#143): point the
+    # shared-data dir at tmp_path so this synthetic artifact passes containment.
+    monkeypatch.setenv("CURIO_SHARED_DATA", str(tmp_path))
     artifact = tmp_path / "abc123_artifact"  # no suffix, like a computed output id
     artifact.write_text("a,b\n1,2\n")
 
@@ -111,7 +114,7 @@ def test_download_name_preserves_friendly_title():
     )
 
 
-def test_download_tabular_parquet_exports_as_csv(tmp_path):
+def test_download_tabular_parquet_exports_as_csv(tmp_path, monkeypatch):
     """A plain-DataFrame parquet is exported as CSV, not parquet."""
     import io
 
@@ -119,6 +122,7 @@ def test_download_tabular_parquet_exports_as_csv(tmp_path):
 
     from utk_curio.backend.app.datasets.service import DatasetCatalogService
 
+    monkeypatch.setenv("CURIO_SHARED_DATA", str(tmp_path))  # allowed read root (#143)
     artifact = tmp_path / "abc123_artifact"  # no suffix, like a computed output id
     frame = pd.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
     frame.to_parquet(artifact)
@@ -141,13 +145,14 @@ def test_download_tabular_parquet_exports_as_csv(tmp_path):
     pd.testing.assert_frame_equal(exported, frame)
 
 
-def test_download_geo_parquet_exports_as_geojson(tmp_path):
+def test_download_geo_parquet_exports_as_geojson(tmp_path, monkeypatch):
     """A GeoParquet dataset is exported as GeoJSON."""
     import geopandas as gpd
     from shapely.geometry import Point
 
     from utk_curio.backend.app.datasets.service import DatasetCatalogService
 
+    monkeypatch.setenv("CURIO_SHARED_DATA", str(tmp_path))  # allowed read root (#143)
     artifact = tmp_path / "geo_artifact"  # no suffix
     gdf = gpd.GeoDataFrame(
         {"name": ["a", "b"]},
@@ -176,7 +181,7 @@ def test_download_geo_parquet_exports_as_geojson(tmp_path):
     assert payload["features"][0]["geometry"]["type"] == "Point"
 
 
-def test_download_geo_parquet_with_timestamp_exports_as_geojson(tmp_path):
+def test_download_geo_parquet_with_timestamp_exports_as_geojson(tmp_path, monkeypatch):
     """GeoParquet carrying datetime columns exports to GeoJSON.
 
     Regression: ``to_json`` serializes properties via ``json.dumps`` and used
@@ -189,6 +194,7 @@ def test_download_geo_parquet_with_timestamp_exports_as_geojson(tmp_path):
 
     from utk_curio.backend.app.datasets.service import DatasetCatalogService
 
+    monkeypatch.setenv("CURIO_SHARED_DATA", str(tmp_path))  # allowed read root (#143)
     artifact = tmp_path / "geo_ts_artifact"  # no suffix
     gdf = gpd.GeoDataFrame(
         {
