@@ -1,5 +1,5 @@
-import type { ReactFlowInstance, FitViewOptions } from "reactflow";
-import { getRectOfNodes, getViewportForBounds } from "reactflow";
+import type { ReactFlowInstance, FitViewOptions, Node } from "reactflow";
+import { getNodesBounds, getViewportForBounds } from "reactflow";
 
 // fitView centers content in the full pane, but the palette dock
 // (`#tools-palette-dock`) is a fixed overlay on the left — and with a panel open
@@ -30,6 +30,17 @@ export function fitViewWithMenuOffset(
         : allNodes;
     if (targetNodes.length === 0) return false;
 
+    // React Flow populates `width`/`height` only after it measures each node in
+    // the DOM. Loading a workflow can run this before measurement, when the
+    // dimensions are still null — bounds would then collapse to a near-zero
+    // point and getViewportForBounds would over-zoom to maxZoom on it. Report
+    // failure so the caller's retry loop waits for measurement instead of
+    // halting on a degenerate fit.
+    const measured = (n: Node) =>
+        typeof n.width === "number" && n.width > 0 &&
+        typeof n.height === "number" && n.height > 0;
+    if (!targetNodes.every(measured)) return false;
+
     const container = document.querySelector<HTMLElement>(".react-flow");
     const paneRect = container?.getBoundingClientRect();
     // No measurable pane (headless / tests / hidden): fall back to plain fitView so
@@ -42,7 +53,7 @@ export function fitViewWithMenuOffset(
     const minZoom = options?.minZoom ?? FALLBACK_MIN_ZOOM;
     const maxZoom = options?.maxZoom ?? FALLBACK_MAX_ZOOM;
 
-    const bounds = getRectOfNodes(targetNodes);
+    const bounds = getNodesBounds(targetNodes);
     const { x, y, zoom } = getViewportForBounds(
         bounds,
         paneRect.width,
