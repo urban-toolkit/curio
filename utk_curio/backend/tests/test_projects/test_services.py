@@ -231,3 +231,35 @@ def test_prune_sink_node_dataset_refs_noop_without_sink(app, tmp_curio):
         "datasets": [{"datasetId": "computed.t", "producerNodeId": "t", "dirName": "computed.t@1"}],
     }}
     assert services._prune_sink_node_dataset_refs("1", spec) is spec
+
+
+def test_save_drops_non_persisted_output_from_manifest(
+    app, db, user_and_token, tmp_curio
+):
+    """#144: an output whose source can't be installed must not be recorded as a
+    phantom in the manifest (it would silently vanish on reload)."""
+    user, _ = user_and_token
+    shared = storage._shared_data_dir()
+    shared.mkdir(parents=True, exist_ok=True)
+    (shared / "good.data").write_bytes(b"payload")
+    # "ghost.data" is intentionally absent -> install_node_output returns None.
+
+    data = ProjectCreate(
+        name="Phantom",
+        spec=_make_spec(),
+        outputs=[
+            OutputRef(node_id="n1", filename="good.data"),
+            OutputRef(node_id="n2", filename="ghost.data"),
+        ],
+    )
+    detail = services.save_project(user, data)
+
+    ukey = services._user_dir_key(user)
+    manifest = storage.read_manifest(ukey, detail.id)
+    names = {o["filename"] for o in manifest["outputs"]}
+    assert names == {"good.data"}, "ghost output must not be persisted as a phantom"
+
+    # The save response and a fresh load both reflect only the durable output.
+    assert {o["filename"] for o in (services.load_project(user, detail.id)["outputs"])} == {
+        "good.data"
+    }

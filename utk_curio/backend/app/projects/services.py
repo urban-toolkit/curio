@@ -359,6 +359,37 @@ def _output_refs_from_manifest(manifest: Optional[dict]) -> List[OutputRef]:
     ]
 
 
+def _persisted_output_refs(
+    user_key: str,
+    project_id: str,
+    output_refs: List[OutputRef],
+    spec: Optional[dict],
+) -> List[OutputRef]:
+    """Filter *output_refs* to those a reload can durably restore, logging drops.
+
+    Thin wrapper over :func:`storage.persisted_output_refs` that logs every
+    dropped ref. A drop means an output the client sent was not durably
+    persisted (auto-install failed/returned None, or its dataset was pruned as a
+    sink-node duplicate). We omit it from the manifest so the manifest never
+    claims an output that would silently vanish on reload, and log it loudly so
+    the dropped dataset is diagnosable instead of invisible (issue #144).
+    """
+    persisted = storage.persisted_output_refs(user_key, project_id, output_refs, spec=spec)
+    if len(persisted) != len(output_refs):
+        kept = {(r.node_id, r.filename) for r in persisted}
+        for ref in output_refs:
+            if (ref.node_id, ref.filename) not in kept:
+                logger.warning(
+                    "Output %r from node %s was not durably persisted (no "
+                    "installed dataset or legacy copy); omitting it from the "
+                    "project manifest so it isn't recorded as a phantom that "
+                    "vanishes on reload.",
+                    ref.filename,
+                    ref.node_id,
+                )
+    return persisted
+
+
 # ---------------------------------------------------------------------------
 # Save
 # ---------------------------------------------------------------------------
@@ -399,14 +430,18 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
     effective_spec = _prune_sink_node_dataset_refs(ukey, effective_spec)
     if effective_spec is not data.spec:
         storage.write_spec(ukey, project_id, effective_spec)
-    storage.write_manifest(ukey, project_id, project.spec_revision, output_refs,
+    # Record only outputs the reload path can restore from a durable source
+    # (installed dataset / legacy copy). Writing the raw client list would let a
+    # swallowed install error leave a phantom that vanishes on reload (#144).
+    persisted_refs = _persisted_output_refs(ukey, project_id, output_refs, effective_spec)
+    storage.write_manifest(ukey, project_id, project.spec_revision, persisted_refs,
         name=data.name,
         description=data.description,
         thumbnail_accent=data.thumbnail_accent or "peach",
     )
 
     db.session.commit()
-    return _to_detail(project, spec=effective_spec, outputs=output_refs)
+    return _to_detail(project, spec=effective_spec, outputs=persisted_refs)
 
 
 def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
@@ -464,14 +499,17 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
         if data.spec is not None or spec_dirty:
             storage.write_spec(ukey, project_id, effective_spec)
 
-    storage.write_manifest(ukey, project_id, project.spec_revision, output_refs,
+    # Record only outputs the reload path can restore from a durable source so a
+    # swallowed install error can't leave a phantom manifest entry (#144).
+    persisted_refs = _persisted_output_refs(ukey, project_id, output_refs, effective_spec)
+    storage.write_manifest(ukey, project_id, project.spec_revision, persisted_refs,
         name=project.name,
         description=project.description,
         thumbnail_accent=project.thumbnail_accent or "peach",
     )
 
     db.session.commit()
-    return _to_detail(project, spec=effective_spec, outputs=output_refs)
+    return _to_detail(project, spec=effective_spec, outputs=persisted_refs)
 
 
 # ---------------------------------------------------------------------------

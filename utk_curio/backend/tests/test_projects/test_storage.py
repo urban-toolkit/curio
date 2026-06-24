@@ -169,3 +169,57 @@ def test_installed_file_for_node_swallows_path_traversal(tmp_curio):
     ]}}
     # Must return None rather than raising PathTraversalError out of load_project.
     assert storage._installed_file_for_node("1", spec, "n") is None
+
+
+# ---------------------------------------------------------------------------
+# persisted_output_refs — #144: manifest must only claim durably-recoverable
+# outputs, never ones backed solely by the volatile shared cache.
+# ---------------------------------------------------------------------------
+
+def test_persisted_output_refs_excludes_shared_cache_only(tmp_curio):
+    """An output present only in the shared scratch cache is NOT durable."""
+    shared = storage._shared_data_dir()
+    shared.mkdir(parents=True, exist_ok=True)
+    (shared / "cache_only.data").write_bytes(b"x")
+
+    refs = [OutputRef(node_id="n1", filename="cache_only.data")]
+    # No legacy copy, no installed dataset ref in the spec -> dropped.
+    kept = storage.persisted_output_refs("1", "proj-cache", refs, spec={"dataflow": {}})
+    assert kept == []
+
+
+def test_persisted_output_refs_keeps_legacy_copy(tmp_curio):
+    """An output with a legacy project/data copy survives a reload -> kept."""
+    shared = storage._shared_data_dir()
+    shared.mkdir(parents=True, exist_ok=True)
+    (shared / "leg.data").write_bytes(b"x")
+    refs = [OutputRef(node_id="n1", filename="leg.data")]
+    storage.copy_outputs("1", "proj-legacy", refs)  # writes project/data/leg.data
+
+    kept = storage.persisted_output_refs("1", "proj-legacy", refs, spec={"dataflow": {}})
+    assert [r.filename for r in kept] == ["leg.data"]
+
+
+class _FakeMsvcrt:
+    LK_LOCK = 1
+    LK_UNLCK = 0
+
+    def __init__(self):
+        self.calls = []
+
+    def locking(self, fd, mode, nbytes):
+        self.calls.append((mode, nbytes))
+
+
+def test_spec_write_lock_uses_msvcrt_when_fcntl_absent(tmp_curio, monkeypatch):
+    """#144: on Windows (no fcntl) the lock must still take a cross-process
+    msvcrt lock, not silently degrade to the in-process layer only."""
+    fake = _FakeMsvcrt()
+    monkeypatch.setattr(storage, "fcntl", None)
+    monkeypatch.setattr(storage, "msvcrt", fake)
+
+    with storage.spec_write_lock("1", "proj-win"):
+        pass
+
+    assert (fake.LK_LOCK, 1) in fake.calls, "should acquire the cross-process lock"
+    assert (fake.LK_UNLCK, 1) in fake.calls, "should release the cross-process lock"

@@ -24,6 +24,11 @@ try:  # POSIX advisory file locking; unavailable on Windows.
 except ImportError:  # pragma: no cover - non-POSIX fallback
     fcntl = None
 
+try:  # Windows mandatory file locking; unavailable on POSIX.
+    import msvcrt
+except ImportError:  # pragma: no cover - non-Windows fallback
+    msvcrt = None
+
 
 # Per-(user, project) in-process locks. flock guards cross-PROCESS contention but
 # is a no-op on Windows; this threading lock serializes same-process threads
@@ -123,25 +128,50 @@ def spec_write_lock(user_key: str, project_id: str):
     per-project lock file makes the read+merge+write critical section atomic.
 
     Serialization has two layers: an in-process threading lock (all platforms,
-    same-process threads) and a POSIX ``flock`` (cross-process). On Windows
-    ``flock`` is unavailable, so only the in-process layer applies there.
+    same-process threads) and a cross-process file lock (POSIX ``flock`` or, on
+    Windows, ``msvcrt.locking``). Only a platform with neither falls back to the
+    in-process layer alone.
     """
     d = ensure_project_dir(user_key, project_id)
     lock_path = d / ".spec.lock"
     thread_lock = _spec_thread_lock(user_key, project_id)
     thread_lock.acquire()
     try:
-        if fcntl is None:
+        with _interprocess_spec_lock(lock_path):
             yield
-            return
+    finally:
+        thread_lock.release()
+
+
+@contextmanager
+def _interprocess_spec_lock(lock_path: Path):
+    """Best-effort exclusive cross-process lock on *lock_path*.
+
+    POSIX uses ``fcntl.flock``; Windows uses ``msvcrt.locking`` (the previous
+    fcntl-only path skipped Windows entirely, leaving multi-process Windows
+    saves racing). On the rare platform with neither, the caller's in-process
+    threading lock is the only guard and this is a no-op.
+    """
+    if fcntl is not None:
         with open(lock_path, "w") as handle:
             fcntl.flock(handle, fcntl.LOCK_EX)
             try:
                 yield
             finally:
                 fcntl.flock(handle, fcntl.LOCK_UN)
-    finally:
-        thread_lock.release()
+    elif msvcrt is not None:  # pragma: no cover - exercised only on Windows
+        # Lock a 1-byte region at offset 0. LK_LOCK blocks (retrying ~10s) until
+        # the region is free, giving a cross-process mutex like flock(LOCK_EX).
+        with open(lock_path, "a+") as handle:
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+    else:  # pragma: no cover - neither POSIX nor Windows locking available
+        yield
 
 
 # ---------------------------------------------------------------------------
@@ -258,6 +288,41 @@ def hydrate_outputs(
             shutil.copy2(str(installed_src), str(dst))
             hydrated.append(ref)
     return hydrated
+
+
+def persisted_output_refs(
+    user_key: str,
+    project_id: str,
+    refs: List[OutputRef],
+    *,
+    spec: Optional[dict] = None,
+) -> List[OutputRef]:
+    """Subset of *refs* that a later reload can restore from a DURABLE source.
+
+    ``hydrate_outputs`` resolves an output from one of three places: the shared
+    scratch cache, a legacy ``project/data`` copy, or an installed dataset in the
+    user store (via *spec* ``dataflow.datasets``). The shared cache is a global,
+    by-filename scratch dir that gets cleared and is not a per-project guarantee,
+    so it is intentionally *excluded* here: an output backed only by the cache
+    silently vanishes once it's evicted.
+
+    The manifest must therefore record only outputs backed by a legacy copy or an
+    installed dataset. Recording the raw client list instead lets a swallowed
+    auto-install error (or a pruned sink-node dataset) leave a phantom entry the
+    manifest claims exists but reload can never restore (issue #144).
+    """
+    d = project_dir(user_key, project_id)
+    kept: List[OutputRef] = []
+    for ref in refs:
+        validate_component(ref.filename, field="output filename")
+        legacy = safe_join(d / "data", ref.filename, validate=False, field="output filename")
+        if legacy.is_file():
+            kept.append(ref)
+            continue
+        installed = _installed_file_for_node(user_key, spec, ref.node_id)
+        if installed is not None and installed.is_file():
+            kept.append(ref)
+    return kept
 
 
 # ---------------------------------------------------------------------------
