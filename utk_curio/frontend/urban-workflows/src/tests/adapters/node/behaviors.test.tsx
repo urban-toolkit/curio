@@ -227,6 +227,18 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(output.type).toBe('source');
       expect(output.position).toBe('right');
     });
+
+    // Regression for #151: Merge Flow must not set `disablePlay`. When it did,
+    // UniversalNode's Play-All handler short-circuited (signalNodeExecDone +
+    // return) before invoking `sendCode`, so the run advanced to the downstream
+    // level before the merged output was propagated — downstream nodes then ran
+    // with stale/empty input. Routing Play All through `sendCodeOverride`
+    // (which emits synchronously, then signals done) is what fixes it.
+    test('does not disable Play and exposes sendCodeOverride for Play All', async () => {
+      const result = await callBehavior(useMergeFlowBehavior);
+      expect(result.current.disablePlay).toBeFalsy();
+      expect(typeof result.current.sendCodeOverride).toBe('function');
+    });
   });
 
   describe('useDataPoolBehavior', () => {

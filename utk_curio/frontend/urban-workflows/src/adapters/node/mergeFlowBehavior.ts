@@ -78,10 +78,18 @@ export const useMergeFlowBehavior: NodeBehaviorHook = (data, nodeState) => {
     { id: 'out', type: 'source', position: Position.Right },
   ];
 
+  // NOTE: intentionally *not* setting `disablePlay`. With `disablePlay: true`
+  // UniversalNode's Play-All handler short-circuits — it calls
+  // `signalNodeExecDone` and returns *before* invoking `sendCode`, so the run
+  // advances to the downstream level before this node's reactive effect commits
+  // the merged output. Downstream code nodes then execute with stale/empty
+  // `data.input` (`arg=None`). Leaving `disablePlay` falsy makes Play All route
+  // through `sendCodeOverride`, which emits synchronously (propagating
+  // downstream input and only then signalling done) — matching the Data Pool
+  // pattern. See issue #151.
   return {
     handlesOverride,
     setOutputCallbackOverride,
     sendCodeOverride,
-    disablePlay: true,
   };
 };
