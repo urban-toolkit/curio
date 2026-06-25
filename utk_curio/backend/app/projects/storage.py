@@ -269,6 +269,41 @@ def _installed_file_for_node(
     return None
 
 
+def _durable_source_for(
+    user_key: str,
+    project_id: str,
+    ref: OutputRef,
+    *,
+    spec: Optional[dict],
+) -> Optional[Path]:
+    """Resolve *ref* to a DURABLE on-disk source a reload can restore from.
+
+    A source is durable when it survives independently of the shared scratch
+    cache: a legacy ``project/data/`` copy, or an installed dataset in the user
+    store (registered in *spec* ``dataflow.datasets``). The shared cache is a
+    global, by-filename dir that gets cleared, so it is intentionally NOT a
+    durable source — it's only a hydrate fast-path.
+
+    This is the single definition of "durable" shared by :func:`hydrate_outputs`
+    (which copies the source into the cache) and :func:`persisted_output_refs`
+    (which keeps a ref iff a durable source exists). Keeping one resolver stops
+    the persist filter and the hydrate path from drifting apart — e.g. a future
+    durable source added to one but not the other would otherwise let save drop
+    an output reload could restore, or record one it can't.
+
+    Assumes ``ref.filename`` has already been validated by the caller (it is
+    joined with ``validate=False``). Returns the source ``Path`` or ``None``.
+    """
+    d = project_dir(user_key, project_id)
+    legacy = safe_join(d / "data", ref.filename, validate=False, field="output filename")
+    if legacy.is_file():
+        return legacy
+    installed = _installed_file_for_node(user_key, spec, ref.node_id)
+    if installed is not None and installed.is_file():
+        return installed
+    return None
+
+
 def hydrate_outputs(
     user_key: str,
     project_id: str,
@@ -280,12 +315,11 @@ def hydrate_outputs(
 
     Sources (first match wins):
     1. Already present in shared data (current session).
-    2. Legacy ``project/data/`` copies from older saves.
-    3. User dataset store paths registered in *spec* ``dataflow.datasets``.
+    2. A durable source (legacy ``project/data/`` copy or installed dataset) —
+       see :func:`_durable_source_for`.
     """
     shared = _shared_data_dir()
     shared.mkdir(parents=True, exist_ok=True)
-    d = project_dir(user_key, project_id)
     hydrated: List[OutputRef] = []
     for ref in refs:
         validate_component(ref.filename, field="output filename")
@@ -294,15 +328,9 @@ def hydrate_outputs(
             hydrated.append(ref)
             continue
 
-        legacy_src = safe_join(d / "data", ref.filename, validate=False, field="output filename")
-        if legacy_src.is_file():
-            shutil.copy2(str(legacy_src), str(dst))
-            hydrated.append(ref)
-            continue
-
-        installed_src = _installed_file_for_node(user_key, spec, ref.node_id)
-        if installed_src is not None and installed_src.is_file():
-            shutil.copy2(str(installed_src), str(dst))
+        source = _durable_source_for(user_key, project_id, ref, spec=spec)
+        if source is not None:
+            shutil.copy2(str(source), str(dst))
             hydrated.append(ref)
     return hydrated
 
@@ -328,7 +356,6 @@ def persisted_output_refs(
     auto-install error (or a pruned sink-node dataset) leave a phantom entry the
     manifest claims exists but reload can never restore (issue #144).
     """
-    d = project_dir(user_key, project_id)
     kept: List[OutputRef] = []
     for ref in refs:
         try:
@@ -340,12 +367,7 @@ def persisted_output_refs(
             # instead of letting PathTraversalError (a PermissionError, which
             # the save routes don't catch) bubble up as an HTTP 500 (#144).
             continue
-        legacy = safe_join(d / "data", ref.filename, validate=False, field="output filename")
-        if legacy.is_file():
-            kept.append(ref)
-            continue
-        installed = _installed_file_for_node(user_key, spec, ref.node_id)
-        if installed is not None and installed.is_file():
+        if _durable_source_for(user_key, project_id, ref, spec=spec) is not None:
             kept.append(ref)
     return kept
 
