@@ -174,6 +174,14 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 attempts += 1;
 
                 if (attempts >= 20) {
+                    // Measurement never produced positive dimensions for every
+                    // node within the retry budget (e.g. a hidden/zero-sized
+                    // node, or a context where fitViewWithMenuOffset's pane
+                    // fallback is never reached because its measurement gate
+                    // keeps short-circuiting). Don't leave the canvas at the
+                    // default viewport — do a best-effort plain fitView so
+                    // content is at least roughly framed before giving up.
+                    reactFlow.fitView(fitOptions);
                     setFitViewOnLoad(false);
                     return;
                 }
