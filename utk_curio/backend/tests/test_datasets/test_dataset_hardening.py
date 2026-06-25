@@ -222,3 +222,53 @@ def test_download_does_not_stream_file_from_live_outputs(client, user_and_token)
     # The file must not be streamed; export reports it unavailable instead.
     assert resp.status_code == 404, resp.get_data(as_text=True)
     assert _SECRET not in resp.get_data(as_text=True)
+
+
+def test_listing_does_not_disclose_out_of_root_path_from_live_outputs(client, user_and_token):
+    """The catalog *listing* must not echo an attacker-controlled absolute path.
+
+    Preview/download are gated by ``_resolve_item_path``, but the listing
+    enrichment used to copy a ``liveOutputs`` filename verbatim into
+    ``item["path"]``/``loaderSnippet`` whenever the file existed on disk —
+    a file-existence oracle plus absolute-path disclosure. The enrichment
+    must confine the kept path to the allowed read roots (#143 follow-up).
+    """
+    _, token = user_and_token
+    secret = _secret_outside_roots("secret_listing.txt")
+    abs_path = secret.as_posix()
+
+    resp = client.get(
+        f"/api/datasets/catalog"
+        f"?liveOutputs={_live_outputs_param('atk3', abs_path)}",
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    # The leaked absolute path must appear nowhere in the response body...
+    body_text = resp.get_data(as_text=True)
+    assert abs_path not in body_text
+    assert _SECRET not in body_text
+    # ...and the offending item, if surfaced at all, must carry no path.
+    item = next(
+        (it for it in resp.get_json()["items"] if it["id"] == "computed.atk3"),
+        None,
+    )
+    if item is not None:
+        assert item.get("path") is None
+
+
+def test_detail_does_not_disclose_out_of_root_path_from_live_outputs(client, user_and_token):
+    """Same protection on the single-item ``GET /api/datasets/<id>`` route."""
+    _, token = user_and_token
+    secret = _secret_outside_roots("secret_detail.txt")
+    abs_path = secret.as_posix()
+
+    resp = client.get(
+        f"/api/datasets/computed.atk4"
+        f"?liveOutputs={_live_outputs_param('atk4', abs_path)}",
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    body_text = resp.get_data(as_text=True)
+    assert abs_path not in body_text
+    assert _SECRET not in body_text
+    assert resp.get_json().get("path") is None

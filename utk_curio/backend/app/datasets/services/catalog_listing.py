@@ -122,10 +122,21 @@ class CatalogListingMixin(CatalogPathMixin):
             is_outputs_uri = uri.startswith("curio://outputs/")
             if item.get("origin") == "computed" or is_outputs_uri:
                 # Auto-installed copies already carry an absolute path into the
-                # user's dataset store — do not replace it with the ephemeral
-                # shared-data parquet used only for live discovery.
+                # user's dataset store — keep it (don't replace it with the
+                # ephemeral shared-data parquet used only for live discovery),
+                # but ONLY when it resolves inside an allowed read root. The
+                # path is not trustworthy: a malicious ``liveOutputs`` entry has
+                # its ``filename`` copied verbatim into ``item["path"]`` by
+                # ``ComputedDatasetIndexer``, so an entry like
+                # ``{"filename": "/etc/passwd"}`` would otherwise be echoed back
+                # here — disclosing an absolute path and acting as a
+                # file-existence oracle in the listing/detail response, even
+                # though preview/download are separately gated by
+                # ``_resolve_item_path``. Confining it to the same roots is the
+                # chokepoint that closes that leak (#143 follow-up).
                 path_val = item.get("path") or ""
-                if path_val and Path(path_val).is_file():
+                contained = bool(path_val) and self._contained_path(path_val) is not None
+                if path_val and contained and Path(path_val).is_file():
                     item["loaderSnippet"] = loader_snippet(item["format"], path_val)
                     continue
                 resolved = self._resolve_computed_output_path(item)
@@ -139,14 +150,25 @@ class CatalogListingMixin(CatalogPathMixin):
                     item["path"] = resolved
                     item["loaderSnippet"] = loader_snippet(item["format"], resolved)
                 elif is_outputs_uri:
-                    # The URI looks like an output but the file no longer
-                    # exists on disk.  Replace the stale relative path with
-                    # None so the loader snippet shows a clear placeholder
-                    # rather than a bare artifact ID that Python can't open.
-                    path_val = item.get("path") or ""
-                    if not path_val or not Path(path_val).is_absolute():
+                    # The URI looks like an output but it didn't resolve to a
+                    # real file in the shared dir. Drop a stale relative path,
+                    # and drop an absolute path that escapes the allowed roots
+                    # (the attacker case above) so the response never carries a
+                    # leaked path. A *contained* absolute path is a legitimate
+                    # installed dataset whose file is momentarily missing —
+                    # leave it so the loader snippet still points at the right
+                    # place once it reappears.
+                    abs_uncontained = bool(path_val) and Path(path_val).is_absolute() and not contained
+                    if not path_val or not Path(path_val).is_absolute() or not contained:
                         item["path"] = None
                         item["loaderSnippet"] = loader_snippet(item["format"], None)
+                    if abs_uncontained:
+                        # The same out-of-root absolute path is embedded verbatim
+                        # in the ``curio://outputs/<filename>`` URI (the filename
+                        # is attacker-controlled via ``liveOutputs``). Drop it so
+                        # no out-of-root absolute path is reflected anywhere in
+                        # the listing/detail response.
+                        item["uri"] = None
 
         # Paths are now resolved, so collapse computed datasets that point at the
         # same data file (two producer nodes installing one shared output) — they
