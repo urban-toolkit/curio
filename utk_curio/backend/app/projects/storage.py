@@ -160,11 +160,24 @@ def _interprocess_spec_lock(lock_path: Path):
             finally:
                 fcntl.flock(handle, fcntl.LOCK_UN)
     elif msvcrt is not None:  # pragma: no cover - exercised only on Windows
-        # Lock a 1-byte region at offset 0. LK_LOCK blocks (retrying ~10s) until
-        # the region is free, giving a cross-process mutex like flock(LOCK_EX).
+        # Lock a 1-byte region at offset 0 to get a cross-process mutex like
+        # flock(LOCK_EX). Unlike flock, ``LK_LOCK`` only retries internally for
+        # ~10s and then raises OSError; under sustained contention (e.g. a
+        # Play-All install racing a save) that uncaught OSError would propagate
+        # out to an HTTP 500. Re-issue the blocking lock until it is acquired so
+        # the waiter blocks indefinitely like the POSIX path instead of failing
+        # the save (#144).
         with open(lock_path, "a+") as handle:
-            handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            while True:
+                handle.seek(0)
+                try:
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+                    break
+                except OSError:
+                    # The ~10s window elapsed without the region freeing; the
+                    # call already blocked, so loop straight back into another
+                    # blocking attempt (no busy-spin).
+                    continue
             try:
                 yield
             finally:

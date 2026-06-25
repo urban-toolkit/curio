@@ -201,13 +201,25 @@ def test_persisted_output_refs_keeps_legacy_copy(tmp_curio):
 
 
 class _FakeMsvcrt:
-    LK_LOCK = 1
+    LK_LOCK = 1   # blocking acquire
+    LK_NBLCK = 2  # non-blocking acquire (must NOT be used — it can't wait)
     LK_UNLCK = 0
 
-    def __init__(self):
+    def __init__(self, fail_times: int = 0):
+        # Record (mode, nbytes) only for calls that did not raise, so the
+        # assertions reflect the lock that was actually taken/released.
         self.calls = []
+        self.lock_attempts = 0
+        self._fail_remaining = fail_times
 
     def locking(self, fd, mode, nbytes):
+        if mode == self.LK_LOCK:
+            self.lock_attempts += 1
+            if self._fail_remaining > 0:
+                self._fail_remaining -= 1
+                # Mirror msvcrt: a contended blocking lock retries internally
+                # for ~10s and then raises OSError instead of waiting forever.
+                raise OSError("Resource deadlock avoided")
         self.calls.append((mode, nbytes))
 
 
@@ -221,5 +233,27 @@ def test_spec_write_lock_uses_msvcrt_when_fcntl_absent(tmp_curio, monkeypatch):
     with storage.spec_write_lock("1", "proj-win"):
         pass
 
+    # The blocking mode (not the non-blocking LK_NBLCK) must be used, on a
+    # 1-byte region, and the lock must be released.
     assert (fake.LK_LOCK, 1) in fake.calls, "should acquire the cross-process lock"
     assert (fake.LK_UNLCK, 1) in fake.calls, "should release the cross-process lock"
+    assert all(mode != fake.LK_NBLCK for mode, _ in fake.calls), (
+        "must use the blocking lock so a contended waiter waits, not LK_NBLCK"
+    )
+
+
+def test_spec_write_lock_msvcrt_blocks_through_contention(tmp_curio, monkeypatch):
+    """#144(c): the actual race — a contended Windows lock whose LK_LOCK raises
+    OSError after its ~10s window — must be retried until the region frees, not
+    surfaced as an uncaught OSError (HTTP 500) out of the save."""
+    fake = _FakeMsvcrt(fail_times=3)
+    monkeypatch.setattr(storage, "fcntl", None)
+    monkeypatch.setattr(storage, "msvcrt", fake)
+
+    # Must NOT raise despite three timeouts before the region becomes free.
+    with storage.spec_write_lock("1", "proj-win-contended"):
+        pass
+
+    assert fake.lock_attempts == 4, "should re-issue the blocking lock until acquired"
+    assert (fake.LK_LOCK, 1) in fake.calls
+    assert (fake.LK_UNLCK, 1) in fake.calls
