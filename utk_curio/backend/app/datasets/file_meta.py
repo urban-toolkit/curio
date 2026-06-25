@@ -47,9 +47,16 @@ def count_file(path: Path, fmt: str) -> tuple[int | None, int | None]:
     return None, None
 
 
+# Suffix for the row/feature counts sidecar written next to a dataset file.
+# The catalog directory-scan skip-guard (``datasets.constants.SIDECAR_SUFFIXES``)
+# derives from this, so changing it here keeps the scan in lockstep and can't
+# silently reopen the unbounded ``.meta.json.meta.json…`` regrowth #145 fixed.
+META_SIDECAR_SUFFIX = ".meta.json"
+
+
 def meta_path(data_path: Path) -> Path:
     """Return the sidecar metadata path for a dataset file."""
-    return data_path.parent / (data_path.name + ".meta.json")
+    return data_path.parent / (data_path.name + META_SIDECAR_SUFFIX)
 
 
 def read_file_meta(data_path: Path) -> tuple[int | None, int | None]:
