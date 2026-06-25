@@ -47,7 +47,11 @@ def _spec_thread_lock(user_key: str, project_id: str) -> "threading.Lock":
             _spec_locks[key] = lock
         return lock
 
-from utk_curio.backend.app.common.safe_paths import safe_join, validate_component
+from utk_curio.backend.app.common.safe_paths import (
+    PathTraversalError,
+    safe_join,
+    validate_component,
+)
 from utk_curio.backend.app.projects.schemas import OutputRef
 
 
@@ -327,7 +331,15 @@ def persisted_output_refs(
     d = project_dir(user_key, project_id)
     kept: List[OutputRef] = []
     for ref in refs:
-        validate_component(ref.filename, field="output filename")
+        try:
+            validate_component(ref.filename, field="output filename")
+        except PathTraversalError:
+            # An unsafe filename (separator/traversal or a char outside the
+            # safe set) can never be durably persisted — the load-path
+            # resolvers reject it the same way — so drop it from the manifest
+            # instead of letting PathTraversalError (a PermissionError, which
+            # the save routes don't catch) bubble up as an HTTP 500 (#144).
+            continue
         legacy = safe_join(d / "data", ref.filename, validate=False, field="output filename")
         if legacy.is_file():
             kept.append(ref)

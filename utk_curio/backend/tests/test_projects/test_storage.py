@@ -200,6 +200,26 @@ def test_persisted_output_refs_keeps_legacy_copy(tmp_curio):
     assert [r.filename for r in kept] == ["leg.data"]
 
 
+def test_persisted_output_refs_drops_unsafe_filename_without_raising(tmp_curio):
+    """An output filename with a char outside the safe set must be dropped, not
+    raise PathTraversalError (a PermissionError the save routes don't catch and
+    would surface as a 500)."""
+    safe_ref = OutputRef(node_id="ok", filename="good.data")
+    # Space is outside [A-Za-z0-9._-] -> validate_component raises; CJK/emoji etc.
+    # would trigger the same path.
+    unsafe_ref = OutputRef(node_id="bad", filename="bad name.data")
+    shared = storage._shared_data_dir()
+    shared.mkdir(parents=True, exist_ok=True)
+    (shared / "good.data").write_bytes(b"x")
+    storage.copy_outputs("1", "proj-unsafe", [safe_ref])  # durable legacy copy
+
+    kept = storage.persisted_output_refs(
+        "1", "proj-unsafe", [safe_ref, unsafe_ref], spec={"dataflow": {}}
+    )
+    # No raise; the unsafe ref is simply omitted (never durably persistable).
+    assert [r.filename for r in kept] == ["good.data"]
+
+
 class _FakeMsvcrt:
     LK_LOCK = 1   # blocking acquire
     LK_NBLCK = 2  # non-blocking acquire (must NOT be used — it can't wait)
