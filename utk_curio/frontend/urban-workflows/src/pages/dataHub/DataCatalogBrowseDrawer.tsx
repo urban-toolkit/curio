@@ -175,7 +175,9 @@ function DataCatalogBrowseDrawerContent({
       {/* Dataflows that consume this dataset (resolved from saved specs by the
           backend, so it works on this canvas-less browse page). Renders nothing
           when the dataset isn't used anywhere. */}
-      <DatasetDataflowUsageSection datasetId={dataset.id} />
+      <div className={styles.drawerSection}>
+        <DatasetDataflowUsageSection datasetId={dataset.id} />
+      </div>
 
       <div className={styles.drawerCtas}>
         {published ? (
