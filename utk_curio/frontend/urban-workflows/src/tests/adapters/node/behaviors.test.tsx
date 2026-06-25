@@ -37,13 +37,16 @@ jest.mock('../../../components/editing/OutputContent', () => {
   return { __esModule: true, default: () => mockReact.createElement('div', null, 'output') };
 });
 
+// `useEdges()` is settable per test so a Play-All test can wire the merge's
+// input slots. Defaults to [] for every other behavior test; reset in afterEach.
+let mockEdges: any[] = [];
 jest.mock('reactflow', () => ({
   Position: { Left: 'left', Right: 'right', Top: 'top', Bottom: 'bottom' },
   useStoreApi: () => ({
     subscribe: jest.fn().mockReturnValue(jest.fn()),
     getState: () => ({ edges: [] }),
   }),
-  useEdges: () => [],
+  useEdges: () => mockEdges,
 }));
 
 jest.mock('../../../providers/StarterProvider', () => ({
@@ -238,6 +241,69 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       const result = await callBehavior(useMergeFlowBehavior);
       expect(result.current.disablePlay).toBeFalsy();
       expect(typeof result.current.sendCodeOverride).toBe('function');
+    });
+
+    afterEach(() => {
+      mockEdges = [];
+    });
+
+    // The actual #151 bug was about ORDERING: Play All must propagate the merged
+    // output downstream *synchronously* (before the run advances). This drives
+    // sendCodeOverride and asserts outputCallback fires synchronously with the
+    // full merged array — so a regression where sendCodeOverride stops emitting
+    // synchronously (e.g. becomes async) is caught, not just re-adding disablePlay.
+    test('sendCodeOverride emits the merged output synchronously when all slots are ready', async () => {
+      mockEdges = [
+        { source: 'a', target: 'merge-1', targetHandle: 'in_0' },
+        { source: 'b', target: 'merge-1', targetHandle: 'in_1' },
+      ];
+      const outputCallback = jest.fn();
+      const setOutput = jest.fn();
+      const result = await callBehavior(
+        useMergeFlowBehavior,
+        { nodeId: 'merge-1', outputCallback, input: [{ id: 'a-data' }, { id: 'b-data' }] },
+        { setOutput },
+      );
+
+      // Ignore any emission from the mount effect; assert only the Play-All call.
+      outputCallback.mockClear();
+      act(() => {
+        result.current.sendCodeOverride!('print(1)');
+      });
+
+      // Propagated synchronously (we assert right after the sync act, no await)
+      // with the merged slot array — and no "inputs not ready" error.
+      expect(outputCallback).toHaveBeenCalledTimes(1);
+      expect(outputCallback).toHaveBeenCalledWith('merge-1', {
+        data: [{ id: 'a-data' }, { id: 'b-data' }],
+        dataType: 'outputs',
+      });
+      expect(setOutput).not.toHaveBeenCalled();
+    });
+
+    // The flip side: Play All must NOT emit stale/partial input when a wired slot
+    // is still empty — it surfaces an error instead of propagating downstream.
+    test('sendCodeOverride does not propagate partial input; reports inputs-not-ready', async () => {
+      mockEdges = [
+        { source: 'a', target: 'merge-2', targetHandle: 'in_0' },
+        { source: 'b', target: 'merge-2', targetHandle: 'in_1' },
+      ];
+      const outputCallback = jest.fn();
+      const setOutput = jest.fn();
+      const result = await callBehavior(
+        useMergeFlowBehavior,
+        { nodeId: 'merge-2', outputCallback, input: [{ id: 'a-data' }] }, // only 1 of 2 ready
+        { setOutput },
+      );
+
+      outputCallback.mockClear();
+      act(() => {
+        result.current.sendCodeOverride!('print(1)');
+      });
+
+      expect(outputCallback).not.toHaveBeenCalled();
+      expect(setOutput).toHaveBeenCalledTimes(1);
+      expect(setOutput.mock.calls[0][0].code).toBe('error');
     });
   });
 
