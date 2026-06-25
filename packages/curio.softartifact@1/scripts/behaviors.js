@@ -24,6 +24,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! react */ "react");
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
+var _curio;
 function _slicedToArray(r, e) { return _arrayWithHoles(r) || _iterableToArrayLimit(r, e) || _unsupportedIterableToArray(r, e) || _nonIterableRest(); }
 function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
 function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) return _arrayLikeToArray(r, a); var t = {}.toString.call(r).slice(8, -1); return "Object" === t && r.constructor && (t = r.constructor.name), "Map" === t || "Set" === t ? Array.from(r) : "Arguments" === t || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t) ? _arrayLikeToArray(r, a) : void 0; } }
@@ -39,6 +40,7 @@ function fakeIngest(file, role, nodeId) {
     status: 'ready'
   };
 }
+var API_BASE = "".concat(typeof window !== 'undefined' && ((_curio = window.curio) === null || _curio === void 0 ? void 0 : _curio.backendUrl) || '', "/api/softartifact");
 
 //todo: create a behavior hook for soft artifact behavior
 var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) {
@@ -58,6 +60,10 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
     _useState8 = _slicedToArray(_useState7, 2),
     result = _useState8[0],
     setResult = _useState8[1];
+  var _useState9 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false),
+    _useState0 = _slicedToArray(_useState9, 2),
+    backendUp = _useState0[0],
+    setBackendUp = _useState0[1];
 
   //call outputcallback when it is ingested, put in onIngest function
   var emitOutput = function emitOutput(descriptor) {
@@ -95,6 +101,21 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
       setBusy(false);
     }, 400);
   };
+  (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(function () {
+    var check = function check() {
+      fetch("".concat(API_BASE, "/health")).then(function (response) {
+        return setBackendUp(response.ok);
+      })["catch"](function () {
+        return setBackendUp(false);
+      });
+    };
+    check();
+    var iv = setInterval(check, 10000); //check health every 10 seconds 
+    return function () {
+      return clearInterval(iv);
+    };
+  }, []);
+  var statusText = backendUp ? "healthy af" : "sad af";
   var contentComponent = /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       padding: 12
@@ -162,12 +183,12 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
     onClick: onIngest,
     disabled: !file || busy,
     style: {
-      marginTop: 12,
-      width: '100%',
+      marginTop: 10,
+      width: '50%',
       padding: '8px 12px',
       border: 'none',
-      borderRadius: 8,
-      fontWeight: 600,
+      borderRadius: 5,
+      fontWeight: 400,
       cursor: !file || busy ? 'not-allowed' : 'pointer',
       background: !file || busy ? '#e2e8f0' : '#2563eb',
       color: !file || busy ? '#94a3b8' : '#fff'
@@ -179,7 +200,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
       background: '#f8fafc',
       padding: 8
     }
-  }, JSON.stringify(result, null, 2)) : null));
+  }, JSON.stringify(result, null, 2)) : null), /*#__PURE__*/React.createElement("div", null, "backend is ", statusText));
   return {
     contentComponent: contentComponent
   };

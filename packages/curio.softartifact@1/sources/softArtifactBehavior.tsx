@@ -1,6 +1,12 @@
 import { NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
+interface softArtifactState{
+  artifactId: string | null;
+  role: 'explain' | 'inform' | 'transform' | 'expand'
+  sourceFile: string,
+  status: 'empty' | 'ingesting' | 'ready' | 'error'
+}
 
 function fakeIngest(file: File, role: string, nodeId: string) {
   return {
@@ -11,12 +17,16 @@ function fakeIngest(file: File, role: string, nodeId: string) {
   }
 }
 
+const API_BASE = `${(typeof window !== 'undefined' && (window as any).curio?.backendUrl) || ''}/api/softartifact`;
+
 //todo: create a behavior hook for soft artifact behavior
 export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
   const [role, setRole] = useState("inform");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ReturnType<typeof fakeIngest> | null>(null);
+  const [backendUp, setBackendUp] = useState(false);
+  
 
   //call outputcallback when it is ingested, put in onIngest function
   const emitOutput = (descriptor: Record<string, unknown>) => {
@@ -49,6 +59,19 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
       setBusy(false);
     }, 400);
   }
+
+  useEffect(() => {
+    const check = () => {
+      fetch(`${API_BASE}/health`)
+        .then((response) => setBackendUp(response.ok))
+        .catch(() => setBackendUp(false))
+    };
+    check();
+    const iv = setInterval(check, 10_000); //check health every 10 seconds 
+    return () => clearInterval(iv);
+  }, [])
+
+  const statusText = backendUp ? "healthy af" : "sad af";
 
   const contentComponent = (
     <>
@@ -92,16 +115,16 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
           onClick={onIngest}
           disabled={!file || busy}
           style={{
-            marginTop: 12,
-            width: '100%',
+            marginTop: 10,
+            width: '50%',
             padding: '8px 12px',
             border: 'none',
-            borderRadius: 8,
-            fontWeight: 600,
+            borderRadius: 5,
+            fontWeight: 400,
             cursor: !file || busy ? 'not-allowed' : 'pointer',
             background: !file || busy ? '#e2e8f0' : '#2563eb',
             color: !file || busy ? '#94a3b8' : '#fff',
-          }}
+          }}       
         >
           {busy ? 'Ingesting…' : 'Ingest (stub)'}
         </button>
@@ -111,7 +134,11 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
             {JSON.stringify(result, null, 2)}
           </pre>
           ) : null}
-        </div>
+      </div>
+
+      <div>
+        backend is {statusText}
+      </div>
     </>
 
   );
