@@ -33,6 +33,33 @@ def _load_json_file(path: Path) -> Any:
     return _load_json_cached(str(path), stat.st_mtime_ns, stat.st_size)
 
 
+@lru_cache(maxsize=2)
+def _load_json_maybe_compressed_cached(path_str: str, mtime_ns: int, size: int) -> Any:
+    """Parse a JSON file that may be zlib-compressed, memoized by (path, mtime, size).
+
+    Computed ``dict``/``list`` outputs (e.g. autk-grammar pool wrappers) are
+    persisted zlib-compressed with a ``.json.zlib`` name. Reading those as plain
+    UTF-8 text raises ``UnicodeDecodeError`` — a ``ValueError`` subclass — which is
+    exactly what broke the catalog preview for these datasets. Try a transparent
+    zlib decompress first and fall back to the raw bytes for ordinary ``.json``
+    (a plain JSON document never decompresses as zlib, so the fallback is safe).
+    """
+    import zlib
+
+    with open(path_str, "rb") as handle:
+        raw = handle.read()
+    try:
+        raw = zlib.decompress(raw)
+    except zlib.error:
+        pass
+    return json.loads(raw.decode("utf-8"))
+
+
+def _load_json_maybe_compressed(path: Path) -> Any:
+    stat = path.stat()
+    return _load_json_maybe_compressed_cached(str(path), stat.st_mtime_ns, stat.st_size)
+
+
 def _json_safe(value: Any) -> Any:
     """Recursively replace JSON-invalid floats (NaN, +Inf, -Inf) with ``None``.
 
@@ -114,7 +141,7 @@ class DatasetPreviewService:
         if fmt == "csv":
             return self._preview_csv(path, row_limit, offset, item)
         if fmt == "json":
-            return self._preview_json(path, row_limit, offset, item)
+            return self._preview_json(path, row_limit, offset, item, part_index=part_index)
         if fmt == "geojson":
             return self._preview_geojson(path, row_limit, offset, item)
         if fmt == "parquet":
@@ -328,8 +355,125 @@ class DatasetPreviewService:
             "truncated": end < self._total_rows(item, total_rows),
         }
 
-    def _preview_json(self, path: Path, row_limit: int, offset: int, item: dict[str, Any]) -> dict[str, Any]:
-        data = _load_json_file(path)  # cached: page navigation never re-parses the file
+    def _preview_layer_table(
+        self, layer: dict[str, Any], row_limit: int, offset: int
+    ) -> dict[str, Any]:
+        """Table preview for one normalized pool layer, parsed exactly like the
+        Data Pool (via the shared ``rows_from_parse_output``)."""
+        from utk_curio.sandbox.util.tabular_preview import rows_from_parse_output
+
+        all_rows = rows_from_parse_output(
+            {"dataType": layer.get("dataType"), "data": layer.get("data")}
+        )
+        total_rows = len(all_rows)
+        page = all_rows[offset : offset + row_limit] if offset < total_rows else []
+        end = offset + len(page)
+        return {
+            "schema": {"fields": self._infer_fields(page) if page else []},
+            "rows": page,
+            "rowLimit": row_limit,
+            "offset": offset,
+            "totalRows": total_rows,
+            "truncated": end < total_rows,
+        }
+
+    def _preview_pool_envelope(
+        self,
+        layers: list[dict[str, Any]],
+        row_limit: int,
+        offset: int,
+        item: dict[str, Any],
+        part_index: int | None,
+    ) -> dict[str, Any]:
+        """Preview an autk-grammar pool output the way the Data Pool renders it:
+        a single layer becomes a flat table; multiple layers become a bundle with
+        one tab per layer (so the existing bundle UI and per-part paging apply)."""
+        # One layer → flat table, matching a single-tab Data Pool (part_index N/A).
+        if len(layers) == 1:
+            return self._preview_layer_table(layers[0], row_limit, offset)
+
+        def part_meta(layer: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "label": str(layer.get("label") or "Layer"),
+                "format": "geojson" if layer.get("dataType") == "geodataframe" else "json",
+                "kind": layer.get("dataType"),
+            }
+
+        # Paginate a single tab (its own offset) — mirrors _preview_bundle_part.
+        if part_index is not None:
+            if part_index < 0 or part_index >= len(layers):
+                return {
+                    "schema": {"fields": []},
+                    "rows": [],
+                    "rowLimit": row_limit,
+                    "offset": offset,
+                    "totalRows": 0,
+                    "truncated": False,
+                    "bundle": True,
+                    "partIndex": part_index,
+                    "unsupported": True,
+                    "message": "No such bundle part.",
+                }
+            layer = layers[part_index]
+            preview = {**part_meta(layer), **self._preview_layer_table(layer, row_limit, offset)}
+            return {**preview, "bundle": True, "partIndex": part_index}
+
+        # Overview: every tab's first page (offset 0) plus its own totalRows.
+        parts_payload = [
+            {**part_meta(layer), **self._preview_layer_table(layer, row_limit, 0)}
+            for layer in layers
+        ]
+        return {
+            "schema": item.get("schema") or {
+                "fields": [
+                    {"name": "parts", "type": "integer", "nullable": False, "sample": len(parts_payload)}
+                ],
+                "bundleParts": [
+                    {"label": p["label"], "format": p["format"]} for p in parts_payload
+                ],
+            },
+            "rows": [],
+            "rowLimit": row_limit,
+            "offset": offset,
+            "totalRows": len(parts_payload),
+            "truncated": False,
+            "bundle": True,
+            "parts": parts_payload,
+        }
+
+    def _preview_json(
+        self,
+        path: Path,
+        row_limit: int,
+        offset: int,
+        item: dict[str, Any],
+        part_index: int | None = None,
+    ) -> dict[str, Any]:
+        from utk_curio.sandbox.util.tabular_preview import normalize_pool_layers
+
+        try:
+            # cached + zlib-aware: page navigation never re-parses, and computed
+            # dict/list outputs (`.json.zlib`) decompress transparently.
+            data = _load_json_maybe_compressed(path)
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "schema": item.get("schema") or {"fields": []},
+                "rows": [],
+                "rowLimit": row_limit,
+                "offset": offset,
+                "totalRows": item.get("featureCount") or item.get("rowCount") or 0,
+                "truncated": False,
+                "unsupported": True,
+                "message": f"Could not read JSON preview: {exc}",
+            }
+
+        # autk-grammar pool wrappers (single geodataframe, multi-layer `outputs`
+        # envelope, or a raw layer array) preview as per-layer tables, parsed the
+        # same way the Data Pool parses them.
+        layers = normalize_pool_layers(data)
+        if layers:
+            return self._preview_pool_envelope(layers, row_limit, offset, item, part_index)
+
         rows = data if isinstance(data, list) else [data] if isinstance(data, dict) else [{"value": data}]
         total_rows = len(rows)
         page = rows[offset : offset + row_limit]

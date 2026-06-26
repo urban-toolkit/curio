@@ -120,21 +120,27 @@ def get_dataset(dataset_id: str):
 @datasets_bp.route("/datasets/<dataset_id>/preview", methods=["GET"])
 @require_auth
 def preview_dataset(dataset_id: str):
-    row_limit = request.args.get("rowLimit", "50")
-    offset = request.args.get("offset", "0")
+    # Parse the pagination params in isolation: a ValueError here is genuinely a
+    # bad query parameter. Wrapping the whole preview() call in `except ValueError`
+    # (as this once did) masked any ValueError raised deep inside preview parsing —
+    # e.g. a UnicodeDecodeError reading a zlib-compressed output — as this message.
     part = request.args.get("part")
     try:
+        row_limit = max(1, min(int(request.args.get("rowLimit", "50")), 500))
+        offset = max(0, int(request.args.get("offset", "0")))
         part_index = max(0, int(part)) if part is not None else None
+    except ValueError:
+        return _error("rowLimit, offset and part must be integers")
+
+    try:
         payload = _service().preview(
             dataset_id,
             dataflow_id=_dataflow_id_from_request(),
             live_outputs=_parse_live_outputs(request.args.get("liveOutputs")),
-            row_limit=max(1, min(int(row_limit), 500)),
-            offset=max(0, int(offset)),
+            row_limit=row_limit,
+            offset=offset,
             part_index=part_index,
         )
-    except ValueError:
-        return _error("rowLimit, offset and part must be integers")
     except (DatasetCatalogError, ProjectError) as exc:
         return _error(str(exc), getattr(exc, "status", 400))
     except NotFoundError:

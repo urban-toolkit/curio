@@ -248,6 +248,21 @@ def test_hub_dataset_preview_reads_catalog_payload(client, user_and_token, tmp_p
     assert body.get("unsupported") is not True
 
 
+def test_preview_rejects_non_integer_pagination_params(client, user_and_token, tmp_path, monkeypatch):
+    """The int-parse error is reserved for genuinely bad pagination params — it
+    must not leak from a ValueError raised deep inside preview parsing (that bug
+    masked a UnicodeDecodeError on zlib-compressed outputs as this message)."""
+    _, token = user_and_token
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+
+    catalog = client.get("/api/datasets/catalog", headers=_auth(token)).get_json()
+    dataset = next(item for item in catalog["items"] if item["title"] == "ACS Neighborhood Profile")
+
+    resp = client.get(f"/api/datasets/{dataset['id']}/preview?rowLimit=abc", headers=_auth(token))
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "rowLimit, offset and part must be integers"
+
+
 def test_catalog_surfaces_workspace_data_without_dataflow(client, user_and_token, tmp_path, monkeypatch):
     """Workspace data (<launch>/data) must appear in the browse catalog even with
     no open dataflow (review #145a / dead LocalDatasetRepository)."""

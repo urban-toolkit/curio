@@ -47,6 +47,95 @@ def rows_from_parse_output(parsed: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
+def _layer_is_nonempty(layer: dict[str, Any]) -> bool:
+    """Mirror the Data Pool's empty-tab drop (``useTableData`` ``tabd.filter``)."""
+    if layer.get("dataType") == "geodataframe":
+        features = (layer.get("data") or {}).get("features")
+        return isinstance(features, list) and len(features) > 0
+    if layer.get("dataType") == "dataframe":
+        data = layer.get("data") or {}
+        columns = list(data.keys()) if isinstance(data, dict) else []
+        return bool(columns) and bool(data.get(columns[0]))
+    return True
+
+
+def normalize_pool_layers(payload: Any) -> list[dict[str, Any]] | None:
+    """Normalize an autk-grammar pool output into per-layer table wrappers.
+
+    Mirrors the Data Pool's ``useTableData`` normalization so the catalog
+    preview shows the same per-layer tables the pool does. autk-grammar emits two
+    shapes, both stored as a ``dict``/``list`` artifact (and zlib-compressed):
+
+    - compute / data+compute (``layersToPoolWrapper``):
+      ``{dataType: 'outputs', data: [{dataType: 'geodataframe', data: FC,
+      layerName, layerType}, ...]}`` (or a single ``geodataframe`` wrapper).
+    - data-only (``compileDataSpecToAutkDbJs``): a plain layer array
+      ``[{name, type, geojson}, ...]``.
+
+    Returns a list of ``{label, layerType, dataType, data}`` wrappers (each ready
+    for :func:`rows_from_parse_output`), with empty layers dropped to match the
+    pool. Returns ``None`` when ``payload`` is not a recognizable pool shape, so
+    the caller falls back to a plain-JSON preview.
+    """
+    known = {"geodataframe", "dataframe"}
+
+    def peel(rec: Any) -> Any:
+        # parseOutput recursively wraps non-tabular values as {dataType, data};
+        # peel those envelopes until a layer record or known wrapper surfaces.
+        while (
+            isinstance(rec, dict)
+            and isinstance(rec.get("dataType"), str)
+            and rec["dataType"] not in known
+            and "data" in rec
+        ):
+            rec = rec["data"]
+        return rec
+
+    if (
+        isinstance(payload, dict)
+        and payload.get("dataType") == "outputs"
+        and isinstance(payload.get("data"), list)
+    ):
+        items = payload["data"]
+    elif isinstance(payload, list):
+        items = payload
+    elif isinstance(payload, dict) and payload.get("dataType") in known:
+        items = [payload]
+    else:
+        return None
+
+    layers: list[dict[str, Any]] = []
+    for item in items:
+        if item is None:
+            continue
+        rec = peel(item)
+        if not isinstance(rec, dict):
+            continue
+        geojson = rec.get("geojson")
+        if isinstance(geojson, dict) and geojson.get("type") == "FeatureCollection":
+            # data-only autk shape: {name, type, geojson}
+            layer = {
+                "label": rec.get("name"),
+                "layerType": rec.get("type"),
+                "dataType": "geodataframe",
+                "data": geojson,
+            }
+        elif rec.get("dataType") in known:
+            # pool wrapper: {dataType, data, layerName, layerType}
+            layer = {
+                "label": rec.get("layerName"),
+                "layerType": rec.get("layerType"),
+                "dataType": rec["dataType"],
+                "data": rec.get("data"),
+            }
+        else:
+            continue
+        if _layer_is_nonempty(layer):
+            layers.append(layer)
+
+    return layers or None
+
+
 def load_parquet_frame(path: Path) -> tuple[Any, int]:
     """Load a parquet file and return ``(frame, total_row_count)``.
 
