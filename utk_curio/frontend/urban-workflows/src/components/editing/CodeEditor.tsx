@@ -19,6 +19,7 @@ import Editor, { Monaco } from "@monaco-editor/react";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { applyInstalledDatasetToProject } from "../../services/datasetCatalog/datasetCatalogApi";
 import { resolveSaveOutputDataset } from "../../utils/saveOutputDataset";
+import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
 import { useProvenanceContext } from "../../providers/ProvenanceProvider";
 import { useCollab, CodeProposal } from "../../providers/CollaborationProvider";
 import { ICodeData } from "../../types";
@@ -225,6 +226,7 @@ function CodeEditor({
             nodeExecProv,
             projectId,
             resolveSaveOutputDataset(data, defaultSaveOutputDataset),
+            resolveNodeDisplayLabel(data),
         );
     }, [replacedCodeDirty]);
 

@@ -58,6 +58,9 @@ class ComputedDatasetIndexer:
             items.append(base_item(
                 id=item_id,
                 title=title_from_filename(raw),
+                # Session-only outputs have no producing-node name available yet,
+                # so the filename remains both title and subtitle until install.
+                fileName=title_from_filename(raw),
                 description="Dataset produced by a node output.",
                 origin="computed",
                 format=fmt,

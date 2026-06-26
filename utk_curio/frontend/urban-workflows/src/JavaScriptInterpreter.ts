@@ -16,6 +16,7 @@ export class JavaScriptInterpreter {
         nodeExecProv: any,
         dataflowId?: string | null,
         saveOutputDataset = false,
+        nodeName?: string,
     ) {
         const callbackError = (message: string) => {
             callback({
@@ -42,6 +43,7 @@ export class JavaScriptInterpreter {
                 nodeType: nodeType,
                 nodeId: nodeId,
                 ...(dataflowId ? { dataflowId } : {}),
+                ...(nodeName ? { nodeName } : {}),
                 saveOutputDataset,
             }),
             headers: {

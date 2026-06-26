@@ -146,6 +146,7 @@ def base_item(**overrides: Any) -> dict[str, Any]:
     item = {
         "id": "",
         "title": "",
+        "fileName": None,
         "description": "",
         "origin": "imported",
         "format": "csv",
@@ -218,6 +219,10 @@ def item_from_manifest(manifest: DatasetManifest, dataset_root: Path, *, origin:
     return base_item(
         id=manifest.id,
         title=manifest.name,
+        # The generated data-file name, kept as a distinct field so a computed
+        # dataset's ``title`` can carry the producing node's name while the
+        # original filename stays available for display (see datasetSubtitle).
+        fileName=title_from_filename(Path(manifest.data_file).name),
         description=manifest.description,
         origin=origin,
         format=manifest.format,

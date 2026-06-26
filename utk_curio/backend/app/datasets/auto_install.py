@@ -11,6 +11,7 @@ def auto_install_node_output(
     node_id: str | None,
     sandbox_output: dict[str, Any],
     dataflow_id: str | None = None,
+    node_name: str | None = None,
 ) -> dict[str, Any] | None:
     """Copy a node execution artifact into ``computed.<node_id>@1/`` when possible.
 
@@ -45,11 +46,15 @@ def auto_install_node_output(
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user_key = _user_dir_key(user)
+        # The node's canvas display name becomes the dataset title; ignore blank
+        # values so the installer keeps its filename-derived fallback.
+        clean_node_name = (node_name or "").strip() or None
         result = install_node_output(
             user_key,
             node_id=node_id,
             path_ref=str(path_ref),
             data_type=data_type,
+            node_name=clean_node_name,
         )
         if result is None:
             return None

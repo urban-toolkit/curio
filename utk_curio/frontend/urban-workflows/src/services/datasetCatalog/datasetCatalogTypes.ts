@@ -40,6 +40,10 @@ export interface DatasetLoaderSnippet {
 export interface DatasetCatalogItem {
   id: string;
   title: string;
+  /** Human-friendly name of the generated data file. For computed datasets the
+   * ``title`` carries the producing node's name, so the original filename lives
+   * here and is shown as a subtitle (see {@link datasetSubtitle}). */
+  fileName?: string | null;
   description?: string;
   origin: DatasetOrigin;
   format: DatasetFormat;
@@ -182,23 +186,44 @@ export function datasetProvenanceLabel(
  * The clean, user-facing display name for a dataset — the single source of
  * truth for *which* field to render as a dataset's title.
  *
- * Computed node outputs (``origin === "computed"``) carry a generated output
- * filename in ``title`` (e.g. ``1782498496720 Ef610Da8.Json``); their
- * human-meaningful name is the store folder (``dirName``). Catalog / imported /
- * source datasets carry their real name in ``title``. When a computed dataset
- * has no ``dirName`` we fall back to ``title`` so the result is never blank.
+ * ``title`` holds the real name for every origin: a catalog/imported dataset's
+ * published name, and — for computed node outputs — the producing node's canvas
+ * name (the backend stamps it at install time). The generated output filename
+ * lives in ``fileName`` and is shown as a subtitle, not the title.
+ *
+ * A computed output with no captured node name carries the generated filename
+ * in *both* ``title`` and ``fileName``; that raw filename must never be the
+ * title, so we fall back to the store folder (``dirName``) — never to
+ * ``fileName`` — for computed datasets. Same fallback applies if ``title`` is
+ * ever blank.
  *
  * Use this everywhere a dataset title is rendered (palette, catalog browse,
- * detail panel, breadcrumb) instead of inlining the ``origin``-based ternary,
- * so the displayed name stays consistent across the UI.
+ * detail panel, breadcrumb) instead of reading ``title`` directly, so the
+ * displayed name stays consistent across the UI.
  */
 export function datasetDisplayTitle(
-  dataset: Pick<DatasetCatalogItem, "origin" | "title" | "dirName">,
+  dataset: Pick<DatasetCatalogItem, "origin" | "title" | "dirName" | "fileName">,
 ): string {
-  if (dataset.origin === "computed") {
-    return dataset.dirName?.trim() || dataset.title;
+  const title = dataset.title?.trim();
+  const dirName = dataset.dirName?.trim();
+  const isGeneratedFilename =
+    dataset.origin === "computed" && !!title && title === dataset.fileName?.trim();
+  if (!title || isGeneratedFilename) {
+    return dirName || dataset.title;
   }
-  return dataset.title;
+  return title;
+}
+
+/**
+ * Secondary line shown beneath {@link datasetDisplayTitle}. For computed
+ * datasets this is the generated output filename (``fileName``); for everything
+ * else it's the store folder (``dirName``). Returns ``null``/``undefined`` when
+ * there is nothing to show, so callers can omit the line.
+ */
+export function datasetSubtitle(
+  dataset: Pick<DatasetCatalogItem, "origin" | "fileName" | "dirName">,
+): string | null | undefined {
+  return dataset.origin === "computed" ? dataset.fileName : dataset.dirName;
 }
 
 /** True when the dataset is listed in the committed catalog (``hub``) or marked published from a project. */

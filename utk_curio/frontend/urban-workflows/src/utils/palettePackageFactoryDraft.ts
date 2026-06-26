@@ -183,6 +183,17 @@ export function canvasTemplateLabelFromNode(node: { data: object }, desc: NodeDe
   return desc.label || canonicalTemplateSlugForDescriptor(desc);
 }
 
+/**
+ * The node's user-facing display name — the same label shown in its canvas
+ * header. Single source of truth so the node header and the computed-dataset
+ * title it produces never drift apart. Falls back to the raw node type when no
+ * registry descriptor is found.
+ */
+export function resolveNodeDisplayLabel(data: { nodeType: NodeTemplateId }): string {
+  const desc = tryGetNodeDescriptor(data.nodeType);
+  return desc ? canvasTemplateLabelFromNode({ data }, desc) : String(data.nodeType);
+}
+
 function templateDraftFromCanvasNode(
   node: RFNode<any>,
   desc: NodeDescriptor,

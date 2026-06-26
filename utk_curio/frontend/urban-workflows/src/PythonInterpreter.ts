@@ -24,6 +24,7 @@ export class PythonInterpreter {
         nodeExecProv: any,
         dataflowId?: string | null,
         saveOutputDataset = false,
+        nodeName?: string,
     ) {
         const callbackError = (message: string) => {
             callback({
@@ -76,6 +77,7 @@ export class PythonInterpreter {
                 nodeType: nodeType, // new
                 nodeId: nodeId,
                 ...(dataflowId ? { dataflowId } : {}),
+                ...(nodeName ? { nodeName } : {}),
                 saveOutputDataset,
             }),
             headers: {

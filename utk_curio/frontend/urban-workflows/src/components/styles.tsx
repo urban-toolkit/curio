@@ -16,7 +16,7 @@ import {
 import { useUserContext } from "../providers/UserProvider";
 import { useLLMContext } from "../providers/LLMProvider";
 import { useToastContext } from "../providers/ToastProvider";
-import { canvasTemplateLabelFromNode } from "../utils/palettePackageFactoryDraft";
+import { canvasTemplateLabelFromNode, resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { readCanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { ConnectionValidator } from "../ConnectionValidator";
@@ -521,15 +521,8 @@ export const NodeContainer = ({
         catch { return faCopy; }
     };
 
-    const nodeNameTranslation = (nodeType: NodeTemplateId) => {
-        try { return getNodeDescriptor(nodeType).label; }
-        catch { return nodeType; }
-    };
-
     const packageDescriptor = tryGetNodeDescriptor(data.nodeType as NodeTemplateId);
-    const headerKindLabel = packageDescriptor
-        ? canvasTemplateLabelFromNode({ data }, packageDescriptor)
-        : nodeNameTranslation(data.nodeType);
+    const headerKindLabel = resolveNodeDisplayLabel(data);
     const hasPackageMetaHeader = packageDescriptor?.source === "package" && !!packageDescriptor.package;
     const showPackageNodeActions = hasPackageMetaHeader && !dashboardOn;
     const suggestionActive = data.suggestionType != "none" && data.suggestionType != undefined;

@@ -9,6 +9,7 @@ import {
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
   datasetDisplayTitle,
+  datasetSubtitle,
   datasetProvenanceLabel,
 } from "../../../../services/datasetCatalog";
 import {
@@ -97,7 +98,7 @@ export const DatasetRow = memo(function DatasetRow({
             {datasetDisplayTitle(dataset)}
           </span>
           <span className={packageCardStyles.cardMetaText}>
-            {dataset.origin == "computed" ? dataset.title : dataset.dirName}
+            {datasetSubtitle(dataset)}
           </span>
 
           <div className={rowStyles.rowMeta}>

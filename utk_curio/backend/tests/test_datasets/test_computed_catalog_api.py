@@ -290,6 +290,60 @@ def test_process_python_code_auto_installs_dataset(client, user_and_token, monke
     assert inst["dirName"] == f"{expected_id}@1"
 
 
+def test_process_python_code_titles_computed_dataset_with_node_name(client, user_and_token, monkeypatch):
+    """When the frontend sends nodeName, the computed dataset's title is the
+    node's name and the generated filename moves to the ``fileName`` field."""
+    import os
+    from pathlib import Path
+    from unittest.mock import MagicMock
+
+    from utk_curio.backend.app.datasets.catalog_utils import title_from_filename
+    from utk_curio.backend.app.datasets.installer import sanitize_node_id_segment
+
+    _, token = user_and_token
+    shared = Path(os.environ["CURIO_SHARED_DATA"])
+    parquet_name = "1782498496720_ef610da8_output.parquet"
+    (shared / parquet_name).write_bytes(b"PAR1")
+
+    project_id = create_project(client, token, name="Node-named output")
+    node_id = "node-named"
+
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "stdout": "",
+        "stderr": "",
+        "output": {"path": "art-1", "dataType": "dataframe", "dataset": parquet_name},
+    }
+    monkeypatch.setattr(
+        "utk_curio.backend.app.api.routes._sandbox_call",
+        lambda *args, **kwargs: mock_response,
+    )
+
+    resp = client.post(
+        "/processPythonCode",
+        data=json.dumps({
+            "code": "    return df\n",
+            "nodeType": "PYTHON_COMPUTATION",
+            "nodeId": node_id,
+            "nodeName": "Data Transformation",
+            "dataflowId": project_id,
+            "input": {"path": "", "dataType": "str"},
+            "saveOutputDataset": True,
+        }),
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+
+    expected_id = f"computed.{sanitize_node_id_segment(node_id)}"
+    catalog = client.get(
+        f"/api/datasets/catalog?includeHub=false&dataflowId={project_id}",
+        headers=auth_headers(token),
+    ).get_json()
+    item = next(i for i in catalog["items"] if i["id"] == expected_id)
+    assert item["title"] == "Data Transformation"
+    assert item["fileName"] == title_from_filename(parquet_name)
+
+
 def test_process_python_code_skips_auto_install_when_save_disabled(client, user_and_token, monkeypatch):
     from unittest.mock import MagicMock
 

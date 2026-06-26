@@ -7,6 +7,7 @@ import {
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
   datasetDisplayTitle,
+  datasetSubtitle,
   datasetProvenanceLabel,
   isDatasetPublishedToCatalog,
 } from "../../services/datasetCatalog";
@@ -98,7 +99,7 @@ function DataCatalogBrowseDrawerContent({
 
       <div className={styles.drawerPublisher}>
         <span className={styles.drawerPublisherText}>
-          {dataset.origin == "computed" ? dataset.title : dataset.dirName}
+          {datasetSubtitle(dataset)}
         </span>
         <span className={styles.verifiedBadge}>
           <span className={styles.verifiedCircle}>✓</span>

@@ -11,6 +11,7 @@ import {
   getDatasetSourceId,
   installedComputedByProducer,
   datasetDisplayTitle,
+  datasetSubtitle,
   DATASET_DRAG_MIME,
   DatasetCatalogItem,
 } from "../../services/datasetCatalog";
@@ -52,25 +53,38 @@ describe("isUserInstalledDataset (palette 'Installed datasets' filter)", () => {
 });
 
 describe("datasetDisplayTitle (clean, user-facing dataset name)", () => {
-  test("computed datasets show the store folder, not the generated filename", () => {
+  test("computed datasets show the producing node's name (title), not the filename", () => {
+    expect(
+      datasetDisplayTitle(
+        makeDataset({
+          origin: "computed",
+          title: "Data Transformation",
+          fileName: "1782498496720 Ef610Da8.Json",
+          dirName: "computed.node-x@1",
+        }),
+      ),
+    ).toBe("Data Transformation");
+  });
+
+  test("computed datasets with no captured node name (title === fileName) fall back to dirName", () => {
     expect(
       datasetDisplayTitle(
         makeDataset({
           origin: "computed",
           title: "1782498496720 Ef610Da8.Json",
+          fileName: "1782498496720 Ef610Da8.Json",
           dirName: "computed.node-x@1",
         }),
       ),
     ).toBe("computed.node-x@1");
   });
 
-  test("computed datasets fall back to title when dirName is missing/blank", () => {
+  test("computed datasets fall back to dirName (not fileName) when title is blank", () => {
     expect(
-      datasetDisplayTitle(makeDataset({ origin: "computed", title: "Node Output", dirName: null })),
-    ).toBe("Node Output");
-    expect(
-      datasetDisplayTitle(makeDataset({ origin: "computed", title: "Node Output", dirName: "   " })),
-    ).toBe("Node Output");
+      datasetDisplayTitle(
+        makeDataset({ origin: "computed", title: "   ", fileName: "My Output", dirName: "computed.node-x@1" }),
+      ),
+    ).toBe("computed.node-x@1");
   });
 
   test("imported / hub / source datasets show their real title", () => {
@@ -80,6 +94,22 @@ describe("datasetDisplayTitle (clean, user-facing dataset name)", () => {
     expect(
       datasetDisplayTitle(makeDataset({ origin: "hub", title: "Census Blocks" })),
     ).toBe("Census Blocks");
+  });
+});
+
+describe("datasetSubtitle (secondary line under the title)", () => {
+  test("computed datasets show the generated filename", () => {
+    expect(
+      datasetSubtitle(
+        makeDataset({ origin: "computed", fileName: "1782498496720 Ef610Da8.Json", dirName: "computed.node-x@1" }),
+      ),
+    ).toBe("1782498496720 Ef610Da8.Json");
+  });
+
+  test("imported / hub datasets show the store folder", () => {
+    expect(
+      datasetSubtitle(makeDataset({ origin: "imported", dirName: "data.urbanlab.chicago-boundary@1" })),
+    ).toBe("data.urbanlab.chicago-boundary@1");
   });
 });
 

@@ -447,6 +447,7 @@ def process_python_code():
             node_id=node_id,
             sandbox_output=output,
             dataflow_id=request.json.get("dataflowId") or None,
+            node_name=request.json.get("nodeName") or None,
         )
         if installed_dataset:
             print(
@@ -536,6 +537,7 @@ def process_javascript_code():
             node_id=node_id,
             sandbox_output=output,
             dataflow_id=request.json.get("dataflowId") or None,
+            node_name=request.json.get("nodeName") or None,
         )
 
     return {

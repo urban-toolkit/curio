@@ -302,8 +302,14 @@ def install_node_output(
     node_id: str,
     path_ref: str,
     data_type: str | None,
+    node_name: str | None = None,
 ) -> Any:
-    """Install a single file or multi-part ``outputs`` bundle from shared storage."""
+    """Install a single file or multi-part ``outputs`` bundle from shared storage.
+
+    *node_name* (the producing node's canvas display name) becomes the dataset
+    title when provided; otherwise the installer derives a title from the
+    generated filename.
+    """
     from utk_curio.backend.app.datasets.output_paths import resolve_shared_output_path
     from utk_curio.backend.app.datasets.provenance import computed_output_format
 
@@ -317,6 +323,7 @@ def install_node_output(
             parts,
             node_id=node_id,
             parent_artifact_id=path_ref,
+            title=node_name,
         )
 
     src = resolve_shared_output_path(path_ref, data_type=data_type)
@@ -332,5 +339,6 @@ def install_node_output(
         store_name,
         fmt,
         node_id=node_id,
+        title=node_name,
         source_path=src,
     )

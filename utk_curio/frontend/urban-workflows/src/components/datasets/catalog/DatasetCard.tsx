@@ -3,6 +3,7 @@ import {
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
   datasetDisplayTitle,
+  datasetSubtitle,
   datasetListSourceCaption,
 } from "../../../services/datasetCatalog";
 import {
@@ -144,7 +145,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
 
         <div className={styles.cardMetaRow}>
           <span className={styles.cardMetaText}>
-            {dataset.origin == "computed" ? dataset.title : dataset.dirName}
+            {datasetSubtitle(dataset)}
           </span>
           {metaParts ? <span className={styles.cardMetaText}>{metaParts}</span> : null}
           <DatasetConnectionBadge dataset={dataset} className={styles.connBadge} />

@@ -5,6 +5,7 @@ import {
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
   datasetDisplayTitle,
+  datasetSubtitle,
   isDatasetPublishedToCatalog,
 } from "../../services/datasetCatalog";
 import { isFresh, metaLeft, relativeTime } from "./dataHubBrowseFormat";
@@ -72,7 +73,7 @@ export function DataCatalogBrowseCard({
           {datasetDisplayTitle(dataset)}
         </h2>
         <p className={styles.publisher}>
-          {dataset.origin == "computed" ? dataset.title : dataset.dirName}
+          {datasetSubtitle(dataset)}
           {/*{formatDatasetLocation(dataset)} · v1.0.0*/}
         </p>
         <p
