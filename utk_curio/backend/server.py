@@ -5,6 +5,22 @@ from utk_curio.backend.config import CURIO_SEED_EXAMPLES
 app = create_app()
 
 
+# [reloader-diag] Greppable marker emitted on every backend (re)start so CI
+# logs reveal Werkzeug auto-reloader restarts that drop in-flight requests.
+# A worker (run_main=true) line appearing more than once per run means the
+# backend restarted mid-test. Revert this commit once the hypothesis is closed.
+import sys as _diag_sys
+import time as _diag_time
+print(
+    f"[reloader-diag] backend module loaded pid={os.getpid()} "
+    f"run_main={os.environ.get('WERKZEUG_RUN_MAIN')} "
+    f"use_reloader={os.environ.get('FLASK_USE_RELOADER', '1')} "
+    f"mono={_diag_time.monotonic():.3f}",
+    file=_diag_sys.stderr,
+    flush=True,
+)
+
+
 # fnmatch patterns the dev-server stat reloader must NEVER treat as
 # reload triggers (see :func:`werkzeug._reloader._find_stat_paths`).
 #
