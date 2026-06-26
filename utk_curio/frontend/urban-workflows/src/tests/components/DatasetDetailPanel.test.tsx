@@ -27,6 +27,13 @@ jest.mock("../../components/datasets/catalog/DatasetSchemaPanel", () => ({
 jest.mock("../../components/datasets/catalog/DatasetTablePreview", () => ({
   DatasetTablePreview: () => <div data-testid="table-preview" />,
 }));
+// Backend cross-dataflow usage fetches on mount; neutralize it so its async
+// state update doesn't fire after render (these tests cover live lineage, not
+// the backend usage section).
+jest.mock("../../components/datasets/catalog/DatasetDataflowUsage", () => ({
+  useDatasetDataflowUsage: () => [],
+  DatasetDataflowUsageSection: () => null,
+}));
 
 import { DatasetDetailPanel } from "../../components/datasets/catalog/DatasetDetailPanel";
 import { useDatasetLineage } from "../../services/datasetLineage/useDatasetLineage";
