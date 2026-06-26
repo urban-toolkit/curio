@@ -3,6 +3,7 @@ import {
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
   datasetCatalogApi,
+  datasetDisplayTitle,
   datasetProvenanceLabel,
   isDatasetInstalledFromCatalog,
   isDatasetPublishedToCatalog,
@@ -348,7 +349,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
               <span>DATA CATALOG</span><span>/</span>
             </>
           )}
-          <strong>{dataset.title}</strong>
+          <strong>{datasetDisplayTitle(dataset)}</strong>
         </div>
 
         {variant === "page" && onBack ? (
@@ -359,7 +360,7 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
           <div className={styles.titleBlock}>
             <CatalogKindIcon kind="dataset" size="md" title="Dataset" />
             <div>
-              <h1>{dataset.title}</h1>
+              <h1>{datasetDisplayTitle(dataset)}</h1>
               <div className={styles.inspectorMeta}>
                 <span className={styles.installedBadge}>
                   {dataset.installed

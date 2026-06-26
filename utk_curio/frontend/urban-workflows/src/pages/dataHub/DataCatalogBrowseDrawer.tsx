@@ -6,6 +6,7 @@ import { DatasetDataflowUsageSection } from "../../components/datasets/catalog/D
 import {
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
+  datasetDisplayTitle,
   datasetProvenanceLabel,
   isDatasetPublishedToCatalog,
 } from "../../services/datasetCatalog";
@@ -77,7 +78,7 @@ function DataCatalogBrowseDrawerContent({
       <DataCatalogGeoPreview dataset={dataset} />
 
       <div className={styles.drawerDatasetName}>
-        <h2>{dataset.origin == "computed" ? dataset.dirName : dataset.title}</h2>
+        <h2>{datasetDisplayTitle(dataset)}</h2>
         <div className={styles.drawerBadgesRow}>
           <span className={`${styles.drawerFormatBadge} ${styles[`dfmt_${dataset.format}`] || ""}`}>
             {DATASET_FORMAT_LABEL[dataset.format]}

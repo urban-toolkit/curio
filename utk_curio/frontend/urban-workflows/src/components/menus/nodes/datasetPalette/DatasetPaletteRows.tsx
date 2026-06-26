@@ -8,6 +8,7 @@ import {
   writeDatasetDragData,
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
+  datasetDisplayTitle,
   datasetProvenanceLabel,
 } from "../../../../services/datasetCatalog";
 import {
@@ -44,7 +45,7 @@ export const DatasetRow = memo(function DatasetRow({
   const count = datasetCount(dataset);
   const time = relativeTime(dataset.updatedAt);
   const metaParts = [count, time].filter(Boolean).join(" · ");
-  const tooltipParts = [dataset.title, metaParts].filter(Boolean);
+  const tooltipParts = [datasetDisplayTitle(dataset), metaParts].filter(Boolean);
   const formatChipClass =
     rowStyles[`chip_${dataset.format}` as keyof typeof rowStyles] ?? rowStyles.formatChip;
 
@@ -93,7 +94,7 @@ export const DatasetRow = memo(function DatasetRow({
         </div>
         <button type="button" className={packageStyles.packageKindRowMeta} onClick={selectOnCanvas}>
           <span className={packageStyles.packageKindRowLabel}>
-            {dataset.origin == "computed" ? dataset.dirName : dataset.title}
+            {datasetDisplayTitle(dataset)}
           </span>
           <span className={packageCardStyles.cardMetaText}>
             {dataset.origin == "computed" ? dataset.title : dataset.dirName}

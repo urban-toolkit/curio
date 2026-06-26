@@ -178,6 +178,29 @@ export function datasetProvenanceLabel(
   return datasetProvenanceKind(origin, format) === "computed" ? "Computed" : "Imported";
 }
 
+/**
+ * The clean, user-facing display name for a dataset — the single source of
+ * truth for *which* field to render as a dataset's title.
+ *
+ * Computed node outputs (``origin === "computed"``) carry a generated output
+ * filename in ``title`` (e.g. ``1782498496720 Ef610Da8.Json``); their
+ * human-meaningful name is the store folder (``dirName``). Catalog / imported /
+ * source datasets carry their real name in ``title``. When a computed dataset
+ * has no ``dirName`` we fall back to ``title`` so the result is never blank.
+ *
+ * Use this everywhere a dataset title is rendered (palette, catalog browse,
+ * detail panel, breadcrumb) instead of inlining the ``origin``-based ternary,
+ * so the displayed name stays consistent across the UI.
+ */
+export function datasetDisplayTitle(
+  dataset: Pick<DatasetCatalogItem, "origin" | "title" | "dirName">,
+): string {
+  if (dataset.origin === "computed") {
+    return dataset.dirName?.trim() || dataset.title;
+  }
+  return dataset.title;
+}
+
 /** True when the dataset is listed in the committed catalog (``hub``) or marked published from a project. */
 export function isDatasetPublishedToCatalog(dataset: DatasetCatalogItem): boolean {
   return dataset.origin === "hub" || dataset.publishedToHub === true;

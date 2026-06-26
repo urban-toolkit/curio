@@ -4,6 +4,7 @@ import { CatalogPublishPill } from "../../components/packages/CatalogPublishPill
 import {
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
+  datasetDisplayTitle,
   isDatasetPublishedToCatalog,
 } from "../../services/datasetCatalog";
 import { isFresh, metaLeft, relativeTime } from "./dataHubBrowseFormat";
@@ -68,7 +69,7 @@ export function DataCatalogBrowseCard({
 
       <div className={styles.cardBody}>
         <h2 className={styles.cardTitle}>
-          {dataset.origin == "computed" ? dataset.dirName : dataset.title}
+          {datasetDisplayTitle(dataset)}
         </h2>
         <p className={styles.publisher}>
           {dataset.origin == "computed" ? dataset.title : dataset.dirName}

@@ -4,6 +4,7 @@ import { faTrashCan } from "@fortawesome/free-solid-svg-icons";
 import {
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
+  datasetDisplayTitle,
   datasetProvenanceLabel,
 } from "../../../services/datasetCatalog";
 import {
@@ -69,7 +70,7 @@ function InstalledDatasetRow({
               />
             }
           />
-          <span className={styles.installedName}>{dataset.title}</span>
+          <span className={styles.installedName}>{datasetDisplayTitle(dataset)}</span>
         </div>
         <span className={styles.installedMeta}>
           {DATASET_FORMAT_LABEL[dataset.format]}

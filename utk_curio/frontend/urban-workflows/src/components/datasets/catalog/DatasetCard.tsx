@@ -2,6 +2,7 @@ import React from "react";
 import {
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
+  datasetDisplayTitle,
   datasetListSourceCaption,
 } from "../../../services/datasetCatalog";
 import {
@@ -135,10 +136,10 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
             />
           }
           onClick={onOpenDetails ? () => onOpenDetails(dataset) : undefined}
-          buttonLabel={`View ${dataset.title} details`}
+          buttonLabel={`View ${datasetDisplayTitle(dataset)} details`}
         />
         <h3 className={styles.cardTitle}>
-          {dataset.origin == "computed" ? dataset.dirName : dataset.title}
+          {datasetDisplayTitle(dataset)}
         </h3>
 
         <div className={styles.cardMetaRow}>

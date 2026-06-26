@@ -10,6 +10,7 @@ import {
   isDatasetPaletteNode,
   getDatasetSourceId,
   installedComputedByProducer,
+  datasetDisplayTitle,
   DATASET_DRAG_MIME,
   DatasetCatalogItem,
 } from "../../services/datasetCatalog";
@@ -47,6 +48,38 @@ describe("isUserInstalledDataset (palette 'Installed datasets' filter)", () => {
   test("excludes ephemeral live outputs / browsable entries (installed falsy)", () => {
     expect(isUserInstalledDataset(makeDataset({ installed: false }))).toBe(false);
     expect(isUserInstalledDataset(makeDataset({}))).toBe(false);
+  });
+});
+
+describe("datasetDisplayTitle (clean, user-facing dataset name)", () => {
+  test("computed datasets show the store folder, not the generated filename", () => {
+    expect(
+      datasetDisplayTitle(
+        makeDataset({
+          origin: "computed",
+          title: "1782498496720 Ef610Da8.Json",
+          dirName: "computed.node-x@1",
+        }),
+      ),
+    ).toBe("computed.node-x@1");
+  });
+
+  test("computed datasets fall back to title when dirName is missing/blank", () => {
+    expect(
+      datasetDisplayTitle(makeDataset({ origin: "computed", title: "Node Output", dirName: null })),
+    ).toBe("Node Output");
+    expect(
+      datasetDisplayTitle(makeDataset({ origin: "computed", title: "Node Output", dirName: "   " })),
+    ).toBe("Node Output");
+  });
+
+  test("imported / hub / source datasets show their real title", () => {
+    expect(
+      datasetDisplayTitle(makeDataset({ origin: "imported", title: "Chicago Boundary", dirName: "data.urbanlab.chicago-boundary@1" })),
+    ).toBe("Chicago Boundary");
+    expect(
+      datasetDisplayTitle(makeDataset({ origin: "hub", title: "Census Blocks" })),
+    ).toBe("Census Blocks");
   });
 });
 
