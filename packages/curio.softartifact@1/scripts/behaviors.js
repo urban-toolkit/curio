@@ -31,12 +31,36 @@ function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) 
 function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length); for (var e = 0, n = Array(a); e < a; e++) n[e] = r[e]; return n; }
 function _iterableToArrayLimit(r, l) { var t = null == r ? null : "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (null != t) { var e, n, i, u, a = [], f = !0, o = !1; try { if (i = (t = t.call(r)).next, 0 === l) { if (Object(t) !== t) return; f = !1; } else for (; !(f = (e = i.call(t)).done) && (a.push(e.value), a.length !== l); f = !0); } catch (r) { o = !0, n = r; } finally { try { if (!f && null != t["return"] && (u = t["return"](), Object(u) !== u)) return; } finally { if (o) throw n; } } return a; } }
 function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
+function ownKeys(e, r) { var t = Object.keys(e); if (Object.getOwnPropertySymbols) { var o = Object.getOwnPropertySymbols(e); r && (o = o.filter(function (r) { return Object.getOwnPropertyDescriptor(e, r).enumerable; })), t.push.apply(t, o); } return t; }
+function _objectSpread(e) { for (var r = 1; r < arguments.length; r++) { var t = null != arguments[r] ? arguments[r] : {}; r % 2 ? ownKeys(Object(t), !0).forEach(function (r) { _defineProperty(e, r, t[r]); }) : Object.getOwnPropertyDescriptors ? Object.defineProperties(e, Object.getOwnPropertyDescriptors(t)) : ownKeys(Object(t)).forEach(function (r) { Object.defineProperty(e, r, Object.getOwnPropertyDescriptor(t, r)); }); } return e; }
+function _defineProperty(e, r, t) { return (r = _toPropertyKey(r)) in e ? Object.defineProperty(e, r, { value: t, enumerable: !0, configurable: !0, writable: !0 }) : e[r] = t, e; }
+function _toPropertyKey(t) { var i = _toPrimitive(t, "string"); return "symbol" == _typeof(i) ? i : i + ""; }
+function _toPrimitive(t, r) { if ("object" != _typeof(t) || !t) return t; var e = t[Symbol.toPrimitive]; if (void 0 !== e) { var i = e.call(t, r || "default"); if ("object" != _typeof(i)) return i; throw new TypeError("@@toPrimitive must return a primitive value."); } return ("string" === r ? String : Number)(t); }
+function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) { return typeof o; } : function (o) { return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o; }, _typeof(o); }
 
+
+//package specific field saved on node
+
+function defaultState() {
+  return {
+    artifactId: null,
+    role: 'inform',
+    sourceFile: null,
+    mimeType: null,
+    status: 'empty'
+  };
+}
+function readSaved(data) {
+  var raw = data.softArtifact;
+  if (!raw || _typeof(raw) !== 'object') return defaultState(); //if raw is invalid return default state
+  return _objectSpread(_objectSpread({}, defaultState()), raw);
+}
 function fakeIngest(file, role, nodeId) {
   return {
-    artifactId: "saStub_".concat(nodeId, "_").concat(Date.now),
-    fileName: file.name,
-    artifactRole: role,
+    artifactId: "saStub_".concat(nodeId, "_").concat(Date.now()),
+    sourceFile: file.name,
+    role: role,
+    mimeType: file.type || 'application/octet-stream',
     status: 'ready'
   };
 }
@@ -44,26 +68,49 @@ var API_BASE = "".concat(typeof window !== 'undefined' && ((_curio = window.curi
 
 //todo: create a behavior hook for soft artifact behavior
 var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) {
-  var _useState = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)("inform"),
+  //health API
+  var _useState = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false),
     _useState2 = _slicedToArray(_useState, 2),
-    role = _useState2[0],
-    setRole = _useState2[1];
+    backendUp = _useState2[0],
+    setBackendUp = _useState2[1];
+  (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(function () {
+    var check = function check() {
+      fetch("".concat(API_BASE, "/health")).then(function (response) {
+        return setBackendUp(response.ok);
+      })["catch"](function () {
+        return setBackendUp(false);
+      });
+    };
+    check();
+    var iv = setInterval(check, 10000); //check health every 10 seconds 
+    return function () {
+      return clearInterval(iv);
+    };
+  }, []);
   var _useState3 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null),
     _useState4 = _slicedToArray(_useState3, 2),
     file = _useState4[0],
     setFile = _useState4[1];
-  var _useState5 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false),
+
+  //data doesn't have softArtifact field, therefore extending the package specific field for data (nodeData)
+  var nodeData = data;
+  var _useState5 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(function () {
+      return readSaved(nodeData);
+    }),
     _useState6 = _slicedToArray(_useState5, 2),
-    busy = _useState6[0],
-    setBusy = _useState6[1];
-  var _useState7 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null),
-    _useState8 = _slicedToArray(_useState7, 2),
-    result = _useState8[0],
-    setResult = _useState8[1];
-  var _useState9 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false),
-    _useState0 = _slicedToArray(_useState9, 2),
-    backendUp = _useState0[0],
-    setBackendUp = _useState0[1];
+    state = _useState6[0],
+    setState = _useState6[1];
+  //for the UI to survive after every refresh  
+  var persist = function persist(patch) {
+    setState(function (prev) {
+      var next = _objectSpread(_objectSpread({}, prev), patch);
+      nodeData.softArtifact = next;
+      return next;
+    });
+  };
+  (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(function () {
+    nodeData.softArtifact = state;
+  }, [state]);
 
   //call outputcallback when it is ingested, put in onIngest function
   var emitOutput = function emitOutput(descriptor) {
@@ -84,104 +131,114 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
   //onChange function for ingest button 
   var onIngest = function onIngest() {
     if (!file) return;
-    setBusy(true);
-    setResult(null);
+    persist({
+      status: "ingesting"
+    });
 
     //create a timeout to see ingest status
     window.setTimeout(function () {
-      var out = fakeIngest(file, role, data.nodeId);
-      setResult(out);
+      var out = fakeIngest(file, state.role, data.nodeId);
+      persist({
+        artifactId: out.artifactId,
+        role: out.role,
+        sourceFile: out.sourceFile,
+        mimeType: out.mimeType,
+        status: 'ready'
+      });
       emitOutput({
         artifactId: out.artifactId,
-        fileName: out.fileName,
-        artifactRole: out.artifactRole,
+        sourceFile: out.sourceFile,
+        artifactRole: out.role,
         status: out.status,
         stub: true
       });
-      setBusy(false);
     }, 400);
   };
-  (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(function () {
-    var check = function check() {
-      fetch("".concat(API_BASE, "/health")).then(function (response) {
-        return setBackendUp(response.ok);
-      })["catch"](function () {
-        return setBackendUp(false);
-      });
-    };
-    check();
-    var iv = setInterval(check, 10000); //check health every 10 seconds 
-    return function () {
-      return clearInterval(iv);
-    };
-  }, []);
+  var onFile = function onFile(file) {
+    setFile(file);
+    if (!file) {
+      persist(defaultState());
+      return;
+    }
+    persist({
+      artifactId: null,
+      sourceFile: file.name,
+      mimeType: file.type || 'application/octet-stream',
+      status: 'empty'
+    });
+  };
+  var onRole = function onRole(next) {
+    persist({
+      role: next
+    });
+  };
   var statusText = backendUp ? "healthy af" : "sad af";
-  var contentComponent = /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  var contentComponent = /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement((react__WEBPACK_IMPORTED_MODULE_0___default().Fragment), null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, "backend is ", statusText), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     style: {
       padding: 12
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     style: {
       fontSize: 11,
       fontWeight: 600,
       color: '#64748b',
       marginBottom: 4
     }
-  }, "Role:"), /*#__PURE__*/React.createElement("select", {
-    value: role,
+  }, "Role:"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("select", {
+    value: state.role,
     onChange: function onChange(e) {
-      return setRole(e.target.value);
+      return onRole(e.target.value);
     },
     style: {
       width: '100%',
       padding: '6px 8px'
     }
-  }, /*#__PURE__*/React.createElement("option", {
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("option", {
     value: "inform"
-  }, " inform "), /*#__PURE__*/React.createElement("option", {
+  }, " inform "), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("option", {
     value: "explain"
-  }, " explain "), /*#__PURE__*/React.createElement("option", {
+  }, " explain "), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("option", {
     value: "transform"
-  }, " transform "), /*#__PURE__*/React.createElement("option", {
+  }, " transform "), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("option", {
     value: "expand"
-  }, " expand ")), /*#__PURE__*/React.createElement("p", {
+  }, " expand ")), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", {
     style: {
       marginTop: 8,
       fontSize: 11
     }
-  }, "Selected: ", role)), /*#__PURE__*/React.createElement("div", {
+  }, "Selected: ", state.role)), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     style: {
       margin: 10
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     style: {
       fontSize: 11,
       fontWeight: 600,
       color: '#64748b',
       marginBottom: 4
     }
-  }, "Document:"), /*#__PURE__*/React.createElement("input", {
+  }, "Document:"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("input", {
     type: "file",
     accept: ".pdf,.txt,.md",
     onChange: function onChange(e) {
       var _e$target$files$, _e$target$files;
-      return setFile((_e$target$files$ = (_e$target$files = e.target.files) === null || _e$target$files === void 0 ? void 0 : _e$target$files[0]) !== null && _e$target$files$ !== void 0 ? _e$target$files$ : null);
+      return onFile((_e$target$files$ = (_e$target$files = e.target.files) === null || _e$target$files === void 0 ? void 0 : _e$target$files[0]) !== null && _e$target$files$ !== void 0 ? _e$target$files$ : null);
     }
-  }), file ? /*#__PURE__*/React.createElement("p", {
+  }), state.sourceFile ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", {
     style: {
       marginTop: 6,
       fontSize: 11
     }
-  }, "Selected: ", file.name) : /*#__PURE__*/React.createElement("p", {
+  }, "Selected: ", state.sourceFile) : /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", {
     style: {
       marginTop: 6,
       fontSize: 11,
       color: '#94a3b8'
     }
-  }, "No file chosen")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("button", {
+  }, "No file chosen")), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
     type: "button",
     onClick: onIngest,
-    disabled: !file || busy,
+    disabled: !file || state.status === 'ingesting' || !backendUp,
     style: {
       marginTop: 10,
       width: '50%',
@@ -189,20 +246,21 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
       border: 'none',
       borderRadius: 5,
       fontWeight: 400,
-      cursor: !file || busy ? 'not-allowed' : 'pointer',
-      background: !file || busy ? '#e2e8f0' : '#2563eb',
-      color: !file || busy ? '#94a3b8' : '#fff'
+      cursor: !file || state.status === 'ingesting' ? 'not-allowed' : 'pointer',
+      background: !file || state.status === 'ingesting' ? '#e2e8f0' : '#2563eb',
+      color: !file || state.status === 'ingesting' ? '#94a3b8' : '#fff'
     }
-  }, busy ? 'Ingesting…' : 'Ingest (stub)'), result ? /*#__PURE__*/React.createElement("pre", {
+  }, state.status === 'ingesting' ? 'Ingesting…' : 'Ingest (stub)'), state ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("pre", {
     style: {
       marginTop: 10,
       fontSize: 10,
       background: '#f8fafc',
       padding: 8
     }
-  }, JSON.stringify(result, null, 2)) : null), /*#__PURE__*/React.createElement("div", null, "backend is ", statusText));
+  }, JSON.stringify(state, null, 2)) : null));
   return {
-    contentComponent: contentComponent
+    contentComponent: contentComponent,
+    disablePlay: true
   };
 };
 

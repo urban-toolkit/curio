@@ -1,19 +1,46 @@
-import { NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
-import { useEffect, useState } from 'react'
+	
+import { NodeBehaviorData, NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
+import React, { useEffect, useState } from 'react'
 
-interface softArtifactState{
-  artifactId: string | null;
-  role: 'explain' | 'inform' | 'transform' | 'expand'
-  sourceFile: string,
-  status: 'empty' | 'ingesting' | 'ready' | 'error'
+type softArtifactRole = 'inform' | 'explain' | 'transform' | 'expand';
+
+interface SoftArtifactState{
+  artifactId: string | null,
+  role: softArtifactRole,
+  sourceFile: string | null,
+  mimeType: string | null,
+  status: 'empty' | 'ingesting' | 'ready' | 'error',
+  errorMessage?: string
 }
 
-function fakeIngest(file: File, role: string, nodeId: string) {
+//package specific field saved on node
+type softArtifactNodeData = NodeBehaviorData & {
+  softArtifact?: SoftArtifactState
+}
+
+function defaultState(): SoftArtifactState{
   return {
-    artifactId: `saStub_${nodeId}_${Date.now}`,
-    fileName: file.name,
-    artifactRole: role,
-    status: 'ready'
+    artifactId: null,
+    role: 'inform',
+    sourceFile: null,
+    mimeType: null,
+    status: 'empty' 
+  }
+}
+
+function readSaved(data: {softArtifact?: SoftArtifactState}): SoftArtifactState{
+  const raw = data.softArtifact;
+  if (!raw || typeof raw !== 'object') return defaultState(); //if raw is invalid return default state
+  return { ...defaultState(), ...raw };
+}
+
+function fakeIngest(file: File, role: softArtifactRole, nodeId: string) {
+  return {
+    artifactId: `saStub_${nodeId}_${Date.now()}`,
+    sourceFile: file.name,
+    role: role,
+    mimeType: file.type || 'application/octet-stream',
+    status: 'ready' as const,
   }
 }
 
@@ -21,15 +48,39 @@ const API_BASE = `${(typeof window !== 'undefined' && (window as any).curio?.bac
 
 //todo: create a behavior hook for soft artifact behavior
 export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
-  const [role, setRole] = useState("inform");
-  const [file, setFile] = useState<File | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<ReturnType<typeof fakeIngest> | null>(null);
+  //health API
   const [backendUp, setBackendUp] = useState(false);
-  
+  useEffect(() => {
+    const check = () => {
+      fetch(`${API_BASE}/health`)
+        .then((response) => setBackendUp(response.ok))
+        .catch(() => setBackendUp(false))
+    };
+    check();
+    const iv = setInterval(check, 10_000); //check health every 10 seconds 
+    return () => clearInterval(iv);
+  }, [])
+
+  const [file, setFile] = useState<File | null>(null);
+
+  //data doesn't have softArtifact field, therefore extending the package specific field for data (nodeData)
+  const nodeData = data as softArtifactNodeData;  
+  const [state, setState] = useState<SoftArtifactState>(() => readSaved(nodeData));
+  //for the UI to survive after every refresh  
+  const persist = (patch: Partial<SoftArtifactState>) => {
+    setState((prev) => {
+      const next = { ...prev, ...patch };
+      nodeData.softArtifact = next; 
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    nodeData.softArtifact = state;
+  },[state])
 
   //call outputcallback when it is ingested, put in onIngest function
-  const emitOutput = (descriptor: Record<string, unknown>) => {
+  const emitOutput = (descriptor: object) => {
     const json = {
       dataType: 'dict',   // JSON objects use 'dict' in Curio’s type system
       data: descriptor,
@@ -48,40 +99,62 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
   const onIngest = () => {
     if (!file) return;
 
-    setBusy(true);
-    setResult(null);
+    persist({ status: "ingesting" });
 
     //create a timeout to see ingest status
     window.setTimeout(() => {
-      const out = fakeIngest(file, role, data.nodeId);
-      setResult(out);
-      emitOutput({ artifactId: out.artifactId, fileName: out.fileName, artifactRole: out.artifactRole, status: out.status, stub: true });
-      setBusy(false);
+      const out = fakeIngest(file, state.role, data.nodeId);
+      persist({
+        artifactId: out.artifactId,
+        role: out.role,
+        sourceFile: out.sourceFile,
+        mimeType: out.mimeType,
+        status: 'ready',
+      });
+
+      emitOutput({
+        artifactId: out.artifactId,
+        sourceFile: out.sourceFile,
+        artifactRole: out.role,
+        status: out.status,
+        stub: true
+      });
     }, 400);
   }
 
-  useEffect(() => {
-    const check = () => {
-      fetch(`${API_BASE}/health`)
-        .then((response) => setBackendUp(response.ok))
-        .catch(() => setBackendUp(false))
-    };
-    check();
-    const iv = setInterval(check, 10_000); //check health every 10 seconds 
-    return () => clearInterval(iv);
-  }, [])
+  const onFile = (file : File | null) => {
+    setFile(file);
+    if (!file) {
+      persist(defaultState());
+      return;
+    }
+    persist({
+      artifactId: null,
+      sourceFile: file.name,
+      mimeType: file.type || 'application/octet-stream',
+      status: 'empty'
+    })
+  }
+
+  const onRole = (next: softArtifactRole) => {
+    persist({ role: next });
+  }
 
   const statusText = backendUp ? "healthy af" : "sad af";
 
   const contentComponent = (
     <>
+      <div>
+        backend is {statusText}
+      </div>
+
       <div style={{ padding: 12 }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 4 }}>
           Role:
         </div>
         <select
-          value={role}
-          onChange={(e) => setRole(e.target.value)}
+          value={state.role}
+          onChange={(e) => onRole(e.target.value as softArtifactRole)}
           style={{ width: '100%', padding: '6px 8px' }}
         >
           <option value="inform"> inform </option>
@@ -89,7 +162,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
           <option value="transform"> transform </option>
           <option value="expand"> expand </option>
         </select>
-        <p style={{ marginTop: 8, fontSize: 11 }}>Selected: {role}</p>
+        <p style={{ marginTop: 8, fontSize: 11 }}>Selected: {state.role}</p>
       </div>
       
       <div style={{ margin: 10 }}>
@@ -99,11 +172,11 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
         <input
           type="file"
           accept='.pdf,.txt,.md'
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          onChange={(e) => onFile(e.target.files?.[0] ?? null)}
         />
 
-        {file ? (
-          <p style={{ marginTop: 6, fontSize: 11 }}>Selected: {file.name}</p>
+        {state.sourceFile ? (
+          <p style={{ marginTop: 6, fontSize: 11 }}>Selected: {state.sourceFile}</p>
         ) : (
           <p style={{ marginTop: 6, fontSize: 11, color: '#94a3b8' }}>No file chosen</p>
         )}
@@ -113,7 +186,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
         <button
           type="button"
           onClick={onIngest}
-          disabled={!file || busy}
+          disabled={!file || state.status === 'ingesting' || !backendUp}
           style={{
             marginTop: 10,
             width: '50%',
@@ -121,29 +194,26 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
             border: 'none',
             borderRadius: 5,
             fontWeight: 400,
-            cursor: !file || busy ? 'not-allowed' : 'pointer',
-            background: !file || busy ? '#e2e8f0' : '#2563eb',
-            color: !file || busy ? '#94a3b8' : '#fff',
+            cursor: !file || state.status === 'ingesting' ? 'not-allowed' : 'pointer',
+            background: !file || state.status === 'ingesting' ? '#e2e8f0' : '#2563eb',
+            color: !file || state.status === 'ingesting' ? '#94a3b8' : '#fff',
           }}       
         >
-          {busy ? 'Ingesting…' : 'Ingest (stub)'}
+          {state.status === 'ingesting' ? 'Ingesting…' : 'Ingest (stub)'}
         </button>
 
-        {result ? (
+        {state ? (
           <pre style={{ marginTop: 10, fontSize: 10, background: '#f8fafc', padding: 8 }}>
-            {JSON.stringify(result, null, 2)}
+            {JSON.stringify(state, null, 2)}
           </pre>
           ) : null}
-      </div>
-
-      <div>
-        backend is {statusText}
       </div>
     </>
 
   );
 
   return {
-    contentComponent
+    contentComponent,
+    disablePlay: true
   };
 }
