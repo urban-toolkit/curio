@@ -25,6 +25,15 @@ app = create_app()
 RELOADER_EXCLUDE_PATTERNS = [
     '*.duckdb', '*.duckdb.wal', '*.duckdb-shm', '*.duckdb-wal',
     '*/.curio/*', '*/.curio', '*starters*',
+    # The Data Catalog writes computed dataset bundles (``manifest.json`` +
+    # ``data/*.parquet``) into ``<repo_root>/datasets/`` at node-execution
+    # time (catalog auto-install). Like ``.curio/`` above, these are runtime
+    # data writes, not source changes — without this exclude, a node that
+    # produces a dataset trips the stat reloader and SIGTERMs the worker
+    # mid-request, dropping the in-flight /processJavaScriptCode (the autk
+    # data node then falls back to an in-browser load that fails).
+    '*/datasets/*', '*\\datasets\\*',
+    '*/datasets', '*\\datasets',
     # Synchronous catalog installs run ``pip install`` from inside the
     # backend (see ``packages/pip_runner.py``); pip writes ~thousands of
     # files into ``site-packages/`` for a heavy package like ``torch``,
