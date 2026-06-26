@@ -1,4 +1,12 @@
 .pagination {
+  /* Pin the bar to the bottom of the scrolling catalog/list view so it stays
+     visible without scrolling to the end of a long table. It sticks to the
+     bottom edge of the nearest scroll container (the detail panel's center
+     column / bundle panel); the opaque background keeps rows from showing
+     through as they scroll underneath. */
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -7,6 +15,7 @@
   padding: 0 16px;
   background: #fafafa;
   border-top: 1px solid #ebebeb;
+  box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.04);
 }
 
 .paginationNote {
