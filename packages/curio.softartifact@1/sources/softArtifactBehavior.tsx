@@ -34,15 +34,6 @@ function readSaved(data: {softArtifact?: SoftArtifactState}): SoftArtifactState{
   return { ...defaultState(), ...raw };
 }
 
-function fakeIngest(file: File, role: softArtifactRole, nodeId: string) {
-  return {
-    artifactId: `saStub_${nodeId}_${Date.now()}`,
-    sourceFile: file.name,
-    role: role,
-    mimeType: file.type || 'application/octet-stream',
-    status: 'ready' as const,
-  }
-}
 
 const API_BASE = `${(typeof window !== 'undefined' && (window as any).curio?.backendUrl) || ''}/api/softartifact`;
 
@@ -96,30 +87,45 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
   };
 
   //onChange function for ingest button 
-  const onIngest = () => {
+  const onIngest = async () => {
     if (!file) return;
 
     persist({ status: "ingesting" });
 
-    //create a timeout to see ingest status
-    window.setTimeout(() => {
-      const out = fakeIngest(file, state.role, data.nodeId);
+    //ingesting the using API_BASE/ingest 
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('role', state.role);
+
+      const res = await fetch(`${API_BASE}/ingest`, {
+        method: 'POST',
+        headers: {},
+        body: form
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.Error || `HTTP  ${res.status}`)
+      }
+
+      const out = await res.json();
       persist({
         artifactId: out.artifactId,
-        role: out.role,
+        role: out.role ?? state.role,
         sourceFile: out.sourceFile,
         mimeType: out.mimeType,
         status: 'ready',
-      });
+      })
 
-      emitOutput({
-        artifactId: out.artifactId,
-        sourceFile: out.sourceFile,
-        artifactRole: out.role,
-        status: out.status,
-        stub: true
-      });
-    }, 400);
+      emitOutput({ ...out });
+      
+    } catch (e) {
+      persist({
+        status: 'error',
+        errorMessage: e instanceof Error ? e.message : String(e),
+      })
+    }
   }
 
   const onFile = (file : File | null) => {
@@ -145,7 +151,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
   const contentComponent = (
     <>
       <div>
-        backend is {statusText}
+        backends are {statusText}
       </div>
 
       <div style={{ padding: 12 }}>
