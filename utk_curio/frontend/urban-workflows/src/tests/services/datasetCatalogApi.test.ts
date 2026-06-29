@@ -1,4 +1,10 @@
-import { encodeLiveOutputsParam } from "../../services/datasetCatalog/datasetCatalogApi";
+import {
+  encodeLiveOutputsParam,
+  buildInstalledDatasetRef,
+  upsertDataflowDatasetRef,
+  applyInstalledDatasetToProject,
+  DATASET_CATALOG_REFRESH_EVENT,
+} from "../../services/datasetCatalog/datasetCatalogApi";
 
 /**
  * Regression for issue #139: the liveOutputs query param must be encoded as
@@ -27,5 +33,89 @@ describe("encodeLiveOutputsParam", () => {
   test("still encodes the original ASCII export case", () => {
     const outputs = [{ node_id: "n1", filename: "data.csv", data_type: "dataframe" }];
     expect(decodeUtf8(encodeLiveOutputsParam(outputs))).toBe(JSON.stringify(outputs));
+  });
+});
+
+describe("buildInstalledDatasetRef", () => {
+  test("maps the install payload to the lean spec ref shape", () => {
+    const ref = buildInstalledDatasetRef({
+      id: "computed.n1@1",
+      dirName: "computed.n1@1",
+      origin: "computed",
+      producerNodeId: "n1",
+    });
+    expect(ref).toMatchObject({
+      datasetId: "computed.n1@1",
+      dirName: "computed.n1@1",
+      origin: "computed",
+      producerNodeId: "n1",
+    });
+    expect(typeof ref.installedAt).toBe("string");
+  });
+
+  test("defaults origin to 'computed' and producerNodeId to null", () => {
+    const ref = buildInstalledDatasetRef({ id: "d1", dirName: "d1" });
+    expect(ref.origin).toBe("computed");
+    expect(ref.producerNodeId).toBeNull();
+  });
+});
+
+describe("upsertDataflowDatasetRef", () => {
+  const ref = buildInstalledDatasetRef({ id: "d1", dirName: "d1" });
+
+  test("appends when the dataset is new", () => {
+    const out = upsertDataflowDatasetRef([{ datasetId: "other" }], "d1", ref);
+    expect(out).toHaveLength(2);
+    expect(out[1]).toBe(ref);
+  });
+
+  test("replaces an existing entry matched by datasetId (no duplicates)", () => {
+    const out = upsertDataflowDatasetRef([{ datasetId: "d1", stale: true }], "d1", ref);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toBe(ref);
+  });
+
+  test("also matches a legacy entry keyed by `id`", () => {
+    const out = upsertDataflowDatasetRef([{ id: "d1", stale: true }], "d1", ref);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toBe(ref);
+  });
+
+  test("tolerates a non-array previous value", () => {
+    expect(upsertDataflowDatasetRef(undefined, "d1", ref)).toEqual([ref]);
+    expect(upsertDataflowDatasetRef(null, "d1", ref)).toEqual([ref]);
+  });
+});
+
+describe("applyInstalledDatasetToProject", () => {
+  test("upserts via the setter and fires the catalog refresh event", () => {
+    const dispatch = jest.spyOn(window, "dispatchEvent");
+    let state: unknown[] = [{ datasetId: "old" }];
+    const setter = jest.fn((updater: any) => {
+      state = typeof updater === "function" ? updater(state) : updater;
+    });
+
+    applyInstalledDatasetToProject(
+      { id: "computed.n1@1", dirName: "computed.n1@1", producerNodeId: "n1" },
+      setter as any,
+    );
+
+    expect(setter).toHaveBeenCalledTimes(1);
+    expect(state).toHaveLength(2);
+    expect((state[1] as any).datasetId).toBe("computed.n1@1");
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: DATASET_CATALOG_REFRESH_EVENT }),
+    );
+    dispatch.mockRestore();
+  });
+
+  test("is a no-op for a missing or partial payload", () => {
+    const dispatch = jest.spyOn(window, "dispatchEvent");
+    const setter = jest.fn();
+    applyInstalledDatasetToProject(null, setter as any);
+    applyInstalledDatasetToProject({ id: "x" } as any, setter as any); // no dirName
+    expect(setter).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+    dispatch.mockRestore();
   });
 });

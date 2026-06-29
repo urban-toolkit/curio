@@ -166,3 +166,9 @@
 .chip_geotiff  { background: rgba(38, 198, 218, 0.22);  color: #70dde8; }
 .chip_shp      { background: rgba(160, 131, 106, 0.22); color: #c9a98a; }
 
+
+/* "Installing…" placeholder row — subdued + non-interactive while in flight. */
+.installingRow {
+  opacity: 0.65;
+  cursor: default;
+}

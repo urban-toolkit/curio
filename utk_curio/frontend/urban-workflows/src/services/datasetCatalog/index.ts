@@ -3,4 +3,5 @@ export * from "./datasetCatalogApi";
 export * from "./datasetCatalogHooks";
 export * from "./datasetCatalogTypes";
 export * from "./datasetLoaderSnippets";
+export * from "./pendingInstallView";
 export * from "./producerLinkage";

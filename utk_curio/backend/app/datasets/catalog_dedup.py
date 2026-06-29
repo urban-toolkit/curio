@@ -79,11 +79,8 @@ def merge_catalog_items(existing: dict[str, Any], incoming: dict[str, Any]) -> d
         # When a computed dataset was published, its hub-registry copy keeps the
         # node id and a STALE file/name captured at publish time. On re-execution
         # the live/local record (origin "computed") carries the CURRENT output —
-        # prefer its identity fields so the palette and drawer show the same,
-        # current dataset. Critically, prefer its ``path`` too: otherwise the
-        # merged row points at the stale hub file, and the file-based collapse
-        # (collapse_computed_by_file) keys on the wrong basename and fails to
-        # collapse the published node against its same-file twin → drawer dupes.
+        # prefer its identity fields (including ``path``) so the palette and drawer
+        # show the same, current dataset instead of the stale published name/file.
         live_cand = next(
             (c for c in (winner, loser) if c.get("origin") == "computed"),
             None,
@@ -107,36 +104,13 @@ def dedupe_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [*by_id.values(), *anonymous]
 
 
-def collapse_computed_by_file(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Collapse computed datasets that resolve to the SAME data file.
-
-    Two different producer nodes can end up installing the same underlying
-    output (e.g. both auto-installing one shared artifact, or the same output
-    installed under two node ids). Each is a distinct ``computed.<node>`` id, so
-    ``dedupe_items`` keeps both — and since the title is derived from the file
-    name they render as duplicate, identically-named palette entries. Keep only
-    the richest record per data file (by ``catalog_item_rank``).
-
-    Only ``computed`` rows are collapsed, and only when a concrete file path is
-    known; everything else passes through untouched and order is preserved.
-    """
-    result: list[dict[str, Any]] = []
-    index_by_file: dict[str, int] = {}
-    for item in items:
-        path_val = item.get("path") or ""
-        key = Path(path_val).name if (item.get("origin") == "computed" and path_val) else None
-        if key is None:
-            result.append(item)
-            continue
-        existing_idx = index_by_file.get(key)
-        if existing_idx is None:
-            index_by_file[key] = len(result)
-            result.append(item)
-        elif catalog_item_rank(item) > catalog_item_rank(result[existing_idx]):
-            # Prefer the richer record (installed/published/absolute path) but
-            # keep the original position so ordering stays stable.
-            result[existing_idx] = item
-    return result
+# NOTE: there is intentionally no "collapse computed datasets by data-file
+# basename" step. Distinct saved records (e.g. an Autark map output and its
+# baseline-/modified-compute siblings) live in their own ``computed.<node>@1``
+# dirs with distinct ids but often share a generated filename; collapsing by
+# basename silently hid all but one until the others were deleted. The only
+# legitimate duplicates — the same dataset's hub registry row and its
+# installed/live copy — share a dataset ``id`` and are merged by ``dedupe_items``.
 
 
 def catalog_facets(items: list[dict[str, Any]]) -> dict[str, dict[str, int]]:

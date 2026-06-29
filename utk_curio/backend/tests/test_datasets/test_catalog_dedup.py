@@ -115,36 +115,35 @@ def test_merge_still_marks_published_when_hub_row_present():
     assert merge_catalog_items(project_ref, hub_row).get("publishedToHub") is True
 
 
-def test_collapse_computed_by_file_keeps_richest():
-    """Two computed datasets (different producer nodes) pointing at the SAME
-    data file collapse to one — the richer (installed) record — so the palette
-    doesn't show duplicate, identically-named entries."""
-    from utk_curio.backend.app.datasets.catalog_dedup import collapse_computed_by_file
+def test_distinct_computed_datasets_sharing_a_filename_are_not_collapsed():
+    """Distinct saved records (different producer nodes) that happen to share a
+    generated data-file basename must EACH stay visible — they are no longer
+    collapsed by filename. Mirrors the Autark map output + baseline-compute +
+    modified-compute case where all but one used to be silently hidden until the
+    siblings were deleted. ``dedupe_items`` only merges rows with the SAME id."""
+    from utk_curio.backend.app.datasets.catalog_dedup import dedupe_items
 
-    a = {"id": "computed.nodeA", "origin": "computed", "producerNodeId": "A",
-         "path": "/store/computed.nodeA@1/data/1781903321396_c8572ee7.parquet",
-         "dirName": "computed.nodeA@1", "installed": True}
-    b = {"id": "computed.nodeB", "origin": "computed", "producerNodeId": "B",
-         "path": "/store/computed.nodeB@1/data/1781903321396_c8572ee7.parquet"}
-    hub = {"id": "data.x.thing", "origin": "hub", "path": "/cat/data.x.thing@1/data/thing.csv"}
-
-    out = collapse_computed_by_file([b, a, hub])
-    # One computed row (the richer 'a'), plus the untouched hub row.
-    computed = [i for i in out if i["origin"] == "computed"]
-    assert len(computed) == 1
-    assert computed[0]["id"] == "computed.nodeA"  # richer record wins
-    assert any(i["id"] == "data.x.thing" for i in out)
-
-
-def test_collapse_computed_by_file_keeps_distinct_files():
-    """Distinct files (the normal case) are never collapsed."""
-    from utk_curio.backend.app.datasets.catalog_dedup import collapse_computed_by_file
-
+    same_name = "1781903321396_c8572ee7.parquet"
     items = [
-        {"id": "computed.a", "origin": "computed", "path": "/s/a@1/data/1_aaaa_output.parquet"},
-        {"id": "computed.b", "origin": "computed", "path": "/s/b@1/data/2_bbbb_output.parquet"},
+        {"id": "computed.whatif-baseline-compute", "origin": "computed",
+         "producerNodeId": "baseline", "installed": True,
+         "dirName": "computed.whatif-baseline-compute@1",
+         "path": f"/store/computed.whatif-baseline-compute@1/data/{same_name}"},
+        {"id": "computed.whatif-modified-compute", "origin": "computed",
+         "producerNodeId": "modified", "installed": True,
+         "dirName": "computed.whatif-modified-compute@1",
+         "path": f"/store/computed.whatif-modified-compute@1/data/{same_name}"},
+        {"id": "computed.whatif-map", "origin": "computed",
+         "producerNodeId": "map", "installed": True,
+         "dirName": "computed.whatif-map@1",
+         "path": f"/store/computed.whatif-map@1/data/{same_name}"},
     ]
-    assert len(collapse_computed_by_file(items)) == 2
+    out = dedupe_items(items)
+    assert sorted(i["id"] for i in out) == [
+        "computed.whatif-baseline-compute",
+        "computed.whatif-map",
+        "computed.whatif-modified-compute",
+    ]
 
 
 def test_merge_prefers_live_computed_name_over_stale_published():
@@ -173,17 +172,13 @@ def test_merge_prefers_live_computed_name_over_stale_published():
         assert merged["path"] == "1782_new.parquet"
 
 
-def test_published_node_collapses_with_same_file_twin_in_drawer():
-    """A published node (hub copy holds a STALE file) and its same-file twin must
-    still collapse to ONE row. Regression for the drawer showing 2 extra rows
-    because the published node's merged path pointed at the stale hub file."""
-    from utk_curio.backend.app.datasets.catalog_dedup import (
-        collapse_computed_by_file,
-        dedupe_items,
-    )
+def test_published_node_merges_by_id_but_distinct_twin_stays_visible():
+    """The same dataset's hub registry row and its installed copy (SAME id) still
+    merge to one row via dedupe_items. But a DISTINCT second node sharing the same
+    data-file basename is its own saved record and must remain visible — it is no
+    longer collapsed away. So the set is {merged A, distinct B} = 2 rows."""
+    from utk_curio.backend.app.datasets.catalog_dedup import dedupe_items
 
-    # Drawer (includeHub=true) item set for ONE current output file shared by two
-    # nodes, where node A was published (hub copy has an OLD file).
     hub_a = {"id": "computed.a", "origin": "hub", "title": "A", "installed": True,
              "dirName": "computed.a@1", "path": "/cat/computed.a@1/data/STALE.parquet",
              "publishedToHub": True}
@@ -194,6 +189,8 @@ def test_published_node_collapses_with_same_file_twin_in_drawer():
               "producerNodeId": "b", "dirName": "computed.b@1",
               "path": "/user/computed.b@1/data/CURRENT.parquet"}
 
-    deduped = dedupe_items([hub_a, inst_a, inst_b])
-    collapsed = collapse_computed_by_file(deduped)
-    assert len(collapsed) == 1, [i["id"] for i in collapsed]
+    out = dedupe_items([hub_a, inst_a, inst_b])
+    assert sorted(i["id"] for i in out) == ["computed.a", "computed.b"]
+    # The merged A row keeps its published badge (hub + installed copy of same id).
+    merged_a = next(i for i in out if i["id"] == "computed.a")
+    assert merged_a.get("publishedToHub") is True

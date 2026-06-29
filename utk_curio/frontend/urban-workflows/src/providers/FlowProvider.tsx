@@ -23,6 +23,8 @@ import {
     NodeRemoveChange,
 } from "reactflow";
 import { ConnectionValidator } from "../ConnectionValidator";
+import type { InstalledDatasetPayload } from "../services/datasetCatalog/datasetCatalogApi";
+import type { PendingInstall } from "../services/datasetCatalog/datasetCatalogTypes";
 import { NodeType, EdgeType } from "../constants";
 import { getFlowNodeCanonicalType } from "../utils/flowNodeCanonicalType";
 import { TrillGenerator } from "../TrillGenerator";
@@ -39,7 +41,9 @@ import { useToastContext } from "./ToastProvider";
 import { useCollab } from "./CollaborationProvider";
 import { pythonInterpreter, jsInterpreter } from "../hook/useCode";
 import { normalizeFlowInput } from "../utils/flowOutputRef";
-import { DEFAULT_SAVE_OUTPUT_DATASET } from "../utils/saveOutputDataset";
+import { DEFAULT_SAVE_OUTPUT_DATASET, resolveSaveOutputDataset } from "../utils/saveOutputDataset";
+import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
+import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
 import { authApi } from "../utils/authApi";
 
 
@@ -115,6 +119,9 @@ interface FlowContextProps {
     removePackage: (pkg: string) => void;
     dataflowDatasets: any[];
     setDataflowDatasets: React.Dispatch<React.SetStateAction<any[]>>;
+    pendingInstalls: PendingInstall[];
+    beginPendingInstall: (entry: Omit<PendingInstall, "startedAt">) => void;
+    endPendingInstall: (key: string) => void;
     updateDataNode: (nodeId: string, newData: any) => void;
     updateWarnings: (trill_spec: any) => void;
     updateDefaultCode: (nodeId: string, content: string) => void;
@@ -136,6 +143,9 @@ interface FlowContextProps {
     // Project operations
     saveCurrentProject: (nameOverride?: string) => Promise<any>;
     saveAsNewProject: (name: string) => Promise<any>;
+    ensureProjectId: () => Promise<string | null>;
+    persistInstalledDataset: (inst: InstalledDatasetPayload | null | undefined) => Promise<void>;
+    persistDataflowForInstall: () => Promise<void>;
     loadProject: (id: string) => Promise<any>;
     loadSharedProject: (id: string) => Promise<any>;
     discardProject: () => void;
@@ -240,6 +250,9 @@ export const FlowContext = createContext<FlowContextProps>({
     removePackage: () => {},
     dataflowDatasets: [],
     setDataflowDatasets: () => {},
+    pendingInstalls: [],
+    beginPendingInstall: () => {},
+    endPendingInstall: () => {},
 
     // Project defaults
     projectId: null,
@@ -250,6 +263,9 @@ export const FlowContext = createContext<FlowContextProps>({
     viewerMode: "owner",
     saveCurrentProject: async () => {},
     saveAsNewProject: async () => {},
+    ensureProjectId: async () => null,
+    persistInstalledDataset: async () => {},
+    persistDataflowForInstall: async () => {},
     loadProject: async () => {},
     loadSharedProject: async () => {},
     discardProject: () => {},
@@ -317,6 +333,10 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const markNodeExecutedRef = useRef<(nodeId: string) => void>(() => {});
     const markNodeStaleRef = useRef<(nodeId: string) => void>(() => {});
     const markDirtyRef = useRef<() => void>(() => {});
+    // Set after workflowOps exists; called from applyNewOutput (a genuine runtime
+    // output, NOT project load — load writes outputs via setOutputs directly) to
+    // auto-install + surface a produced dataset without a manual disk-icon save.
+    const scheduleInstallSyncRef = useRef<(nodeId: string) => void>(() => {});
     const [defaultSaveOutputDataset, setDefaultSaveOutputDataset] = useState(
         DEFAULT_SAVE_OUTPUT_DATASET,
     );
@@ -1019,6 +1039,9 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
         markNodeExecutedRef.current(newOutput.nodeId);
         signalNodeExecDone(newOutput.nodeId);
+        // Auto-install + surface the produced dataset (debounced, gated to saver
+        // producer nodes inside the handler) without a manual save.
+        scheduleInstallSyncRef.current(newOutput.nodeId);
     };
 
     // responsible for flow of already connected nodes
@@ -1325,6 +1348,63 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     markNodeExecutedRef.current = workflowOps.markNodeExecuted;
     markNodeStaleRef.current = workflowOps.markNodeStale;
     markDirtyRef.current = workflowOps.markDirty;
+
+    // ── Auto-surface produced datasets without a manual disk-icon save ─────────
+    // A dataset is installed when its producing node's output is persisted: for
+    // tabular outputs the backend installs during execution, but for many node
+    // types (raster, merge, spatial-join, etc.) the install happens only at SAVE
+    // time via _auto_install_computed_outputs over the saved output refs. Only
+    // CodeEditor previously triggered that, so datasets from other node types
+    // stayed invisible until the user clicked Save. Centralize here: applyNewOutput
+    // (reached by EVERY producing node, and only on a genuine runtime output — not
+    // project load) calls scheduleInstallSyncRef → this runs the same save the disk
+    // icon does (install + syncDatasetsFromSavedSpec resync) so the open palette /
+    // drawer refresh live. Debounced so a "play all" burst collapses into one save.
+    const installSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const installSyncPendingIdsRef = useRef<Set<string>>(new Set());
+    scheduleInstallSyncRef.current = (nodeId: string) => {
+        const node = reactFlow.getNode(nodeId);
+        if (!node) return;
+        const canonical = getFlowNodeCanonicalType(node);
+        // Sinks / interaction surfaces pass their input through — never a NEW
+        // dataset — so excluding them keeps e.g. a Data Pool's per-brush re-emit
+        // from triggering saves.
+        if (
+            canonical === NodeType.VIS_VEGA ||
+            canonical === NodeType.VIS_SIMPLE ||
+            canonical === NodeType.DATA_POOL
+        ) {
+            return;
+        }
+        if (isDatasetPaletteNode(node.data)) return;
+        if (!resolveSaveOutputDataset(node.data, defaultSaveOutputDataset)) return;
+
+        installSyncPendingIdsRef.current.add(nodeId);
+        workflowOps.beginPendingInstall({
+            key: nodeId,
+            producerNodeId: nodeId,
+            label: resolveNodeDisplayLabel(node.data),
+        });
+
+        // Debounce: one save covers every producer that landed in this window. The
+        // save fires after outputs have committed, so buildOutputRefs sees them.
+        if (installSyncTimerRef.current) clearTimeout(installSyncTimerRef.current);
+        installSyncTimerRef.current = setTimeout(() => {
+            installSyncTimerRef.current = null;
+            const ids = Array.from(installSyncPendingIdsRef.current);
+            installSyncPendingIdsRef.current = new Set();
+            void workflowOps
+                .persistDataflowForInstall()
+                .finally(() => ids.forEach((id) => workflowOps.endPendingInstall(id)));
+        }, 500);
+    };
+
+    useEffect(
+        () => () => {
+            if (installSyncTimerRef.current) clearTimeout(installSyncTimerRef.current);
+        },
+        [],
+    );
 
     const nodeActionsValue = useMemo<NodeActionsContextProps>(() => ({
         workflowNameRef,

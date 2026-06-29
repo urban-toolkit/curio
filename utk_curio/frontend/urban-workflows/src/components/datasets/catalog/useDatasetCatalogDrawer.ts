@@ -29,7 +29,7 @@ import { tabOrigin } from "./datasetCatalogDrawerTypes";
 export function useDatasetCatalogDrawer(presented: boolean) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importInFlightRef = useRef(false);
-  const { projectId, saveCurrentProject, setDataflowDatasets, outputs, nodes, defaultSaveOutputDataset } = useFlowContext();
+  const { projectId, ensureProjectId, setDataflowDatasets, outputs, nodes, defaultSaveOutputDataset, pendingInstalls, beginPendingInstall, endPendingInstall } = useFlowContext();
   const { showToast } = useToastContext();
   const [tab, setTab] = useState<DrawerTab>("browse");
   const [search, setSearch] = useState("");
@@ -145,25 +145,18 @@ export function useDatasetCatalogDrawer(presented: boolean) {
     [catalogItems, detailDatasetId],
   );
 
-  const ensureProjectId = useCallback(async (): Promise<string | null> => {
-    if (projectId) return projectId;
-    try {
-      const detail = await saveCurrentProject();
-      return (detail as { id?: string } | undefined)?.id || null;
-    } catch (err) {
-      showToast(
-        (err as Error)?.message || "Save the dataflow before installing datasets.",
-        "error",
-      );
-      return null;
-    }
-  }, [projectId, saveCurrentProject, showToast]);
-
   const onInstall = useCallback(
     async (dataset: DatasetCatalogItem) => {
       const id = await ensureProjectId();
       if (!id) return;
       setBusyId(dataset.id);
+      beginPendingInstall({
+        key: dataset.id,
+        datasetId: dataset.id,
+        label: dataset.title,
+        producerNodeId: dataset.producerNodeId ?? undefined,
+        format: dataset.format,
+      });
       try {
         const installed = await datasetCatalogApi.installToDataflow(id, dataset.id, dataset);
         setDataflowDatasets((prev) => {
@@ -179,10 +172,11 @@ export function useDatasetCatalogDrawer(presented: boolean) {
       } catch (err) {
         showToast((err as Error)?.message || "Could not install dataset.", "error");
       } finally {
+        endPendingInstall(dataset.id);
         setBusyId(null);
       }
     },
-    [catalog, ensureProjectId, setDataflowDatasets, showToast],
+    [catalog, ensureProjectId, setDataflowDatasets, showToast, beginPendingInstall, endPendingInstall],
   );
 
   const onUninstall = useCallback(
@@ -285,6 +279,9 @@ export function useDatasetCatalogDrawer(presented: boolean) {
       if (importInFlightRef.current) return;
       importInFlightRef.current = true;
       setBusyId("import");
+      // No catalog row exists yet for a brand-new import, so the placeholder is the
+      // only in-list feedback until it lands.
+      beginPendingInstall({ key: "import", label: file.name });
       try {
         const imported = await catalog.importDataset(file);
         setDataflowDatasets((prev) => {
@@ -295,11 +292,12 @@ export function useDatasetCatalogDrawer(presented: boolean) {
       } catch (err) {
         showToast((err as Error)?.message || "Could not import dataset.", "error");
       } finally {
+        endPendingInstall("import");
         importInFlightRef.current = false;
         setBusyId(null);
       }
     },
-    [catalog, setDataflowDatasets, showToast],
+    [catalog, setDataflowDatasets, showToast, beginPendingInstall, endPendingInstall],
   );
 
   const handleDatasetDragStart = useCallback(
@@ -339,6 +337,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
     liveOutputs,
     catalog,
     items,
+    pendingInstalls,
     tabInstalledCount,
     tabComputedCount,
     startUiTransition,

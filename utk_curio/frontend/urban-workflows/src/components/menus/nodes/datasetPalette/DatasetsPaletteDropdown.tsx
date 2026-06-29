@@ -21,13 +21,15 @@ import {
 } from "../toolsPaletteDismiss";
 import { buildSaveableLiveOutputs } from "../../../../utils/saveOutputDataset";
 import { DatasetRow } from "./DatasetPaletteRows";
+import { DatasetInstallingRow } from "./DatasetInstallingRow";
+import { pendingInstallsNotYetListed } from "../../../../services/datasetCatalog/pendingInstallView";
 import styles from "./DatasetsPaletteDropdown.module.css";
 
 export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { projectId, outputs, nodes, defaultSaveOutputDataset } = useFlowContext();
+  const { projectId, outputs, nodes, defaultSaveOutputDataset, pendingInstalls } = useFlowContext();
   const { openDatasetCatalogDrawer, isDatasetCatalogDrawerOpen } = useDatasetCatalogDrawer();
   const { datasetRevealId, setDatasetRevealId } = useDatasetPalette();
 
@@ -95,10 +97,17 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
     [rows],
   );
 
-  // Count what the palette actually shows (installed/saved datasets) so the
-  // trigger badge stays consistent with the list instead of also counting
-  // hub/ephemeral rows that never render here.
-  const total = installedRows.length;
+  // In-flight installs without a real installed row yet, rendered as
+  // "Installing…" placeholders above the installed rows.
+  const installingRows = useMemo(
+    () => pendingInstallsNotYetListed(pendingInstalls, installedRows),
+    [pendingInstalls, installedRows],
+  );
+
+  // Count what the palette actually shows (installed/saved datasets + in-flight
+  // placeholders) so the trigger badge stays consistent with the list and does
+  // not visibly jump when a placeholder is replaced by its real row.
+  const total = installedRows.length + installingRows.length;
 
   // A node's DATASET chip requests a reveal: open the palette, then scroll the
   // matching row into view and pulse it. Mirrors the package palette behaviour.
@@ -186,15 +195,18 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
             ) : null}
             <PaletteAccordion
               title="Installed datasets"
-              count={installedRows.length}
+              count={total}
               selected
               defaultOpen
             >
+              {installingRows.map((pending) => (
+                <DatasetInstallingRow key={`pending:${pending.key}`} pending={pending} />
+              ))}
               {installedRows.length > 0 ? (
                 installedRows.map((dataset) => <DatasetRow key={`${dataset.origin}:${dataset.id}`} dataset={dataset} />)
-              ) : (
+              ) : installingRows.length === 0 ? (
                 <div className={styles.sectionEmpty}>No installed datasets yet.</div>
-              )}
+              ) : null}
             </PaletteAccordion>
           </div>
           <div className={styles.footer}>

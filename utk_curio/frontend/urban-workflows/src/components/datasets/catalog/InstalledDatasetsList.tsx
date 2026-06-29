@@ -1,9 +1,10 @@
 import React from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faTrashCan } from "@fortawesome/free-solid-svg-icons";
+import { faTrashCan, faSpinner } from "@fortawesome/free-solid-svg-icons";
 import {
   DATASET_FORMAT_LABEL,
   DatasetCatalogItem,
+  PendingInstall,
   datasetDisplayTitle,
   datasetProvenanceLabel,
 } from "../../../services/datasetCatalog";
@@ -16,6 +17,8 @@ import styles from "./InstalledDatasetsList.module.css";
 
 export interface InstalledDatasetsListProps {
   datasets: DatasetCatalogItem[];
+  /** In-flight installs rendered as "Installing…" rows above the installed ones. */
+  installing?: PendingInstall[];
   busy?: boolean;
   publishAllowed?: boolean;
   publishingId?: string | null;
@@ -109,8 +112,30 @@ function InstalledDatasetRow({
   );
 }
 
+/** Compact "Installing…" placeholder row matching the installed-row layout. */
+function InstalledInstallingRow({ pending }: { pending: PendingInstall }) {
+  return (
+    <div
+      className={styles.installedRow}
+      role="status"
+      aria-busy="true"
+      aria-label={`Installing ${pending.label}`}
+      style={{ opacity: 0.7 }}
+    >
+      <div className={styles.installedBody}>
+        <div className={styles.installedHeader}>
+          <FontAwesomeIcon icon={faSpinner} spin aria-hidden />
+          <span className={styles.installedName}>{pending.label}</span>
+        </div>
+        <span className={styles.installedMeta}>Installing…</span>
+      </div>
+    </div>
+  );
+}
+
 export const InstalledDatasetsList: React.FC<InstalledDatasetsListProps> = ({
   datasets,
+  installing = [],
   busy = false,
   publishAllowed = true,
   publishingId = null,
@@ -122,7 +147,7 @@ export const InstalledDatasetsList: React.FC<InstalledDatasetsListProps> = ({
   onDragStart,
   onDragEnd,
 }) => {
-  if (datasets.length === 0) return null;
+  if (datasets.length === 0 && installing.length === 0) return null;
 
   const label = sectionLabel ?? `Your datasets · ${datasets.length} installed`;
 
@@ -133,6 +158,9 @@ export const InstalledDatasetsList: React.FC<InstalledDatasetsListProps> = ({
         className={styles.installedList}
         style={refreshing ? { opacity: 0.6, pointerEvents: "none", transition: "opacity 0.15s" } : { transition: "opacity 0.15s" }}
       >
+        {installing.map((pending) => (
+          <InstalledInstallingRow key={`pending:${pending.key}`} pending={pending} />
+        ))}
         {datasets.map((dataset) => (
           <InstalledDatasetRow
             key={`${dataset.origin}:${dataset.id}`}

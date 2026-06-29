@@ -17,7 +17,6 @@ function unversionedNodeType(nodeType: string): string {
 // Editor
 import Editor, { Monaco } from "@monaco-editor/react";
 import { useFlowContext } from "../../providers/FlowProvider";
-import { applyInstalledDatasetToProject } from "../../services/datasetCatalog/datasetCatalogApi";
 import { resolveSaveOutputDataset } from "../../utils/saveOutputDataset";
 import { resolveNodeDisplayLabel } from "../../utils/palettePackageFactoryDraft";
 import { useProvenanceContext } from "../../providers/ProvenanceProvider";
@@ -58,7 +57,6 @@ function CodeEditor({
         markNodeStale,
         signalNodeExecDone,
         projectId,
-        setDataflowDatasets,
         defaultSaveOutputDataset,
     } = useFlowContext();
     const { nodeExecProv } = useProvenanceContext();
@@ -171,16 +169,6 @@ function CodeEditor({
                 : stdoutText)
             : "";
 
-        // ── Persist auto-installed computed dataset in the local spec state ──
-        // The backend installs the parquet to the user's datasets folder
-        // (and writes to spec.trill.json if dataflowId was provided).  We
-        // also update the React state here so the dataset appears in the
-        // drawer immediately and is included in the next manual save even
-        // if the backend spec write failed (e.g. project not saved yet).
-        if (resolveSaveOutputDataset(data, defaultSaveOutputDataset)) {
-            applyInstalledDatasetToProject(result.installedDataset, setDataflowDatasets);
-        }
-
         if (hasOutput) {
             let outputContent = stdoutBlock;
             if (result.stderr) {
@@ -188,6 +176,8 @@ function CodeEditor({
             }
             outputContent += (outputContent ? "\n" : "") + "Saved to file: " + result.output.path;
             setOutputCallback({ code: "success", content: outputContent });
+            // outputCallback → applyNewOutput, which centrally auto-installs +
+            // surfaces the produced dataset (no manual disk-icon save needed).
             data.outputCallback(data.nodeId, result.output);
             markNodeExecuted(data.nodeId);
         } else {

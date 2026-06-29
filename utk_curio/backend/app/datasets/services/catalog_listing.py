@@ -9,7 +9,6 @@ from typing import Any
 
 from utk_curio.backend.app.datasets.catalog_dedup import (
     catalog_facets,
-    collapse_computed_by_file,
     dedupe_items,
 )
 from utk_curio.backend.app.datasets.catalog_items import loader_snippet
@@ -170,10 +169,15 @@ class CatalogListingMixin(CatalogPathMixin):
                         # the listing/detail response.
                         item["uri"] = None
 
-        # Paths are now resolved, so collapse computed datasets that point at the
-        # same data file (two producer nodes installing one shared output) — they
-        # otherwise render as duplicate, identically-named palette entries.
-        items = collapse_computed_by_file(items)
+        # NOTE: we deliberately do NOT collapse computed datasets by data-file
+        # basename here. Distinct saved records (e.g. an Autark map output and its
+        # baseline-compute / modified-compute siblings) live in their own
+        # ``computed.<node>@1`` dirs with distinct ids, but often share a generated
+        # filename — basename-collapsing silently hid all but the "richest" one
+        # until the others were deleted. ``dedupe_items`` (by dataset id, above)
+        # already merges the only legitimate duplicates: the same dataset's hub
+        # registry row and its installed/live copy. Every distinct record must
+        # stay visible — the list reflects the actual saved datasets.
 
         if q:
             needle = q.casefold()

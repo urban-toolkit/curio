@@ -1,10 +1,12 @@
-import React, { useCallback, useRef } from "react";
+import React, { useCallback, useMemo, useRef } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faFileImport } from "@fortawesome/free-solid-svg-icons";
 import { DrawerFooter } from "../../packages/publishing/DrawerFooter";
 import { DrawerHeader } from "../../packages/publishing/DrawerHeader";
 import tabStyles from "../../packages/publishing/DrawerTabs.module.css";
+import { pendingInstallsNotYetListed } from "../../../services/datasetCatalog";
 import { DatasetCard } from "./DatasetCard";
+import { DatasetInstallingCard } from "./DatasetInstallingCard";
 import { DatasetDetailModal } from "./DatasetDetailModal";
 import { InstalledDatasetsList } from "./InstalledDatasetsList";
 import { TAB_LABEL } from "./datasetCatalogDrawerTypes";
@@ -42,6 +44,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
     liveOutputs,
     catalog,
     items,
+    pendingInstalls,
     tabInstalledCount,
     tabComputedCount,
     startUiTransition,
@@ -55,6 +58,16 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
     openDatasetDetails,
     closeDatasetDetails,
   } = useDatasetCatalogDrawer(presented);
+
+  // In-flight installs without a real installed row yet → "Installing…" cards.
+  // Match against genuinely-installed items only (an un-installed hub/computed row
+  // sharing the id must not suppress the placeholder while the install runs).
+  const installingRows = useMemo(() => {
+    const installed = items.filter(
+      (it) => it.installed === true || (it.origin !== "hub" && it.origin !== "computed"),
+    );
+    return pendingInstallsNotYetListed(pendingInstalls, installed);
+  }, [pendingInstalls, items]);
 
   const handleDrawerTransitionEnd = useCallback(
     (e: React.TransitionEvent<HTMLElement>) => {
@@ -159,11 +172,12 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
               </div>
             ) : null}
             {tab === "installed" ? (
-              !catalog.loading && !catalog.error && items.length === 0 ? (
+              !catalog.loading && !catalog.error && items.length === 0 && installingRows.length === 0 ? (
                 <div className={styles.empty}>No datasets installed in this dataflow yet.</div>
               ) : (
                 <InstalledDatasetsList
                   datasets={items}
+                  installing={installingRows}
                   busy={busyId != null || publishingId != null}
                   publishingId={publishingId}
                   onUninstall={projectId ? (dataset) => void onUninstall(dataset) : undefined}
@@ -176,7 +190,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
             ) : (
               <>
                 {!catalog.error ? <p className={styles.sectionLabel}>{TAB_LABEL[tab]}</p> : null}
-                {!catalog.loading && !catalog.error && items.length === 0 ? (
+                {!catalog.loading && !catalog.error && items.length === 0 && installingRows.length === 0 ? (
                   <div className={styles.empty}>
                     {tab === "computed"
                       ? "No computed datasets yet. Run a dataflow node that outputs a table — it will appear here and be installed automatically."
@@ -184,6 +198,9 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
                   </div>
                 ) : null}
                 <div className={styles.cardList}>
+                  {installingRows.map((pending) => (
+                    <DatasetInstallingCard key={`pending:${pending.key}`} pending={pending} />
+                  ))}
                   {items.map((dataset) => {
                     const isComputedInstalled =
                       dataset.origin === "computed" && dataset.installed === true;

@@ -4,6 +4,26 @@ export type DatasetFormat = "csv" | "geojson" | "json" | "parquet" | "geotiff" |
 
 export type DatasetSortMode = "recent" | "name";
 
+/**
+ * A dataset install that is currently in flight, surfaced as an "Installing…"
+ * placeholder in the dataset palette and Data Catalog drawer until the real
+ * installed row lands (or the operation fails). Volatile, session-only state.
+ */
+export interface PendingInstall {
+  /** Stable key: producer node id (auto-install), datasetId (manual), or "import". */
+  key: string;
+  /** Human label shown on the placeholder (node display name / dataset title / file name). */
+  label: string;
+  /** Producer node id when the install comes from a node execution. */
+  producerNodeId?: string;
+  /** Catalog dataset id when known (manual install of a listed dataset). */
+  datasetId?: string;
+  /** Dataset format when known, so the placeholder can mirror the real row's chrome. */
+  format?: DatasetFormat;
+  /** Epoch ms when the install started (used only for the safety timeout). */
+  startedAt: number;
+}
+
 /** A dataflow that uses a dataset, as returned by ``GET /datasets/<id>/usage``. */
 export interface DatasetDataflowUsageRef {
   dataflowId: string;

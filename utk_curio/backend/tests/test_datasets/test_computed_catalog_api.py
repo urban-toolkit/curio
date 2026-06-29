@@ -723,9 +723,12 @@ def test_install_computed_dataset_carries_decode_sidecar(client, user_and_token)
     assert sidecars, "manual install should copy the decode sidecar into the user store"
 
 
-def test_two_nodes_sharing_output_file_collapse_in_catalog(client, user_and_token):
-    """Two producer nodes whose outputs resolve to the SAME file must surface as
-    ONE catalog entry, not duplicate identically-named palette rows."""
+def test_two_nodes_sharing_output_file_both_appear_in_catalog(client, user_and_token):
+    """Two producer nodes whose outputs resolve to the same data-file basename are
+    two distinct saved records and must BOTH appear in the catalog — they are no
+    longer collapsed by filename. (Same scenario that hid Autark map outputs beside
+    their baseline-/modified-compute siblings.) Duplicate titles are acceptable;
+    hiding a distinct saved dataset is not."""
     import os
     from pathlib import Path
 
@@ -752,9 +755,9 @@ def test_two_nodes_sharing_output_file_collapse_in_catalog(client, user_and_toke
         headers=auth_headers(token),
     ).get_json()
     computed = [i for i in catalog["items"] if i.get("origin") == "computed"]
-    titles = [i.get("title") for i in computed]
-    assert len(titles) == len(set(titles)), f"duplicate computed names: {titles}"
-    assert len(computed) == 1
+    # Both distinct records are present (one per producer node), not collapsed.
+    assert len(computed) == 2, [i.get("id") for i in computed]
+    assert len({i["id"] for i in computed}) == 2
 
 
 def test_process_python_code_no_auto_install_without_saved_dataset(client, user_and_token, monkeypatch):
