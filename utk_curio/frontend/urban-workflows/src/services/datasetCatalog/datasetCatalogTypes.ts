@@ -226,9 +226,9 @@ export function datasetDisplayTitle(
 ): string {
   const title = dataset.title?.trim();
   const dirName = dataset.dirName?.trim();
-  const isGeneratedFilename =
-    dataset.origin === "computed" && !!title && title === dataset.fileName?.trim();
-  if (!title || isGeneratedFilename) {
+  const isComputed = isDatasetComputed(dataset);
+  const isGeneratedFilename = isComputed && !!title && title === dataset.fileName?.trim();
+  if (!title || isComputed) {
     return dirName || dataset.title;
   }
   return title;
@@ -243,12 +243,17 @@ export function datasetDisplayTitle(
 export function datasetSubtitle(
   dataset: Pick<DatasetCatalogItem, "origin" | "fileName" | "dirName">,
 ): string | null | undefined {
-  return dataset.origin === "computed" ? dataset.fileName : dataset.dirName;
+  return isDatasetComputed(dataset) ? dataset.fileName : dataset.dirName;
 }
 
 /** True when the dataset is listed in the committed catalog (``hub``) or marked published from a project. */
 export function isDatasetPublishedToCatalog(dataset: DatasetCatalogItem): boolean {
   return dataset.origin === "hub" || dataset.publishedToHub === true;
+}
+
+/** True when the dataset comes from a node execution - computed*/
+export function isDatasetComputed(dataset: DatasetCatalogItem): boolean {
+  return dataset.origin === "computed" || dataset.sourceLabel?.toLowerCase() === "computed";
 }
 
 /** Installed into the current project/dataflow — computed, imported, or a
