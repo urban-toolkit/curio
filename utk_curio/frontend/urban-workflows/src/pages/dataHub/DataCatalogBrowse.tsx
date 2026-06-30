@@ -153,10 +153,6 @@ export const DataCatalogBrowse: React.FC = () => {
             </span>
           </button>
         ))}
-
-        <button className={styles.publishRailButton} type="button">
-          Publish a dataset
-        </button>
       </aside>
 
       <main className={styles.browseMain}>
