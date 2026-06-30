@@ -760,10 +760,13 @@ def test_two_nodes_sharing_output_file_both_appear_in_catalog(client, user_and_t
     assert len({i["id"] for i in computed}) == 2
 
 
-def test_process_python_code_no_auto_install_without_saved_dataset(client, user_and_token, monkeypatch):
-    """With save ON but no output['dataset'] (a non-tabular / not-saved result),
-    auto-install must NOT install the raw artifact as a computed dataset — that
-    fallback is what produced redundant, duplicate-named computed datasets."""
+def test_process_python_code_skips_unresolvable_output_artifact(client, user_and_token, monkeypatch):
+    """When the output references an artifact that can't be resolved on disk,
+    auto-install skips gracefully — no install, no crash — and reports a
+    ``skipped`` diagnostic instead of failing silently.
+
+    (Execution now persists JSON/path outputs in parity with the project-save
+    installer, keyed on node id; only genuinely unresolvable artifacts skip.)"""
     from unittest.mock import MagicMock
 
     _, token = user_and_token
@@ -773,8 +776,7 @@ def test_process_python_code_no_auto_install_without_saved_dataset(client, user_
     mock_response.json.return_value = {
         "stdout": "",
         "stderr": "",
-        # dataType is a plain scalar/list-ish single output, NOT a bundle, and no
-        # 'dataset' key — only the raw artifact id in 'path'.
+        # No 'dataset' key and the 'path' artifact id resolves to no file on disk.
         "output": {"path": "1781903321396_c8572ee7", "dataType": "dataframe"},
     }
     monkeypatch.setattr(
@@ -795,4 +797,6 @@ def test_process_python_code_no_auto_install_without_saved_dataset(client, user_
         headers=auth_headers(token),
     )
     assert resp.status_code == 200, resp.get_data(as_text=True)
-    assert resp.get_json().get("installedDataset") is None
+    body = resp.get_json()
+    assert body.get("installedDataset") is None
+    assert body.get("datasetDiagnostic", {}).get("status") == "skipped"

@@ -441,18 +441,27 @@ def process_python_code():
     from utk_curio.backend.app.datasets.auto_install import auto_install_node_output
 
     installed_dataset = None
+    dataset_diagnostic = None
     if save_output_dataset and isinstance(output, dict) and node_id:
-        installed_dataset = auto_install_node_output(
+        dataset_diagnostic = auto_install_node_output(
             user=getattr(g, "user", None),
             node_id=node_id,
             sandbox_output=output,
             dataflow_id=request.json.get("dataflowId") or None,
             node_name=request.json.get("nodeName") or None,
+            node_type=nodeType,
         )
-        if installed_dataset:
+        if dataset_diagnostic.get("status") == "installed":
+            installed_dataset = dataset_diagnostic.get("dataset")
             print(
                 f"[processPythonCode] auto-installed dataset "
                 f"{installed_dataset.get('id')} for node {node_id}",
+                flush=True,
+            )
+        else:
+            print(
+                f"[processPythonCode] node {node_id} produced no computed dataset: "
+                f"{dataset_diagnostic.get('status')} — {dataset_diagnostic.get('reason')}",
                 flush=True,
             )
 
@@ -462,6 +471,7 @@ def process_python_code():
         'input': input,
         'output': output,
         'installedDataset': installed_dataset,
+        'datasetDiagnostic': dataset_diagnostic,
     }
 
 
@@ -531,14 +541,29 @@ def process_javascript_code():
     from utk_curio.backend.app.datasets.auto_install import auto_install_node_output
 
     installed_dataset = None
+    dataset_diagnostic = None
     if save_output_dataset and isinstance(output, dict) and node_id:
-        installed_dataset = auto_install_node_output(
+        dataset_diagnostic = auto_install_node_output(
             user=getattr(g, "user", None),
             node_id=node_id,
             sandbox_output=output,
             dataflow_id=request.json.get("dataflowId") or None,
             node_name=request.json.get("nodeName") or None,
+            node_type=nodeType,
         )
+        if dataset_diagnostic.get("status") == "installed":
+            installed_dataset = dataset_diagnostic.get("dataset")
+            print(
+                f"[processJavaScriptCode] auto-installed dataset "
+                f"{installed_dataset.get('id')} for node {node_id}",
+                flush=True,
+            )
+        else:
+            print(
+                f"[processJavaScriptCode] node {node_id} produced no computed dataset: "
+                f"{dataset_diagnostic.get('status')} — {dataset_diagnostic.get('reason')}",
+                flush=True,
+            )
 
     return {
         'stdout': stdout,
@@ -546,6 +571,7 @@ def process_javascript_code():
         'input': input,
         'output': output,
         'installedDataset': installed_dataset,
+        'datasetDiagnostic': dataset_diagnostic,
     }
 
 
