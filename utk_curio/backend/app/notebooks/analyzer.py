@@ -227,3 +227,92 @@ def analyze_cells(cells: list[str]) -> dict:
                 producer[name] = i
 
     return {'analysis': analysis, 'edges': edges}
+
+# ── Improved Public API ───────────────────────────────────────────────────────
+def runtime_analyze_cells(cells: list[str]) -> dict:
+    analysis = []
+    import_names_per_cell = []
+
+    # ── Pass 1: Static analysis───────────────────────────────────────────
+    for code in cells:
+        try:
+            tree = ast.parse(code)
+        except SyntaxError:
+            analysis.append({'defined': [], 'used': [], 'last_var': None, 'altair_spec': None})
+            import_names_per_cell.append(set())
+            continue
+
+        defined = _collect_defined(tree)
+        import_names = _collect_import_names(tree)
+
+        visitor = _UsedNamesVisitor()
+        visitor.used = set()
+        visitor.visit(tree)
+        used = visitor.used - import_names - _PYTHON_BUILTINS
+
+        last_var = _last_assigned_var(tree)
+        altair_spec = (
+            _try_altair_to_spec(code, last_var, external_vars=used)
+            if last_var and _ALTAIR_RE.search(code)
+            else None
+        )
+
+        analysis.append({
+            'defined': list(defined),
+            'used': list(used),
+            'last_var': last_var,
+            'altair_spec': altair_spec,
+        })
+        import_names_per_cell.append(import_names)
+
+    # ── Pass 2: Runtime analysis──────────────────────────────────────────
+    # This might fail if a cell has vega-lite code
+    namespace = {'__builtins__': builtins}
+    for i, code in enumerate(cells):
+        # What keys are in the namespace before code execution
+        before = set(namespace.keys())
+        try:
+            # Try to verify if this is isn't a security risk.
+            exec(compile(code, f"<cell_{i}>", "exec"), namespace)
+        except Exception:
+            analysis[i]['runtime_error'] = True
+            continue
+
+        # What keys are in the namespace after code execution
+        after = set(namespace.keys())
+
+        # Gather the variables produced in this code execution
+        _import_names = import_names_per_cell[i]
+        produced = after - before - _import_names - _PYTHON_BUILTINS
+        
+        types = {}  #{key = var_name: value = var_type}
+        for name in produced:
+            types[name] = type(namespace[name]).__name__
+        
+        # The variable types of what was produced
+        analysis[i]['runtime_types'] = types
+
+        # Update defined with the variables produced in runtime
+        runtime_only = produced - set(analysis[i]['defined'])
+        analysis[i]['defined'] = list(runtime_only | set(analysis[i]['defined']))
+
+
+    # ── Pass 3: Dependency edges──────────────────────────────────────────
+    producer: dict[str, int] = {}
+    edges: list[dict] = []
+    seen: set[tuple] = set()
+
+    for i, cell in enumerate(analysis):
+        for name in cell['used']:
+            # Added, name not in cell['defined']
+            if name in producer and name not in cell['defined']:
+                key = (producer[name], i)
+                if key not in seen:
+                    seen.add(key)
+                    edges.append({'source': producer[name], 'target': i})
+        import_names = import_names_per_cell[i]
+        for name in cell['defined']:
+            if name not in import_names:
+                producer[name] = i
+
+    return {'analysis': analysis, 'edges': edges}

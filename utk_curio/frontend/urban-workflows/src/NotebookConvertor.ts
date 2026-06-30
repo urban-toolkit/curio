@@ -77,7 +77,11 @@ function inferNodeType(code: string): NodeType {
 
 // ── Import: Notebook → Trill ─────────────────────────────────────────────────
 
-type CellEdge = { source: number; target: number };
+type CellEdge = { 
+  source: number; 
+  target: number 
+  // We might need to add more here
+};
 
 function wireCode(
   code: string,
@@ -123,6 +127,7 @@ export async function notebookToTrill(
   notebook: Record<string, unknown>,
   backendUrl: string
 ): Promise<TrillSpec> {
+  // ── Step 1: Extract code cells ──────────────────────────────────────────
   const rawCells = Array.isArray(notebook.cells) ? notebook.cells : [];
 
   const codeCells = rawCells
@@ -133,16 +138,22 @@ export async function notebookToTrill(
       return Array.isArray(source) ? source.join("") : String(source ?? "");
     });
 
+  // Needed for debbuging
+  console.log(codeCells)
+
   // Call backend for AST-based dependency analysis + Altair spec extraction
   type CellAnalysis = {
     defined: string[];
     used: string[];
     last_var: string | null;
     altair_spec: Record<string, unknown> | null;
+    //We might need to add more here
   };
   let cellEdges: CellEdge[] = [];
   let lastVars: (string | null)[] = [];
   let altairSpecs: (Record<string, unknown> | null)[] = [];
+
+  // ── Step 2: Ask the backend for real dependency analysis ────────────────
   try {
     const response = await fetch(`${backendUrl}/api/analyzeNotebook`, {
       method: "POST",
@@ -164,6 +175,7 @@ export async function notebookToTrill(
     );
   }
 
+  // ── Step 3: Fallback — naive linear chain ────────────────────────────────
   // Linear fallback when backend returned no edges
   if (cellEdges.length === 0 && codeCells.length > 1) {
     for (let i = 0; i < codeCells.length - 1; i++) {
@@ -173,6 +185,7 @@ export async function notebookToTrill(
     lastVars = [];
   }
 
+  // ── Step 4: Build quick-lookup structures from the edge list ────────────
   // Build wiring sets
   const hasOutgoing = new Set(cellEdges.map((e) => e.source));
   const incomingSources = new Map<number, number[]>();
@@ -181,10 +194,12 @@ export async function notebookToTrill(
     incomingSources.get(target)!.push(source);
   }
 
+  // ── Step 5: Compute visual layout ────────────────────────────────────────
   const positions = computeLayout(codeCells.length, cellEdges);
 
   const nodeIds = codeCells.map(() => uuid());
 
+  // ── Step 6: Build the actual TrillNode objects ──────────────────────────
   const nodes: TrillNode[] = codeCells.map((code, index) => {
     const spec = altairSpecs[index] ?? null;
     const nodeType = spec ? NodeType.VIS_VEGA : inferNodeType(code);
@@ -202,6 +217,7 @@ export async function notebookToTrill(
     };
   });
 
+  // ── Step 7: Build the edge list ──────────────────────────────────────────
   const edgeList: TrillEdge[] = cellEdges
     .filter(({ source, target }) => nodes[source] && nodes[target])
     .map(({ source, target }) => ({
@@ -209,7 +225,8 @@ export async function notebookToTrill(
       source: nodeIds[source],
       target: nodeIds[target],
     }));
-
+    
+    // ── Step 8: Assemble and return the final spec ──────────────────────────
   return {
     dataflow: {
       nodes,

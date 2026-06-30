@@ -111,6 +111,9 @@ const ProjectsList: React.FC = () => {
     reader.onload = async (event: ProgressEvent<FileReader>) => {
       try {
         const json = JSON.parse(event.target?.result as string) as Record<string, unknown>;
+
+        console.log(json)
+        
         const trillSpec = await notebookToTrill(json, process.env.BACKEND_URL as string);
         const name = file.name.replace(/\.ipynb$/i, "");
         await projectsApi.create({ name, spec: trillSpec as unknown as Record<string, unknown>, outputs: [] });
