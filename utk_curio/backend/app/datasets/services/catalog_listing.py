@@ -214,15 +214,77 @@ class CatalogListingMixin(CatalogPathMixin):
 
         return {"items": items, "facets": facets}
 
-    def get_dataset(self, dataset_id: str, *, dataflow_id: str | None = None, live_outputs: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    def get_dataset(
+        self,
+        dataset_id: str,
+        *,
+        dataflow_id: str | None = None,
+        live_outputs: list[dict[str, Any]] | None = None,
+        resolve_producer: bool = False,
+    ) -> dict[str, Any]:
         # ``include_hub=True`` is a strict superset of ``include_hub=False`` (it
         # only *adds* the hub registry items), so a single pass finds any id —
         # no need for the historical two-pass scan.
         result = self.list_catalog(dataflow_id=dataflow_id, include_hub=True, live_outputs=live_outputs)
         for item in result["items"]:
             if item["id"] == dataset_id:
+                if resolve_producer:
+                    self._backfill_authoritative_producer(item)
                 return item
         raise DatasetCatalogError("Dataset not found", 404)
+
+    def _backfill_authoritative_producer(self, item: dict[str, Any]) -> None:
+        """Augment a computed dataset item with its authoritative producer.
+
+        A computed dataset opened from a dataflow that only *imported* it carries
+        that dataflow's ref, whose ``producerNodeId`` is ``null`` — the producing
+        node lives in another dataflow. Resolve the real producer (node + type +
+        producing dataflow) across all the user's projects so the Dataset Details
+        page shows the same generating node as the dataset's producing record,
+        regardless of where it was opened from. Mutates *item* in place.
+        """
+        if not catalog_item_is_computed_provenance(item):
+            return
+        producer = self.resolve_dataset_producer(item.get("id") or "")
+        if producer is None:
+            return
+        # Don't clobber a producer id already resolved from the open (producing)
+        # dataflow — it is identical to the authoritative one. Always surface the
+        # node type and producing dataflow so the cross-dataflow case can render.
+        if not item.get("producerNodeId"):
+            item["producerNodeId"] = producer["nodeId"]
+        item["producerNodeType"] = producer.get("nodeType")
+        item["producerDataflowId"] = producer.get("dataflowId")
+        item["producerDataflowName"] = producer.get("dataflowName")
+        item["origin"] = "computed"
+
+    def resolve_dataset_producer(self, dataset_id: str) -> dict[str, Any] | None:
+        """Authoritative producer of a computed dataset, resolved across ALL of
+        the user's projects (not just the open dataflow).
+
+        Returns ``{nodeId, nodeType, dataflowId, dataflowName}`` for the first
+        dataflow whose nodes actually produce *dataset_id*, or ``None`` (the
+        dataset is not computed, or no producing node exists anywhere). Mirrors
+        the cross-project scan in :meth:`dataset_usage`.
+        """
+        if not dataset_id.startswith("computed."):
+            return None
+        if self.user is None:
+            raise DatasetCatalogError("Authorization required", 401)
+        from utk_curio.backend.app.projects import repositories as projects_repo
+        from utk_curio.backend.app.projects import storage as project_storage
+
+        user_key = self._user_key()
+        for project in projects_repo.list_for_user(self.user.id):
+            spec = project_storage.read_spec(user_key, project.id) or {}
+            producer = _dataset_producer_in_spec(spec, dataset_id)
+            if producer is not None:
+                return {
+                    **producer,
+                    "dataflowId": project.id,
+                    "dataflowName": project.name,
+                }
+        return None
 
     def preview(
         self,
@@ -350,6 +412,33 @@ def _producer_node_id_for(nodes: list, dataset_id: str) -> str | None:
         if nid and f"computed.{sanitize_node_id_segment(nid)}" == dataset_id:
             return nid
     return None
+
+
+def _dataset_producer_in_spec(
+    spec: dict[str, Any], dataset_id: str
+) -> dict[str, Any] | None:
+    """The producer node (``{nodeId, nodeType}``) for *dataset_id* in *spec*'s
+    dataflow, or ``None`` when this dataflow does not produce it.
+
+    A computed dataset's id encodes its producer node id
+    (``computed.<sanitized-nodeId>``), so the producing node — and its type —
+    can be recovered from any dataflow that still contains that node.
+    """
+    if not isinstance(spec, dict):
+        return None
+    dataflow = spec.get("dataflow")
+    if not isinstance(dataflow, dict):
+        return None
+    nodes = dataflow.get("nodes") or []
+    producer_id = _producer_node_id_for(nodes, dataset_id)
+    if producer_id is None:
+        return None
+    node_type = None
+    for node in nodes:
+        if isinstance(node, dict) and node.get("id") == producer_id:
+            node_type = node.get("type")
+            break
+    return {"nodeId": producer_id, "nodeType": node_type}
 
 
 def _dataset_consumer_nodes_in_spec(

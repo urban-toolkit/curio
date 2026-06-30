@@ -156,6 +156,13 @@ def base_item(**overrides: Any) -> dict[str, Any]:
         "rowCount": None,
         "featureCount": None,
         "producerNodeId": None,
+        # Authoritative producer info, resolved across the user's projects (not
+        # just the open dataflow) so a computed dataset opened from a dataflow
+        # that only imported it still shows its true generating node. Populated
+        # by ``get_dataset(resolve_producer=True)``; ``None`` otherwise.
+        "producerNodeType": None,
+        "producerDataflowId": None,
+        "producerDataflowName": None,
         "consumerNodeIds": [],
         "updatedAt": iso_from_timestamp(),
         "sourceLabel": "",

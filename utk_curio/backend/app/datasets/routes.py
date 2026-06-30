@@ -109,6 +109,7 @@ def get_dataset(dataset_id: str):
             dataset_id,
             dataflow_id=_dataflow_id_from_request(),
             live_outputs=_parse_live_outputs(request.args.get("liveOutputs")),
+            resolve_producer=True,
         )
     except (DatasetCatalogError, ProjectError) as exc:
         return _error(str(exc), getattr(exc, "status", 400))

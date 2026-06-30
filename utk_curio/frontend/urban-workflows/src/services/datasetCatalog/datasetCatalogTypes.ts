@@ -75,6 +75,14 @@ export interface DatasetCatalogItem {
   rowCount?: number | null;
   featureCount?: number | null;
   producerNodeId?: string | null;
+  /** Node type of the producing node, resolved across the user's projects (not
+   * just the open dataflow) so a computed dataset opened from a dataflow that
+   * only imported it can still label its generating node. */
+  producerNodeType?: string | null;
+  /** Dataflow that actually produced this computed dataset, when it differs from
+   * the dataflow the details page was opened from. */
+  producerDataflowId?: string | null;
+  producerDataflowName?: string | null;
   consumerNodeIds: string[];
   updatedAt: string;
   sourceLabel?: string | null;

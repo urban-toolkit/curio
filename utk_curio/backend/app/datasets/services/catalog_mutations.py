@@ -388,6 +388,20 @@ class CatalogMutationsMixin(CatalogPathMixin):
                 installed_item["producerNodeId"] = item.get("producerNodeId")
                 item = installed_item
 
+        # Preserve the producer link across uninstall → reinstall. A computed
+        # dataset encodes its producing node in its id/dirName
+        # (``computed.<sanitizedNodeId>``); on reinstall the item can arrive with
+        # producerNodeId dropped (the ref was deleted on uninstall, so the
+        # listing has nothing to carry it), which blanks the upstream connection
+        # badge in the catalog card/palette. Resolve the authoritative producer
+        # from the producing dataflow, falling back to the id-encoded segment, so
+        # the link — and the dataset's computed origin — is never lost.
+        seg = _producer_segment_from_computed_id(item.get("id"), item.get("dirName"))
+        if seg and not item.get("producerNodeId"):
+            producer = self.resolve_dataset_producer(item.get("id") or "")
+            item["producerNodeId"] = producer["nodeId"] if producer else seg
+            item["origin"] = "computed"
+
         refs = self.installed.list_refs(dataflow_id)
         existing = next((ref for ref in refs if ref.get("datasetId") == item["id"]), None)
         ref = self._ref_from_item(item)
@@ -543,3 +557,19 @@ class CatalogMutationsMixin(CatalogPathMixin):
             "updatedAt": item.get("updatedAt") or iso_from_timestamp(),
             "installedAt": iso_from_timestamp(),
         }
+
+
+def _producer_segment_from_computed_id(
+    dataset_id: str | None, dir_name: str | None
+) -> str | None:
+    """Producing node id encoded in a computed dataset's id/dirName
+    (``computed.<sanitizedNodeId>[@N]``), or ``None`` when it is not a computed
+    dataset. Mirrors the frontend ``producerNodeIdForDataset`` fallback so the
+    producer link can be recovered from the persisted id alone."""
+    import re
+
+    source = dir_name or dataset_id or ""
+    if not source.startswith("computed."):
+        return None
+    seg = re.sub(r"@\d+$", "", source[len("computed.") :])
+    return seg or None

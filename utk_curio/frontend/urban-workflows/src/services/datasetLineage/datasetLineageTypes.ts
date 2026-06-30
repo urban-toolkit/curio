@@ -8,6 +8,10 @@ export interface DatasetLineageNodeRef {
   nodeId: string;
   nodeName?: string;
   nodeType?: string;
+  /** Set only when the node lives in a different dataflow than the one the
+   * details page was opened from (cross-dataflow producer). */
+  dataflowId?: string | null;
+  dataflowName?: string | null;
 }
 
 export interface DatasetLineageDatasetRef {

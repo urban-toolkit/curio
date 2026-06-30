@@ -144,11 +144,12 @@
 
 .datasetRowDrag {
   width: 52px;
+  height: 52px;
 }
 
 .iconBadge {
   position: absolute;
-  bottom: 10px;
+  bottom: 4px;
   left: 2px;
   font-size: 7px;
   font-weight: 700;

@@ -304,8 +304,41 @@ export function selectDatasetDownstreamUsage(
   return { consumingNodes, consumingDataflows, derivedDatasets: [] };
 }
 
+/**
+ * The producing node id of a computed dataset, derived from the persisted
+ * lineage data: an explicit ``producerNodeId`` when present, otherwise the node
+ * id encoded in the dataset id/dirName (``computed.<sanitizedNodeId>[@N]``).
+ *
+ * Reinstalling a computed dataset from a previous node persists its ref with a
+ * null ``producerNodeId`` (origin flips to "imported"), which would otherwise
+ * drop the upstream connection badge in the catalog card/palette while the
+ * detail sidebar — built from a producer-resolved item — still shows it. Both
+ * surfaces resolve upstream through this helper, so the badge stays consistent
+ * with the sidebar regardless of newly-generated / uninstalled / reinstalled
+ * state.
+ */
+export function producerNodeIdForDataset(
+  dataset: Pick<DatasetCatalogItem, "id" | "dirName" | "producerNodeId">,
+): string | null {
+  if (dataset.producerNodeId) return dataset.producerNodeId;
+  const source = dataset.dirName || dataset.id || "";
+  if (!source.startsWith("computed.")) return null;
+  const seg = source.slice("computed.".length).replace(/@\d+$/, "");
+  return seg || null;
+}
+
 export interface UpstreamLineageParams {
-  dataset: Pick<DatasetCatalogItem, "origin" | "format" | "producerNodeId">;
+  dataset: Pick<
+    DatasetCatalogItem,
+    | "id"
+    | "dirName"
+    | "origin"
+    | "format"
+    | "producerNodeId"
+    | "producerNodeType"
+    | "producerDataflowId"
+    | "producerDataflowName"
+  >;
   nodes: LineageCanvasNode[];
   resolveNodeLabel?: NodeLabelResolver;
 }
@@ -315,22 +348,34 @@ export function selectDatasetUpstreamLineage(
   params: UpstreamLineageParams,
 ): DatasetUpstreamLineage {
   const { dataset, nodes, resolveNodeLabel } = params;
-  const producerNodeId = dataset.producerNodeId || null;
+  const producerNodeId = producerNodeIdForDataset(dataset);
 
   let generatingNode: DatasetUpstreamLineage["generatingNode"] = null;
   if (producerNodeId) {
     const producer = (nodes || []).find(
       (node) => node?.data?.nodeId === producerNodeId,
     );
-    const nodeType = producer?.data?.nodeType;
+    // Prefer the producer node on the open canvas. When it isn't here — the
+    // dataset was opened from a dataflow that only imported it — fall back to
+    // the producer type/dataflow resolved by the backend across the user's
+    // projects, so the card still names the generating node and its dataflow
+    // instead of a meaningless sliced id.
+    const nodeType = producer?.data?.nodeType ?? dataset.producerNodeType ?? undefined;
+    const nodeName = producer
+      ? resolveNodeLabel?.(nodeType) ||
+        producer.data?.templateName ||
+        formatNodeTypeLabel(nodeType)
+      : nodeType
+        ? resolveNodeLabel?.(nodeType) || formatNodeTypeLabel(nodeType)
+        : undefined;
     generatingNode = {
       nodeId: producerNodeId,
-      nodeName: producer
-        ? resolveNodeLabel?.(nodeType) ||
-          producer.data?.templateName ||
-          formatNodeTypeLabel(nodeType)
-        : undefined,
+      nodeName,
       nodeType,
+      // Surface the producing dataflow only when the producer is off-canvas
+      // (cross-dataflow); on the producing canvas it's the current dataflow.
+      dataflowId: producer ? null : dataset.producerDataflowId ?? null,
+      dataflowName: producer ? null : dataset.producerDataflowName ?? null,
     };
   }
 
@@ -373,7 +418,9 @@ export function selectDatasetLineage(params: DatasetLineageParams): DatasetLinea
     datasetId: dataset.id,
     nodes,
     edges,
-    producerNodeId: dataset.producerNodeId || null,
+    // Derive the producer from the computed id when the ref dropped it (reinstall),
+    // so downstream carrier resolution matches a freshly-generated dataset.
+    producerNodeId: producerNodeIdForDataset(dataset),
     dataflowId,
     dataflowName,
     persistedConsumerNodeIds: dataset.consumerNodeIds || [],

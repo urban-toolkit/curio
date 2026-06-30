@@ -119,7 +119,12 @@ const UpstreamCards: React.FC<{
                   {formatNodeTypeLabel(generatingNode.nodeType)}
                 </span>
               ) : null}
-              <span>{upstreamOriginCaption(dataset)}</span>
+              <span>
+                {upstreamOriginCaption(dataset)}
+                {generatingNode.dataflowName
+                  ? ` · in ${generatingNode.dataflowName}`
+                  : ""}
+              </span>
             </>
           ) : (
             <>
