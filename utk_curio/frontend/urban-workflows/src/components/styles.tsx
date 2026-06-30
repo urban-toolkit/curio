@@ -16,7 +16,7 @@ import {
 import { useUserContext } from "../providers/UserProvider";
 import { useLLMContext } from "../providers/LLMProvider";
 import { useToastContext } from "../providers/ToastProvider";
-import { canvasTemplateLabelFromNode, resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
+import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { readCanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { ConnectionValidator } from "../ConnectionValidator";
