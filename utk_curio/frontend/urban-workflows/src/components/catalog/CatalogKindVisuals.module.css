@@ -173,6 +173,11 @@
   color: #7a4f30;
 }
 
+.formatBadge_bundle {
+  background: #e4e7ec;
+  color: #475467;
+}
+
 .categoryBadge {
   flex-shrink: 0;
   border-radius: 4px;

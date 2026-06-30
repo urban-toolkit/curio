@@ -256,6 +256,7 @@
 .accent_parquet  { background: #f5a623; }
 .accent_geotiff  { background: #26c6da; }
 .accent_shp      { background: #a0836a; }
+.accent_bundle   { background: #5B6472; }
 
 /* ── Format avatar ───────────────────────────────────────────────────────────── */
 
@@ -303,4 +304,5 @@
 .avatar_parquet  { background: #fdf0dc !important; color: #a06a10; }
 .avatar_geotiff  { background: #ddf4f6 !important; color: #1a8a9a; }
 .avatar_shp      { background: #f0e8e2 !important; color: #7a4f30; }
+.avatar_bundle   { background: #e4e7ec !important; color: #475467; }
 
