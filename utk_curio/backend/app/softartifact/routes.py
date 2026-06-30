@@ -1,5 +1,6 @@
 import os 
 from flask import jsonify, request
+from .services.ingest import ingest_file
 from . import bp
 
 
@@ -24,10 +25,17 @@ def ingest():
     if not raw:
         return jsonify({"error": "empty file"}), 400
     
-    
-    return jsonify({
-        "artifactId": "",
-        "sourceFile": "",
-        "mimetype": "",
-        "status": ""
-    })
+    try:
+        result = ingest_file(
+            raw,
+            upload.filename,
+            upload.mimetype or "application/octet-stream"
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
+
+     
+    result["role"] = role
+    return jsonify(result), 200
