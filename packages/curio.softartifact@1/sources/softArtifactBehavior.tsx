@@ -106,7 +106,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.Error || `HTTP  ${res.status}`)
+        throw new Error(err.error || `HTTP  ${res.status}`)
       }
 
       const out = await res.json();

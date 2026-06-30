@@ -54,6 +54,6 @@ def ingest_file(raw: bytes, filename: str, mime_type: str):
     return {
         "artifactId": artifact_id,
         "sourceFile": safe_name,
-        "mimetype": mime_type or "application/octet-stream",
+        "mimeType": mime_type or "application/octet-stream",
         "status": "ready",
     }
