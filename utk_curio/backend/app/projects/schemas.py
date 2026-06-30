@@ -79,6 +79,10 @@ class ProjectDetail(ProjectSummary):
     folder_path: str = ""
     spec: Optional[dict] = None
     outputs: List[OutputRef] = field(default_factory=list)
+    # Computed outputs that could NOT be auto-installed on this save (e.g. the
+    # artifact was missing at save time). Response-only, never persisted — lets
+    # the client warn the user about a silently-skipped dataset.
+    dataset_install_warnings: List[dict] = field(default_factory=list)
 
 
 @dataclass

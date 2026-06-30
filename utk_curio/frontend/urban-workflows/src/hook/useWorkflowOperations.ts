@@ -23,7 +23,7 @@ import { useUserContext } from "../providers/UserProvider";
 import { updateNodeData, updateNodesByMap, updateEdgesByMap, extractNodeFieldMap, extractKeywordMaps } from "../utils/flowNodeUtils";
 import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
 import { TrillGenerator } from "../TrillGenerator";
-import { projectsApi, OutputRef } from "../api/projectsApi";
+import { projectsApi, OutputRef, DatasetInstallWarning } from "../api/projectsApi";
 import { buildSaveableLiveOutputs } from "../utils/saveOutputDataset";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import {
@@ -786,14 +786,43 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // the exact same save the disk icon does — create-or-update + resync — making
     // the dataset appear without a manual save. No dataset ref to stage here: the
     // backend derives it from the saved output refs and returns it in detail.spec.
+    // Map a save's install-warnings onto friendly node labels and warn the user.
+    // Without this, a computed output that failed to install (e.g. its artifact
+    // was missing at save time) was swallowed server-side and the dataset just
+    // never appeared — the "Play All didn't generate all datasets" symptom.
+    const surfaceInstallWarnings = useCallback(
+        (detail: { dataset_install_warnings?: DatasetInstallWarning[] } | undefined) => {
+            const warnings = detail?.dataset_install_warnings;
+            if (!warnings || warnings.length === 0) return;
+            const labelByNodeId = new Map<string, string>();
+            for (const node of reactFlow.getNodes()) {
+                const label = resolveNodeDisplayLabel(node.data).trim();
+                if (!label) continue;
+                if (typeof node.id === "string") labelByNodeId.set(node.id, label);
+                const dataNodeId = (node.data as { nodeId?: unknown })?.nodeId;
+                if (typeof dataNodeId === "string") labelByNodeId.set(dataNodeId, label);
+            }
+            const names = warnings.map((w) => labelByNodeId.get(w.node_id) || w.node_id);
+            const list = names.join(", ");
+            showToast(
+                warnings.length === 1
+                    ? `Dataset for "${list}" couldn't be generated — re-run that node.`
+                    : `${warnings.length} datasets couldn't be generated (${list}) — re-run those nodes.`,
+                "warning",
+            );
+        },
+        [reactFlow, showToast],
+    );
+
     const persistDataflowForInstall = useCallback(async (): Promise<void> => {
         try {
-            await requestProjectSave();
+            const detail = await requestProjectSave();
+            surfaceInstallWarnings(detail);
         } catch (err) {
             showToast((err as Error)?.message || "Could not save the dataflow.", "error");
             notifyDatasetCatalogRefresh();
         }
-    }, [requestProjectSave, showToast]);
+    }, [requestProjectSave, showToast, surfaceInstallWarnings]);
 
     // ── In-flight install placeholders ────────────────────────────────────────
     // Upper bound on how long a placeholder can linger if its clear never fires

@@ -44,10 +44,20 @@ export interface ProjectSummary {
   graph_preview?: GraphPreview | null;
 }
 
+/** A computed output the backend could not auto-install on a save (e.g. its
+ * artifact was missing at save time). Response-only; lets the client warn the
+ * user about a silently-skipped dataset instead of leaving it invisible. */
+export interface DatasetInstallWarning {
+  node_id: string;
+  filename: string;
+  reason: string;
+}
+
 export interface ProjectDetail extends ProjectSummary {
   folder_path: string;
   spec: Record<string, unknown> | null;
   outputs: OutputRef[];
+  dataset_install_warnings?: DatasetInstallWarning[];
 }
 
 export interface SaveBody {

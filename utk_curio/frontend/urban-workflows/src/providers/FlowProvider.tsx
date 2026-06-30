@@ -72,6 +72,17 @@ interface PlayAllState {
     pending: Set<string>;
 }
 
+// Play All advances level-by-level only once every node in the active level
+// reports it finished. If a node never does — the backend never returns, its
+// output never reaches success/error, or a node type forgets to signal — the run
+// would wedge forever and every downstream level (and the datasets those nodes
+// produce) would never run. This watchdog bounds that: if NO node in the active
+// level makes progress for this long, the run force-advances past the stuck
+// node(s) with a warning. The timer resets on every completion, so a level full
+// of legitimately-slow nodes is fine as long as they keep finishing. Sized to
+// the client execution ceiling so a single genuinely-running node isn't cut off.
+const PLAY_ALL_STALL_TIMEOUT_MS = 600_000;
+
 interface FlowContextProps {
     nodes: Node[];
     edges: Edge[];
@@ -337,6 +348,10 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     // output, NOT project load — load writes outputs via setOutputs directly) to
     // auto-install + surface a produced dataset without a manual disk-icon save.
     const scheduleInstallSyncRef = useRef<(nodeId: string) => void>(() => {});
+    // Forces the debounced install-save to run NOW (assigned below, next to
+    // scheduleInstallSyncRef). The Play-All runner calls it on completion and the
+    // provider calls it on unmount so the final burst is never lost to the timer.
+    const flushInstallSyncRef = useRef<() => void>(() => {});
     const [defaultSaveOutputDataset, setDefaultSaveOutputDataset] = useState(
         DEFAULT_SAVE_OUTPUT_DATASET,
     );
@@ -934,13 +949,59 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         [reactFlow.getNodes, reactFlow.getEdges]
     );
 
+    const playAllStallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const clearPlayAllStallTimer = () => {
+        if (playAllStallTimerRef.current) {
+            clearTimeout(playAllStallTimerRef.current);
+            playAllStallTimerRef.current = null;
+        }
+    };
+
+    // End the run: stop the watchdog, drop the state, and persist the final burst
+    // immediately so the last level's datasets can't be lost to the install-save
+    // debounce window (see flushInstallSyncRef / scheduleInstallSyncRef).
+    function finishPlayAll() {
+        clearPlayAllStallTimer();
+        playAllStateRef.current = null;
+        flushInstallSyncRef.current();
+    }
+
+    function advancePlayAll(state: PlayAllState) {
+        const next = state.currentLevel + 1;
+        if (next < state.levels.length) triggerLevel(next);
+        else finishPlayAll();
+    }
+
+    // (Re)arm the stall watchdog for the active level. Armed when a level is
+    // triggered and reset on every node completion, so it fires only after a
+    // genuine no-progress stall — never while nodes are still finishing.
+    function armPlayAllStallTimer() {
+        clearPlayAllStallTimer();
+        playAllStallTimerRef.current = setTimeout(() => {
+            playAllStallTimerRef.current = null;
+            const state = playAllStateRef.current;
+            if (!state) return;
+            const stuck = state.pending.size;
+            if (stuck > 0) {
+                showToast(
+                    `${stuck} node(s) didn't finish in time — continuing with the rest of the run`,
+                    "warning",
+                );
+            }
+            state.pending = new Set();
+            advancePlayAll(state);
+        }, PLAY_ALL_STALL_TIMEOUT_MS);
+    }
+
     function triggerLevel(levelIndex: number) {
         const state = playAllStateRef.current;
         if (!state) return;
         const levelNodeIds = state.levels[levelIndex];
-        if (!levelNodeIds?.length) { playAllStateRef.current = null; return; }
+        if (!levelNodeIds?.length) { finishPlayAll(); return; }
         state.pending = new Set(levelNodeIds);
         state.currentLevel = levelIndex;
+        armPlayAllStallTimer();
         setNodes((nds: Node[]) =>
             nds.map((node: Node) =>
                 levelNodeIds.includes(node.id)
@@ -953,11 +1014,15 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const signalNodeExecDone = useCallback((nodeId: string) => {
         const state = playAllStateRef.current;
         if (!state) return;
-        state.pending.delete(nodeId);
+        // Ignore signals from nodes that aren't part of the active level (e.g. a
+        // straggler/duplicate from an earlier level) — they must not drain the
+        // pending set or reset the watchdog.
+        if (!state.pending.delete(nodeId)) return;
         if (state.pending.size === 0) {
-            const next = state.currentLevel + 1;
-            if (next < state.levels.length) triggerLevel(next);
-            else playAllStateRef.current = null;
+            advancePlayAll(state);
+        } else {
+            // Progress made — reset the watchdog so slow-but-alive levels survive.
+            armPlayAllStallTimer();
         }
     }, [setNodes]);
 
@@ -1038,10 +1103,13 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         });
 
         markNodeExecutedRef.current(newOutput.nodeId);
-        signalNodeExecDone(newOutput.nodeId);
+        // Schedule the install BEFORE signaling done: when this is the last node of
+        // the run, signalNodeExecDone → finishPlayAll flushes the debounce, and we
+        // need this node already queued so its dataset is included in that flush.
         // Auto-install + surface the produced dataset (debounced, gated to saver
         // producer nodes inside the handler) without a manual save.
         scheduleInstallSyncRef.current(newOutput.nodeId);
+        signalNodeExecDone(newOutput.nodeId);
     };
 
     // responsible for flow of already connected nodes
@@ -1389,19 +1457,36 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         // Debounce: one save covers every producer that landed in this window. The
         // save fires after outputs have committed, so buildOutputRefs sees them.
         if (installSyncTimerRef.current) clearTimeout(installSyncTimerRef.current);
-        installSyncTimerRef.current = setTimeout(() => {
+        installSyncTimerRef.current = setTimeout(() => runInstallSyncNow(), 500);
+    };
+
+    // Run the pending install-save immediately. Shared by the debounce timer and
+    // by flushInstallSyncRef so a forced flush takes the exact same path.
+    const runInstallSyncNow = () => {
+        if (installSyncTimerRef.current) {
+            clearTimeout(installSyncTimerRef.current);
             installSyncTimerRef.current = null;
-            const ids = Array.from(installSyncPendingIdsRef.current);
-            installSyncPendingIdsRef.current = new Set();
-            void workflowOps
-                .persistDataflowForInstall()
-                .finally(() => ids.forEach((id) => workflowOps.endPendingInstall(id)));
-        }, 500);
+        }
+        const ids = Array.from(installSyncPendingIdsRef.current);
+        if (ids.length === 0) return;
+        installSyncPendingIdsRef.current = new Set();
+        void workflowOps
+            .persistDataflowForInstall()
+            .finally(() => ids.forEach((id) => workflowOps.endPendingInstall(id)));
+    };
+
+    // Force any pending install-save to run now. Called when Play All completes
+    // (finishPlayAll) and on unmount so the last burst's datasets are never lost
+    // to the 500ms debounce window (Vector 2 in the flakiness investigation).
+    flushInstallSyncRef.current = () => {
+        if (installSyncTimerRef.current) runInstallSyncNow();
     };
 
     useEffect(
         () => () => {
-            if (installSyncTimerRef.current) clearTimeout(installSyncTimerRef.current);
+            // Flush (not just clear) on unmount: a dataflow switch / navigation
+            // inside the debounce window would otherwise drop the pending save.
+            flushInstallSyncRef.current();
         },
         [],
     );

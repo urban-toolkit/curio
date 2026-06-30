@@ -276,6 +276,42 @@ describe("persistDataflowForInstall (no execution-time install payload)", () => 
     expect(projectsApi.create).toHaveBeenCalledTimes(1);
     expect(projectsApi.update).toHaveBeenCalledTimes(1);
   });
+
+  it("warns the user when the save reports datasets it couldn't install", async () => {
+    // Vector 3 fix: a computed output the backend silently skipped (e.g. its
+    // artifact was missing) now comes back in dataset_install_warnings, and we
+    // surface it instead of letting the dataset vanish without a trace.
+    (projectsApi.create as jest.Mock).mockResolvedValue({
+      id: "proj-1",
+      name: "wf",
+      spec: { dataflow: { datasets: [], packages: [] } },
+      dataset_install_warnings: [
+        { node_id: "n1", filename: "out.parquet", reason: "output artifact not found at save time" },
+      ],
+    });
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+    await act(async () => {
+      await result.current.persistDataflowForInstall();
+    });
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.stringContaining("couldn't be generated"),
+      "warning",
+    );
+  });
+
+  it("does not warn when there are no install failures", async () => {
+    (projectsApi.create as jest.Mock).mockResolvedValue({
+      id: "proj-1",
+      name: "wf",
+      spec: { dataflow: { datasets: [], packages: [] } },
+      dataset_install_warnings: [],
+    });
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+    await act(async () => {
+      await result.current.persistDataflowForInstall();
+    });
+    expect(mockShowToast).not.toHaveBeenCalled();
+  });
 });
 
 describe("pendingInstalls store", () => {

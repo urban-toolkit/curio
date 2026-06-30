@@ -159,6 +159,7 @@ def _auto_install_computed_outputs(
     user_key: str,
     output_refs: List[OutputRef],
     spec: Optional[dict],
+    failures: Optional[list] = None,
 ) -> Optional[dict]:
     """Install each newly computed output as ``computed.x{hash}@1/`` and add lean
     refs to *spec* so the catalog can resolve them without live_outputs.
@@ -166,9 +167,17 @@ def _auto_install_computed_outputs(
     Returns the (possibly updated) spec dict, or the original spec unchanged if
     nothing new was installed.  Errors for individual files are swallowed (and
     logged) so a single bad output never blocks the whole save.
+
+    When *failures* is provided, each output that could NOT be installed appends
+    ``{"node_id", "filename", "reason"}`` to it so the caller can surface the
+    silently-skipped dataset to the client instead of leaving it invisible.
     """
     if not output_refs or not spec:
         return spec
+
+    def _record_failure(node_id, filename, reason):
+        if failures is not None:
+            failures.append({"node_id": node_id, "filename": filename, "reason": reason})
 
     from utk_curio.backend.app.datasets.bundle import install_node_output
     from utk_curio.backend.app.datasets.storage import DATASET_DIR_RE
@@ -193,17 +202,23 @@ def _auto_install_computed_outputs(
                 data_type=data_type,
                 node_name=_computed_output_title(ref, dataflow),
             )
-        except Exception:  # noqa: BLE001 – best-effort; don't block save
+        except Exception as exc:  # noqa: BLE001 – best-effort; don't block save
             # Swallowed so one bad output never blocks the whole save, but log it
-            # so a silently-dropped dataset is diagnosable instead of invisible.
+            # AND record it so a silently-dropped dataset is surfaced to the user
+            # instead of invisible.
             logger.exception(
                 "Auto-install of computed output failed for node %s (file %r); "
                 "this dataset will not be persisted",
                 node_id,
                 filename,
             )
+            _record_failure(node_id, filename, str(exc) or "install failed")
             continue
         if result is None:
+            # The producing node ran, but its output artifact wasn't found in
+            # shared storage at save time (or the bundle was empty) — the most
+            # common "Play All didn't generate all datasets" cause. Surface it.
+            _record_failure(node_id, filename, "output artifact not found at save time")
             continue
 
         dataset_id = result.manifest.id   # "computed.<sanitized_node_id>"
@@ -212,6 +227,7 @@ def _auto_install_computed_outputs(
         # Validate the generated dir_name before writing it to the spec – if
         # somehow it's invalid we'd rather skip than persist a broken ref.
         if not DATASET_DIR_RE.match(dir_name):
+            _record_failure(node_id, filename, "invalid dataset directory name")
             continue
 
         # Replace any existing ref for this producer node or add a new one.
@@ -362,7 +378,7 @@ def _to_summary(p, graph_preview=None) -> ProjectSummary:
     )
 
 
-def _to_detail(p, spec=None, outputs=None) -> ProjectDetail:
+def _to_detail(p, spec=None, outputs=None, dataset_install_warnings=None) -> ProjectDetail:
     return ProjectDetail(
         id=p.id,
         name=p.name,
@@ -377,6 +393,7 @@ def _to_detail(p, spec=None, outputs=None) -> ProjectDetail:
         folder_path=p.folder_path,
         spec=spec,
         outputs=outputs or [],
+        dataset_install_warnings=dataset_install_warnings or [],
     )
 
 
@@ -466,7 +483,8 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
 
     storage.write_spec(ukey, project_id, data.spec)
     output_refs = list(data.outputs)
-    effective_spec = _auto_install_computed_outputs(ukey, output_refs, data.spec) or data.spec
+    install_warnings: list = []
+    effective_spec = _auto_install_computed_outputs(ukey, output_refs, data.spec, install_warnings) or data.spec
     # Drop dataset refs keyed on visualization/sink nodes (passthrough duplicates).
     effective_spec = _prune_sink_node_dataset_refs(ukey, effective_spec)
     if effective_spec is not data.spec:
@@ -482,7 +500,8 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
     )
 
     db.session.commit()
-    return _to_detail(project, spec=effective_spec, outputs=persisted_refs)
+    return _to_detail(project, spec=effective_spec, outputs=persisted_refs,
+                      dataset_install_warnings=install_warnings)
 
 
 def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
@@ -506,6 +525,7 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
     # (merge_dataflow_dataset_ref) or Play-All can't clobber freshly-installed
     # refs. Re-read existing_spec INSIDE the lock so we merge/preserve against
     # the latest on-disk spec, not the snapshot read before the lock.
+    install_warnings: list = []
     with storage.spec_write_lock(ukey, project_id):
         existing_spec = storage.read_spec(ukey, project_id)
         effective_spec = data.spec if data.spec is not None else existing_spec
@@ -514,7 +534,7 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
             output_refs = list(data.outputs)
             # Install into users/<user>/datasets/ and register lean refs in the spec.
             # Do not copy artifacts into project/data/ — that folder is legacy-only.
-            updated_spec = _auto_install_computed_outputs(ukey, output_refs, effective_spec)
+            updated_spec = _auto_install_computed_outputs(ukey, output_refs, effective_spec, install_warnings)
             if updated_spec is not None and updated_spec is not effective_spec:
                 effective_spec = updated_spec
                 spec_dirty = True
@@ -550,7 +570,8 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
     )
 
     db.session.commit()
-    return _to_detail(project, spec=effective_spec, outputs=persisted_refs)
+    return _to_detail(project, spec=effective_spec, outputs=persisted_refs,
+                      dataset_install_warnings=install_warnings)
 
 
 # ---------------------------------------------------------------------------
