@@ -22,6 +22,7 @@ import {
   useDatasetCatalog,
 } from "../../../services/datasetCatalog";
 import { buildSaveableLiveOutputs } from "../../../utils/saveOutputDataset";
+import { resolveComputedInstallTitle } from "../../../utils/palettePackageFactoryDraft";
 import { dataflowRefFromCatalogItem } from "./dataflowDatasetRef";
 import type { DrawerTab } from "./datasetCatalogDrawerTypes";
 import { tabOrigin } from "./datasetCatalogDrawerTypes";
@@ -158,7 +159,12 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         format: dataset.format,
       });
       try {
-        const installed = await datasetCatalogApi.installToDataflow(id, dataset.id, dataset);
+        const installed = await datasetCatalogApi.installToDataflow(
+          id,
+          dataset.id,
+          dataset,
+          resolveComputedInstallTitle(dataset),
+        );
         setDataflowDatasets((prev) => {
           const next = prev.filter((row) => (row?.datasetId || row?.id) !== installed.id);
           return [...next, dataflowRefFromCatalogItem(installed)];

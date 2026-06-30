@@ -12,6 +12,8 @@ import {
   installedComputedByProducer,
   datasetDisplayTitle,
   datasetSubtitle,
+  stripDataFileExtension,
+  isGeneratedDataFileName,
   DATASET_DRAG_MIME,
   DatasetCatalogItem,
 } from "../../services/datasetCatalog";
@@ -87,6 +89,24 @@ describe("datasetDisplayTitle (clean, user-facing dataset name)", () => {
     ).toBe("computed.node-x@1");
   });
 
+  test("stale hub copy (title LOOKS generated, fileName differs) still falls back to dirName", () => {
+    // Browsing from another dataflow surfaces only the published hub row, whose
+    // title was captured at publish time and whose fileName is derived from the
+    // stored ``.json.zlib`` file — so they don't match byte-for-byte. The title
+    // must still never render as the raw filename.
+    expect(
+      datasetDisplayTitle(
+        makeDataset({
+          origin: "hub",
+          sourceLabel: "Computed",
+          title: "1782757759504 31640Bba.Json",
+          fileName: "1782757759504 31640Bba.Json.Zlib",
+          dirName: "computed.whatif-data@1",
+        }),
+      ),
+    ).toBe("computed.whatif-data@1");
+  });
+
   test("imported / hub / source datasets show their real title", () => {
     expect(
       datasetDisplayTitle(makeDataset({ origin: "imported", title: "Chicago Boundary", dirName: "data.urbanlab.chicago-boundary@1" })),
@@ -98,18 +118,88 @@ describe("datasetDisplayTitle (clean, user-facing dataset name)", () => {
 });
 
 describe("datasetSubtitle (secondary line under the title)", () => {
-  test("computed datasets show the generated filename", () => {
+  test("computed datasets with a real node-name title show the store folder (dirName)", () => {
     expect(
       datasetSubtitle(
-        makeDataset({ origin: "computed", fileName: "1782498496720 Ef610Da8.Json", dirName: "computed.node-x@1" }),
+        makeDataset({
+          origin: "computed",
+          title: "Data Transformation",
+          fileName: "1782498496720 Ef610Da8.Json",
+          dirName: "computed.node-x@1",
+        }),
       ),
-    ).toBe("1782498496720 Ef610Da8.Json");
+    ).toBe("computed.node-x@1");
   });
 
   test("imported / hub datasets show the store folder", () => {
     expect(
       datasetSubtitle(makeDataset({ origin: "imported", dirName: "data.urbanlab.chicago-boundary@1" })),
     ).toBe("data.urbanlab.chicago-boundary@1");
+  });
+
+  test("falls back to the filename (no extension) when dirName would duplicate the title", () => {
+    // No node name captured (title === fileName) → datasetDisplayTitle falls back
+    // to dirName, so showing dirName again would just echo the title.
+    expect(
+      datasetSubtitle(
+        makeDataset({
+          origin: "computed",
+          title: "1782498496720 Ef610Da8.Json",
+          fileName: "1782498496720 Ef610Da8.Json",
+          dirName: "computed.node-x@1",
+        }),
+      ),
+    ).toBe("1782498496720 Ef610Da8");
+  });
+
+  test("blank-title computed dataset (title→dirName) also shows the filename subtitle", () => {
+    expect(
+      datasetSubtitle(
+        makeDataset({ origin: "computed", title: "   ", fileName: "My Output.json", dirName: "computed.node-x@1" }),
+      ),
+    ).toBe("My Output");
+  });
+
+  test("returns nullish when there is no store folder yet (line omitted)", () => {
+    expect(datasetSubtitle(makeDataset({ origin: "computed", dirName: null }))).toBeNull();
+    expect(datasetSubtitle(makeDataset({ origin: "computed" }))).toBeUndefined();
+  });
+});
+
+describe("isGeneratedDataFileName", () => {
+  test("flags epoch-prefixed and data-extension names as generated", () => {
+    expect(isGeneratedDataFileName("1782757759504 31640Bba.Json")).toBe(true);
+    expect(isGeneratedDataFileName("1782757759504_31640bba")).toBe(true); // epoch prefix
+    expect(isGeneratedDataFileName("output.json")).toBe(true);
+    expect(isGeneratedDataFileName("data.json.zlib")).toBe(true);
+    expect(isGeneratedDataFileName("blocks.parquet")).toBe(true);
+  });
+
+  test("treats real human/node names as NOT generated", () => {
+    expect(isGeneratedDataFileName("Autark")).toBe(false);
+    expect(isGeneratedDataFileName("Data Transformation")).toBe(false);
+    expect(isGeneratedDataFileName("Chicago Boundary")).toBe(false);
+    expect(isGeneratedDataFileName("")).toBe(false);
+    expect(isGeneratedDataFileName(null)).toBe(false);
+  });
+});
+
+describe("stripDataFileExtension", () => {
+  test("strips a trailing .json / .Json case-insensitively", () => {
+    expect(stripDataFileExtension("output.json")).toBe("output");
+    expect(stripDataFileExtension("1782498496720 Ef610Da8.Json")).toBe("1782498496720 Ef610Da8");
+    expect(stripDataFileExtension("data.JSON")).toBe("data");
+  });
+
+  test("leaves names without a .json extension untouched (incl. embedded dots)", () => {
+    expect(stripDataFileExtension("My Output")).toBe("My Output");
+    expect(stripDataFileExtension("v1.2.summary")).toBe("v1.2.summary");
+    expect(stripDataFileExtension("blocks.csv")).toBe("blocks.csv");
+  });
+
+  test("passes through null / undefined", () => {
+    expect(stripDataFileExtension(null)).toBeNull();
+    expect(stripDataFileExtension(undefined)).toBeUndefined();
   });
 });
 

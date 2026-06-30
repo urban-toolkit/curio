@@ -25,6 +25,7 @@ import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
 import { TrillGenerator } from "../TrillGenerator";
 import { projectsApi, OutputRef } from "../api/projectsApi";
 import { buildSaveableLiveOutputs } from "../utils/saveOutputDataset";
+import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import {
     notifyDatasetCatalogRefresh,
     buildInstalledDatasetRef,
@@ -568,17 +569,39 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
      * anything that isn't a single safe string segment, so we coerce here at
      * the serialization boundary and drop refs we can't normalize.
      */
-    const buildOutputRefs = (): OutputRef[] =>
+    const buildOutputRefs = (): OutputRef[] => {
         // Honor the per-node "Save output dataset" toggle (defaults to
         // CURIO_DEFAULT_SAVE_NODE_OUTPUT): only saving-enabled nodes persist
         // their output as a computed dataset. Shared with the catalog's live
         // discovery via ``buildSaveableLiveOutputs`` so the save-time and
         // listing-time filters can never drift apart.
-        buildSaveableLiveOutputs(
-            deps.outputsRef.current,
-            reactFlow.getNodes(),
-            defaultSaveOutputDataset,
-        ) ?? [];
+        const refs =
+            buildSaveableLiveOutputs(
+                deps.outputsRef.current,
+                reactFlow.getNodes(),
+                defaultSaveOutputDataset,
+            ) ?? [];
+        // Attach each producing node's friendly display label so the save-time
+        // installer (``_auto_install_computed_outputs``) titles computed datasets
+        // by their node — matching execution-time auto-install — instead of the
+        // raw generated filename. Non-CodeEditor nodes (grammar, data pool, …)
+        // are persisted only via this save path, so without this they kept the
+        // filename title even after a "Play All" rerun.
+        const labelByNodeId = new Map<string, string>();
+        for (const node of reactFlow.getNodes()) {
+            const label = resolveNodeDisplayLabel(node.data).trim();
+            if (!label) continue;
+            // Key by both ids: outputs reference node.id or node.data.nodeId
+            // depending on the node type (matches buildSaveableLiveOutputs).
+            if (typeof node.id === "string") labelByNodeId.set(node.id, label);
+            const dataNodeId = (node.data as { nodeId?: unknown })?.nodeId;
+            if (typeof dataNodeId === "string") labelByNodeId.set(dataNodeId, label);
+        }
+        return refs.map((ref) => {
+            const label = labelByNodeId.get(ref.node_id);
+            return label ? { ...ref, node_name: label } : ref;
+        });
+    };
 
     const syncDatasetsFromSavedSpec = useCallback(
         (spec: Record<string, unknown> | null | undefined) => {

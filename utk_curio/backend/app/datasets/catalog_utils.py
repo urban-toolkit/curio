@@ -17,6 +17,24 @@ def title_from_filename(name: str) -> str:
     return Path(name).stem.replace("_", " ").replace("-", " ").strip().title() or name
 
 
+# A raw node-execution output name: an epoch-ms timestamp prefix and/or a
+# trailing data-file extension (incl. the ``.zlib`` compression suffix computed
+# JSON is stored with). Real node/dataset names never look like this. Mirrors the
+# frontend ``isGeneratedDataFileName`` so both ends agree on what is "generated".
+_GENERATED_DATA_FILE_RE = re.compile(
+    r"(^\d{10,}[\s._-])|\.(json|csv|parquet|geojson|shp|geotiff|zlib)$",
+    re.IGNORECASE,
+)
+
+
+def looks_like_generated_filename(name: str | None) -> bool:
+    """True when *name* looks like a generated output filename rather than a
+    human-chosen title (see :data:`_GENERATED_DATA_FILE_RE`)."""
+    if not name:
+        return False
+    return bool(_GENERATED_DATA_FILE_RE.search(name.strip()))
+
+
 def iso_from_timestamp(ts: float | None = None) -> str:
     dt = datetime.fromtimestamp(ts, timezone.utc) if ts is not None else datetime.now(timezone.utc)
     return dt.isoformat().replace("+00:00", "Z")

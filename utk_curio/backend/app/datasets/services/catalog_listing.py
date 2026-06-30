@@ -12,6 +12,7 @@ from utk_curio.backend.app.datasets.catalog_dedup import (
     dedupe_items,
 )
 from utk_curio.backend.app.datasets.catalog_items import loader_snippet
+from utk_curio.backend.app.datasets.catalog_utils import looks_like_generated_filename
 from utk_curio.backend.app.datasets.services.catalog_paths import CatalogPathMixin
 from utk_curio.backend.app.datasets.computed_indexer import ComputedDatasetIndexer
 from utk_curio.backend.app.datasets.constants import FORMAT_TO_EXTENSION, SUPPORTED_SUFFIXES
@@ -108,6 +109,20 @@ class CatalogListingMixin(CatalogPathMixin):
             )
 
         items = dedupe_items(items)
+
+        # A computed dataset published to the hub keeps the title captured at
+        # publish time (often the raw generated filename). When browsing from a
+        # dataflow other than the producer's, only that stale hub row is listed,
+        # so adopt the friendly node title from the user's store copy (same dir,
+        # keyed on the producing node) when the listed title looks generated.
+        try:
+            self._prefer_user_store_computed_title(items, self._user_key())
+        except DatasetCatalogError:
+            logger.warning(
+                "Could not resolve friendly computed titles from the user store; "
+                "continuing with the listed titles.",
+                exc_info=True,
+            )
 
         # Enrich computed items: resolve their bare filename to an absolute path
         # so the loader snippet points to a real file.  This must happen after
@@ -213,6 +228,36 @@ class CatalogListingMixin(CatalogPathMixin):
             items.sort(key=lambda item: item.get("updatedAt") or "", reverse=True)
 
         return {"items": items, "facets": facets}
+
+    def _prefer_user_store_computed_title(
+        self, items: list[dict[str, Any]], user_key: str
+    ) -> None:
+        """For computed datasets whose listed ``title`` looks like a raw generated
+        filename, adopt the friendlier name from the user's store copy (same
+        ``dirName``, keyed on the producing node) so the producing-node title
+        shows regardless of which dataflow is open. Best-effort per item: a
+        missing/unreadable manifest, or one whose own name is also generated,
+        leaves the item untouched (the UI then falls back to ``dirName``)."""
+        from utk_curio.backend.app.datasets.manifest import (
+            ManifestError,
+            load_dataset_manifest,
+        )
+        from utk_curio.backend.app.datasets.storage import dataset_dir
+
+        for item in items:
+            if not catalog_item_is_computed_provenance(item):
+                continue
+            dir_name = item.get("dirName")
+            title = item.get("title")
+            if not dir_name or not looks_like_generated_filename(title):
+                continue
+            try:
+                manifest = load_dataset_manifest(dataset_dir(user_key, dir_name))
+            except (ManifestError, OSError, ValueError):
+                continue
+            friendly = (manifest.name or "").strip()
+            if friendly and not looks_like_generated_filename(friendly):
+                item["title"] = friendly
 
     def get_dataset(
         self,

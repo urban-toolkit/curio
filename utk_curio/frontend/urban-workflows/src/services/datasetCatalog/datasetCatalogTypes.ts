@@ -60,9 +60,9 @@ export interface DatasetLoaderSnippet {
 export interface DatasetCatalogItem {
   id: string;
   title: string;
-  /** Human-friendly name of the generated data file. For computed datasets the
-   * ``title`` carries the producing node's name, so the original filename lives
-   * here and is shown as a subtitle (see {@link datasetSubtitle}). */
+  /** Name of the generated data file. For computed datasets the ``title``
+   * carries the producing node's name; the original filename is kept here as
+   * metadata (the subtitle now shows ``dirName`` — see {@link datasetSubtitle}). */
   fileName?: string | null;
   description?: string;
   origin: DatasetOrigin;
@@ -211,6 +211,22 @@ export function datasetProvenanceLabel(
 }
 
 /**
+ * True when a string looks like a raw node-execution output filename rather than
+ * a human-chosen name — an epoch-ms timestamp prefix (e.g. ``1782757759504
+ * 31640Bba``) and/or a trailing data-file extension (``.json``/``.Json``, csv,
+ * parquet, …). Real node/dataset names never look like this. Used so a generated
+ * filename is never shown as a title even when it isn't byte-identical to
+ * ``fileName`` (e.g. a hub copy whose stored file is ``….json.zlib``).
+ */
+const GENERATED_DATA_FILE_RE =
+  /(^\d{10,}[\s._-])|\.(json|csv|parquet|geojson|shp|geotiff|zlib)$/i;
+
+export function isGeneratedDataFileName(name: string | null | undefined): boolean {
+  const n = name?.trim();
+  return !!n && GENERATED_DATA_FILE_RE.test(n);
+}
+
+/**
  * The clean, user-facing display name for a dataset — the single source of
  * truth for *which* field to render as a dataset's title.
  *
@@ -219,11 +235,11 @@ export function datasetProvenanceLabel(
  * name (the backend stamps it at install time). The generated output filename
  * lives in ``fileName`` and is shown as a subtitle, not the title.
  *
- * A computed output with no captured node name carries the generated filename
- * in *both* ``title`` and ``fileName``; that raw filename must never be the
- * title, so we fall back to the store folder (``dirName``) — never to
- * ``fileName`` — for computed datasets. Same fallback applies if ``title`` is
- * ever blank.
+ * A computed output with no captured node name carries the generated filename as
+ * its ``title`` (matching ``fileName``, or just *looking* like a generated file
+ * name — e.g. a stale hub copy browsed from another dataflow). That raw filename
+ * must never be the title, so we fall back to the store folder (``dirName``) —
+ * never to ``fileName``. Same fallback applies if ``title`` is blank.
  *
  * Use this everywhere a dataset title is rendered (palette, catalog browse,
  * detail panel, breadcrumb) instead of reading ``title`` directly, so the
@@ -235,23 +251,52 @@ export function datasetDisplayTitle(
   const title = dataset.title?.trim();
   const dirName = dataset.dirName?.trim();
   const isComputed = isDatasetComputed(dataset);
-  const isGeneratedFilename = isComputed && !!title && title === dataset.fileName?.trim();
-  if (!title || isComputed) {
+  // For a computed dataset, the title is a generated filename when it equals
+  // ``fileName`` or simply looks like one — in either case it must not be shown.
+  const isGeneratedFilename =
+    isComputed &&
+    !!title &&
+    (title === dataset.fileName?.trim() || isGeneratedDataFileName(title));
+  if (!title || isGeneratedFilename) {
     return dirName || dataset.title;
   }
   return title;
 }
 
 /**
- * Secondary line shown beneath {@link datasetDisplayTitle}. For computed
- * datasets this is the generated output filename (``fileName``); for everything
- * else it's the store folder (``dirName``). Returns ``null``/``undefined`` when
- * there is nothing to show, so callers can omit the line.
+ * Strip a trailing ``.json`` / ``.Json`` extension from a generated data-file
+ * name. Case-insensitive and limited to the ``.json`` extension computed outputs
+ * are serialized as; names without it (or ``null``/``undefined``) are returned
+ * unchanged.
+ */
+export function stripDataFileExtension(
+  name: string | null | undefined,
+): string | null | undefined {
+  if (name == null) return name;
+  return name.replace(/\.json$/i, "");
+}
+
+/**
+ * Secondary line shown beneath {@link datasetDisplayTitle}: the dataset's store
+ * folder (``dirName``, e.g. ``computed.whatif-data@1``), so the subtitle is a
+ * stable, meaningful identifier rather than the raw generated filename.
+ *
+ * When the ``dirName`` would merely repeat the displayed title — a computed
+ * dataset with no captured node name falls back to ``dirName`` for its title —
+ * we instead show the generated filename (with its ``.json`` extension stripped)
+ * so the subtitle still adds information rather than echoing the title.
+ *
+ * Returns ``null``/``undefined`` when there is nothing to show (e.g. a
+ * session-only computed output not yet in the store), so callers can omit the line.
  */
 export function datasetSubtitle(
-  dataset: Pick<DatasetCatalogItem, "origin" | "fileName" | "dirName">,
+  dataset: Pick<DatasetCatalogItem, "origin" | "title" | "dirName" | "fileName" | "sourceLabel">,
 ): string | null | undefined {
-  return isDatasetComputed(dataset) ? dataset.fileName : dataset.dirName;
+  const dirName = dataset.dirName?.trim();
+  if (dirName && dirName === datasetDisplayTitle(dataset).trim()) {
+    return stripDataFileExtension(dataset.fileName);
+  }
+  return dataset.dirName;
 }
 
 /** True when the dataset is listed in the committed catalog (``hub``) or marked published from a project. */

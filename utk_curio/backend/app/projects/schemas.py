@@ -18,6 +18,10 @@ class OutputRef:
     filename: str
     # Sandbox ``dataType`` (e.g. raster, dataframe) for extensionless DuckDB paths.
     data_type: Optional[str] = None
+    # Producing node's friendly display label, resolved client-side. The save-time
+    # installer titles the computed dataset with it instead of the raw generated
+    # filename (see ``_auto_install_computed_outputs``).
+    node_name: Optional[str] = None
 
 
 @dataclass

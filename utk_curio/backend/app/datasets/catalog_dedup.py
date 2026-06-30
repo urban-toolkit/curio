@@ -86,7 +86,10 @@ def merge_catalog_items(existing: dict[str, Any], incoming: dict[str, Any]) -> d
             None,
         )
         if live_cand is not None:
-            for field in ("title", "updatedAt", "path", "dirName", "uri", "loaderSnippet"):
+            # ``fileName`` travels with ``title`` so the pair stays from the same
+            # (live) record — otherwise a live title + stale hub fileName mismatch
+            # would defeat the "title is the generated filename" check downstream.
+            for field in ("title", "fileName", "updatedAt", "path", "dirName", "uri", "loaderSnippet"):
                 if live_cand.get(field):
                     merged[field] = live_cand[field]
     return merged

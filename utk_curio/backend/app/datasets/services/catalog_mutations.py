@@ -12,7 +12,11 @@ from werkzeug.utils import secure_filename
 
 from utk_curio.backend.app.datasets.catalog_items import item_from_manifest, loader_snippet
 from utk_curio.backend.app.datasets.services.catalog_paths import CatalogPathMixin
-from utk_curio.backend.app.datasets.catalog_utils import catalog_id_from_title, iso_from_timestamp
+from utk_curio.backend.app.datasets.catalog_utils import (
+    catalog_id_from_title,
+    iso_from_timestamp,
+    looks_like_generated_filename,
+)
 from utk_curio.backend.app.datasets.constants import JUNK_SOURCE_LABELS, SUPPORTED_SUFFIXES
 from utk_curio.backend.app.datasets.errors import DatasetCatalogError
 from utk_curio.backend.app.datasets.file_meta import count_file, patch_manifest_file, write_file_meta
@@ -140,13 +144,27 @@ class CatalogMutationsMixin(CatalogPathMixin):
             shutil.copy2(local_path, dest / "data" / local_path.name)
         data_file = f"data/{local_path.name}"
 
+        # ── Resolve the published title ───────────────────────────────────────
+        # The hub manifest is the title other dataflows see, so it must never be
+        # a raw generated filename for a computed dataset (it would otherwise be
+        # frozen at publish time and shown verbatim when browsed elsewhere).
+        # ``item["title"]`` is already the friendly display name when resolvable
+        # (get_dataset backfills the producing node's name); only fall back to the
+        # store folder when it still looks generated. Imported datasets keep their
+        # title as-is (a ``.csv`` import name is legitimate, not "generated").
+        publish_title = (item.get("title") or "").strip()
+        if publish_is_computed and looks_like_generated_filename(publish_title):
+            publish_title = dir_name or catalog_id
+        publish_title = publish_title or catalog_id
+        item["title"] = publish_title
+
         # ── Write manifest.json with all fields ───────────────────────────────
         from utk_curio.backend.app.datasets.manifest import DatasetManifest, write_manifest
 
         now = iso_from_timestamp()
         manifest_obj = DatasetManifest(
             id=catalog_id,
-            name=item.get("title") or catalog_id,
+            name=publish_title,
             version="1.0.0",
             format=item.get("format", "csv"),
             description=item.get("description") or "",
@@ -241,6 +259,7 @@ class CatalogMutationsMixin(CatalogPathMixin):
         dataset_id: str,
         *,
         source_item: dict[str, Any] | None = None,
+        node_title: str | None = None,
     ) -> dict[str, Any]:
         item = deepcopy(source_item or self.get_dataset(dataset_id, dataflow_id=dataflow_id))
         # A client-supplied ``sourceItem`` may omit ``id``; the route-validated
@@ -316,6 +335,13 @@ class CatalogMutationsMixin(CatalogPathMixin):
                 fmt = SUPPORTED_SUFFIXES.get(suffix, "json")
 
                 producer_node_id = item.get("producerNodeId")
+                user_key = self._user_key()
+                # Title the (re)installed dataset by the producing node, never the
+                # raw generated filename. On reinstall the item arrives as a session
+                # output whose ``title`` is the filename (the original manifest was
+                # removed on uninstall), so we prefer the client-resolved node label
+                # and on-disk fallbacks instead of ``item["title"]``.
+                resolved_title = _resolve_computed_install_title(item, node_title, user_key)
 
                 if producer_node_id:
                     from utk_curio.backend.app.datasets.installer import (
@@ -324,13 +350,12 @@ class CatalogMutationsMixin(CatalogPathMixin):
                         resolve_installed_data_path,
                     )
 
-                    user_key = self._user_key()
                     file_bytes = data_path.read_bytes()
                     try:
                         result = install_computed_file_for_node(
                             user_key, file_bytes, data_path.name, fmt,
                             node_id=producer_node_id,
-                            title=item.get("title"),
+                            title=resolved_title,
                         )
                     except InstallerError as exc:
                         raise DatasetCatalogError(str(exc)) from exc
@@ -341,12 +366,11 @@ class CatalogMutationsMixin(CatalogPathMixin):
                         resolve_installed_data_path,
                     )
 
-                    user_key = self._user_key()
                     file_bytes = data_path.read_bytes()
                     try:
                         result = install_computed_file(
                             user_key, file_bytes, data_path.name, fmt,
-                            title=item.get("title"),
+                            title=resolved_title,
                             node_id=producer_node_id,
                         )
                     except InstallerError as exc:
@@ -557,6 +581,64 @@ class CatalogMutationsMixin(CatalogPathMixin):
             "updatedAt": item.get("updatedAt") or iso_from_timestamp(),
             "installedAt": iso_from_timestamp(),
         }
+
+
+def _resolve_computed_install_title(
+    item: dict[str, Any], node_title: str | None, user_key: str | None
+) -> str | None:
+    """Resolve the title for a (re)installed computed dataset.
+
+    Precedence — the raw generated filename is *never* used as a title:
+      1. an explicit node label supplied by the client (``node_title``), which
+         is how the producing node's name survives publish → uninstall →
+         reinstall (the original manifest is gone by then);
+      2. the name on a still-present on-disk manifest (e.g. a user-store copy
+         preserved across unpublish), when it isn't just the filename;
+      3. the item's own ``title``, when it isn't the generated filename;
+      4. the store-folder name (``dirName`` / id-encoded segment);
+      5. ``None`` — the installer then derives a filename-based title, which the
+         frontend renders as ``dirName`` via ``datasetDisplayTitle``.
+    """
+    file_name = (item.get("fileName") or "").strip()
+
+    def _usable(value: str | None) -> str | None:
+        candidate = (value or "").strip()
+        if not candidate:
+            return None
+        # A value equal to the generated filename is not a real node name.
+        if file_name and candidate == file_name:
+            return None
+        return candidate
+
+    # 1. Explicit node label resolved by the client.
+    explicit = _usable(node_title)
+    if explicit:
+        return explicit
+
+    seg = _producer_segment_from_computed_id(item.get("id"), item.get("dirName"))
+    dir_name = item.get("dirName") or (f"computed.{seg}@1" if seg else None)
+
+    # 2. Name on a preserved on-disk manifest.
+    if user_key and dir_name:
+        try:
+            from utk_curio.backend.app.datasets.storage import dataset_dir
+            from utk_curio.backend.app.datasets.manifest import load_dataset_manifest
+
+            dest = dataset_dir(user_key, dir_name)
+            if dest.exists():
+                manifest_name = _usable(load_dataset_manifest(dest).name)
+                if manifest_name:
+                    return manifest_name
+        except Exception:  # noqa: BLE001 – fall through to the next candidate
+            pass
+
+    # 3. The item's own title (skipped when it is the generated filename).
+    own_title = _usable(item.get("title"))
+    if own_title:
+        return own_title
+
+    # 4. Store-folder name; 5. None.
+    return dir_name or None
 
 
 def _producer_segment_from_computed_id(

@@ -260,8 +260,14 @@ def install_dataset(dataflow_id: str):
     # sourceItem is optionally provided by the frontend for ephemeral computed
     # datasets (live outputs) that don't exist in the persisted catalog yet.
     source_item = body.get("sourceItem") or None
+    # nodeTitle is the producing node's display label, resolved client-side from
+    # the node registry, so a computed dataset keeps its node name across
+    # publish → uninstall → reinstall (the original manifest is gone by then).
+    node_title = body.get("nodeTitle") or None
     try:
-        payload = _service().install_dataset(dataflow_id, dataset_id, source_item=source_item)
+        payload = _service().install_dataset(
+            dataflow_id, dataset_id, source_item=source_item, node_title=node_title
+        )
     except (DatasetCatalogError, ProjectError) as exc:
         return _error(str(exc), getattr(exc, "status", 400))
     except NotFoundError:

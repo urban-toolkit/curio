@@ -214,10 +214,19 @@ export const datasetCatalogApi = {
     });
   },
 
-  installToDataflow(dataflowId: string, datasetId: string, sourceItem?: DatasetCatalogItem): Promise<DatasetCatalogItem> {
+  installToDataflow(
+    dataflowId: string,
+    datasetId: string,
+    sourceItem?: DatasetCatalogItem,
+    nodeTitle?: string,
+  ): Promise<DatasetCatalogItem> {
     return apiFetch(`/api/dataflows/${encodeURIComponent(dataflowId)}/datasets/install`, {
       method: "POST",
-      body: JSON.stringify({ datasetId, ...(sourceItem ? { sourceItem } : {}) }),
+      body: JSON.stringify({
+        datasetId,
+        ...(sourceItem ? { sourceItem } : {}),
+        ...(nodeTitle ? { nodeTitle } : {}),
+      }),
     });
   },
 

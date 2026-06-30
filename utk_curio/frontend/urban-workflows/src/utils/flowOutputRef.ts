@@ -8,6 +8,8 @@ export interface FlowOutputRef {
   node_id: string;
   filename: string;
   data_type?: string;
+  /** Producing node's friendly display label (attached at save time). */
+  node_name?: string;
 }
 
 export function flowOutputRefFromRaw(

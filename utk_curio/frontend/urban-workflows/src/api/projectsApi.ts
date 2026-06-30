@@ -5,6 +5,10 @@ export interface OutputRef {
   filename: string;
   /** Sandbox dataType (e.g. raster, dataframe) for extensionless artifact paths. */
   data_type?: string;
+  /** Producing node's friendly display label, so the save-time installer titles
+   * computed datasets by their node (matching execution-time auto-install)
+   * instead of the raw generated filename. */
+  node_name?: string;
 }
 
 export interface GraphPreviewNode {

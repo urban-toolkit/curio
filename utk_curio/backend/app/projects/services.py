@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 from typing import Dict, List, Optional
 from uuid import uuid4
@@ -115,6 +116,45 @@ def _assert_guest_can_save(user) -> None:
         raise ProjectError("Guest users cannot save projects", 403)
 
 
+def _humanize_node_type(node_type: Optional[str]) -> Optional[str]:
+    """Friendly fallback title from a node type slug, e.g.
+    ``curio.builtin/autk-grammar`` → ``Autk Grammar``. Returns ``None`` when no
+    type is available."""
+    if not node_type:
+        return None
+    base = str(node_type).rsplit("/", 1)[-1]
+    cleaned = re.sub(r"[-_]+", " ", base).strip()
+    return cleaned.title() if cleaned else None
+
+
+def _computed_output_title(
+    ref: OutputRef, dataflow: Optional[dict]
+) -> Optional[str]:
+    """Resolve the friendly title for a save-time computed output, never the raw
+    generated filename:
+
+      1. the producing node's client-resolved display label (``ref.node_name``);
+      2. the node's custom label in the spec (``data.packageTemplateLabel``);
+      3. a friendly name derived from the node type;
+      4. ``None`` — the installer then derives a filename-based title, which the
+         frontend renders as ``dirName`` via ``datasetDisplayTitle``.
+    """
+    explicit = (getattr(ref, "node_name", None) or "").strip()
+    if explicit:
+        return explicit
+
+    nodes = dataflow.get("nodes") if isinstance(dataflow, dict) else None
+    for node in nodes or []:
+        if not isinstance(node, dict) or node.get("id") != ref.node_id:
+            continue
+        data = node.get("data") if isinstance(node.get("data"), dict) else {}
+        label = (data.get("packageTemplateLabel") or "").strip()
+        if label:
+            return label
+        return _humanize_node_type(node.get("type") or data.get("nodeType"))
+    return None
+
+
 def _auto_install_computed_outputs(
     user_key: str,
     output_refs: List[OutputRef],
@@ -151,6 +191,7 @@ def _auto_install_computed_outputs(
                 node_id=node_id,
                 path_ref=filename,
                 data_type=data_type,
+                node_name=_computed_output_title(ref, dataflow),
             )
         except Exception:  # noqa: BLE001 – best-effort; don't block save
             # Swallowed so one bad output never blocks the whole save, but log it

@@ -344,6 +344,91 @@ def test_process_python_code_titles_computed_dataset_with_node_name(client, user
     assert item["fileName"] == title_from_filename(parquet_name)
 
 
+def test_reinstall_computed_dataset_recovers_node_title_from_node_title_param(client, user_and_token):
+    """Reinstalling a computed dataset (e.g. after publish → uninstall) titles it
+    by the client-resolved node label sent as ``nodeTitle`` — never the raw
+    generated filename carried by the post-uninstall session item."""
+    import os
+    from pathlib import Path
+
+    from utk_curio.backend.app.datasets.catalog_utils import title_from_filename
+    from utk_curio.backend.app.datasets.installer import sanitize_node_id_segment
+
+    _, token = user_and_token
+    project_id = create_project(client, token, name="Reinstall with node title")
+    shared = Path(os.environ["CURIO_SHARED_DATA"])
+    filename = "1782498496720_ef610da8.json"
+    (shared / filename).write_text('{"a": 1}', encoding="utf-8")
+
+    node_id = "node-reinstall"
+    dataset_id = f"computed.{sanitize_node_id_segment(node_id)}"
+    # After uninstall the dataset reappears as a session output whose title is the
+    # generated filename (the original manifest was deleted on uninstall).
+    source_item = {
+        "id": dataset_id,
+        "origin": "computed",
+        "uri": f"curio://outputs/{filename}",
+        "producerNodeId": node_id,
+        "format": "json",
+        "title": title_from_filename(filename),
+        "fileName": title_from_filename(filename),
+    }
+
+    resp = client.post(
+        f"/api/dataflows/{project_id}/datasets/install",
+        data=json.dumps({
+            "datasetId": dataset_id,
+            "sourceItem": source_item,
+            "nodeTitle": "Data Transformation",
+        }),
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    body = resp.get_json()
+    assert body["title"] == "Data Transformation"
+    assert body["fileName"] == title_from_filename(filename)
+
+
+def test_reinstall_computed_dataset_without_node_title_never_uses_filename(client, user_and_token):
+    """With no ``nodeTitle`` and no captured node name (the session item's title
+    is the generated filename), reinstall falls back to the store-folder name —
+    never the raw filename."""
+    import os
+    from pathlib import Path
+
+    from utk_curio.backend.app.datasets.catalog_utils import title_from_filename
+    from utk_curio.backend.app.datasets.installer import sanitize_node_id_segment
+
+    _, token = user_and_token
+    project_id = create_project(client, token, name="Reinstall without node title")
+    shared = Path(os.environ["CURIO_SHARED_DATA"])
+    filename = "1782498496720_ef610da8.json"
+    (shared / filename).write_text('{"a": 1}', encoding="utf-8")
+
+    node_id = "node-reinstall-noname"
+    dataset_id = f"computed.{sanitize_node_id_segment(node_id)}"
+    filename_title = title_from_filename(filename)
+    source_item = {
+        "id": dataset_id,
+        "origin": "computed",
+        "uri": f"curio://outputs/{filename}",
+        "producerNodeId": node_id,
+        "format": "json",
+        "title": filename_title,
+        "fileName": filename_title,
+    }
+
+    resp = client.post(
+        f"/api/dataflows/{project_id}/datasets/install",
+        data=json.dumps({"datasetId": dataset_id, "sourceItem": source_item}),
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    body = resp.get_json()
+    assert body["title"] != filename_title, "reinstall must not title the dataset with the raw filename"
+    assert body["title"] == f"{dataset_id}@1"
+
+
 def test_process_python_code_skips_auto_install_when_save_disabled(client, user_and_token, monkeypatch):
     from unittest.mock import MagicMock
 

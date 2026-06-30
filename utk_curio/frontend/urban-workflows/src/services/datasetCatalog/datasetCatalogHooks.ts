@@ -5,6 +5,7 @@ import {
   DatasetCatalogQuery,
   DatasetCatalogResponse,
 } from "./datasetCatalogTypes";
+import { resolveComputedInstallTitle } from "../../utils/palettePackageFactoryDraft";
 
 const EMPTY_RESPONSE: DatasetCatalogResponse = {
   items: [],
@@ -167,7 +168,12 @@ export function useDatasetCatalog(query: UseDatasetCatalogOptions = {}) {
       if (!stableQuery.dataflowId) {
         throw new Error("Save the dataflow before installing datasets.");
       }
-      const item = await datasetCatalogApi.installToDataflow(stableQuery.dataflowId, dataset.id, dataset);
+      const item = await datasetCatalogApi.installToDataflow(
+        stableQuery.dataflowId,
+        dataset.id,
+        dataset,
+        resolveComputedInstallTitle(dataset),
+      );
       await reload();
       return item;
     },
