@@ -39,6 +39,7 @@ type CreateCodeNodeOptions = {
     dashboardY?: number;
     dashboardWidth?: number;
     dashboardHeight?: number;
+    softArtifact?: Record<string, unknown>;
 };
 
 interface IUseCode {
@@ -135,6 +136,9 @@ export function useCode(): IUseCode {
 
             if(node.metadata != undefined && node.metadata.keywords != undefined)
                 nodeMeta.keywords = node.metadata.keywords;
+
+            if (node.metadata?.softArtifact != undefined)
+                nodeMeta.softArtifact = node.metadata.softArtifact;
 
             if(typeof parsedWidth === "number")
                 nodeMeta.nodeWidth = parsedWidth;
@@ -241,6 +245,7 @@ export function useCode(): IUseCode {
             dashboardPinned = undefined,
             dashboardX = undefined,
             dashboardY = undefined,
+            softArtifact = undefined,
             dashboardWidth = undefined,
             dashboardHeight = undefined,
         } = options;
@@ -271,6 +276,7 @@ export function useCode(): IUseCode {
                 dashboardPinned,
                 dashboardX,
                 dashboardY,
+                softArtifact,
                 dashboardWidth,
                 dashboardHeight,
                 input: "",
