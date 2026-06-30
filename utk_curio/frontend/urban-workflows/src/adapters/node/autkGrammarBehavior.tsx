@@ -147,10 +147,26 @@ export const useAutkGrammarBehavior: NodeBehaviorHook = (data, nodeState) => {
                     } catch (e: any) {
                         // Graceful fallback: load the data in-browser (the original
                         // path) so the node still works if the sandbox is down.
-                        console.warn('[autk-grammar] backend data load failed; falling back to in-browser AutkDb', e);
+                        const backendReason = e?.message ?? String(e);
+                        console.warn('[autk-grammar] backend data load failed; falling back to in-browser AutkDb:', backendReason);
                         const resolvedForFrontend = resolveDataSourceUrls({ data: specDataSources }, false).data;
-                        backendLayers = await loadSpecLayers({ data: resolvedForFrontend });
                         dataCacheRef.current = null;
+                        try {
+                            backendLayers = await loadSpecLayers({ data: resolvedForFrontend });
+                        } catch (fe: any) {
+                            // Both paths failed. Surface BOTH reasons: the backend
+                            // failure is otherwise swallowed here, and the e2e log
+                            // capture keeps only console.error/pageerror entries
+                            // (never warns), so a recurrence would otherwise show
+                            // up as the in-browser loader's opaque error with no
+                            // hint at the real (backend) cause.
+                            const fallbackReason = fe?.message ?? String(fe);
+                            const combined =
+                                `autk data load failed — backend: ${backendReason}; `
+                                + `in-browser fallback: ${fallbackReason}`;
+                            console.error('[autk-grammar]', combined);
+                            throw new Error(combined);
+                        }
                     }
                 }
             }
@@ -811,7 +827,7 @@ return __out;`;
 // callback-based JavaScriptInterpreter in a Promise. No DuckDB input is loaded
 // (input is ''); the data spec is inlined in the code, so the wrapper's `arg`
 // is unused.
-function runDataInBackend(
+function runDataInBackendOnce(
     jsInterpreter: JavaScriptInterpreter,
     code: string,
     nodeId: string,
@@ -835,6 +851,38 @@ function runDataInBackend(
             () => {},        // nodeExecProv — no provenance hook here
         );
     });
+}
+
+// The authored OSM/PBF (and other file) sources are local and deterministic, so
+// a failed attempt is a transient hiccup — sandbox cold-start, a dropped /file/
+// range fetch under thread contention, a momentary connection reset — not a
+// real data error. Retry once before giving up: the caller only falls back to
+// the in-browser loader (markedly less reliable in a headless browser, where a
+// failed PBF fetch crashes autk-db rather than degrading), so absorbing a
+// transient failure here keeps the deterministic backend path in control.
+// Re-throws the LAST failure so the caller can surface its reason.
+async function runDataInBackend(
+    jsInterpreter: JavaScriptInterpreter,
+    code: string,
+    nodeId: string,
+    attempts = 2,
+): Promise<{ path: string; dataType: string }> {
+    let lastErr: any;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+        try {
+            return await runDataInBackendOnce(jsInterpreter, code, nodeId);
+        } catch (e: any) {
+            lastErr = e;
+            if (attempt < attempts) {
+                console.warn(
+                    `[autk-grammar] backend data load attempt ${attempt}/${attempts} `
+                    + `failed; retrying:`,
+                    e?.message ?? e,
+                );
+            }
+        }
+    }
+    throw lastErr ?? new Error('Backend data load failed.');
 }
 
 // Resolve the backend data load into in-browser layers for the render path:
@@ -931,6 +979,10 @@ async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: st
     const DEFAULT_WORKSPACE_COORDINATE_FORMAT = mod.DEFAULT_WORKSPACE_COORDINATE_FORMAT || 'EPSG:3395';
     const db: any = new AutkDbCtor();
     await db.init();
+    // Reasons individual sources / reads failed, surfaced below when the load
+    // produced no usable layer at all — so a total failure reports WHY instead
+    // of crashing later with an opaque "Cannot read properties of null".
+    const loadErrors: string[] = [];
     for (const source of (spec?.data ?? [])) {
         const { type, ...rest } = source ?? {};
         // Old AutkSpatialDb.loadOsm dereferences autoLoadLayers.coordinateFormat
@@ -949,7 +1001,10 @@ async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: st
             else if (type === 'join' && typeof db.spatialQuery === 'function') await db.spatialQuery(rest);
             else console.warn(`[autk-grammar] unsupported data source type "${type}" — skipped`);
         } catch (e) {
-            // Skip a source that fails to load; others may still produce layers.
+            // Record + skip a source that fails to load; others may still
+            // produce layers. The recorded reason is surfaced below if the load
+            // produced nothing at all.
+            loadErrors.push(`${type}: ${(e as any)?.message ?? String(e)}`);
             console.warn(`[autk-grammar] data-only load failed for source type "${type}"`, e);
         }
     }
@@ -961,32 +1016,61 @@ async function loadSpecLayers(spec: any): Promise<Array<{ name: string; type: st
     // degree values as meters near the origin — a silently blank map — so
     // detect by coordinate magnitude. Strip any pre-existing crs field first:
     // detectCoordinateFormat trusts it over the heuristic.
-    const tables = (db.getLayerTables ? db.getLayerTables() : []) as Array<{ name: string; type?: string }>;
-    return Promise.all(
+    let tables: Array<{ name: string; type?: string }> = [];
+    try {
+        tables = (db.getLayerTables ? db.getLayerTables() : []) as Array<{ name: string; type?: string }>;
+    } catch (e) {
+        // A partially-loaded DB can throw here (rather than return []). Treat it
+        // as "no usable tables" and let the empty-result guard below report it,
+        // instead of letting an opaque TypeError escape the loader.
+        loadErrors.push(`getLayerTables: ${(e as any)?.message ?? String(e)}`);
+    }
+    const layers = await Promise.all(
         tables.map(async (t) => {
-            const geojson = (await db.getLayer(t.name)) as any;
-            // Keep the autk-db layer type ('roads', 'surface', 'water', 'parks',
-            // 'buildings', …) so a downstream grammar node re-loads it with the
-            // right rendering.
-            const type = (t.type as string) ?? 'polygons';
-            // Buildings: explode the grouped GeometryCollection into one footprint
-            // feature per part (each with its own height) and KEEP type 'buildings',
-            // so the downstream loadGeojson('buildings') re-clusters them and autk-map
-            // extrudes each part by its real height. See explodeBuildingParts.
-            if (type === 'buildings' && Array.isArray(geojson?.features)) {
-                geojson.features = explodeBuildingParts(geojson.features);
+            try {
+                const geojson = (await db.getLayer(t.name)) as any;
+                // Keep the autk-db layer type ('roads', 'surface', 'water', 'parks',
+                // 'buildings', …) so a downstream grammar node re-loads it with the
+                // right rendering.
+                const type = (t.type as string) ?? 'polygons';
+                // Buildings: explode the grouped GeometryCollection into one footprint
+                // feature per part (each with its own height) and KEEP type 'buildings',
+                // so the downstream loadGeojson('buildings') re-clusters them and autk-map
+                // extrudes each part by its real height. See explodeBuildingParts.
+                if (type === 'buildings' && Array.isArray(geojson?.features)) {
+                    geojson.features = explodeBuildingParts(geojson.features);
+                }
+                if (geojson && typeof geojson === 'object') {
+                    delete geojson.crs;
+                    const fmt = detectCoordinateFormat(geojson as FeatureCollection);
+                    const epsg = fmt.match(/(\d+)/)?.[1]
+                        ?? String(DEFAULT_WORKSPACE_COORDINATE_FORMAT).match(/(\d+)/)?.[1]
+                        ?? '3395';
+                    geojson.crs = { type: 'name', properties: { name: `urn:ogc:def:crs:EPSG::${epsg}` } };
+                }
+                return { name: t.name, type, geojson: geojson as FeatureCollection };
+            } catch (e) {
+                loadErrors.push(`getLayer(${t.name}): ${(e as any)?.message ?? String(e)}`);
+                return null;
             }
-            if (geojson && typeof geojson === 'object') {
-                delete geojson.crs;
-                const fmt = detectCoordinateFormat(geojson as FeatureCollection);
-                const epsg = fmt.match(/(\d+)/)?.[1]
-                    ?? String(DEFAULT_WORKSPACE_COORDINATE_FORMAT).match(/(\d+)/)?.[1]
-                    ?? '3395';
-                geojson.crs = { type: 'name', properties: { name: `urn:ogc:def:crs:EPSG::${epsg}` } };
-            }
-            return { name: t.name, type, geojson: geojson as FeatureCollection };
         }),
     );
+    const usable = layers.filter(
+        (l): l is { name: string; type: string; geojson: FeatureCollection } => l != null,
+    );
+    // A load that asked for sources but produced no usable layer AND hit errors
+    // is a real failure (e.g. every PBF range fetch 404'd) — throw an ATTRIBUTED
+    // error so the node reports the reason, instead of crashing later with an
+    // opaque "Cannot read properties of null (reading 'length')" or silently
+    // emitting an empty layer set. A genuinely empty area (no errors) returns [].
+    if (
+        usable.length === 0
+        && loadErrors.length > 0
+        && Array.isArray(spec?.data) && spec.data.length > 0
+    ) {
+        throw new Error(`in-browser AutkDb load produced no layers (${loadErrors.join('; ')})`);
+    }
+    return usable;
 }
 
 // Persist a pool-compatible wrapper (output of `layersToPoolWrapper`) to the

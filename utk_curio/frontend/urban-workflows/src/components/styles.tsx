@@ -13,7 +13,6 @@ import {
     faCircle,
     faCircleDot,
 } from "@fortawesome/free-solid-svg-icons";
-import { useUserContext } from "../providers/UserProvider";
 import { useLLMContext } from "../providers/LLMProvider";
 import { useToastContext } from "../providers/ToastProvider";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
@@ -28,11 +27,8 @@ import {
     PackageMetaHeader,
 } from "./packages/editing";
 import Col from "react-bootstrap/Col";
-import Nav from "react-bootstrap/Nav";
 import Row from "react-bootstrap/Row";
 import {
-    faGear,
-    faCircleInfo,
     faCirclePlay,
     faCopy,
     faFloppyDisk,
