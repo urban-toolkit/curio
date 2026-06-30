@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 import math
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=2)
@@ -51,7 +54,11 @@ def _load_json_maybe_compressed_cached(path_str: str, mtime_ns: int, size: int) 
     try:
         raw = zlib.decompress(raw)
     except zlib.error:
-        pass
+        # A zlib.error means the bytes are not a zlib stream, i.e. this is an
+        # ordinary (uncompressed) JSON document. That is the expected fallback
+        # path, not an error condition, so we intentionally keep the raw bytes
+        # and decode them as UTF-8 below. Logged at debug for traceability only.
+        logger.debug("zlib decompress failed for %s; treating as plain JSON", path_str)
     return json.loads(raw.decode("utf-8"))
 
 

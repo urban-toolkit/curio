@@ -105,6 +105,7 @@
 }
 
 .cardMetaText {
+    width: 100%;
     font-size: 11px;
     color: var(--curio-text-muted, #86878c);
     white-space: nowrap;
