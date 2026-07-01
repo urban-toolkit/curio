@@ -9,22 +9,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from utk_curio.backend.app.datasets.installer import (
+from utk_curio.backend.app.datasets.install.installer import (
     InstallerError,
     _sanitize_node_id_segment,
     install_computed_file_for_node,
 )  # install_computed_file_for_node used in install_node_output
-from utk_curio.backend.app.datasets.manifest import (
+from utk_curio.backend.app.datasets.domain.manifest import (
     DatasetManifest,
     ManifestError,
     load_dataset_manifest,
     write_manifest,
 )
-from utk_curio.backend.app.datasets.constants import (
+from utk_curio.backend.app.datasets.domain.constants import (
     FORMAT_TO_EXTENSION,
     SANDBOX_DATATYPE_TO_FORMAT,
 )
-from utk_curio.backend.app.datasets.storage import dataset_dir
+from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
 
 
 @dataclass(frozen=True)
@@ -55,7 +55,7 @@ def _part_label(index: int, kind: str) -> str:
 
 
 def _resolve_artifact_source(art_id: str, kind: str, value_str: str | None) -> Path | None:
-    from utk_curio.backend.app.datasets.output_paths import resolve_shared_output_path
+    from utk_curio.backend.app.datasets.infrastructure.output_paths import resolve_shared_output_path
 
     mapped = SANDBOX_DATATYPE_TO_FORMAT.get(kind)
     resolved = resolve_shared_output_path(art_id, data_type=kind if mapped else None)
@@ -64,7 +64,7 @@ def _resolve_artifact_source(art_id: str, kind: str, value_str: str | None) -> P
 
     if value_str:
         from utk_curio.backend.app.projects.storage import _launch_dir
-        from utk_curio.backend.app.datasets.output_paths import _shared_data_dir
+        from utk_curio.backend.app.datasets.infrastructure.output_paths import _shared_data_dir
 
         shared = _shared_data_dir()
         for candidate in (
@@ -186,7 +186,7 @@ def install_computed_bundle_for_node(
     title: str | None = None,
 ) -> Any:
     """Materialize a tuple output as ``format: bundle`` in the user dataset store."""
-    from utk_curio.backend.app.datasets.installer import InstallResult
+    from utk_curio.backend.app.datasets.install.installer import InstallResult
 
     if not parts:
         raise InstallerError("Bundle has no resolvable parts")
@@ -310,8 +310,8 @@ def install_node_output(
     title when provided; otherwise the installer derives a title from the
     generated filename.
     """
-    from utk_curio.backend.app.datasets.output_paths import resolve_shared_output_path
-    from utk_curio.backend.app.datasets.provenance import computed_output_format
+    from utk_curio.backend.app.datasets.infrastructure.output_paths import resolve_shared_output_path
+    from utk_curio.backend.app.datasets.domain.provenance import computed_output_format
 
     dtype = (data_type or "").strip().lower()
     if dtype == "outputs":

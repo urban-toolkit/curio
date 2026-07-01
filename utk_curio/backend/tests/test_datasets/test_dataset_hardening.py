@@ -28,7 +28,7 @@ from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
 # ── (b) arbitrary file READ via output-ref filename ─────────────────────────
 
 def test_resolve_shared_output_path_rejects_traversal(app):
-    from utk_curio.backend.app.datasets.output_paths import (
+    from utk_curio.backend.app.datasets.infrastructure.output_paths import (
         _shared_data_dir,
         resolve_shared_output_path,
     )
@@ -51,7 +51,7 @@ def test_resolve_shared_output_path_rejects_traversal(app):
 # ── (a) arbitrary file OVERWRITE via output-ref filename ────────────────────
 
 def test_install_computed_file_rejects_traversal_filename(app):
-    from utk_curio.backend.app.datasets.installer import (
+    from utk_curio.backend.app.datasets.install.installer import (
         InstallerError,
         install_computed_file_for_node,
     )
@@ -67,7 +67,7 @@ def test_install_computed_file_rejects_traversal_filename(app):
 def test_install_node_output_drops_traversal_ref(app):
     """The project-save path resolves the ref via ``resolve_shared_output_path``;
     a traversal ref resolves to nothing and installs nothing (no write)."""
-    from utk_curio.backend.app.datasets.bundle import install_node_output
+    from utk_curio.backend.app.datasets.install.bundle import install_node_output
 
     result = install_node_output(
         "1", node_id="node-b", path_ref="../../../../etc/hosts", data_type="dataframe"
@@ -78,7 +78,7 @@ def test_install_node_output_drops_traversal_ref(app):
 # ── (c) unpublish must not 500 on a legacy ``dirName: null`` ref ─────────────
 
 def test_unpublish_reconciles_spec_with_null_dirname_ref(app, client, user_and_token, monkeypatch, tmp_path):
-    from utk_curio.backend.app.datasets import storage
+    from utk_curio.backend.app.datasets.infrastructure import storage
     from utk_curio.backend.app.datasets.service import DatasetCatalogService
 
     user, token = user_and_token
@@ -127,7 +127,7 @@ def test_install_dataset_handles_source_item_without_id(client, user_and_token):
 # ── (e) GeoJSON preview must not 500 on ``"crs": null`` ─────────────────────
 
 def test_geojson_preview_handles_null_crs(app, tmp_path):
-    from utk_curio.backend.app.datasets.services.preview_service import DatasetPreviewService
+    from utk_curio.backend.app.datasets.application.preview import DatasetPreviewService
 
     geojson = tmp_path / "null_crs.geojson"
     geojson.write_text(
@@ -191,7 +191,7 @@ def test_resolve_item_path_rejects_out_of_root_absolute_path(app, user_and_token
         "uri": f"curio://outputs/{secret.as_posix()}",
         "path": secret.as_posix(),
     }
-    assert svc._resolve_item_path(item) is None
+    assert svc._paths._resolve_item_path(item) is None
 
 
 def test_preview_does_not_leak_file_from_live_outputs(client, user_and_token):

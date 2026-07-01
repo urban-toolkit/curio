@@ -106,7 +106,7 @@ def auto_install_node_output(
     try:
         from datetime import datetime as _dt, timezone as _tz
 
-        from utk_curio.backend.app.datasets.bundle import install_node_output
+        from utk_curio.backend.app.datasets.install.bundle import install_node_output
         from utk_curio.backend.app.projects.services import _user_dir_key
 
         user_key = _user_dir_key(user)

@@ -438,7 +438,7 @@ def process_python_code():
     )
 
     # Auto-install into the user store (not the public Data Catalog).
-    from utk_curio.backend.app.datasets.auto_install import auto_install_node_output
+    from utk_curio.backend.app.datasets.application.auto_install import auto_install_node_output
 
     installed_dataset = None
     dataset_diagnostic = None
@@ -538,7 +538,7 @@ def process_javascript_code():
         flush=True,
     )
 
-    from utk_curio.backend.app.datasets.auto_install import auto_install_node_output
+    from utk_curio.backend.app.datasets.application.auto_install import auto_install_node_output
 
     installed_dataset = None
     dataset_diagnostic = None

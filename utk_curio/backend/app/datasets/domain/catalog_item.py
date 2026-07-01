@@ -5,10 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from utk_curio.backend.app.datasets.catalog_utils import iso_from_timestamp, stable_id, title_from_filename
-from utk_curio.backend.app.datasets.constants import SUPPORTED_SUFFIXES
-from utk_curio.backend.app.datasets.file_meta import read_file_meta
-from utk_curio.backend.app.datasets.manifest import DatasetManifest
+from utk_curio.backend.app.datasets.infrastructure.catalog_utils import iso_from_timestamp, stable_id, title_from_filename
+from utk_curio.backend.app.datasets.domain.constants import SUPPORTED_SUFFIXES
+from utk_curio.backend.app.datasets.infrastructure.file_meta import read_file_meta
+from utk_curio.backend.app.datasets.domain.manifest import DatasetManifest
 
 
 def format_for_path(path: Path) -> str | None:
@@ -168,7 +168,7 @@ def base_item(**overrides: Any) -> dict[str, Any]:
         # dataflows. Populated by ``list_catalog`` from the dependency-graph
         # resolver; ``consumerNodeIds`` (a canvas-binding concept) stays empty in
         # persisted specs and must not be used for this count. See
-        # ``CatalogListingMixin._consumer_counts``.
+        # ``CatalogListing._consumer_counts``.
         "consumerNodeCount": 0,
         "updatedAt": iso_from_timestamp(),
         "sourceLabel": "",

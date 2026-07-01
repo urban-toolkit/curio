@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from utk_curio.backend.app.datasets.catalog_items import (
+from utk_curio.backend.app.datasets.domain.catalog_item import (
     base_item,
     item_from_manifest,
     loader_snippet,
     origin_from_dataflow_ref,
 )
-from utk_curio.backend.app.datasets.catalog_utils import iso_from_timestamp, stable_id
-from utk_curio.backend.app.datasets.errors import DatasetCatalogError
+from utk_curio.backend.app.datasets.infrastructure.catalog_utils import iso_from_timestamp, stable_id
+from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
 
 class InstalledDatasetRepository:
     def __init__(self, user: Any | None):
@@ -47,15 +47,15 @@ class InstalledDatasetRepository:
             # installed manifest.  Any ref that carries a dirName is handled here,
             # regardless of origin.
             if dir_name:
-                from utk_curio.backend.app.datasets.installer import (
+                from utk_curio.backend.app.datasets.install.installer import (
                     InstallerError,
                     resolve_installed_data_path,
                 )
-                from utk_curio.backend.app.datasets.manifest import (
+                from utk_curio.backend.app.datasets.domain.manifest import (
                     ManifestError,
                     load_dataset_manifest,
                 )
-                from utk_curio.backend.app.datasets.storage import dataset_dir
+                from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
                 from utk_curio.backend.app.projects.services import _user_dir_key
 
                 user_key = _user_dir_key(self.user)

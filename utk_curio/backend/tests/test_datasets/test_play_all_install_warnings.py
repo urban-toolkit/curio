@@ -30,7 +30,7 @@ def test_failed_install_is_recorded_not_silent():
     failures: list = []
 
     with mock.patch(
-        "utk_curio.backend.app.datasets.bundle.install_node_output",
+        "utk_curio.backend.app.datasets.install.bundle.install_node_output",
         side_effect=side_effect,
     ):
         new_spec = _auto_install_computed_outputs("u", refs, spec, failures)
@@ -51,7 +51,7 @@ def test_missing_artifact_is_recorded():
     failures: list = []
 
     with mock.patch(
-        "utk_curio.backend.app.datasets.bundle.install_node_output",
+        "utk_curio.backend.app.datasets.install.bundle.install_node_output",
         side_effect=side_effect,
     ):
         _auto_install_computed_outputs("u", refs, spec, failures)
@@ -71,7 +71,7 @@ def test_no_failures_when_all_install():
     failures: list = []
 
     with mock.patch(
-        "utk_curio.backend.app.datasets.bundle.install_node_output",
+        "utk_curio.backend.app.datasets.install.bundle.install_node_output",
         side_effect=side_effect,
     ):
         new_spec = _auto_install_computed_outputs("u", refs, spec, failures)
@@ -89,7 +89,7 @@ def test_failures_param_optional_back_compat():
     spec = {"dataflow": {"datasets": []}}
 
     with mock.patch(
-        "utk_curio.backend.app.datasets.bundle.install_node_output",
+        "utk_curio.backend.app.datasets.install.bundle.install_node_output",
         side_effect=side_effect,
     ):
         # Must not raise even without a failures list.

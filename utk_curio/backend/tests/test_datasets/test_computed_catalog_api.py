@@ -152,7 +152,7 @@ def test_install_computed_dataset_copies_to_user_store(client, user_and_token):
 def test_install_computed_dataset_404_when_file_missing(client, user_and_token):
     """Installing a computed dataset whose ephemeral output file is gone returns 404
     when it was never auto-installed into the user store."""
-    from utk_curio.backend.app.datasets.installer import sanitize_node_id_segment
+    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
 
     _, token = user_and_token
     project_id = create_project(client, token, name="Missing computed output")
@@ -182,7 +182,7 @@ def test_process_python_code_auto_installs_outputs_bundle(client, user_and_token
     """Tuple (outputs) installs as a multi-part bundle dataset."""
     from unittest.mock import MagicMock
 
-    from utk_curio.backend.app.datasets.installer import sanitize_node_id_segment
+    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
     from utk_curio.sandbox.util.db import release_connection
     from utk_curio.sandbox.util.parsers import init_db, save_to_duckdb
 
@@ -248,7 +248,7 @@ def test_process_python_code_auto_installs_dataset(client, user_and_token, monke
     from pathlib import Path
     from unittest.mock import MagicMock
 
-    from utk_curio.backend.app.datasets.installer import sanitize_node_id_segment
+    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
 
     _, token = user_and_token
     shared = Path(os.environ["CURIO_SHARED_DATA"])
@@ -297,8 +297,8 @@ def test_process_python_code_titles_computed_dataset_with_node_name(client, user
     from pathlib import Path
     from unittest.mock import MagicMock
 
-    from utk_curio.backend.app.datasets.catalog_utils import title_from_filename
-    from utk_curio.backend.app.datasets.installer import sanitize_node_id_segment
+    from utk_curio.backend.app.datasets.infrastructure.catalog_utils import title_from_filename
+    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
 
     _, token = user_and_token
     shared = Path(os.environ["CURIO_SHARED_DATA"])
@@ -351,8 +351,8 @@ def test_reinstall_computed_dataset_recovers_node_title_from_node_title_param(cl
     import os
     from pathlib import Path
 
-    from utk_curio.backend.app.datasets.catalog_utils import title_from_filename
-    from utk_curio.backend.app.datasets.installer import sanitize_node_id_segment
+    from utk_curio.backend.app.datasets.infrastructure.catalog_utils import title_from_filename
+    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
 
     _, token = user_and_token
     project_id = create_project(client, token, name="Reinstall with node title")
@@ -396,8 +396,8 @@ def test_reinstall_computed_dataset_without_node_title_never_uses_filename(clien
     import os
     from pathlib import Path
 
-    from utk_curio.backend.app.datasets.catalog_utils import title_from_filename
-    from utk_curio.backend.app.datasets.installer import sanitize_node_id_segment
+    from utk_curio.backend.app.datasets.infrastructure.catalog_utils import title_from_filename
+    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
 
     _, token = user_and_token
     project_id = create_project(client, token, name="Reinstall without node title")
@@ -530,7 +530,7 @@ def test_saved_computed_dataset_survives_disabling_save_toggle(client, user_and_
     import os
     from pathlib import Path
 
-    from utk_curio.backend.app.datasets.installer import sanitize_node_id_segment
+    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
 
     _, token = user_and_token
     project_id = create_project(client, token, name="Save-toggle persistence")
@@ -590,7 +590,7 @@ def test_saved_computed_dataset_dir_survives_save_off_and_dies_on_uninstall(
     import os
     from pathlib import Path
 
-    from utk_curio.backend.app.datasets.installer import sanitize_node_id_segment
+    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
 
     _, token = user_and_token
     project_id = create_project(client, token, name="Dir lifecycle")
@@ -628,7 +628,7 @@ def test_installed_computed_parquet_loader_is_geoparquet_aware(
     from pathlib import Path
     from unittest.mock import MagicMock
 
-    from utk_curio.backend.app.datasets.installer import sanitize_node_id_segment
+    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
 
     _, token = user_and_token
     project_id = create_project(client, token, name="Loader snippet parquet")
@@ -677,7 +677,7 @@ def test_installed_bundle_loader_returns_tuple(client, user_and_token, monkeypat
     so the sandbox re-detects the same ``outputs`` envelope."""
     from unittest.mock import MagicMock
 
-    from utk_curio.backend.app.datasets.installer import sanitize_node_id_segment
+    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
     from utk_curio.sandbox.util.db import release_connection
     from utk_curio.sandbox.util.parsers import init_db, save_to_duckdb
 
@@ -735,7 +735,7 @@ def test_published_computed_dataset_stays_installed_in_dataflow_catalog(
     import os
     from pathlib import Path
 
-    from utk_curio.backend.app.datasets.installer import sanitize_node_id_segment
+    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
 
     _, token = user_and_token
     project_id = create_project(client, token, name="Publish keeps install")

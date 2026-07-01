@@ -55,7 +55,7 @@ def test_hydrate_outputs(tmp_curio):
 
 
 def test_hydrate_outputs_from_user_dataset_store(tmp_curio):
-    from utk_curio.backend.app.datasets.installer import install_computed_file_for_node
+    from utk_curio.backend.app.datasets.install.installer import install_computed_file_for_node
 
     user_key = "1"
     node_id = "node-hydrate"

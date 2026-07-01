@@ -13,7 +13,7 @@ list_items must skip ``.meta.json``/``.decode.json`` files entirely.
 """
 from __future__ import annotations
 
-from utk_curio.backend.app.datasets.local_repository import LocalDatasetRepository
+from utk_curio.backend.app.datasets.repositories.local import LocalDatasetRepository
 
 
 def _workspace_repo(tmp_path, monkeypatch):
@@ -62,8 +62,8 @@ def test_sidecar_suffixes_track_meta_path_writer():
     """The meta-sidecar entry must equal what ``meta_path()`` actually writes."""
     from pathlib import Path
 
-    from utk_curio.backend.app.datasets.constants import SIDECAR_SUFFIXES
-    from utk_curio.backend.app.datasets.file_meta import META_SIDECAR_SUFFIX, meta_path
+    from utk_curio.backend.app.datasets.domain.constants import SIDECAR_SUFFIXES
+    from utk_curio.backend.app.datasets.infrastructure.file_meta import META_SIDECAR_SUFFIX, meta_path
 
     # The suffix the scan skips is exactly what meta_path() appends on disk.
     written = meta_path(Path("foo.csv")).name
@@ -74,7 +74,7 @@ def test_sidecar_suffixes_track_meta_path_writer():
 
 def test_sidecar_suffixes_track_parquet_decode_writer():
     """The decode-sidecar entry must equal the parquet decode writer's suffix."""
-    from utk_curio.backend.app.datasets.constants import SIDECAR_SUFFIXES
+    from utk_curio.backend.app.datasets.domain.constants import SIDECAR_SUFFIXES
     from utk_curio.sandbox.util.parsers import PARQUET_DECODE_SIDECAR_SUFFIX
 
     assert PARQUET_DECODE_SIDECAR_SUFFIX in SIDECAR_SUFFIXES

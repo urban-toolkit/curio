@@ -12,8 +12,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from utk_curio.backend.app.datasets.catalog_utils import title_from_filename
-from utk_curio.backend.app.datasets.constants import (
+from utk_curio.backend.app.datasets.infrastructure.catalog_utils import title_from_filename
+from utk_curio.backend.app.datasets.domain.constants import (
     FORMAT_TO_EXTENSION,
     SANDBOX_DATATYPE_TO_FORMAT,
     SUPPORTED_SUFFIXES,
@@ -48,7 +48,7 @@ def test_sandbox_datatype_map_covers_bundle_and_geo():
 # ── #2: install hard-links the shared artifact instead of copying ───────────
 
 def test_install_node_output_hardlinks_shared_artifact(app):
-    from utk_curio.backend.app.datasets.bundle import install_node_output
+    from utk_curio.backend.app.datasets.install.bundle import install_node_output
 
     shared = Path(os.environ["CURIO_SHARED_DATA"])
     name = "1718000000333_beef0003_output.parquet"
@@ -72,8 +72,8 @@ def test_install_node_output_hardlinks_shared_artifact(app):
 def test_listing_reads_counts_from_sidecar_not_full_file(tmp_path, monkeypatch):
     """The catalog item builder used during listing pulls row/feature counts
     from the ``.meta.json`` sidecar; it must never re-scan the full file."""
-    import utk_curio.backend.app.datasets.file_meta as file_meta
-    from utk_curio.backend.app.datasets.catalog_items import item_from_file
+    import utk_curio.backend.app.datasets.infrastructure.file_meta as file_meta
+    from utk_curio.backend.app.datasets.domain.catalog_item import item_from_file
 
     csv = tmp_path / "blocks.csv"
     csv.write_text("a,b\n1,2\n3,4\n", encoding="utf-8")
@@ -92,7 +92,7 @@ def test_listing_reads_counts_from_sidecar_not_full_file(tmp_path, monkeypatch):
 def test_merge_does_not_resurrect_publishedtohub_after_unpublish():
     """A just-unpublished ref (publishedToHub=False) must not be flipped back to
     True by a lingering hub row during dedup (notable review item)."""
-    from utk_curio.backend.app.datasets.catalog_dedup import merge_catalog_items
+    from utk_curio.backend.app.datasets.domain.dedup import merge_catalog_items
 
     project_ref = {
         "id": "data.x.thing", "origin": "computed", "installed": True,
@@ -107,7 +107,7 @@ def test_merge_does_not_resurrect_publishedtohub_after_unpublish():
 
 def test_merge_still_marks_published_when_hub_row_present():
     """Without an explicit unpublish, a hub row still marks the row published."""
-    from utk_curio.backend.app.datasets.catalog_dedup import merge_catalog_items
+    from utk_curio.backend.app.datasets.domain.dedup import merge_catalog_items
 
     project_ref = {"id": "data.x.thing", "origin": "computed", "installed": True,
                    "producerNodeId": "n1", "dirName": "data.x.thing@1"}
@@ -121,7 +121,7 @@ def test_distinct_computed_datasets_sharing_a_filename_are_not_collapsed():
     collapsed by filename. Mirrors the Autark map output + baseline-compute +
     modified-compute case where all but one used to be silently hidden until the
     siblings were deleted. ``dedupe_items`` only merges rows with the SAME id."""
-    from utk_curio.backend.app.datasets.catalog_dedup import dedupe_items
+    from utk_curio.backend.app.datasets.domain.dedup import dedupe_items
 
     same_name = "1781903321396_c8572ee7.parquet"
     items = [
@@ -150,7 +150,7 @@ def test_merge_prefers_live_computed_name_over_stale_published():
     """When a published hub copy (stale name) and the live/local computed record
     (current name) share an id, the merged row shows the CURRENT name — so the
     palette and drawer agree instead of showing the stale published name."""
-    from utk_curio.backend.app.datasets.catalog_dedup import merge_catalog_items
+    from utk_curio.backend.app.datasets.domain.dedup import merge_catalog_items
 
     # Hub-registry copy captured at publish time (richer rank: dirName + path).
     hub = {"id": "computed.nodeX", "origin": "hub", "title": "OLD published name",
@@ -177,7 +177,7 @@ def test_published_node_merges_by_id_but_distinct_twin_stays_visible():
     merge to one row via dedupe_items. But a DISTINCT second node sharing the same
     data-file basename is its own saved record and must remain visible — it is no
     longer collapsed away. So the set is {merged A, distinct B} = 2 rows."""
-    from utk_curio.backend.app.datasets.catalog_dedup import dedupe_items
+    from utk_curio.backend.app.datasets.domain.dedup import dedupe_items
 
     hub_a = {"id": "computed.a", "origin": "hub", "title": "A", "installed": True,
              "dirName": "computed.a@1", "path": "/cat/computed.a@1/data/STALE.parquet",

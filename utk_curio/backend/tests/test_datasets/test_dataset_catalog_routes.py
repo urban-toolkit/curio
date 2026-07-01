@@ -98,7 +98,7 @@ def test_download_name_falls_back_to_format_extension(tmp_path, monkeypatch):
 
 def test_download_name_preserves_friendly_title():
     """The export name keeps the readable title, only stripping illegal chars."""
-    from utk_curio.backend.app.datasets.services.catalog_listing import _download_name
+    from utk_curio.backend.app.datasets.application.listing import _download_name
 
     assert _download_name("Chicago Community Areas", ".geojson") == (
         "Chicago Community Areas.geojson"

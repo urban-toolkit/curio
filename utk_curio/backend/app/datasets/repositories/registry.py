@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Iterator
 
-from utk_curio.backend.app.datasets.catalog_items import item_from_manifest
+from utk_curio.backend.app.datasets.domain.catalog_item import item_from_manifest
 
 class DatasetRegistryRepository:
     """Manifest-backed Data Catalog at ``<repo_root>/datasets/``.
@@ -20,8 +20,8 @@ class DatasetRegistryRepository:
         self._dir_index: dict[str, Path] | None = None
 
     def _iter_manifests(self) -> Iterator[tuple[Any, Path]]:
-        from utk_curio.backend.app.datasets.manifest import ManifestError, load_dataset_manifest_from_dir
-        from utk_curio.backend.app.datasets.storage import list_catalog_datasets
+        from utk_curio.backend.app.datasets.domain.manifest import ManifestError, load_dataset_manifest_from_dir
+        from utk_curio.backend.app.datasets.infrastructure.storage import list_catalog_datasets
 
         for dataset_root in list_catalog_datasets():
             try:

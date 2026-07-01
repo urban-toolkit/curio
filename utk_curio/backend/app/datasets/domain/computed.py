@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from utk_curio.backend.app.datasets.catalog_items import base_item
-from utk_curio.backend.app.datasets.catalog_utils import iso_from_timestamp, stable_id, title_from_filename
-from utk_curio.backend.app.datasets.provenance import computed_output_format
+from utk_curio.backend.app.datasets.domain.catalog_item import base_item
+from utk_curio.backend.app.datasets.infrastructure.catalog_utils import iso_from_timestamp, stable_id, title_from_filename
+from utk_curio.backend.app.datasets.domain.provenance import computed_output_format
 
 class ComputedDatasetIndexer:
     def list_items(
@@ -51,7 +51,7 @@ class ComputedDatasetIndexer:
             # writes to the manifest so that the live-output item and the
             # user-store item share the same ID and are correctly deduped.
             if node_id:
-                from utk_curio.backend.app.datasets.installer import sanitize_node_id_segment
+                from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
                 item_id = f"computed.{sanitize_node_id_segment(node_id)}"
             else:
                 item_id = stable_id("computed", f"{node_id}:{raw}")

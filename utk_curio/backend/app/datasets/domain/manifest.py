@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from utk_curio.backend.app.datasets.storage import DatasetId
+from utk_curio.backend.app.datasets.infrastructure.storage import DatasetId
 
 
 SUPPORTED_FORMATS = {"csv", "geojson", "json", "parquet", "geotiff", "shp", "bundle"}

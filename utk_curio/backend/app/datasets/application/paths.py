@@ -9,18 +9,31 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 from utk_curio.backend.app.common.safe_paths import is_within
-from utk_curio.backend.app.datasets.catalog_items import loader_snippet
-from utk_curio.backend.app.datasets.errors import DatasetCatalogError
-from utk_curio.backend.app.datasets.installed_repository import InstalledDatasetRepository
-from utk_curio.backend.app.datasets.registry_repository import DatasetRegistryRepository
+from utk_curio.backend.app.datasets.domain.catalog_item import loader_snippet
+from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
+from utk_curio.backend.app.datasets.repositories.installed import InstalledDatasetRepository
+from utk_curio.backend.app.datasets.repositories.registry import DatasetRegistryRepository
 
 
-class CatalogPathMixin:
-    """Requires ``user``, ``registry``, and ``installed`` on the host service."""
+class PathResolver:
+    """Resolves catalog-item filesystem paths against the user store, hub, and
+    shared-output directories.
 
-    user: Any | None
-    registry: DatasetRegistryRepository
-    installed: InstalledDatasetRepository
+    A composed collaborator (not a mixin): the catalog service builds one and
+    injects it into listing and mutations, replacing the former shared-``self``
+    ``CatalogPathMixin`` state.
+    """
+
+    def __init__(
+        self,
+        *,
+        user: Any | None,
+        registry: DatasetRegistryRepository,
+        installed: InstalledDatasetRepository,
+    ):
+        self.user = user
+        self.registry = registry
+        self.installed = installed
 
     def _user_key(self) -> str:
         if self.user is None:
@@ -47,7 +60,7 @@ class CatalogPathMixin:
         filename = uri[len("curio://outputs/"):]
         if not filename:
             return None
-        from utk_curio.backend.app.datasets.output_paths import resolve_shared_output_path
+        from utk_curio.backend.app.datasets.infrastructure.output_paths import resolve_shared_output_path
 
         resolved = resolve_shared_output_path(filename)
         return resolved.as_posix() if resolved is not None else None
@@ -59,13 +72,13 @@ class CatalogPathMixin:
         installed_computed_filenames: dict[str, str],
     ) -> None:
         """Mark computed rows installed when ``computed.<node>@1`` exists on disk."""
-        from utk_curio.backend.app.datasets.installer import (
+        from utk_curio.backend.app.datasets.install.installer import (
             InstallerError,
             resolve_installed_data_path,
             sanitize_node_id_segment,
         )
-        from utk_curio.backend.app.datasets.manifest import ManifestError, load_dataset_manifest
-        from utk_curio.backend.app.datasets.storage import dataset_dir
+        from utk_curio.backend.app.datasets.domain.manifest import ManifestError, load_dataset_manifest
+        from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
 
         for item in items:
             if item.get("origin") != "computed":
@@ -112,8 +125,8 @@ class CatalogPathMixin:
         back to the client. Confining every concrete return to these roots is
         the single chokepoint that closes that arbitrary-file-read.
         """
-        from utk_curio.backend.app.datasets.local_repository import data_root_dirs
-        from utk_curio.backend.app.datasets.storage import catalog_root, user_datasets_dir
+        from utk_curio.backend.app.datasets.repositories.local import data_root_dirs
+        from utk_curio.backend.app.datasets.infrastructure.storage import catalog_root, user_datasets_dir
         from utk_curio.backend.app.projects.storage import _shared_data_dir
 
         roots = [_shared_data_dir(), catalog_root(), *data_root_dirs()]
@@ -185,9 +198,9 @@ class CatalogPathMixin:
             else:
                 return None
 
-        from utk_curio.backend.app.datasets.installer import resolve_installed_data_path
-        from utk_curio.backend.app.datasets.manifest import ManifestError, load_dataset_manifest
-        from utk_curio.backend.app.datasets.storage import catalog_root, dataset_dir
+        from utk_curio.backend.app.datasets.install.installer import resolve_installed_data_path
+        from utk_curio.backend.app.datasets.domain.manifest import ManifestError, load_dataset_manifest
+        from utk_curio.backend.app.datasets.infrastructure.storage import catalog_root, dataset_dir
 
         if self.user is not None:
             user_key = self._user_key()

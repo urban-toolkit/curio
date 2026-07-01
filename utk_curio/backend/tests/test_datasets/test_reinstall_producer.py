@@ -13,7 +13,7 @@ import json
 import os
 from pathlib import Path
 
-from utk_curio.backend.app.datasets.services.catalog_mutations import (
+from utk_curio.backend.app.datasets.application.mutations import (
     _producer_segment_from_computed_id,
 )
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import (

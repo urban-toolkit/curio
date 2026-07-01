@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import json
 
-from utk_curio.backend.app.datasets.installer import sanitize_node_id_segment
-from utk_curio.backend.app.datasets.services.catalog_listing import (
+from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
+from utk_curio.backend.app.datasets.application.listing import (
     _dataset_producer_in_spec,
 )
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import auth_headers

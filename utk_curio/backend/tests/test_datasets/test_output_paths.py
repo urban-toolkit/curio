@@ -6,7 +6,7 @@ from __future__ import annotations
 def test_resolve_shared_output_path_artifact_parquet(app, tmp_path, monkeypatch):
     import os
 
-    from utk_curio.backend.app.datasets.output_paths import resolve_shared_output_path
+    from utk_curio.backend.app.datasets.infrastructure.output_paths import resolve_shared_output_path
 
     shared = tmp_path / "shared"
     (shared / "artifacts").mkdir(parents=True)
@@ -28,7 +28,7 @@ def test_computed_output_format_uses_data_type():
 
 
 def test_resolve_duckdb_artifact_path_ignores_lock_errors(monkeypatch):
-    from utk_curio.backend.app.datasets.output_paths import resolve_shared_output_path
+    from utk_curio.backend.app.datasets.infrastructure.output_paths import resolve_shared_output_path
 
     def _boom():
         raise OSError("Could not set lock on file")

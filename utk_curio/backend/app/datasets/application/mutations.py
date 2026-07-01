@@ -10,22 +10,42 @@ from typing import Any
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
-from utk_curio.backend.app.datasets.catalog_items import item_from_manifest, loader_snippet
-from utk_curio.backend.app.datasets.services.catalog_paths import CatalogPathMixin
-from utk_curio.backend.app.datasets.catalog_utils import (
+from utk_curio.backend.app.datasets.domain.catalog_item import item_from_manifest, loader_snippet
+from utk_curio.backend.app.datasets.application.paths import PathResolver
+from utk_curio.backend.app.datasets.infrastructure.catalog_utils import (
     catalog_id_from_title,
     iso_from_timestamp,
     looks_like_generated_filename,
 )
-from utk_curio.backend.app.datasets.constants import JUNK_SOURCE_LABELS, SUPPORTED_SUFFIXES
-from utk_curio.backend.app.datasets.errors import DatasetCatalogError
-from utk_curio.backend.app.datasets.file_meta import count_file, patch_manifest_file, write_file_meta
-from utk_curio.backend.app.datasets.installed_repository import InstalledDatasetRepository
-from utk_curio.backend.app.datasets.storage import DATASET_ID_RE
+from utk_curio.backend.app.datasets.domain.constants import JUNK_SOURCE_LABELS, SUPPORTED_SUFFIXES
+from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
+from utk_curio.backend.app.datasets.infrastructure.file_meta import count_file, patch_manifest_file, write_file_meta
+from utk_curio.backend.app.datasets.repositories.installed import InstalledDatasetRepository
+from utk_curio.backend.app.datasets.infrastructure.storage import DATASET_ID_RE
 
 
-class CatalogMutationsMixin(CatalogPathMixin):
-    installed: InstalledDatasetRepository
+class CatalogMutations:
+    """Write-side catalog operations: import, publish, install, uninstall.
+
+    Injected by :class:`DatasetCatalogService` with the installed-datasets
+    repository, the shared :class:`PathResolver`, and an ``owner`` reference to
+    the facade so cross-cutting reads (``get_dataset``,
+    ``resolve_dataset_producer``) resolve through the same public methods callers
+    (and tests) may override.
+    """
+
+    def __init__(
+        self,
+        *,
+        user: Any | None,
+        installed: InstalledDatasetRepository,
+        paths: PathResolver,
+        owner: Any,
+    ):
+        self.user = user
+        self.installed = installed
+        self._paths = paths
+        self._owner = owner
 
     def import_dataset(
         self,
@@ -34,7 +54,7 @@ class CatalogMutationsMixin(CatalogPathMixin):
         dataflow_id: str | None = None,
         title: str | None = None,
     ) -> dict[str, Any]:
-        from utk_curio.backend.app.datasets.installer import (
+        from utk_curio.backend.app.datasets.install.installer import (
             InstallerError,
             install_imported_file,
         )
@@ -47,7 +67,7 @@ class CatalogMutationsMixin(CatalogPathMixin):
             raise DatasetCatalogError(f"Unsupported dataset format: {suffix or filename}")
         fmt = SUPPORTED_SUFFIXES[suffix]
 
-        user_key = self._user_key()
+        user_key = self._paths._user_key()
         file_bytes = file.read()
 
         try:
@@ -66,7 +86,7 @@ class CatalogMutationsMixin(CatalogPathMixin):
             patch_manifest_file(result.dest / "manifest.json", row_count, feature_count)
             write_file_meta(data_path, row_count, feature_count)
 
-        from utk_curio.backend.app.datasets.manifest import load_dataset_manifest
+        from utk_curio.backend.app.datasets.domain.manifest import load_dataset_manifest
         manifest = load_dataset_manifest(result.dest)
         item = item_from_manifest(manifest, result.dest, origin="imported")
         item["path"] = data_path.as_posix()
@@ -84,9 +104,9 @@ class CatalogMutationsMixin(CatalogPathMixin):
         return item
 
     def publish_dataset(self, dataset_id: str, metadata: dict[str, Any], *, dataflow_id: str | None = None, live_outputs: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-        from utk_curio.backend.app.datasets.storage import catalog_root
+        from utk_curio.backend.app.datasets.infrastructure.storage import catalog_root
 
-        item = deepcopy(self.get_dataset(dataset_id, dataflow_id=dataflow_id, live_outputs=live_outputs))
+        item = deepcopy(self._owner.get_dataset(dataset_id, dataflow_id=dataflow_id, live_outputs=live_outputs))
         for key in ("title", "description", "license", "tags"):
             if key in metadata:
                 item[key] = metadata[key]
@@ -159,7 +179,7 @@ class CatalogMutationsMixin(CatalogPathMixin):
         item["title"] = publish_title
 
         # ── Write manifest.json with all fields ───────────────────────────────
-        from utk_curio.backend.app.datasets.manifest import DatasetManifest, write_manifest
+        from utk_curio.backend.app.datasets.domain.manifest import DatasetManifest, write_manifest
 
         now = iso_from_timestamp()
         manifest_obj = DatasetManifest(
@@ -242,11 +262,11 @@ class CatalogMutationsMixin(CatalogPathMixin):
         # user's store so the ref's new dirName can be resolved on next list. ─────────
         if catalog_id != dataset_id and dataflow_id:
             try:
-                from utk_curio.backend.app.datasets.installer import (
+                from utk_curio.backend.app.datasets.install.installer import (
                     InstallerError,
                     install_dataset_from_catalog,
                 )
-                user_key = self._user_key()
+                user_key = self._paths._user_key()
                 install_dataset_from_catalog(user_key, dir_name)
             except Exception:  # noqa: BLE001 – best-effort; don't block the publish response
                 pass
@@ -261,7 +281,7 @@ class CatalogMutationsMixin(CatalogPathMixin):
         source_item: dict[str, Any] | None = None,
         node_title: str | None = None,
     ) -> dict[str, Any]:
-        item = deepcopy(source_item or self.get_dataset(dataset_id, dataflow_id=dataflow_id))
+        item = deepcopy(source_item or self._owner.get_dataset(dataset_id, dataflow_id=dataflow_id))
         # A client-supplied ``sourceItem`` may omit ``id``; the route-validated
         # ``dataset_id`` is authoritative, so backfill it rather than KeyError
         # (500) later when building the dataflow ref.
@@ -271,13 +291,13 @@ class CatalogMutationsMixin(CatalogPathMixin):
             dir_name = item.get("dirName")
             if not dir_name:
                 raise DatasetCatalogError("Catalog dataset is missing catalog directory metadata", 500)
-            from utk_curio.backend.app.datasets.installer import (
+            from utk_curio.backend.app.datasets.install.installer import (
                 InstallerError,
                 install_dataset_from_catalog,
                 resolve_installed_data_path,
             )
 
-            user_key = self._user_key()
+            user_key = self._paths._user_key()
             try:
                 result = install_dataset_from_catalog(user_key, dir_name)
                 data_path = resolve_installed_data_path(user_key, result.manifest)
@@ -324,7 +344,7 @@ class CatalogMutationsMixin(CatalogPathMixin):
             # re-copying the file and just fall through to the ref-write below.
             already_in_store = bool(item.get("dirName"))
             if not already_in_store:
-                resolved = self._resolve_computed_output_path(item)
+                resolved = self._paths._resolve_computed_output_path(item)
                 if resolved is None:
                     raise DatasetCatalogError(
                         "Computed output file is not available. Run the dataflow node first.",
@@ -335,7 +355,7 @@ class CatalogMutationsMixin(CatalogPathMixin):
                 fmt = SUPPORTED_SUFFIXES.get(suffix, "json")
 
                 producer_node_id = item.get("producerNodeId")
-                user_key = self._user_key()
+                user_key = self._paths._user_key()
                 # Title the (re)installed dataset by the producing node, never the
                 # raw generated filename. On reinstall the item arrives as a session
                 # output whose ``title`` is the filename (the original manifest was
@@ -344,7 +364,7 @@ class CatalogMutationsMixin(CatalogPathMixin):
                 resolved_title = _resolve_computed_install_title(item, node_title, user_key)
 
                 if producer_node_id:
-                    from utk_curio.backend.app.datasets.installer import (
+                    from utk_curio.backend.app.datasets.install.installer import (
                         InstallerError,
                         install_computed_file_for_node,
                         resolve_installed_data_path,
@@ -360,7 +380,7 @@ class CatalogMutationsMixin(CatalogPathMixin):
                     except InstallerError as exc:
                         raise DatasetCatalogError(str(exc)) from exc
                 else:
-                    from utk_curio.backend.app.datasets.installer import (
+                    from utk_curio.backend.app.datasets.install.installer import (
                         InstallerError,
                         install_computed_file,
                         resolve_installed_data_path,
@@ -398,7 +418,7 @@ class CatalogMutationsMixin(CatalogPathMixin):
                     patch_manifest_file(result.dest / "manifest.json", row_count, feature_count)
                     write_file_meta(inst_data_path, row_count, feature_count)
 
-                from utk_curio.backend.app.datasets.manifest import load_dataset_manifest
+                from utk_curio.backend.app.datasets.domain.manifest import load_dataset_manifest
 
                 installed_manifest = load_dataset_manifest(result.dest)
                 installed_item = item_from_manifest(installed_manifest, result.dest, origin="computed")
@@ -422,7 +442,7 @@ class CatalogMutationsMixin(CatalogPathMixin):
         # the link — and the dataset's computed origin — is never lost.
         seg = _producer_segment_from_computed_id(item.get("id"), item.get("dirName"))
         if seg and not item.get("producerNodeId"):
-            producer = self.resolve_dataset_producer(item.get("id") or "")
+            producer = self._owner.resolve_dataset_producer(item.get("id") or "")
             item["producerNodeId"] = producer["nodeId"] if producer else seg
             item["origin"] = "computed"
 
@@ -458,8 +478,8 @@ class CatalogMutationsMixin(CatalogPathMixin):
             dir_name = removed_ref.get("dirName")
             if dir_name:
                 try:
-                    from utk_curio.backend.app.datasets.storage import dataset_dir
-                    dest = dataset_dir(self._user_key(), dir_name)
+                    from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
+                    dest = dataset_dir(self._paths._user_key(), dir_name)
                     if dest.exists():
                         shutil.rmtree(dest, ignore_errors=True)
                 except Exception:  # noqa: BLE001
@@ -476,7 +496,7 @@ class CatalogMutationsMixin(CatalogPathMixin):
         ``imported`` / ``computed`` provenance; only ``publishedToHub`` is cleared.
         The user's store copy (if any) is left intact.
         """
-        from utk_curio.backend.app.datasets.storage import catalog_root
+        from utk_curio.backend.app.datasets.infrastructure.storage import catalog_root
 
         # Locate the catalog directory for this dataset.
         root = catalog_root()
@@ -500,10 +520,10 @@ class CatalogMutationsMixin(CatalogPathMixin):
         # This also preserves the manifest.json (and therefore the dataset title).
         if self.user is not None:
             try:
-                from utk_curio.backend.app.datasets.installer import (
+                from utk_curio.backend.app.datasets.install.installer import (
                     install_dataset_from_catalog,
                 )
-                install_dataset_from_catalog(self._user_key(), dir_name, replace=False)
+                install_dataset_from_catalog(self._paths._user_key(), dir_name, replace=False)
             except Exception:  # noqa: BLE001
                 pass
 
@@ -621,8 +641,8 @@ def _resolve_computed_install_title(
     # 2. Name on a preserved on-disk manifest.
     if user_key and dir_name:
         try:
-            from utk_curio.backend.app.datasets.storage import dataset_dir
-            from utk_curio.backend.app.datasets.manifest import load_dataset_manifest
+            from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
+            from utk_curio.backend.app.datasets.domain.manifest import load_dataset_manifest
 
             dest = dataset_dir(user_key, dir_name)
             if dest.exists():

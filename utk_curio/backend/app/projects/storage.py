@@ -209,7 +209,7 @@ def copy_outputs(
     Returns only the refs that were successfully copied (missing source files
     are skipped so partial saves stay self-consistent).
     """
-    from utk_curio.backend.app.datasets.output_paths import resolve_shared_output_path
+    from utk_curio.backend.app.datasets.infrastructure.output_paths import resolve_shared_output_path
 
     d = ensure_project_dir(user_key, project_id)
     copied: List[OutputRef] = []
@@ -240,13 +240,13 @@ def _installed_file_for_node(
     if not isinstance(dataflow, dict):
         return None
 
-    from utk_curio.backend.app.datasets.installer import (
+    from utk_curio.backend.app.datasets.install.installer import (
         InstallerError,
         resolve_installed_data_path,
     )
     from utk_curio.backend.app.common.safe_paths import PathTraversalError
-    from utk_curio.backend.app.datasets.manifest import ManifestError, load_dataset_manifest
-    from utk_curio.backend.app.datasets.storage import dataset_dir
+    from utk_curio.backend.app.datasets.domain.manifest import ManifestError, load_dataset_manifest
+    from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
 
     for ds_ref in dataflow.get("datasets") or []:
         if not isinstance(ds_ref, dict):

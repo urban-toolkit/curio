@@ -190,8 +190,8 @@ def test_auto_install_skips_non_dict_dataset_refs(app, tmp_curio):
 def test_prune_sink_node_dataset_refs(app, tmp_curio):
     """Dataset refs keyed on a visualization/sink node are pruned on save and
     their orphaned user-store dir is removed; the real producer's ref stays."""
-    from utk_curio.backend.app.datasets.installer import install_computed_file_for_node
-    from utk_curio.backend.app.datasets.storage import dataset_dir
+    from utk_curio.backend.app.datasets.install.installer import install_computed_file_for_node
+    from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
 
     # Install two computed datasets: a transform (producer) and a vis node
     # (passthrough duplicate, same data).

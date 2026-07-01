@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from utk_curio.backend.app.datasets.constants import JUNK_SOURCE_LABELS, SUPPORTED_SUFFIXES
-from utk_curio.backend.app.datasets.provenance import catalog_item_is_computed_provenance
+from utk_curio.backend.app.datasets.domain.constants import JUNK_SOURCE_LABELS, SUPPORTED_SUFFIXES
+from utk_curio.backend.app.datasets.domain.provenance import catalog_item_is_computed_provenance
 
 def catalog_item_rank(item: dict[str, Any]) -> int:
     """Higher rank = richer catalog record (prefer when deduping by id)."""

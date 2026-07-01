@@ -15,7 +15,7 @@ import json
 import zlib
 from pathlib import Path
 
-from utk_curio.backend.app.datasets.services.preview_service import DatasetPreviewService
+from utk_curio.backend.app.datasets.application.preview import DatasetPreviewService
 from utk_curio.sandbox.util.tabular_preview import normalize_pool_layers
 
 

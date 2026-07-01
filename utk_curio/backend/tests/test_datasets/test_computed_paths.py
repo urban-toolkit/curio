@@ -18,7 +18,7 @@ def test_resolve_computed_output_path_present(app):
         "uri": "curio://outputs/my_output.csv",
         "path": "my_output.csv",
     }
-    resolved = svc._resolve_computed_output_path(item)
+    resolved = svc._paths._resolve_computed_output_path(item)
     assert resolved == str(output_file)
 
 
@@ -32,7 +32,7 @@ def test_resolve_computed_output_path_missing(app):
         "uri": "curio://outputs/ghost.csv",
         "path": "ghost.csv",
     }
-    assert svc._resolve_computed_output_path(item) is None
+    assert svc._paths._resolve_computed_output_path(item) is None
 
 
 def test_resolve_item_path_delegates_for_computed(app):
@@ -51,7 +51,7 @@ def test_resolve_item_path_delegates_for_computed(app):
         "uri": "curio://outputs/scores.csv",
         "path": "curio://outputs/scores.csv",
     }
-    result = svc._resolve_item_path(item)
+    result = svc._paths._resolve_item_path(item)
     assert result is not None
     assert result.endswith("scores.csv")
 
@@ -83,7 +83,7 @@ def test_resolve_item_path_installed_computed_uses_absolute_path(app):
         "dirName": "computed.node-abc@1",
         "installed": True,
     }
-    result = svc._resolve_item_path(item)
+    result = svc._paths._resolve_item_path(item)
     assert result == data_file.as_posix()
 
 
@@ -99,13 +99,13 @@ def test_resolve_item_path_computed_missing_absolute_path_returns_none(app):
         "dirName": "computed.node-gone@1",
         "installed": True,
     }
-    assert svc._resolve_item_path(item) is None
+    assert svc._paths._resolve_item_path(item) is None
 
 
 def test_dedupe_prefers_installed_copy_over_live_output(tmp_path):
     """When the same computed id appears as an installed folder and a live
     output row, dedupe must keep the installed record (dirName + user path)."""
-    from utk_curio.backend.app.datasets.catalog_dedup import dedupe_items
+    from utk_curio.backend.app.datasets.domain.dedup import dedupe_items
 
     user_file = tmp_path / "store.parquet"
     user_file.write_bytes(b"PAR1")

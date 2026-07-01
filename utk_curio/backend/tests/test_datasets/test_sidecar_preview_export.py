@@ -27,7 +27,7 @@ def test_preview_decodes_object_columns(tmp_path, monkeypatch):
 
 
 def test_export_csv_decodes_object_columns(tmp_path, monkeypatch):
-    from utk_curio.backend.app.datasets.services.catalog_listing import (
+    from utk_curio.backend.app.datasets.application.listing import (
         _serialize_parquet_for_export,
     )
 

@@ -11,7 +11,7 @@ import json
 import os
 from pathlib import Path
 
-from utk_curio.backend.app.datasets.installer import sanitize_node_id_segment
+from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
 from utk_curio.backend.app.projects.services import (
     _humanize_node_type,
     _computed_output_title,

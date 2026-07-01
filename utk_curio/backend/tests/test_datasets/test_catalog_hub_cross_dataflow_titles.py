@@ -12,13 +12,13 @@ import json
 import os
 from pathlib import Path
 
-from utk_curio.backend.app.datasets.catalog_dedup import merge_catalog_items
-from utk_curio.backend.app.datasets.catalog_utils import looks_like_generated_filename
-from utk_curio.backend.app.datasets.installer import (
+from utk_curio.backend.app.datasets.domain.dedup import merge_catalog_items
+from utk_curio.backend.app.datasets.infrastructure.catalog_utils import looks_like_generated_filename
+from utk_curio.backend.app.datasets.install.installer import (
     install_computed_file_for_node,
     sanitize_node_id_segment,
 )
-from utk_curio.backend.app.datasets.services.catalog_service import DatasetCatalogService
+from utk_curio.backend.app.datasets.application.catalog_service import DatasetCatalogService
 from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     auth_headers,
@@ -124,7 +124,7 @@ def test_listing_backfills_friendly_title_from_user_store(app, user_and_token):
         }
 
         service = DatasetCatalogService(user)
-        service._prefer_user_store_computed_title([stale_hub_item], user_key)
+        service._listing._prefer_user_store_computed_title([stale_hub_item], user_key)
         assert stale_hub_item["title"] == "Autark"
 
 
@@ -145,7 +145,7 @@ def test_listing_leaves_friendly_titles_untouched(app, user_and_token):
             "title": "Knowledge Graph",  # already friendly → must not change
             "dirName": f"{dataset_id}@1",
         }
-        DatasetCatalogService(user)._prefer_user_store_computed_title([item], user_key)
+        DatasetCatalogService(user)._listing._prefer_user_store_computed_title([item], user_key)
         assert item["title"] == "Knowledge Graph"
 
 

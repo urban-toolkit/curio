@@ -76,7 +76,7 @@ def _prune_sink_node_dataset_refs(user_key: str, spec: Optional[dict]) -> Option
         return spec
 
     # Best-effort: remove the orphaned dataset dir for each pruned ref.
-    from utk_curio.backend.app.datasets.storage import dataset_dir
+    from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
     for ref in pruned:
         dir_name = ref.get("dirName")
         if not dir_name:
@@ -179,8 +179,8 @@ def _auto_install_computed_outputs(
         if failures is not None:
             failures.append({"node_id": node_id, "filename": filename, "reason": reason})
 
-    from utk_curio.backend.app.datasets.bundle import install_node_output
-    from utk_curio.backend.app.datasets.storage import DATASET_DIR_RE
+    from utk_curio.backend.app.datasets.install.bundle import install_node_output
+    from utk_curio.backend.app.datasets.infrastructure.storage import DATASET_DIR_RE
 
     dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
     if not isinstance(dataflow, dict):
@@ -299,7 +299,7 @@ def _preserve_persisted_computed_refs(
     if not preserved:
         return new_spec
 
-    from utk_curio.backend.app.datasets.storage import dataset_dir
+    from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
 
     new_dataflow = new_spec.get("dataflow")
     if not isinstance(new_dataflow, dict):

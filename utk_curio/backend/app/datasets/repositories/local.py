@@ -9,10 +9,10 @@ from typing import Any
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
-from utk_curio.backend.app.datasets.catalog_items import format_for_path, item_from_file
-from utk_curio.backend.app.datasets.constants import SIDECAR_SUFFIXES, SUPPORTED_SUFFIXES
-from utk_curio.backend.app.datasets.errors import DatasetCatalogError
-from utk_curio.backend.app.datasets.file_meta import count_file, meta_path, write_file_meta
+from utk_curio.backend.app.datasets.domain.catalog_item import format_for_path, item_from_file
+from utk_curio.backend.app.datasets.domain.constants import SIDECAR_SUFFIXES, SUPPORTED_SUFFIXES
+from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
+from utk_curio.backend.app.datasets.infrastructure.file_meta import count_file, meta_path, write_file_meta
 
 
 def data_root_dirs() -> list[Path]:
@@ -23,7 +23,8 @@ def data_root_dirs() -> list[Path]:
     exactly which directories hold legitimately readable data files.
     """
     launch_dir = Path(os.environ.get("CURIO_LAUNCH_CWD", os.getcwd()))
-    package_data = Path(__file__).resolve().parents[3] / "data"
+    # local.py -> repositories/ -> datasets/ -> app/ -> backend/ -> utk_curio/data/
+    package_data = Path(__file__).resolve().parents[4] / "data"
     return [package_data, launch_dir / "data"]
 
 

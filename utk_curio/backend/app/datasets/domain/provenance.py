@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from utk_curio.backend.app.datasets.constants import SANDBOX_DATATYPE_TO_FORMAT, SUPPORTED_SUFFIXES
+from utk_curio.backend.app.datasets.domain.constants import SANDBOX_DATATYPE_TO_FORMAT, SUPPORTED_SUFFIXES
 
 
 def catalog_item_is_computed_provenance(item: dict[str, Any]) -> bool:
@@ -45,7 +45,7 @@ def computed_output_format(filename: str, data_type: str | None = None) -> str:
         if mapped:
             return mapped
 
-    from utk_curio.backend.app.datasets.output_paths import resolve_shared_output_path
+    from utk_curio.backend.app.datasets.infrastructure.output_paths import resolve_shared_output_path
 
     resolved = resolve_shared_output_path(filename, data_type=data_type)
     if resolved is not None:

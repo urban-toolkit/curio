@@ -44,7 +44,7 @@ if TYPE_CHECKING:
 
 def _dataset_ref(node_id: str) -> tuple[str, dict]:
     """The catalog id + dataflow ``datasets`` ref for a computed node output."""
-    from utk_curio.backend.app.datasets.installer import sanitize_node_id_segment
+    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
 
     dataset_id = f"computed.{sanitize_node_id_segment(node_id)}"
     ref = {
@@ -59,7 +59,7 @@ def _dataset_ref(node_id: str) -> tuple[str, dict]:
 def _install_dataset_on_disk(user_id: int, node_id: str) -> None:
     """Materialize ``computed.<node>@1/`` in the owner's dataset store — the
     on-disk state a toggle-on node run leaves behind."""
-    from utk_curio.backend.app.datasets.bundle import install_node_output
+    from utk_curio.backend.app.datasets.install.bundle import install_node_output
 
     # Bytes need not be valid parquet — the installer copies them and the palette
     # only renders manifest metadata.

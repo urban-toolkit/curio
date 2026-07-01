@@ -5,8 +5,8 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.datasets import storage as ds_storage
-from utk_curio.backend.app.datasets.errors import DatasetCatalogError
+from utk_curio.backend.app.datasets.infrastructure import storage as ds_storage
+from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
 from utk_curio.backend.app.datasets.service import DatasetCatalogService
 
 
@@ -60,7 +60,7 @@ def test_publish_rejects_missing_local_file(tmp_path, monkeypatch):
 def test_catalog_root_env_override(tmp_path, monkeypatch):
     """CURIO_CATALOG_ROOT relocates the hub/publish target for pip/Docker
     deployments where the package dir is read-only/ephemeral (review B10)."""
-    from utk_curio.backend.app.datasets import storage as ds_storage
+    from utk_curio.backend.app.datasets.infrastructure import storage as ds_storage
 
     monkeypatch.delenv("CURIO_CATALOG_ROOT", raising=False)
     default_root = ds_storage.catalog_root()

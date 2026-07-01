@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from utk_curio.backend.app.datasets.file_meta import META_SIDECAR_SUFFIX
+from utk_curio.backend.app.datasets.infrastructure.file_meta import META_SIDECAR_SUFFIX
 
 SUPPORTED_SUFFIXES = {
     ".csv": "csv",

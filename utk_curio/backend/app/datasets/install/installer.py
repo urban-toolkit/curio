@@ -10,15 +10,15 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from utk_curio.backend.app.datasets.manifest import (
+from utk_curio.backend.app.datasets.domain.manifest import (
     DatasetManifest,
     ManifestError,
     load_dataset_manifest,
     write_manifest,
 )
 from utk_curio.backend.app.common.safe_paths import PathTraversalError, validate_component
-from utk_curio.backend.app.datasets.catalog_utils import title_from_filename
-from utk_curio.backend.app.datasets.storage import catalog_root, dataset_dir
+from utk_curio.backend.app.datasets.infrastructure.catalog_utils import title_from_filename
+from utk_curio.backend.app.datasets.infrastructure.storage import catalog_root, dataset_dir
 
 
 def _validate_store_filename(safe_filename: str) -> str:

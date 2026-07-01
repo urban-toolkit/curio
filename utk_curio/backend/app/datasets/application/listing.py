@@ -7,31 +7,64 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from utk_curio.backend.app.datasets.catalog_dedup import (
+from utk_curio.backend.app.datasets.domain.dedup import (
     catalog_facets,
     dedupe_items,
 )
-from utk_curio.backend.app.datasets.catalog_items import loader_snippet
-from utk_curio.backend.app.datasets.catalog_utils import looks_like_generated_filename
-from utk_curio.backend.app.datasets.services.catalog_paths import CatalogPathMixin
-from utk_curio.backend.app.datasets.computed_indexer import ComputedDatasetIndexer
-from utk_curio.backend.app.datasets.constants import FORMAT_TO_EXTENSION, SUPPORTED_SUFFIXES
-from utk_curio.backend.app.datasets.errors import DatasetCatalogError
-from utk_curio.backend.app.datasets.installed_repository import InstalledDatasetRepository
-from utk_curio.backend.app.datasets.local_repository import LocalDatasetRepository
-from utk_curio.backend.app.datasets.services.preview_service import DatasetPreviewService
-from utk_curio.backend.app.datasets.provenance import catalog_item_is_computed_provenance
-from utk_curio.backend.app.datasets.registry_repository import DatasetRegistryRepository
+from utk_curio.backend.app.datasets.domain.catalog_item import loader_snippet
+from utk_curio.backend.app.datasets.infrastructure.catalog_utils import looks_like_generated_filename
+from utk_curio.backend.app.datasets.application.paths import PathResolver
+from utk_curio.backend.app.datasets.application.export import (
+    _DOWNLOAD_MIMETYPES,
+    _dataset_consumer_nodes_in_spec,
+    _dataset_producer_in_spec,
+    _download_extension,
+    _download_name,
+    _serialize_parquet_for_export,
+)
+from utk_curio.backend.app.datasets.domain.computed import ComputedDatasetIndexer
+from utk_curio.backend.app.datasets.domain.constants import SUPPORTED_SUFFIXES
+from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
+from utk_curio.backend.app.datasets.repositories.installed import InstalledDatasetRepository
+from utk_curio.backend.app.datasets.repositories.local import LocalDatasetRepository
+from utk_curio.backend.app.datasets.application.preview import DatasetPreviewService
+from utk_curio.backend.app.datasets.domain.provenance import catalog_item_is_computed_provenance
+from utk_curio.backend.app.datasets.repositories.registry import DatasetRegistryRepository
 
 logger = logging.getLogger(__name__)
 
 
-class CatalogListingMixin(CatalogPathMixin):
-    registry: DatasetRegistryRepository
-    installed: InstalledDatasetRepository
-    local: LocalDatasetRepository
-    computed: ComputedDatasetIndexer
-    preview_service: DatasetPreviewService
+class CatalogListing:
+    """Read-side catalog operations: list, get, preview, download, usage.
+
+    Collaborators (repositories, computed indexer, preview service, and the
+    shared :class:`PathResolver`) are injected by :class:`DatasetCatalogService`.
+    """
+
+    def __init__(
+        self,
+        *,
+        user: Any | None,
+        registry: DatasetRegistryRepository,
+        local: LocalDatasetRepository,
+        installed: InstalledDatasetRepository,
+        computed: ComputedDatasetIndexer,
+        preview_service: DatasetPreviewService,
+        paths: PathResolver,
+        owner: Any,
+    ):
+        self.user = user
+        self.registry = registry
+        self.local = local
+        self.installed = installed
+        self.computed = computed
+        self.preview_service = preview_service
+        self._paths = paths
+        # Facade back-reference: internal cross-method reads (get_dataset,
+        # list_catalog, resolve_dataset_producer) resolve through the public
+        # facade so a caller/test override of ``service.get_dataset`` is honored
+        # exactly as it was under the former mixin design.
+        self._owner = owner
 
     def list_catalog(
         self,
@@ -55,7 +88,7 @@ class CatalogListingMixin(CatalogPathMixin):
         if dataflow_id:
             items.extend(self.installed.list_items(dataflow_id))
             items.extend(self.computed.list_items(
-                manifest=self._project_manifest(dataflow_id),
+                manifest=self._paths._project_manifest(dataflow_id),
                 live_outputs=live_outputs,
             ))
         elif live_outputs:
@@ -96,8 +129,8 @@ class CatalogListingMixin(CatalogPathMixin):
         # Post-execution auto-install writes to the user dataset store immediately;
         # reflect that in the catalog even before the next project save syncs spec refs.
         try:
-            user_key = self._user_key()
-            self._mark_user_store_computed_installs(
+            user_key = self._paths._user_key()
+            self._paths._mark_user_store_computed_installs(
                 items,
                 user_key,
                 installed_computed_filenames,
@@ -116,7 +149,7 @@ class CatalogListingMixin(CatalogPathMixin):
         # so adopt the friendly node title from the user's store copy (same dir,
         # keyed on the producing node) when the listed title looks generated.
         try:
-            self._prefer_user_store_computed_title(items, self._user_key())
+            self._prefer_user_store_computed_title(items, self._paths._user_key())
         except DatasetCatalogError:
             logger.warning(
                 "Could not resolve friendly computed titles from the user store; "
@@ -149,11 +182,11 @@ class CatalogListingMixin(CatalogPathMixin):
                 # ``_resolve_item_path``. Confining it to the same roots is the
                 # chokepoint that closes that leak (#143 follow-up).
                 path_val = item.get("path") or ""
-                contained = bool(path_val) and self._contained_path(path_val) is not None
+                contained = bool(path_val) and self._paths._contained_path(path_val) is not None
                 if path_val and contained and Path(path_val).is_file():
                     item["loaderSnippet"] = loader_snippet(item["format"], path_val)
                     continue
-                resolved = self._resolve_computed_output_path(item)
+                resolved = self._paths._resolve_computed_output_path(item)
                 if resolved:
                     # If the resolved file is a parquet but the stored format
                     # differs (e.g. legacy "json" artifact), update the format
@@ -255,11 +288,11 @@ class CatalogListingMixin(CatalogPathMixin):
         shows regardless of which dataflow is open. Best-effort per item: a
         missing/unreadable manifest, or one whose own name is also generated,
         leaves the item untouched (the UI then falls back to ``dirName``)."""
-        from utk_curio.backend.app.datasets.manifest import (
+        from utk_curio.backend.app.datasets.domain.manifest import (
             ManifestError,
             load_dataset_manifest,
         )
-        from utk_curio.backend.app.datasets.storage import dataset_dir
+        from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
 
         for item in items:
             if not catalog_item_is_computed_provenance(item):
@@ -287,7 +320,7 @@ class CatalogListingMixin(CatalogPathMixin):
         # ``include_hub=True`` is a strict superset of ``include_hub=False`` (it
         # only *adds* the hub registry items), so a single pass finds any id —
         # no need for the historical two-pass scan.
-        result = self.list_catalog(dataflow_id=dataflow_id, include_hub=True, live_outputs=live_outputs)
+        result = self._owner.list_catalog(dataflow_id=dataflow_id, include_hub=True, live_outputs=live_outputs)
         for item in result["items"]:
             if item["id"] == dataset_id:
                 if resolve_producer:
@@ -307,7 +340,7 @@ class CatalogListingMixin(CatalogPathMixin):
         """
         if not catalog_item_is_computed_provenance(item):
             return
-        producer = self.resolve_dataset_producer(item.get("id") or "")
+        producer = self._owner.resolve_dataset_producer(item.get("id") or "")
         if producer is None:
             return
         # Don't clobber a producer id already resolved from the open (producing)
@@ -336,7 +369,7 @@ class CatalogListingMixin(CatalogPathMixin):
         from utk_curio.backend.app.projects import repositories as projects_repo
         from utk_curio.backend.app.projects import storage as project_storage
 
-        user_key = self._user_key()
+        user_key = self._paths._user_key()
         for project in projects_repo.list_for_user(self.user.id):
             spec = project_storage.read_spec(user_key, project.id) or {}
             producer = _dataset_producer_in_spec(spec, dataset_id)
@@ -358,7 +391,7 @@ class CatalogListingMixin(CatalogPathMixin):
         offset: int = 0,
         part_index: int | None = None,
     ) -> dict[str, Any]:
-        item = deepcopy(self.get_dataset(
+        item = deepcopy(self._owner.get_dataset(
             dataset_id,
             dataflow_id=dataflow_id,
             live_outputs=live_outputs,
@@ -368,7 +401,7 @@ class CatalogListingMixin(CatalogPathMixin):
         # (e.g. an attacker-supplied absolute path like ``/etc/passwd`` injected
         # via ``liveOutputs``); the preview service then reports the dataset as
         # unavailable instead of reading the raw path off disk.
-        item["path"] = self._resolve_item_path(item)
+        item["path"] = self._paths._resolve_item_path(item)
         return self.preview_service.preview(
             item, row_limit=row_limit, offset=offset, part_index=part_index
         )
@@ -386,7 +419,7 @@ class CatalogListingMixin(CatalogPathMixin):
         and mimetype. The serialized file is streamed as-is, so a parquet
         dataset exports the parquet binary, a CSV exports the CSV, etc.
         """
-        item = deepcopy(self.get_dataset(
+        item = deepcopy(self._owner.get_dataset(
             dataset_id,
             dataflow_id=dataflow_id,
             live_outputs=live_outputs,
@@ -396,7 +429,7 @@ class CatalogListingMixin(CatalogPathMixin):
                 "Multi-part (bundle) datasets cannot be exported as a single file.",
                 400,
             )
-        resolved = self._resolve_item_path(item)
+        resolved = self._paths._resolve_item_path(item)
         if not resolved or not Path(resolved).is_file():
             raise DatasetCatalogError("Dataset file is not available for export.", 404)
 
@@ -444,7 +477,7 @@ class CatalogListingMixin(CatalogPathMixin):
         from utk_curio.backend.app.projects import repositories as projects_repo
         from utk_curio.backend.app.projects import storage as project_storage
 
-        user_key = self._user_key()
+        user_key = self._paths._user_key()
         usages: list[dict[str, Any]] = []
         for project in projects_repo.list_for_user(self.user.id):
             spec = project_storage.read_spec(user_key, project.id) or {}
@@ -481,7 +514,7 @@ class CatalogListingMixin(CatalogPathMixin):
         from utk_curio.backend.app.projects import repositories as projects_repo
         from utk_curio.backend.app.projects import storage as project_storage
 
-        user_key = self._user_key()
+        user_key = self._paths._user_key()
         counts: dict[str, int] = {}
         for project in projects_repo.list_for_user(self.user.id):
             spec = project_storage.read_spec(user_key, project.id) or {}
@@ -490,208 +523,3 @@ class CatalogListingMixin(CatalogPathMixin):
                 if consumers:
                     counts[dataset_id] = counts.get(dataset_id, 0) + len(consumers)
         return counts
-
-
-def _producer_node_id_for(nodes: list, dataset_id: str) -> str | None:
-    """The node id whose computed output is ``dataset_id`` (``computed.<seg>``)."""
-    if not dataset_id.startswith("computed."):
-        return None
-    from utk_curio.backend.app.datasets.installer import sanitize_node_id_segment
-
-    for node in nodes:
-        if not isinstance(node, dict):
-            continue
-        nid = node.get("id")
-        if nid and f"computed.{sanitize_node_id_segment(nid)}" == dataset_id:
-            return nid
-    return None
-
-
-def _dataset_producer_in_spec(
-    spec: dict[str, Any], dataset_id: str
-) -> dict[str, Any] | None:
-    """The producer node (``{nodeId, nodeType}``) for *dataset_id* in *spec*'s
-    dataflow, or ``None`` when this dataflow does not produce it.
-
-    A computed dataset's id encodes its producer node id
-    (``computed.<sanitized-nodeId>``), so the producing node — and its type —
-    can be recovered from any dataflow that still contains that node.
-    """
-    if not isinstance(spec, dict):
-        return None
-    dataflow = spec.get("dataflow")
-    if not isinstance(dataflow, dict):
-        return None
-    nodes = dataflow.get("nodes") or []
-    producer_id = _producer_node_id_for(nodes, dataset_id)
-    if producer_id is None:
-        return None
-    node_type = None
-    for node in nodes:
-        if isinstance(node, dict) and node.get("id") == producer_id:
-            node_type = node.get("type")
-            break
-    return {"nodeId": producer_id, "nodeType": node_type}
-
-
-def _dataset_consumer_nodes_in_spec(
-    spec: dict[str, Any], dataset_id: str
-) -> list[dict[str, Any]] | None:
-    """Consumer node refs (``[{nodeId, nodeType}]``) if *spec*'s dataflow uses
-    *dataset_id*, else ``None``. An empty list means the dataflow uses/owns the
-    dataset (e.g. produced or installed) but no node consumes it downstream.
-
-    Mirrors the frontend lineage resolver: the dataset enters the flow through
-    *carrier* nodes — the computed producer and any Data Loading node that
-    (re)loads it — and is consumed by the nodes wired downstream of those
-    carriers. A carrier's own binding is NOT consumption, so a dropped-but-
-    unconnected loader registers no downstream usage. A non-loading node with
-    the dataset applied (a binding) is a genuine consumer.
-    """
-    if not isinstance(spec, dict):
-        return None
-    dataflow = spec.get("dataflow")
-    if not isinstance(dataflow, dict):
-        return None
-
-    nodes = dataflow.get("nodes") or []
-    edges = dataflow.get("edges") or []
-    datasets = dataflow.get("datasets") or []
-
-    node_type_by_id = {
-        node["id"]: node.get("type")
-        for node in nodes
-        if isinstance(node, dict) and node.get("id")
-    }
-
-    def _is_data_loading(node_type: Any) -> bool:
-        return isinstance(node_type, str) and (
-            node_type == "DATA_LOADING" or "data-loading" in node_type
-        )
-
-    uses = False
-    consumer_ids: list[str] = []
-    seen: set[str] = set()
-    carrier_ids: set[str] = set()
-
-    producer_id = _producer_node_id_for(nodes, dataset_id)
-    if producer_id is not None:
-        uses = True
-        carrier_ids.add(producer_id)
-
-    def add_consumer(nid: str | None) -> None:
-        if nid and nid not in seen and nid not in carrier_ids:
-            seen.add(nid)
-            consumer_ids.append(nid)
-
-    for ref in datasets:
-        if isinstance(ref, dict) and dataset_id in (ref.get("datasetId"), ref.get("id")):
-            uses = True
-
-    for node in nodes:
-        if not isinstance(node, dict):
-            continue
-        refs = (node.get("metadata") or {}).get("datasetRefs") or []
-        if dataset_id in refs:
-            uses = True
-            nid = node.get("id")
-            if _is_data_loading(node.get("type")):
-                if nid:
-                    carrier_ids.add(nid)  # loader = source/carrier, not a consumer
-            else:
-                add_consumer(nid)  # dataset applied to a node → genuine consumer
-
-    if carrier_ids:
-        for edge in edges:
-            if not isinstance(edge, dict) or edge.get("type") == "Interaction":
-                continue
-            if edge.get("source") in carrier_ids and edge.get("target"):
-                add_consumer(edge["target"])
-
-    if not uses:
-        return None
-    return [{"nodeId": nid, "nodeType": node_type_by_id.get(nid)} for nid in consumer_ids]
-
-
-_DOWNLOAD_MIMETYPES: dict[str, str] = {
-    ".csv": "text/csv",
-    ".json": "application/json",
-    ".geojson": "application/geo+json",
-    ".parquet": "application/vnd.apache.parquet",
-    ".tif": "image/tiff",
-    ".tiff": "image/tiff",
-    ".shp": "application/octet-stream",
-}
-
-def _serialize_parquet_for_export(path: Path) -> tuple[bytes, str, str]:
-    """Deserialize a stored parquet dataset and re-serialize it to the data type
-    it represents — GeoJSON for geospatial data, CSV for plain tabular data.
-
-    Parquet is an internal storage format; exports should match what the user
-    sees in the preview, so a GeoDataFrame round-trips to GeoJSON and a plain
-    DataFrame to CSV.
-
-    Returns ``(payload_bytes, extension, mimetype)``.
-    """
-    import pandas as pd
-
-    # GeoParquet carries geo metadata; ``gpd.read_parquet`` succeeds only for
-    # geospatial data and decodes the geometry column to real shapely geometries.
-    geo_frame = None
-    try:
-        import geopandas as gpd
-
-        geo_frame = gpd.read_parquet(path)
-    except Exception:  # noqa: BLE001 — not geospatial / no geo metadata
-        geo_frame = None
-
-    from utk_curio.sandbox.util.parsers import restore_parquet_sidecar
-
-    if geo_frame is not None:
-        # Decode JSON-encoded object columns (the <file>.decode.json sidecar) so
-        # list/dict properties export as real values, not double-encoded strings.
-        geo_frame = restore_parquet_sidecar(
-            geo_frame, path, geometry_col=geo_frame.geometry.name
-        )
-        # ``to_json`` serializes feature properties via ``json.dumps``, which
-        # can't natively encode pandas/numpy temporal values (e.g. Timestamp).
-        # Forward ``default=str`` so those fall back to their string form rather
-        # than raising "Object of type Timestamp is not JSON serializable".
-        return (
-            geo_frame.to_json(default=str).encode("utf-8"),
-            ".geojson",
-            "application/geo+json",
-        )
-
-    frame = pd.read_parquet(path)
-    frame = restore_parquet_sidecar(frame, path)
-    return frame.to_csv(index=False).encode("utf-8"), ".csv", "text/csv"
-
-
-def _download_extension(path: Path, fmt: str | None) -> str:
-    """Prefer the real file extension; fall back to the dataset format's."""
-    suffix = path.suffix.lower()
-    if suffix in _DOWNLOAD_MIMETYPES:
-        return suffix
-    if suffix:
-        return suffix
-    return FORMAT_TO_EXTENSION.get(fmt or "", "")
-
-
-def _download_name(title: str, extension: str) -> str:
-    """Build a friendly, filesystem-safe download filename from the dataset's
-    display title plus the canonical extension.
-
-    Preserves the human-readable title (spaces and casing) so the exported file
-    matches the name shown in the catalog, only stripping characters that are
-    illegal in filenames.
-    """
-    import re
-
-    # Replace path separators, reserved characters, and dots with a space, then
-    # collapse whitespace. Dots are stripped from the stem so the only dot in the
-    # final filename is the one separating the extension.
-    cleaned = re.sub(r'[\\/:*?"<>|.\x00-\x1f]+', " ", title.strip())
-    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
-    stem = cleaned or "dataset"
-    return f"{stem}{extension}"

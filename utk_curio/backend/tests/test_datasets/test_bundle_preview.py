@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 
-from utk_curio.backend.app.datasets.services.preview_service import DatasetPreviewService
+from utk_curio.backend.app.datasets.application.preview import DatasetPreviewService
 
 
 def test_bundle_preview_resolves_parts(tmp_path):
@@ -149,7 +149,7 @@ def test_json_part_load_is_cached_until_file_changes(tmp_path):
     """Paging a JSON part must not re-parse the file each page. The loader is
     memoized by (path, mtime, size) so repeated reads return the same object, and a
     regenerated file (different size/mtime) misses the cache and reloads."""
-    from utk_curio.backend.app.datasets.services.preview_service import (
+    from utk_curio.backend.app.datasets.application.preview import (
         _load_json_cached,
         _load_json_file,
     )

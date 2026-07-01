@@ -21,7 +21,7 @@ import json
 
 import pytest
 
-from utk_curio.backend.app.datasets.catalog_items import loader_snippet
+from utk_curio.backend.app.datasets.domain.catalog_item import loader_snippet
 
 
 def _run_loader(snippet: dict):

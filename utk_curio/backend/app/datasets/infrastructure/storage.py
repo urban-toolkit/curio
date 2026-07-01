@@ -97,8 +97,8 @@ def catalog_root() -> Path:
     override = os.environ.get("CURIO_CATALOG_ROOT")
     if override and override.strip():
         return Path(override).expanduser().resolve()
-    # storage.py -> datasets/ -> app/ -> backend/ -> utk_curio/ -> repo_root/datasets/
-    return Path(__file__).resolve().parents[4] / "datasets"
+    # storage.py -> infrastructure/ -> datasets/ -> app/ -> backend/ -> utk_curio/ -> repo_root/datasets/
+    return Path(__file__).resolve().parents[5] / "datasets"
 
 
 def user_datasets_dir(user_key: str) -> Path:
