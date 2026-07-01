@@ -34,6 +34,20 @@ function readSaved(data: {softArtifact?: SoftArtifactState}): SoftArtifactState{
   return { ...defaultState(), ...raw };
 }
 
+function artifactStatusLine(state: SoftArtifactState): string {
+  switch (state.status) {
+    case 'empty':
+      return state.sourceFile ? "File selected - not ingested" : "No Document here"
+    case 'ingesting':
+      return "ingesting"
+    case 'ready':
+      return "Ready"
+    case 'error':
+      return state.errorMessage ?? "error"
+    default:
+      return "idk man";  
+  }
+}
 
 const API_BASE = `${(typeof window !== 'undefined' && (window as any).curio?.backendUrl) || ''}/api/softartifact`;
 
@@ -131,15 +145,21 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
   const onFile = (file : File | null) => {
     setFile(file);
     if (!file) {
-      persist(defaultState());
+      persist({artifactId: null,
+      sourceFile: null,
+      mimeType: null,
+      status: 'empty',
+      errorMessage: undefined,
+      });
       return;
     }
+
     persist({
       artifactId: null,
       sourceFile: file.name,
       mimeType: file.type || 'application/octet-stream',
       status: 'empty'
-    })
+    });
   }
 
   const onRole = (next: softArtifactRole) => {
@@ -205,7 +225,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
             color: !file || state.status === 'ingesting' ? '#94a3b8' : '#fff',
           }}       
         >
-          {state.status === 'ingesting' ? 'Ingesting…' : 'Ingest (stub)'}
+          {artifactStatusLine(state)}
         </button>
 
         {state ? (

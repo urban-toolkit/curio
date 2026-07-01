@@ -59,6 +59,21 @@ function readSaved(data) {
   if (!raw || _typeof(raw) !== 'object') return defaultState(); //if raw is invalid return default state
   return _objectSpread(_objectSpread({}, defaultState()), raw);
 }
+function artifactStatusLine(state) {
+  var _state$errorMessage;
+  switch (state.status) {
+    case 'empty':
+      return state.sourceFile ? "File selected - not ingested" : "No Document here";
+    case 'ingesting':
+      return "ingesting";
+    case 'ready':
+      return "Ready";
+    case 'error':
+      return (_state$errorMessage = state.errorMessage) !== null && _state$errorMessage !== void 0 ? _state$errorMessage : "error";
+    default:
+      return "idk man";
+  }
+}
 var API_BASE = "".concat(typeof window !== 'undefined' && ((_curio = window.curio) === null || _curio === void 0 ? void 0 : _curio.backendUrl) || '', "/api/softartifact");
 
 //todo: create a behavior hook for soft artifact behavior
@@ -163,7 +178,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
             });
           case 4:
             err = _context.v;
-            throw new Error(err.Error || "HTTP  ".concat(res.status));
+            throw new Error(err.error || "HTTP  ".concat(res.status));
           case 5:
             _context.n = 6;
             return res.json();
@@ -198,7 +213,13 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
   var onFile = function onFile(file) {
     setFile(file);
     if (!file) {
-      persist(defaultState());
+      persist({
+        artifactId: null,
+        sourceFile: null,
+        mimeType: null,
+        status: 'empty',
+        errorMessage: undefined
+      });
       return;
     }
     persist({
@@ -291,7 +312,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
       background: !file || state.status === 'ingesting' ? '#e2e8f0' : '#2563eb',
       color: !file || state.status === 'ingesting' ? '#94a3b8' : '#fff'
     }
-  }, state.status === 'ingesting' ? 'Ingesting…' : 'Ingest (stub)'), state ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("pre", {
+  }, artifactStatusLine(state)), state ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("pre", {
     style: {
       marginTop: 10,
       fontSize: 10,
