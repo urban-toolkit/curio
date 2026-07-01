@@ -1,6 +1,7 @@
 import os 
 from flask import jsonify, request
 from .services.ingest import ingest_file
+from .services.get_artifact import get_softartifact_metadata
 from . import bp
 
 
@@ -39,3 +40,12 @@ def ingest():
      
     result["role"] = role
     return jsonify(result), 200
+
+# ── artifacts/<artifactId> ──────────────────────────────────────────────────────────
+@bp.get("/artifacts/<artifactId>")
+def getArtifact(artifactId: str):
+    meta = get_softartifact_metadata(artifactId)
+    if meta is None:
+        return jsonify({"error": "artifact not found"}), 400
+    
+    return jsonify(meta), 200
