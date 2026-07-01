@@ -164,6 +164,12 @@ def base_item(**overrides: Any) -> dict[str, Any]:
         "producerDataflowId": None,
         "producerDataflowName": None,
         "consumerNodeIds": [],
+        # Real count of nodes consuming this dataset, summed across the user's
+        # dataflows. Populated by ``list_catalog`` from the dependency-graph
+        # resolver; ``consumerNodeIds`` (a canvas-binding concept) stays empty in
+        # persisted specs and must not be used for this count. See
+        # ``CatalogListingMixin._consumer_counts``.
+        "consumerNodeCount": 0,
         "updatedAt": iso_from_timestamp(),
         "sourceLabel": "",
         "license": None,

@@ -222,6 +222,23 @@ class CatalogListingMixin(CatalogPathMixin):
             else:
                 items = [item for item in items if item.get("origin") == origin]
 
+        # Real "N nodes consume" count for the browse cards. The persisted
+        # ``consumerNodeIds`` ref is structurally empty, so derive the count from
+        # the same cross-project graph resolver that powers ``dataset_usage``.
+        # Best-effort: never fail the listing because usage couldn't be resolved.
+        try:
+            counts = self._consumer_counts(
+                {item["id"] for item in items if item.get("id")}
+            )
+        except DatasetCatalogError:
+            logger.warning(
+                "Could not resolve dataset consumer counts; browse cards will show 0.",
+                exc_info=True,
+            )
+            counts = {}
+        for item in items:
+            item["consumerNodeCount"] = counts.get(item.get("id"), 0)
+
         if sort == "name":
             items.sort(key=lambda item: (item.get("title") or "").casefold())
         else:
@@ -442,6 +459,37 @@ class CatalogListingMixin(CatalogPathMixin):
             })
         usages.sort(key=lambda u: (u["dataflowName"] or "").casefold())
         return usages
+
+    def _consumer_counts(self, dataset_ids: set[str]) -> dict[str, int]:
+        """Total nodes consuming each id in *dataset_ids*, summed across all of
+        the user's dataflows — the count rendered as "N nodes consume" on Data
+        Hub browse cards.
+
+        Uses the same resolver as :meth:`dataset_usage`
+        (``_dataset_consumer_nodes_in_spec``) so the browse count always agrees
+        with the detail panel's ``/usage`` total, but reads each project spec
+        once and resolves every requested dataset against it — the whole browse
+        page costs one pass over the projects, not one per dataset.
+
+        Best-effort: returns ``{}`` when there is no authenticated user (an
+        unauth listing) and skips any spec that cannot be read, so the listing
+        never fails because usage could not be resolved. Ids with no consumers
+        are omitted; callers default missing ids to ``0``.
+        """
+        if not dataset_ids or self.user is None:
+            return {}
+        from utk_curio.backend.app.projects import repositories as projects_repo
+        from utk_curio.backend.app.projects import storage as project_storage
+
+        user_key = self._user_key()
+        counts: dict[str, int] = {}
+        for project in projects_repo.list_for_user(self.user.id):
+            spec = project_storage.read_spec(user_key, project.id) or {}
+            for dataset_id in dataset_ids:
+                consumers = _dataset_consumer_nodes_in_spec(spec, dataset_id)
+                if consumers:
+                    counts[dataset_id] = counts.get(dataset_id, 0) + len(consumers)
+        return counts
 
 
 def _producer_node_id_for(nodes: list, dataset_id: str) -> str | None:

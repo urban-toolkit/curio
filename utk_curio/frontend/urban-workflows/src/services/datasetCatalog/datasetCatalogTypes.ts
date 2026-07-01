@@ -84,6 +84,13 @@ export interface DatasetCatalogItem {
   producerDataflowId?: string | null;
   producerDataflowName?: string | null;
   consumerNodeIds: string[];
+  /** Real count of nodes consuming this dataset, summed across the user's
+   * dataflows — the source of truth for the "N nodes consume" browse label.
+   * Derived server-side from the dependency graph (see backend
+   * ``_consumer_counts``); ``consumerNodeIds`` is a canvas-binding array that is
+   * empty in persisted specs and must not be used for this count. Optional so
+   * older/detail payloads without it default to 0 in the UI. */
+  consumerNodeCount?: number;
   updatedAt: string;
   sourceLabel?: string | null;
   license?: string | null;

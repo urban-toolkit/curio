@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 
 from utk_curio.backend.app.datasets.installer import sanitize_node_id_segment
-from utk_curio.backend.tests.test_datasets.computed_test_helpers import auth_headers
+from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
+    auth_headers,
+    save_project_with_output,
+)
 
 
 def _create_project(client, token, name, spec):
@@ -138,3 +141,74 @@ def test_usage_empty_for_unused_dataset(client, user_and_token):
         "dataflow": {"name": "Empty", "nodes": [], "edges": [], "datasets": []}
     })
     assert _usage(client, token, "computed.nothing") == []
+
+
+# ---------------------------------------------------------------------------
+# Browse-card ``consumerNodeCount`` — the "N nodes consume" figure. Regression
+# for the hardcoded ``0``: it must be the real graph count, and must agree with
+# the ``/usage`` total the detail panel shows.
+# ---------------------------------------------------------------------------
+
+
+def _computed_item(client, token, project_id, dataset_id):
+    catalog = client.get(
+        f"/api/datasets/catalog?includeHub=false&dataflowId={project_id}",
+        headers=auth_headers(token),
+    ).get_json()
+    return next(i for i in catalog["items"] if i["id"] == dataset_id)
+
+
+def _consumed_project_spec(consumer_ids):
+    """Spec with producer ``n1`` wired to each consumer in *consumer_ids*."""
+    nodes = [{"id": "n1", "type": "PYTHON_COMPUTATION", "x": 0, "y": 0}]
+    edges = []
+    for i, cid in enumerate(consumer_ids):
+        nodes.append({"id": cid, "type": "VEGA", "x": 0, "y": 0})
+        edges.append({"id": f"e{i}", "source": "n1", "target": cid})
+    return {"dataflow": {"name": "Consumed", "nodes": nodes, "edges": edges, "datasets": []}}
+
+
+def _install_producer_output(client, token, project_id):
+    """Give ``n1`` a real computed output so it lists as a catalog dataset."""
+    import os
+    from pathlib import Path
+
+    shared = Path(os.environ["CURIO_SHARED_DATA"])
+    (shared / "n1_out.csv").write_text("city,count\nChicago,10\n", encoding="utf-8")
+    save_project_with_output(client, token, project_id, "n1_out.csv", node_id="n1")
+    return f"computed.{sanitize_node_id_segment('n1')}"
+
+
+def test_catalog_consumer_count_reflects_downstream_nodes(client, user_and_token):
+    """A computed dataset consumed by 2 downstream nodes reports
+    ``consumerNodeCount == 2`` — not the always-empty persisted ``consumerNodeIds``."""
+    _, token = user_and_token
+    project_id = _create_project(client, token, "Consumed", _consumed_project_spec(["n2", "n3"]))
+    dataset_id = _install_producer_output(client, token, project_id)
+
+    item = _computed_item(client, token, project_id, dataset_id)
+    assert item["consumerNodeCount"] == 2
+
+    # Invariant: the browse count equals the detail panel's /usage total.
+    usage_total = sum(f["nodeCount"] for f in _usage(client, token, dataset_id))
+    assert item["consumerNodeCount"] == usage_total
+
+
+def test_catalog_consumer_count_singular(client, user_and_token):
+    """Exactly one consumer → count of 1 (the UI renders "1 node consumes")."""
+    _, token = user_and_token
+    project_id = _create_project(client, token, "Consumed", _consumed_project_spec(["n2"]))
+    dataset_id = _install_producer_output(client, token, project_id)
+
+    item = _computed_item(client, token, project_id, dataset_id)
+    assert item["consumerNodeCount"] == 1
+
+
+def test_catalog_consumer_count_zero_when_unconsumed(client, user_and_token):
+    """A produced-but-unwired dataset reports 0 consumers (real value, not stale)."""
+    _, token = user_and_token
+    project_id = _create_project(client, token, "Unconsumed", _consumed_project_spec([]))
+    dataset_id = _install_producer_output(client, token, project_id)
+
+    item = _computed_item(client, token, project_id, dataset_id)
+    assert item["consumerNodeCount"] == 0
