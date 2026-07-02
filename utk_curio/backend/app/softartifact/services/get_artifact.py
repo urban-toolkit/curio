@@ -57,7 +57,7 @@ def get_softartifact_metadata(artifactId: str) -> dict | None:
     if not source_file:
         return None
     
-    guessedMimed = mimetypes.guess_type(source_file)
+    guessedMimed, _ = mimetypes.guess_type(source_file)
 
     return{
         "artifactId": artifactId,

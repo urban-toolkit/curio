@@ -34,7 +34,9 @@ function readSaved(data: {softArtifact?: SoftArtifactState}): SoftArtifactState{
   return { ...defaultState(), ...raw };
 }
 
-function artifactStatusLine(state: SoftArtifactState): string {
+function artifactStatusLine(state: SoftArtifactState, verifying: boolean): string {
+  if (verifying) return "verifying artifact";
+
   switch (state.status) {
     case 'empty':
       return state.sourceFile ? "File selected - not ingested" : "No Document here"
@@ -99,6 +101,61 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
     
     data.outputCallback?.(data.nodeId, json);
   };
+
+  const applyArtifactMeta = (out: Record<string, unknown>, role: softArtifactRole) => {
+    persist({
+      artifactId: typeof out.artifactId === 'string' ? out.artifactId : null,
+      sourceFile: typeof out.sourceFile === 'string' ? out.sourceFile : null,
+      mimeType: typeof out.mimeType === 'string' ? out.mimeType : null,
+      status: 'ready',
+      errorMessage: undefined,
+    });
+    emitOutput({ ...out, role });  // downstream Simple View gets JSON again
+  };
+
+  const [verifying, setVerifying] = useState(false); //short-lived UI while the GET api get run 
+  //on mount effect, run once when the node is reloaded 
+  useEffect(() => {
+    const artifactId = nodeData.softArtifact?.artifactId
+    if (!artifactId) {
+      console.log("soft artifact Id doesn't exist, skip GET")
+      return;
+    }
+
+    console.log('[soft-artifact] mount: verifying', artifactId);
+    let cancelled = false;
+    setVerifying(true);
+
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/artifacts/${encodeURI(artifactId)}`)
+        if (cancelled) return
+
+        if (res.status === 404) {
+          persist({
+            status: 'error',
+            errorMessage: "artifact not found"
+          })
+          return;
+        }
+
+        if (!res.ok) return;
+
+        const out = await res.json();
+        if (cancelled) return;
+
+        const role = nodeData.softArtifact?.role ?? state.role;
+        applyArtifactMeta(out, role);
+      } catch {
+        console.log("ERROR HERE I LOVE FREEDOM");
+      } finally {
+        if (!cancelled) setVerifying(false);
+      }
+
+    })();
+    
+    return () => { cancelled = true }
+  }, [])
 
   //onChange function for ingest button 
   const onIngest = async () => {
@@ -225,7 +282,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
             color: !file || state.status === 'ingesting' ? '#94a3b8' : '#fff',
           }}       
         >
-          {artifactStatusLine(state)}
+          {artifactStatusLine(state, verifying)}
         </button>
 
         {state ? (

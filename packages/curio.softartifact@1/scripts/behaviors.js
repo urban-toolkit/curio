@@ -59,8 +59,9 @@ function readSaved(data) {
   if (!raw || _typeof(raw) !== 'object') return defaultState(); //if raw is invalid return default state
   return _objectSpread(_objectSpread({}, defaultState()), raw);
 }
-function artifactStatusLine(state) {
+function artifactStatusLine(state, verifying) {
   var _state$errorMessage;
+  if (verifying) return "verifying artifact";
   switch (state.status) {
     case 'empty':
       return state.sourceFile ? "File selected - not ingested" : "No Document here";
@@ -137,53 +138,143 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
     });
     (_data$outputCallback = data.outputCallback) === null || _data$outputCallback === void 0 || _data$outputCallback.call(data, data.nodeId, json);
   };
-
-  //onChange function for ingest button 
-  var onIngest = /*#__PURE__*/function () {
-    var _ref = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
-      var _out$role, form, res, err, out, _t;
+  var applyArtifactMeta = function applyArtifactMeta(out, role) {
+    persist({
+      artifactId: typeof out.artifactId === 'string' ? out.artifactId : null,
+      sourceFile: typeof out.sourceFile === 'string' ? out.sourceFile : null,
+      mimeType: typeof out.mimeType === 'string' ? out.mimeType : null,
+      status: 'ready',
+      errorMessage: undefined
+    });
+    emitOutput(_objectSpread(_objectSpread({}, out), {}, {
+      role: role
+    })); // downstream Simple View gets JSON again
+  };
+  var _useState7 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false),
+    _useState8 = _slicedToArray(_useState7, 2),
+    verifying = _useState8[0],
+    setVerifying = _useState8[1]; //short-lived UI while the GET api get run 
+  //on mount effect, run once when the node is reloaded 
+  (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(function () {
+    var _nodeData$softArtifac;
+    var artifactId = (_nodeData$softArtifac = nodeData.softArtifact) === null || _nodeData$softArtifac === void 0 ? void 0 : _nodeData$softArtifac.artifactId;
+    if (!artifactId) {
+      console.log("soft artifact Id doesn't exist, skip GET");
+      return;
+    }
+    console.log('[soft-artifact] mount: verifying', artifactId);
+    var cancelled = false;
+    setVerifying(true);
+    _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
+      var _nodeData$softArtifac2, _nodeData$softArtifac3, res, out, role, _t;
       return _regenerator().w(function (_context) {
         while (1) switch (_context.p = _context.n) {
           case 0:
-            if (file) {
-              _context.n = 1;
+            _context.p = 0;
+            _context.n = 1;
+            return fetch("".concat(API_BASE, "/artifacts/").concat(encodeURI(artifactId)));
+          case 1:
+            res = _context.v;
+            if (!cancelled) {
+              _context.n = 2;
               break;
             }
             return _context.a(2);
+          case 2:
+            if (!(res.status === 404)) {
+              _context.n = 3;
+              break;
+            }
+            persist({
+              status: 'error',
+              errorMessage: "artifact not found"
+            });
+            return _context.a(2);
+          case 3:
+            if (res.ok) {
+              _context.n = 4;
+              break;
+            }
+            return _context.a(2);
+          case 4:
+            _context.n = 5;
+            return res.json();
+          case 5:
+            out = _context.v;
+            if (!cancelled) {
+              _context.n = 6;
+              break;
+            }
+            return _context.a(2);
+          case 6:
+            role = (_nodeData$softArtifac2 = (_nodeData$softArtifac3 = nodeData.softArtifact) === null || _nodeData$softArtifac3 === void 0 ? void 0 : _nodeData$softArtifac3.role) !== null && _nodeData$softArtifac2 !== void 0 ? _nodeData$softArtifac2 : state.role;
+            applyArtifactMeta(out, role);
+            _context.n = 8;
+            break;
+          case 7:
+            _context.p = 7;
+            _t = _context.v;
+            console.log("ERROR HERE I LOVE FREEDOM");
+          case 8:
+            _context.p = 8;
+            if (!cancelled) setVerifying(false);
+            return _context.f(8);
+          case 9:
+            return _context.a(2);
+        }
+      }, _callee, null, [[0, 7, 8, 9]]);
+    }))();
+    return function () {
+      cancelled = true;
+    };
+  }, []);
+
+  //onChange function for ingest button 
+  var onIngest = /*#__PURE__*/function () {
+    var _ref2 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+      var _out$role, form, res, err, out, _t2;
+      return _regenerator().w(function (_context2) {
+        while (1) switch (_context2.p = _context2.n) {
+          case 0:
+            if (file) {
+              _context2.n = 1;
+              break;
+            }
+            return _context2.a(2);
           case 1:
             persist({
               status: "ingesting"
             });
 
             //ingesting the using API_BASE/ingest 
-            _context.p = 2;
+            _context2.p = 2;
             form = new FormData();
             form.append('file', file);
             form.append('role', state.role);
-            _context.n = 3;
+            _context2.n = 3;
             return fetch("".concat(API_BASE, "/ingest"), {
               method: 'POST',
               headers: {},
               body: form
             });
           case 3:
-            res = _context.v;
+            res = _context2.v;
             if (res.ok) {
-              _context.n = 5;
+              _context2.n = 5;
               break;
             }
-            _context.n = 4;
+            _context2.n = 4;
             return res.json()["catch"](function () {
               return {};
             });
           case 4:
-            err = _context.v;
+            err = _context2.v;
             throw new Error(err.error || "HTTP  ".concat(res.status));
           case 5:
-            _context.n = 6;
+            _context2.n = 6;
             return res.json();
           case 6:
-            out = _context.v;
+            out = _context2.v;
             persist({
               artifactId: out.artifactId,
               role: (_out$role = out.role) !== null && _out$role !== void 0 ? _out$role : state.role,
@@ -192,22 +283,22 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
               status: 'ready'
             });
             emitOutput(_objectSpread({}, out));
-            _context.n = 8;
+            _context2.n = 8;
             break;
           case 7:
-            _context.p = 7;
-            _t = _context.v;
+            _context2.p = 7;
+            _t2 = _context2.v;
             persist({
               status: 'error',
-              errorMessage: _t instanceof Error ? _t.message : String(_t)
+              errorMessage: _t2 instanceof Error ? _t2.message : String(_t2)
             });
           case 8:
-            return _context.a(2);
+            return _context2.a(2);
         }
-      }, _callee, null, [[2, 7]]);
+      }, _callee2, null, [[2, 7]]);
     }));
     return function onIngest() {
-      return _ref.apply(this, arguments);
+      return _ref2.apply(this, arguments);
     };
   }();
   var onFile = function onFile(file) {
@@ -312,7 +403,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
       background: !file || state.status === 'ingesting' ? '#e2e8f0' : '#2563eb',
       color: !file || state.status === 'ingesting' ? '#94a3b8' : '#fff'
     }
-  }, artifactStatusLine(state)), state ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("pre", {
+  }, artifactStatusLine(state, verifying)), state ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("pre", {
     style: {
       marginTop: 10,
       fontSize: 10,
