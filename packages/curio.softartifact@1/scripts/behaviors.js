@@ -181,14 +181,20 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
             }
             return _context.a(2);
           case 2:
-            if (!(res.status === 404)) {
+            if (!(res.status === 400)) {
               _context.n = 3;
               break;
             }
             persist({
+              artifactId: null,
+              // clear stale id — backend doesn't have it
+              sourceFile: null,
+              // optional: clear or keep for context
+              mimeType: null,
               status: 'error',
-              errorMessage: "artifact not found"
+              errorMessage: 'artifact missing — re-upload'
             });
+            setFile(null);
             return _context.a(2);
           case 3:
             if (res.ok) {
@@ -275,14 +281,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
             return res.json();
           case 6:
             out = _context2.v;
-            persist({
-              artifactId: out.artifactId,
-              role: (_out$role = out.role) !== null && _out$role !== void 0 ? _out$role : state.role,
-              sourceFile: out.sourceFile,
-              mimeType: out.mimeType,
-              status: 'ready'
-            });
-            emitOutput(_objectSpread({}, out));
+            applyArtifactMeta(out, (_out$role = out.role) !== null && _out$role !== void 0 ? _out$role : state.role);
             _context2.n = 8;
             break;
           case 7:

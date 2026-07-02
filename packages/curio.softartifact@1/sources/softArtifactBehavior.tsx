@@ -131,11 +131,15 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
         const res = await fetch(`${API_BASE}/artifacts/${encodeURI(artifactId)}`)
         if (cancelled) return
 
-        if (res.status === 404) {
+        if (res.status === 400) {
           persist({
+            artifactId: null,           // clear stale id — backend doesn't have it
+            sourceFile: null,           // optional: clear or keep for context
+            mimeType: null,
             status: 'error',
-            errorMessage: "artifact not found"
-          })
+            errorMessage: 'artifact missing — re-upload',
+          });
+          setFile(null);
           return;
         }
 
@@ -181,16 +185,8 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
       }
 
       const out = await res.json();
-      persist({
-        artifactId: out.artifactId,
-        role: out.role ?? state.role,
-        sourceFile: out.sourceFile,
-        mimeType: out.mimeType,
-        status: 'ready',
-      })
+      applyArtifactMeta(out, out.role ?? state.role);
 
-      emitOutput({ ...out });
-      
     } catch (e) {
       persist({
         status: 'error',
