@@ -1,7 +1,10 @@
 import os 
 from flask import jsonify, request
+
 from .services.ingest import ingest_file
 from .services.get_artifact import get_softartifact_metadata
+from .services.retrieve import _load_chunk
+
 from . import bp
 
 
@@ -11,6 +14,7 @@ def health():
     return jsonify({
         "status": "healthy",
     })
+
 
 # ── Ingest ──────────────────────────────────────────────────────────
 @bp.post("/ingest")
@@ -41,6 +45,7 @@ def ingest():
     result["role"] = role
     return jsonify(result), 200
 
+
 # ── artifacts/<artifactId> ──────────────────────────────────────────────────────────
 @bp.get("/artifacts/<artifactId>")
 def getArtifact(artifactId: str):
@@ -49,3 +54,23 @@ def getArtifact(artifactId: str):
         return jsonify({"error": "artifact not found"}), 400
     
     return jsonify(meta), 200
+
+
+# ── Retrieve ──────────────────────────────────────────────────────────
+@bp.post("retrieve")
+def retrieve():
+    data = request.get_json(silent = True);
+
+    if not isinstance(data, dict):
+        return jsonify({"error": "Request body must be valid JSON"}), 400
+
+    artifactId = data.get("artifactId")
+    query = data.get("query")
+    top_k = data.get("top_k") 
+    if artifactId is None:
+        return jsonify({"error": "missing artifactId"}), 400
+    
+    return jsonify(_load_chunk(artifactId));
+    
+
+
