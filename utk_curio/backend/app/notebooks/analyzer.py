@@ -206,75 +206,8 @@ def _try_altair_to_spec(code, last_var, external_vars=()):
         return None
 
 
-# ── Public API ────────────────────────────────────────────────────────────────
-
-def analyze_cells(cells: list[str]) -> dict:
-    """
-    Analyse a list of notebook cell source strings.
-
-    Returns a dict with:
-      - 'analysis': per-cell dicts with 'defined', 'used', 'last_var',
-                    and 'altair_spec' (Vega-Lite spec or null).
-      - 'edges': list of {source, target} cell-index pairs representing
-                 data-flow dependencies.
-    """
-    analysis = []
-    import_names_per_cell = []
-
-    for code in cells:
-        try:
-            tree = ast.parse(code)
-        except SyntaxError:
-            analysis.append({'defined': [], 'used': [], 'last_var': None, 'altair_spec': None})
-            import_names_per_cell.append(set())
-            continue
-
-        defined = _collect_defined(tree)
-        import_names = _collect_import_names(tree)
-
-        visitor = _UsedNamesVisitor()
-        visitor.used = set()
-        visitor.visit(tree)
-        used = visitor.used - import_names - _PYTHON_BUILTINS
-
-        last_var = _last_assigned_var(tree)
-        altair_spec = (
-            _try_altair_to_spec(code, last_var, external_vars=used)
-            if last_var and _ALTAIR_RE.search(code)
-            else None
-        )
-
-        analysis.append({
-            'defined': list(defined),
-            'used': list(used),
-            'last_var': last_var,
-            'altair_spec': altair_spec,
-        })
-        import_names_per_cell.append(import_names)
-
-    # Build dependency edges.
-    # Only non-import names are tracked as producers so library aliases (pd, alt, np)
-    # don't create spurious edges between an import cell and every cell that uses the library.
-    producer: dict[str, int] = {}
-    edges: list[dict] = []
-    seen: set[tuple] = set()
-
-    for i, cell in enumerate(analysis):
-        for name in cell['used']:
-            if name in producer:
-                key = (producer[name], i)
-                if key not in seen:
-                    seen.add(key)
-                    edges.append({'source': producer[name], 'target': i})
-        import_names = import_names_per_cell[i]
-        for name in cell['defined']:
-            if name not in import_names:
-                producer[name] = i
-
-    return {'analysis': analysis, 'edges': edges}
-
 # ── Improved Public API ───────────────────────────────────────────────────────
-def runtime_analyze_cells(cells: list[str]) -> dict:
+def analyze_cells(cells: list[str]) -> dict:
     analysis = []
     import_names_per_cell = []
 

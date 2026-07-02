@@ -78,37 +78,15 @@ function inferNodeType(code: string): NodeType {
 // ── Import: Notebook → Trill ─────────────────────────────────────────────────
 
 
-//Only export for tests
-export type CellEdge = { 
+type CellEdge = { 
   source: number; 
   target: number;
   // We added parentVar
   parent_var?: string
 };
 
-function wireCode(
-  code: string,
-  cellIdx: number,
-  lastVars: (string | null)[],
-  hasOutgoing: Set<number>,
-  incomingSources: Map<number, number[]>,
-): string {
-  let out = code;
-  const sources = incomingSources.get(cellIdx) ?? [];
-  if (sources.length === 1) {
-    const srcVar = lastVars[sources[0]] ?? "arg";
-    out = `${srcVar} = arg\n${out}`;
-  } else if (sources.length > 1) {
-    out = `# multiple inputs available via arg\n${out}`;
-  }
-  const lv = lastVars[cellIdx];
-  if (hasOutgoing.has(cellIdx) && lv) {
-    out = `${out}\nreturn ${lv}`;
-  }
-  return out;
-}
 //Only export for tests
-export function modified_wireCode(
+function modified_wireCode(
   code: string,
   cellIdx: number,
   cellEdges: CellEdge[],
@@ -119,13 +97,10 @@ export function modified_wireCode(
   const sources = incomingSources.get(cellIdx) ?? [];
 
   if (sources.length === 1) {
-    //This should probably be what I modify
     const incomingEdge = cellEdges.find(e => e.source === sources[0] && e.target === cellIdx)
     const parentVar = incomingEdge?.parent_var
     const srcVar = parentVar ?? "arg"
     out = `${srcVar} = arg\n${out}`
-    // const srcVar = lastVars[sources[0]] ?? "arg";
-    // out = `${srcVar} = arg\n${out}`;
   } else if (sources.length > 1) {
     out = `# multiple inputs available via arg\n${out}`;
   }
@@ -181,7 +156,6 @@ export async function notebookToTrill(
     used: string[];
     last_var: string | null;
     altair_spec: Record<string, unknown> | null;
-    //We might need to add more here
   };
   let cellEdges: CellEdge[] = [];
   // Declaring parentVars
@@ -223,15 +197,6 @@ export async function notebookToTrill(
   // alternative to randomly guessing connections and potentially getting them wrong. Also, this is perhaps 
   // the only time last_var is used. But with the current way to connect nodes using parent_variables, 
   // using last_var is completley outdated
-
-  // if (cellEdges.length === 0 && codeCells.length > 1) {
-  //   for (let i = 0; i < codeCells.length - 1; i++) {
-  //     // Added a change here
-  //     cellEdges.push({ source: i, target: i + 1, parent_var: lastVars[i] ?? undefined });
-  //   }
-  //   // No lastVars available — skip wiring in this path
-  //   lastVars = [];
-  // }
 
   // ── Step 4: Build quick-lookup structures from the edge list ────────────
   // Build wiring sets

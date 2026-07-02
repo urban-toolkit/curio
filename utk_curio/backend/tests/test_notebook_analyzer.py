@@ -1,6 +1,6 @@
 import json
 import pytest
-from utk_curio.backend.app.notebooks.analyzer import analyze_cells, runtime_analyze_cells, _UsedNamesVisitor, _collect_import_names, _collect_defined
+from utk_curio.backend.app.notebooks.analyzer import analyze_cells, _UsedNamesVisitor, _collect_import_names, _collect_defined
 import ast      # The magical abstract syntax tree
 import builtins
 
@@ -13,7 +13,7 @@ class TestNoteBookAnalyzer:
             "grouped_data = community_zipcode.groupby(\"Community Area Name\").size().reset_index(name=\"High School Count\")\ngrouped_data"
         ]
 
-        output = runtime_analyze_cells(cells)
+        output = analyze_cells(cells)
 
         # for analysis in output["analysis"]:
         #     print(f"{analysis}\n")
@@ -33,7 +33,7 @@ class TestNoteBookAnalyzer:
             "tier_summary = (\n    df_scored\n    .groupby([\"Elementary, Middle, or High School\", \"performance_tier\"])\n    .agg(\n        school_count=(\"Name of School\", \"count\"),\n        avg_composite=(\"composite_score\", \"mean\")\n    )\n    .round(3)\n    .reset_index()\n)\ntier_summary",
             "tier_pivot = tier_summary.pivot_table(\n    index=\"Elementary, Middle, or High School\",\n    columns=\"performance_tier\",\n    values=\"school_count\",\n    fill_value=0\n)\n\ntier_pivot[\"dominant_tier\"] = tier_pivot.idxmax(axis=1)\ntier_pivot[\"total_schools\"] = tier_pivot.drop(columns=\"dominant_tier\").sum(axis=1)\ntier_pivot = tier_pivot.reset_index()\ntier_pivot"
         ]
-        output = runtime_analyze_cells(cells)
+        output = analyze_cells(cells)
 
 
         actual_edges = {(e["source"], e["target"]) for e in output["edges"]}
@@ -52,7 +52,7 @@ class TestNoteBookAnalyzer:
             "community_zipcode = MS_only[[\"Community Area Name\", \"ZIP Code\"]]\ngrouped_data = community_zipcode.groupby(\"Community Area Name\").size().reset_index(name=\"Middle School Count\")\ngrouped_data",
             "community_zipcode = ES_only[[\"Community Area Name\", \"ZIP Code\"]]\ngrouped_data = community_zipcode.groupby(\"Community Area Name\").size().reset_index(name=\"Elementary School Count\")\ngrouped_data"
         ]
-        output = runtime_analyze_cells(cells)
+        output = analyze_cells(cells)
 
         actual_edges = {(e["source"], e["target"]) for e in output["edges"]}
         expected_edges = set()
@@ -71,7 +71,7 @@ class TestNoteBookAnalyzer:
             "community_zipcode = MS_only[[\"Community Area Name\", \"ZIP Code\"]]\ngrouped_data = community_zipcode.groupby(\"Community Area Name\").size().reset_index(name=\"Middle School Count\")\ngrouped_data",
             "community_zipcode = ES_only[[\"Community Area Name\", \"ZIP Code\"]]\ngrouped_data = community_zipcode.groupby(\"Community Area Name\").size().reset_index(name=\"Elementary School Count\")\ngrouped_data"
         ]
-        output = runtime_analyze_cells(cells)
+        output = analyze_cells(cells)
 
         actual_edges = {(e["source"], e["target"]) for e in output["edges"]}
         expected_edges = {(0,1), (0,2), (0,3), (1,4), (2,5), (3,6)}
@@ -87,7 +87,7 @@ class TestNoteBookAnalyzer:
             "import pandas as pd\n\ngrad_df = pd.read_csv(\"/Users/andresquesada/desktop/CPS.csv\")\ngrad_df[\"Graduation Rate %\"] = pd.to_numeric(grad_df[\"Graduation Rate %\"], errors=\"coerce\")\nhs_grad = grad_df[grad_df[\"Elementary, Middle, or High School\"] == \"HS\"][\"Graduation Rate %\"].dropna()\nhs_grad.describe()",
             "import pandas as pd\n\ncommunity_df = pd.read_csv(\"/Users/andresquesada/desktop/CPS.csv\")\nschools_per_community = community_df.groupby(\"Community Area Name\")[\"Name of School\"].count().sort_values(ascending=False)\nschools_per_community.head(10)"
         ]
-        output = runtime_analyze_cells(cells)
+        output = analyze_cells(cells)
 
         actual_edges = {(e["source"], e["target"]) for e in output["edges"]}
         expected_edges = set()
@@ -102,7 +102,7 @@ class TestNoteBookAnalyzer:
             "x = \"Hello\"\ny = \"World!\"\n\nprint(x+\" \"+y)",
             "def fizzbuzz(num):\n    if (num % 15 == 0):\n        print(\"FizzBuzz\")\n    elif (num % 3 == 0):\n        print(\"Fizz\")\n    elif (num % 5 == 0):\n        print(\"Buzz\")\n    else:\n        print(\"Sleep\")\n\nfor i in range(1,11):\n    print(f\"{i}.)\", end=\" \")\n    fizzbuzz(i)\n\n    "
         ]
-        output = runtime_analyze_cells(cells)
+        output = analyze_cells(cells)
 
         for analysis in output["analysis"]:
             print(f"{analysis}\n")
@@ -125,7 +125,7 @@ class TestNoteBookAnalyzer:
             "import pandas as pd\n\ndf = pd.read_csv(\"/Users/andresquesada/desktop/CPS.csv\")\ndf[\"Graduation Rate %\"] = pd.to_numeric(df[\"Graduation Rate %\"], errors=\"coerce\")\nhs_grad = df[df[\"Elementary, Middle, or High School\"] == \"HS\"][\"Graduation Rate %\"].dropna()\nhs_grad.describe()",
             "import pandas as pd\n\ndf = pd.read_csv(\"/Users/andresquesada/desktop/CPS.csv\")\nschools_per_community = df.groupby(\"Community Area Name\")[\"Name of School\"].count().sort_values(ascending=False)\nschools_per_community.head(10)"
         ]
-        output = runtime_analyze_cells(cells)
+        output = analyze_cells(cells)
 
         actual_edges = {(e["source"], e["target"]) for e in output["edges"]}
         expected_edges = set()
@@ -143,7 +143,7 @@ class TestNoteBookAnalyzer:
             "unsafe_df = df[df['Safety Score'] < 40]\ngrouped_data = unsafe_df.groupby(\"Community Area Name\").size().reset_index(name=\"Unsafe Schools in the Area\")\ngrouped_data",
             "unsafeHS_df = unsafe_df[unsafe_df[\"Elementary, Middle, or High School\"] == \"HS\"]\nunsafeMS_df = unsafe_df[unsafe_df[\"Elementary, Middle, or High School\"] == \"MS\"]\nunsafeES_df = unsafe_df[unsafe_df[\"Elementary, Middle, or High School\"] == \"ES\"]\n\nhs_grouped = unsafeHS_df.groupby(\"Community Area Name\").size().reset_index(name=\"Unsafe HS Count\")\nms_grouped = unsafeMS_df.groupby(\"Community Area Name\").size().reset_index(name=\"Unsafe MS Count\")\nes_grouped = unsafeES_df.groupby(\"Community Area Name\").size().reset_index(name=\"Unsafe ES Count\")\n\nunsafe_summary = hs_grouped.merge(ms_grouped, on=\"Community Area Name\", how=\"outer\") \\\n                            .merge(es_grouped, on=\"Community Area Name\", how=\"outer\") \\\n                            .fillna(0)\n\nunsafe_summary[[\"Unsafe HS Count\", \"Unsafe MS Count\", \"Unsafe ES Count\"]] = \\\n    unsafe_summary[[\"Unsafe HS Count\", \"Unsafe MS Count\", \"Unsafe ES Count\"]].astype(int)\n\nunsafe_summary"
         ]
-        output = runtime_analyze_cells(cells)
+        output = analyze_cells(cells)
 
         actual_edges = {(e["source"], e["target"]) for e in output["edges"]}
         expected_edges = {(0,1),(1,2)}
@@ -158,7 +158,7 @@ class TestNoteBookAnalyzer:
             "import pandas as pd\ndf = pd.read_csv('/Users/andresquesada/desktop/words_dataset.txt', header=None, names=['My_Column'])\n\nrecords = []\nfor word in df['My_Column']:\n    sz = len(str(word))\n    if sz >= 22:\n        label = \"22+\"\n    else:\n        label = sz\n    records.append({\"Word Size\": label, \"count\": 1})\n\nt_df = pd.DataFrame(records).groupby(\"Word Size\", as_index=False).sum()\n\nt_df",
             "import numpy as np\nimport pandas as pd\n\ncps_df.columns = cps_df.columns.str.strip().str.replace(\" \", \"_\").str.lower()\n\ncps_df = cps_df.replace(\"NDA\", np.nan)\n\n\ndef convert_percent(val):\n    if pd.isna(val) or not isinstance(val, str):\n        return val\n    return float(val.replace(\"%\", \"\")) / 100.0\n\n\ncps_df[\"average_student_attendance\"] = cps_df[\"average_student_attendance\"].apply(\n    convert_percent\n)\ncps_df[\"average_teacher_attendance\"] = cps_df[\"average_teacher_attendance\"].apply(\n    convert_percent\n)\n\nnumeric_score_cols = [\n    \"safety_score\",\n    \"environment_score\",\n    \"instruction_score\",\n    \"parent_engagement_score\",\n    \"parent_environment_score\",\n]\nfor col in numeric_score_cols:\n    if col in cps_df.columns:\n        cps_df[col] = pd.to_numeric(cps_df[col], errors=\"coerce\")\n\ncps_df[\"high_student_attendance\"] = cps_df[\"average_student_attendance\"] >= 0.95\n\ncps_df.head()"
         ]
-        output = runtime_analyze_cells(cells)
+        output = analyze_cells(cells)
 
         actual_edges = {(e["source"], e["target"]) for e in output["edges"]}
         expected_edges = {(1,4)}
