@@ -77,10 +77,13 @@ function inferNodeType(code: string): NodeType {
 
 // ── Import: Notebook → Trill ─────────────────────────────────────────────────
 
-type CellEdge = { 
+
+//Only export for tests
+export type CellEdge = { 
   source: number; 
-  target: number 
-  // We might need to add more here
+  target: number;
+  // We added parentVar
+  parent_var?: string
 };
 
 function wireCode(
@@ -101,6 +104,37 @@ function wireCode(
   const lv = lastVars[cellIdx];
   if (hasOutgoing.has(cellIdx) && lv) {
     out = `${out}\nreturn ${lv}`;
+  }
+  return out;
+}
+//Only export for tests
+export function modified_wireCode(
+  code: string,
+  cellIdx: number,
+  cellEdges: CellEdge[],
+  hasOutgoing: Set<number>,
+  incomingSources: Map<number, number[]>,
+): string {
+  let out = code;
+  const sources = incomingSources.get(cellIdx) ?? [];
+
+  if (sources.length === 1) {
+    //This should probably be what I modify
+    const incomingEdge = cellEdges.find(e => e.source === sources[0] && e.target === cellIdx)
+    const parentVar = incomingEdge?.parent_var
+    const srcVar = parentVar ?? "arg"
+    out = `${srcVar} = arg\n${out}`
+    // const srcVar = lastVars[sources[0]] ?? "arg";
+    // out = `${srcVar} = arg\n${out}`;
+  } else if (sources.length > 1) {
+    out = `# multiple inputs available via arg\n${out}`;
+  }
+
+  const outgoingEdge = cellEdges.find(e => e.source === cellIdx)
+  const pv = outgoingEdge?.parent_var;
+
+  if (hasOutgoing.has(cellIdx) && pv) {
+    out = `${out}\nreturn ${pv}`;
   }
   return out;
 }
@@ -150,6 +184,9 @@ export async function notebookToTrill(
     //We might need to add more here
   };
   let cellEdges: CellEdge[] = [];
+  // Declaring parentVars
+  let parentVars: (string | null)[] = [];
+
   let lastVars: (string | null)[] = [];
   let altairSpecs: (Record<string, unknown> | null)[] = [];
 
@@ -166,6 +203,9 @@ export async function notebookToTrill(
         analysis: CellAnalysis[];
       };
       cellEdges = data.edges ?? [];
+      // Adding parentVars
+      parentVars = (data.edges ?? []).map((a) => a.parent_var ?? null);
+
       lastVars = (data.analysis ?? []).map((a) => a.last_var ?? null);
       altairSpecs = (data.analysis ?? []).map((a) => a.altair_spec ?? null);
     }
@@ -177,13 +217,21 @@ export async function notebookToTrill(
 
   // ── Step 3: Fallback — naive linear chain ────────────────────────────────
   // Linear fallback when backend returned no edges
-  if (cellEdges.length === 0 && codeCells.length > 1) {
-    for (let i = 0; i < codeCells.length - 1; i++) {
-      cellEdges.push({ source: i, target: i + 1 });
-    }
-    // No lastVars available — skip wiring in this path
-    lastVars = [];
-  }
+
+  // I will remove the linear fallback. It does not accuratley distinguish between an unreachable backend
+  // and completley independent cells. Not only that, but I believe that disconnected nodes are a better
+  // alternative to randomly guessing connections and potentially getting them wrong. Also, this is perhaps 
+  // the only time last_var is used. But with the current way to connect nodes using parent_variables, 
+  // using last_var is completley outdated
+
+  // if (cellEdges.length === 0 && codeCells.length > 1) {
+  //   for (let i = 0; i < codeCells.length - 1; i++) {
+  //     // Added a change here
+  //     cellEdges.push({ source: i, target: i + 1, parent_var: lastVars[i] ?? undefined });
+  //   }
+  //   // No lastVars available — skip wiring in this path
+  //   lastVars = [];
+  // }
 
   // ── Step 4: Build quick-lookup structures from the edge list ────────────
   // Build wiring sets
@@ -205,8 +253,8 @@ export async function notebookToTrill(
     const nodeType = spec ? NodeType.VIS_VEGA : inferNodeType(code);
     const content = spec
       ? JSON.stringify(spec, null, 2)
-      : lastVars.length > 0
-        ? wireCode(code, index, lastVars, hasOutgoing, incomingSources)
+      : cellEdges.length > 0  // Changed lastVars.length > 0 to cellEdges.length > 0
+        ? modified_wireCode(code, index, cellEdges, hasOutgoing, incomingSources)
         : code;
     return {
       id: nodeIds[index],

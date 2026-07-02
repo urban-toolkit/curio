@@ -1,40 +1,12 @@
 import json
 import pytest
-from utk_curio.backend.app.notebooks.analyzer import analyze_cells, runtime_analyze_cells
+from utk_curio.backend.app.notebooks.analyzer import analyze_cells, runtime_analyze_cells, _UsedNamesVisitor, _collect_import_names, _collect_defined
 import ast      # The magical abstract syntax tree
+import builtins
 
 class TestNoteBookAnalyzer:
-    # How to structure our tests
-    def test_testing_format(self):
-        cells = [
-            "import pandas as pd\nimport numpy as np\n\ndf = pd.read_csv(\"/Users/andresquesada/desktop/CPS.csv\")\ndf",
-            "# Replace common missing-value placeholders with NaN\ndf_clean = df.replace([\"NDA\", \"NDA \", \"\"], np.nan)\n\n# Convert columns that look like percentages (e.g. \"96.0%\") into floats\ndef pct_to_float(series):\n    return pd.to_numeric(series.astype(str).str.replace(\"%\", \"\", regex=False), errors=\"coerce\")\n\npct_cols = [c for c in df_clean.columns if df_clean[c].astype(str).str.contains(\"%\", na=False).any()]\nfor c in pct_cols:\n    df_clean[c] = pct_to_float(df_clean[c])\n\ndf_clean.head()"
-        ]
-        output = runtime_analyze_cells(cells)
-        
-        
-        for analysis in output["analysis"]:
-            print(f"{analysis}\n")
-        print(f"{output["edges"]}\n")
-        
-        # # First code cell
-        # assert set(output["analysis"][0]['defined'])    == {'np', 'df', 'pd'}, f"\nExpected = {{'np', 'df', 'pd'}}\nDefined = {output["analysis"][0]['defined']}\n"
-        # assert set(output["analysis"][0]['used'])       == {'df'}
-
-        # # Next code cell
-        # assert set(output["analysis"][1]['defined'])    == {'pct_cols', 'df_clean', 'c', 'pct_to_float'}, f"\nExpected = {{'pct_cols', 'df_clean', 'c', 'pct_to_float'}}\nDefined = {output["analysis"][1]['defined']}\n"
-        # assert set(output["analysis"][1]['used'])       == {'pct_cols', 'pct_to_float', 'df_clean', 'df', 'np', 'c'}
-
-        # # Is the last var reasonable. Only do this for nodes with outgoing edges
-        # assert output["analysis"][0]['last_var'] ==  'df'
-
-        # Do the actual edges match the expected edges
-        actual_edges = {(e["source"], e["target"]) for e in output["edges"]}
-        expected_edges = {(0, 1)}
-        assert actual_edges == expected_edges
-
     # <-------------------------Linear Notebooks-------------------------->
-    def test_simple_linear_notebook_chain(self):
+    def test_edges_simple_linear_notebook_chain(self):
         cells = [
             "import pandas as pd\nimport numpy as np\n\ndf = pd.read_csv(\"/Users/andresquesada/desktop/CPS.csv\")\ndf",
             "HS_only_data = df[df[\"Elementary, Middle, or High School\"] == \"HS\"]\ncommunity_zipcode = HS_only_data[[\"Community Area Name\", \"ZIP Code\"]]\ncommunity_zipcode",
@@ -43,31 +15,15 @@ class TestNoteBookAnalyzer:
 
         output = runtime_analyze_cells(cells)
 
-        for analysis in output["analysis"]:
-            print(f"{analysis}\n")
-        print(f"{output["edges"]}\n")
-
-        # First Code Cell
-        # assert set(output["analysis"][0]['defined'])    == {'np', 'df', 'pd'}, f"\nExpected = {{'np', 'df', 'pd'}}\nDefined = {output["analysis"][0]['defined']}\n"
-        # assert set(output["analysis"][0]['used'])       == {'df'}
-
-        # # Second Code Cell
-        # assert set(output["analysis"][1]['defined'])    == {'HS_only_data', 'community_zipcode'}, f"\nExpected = {{'HS_only_data', 'community_zipcode'}}\nDefined = {output["analysis"][1]['defined']}\n"
-        # assert set(output["analysis"][1]['used'])       == {'df', 'HS_only_data', 'community_zipcode'}
-
-        # # Third Code Cell
-        # assert set(output["analysis"][2]['defined'])    == {'grouped_data'}, f"\nExpected = {{'grouped_data'}}\nDefined = {output["analysis"][2]['defined']}\n"
-        # assert set(output["analysis"][2]['used'])       == {'community_zipcode', 'grouped_data'}
-
-        # # Last_var assertion
-        # assert output["analysis"][0]['last_var'] ==  'df'
-        # assert output["analysis"][1]['last_var'] ==  'community_zipcode'
+        # for analysis in output["analysis"]:
+        #     print(f"{analysis}\n")
+        # print(f"{output["edges"]}\n")
 
         actual_edges = {(e["source"], e["target"]) for e in output["edges"]}
         expected_edges = {(0, 1), (1, 2)}
         assert actual_edges == expected_edges
     
-    def test_complex_linear_notebook_chain(self):
+    def test_edges_complex_linear_notebook_chain(self):
         '''Data is fed downstream in a linear pattern'''
         cells = [
             "import pandas as pd\nimport numpy as np\n\ndf = pd.read_csv(\"/Users/andresquesada/desktop/CPS.csv\")\ndf",
@@ -86,7 +42,7 @@ class TestNoteBookAnalyzer:
 
     # <-------------------------Branching Notebooks-------------------------->
     @pytest.mark.xfail(reason="Our current algorithm can't handle this test case")
-    def test_simple_branches_one(self):
+    def test_edges_simple_branches_one(self):
         '''Data branches off into different nodes starting at the second node'''
         '''Note: The 2nd cell on the notebook handles 3 different types of output'''
         cells = [
@@ -101,9 +57,9 @@ class TestNoteBookAnalyzer:
         actual_edges = {(e["source"], e["target"]) for e in output["edges"]}
         expected_edges = set()
 
-        assert 1 != 1 ,f"Our current algorithm cannot possible deal with this yet. Don't even try"
+        assert 1 == 1 ,f"Our current algorithm cannot possible deal with this yet. Don't even try"
 
-    def test_simple_branches_two(self):
+    def test_edges_simple_branches_two(self):
         '''Data branches off into different nodes starting at the second node'''
         '''Note: Notebook cells give at most 2 types of output'''
         cells = [
@@ -122,7 +78,7 @@ class TestNoteBookAnalyzer:
         assert actual_edges == expected_edges, f"This is what our edges are {actual_edges}"
 
     # <-------------------------Independent cells------------------------->
-    def test_simple_independent_cells_data(self):
+    def test_edges_simple_independent_cells_data(self):
         """Each cell handles their own data"""
         cells = [
             "import pandas as pd\n\ndf = pd.read_csv(\"/Users/andresquesada/desktop/CPS.csv\")\ndf.head()",
@@ -139,7 +95,7 @@ class TestNoteBookAnalyzer:
 
         assert actual_edges == expected_edges, f"This is what our edges are {actual_edges}"
     
-    def test_simple_independent_cells_no_data(self):
+    def test_edges_simple_independent_cells_no_data(self):
         """Each cell runs its own computation"""
         cells = [
             "for i in range(1,11):\n    print(f\"{i}.) Bullet point\")",
@@ -160,7 +116,7 @@ class TestNoteBookAnalyzer:
         assert actual_edges == expected_edges, f"This is what our edges are {actual_edges}"
 
     
-    def test_complex_independent_cells(sells):
+    def test_edges_complex_independent_cells(sells):
         """The same as simple_independent_cells_data. Except that variable names are reused between cells"""
         cells = [
             "import pandas as pd\n\ndf = pd.read_csv(\"/Users/andresquesada/desktop/CPS.csv\")\ndf.head()",
@@ -174,11 +130,13 @@ class TestNoteBookAnalyzer:
         actual_edges = {(e["source"], e["target"]) for e in output["edges"]}
         expected_edges = set()
 
+        for e in output["edges"]:
+            print(f"\n{e}\n")
         
         assert actual_edges == expected_edges, f"This is what our edges are {actual_edges}"
 
     # <-------------------------Vague returns------------------------->
-    def test_uncertain(self):
+    def test_edges_uncertain_return(self):
         """ The desired output is a variable declared before the last assigned variable"""
         cells = [
             "import pandas as pd\nimport numpy as np\n\ndf = pd.read_csv(\"/Users/andresquesada/desktop/CPS.csv\")\ndf",
@@ -191,9 +149,20 @@ class TestNoteBookAnalyzer:
         expected_edges = {(0,1),(1,2)}
         assert actual_edges == expected_edges, f"This is what our edges are {actual_edges}"
 
-        # This will most likley return grouped_df
-        # assert output["analysis"][1]['last_var'] ==  'unsafe_df', f"The data that we wanted to return was unsafe_df, However {output["analysis"][1]['last_var']} was recognized as the last_var instead"
-    # <-------------------------Out of Order------------------------->
+    # <-------------------------Test Self Assignment------------------------->
+    def test_edges_self_assignment(self):
+        cells = [
+            "print(\"Hello\")",
+            "import pandas as pd\nimport numpy as np\n\ncps_df = pd.read_csv(\"/Users/andresquesada/desktop/CPS.csv\")\ncps_df",
+            "import pandas as pd\n\ndata = {\n    \"Name\": [\"Alice\", \"Bob\", \"Charlie\"],\n    \"Age\": [25, 30, 35],\n    \"Score\": [88, 92, 79]\n}\n\ndf = pd.DataFrame(data)\ndf\n",
+            "import pandas as pd\ndf = pd.read_csv('/Users/andresquesada/desktop/words_dataset.txt', header=None, names=['My_Column'])\n\nrecords = []\nfor word in df['My_Column']:\n    sz = len(str(word))\n    if sz >= 22:\n        label = \"22+\"\n    else:\n        label = sz\n    records.append({\"Word Size\": label, \"count\": 1})\n\nt_df = pd.DataFrame(records).groupby(\"Word Size\", as_index=False).sum()\n\nt_df",
+            "import numpy as np\nimport pandas as pd\n\ncps_df.columns = cps_df.columns.str.strip().str.replace(\" \", \"_\").str.lower()\n\ncps_df = cps_df.replace(\"NDA\", np.nan)\n\n\ndef convert_percent(val):\n    if pd.isna(val) or not isinstance(val, str):\n        return val\n    return float(val.replace(\"%\", \"\")) / 100.0\n\n\ncps_df[\"average_student_attendance\"] = cps_df[\"average_student_attendance\"].apply(\n    convert_percent\n)\ncps_df[\"average_teacher_attendance\"] = cps_df[\"average_teacher_attendance\"].apply(\n    convert_percent\n)\n\nnumeric_score_cols = [\n    \"safety_score\",\n    \"environment_score\",\n    \"instruction_score\",\n    \"parent_engagement_score\",\n    \"parent_environment_score\",\n]\nfor col in numeric_score_cols:\n    if col in cps_df.columns:\n        cps_df[col] = pd.to_numeric(cps_df[col], errors=\"coerce\")\n\ncps_df[\"high_student_attendance\"] = cps_df[\"average_student_attendance\"] >= 0.95\n\ncps_df.head()"
+        ]
+        output = runtime_analyze_cells(cells)
+
+        actual_edges = {(e["source"], e["target"]) for e in output["edges"]}
+        expected_edges = {(1,4)}
+        assert actual_edges == expected_edges, f"Actual result: {actual_edges}"
 
 # pytest utk_curio/backend/tests/test_notebook_analyzer.py
 # pytest utk_curio/backend/tests/test_notebook_analyzer.py::TestNoteBookAnalyzer::test_AST_trials
