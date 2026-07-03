@@ -1,8 +1,12 @@
 	
 import { NodeBehaviorData, NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react';
 
 type softArtifactRole = 'inform' | 'explain' | 'transform' | 'expand';
+
+const EXPLAIN_QUERY = 'Explain the main content and key points of this document.';
+const EXPLAIN_TOP_K = 5;
+
 
 interface SoftArtifactState{
   artifactId: string | null,
@@ -102,6 +106,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
     data.outputCallback?.(data.nodeId, json);
   };
 
+  //persist + emitOutput
   const applyArtifactMeta = (out: Record<string, unknown>, role: softArtifactRole) => {
     persist({
       artifactId: typeof out.artifactId === 'string' ? out.artifactId : null,
@@ -195,6 +200,39 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
     }
   }
 
+  // //TODO
+  // //needs modifying, this just simply returns what retrieve API return with const EXPLAIN_QUERY
+  // //make runExplain that use runRetrieve -> 
+  // const runRetrieve = async(artifactId: string, role: softArtifactRole) => {
+  //   if (!artifactId || !backendUp) return;
+
+  //   const userEnd = {
+  //     "artifactId": artifactId,
+  //     "query": EXPLAIN_QUERY,
+  //     "top_k": EXPLAIN_TOP_K
+  //   }
+
+  //   try {
+  //     const res = await fetch(`${API_BASE}/retrieve`, {
+  //       method: "POST",
+  //       headers: {},
+  //       body: JSON.stringify(userEnd)
+  //     })
+
+  //     if (!res.ok) {
+  //       const err = await res.json().catch(() => ({}));
+  //       throw new Error(err.error || `HTTP  ${res.status}`);
+  //     }
+
+  //     const result = await res.json();
+  //     const spans = Array.isArray(result) ? result : [];
+      
+  //     return spans
+  //   } catch (e) {
+  //     //TODO
+  //   }
+  // }
+
   const onFile = (file : File | null) => {
     setFile(file);
     if (!file) {
@@ -285,7 +323,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
           <pre style={{ marginTop: 10, fontSize: 10, background: '#f8fafc', padding: 8 }}>
             {JSON.stringify(state, null, 2)}
           </pre>
-          ) : null}
+        ) : null}
       </div>
     </>
 
