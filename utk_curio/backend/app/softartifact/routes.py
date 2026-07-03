@@ -3,7 +3,7 @@ from flask import jsonify, request
 
 from .services.ingest import ingest_file
 from .services.get_artifact import get_softartifact_metadata
-from .services.retrieve import _load_chunk
+from .services.retrieve import search_chunks
 
 from . import bp
 
@@ -70,7 +70,7 @@ def retrieve():
     if artifactId is None:
         return jsonify({"error": "missing artifactId"}), 400
     
-    return jsonify(_load_chunk(artifactId));
+    return jsonify(search_chunks(query, artifactId, top_k));
     
 
 
