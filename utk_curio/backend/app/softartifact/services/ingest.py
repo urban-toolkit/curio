@@ -21,6 +21,10 @@ def split_text(text: str, size: int = CHUNK_SIZE) -> list[str]:
         return []
     return [text[i : i + size] for i in range(0, len(text), size)]
 
+#Real gigachad Chunking
+#To be implemented 
+def chunk_doc(text: str, filename: str) -> list[str]:
+    return[]
 
 #plain text and markdown only (v1 minimal ingest API)
 def decode_upload(raw: bytes) -> str:

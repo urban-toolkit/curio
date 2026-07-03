@@ -35,9 +35,10 @@ def _tokenize(text):
 
 #scoring each chunk depends on the query
 #using TF_IDF and cosine similarity to score query to text chunk
-def search_chunks(query, artifactId, top_k = 5):
+def search_chunks(query, artifactId, top_k = 1):
+    if top_k is None:
+        top_k = 1
     chunks = _load_chunk(artifactId)
-    tokenized_query = _tokenize(query)
 
     texts = [chunk.get("text","") for chunk in chunks]
 

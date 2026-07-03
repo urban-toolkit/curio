@@ -69,6 +69,8 @@ def retrieve():
     top_k = data.get("top_k") 
     if artifactId is None:
         return jsonify({"error": "missing artifactId"}), 400
+    if query is None:
+        return jsonify({"error": "missing query"}), 400
     
     return jsonify(search_chunks(query, artifactId, top_k));
     
