@@ -61,6 +61,7 @@ def getArtifact(artifactId: str):
 
 # ── Retrieve ──────────────────────────────────────────────────────────
 @bp.post("retrieve")
+@require_auth
 def retrieve():
     data = request.get_json(silent = True);
     if not isinstance(data, dict):
@@ -75,6 +76,7 @@ def retrieve():
         return jsonify({"error": "missing query"}), 400
     
     return jsonify(search_chunks(query, artifactId, top_k));
+
 
 # ── Explain ──────────────────────────────────────────────────────────
 @bp.post("explain")

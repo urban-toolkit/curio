@@ -2,10 +2,15 @@
 import { NodeBehaviorData, NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
 import React, { useCallback, useEffect, useState } from 'react';
 
+function getToken(): string | undefined {
+  const match = document.cookie.match(/(?:^|;\s*)session_token=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : undefined;
+}
+
+
 type softArtifactRole = 'inform' | 'explain' | 'transform' | 'expand';
 
 const API_BASE = `${(typeof window !== 'undefined' && (window as any).curio?.backendUrl) || ''}/api/softartifact`;
-const BACKEND = (window as any).curio?.backendUrl ?? '';
 
 interface SoftArtifactState{
   artifactId: string | null,
@@ -54,42 +59,48 @@ function artifactStatusLine(state: SoftArtifactState, verifying: boolean): strin
   }
 }
 
-function explainQuery(goal: string) {
-  const base = "Summarize the document: main themes, claims, named places, and policy priorities";
-  return goal?.trim() ? `${base}. Focus on: ${goal.trim()}` : base;
+async function explainArtifact(artifactId: string, sourceFile: string | null, top_k = 8) {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  }
+  const token = getToken();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
+  const res = await fetch(`${API_BASE}/explain`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      artifactId: artifactId,
+      top_k: top_k,
+      sourceFile: sourceFile
+      //No query, use Default query
+    })
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || err.hint || `HTTP ${res.status}`);
+  }
+
+  return res.json();
 
 }
 
-// async function llmExplain (passages: string, sourceFile: string, token?: string) {
-//   const text = `Source file: ${sourceFile} \n\nPassages:\n${passages}`;
-  
-//   const res = await fetch(`${BACKEND}/llm/chat`, {
-//     method: "POST",
-//     headers: {
-//       "Content-Type": "application/json", 
-//       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-//     },
-//     credentials: "include",
-//     body: JSON.stringify({
-//       preamble: "default_preamble",
-//       prompt: "softartifact_explain_prompt",
-//       text
-//     })
-//   });
-//   if (!res.ok) {
-//     const err = await res.json().catch(() => ({}));
-//     throw new Error(err.error || `HTTP ${res.status}`);
-//   }
-
-//   const data = await res.json();
-//   return data.result as string;
-// }
-
-//todo: create a behavior hook for soft artifact behavior
-
 export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
-  //health API
+  //data doesn't have softArtifact field, therefore extending the package specific field for data (nodeData)
+  const nodeData = data as softArtifactNodeData;  
+
   const [backendUp, setBackendUp] = useState(false);
+  const [state, setState] = useState<SoftArtifactState>(() => readSaved(nodeData));
+  const [file, setFile] = useState<File | null>(null);
+  const [verifying, setVerifying] = useState(false); //short-lived UI while the GET api get run 
+  const [explaining, setExplaining] = useState<boolean>(false);
+  const [explanation, setExplanation] = useState<string>("");
+
+
+  //health API call
   useEffect(() => {
     const check = () => {
       fetch(`${API_BASE}/health`)
@@ -101,11 +112,6 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
     return () => clearInterval(iv);
   }, [])
 
-  const [file, setFile] = useState<File | null>(null);
-
-  //data doesn't have softArtifact field, therefore extending the package specific field for data (nodeData)
-  const nodeData = data as softArtifactNodeData;  
-  const [state, setState] = useState<SoftArtifactState>(() => readSaved(nodeData));
   //for the UI to survive after every refresh  
   const persist = (patch: Partial<SoftArtifactState>) => {
     setState((prev) => {
@@ -147,8 +153,33 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
     emitOutput({ ...out, role });  // downstream Simple View gets JSON again
   };
 
-  const [verifying, setVerifying] = useState(false); //short-lived UI while the GET api get run 
-  //on mount effect, run once when the node is reloaded 
+  const runExplain = useCallback(async (artifactId: string, role: softArtifactRole) => {
+    if (role != 'explain' || !artifactId) return;
+
+    setExplaining(true);
+    try {
+      const out = await explainArtifact(artifactId, state.sourceFile);
+
+      setExplanation(out.explanation);
+
+      emitOutput({
+        artifactId,
+        sourceFile: state.sourceFile,
+        mimeType: state.mimeType,
+        role: 'explain',
+        spans: out.spans,
+        explanation: out.explanation,
+        query: out.query,
+      })
+    } catch (e) {
+      persist({
+        status: 'error',
+        errorMessage: e instanceof Error ? e.message : String(e),
+      });
+    }
+  },[])
+
+  //on mount effect, run once when the node is reloaded
   useEffect(() => {
     const artifactId = nodeData.softArtifact?.artifactId
     if (!artifactId) {
@@ -181,13 +212,6 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
 
         const out = await res.json();
         if (cancelled) return;
-
-        const role = nodeData.softArtifact?.role ?? state.role;
-        // applyArtifactMeta(out, role);
-        // if (role === 'explain') {
-        //   await runExplain(artifactId, role);
-        // }
-
       } catch {
         console.log("ERROR HERE I LOVE FREEDOM");
       } finally {
@@ -198,54 +222,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
     
     return () => { cancelled = true }
   }, [])
-
-  // const [explanation, setExplanation] = useState<string | null>(null);
-  // const [explaining, setExplaining] = useState<boolean>(false);
-
-  // const runExplain = useCallback(async (artifactId: string, role: softArtifactRole) => {
-  //   if (role != "explain") return
-
-  //   setExplaining(true);
-  //   try {
-  //     const retreiveRes = await fetch(`${API_BASE}/retrieve`, {
-  //       method: "POST",
-  //       headers: { "Content-Type": "application/json" },
-  //       body: JSON.stringify({
-  //         artifactId: artifactId,
-  //         query: explainQuery((data as any).goal ?? ""),
-  //         top_k: 5
-  //       })
-  //     })
-  //     if (!retreiveRes.ok) throw new Error(`HTTP ${retreiveRes.status}` || "retrieve failed")
-  //     const spans = await retreiveRes.json();
-  //     const passages = spans
-  //       .map((s: { text?: string }) => s.text ?? '')
-  //       .filter(Boolean)
-  //       .join('\n\n')
-      
-  //     const sourceFile = state.sourceFile ?? 'document';
-  //     const token = (window as any).curio?.getToken?.();
-  //     const summary = await llmExplain(passages, sourceFile, token);
-
-  //     setExplanation(summary);
-
-  //     emitOutput({
-  //       artifactId,
-  //       sourceFile: state.sourceFile,
-  //       mimeType: state.mimeType,
-  //       role: 'explain',
-  //       spans,
-  //       explanation: summary,
-  //     })
-  //   } catch (e) {
-  //     persist({
-  //       status: 'error',
-  //       errorMessage: e instanceof Error ? e.message : String(e),
-  //     })
-  //   } finally {
-  //     setExplaining(false);
-  //   }
-  // },[state])
+  
 
   //onChange function for ingest button 
   const onIngest = async () => {
@@ -274,9 +251,10 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
       const role = (out.role ?? state.role) as softArtifactRole;
       applyArtifactMeta(out, role);
 
-      // if (role === "explain" && out.artifactId) {
-      //   await runExplain(out.artifactId, role);
-      // }
+      if (role === "explain" && out.artifactId) {
+        await runExplain(out.artifactId, role);
+      }
+
     } catch (e) {
       persist({
         status: 'error',
@@ -372,15 +350,14 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
         </button>
       </div>
       <div>
-        {/* {explaining ? (
+        {explaining ? (
           <p style={{ fontSize: 11, marginTop: 8 }}>Explaining…</p>
         ) : null}
         {explanation ? (
           <pre style={{ marginTop: 8, fontSize: 10, background: '#f8fafc', padding: 8, whiteSpace: 'pre-wrap' }}>
             {explanation}
           </pre>
-        ) : null */}
-
+        ) : null}
       </div> 
     </>
 

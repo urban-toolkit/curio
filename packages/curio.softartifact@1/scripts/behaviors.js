@@ -24,7 +24,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! react */ "react");
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(react__WEBPACK_IMPORTED_MODULE_0__);
-var _curio, _curio$backendUrl, _curio2;
+var _curio;
 function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i["return"]) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
 function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
 function _slicedToArray(r, e) { return _arrayWithHoles(r) || _iterableToArrayLimit(r, e) || _unsupportedIterableToArray(r, e) || _nonIterableRest(); }
@@ -42,8 +42,11 @@ function _toPropertyKey(t) { var i = _toPrimitive(t, "string"); return "symbol" 
 function _toPrimitive(t, r) { if ("object" != _typeof(t) || !t) return t; var e = t[Symbol.toPrimitive]; if (void 0 !== e) { var i = e.call(t, r || "default"); if ("object" != _typeof(i)) return i; throw new TypeError("@@toPrimitive must return a primitive value."); } return ("string" === r ? String : Number)(t); }
 function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) { return typeof o; } : function (o) { return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o; }, _typeof(o); }
 
+function getToken() {
+  var match = document.cookie.match(/(?:^|;\s*)session_token=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : undefined;
+}
 var API_BASE = "".concat(typeof window !== 'undefined' && ((_curio = window.curio) === null || _curio === void 0 ? void 0 : _curio.backendUrl) || '', "/api/softartifact");
-var BACKEND = (_curio$backendUrl = (_curio2 = window.curio) === null || _curio2 === void 0 ? void 0 : _curio2.backendUrl) !== null && _curio$backendUrl !== void 0 ? _curio$backendUrl : '';
 
 //package specific field saved on node
 
@@ -77,33 +80,37 @@ function artifactStatusLine(state, verifying) {
       return "idk man";
   }
 }
-function explainQuery(goal) {
-  var base = "Summarize the document: main themes, claims, named places, and policy priorities";
-  return goal !== null && goal !== void 0 && goal.trim() ? "".concat(base, ". Focus on: ").concat(goal.trim()) : base;
+function explainArtifact(_x, _x2) {
+  return _explainArtifact.apply(this, arguments);
 }
-function llmExplain(_x, _x2, _x3) {
-  return _llmExplain.apply(this, arguments);
-} //todo: create a behavior hook for soft artifact behavior
-function _llmExplain() {
-  _llmExplain = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4(passages, sourceFile, token) {
-    var text, res, err, data;
+function _explainArtifact() {
+  _explainArtifact = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4(artifactId, sourceFile) {
+    var top_k,
+      headers,
+      token,
+      res,
+      err,
+      _args4 = arguments;
     return _regenerator().w(function (_context4) {
       while (1) switch (_context4.n) {
         case 0:
-          text = "Source file: ".concat(sourceFile, " \n\nPassages:\n").concat(passages);
+          top_k = _args4.length > 2 && _args4[2] !== undefined ? _args4[2] : 8;
+          headers = {
+            'Content-Type': 'application/json'
+          };
+          token = getToken();
+          if (token) {
+            headers.Authorization = "Bearer ".concat(token);
+          }
           _context4.n = 1;
-          return fetch("".concat(BACKEND, "/llm/chat"), {
+          return fetch("".concat(API_BASE, "/explain"), {
             method: "POST",
-            headers: _objectSpread({
-              "Content-Type": "application/json"
-            }, token ? {
-              Authorization: "Bearer ".concat(token)
-            } : {}),
-            credentials: "include",
+            headers: headers,
             body: JSON.stringify({
-              preamble: "default_preamble",
-              prompt: "softartifact_explain_prompt",
-              text: text
+              artifactId: artifactId,
+              top_k: top_k,
+              sourceFile: sourceFile
+              //No query, use Default query
             })
           });
         case 1:
@@ -118,24 +125,45 @@ function _llmExplain() {
           });
         case 2:
           err = _context4.v;
-          throw new Error(err.error || "HTTP ".concat(res.status));
+          throw new Error(err.error || err.hint || "HTTP ".concat(res.status));
         case 3:
-          _context4.n = 4;
-          return res.json();
-        case 4:
-          data = _context4.v;
-          return _context4.a(2, data.result);
+          return _context4.a(2, res.json());
       }
     }, _callee4);
   }));
-  return _llmExplain.apply(this, arguments);
+  return _explainArtifact.apply(this, arguments);
 }
 var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) {
-  //health API
+  //data doesn't have softArtifact field, therefore extending the package specific field for data (nodeData)
+  var nodeData = data;
   var _useState = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false),
     _useState2 = _slicedToArray(_useState, 2),
     backendUp = _useState2[0],
     setBackendUp = _useState2[1];
+  var _useState3 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(function () {
+      return readSaved(nodeData);
+    }),
+    _useState4 = _slicedToArray(_useState3, 2),
+    state = _useState4[0],
+    setState = _useState4[1];
+  var _useState5 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null),
+    _useState6 = _slicedToArray(_useState5, 2),
+    file = _useState6[0],
+    setFile = _useState6[1];
+  var _useState7 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false),
+    _useState8 = _slicedToArray(_useState7, 2),
+    verifying = _useState8[0],
+    setVerifying = _useState8[1]; //short-lived UI while the GET api get run 
+  var _useState9 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false),
+    _useState0 = _slicedToArray(_useState9, 2),
+    explaining = _useState0[0],
+    setExplaining = _useState0[1];
+  var _useState1 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(""),
+    _useState10 = _slicedToArray(_useState1, 2),
+    explanation = _useState10[0],
+    setExplanation = _useState10[1];
+
+  //health API call
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(function () {
     var check = function check() {
       fetch("".concat(API_BASE, "/health")).then(function (response) {
@@ -145,24 +173,12 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
       });
     };
     check();
-    var iv = setInterval(check, 10000); //check health every 10 seconds 
+    var iv = setInterval(check, 60000); //check health every 10 seconds 
     return function () {
       return clearInterval(iv);
     };
   }, []);
-  var _useState3 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null),
-    _useState4 = _slicedToArray(_useState3, 2),
-    file = _useState4[0],
-    setFile = _useState4[1];
 
-  //data doesn't have softArtifact field, therefore extending the package specific field for data (nodeData)
-  var nodeData = data;
-  var _useState5 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(function () {
-      return readSaved(nodeData);
-    }),
-    _useState6 = _slicedToArray(_useState5, 2),
-    state = _useState6[0],
-    setState = _useState6[1];
   //for the UI to survive after every refresh  
   var persist = function persist(patch) {
     setState(function (prev) {
@@ -204,11 +220,54 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
       role: role
     })); // downstream Simple View gets JSON again
   };
-  var _useState7 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false),
-    _useState8 = _slicedToArray(_useState7, 2),
-    verifying = _useState8[0],
-    setVerifying = _useState8[1]; //short-lived UI while the GET api get run 
-  //on mount effect, run once when the node is reloaded 
+  var runExplain = (0,react__WEBPACK_IMPORTED_MODULE_0__.useCallback)(/*#__PURE__*/function () {
+    var _ref = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee(artifactId, role) {
+      var out, _t;
+      return _regenerator().w(function (_context) {
+        while (1) switch (_context.p = _context.n) {
+          case 0:
+            if (!(role != 'explain' || !artifactId)) {
+              _context.n = 1;
+              break;
+            }
+            return _context.a(2);
+          case 1:
+            setExplaining(true);
+            _context.p = 2;
+            _context.n = 3;
+            return explainArtifact(artifactId, state.sourceFile);
+          case 3:
+            out = _context.v;
+            setExplanation(out.explanation);
+            emitOutput({
+              artifactId: artifactId,
+              sourceFile: state.sourceFile,
+              mimeType: state.mimeType,
+              role: 'explain',
+              spans: out.spans,
+              explanation: out.explanation,
+              query: out.query
+            });
+            _context.n = 5;
+            break;
+          case 4:
+            _context.p = 4;
+            _t = _context.v;
+            persist({
+              status: 'error',
+              errorMessage: _t instanceof Error ? _t.message : String(_t)
+            });
+          case 5:
+            return _context.a(2);
+        }
+      }, _callee, null, [[2, 4]]);
+    }));
+    return function (_x3, _x4) {
+      return _ref.apply(this, arguments);
+    };
+  }(), []);
+
+  //on mount effect, run once when the node is reloaded
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(function () {
     var _nodeData$softArtifac;
     var artifactId = (_nodeData$softArtifac = nodeData.softArtifact) === null || _nodeData$softArtifac === void 0 ? void 0 : _nodeData$softArtifac.artifactId;
@@ -219,24 +278,24 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
     console.log('[soft-artifact] mount: verifying', artifactId);
     var cancelled = false;
     setVerifying(true);
-    _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee() {
-      var _nodeData$softArtifac2, _nodeData$softArtifac3, res, out, role, _t;
-      return _regenerator().w(function (_context) {
-        while (1) switch (_context.p = _context.n) {
+    _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+      var res, out, _t2;
+      return _regenerator().w(function (_context2) {
+        while (1) switch (_context2.p = _context2.n) {
           case 0:
-            _context.p = 0;
-            _context.n = 1;
+            _context2.p = 0;
+            _context2.n = 1;
             return fetch("".concat(API_BASE, "/artifacts/").concat(encodeURI(artifactId)));
           case 1:
-            res = _context.v;
+            res = _context2.v;
             if (!cancelled) {
-              _context.n = 2;
+              _context2.n = 2;
               break;
             }
-            return _context.a(2);
+            return _context2.a(2);
           case 2:
             if (!(res.status === 400)) {
-              _context.n = 3;
+              _context2.n = 3;
               break;
             }
             persist({
@@ -249,139 +308,43 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
               errorMessage: 'artifact missing — re-upload'
             });
             setFile(null);
-            return _context.a(2);
+            return _context2.a(2);
           case 3:
             if (res.ok) {
-              _context.n = 4;
-              break;
-            }
-            return _context.a(2);
-          case 4:
-            _context.n = 5;
-            return res.json();
-          case 5:
-            out = _context.v;
-            if (!cancelled) {
-              _context.n = 6;
-              break;
-            }
-            return _context.a(2);
-          case 6:
-            role = (_nodeData$softArtifac2 = (_nodeData$softArtifac3 = nodeData.softArtifact) === null || _nodeData$softArtifac3 === void 0 ? void 0 : _nodeData$softArtifac3.role) !== null && _nodeData$softArtifac2 !== void 0 ? _nodeData$softArtifac2 : state.role;
-            applyArtifactMeta(out, role);
-            if (!(role === 'explain')) {
-              _context.n = 7;
-              break;
-            }
-            _context.n = 7;
-            return runExplain(artifactId, role);
-          case 7:
-            _context.n = 9;
-            break;
-          case 8:
-            _context.p = 8;
-            _t = _context.v;
-            console.log("ERROR HERE I LOVE FREEDOM");
-          case 9:
-            _context.p = 9;
-            if (!cancelled) setVerifying(false);
-            return _context.f(9);
-          case 10:
-            return _context.a(2);
-        }
-      }, _callee, null, [[0, 8, 9, 10]]);
-    }))();
-    return function () {
-      cancelled = true;
-    };
-  }, []);
-  var _useState9 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null),
-    _useState0 = _slicedToArray(_useState9, 2),
-    explanation = _useState0[0],
-    setExplanation = _useState0[1];
-  var _useState1 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false),
-    _useState10 = _slicedToArray(_useState1, 2),
-    explaining = _useState10[0],
-    setExplaining = _useState10[1];
-  var runExplain = (0,react__WEBPACK_IMPORTED_MODULE_0__.useCallback)(/*#__PURE__*/function () {
-    var _ref2 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2(artifactId, role) {
-      var _goal, _state$sourceFile, _curio3, _curio3$getToken, retreiveRes, spans, passages, sourceFile, token, summary, _t2;
-      return _regenerator().w(function (_context2) {
-        while (1) switch (_context2.p = _context2.n) {
-          case 0:
-            if (!(role != "explain")) {
-              _context2.n = 1;
-              break;
-            }
-            return _context2.a(2);
-          case 1:
-            setExplaining(true);
-            _context2.p = 2;
-            _context2.n = 3;
-            return fetch("".concat(API_BASE, "/retrieve"), {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json"
-              },
-              body: JSON.stringify({
-                artifactId: artifactId,
-                query: explainQuery((_goal = data.goal) !== null && _goal !== void 0 ? _goal : ""),
-                top_k: 5
-              })
-            });
-          case 3:
-            retreiveRes = _context2.v;
-            if (retreiveRes.ok) {
               _context2.n = 4;
               break;
             }
-            throw new Error("HTTP ".concat(retreiveRes.status) || 0);
+            return _context2.a(2);
           case 4:
             _context2.n = 5;
-            return retreiveRes.json();
+            return res.json();
           case 5:
-            spans = _context2.v;
-            passages = spans.map(function (s) {
-              var _s$text;
-              return (_s$text = s.text) !== null && _s$text !== void 0 ? _s$text : '';
-            }).filter(Boolean).join('\n\n');
-            sourceFile = (_state$sourceFile = state.sourceFile) !== null && _state$sourceFile !== void 0 ? _state$sourceFile : 'document';
-            token = (_curio3 = window.curio) === null || _curio3 === void 0 || (_curio3$getToken = _curio3.getToken) === null || _curio3$getToken === void 0 ? void 0 : _curio3$getToken.call(_curio3);
-            _context2.n = 6;
-            return llmExplain(passages, sourceFile, token);
+            out = _context2.v;
+            if (!cancelled) {
+              _context2.n = 6;
+              break;
+            }
+            return _context2.a(2);
           case 6:
-            summary = _context2.v;
-            setExplanation(summary);
-            emitOutput({
-              artifactId: artifactId,
-              sourceFile: state.sourceFile,
-              mimeType: state.mimeType,
-              role: 'explain',
-              spans: spans,
-              explanation: summary
-            });
             _context2.n = 8;
             break;
           case 7:
             _context2.p = 7;
             _t2 = _context2.v;
-            persist({
-              status: 'error',
-              errorMessage: _t2 instanceof Error ? _t2.message : String(_t2)
-            });
+            console.log("ERROR HERE I LOVE FREEDOM");
           case 8:
             _context2.p = 8;
-            setExplaining(false);
+            if (!cancelled) setVerifying(false);
             return _context2.f(8);
           case 9:
             return _context2.a(2);
         }
-      }, _callee2, null, [[2, 7, 8, 9]]);
-    }));
-    return function (_x4, _x5) {
-      return _ref2.apply(this, arguments);
+      }, _callee2, null, [[0, 7, 8, 9]]);
+    }))();
+    return function () {
+      cancelled = true;
     };
-  }(), [state]);
+  }, []);
 
   //onChange function for ingest button 
   var onIngest = /*#__PURE__*/function () {
