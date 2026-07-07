@@ -1,12 +1,11 @@
 	
 import { NodeBehaviorData, NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 
 type softArtifactRole = 'inform' | 'explain' | 'transform' | 'expand';
 
-const EXPLAIN_QUERY = 'Explain the main content and key points of this document.';
-const EXPLAIN_TOP_K = 5;
-
+const API_BASE = `${(typeof window !== 'undefined' && (window as any).curio?.backendUrl) || ''}/api/softartifact`;
+const BACKEND = (window as any).curio?.backendUrl ?? '';
 
 interface SoftArtifactState{
   artifactId: string | null,
@@ -55,9 +54,39 @@ function artifactStatusLine(state: SoftArtifactState, verifying: boolean): strin
   }
 }
 
-const API_BASE = `${(typeof window !== 'undefined' && (window as any).curio?.backendUrl) || ''}/api/softartifact`;
+function explainQuery(goal: string) {
+  const base = "Summarize the document: main themes, claims, named places, and policy priorities";
+  return goal?.trim() ? `${base}. Focus on: ${goal.trim()}` : base;
+
+}
+
+// async function llmExplain (passages: string, sourceFile: string, token?: string) {
+//   const text = `Source file: ${sourceFile} \n\nPassages:\n${passages}`;
+  
+//   const res = await fetch(`${BACKEND}/llm/chat`, {
+//     method: "POST",
+//     headers: {
+//       "Content-Type": "application/json", 
+//       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+//     },
+//     credentials: "include",
+//     body: JSON.stringify({
+//       preamble: "default_preamble",
+//       prompt: "softartifact_explain_prompt",
+//       text
+//     })
+//   });
+//   if (!res.ok) {
+//     const err = await res.json().catch(() => ({}));
+//     throw new Error(err.error || `HTTP ${res.status}`);
+//   }
+
+//   const data = await res.json();
+//   return data.result as string;
+// }
 
 //todo: create a behavior hook for soft artifact behavior
+
 export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
   //health API
   const [backendUp, setBackendUp] = useState(false);
@@ -68,7 +97,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
         .catch(() => setBackendUp(false))
     };
     check();
-    const iv = setInterval(check, 10_000); //check health every 10 seconds 
+    const iv = setInterval(check, 60_000); //check health every 10 seconds 
     return () => clearInterval(iv);
   }, [])
 
@@ -154,7 +183,11 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
         if (cancelled) return;
 
         const role = nodeData.softArtifact?.role ?? state.role;
-        applyArtifactMeta(out, role);
+        // applyArtifactMeta(out, role);
+        // if (role === 'explain') {
+        //   await runExplain(artifactId, role);
+        // }
+
       } catch {
         console.log("ERROR HERE I LOVE FREEDOM");
       } finally {
@@ -165,6 +198,54 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
     
     return () => { cancelled = true }
   }, [])
+
+  // const [explanation, setExplanation] = useState<string | null>(null);
+  // const [explaining, setExplaining] = useState<boolean>(false);
+
+  // const runExplain = useCallback(async (artifactId: string, role: softArtifactRole) => {
+  //   if (role != "explain") return
+
+  //   setExplaining(true);
+  //   try {
+  //     const retreiveRes = await fetch(`${API_BASE}/retrieve`, {
+  //       method: "POST",
+  //       headers: { "Content-Type": "application/json" },
+  //       body: JSON.stringify({
+  //         artifactId: artifactId,
+  //         query: explainQuery((data as any).goal ?? ""),
+  //         top_k: 5
+  //       })
+  //     })
+  //     if (!retreiveRes.ok) throw new Error(`HTTP ${retreiveRes.status}` || "retrieve failed")
+  //     const spans = await retreiveRes.json();
+  //     const passages = spans
+  //       .map((s: { text?: string }) => s.text ?? '')
+  //       .filter(Boolean)
+  //       .join('\n\n')
+      
+  //     const sourceFile = state.sourceFile ?? 'document';
+  //     const token = (window as any).curio?.getToken?.();
+  //     const summary = await llmExplain(passages, sourceFile, token);
+
+  //     setExplanation(summary);
+
+  //     emitOutput({
+  //       artifactId,
+  //       sourceFile: state.sourceFile,
+  //       mimeType: state.mimeType,
+  //       role: 'explain',
+  //       spans,
+  //       explanation: summary,
+  //     })
+  //   } catch (e) {
+  //     persist({
+  //       status: 'error',
+  //       errorMessage: e instanceof Error ? e.message : String(e),
+  //     })
+  //   } finally {
+  //     setExplaining(false);
+  //   }
+  // },[state])
 
   //onChange function for ingest button 
   const onIngest = async () => {
@@ -190,8 +271,12 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
       }
 
       const out = await res.json();
-      applyArtifactMeta(out, out.role ?? state.role);
+      const role = (out.role ?? state.role) as softArtifactRole;
+      applyArtifactMeta(out, role);
 
+      // if (role === "explain" && out.artifactId) {
+      //   await runExplain(out.artifactId, role);
+      // }
     } catch (e) {
       persist({
         status: 'error',
@@ -199,39 +284,6 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
       })
     }
   }
-
-  // //TODO
-  // //needs modifying, this just simply returns what retrieve API return with const EXPLAIN_QUERY
-  // //make runExplain that use runRetrieve -> 
-  // const runRetrieve = async(artifactId: string, role: softArtifactRole) => {
-  //   if (!artifactId || !backendUp) return;
-
-  //   const userEnd = {
-  //     "artifactId": artifactId,
-  //     "query": EXPLAIN_QUERY,
-  //     "top_k": EXPLAIN_TOP_K
-  //   }
-
-  //   try {
-  //     const res = await fetch(`${API_BASE}/retrieve`, {
-  //       method: "POST",
-  //       headers: {},
-  //       body: JSON.stringify(userEnd)
-  //     })
-
-  //     if (!res.ok) {
-  //       const err = await res.json().catch(() => ({}));
-  //       throw new Error(err.error || `HTTP  ${res.status}`);
-  //     }
-
-  //     const result = await res.json();
-  //     const spans = Array.isArray(result) ? result : [];
-      
-  //     return spans
-  //   } catch (e) {
-  //     //TODO
-  //   }
-  // }
 
   const onFile = (file : File | null) => {
     setFile(file);
@@ -318,13 +370,18 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
         >
           {artifactStatusLine(state, verifying)}
         </button>
-
-        {state ? (
-          <pre style={{ marginTop: 10, fontSize: 10, background: '#f8fafc', padding: 8 }}>
-            {JSON.stringify(state, null, 2)}
-          </pre>
-        ) : null}
       </div>
+      <div>
+        {/* {explaining ? (
+          <p style={{ fontSize: 11, marginTop: 8 }}>Explaining…</p>
+        ) : null}
+        {explanation ? (
+          <pre style={{ marginTop: 8, fontSize: 10, background: '#f8fafc', padding: 8, whiteSpace: 'pre-wrap' }}>
+            {explanation}
+          </pre>
+        ) : null */}
+
+      </div> 
     </>
 
   );

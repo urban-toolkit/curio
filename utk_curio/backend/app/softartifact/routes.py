@@ -4,6 +4,9 @@ from flask import jsonify, request
 from .services.ingest import ingest_file
 from .services.get_artifact import get_softartifact_metadata
 from .services.retrieve import search_chunks
+from .services.explain import explain_artifact
+
+from utk_curio.backend.app.users.dependencies import require_auth
 
 from . import bp
 
@@ -60,19 +63,33 @@ def getArtifact(artifactId: str):
 @bp.post("retrieve")
 def retrieve():
     data = request.get_json(silent = True);
-
     if not isinstance(data, dict):
         return jsonify({"error": "Request body must be valid JSON"}), 400
 
-    artifactId = data.get("artifactId")
-    query = data.get("query")
-    top_k = data.get("top_k") 
+    artifactId = data.get("artifactId") or None
+    query = data.get("query") or None
+    top_k = data.get("top_k") or None
     if artifactId is None:
         return jsonify({"error": "missing artifactId"}), 400
     if query is None:
         return jsonify({"error": "missing query"}), 400
     
     return jsonify(search_chunks(query, artifactId, top_k));
+
+# ── Explain ──────────────────────────────────────────────────────────
+@bp.post("explain")
+@require_auth  # same as /llm/chat — needs logged-in user + LLM config
+def explain():
+    data = request.get_json(silent = True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Request body must be valid JSON"}), 400
+
+    artifactId = data.get("artifactId") or None
+    query = data.get("query") or None
+    top_k = data.get("top_k") or None    
+
+    test = explain_artifact(artifactId=artifactId, query=query, top_k=top_k,source_file= "Architecture.md");
+    return jsonify(test);
     
 
 
