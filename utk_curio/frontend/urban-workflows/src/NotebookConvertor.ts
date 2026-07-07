@@ -161,7 +161,6 @@ export async function notebookToTrill(
   // Declaring parentVars
   let parentVars: (string | null)[] = [];
 
-  let lastVars: (string | null)[] = [];
   let altairSpecs: (Record<string, unknown> | null)[] = [];
 
   // ── Step 2: Ask the backend for real dependency analysis ────────────────
@@ -179,8 +178,6 @@ export async function notebookToTrill(
       cellEdges = data.edges ?? [];
       // Adding parentVars
       parentVars = (data.edges ?? []).map((a) => a.parent_var ?? null);
-
-      lastVars = (data.analysis ?? []).map((a) => a.last_var ?? null);
       altairSpecs = (data.analysis ?? []).map((a) => a.altair_spec ?? null);
     }
   } catch {

@@ -1,6 +1,10 @@
 from flask import request, abort, jsonify, g, Response, current_app
 import requests
 import json
+import importlib.resources
+
+# The directory to the llm-prompts
+LLM_PROMPTS_DIR = importlib.resources.files("utk_curio") / "llm-prompts"
 
 ARROW_IPC_MIME = "application/vnd.apache.arrow.stream"
 
@@ -615,7 +619,7 @@ def llm_chat():
     if chatId is not None and chatId in conversation:
         past_conversation = conversation[chatId]
 
-    prompt_preamble_file = open("./llm-prompts/"+preamble_file+".txt")
+    prompt_preamble_file = open(LLM_PROMPTS_DIR / f"{preamble_file}.txt")
     prompt_preamble = prompt_preamble_file.read()
 
     prompt_preamble += "In case you need. This is the list of files and metadata currently loaded into the system"
@@ -624,7 +628,7 @@ def llm_chat():
 
     prompt_preamble += "\n" + metadata
 
-    prompt_file_obj = open("./llm-prompts/"+prompt_file+".txt")
+    prompt_file_obj = open(LLM_PROMPTS_DIR / f"{prompt_file}.txt")
     prompt_text = prompt_file_obj.read()
 
     if len(past_conversation) == 0:

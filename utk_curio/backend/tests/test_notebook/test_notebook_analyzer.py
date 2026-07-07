@@ -164,8 +164,8 @@ class TestNoteBookAnalyzer:
         expected_edges = {(1,4)}
         assert actual_edges == expected_edges, f"Actual result: {actual_edges}"
 
-# pytest utk_curio/backend/tests/test_notebook_analyzer.py
-# pytest utk_curio/backend/tests/test_notebook_analyzer.py::TestNoteBookAnalyzer::test_AST_trials
+# pytest utk_curio/backend/tests/test_notebook/test_notebook_analyzer.py
+# pytest utk_curio/backend/tests/test_notebook/test_notebook_analyzer.py::TestNoteBookAnalyzer::test_AST_trials
 
 # Insert Tests for Out of Order, Tricky installs, Linear Fallback (Another independent cell test)
 
