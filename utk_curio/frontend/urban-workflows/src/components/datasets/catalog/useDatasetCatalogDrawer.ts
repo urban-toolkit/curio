@@ -294,6 +294,10 @@ export function useDatasetCatalogDrawer(presented: boolean) {
           const next = prev.filter((row) => (row?.datasetId || row?.id) !== imported.id);
           return [...next, dataflowRefFromCatalogItem(imported)];
         });
+        // Fan out to the other catalog surfaces (palette provider + palette
+        // dropdown hold separate cache keys) so the imported dataset appears
+        // immediately without a page reload, matching onInstall/onUninstall.
+        notifyDatasetCatalogRefresh();
         showToast(`Imported ${file.name}.`, "success");
       } catch (err) {
         showToast((err as Error)?.message || "Could not import dataset.", "error");
