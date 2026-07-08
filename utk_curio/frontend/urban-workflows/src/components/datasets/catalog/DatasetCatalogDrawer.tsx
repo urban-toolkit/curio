@@ -4,7 +4,10 @@ import { faFileImport } from "@fortawesome/free-solid-svg-icons";
 import { DrawerFooter } from "../../packages/publishing/DrawerFooter";
 import { DrawerHeader } from "../../packages/publishing/DrawerHeader";
 import tabStyles from "../../packages/publishing/DrawerTabs.module.css";
-import { pendingInstallsNotYetListed } from "../../../services/datasetCatalog";
+import {
+  DATASET_IMPORT_ACCEPT,
+  pendingInstallsNotYetListed,
+} from "../../../services/datasetCatalog";
 import { DatasetCard } from "./DatasetCard";
 import { DatasetInstallingCard } from "./DatasetInstallingCard";
 import { DatasetDetailModal } from "./DatasetDetailModal";
@@ -241,7 +244,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
 
           <DrawerFooter
             busy={busyId === "import"}
-            accept={null}
+            accept={DATASET_IMPORT_ACCEPT}
             label={
               <>
                 <FontAwesomeIcon icon={faFileImport} />{" "}

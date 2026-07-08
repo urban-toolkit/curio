@@ -1,10 +1,32 @@
 from __future__ import annotations
 
+import io
 import json
 
 
 def _auth(token):
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+
+def test_import_osm_pbf_is_rejected_with_autark_guidance(
+    client, user_and_token, tmp_path, monkeypatch
+):
+    """OSM PBF isn't a catalog-importable format; the importer must reject it
+    with an explicit Autark-node redirect rather than a generic error."""
+    from utk_curio.backend.app.datasets.domain.constants import OSM_PBF_IMPORT_MESSAGE
+
+    _, token = user_and_token
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+
+    for filename in ("chicago.pbf", "chicago.osm.pbf"):
+        resp = client.post(
+            "/api/datasets/import",
+            headers={"Authorization": f"Bearer {token}"},
+            data={"file": (io.BytesIO(b"\x00binary"), filename)},
+            content_type="multipart/form-data",
+        )
+        assert resp.status_code == 400, filename
+        assert resp.get_json()["error"] == OSM_PBF_IMPORT_MESSAGE, filename
 
 
 def test_dataset_catalog_lists_hub_datasets(client, user_and_token, tmp_path, monkeypatch):

@@ -17,7 +17,12 @@ from utk_curio.backend.app.datasets.infrastructure.catalog_utils import (
     iso_from_timestamp,
     looks_like_generated_filename,
 )
-from utk_curio.backend.app.datasets.domain.constants import JUNK_SOURCE_LABELS, SUPPORTED_SUFFIXES
+from utk_curio.backend.app.datasets.domain.constants import (
+    JUNK_SOURCE_LABELS,
+    OSM_PBF_IMPORT_MESSAGE,
+    OSM_PBF_SUFFIXES,
+    SUPPORTED_SUFFIXES,
+)
 from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
 from utk_curio.backend.app.datasets.infrastructure.file_meta import count_file, patch_manifest_file, write_file_meta
 from utk_curio.backend.app.datasets.repositories.installed import InstalledDatasetRepository
@@ -63,6 +68,8 @@ class CatalogMutations:
         if not filename:
             raise DatasetCatalogError("No file selected")
         suffix = Path(filename).suffix.lower()
+        if suffix in OSM_PBF_SUFFIXES:
+            raise DatasetCatalogError(OSM_PBF_IMPORT_MESSAGE)
         if suffix not in SUPPORTED_SUFFIXES:
             raise DatasetCatalogError(f"Unsupported dataset format: {suffix or filename}")
         fmt = SUPPORTED_SUFFIXES[suffix]

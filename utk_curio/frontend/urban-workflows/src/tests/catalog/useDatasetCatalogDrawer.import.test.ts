@@ -50,7 +50,10 @@ jest.mock("../../utils/saveOutputDataset", () => ({
 }));
 
 import { useDatasetCatalogDrawer } from "../../components/datasets/catalog/useDatasetCatalogDrawer";
-import { DATASET_CATALOG_REFRESH_EVENT } from "../../services/datasetCatalog";
+import {
+  DATASET_CATALOG_REFRESH_EVENT,
+  OSM_PBF_IMPORT_MESSAGE,
+} from "../../services/datasetCatalog";
 
 describe("useDatasetCatalogDrawer.onPickImport", () => {
   beforeEach(() => {
@@ -87,7 +90,7 @@ describe("useDatasetCatalogDrawer.onPickImport", () => {
     const refreshSpy = jest.fn();
     window.addEventListener(DATASET_CATALOG_REFRESH_EVENT, refreshSpy);
 
-    const file = new File(["x"], "bad.pbf", { type: "application/octet-stream" });
+    const file = new File(["x"], "bad.csv", { type: "text/csv" });
     const { result } = renderHook(() => useDatasetCatalogDrawer(true));
 
     await act(async () => {
@@ -99,4 +102,25 @@ describe("useDatasetCatalogDrawer.onPickImport", () => {
 
     window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, refreshSpy);
   });
+
+  it.each(["chicago.pbf", "chicago.osm.pbf", "CHICAGO.OSM.PBF"])(
+    "redirects OSM PBF imports (%s) to the Autark node without hitting the importer",
+    async (name) => {
+      const refreshSpy = jest.fn();
+      window.addEventListener(DATASET_CATALOG_REFRESH_EVENT, refreshSpy);
+
+      const file = new File(["<binary>"], name, { type: "application/octet-stream" });
+      const { result } = renderHook(() => useDatasetCatalogDrawer(true));
+
+      await act(async () => {
+        await result.current.onPickImport(file);
+      });
+
+      expect(mockImportDataset).not.toHaveBeenCalled();
+      expect(refreshSpy).not.toHaveBeenCalled();
+      expect(mockShowToast).toHaveBeenCalledWith(OSM_PBF_IMPORT_MESSAGE, "warning");
+
+      window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, refreshSpy);
+    },
+  );
 });
