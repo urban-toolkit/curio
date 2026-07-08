@@ -66,7 +66,7 @@ def explain_artifact(artifactId, query, top_k, source_file) -> dict:
             "artifactId": artifactId,
             "query": query,
             "spans": [],
-            "explanation": "nothing was found sad af"
+            "explanation": "the file is too small for any explanation"
         }
     
     # Format retrieved spans into a single text block for the LLM prompt

@@ -42,14 +42,28 @@ function _toPropertyKey(t) { var i = _toPrimitive(t, "string"); return "symbol" 
 function _toPrimitive(t, r) { if ("object" != _typeof(t) || !t) return t; var e = t[Symbol.toPrimitive]; if (void 0 !== e) { var i = e.call(t, r || "default"); if ("object" != _typeof(i)) return i; throw new TypeError("@@toPrimitive must return a primitive value."); } return ("string" === r ? String : Number)(t); }
 function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) { return typeof o; } : function (o) { return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o; }, _typeof(o); }
 
+
+// Reads the session token out of the browser's cookies (looks for a
+// cookie named "session_token") so API calls can authenticate.
 function getToken() {
   var match = document.cookie.match(/(?:^|;\s*)session_token=([^;]*)/);
   return match ? decodeURIComponent(match[1]) : undefined;
 }
+
+// The different "modes" this artifact node can operate in — determines
+// what happens to the uploaded document (just pass it through, explain it, etc.)
+
+// Base URL for all softartifact API calls. Falls back to relative path
+// if window.curio.backendUrl isn't set (e.g. during SSR or testing).
 var API_BASE = "".concat(typeof window !== 'undefined' && ((_curio = window.curio) === null || _curio === void 0 ? void 0 : _curio.backendUrl) || '', "/api/softartifact");
 
-//package specific field saved on node
+// Shape of the persisted state for this node — this is what gets saved
+// on the node data so it survives refreshes/reloads.
 
+// Extends the generic NodeBehaviorData with this package's specific
+// "softArtifact" field, since the base type doesn't know about it.
+
+// Fresh/blank state for a node that has no artifact yet.
 function defaultState() {
   return {
     artifactId: null,
@@ -59,11 +73,18 @@ function defaultState() {
     status: 'empty'
   };
 }
+
+// Restores state from whatever was previously saved on the node.
+// Merges onto defaultState() so any missing/new fields still get
+// sensible defaults (e.g. if the shape changed since last save).
 function readSaved(data) {
   var raw = data.softArtifact;
   if (!raw || _typeof(raw) !== 'object') return defaultState(); //if raw is invalid return default state
   return _objectSpread(_objectSpread({}, defaultState()), raw);
 }
+
+// Produces the human-readable status label shown on the ingest button,
+// based on current state and whether we're mid-verification.
 function artifactStatusLine(state, verifying) {
   var _state$errorMessage;
   if (verifying) return "verifying artifact";
@@ -77,12 +98,16 @@ function artifactStatusLine(state, verifying) {
     case 'error':
       return (_state$errorMessage = state.errorMessage) !== null && _state$errorMessage !== void 0 ? _state$errorMessage : "error";
     default:
-      return "idk man";
+      return "the state input is incorrect";
   }
 }
+
+// Calls the backend's /explain endpoint for a given artifact, asking it
+// to summarize/explain the document (using the default query server-side).
 function explainArtifact(_x, _x2) {
   return _explainArtifact.apply(this, arguments);
-}
+} // Main hook powering the "soft artifact" node's behavior — handles file
+// upload/ingestion, state persistence, health checks, and the "explain" flow.
 function _explainArtifact() {
   _explainArtifact = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4(artifactId, sourceFile) {
     var top_k,
@@ -97,7 +122,7 @@ function _explainArtifact() {
           top_k = _args4.length > 2 && _args4[2] !== undefined ? _args4[2] : 8;
           headers = {
             'Content-Type': 'application/json'
-          };
+          }; // Attach auth token if we have one
           token = getToken();
           if (token) {
             headers.Authorization = "Bearer ".concat(token);
@@ -139,17 +164,17 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
   var _useState = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false),
     _useState2 = _slicedToArray(_useState, 2),
     backendUp = _useState2[0],
-    setBackendUp = _useState2[1];
+    setBackendUp = _useState2[1]; // is the backend reachable?
   var _useState3 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(function () {
       return readSaved(nodeData);
     }),
     _useState4 = _slicedToArray(_useState3, 2),
     state = _useState4[0],
-    setState = _useState4[1];
+    setState = _useState4[1]; // persisted artifact state
   var _useState5 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(null),
     _useState6 = _slicedToArray(_useState5, 2),
     file = _useState6[0],
-    setFile = _useState6[1];
+    setFile = _useState6[1]; // currently selected (not yet ingested) file
   var _useState7 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false),
     _useState8 = _slicedToArray(_useState7, 2),
     verifying = _useState8[0],
@@ -157,11 +182,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
   var _useState9 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false),
     _useState0 = _slicedToArray(_useState9, 2),
     explaining = _useState0[0],
-    setExplaining = _useState0[1];
-  var _useState1 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(""),
-    _useState10 = _slicedToArray(_useState1, 2),
-    explanation = _useState10[0],
-    setExplanation = _useState10[1];
+    setExplaining = _useState0[1]; // true while /explain call is in flight
 
   //health API call
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(function () {
@@ -172,14 +193,16 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
         return setBackendUp(false);
       });
     };
-    check();
-    var iv = setInterval(check, 60000); //check health every 10 seconds 
+    check(); // run immediately on mount
+    var iv = setInterval(check, 60000); //check health every 60 seconds 
     return function () {
       return clearInterval(iv);
-    };
+    }; // stop polling when unmounted
   }, []);
 
   //for the UI to survive after every refresh  
+  // Updates both React state and the underlying node data object in one go,
+  // so changes persist even if the component remounts/reloads.
   var persist = function persist(patch) {
     setState(function (prev) {
       var next = _objectSpread(_objectSpread({}, prev), patch);
@@ -187,11 +210,16 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
       return next;
     });
   };
+
+  // Redundant safety net: whenever `state` changes for any reason, make sure
+  // nodeData.softArtifact reflects it (in case persist() wasn't the source).
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(function () {
     nodeData.softArtifact = state;
   }, [state]);
 
   //call outputcallback when it is ingested, put in onIngest function
+  // Pushes this node's output downstream to connected nodes in the workflow,
+  // wrapping the data in Curio's expected JSON output format.
   var emitOutput = function emitOutput(descriptor) {
     var _data$outputCallback;
     var json = {
@@ -208,7 +236,10 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
   };
 
   //persist + emitOutput
+  // Called after a successful ingest: saves the returned artifact metadata
+  // and forwards it as this node's output.
   var applyArtifactMeta = function applyArtifactMeta(out, role) {
+    var _nodeData$softArtifac;
     persist({
       artifactId: typeof out.artifactId === 'string' ? out.artifactId : null,
       sourceFile: typeof out.sourceFile === 'string' ? out.sourceFile : null,
@@ -216,11 +247,22 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
       status: 'ready',
       errorMessage: undefined
     });
-    emitOutput(_objectSpread(_objectSpread({}, out), {}, {
-      role: role
-    })); // downstream Simple View gets JSON again
+    var cached = (_nodeData$softArtifac = nodeData.softArtifact) === null || _nodeData$softArtifac === void 0 ? void 0 : _nodeData$softArtifac.explanation;
+    if (role === 'explain' && cached) {
+      emitOutput(_objectSpread(_objectSpread({}, out), {}, {
+        role: role,
+        explanation: cached
+      }));
+    } else {
+      emitOutput(_objectSpread(_objectSpread({}, out), {}, {
+        role: role
+      })); // downstream Simple View gets JSON again    
+    }
   };
-  var runExplain = (0,react__WEBPACK_IMPORTED_MODULE_0__.useCallback)(/*#__PURE__*/function () {
+
+  // Runs the "explain" flow for the current artifact: calls the backend,
+  // stores the explanation, and emits it as node output.
+  var runExplain = /*#__PURE__*/function () {
     var _ref = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee(artifactId, role) {
       var out, _t;
       return _regenerator().w(function (_context) {
@@ -232,54 +274,68 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
             }
             return _context.a(2);
           case 1:
+            // only applies to the "explain" role
+
             setExplaining(true);
             _context.p = 2;
             _context.n = 3;
             return explainArtifact(artifactId, state.sourceFile);
           case 3:
             out = _context.v;
-            setExplanation(out.explanation);
+            persist({
+              explanation: out.explanation
+            });
             emitOutput({
               artifactId: artifactId,
               sourceFile: state.sourceFile,
               mimeType: state.mimeType,
               role: 'explain',
-              spans: out.spans,
               explanation: out.explanation,
-              query: out.query
+              query: out.query,
+              spans: out.spans
             });
             _context.n = 5;
             break;
           case 4:
             _context.p = 4;
             _t = _context.v;
+            // Surface any failure as node error state
             persist({
               status: 'error',
               errorMessage: _t instanceof Error ? _t.message : String(_t)
             });
           case 5:
+            _context.p = 5;
+            setExplaining(false);
+            return _context.f(5);
+          case 6:
             return _context.a(2);
         }
-      }, _callee, null, [[2, 4]]);
+      }, _callee, null, [[2, 4, 5, 6]]);
     }));
-    return function (_x3, _x4) {
+    return function runExplain(_x3, _x4) {
       return _ref.apply(this, arguments);
     };
-  }(), []);
+  }();
 
   //on mount effect, run once when the node is reloaded
+  // Verifies with the backend that a previously-saved artifactId still
+  // exists (e.g. after a page refresh). If the backend no longer has it,
+  // clears the stale state so the user knows to re-upload.
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(function () {
-    var _nodeData$softArtifac;
-    var artifactId = (_nodeData$softArtifac = nodeData.softArtifact) === null || _nodeData$softArtifac === void 0 ? void 0 : _nodeData$softArtifac.artifactId;
+    var _nodeData$softArtifac2;
+    var artifactId = (_nodeData$softArtifac2 = nodeData.softArtifact) === null || _nodeData$softArtifac2 === void 0 ? void 0 : _nodeData$softArtifac2.artifactId;
     if (!artifactId) {
+      // Nothing was previously ingested — nothing to verify, skip the GET
       console.log("soft artifact Id doesn't exist, skip GET");
       return;
     }
     console.log('[soft-artifact] mount: verifying', artifactId);
+    // Guards against updating state after unmount (see earlier explanation)
     var cancelled = false;
     setVerifying(true);
     _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
-      var res, out, _t2;
+      var _nodeData$softArtifac3, _nodeData$softArtifac4, res, out, role, _t2;
       return _regenerator().w(function (_context2) {
         while (1) switch (_context2.p = _context2.n) {
           case 0:
@@ -305,7 +361,8 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
               // optional: clear or keep for context
               mimeType: null,
               status: 'error',
-              errorMessage: 'artifact missing — re-upload'
+              errorMessage: 'artifact missing — re-upload',
+              explanation: undefined
             });
             setFile(null);
             return _context2.a(2);
@@ -326,12 +383,14 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
             }
             return _context2.a(2);
           case 6:
+            role = (_nodeData$softArtifac3 = (_nodeData$softArtifac4 = nodeData.softArtifact) === null || _nodeData$softArtifac4 === void 0 ? void 0 : _nodeData$softArtifac4.role) !== null && _nodeData$softArtifac3 !== void 0 ? _nodeData$softArtifac3 : state.role;
+            applyArtifactMeta(out, role);
             _context2.n = 8;
             break;
           case 7:
             _context2.p = 7;
             _t2 = _context2.v;
-            console.log("ERROR HERE I LOVE FREEDOM");
+            console.log("verifying unsuccesful with on mount effect softartifact node");
           case 8:
             _context2.p = 8;
             if (!cancelled) setVerifying(false);
@@ -341,12 +400,17 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
         }
       }, _callee2, null, [[0, 7, 8, 9]]);
     }))();
+
+    // Cleanup: mark this effect run as stale if the component unmounts
     return function () {
       cancelled = true;
     };
   }, []);
 
   //onChange function for ingest button 
+  // Uploads the currently selected file to the backend for ingestion,
+  // then applies the returned metadata and (if role is "explain") kicks
+  // off the explain flow automatically.
   var onIngest = /*#__PURE__*/function () {
     var _ref3 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
       var _out$role, form, res, err, out, role, _t3;
@@ -394,6 +458,8 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
             out = _context3.v;
             role = (_out$role = out.role) !== null && _out$role !== void 0 ? _out$role : state.role;
             applyArtifactMeta(out, role);
+
+            // Automatically trigger explanation if this node's role is "explain"
             if (!(role === "explain" && out.artifactId)) {
               _context3.n = 7;
               break;
@@ -419,18 +485,25 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
       return _ref3.apply(this, arguments);
     };
   }();
+
+  // Handles selecting/clearing a file in the <input type="file">.
+  // Doesn't upload anything yet — just updates local state until "ingest" is clicked.
   var onFile = function onFile(file) {
     setFile(file);
     if (!file) {
+      // File cleared — reset artifact state entirely
       persist({
         artifactId: null,
         sourceFile: null,
         mimeType: null,
         status: 'empty',
-        errorMessage: undefined
+        errorMessage: undefined,
+        explanation: undefined
       });
       return;
     }
+
+    // New file selected — record its name/type but mark as not-yet-ingested
     persist({
       artifactId: null,
       sourceFile: file.name,
@@ -438,12 +511,18 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
       status: 'empty'
     });
   };
+
+  // Handles changing the selected role (inform/explain/transform/expand)
   var onRole = function onRole(next) {
     persist({
       role: next
     });
   };
-  var statusText = backendUp ? "healthy af" : "sad af";
+
+  // Display-only string reflecting backend health for the UI
+  var statusText = backendUp ? "healthy backend" : "backend down";
+
+  // ---- UI ----
   var contentComponent = /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement((react__WEBPACK_IMPORTED_MODULE_0___default().Fragment), null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, "backends are ", statusText), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     style: {
       padding: 12
@@ -526,7 +605,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
       fontSize: 11,
       marginTop: 8
     }
-  }, "Explaining\u2026") : null, explanation ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("pre", {
+  }, "Explaining\u2026") : null, state.explanation ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("pre", {
     style: {
       marginTop: 8,
       fontSize: 10,
@@ -534,7 +613,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
       padding: 8,
       whiteSpace: 'pre-wrap'
     }
-  }, explanation) : null));
+  }, state.explanation) : null));
   return {
     contentComponent: contentComponent,
     disablePlay: true

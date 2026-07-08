@@ -1,31 +1,40 @@
-	
 import { NodeBehaviorData, NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
 import React, { useCallback, useEffect, useState } from 'react';
 
+// Reads the session token out of the browser's cookies (looks for a
+// cookie named "session_token") so API calls can authenticate.
 function getToken(): string | undefined {
   const match = document.cookie.match(/(?:^|;\s*)session_token=([^;]*)/);
   return match ? decodeURIComponent(match[1]) : undefined;
 }
 
-
+// The different "modes" this artifact node can operate in — determines
+// what happens to the uploaded document (just pass it through, explain it, etc.)
 type softArtifactRole = 'inform' | 'explain' | 'transform' | 'expand';
 
+// Base URL for all softartifact API calls. Falls back to relative path
+// if window.curio.backendUrl isn't set (e.g. during SSR or testing).
 const API_BASE = `${(typeof window !== 'undefined' && (window as any).curio?.backendUrl) || ''}/api/softartifact`;
 
+// Shape of the persisted state for this node — this is what gets saved
+// on the node data so it survives refreshes/reloads.
 interface SoftArtifactState{
   artifactId: string | null,
   role: softArtifactRole,
   sourceFile: string | null,
   mimeType: string | null,
   status: 'empty' | 'ingesting' | 'ready' | 'error',
-  errorMessage?: string
+  errorMessage?: string,
+  explanation?: string,
 }
 
-//package specific field saved on node
+// Extends the generic NodeBehaviorData with this package's specific
+// "softArtifact" field, since the base type doesn't know about it.
 type softArtifactNodeData = NodeBehaviorData & {
   softArtifact?: SoftArtifactState
 }
 
+// Fresh/blank state for a node that has no artifact yet.
 function defaultState(): SoftArtifactState{
   return {
     artifactId: null,
@@ -36,12 +45,17 @@ function defaultState(): SoftArtifactState{
   }
 }
 
+// Restores state from whatever was previously saved on the node.
+// Merges onto defaultState() so any missing/new fields still get
+// sensible defaults (e.g. if the shape changed since last save).
 function readSaved(data: {softArtifact?: SoftArtifactState}): SoftArtifactState{
   const raw = data.softArtifact;
   if (!raw || typeof raw !== 'object') return defaultState(); //if raw is invalid return default state
   return { ...defaultState(), ...raw };
 }
 
+// Produces the human-readable status label shown on the ingest button,
+// based on current state and whether we're mid-verification.
 function artifactStatusLine(state: SoftArtifactState, verifying: boolean): string {
   if (verifying) return "verifying artifact";
 
@@ -55,14 +69,17 @@ function artifactStatusLine(state: SoftArtifactState, verifying: boolean): strin
     case 'error':
       return state.errorMessage ?? "error"
     default:
-      return "idk man";  
+      return "the state input is incorrect";  
   }
 }
 
+// Calls the backend's /explain endpoint for a given artifact, asking it
+// to summarize/explain the document (using the default query server-side).
 async function explainArtifact(artifactId: string, sourceFile: string | null, top_k = 8) {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json'
   }
+  // Attach auth token if we have one
   const token = getToken();
   if (token) {
     headers.Authorization = `Bearer ${token}`
@@ -79,6 +96,7 @@ async function explainArtifact(artifactId: string, sourceFile: string | null, to
     })
   })
 
+  // Surface a useful error message if the request failed
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || err.hint || `HTTP ${res.status}`);
@@ -88,16 +106,17 @@ async function explainArtifact(artifactId: string, sourceFile: string | null, to
 
 }
 
+// Main hook powering the "soft artifact" node's behavior — handles file
+// upload/ingestion, state persistence, health checks, and the "explain" flow.
 export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
   //data doesn't have softArtifact field, therefore extending the package specific field for data (nodeData)
   const nodeData = data as softArtifactNodeData;  
 
-  const [backendUp, setBackendUp] = useState(false);
-  const [state, setState] = useState<SoftArtifactState>(() => readSaved(nodeData));
-  const [file, setFile] = useState<File | null>(null);
+  const [backendUp, setBackendUp] = useState(false);            // is the backend reachable?
+  const [state, setState] = useState<SoftArtifactState>(() => readSaved(nodeData)); // persisted artifact state
+  const [file, setFile] = useState<File | null>(null);           // currently selected (not yet ingested) file
   const [verifying, setVerifying] = useState(false); //short-lived UI while the GET api get run 
-  const [explaining, setExplaining] = useState<boolean>(false);
-  const [explanation, setExplanation] = useState<string>("");
+  const [explaining, setExplaining] = useState<boolean>(false);  // true while /explain call is in flight
 
 
   //health API call
@@ -107,12 +126,14 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
         .then((response) => setBackendUp(response.ok))
         .catch(() => setBackendUp(false))
     };
-    check();
-    const iv = setInterval(check, 60_000); //check health every 10 seconds 
-    return () => clearInterval(iv);
+    check(); // run immediately on mount
+    const iv = setInterval(check, 60_000); //check health every 60 seconds 
+    return () => clearInterval(iv); // stop polling when unmounted
   }, [])
 
   //for the UI to survive after every refresh  
+  // Updates both React state and the underlying node data object in one go,
+  // so changes persist even if the component remounts/reloads.
   const persist = (patch: Partial<SoftArtifactState>) => {
     setState((prev) => {
       const next = { ...prev, ...patch };
@@ -121,11 +142,15 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
     });
   };
 
+  // Redundant safety net: whenever `state` changes for any reason, make sure
+  // nodeData.softArtifact reflects it (in case persist() wasn't the source).
   useEffect(() => {
     nodeData.softArtifact = state;
   },[state])
 
   //call outputcallback when it is ingested, put in onIngest function
+  // Pushes this node's output downstream to connected nodes in the workflow,
+  // wrapping the data in Curio's expected JSON output format.
   const emitOutput = (descriptor: object) => {
     const json = {
       dataType: 'dict',   // JSON objects use 'dict' in Curio’s type system
@@ -142,6 +167,8 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
   };
 
   //persist + emitOutput
+  // Called after a successful ingest: saves the returned artifact metadata
+  // and forwards it as this node's output.
   const applyArtifactMeta = (out: Record<string, unknown>, role: softArtifactRole) => {
     persist({
       artifactId: typeof out.artifactId === 'string' ? out.artifactId : null,
@@ -150,44 +177,62 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
       status: 'ready',
       errorMessage: undefined,
     });
-    emitOutput({ ...out, role });  // downstream Simple View gets JSON again
+
+    const cached = nodeData.softArtifact?.explanation;
+
+    if (role === 'explain' && cached) {
+      emitOutput({...out, role, explanation: cached})
+    }
+    else {
+      emitOutput({ ...out, role });  // downstream Simple View gets JSON again    
+    }
   };
 
-  const runExplain = useCallback(async (artifactId: string, role: softArtifactRole) => {
-    if (role != 'explain' || !artifactId) return;
+  // Runs the "explain" flow for the current artifact: calls the backend,
+  // stores the explanation, and emits it as node output.
+  const runExplain = async (artifactId: string, role: softArtifactRole) => {
+    if (role != 'explain' || !artifactId) return; // only applies to the "explain" role
 
     setExplaining(true);
     try {
       const out = await explainArtifact(artifactId, state.sourceFile);
 
-      setExplanation(out.explanation);
+      persist({ explanation: out.explanation });
 
       emitOutput({
         artifactId,
         sourceFile: state.sourceFile,
         mimeType: state.mimeType,
         role: 'explain',
-        spans: out.spans,
         explanation: out.explanation,
         query: out.query,
+        spans: out.spans,
       })
     } catch (e) {
+      // Surface any failure as node error state
       persist({
         status: 'error',
         errorMessage: e instanceof Error ? e.message : String(e),
       });
+    } finally {
+      setExplaining(false);
     }
-  },[])
+  };
 
   //on mount effect, run once when the node is reloaded
+  // Verifies with the backend that a previously-saved artifactId still
+  // exists (e.g. after a page refresh). If the backend no longer has it,
+  // clears the stale state so the user knows to re-upload.
   useEffect(() => {
     const artifactId = nodeData.softArtifact?.artifactId
     if (!artifactId) {
+      // Nothing was previously ingested — nothing to verify, skip the GET
       console.log("soft artifact Id doesn't exist, skip GET")
       return;
     }
 
     console.log('[soft-artifact] mount: verifying', artifactId);
+    // Guards against updating state after unmount (see earlier explanation)
     let cancelled = false;
     setVerifying(true);
 
@@ -196,6 +241,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
         const res = await fetch(`${API_BASE}/artifacts/${encodeURI(artifactId)}`)
         if (cancelled) return
 
+        // Backend doesn't recognize this artifact anymore — reset to a clean/error state
         if (res.status === 400) {
           persist({
             artifactId: null,           // clear stale id — backend doesn't have it
@@ -203,28 +249,37 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
             mimeType: null,
             status: 'error',
             errorMessage: 'artifact missing — re-upload',
+            explanation: undefined
           });
           setFile(null);
           return;
         }
 
+        // Any other non-OK response: bail out silently (no explicit handling)
         if (!res.ok) return;
 
         const out = await res.json();
         if (cancelled) return;
+
+        const role = nodeData.softArtifact?.role ?? state.role;
+        applyArtifactMeta(out, role);
       } catch {
-        console.log("ERROR HERE I LOVE FREEDOM");
+        console.log("verifying unsuccesful with on mount effect softartifact node");
       } finally {
         if (!cancelled) setVerifying(false);
       }
 
     })();
     
+    // Cleanup: mark this effect run as stale if the component unmounts
     return () => { cancelled = true }
   }, [])
   
 
   //onChange function for ingest button 
+  // Uploads the currently selected file to the backend for ingestion,
+  // then applies the returned metadata and (if role is "explain") kicks
+  // off the explain flow automatically.
   const onIngest = async () => {
     if (!file) return;
 
@@ -251,6 +306,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
       const role = (out.role ?? state.role) as softArtifactRole;
       applyArtifactMeta(out, role);
 
+      // Automatically trigger explanation if this node's role is "explain"
       if (role === "explain" && out.artifactId) {
         await runExplain(out.artifactId, role);
       }
@@ -263,18 +319,23 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
     }
   }
 
+  // Handles selecting/clearing a file in the <input type="file">.
+  // Doesn't upload anything yet — just updates local state until "ingest" is clicked.
   const onFile = (file : File | null) => {
     setFile(file);
     if (!file) {
+      // File cleared — reset artifact state entirely
       persist({artifactId: null,
-      sourceFile: null,
-      mimeType: null,
-      status: 'empty',
-      errorMessage: undefined,
+        sourceFile: null,
+        mimeType: null,
+        status: 'empty',
+        errorMessage: undefined,
+        explanation: undefined
       });
       return;
     }
 
+    // New file selected — record its name/type but mark as not-yet-ingested
     persist({
       artifactId: null,
       sourceFile: file.name,
@@ -283,18 +344,22 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
     });
   }
 
+  // Handles changing the selected role (inform/explain/transform/expand)
   const onRole = (next: softArtifactRole) => {
     persist({ role: next });
   }
 
-  const statusText = backendUp ? "healthy af" : "sad af";
+  // Display-only string reflecting backend health for the UI
+  const statusText = backendUp ? "healthy backend" : "backend down";
 
+  // ---- UI ----
   const contentComponent = (
     <>
       <div>
         backends are {statusText}
       </div>
 
+      {/* Role selector dropdown */}
       <div style={{ padding: 12 }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 4 }}>
           Role:
@@ -312,6 +377,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
         <p style={{ marginTop: 8, fontSize: 11 }}>Selected: {state.role}</p>
       </div>
       
+      {/* File picker */}
       <div style={{ margin: 10 }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 4 }}>
           Document:
@@ -329,6 +395,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
         )}
       </div>
       
+      {/* Ingest button — disabled if no file selected, already ingesting, or backend is down */}
       <div>
         <button
           type="button"
@@ -349,13 +416,15 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
           {artifactStatusLine(state, verifying)}
         </button>
       </div>
+
+      {/* Explanation output (shown only in "explain" flow) */}
       <div>
         {explaining ? (
           <p style={{ fontSize: 11, marginTop: 8 }}>Explaining…</p>
         ) : null}
-        {explanation ? (
+        {state.explanation ? (
           <pre style={{ marginTop: 8, fontSize: 10, background: '#f8fafc', padding: 8, whiteSpace: 'pre-wrap' }}>
-            {explanation}
+            {state.explanation}
           </pre>
         ) : null}
       </div> 
