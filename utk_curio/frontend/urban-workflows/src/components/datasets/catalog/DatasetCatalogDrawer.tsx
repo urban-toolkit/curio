@@ -205,13 +205,14 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
                     <DatasetInstallingCard key={`pending:${pending.key}`} pending={pending} />
                   ))}
                   {items.map((dataset) => {
-                    const isComputedInstalled =
-                      dataset.origin === "computed" && dataset.installed === true;
+                    // Installed state is driven by the ``installed`` flag (the
+                    // dataset is referenced by the open dataflow). Imported
+                    // datasets are register-only account-level items now, so
+                    // origin is NOT a proxy for installed — only ``source_node``
+                    // datasets (a data-loading node's own output in this flow)
+                    // are installed by nature.
                     const isInstalled =
-                      isComputedInstalled ||
-                      (!isComputedInstalled &&
-                        (dataset.installed === true ||
-                          (dataset.origin !== "hub" && dataset.origin !== "computed")));
+                      dataset.installed === true || dataset.origin === "source_node";
                     const isPublished = dataset.origin === "hub" || dataset.publishedToHub === true;
                     return (
                       <DatasetCard

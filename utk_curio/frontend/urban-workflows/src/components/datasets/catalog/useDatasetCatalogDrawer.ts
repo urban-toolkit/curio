@@ -298,16 +298,14 @@ export function useDatasetCatalogDrawer(presented: boolean) {
       // only in-list feedback until it lands.
       beginPendingInstall({ key: "import", label: file.name });
       try {
-        const imported = await catalog.importDataset(file);
-        setDataflowDatasets((prev) => {
-          const next = prev.filter((row) => (row?.datasetId || row?.id) !== imported.id);
-          return [...next, dataflowRefFromCatalogItem(imported)];
-        });
-        // Fan out to the other catalog surfaces (palette provider + palette
-        // dropdown hold separate cache keys) so the imported dataset appears
-        // immediately without a page reload, matching onInstall/onUninstall.
+        await catalog.importDataset(file);
+        // Register-only: importing adds a standalone account-level catalog item;
+        // it is NOT attached to the open dataflow, so we do not touch
+        // dataflowDatasets. A node/dataflow link is created only on explicit
+        // install. Fan out so the imported dataset appears immediately across
+        // catalog surfaces (palette provider + dropdown hold separate caches).
         notifyDatasetCatalogRefresh();
-        showToast(`Imported ${file.name}.`, "success");
+        showToast(`Registered ${file.name} in the data catalog.`, "success");
       } catch (err) {
         showToast((err as Error)?.message || "Could not import dataset.", "error");
       } finally {
@@ -316,7 +314,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         setBusyId(null);
       }
     },
-    [catalog, setDataflowDatasets, showToast, beginPendingInstall, endPendingInstall],
+    [catalog, showToast, beginPendingInstall, endPendingInstall],
   );
 
   const handleDatasetDragStart = useCallback(

@@ -60,7 +60,7 @@ describe("useDatasetCatalogDrawer.onPickImport", () => {
     jest.clearAllMocks();
   });
 
-  it("fans out a catalog-refresh event so other surfaces update without a reload", async () => {
+  it("registers a standalone catalog item and fans out a refresh without attaching to the dataflow", async () => {
     mockImportDataset.mockResolvedValueOnce({
       id: "imported-1",
       title: "Imported.csv",
@@ -78,9 +78,13 @@ describe("useDatasetCatalogDrawer.onPickImport", () => {
     });
 
     expect(mockImportDataset).toHaveBeenCalledWith(file);
-    expect(mockSetDataflowDatasets).toHaveBeenCalled();
+    // Register-only: import must NOT attach the dataset to the open dataflow.
+    expect(mockSetDataflowDatasets).not.toHaveBeenCalled();
     expect(refreshSpy).toHaveBeenCalledTimes(1);
-    expect(mockShowToast).toHaveBeenCalledWith("Imported Imported.csv.", "success");
+    expect(mockShowToast).toHaveBeenCalledWith(
+      "Registered Imported.csv in the data catalog.",
+      "success",
+    );
 
     window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, refreshSpy);
   });
