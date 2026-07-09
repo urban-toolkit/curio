@@ -33,6 +33,66 @@ def test_imported_dataset_lists_as_standalone_catalog_item(
     assert items[imported_id]["origin"] == "imported"
 
 
+def test_import_does_not_auto_install_and_explicit_install_attaches(
+    client, user_and_token, tmp_path, monkeypatch
+):
+    """Register-only import: even with a dataflow open, importing does not write
+    a project ref; an explicit install attaches it, and it stays registered
+    (visible, not-installed) in a different dataflow."""
+    from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
+        create_project,
+    )
+
+    _, token = user_and_token
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+
+    project_id = create_project(client, token, name="Decouple import")
+
+    # Import WITH the dataflow open — must not auto-attach.
+    imp = client.post(
+        "/api/datasets/import",
+        headers={"Authorization": f"Bearer {token}", "X-Curio-Dataflow": project_id},
+        data={
+            "file": (io.BytesIO(b"a,b\n1,2\n"), "roads.csv"),
+            "dataflowId": project_id,
+        },
+        content_type="multipart/form-data",
+    )
+    assert imp.status_code == 201, imp.get_data(as_text=True)
+    imported = imp.get_json()
+    imported_id = imported["id"]
+    assert imported["installed"] is False
+
+    # It lists for the open dataflow but as not-installed.
+    listed = client.get(
+        f"/api/datasets/catalog?dataflowId={project_id}", headers=_auth(token)
+    ).get_json()["items"]
+    row = next((i for i in listed if i["id"] == imported_id), None)
+    assert row is not None and row["installed"] is False
+
+    # Explicit install attaches it to this dataflow.
+    inst = client.post(
+        f"/api/dataflows/{project_id}/datasets/install",
+        headers=_auth(token),
+        data=json.dumps({"datasetId": imported_id}),
+    )
+    assert inst.status_code in (200, 201), inst.get_data(as_text=True)
+
+    after = client.get(
+        f"/api/datasets/catalog?dataflowId={project_id}", headers=_auth(token)
+    ).get_json()["items"]
+    row = next((i for i in after if i["id"] == imported_id), None)
+    assert row is not None and row["installed"] is True
+
+    # In a different dataflow it is registered but not installed.
+    other_id = create_project(client, token, name="Other flow")
+    other = client.get(
+        f"/api/datasets/catalog?dataflowId={other_id}", headers=_auth(token)
+    ).get_json()["items"]
+    row = next((i for i in other if i["id"] == imported_id), None)
+    assert row is not None and row["installed"] is False
+
+
 def test_import_osm_pbf_is_rejected_with_autark_guidance(
     client, user_and_token, tmp_path, monkeypatch
 ):

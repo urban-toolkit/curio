@@ -105,9 +105,14 @@ class CatalogMutations:
         if feature_count is not None:
             item["featureCount"] = feature_count
 
-        if dataflow_id:
-            self.install_dataset(dataflow_id, item["id"], source_item=item)
-            item["installed"] = True
+        # Register-only: importing a file adds it to the account-level Data
+        # Catalog (user store) but does NOT attach it to any node or dataflow.
+        # A node/dataflow linkage is created only when the user explicitly
+        # installs/selects the dataset (``install_dataset`` writes the project
+        # ref). ``dataflow_id`` is accepted for API compatibility but no longer
+        # triggers an auto-install. The imported dataset is surfaced in the
+        # catalog by ``UserDatasetRepository`` (account-level source).
+        item["installed"] = False
         return item
 
     def publish_dataset(self, dataset_id: str, metadata: dict[str, Any], *, dataflow_id: str | None = None, live_outputs: list[dict[str, Any]] | None = None) -> dict[str, Any]:
