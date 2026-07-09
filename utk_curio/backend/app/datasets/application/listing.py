@@ -27,6 +27,7 @@ from utk_curio.backend.app.datasets.domain.constants import SUPPORTED_SUFFIXES
 from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
 from utk_curio.backend.app.datasets.repositories.installed import InstalledDatasetRepository
 from utk_curio.backend.app.datasets.repositories.local import LocalDatasetRepository
+from utk_curio.backend.app.datasets.repositories.user_store import UserDatasetRepository
 from utk_curio.backend.app.datasets.application.preview import DatasetPreviewService
 from utk_curio.backend.app.datasets.domain.provenance import catalog_item_is_computed_provenance
 from utk_curio.backend.app.datasets.repositories.registry import DatasetRegistryRepository
@@ -48,6 +49,7 @@ class CatalogListing:
         registry: DatasetRegistryRepository,
         local: LocalDatasetRepository,
         installed: InstalledDatasetRepository,
+        user_store: UserDatasetRepository,
         computed: ComputedDatasetIndexer,
         preview_service: DatasetPreviewService,
         paths: PathResolver,
@@ -57,6 +59,7 @@ class CatalogListing:
         self.registry = registry
         self.local = local
         self.installed = installed
+        self.user_store = user_store
         self.computed = computed
         self.preview_service = preview_service
         self._paths = paths
@@ -85,6 +88,14 @@ class CatalogListing:
             # browse view so a dataset imported without an open dataflow (and
             # the shipped samples) are visible, not silently dropped.
             items.extend(self.local.list_items())
+            # Account-level imported datasets registered in the user store, so a
+            # register-only import stays visible in the catalog even when no
+            # project references it. Computed node-output copies are excluded by
+            # the repository (their per-project path is unchanged). A dataset
+            # that IS installed in the open project also appears via
+            # ``installed`` below; ``dedupe_items`` merges the two by id (the
+            # ref row wins ``installed=True``).
+            items.extend(self.user_store.list_items())
         if dataflow_id:
             items.extend(self.installed.list_items(dataflow_id))
             items.extend(self.computed.list_items(

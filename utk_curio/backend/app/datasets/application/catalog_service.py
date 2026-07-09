@@ -19,6 +19,7 @@ from utk_curio.backend.app.datasets.domain.computed import ComputedDatasetIndexe
 from utk_curio.backend.app.datasets.repositories.installed import InstalledDatasetRepository
 from utk_curio.backend.app.datasets.repositories.local import LocalDatasetRepository
 from utk_curio.backend.app.datasets.repositories.registry import DatasetRegistryRepository
+from utk_curio.backend.app.datasets.repositories.user_store import UserDatasetRepository
 
 
 class DatasetCatalogService:
@@ -27,6 +28,7 @@ class DatasetCatalogService:
         self.registry = DatasetRegistryRepository()
         self.local = LocalDatasetRepository()
         self.installed = InstalledDatasetRepository(user)
+        self.user_store = UserDatasetRepository(user)
         self.computed = ComputedDatasetIndexer()
         self.preview_service = DatasetPreviewService()
 
@@ -38,6 +40,7 @@ class DatasetCatalogService:
             registry=self.registry,
             local=self.local,
             installed=self.installed,
+            user_store=self.user_store,
             computed=self.computed,
             preview_service=self.preview_service,
             paths=self._paths,

@@ -8,6 +8,31 @@ def _auth(token):
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
+def test_imported_dataset_lists_as_standalone_catalog_item(
+    client, user_and_token, tmp_path, monkeypatch
+):
+    """An import with no open dataflow registers a standalone catalog item that
+    shows up in the browse listing (include_hub) as not-installed."""
+    _, token = user_and_token
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+
+    imp = client.post(
+        "/api/datasets/import",
+        headers={"Authorization": f"Bearer {token}"},
+        data={"file": (io.BytesIO(b"a,b\n1,2\n"), "cities.csv")},
+        content_type="multipart/form-data",
+    )
+    assert imp.status_code == 201, imp.get_data(as_text=True)
+    imported_id = imp.get_json()["id"]
+
+    resp = client.get("/api/datasets/catalog", headers=_auth(token))
+    assert resp.status_code == 200
+    items = {item["id"]: item for item in resp.get_json()["items"]}
+    assert imported_id in items, "imported dataset should be listed account-level"
+    assert items[imported_id]["installed"] is False
+    assert items[imported_id]["origin"] == "imported"
+
+
 def test_import_osm_pbf_is_rejected_with_autark_guidance(
     client, user_and_token, tmp_path, monkeypatch
 ):
