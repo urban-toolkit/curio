@@ -5,6 +5,7 @@ from .services.ingest import ingest_file
 from .services.get_artifact import get_softartifact_metadata
 from .services.retrieve import search_chunks
 from .services.explain import explain_artifact
+from .services.inform import inform_artifact
 
 from utk_curio.backend.app.users.dependencies import require_auth
 
@@ -90,8 +91,32 @@ def explain():
     query = data.get("query") or None
     top_k = data.get("top_k") or None    
 
-    test = explain_artifact(artifactId=artifactId, query=query, top_k=top_k,source_file= "Architecture.md");
-    return jsonify(test);
+    if artifactId is None:
+        return jsonify({"error": "missing artifactId"}), 400
+    if query is None:
+        return jsonify({"error": "missing query"}), 400
+
+    explanation = explain_artifact(artifactId=artifactId, query=query, top_k=top_k,source_file= "Architecture.md");
+    return jsonify(explanation);
     
 
+# ── Inform ──────────────────────────────────────────────────────────
+@bp.post("inform")
+@require_auth
+def inform():
+    data = request.get_json(silent = True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Request body must be valid JSON"}), 400
+    
+    
+    artifactId = data.get("artifactId") or None
+    top_k = data.get("top_k") or None
+    source_file = data.get("sourceFile") or None
+    context = data.get("context") or None
+    if artifactId is None:
+        return jsonify({"error": "missing artifactId"}), 400
+    
+    output = inform_artifact(artifactId=artifactId, top_k=top_k, context=context, source_file = source_file)
+    return jsonify(output)
 
+    

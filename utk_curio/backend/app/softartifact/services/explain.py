@@ -19,9 +19,9 @@ DEFAULT_QUERY = (
 )
 
 
-def _load_prompt() -> str:
+def _load_prompt(promt_path: any) -> str:
     """Read and return the system prompt text from disk."""
-    return PROMPT_PATH.read_text(encoding="utf-8")
+    return promt_path.read_text(encoding="utf-8")
 
 
 def _format_passages(spans: list[dict]) -> str:
@@ -76,7 +76,7 @@ def explain_artifact(artifactId, query, top_k, source_file) -> dict:
     user_text = f"Source file: {source_file or 'document'}\n\nPassages:\n{passages}"
 
     # Load the system prompt (instructions for how the LLM should behave)
-    system = _load_prompt()
+    system = _load_prompt(PROMPT_PATH)
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": user_text},
