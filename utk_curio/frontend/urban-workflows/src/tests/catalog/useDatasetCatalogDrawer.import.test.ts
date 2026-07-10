@@ -50,10 +50,7 @@ jest.mock("../../utils/saveOutputDataset", () => ({
 }));
 
 import { useDatasetCatalogDrawer } from "../../components/datasets/catalog/useDatasetCatalogDrawer";
-import {
-  DATASET_CATALOG_REFRESH_EVENT,
-  OSM_PBF_IMPORT_MESSAGE,
-} from "../../services/datasetCatalog";
+import { DATASET_CATALOG_REFRESH_EVENT } from "../../services/datasetCatalog";
 
 describe("useDatasetCatalogDrawer.onPickImport", () => {
   beforeEach(() => {
@@ -108,8 +105,14 @@ describe("useDatasetCatalogDrawer.onPickImport", () => {
   });
 
   it.each(["chicago.pbf", "chicago.osm.pbf", "CHICAGO.OSM.PBF"])(
-    "redirects OSM PBF imports (%s) to the Autark node without hitting the importer",
+    "sends OSM PBF (%s) through the importer like any supported format",
     async (name) => {
+      mockImportDataset.mockResolvedValueOnce({
+        id: "imported-osm",
+        title: name,
+        origin: "imported",
+        format: "parquet",
+      });
       const refreshSpy = jest.fn();
       window.addEventListener(DATASET_CATALOG_REFRESH_EVENT, refreshSpy);
 
@@ -120,9 +123,13 @@ describe("useDatasetCatalogDrawer.onPickImport", () => {
         await result.current.onPickImport(file);
       });
 
-      expect(mockImportDataset).not.toHaveBeenCalled();
-      expect(refreshSpy).not.toHaveBeenCalled();
-      expect(mockShowToast).toHaveBeenCalledWith(OSM_PBF_IMPORT_MESSAGE, "warning");
+      // .pbf is a real importable format now (backend converts it to GeoParquet).
+      expect(mockImportDataset).toHaveBeenCalledWith(file);
+      expect(refreshSpy).toHaveBeenCalledTimes(1);
+      expect(mockShowToast).toHaveBeenCalledWith(
+        `Registered ${name} in the data catalog.`,
+        "success",
+      );
 
       window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, refreshSpy);
     },

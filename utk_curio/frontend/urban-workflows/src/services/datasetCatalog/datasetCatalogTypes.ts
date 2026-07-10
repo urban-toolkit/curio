@@ -5,8 +5,10 @@ export type DatasetFormat = "csv" | "geojson" | "json" | "parquet" | "geotiff" |
 export type DatasetSortMode = "recent" | "name";
 
 /**
- * File extensions the generic dataset importer can ingest. Mirrors the backend
- * ``SUPPORTED_SUFFIXES`` (``datasets/domain/constants.py``) — keep in lockstep.
+ * File extensions the dataset importer can ingest. Mirrors the backend
+ * ``SUPPORTED_SUFFIXES`` (``datasets/domain/constants.py``) plus OSM PBF, which
+ * the backend converts to a single GeoParquet on import
+ * (``install/osm_pbf.py``). Keep in lockstep with the backend.
  */
 export const IMPORTABLE_DATASET_EXTENSIONS = [
   ".csv",
@@ -16,33 +18,12 @@ export const IMPORTABLE_DATASET_EXTENSIONS = [
   ".tif",
   ".tiff",
   ".shp",
+  ".pbf",
+  ".osm.pbf",
 ] as const;
 
-/**
- * OSM PBF is intentionally NOT importable as a dataset — it is consumed by an
- * Autark node (declarative UrbanSpec ``type: 'osm'`` → ``db.loadOsm``), not the
- * catalog importer. We keep it in the import picker's ``accept`` list so picking
- * one yields an explicit redirect message instead of the OS silently disabling
- * the file (which reads as "why can't I select my file?").
- */
-export const OSM_PBF_EXTENSIONS = [".osm.pbf", ".pbf"] as const;
-
 /** ``accept`` attribute for the Data Catalog import picker. */
-export const DATASET_IMPORT_ACCEPT = [
-  ...IMPORTABLE_DATASET_EXTENSIONS,
-  ...OSM_PBF_EXTENSIONS,
-].join(",");
-
-/** True when a filename is an OSM PBF (``.pbf`` / ``.osm.pbf``), case-insensitive. */
-export function isOsmPbfFilename(name: string): boolean {
-  const lower = name.toLowerCase();
-  return OSM_PBF_EXTENSIONS.some((ext) => lower.endsWith(ext));
-}
-
-/** User-facing guidance shown when someone tries to import an OSM PBF file. */
-export const OSM_PBF_IMPORT_MESSAGE =
-  "OSM PBF files can't be imported as datasets — load them with an Autark node " +
-  "(UrbanSpec OSM source), which reads the .pbf directly in the browser.";
+export const DATASET_IMPORT_ACCEPT = IMPORTABLE_DATASET_EXTENSIONS.join(",");
 
 /**
  * A dataset install that is currently in flight, surfaced as an "Installing…"

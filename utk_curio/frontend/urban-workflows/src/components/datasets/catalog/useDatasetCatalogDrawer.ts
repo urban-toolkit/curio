@@ -18,9 +18,7 @@ import {
   DatasetSortMode,
   DATASET_CATALOG_REFRESH_EVENT,
   datasetCatalogApi,
-  isOsmPbfFilename,
   notifyDatasetCatalogRefresh,
-  OSM_PBF_IMPORT_MESSAGE,
   useDatasetCatalog,
 } from "../../../services/datasetCatalog";
 import { buildSaveableLiveOutputs } from "../../../utils/saveOutputDataset";
@@ -285,13 +283,6 @@ export function useDatasetCatalogDrawer(presented: boolean) {
   const onPickImport = useCallback(
     async (file: File) => {
       if (importInFlightRef.current) return;
-      // OSM PBF isn't a catalog-importable format (the backend rejects it); it
-      // loads through an Autark node. Redirect explicitly instead of firing a
-      // silent request that comes back as a generic "unsupported format" error.
-      if (isOsmPbfFilename(file.name)) {
-        showToast(OSM_PBF_IMPORT_MESSAGE, "warning");
-        return;
-      }
       importInFlightRef.current = true;
       setBusyId("import");
       // No catalog row exists yet for a brand-new import, so the placeholder is the
