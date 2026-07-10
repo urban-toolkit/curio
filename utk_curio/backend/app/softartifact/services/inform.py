@@ -29,7 +29,7 @@ def _parse_inform_json(llm_text: str) -> dict:
         }
 
 #entry point
-def inform_artifact(artifactId: str, top_k: str, context: str, source_file: str):
+def inform_artifact(artifactId: str, top_k: str, source_file: str, context: any):
     spans = search_chunks(artifactId=artifactId, query = INFORM_QUERY, top_k = top_k)
     if not spans:
         return{
@@ -38,8 +38,16 @@ def inform_artifact(artifactId: str, top_k: str, context: str, source_file: str)
             "spans": [],
         }
     
+    context_block = ""
+    if context:
+        if isinstance(context, dict):
+            context_block = json.dumps(context, indent=2)
+        else:
+            context_block = str(context)
+
+
     passages = _format_passages(spans)
-    user_text = f"Passages: {passages} context: {context} sourceFile: {source_file}"
+    user_text = f"Passages: {passages} context: {context_block} sourceFile: {source_file}"
     
     system = _load_prompt(PROMPT_PATH)  #read the promt from the promt path
     messages = [

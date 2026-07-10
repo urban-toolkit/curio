@@ -25,7 +25,9 @@ interface SoftArtifactState{
   mimeType: string | null,
   status: 'empty' | 'ingesting' | 'ready' | 'error',
   errorMessage?: string,
-  explanation?: string,
+  explanation?: string, // this is for Explain route
+  guidance?: string,  //this is for Inform route
+  suggestions?: Record<string, unknown> //this is for Inform route
 }
 
 // Extends the generic NodeBehaviorData with this package's specific
@@ -106,6 +108,42 @@ async function explainArtifact(artifactId: string, sourceFile: string | null, to
 
 }
 
+// Call the backend's /inform endpoint for a given artifact
+// to suggest new nodes or guidance using the given artifact 
+async function informArtifact(artifactId: string, sourceFile: string | null, top_k = 8, context?: string) {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  };
+  
+  const token = getToken();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
+  const body: Record<string, unknown> = {
+    artifactId,
+    sourceFile,
+    top_k
+  }
+
+  if (context !== undefined && context !== null && context !== '') {
+    body.context = context;
+  }
+
+  const res = await fetch(`${API_BASE}/inform`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body)
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || err.hint || `HTTP ${res.status}`);
+  }
+
+  return res.json();
+}
+
 // Main hook powering the "soft artifact" node's behavior — handles file
 // upload/ingestion, state persistence, health checks, and the "explain" flow.
 export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
@@ -117,6 +155,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
   const [file, setFile] = useState<File | null>(null);           // currently selected (not yet ingested) file
   const [verifying, setVerifying] = useState(false); //short-lived UI while the GET api get run 
   const [explaining, setExplaining] = useState<boolean>(false);  // true while /explain call is in flight
+  const [informing, setInforming] = useState<boolean>(false);  // true while /inform call is in flight
 
 
   //health API call
@@ -219,6 +258,36 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
     }
   };
 
+  // run 'Inform' flow for the current artifact, call the backend
+  // emit the output
+  const runInform = async (artifactId: string, role: softArtifactRole) => {
+    if (role != 'inform' || !artifactId) return;
+
+    setInforming(true);
+    
+    try {
+      const out = await informArtifact(artifactId, state.sourceFile);
+      
+      persist({ guidance: out.guidance, suggestions: out.suggestions });
+
+      emitOutput({
+        artifactId,
+        sourceFile: state.sourceFile,
+        mimeType: state.mimeType,
+        role: 'inform',
+        guidance: out.guidance,
+        suggestions: out.suggestions
+      })
+    } catch (e) {
+      persist({
+        status: 'error',
+        errorMessage: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setInforming(false);
+    }
+  }
+
   //on mount effect, run once when the node is reloaded
   // Verifies with the backend that a previously-saved artifactId still
   // exists (e.g. after a page refresh). If the backend no longer has it,
@@ -306,9 +375,16 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
       const role = (out.role ?? state.role) as softArtifactRole;
       applyArtifactMeta(out, role);
 
+      console.log('[soft-artifact] ingest out:', out);
+      console.log('[soft-artifact] role:', out.role ?? state.role, 'artifactId:', out.artifactId);
       // Automatically trigger explanation if this node's role is "explain"
       if (role === "explain" && out.artifactId) {
         await runExplain(out.artifactId, role);
+      }
+
+      // Automatically trigger explanation if this node's role is "inform"
+      if (role === "inform" && out.artifactId) {
+        await runInform(out.artifactId, role);
       }
 
     } catch (e) {
@@ -419,7 +495,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
 
       {/* Explanation output (shown only in "explain" flow) */}
       <div>
-        {explaining ? (
+        {state.role === 'explain' && explaining ? (
           <p style={{ fontSize: 11, marginTop: 8 }}>Explaining…</p>
         ) : null}
         {state.explanation ? (
@@ -428,6 +504,25 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
           </pre>
         ) : null}
       </div> 
+
+      {/* Informing output (shown only in "inform" flow) */}
+      <div>
+        {state.role === 'inform' && informing ? (
+          <p style={{ fontSize: 11, marginTop: 8 }}>Informing…</p>
+        ) : null}
+
+        {state.guidance ? (
+          <pre style={{ marginTop: 8, fontSize: 10, background: '#f8fafc', padding: 8, whiteSpace: 'pre-wrap' }}>
+            {state.guidance}
+          </pre>
+        ) : null}
+
+        {state.suggestions ? (
+          <pre style={{ marginTop: 8, fontSize: 10, background: '#f8fafc', padding: 8, whiteSpace: 'pre-wrap' }}>
+            { JSON.stringify(state.suggestions, null, 2) }
+          </pre>
+        ) : null}
+      </div>
     </>
 
   );

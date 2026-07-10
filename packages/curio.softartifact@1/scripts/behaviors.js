@@ -106,20 +106,20 @@ function artifactStatusLine(state, verifying) {
 // to summarize/explain the document (using the default query server-side).
 function explainArtifact(_x, _x2) {
   return _explainArtifact.apply(this, arguments);
-} // Main hook powering the "soft artifact" node's behavior — handles file
-// upload/ingestion, state persistence, health checks, and the "explain" flow.
+} // Call the backend's /inform endpoint for a given artifact
+// to suggest new nodes or guidance using the given artifact 
 function _explainArtifact() {
-  _explainArtifact = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4(artifactId, sourceFile) {
+  _explainArtifact = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5(artifactId, sourceFile) {
     var top_k,
       headers,
       token,
       res,
       err,
-      _args4 = arguments;
-    return _regenerator().w(function (_context4) {
-      while (1) switch (_context4.n) {
+      _args5 = arguments;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.n) {
         case 0:
-          top_k = _args4.length > 2 && _args4[2] !== undefined ? _args4[2] : 8;
+          top_k = _args5.length > 2 && _args5[2] !== undefined ? _args5[2] : 8;
           headers = {
             'Content-Type': 'application/json'
           }; // Attach auth token if we have one
@@ -127,7 +127,7 @@ function _explainArtifact() {
           if (token) {
             headers.Authorization = "Bearer ".concat(token);
           }
-          _context4.n = 1;
+          _context5.n = 1;
           return fetch("".concat(API_BASE, "/explain"), {
             method: "POST",
             headers: headers,
@@ -139,24 +139,84 @@ function _explainArtifact() {
             })
           });
         case 1:
-          res = _context4.v;
+          res = _context5.v;
           if (res.ok) {
-            _context4.n = 3;
+            _context5.n = 3;
             break;
           }
-          _context4.n = 2;
+          _context5.n = 2;
           return res.json()["catch"](function () {
             return {};
           });
         case 2:
-          err = _context4.v;
+          err = _context5.v;
           throw new Error(err.error || err.hint || "HTTP ".concat(res.status));
         case 3:
-          return _context4.a(2, res.json());
+          return _context5.a(2, res.json());
       }
-    }, _callee4);
+    }, _callee5);
   }));
   return _explainArtifact.apply(this, arguments);
+}
+function informArtifact(_x3, _x4) {
+  return _informArtifact.apply(this, arguments);
+} // Main hook powering the "soft artifact" node's behavior — handles file
+// upload/ingestion, state persistence, health checks, and the "explain" flow.
+function _informArtifact() {
+  _informArtifact = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6(artifactId, sourceFile) {
+    var top_k,
+      context,
+      headers,
+      token,
+      body,
+      res,
+      err,
+      _args6 = arguments;
+    return _regenerator().w(function (_context6) {
+      while (1) switch (_context6.n) {
+        case 0:
+          top_k = _args6.length > 2 && _args6[2] !== undefined ? _args6[2] : 8;
+          context = _args6.length > 3 ? _args6[3] : undefined;
+          headers = {
+            'Content-Type': 'application/json'
+          };
+          token = getToken();
+          if (token) {
+            headers.Authorization = "Bearer ".concat(token);
+          }
+          body = {
+            artifactId: artifactId,
+            sourceFile: sourceFile,
+            top_k: top_k
+          };
+          if (context !== undefined && context !== null && context !== '') {
+            body.context = context;
+          }
+          _context6.n = 1;
+          return fetch("".concat(API_BASE, "/inform"), {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(body)
+          });
+        case 1:
+          res = _context6.v;
+          if (res.ok) {
+            _context6.n = 3;
+            break;
+          }
+          _context6.n = 2;
+          return res.json()["catch"](function () {
+            return {};
+          });
+        case 2:
+          err = _context6.v;
+          throw new Error(err.error || err.hint || "HTTP ".concat(res.status));
+        case 3:
+          return _context6.a(2, res.json());
+      }
+    }, _callee6);
+  }));
+  return _informArtifact.apply(this, arguments);
 }
 var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) {
   //data doesn't have softArtifact field, therefore extending the package specific field for data (nodeData)
@@ -183,6 +243,10 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
     _useState0 = _slicedToArray(_useState9, 2),
     explaining = _useState0[0],
     setExplaining = _useState0[1]; // true while /explain call is in flight
+  var _useState1 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false),
+    _useState10 = _slicedToArray(_useState1, 2),
+    informing = _useState10[0],
+    setInforming = _useState10[1]; // true while /inform call is in flight
 
   //health API call
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(function () {
@@ -313,8 +377,63 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
         }
       }, _callee, null, [[2, 4, 5, 6]]);
     }));
-    return function runExplain(_x3, _x4) {
+    return function runExplain(_x5, _x6) {
       return _ref.apply(this, arguments);
+    };
+  }();
+
+  // run 'Inform' flow for the current artifact, call the backend
+  // emit the output
+  var runInform = /*#__PURE__*/function () {
+    var _ref2 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2(artifactId, role) {
+      var out, _t2;
+      return _regenerator().w(function (_context2) {
+        while (1) switch (_context2.p = _context2.n) {
+          case 0:
+            if (!(role != 'inform' || !artifactId)) {
+              _context2.n = 1;
+              break;
+            }
+            return _context2.a(2);
+          case 1:
+            setInforming(true);
+            _context2.p = 2;
+            _context2.n = 3;
+            return informArtifact(artifactId, state.sourceFile);
+          case 3:
+            out = _context2.v;
+            persist({
+              guidance: out.guidance,
+              suggestions: out.suggestions
+            });
+            emitOutput({
+              artifactId: artifactId,
+              sourceFile: state.sourceFile,
+              mimeType: state.mimeType,
+              role: 'inform',
+              guidance: out.guidance,
+              suggestions: out.suggestions
+            });
+            _context2.n = 5;
+            break;
+          case 4:
+            _context2.p = 4;
+            _t2 = _context2.v;
+            persist({
+              status: 'error',
+              errorMessage: _t2 instanceof Error ? _t2.message : String(_t2)
+            });
+          case 5:
+            _context2.p = 5;
+            setInforming(false);
+            return _context2.f(5);
+          case 6:
+            return _context2.a(2);
+        }
+      }, _callee2, null, [[2, 4, 5, 6]]);
+    }));
+    return function runInform(_x7, _x8) {
+      return _ref2.apply(this, arguments);
     };
   }();
 
@@ -334,24 +453,24 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
     // Guards against updating state after unmount (see earlier explanation)
     var cancelled = false;
     setVerifying(true);
-    _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
-      var _nodeData$softArtifac3, _nodeData$softArtifac4, res, out, role, _t2;
-      return _regenerator().w(function (_context2) {
-        while (1) switch (_context2.p = _context2.n) {
+    _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
+      var _nodeData$softArtifac3, _nodeData$softArtifac4, res, out, role, _t3;
+      return _regenerator().w(function (_context3) {
+        while (1) switch (_context3.p = _context3.n) {
           case 0:
-            _context2.p = 0;
-            _context2.n = 1;
+            _context3.p = 0;
+            _context3.n = 1;
             return fetch("".concat(API_BASE, "/artifacts/").concat(encodeURI(artifactId)));
           case 1:
-            res = _context2.v;
+            res = _context3.v;
             if (!cancelled) {
-              _context2.n = 2;
+              _context3.n = 2;
               break;
             }
-            return _context2.a(2);
+            return _context3.a(2);
           case 2:
             if (!(res.status === 400)) {
-              _context2.n = 3;
+              _context3.n = 3;
               break;
             }
             persist({
@@ -365,40 +484,40 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
               explanation: undefined
             });
             setFile(null);
-            return _context2.a(2);
+            return _context3.a(2);
           case 3:
             if (res.ok) {
-              _context2.n = 4;
+              _context3.n = 4;
               break;
             }
-            return _context2.a(2);
+            return _context3.a(2);
           case 4:
-            _context2.n = 5;
+            _context3.n = 5;
             return res.json();
           case 5:
-            out = _context2.v;
+            out = _context3.v;
             if (!cancelled) {
-              _context2.n = 6;
+              _context3.n = 6;
               break;
             }
-            return _context2.a(2);
+            return _context3.a(2);
           case 6:
             role = (_nodeData$softArtifac3 = (_nodeData$softArtifac4 = nodeData.softArtifact) === null || _nodeData$softArtifac4 === void 0 ? void 0 : _nodeData$softArtifac4.role) !== null && _nodeData$softArtifac3 !== void 0 ? _nodeData$softArtifac3 : state.role;
             applyArtifactMeta(out, role);
-            _context2.n = 8;
+            _context3.n = 8;
             break;
           case 7:
-            _context2.p = 7;
-            _t2 = _context2.v;
+            _context3.p = 7;
+            _t3 = _context3.v;
             console.log("verifying unsuccesful with on mount effect softartifact node");
           case 8:
-            _context2.p = 8;
+            _context3.p = 8;
             if (!cancelled) setVerifying(false);
-            return _context2.f(8);
+            return _context3.f(8);
           case 9:
-            return _context2.a(2);
+            return _context3.a(2);
         }
-      }, _callee2, null, [[0, 7, 8, 9]]);
+      }, _callee3, null, [[0, 7, 8, 9]]);
     }))();
 
     // Cleanup: mark this effect run as stale if the component unmounts
@@ -412,77 +531,85 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
   // then applies the returned metadata and (if role is "explain") kicks
   // off the explain flow automatically.
   var onIngest = /*#__PURE__*/function () {
-    var _ref3 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
-      var _out$role, form, res, err, out, role, _t3;
-      return _regenerator().w(function (_context3) {
-        while (1) switch (_context3.p = _context3.n) {
+    var _ref4 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4() {
+      var _out$role, _out$role2, form, res, err, out, role, _t4;
+      return _regenerator().w(function (_context4) {
+        while (1) switch (_context4.p = _context4.n) {
           case 0:
             if (file) {
-              _context3.n = 1;
+              _context4.n = 1;
               break;
             }
-            return _context3.a(2);
+            return _context4.a(2);
           case 1:
             persist({
               status: "ingesting"
             });
 
             //ingesting the using API_BASE/ingest 
-            _context3.p = 2;
+            _context4.p = 2;
             form = new FormData();
             form.append('file', file);
             form.append('role', state.role);
-            _context3.n = 3;
+            _context4.n = 3;
             return fetch("".concat(API_BASE, "/ingest"), {
               method: 'POST',
               headers: {},
               body: form
             });
           case 3:
-            res = _context3.v;
+            res = _context4.v;
             if (res.ok) {
-              _context3.n = 5;
+              _context4.n = 5;
               break;
             }
-            _context3.n = 4;
+            _context4.n = 4;
             return res.json()["catch"](function () {
               return {};
             });
           case 4:
-            err = _context3.v;
+            err = _context4.v;
             throw new Error(err.error || "HTTP  ".concat(res.status));
           case 5:
-            _context3.n = 6;
+            _context4.n = 6;
             return res.json();
           case 6:
-            out = _context3.v;
+            out = _context4.v;
             role = (_out$role = out.role) !== null && _out$role !== void 0 ? _out$role : state.role;
             applyArtifactMeta(out, role);
-
+            console.log('[soft-artifact] ingest out:', out);
+            console.log('[soft-artifact] role:', (_out$role2 = out.role) !== null && _out$role2 !== void 0 ? _out$role2 : state.role, 'artifactId:', out.artifactId);
             // Automatically trigger explanation if this node's role is "explain"
             if (!(role === "explain" && out.artifactId)) {
-              _context3.n = 7;
+              _context4.n = 7;
               break;
             }
-            _context3.n = 7;
+            _context4.n = 7;
             return runExplain(out.artifactId, role);
           case 7:
-            _context3.n = 9;
-            break;
+            if (!(role === "inform" && out.artifactId)) {
+              _context4.n = 8;
+              break;
+            }
+            _context4.n = 8;
+            return runInform(out.artifactId, role);
           case 8:
-            _context3.p = 8;
-            _t3 = _context3.v;
+            _context4.n = 10;
+            break;
+          case 9:
+            _context4.p = 9;
+            _t4 = _context4.v;
             persist({
               status: 'error',
-              errorMessage: _t3 instanceof Error ? _t3.message : String(_t3)
+              errorMessage: _t4 instanceof Error ? _t4.message : String(_t4)
             });
-          case 9:
-            return _context3.a(2);
+          case 10:
+            return _context4.a(2);
         }
-      }, _callee3, null, [[2, 8]]);
+      }, _callee4, null, [[2, 9]]);
     }));
     return function onIngest() {
-      return _ref3.apply(this, arguments);
+      return _ref4.apply(this, arguments);
     };
   }();
 
@@ -600,7 +727,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
       background: !file || state.status === 'ingesting' ? '#e2e8f0' : '#2563eb',
       color: !file || state.status === 'ingesting' ? '#94a3b8' : '#fff'
     }
-  }, artifactStatusLine(state, verifying))), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, explaining ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", {
+  }, artifactStatusLine(state, verifying))), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, state.role === 'explain' && explaining ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", {
     style: {
       fontSize: 11,
       marginTop: 8
@@ -613,7 +740,28 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
       padding: 8,
       whiteSpace: 'pre-wrap'
     }
-  }, state.explanation) : null));
+  }, state.explanation) : null), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, state.role === 'inform' && informing ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", {
+    style: {
+      fontSize: 11,
+      marginTop: 8
+    }
+  }, "Informing\u2026") : null, state.guidance ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("pre", {
+    style: {
+      marginTop: 8,
+      fontSize: 10,
+      background: '#f8fafc',
+      padding: 8,
+      whiteSpace: 'pre-wrap'
+    }
+  }, state.guidance) : null, state.suggestions ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("pre", {
+    style: {
+      marginTop: 8,
+      fontSize: 10,
+      background: '#f8fafc',
+      padding: 8,
+      whiteSpace: 'pre-wrap'
+    }
+  }, JSON.stringify(state.suggestions, null, 2)) : null));
   return {
     contentComponent: contentComponent,
     disablePlay: true

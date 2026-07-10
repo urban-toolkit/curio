@@ -1,3 +1,4 @@
+#entry point for softArtifact node
 import os 
 from flask import jsonify, request
 
@@ -93,8 +94,7 @@ def explain():
 
     if artifactId is None:
         return jsonify({"error": "missing artifactId"}), 400
-    if query is None:
-        return jsonify({"error": "missing query"}), 400
+
 
     explanation = explain_artifact(artifactId=artifactId, query=query, top_k=top_k,source_file= "Architecture.md");
     return jsonify(explanation);
