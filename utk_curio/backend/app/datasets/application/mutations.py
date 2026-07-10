@@ -19,7 +19,6 @@ from utk_curio.backend.app.datasets.infrastructure.catalog_utils import (
 )
 from utk_curio.backend.app.datasets.domain.constants import (
     JUNK_SOURCE_LABELS,
-    OSM_PBF_IMPORT_MESSAGE,
     OSM_PBF_SUFFIXES,
     SUPPORTED_SUFFIXES,
 )
@@ -68,14 +67,37 @@ class CatalogMutations:
         if not filename:
             raise DatasetCatalogError("No file selected")
         suffix = Path(filename).suffix.lower()
+        file_bytes = file.read()
+
+        # OSM PBF is multi-layer and not a directly storable dataset file, so we
+        # convert it to a single GeoParquet (all non-empty layers merged, with an
+        # ``osm_layer`` column) and import THAT as a normal geo dataset. The rest
+        # of the pipeline (loader, preview, export) then treats it like any other
+        # GeoParquet import.
+        osm_feature_count: int | None = None
         if suffix in OSM_PBF_SUFFIXES:
-            raise DatasetCatalogError(OSM_PBF_IMPORT_MESSAGE)
-        if suffix not in SUPPORTED_SUFFIXES:
+            from utk_curio.backend.app.datasets.install.osm_pbf import (
+                OsmPbfError,
+                convert_osm_pbf_to_geoparquet,
+            )
+
+            try:
+                file_bytes, osm_feature_count = convert_osm_pbf_to_geoparquet(file_bytes)
+            except OsmPbfError as exc:
+                raise DatasetCatalogError(str(exc)) from exc
+            fmt = "parquet"
+            base = filename
+            for pbf_suffix in (".osm.pbf", ".pbf"):
+                if base.lower().endswith(pbf_suffix):
+                    base = base[: -len(pbf_suffix)]
+                    break
+            filename = f"{base or 'osm'}.parquet"
+        elif suffix not in SUPPORTED_SUFFIXES:
             raise DatasetCatalogError(f"Unsupported dataset format: {suffix or filename}")
-        fmt = SUPPORTED_SUFFIXES[suffix]
+        else:
+            fmt = SUPPORTED_SUFFIXES[suffix]
 
         user_key = self._paths._user_key()
-        file_bytes = file.read()
 
         try:
             result = install_imported_file(
@@ -87,6 +109,9 @@ class CatalogMutations:
         # Compute row/feature counts and patch the manifest if they were missing.
         data_path = result.dest / result.manifest.data_file
         row_count, feature_count = count_file(data_path, fmt)
+        # count_file doesn't parse parquet; use the count from OSM conversion.
+        if feature_count is None and osm_feature_count is not None:
+            feature_count = osm_feature_count
         if (result.manifest.row_count is None and row_count is not None) or (
             result.manifest.feature_count is None and feature_count is not None
         ):

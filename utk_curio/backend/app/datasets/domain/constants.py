@@ -14,15 +14,11 @@ SUPPORTED_SUFFIXES = {
     ".shp": "shp",
 }
 
-# OSM PBF is deliberately absent from SUPPORTED_SUFFIXES: it is consumed by an
-# Autark node (declarative UrbanSpec ``type: 'osm'`` → ``db.loadOsm``), not the
-# catalog importer. The import route special-cases these suffixes so the user
-# gets an explicit redirect instead of the generic "unsupported format" error.
+# OSM PBF suffixes. Not in SUPPORTED_SUFFIXES because a ``.pbf`` isn't stored
+# verbatim: the importer converts it to a single GeoParquet (all OSM layers
+# merged) before installing. The import route special-cases these suffixes to
+# run that conversion (see ``install/osm_pbf.py``).
 OSM_PBF_SUFFIXES = (".pbf",)
-OSM_PBF_IMPORT_MESSAGE = (
-    "OSM PBF files can't be imported as datasets — load them with an Autark "
-    "node (UrbanSpec OSM source), which reads the .pbf directly in the browser."
-)
 
 # Sidecar files written next to dataset files: the row/feature counts cache from
 # ``file_meta`` (``<file>.meta.json``) and the parquet object-column decode map

@@ -93,25 +93,84 @@ def test_import_does_not_auto_install_and_explicit_install_attaches(
     assert row is not None and row["installed"] is False
 
 
-def test_import_osm_pbf_is_rejected_with_autark_guidance(
+def _osm_geo_available() -> bool:
+    try:
+        import geopandas  # noqa: F401
+        import pyogrio
+    except Exception:
+        return False
+    try:
+        return bool(pyogrio.list_drivers().get("OSM"))
+    except Exception:
+        return False
+
+
+def _sample_pbf() -> Path:
+    from pathlib import Path as _P
+
+    # repo_root/docs/examples/data/<file>.osm.pbf
+    root = _P(__file__).resolve().parents[4]
+    return root / "docs" / "examples" / "data" / "back_bay.osm.pbf"
+
+
+def test_import_osm_pbf_creates_geoparquet_dataset(
     client, user_and_token, tmp_path, monkeypatch
 ):
-    """OSM PBF isn't a catalog-importable format; the importer must reject it
-    with an explicit Autark-node redirect rather than a generic error."""
-    from utk_curio.backend.app.datasets.domain.constants import OSM_PBF_IMPORT_MESSAGE
+    """Importing an OSM PBF converts it to a standalone GeoParquet catalog
+    dataset (all layers merged, register-only)."""
+    import pytest
+
+    if not _osm_geo_available():
+        pytest.skip("geopandas/pyogrio with the GDAL OSM driver is not available")
+    pbf = _sample_pbf()
+    if not pbf.is_file():
+        pytest.skip(f"sample PBF not found at {pbf}")
 
     _, token = user_and_token
     monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
 
-    for filename in ("chicago.pbf", "chicago.osm.pbf"):
-        resp = client.post(
-            "/api/datasets/import",
-            headers={"Authorization": f"Bearer {token}"},
-            data={"file": (io.BytesIO(b"\x00binary"), filename)},
-            content_type="multipart/form-data",
-        )
-        assert resp.status_code == 400, filename
-        assert resp.get_json()["error"] == OSM_PBF_IMPORT_MESSAGE, filename
+    resp = client.post(
+        "/api/datasets/import",
+        headers={"Authorization": f"Bearer {token}"},
+        data={"file": (io.BytesIO(pbf.read_bytes()), "back_bay.osm.pbf")},
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    item = resp.get_json()
+    assert item["format"] == "parquet"
+    assert item["origin"] == "imported"
+    assert item["installed"] is False
+    assert (item.get("featureCount") or 0) > 0
+
+    # It lists as a standalone catalog item and previews as a real table.
+    listed = client.get("/api/datasets/catalog", headers=_auth(token)).get_json()["items"]
+    assert any(i["id"] == item["id"] for i in listed)
+
+    from utk_curio.backend.app.datasets.install.osm_pbf import OSM_LAYER_COLUMN
+
+    preview = client.get(
+        f"/api/datasets/{item['id']}/preview", headers=_auth(token)
+    )
+    assert preview.status_code == 200, preview.get_data(as_text=True)
+    body = preview.get_json()
+    assert (body.get("totalRows") or 0) > 0
+    field_names = [f["name"] for f in body.get("schema", {}).get("fields", [])]
+    assert OSM_LAYER_COLUMN in field_names
+
+
+def test_import_pbf_reports_clear_error_when_geo_extras_missing(monkeypatch):
+    """Without the geo stack the converter raises a user-facing OsmPbfError
+    (surfaced as a 4xx by the route), never a raw ImportError."""
+    from utk_curio.backend.app.datasets.install import osm_pbf
+
+    def _boom():
+        raise osm_pbf.OsmPbfError("geo extras missing")
+
+    monkeypatch.setattr(osm_pbf, "_import_geo", _boom)
+    import pytest
+
+    with pytest.raises(osm_pbf.OsmPbfError):
+        osm_pbf.convert_osm_pbf_to_geoparquet(b"not-a-real-pbf")
 
 
 def test_dataset_catalog_lists_hub_datasets(client, user_and_token, tmp_path, monkeypatch):
