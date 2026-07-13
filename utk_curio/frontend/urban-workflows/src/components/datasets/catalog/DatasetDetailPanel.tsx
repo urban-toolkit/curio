@@ -485,8 +485,8 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
                 <div><dt>CRS</dt><dd>{dataset.schema.crs}</dd></div>
               ) : null}
               <div><dt>Availability</dt><dd><span className={styles.installedBadge}>{dataset.installed ? "Installed" : "Available"}</span></dd></div>
-              <div><dt>Created</dt><dd>{absoluteDate(dataset.createdAt ?? dataset.updatedAt)}</dd></div>
-              <div><dt>Last updated</dt><dd title={absoluteDate(dataset.updatedAt)}>{relativeTime(dataset.updatedAt)}</dd></div>
+              <div><dt>Imported</dt><dd>{absoluteDate(dataset.createdAt ?? dataset.updatedAt)}</dd></div>
+              {/*<div><dt>Last updated</dt><dd title={absoluteDate(dataset.updatedAt)}>{relativeTime(dataset.updatedAt)}</dd></div>*/}
               {dataset.sourceUpdatedAt ? (
                 <div><dt>Source updated</dt><dd title={absoluteDate(dataset.sourceUpdatedAt)}>{relativeTime(dataset.sourceUpdatedAt)}</dd></div>
               ) : null}

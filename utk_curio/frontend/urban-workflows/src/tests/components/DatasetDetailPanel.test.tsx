@@ -147,7 +147,7 @@ describe("DatasetDetailPanel timestamps (record vs. source file)", () => {
     mockUseDatasetLineage.mockReset();
   });
 
-  it("uses createdAt (not updatedAt) for the Created row", () => {
+  it("uses createdAt (not updatedAt) for the Imported row", () => {
     renderPanel(
       lineageFixture(),
       catalogItem({
@@ -156,10 +156,10 @@ describe("DatasetDetailPanel timestamps (record vs. source file)", () => {
       }),
     );
     const sidebar = within(screen.getByRole("complementary", { name: "Dataset info" }));
-    const created = sidebar.getByText("Created").nextElementSibling;
-    // The absolute Created date reflects createdAt (2020), not updatedAt (2026).
-    expect(created).toHaveTextContent(/2020|Mar/);
-    expect(created).not.toHaveTextContent("2026");
+    const imported = sidebar.getByText("Imported", { selector: "dt" }).nextElementSibling;
+    // The absolute Imported date reflects createdAt (2020), not updatedAt (2026).
+    expect(imported).toHaveTextContent(/2020|Mar/);
+    expect(imported).not.toHaveTextContent("2026");
   });
 
   it("shows a distinct Source updated row only when sourceUpdatedAt is present", () => {
