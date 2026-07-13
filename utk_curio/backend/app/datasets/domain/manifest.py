@@ -35,6 +35,11 @@ class DatasetManifest:
     row_count: int | None = None
     schema: dict[str, Any] | None = None
     source_label: str | None = None
+    # Grouping for multi-part imports (e.g. OSM PBF layers): every layer dataset
+    # from one import shares ``group_id`` and carries its own ``layer_name``, so
+    # the catalog can present them as a single tabbed entry.
+    group_id: str | None = None
+    layer_name: str | None = None
 
     @property
     def dir_name(self) -> str:
@@ -99,6 +104,8 @@ def _parse_manifest(raw: dict[str, Any], *, where: str) -> DatasetManifest:
         row_count=row_count,
         schema=schema,
         source_label=str(raw.get("sourceLabel") or raw.get("publisher") or "Data Catalog") or None,
+        group_id=str(raw.get("groupId") or "") or None,
+        layer_name=str(raw.get("layerName") or "") or None,
     )
 
 
@@ -127,6 +134,8 @@ def build_manifest_dict(manifest: DatasetManifest) -> dict[str, Any]:
         "schema": manifest.schema,
         "createdAt": manifest.created_at or None,
         "updatedAt": manifest.updated_at or None,
+        "groupId": manifest.group_id or None,
+        "layerName": manifest.layer_name or None,
     }
 
 

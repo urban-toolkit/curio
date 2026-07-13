@@ -149,6 +149,11 @@ def test_import_osm_pbf_creates_one_dataset_per_layer(
     layer_items = [i for i in listed if (i.get("title") or "").startswith("back_bay (")]
     assert len(layer_items) == layer_count
     assert all(i["installed"] is False and i["format"] == "parquet" for i in layer_items)
+    # All layers share one group id and carry their own layer name.
+    group_ids = {i.get("groupId") for i in layer_items}
+    assert len(group_ids) == 1 and next(iter(group_ids))
+    assert all(i.get("layerName") for i in layer_items)
+    assert item.get("groupId") == next(iter(group_ids))
     # The primary item previews as a real, homogeneous-geometry table.
     preview = client.get(
         f"/api/datasets/{item['id']}/preview", headers=_auth(token)

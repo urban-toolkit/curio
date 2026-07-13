@@ -177,6 +177,10 @@ def base_item(**overrides: Any) -> dict[str, Any]:
         "schema": None,
         "loaderSnippet": None,
         "installed": False,
+        # Grouping for multi-part imports (OSM PBF layers). ``groupId`` links the
+        # sibling layer datasets; ``layerName`` is this dataset's layer.
+        "groupId": None,
+        "layerName": None,
     }
     item.update(overrides)
     if item["loaderSnippet"] is None:
@@ -250,4 +254,6 @@ def item_from_manifest(manifest: DatasetManifest, dataset_root: Path, *, origin:
         license=manifest.license or None,
         tags=manifest.tags,
         schema=manifest.schema,
+        groupId=manifest.group_id,
+        layerName=manifest.layer_name,
     )

@@ -51,3 +51,8 @@ class CatalogItem(TypedDict, total=False):
     installed: bool
     dirName: str
     needsReinstall: bool
+
+    # Grouping for multi-part imports (OSM PBF layers): sibling layer datasets
+    # share ``groupId``; ``layerName`` is this dataset's layer.
+    groupId: str | None
+    layerName: str | None

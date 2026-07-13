@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import shutil
 from copy import deepcopy
 from pathlib import Path
@@ -85,6 +86,8 @@ class CatalogMutations:
         *,
         title: str | None = None,
         feature_count_override: int | None = None,
+        group_id: str | None = None,
+        layer_name: str | None = None,
     ) -> dict[str, Any]:
         """Write imported bytes to the account-level user store and build the
         catalog item. Register-only: never attaches the dataset to a dataflow —
@@ -98,7 +101,13 @@ class CatalogMutations:
         user_key = self._paths._user_key()
         try:
             result = install_imported_file(
-                user_key, file_bytes, filename, fmt, title=title
+                user_key,
+                file_bytes,
+                filename,
+                fmt,
+                title=title,
+                group_id=group_id,
+                layer_name=layer_name,
             )
         except InstallerError as exc:
             raise DatasetCatalogError(str(exc)) from exc
@@ -149,6 +158,9 @@ class CatalogMutations:
         except OsmPbfError as exc:
             raise DatasetCatalogError(str(exc)) from exc
 
+        # One deterministic group id per PBF (content hash) so all layers of the
+        # same import share it and re-importing the same file reuses the group.
+        group_id = f"osm.x{hashlib.sha256(pbf_bytes).hexdigest()[:8]}"
         prefix = title.strip() if title and title.strip() else base
         items: list[dict[str, Any]] = []
         for layer in layers:
@@ -159,6 +171,8 @@ class CatalogMutations:
                     "parquet",
                     title=f"{prefix} ({layer.name})",
                     feature_count_override=layer.feature_count,
+                    group_id=group_id,
+                    layer_name=layer.name,
                 )
             )
 

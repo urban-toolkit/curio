@@ -310,11 +310,14 @@ def install_imported_file(
     *,
     title: str | None = None,
     replace: bool = False,
+    group_id: str | None = None,
+    layer_name: str | None = None,
 ) -> InstallResult:
     """Save an uploaded file into the user's dataset store with a generated manifest.
 
     The dataset folder name is derived from a SHA-256 hash of the file content,
-    so re-uploading the same file returns the existing install.
+    so re-uploading the same file returns the existing install. ``group_id`` /
+    ``layer_name`` link multi-part imports (e.g. the layers of one OSM PBF).
     """
     hash_hex = hashlib.sha256(file_bytes).hexdigest()[:8]
     # The dir-name regex requires each dot-segment to start with [a-z].
@@ -371,6 +374,8 @@ def install_imported_file(
         row_count=None,
         feature_count=None,
         schema=None,
+        group_id=group_id,
+        layer_name=layer_name,
     )
     write_manifest(manifest_obj, dest)
 
