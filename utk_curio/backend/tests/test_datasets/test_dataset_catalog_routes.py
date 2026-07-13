@@ -202,8 +202,11 @@ def test_osm_group_card_detail_and_install_all(
 
     # Ungrouped listing (palette): individual layers, no group card.
     flat = client.get("/api/datasets/catalog", headers=_auth(token)).get_json()["items"]
-    assert len([i for i in flat if i.get("groupId") == group_id]) == layer_count
+    layer_ids = {i["id"] for i in flat if i.get("groupId") == group_id}
+    assert len(layer_ids) == layer_count
     assert not [i for i in flat if i["id"] == group_id]
+    # The group card exposes the real per-layer ids for client-side install.
+    assert set(group_cards[0]["groupLayerIds"]) == layer_ids
 
     # Group preview = one tabbed part per layer.
     overview = client.get(

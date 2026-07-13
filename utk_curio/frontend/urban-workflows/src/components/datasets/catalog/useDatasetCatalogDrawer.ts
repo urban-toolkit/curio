@@ -18,6 +18,7 @@ import {
   DatasetSortMode,
   DATASET_CATALOG_REFRESH_EVENT,
   datasetCatalogApi,
+  isOsmGroupId,
   notifyDatasetCatalogRefresh,
   useDatasetCatalog,
 } from "../../../services/datasetCatalog";
@@ -58,6 +59,9 @@ export function useDatasetCatalogDrawer(presented: boolean) {
     sort,
     origin: tabOrigin(tab),
     includeHub: true,
+    // Fold an OSM import's per-layer datasets into one bundle-shaped group card
+    // + tabbed detail. The palette (separate hook) keeps individual layers.
+    groupOsm: true,
     liveOutputs,
     enabled: presented,
   });
@@ -159,22 +163,39 @@ export function useDatasetCatalogDrawer(presented: boolean) {
         format: dataset.format,
       });
       try {
-        const installed = await datasetCatalogApi.installToDataflow(
-          id,
-          dataset.id,
-          dataset,
-          resolveComputedInstallTitle(dataset),
-        );
+        const isGroup = isOsmGroupId(dataset.id);
+        // An OSM group's id is synthetic — install each real per-layer dataset
+        // so their dataflow refs (which feed the saved spec) stay accurate.
+        const memberIds = isGroup ? dataset.groupLayerIds ?? [] : [dataset.id];
+        const installedItems: DatasetCatalogItem[] = [];
+        for (const memberId of memberIds) {
+          installedItems.push(
+            await datasetCatalogApi.installToDataflow(
+              id,
+              memberId,
+              isGroup ? undefined : dataset,
+              isGroup ? undefined : resolveComputedInstallTitle(dataset),
+            ),
+          );
+        }
         setDataflowDatasets((prev) => {
-          const next = prev.filter((row) => (row?.datasetId || row?.id) !== installed.id);
-          return [...next, dataflowRefFromCatalogItem(installed)];
+          const installedIds = new Set(installedItems.map((it) => it.id));
+          const next = prev.filter(
+            (row) => !installedIds.has(String(row?.datasetId || row?.id)),
+          );
+          return [...next, ...installedItems.map(dataflowRefFromCatalogItem)];
         });
         // Bust the cache so the drawer refetches fresh rather than re-reading
         // the stale cached response, then let the palette (and other catalog
         // listeners) refresh so the newly installed dataset shows up immediately.
         await catalog.reload({ bustCache: true });
         notifyDatasetCatalogRefresh();
-        showToast(`Installed ${dataset.title}.`, "success");
+        showToast(
+          isGroup
+            ? `Installed ${installedItems.length} layers from ${dataset.title}.`
+            : `Installed ${dataset.title}.`,
+          "success",
+        );
       } catch (err) {
         showToast((err as Error)?.message || "Could not install dataset.", "error");
       } finally {
@@ -191,15 +212,30 @@ export function useDatasetCatalogDrawer(presented: boolean) {
       if (!id) return;
       setBusyId(dataset.id);
       try {
-        await datasetCatalogApi.uninstallFromDataflow(id, dataset.id);
-        setDataflowDatasets((prev) =>
-          prev.filter((row) => (row?.datasetId || row?.id) !== dataset.id),
-        );
+        const isGroup = isOsmGroupId(dataset.id);
+        const memberIds = isGroup ? dataset.groupLayerIds ?? [] : [dataset.id];
+        for (const memberId of memberIds) {
+          try {
+            await datasetCatalogApi.uninstallFromDataflow(id, memberId);
+          } catch {
+            // A layer that wasn't installed is fine during a group uninstall.
+            if (!isGroup) throw new Error("Could not remove dataset.");
+          }
+        }
+        setDataflowDatasets((prev) => {
+          const removed = new Set(memberIds.map(String));
+          return prev.filter((row) => !removed.has(String(row?.datasetId || row?.id)));
+        });
         // Bust the cache so the drawer's own list refetches the post-uninstall
         // state immediately rather than re-reading the stale cached response.
         await catalog.reload({ bustCache: true });
         notifyDatasetCatalogRefresh();
-        showToast(`Removed ${dataset.title} from this dataflow.`, "success");
+        showToast(
+          isGroup
+            ? `Removed ${dataset.title} (${memberIds.length} layers) from this dataflow.`
+            : `Removed ${dataset.title} from this dataflow.`,
+          "success",
+        );
       } catch (err) {
         showToast((err as Error)?.message || "Could not remove dataset.", "error");
       } finally {

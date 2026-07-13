@@ -50,7 +50,10 @@ jest.mock("../../utils/saveOutputDataset", () => ({
 }));
 
 import { useDatasetCatalogDrawer } from "../../components/datasets/catalog/useDatasetCatalogDrawer";
-import { DATASET_CATALOG_REFRESH_EVENT } from "../../services/datasetCatalog";
+import {
+  DATASET_CATALOG_REFRESH_EVENT,
+  datasetCatalogApi,
+} from "../../services/datasetCatalog";
 
 describe("useDatasetCatalogDrawer.onPickImport", () => {
   beforeEach(() => {
@@ -136,4 +139,59 @@ describe("useDatasetCatalogDrawer.onPickImport", () => {
       window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, refreshSpy);
     },
   );
+});
+
+describe("useDatasetCatalogDrawer.onInstall (OSM group)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCatalogReload.mockResolvedValue(undefined);
+  });
+
+  it("installs each member layer (not the synthetic group id) and records real refs", async () => {
+    const installSpy = jest
+      .spyOn(datasetCatalogApi, "installToDataflow")
+      .mockImplementation(async (_flow, datasetId) => ({
+        id: datasetId,
+        title: datasetId,
+        origin: "imported",
+        format: "parquet",
+        dirName: `${datasetId}@1`,
+        uri: `curio://datasets/${datasetId}@1`,
+        consumerNodeIds: [],
+        tags: [],
+        updatedAt: "2026-01-01T00:00:00Z",
+        installed: true,
+      }) as never);
+
+    const group = {
+      id: "osm.xdeadbeef",
+      title: "back_bay",
+      origin: "imported" as const,
+      format: "bundle" as const,
+      uri: "curio://osm/osm.xdeadbeef",
+      consumerNodeIds: [],
+      tags: ["osm", "bundle"],
+      updatedAt: "2026-01-01T00:00:00Z",
+      groupLayerIds: ["imported.xaaa", "imported.xbbb"],
+    };
+
+    const { result } = renderHook(() => useDatasetCatalogDrawer(true));
+    await act(async () => {
+      await result.current.onInstall(group as never);
+    });
+
+    // Installed each real layer, never the synthetic group id.
+    expect(installSpy).toHaveBeenCalledTimes(2);
+    const installedIds = installSpy.mock.calls.map((c) => c[1]);
+    expect(installedIds).toEqual(["imported.xaaa", "imported.xbbb"]);
+    expect(installedIds).not.toContain("osm.xdeadbeef");
+    // dataflowDatasets got the real per-layer refs (so a later save won't drop them).
+    expect(mockSetDataflowDatasets).toHaveBeenCalled();
+    expect(mockShowToast).toHaveBeenCalledWith(
+      "Installed 2 layers from back_bay.",
+      "success",
+    );
+
+    installSpy.mockRestore();
+  });
 });

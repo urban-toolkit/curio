@@ -72,6 +72,10 @@ def build_osm_group_item(group_id: str, members: list[dict[str, Any]]) -> dict[s
         tags=["osm", "bundle"],
         schema={"bundleParts": bundle_parts},
         installed=installed,
+        # Real per-layer dataset ids, so the client can install/uninstall each
+        # member (keeping its dataflow refs accurate) rather than the synthetic
+        # group id.
+        groupLayerIds=[m.get("id") for m in members if m.get("id")],
     )
 
 

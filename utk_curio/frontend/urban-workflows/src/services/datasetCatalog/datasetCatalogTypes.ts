@@ -25,6 +25,15 @@ export const IMPORTABLE_DATASET_EXTENSIONS = [
 /** ``accept`` attribute for the Data Catalog import picker. */
 export const DATASET_IMPORT_ACCEPT = IMPORTABLE_DATASET_EXTENSIONS.join(",");
 
+/** Prefix of a synthetic OSM layer-group id (mirrors the backend). The group
+ * is a bundle-shaped catalog entry whose id addresses all its member layers. */
+export const OSM_GROUP_ID_PREFIX = "osm.";
+
+/** True when an id addresses a synthetic OSM layer group. */
+export function isOsmGroupId(id: string | null | undefined): boolean {
+  return typeof id === "string" && id.startsWith(OSM_GROUP_ID_PREFIX);
+}
+
 /**
  * A dataset install that is currently in flight, surfaced as an "Installing…"
  * placeholder in the dataset palette and Data Catalog drawer until the real
@@ -128,6 +137,9 @@ export interface DatasetCatalogItem {
    * files; N for an OSM PBF, which registers one dataset per layer (this item is
    * the first — the rest appear via the catalog listing on refresh). */
   importedDatasetCount?: number;
+  /** On a synthetic OSM group entry (``format: "bundle"``, id = group id): the
+   * real per-layer dataset ids, so the client installs/uninstalls each member. */
+  groupLayerIds?: string[];
 }
 
 export interface DatasetCatalogFacets {
@@ -185,6 +197,10 @@ export interface DatasetCatalogQuery {
   origin?: DatasetOrigin | "";
   sort?: DatasetSortMode;
   includeHub?: boolean;
+  /** Fold the per-layer datasets of an OSM import into one bundle-shaped group
+   * entry (catalog drawer). Off elsewhere (e.g. palette) so each layer stays a
+   * separate, draggable dataset. */
+  groupOsm?: boolean;
   /** Current (possibly unsaved) node outputs to show as computed datasets immediately. */
   liveOutputs?: Array<{ node_id: string; filename: string; data_type?: string }>;
 }

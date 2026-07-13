@@ -129,6 +129,7 @@ function queryString(query: DatasetCatalogQuery = {}): string {
   if (query.origin) params.set("origin", query.origin);
   if (query.sort) params.set("sort", query.sort);
   if (query.includeHub !== undefined) params.set("includeHub", String(query.includeHub));
+  if (query.groupOsm) params.set("groupOsm", "true");
   if (query.liveOutputs && query.liveOutputs.length > 0) {
     params.set("liveOutputs", encodeLiveOutputsParam(query.liveOutputs));
   }

@@ -22,6 +22,7 @@ type StableCatalogQuery = {
   origin?: string;
   sort?: string;
   includeHub?: boolean;
+  groupOsm?: boolean;
   liveOutputs?: DatasetCatalogQuery["liveOutputs"];
 };
 
@@ -33,6 +34,7 @@ export function catalogFetchKey(query: StableCatalogQuery): string {
   return JSON.stringify({
     dataflowId: query.dataflowId ?? "",
     includeHub: query.includeHub ?? true,
+    groupOsm: query.groupOsm ?? false,
     search: query.search ?? "",
     sort: query.sort ?? "recent",
     origin: query.origin ?? "",
@@ -49,6 +51,7 @@ export function toStableCatalogQuery(query: DatasetCatalogQuery = {}): StableCat
     origin: query.origin || undefined,
     sort: query.sort || "recent",
     includeHub: query.includeHub ?? true,
+    groupOsm: query.groupOsm ?? false,
     liveOutputs: query.liveOutputs,
   };
 }
@@ -87,6 +90,7 @@ export function useDatasetCatalog(query: UseDatasetCatalogOptions = {}) {
       queryRest.origin,
       queryRest.sort,
       queryRest.includeHub,
+      queryRest.groupOsm,
       JSON.stringify(queryRest.liveOutputs),
     ],
   );

@@ -53,6 +53,8 @@ class CatalogItem(TypedDict, total=False):
     needsReinstall: bool
 
     # Grouping for multi-part imports (OSM PBF layers): sibling layer datasets
-    # share ``groupId``; ``layerName`` is this dataset's layer.
+    # share ``groupId``; ``layerName`` is this dataset's layer. The synthetic
+    # group item carries ``groupLayerIds`` (member dataset ids) instead.
     groupId: str | None
     layerName: str | None
+    groupLayerIds: list[str]
