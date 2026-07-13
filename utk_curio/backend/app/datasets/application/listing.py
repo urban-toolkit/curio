@@ -23,7 +23,12 @@ from utk_curio.backend.app.datasets.application.export import (
     _serialize_parquet_for_export,
 )
 from utk_curio.backend.app.datasets.domain.computed import ComputedDatasetIndexer
-from utk_curio.backend.app.datasets.domain.constants import SUPPORTED_SUFFIXES
+from utk_curio.backend.app.datasets.domain.constants import SUPPORTED_SUFFIXES, is_osm_group_id
+from utk_curio.backend.app.datasets.domain.osm_group import (
+    build_osm_group_item,
+    collapse_osm_groups,
+    sort_group_members,
+)
 from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
 from utk_curio.backend.app.datasets.repositories.installed import InstalledDatasetRepository
 from utk_curio.backend.app.datasets.repositories.local import LocalDatasetRepository
@@ -79,6 +84,7 @@ class CatalogListing:
         sort: str = "recent",
         include_hub: bool = True,
         live_outputs: list[dict[str, Any]] | None = None,
+        group_osm: bool = False,
     ) -> dict[str, Any]:
         items: list[dict[str, Any]] = []
         if include_hub:
@@ -238,6 +244,13 @@ class CatalogListing:
         # registry row and its installed/live copy. Every distinct record must
         # stay visible — the list reflects the actual saved datasets.
 
+        # Fold the per-layer OSM datasets of one import into a single
+        # bundle-shaped group entry for grouped surfaces (the catalog drawer).
+        # Other surfaces (e.g. the node palette) keep the individual layers so
+        # each stays independently draggable/installable.
+        if group_osm:
+            items = collapse_osm_groups(items)
+
         if q:
             needle = q.casefold()
             items = [
@@ -328,6 +341,14 @@ class CatalogListing:
         live_outputs: list[dict[str, Any]] | None = None,
         resolve_producer: bool = False,
     ) -> dict[str, Any]:
+        # A synthetic OSM group id resolves to a bundle-shaped item built from
+        # its member layers (which the un-collapsed listing still exposes).
+        if is_osm_group_id(dataset_id):
+            members = self._osm_group_members(dataset_id, dataflow_id=dataflow_id, live_outputs=live_outputs)
+            if not members:
+                raise DatasetCatalogError("Dataset not found", 404)
+            return build_osm_group_item(dataset_id, members)
+
         # ``include_hub=True`` is a strict superset of ``include_hub=False`` (it
         # only *adds* the hub registry items), so a single pass finds any id —
         # no need for the historical two-pass scan.
@@ -402,6 +423,16 @@ class CatalogListing:
         offset: int = 0,
         part_index: int | None = None,
     ) -> dict[str, Any]:
+        # An OSM group previews as a bundle: one tab (part) per member layer.
+        if is_osm_group_id(dataset_id):
+            return self._preview_osm_group(
+                dataset_id,
+                dataflow_id=dataflow_id,
+                live_outputs=live_outputs,
+                row_limit=row_limit,
+                offset=offset,
+                part_index=part_index,
+            )
         item = deepcopy(self._owner.get_dataset(
             dataset_id,
             dataflow_id=dataflow_id,
@@ -416,6 +447,80 @@ class CatalogListing:
         return self.preview_service.preview(
             item, row_limit=row_limit, offset=offset, part_index=part_index
         )
+
+    def _osm_group_members(
+        self,
+        group_id: str,
+        *,
+        dataflow_id: str | None = None,
+        live_outputs: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
+        """The individual layer items of an OSM group, in canonical tab order.
+
+        Uses the un-collapsed listing (``group_osm=False``) so the member
+        datasets — each carrying ``groupId`` — are visible and enriched with
+        installed state + resolved paths.
+        """
+        result = self._owner.list_catalog(
+            dataflow_id=dataflow_id, include_hub=True, live_outputs=live_outputs
+        )
+        members = [i for i in result["items"] if i.get("groupId") == group_id]
+        return sort_group_members(members)
+
+    def _preview_member(
+        self, member: dict[str, Any], *, row_limit: int, offset: int
+    ) -> dict[str, Any]:
+        item = deepcopy(member)
+        item["path"] = self._paths._resolve_item_path(item)
+        return self.preview_service.preview(item, row_limit=row_limit, offset=offset)
+
+    def _preview_osm_group(
+        self,
+        group_id: str,
+        *,
+        dataflow_id: str | None,
+        live_outputs: list[dict[str, Any]] | None,
+        row_limit: int,
+        offset: int,
+        part_index: int | None,
+    ) -> dict[str, Any]:
+        members = self._osm_group_members(
+            group_id, dataflow_id=dataflow_id, live_outputs=live_outputs
+        )
+        if not members:
+            raise DatasetCatalogError("Dataset not found", 404)
+        if part_index is not None:
+            if part_index < 0 or part_index >= len(members):
+                raise DatasetCatalogError("Invalid part index", 400)
+            part_preview = self._preview_member(
+                members[part_index], row_limit=row_limit, offset=offset
+            )
+            return {**part_preview, "bundle": True, "partIndex": part_index}
+        # Overview: first page of every layer, one tab per layer.
+        parts: list[dict[str, Any]] = []
+        for member in members:
+            preview = self._preview_member(member, row_limit=row_limit, offset=0)
+            parts.append({
+                "label": member.get("layerName") or member.get("title"),
+                "format": member.get("format"),
+                "kind": "geodataframe",
+                **preview,
+            })
+        return {
+            "schema": {
+                "bundleParts": [
+                    {"label": p["label"], "format": p["format"], "kind": p.get("kind")}
+                    for p in parts
+                ]
+            },
+            "rows": [],
+            "rowLimit": row_limit,
+            "offset": 0,
+            "totalRows": len(members),
+            "truncated": False,
+            "bundle": True,
+            "parts": parts,
+        }
 
     def download_target(
         self,

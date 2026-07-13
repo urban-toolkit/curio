@@ -22,6 +22,7 @@ from utk_curio.backend.app.datasets.domain.constants import (
     JUNK_SOURCE_LABELS,
     OSM_PBF_SUFFIXES,
     SUPPORTED_SUFFIXES,
+    is_osm_group_id,
 )
 from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
 from utk_curio.backend.app.datasets.infrastructure.file_meta import count_file, patch_manifest_file, write_file_meta
@@ -361,6 +362,9 @@ class CatalogMutations:
         source_item: dict[str, Any] | None = None,
         node_title: str | None = None,
     ) -> dict[str, Any]:
+        # "Install all layers": an OSM group id installs every member layer.
+        if is_osm_group_id(dataset_id):
+            return self._install_osm_group(dataflow_id, dataset_id)
         item = deepcopy(source_item or self._owner.get_dataset(dataset_id, dataflow_id=dataflow_id))
         # A client-supplied ``sourceItem`` may omit ``id``; the route-validated
         # ``dataset_id`` is authoritative, so backfill it rather than KeyError
@@ -539,7 +543,38 @@ class CatalogMutations:
         installed_item["installed"] = True
         return installed_item
 
+    def _osm_group_member_ids(self, dataflow_id: str | None, group_id: str) -> list[str]:
+        result = self._owner.list_catalog(dataflow_id=dataflow_id, include_hub=True)
+        return [
+            i["id"]
+            for i in result["items"]
+            if i.get("groupId") == group_id and i.get("id")
+        ]
+
+    def _install_osm_group(self, dataflow_id: str, group_id: str) -> dict[str, Any]:
+        member_ids = self._osm_group_member_ids(dataflow_id, group_id)
+        if not member_ids:
+            raise DatasetCatalogError("Dataset not found", 404)
+        for member_id in member_ids:
+            self.install_dataset(dataflow_id, member_id)
+        # Return the group item so the response reflects the "all installed" state.
+        return self._owner.get_dataset(group_id, dataflow_id=dataflow_id)
+
     def uninstall_dataset(self, dataflow_id: str, dataset_id: str) -> dict[str, Any]:
+        # An OSM group id uninstalls every member layer.
+        if is_osm_group_id(dataset_id):
+            member_ids = self._osm_group_member_ids(dataflow_id, dataset_id)
+            removed = False
+            for member_id in member_ids:
+                try:
+                    self.uninstall_dataset(dataflow_id, member_id)
+                    removed = True
+                except DatasetCatalogError:
+                    # A layer that wasn't installed is fine during a group uninstall.
+                    continue
+            if not removed:
+                raise DatasetCatalogError("Dataset is not installed in this dataflow", 404)
+            return {"id": dataset_id, "installed": False}
         refs = self.installed.list_refs(dataflow_id)
         removed_ref = next(
             (ref for ref in refs if ref.get("datasetId") == dataset_id or ref.get("id") == dataset_id),

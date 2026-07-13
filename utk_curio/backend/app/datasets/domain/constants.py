@@ -15,10 +15,30 @@ SUPPORTED_SUFFIXES = {
 }
 
 # OSM PBF suffixes. Not in SUPPORTED_SUFFIXES because a ``.pbf`` isn't stored
-# verbatim: the importer converts it to a single GeoParquet (all OSM layers
-# merged) before installing. The import route special-cases these suffixes to
-# run that conversion (see ``install/osm_pbf.py``).
+# verbatim: the importer converts it to one GeoParquet dataset per OSM layer
+# before installing. The import route special-cases these suffixes to run that
+# conversion (see ``install/osm_pbf.py``).
 OSM_PBF_SUFFIXES = (".pbf",)
+
+# The per-layer OSM datasets from one import share a ``group_id`` with this
+# prefix (e.g. ``osm.x1a2b3c4d``). The catalog presents the group as a single
+# bundle-shaped entry whose id IS the group id; helpers below recognize it so
+# list/get/preview/install can expand the group into its member layers.
+OSM_GROUP_ID_PREFIX = "osm."
+
+# Canonical tab order for OSM layers in the grouped detail view.
+OSM_LAYER_ORDER = {
+    "points": 0,
+    "lines": 1,
+    "multilinestrings": 2,
+    "multipolygons": 3,
+    "other_relations": 4,
+}
+
+
+def is_osm_group_id(dataset_id: object) -> bool:
+    """True when *dataset_id* addresses a synthetic OSM layer group."""
+    return isinstance(dataset_id, str) and dataset_id.startswith(OSM_GROUP_ID_PREFIX)
 
 # Sidecar files written next to dataset files: the row/feature counts cache from
 # ``file_meta`` (``<file>.meta.json``) and the parquet object-column decode map

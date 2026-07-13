@@ -56,6 +56,9 @@ def _dataflow_id_from_request() -> str | None:
 @_map_catalog_errors
 def list_dataset_catalog():
     include_hub = request.args.get("includeHub", "true").lower() not in {"0", "false", "no"}
+    # Fold OSM per-layer datasets into one bundle-shaped group entry (drawer);
+    # off by default so surfaces like the palette keep the individual layers.
+    group_osm = request.args.get("groupOsm", "false").lower() in {"1", "true", "yes"}
     # Live outputs (base64 JSON) are the current execution outputs the frontend
     # holds before the manifest is saved, so computed datasets appear immediately
     # after node execution.
@@ -68,6 +71,7 @@ def list_dataset_catalog():
         sort=request.args.get("sort", "recent"),
         include_hub=include_hub,
         live_outputs=live_outputs,
+        group_osm=group_osm,
     )
     return jsonify(payload), 200
 

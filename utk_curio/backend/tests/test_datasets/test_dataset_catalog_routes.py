@@ -162,6 +162,89 @@ def test_import_osm_pbf_creates_one_dataset_per_layer(
     assert (preview.get_json().get("totalRows") or 0) > 0
 
 
+def test_osm_group_card_detail_and_install_all(
+    client, user_and_token, tmp_path, monkeypatch
+):
+    """The per-layer OSM datasets present as one bundle-shaped group: grouped
+    listing shows a single card, the group previews as tabbed parts, and
+    installing the group id attaches every layer."""
+    import pytest
+
+    if not _osm_geo_available():
+        pytest.skip("geopandas/pyogrio with the GDAL OSM driver is not available")
+    pbf = _sample_pbf()
+    if not pbf.is_file():
+        pytest.skip(f"sample PBF not found at {pbf}")
+
+    _, token = user_and_token
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+
+    imp = client.post(
+        "/api/datasets/import",
+        headers={"Authorization": f"Bearer {token}"},
+        data={"file": (io.BytesIO(pbf.read_bytes()), "back_bay.osm.pbf")},
+        content_type="multipart/form-data",
+    )
+    assert imp.status_code == 201, imp.get_data(as_text=True)
+    group_id = imp.get_json()["groupId"]
+    layer_count = imp.get_json()["importedDatasetCount"]
+    assert group_id and layer_count >= 2
+
+    # Grouped listing (drawer): one bundle card for the group, no loose layers.
+    grouped = client.get(
+        "/api/datasets/catalog?groupOsm=true", headers=_auth(token)
+    ).get_json()["items"]
+    group_cards = [i for i in grouped if i["id"] == group_id]
+    assert len(group_cards) == 1
+    assert group_cards[0]["format"] == "bundle"
+    assert group_cards[0]["title"] == "back_bay"
+    assert not [i for i in grouped if i.get("groupId") == group_id and i["id"] != group_id]
+
+    # Ungrouped listing (palette): individual layers, no group card.
+    flat = client.get("/api/datasets/catalog", headers=_auth(token)).get_json()["items"]
+    assert len([i for i in flat if i.get("groupId") == group_id]) == layer_count
+    assert not [i for i in flat if i["id"] == group_id]
+
+    # Group preview = one tabbed part per layer.
+    overview = client.get(
+        f"/api/datasets/{group_id}/preview", headers=_auth(token)
+    ).get_json()
+    assert overview["bundle"] is True
+    assert len(overview["parts"]) == layer_count
+    assert all(p.get("label") for p in overview["parts"])
+    part0 = client.get(
+        f"/api/datasets/{group_id}/preview?part=0", headers=_auth(token)
+    ).get_json()
+    assert part0["bundle"] is True and part0["partIndex"] == 0
+
+    # Save a project, then "install all layers" via the group id.
+    from utk_curio.backend.tests.test_datasets.computed_test_helpers import create_project
+
+    project_id = create_project(client, token, name="OSM group install")
+    inst = client.post(
+        f"/api/dataflows/{project_id}/datasets/install",
+        headers=_auth(token),
+        data=json.dumps({"datasetId": group_id}),
+    )
+    assert inst.status_code in (200, 201), inst.get_data(as_text=True)
+
+    after = client.get(
+        f"/api/datasets/catalog?groupOsm=true&dataflowId={project_id}",
+        headers=_auth(token),
+    ).get_json()["items"]
+    grp = next(i for i in after if i["id"] == group_id)
+    assert grp["installed"] is True
+    # Every underlying layer is now installed in the dataflow.
+    flat_after = client.get(
+        f"/api/datasets/catalog?dataflowId={project_id}", headers=_auth(token)
+    ).get_json()["items"]
+    assert all(
+        i["installed"] is True
+        for i in flat_after
+        if i.get("groupId") == group_id
+    )
+
+
 def test_import_pbf_reports_clear_error_when_geo_extras_missing(monkeypatch):
     """Without the geo stack the converter raises a user-facing OsmPbfError
     (surfaced as a 4xx by the route), never a raw ImportError."""
