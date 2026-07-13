@@ -283,7 +283,8 @@ export const DatasetDetailPanel: React.FC<DatasetDetailPanelProps> = ({
   const { consumingNodes } = effectiveLineage.downstream;
   const published = isDatasetPublishedToCatalog(dataset);
   // Bundles are multi-part and have no single serialized file to export.
-  const canExport = dataset.format !== "bundle";
+  // Neither a multi-part bundle nor an OSM group is a single exportable file.
+  const canExport = dataset.format !== "bundle" && dataset.format !== "osm";
   const activeDataset = dataset;
 
   const handleExport = async () => {

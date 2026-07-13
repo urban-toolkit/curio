@@ -63,13 +63,15 @@ def build_osm_group_item(group_id: str, members: list[dict[str, Any]]) -> dict[s
         title=group_base_title(members, group_id),
         description=f"OpenStreetMap import — {len(members)} layer(s).",
         origin="imported",
-        format="bundle",
+        # Displayed as an OSM PBF type (not a generic bundle); the tabbed preview
+        # is driven by the preview response's ``bundle`` flag, not this format.
+        format="osm",
         uri=f"curio://osm/{group_id}",
         sizeBytes=total_size,
         featureCount=total_features,
         updatedAt=updated,
         sourceLabel="OSM Import",
-        tags=["osm", "bundle"],
+        tags=["osm", "pbf"],
         schema={"bundleParts": bundle_parts},
         installed=installed,
         # Real per-layer dataset ids, so the client can install/uninstall each

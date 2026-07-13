@@ -37,6 +37,7 @@ const FORMAT_ABBR: Record<DatasetCatalogItem["format"], string> = {
   geotiff: "GeoTIFF",
   shp: "SHP",
   bundle: "Bundle",
+  osm: "OSM",
 };
 
 function formatAvatarClass(format: DatasetCatalogItem["format"]): string {

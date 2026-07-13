@@ -196,7 +196,7 @@ def test_osm_group_card_detail_and_install_all(
     ).get_json()["items"]
     group_cards = [i for i in grouped if i["id"] == group_id]
     assert len(group_cards) == 1
-    assert group_cards[0]["format"] == "bundle"
+    assert group_cards[0]["format"] == "osm"
     assert group_cards[0]["title"] == "back_bay"
     assert not [i for i in grouped if i.get("groupId") == group_id and i["id"] != group_id]
 

@@ -119,9 +119,10 @@ def dedupe_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def catalog_facets(items: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
     facets = {
         "origin": {"source_node": 0, "computed": 0, "imported": 0, "hub": 0},
-        # ``bundle`` is a synthetic multi-output format with no file suffix, so it
-        # isn't in ``SUPPORTED_SUFFIXES``; seed it explicitly so bundles are counted.
-        "format": {fmt: 0 for fmt in sorted(set(SUPPORTED_SUFFIXES.values()) | {"bundle"})},
+        # ``bundle`` (multi-output node result) and ``osm`` (synthetic OSM layer
+        # group) have no file suffix, so they aren't in ``SUPPORTED_SUFFIXES``;
+        # seed them explicitly so those catalog entries are counted.
+        "format": {fmt: 0 for fmt in sorted(set(SUPPORTED_SUFFIXES.values()) | {"bundle", "osm"})},
     }
     for item in items:
         fmt = item.get("format")

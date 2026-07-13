@@ -178,6 +178,11 @@
   color: #475467;
 }
 
+.formatBadge_osm {
+  background: #eaf5df;
+  color: #4c7a1f;
+}
+
 .categoryBadge {
   flex-shrink: 0;
   border-radius: 4px;

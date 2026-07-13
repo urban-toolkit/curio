@@ -156,6 +156,7 @@
 .dot_geotiff  { background: #7A4BD1; opacity: 0.7; }
 .dot_shp      { background: #888888; }
 .dot_bundle   { background: #5B6472; }
+.dot_osm      { background: #7ab648; }
 
 .railDivider {
   height: 1px;
@@ -526,6 +527,7 @@
 .strip_geotiff { background: #7A4BD1; }
 .strip_shp     { background: #888888; }
 .strip_bundle  { background: #5B6472; }
+.strip_osm     { background: #7ab648; }
 
 /* Active card: colored border matches strip */
 .cardActive.card_geojson { border-color: #2F8F4A; }
@@ -535,6 +537,7 @@
 .cardActive.card_geotiff { border-color: #7A4BD1; }
 .cardActive.card_shp     { border-color: #888888; }
 .cardActive.card_bundle  { border-color: #5B6472; }
+.cardActive.card_osm  { border-color: #7ab648; }
 
 .selectedDot {
   width: 10px;
@@ -657,6 +660,7 @@
 .tagAccent_geotiff { background: #EADCFB; color: #7A4BD1; }
 .tagAccent_shp     { background: #ECECEC; color: #555555; }
 .tagAccent_bundle  { background: #E4E7EC; color: #475467; }
+.tagAccent_osm  { background: #eaf5df; color: #4c7a1f; }
 
 /* Meta row */
 .cardMeta {
@@ -746,6 +750,7 @@
 .link_geotiff { color: #7A4BD1; }
 .link_shp     { color: #888888; }
 .link_bundle  { color: #5B6472; }
+.link_osm  { color: #4c7a1f; }
 
 .installButton {
   height: 28px;
@@ -978,6 +983,7 @@
 .dfmt_geotiff { background: #E3F1F3; color: #2e6874; }
 .dfmt_shp     { background: #F0E5EC; color: #7a4865; }
 .dfmt_bundle  { background: #E4E7EC; color: #475467; }
+.dfmt_osm  { background: #eaf5df; color: #4c7a1f; }
 
 .drawerHubBadge {
   height: 20px;

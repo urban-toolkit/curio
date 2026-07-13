@@ -167,7 +167,7 @@ describe("useDatasetCatalogDrawer.onInstall (OSM group)", () => {
       id: "osm.xdeadbeef",
       title: "back_bay",
       origin: "imported" as const,
-      format: "bundle" as const,
+      format: "osm" as const,
       uri: "curio://osm/osm.xdeadbeef",
       consumerNodeIds: [],
       tags: ["osm", "bundle"],

@@ -1,6 +1,6 @@
 export type DatasetOrigin = "source_node" | "computed" | "imported" | "hub";
 
-export type DatasetFormat = "csv" | "geojson" | "json" | "parquet" | "geotiff" | "shp" | "bundle";
+export type DatasetFormat = "csv" | "geojson" | "json" | "parquet" | "geotiff" | "shp" | "bundle" | "osm";
 
 export type DatasetSortMode = "recent" | "name";
 
@@ -137,7 +137,7 @@ export interface DatasetCatalogItem {
    * files; N for an OSM PBF, which registers one dataset per layer (this item is
    * the first — the rest appear via the catalog listing on refresh). */
   importedDatasetCount?: number;
-  /** On a synthetic OSM group entry (``format: "bundle"``, id = group id): the
+  /** On a synthetic OSM group entry (``format: "osm"``, id = group id): the
    * real per-layer dataset ids, so the client installs/uninstalls each member. */
   groupLayerIds?: string[];
 }
@@ -423,4 +423,5 @@ export const DATASET_FORMAT_LABEL: Record<DatasetFormat, string> = {
   geotiff: "GeoTIFF",
   shp: "SHP",
   bundle: "Bundle",
+  osm: "OSM PBF",
 };
