@@ -6,6 +6,7 @@ import hashlib
 import logging
 import os
 import shutil
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -312,38 +313,25 @@ def install_imported_file(
     replace: bool = False,
     group_id: str | None = None,
     layer_name: str | None = None,
+    source_updated_at: str | None = None,
 ) -> InstallResult:
     """Save an uploaded file into the user's dataset store with a generated manifest.
 
-    The dataset folder name is derived from a SHA-256 hash of the file content,
-    so re-uploading the same file returns the existing install. ``group_id`` /
-    ``layer_name`` link multi-part imports (e.g. the layers of one OSM PBF).
+    Every import mints a **fresh, unique** dataset folder (``imported.x<uuid>``),
+    so re-uploading a byte-identical file is always treated as a new, independent
+    dataset — content is never used to reuse a previous import's directory.
+    ``group_id`` / ``layer_name`` link multi-part imports (e.g. the layers of one
+    OSM PBF); ``source_updated_at`` records the original file's last-modified
+    date, distinct from the record's ``created_at`` / ``updated_at``.
     """
-    hash_hex = hashlib.sha256(file_bytes).hexdigest()[:8]
-    # The dir-name regex requires each dot-segment to start with [a-z].
-    # Prefix with 'x' to guarantee a letter-first segment regardless of the hash.
-    dataset_id = f"imported.x{hash_hex}"
+    # A per-import unique token — never the file content — guarantees each import
+    # is a distinct dataset. The dir-name regex requires each dot-segment to
+    # start with [a-z]; the 'x' prefix keeps the (hex) uuid segment letter-first.
+    unique = uuid.uuid4().hex[:12]
+    dataset_id = f"imported.x{unique}"
     dir_name = f"{dataset_id}@1"
 
     dest = dataset_dir(user_key, dir_name)
-    # Whether a prior install existed at entry — this is the real "replaced"
-    # signal. (dest.exists() at the end is always True: we just created it.)
-    existed_before = dest.exists()
-
-    # Fast path: already fully installed and no replacement requested.
-    if dest.exists() and not replace:
-        try:
-            manifest = load_dataset_manifest(dest)
-            if (dest / manifest.data_file).is_file():
-                return InstallResult(manifest=manifest, dest=dest, replaced=False)
-        except ManifestError:
-            # Corrupt or incomplete prior install; remove and reinstall below.
-            logger.debug(
-                "Corrupt or incomplete prior install at %s; reinstalling",
-                dest,
-                exc_info=True,
-            )
-        shutil.rmtree(dest, ignore_errors=True)
 
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "data").mkdir(exist_ok=True)
@@ -371,6 +359,7 @@ def install_imported_file(
         source_label="Imported",
         created_at=now,
         updated_at=now,
+        source_updated_at=source_updated_at,
         row_count=None,
         feature_count=None,
         schema=None,
@@ -385,6 +374,7 @@ def install_imported_file(
         shutil.rmtree(dest, ignore_errors=True)
         raise InstallerError(f"Failed to create imported dataset manifest: {exc}") from exc
 
-    return InstallResult(manifest=manifest, dest=dest, replaced=existed_before)
+    # A fresh unique dir is always created — never a reuse of a prior import.
+    return InstallResult(manifest=manifest, dest=dest, replaced=False)
 
 

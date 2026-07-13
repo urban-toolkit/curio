@@ -170,7 +170,13 @@ def base_item(**overrides: Any) -> dict[str, Any]:
         # persisted specs and must not be used for this count. See
         # ``CatalogListing._consumer_counts``.
         "consumerNodeCount": 0,
+        # ``createdAt`` / ``updatedAt`` are the Curio *record* dates (when the
+        # dataset was created/imported and last changed in Curio).
+        # ``sourceUpdatedAt`` is the *original source file's* last-modified date,
+        # kept distinct so the UI never conflates the two. ``None`` when unknown.
+        "createdAt": None,
         "updatedAt": iso_from_timestamp(),
+        "sourceUpdatedAt": None,
         "sourceLabel": "",
         "license": None,
         "tags": [],
@@ -233,6 +239,7 @@ def item_from_manifest(manifest: DatasetManifest, dataset_root: Path, *, origin:
     data_path = dataset_root / manifest.data_file
     size_bytes = data_path.stat().st_size if data_path.is_file() else None
     updated_at = manifest.updated_at or manifest.created_at or iso_from_timestamp()
+    created_at = manifest.created_at or manifest.updated_at or updated_at
     return base_item(
         id=manifest.id,
         title=manifest.name,
@@ -249,7 +256,9 @@ def item_from_manifest(manifest: DatasetManifest, dataset_root: Path, *, origin:
         sizeBytes=size_bytes,
         rowCount=manifest.row_count,
         featureCount=manifest.feature_count,
+        createdAt=created_at,
         updatedAt=updated_at,
+        sourceUpdatedAt=manifest.source_updated_at,
         sourceLabel=manifest.source_label or manifest.publisher,
         license=manifest.license or None,
         tags=manifest.tags,

@@ -183,6 +183,11 @@ export const datasetCatalogApi = {
     form.append("file", file);
     if (opts.dataflowId) form.append("dataflowId", opts.dataflowId);
     if (opts.title) form.append("title", opts.title);
+    // The original file's last-modified date (epoch ms), so the catalog can show
+    // the *source file's* date distinctly from the Curio import/record date.
+    if (typeof file.lastModified === "number" && file.lastModified > 0) {
+      form.append("sourceUpdatedAt", String(file.lastModified));
+    }
     const res = await fetch(`${BACKEND_URL}/api/datasets/import`, {
       method: "POST",
       body: form,

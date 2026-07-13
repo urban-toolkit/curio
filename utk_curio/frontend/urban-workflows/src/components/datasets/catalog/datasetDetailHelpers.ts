@@ -23,6 +23,21 @@ export function relativeTime(iso?: string | null): string {
   return `${Math.round(hours / 24)}d ago`;
 }
 
+/** Absolute date/time label (e.g. ``"Mar 5, 02:14 PM"``) for a timestamp,
+ * used where an exact date is clearer than a relative one (the "Created" row and
+ * as hover titles). Returns ``"Unknown"`` for a missing/invalid value. */
+export function absoluteDate(iso?: string | null): string {
+  if (!iso) return "Unknown";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "Unknown";
+  return d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export function datasetCount(dataset?: DatasetCatalogItem | null): string | null {
   if (!dataset) return null;
   if (dataset.featureCount != null) return `${dataset.featureCount.toLocaleString()} features`;

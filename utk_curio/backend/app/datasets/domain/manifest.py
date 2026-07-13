@@ -31,6 +31,11 @@ class DatasetManifest:
     major: int
     created_at: str | None = None
     updated_at: str | None = None
+    # Last-modified date of the *original source file* (from the browser's
+    # ``File.lastModified`` at import), distinct from ``created_at`` /
+    # ``updated_at`` which track the Curio dataset *record*. ``None`` when the
+    # importer did not supply it.
+    source_updated_at: str | None = None
     feature_count: int | None = None
     row_count: int | None = None
     schema: dict[str, Any] | None = None
@@ -100,6 +105,7 @@ def _parse_manifest(raw: dict[str, Any], *, where: str) -> DatasetManifest:
         major=major,
         created_at=str(raw.get("createdAt") or "") or None,
         updated_at=str(raw.get("updatedAt") or "") or None,
+        source_updated_at=str(raw.get("sourceUpdatedAt") or "") or None,
         feature_count=feature_count,
         row_count=row_count,
         schema=schema,
@@ -134,6 +140,7 @@ def build_manifest_dict(manifest: DatasetManifest) -> dict[str, Any]:
         "schema": manifest.schema,
         "createdAt": manifest.created_at or None,
         "updatedAt": manifest.updated_at or None,
+        "sourceUpdatedAt": manifest.source_updated_at or None,
         "groupId": manifest.group_id or None,
         "layerName": manifest.layer_name or None,
     }

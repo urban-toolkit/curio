@@ -164,8 +164,31 @@ def import_dataset():
         file,
         dataflow_id=request.form.get("dataflowId") or request.form.get("projectId"),
         title=request.form.get("title") or None,
+        source_updated_at=_parse_source_updated_at(request.form.get("sourceUpdatedAt")),
     )
     return jsonify(payload), 201
+
+
+def _parse_source_updated_at(raw: str | None) -> str | None:
+    """Normalize the client-supplied source-file last-modified value to ISO.
+
+    Accepts an epoch-milliseconds string (``File.lastModified``) or an ISO
+    string. Returns ``None`` for absent/unparseable input so a bad value never
+    fails the import — the source date is simply treated as unknown.
+    """
+    if not raw or not raw.strip():
+        return None
+    value = raw.strip()
+    try:
+        # Epoch milliseconds from the browser's File.lastModified.
+        from utk_curio.backend.app.datasets.infrastructure.catalog_utils import (
+            iso_from_timestamp,
+        )
+
+        return iso_from_timestamp(int(value) / 1000)
+    except (ValueError, TypeError, OverflowError, OSError):
+        # Fall back to treating it as an already-ISO string.
+        return value
 
 
 @datasets_bp.route("/datasets/publish", methods=["POST"])

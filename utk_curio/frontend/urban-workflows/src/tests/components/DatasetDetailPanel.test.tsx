@@ -142,6 +142,42 @@ describe("DatasetDetailPanel header actions", () => {
   });
 });
 
+describe("DatasetDetailPanel timestamps (record vs. source file)", () => {
+  beforeEach(() => {
+    mockUseDatasetLineage.mockReset();
+  });
+
+  it("uses createdAt (not updatedAt) for the Created row", () => {
+    renderPanel(
+      lineageFixture(),
+      catalogItem({
+        createdAt: "2020-03-05T14:14:00Z",
+        updatedAt: "2026-06-18T00:00:00Z",
+      }),
+    );
+    const sidebar = within(screen.getByRole("complementary", { name: "Dataset info" }));
+    const created = sidebar.getByText("Created").nextElementSibling;
+    // The absolute Created date reflects createdAt (2020), not updatedAt (2026).
+    expect(created).toHaveTextContent(/2020|Mar/);
+    expect(created).not.toHaveTextContent("2026");
+  });
+
+  it("shows a distinct Source updated row only when sourceUpdatedAt is present", () => {
+    renderPanel(
+      lineageFixture(),
+      catalogItem({ sourceUpdatedAt: "2019-01-01T00:00:00Z" }),
+    );
+    const sidebar = within(screen.getByRole("complementary", { name: "Dataset info" }));
+    expect(sidebar.getByText("Source updated")).toBeInTheDocument();
+  });
+
+  it("hides the Source updated row when sourceUpdatedAt is absent", () => {
+    renderPanel(lineageFixture(), catalogItem({ sourceUpdatedAt: null }));
+    const sidebar = within(screen.getByRole("complementary", { name: "Dataset info" }));
+    expect(sidebar.queryByText("Source updated")).not.toBeInTheDocument();
+  });
+});
+
 describe("DatasetDetailPanel lineage", () => {
   beforeEach(() => {
     mockUseDatasetLineage.mockReset();

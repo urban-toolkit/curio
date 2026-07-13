@@ -121,7 +121,16 @@ export interface DatasetCatalogItem {
    * empty in persisted specs and must not be used for this count. Optional so
    * older/detail payloads without it default to 0 in the UI. */
   consumerNodeCount?: number;
+  /** When the dataset *record* was created/imported in Curio. Distinct from
+   * ``sourceUpdatedAt`` (the original file's date). Optional so older payloads
+   * fall back to ``updatedAt`` in the UI. */
+  createdAt?: string | null;
+  /** When the dataset *record* was last changed in Curio. */
   updatedAt: string;
+  /** Last-modified date of the *original source file* (from the browser's
+   * ``File.lastModified`` at import), distinct from the Curio record dates.
+   * ``null``/absent when unknown (older imports, programmatic imports). */
+  sourceUpdatedAt?: string | null;
   sourceLabel?: string | null;
   license?: string | null;
   tags: string[];

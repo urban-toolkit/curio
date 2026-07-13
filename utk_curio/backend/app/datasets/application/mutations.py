@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import shutil
 from copy import deepcopy
 from pathlib import Path
@@ -59,6 +58,7 @@ class CatalogMutations:
         *,
         dataflow_id: str | None = None,
         title: str | None = None,
+        source_updated_at: str | None = None,
     ) -> dict[str, Any]:
         filename = secure_filename(file.filename or "")
         if not filename:
@@ -71,12 +71,18 @@ class CatalogMutations:
         # dataset. The route returns the first; the rest surface via the
         # account-level catalog listing on the next reload.
         if suffix in OSM_PBF_SUFFIXES:
-            return self._import_osm_pbf_layers(file_bytes, filename, title=title)
+            return self._import_osm_pbf_layers(
+                file_bytes, filename, title=title, source_updated_at=source_updated_at
+            )
 
         if suffix not in SUPPORTED_SUFFIXES:
             raise DatasetCatalogError(f"Unsupported dataset format: {suffix or filename}")
         return self._install_imported_bytes(
-            file_bytes, filename, SUPPORTED_SUFFIXES[suffix], title=title
+            file_bytes,
+            filename,
+            SUPPORTED_SUFFIXES[suffix],
+            title=title,
+            source_updated_at=source_updated_at,
         )
 
     def _install_imported_bytes(
@@ -89,6 +95,7 @@ class CatalogMutations:
         feature_count_override: int | None = None,
         group_id: str | None = None,
         layer_name: str | None = None,
+        source_updated_at: str | None = None,
     ) -> dict[str, Any]:
         """Write imported bytes to the account-level user store and build the
         catalog item. Register-only: never attaches the dataset to a dataflow —
@@ -109,6 +116,7 @@ class CatalogMutations:
                 title=title,
                 group_id=group_id,
                 layer_name=layer_name,
+                source_updated_at=source_updated_at,
             )
         except InstallerError as exc:
             raise DatasetCatalogError(str(exc)) from exc
@@ -139,9 +147,16 @@ class CatalogMutations:
         return item
 
     def _import_osm_pbf_layers(
-        self, pbf_bytes: bytes, filename: str, *, title: str | None = None
+        self,
+        pbf_bytes: bytes,
+        filename: str,
+        *,
+        title: str | None = None,
+        source_updated_at: str | None = None,
     ) -> dict[str, Any]:
         """Import an OSM PBF as one GeoParquet dataset per non-empty layer."""
+        import uuid
+
         from utk_curio.backend.app.datasets.install.osm_pbf import (
             OsmPbfError,
             convert_osm_pbf_layers,
@@ -159,9 +174,10 @@ class CatalogMutations:
         except OsmPbfError as exc:
             raise DatasetCatalogError(str(exc)) from exc
 
-        # One deterministic group id per PBF (content hash) so all layers of the
-        # same import share it and re-importing the same file reuses the group.
-        group_id = f"osm.x{hashlib.sha256(pbf_bytes).hexdigest()[:8]}"
+        # One unique group id per *import* (never derived from file content) so
+        # all layers of the same import share it, but re-importing the same PBF
+        # forms a separate group rather than collapsing into the earlier one.
+        group_id = f"osm.x{uuid.uuid4().hex[:8]}"
         prefix = title.strip() if title and title.strip() else base
         items: list[dict[str, Any]] = []
         for layer in layers:
@@ -174,6 +190,7 @@ class CatalogMutations:
                     feature_count_override=layer.feature_count,
                     group_id=group_id,
                     layer_name=layer.name,
+                    source_updated_at=source_updated_at,
                 )
             )
 
@@ -602,7 +619,42 @@ class CatalogMutations:
 
         self.installed.replace_refs(dataflow_id, next_refs)
 
+        # For imported datasets, uninstalling must remove *all traces* — the
+        # account-level store folder (manifest, data file, and counts sidecar all
+        # live inside it), not just this dataflow's ref. Do this AFTER persisting
+        # the ref removal so ``dataset_usage`` reflects it, then only delete when
+        # no OTHER dataflow (or node binding) still references the dataset — a
+        # dataset shared by another project must survive.
+        if (
+            removed_ref
+            and self.user is not None
+            and removed_ref.get("origin") not in ("computed", "source_node")
+        ):
+            dir_name = removed_ref.get("dirName")
+            if dir_name and str(dir_name).startswith("imported."):
+                self._remove_orphaned_imported_store_dir(dataset_id, dir_name)
+
         return {"datasets": next_refs}
+
+    def _remove_orphaned_imported_store_dir(self, dataset_id: str, dir_name: str) -> None:
+        """Delete an imported dataset's user-store folder when nothing else uses it.
+
+        Best-effort: any failure (still-referenced, usage lookup error, or a
+        locked file) leaves the folder in place and never fails the uninstall."""
+        try:
+            still_used = self._owner.dataset_usage(dataset_id)
+        except Exception:  # noqa: BLE001 – if usage can't be resolved, keep the folder
+            return
+        if still_used:
+            return
+        try:
+            from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
+
+            dest = dataset_dir(self._paths._user_key(), dir_name)
+            if dest.exists():
+                shutil.rmtree(dest, ignore_errors=True)
+        except Exception:  # noqa: BLE001
+            pass
 
     def unpublish_dataset(self, dataset_id: str, *, dataflow_id: str | None = None) -> dict[str, Any]:
         """Remove a dataset from the local Data Catalog directory.
