@@ -105,13 +105,14 @@ describe("useDatasetCatalogDrawer.onPickImport", () => {
   });
 
   it.each(["chicago.pbf", "chicago.osm.pbf", "CHICAGO.OSM.PBF"])(
-    "sends OSM PBF (%s) through the importer like any supported format",
+    "sends OSM PBF (%s) through the importer and reports the per-layer count",
     async (name) => {
       mockImportDataset.mockResolvedValueOnce({
         id: "imported-osm",
-        title: name,
+        title: `${name} (points)`,
         origin: "imported",
         format: "parquet",
+        importedDatasetCount: 3,
       });
       const refreshSpy = jest.fn();
       window.addEventListener(DATASET_CATALOG_REFRESH_EVENT, refreshSpy);
@@ -123,11 +124,12 @@ describe("useDatasetCatalogDrawer.onPickImport", () => {
         await result.current.onPickImport(file);
       });
 
-      // .pbf is a real importable format now (backend converts it to GeoParquet).
+      // .pbf is a real importable format now (backend converts it to one
+      // GeoParquet dataset per OSM layer).
       expect(mockImportDataset).toHaveBeenCalledWith(file);
       expect(refreshSpy).toHaveBeenCalledTimes(1);
       expect(mockShowToast).toHaveBeenCalledWith(
-        `Registered ${name} in the data catalog.`,
+        `Registered 3 datasets from ${name} in the data catalog.`,
         "success",
       );
 

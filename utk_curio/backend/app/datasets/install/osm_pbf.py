@@ -2,11 +2,10 @@
 
 An OSM ``.pbf`` extract is inherently multi-layer: GDAL's OSM driver exposes
 ``points``, ``lines``, ``multilinestrings``, ``multipolygons`` and
-``other_relations``. To register it as a single standalone catalog dataset we
-read every non-empty layer and concatenate them into one GeoDataFrame with an
-``osm_layer`` discriminator column (all layers are EPSG:4326), then serialize to
-GeoParquet — the same on-disk format computed/imported geo datasets already use,
-so the existing loader, preview and export paths work unchanged.
+``other_relations``. Each has a homogeneous geometry type, so we register one
+standalone catalog dataset **per non-empty layer** — every layer becomes its own
+GeoParquet (EPSG:4326), the same on-disk format computed/imported geo datasets
+already use, so the existing loader, preview and export paths work unchanged.
 
 Geospatial libraries are imported lazily and errors degrade gracefully
 (``OsmPbfError``), mirroring the backend's existing optional-geo handling — the
@@ -17,14 +16,19 @@ from __future__ import annotations
 
 import logging
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Discriminator column added to every feature recording which OSM layer it came
-# from (points / lines / multipolygons / …) so a merged extract can be split
-# downstream by geometry theme.
-OSM_LAYER_COLUMN = "osm_layer"
+
+@dataclass(frozen=True)
+class OsmLayer:
+    """One non-empty OSM layer serialized to GeoParquet, ready to import."""
+
+    name: str
+    geoparquet_bytes: bytes
+    feature_count: int
 
 
 class OsmPbfError(Exception):
@@ -56,16 +60,17 @@ def _import_geo():
     return gpd, pd, pyogrio
 
 
-def convert_osm_pbf_to_geoparquet(pbf_bytes: bytes) -> tuple[bytes, int]:
-    """Convert OSM PBF bytes to a single GeoParquet.
+def convert_osm_pbf_layers(pbf_bytes: bytes) -> list[OsmLayer]:
+    """Convert OSM PBF bytes to one GeoParquet per non-empty layer.
 
-    Returns ``(geoparquet_bytes, feature_count)``. Merges every non-empty OSM
-    layer into one GeoDataFrame with an :data:`OSM_LAYER_COLUMN` column.
+    Returns a list of :class:`OsmLayer` (points / lines / multipolygons / …),
+    each a homogeneous-geometry GeoParquet in EPSG:4326.
 
     Raises :class:`OsmPbfError` when the geo stack/OSM driver is unavailable,
-    the file is not a readable OSM PBF, or the extract has no features.
+    the file is not a readable OSM PBF, or the extract has no features in any
+    layer.
     """
-    gpd, pd, pyogrio = _import_geo()
+    gpd, _pd, pyogrio = _import_geo()
 
     with tempfile.TemporaryDirectory() as tmp:
         src = Path(tmp) / "input.osm.pbf"
@@ -79,31 +84,29 @@ def convert_osm_pbf_to_geoparquet(pbf_bytes: bytes) -> tuple[bytes, int]:
                 "valid OpenStreetMap PBF extract."
             ) from exc
 
-        frames = []
-        crs = None
-        for layer in layer_names:
+        layers: list[OsmLayer] = []
+        for name in layer_names:
             try:
-                gdf = gpd.read_file(src, layer=layer, engine="pyogrio")
+                gdf = gpd.read_file(src, layer=name, engine="pyogrio")
             except Exception:  # noqa: BLE001 - skip a single unreadable layer
-                logger.debug("Skipping unreadable OSM layer %s", layer, exc_info=True)
+                logger.debug("Skipping unreadable OSM layer %s", name, exc_info=True)
                 continue
             if len(gdf) == 0:
                 continue
-            gdf = gdf.copy()
-            gdf.insert(0, OSM_LAYER_COLUMN, layer)
-            crs = crs or gdf.crs
-            frames.append(gdf)
+            if gdf.crs is None:
+                gdf = gdf.set_crs("EPSG:4326")
+            out = Path(tmp) / f"{name}.parquet"
+            gdf.to_parquet(out)
+            layers.append(
+                OsmLayer(
+                    name=name,
+                    geoparquet_bytes=out.read_bytes(),
+                    feature_count=int(len(gdf)),
+                )
+            )
 
-        if not frames:
+        if not layers:
             raise OsmPbfError(
                 "The OSM PBF extract contains no importable features."
             )
-
-        merged = pd.concat(frames, ignore_index=True)
-        merged = gpd.GeoDataFrame(
-            merged, geometry="geometry", crs=crs or "EPSG:4326"
-        )
-
-        out = Path(tmp) / "output.parquet"
-        merged.to_parquet(out)
-        return out.read_bytes(), int(len(merged))
+        return layers

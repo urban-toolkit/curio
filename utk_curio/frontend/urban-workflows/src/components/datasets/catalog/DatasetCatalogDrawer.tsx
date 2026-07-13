@@ -226,7 +226,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
                         onDragEnd={handleDatasetDragEnd}
                         onInstall={(row) => void onInstall(row)}
                         onUninstall={
-                          projectId && !isComputedInstalled
+                          projectId
                             ? (row) => void onUninstall(row)
                             : undefined
                         }

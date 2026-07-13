@@ -58,47 +58,44 @@ class CatalogMutations:
         dataflow_id: str | None = None,
         title: str | None = None,
     ) -> dict[str, Any]:
-        from utk_curio.backend.app.datasets.install.installer import (
-            InstallerError,
-            install_imported_file,
-        )
-
         filename = secure_filename(file.filename or "")
         if not filename:
             raise DatasetCatalogError("No file selected")
         suffix = Path(filename).suffix.lower()
         file_bytes = file.read()
 
-        # OSM PBF is multi-layer and not a directly storable dataset file, so we
-        # convert it to a single GeoParquet (all non-empty layers merged, with an
-        # ``osm_layer`` column) and import THAT as a normal geo dataset. The rest
-        # of the pipeline (loader, preview, export) then treats it like any other
-        # GeoParquet import.
-        osm_feature_count: int | None = None
+        # OSM PBF is multi-layer, so each non-empty layer (points / lines /
+        # multipolygons / …) is registered as its own standalone GeoParquet
+        # dataset. The route returns the first; the rest surface via the
+        # account-level catalog listing on the next reload.
         if suffix in OSM_PBF_SUFFIXES:
-            from utk_curio.backend.app.datasets.install.osm_pbf import (
-                OsmPbfError,
-                convert_osm_pbf_to_geoparquet,
-            )
+            return self._import_osm_pbf_layers(file_bytes, filename, title=title)
 
-            try:
-                file_bytes, osm_feature_count = convert_osm_pbf_to_geoparquet(file_bytes)
-            except OsmPbfError as exc:
-                raise DatasetCatalogError(str(exc)) from exc
-            fmt = "parquet"
-            base = filename
-            for pbf_suffix in (".osm.pbf", ".pbf"):
-                if base.lower().endswith(pbf_suffix):
-                    base = base[: -len(pbf_suffix)]
-                    break
-            filename = f"{base or 'osm'}.parquet"
-        elif suffix not in SUPPORTED_SUFFIXES:
+        if suffix not in SUPPORTED_SUFFIXES:
             raise DatasetCatalogError(f"Unsupported dataset format: {suffix or filename}")
-        else:
-            fmt = SUPPORTED_SUFFIXES[suffix]
+        return self._install_imported_bytes(
+            file_bytes, filename, SUPPORTED_SUFFIXES[suffix], title=title
+        )
+
+    def _install_imported_bytes(
+        self,
+        file_bytes: bytes,
+        filename: str,
+        fmt: str,
+        *,
+        title: str | None = None,
+        feature_count_override: int | None = None,
+    ) -> dict[str, Any]:
+        """Write imported bytes to the account-level user store and build the
+        catalog item. Register-only: never attaches the dataset to a dataflow —
+        a node/dataflow linkage is created only on explicit install."""
+        from utk_curio.backend.app.datasets.install.installer import (
+            InstallerError,
+            install_imported_file,
+        )
+        from utk_curio.backend.app.datasets.domain.manifest import load_dataset_manifest
 
         user_key = self._paths._user_key()
-
         try:
             result = install_imported_file(
                 user_key, file_bytes, filename, fmt, title=title
@@ -109,16 +106,15 @@ class CatalogMutations:
         # Compute row/feature counts and patch the manifest if they were missing.
         data_path = result.dest / result.manifest.data_file
         row_count, feature_count = count_file(data_path, fmt)
-        # count_file doesn't parse parquet; use the count from OSM conversion.
-        if feature_count is None and osm_feature_count is not None:
-            feature_count = osm_feature_count
+        # count_file doesn't parse parquet; use a caller-supplied count if given.
+        if feature_count is None and feature_count_override is not None:
+            feature_count = feature_count_override
         if (result.manifest.row_count is None and row_count is not None) or (
             result.manifest.feature_count is None and feature_count is not None
         ):
             patch_manifest_file(result.dest / "manifest.json", row_count, feature_count)
             write_file_meta(data_path, row_count, feature_count)
 
-        from utk_curio.backend.app.datasets.domain.manifest import load_dataset_manifest
         manifest = load_dataset_manifest(result.dest)
         item = item_from_manifest(manifest, result.dest, origin="imported")
         item["path"] = data_path.as_posix()
@@ -129,16 +125,49 @@ class CatalogMutations:
             item["rowCount"] = row_count
         if feature_count is not None:
             item["featureCount"] = feature_count
-
-        # Register-only: importing a file adds it to the account-level Data
-        # Catalog (user store) but does NOT attach it to any node or dataflow.
-        # A node/dataflow linkage is created only when the user explicitly
-        # installs/selects the dataset (``install_dataset`` writes the project
-        # ref). ``dataflow_id`` is accepted for API compatibility but no longer
-        # triggers an auto-install. The imported dataset is surfaced in the
-        # catalog by ``UserDatasetRepository`` (account-level source).
         item["installed"] = False
         return item
+
+    def _import_osm_pbf_layers(
+        self, pbf_bytes: bytes, filename: str, *, title: str | None = None
+    ) -> dict[str, Any]:
+        """Import an OSM PBF as one GeoParquet dataset per non-empty layer."""
+        from utk_curio.backend.app.datasets.install.osm_pbf import (
+            OsmPbfError,
+            convert_osm_pbf_layers,
+        )
+
+        base = filename
+        for pbf_suffix in (".osm.pbf", ".pbf"):
+            if base.lower().endswith(pbf_suffix):
+                base = base[: -len(pbf_suffix)]
+                break
+        base = base or "osm"
+
+        try:
+            layers = convert_osm_pbf_layers(pbf_bytes)
+        except OsmPbfError as exc:
+            raise DatasetCatalogError(str(exc)) from exc
+
+        prefix = title.strip() if title and title.strip() else base
+        items: list[dict[str, Any]] = []
+        for layer in layers:
+            items.append(
+                self._install_imported_bytes(
+                    layer.geoparquet_bytes,
+                    f"{base}_{layer.name}.parquet",
+                    "parquet",
+                    title=f"{prefix} ({layer.name})",
+                    feature_count_override=layer.feature_count,
+                )
+            )
+
+        # The import route returns a single item. Report how many datasets the
+        # PBF produced so the client can message "registered N datasets"; the
+        # rest are surfaced by the account-level catalog listing on reload.
+        primary = items[0]
+        primary["importedDatasetCount"] = len(items)
+        return primary
 
     def publish_dataset(self, dataset_id: str, metadata: dict[str, Any], *, dataflow_id: str | None = None, live_outputs: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         from utk_curio.backend.app.datasets.infrastructure.storage import catalog_root

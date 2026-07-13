@@ -124,6 +124,10 @@ export interface DatasetCatalogItem {
   /** True when a computed dataset (origin="computed") has been published to the Data Catalog.
    * The origin field stays "computed" — use this flag to determine published state. */
   publishedToHub?: boolean;
+  /** Number of catalog datasets produced by a single import. 1 for ordinary
+   * files; N for an OSM PBF, which registers one dataset per layer (this item is
+   * the first — the rest appear via the catalog listing on refresh). */
+  importedDatasetCount?: number;
 }
 
 export interface DatasetCatalogFacets {

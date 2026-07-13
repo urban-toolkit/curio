@@ -113,11 +113,11 @@ def _sample_pbf() -> Path:
     return root / "docs" / "examples" / "data" / "back_bay.osm.pbf"
 
 
-def test_import_osm_pbf_creates_geoparquet_dataset(
+def test_import_osm_pbf_creates_one_dataset_per_layer(
     client, user_and_token, tmp_path, monkeypatch
 ):
-    """Importing an OSM PBF converts it to a standalone GeoParquet catalog
-    dataset (all layers merged, register-only)."""
+    """Importing an OSM PBF registers one standalone GeoParquet dataset per
+    non-empty OSM layer (register-only)."""
     import pytest
 
     if not _osm_geo_available():
@@ -141,21 +141,20 @@ def test_import_osm_pbf_creates_geoparquet_dataset(
     assert item["origin"] == "imported"
     assert item["installed"] is False
     assert (item.get("featureCount") or 0) > 0
+    layer_count = item.get("importedDatasetCount")
+    assert isinstance(layer_count, int) and layer_count >= 2
 
-    # It lists as a standalone catalog item and previews as a real table.
+    # Every layer is a distinct standalone catalog item titled "back_bay (<layer>)".
     listed = client.get("/api/datasets/catalog", headers=_auth(token)).get_json()["items"]
-    assert any(i["id"] == item["id"] for i in listed)
-
-    from utk_curio.backend.app.datasets.install.osm_pbf import OSM_LAYER_COLUMN
-
+    layer_items = [i for i in listed if (i.get("title") or "").startswith("back_bay (")]
+    assert len(layer_items) == layer_count
+    assert all(i["installed"] is False and i["format"] == "parquet" for i in layer_items)
+    # The primary item previews as a real, homogeneous-geometry table.
     preview = client.get(
         f"/api/datasets/{item['id']}/preview", headers=_auth(token)
     )
     assert preview.status_code == 200, preview.get_data(as_text=True)
-    body = preview.get_json()
-    assert (body.get("totalRows") or 0) > 0
-    field_names = [f["name"] for f in body.get("schema", {}).get("fields", [])]
-    assert OSM_LAYER_COLUMN in field_names
+    assert (preview.get_json().get("totalRows") or 0) > 0
 
 
 def test_import_pbf_reports_clear_error_when_geo_extras_missing(monkeypatch):
@@ -170,7 +169,7 @@ def test_import_pbf_reports_clear_error_when_geo_extras_missing(monkeypatch):
     import pytest
 
     with pytest.raises(osm_pbf.OsmPbfError):
-        osm_pbf.convert_osm_pbf_to_geoparquet(b"not-a-real-pbf")
+        osm_pbf.convert_osm_pbf_layers(b"not-a-real-pbf")
 
 
 def test_dataset_catalog_lists_hub_datasets(client, user_and_token, tmp_path, monkeypatch):

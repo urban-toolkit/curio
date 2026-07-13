@@ -289,14 +289,21 @@ export function useDatasetCatalogDrawer(presented: boolean) {
       // only in-list feedback until it lands.
       beginPendingInstall({ key: "import", label: file.name });
       try {
-        await catalog.importDataset(file);
-        // Register-only: importing adds a standalone account-level catalog item;
-        // it is NOT attached to the open dataflow, so we do not touch
+        const imported = await catalog.importDataset(file);
+        // Register-only: importing adds standalone account-level catalog items;
+        // they are NOT attached to the open dataflow, so we do not touch
         // dataflowDatasets. A node/dataflow link is created only on explicit
-        // install. Fan out so the imported dataset appears immediately across
+        // install. Fan out so the imported dataset(s) appear immediately across
         // catalog surfaces (palette provider + dropdown hold separate caches).
         notifyDatasetCatalogRefresh();
-        showToast(`Registered ${file.name} in the data catalog.`, "success");
+        // An OSM PBF registers one dataset per layer; report the count.
+        const count = imported?.importedDatasetCount ?? 1;
+        showToast(
+          count > 1
+            ? `Registered ${count} datasets from ${file.name} in the data catalog.`
+            : `Registered ${file.name} in the data catalog.`,
+          "success",
+        );
       } catch (err) {
         showToast((err as Error)?.message || "Could not import dataset.", "error");
       } finally {
