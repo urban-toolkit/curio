@@ -218,6 +218,16 @@ export interface DatasetCatalogQuery {
   liveOutputs?: Array<{ node_id: string; filename: string; data_type?: string }>;
 }
 
+/** One layer of a dragged OSM PBF group — a real, installed layer dataset. */
+export interface DatasetGroupLayerRef {
+  id: string;
+  title: string;
+  uri: string;
+  path?: string | null;
+  format: DatasetFormat;
+  layerName?: string | null;
+}
+
 export interface DatasetDragPayload {
   datasetId: string;
   title: string;
@@ -226,6 +236,10 @@ export interface DatasetDragPayload {
   format: DatasetFormat;
   origin?: DatasetOrigin;
   loaderSnippet?: DatasetLoaderSnippet | null;
+  /** Present only when dragging a multilayer OSM PBF group parent: the real
+   * per-layer datasets the created node loads. The node references these (not
+   * the synthetic group id) so the saved spec never carries a phantom ref. */
+  groupLayers?: DatasetGroupLayerRef[];
 }
 
 /**

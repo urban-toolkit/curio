@@ -1,4 +1,9 @@
-import type { DatasetCatalogItem } from "./datasetCatalogTypes";
+import type {
+  DatasetCatalogItem,
+  DatasetDragPayload,
+  DatasetGroupLayerRef,
+} from "./datasetCatalogTypes";
+import { osmGroupLoaderSnippet } from "./datasetLoaderSnippets";
 
 /**
  * Dataset Palette entries after folding multi-layer OSM PBF imports into groups.
@@ -124,6 +129,43 @@ export function groupDatasetsForPalette(
   }
 
   return out;
+}
+
+/** The real per-layer datasets of a group, as drag-payload layer refs. */
+export function osmGroupLayerRefs(
+  group: DatasetPaletteGroup,
+): DatasetGroupLayerRef[] {
+  return group.members.map((m) => ({
+    id: m.id,
+    title: m.title,
+    uri: m.uri,
+    path: m.path,
+    format: m.format,
+    layerName: m.layerName,
+  }));
+}
+
+/**
+ * Drag payload for a multilayer OSM PBF group parent. Dropping it creates a
+ * single node representing the *whole* import: the loader reads every layer, and
+ * the node references the real per-layer dataset ids (via ``groupLayers``) so the
+ * saved spec never carries the synthetic group id. The group id is kept only as
+ * the drag's identity/linkage marker.
+ */
+export function createOsmGroupDragPayload(
+  group: DatasetPaletteGroup,
+): DatasetDragPayload {
+  const layers = osmGroupLayerRefs(group);
+  return {
+    datasetId: group.groupId,
+    title: group.title,
+    uri: `curio://osm/${group.groupId}`,
+    path: null,
+    format: "osm",
+    origin: "imported",
+    loaderSnippet: osmGroupLoaderSnippet(layers),
+    groupLayers: layers,
+  };
 }
 
 /** Which persisted timestamp the palette sorts entries by. */

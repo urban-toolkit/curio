@@ -1,9 +1,11 @@
-import React, { memo, useCallback, useState } from "react";
+import React, { memo, useCallback, useMemo, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faDatabase, faChevronDown, faChevronUp } from "@fortawesome/free-solid-svg-icons";
 import { Tooltip, OverlayTrigger } from "react-bootstrap";
 import {
   beginDatasetDrag,
+  beginDatasetDragWith,
+  createOsmGroupDragPayload,
   endDatasetDrag,
   writeDatasetDragData,
   DATASET_FORMAT_LABEL,
@@ -133,18 +135,20 @@ export const DatasetGroupRow = memo(function DatasetGroupRow({
   const layerCount = group.members.length;
   const time = relativeTime(group.updatedAt);
   const osmChipClass = rowStyles.chip_osm ?? rowStyles.formatChip;
+  // Dragging the parent creates one node loading ALL layers (the full import).
+  const dragPayload = useMemo(() => createOsmGroupDragPayload(group), [group]);
 
   return (
     <div className={rowStyles.groupBlock} data-osm-group-id={group.groupId}>
-      <button
-        type="button"
-        className={rowStyles.groupHeader}
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        aria-label={`${open ? "Collapse" : "Expand"} ${group.title} — OSM PBF import with ${layerCount} layer${layerCount === 1 ? "" : "s"}`}
-      >
+      <div className={rowStyles.groupHeader}>
         <div
           className={`${packageStyles.packageKindRowDrag} ${rowStyles.datasetRowDrag} ${rowStyles.groupIconBox}`}
+          draggable
+          onDragStart={(event) => {
+            writeDatasetDragData(event.dataTransfer, beginDatasetDragWith(dragPayload));
+          }}
+          onDragEnd={() => endDatasetDrag()}
+          title={`Drag to add all ${layerCount} layer${layerCount === 1 ? "" : "s"} as one dataset`}
         >
           <FontAwesomeIcon
             icon={faDatabase}
@@ -154,18 +158,26 @@ export const DatasetGroupRow = memo(function DatasetGroupRow({
             {DATASET_FORMAT_LABEL.osm}
           </span>
         </div>
-        <div className={rowStyles.groupHeaderMeta}>
-          <span className={packageStyles.packageKindRowLabel}>{group.title}</span>
-          <div className={rowStyles.rowMeta}>
-            <span className={packageStyles.packageKindCategoryChip}>Imported</span>
-            {time ? <span className={rowStyles.rowMetaText}>{time}</span> : null}
+        <button
+          type="button"
+          className={rowStyles.groupToggle}
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+          aria-label={`${open ? "Collapse" : "Expand"} ${group.title} — OSM PBF import with ${layerCount} layer${layerCount === 1 ? "" : "s"}`}
+        >
+          <div className={rowStyles.groupHeaderMeta}>
+            <span className={packageStyles.packageKindRowLabel}>{group.title}</span>
+            <div className={rowStyles.rowMeta}>
+              <span className={packageStyles.packageKindCategoryChip}>Imported</span>
+              {time ? <span className={rowStyles.rowMetaText}>{time}</span> : null}
+            </div>
           </div>
-        </div>
-        <FontAwesomeIcon
-          icon={open ? faChevronUp : faChevronDown}
-          className={rowStyles.groupCaret}
-        />
-      </button>
+          <FontAwesomeIcon
+            icon={open ? faChevronUp : faChevronDown}
+            className={rowStyles.groupCaret}
+          />
+        </button>
+      </div>
       {open ? (
         <div className={rowStyles.groupMembers} role="group" aria-label={`${group.title} layers`}>
           {group.members.map((member) => (

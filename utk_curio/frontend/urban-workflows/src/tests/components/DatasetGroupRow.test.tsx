@@ -67,6 +67,13 @@ describe("DatasetGroupRow", () => {
     expect(screen.queryByText("chicago_loop (points)")).not.toBeInTheDocument();
   });
 
+  test("the parent has a draggable handle for the full multilayer dataset", () => {
+    const { container } = render(<DatasetGroupRow group={group()} />);
+    const handle = container.querySelector('[draggable="true"]');
+    expect(handle).not.toBeNull();
+    expect(handle).toHaveAttribute("title", expect.stringMatching(/all 3 layers/));
+  });
+
   test("expands to reveal each layer as an individually draggable row", async () => {
     render(<DatasetGroupRow group={group()} />);
     await userEvent.click(screen.getByRole("button", { name: /Expand chicago_loop/ }));

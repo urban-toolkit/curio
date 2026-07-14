@@ -14,8 +14,11 @@ import {
   datasetSubtitle,
   stripDataFileExtension,
   isGeneratedDataFileName,
+  createOsmGroupDragPayload,
+  groupDatasetsForPalette,
   DATASET_DRAG_MIME,
   DatasetCatalogItem,
+  type DatasetPaletteGroup,
 } from "../../services/datasetCatalog";
 import { mergeDatasetLoaderCode } from "../../services/datasetCatalog/datasetLoaderSnippets";
 import { NodeType } from "../../constants";
@@ -284,6 +287,45 @@ test("buildDatasetLoaderNodeOptions builds a new Data Loading node payload", () 
     title: "Blocks",
     format: "csv",
   });
+});
+
+test("dragging an OSM group builds a node that loads all layers via real member refs", () => {
+  const members = [
+    makeDataset({ id: "loop.points", title: "chicago_loop (points)", origin: "imported", format: "parquet", path: "/store/loop.points@1/data/points.parquet", layerName: "points", groupId: "osm.x1" }),
+    makeDataset({ id: "loop.lines", title: "chicago_loop (lines)", origin: "imported", format: "parquet", path: "/store/loop.lines@1/data/lines.parquet", layerName: "lines", groupId: "osm.x1" }),
+  ];
+  const [group] = groupDatasetsForPalette(members) as [DatasetPaletteGroup];
+  const payload = createOsmGroupDragPayload(group);
+
+  // The payload is the full multilayer dataset (osm), carrying the real layers.
+  expect(payload.format).toBe("osm");
+  expect(payload.datasetId).toBe("osm.x1");
+  expect(payload.groupLayers?.map((l) => l.id)).toEqual(["loop.points", "loop.lines"]);
+
+  const options = buildDatasetLoaderNodeOptions(payload, { x: 0, y: 0 });
+  // Node references the REAL layer ids — never the synthetic group id — so the
+  // saved dataflow.datasets can't gain a phantom ref.
+  expect(options.datasetRefs).toEqual(["loop.points", "loop.lines"]);
+  expect(Object.keys(options.appliedDatasets)).toEqual(["loop.points", "loop.lines"]);
+  expect(options.appliedDatasets["osm.x1"]).toBeUndefined();
+  // The loader reads every layer into one `layers` dict (the full import).
+  expect(options.code).toContain('layers["points"] = _curio_read_layer("/store/loop.points@1/data/points.parquet")');
+  expect(options.code).toContain('layers["lines"] = _curio_read_layer("/store/loop.lines@1/data/lines.parquet")');
+  expect(options.code).toContain("return layers");
+  // The linkage marker still points at the group for palette↔canvas focus.
+  expect(options.datasetSource.datasetId).toBe("osm.x1");
+});
+
+test("dropping an OSM group onto a node applies all layer refs, not the group id", () => {
+  const members = [
+    makeDataset({ id: "loop.points", title: "chicago_loop (points)", format: "parquet", path: "/a.parquet", layerName: "points", groupId: "osm.x9" }),
+    makeDataset({ id: "loop.lines", title: "chicago_loop (lines)", format: "parquet", path: "/b.parquet", layerName: "lines", groupId: "osm.x9" }),
+  ];
+  const [group] = groupDatasetsForPalette(members) as [DatasetPaletteGroup];
+  const result = applyDatasetToNodeData({ datasetRefs: ["existing"] }, "", createOsmGroupDragPayload(group));
+  expect(result.data.datasetRefs).toEqual(["existing", "loop.points", "loop.lines"]);
+  expect(result.data.appliedDatasets["osm.x9"]).toBeUndefined();
+  expect(result.data.appliedDatasets["loop.points"]).toBeTruthy();
 });
 
 test("buildDatasetLoaderNodeOptions stamps the datasetSource linkage marker", () => {

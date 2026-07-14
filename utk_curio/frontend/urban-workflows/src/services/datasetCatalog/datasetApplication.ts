@@ -2,9 +2,45 @@ import { NodeType } from "../../constants";
 import {
   DatasetCatalogItem,
   DatasetDragPayload,
+  DatasetGroupLayerRef,
   DatasetNodeSource,
 } from "./datasetCatalogTypes";
 import { buildDatasetLoaderCode, mergeDatasetLoaderCode } from "./datasetLoaderSnippets";
+
+type AppliedDataset = { id: string; title: string; uri: string; path?: string | null; format: string };
+
+/** The real datasets a dropped payload applies to: the OSM group's per-layer
+ * members when present, else the single dataset itself. Keeps the synthetic
+ * group id out of the node's ``datasetRefs`` / ``appliedDatasets`` (and thus out
+ * of the saved ``dataflow.datasets``). */
+function appliedDatasetsForPayload(
+  dataset: DatasetLike,
+): { refs: string[]; applied: Record<string, AppliedDataset> } {
+  const layers =
+    "groupLayers" in dataset && dataset.groupLayers && dataset.groupLayers.length > 0
+      ? dataset.groupLayers
+      : null;
+  const sources: Array<AppliedDataset> = layers
+    ? layers.map((layer: DatasetGroupLayerRef) => ({
+        id: layer.id,
+        title: layer.title,
+        uri: layer.uri,
+        path: layer.path,
+        format: layer.format,
+      }))
+    : [
+        {
+          id: datasetIdOf(dataset),
+          title: dataset.title,
+          uri: dataset.uri,
+          path: dataset.path,
+          format: dataset.format,
+        },
+      ];
+  const applied: Record<string, AppliedDataset> = {};
+  for (const source of sources) applied[source.id] = source;
+  return { refs: sources.map((source) => source.id), applied };
+}
 
 export type DatasetLoaderNodeOptions = {
   position: { x: number; y: number };
@@ -35,20 +71,12 @@ export function buildDatasetLoaderNodeOptions(
   dataset: DatasetLike,
   position: { x: number; y: number },
 ): DatasetLoaderNodeOptions {
-  const datasetId = datasetIdOf(dataset);
+  const { refs, applied } = appliedDatasetsForPayload(dataset);
   return {
     position,
     code: buildDatasetLoaderCode(dataset),
-    datasetRefs: [datasetId],
-    appliedDatasets: {
-      [datasetId]: {
-        id: datasetId,
-        title: dataset.title,
-        uri: dataset.uri,
-        path: dataset.path,
-        format: dataset.format,
-      },
-    },
+    datasetRefs: refs,
+    appliedDatasets: applied,
     datasetSource: buildDatasetSource(dataset),
   };
 }
@@ -103,6 +131,12 @@ export function beginDatasetDrag(dataset: DatasetCatalogItem): DatasetDragPayloa
   return payload;
 }
 
+/** Begin a drag from a prebuilt payload (e.g. an OSM group parent). */
+export function beginDatasetDragWith(payload: DatasetDragPayload): DatasetDragPayload {
+  activeDatasetDrag = payload;
+  return payload;
+}
+
 /** Call from ``dragEnd`` so stale payloads are not reused. */
 export function endDatasetDrag(): void {
   activeDatasetDrag = null;
@@ -147,8 +181,10 @@ export function applyDatasetToNodeData(
   currentCode: string | undefined,
   dataset: DatasetLike,
 ): { data: any; code: string } {
-  const datasetId = "datasetId" in dataset ? dataset.datasetId : dataset.id;
-  const datasetRefs = Array.from(new Set([...(data?.datasetRefs || []), datasetId]));
+  // Expand an OSM group to its real per-layer datasets so the node references
+  // resolvable ids (never the synthetic group id).
+  const { refs, applied } = appliedDatasetsForPayload(dataset);
+  const datasetRefs = Array.from(new Set([...(data?.datasetRefs || []), ...refs]));
   const code = mergeDatasetLoaderCode(currentCode, dataset);
   return {
     code,
@@ -159,13 +195,7 @@ export function applyDatasetToNodeData(
       datasetRefs,
       appliedDatasets: {
         ...(data?.appliedDatasets || {}),
-        [datasetId]: {
-          id: datasetId,
-          title: dataset.title,
-          uri: dataset.uri,
-          path: dataset.path,
-          format: dataset.format,
-        },
+        ...applied,
       },
     },
   };

@@ -2,6 +2,7 @@ import {
   DatasetCatalogItem,
   DatasetDragPayload,
   DatasetFormat,
+  DatasetGroupLayerRef,
   DatasetLoaderSnippet,
 } from "./datasetCatalogTypes";
 
@@ -51,6 +52,39 @@ function bundleLoaderCode(path: string): string {
     "    return tuple(items)",
     "bundle = _curio_load_bundle(bundle_path)",
   ].join("\n");
+}
+
+/**
+ * Loader for a multilayer OSM PBF group: reads every extracted layer's
+ * GeoParquet into one ``layers`` dict keyed by layer name, so a single node
+ * represents the full multilayer import. GeoParquet is read with
+ * ``gpd.read_parquet`` (geometry + CRS), falling back to ``pd.read_parquet``.
+ */
+export function osmGroupLoaderSnippet(
+  layers: DatasetGroupLayerRef[],
+): DatasetLoaderSnippet {
+  const readerLines = layers.map((layer, index) => {
+    const key = layer.layerName || layer.title || `layer_${index}`;
+    const path = layer.path || layer.uri || "<dataset-path>";
+    return `layers[${JSON.stringify(key)}] = _curio_read_layer(${JSON.stringify(path)})`;
+  });
+  const code = [
+    "def _curio_read_layer(path):",
+    "    try:",
+    "        return gpd.read_parquet(path)",
+    "    except Exception:",
+    "        return pd.read_parquet(path)",
+    "",
+    "layers = {}",
+    ...readerLines,
+  ].join("\n");
+  return {
+    language: "python",
+    imports: ["import geopandas as gpd", "import pandas as pd"],
+    pathVariable: "layers",
+    code,
+    returnVariable: "layers",
+  };
 }
 
 function snippetForFormat(format: DatasetFormat, path: string): DatasetLoaderSnippet {
