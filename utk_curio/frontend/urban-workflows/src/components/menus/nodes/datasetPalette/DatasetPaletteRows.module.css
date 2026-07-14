@@ -184,24 +184,9 @@
   width: 100%;
 }
 
-/* The meta + caret area toggles expand/collapse; the icon box is the drag
-   handle (see DatasetGroupRow). */
-.groupToggle {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-  padding: 0;
-  background: transparent;
-  border: none;
-  color: inherit;
-  cursor: pointer;
-  text-align: left;
-}
-
-.groupHeaderMeta {
+/* The meta button highlights linked nodes (like a single dataset row); the icon
+   box is the drag handle and the caret button owns expand/collapse. */
+.groupMetaButton {
   flex: 1;
   min-width: 0;
   display: flex;
@@ -210,13 +195,40 @@
   justify-content: center;
   gap: 4px;
   padding: 4px 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.groupMetaButton:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.groupCaretButton {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  align-self: stretch;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
 }
 
 .groupCaret {
-  flex-shrink: 0;
-  margin-right: 6px;
   font-size: 11px;
   color: rgba(251, 252, 246, 0.6);
+}
+
+.groupCaretButton:hover .groupCaret {
+  color: rgba(251, 252, 246, 0.95);
 }
 
 /* Indented member layers with a coloured left accent bar tying them to the

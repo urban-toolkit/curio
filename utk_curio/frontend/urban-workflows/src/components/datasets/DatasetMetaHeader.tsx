@@ -6,7 +6,7 @@ import {
   DatasetNodeSource,
   DATASET_FORMAT_LABEL,
   datasetProvenanceLabel,
-  getDatasetSourceId,
+  isNodeLinkedToAnyDataset,
 } from "../../services/datasetCatalog";
 import { useDatasetPalette } from "../../providers/DatasetPaletteContext";
 import { useHeaderIconDragClick } from "../../utils/headerIconDragClick";
@@ -61,7 +61,7 @@ export function DatasetMetaHeader({
     // Highlight every node linked to the same dataset row (consumer via
     // datasetSource, producer via the catalog producer map), then reveal the row.
     const isLinked = (n: { id: string; data: any }) =>
-      getDatasetSourceId(n.data) === source.datasetId ||
+      isNodeLinkedToAnyDataset(n.data, [source.datasetId]) ||
       installedComputedByProducer.get(n.id)?.id === source.datasetId;
     focusLinkedNodes(reactFlow, isLinked);
     setDatasetRevealId(source.datasetId);

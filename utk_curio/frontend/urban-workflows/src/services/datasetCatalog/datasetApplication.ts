@@ -91,6 +91,37 @@ export function getDatasetSourceId(data: any): string | null {
   return data?.datasetSource?.datasetId ?? null;
 }
 
+/**
+ * Every dataset id a canvas node is linked to: the palette-creation marker
+ * (``datasetSource``) plus every applied/referenced dataset (``datasetRefs`` /
+ * ``appliedDatasets``). This is the single source of truth for palette↔canvas
+ * highlighting, so a node created by dragging a *group* (whose ``datasetSource``
+ * is the synthetic group id but whose ``datasetRefs`` are the real per-layer
+ * ids) is matched when interacting with either the group or one of its layers.
+ */
+export function nodeLinkedDatasetIds(data: any): string[] {
+  const ids = new Set<string>();
+  const source = getDatasetSourceId(data);
+  if (source) ids.add(source);
+  for (const ref of data?.datasetRefs || []) {
+    if (typeof ref === "string" && ref) ids.add(ref);
+  }
+  for (const applied of Object.values(data?.appliedDatasets || {})) {
+    const id = (applied as any)?.id;
+    if (typeof id === "string" && id) ids.add(id);
+  }
+  return Array.from(ids);
+}
+
+/** True when *data* is linked to any of *datasetIds* (see {@link nodeLinkedDatasetIds}). */
+export function isNodeLinkedToAnyDataset(data: any, datasetIds: Iterable<string>): boolean {
+  const linked = new Set(nodeLinkedDatasetIds(data));
+  for (const id of datasetIds) {
+    if (id && linked.has(id)) return true;
+  }
+  return false;
+}
+
 export const DATASET_DRAG_MIME = "application/x-curio-dataset";
 const DATASET_DRAG_PLAIN_PREFIX = "curio-dataset:";
 

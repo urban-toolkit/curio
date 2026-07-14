@@ -16,6 +16,8 @@ import {
   isGeneratedDataFileName,
   createOsmGroupDragPayload,
   groupDatasetsForPalette,
+  nodeLinkedDatasetIds,
+  isNodeLinkedToAnyDataset,
   DATASET_DRAG_MIME,
   DatasetCatalogItem,
   type DatasetPaletteGroup,
@@ -286,6 +288,38 @@ test("buildDatasetLoaderNodeOptions builds a new Data Loading node payload", () 
     id: "file-123",
     title: "Blocks",
     format: "csv",
+  });
+});
+
+describe("nodeLinkedDatasetIds / isNodeLinkedToAnyDataset (highlighting)", () => {
+  test("collects datasetSource, datasetRefs, and appliedDatasets ids", () => {
+    const data = {
+      datasetSource: { datasetId: "osm.x1" },
+      datasetRefs: ["loop.points", "loop.lines"],
+      appliedDatasets: { "loop.multipolygons": { id: "loop.multipolygons" } },
+    };
+    expect(new Set(nodeLinkedDatasetIds(data))).toEqual(
+      new Set(["osm.x1", "loop.points", "loop.lines", "loop.multipolygons"]),
+    );
+  });
+
+  test("a group-created node is matched by both the group id and any member id", () => {
+    // Node created by dragging the whole group: datasetSource = group id, refs = layers.
+    const groupNode = { datasetSource: { datasetId: "osm.x1" }, datasetRefs: ["loop.points", "loop.lines"] };
+    expect(isNodeLinkedToAnyDataset(groupNode, ["osm.x1"])).toBe(true); // group parent
+    expect(isNodeLinkedToAnyDataset(groupNode, ["loop.points"])).toBe(true); // an individual layer
+    expect(isNodeLinkedToAnyDataset(groupNode, ["unrelated"])).toBe(false);
+  });
+
+  test("an individual-layer node is matched by that layer id", () => {
+    const layerNode = { datasetSource: { datasetId: "loop.lines" }, datasetRefs: ["loop.lines"] };
+    expect(isNodeLinkedToAnyDataset(layerNode, ["loop.lines"])).toBe(true);
+    expect(isNodeLinkedToAnyDataset(layerNode, ["loop.points"])).toBe(false);
+  });
+
+  test("empty/absent linkage never matches", () => {
+    expect(nodeLinkedDatasetIds({})).toEqual([]);
+    expect(isNodeLinkedToAnyDataset({}, ["x"])).toBe(false);
   });
 });
 

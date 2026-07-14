@@ -20,12 +20,15 @@ jest.mock("../../components/datasets/catalog/DatasetConnectionBadge", () => ({
   DatasetConnectionBadge: () => null,
 }));
 jest.mock("../../utils/focusDatasetNodes", () => ({
-  focusLinkedNodes: () => 0,
+  focusLinkedNodes: jest.fn(() => 1),
 }));
 
 import { DatasetGroupRow } from "../../components/menus/nodes/datasetPalette/DatasetPaletteRows";
+import { focusLinkedNodes } from "../../utils/focusDatasetNodes";
 import type { DatasetPaletteGroup } from "../../services/datasetCatalog";
 import type { DatasetCatalogItem } from "../../services/datasetCatalog";
+
+const focusLinkedNodesMock = focusLinkedNodes as jest.Mock;
 
 function member(id: string, title: string): DatasetCatalogItem {
   return {
@@ -49,6 +52,8 @@ function group(): DatasetPaletteGroup {
     groupId: "osm.x1",
     title: "chicago_loop",
     updatedAt: "2026-07-14T00:00:00Z",
+    importedAt: "2026-07-14T00:00:00Z",
+    installedAt: "2026-07-14T00:00:00Z",
     members: [
       member("loop.points", "chicago_loop (points)"),
       member("loop.lines", "chicago_loop (lines)"),
@@ -58,6 +63,8 @@ function group(): DatasetPaletteGroup {
 }
 
 describe("DatasetGroupRow", () => {
+  beforeEach(() => focusLinkedNodesMock.mockClear());
+
   test("collapsed by default: shows the OSM PBF parent, hides members", () => {
     render(<DatasetGroupRow group={group()} />);
     expect(screen.getByText("chicago_loop")).toBeInTheDocument();
@@ -72,6 +79,28 @@ describe("DatasetGroupRow", () => {
     const handle = container.querySelector('[draggable="true"]');
     expect(handle).not.toBeNull();
     expect(handle).toHaveAttribute("title", expect.stringMatching(/all 3 layers/));
+  });
+
+  test("clicking the parent meta highlights nodes linked to the group or any layer", async () => {
+    render(<DatasetGroupRow group={group()} />);
+    // The meta button carries the title; the caret is a separate button.
+    await userEvent.click(screen.getByText("chicago_loop"));
+    expect(focusLinkedNodesMock).toHaveBeenCalledTimes(1);
+
+    const predicate = focusLinkedNodesMock.mock.calls[0][1] as (n: any) => boolean;
+    // Full-group node (datasetSource = group id) — highlighted.
+    expect(predicate({ id: "n1", data: { datasetSource: { datasetId: "osm.x1" } } })).toBe(true);
+    // Individual-layer node (references a member) — highlighted.
+    expect(predicate({ id: "n2", data: { datasetRefs: ["loop.lines"] } })).toBe(true);
+    // Unrelated node — not highlighted.
+    expect(predicate({ id: "n3", data: { datasetSource: { datasetId: "other" } } })).toBe(false);
+  });
+
+  test("clicking the caret toggles expand without triggering highlight", async () => {
+    render(<DatasetGroupRow group={group()} />);
+    await userEvent.click(screen.getByRole("button", { name: /Expand chicago_loop/ }));
+    expect(screen.getByText("chicago_loop (points)")).toBeInTheDocument();
+    expect(focusLinkedNodesMock).not.toHaveBeenCalled();
   });
 
   test("expands to reveal each layer as an individually draggable row", async () => {
