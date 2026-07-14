@@ -177,6 +177,10 @@ def base_item(**overrides: Any) -> dict[str, Any]:
         "createdAt": None,
         "updatedAt": iso_from_timestamp(),
         "sourceUpdatedAt": None,
+        # When this dataset was installed into the current dataflow (from the
+        # project ref's ``installedAt``). Distinct from ``createdAt`` (import /
+        # record creation). ``None`` for datasets not installed in a dataflow.
+        "installedAt": None,
         "sourceLabel": "",
         "license": None,
         "tags": [],

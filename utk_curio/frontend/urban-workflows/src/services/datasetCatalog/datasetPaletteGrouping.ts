@@ -20,6 +20,10 @@ export interface DatasetPaletteGroup {
   members: DatasetCatalogItem[];
   /** Most-recent member record-update time — the header's relative time. */
   updatedAt: string | null;
+  /** Most-recent member import/creation time (persisted ``createdAt``). */
+  importedAt: string | null;
+  /** Most-recent member install time (persisted ``installedAt``). */
+  installedAt: string | null;
 }
 
 export interface DatasetPaletteSingle {
@@ -44,14 +48,26 @@ export function osmGroupBaseTitle(
   return raw.replace(LAYER_SUFFIX_RE, "").trim() || groupId;
 }
 
-/** Latest (max) non-empty value of ``field`` across members, or ``null``. */
+/** Import/creation timestamp of a dataset for palette sorting: the persisted
+ * record-creation time, falling back to the last-updated time. */
+export function datasetImportedAt(dataset: DatasetCatalogItem): string | null {
+  return dataset.createdAt ?? dataset.updatedAt ?? null;
+}
+
+/** Install timestamp of a dataset for palette sorting (persisted; ``null`` when
+ * the dataset is not installed in a dataflow). */
+export function datasetInstalledAt(dataset: DatasetCatalogItem): string | null {
+  return dataset.installedAt ?? null;
+}
+
+/** Latest (max) non-empty value produced by ``pick`` across members, or null. */
 function latest(
   members: DatasetCatalogItem[],
-  field: "updatedAt",
+  pick: (m: DatasetCatalogItem) => string | null | undefined,
 ): string | null {
   let max: string | null = null;
   for (const m of members) {
-    const value = m[field];
+    const value = pick(m);
     if (value && (max === null || value > max)) max = value;
   }
   return max;
@@ -81,7 +97,15 @@ export function groupDatasetsForPalette(
       members = [];
       membersByGroup.set(groupId, members);
       slotByGroup.set(groupId, out.length);
-      out.push({ kind: "group", groupId, title: groupId, members, updatedAt: null });
+      out.push({
+        kind: "group",
+        groupId,
+        title: groupId,
+        members,
+        updatedAt: null,
+        importedAt: null,
+        installedAt: null,
+      });
     }
     members.push(item);
   }
@@ -93,9 +117,47 @@ export function groupDatasetsForPalette(
       groupId,
       title: osmGroupBaseTitle(members, groupId),
       members,
-      updatedAt: latest(members, "updatedAt"),
+      updatedAt: latest(members, (m) => m.updatedAt),
+      importedAt: latest(members, datasetImportedAt),
+      installedAt: latest(members, datasetInstalledAt),
     };
   }
 
   return out;
+}
+
+/** Which persisted timestamp the palette sorts entries by. */
+export type DatasetPaletteSortKey = "importedAt" | "installedAt";
+
+/** The sort timestamp for an entry under ``key`` — a group's representative
+ * value, or the dataset's own persisted metadata. ``null`` when unknown. */
+export function entrySortValue(
+  entry: DatasetPaletteEntry,
+  key: DatasetPaletteSortKey,
+): string | null {
+  if (entry.kind === "group") return entry[key];
+  return key === "installedAt"
+    ? datasetInstalledAt(entry.dataset)
+    : datasetImportedAt(entry.dataset);
+}
+
+/**
+ * Order palette entries by a persisted timestamp, most-recent first. Groups sort
+ * as a single unit by their representative value. Entries whose timestamp is
+ * unknown sort last; ties keep their original (stable) order. Pure — returns a
+ * new array and never reads UI state.
+ */
+export function sortDatasetPaletteEntries(
+  entries: DatasetPaletteEntry[],
+  key: DatasetPaletteSortKey,
+): DatasetPaletteEntry[] {
+  return entries
+    .map((entry, index) => ({ entry, index, value: entrySortValue(entry, key) }))
+    .sort((a, b) => {
+      if (a.value === b.value) return a.index - b.index;
+      if (a.value === null) return 1;
+      if (b.value === null) return -1;
+      return a.value < b.value ? 1 : -1;
+    })
+    .map((wrapped) => wrapped.entry);
 }

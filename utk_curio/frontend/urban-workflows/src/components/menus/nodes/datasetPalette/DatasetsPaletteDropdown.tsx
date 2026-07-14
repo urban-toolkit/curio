@@ -13,8 +13,10 @@ import {
   DATASET_CATALOG_REFRESH_EVENT,
   groupDatasetsForPalette,
   isUserInstalledDataset,
+  sortDatasetPaletteEntries,
   useDatasetCatalog,
   prefetchDatasetCatalog,
+  type DatasetPaletteSortKey,
 } from "../../../../services/datasetCatalog";
 import {
   isToolsPaletteDismissOutsideClick,
@@ -104,6 +106,15 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
   const paletteEntries = useMemo(
     () => groupDatasetsForPalette(installedRows),
     [installedRows],
+  );
+
+  // Palette sort key. Backed entirely by persisted dataset metadata (import
+  // ``createdAt`` / install ``installedAt``), never UI-only state, so the order
+  // is stable across reopens. Groups sort as a unit by their representative time.
+  const [sortKey, setSortKey] = useState<DatasetPaletteSortKey>("importedAt");
+  const sortedEntries = useMemo(
+    () => sortDatasetPaletteEntries(paletteEntries, sortKey),
+    [paletteEntries, sortKey],
   );
 
   // In-flight installs without a real installed row yet, rendered as
@@ -207,12 +218,32 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
               count={total}
               selected
               defaultOpen
+              trailing={
+                total > 0 ? (
+                  <button
+                    type="button"
+                    className={styles.sortToggle}
+                    // Toggle without opening/closing the accordion summary.
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setSortKey((key) =>
+                        key === "importedAt" ? "installedAt" : "importedAt",
+                      );
+                    }}
+                    title="Toggle sort between import time and install time"
+                    aria-label={`Sort by ${sortKey === "importedAt" ? "import" : "install"} date; click to change`}
+                  >
+                    Sort: {sortKey === "importedAt" ? "Import date" : "Install date"}
+                  </button>
+                ) : null
+              }
             >
               {installingRows.map((pending) => (
                 <DatasetInstallingRow key={`pending:${pending.key}`} pending={pending} />
               ))}
               {installedRows.length > 0 ? (
-                paletteEntries.map((entry) =>
+                sortedEntries.map((entry) =>
                   entry.kind === "group" ? (
                     <DatasetGroupRow key={`group:${entry.groupId}`} group={entry} />
                   ) : (

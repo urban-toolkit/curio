@@ -1,7 +1,10 @@
 import {
   groupDatasetsForPalette,
   osmGroupBaseTitle,
+  sortDatasetPaletteEntries,
+  type DatasetPaletteEntry,
   type DatasetPaletteGroup,
+  type DatasetPaletteSingle,
 } from "../../services/datasetCatalog/datasetPaletteGrouping";
 import type { DatasetCatalogItem } from "../../services/datasetCatalog";
 
@@ -70,6 +73,70 @@ describe("groupDatasetsForPalette", () => {
     ]);
     expect(entries).toHaveLength(2);
     expect(entries.every((e) => e.kind === "group")).toBe(true);
+  });
+});
+
+describe("representative group timestamps", () => {
+  test("importedAt/installedAt are the latest member values", () => {
+    const entries = groupDatasetsForPalette([
+      ds({ id: "a", groupId: "g", title: "x (a)", createdAt: "2026-07-01T00:00:00Z", installedAt: "2026-07-05T00:00:00Z" }),
+      ds({ id: "b", groupId: "g", title: "x (b)", createdAt: "2026-07-03T00:00:00Z", installedAt: "2026-07-02T00:00:00Z" }),
+    ]);
+    const group = entries[0] as DatasetPaletteGroup;
+    expect(group.importedAt).toBe("2026-07-03T00:00:00Z");
+    expect(group.installedAt).toBe("2026-07-05T00:00:00Z");
+  });
+});
+
+describe("sortDatasetPaletteEntries", () => {
+  const singleId = (e: DatasetPaletteEntry) =>
+    e.kind === "single" ? (e as DatasetPaletteSingle).dataset.id : e.groupId;
+
+  test("orders by import time (createdAt), most recent first", () => {
+    const entries = groupDatasetsForPalette([
+      ds({ id: "old", createdAt: "2026-07-01T00:00:00Z" }),
+      ds({ id: "new", createdAt: "2026-07-10T00:00:00Z" }),
+      ds({ id: "mid", createdAt: "2026-07-05T00:00:00Z" }),
+    ]);
+    expect(sortDatasetPaletteEntries(entries, "importedAt").map(singleId)).toEqual([
+      "new",
+      "mid",
+      "old",
+    ]);
+  });
+
+  test("orders by install time (installedAt), independent of import time", () => {
+    const entries = groupDatasetsForPalette([
+      ds({ id: "a", createdAt: "2026-07-10T00:00:00Z", installedAt: "2026-07-01T00:00:00Z" }),
+      ds({ id: "b", createdAt: "2026-07-01T00:00:00Z", installedAt: "2026-07-10T00:00:00Z" }),
+    ]);
+    expect(sortDatasetPaletteEntries(entries, "installedAt").map(singleId)).toEqual(["b", "a"]);
+  });
+
+  test("a group sorts as a unit by its representative timestamp", () => {
+    const entries = groupDatasetsForPalette([
+      ds({ id: "single", createdAt: "2026-07-04T00:00:00Z" }),
+      ds({ id: "g1", groupId: "osm.g", title: "loop (points)", createdAt: "2026-07-09T00:00:00Z" }),
+      ds({ id: "g2", groupId: "osm.g", title: "loop (lines)", createdAt: "2026-07-08T00:00:00Z" }),
+    ]);
+    // Group's representative importedAt = 2026-07-09 > single's 2026-07-04.
+    expect(sortDatasetPaletteEntries(entries, "importedAt").map(singleId)).toEqual([
+      "osm.g",
+      "single",
+    ]);
+  });
+
+  test("entries with an unknown timestamp sort last (stable)", () => {
+    const entries = groupDatasetsForPalette([
+      ds({ id: "known", installedAt: "2026-07-05T00:00:00Z" }),
+      ds({ id: "unknown1", installedAt: null }),
+      ds({ id: "unknown2", installedAt: null }),
+    ]);
+    expect(sortDatasetPaletteEntries(entries, "installedAt").map(singleId)).toEqual([
+      "known",
+      "unknown1",
+      "unknown2",
+    ]);
   });
 });
 

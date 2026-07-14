@@ -71,6 +71,9 @@ class InstalledDatasetRepository:
                     item["loaderSnippet"] = loader_snippet(item["format"], data_path.as_posix())
                     item["sizeBytes"] = data_path.stat().st_size
                     item["installed"] = True
+                    # Persisted install time from the project ref — distinct from
+                    # the manifest's createdAt/import time (see catalog_item).
+                    item["installedAt"] = ref.get("installedAt")
                     item["producerNodeId"] = ref.get("producerNodeId")
                     item["consumerNodeIds"] = ref.get("consumerNodeIds") or []
                     # Propagate publishedToHub flag so computed datasets can be
@@ -91,6 +94,7 @@ class InstalledDatasetRepository:
                         dirName=dir_name,
                         producerNodeId=ref.get("producerNodeId"),
                         consumerNodeIds=ref.get("consumerNodeIds") or [],
+                        installedAt=ref.get("installedAt"),
                         installed=True,
                     ))
                 continue
@@ -112,6 +116,7 @@ class InstalledDatasetRepository:
                 producerNodeId=ref.get("producerNodeId"),
                 consumerNodeIds=ref.get("consumerNodeIds") or [],
                 updatedAt=ref.get("updatedAt") or ref.get("installedAt") or iso_from_timestamp(),
+                installedAt=ref.get("installedAt"),
                 sourceLabel=ref.get("sourceLabel")
                 or (
                     "Computed"

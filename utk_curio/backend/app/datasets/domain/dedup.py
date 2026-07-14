@@ -32,6 +32,11 @@ def merge_catalog_items(existing: dict[str, Any], incoming: dict[str, Any]) -> d
         merged["installed"] = True
     if loser.get("needsReinstall"):
         merged["needsReinstall"] = True
+    # Persisted install time lives only on the project-ref (installed) row; the
+    # account-level row carries none. Keep it when the winner lacks it so the
+    # merged item can be sorted by install time regardless of which row won.
+    if not merged.get("installedAt") and loser.get("installedAt"):
+        merged["installedAt"] = loser["installedAt"]
     if not merged.get("dirName") and loser.get("dirName"):
         merged["dirName"] = loser["dirName"]
     if not merged.get("producerNodeId") and loser.get("producerNodeId"):

@@ -79,6 +79,40 @@ def test_reimport_identical_file_creates_new_dataset(client, user_and_token, tmp
     assert first["id"] in ids and second["id"] in ids
 
 
+# ── Route: install time is persisted and surfaced, distinct from import ──────
+
+def test_installed_dataset_surfaces_installed_at(client, user_and_token, tmp_path, monkeypatch):
+    from utk_curio.backend.tests.test_datasets.computed_test_helpers import create_project
+
+    _, token = user_and_token
+    monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
+
+    project_id = create_project(client, token, name="Install-time flow")
+    imported = _import(client, token, name="places.csv")
+    imported_id = imported["id"]
+
+    # Before install: no install time; import time (createdAt) is set.
+    assert imported.get("installedAt") is None
+    assert imported.get("createdAt")
+
+    inst = client.post(
+        f"/api/dataflows/{project_id}/datasets/install",
+        headers=_auth(token),
+        data=json.dumps({"datasetId": imported_id}),
+    )
+    assert inst.status_code in (200, 201), inst.get_data(as_text=True)
+
+    listed = client.get(
+        f"/api/datasets/catalog?dataflowId={project_id}", headers=_auth(token)
+    ).get_json()["items"]
+    row = next((i for i in listed if i["id"] == imported_id), None)
+    assert row is not None
+    # Install time is persisted metadata surfaced on the item, kept separate from
+    # the import/record-creation time.
+    assert row["installedAt"], "installed dataset must carry a persisted installedAt"
+    assert row["createdAt"], "import time (createdAt) must remain populated"
+
+
 # ── Route: full-cleanup uninstall ────────────────────────────────────────────
 
 def test_uninstall_imported_removes_all_traces(client, user_and_token, tmp_path, monkeypatch):

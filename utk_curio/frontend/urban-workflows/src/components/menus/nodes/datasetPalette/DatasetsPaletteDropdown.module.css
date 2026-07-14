@@ -130,6 +130,28 @@
   text-transform: uppercase;
 }
 
+/* Sort toggle pinned to the right of the "Installed datasets" section header. */
+.sortToggle {
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(251, 252, 246, 0.7);
+  padding: 3px 9px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.sortToggle:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: rgba(251, 252, 246, 0.92);
+}
+
 .scroll {
   flex: 1;
   min-height: 0;

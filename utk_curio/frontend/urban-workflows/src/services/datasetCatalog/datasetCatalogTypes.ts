@@ -127,6 +127,10 @@ export interface DatasetCatalogItem {
   createdAt?: string | null;
   /** When the dataset *record* was last changed in Curio. */
   updatedAt: string;
+  /** When the dataset was installed into the current dataflow (from the project
+   * ref). Persisted metadata, distinct from ``createdAt`` (import time). Used to
+   * sort the palette by install time. ``null``/absent when not installed. */
+  installedAt?: string | null;
   /** Last-modified date of the *original source file* (from the browser's
    * ``File.lastModified`` at import), distinct from the Curio record dates.
    * ``null``/absent when unknown (older imports, programmatic imports). */

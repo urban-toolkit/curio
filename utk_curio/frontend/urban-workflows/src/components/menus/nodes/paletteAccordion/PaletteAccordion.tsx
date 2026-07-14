@@ -6,6 +6,9 @@ export interface PaletteAccordionProps {
   titleTooltip?: string;
   count?: React.ReactNode;
   actions?: React.ReactNode;
+  /** Optional control pinned to the far right of the summary row (e.g. a sort
+   * toggle), rendered after the count. */
+  trailing?: React.ReactNode;
   children?: React.ReactNode;
   className?: string;
   bodyClassName?: string;
@@ -19,6 +22,7 @@ export const PaletteAccordion = memo(function PaletteAccordion({
   titleTooltip,
   count,
   actions,
+  trailing,
   children,
   className,
   bodyClassName,
@@ -38,6 +42,7 @@ export const PaletteAccordion = memo(function PaletteAccordion({
             {actions}
           </div>
           {count != null ? <span className={styles.summaryCount}>{count}</span> : null}
+          {trailing}
         </div>
       </summary>
       <div className={`${styles.body} ${bodyClassName || ""}`}>{children}</div>
