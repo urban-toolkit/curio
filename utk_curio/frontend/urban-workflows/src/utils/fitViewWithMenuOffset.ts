@@ -3,15 +3,20 @@ import { getNodesBounds, getViewportForBounds } from "reactflow";
 
 // fitView centers content in the full pane, but the palette dock
 // (`#tools-palette-dock`) is a fixed overlay on the left — and with a panel open
-// it occludes a wide strip. Compute the fitted viewport ourselves and bake a
-// rightward offset (half the occluded width) into a SINGLE animated setViewport so
-// the content lands centered in the visible area.
+// it occludes a wide strip. We compute the fitted viewport against only the
+// *visible* width (pane minus the occluded strip) and shift it right past the
+// dock in a SINGLE animated setViewport, so content is both correctly sized and
+// centered in the area to the right of the open palette.
 //
-// The previous approach (rf.fitView() then a second rf.setViewport with the
-// offset) was broken for animated fits: fitView starts an async transition and
-// returns immediately, so reading the viewport back gave the pre-animation value
-// and the instant setViewport cancelled the fit — the canvas just shifted right
-// instead of focusing the nodes.
+// Fitting against the full pane width and merely nudging the result right (the
+// earlier approach) sized content for a viewport wider than the visible area —
+// with a wide panel open, a framed node overflowed off the right edge. Sizing to
+// the visible width is what actually makes the node fit on screen.
+//
+// (The very first approach — rf.fitView() then a second rf.setViewport — was
+// also broken for animated fits: fitView starts an async transition and returns
+// immediately, so the viewport read back was the pre-animation value and the
+// instant setViewport cancelled the fit, shifting the canvas instead of framing.)
 
 const FALLBACK_MIN_ZOOM = 0.05;
 const FALLBACK_MAX_ZOOM = 2;
@@ -53,27 +58,32 @@ export function fitViewWithMenuOffset(
     const minZoom = options?.minZoom ?? FALLBACK_MIN_ZOOM;
     const maxZoom = options?.maxZoom ?? FALLBACK_MAX_ZOOM;
 
+    // Width the dock occludes on the left (measured from the pane's left edge).
+    // With a palette panel open this is wide, so it must shrink the width the fit
+    // is computed against — otherwise content is sized for the full pane and
+    // overflows the visible strip. Clamp so the visible width stays positive.
+    const dock = document.getElementById("tools-palette-dock");
+    let occluded = 0;
+    if (dock) {
+        const raw = dock.getBoundingClientRect().right - paneRect.left;
+        if (raw > 0) occluded = Math.min(raw, paneRect.width - 1);
+    }
+    const visibleWidth = Math.max(1, paneRect.width - occluded);
+
     const bounds = getNodesBounds(targetNodes);
     const { x, y, zoom } = getViewportForBounds(
         bounds,
-        paneRect.width,
+        visibleWidth,
         paneRect.height,
         minZoom,
         maxZoom,
         padding,
     );
 
-    // Half the pane width the dock occludes (measured relative to the pane's left
-    // edge), so content centers in the area to the right of the open palette.
-    const dock = document.getElementById("tools-palette-dock");
-    let xOffset = 0;
-    if (dock) {
-        const occluded = dock.getBoundingClientRect().right - paneRect.left;
-        if (occluded > 0) xOffset = occluded / 2;
-    }
-
+    // getViewportForBounds centered the content within [0, visibleWidth]; shift it
+    // right past the dock so it centers in the strip [occluded, paneRect.width].
     rf.setViewport(
-        { x: x + xOffset, y, zoom },
+        { x: x + occluded, y, zoom },
         options?.duration ? { duration: options.duration } : undefined,
     );
     return true;
