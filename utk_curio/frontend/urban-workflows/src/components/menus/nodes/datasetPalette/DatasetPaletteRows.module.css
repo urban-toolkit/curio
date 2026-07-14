@@ -166,6 +166,58 @@
 .chip_parquet  { background: rgba(245, 166, 35, 0.22);  color: #f8c56a; }
 .chip_geotiff  { background: rgba(38, 198, 218, 0.22);  color: #70dde8; }
 .chip_shp      { background: rgba(160, 131, 106, 0.22); color: #c9a98a; }
+.chip_osm      { background: rgba(76, 175, 114, 0.22); color: #7dd49a; }
+
+
+/* ── OSM PBF group (collapsible parent + indented member layers) ──────────── */
+
+.groupBlock {
+  display: flex;
+  flex-direction: column;
+}
+
+.groupHeader {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.groupHeaderMeta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 6px;
+}
+
+.groupCaret {
+  flex-shrink: 0;
+  margin-right: 6px;
+  font-size: 11px;
+  color: rgba(251, 252, 246, 0.6);
+}
+
+/* Indented member layers with a coloured left accent bar tying them to the
+   parent group. */
+.groupMembers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 2px 12px;
+  padding-left: 10px;
+  border-left: 2px solid rgba(76, 175, 114, 0.55);
+}
 
 
 /* "Installing…" placeholder row — subdued + non-interactive while in flight. */

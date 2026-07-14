@@ -1,6 +1,6 @@
-import React, { memo, useCallback } from "react";
+import React, { memo, useCallback, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faDatabase } from "@fortawesome/free-solid-svg-icons";
+import { faDatabase, faChevronDown, faChevronUp } from "@fortawesome/free-solid-svg-icons";
 import { Tooltip, OverlayTrigger } from "react-bootstrap";
 import {
   beginDatasetDrag,
@@ -11,6 +11,7 @@ import {
   datasetDisplayTitle,
   datasetSubtitle,
   datasetProvenanceLabel,
+  type DatasetPaletteGroup,
 } from "../../../../services/datasetCatalog";
 import {
   datasetCountCompact as datasetCount,
@@ -112,5 +113,70 @@ export const DatasetRow = memo(function DatasetRow({
         </button>
       </div>
     </OverlayTrigger>
+  );
+});
+
+/**
+ * Collapsible parent row for a multilayer OSM PBF import. The header is not
+ * draggable (it represents the whole import); expanding it reveals the
+ * individual layer datasets, each an ordinary — still draggable — {@link
+ * DatasetRow}. Grouping is computed upstream by ``groupDatasetsForPalette``.
+ */
+export const DatasetGroupRow = memo(function DatasetGroupRow({
+  group,
+  tooltipPlacement = "right",
+}: {
+  group: DatasetPaletteGroup;
+  tooltipPlacement?: ToolsMenuTooltipSide;
+}) {
+  const [open, setOpen] = useState(false);
+  const layerCount = group.members.length;
+  const time = relativeTime(group.updatedAt);
+  const osmChipClass = rowStyles.chip_osm ?? rowStyles.formatChip;
+
+  return (
+    <div className={rowStyles.groupBlock} data-osm-group-id={group.groupId}>
+      <button
+        type="button"
+        className={rowStyles.groupHeader}
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        aria-label={`${open ? "Collapse" : "Expand"} ${group.title} — OSM PBF import with ${layerCount} layer${layerCount === 1 ? "" : "s"}`}
+      >
+        <div
+          className={`${packageStyles.packageKindRowDrag} ${rowStyles.datasetRowDrag} ${rowStyles.groupIconBox}`}
+        >
+          <FontAwesomeIcon
+            icon={faDatabase}
+            className={`${packageStyles.packageKindDragIcon} ${rowStyles.datasetDragIcon}`}
+          />
+          <span className={`${rowStyles.iconBadge} ${osmChipClass}`}>
+            {DATASET_FORMAT_LABEL.osm}
+          </span>
+        </div>
+        <div className={rowStyles.groupHeaderMeta}>
+          <span className={packageStyles.packageKindRowLabel}>{group.title}</span>
+          <div className={rowStyles.rowMeta}>
+            <span className={packageStyles.packageKindCategoryChip}>Imported</span>
+            {time ? <span className={rowStyles.rowMetaText}>{time}</span> : null}
+          </div>
+        </div>
+        <FontAwesomeIcon
+          icon={open ? faChevronUp : faChevronDown}
+          className={rowStyles.groupCaret}
+        />
+      </button>
+      {open ? (
+        <div className={rowStyles.groupMembers} role="group" aria-label={`${group.title} layers`}>
+          {group.members.map((member) => (
+            <DatasetRow
+              key={`${member.origin}:${member.id}`}
+              dataset={member}
+              tooltipPlacement={tooltipPlacement}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 });

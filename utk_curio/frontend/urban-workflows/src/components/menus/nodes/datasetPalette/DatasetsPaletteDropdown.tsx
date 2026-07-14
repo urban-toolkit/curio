@@ -11,6 +11,7 @@ import { useDatasetPalette } from "../../../../providers/DatasetPaletteContext";
 import { PaletteAccordion } from "../paletteAccordion";
 import {
   DATASET_CATALOG_REFRESH_EVENT,
+  groupDatasetsForPalette,
   isUserInstalledDataset,
   useDatasetCatalog,
   prefetchDatasetCatalog,
@@ -20,7 +21,7 @@ import {
   TOOLS_PALETTE_DROPDOWN_ATTR,
 } from "../toolsPaletteDismiss";
 import { buildSaveableLiveOutputs } from "../../../../utils/saveOutputDataset";
-import { DatasetRow } from "./DatasetPaletteRows";
+import { DatasetGroupRow, DatasetRow } from "./DatasetPaletteRows";
 import { DatasetInstallingRow } from "./DatasetInstallingRow";
 import { pendingInstallsNotYetListed } from "../../../../services/datasetCatalog/pendingInstallView";
 import styles from "./DatasetsPaletteDropdown.module.css";
@@ -95,6 +96,14 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
   const installedRows = useMemo(
     () => rows.filter((item) => isUserInstalledDataset(item)),
     [rows],
+  );
+
+  // Fold multilayer OSM PBF imports (layers sharing a groupId) into collapsible
+  // groups; every other dataset stays a single row. Each layer remains an
+  // ordinary, individually draggable DatasetRow inside its group.
+  const paletteEntries = useMemo(
+    () => groupDatasetsForPalette(installedRows),
+    [installedRows],
   );
 
   // In-flight installs without a real installed row yet, rendered as
@@ -203,7 +212,16 @@ export const DatasetsPaletteDropdown = memo(function DatasetsPaletteDropdown() {
                 <DatasetInstallingRow key={`pending:${pending.key}`} pending={pending} />
               ))}
               {installedRows.length > 0 ? (
-                installedRows.map((dataset) => <DatasetRow key={`${dataset.origin}:${dataset.id}`} dataset={dataset} />)
+                paletteEntries.map((entry) =>
+                  entry.kind === "group" ? (
+                    <DatasetGroupRow key={`group:${entry.groupId}`} group={entry} />
+                  ) : (
+                    <DatasetRow
+                      key={`${entry.dataset.origin}:${entry.dataset.id}`}
+                      dataset={entry.dataset}
+                    />
+                  ),
+                )
               ) : installingRows.length === 0 ? (
                 <div className={styles.sectionEmpty}>No installed datasets yet.</div>
               ) : null}
