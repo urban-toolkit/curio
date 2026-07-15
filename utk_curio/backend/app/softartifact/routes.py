@@ -7,6 +7,7 @@ from .services.get_artifact import get_softartifact_metadata
 from .services.retrieve import search_chunks
 from .services.explain import explain_artifact
 from .services.inform import inform_artifact
+from .services.propose import propose_trill
 
 from utk_curio.backend.app.users.dependencies import require_auth
 
@@ -96,7 +97,7 @@ def explain():
         return jsonify({"error": "missing artifactId"}), 400
 
 
-    explanation = explain_artifact(artifactId=artifactId, query=query, top_k=top_k,source_file= "Architecture.md");
+    explanation = explain_artifact(artifactId=artifactId, query=query, top_k=top_k,source_file= "");
     return jsonify(explanation);
     
 
@@ -119,4 +120,23 @@ def inform():
     output = inform_artifact(artifactId=artifactId, top_k=top_k, context=context, source_file = source_file)
     return jsonify(output)
 
+# ── Transform ──────────────────────────────────────────────────────────
+@bp.post("propose_trill")
+@require_auth
+def proposeTrill():  # reads artifactId, mode, top_k, sourceFile, context, query
+    data = request.get_json(silent = True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Request body must be valid JSON"}), 400
     
+    #reading the json request 
+    artifactId = data.get("artifactId") or None
+    top_k = data.get("top_k") or None
+    source_file = data.get("sourceFile") or None
+    mode = data.get("mode") or None
+    context = data.get("context") or None          #this is the dataflow itself
+    
+    if artifactId is None:
+        return jsonify({"error": "missing artifactId"}), 400 
+
+    output = propose_trill(artifactId=artifactId, mode=mode, context=context, top_k=top_k, source_file=source_file)   
+    return jsonify(output)

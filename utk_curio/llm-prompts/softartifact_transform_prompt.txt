@@ -1,0 +1,55 @@
+You receive:
+1. a source document (plain text, split into numbered chunks), and
+2. optionally a Current dataflow (the user's live Curio canvas as Trill JSON).
+Your job depends on the Current dataflow:
+CASE A — Current dataflow is missing, empty, or has zero nodes:
+  Propose a COMPLETE new Curio dataflow that operationalizes the document
+  (same rules as before: full connected graph, fresh UUID v4 for every node).
+CASE B — Current dataflow has one or more nodes:
+  Propose an UPDATED dataflow that improves the CURRENT workflow so it
+  better matches the document.
+  - Prefer REUSING existing node "id" values when the same step remains.
+  - You MAY change "goal", "type", "in", "out", and "citations" on reused nodes.
+  - You MAY add new nodes (fresh UUID v4) only when the document requires
+    steps the current graph lacks.
+  - You MAY drop nodes that are clearly obsolete relative to the document
+    (omit them from "nodes"; omit their edges).
+  - Edges must form one weakly connected component over the nodes you output.
+  - In "rationale", briefly say what you kept, changed, added, or removed.
+
+OUTPUT FORMAT (strict)
+- Output JSON only. No markdown fences, no commentary, no prose outside the JSON object.
+- Top-level shape:
+  {
+    "rationale": "<1-3 sentences explaining how the graph maps to the document>",
+    "dataflow": {
+      "name": "<short workflow title derived from the document>",
+      "nodes": [ ... ],
+      "edges": [ ... ]
+    }
+  }
+GRAPH RULES
+- Produce a FULL connected graph: every node must be reachable from every other node via edges (one weakly connected component).
+- Do NOT generate orphan nodes.
+- Edges use { "id": "<unique edge id>", "source": "<node id>", "target": "<node id>" }.
+- For MERGE_FLOW targets, edge ids must end with in_0, in_1, in_2, in_3, or in_4 matching the merge input slot.
+NODE RULES
+Every node MUST include exactly these fields:
+- "id": a new UUID v4 string (generate a fresh UUID for every node; never reuse example ids).
+- "type": one of the valid node types listed below.
+- "goal": a specific subtask in at most 40 words. State exactly what this node does using concrete details from the document (datasets, columns, metrics, filters, chart types). Avoid generic phrases like "transform the data" or "analyze trends".
+- "in": the expected input data type for this node (e.g. DATAFRAME, GEODATAFRAME, VALUE, LIST, JSON, or empty string "" when the node accepts no typed input).
+- "out": the expected output data type for this node.
+- "citations": an array of chunk indices (integers) pointing to the numbered document chunks that justify this node. Use only indices present in the provided document.
+FORBIDDEN
+- Do NOT include "content", "code", "x", "y", "output", or any implementation text on nodes.
+- Do NOT invent node types outside the valid list.
+- Do NOT copy placeholder ids from examples.
+TYPE COMPATIBILITY
+- Match each node's "in" / "out" to the input/output types supported by that node type (see registry below).
+- An edge from node A to node B is valid only when A's "out" type is compatible with B's "in" type, or B accepts multiple input types that include A's output.
+- DATA_LOADING nodes have no input; DATA_EXPORT nodes have no output.
+VALID NODE TYPES (use ONLY these "type" values)
+{{VALID_NODE_TYPES}}
+When the document describes loading external data, start with DATA_LOADING or an appropriate grammar node. When it describes charts or maps, end with VIS_VEGA, VIS_SIMPLE, or AUTK_GRAMMAR as appropriate. Use MERGE_FLOW when multiple parallel branches must combine. Use DATA_POOL when the document describes linked brushing or shared selection across views.
+The user message contains the document chunks. Derive the workflow name and every node goal directly from that text.
