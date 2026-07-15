@@ -1,6 +1,13 @@
 import { v4 as uuid } from "uuid";
 import { NodeType } from "./constants";
+import { getToken } from "utils/authApi";
 
+// ── Set up for LLM features ───────────────────────────────────────────
+
+const authHeader = (): Record<string, string> => {
+  const token = getToken();
+  return token ? { "Authorization": `Bearer ${token}` } : {};
+};
 // ── Trill types ──────────────────────────────────────────────────────────────
 
 interface TrillNode {
@@ -52,9 +59,16 @@ export interface Notebook {
 }
 
 // ── Node type inference ──────────────────────────────────────────────────────
+export interface Cell {
+  index: number
+  code: string
+}
 
 const DATA_LOADING_PATTERN =
   /\bpd\.read_\w+\s*\(|\bgpd\.read_\w+\s*\(|\bgeopandas\.read_\w+\s*\(|\bopen\s*\(|\brequests\.(get|post|put|delete|patch)\s*\(|\bsqlite3\.connect\s*\(|\bpsycopg2\.connect\s*\(|\bcreate_engine\s*\(|\bboto3\b/;
+
+const DATA_EXPORT_PATTERN =
+  /\bto_csv\s*\(|\bto_excel\s*\(|\bto_json\s*\(|\bto_parquet\s*\(|\bto_pickle\s*\(|\bto_sql\s*\(|\bto_feather\s*\(|\.to_file\s*\(|\bopen\s*\([^)]*['"]\s*[wa]b?\s*['"]|\bjson\.dump\s*\(|\bpickle\.dump\s*\(|\bnp\.save\w*\s*\(|\bplt\.savefig\s*\(|\bfig\.savefig\s*\(|\bfig\.write_\w+\s*\(|\.upload_file\s*\(|\.upload_fileobj\s*\(|\.put_object\s*\(/;
 
 function isVegaLiteJson(text: string): boolean {
   try {
@@ -69,15 +83,100 @@ function isVegaLiteJson(text: string): boolean {
   return false;
 }
 
-function inferNodeType(code: string): NodeType {
-  if (DATA_LOADING_PATTERN.test(code)) return NodeType.DATA_LOADING;
-  if (isVegaLiteJson(code)) return NodeType.VIS_VEGA;
-  return NodeType.COMPUTATION_ANALYSIS;
+// Used to check if the LLM returned valid types
+function _validate_node(llm_type: string): NodeType {
+  // Change in the future as deemed fit
+  const valid_types: Record<string, NodeType> = {
+    "DATA_LOADING": NodeType.DATA_LOADING,
+    "DATA_EXPORT": NodeType.DATA_EXPORT,
+    "DATA_TRANSFORMATION": NodeType.DATA_TRANSFORMATION,
+    "COMPUTATION_ANALYSIS": NodeType.COMPUTATION_ANALYSIS,
+    "VIS_VEGA": NodeType.VIS_VEGA,
+  }
+
+  if(!(llm_type in valid_types)){
+    return NodeType.COMPUTATION_ANALYSIS
+  }
+  return valid_types[llm_type]
+}
+
+// Used to identify all cells whose types must be evaluated by the LLM
+function _type_is_ambiguous(code: string){
+  if (DATA_LOADING_PATTERN.test(code)) return false;
+  if (DATA_EXPORT_PATTERN.test(code)) return false;
+  if (isVegaLiteJson(code)) return false;
+  return true;
+}
+
+// Delete the export once your done
+// Confers the cell types with the LLM
+export async function getLlmTypes(
+  ambiguousCells: Cell[],
+  backendUrl: string,
+): Promise<Record<number, string>> {
+  const llmTypes: Record<number, string> = {};
+  type Analysis = {
+    index: number,
+    codeType: string
+  }
+
+  // If there aren't any ambigious cells
+  if (ambiguousCells.length < 1){
+    return llmTypes
+  }
+
+  try{
+    // <---------------------------- Backend API calls----------------------------------------------------------------------------------------->
+    let message: any = {preamble: "default_preamble", prompt: "jupyter_notebook_prompt", text: JSON.stringify({ cells: ambiguousCells })};
+    const response_usage = await fetch(`${backendUrl}/llm/check`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeader(),
+      },
+      body: JSON.stringify(message),
+    });
+
+    if (!response_usage.ok) {
+      const body = await response_usage.json().catch(() => ({}));
+      throw new Error(body.description || body.error || "LLM request failed.");
+    }
+
+    const result_usage = await response_usage.json();
+
+    if(result_usage.result != "yes")
+      await new Promise(resolve => setTimeout(resolve, (result_usage.result + 15) * 1000));
+
+    const response = await fetch(`${backendUrl}/llm/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeader(),
+        },
+        body: JSON.stringify(message),
+    });
+
+    if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.description || body.error || "LLM request failed.");
+    }
+    // <---------------------------- End of API call ------------------------------------------------------------------------------>
+    const rawData = await response.json()
+    const data: Analysis[]  = JSON.parse(rawData.result);
+
+    data.forEach((cell) => {
+      llmTypes[cell.index] = _validate_node(cell.codeType);
+    });
+
+    console.log(llmTypes)
+  }catch(err){
+    console.log(`LLM fetch error: ${err}`)
+    // No fallback, return an empty dictionary
+  }
+  return llmTypes
 }
 
 // ── Import: Notebook → Trill ─────────────────────────────────────────────────
-
-
 type CellEdge = { 
   source: number; 
   target: number;
@@ -134,7 +233,7 @@ function computeLayout(
 
 export async function notebookToTrill(
   notebook: Record<string, unknown>,
-  backendUrl: string
+  backendUrl: string,
 ): Promise<TrillSpec> {
   // ── Step 1: Extract code cells ──────────────────────────────────────────
   const rawCells = Array.isArray(notebook.cells) ? notebook.cells : [];
@@ -147,8 +246,6 @@ export async function notebookToTrill(
       return Array.isArray(source) ? source.join("") : String(source ?? "");
     });
 
-  // Needed for debbuging
-  console.log(codeCells)
 
   // Call backend for AST-based dependency analysis + Altair spec extraction
   type CellAnalysis = {
@@ -158,9 +255,7 @@ export async function notebookToTrill(
     altair_spec: Record<string, unknown> | null;
   };
   let cellEdges: CellEdge[] = [];
-  // Declaring parentVars
   let parentVars: (string | null)[] = [];
-
   let altairSpecs: (Record<string, unknown> | null)[] = [];
 
   // ── Step 2: Ask the backend for real dependency analysis ────────────────
@@ -210,14 +305,37 @@ export async function notebookToTrill(
   const nodeIds = codeCells.map(() => uuid());
 
   // ── Step 6: Build the actual TrillNode objects ──────────────────────────
+  
+  // Cells whose types cannot be determined deterministically 
+  const ambiguous: Cell[] = codeCells
+  .map((code, i) => ({ index: i, code: code}))
+  .filter((cell) => !altairSpecs[cell.index] && _type_is_ambiguous(cell.code))
+
+  // The result of the LLM analysis
+  const llm_types = await getLlmTypes(ambiguous, backendUrl)
+  
   const nodes: TrillNode[] = codeCells.map((code, index) => {
     const spec = altairSpecs[index] ?? null;
-    const nodeType = spec ? NodeType.VIS_VEGA : inferNodeType(code);
+    let nodeType;
+    if (spec) {
+      nodeType = NodeType.VIS_VEGA;
+    } else if (isVegaLiteJson(code)){
+      nodeType = NodeType.VIS_VEGA;
+    } else if (DATA_LOADING_PATTERN.test(code)){
+      nodeType = NodeType.DATA_LOADING;
+    } else if(DATA_EXPORT_PATTERN.test(code)){
+      nodeType = NodeType.DATA_EXPORT;
+    } else if (llm_types[index]){
+      nodeType = llm_types[index]
+    } else {
+      nodeType = NodeType.COMPUTATION_ANALYSIS
+    }
     const content = spec
       ? JSON.stringify(spec, null, 2)
       : cellEdges.length > 0  // Changed lastVars.length > 0 to cellEdges.length > 0
         ? modified_wireCode(code, index, cellEdges, hasOutgoing, incomingSources)
         : code;
+
     return {
       id: nodeIds[index],
       type: nodeType,

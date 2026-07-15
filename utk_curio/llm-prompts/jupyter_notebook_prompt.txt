@@ -1,0 +1,22 @@
+You will recieve a json of ambigious cells. The JSON will be formatted as follows
+
+[
+    {"index": Number, "code": String },
+    {"index": Number, "code": String },
+    {"index": Number, "code": String }
+]
+
+Classify each code cell into exactly one of these types:
+
+- DATA_LOADING
+- DATA_EXPORT
+- DATA_TRANSFORMATION
+- COMPUTATION_ANALYSIS
+- VIS_VEGA
+- DATA_SUMMARY
+
+Return ONLY a JSON array like this exact example:
+[{"index": 1, "codeType": "DATA_LOADING"}]
+Use double quotes only. Do not use Python syntax.
+
+Do not wrap the output in markdown code fences or add any explanation before/after..

@@ -127,6 +127,15 @@ def _call_llm(api_key: str, api_type: str, base_url: str, model: str, messages: 
             kwargs["base_url"] = base_url
         client = OpenAI(**kwargs)
         completion = client.chat.completions.create(model=model, messages=messages)
+
+        # How many tokens did we use. Only keep for testing
+        usage = getattr(completion, "usage", None)
+        if usage and usage.prompt_tokens is not None:
+            print(f"Prompt: {usage.prompt_tokens}, Completion: {usage.completion_tokens}")
+        else:
+            print("⚠️ No usage data returned by this server/model")
+
+
         return completion.choices[0].message.content
 
 # The Flask app
