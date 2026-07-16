@@ -25,9 +25,11 @@ interface SoftArtifactState{
   mimeType: string | null,
   status: 'empty' | 'ingesting' | 'ready' | 'error',
   errorMessage?: string,
-  explanation?: string, // this is for Explain route
-  guidance?: string,  //this is for Inform route
-  suggestions?: Record<string, unknown> //this is for Inform route
+  explanation?: string,                                    // this is for Explain route
+  guidance?: string,                                       //this is for Inform route
+  suggestions?: Record<string, unknown>                    //this is for Inform route
+  proposal?: Record<string, unknown>                       //this is for Transform route
+  rationale?: string                                       //this is for Transform route
 }
 
 // Extends the generic NodeBehaviorData with this package's specific
@@ -144,6 +146,47 @@ async function informArtifact(artifactId: string, sourceFile: string | null, top
   return res.json();
 }
 
+// Call the backend's /propose_trill endpoint for a given artifact and context
+// if context(dataflow) is none -> suggests a new dataflow
+// if there is a context -> suggest edit to the dataflow 
+async function proposeTrillArtifact(artifactId: string, sourceFile: string | null, top_k = 8, mode: string, context?: object) {
+  //create a json request
+  //json request header
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json"
+  }
+  const token = getToken();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  //json request body
+  const body: Record<string, unknown> = {
+    artifactId,
+    sourceFile,
+    top_k,
+    mode
+  }
+
+  if (context !== undefined && context !== null) {
+    body.context = context;
+  }
+  
+  //call API endpoint
+  const res = await fetch(`${API_BASE}/propose_trill`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body)
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || err.hint || `HTTP ${res.status}`);
+  }
+
+  return res.json()
+}
+
 // Main hook powering the "soft artifact" node's behavior — handles file
 // upload/ingestion, state persistence, health checks, and the "explain" flow.
 export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
@@ -156,6 +199,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
   const [verifying, setVerifying] = useState(false); //short-lived UI while the GET api get run 
   const [explaining, setExplaining] = useState<boolean>(false);  // true while /explain call is in flight
   const [informing, setInforming] = useState<boolean>(false);  // true while /inform call is in flight
+  const [proposing, setProposing] = useState<boolean>(false);
 
 
   //health API call
@@ -288,6 +332,35 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
     }
   }
 
+  // run propose, either it's transform or expand artifact
+  // for now I haven't added context, need to add it  TODO
+  const runPropose = async (artifactId: string, role: softArtifactRole) => {
+    if (role !== 'transform' && role !== 'expand') return;
+
+    setProposing(true);
+    try {
+      const out = await proposeTrillArtifact(artifactId, state.sourceFile, 8, role);
+
+      persist({ proposal: out.proposal, rationale: out.rationale })
+      
+      emitOutput({
+        artifactId,
+        sourceFile: state.sourceFile,
+        mimeType: state.mimeType,
+        role: 'inform',
+        proposal: out.proposal,
+        rationale: out.rationale
+      })
+    } catch (e) {
+        persist({
+          status: 'error',
+          errorMessage: e instanceof Error ? e.message : String(e),
+        });
+    } finally {
+      setProposing(false);
+    }
+  }
+
   //on mount effect, run once when the node is reloaded
   // Verifies with the backend that a previously-saved artifactId still
   // exists (e.g. after a page refresh). If the backend no longer has it,
@@ -385,6 +458,10 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
       // Automatically trigger explanation if this node's role is "inform"
       if (role === "inform" && out.artifactId) {
         await runInform(out.artifactId, role);
+      }
+
+      if (role === "transform" && out.artifactId) {
+        await runPropose(out.artifactId, role)
       }
 
     } catch (e) {
@@ -520,6 +597,29 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
         {state.suggestions ? (
           <pre style={{ marginTop: 8, fontSize: 10, background: '#f8fafc', padding: 8, whiteSpace: 'pre-wrap' }}>
             { JSON.stringify(state.suggestions, null, 2) }
+          </pre>
+        ) : null}
+      </div>
+      
+      {/* Proposing output (shown only in either "transform" or "Expand" flow) */}
+      <div>
+        {state.role === "transform" && proposing ? (
+          <p style = {{ fontSize: 11, marginTop: 8}}>Transforming…</p>
+        ) : null}
+
+        {state.role === "expand" && proposing ? (
+          <p style = {{ fontSize: 11, marginTop: 8}}>Expanding…</p>
+        ) : null}
+                
+        {state.proposal ? (
+          <pre style={{ marginTop: 8, fontSize: 10, background: '#f8fafc', padding: 8, whiteSpace: 'pre-wrap' }}>
+            {JSON.stringify(state.proposal, null, 2)}
+          </pre>
+        ) : null}
+
+        {state.rationale ? (
+          <pre style={{ marginTop: 8, fontSize: 10, background: '#f8fafc', padding: 8, whiteSpace: 'pre-wrap' }}>
+            { state.rationale }
           </pre>
         ) : null}
       </div>

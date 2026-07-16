@@ -132,11 +132,11 @@ def proposeTrill():  # reads artifactId, mode, top_k, sourceFile, context, query
     artifactId = data.get("artifactId") or None
     top_k = data.get("top_k") or None
     source_file = data.get("sourceFile") or None
-    mode = data.get("mode") or None
+    role = data.get("role") or None
     context = data.get("context") or None          #this is the dataflow itself
     
     if artifactId is None:
         return jsonify({"error": "missing artifactId"}), 400 
 
-    output = propose_trill(artifactId=artifactId, mode=mode, context=context, top_k=top_k, source_file=source_file)   
+    output = propose_trill(artifactId=artifactId, mode=role, context=context, top_k=top_k, source_file=source_file)   
     return jsonify(output)
