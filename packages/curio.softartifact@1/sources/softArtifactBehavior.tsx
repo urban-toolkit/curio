@@ -352,7 +352,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
         artifactId,
         sourceFile: state.sourceFile,
         mimeType: state.mimeType,
-        role: 'inform',
+        role: 'propose',
         proposal: out.proposal,
         rationale: out.rationale
       })
@@ -430,8 +430,18 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
   const onIngest = async () => {
     if (!file) return;
 
-    persist({ status: "ingesting" });
-
+    //before any fetch reset everything on the UI
+    persist({artifactId: null,
+        sourceFile: null,
+        mimeType: null,
+        status: 'ingesting',
+        errorMessage: undefined,
+        explanation: undefined,
+        guidance: undefined,
+        suggestions: undefined,
+        proposal: undefined,
+        rationale: undefined,
+      });
     //ingesting the using API_BASE/ingest 
     try {
       const form = new FormData();
@@ -488,7 +498,11 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
         mimeType: null,
         status: 'empty',
         errorMessage: undefined,
-        explanation: undefined
+        explanation: undefined,
+        guidance: undefined,
+        suggestions: undefined,
+        proposal: undefined,
+        rationale: undefined,
       });
       return;
     }
@@ -608,6 +622,10 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
       
       {/* Proposing output (shown only in either "transform" or "Expand" flow) */}
       <div>
+        {state.role === 'transform' && proposing ? (
+          <p style={{ fontSize: 11, marginTop: 8 }}>Transforming…</p>
+        ) : null}
+
         {state.proposal?.dataflow ? (
           <div>
           <p>{state.rationale}</p>

@@ -541,7 +541,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
               artifactId: artifactId,
               sourceFile: state.sourceFile,
               mimeType: state.mimeType,
-              role: 'inform',
+              role: 'propose',
               proposal: out.proposal,
               rationale: out.rationale
             });
@@ -673,10 +673,19 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
             }
             return _context5.a(2);
           case 1:
+            //before any fetch reset everything on the UI
             persist({
-              status: "ingesting"
+              artifactId: null,
+              sourceFile: null,
+              mimeType: null,
+              status: 'ingesting',
+              errorMessage: undefined,
+              explanation: undefined,
+              guidance: undefined,
+              suggestions: undefined,
+              proposal: undefined,
+              rationale: undefined
             });
-
             //ingesting the using API_BASE/ingest 
             _context5.p = 2;
             form = new FormData();
@@ -763,7 +772,11 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
         mimeType: null,
         status: 'empty',
         errorMessage: undefined,
-        explanation: undefined
+        explanation: undefined,
+        guidance: undefined,
+        suggestions: undefined,
+        proposal: undefined,
+        rationale: undefined
       });
       return;
     }
@@ -899,7 +912,12 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
       padding: 8,
       whiteSpace: 'pre-wrap'
     }
-  }, JSON.stringify(state.suggestions, null, 2)) : null), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, (_state$proposal = state.proposal) !== null && _state$proposal !== void 0 && _state$proposal.dataflow ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", null, state.rationale), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", null, "Review before applying"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
+  }, JSON.stringify(state.suggestions, null, 2)) : null), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, state.role === 'transform' && proposing ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", {
+    style: {
+      fontSize: 11,
+      marginTop: 8
+    }
+  }, "Transforming\u2026") : null, (_state$proposal = state.proposal) !== null && _state$proposal !== void 0 && _state$proposal.dataflow ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", null, state.rationale), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", null, "Review before applying"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
     disabled: typeof data.applyProposal !== "function",
     onClick: function onClick() {
       var _data$applyProposal;
