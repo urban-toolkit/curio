@@ -289,6 +289,7 @@ function _proposeTrillArtifact() {
   return _proposeTrillArtifact.apply(this, arguments);
 }
 var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) {
+  var _state$proposal;
   //data doesn't have softArtifact field, therefore extending the package specific field for data (nodeData)
   var nodeData = data;
   var _useState = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false),
@@ -515,7 +516,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
   // for now I haven't added context, need to add it  TODO
   var runPropose = /*#__PURE__*/function () {
     var _ref3 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3(artifactId, role) {
-      var out, _t3;
+      var context, out, _t3;
       return _regenerator().w(function (_context3) {
         while (1) switch (_context3.p = _context3.n) {
           case 0:
@@ -527,8 +528,9 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
           case 1:
             setProposing(true);
             _context3.p = 2;
+            context = typeof data.getCurrentTrill === "function" ? data.getCurrentTrill() : undefined;
             _context3.n = 3;
-            return proposeTrillArtifact(artifactId, state.sourceFile, 8, role);
+            return proposeTrillArtifact(artifactId, state.sourceFile, 8, role, context);
           case 3:
             out = _context3.v;
             persist({
@@ -897,25 +899,22 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
       padding: 8,
       whiteSpace: 'pre-wrap'
     }
-  }, JSON.stringify(state.suggestions, null, 2)) : null), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, state.role === "transform" && proposing ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", {
-    style: {
-      fontSize: 11,
-      marginTop: 8
+  }, JSON.stringify(state.suggestions, null, 2)) : null), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, (_state$proposal = state.proposal) !== null && _state$proposal !== void 0 && _state$proposal.dataflow ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", null, state.rationale), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", null, "Review before applying"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
+    disabled: typeof data.applyProposal !== "function",
+    onClick: function onClick() {
+      var _data$applyProposal;
+      (_data$applyProposal = data.applyProposal) === null || _data$applyProposal === void 0 || _data$applyProposal.call(data, state.proposal.dataflow);
     }
-  }, "Transforming\u2026") : null, state.role === "expand" && proposing ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", {
-    style: {
-      fontSize: 11,
-      marginTop: 8
+  }, "Apply proposal"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
+    onClick: function onClick() {
+      var _data$cancelProposal;
+      (_data$cancelProposal = data.cancelProposal) === null || _data$cancelProposal === void 0 || _data$cancelProposal.call(data);
+      persist({
+        proposal: undefined,
+        rationale: undefined
+      });
     }
-  }, "Expanding\u2026") : null, state.proposal ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("pre", {
-    style: {
-      marginTop: 8,
-      fontSize: 10,
-      background: '#f8fafc',
-      padding: 8,
-      whiteSpace: 'pre-wrap'
-    }
-  }, JSON.stringify(state.proposal, null, 2)) : null, state.rationale ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("pre", {
+  }, "Cancel"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("pre", {
     style: {
       marginTop: 8,
       fontSize: 10,
@@ -923,7 +922,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
       padding: 8,
       whiteSpace: 'pre-wrap'
     }
-  }, state.rationale) : null));
+  }, JSON.stringify(state.proposal, null, 2))) : null));
   return {
     contentComponent: contentComponent,
     disablePlay: true

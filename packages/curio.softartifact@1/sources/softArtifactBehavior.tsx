@@ -149,7 +149,7 @@ async function informArtifact(artifactId: string, sourceFile: string | null, top
 // Call the backend's /propose_trill endpoint for a given artifact and context
 // if context(dataflow) is none -> suggests a new dataflow
 // if there is a context -> suggest edit to the dataflow 
-async function proposeTrillArtifact(artifactId: string, sourceFile: string | null, top_k = 8, mode: string, context?: object) {
+async function proposeTrillArtifact(artifactId: string, sourceFile: string | null, top_k = 8, mode: string, context?: any) {
   //create a json request
   //json request header
   const headers: Record<string, string> = {
@@ -339,7 +339,12 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
 
     setProposing(true);
     try {
-      const out = await proposeTrillArtifact(artifactId, state.sourceFile, 8, role);
+      const context = 
+        typeof data.getCurrentTrill === "function" 
+         ? data.getCurrentTrill() :
+          undefined
+      
+      const out = await proposeTrillArtifact(artifactId, state.sourceFile, 8, role, context);
 
       persist({ proposal: out.proposal, rationale: out.rationale })
       
@@ -603,25 +608,33 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
       
       {/* Proposing output (shown only in either "transform" or "Expand" flow) */}
       <div>
-        {state.role === "transform" && proposing ? (
-          <p style = {{ fontSize: 11, marginTop: 8}}>Transforming…</p>
-        ) : null}
-
-        {state.role === "expand" && proposing ? (
-          <p style = {{ fontSize: 11, marginTop: 8}}>Expanding…</p>
-        ) : null}
-                
-        {state.proposal ? (
-          <pre style={{ marginTop: 8, fontSize: 10, background: '#f8fafc', padding: 8, whiteSpace: 'pre-wrap' }}>
-            {JSON.stringify(state.proposal, null, 2)}
-          </pre>
-        ) : null}
-
-        {state.rationale ? (
-          <pre style={{ marginTop: 8, fontSize: 10, background: '#f8fafc', padding: 8, whiteSpace: 'pre-wrap' }}>
-            { state.rationale }
-          </pre>
-        ) : null}
+        {state.proposal?.dataflow ? (
+          <div>
+          <p>{state.rationale}</p>
+          <p>Review before applying</p>
+            
+          <button
+            disabled={typeof data.applyProposal !== "function"}
+            onClick={() => {
+              data.applyProposal?.(state.proposal!.dataflow);              
+            }}
+          >
+            Apply proposal
+          </button>
+          
+          <button
+            onClick={() => {
+              data.cancelProposal?.();
+              persist({ proposal: undefined, rationale: undefined });
+            }}
+          >
+            Cancel
+            </button>
+            
+            <pre style={{ marginTop: 8, fontSize: 10, background: '#f8fafc', padding: 8, whiteSpace: 'pre-wrap' }}>
+              {JSON.stringify(state.proposal, null, 2)}
+            </pre>
+        </div>) : null}
       </div>
     </>
 

@@ -9,6 +9,7 @@ import { JavaScriptInterpreter } from "../JavaScriptInterpreter";
 import { TrillGenerator } from "../TrillGenerator";
 import { usePosition } from "./usePosition";
 import { AccessLevelType, EdgeType, CURIO_UNIVERSAL_NODE_TYPE } from "../constants";
+import { useEnsureWorkflowDeps } from "./useEnsureWorkflowDeps";
 
 // Module-level singletons so every node shares the same interpreter
 // connection pool. Exported so collaboration's remote-graph handler can
@@ -51,6 +52,8 @@ export function useCode(): IUseCode {
     const { addNode, setOutputs, setInteractions, applyNewPropagation, applyNewOutput, loadParsedTrill } = useFlowContext();
     const { loadNodeProvenance } = useProvenanceContext();
     const { getPosition } = usePosition();
+    const {nodes, edges, workflowGoal, workflowNameRef, eraseWorkflowSuggestions } = useFlowContext(); //for softartifact 
+    const ensureWorkflowDeps = useEnsureWorkflowDeps(); //for softartifact 
 
     const outputCallback = useCallback(
         (nodeId: string, output: string) => {
@@ -58,6 +61,8 @@ export function useCode(): IUseCode {
         },
         [setOutputs]
     );
+
+    
 
     const interactionsCallback = useCallback((interactions: any, nodeId: string) => {
         setInteractions((prevInteractions: IInteraction[]) => {
@@ -224,6 +229,24 @@ export function useCode(): IUseCode {
 
     }
 
+        //get the current trill (for soft artifact node behavior =D)
+    const getCurrentTrill = useCallback(() => {
+        return TrillGenerator.generateTrill(
+            nodes, edges, workflowNameRef.current, workflowGoal
+        ); 
+    }, [nodes, edges, workflowNameRef, workflowGoal])
+
+    //apply proposal for soft artifact node 
+    const applyProposal = useCallback((dataflow: any) => {
+        // load trill expect {dataflow: {nodes,edges,name}}
+        loadTrill({ dataflow }, "workflow");
+        ensureWorkflowDeps({ dataflow });
+    }, [])
+
+    const cancelProposal = useCallback(() => {
+        eraseWorkflowSuggestions();
+    }, [eraseWorkflowSuggestions]);
+
     const generateCodeNode = useCallback((nodeType: string, options: CreateCodeNodeOptions = {}) => {
         const {
             nodeId = uuid(),
@@ -285,6 +308,9 @@ export function useCode(): IUseCode {
                 outputCallback,
                 interactionsCallback,
                 propagationCallback: applyNewPropagation,
+                getCurrentTrill,
+                applyProposal,
+                cancelProposal
             },
         };
 
@@ -296,6 +322,7 @@ export function useCode(): IUseCode {
         let node = generateCodeNode(nodeType, options);
         addNode(node, undefined, true);
     }, [addNode, outputCallback, getPosition]);
+
 
     return { createCodeNode, loadTrill };
 }
