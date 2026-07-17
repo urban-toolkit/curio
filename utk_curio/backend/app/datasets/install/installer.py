@@ -126,6 +126,78 @@ def _sanitize_node_id_segment(node_id: str) -> str:
 sanitize_node_id_segment = _sanitize_node_id_segment
 
 
+def computed_dataset_id(node_id: str, dataflow_id: str | None = None) -> str:
+    """Build the stable computed-dataset id for a node output.
+
+    Namespaced by the producing dataflow so the same node id reused in two
+    dataflows yields two *distinct* account-level datasets
+    (``computed.<dataflowSeg>.<nodeSeg>``). When *dataflow_id* is absent
+    (unknown / legacy call site) falls back to the un-namespaced
+    ``computed.<nodeSeg>`` so old callers and stored dirs keep working.
+    """
+    node_seg = _sanitize_node_id_segment(node_id)
+    if dataflow_id:
+        return f"computed.{_sanitize_node_id_segment(dataflow_id)}.{node_seg}"
+    return f"computed.{node_seg}"
+
+
+def node_segment_from_computed_id(source: str | None) -> str | None:
+    """Return the sanitized *node* segment of a computed id or dir name.
+
+    The node segment is always the last dotted segment, so this tolerates both
+    the namespaced (``computed.<df>.<node>``) and legacy (``computed.<node>``)
+    forms and an optional ``@<major>`` suffix. Returns ``None`` for non-computed
+    inputs.
+    """
+    import re as _re
+    if not source or not source.startswith("computed."):
+        return None
+    seg = _re.sub(r"@\d+$", "", source[len("computed.") :])
+    if not seg:
+        return None
+    return seg.split(".")[-1] or None
+
+
+def display_folder_name(source: str | None) -> str | None:
+    """Node-scoped display form of a computed id or dir name.
+
+    Computed datasets are stored dataflow-namespaced
+    (``computed.<dataflowId>.<nodeId>[@N]``) so the same node id in two dataflows
+    stays distinct on disk, but the dataflow segment is an opaque project id that
+    must never surface in a title/subtitle. This drops it, keeping
+    ``computed.<nodeId>[@N]`` — the readable folder the catalog showed before
+    namespacing. Legacy (un-namespaced) and non-computed inputs are returned
+    unchanged.
+    """
+    import re as _re
+    if not source or not source.startswith("computed."):
+        return source
+    m = _re.match(r"^computed\.(.+?)(@\d+)?$", source)
+    if not m:
+        return source
+    segments = m.group(1).split(".")
+    if len(segments) < 2:
+        return source  # legacy ``computed.<node>``
+    return f"computed.{segments[-1]}{m.group(2) or ''}"
+
+
+def dataflow_segment_from_computed_id(source: str | None) -> str | None:
+    """Return the sanitized *dataflow* segment of a namespaced computed id, or
+    ``None`` for the legacy (un-namespaced) form or a non-computed input.
+
+    Namespaced ids are ``computed.<dataflowSeg>.<nodeSeg>`` (two dotted segments
+    after the prefix); the legacy ``computed.<nodeSeg>`` has one.
+    """
+    import re as _re
+    if not source or not source.startswith("computed."):
+        return None
+    seg = _re.sub(r"@\d+$", "", source[len("computed.") :])
+    parts = seg.split(".")
+    if len(parts) >= 2:
+        return parts[0] or None
+    return None
+
+
 def _link_or_copy(src: Path, dest: Path) -> None:
     """Materialize *dest* from *src* cheaply.
 
@@ -148,22 +220,31 @@ def install_computed_file_for_node(
     fmt: str,
     *,
     node_id: str,
+    dataflow_id: str | None = None,
+    node_type: str | None = None,
+    dataflow_name: str | None = None,
+    upstream_inputs: list[dict] | None = None,
     title: str | None = None,
     source_path: Path | None = None,
 ) -> InstallResult:
     """Save a node-computed output into the user's dataset store keyed by *node_id*.
 
-    Uses ``computed.<sanitized_node_id>@1`` so re-executing the same node always
-    replaces the same dataset folder, keeping a stable dataset identity across
-    multiple executions.  The destination is always (re-)written — no fast-path
-    skip — so that the latest execution's file is always reflected.
+    Uses ``computed.<sanitized_dataflow_id>.<sanitized_node_id>@1`` (namespaced by
+    the producing dataflow so the same node id in two dataflows stays distinct)
+    so re-executing the same node always replaces the same dataset folder,
+    keeping a stable dataset identity across multiple executions.  The
+    destination is always (re-)written — no fast-path skip — so that the latest
+    execution's file is always reflected.
+
+    The producer/upstream arguments are persisted as lineage on the manifest so
+    the account-level dataset stays connected to its workflow, source node, and
+    upstream inputs without depending on a project reference.
 
     Provide *source_path* to materialize the data file by hard-linking the
     on-disk artifact (no full-file copy / no read into memory); *file_bytes* is
     used otherwise. Exactly one must be supplied.
     """
-    seg = _sanitize_node_id_segment(node_id)
-    dataset_id = f"computed.{seg}"
+    dataset_id = computed_dataset_id(node_id, dataflow_id)
     dir_name = f"{dataset_id}@1"
 
     dest = dataset_dir(user_key, dir_name)
@@ -212,6 +293,11 @@ def install_computed_file_for_node(
         row_count=None,
         feature_count=None,
         schema=None,
+        producer_node_id=node_id,
+        producer_node_type=node_type,
+        producer_dataflow_id=dataflow_id,
+        producer_dataflow_name=dataflow_name,
+        upstream_inputs=list(upstream_inputs) if upstream_inputs else None,
     )
     write_manifest(manifest_obj, dest)
 

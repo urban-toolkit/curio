@@ -107,7 +107,17 @@ class CatalogListing:
             items.extend(self.computed.list_items(
                 manifest=self._paths._project_manifest(dataflow_id),
                 live_outputs=live_outputs,
+                dataflow_id=dataflow_id,
             ))
+            # This dataflow's own computed outputs live in the account store
+            # (saved on generation, no project ref). Surface them here so they
+            # appear in the open project's catalog — as available, not installed
+            # — with their store metadata + lineage, even right after execution.
+            # When include_hub is on, ``user_store.list_items()`` above already
+            # lists every account-level computed dataset (this dataflow's
+            # included), so only add the scoped set when the hub sources are off.
+            if not include_hub:
+                items.extend(self.user_store.list_dataflow_computed_items(dataflow_id))
         elif live_outputs:
             # No project yet (unsaved new dataflow) but live outputs provided —
             # still show computed items so outputs are visible immediately.
@@ -404,7 +414,7 @@ class CatalogListing:
         user_key = self._paths._user_key()
         for project in projects_repo.list_for_user(self.user.id):
             spec = project_storage.read_spec(user_key, project.id) or {}
-            producer = _dataset_producer_in_spec(spec, dataset_id)
+            producer = _dataset_producer_in_spec(spec, dataset_id, project.id)
             if producer is not None:
                 return {
                     **producer,
@@ -597,7 +607,7 @@ class CatalogListing:
         usages: list[dict[str, Any]] = []
         for project in projects_repo.list_for_user(self.user.id):
             spec = project_storage.read_spec(user_key, project.id) or {}
-            consumers = _dataset_consumer_nodes_in_spec(spec, dataset_id)
+            consumers = _dataset_consumer_nodes_in_spec(spec, dataset_id, project.id)
             if consumers is None:
                 continue
             usages.append({
@@ -635,7 +645,7 @@ class CatalogListing:
         for project in projects_repo.list_for_user(self.user.id):
             spec = project_storage.read_spec(user_key, project.id) or {}
             for dataset_id in dataset_ids:
-                consumers = _dataset_consumer_nodes_in_spec(spec, dataset_id)
+                consumers = _dataset_consumer_nodes_in_spec(spec, dataset_id, project.id)
                 if consumers:
                     counts[dataset_id] = counts.get(dataset_id, 0) + len(consumers)
         return counts

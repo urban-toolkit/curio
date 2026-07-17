@@ -87,3 +87,6 @@ class DatasetCatalogService:
 
     def unpublish_dataset(self, *args: Any, **kwargs: Any) -> Any:
         return self._mutations.unpublish_dataset(*args, **kwargs)
+
+    def delete_dataset(self, *args: Any, **kwargs: Any) -> Any:
+        return self._mutations.delete_dataset(*args, **kwargs)

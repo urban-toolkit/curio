@@ -1,10 +1,12 @@
-"""Save-time install warnings (the "Play All" auto-install path).
+"""Save-time save warnings (the "Play All" account-store save path).
 
-When a computed output can't be installed at save time — most commonly because
-its artifact is missing on disk — ``_auto_install_computed_outputs`` skips it so
-one bad output never blocks the whole save. These tests pin that the skip is no
-longer SILENT: the failure is recorded in the ``failures`` list the caller passes
-so the client can warn the user, while every healthy output still installs.
+When a computed output can't be saved at save time — most commonly because its
+artifact is missing on disk — ``_auto_install_computed_outputs`` skips it so one
+bad output never blocks the whole save. These tests pin that the skip is no
+longer SILENT: the failure is recorded in the ``failures`` list the caller
+passes so the client can warn the user, while every healthy output is still
+saved to the account store. (Computed outputs are account-level assets now — the
+save writes no project ``dataflow.datasets`` ref.)
 """
 from types import SimpleNamespace
 from unittest import mock
@@ -19,7 +21,7 @@ def _fake_result(node_id):
 
 
 def test_failed_install_is_recorded_not_silent():
-    def side_effect(user_key, *, node_id, path_ref, data_type, node_name):
+    def side_effect(user_key, *, node_id, path_ref, data_type, node_name, **kwargs):
         if node_id == "bad":
             raise RuntimeError("boom")
         return _fake_result(node_id)
@@ -35,15 +37,15 @@ def test_failed_install_is_recorded_not_silent():
     ):
         new_spec = _auto_install_computed_outputs("u", refs, spec, failures)
 
-    producers = {d["producerNodeId"] for d in new_spec["dataflow"]["datasets"]}
-    assert producers == {"good"}                      # healthy output still installed
+    # No project ref is written (account-level save only) — the spec is unchanged.
+    assert new_spec["dataflow"]["datasets"] == []
     assert [f["node_id"] for f in failures] == ["bad"]  # failure surfaced
     assert "boom" in failures[0]["reason"]
 
 
 def test_missing_artifact_is_recorded():
     # install_node_output returns None when the artifact isn't found at save time.
-    def side_effect(user_key, *, node_id, path_ref, data_type, node_name):
+    def side_effect(user_key, *, node_id, path_ref, data_type, node_name, **kwargs):
         return None
 
     refs = [OutputRef(node_id="n1", filename="missing.parquet")]
@@ -62,7 +64,7 @@ def test_missing_artifact_is_recorded():
 
 
 def test_no_failures_when_all_install():
-    def side_effect(user_key, *, node_id, path_ref, data_type, node_name):
+    def side_effect(user_key, *, node_id, path_ref, data_type, node_name, **kwargs):
         return _fake_result(node_id)
 
     refs = [OutputRef(node_id="a", filename="a.parquet"),
@@ -77,12 +79,13 @@ def test_no_failures_when_all_install():
         new_spec = _auto_install_computed_outputs("u", refs, spec, failures)
 
     assert failures == []
-    assert {d["producerNodeId"] for d in new_spec["dataflow"]["datasets"]} == {"a", "b"}
+    # Account-level save writes no project refs.
+    assert new_spec["dataflow"]["datasets"] == []
 
 
 def test_failures_param_optional_back_compat():
     # Callers that don't care about warnings can still omit the param.
-    def side_effect(user_key, *, node_id, path_ref, data_type, node_name):
+    def side_effect(user_key, *, node_id, path_ref, data_type, node_name, **kwargs):
         raise RuntimeError("x")
 
     refs = [OutputRef(node_id="bad", filename="bad.parquet")]

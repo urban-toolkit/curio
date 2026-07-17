@@ -122,6 +122,18 @@ def read_spec(user_key: str, project_id: str) -> Optional[dict]:
     return json.loads(p.read_text(encoding="utf-8"))
 
 
+def list_project_ids(user_key: str) -> list[str]:
+    """Project ids (on-disk folder names) that have a saved spec for *user_key*."""
+    base = _users_base() / _user_key_segment(user_key) / "projects"
+    if not base.is_dir():
+        return []
+    ids: list[str] = []
+    for entry in sorted(base.iterdir()):
+        if entry.is_dir() and (entry / "spec.trill.json").is_file():
+            ids.append(entry.name)
+    return ids
+
+
 @contextmanager
 def spec_write_lock(user_key: str, project_id: str):
     """Serialize read-modify-write of a project's spec across processes.
@@ -269,6 +281,37 @@ def _installed_file_for_node(
     return None
 
 
+def _account_store_computed_file(
+    user_key: str,
+    project_id: str,
+    node_id: str,
+) -> Optional[Path]:
+    """Resolve a node's computed output in the account store by its deterministic
+    dataflow-namespaced dir (``computed.<dataflowId>.<nodeId>@1``).
+
+    Computed outputs are saved to the account store on generation without a
+    project ref, so this — not the spec ref — is the authoritative durable copy.
+    """
+    if not node_id or not project_id:
+        return None
+    from utk_curio.backend.app.datasets.install.installer import (
+        InstallerError,
+        computed_dataset_id,
+        resolve_installed_data_path,
+    )
+    from utk_curio.backend.app.common.safe_paths import PathTraversalError
+    from utk_curio.backend.app.datasets.domain.manifest import ManifestError, load_dataset_manifest
+    from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
+
+    dir_name = f"{computed_dataset_id(node_id, project_id)}@1"
+    try:
+        installed_dir = dataset_dir(user_key, dir_name)
+        manifest = load_dataset_manifest(installed_dir)
+        return resolve_installed_data_path(user_key, manifest)
+    except (ManifestError, InstallerError, ValueError, PathTraversalError):
+        return None
+
+
 def _durable_source_for(
     user_key: str,
     project_id: str,
@@ -279,9 +322,11 @@ def _durable_source_for(
     """Resolve *ref* to a DURABLE on-disk source a reload can restore from.
 
     A source is durable when it survives independently of the shared scratch
-    cache: a legacy ``project/data/`` copy, or an installed dataset in the user
-    store (registered in *spec* ``dataflow.datasets``). The shared cache is a
-    global, by-filename dir that gets cleared, so it is intentionally NOT a
+    cache: a legacy ``project/data/`` copy, the node's computed output in the
+    account store (``computed.<dataflowId>.<nodeId>@1`` — the default home for a
+    generated output, no project ref required), or a dataset explicitly
+    installed into this dataflow (*spec* ``dataflow.datasets``). The shared cache
+    is a global, by-filename dir that gets cleared, so it is intentionally NOT a
     durable source — it's only a hydrate fast-path.
 
     This is the single definition of "durable" shared by :func:`hydrate_outputs`
@@ -298,6 +343,9 @@ def _durable_source_for(
     legacy = safe_join(d / "data", ref.filename, validate=False, field="output filename")
     if legacy.is_file():
         return legacy
+    account = _account_store_computed_file(user_key, project_id, ref.node_id)
+    if account is not None and account.is_file():
+        return account
     installed = _installed_file_for_node(user_key, spec, ref.node_id)
     if installed is not None and installed.is_file():
         return installed

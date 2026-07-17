@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
+from utk_curio.backend.app.datasets.install.installer import computed_dataset_id, sanitize_node_id_segment
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     auth_headers,
     create_project,
@@ -61,7 +61,7 @@ def test_json_dict_output_installs_on_execution(client, user_and_token, monkeypa
 
     inst = body.get("installedDataset")
     assert inst is not None, body
-    expected_id = f"computed.{sanitize_node_id_segment(node_id)}"
+    expected_id = computed_dataset_id(node_id, project_id)
     assert inst["id"] == expected_id
     assert inst["origin"] == "computed"
     assert inst["format"] == "json"
@@ -123,4 +123,4 @@ def test_dataframe_output_still_installs_via_dataset_key(client, user_and_token,
     assert resp.status_code == 200, resp.get_data(as_text=True)
     inst = resp.get_json().get("installedDataset")
     assert inst is not None
-    assert inst["id"] == f"computed.{sanitize_node_id_segment(node_id)}"
+    assert inst["id"] == computed_dataset_id(node_id, project_id)

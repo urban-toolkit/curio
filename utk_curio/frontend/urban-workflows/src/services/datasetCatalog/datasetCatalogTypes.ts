@@ -113,6 +113,14 @@ export interface DatasetCatalogItem {
    * the dataflow the details page was opened from. */
   producerDataflowId?: string | null;
   producerDataflowName?: string | null;
+  /** Upstream inputs (producer nodes / input datasets) feeding the producing
+   * node, persisted as lineage on computed datasets. Each entry is
+   * ``{ nodeId, nodeType? }`` and/or ``{ datasetId }``. */
+  upstreamInputs?: Array<{
+    nodeId?: string;
+    nodeType?: string | null;
+    datasetId?: string;
+  }>;
   consumerNodeIds: string[];
   /** Real count of nodes consuming this dataset, summed across the user's
    * dataflows — the source of truth for the "N nodes consume" browse label.
@@ -302,6 +310,31 @@ export function isGeneratedDataFileName(name: string | null | undefined): boolea
 }
 
 /**
+ * Display form of a computed dataset's store folder.
+ *
+ * Computed datasets are stored under a dataflow-namespaced id
+ * (``computed.<dataflowId>.<nodeId>@<major>``) so the same node id reused in two
+ * dataflows stays distinct on disk. That dataflow segment is an opaque project
+ * UUID and must never surface in the UI: for display we drop it and keep the
+ * node-scoped folder (``computed.<nodeId>@<major>``), which is the stable,
+ * readable identifier the catalog showed before namespacing. Legacy
+ * (un-namespaced) computed folders and non-computed folders are returned
+ * unchanged.
+ */
+export function displayFolderName(
+  dirName: string | null | undefined,
+): string | null | undefined {
+  const d = dirName?.trim();
+  if (!d) return dirName;
+  const m = d.match(/^computed\.(.+)@(\d+)$/);
+  if (!m) return dirName;
+  const segments = m[1].split(".");
+  if (segments.length < 2) return dirName; // legacy ``computed.<node>``
+  const nodeSegment = segments[segments.length - 1];
+  return `computed.${nodeSegment}@${m[2]}`;
+}
+
+/**
  * The clean, user-facing display name for a dataset — the single source of
  * truth for *which* field to render as a dataset's title.
  *
@@ -324,7 +357,9 @@ export function datasetDisplayTitle(
   dataset: Pick<DatasetCatalogItem, "origin" | "title" | "dirName" | "fileName">,
 ): string {
   const title = dataset.title?.trim();
-  const dirName = dataset.dirName?.trim();
+  // Display the node-scoped folder, never the dataflow-namespaced store id
+  // (whose dataflow segment is an opaque project UUID).
+  const dirName = displayFolderName(dataset.dirName)?.trim();
   const isComputed = isDatasetComputed(dataset);
   // For a computed dataset, the title is a generated filename when it equals
   // ``fileName`` or simply looks like one — in either case it must not be shown.
@@ -367,11 +402,13 @@ export function stripDataFileExtension(
 export function datasetSubtitle(
   dataset: Pick<DatasetCatalogItem, "origin" | "title" | "dirName" | "fileName" | "sourceLabel">,
 ): string | null | undefined {
-  const dirName = dataset.dirName?.trim();
+  // Show the node-scoped folder, never the dataflow-namespaced store id.
+  const displayed = displayFolderName(dataset.dirName);
+  const dirName = displayed?.trim();
   if (dirName && dirName === datasetDisplayTitle(dataset).trim()) {
     return stripDataFileExtension(dataset.fileName);
   }
-  return dataset.dirName;
+  return displayed; // preserves null/undefined when there is no store folder
 }
 
 /** True when the dataset is listed in the committed catalog (``hub``) or marked published from a project. */

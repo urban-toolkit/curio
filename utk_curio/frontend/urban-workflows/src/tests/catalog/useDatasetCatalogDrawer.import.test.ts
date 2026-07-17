@@ -6,13 +6,14 @@ import { renderHook, act } from "@testing-library/react";
 // exercised end-to-end.
 const mockImportDataset = jest.fn();
 const mockCatalogReload = jest.fn(async () => {});
+let mockCatalogItems: unknown[] = [];
 
 jest.mock("../../services/datasetCatalog", () => {
   const actual = jest.requireActual("../../services/datasetCatalog");
   return {
     ...actual,
     useDatasetCatalog: () => ({
-      items: [],
+      items: mockCatalogItems,
       facets: { origin: {} },
       loading: false,
       refreshing: false,
@@ -58,6 +59,7 @@ import {
 describe("useDatasetCatalogDrawer.onPickImport", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCatalogItems = [];
   });
 
   it("registers a standalone catalog item and fans out a refresh without attaching to the dataflow", async () => {
@@ -145,6 +147,7 @@ describe("useDatasetCatalogDrawer.onInstall (OSM group)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockCatalogReload.mockResolvedValue(undefined);
+    mockCatalogItems = [];
   });
 
   it("installs each member layer (not the synthetic group id) and records real refs", async () => {
@@ -193,5 +196,56 @@ describe("useDatasetCatalogDrawer.onInstall (OSM group)", () => {
     );
 
     installSpy.mockRestore();
+  });
+});
+
+describe("useDatasetCatalogDrawer visible items (account-level computed)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCatalogItems = [];
+  });
+
+  const persistedComputed = {
+    id: "computed.flow-1.n1",
+    title: "Knowledge Graph",
+    origin: "computed" as const,
+    format: "json" as const,
+    // A persisted account-store dataset has a real store folder.
+    dirName: "computed.flow-1.n1@1",
+    uri: "curio://datasets/computed.flow-1.n1@1",
+    producerNodeId: "n1",
+    consumerNodeIds: [],
+    tags: ["computed", "json"],
+    updatedAt: "2026-01-01T00:00:00Z",
+    installed: false,
+  };
+  const ephemeralLiveOutput = {
+    id: "computed.flow-1.n2",
+    title: "1790000000000 Deadbeef.Json",
+    origin: "computed" as const,
+    format: "json" as const,
+    // Session-only live output: no store folder yet.
+    uri: "curio://outputs/1790000000000_deadbeef.json",
+    path: "1790000000000_deadbeef.json",
+    producerNodeId: "n2",
+    consumerNodeIds: [],
+    tags: ["computed", "json"],
+    updatedAt: "2026-01-01T00:00:00Z",
+    installed: false,
+  };
+
+  it("shows a persisted-but-not-installed computed dataset and drops the ephemeral live output", () => {
+    mockCatalogItems = [persistedComputed, ephemeralLiveOutput];
+    const { result } = renderHook(() => useDatasetCatalogDrawer(true));
+
+    act(() => result.current.setTab("computed"));
+
+    const shownIds = result.current.items.map((i) => i.id);
+    expect(shownIds).toContain("computed.flow-1.n1"); // account-level asset, available
+    expect(shownIds).not.toContain("computed.flow-1.n2"); // ephemeral, dropped
+    // The persisted computed dataset is shown as available, not installed.
+    const shown = result.current.items.find((i) => i.id === "computed.flow-1.n1");
+    expect(shown?.installed).not.toBe(true);
+    expect(result.current.tabComputedCount).toBe(1);
   });
 });

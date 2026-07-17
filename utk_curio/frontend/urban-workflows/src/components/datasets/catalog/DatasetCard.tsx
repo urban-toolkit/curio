@@ -63,6 +63,7 @@ export interface DatasetCardProps {
   onInstall: (dataset: DatasetCatalogItem) => void;
   onUninstall?: (dataset: DatasetCatalogItem) => void;
   onUnpublish?: (dataset: DatasetCatalogItem) => void;
+  onDelete?: (dataset: DatasetCatalogItem) => void;
   onPublish?: (datasetId: string) => void;
   onOpenDetails?: (dataset: DatasetCatalogItem) => void;
 }
@@ -82,12 +83,17 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
   onInstall,
   onUninstall,
   onUnpublish,
+  onDelete,
   onPublish,
   onOpenDetails,
 }) => {
   const cardBusy = busy;
   const showUninstall = isInstalled && onUninstall != null;
   const showUnpublish = isPublished && isInstalled && onUnpublish != null;
+  // Delete permanently removes an account-level computed dataset from the Data
+  // Catalog (distinct from Uninstall, which only detaches it from this project).
+  const isComputedAsset = dataset.origin === "computed" || Boolean(dataset.producerNodeId);
+  const showDelete = onDelete != null && isComputedAsset;
   const showPublishButton = onPublish != null && publishAllowed && !isPublished;
   const showPublishPill = isPublished || showPublishButton;
 
@@ -177,7 +183,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
           </button>
         ) : null}
 
-        {(showUninstall || showUnpublish || showPublishPill) && (
+        {(showUninstall || showUnpublish || showDelete || showPublishPill) && (
           <div className={styles.cardSecondaryActions}>
             {showUninstall ? (
               <button
@@ -199,6 +205,17 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
                 onClick={() => onUnpublish(dataset)}
               >
                 Unpublish
+              </button>
+            ) : null}
+            {showDelete ? (
+              <button
+                type="button"
+                className={styles.btnSecondary}
+                disabled={cardBusy}
+                title={`Permanently delete ${dataset.title} from your Data Catalog`}
+                onClick={() => onDelete(dataset)}
+              >
+                Delete
               </button>
             ) : null}
             {showPublishPill ? (

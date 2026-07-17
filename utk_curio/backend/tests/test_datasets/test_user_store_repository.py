@@ -1,8 +1,9 @@
-"""Account-level user-store dataset listing (register-only imports).
+"""Account-level user-store dataset listing.
 
-The user store surfaces *imported* datasets as standalone catalog items so a
-register-only import stays visible with no project ref. Computed node-output
-copies keep their existing per-project path and must NOT be listed here.
+The user store surfaces *imported* and *computed* datasets as standalone
+catalog items so they stay visible with no project ref. Computed node outputs
+are account-level assets by default (saved on generation, not auto-installed),
+so they list here alongside imports.
 """
 
 from __future__ import annotations
@@ -16,10 +17,10 @@ def _stub_user(user_id: int = 1):
     return types.SimpleNamespace(id=user_id, is_guest=False, username="alice")
 
 
-def test_user_store_lists_imported_excludes_computed(tmp_path, monkeypatch):
+def test_user_store_lists_imported_and_computed(tmp_path, monkeypatch):
     monkeypatch.setenv("CURIO_LAUNCH_CWD", str(tmp_path))
     from utk_curio.backend.app.datasets.install.installer import (
-        install_computed_file,
+        install_computed_file_for_node,
         install_imported_file,
     )
     from utk_curio.backend.app.datasets.repositories.user_store import (
@@ -30,19 +31,21 @@ def test_user_store_lists_imported_excludes_computed(tmp_path, monkeypatch):
     user_key = "1"
 
     install_imported_file(user_key, b"a,b\n1,2\n", "cities.csv", "csv")
-    # A computed node-output copy living in the same store must be excluded.
-    install_computed_file(
-        user_key, b'{"x": 1}', "out.json", "json", node_id="n-123"
+    # A computed node-output copy is now an account-level asset and IS listed.
+    install_computed_file_for_node(
+        user_key, b'{"x": 1}', "out.json", "json",
+        node_id="n-123", dataflow_id="flow-1",
     )
 
     items = UserDatasetRepository(user).list_items()
 
-    origins = {item["id"] for item in items}
-    assert any(i.startswith("imported.") for i in origins)
-    assert not any(i.startswith("computed.") for i in origins), origins
+    by_origin = {item["id"]: item["origin"] for item in items}
+    assert any(i.startswith("imported.") and o == "imported" for i, o in by_origin.items())
+    computed = [i for i, o in by_origin.items() if o == "computed"]
+    assert computed == ["computed.flow-1.n-123"], by_origin
+    # Account-level rows are never pre-marked installed.
     for item in items:
         assert item["installed"] is False
-        assert item["origin"] == "imported"
 
 
 def test_user_store_empty_without_user():

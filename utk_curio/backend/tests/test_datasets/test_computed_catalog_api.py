@@ -27,11 +27,13 @@ def test_save_installs_to_user_store_not_project_data(client, user_and_token):
 
     user_datasets = launch / ".curio" / "users" / "1" / "datasets"
     installed = list(user_datasets.rglob("persist_me.csv"))
-    assert installed, "save should install into the user datasets store"
+    assert installed, "save should persist the output into the account dataset store"
 
+    # Saving is account-level only: it must NOT write a project spec ref
+    # (no auto-install into the palette). Installing is an explicit action.
     spec = client.get(f"/api/projects/{project_id}", headers=auth_headers(token)).get_json()
     datasets = (spec.get("spec") or {}).get("dataflow", {}).get("datasets") or []
-    assert any(d.get("producerNodeId") == "node-save" and d.get("dirName") for d in datasets)
+    assert not any(d.get("producerNodeId") == "node-save" for d in datasets)
 
 
 def test_catalog_lists_computed_datasets_for_dataflow(client, user_and_token):
@@ -49,7 +51,8 @@ def test_catalog_lists_computed_datasets_for_dataflow(client, user_and_token):
     # Update project with output ref
     save_project_with_output(client, token, project_id, "node_output.csv", node_id="node-42")
 
-    # Fetch catalog scoped to this dataflow
+    # Scoped to this dataflow: its own computed output is surfaced from the
+    # account store with full metadata + lineage (no project ref needed).
     resp = client.get(
         f"/api/datasets/catalog?includeHub=false&dataflowId={project_id}",
         headers=auth_headers(token),
@@ -61,8 +64,9 @@ def test_catalog_lists_computed_datasets_for_dataflow(client, user_and_token):
     assert len(computed) == 1
     item = computed[0]
     assert item["producerNodeId"] == "node-42"
-    # Project save auto-installs computed outputs into the user store.
-    assert item.get("installed") is True
+    # Saving does NOT auto-install the dataset into the project — it stays an
+    # available (not installed) account-level asset until explicitly installed.
+    assert item.get("installed") is False
     assert item.get("dirName")
     assert "node_output.csv" in (item.get("path") or "")
     assert item["format"] == "csv"
@@ -152,12 +156,12 @@ def test_install_computed_dataset_copies_to_user_store(client, user_and_token):
 def test_install_computed_dataset_404_when_file_missing(client, user_and_token):
     """Installing a computed dataset whose ephemeral output file is gone returns 404
     when it was never auto-installed into the user store."""
-    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
+    from utk_curio.backend.app.datasets.install.installer import computed_dataset_id, sanitize_node_id_segment
 
     _, token = user_and_token
     project_id = create_project(client, token, name="Missing computed output")
     node_id = "node-ghost"
-    dataset_id = f"computed.{sanitize_node_id_segment(node_id)}"
+    dataset_id = computed_dataset_id(node_id, project_id)
     source_item = {
         "id": dataset_id,
         "origin": "computed",
@@ -182,7 +186,7 @@ def test_process_python_code_auto_installs_outputs_bundle(client, user_and_token
     """Tuple (outputs) installs as a multi-part bundle dataset."""
     from unittest.mock import MagicMock
 
-    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
+    from utk_curio.backend.app.datasets.install.installer import computed_dataset_id, sanitize_node_id_segment
     from utk_curio.sandbox.util.db import release_connection
     from utk_curio.sandbox.util.parsers import init_db, save_to_duckdb
 
@@ -222,7 +226,7 @@ def test_process_python_code_auto_installs_outputs_bundle(client, user_and_token
     body = resp.get_json()
     inst = body.get("installedDataset")
     assert inst is not None, body
-    expected_id = f"computed.{sanitize_node_id_segment(node_id)}"
+    expected_id = computed_dataset_id(node_id, project_id)
     assert inst["id"] == expected_id
     assert inst["format"] == "bundle"
 
@@ -231,7 +235,9 @@ def test_process_python_code_auto_installs_outputs_bundle(client, user_and_token
         headers=auth_headers(token),
     ).get_json()
     item = next(i for i in catalog["items"] if i["id"] == expected_id)
-    assert item.get("installed") is True
+    # Execution saves the bundle to the account store (surfaced here) but does
+    # NOT install it into the project — it's available, not installed.
+    assert item.get("installed") is False
     assert item["format"] == "bundle"
 
     preview = client.get(
@@ -248,7 +254,7 @@ def test_process_python_code_auto_installs_dataset(client, user_and_token, monke
     from pathlib import Path
     from unittest.mock import MagicMock
 
-    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
+    from utk_curio.backend.app.datasets.install.installer import computed_dataset_id, sanitize_node_id_segment
 
     _, token = user_and_token
     shared = Path(os.environ["CURIO_SHARED_DATA"])
@@ -285,7 +291,7 @@ def test_process_python_code_auto_installs_dataset(client, user_and_token, monke
     body = resp.get_json()
     inst = body.get("installedDataset")
     assert inst is not None, body
-    expected_id = f"computed.{sanitize_node_id_segment(node_id)}"
+    expected_id = computed_dataset_id(node_id, project_id)
     assert inst["id"] == expected_id
     assert inst["dirName"] == f"{expected_id}@1"
 
@@ -298,7 +304,7 @@ def test_process_python_code_titles_computed_dataset_with_node_name(client, user
     from unittest.mock import MagicMock
 
     from utk_curio.backend.app.datasets.infrastructure.catalog_utils import title_from_filename
-    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
+    from utk_curio.backend.app.datasets.install.installer import computed_dataset_id, sanitize_node_id_segment
 
     _, token = user_and_token
     shared = Path(os.environ["CURIO_SHARED_DATA"])
@@ -334,7 +340,7 @@ def test_process_python_code_titles_computed_dataset_with_node_name(client, user
     )
     assert resp.status_code == 200, resp.get_data(as_text=True)
 
-    expected_id = f"computed.{sanitize_node_id_segment(node_id)}"
+    expected_id = computed_dataset_id(node_id, project_id)
     catalog = client.get(
         f"/api/datasets/catalog?includeHub=false&dataflowId={project_id}",
         headers=auth_headers(token),
@@ -352,7 +358,7 @@ def test_reinstall_computed_dataset_recovers_node_title_from_node_title_param(cl
     from pathlib import Path
 
     from utk_curio.backend.app.datasets.infrastructure.catalog_utils import title_from_filename
-    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
+    from utk_curio.backend.app.datasets.install.installer import computed_dataset_id, sanitize_node_id_segment
 
     _, token = user_and_token
     project_id = create_project(client, token, name="Reinstall with node title")
@@ -361,7 +367,7 @@ def test_reinstall_computed_dataset_recovers_node_title_from_node_title_param(cl
     (shared / filename).write_text('{"a": 1}', encoding="utf-8")
 
     node_id = "node-reinstall"
-    dataset_id = f"computed.{sanitize_node_id_segment(node_id)}"
+    dataset_id = computed_dataset_id(node_id, project_id)
     # After uninstall the dataset reappears as a session output whose title is the
     # generated filename (the original manifest was deleted on uninstall).
     source_item = {
@@ -397,7 +403,7 @@ def test_reinstall_computed_dataset_without_node_title_never_uses_filename(clien
     from pathlib import Path
 
     from utk_curio.backend.app.datasets.infrastructure.catalog_utils import title_from_filename
-    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
+    from utk_curio.backend.app.datasets.install.installer import computed_dataset_id, sanitize_node_id_segment
 
     _, token = user_and_token
     project_id = create_project(client, token, name="Reinstall without node title")
@@ -406,7 +412,7 @@ def test_reinstall_computed_dataset_without_node_title_never_uses_filename(clien
     (shared / filename).write_text('{"a": 1}', encoding="utf-8")
 
     node_id = "node-reinstall-noname"
-    dataset_id = f"computed.{sanitize_node_id_segment(node_id)}"
+    dataset_id = computed_dataset_id(node_id, project_id)
     filename_title = title_from_filename(filename)
     source_item = {
         "id": dataset_id,
@@ -524,54 +530,44 @@ def _save_spec(client, token, project_id, datasets, outputs):
 
 
 def test_saved_computed_dataset_survives_disabling_save_toggle(client, user_and_token):
-    """A computed dataset saved while the toggle was on must remain installed
-    after a later save that omits it (i.e. the toggle was turned off), and be
-    removable only by an explicit uninstall."""
+    """A computed dataset saved while the toggle was on is an account-level asset
+    (no project ref) and must remain browsable after a later save that omits it
+    (the toggle was turned off)."""
     import os
     from pathlib import Path
 
-    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
+    from utk_curio.backend.app.datasets.install.installer import computed_dataset_id, sanitize_node_id_segment
 
     _, token = user_and_token
     project_id = create_project(client, token, name="Save-toggle persistence")
     node_id = "node-keep"
-    expected_id = f"computed.{sanitize_node_id_segment(node_id)}"
+    expected_id = computed_dataset_id(node_id, project_id)
 
     shared = Path(os.environ["CURIO_SHARED_DATA"])
     (shared / "keep_me.csv").write_text("a,b\n1,2\n", encoding="utf-8")
 
-    # Save with the output (toggle ON) — installs and records the ref.
+    # Save with the output (toggle ON) — saved to the account store, NOT installed
+    # into the project (no spec ref).
     save_project_with_output(client, token, project_id, "keep_me.csv", node_id=node_id)
-    assert expected_id in _dataflow_dataset_ids(client, token, project_id)
-
-    # Save again as if the toggle were turned OFF: the client no longer tracks
-    # the computed ref and no longer sends the output. It must NOT be removed.
-    _save_spec(client, token, project_id, datasets=[], outputs=[])
-    assert expected_id in _dataflow_dataset_ids(client, token, project_id), (
-        "disabling the save toggle removed an already-saved computed dataset"
-    )
-
-    catalog = client.get(
-        f"/api/datasets/catalog?includeHub=false&dataflowId={project_id}",
-        headers=auth_headers(token),
-    ).get_json()
-    assert any(
-        i["id"] == expected_id and i.get("installed") is True for i in catalog["items"]
-    ), "saved computed dataset should still be installed in the catalog"
-
-    # Explicit uninstall is the only way to remove it.
-    resp = client.delete(
-        f"/api/dataflows/{project_id}/datasets/{expected_id}",
-        headers=auth_headers(token),
-    )
-    assert resp.status_code == 200, resp.get_data(as_text=True)
     assert expected_id not in _dataflow_dataset_ids(client, token, project_id)
 
-    # A subsequent save must not resurrect the uninstalled dataset.
+    def _is_available():
+        catalog = client.get(
+            f"/api/datasets/catalog?includeHub=false&dataflowId={project_id}",
+            headers=auth_headers(token),
+        ).get_json()
+        return any(
+            i["id"] == expected_id and i.get("installed") is False
+            for i in catalog["items"]
+        )
+
+    assert _is_available(), "saved computed dataset should be browsable (not installed)"
+
+    # Save again as if the toggle were turned OFF: the client no longer sends the
+    # output. The account-level dataset must NOT vanish.
     _save_spec(client, token, project_id, datasets=[], outputs=[])
-    assert expected_id not in _dataflow_dataset_ids(client, token, project_id), (
-        "uninstalled computed dataset was resurrected by a later save"
-    )
+    assert _is_available(), "disabling the save toggle removed an account-level dataset"
+    assert expected_id not in _dataflow_dataset_ids(client, token, project_id)
 
 
 def _computed_catalog_item(client, token, project_id, dataset_id):
@@ -582,20 +578,21 @@ def _computed_catalog_item(client, token, project_id, dataset_id):
     return next((i for i in catalog["items"] if i["id"] == dataset_id), None)
 
 
-def test_saved_computed_dataset_dir_survives_save_off_and_dies_on_uninstall(
+def test_saved_computed_dataset_dir_survives_save_off(
     client, user_and_token
 ):
-    """The on-disk dataset dir is the source of truth: a toggle-off save keeps
-    it, only an explicit uninstall deletes it."""
+    """The account-store dataset dir is the source of truth: it is created on
+    save and a later toggle-off save keeps it (it's an account-level asset,
+    independent of the project spec)."""
     import os
     from pathlib import Path
 
-    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
+    from utk_curio.backend.app.datasets.install.installer import computed_dataset_id, sanitize_node_id_segment
 
     _, token = user_and_token
     project_id = create_project(client, token, name="Dir lifecycle")
     node_id = "node-dir"
-    dir_name = f"computed.{sanitize_node_id_segment(node_id)}@1"
+    dir_name = f"{computed_dataset_id(node_id, project_id)}@1"
     dataset_dir = (
         Path(os.environ["CURIO_LAUNCH_CWD"]) / ".curio" / "users" / "1" / "datasets" / dir_name
     )
@@ -603,20 +600,11 @@ def test_saved_computed_dataset_dir_survives_save_off_and_dies_on_uninstall(
     shared = Path(os.environ["CURIO_SHARED_DATA"])
     (shared / "dir_me.csv").write_text("c\n1\n", encoding="utf-8")
     save_project_with_output(client, token, project_id, "dir_me.csv", node_id=node_id)
-    assert dataset_dir.is_dir(), "save with toggle on should install the dataset dir"
+    assert dataset_dir.is_dir(), "save should write the account-store dataset dir"
 
-    # Toggle off + save: dir must remain.
+    # Toggle off + save: the account-level dir must remain.
     _save_spec(client, token, project_id, datasets=[], outputs=[])
-    assert dataset_dir.is_dir(), "disabling save removed an already-installed dataset dir"
-
-    # Explicit uninstall: dir is deleted.
-    expected_id = f"computed.{sanitize_node_id_segment(node_id)}"
-    resp = client.delete(
-        f"/api/dataflows/{project_id}/datasets/{expected_id}",
-        headers=auth_headers(token),
-    )
-    assert resp.status_code == 200, resp.get_data(as_text=True)
-    assert not dataset_dir.exists(), "uninstall should delete the dataset dir"
+    assert dataset_dir.is_dir(), "disabling save removed an account-level dataset dir"
 
 
 def test_installed_computed_parquet_loader_is_geoparquet_aware(
@@ -628,7 +616,7 @@ def test_installed_computed_parquet_loader_is_geoparquet_aware(
     from pathlib import Path
     from unittest.mock import MagicMock
 
-    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
+    from utk_curio.backend.app.datasets.install.installer import computed_dataset_id, sanitize_node_id_segment
 
     _, token = user_and_token
     project_id = create_project(client, token, name="Loader snippet parquet")
@@ -663,7 +651,7 @@ def test_installed_computed_parquet_loader_is_geoparquet_aware(
     )
     assert resp.status_code == 200, resp.get_data(as_text=True)
 
-    expected_id = f"computed.{sanitize_node_id_segment(node_id)}"
+    expected_id = computed_dataset_id(node_id, project_id)
     item = _computed_catalog_item(client, token, project_id, expected_id)
     assert item is not None
     snippet = item.get("loaderSnippet") or {}
@@ -677,7 +665,7 @@ def test_installed_bundle_loader_returns_tuple(client, user_and_token, monkeypat
     so the sandbox re-detects the same ``outputs`` envelope."""
     from unittest.mock import MagicMock
 
-    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
+    from utk_curio.backend.app.datasets.install.installer import computed_dataset_id, sanitize_node_id_segment
     from utk_curio.sandbox.util.db import release_connection
     from utk_curio.sandbox.util.parsers import init_db, save_to_duckdb
 
@@ -715,7 +703,7 @@ def test_installed_bundle_loader_returns_tuple(client, user_and_token, monkeypat
     )
     assert resp.status_code == 200, resp.get_data(as_text=True)
 
-    expected_id = f"computed.{sanitize_node_id_segment(node_id)}"
+    expected_id = computed_dataset_id(node_id, project_id)
     item = _computed_catalog_item(client, token, project_id, expected_id)
     assert item is not None
     assert item["format"] == "bundle"
@@ -735,24 +723,25 @@ def test_published_computed_dataset_stays_installed_in_dataflow_catalog(
     import os
     from pathlib import Path
 
-    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
+    from utk_curio.backend.app.datasets.install.installer import computed_dataset_id, sanitize_node_id_segment
 
     _, token = user_and_token
     project_id = create_project(client, token, name="Publish keeps install")
     node_id = "node-pub"
-    dataset_id = f"computed.{sanitize_node_id_segment(node_id)}"
+    dataset_id = computed_dataset_id(node_id, project_id)
 
     shared = Path(os.environ["CURIO_SHARED_DATA"])
     (shared / "pub_me.csv").write_text("c\n1\n", encoding="utf-8")
     save_project_with_output(client, token, project_id, "pub_me.csv", node_id=node_id)
 
+    # Saved account-level: available, not installed, not published.
     before = _computed_catalog_item(client, token, project_id, dataset_id)
-    assert before is not None and before.get("installed") is True
+    assert before is not None and before.get("installed") is False
     assert not before.get("publishedToHub")
 
-    # Simulate publish: the dataflow ref gains publishedToHub (the dataset dir is
-    # untouched). This mirrors what publishDataset persists, without writing into
-    # the repo's committed catalog root.
+    # Simulate explicit install + publish: a dataflow ref with publishedToHub
+    # (the dataset dir is untouched). This mirrors what publishDataset persists,
+    # without writing into the repo's committed catalog root.
     published_ref = {
         "datasetId": dataset_id,
         "dirName": f"{dataset_id}@1",

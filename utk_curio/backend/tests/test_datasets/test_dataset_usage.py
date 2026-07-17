@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
+from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
 from utk_curio.backend.tests.test_datasets.computed_test_helpers import (
     auth_headers,
     save_project_with_output,
@@ -45,7 +45,8 @@ def test_usage_lists_dataflows_for_computed_dataset_with_downstream(client, user
         }
     })
     # Flow B: references the dataset through an installed dataflow ref only.
-    dataset_id = f"computed.{sanitize_node_id_segment('n1')}"
+    # The dataset is produced by Flow A, so its id is namespaced by flow_a.
+    dataset_id = computed_dataset_id("n1", flow_a)
     flow_b = _create_project(client, token, "Flow B", {
         "dataflow": {
             "name": "Flow B",
@@ -151,6 +152,8 @@ def test_usage_empty_for_unused_dataset(client, user_and_token):
 
 
 def _computed_item(client, token, project_id, dataset_id):
+    # A saved computed output is an account-level asset surfaced in the
+    # producing dataflow's scoped catalog (not auto-installed into the project).
     catalog = client.get(
         f"/api/datasets/catalog?includeHub=false&dataflowId={project_id}",
         headers=auth_headers(token),
@@ -176,7 +179,7 @@ def _install_producer_output(client, token, project_id):
     shared = Path(os.environ["CURIO_SHARED_DATA"])
     (shared / "n1_out.csv").write_text("city,count\nChicago,10\n", encoding="utf-8")
     save_project_with_output(client, token, project_id, "n1_out.csv", node_id="n1")
-    return f"computed.{sanitize_node_id_segment('n1')}"
+    return computed_dataset_id("n1", project_id)
 
 
 def test_catalog_consumer_count_reflects_downstream_nodes(client, user_and_token):

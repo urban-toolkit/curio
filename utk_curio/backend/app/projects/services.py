@@ -155,22 +155,42 @@ def _computed_output_title(
     return None
 
 
+def _computed_node_type(ref: OutputRef, dataflow: Optional[dict]) -> Optional[str]:
+    """The producing node's type slug for lineage: the client-attached
+    ``ref.node_type`` if present, else resolved from the spec node."""
+    explicit = (getattr(ref, "node_type", None) or "").strip()
+    if explicit:
+        return explicit
+    nodes = dataflow.get("nodes") if isinstance(dataflow, dict) else None
+    for node in nodes or []:
+        if isinstance(node, dict) and node.get("id") == ref.node_id:
+            data = node.get("data") if isinstance(node.get("data"), dict) else {}
+            return node.get("type") or data.get("nodeType")
+    return None
+
+
 def _auto_install_computed_outputs(
     user_key: str,
     output_refs: List[OutputRef],
     spec: Optional[dict],
     failures: Optional[list] = None,
+    *,
+    dataflow_id: Optional[str] = None,
+    dataflow_name: Optional[str] = None,
 ) -> Optional[dict]:
-    """Install each newly computed output as ``computed.x{hash}@1/`` and add lean
-    refs to *spec* so the catalog can resolve them without live_outputs.
+    """Save each newly computed output to the account-level user store as
+    ``computed.<dataflowId>.<nodeId>@1/`` with its producer/upstream lineage.
 
-    Returns the (possibly updated) spec dict, or the original spec unchanged if
-    nothing new was installed.  Errors for individual files are swallowed (and
-    logged) so a single bad output never blocks the whole save.
+    Computed outputs are account-level assets by default: this NO LONGER
+    installs them into the project (no ``dataflow.datasets`` ref is written).
+    Attaching one to a project is now an explicit user action (Data Catalog
+    ``Install``). The spec is therefore returned unchanged — the return type is
+    kept (``Optional[dict]``) for call-site compatibility.
 
-    When *failures* is provided, each output that could NOT be installed appends
-    ``{"node_id", "filename", "reason"}`` to it so the caller can surface the
-    silently-skipped dataset to the client instead of leaving it invisible.
+    Errors for individual files are swallowed (and logged) so a single bad
+    output never blocks the whole save. When *failures* is provided, each output
+    that could NOT be saved appends ``{"node_id", "filename", "reason"}`` so the
+    caller can surface the silently-skipped dataset to the client.
     """
     if not output_refs or not spec:
         return spec
@@ -180,15 +200,12 @@ def _auto_install_computed_outputs(
             failures.append({"node_id": node_id, "filename": filename, "reason": reason})
 
     from utk_curio.backend.app.datasets.install.bundle import install_node_output
-    from utk_curio.backend.app.datasets.infrastructure.storage import DATASET_DIR_RE
+    from utk_curio.backend.app.datasets.application.export import resolve_upstream_inputs
 
     dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
     if not isinstance(dataflow, dict):
         return spec
 
-    datasets_refs: list[dict] = list(dataflow.get("datasets") or [])
-
-    changed = False
     for ref in output_refs:
         filename = ref.filename
         node_id = ref.node_id
@@ -201,13 +218,17 @@ def _auto_install_computed_outputs(
                 path_ref=filename,
                 data_type=data_type,
                 node_name=_computed_output_title(ref, dataflow),
+                dataflow_id=dataflow_id,
+                node_type=_computed_node_type(ref, dataflow),
+                dataflow_name=dataflow_name,
+                upstream_inputs=resolve_upstream_inputs(spec, node_id),
             )
         except Exception as exc:  # noqa: BLE001 – best-effort; don't block save
             # Swallowed so one bad output never blocks the whole save, but log it
             # AND record it so a silently-dropped dataset is surfaced to the user
             # instead of invisible.
             logger.exception(
-                "Auto-install of computed output failed for node %s (file %r); "
+                "Save of computed output failed for node %s (file %r); "
                 "this dataset will not be persisted",
                 node_id,
                 filename,
@@ -221,117 +242,11 @@ def _auto_install_computed_outputs(
             _record_failure(node_id, filename, "output artifact not found at save time")
             continue
 
-        dataset_id = result.manifest.id   # "computed.<sanitized_node_id>"
-        dir_name = result.manifest.dir_name  # "computed.<sanitized_node_id>@1"
+        # Saved to the account store only. Intentionally NO project-ref write:
+        # the dataset lives in the user's Data Catalog and is installed into a
+        # project only by an explicit user action.
 
-        # Validate the generated dir_name before writing it to the spec – if
-        # somehow it's invalid we'd rather skip than persist a broken ref.
-        if not DATASET_DIR_RE.match(dir_name):
-            _record_failure(node_id, filename, "invalid dataset directory name")
-            continue
-
-        # Replace any existing ref for this producer node or add a new one.
-        # ``datasets_refs`` derives from the client-supplied spec, so an entry
-        # may not be a dict — skip those rather than AttributeError out of the
-        # try and 500 the whole save (matches merge_dataflow_dataset_ref).
-        updated = False
-        for existing_ref in datasets_refs:
-            if not isinstance(existing_ref, dict):
-                continue
-            if existing_ref.get("producerNodeId") == node_id:
-                existing_ref.update({
-                    "datasetId": dataset_id,
-                    "dirName": dir_name,
-                    "origin": "computed",
-                })
-                updated = True
-                changed = True
-                break
-        if not updated:
-            datasets_refs.append({
-                "datasetId": dataset_id,
-                "dirName": dir_name,
-                "origin": "computed",
-                "producerNodeId": node_id,
-                "consumerNodeIds": [],
-            })
-            changed = True
-
-    if not changed:
-        return spec
-
-    new_spec = dict(spec)
-    new_spec["dataflow"] = {**dataflow, "datasets": datasets_refs}
-    return new_spec
-
-
-def _preserve_persisted_computed_refs(
-    user_key: str,
-    new_spec: Optional[dict],
-    existing_spec: Optional[dict],
-) -> Optional[dict]:
-    """Carry forward already-saved computed dataset refs across a save.
-
-    A computed dataset becomes "saved" once it has been auto-installed into the
-    user store (``computed.<node>@1/``). Disabling the per-node "Save output
-    dataset" toggle must only affect *future* outputs — it must never remove a
-    dataset that was already saved. The only way to remove one is an explicit
-    uninstall from the Data Catalog (which deletes the dataset directory).
-
-    The client save always rewrites ``dataflow.datasets`` from its own state,
-    which can omit refs the client never learned about (e.g. outputs installed
-    by a Play-All run, or refs hidden once the toggle is off). To keep those
-    persisted, we treat the on-disk dataset directory as the source of truth:
-    any computed ref present in the previously-saved spec is re-added when its
-    directory still exists and it isn't already in the incoming spec.
-    """
-    if not isinstance(new_spec, dict) or not isinstance(existing_spec, dict):
-        return new_spec
-
-    old_dataflow = existing_spec.get("dataflow")
-    if not isinstance(old_dataflow, dict):
-        return new_spec
-    preserved = [
-        ref
-        for ref in (old_dataflow.get("datasets") or [])
-        if isinstance(ref, dict) and ref.get("origin") == "computed" and ref.get("dirName")
-    ]
-    if not preserved:
-        return new_spec
-
-    from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
-
-    new_dataflow = new_spec.get("dataflow")
-    if not isinstance(new_dataflow, dict):
-        new_dataflow = {}
-    new_refs: list[dict] = [r for r in (new_dataflow.get("datasets") or []) if isinstance(r, dict)]
-    existing_ids = {r.get("datasetId") for r in new_refs}
-    existing_producers = {r.get("producerNodeId") for r in new_refs if r.get("producerNodeId")}
-
-    changed = False
-    for ref in preserved:
-        if ref.get("datasetId") in existing_ids:
-            continue
-        producer = ref.get("producerNodeId")
-        if producer and producer in existing_producers:
-            continue
-        # Only carry forward datasets that are still installed on disk. An
-        # explicit uninstall deletes the directory, so a missing dir means the
-        # user intentionally removed it and it should stay gone.
-        try:
-            if not (dataset_dir(user_key, ref["dirName"]) / "manifest.json").is_file():
-                continue
-        except Exception:  # noqa: BLE001 – defensive; a bad ref shouldn't block save
-            continue
-        new_refs.append(ref)
-        changed = True
-
-    if not changed:
-        return new_spec
-
-    result = dict(new_spec)
-    result["dataflow"] = {**new_dataflow, "datasets": new_refs}
-    return result
+    return spec
 
 
 def _extract_graph_preview(spec: Optional[dict]) -> Optional[dict]:
@@ -484,7 +399,10 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
     storage.write_spec(ukey, project_id, data.spec)
     output_refs = list(data.outputs)
     install_warnings: list = []
-    effective_spec = _auto_install_computed_outputs(ukey, output_refs, data.spec, install_warnings) or data.spec
+    effective_spec = _auto_install_computed_outputs(
+        ukey, output_refs, data.spec, install_warnings,
+        dataflow_id=project_id, dataflow_name=data.name,
+    ) or data.spec
     # Drop dataset refs keyed on visualization/sink nodes (passthrough duplicates).
     effective_spec = _prune_sink_node_dataset_refs(ukey, effective_spec)
     if effective_spec is not data.spec:
@@ -534,19 +452,23 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
             output_refs = list(data.outputs)
             # Install into users/<user>/datasets/ and register lean refs in the spec.
             # Do not copy artifacts into project/data/ — that folder is legacy-only.
-            updated_spec = _auto_install_computed_outputs(ukey, output_refs, effective_spec, install_warnings)
+            updated_spec = _auto_install_computed_outputs(
+                ukey, output_refs, effective_spec, install_warnings,
+                dataflow_id=project_id, dataflow_name=(data.name or project.name),
+            )
             if updated_spec is not None and updated_spec is not effective_spec:
                 effective_spec = updated_spec
                 spec_dirty = True
         else:
             output_refs = _output_refs_from_manifest(existing_manifest)
 
-        if data.spec is not None:
-            # A normal save rewrites the whole spec from the client, which may omit
-            # computed dataset refs the client never learned about. Carry forward
-            # any still-installed computed datasets so disabling "Save output
-            # dataset" (or a Play-All install) never silently removes one.
-            effective_spec = _preserve_persisted_computed_refs(ukey, effective_spec, existing_spec)
+        # NOTE: computed dataset refs are created ONLY by an explicit install
+        # (the client tracks them in its own dataflow-datasets state and sends
+        # them back on save), so there is no longer a "ref the client never
+        # learned about" to carry forward. The old ``_preserve_persisted_computed_refs``
+        # step re-added refs whenever the account-store dir existed, which — now
+        # that uninstall keeps that dir — would resurrect an explicitly
+        # uninstalled ref. It is intentionally gone.
 
         # Prune dataset refs keyed on visualization/sink nodes — their output is a
         # passthrough of their input, so the ref just duplicates the upstream

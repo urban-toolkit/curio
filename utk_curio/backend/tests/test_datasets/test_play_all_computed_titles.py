@@ -11,7 +11,7 @@ import json
 import os
 from pathlib import Path
 
-from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
+from utk_curio.backend.app.datasets.install.installer import computed_dataset_id, sanitize_node_id_segment
 from utk_curio.backend.app.projects.services import (
     _humanize_node_type,
     _computed_output_title,
@@ -34,6 +34,8 @@ def _grammar_spec(name: str, node_id: str) -> dict:
 
 
 def _computed_title(client, token, project_id, dataset_id):
+    # The friendly node title lives on the account-store manifest and is surfaced
+    # in the dataflow's scoped catalog (its own computed outputs).
     catalog = client.get(
         f"/api/datasets/catalog?includeHub=false&dataflowId={project_id}",
         headers=auth_headers(token),
@@ -67,7 +69,7 @@ def test_save_titles_computed_output_by_node_name(client, user_and_token):
     )
     assert resp.status_code == 200, resp.get_data(as_text=True)
 
-    dataset_id = f"computed.{sanitize_node_id_segment(node_id)}"
+    dataset_id = computed_dataset_id(node_id, project_id)
     assert _computed_title(client, token, project_id, dataset_id) == "Knowledge Graph"
 
 
@@ -91,7 +93,7 @@ def test_save_falls_back_to_humanized_node_type_without_node_name(client, user_a
     )
     assert resp.status_code == 200, resp.get_data(as_text=True)
 
-    dataset_id = f"computed.{sanitize_node_id_segment(node_id)}"
+    dataset_id = computed_dataset_id(node_id, project_id)
     title = _computed_title(client, token, project_id, dataset_id)
     assert title == "Autk Grammar"  # humanized "curio.builtin/autk-grammar"
     assert ".json" not in title.lower()

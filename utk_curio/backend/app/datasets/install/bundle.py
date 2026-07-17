@@ -11,7 +11,7 @@ from typing import Any
 
 from utk_curio.backend.app.datasets.install.installer import (
     InstallerError,
-    _sanitize_node_id_segment,
+    computed_dataset_id,
     install_computed_file_for_node,
 )  # install_computed_file_for_node used in install_node_output
 from utk_curio.backend.app.datasets.domain.manifest import (
@@ -183,6 +183,10 @@ def install_computed_bundle_for_node(
     *,
     node_id: str,
     parent_artifact_id: str,
+    dataflow_id: str | None = None,
+    node_type: str | None = None,
+    dataflow_name: str | None = None,
+    upstream_inputs: list[dict] | None = None,
     title: str | None = None,
 ) -> Any:
     """Materialize a tuple output as ``format: bundle`` in the user dataset store."""
@@ -191,8 +195,7 @@ def install_computed_bundle_for_node(
     if not parts:
         raise InstallerError("Bundle has no resolvable parts")
 
-    seg = _sanitize_node_id_segment(node_id)
-    dataset_id = f"computed.{seg}"
+    dataset_id = computed_dataset_id(node_id, dataflow_id)
     dir_name = f"{dataset_id}@1"
     dest = dataset_dir(user_key, dir_name)
 
@@ -285,6 +288,11 @@ def install_computed_bundle_for_node(
                 for p in bundle_spec["parts"]
             ],
         },
+        producer_node_id=node_id,
+        producer_node_type=node_type,
+        producer_dataflow_id=dataflow_id,
+        producer_dataflow_name=dataflow_name,
+        upstream_inputs=list(upstream_inputs) if upstream_inputs else None,
     )
     write_manifest(manifest_obj, dest)
     try:
@@ -303,12 +311,17 @@ def install_node_output(
     path_ref: str,
     data_type: str | None,
     node_name: str | None = None,
+    dataflow_id: str | None = None,
+    node_type: str | None = None,
+    dataflow_name: str | None = None,
+    upstream_inputs: list[dict] | None = None,
 ) -> Any:
     """Install a single file or multi-part ``outputs`` bundle from shared storage.
 
     *node_name* (the producing node's canvas display name) becomes the dataset
     title when provided; otherwise the installer derives a title from the
-    generated filename.
+    generated filename. *dataflow_id* namespaces the dataset id and, with the
+    other lineage arguments, is persisted on the manifest.
     """
     from utk_curio.backend.app.datasets.infrastructure.output_paths import resolve_shared_output_path
     from utk_curio.backend.app.datasets.domain.provenance import computed_output_format
@@ -323,6 +336,10 @@ def install_node_output(
             parts,
             node_id=node_id,
             parent_artifact_id=path_ref,
+            dataflow_id=dataflow_id,
+            node_type=node_type,
+            dataflow_name=dataflow_name,
+            upstream_inputs=upstream_inputs,
             title=node_name,
         )
 
@@ -339,6 +356,10 @@ def install_node_output(
         store_name,
         fmt,
         node_id=node_id,
+        dataflow_id=dataflow_id,
+        node_type=node_type,
+        dataflow_name=dataflow_name,
+        upstream_inputs=upstream_inputs,
         title=node_name,
         source_path=src,
     )
