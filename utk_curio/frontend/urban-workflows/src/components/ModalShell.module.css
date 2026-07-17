@@ -44,11 +44,11 @@
 }
 
 .backdropOverlay {
-  z-index: 10054;
+  z-index: var(--curio-z-modal-backdrop);
 }
 
 .modalOverlay {
-  z-index: 10055;
+  z-index: var(--curio-z-modal);
 }
 
 .closeX {

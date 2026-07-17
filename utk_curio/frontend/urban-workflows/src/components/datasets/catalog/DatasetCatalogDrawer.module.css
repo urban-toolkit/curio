@@ -1,7 +1,7 @@
 .overlayRoot {
   position: fixed;
   inset: 0;
-  z-index: 10045;
+  z-index: var(--curio-z-dataset-drawer);
   display: flex;
   justify-content: flex-end;
   pointer-events: none;
