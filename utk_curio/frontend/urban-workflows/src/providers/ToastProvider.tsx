@@ -1,4 +1,5 @@
 import React, { createContext, useState, useContext, useCallback, ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Toast } from "react-bootstrap";
 
 export type ToastVariant = "error" | "warning" | "info" | "success";
@@ -46,26 +47,35 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
         setToasts((prev) => prev.filter((t) => t.id !== id));
     }, []);
 
-    return (
-        <ToastContext.Provider value={{ showToast }}>
-            {children}
-            <div
-                style={{
-                    position: "fixed",
-                    bottom: "20px",
-                    right: "20px",
-                    zIndex: 10000,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "8px",
-                    maxWidth: "360px",
-                }}
-            >
-                {toasts.map((toast) => (
+    const toastContainer = (
+        <div
+            // aria-live so screen readers announce feedback even while a
+            // focus-trapped `aria-modal` drawer/dialog is open. Error toasts
+            // escalate to assertive via role="alert" on the toast itself.
+            aria-live="polite"
+            aria-atomic="false"
+            aria-label="Notifications"
+            style={{
+                position: "fixed",
+                bottom: "20px",
+                right: "20px",
+                // Top of the overlay/layering scale (see curioTokens.css) so
+                // dataset action feedback stays visible above drawers/modals.
+                zIndex: "var(--curio-z-toast)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+                maxWidth: "360px",
+            }}
+        >
+            {toasts.map((toast) => (
                     <Toast
                         key={toast.id}
                         show
                         onClose={() => dismiss(toast.id)}
+                        role={toast.variant === "error" ? "alert" : "status"}
+                        aria-live={toast.variant === "error" ? "assertive" : "polite"}
+                        aria-atomic="true"
                         style={{
                             backgroundColor: VARIANT_BG[toast.variant],
                             color: "white",
@@ -92,7 +102,22 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
                         </Toast.Body>
                     </Toast>
                 ))}
-            </div>
+        </div>
+    );
+
+    // Portal to <body> so the toasts escape any ancestor stacking context
+    // (transform/opacity/z-index on a provider wrapper would otherwise trap
+    // the fixed container and re-bury it behind portaled overlays). Mirrors
+    // ModalShell. Fall back to inline render where document is unavailable.
+    const toastPortal =
+        typeof document !== "undefined"
+            ? createPortal(toastContainer, document.body)
+            : toastContainer;
+
+    return (
+        <ToastContext.Provider value={{ showToast }}>
+            {children}
+            {toastPortal}
         </ToastContext.Provider>
     );
 };
