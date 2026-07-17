@@ -246,3 +246,17 @@ def install_dataset(dataflow_id: str):
 def uninstall_dataset(dataflow_id: str, dataset_id: str):
     payload = _service().uninstall_dataset(dataflow_id, dataset_id)
     return jsonify(payload), 200
+
+
+@datasets_bp.route("/datasets/<dataset_id>", methods=["DELETE"])
+@require_auth
+@_map_catalog_errors
+def delete_dataset(dataset_id: str):
+    """Permanently delete an account-level dataset from the user's catalog.
+
+    Distinct from project uninstall (``DELETE
+    /dataflows/<id>/datasets/<id>``), which only detaches the dataset from one
+    dataflow and keeps the account asset.
+    """
+    payload = _service().delete_dataset(dataset_id)
+    return jsonify(payload), 200

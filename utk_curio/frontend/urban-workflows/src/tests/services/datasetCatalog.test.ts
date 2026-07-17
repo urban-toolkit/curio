@@ -94,6 +94,33 @@ describe("datasetDisplayTitle (clean, user-facing dataset name)", () => {
     ).toBe("computed.node-x@1");
   });
 
+  test("namespaced computed dirName falls back to the node-scoped folder, never the dataflow UUID", () => {
+    expect(
+      datasetDisplayTitle(
+        makeDataset({
+          origin: "computed",
+          title: "1782498496720 Ef610Da8.Json",
+          fileName: "1782498496720 Ef610Da8.Json",
+          // dirName is dataflow-namespaced: computed.<dataflowId>.<node>@1
+          dirName: "computed.c8077fbd-010d-4f6f-b7e2-a99f5df87243.whatif-data@1",
+        }),
+      ),
+    ).toBe("computed.whatif-data@1");
+  });
+
+  test("a friendly node title is still shown even with a namespaced dirName", () => {
+    expect(
+      datasetDisplayTitle(
+        makeDataset({
+          origin: "computed",
+          title: "Knowledge Graph",
+          fileName: "1782498496720 Ef610Da8.Json",
+          dirName: "computed.c8077fbd-010d-4f6f-b7e2-a99f5df87243.whatif-data@1",
+        }),
+      ),
+    ).toBe("Knowledge Graph");
+  });
+
   test("stale hub copy (title LOOKS generated, fileName differs) still falls back to dirName", () => {
     // Browsing from another dataflow surfaces only the published hub row, whose
     // title was captured at publish time and whose fileName is derived from the
@@ -168,6 +195,19 @@ describe("datasetSubtitle (secondary line under the title)", () => {
   test("returns nullish when there is no store folder yet (line omitted)", () => {
     expect(datasetSubtitle(makeDataset({ origin: "computed", dirName: null }))).toBeNull();
     expect(datasetSubtitle(makeDataset({ origin: "computed" }))).toBeUndefined();
+  });
+
+  test("shows the node-scoped folder for a dataflow-namespaced computed dir", () => {
+    expect(
+      datasetSubtitle(
+        makeDataset({
+          origin: "computed",
+          title: "Knowledge Graph",
+          fileName: "1782498496720 Ef610Da8.Json",
+          dirName: "computed.c8077fbd-010d-4f6f-b7e2-a99f5df87243.whatif-data@1",
+        }),
+      ),
+    ).toBe("computed.whatif-data@1");
   });
 });
 

@@ -163,6 +163,9 @@ def base_item(**overrides: Any) -> dict[str, Any]:
         "producerNodeType": None,
         "producerDataflowId": None,
         "producerDataflowName": None,
+        # Upstream inputs (producer nodes / input datasets) feeding the producing
+        # node, persisted on computed manifests as lineage. ``[]`` when unknown.
+        "upstreamInputs": [],
         "consumerNodeIds": [],
         # Real count of nodes consuming this dataset, summed across the user's
         # dataflows. Populated by ``list_catalog`` from the dependency-graph
@@ -269,4 +272,9 @@ def item_from_manifest(manifest: DatasetManifest, dataset_root: Path, *, origin:
         schema=manifest.schema,
         groupId=manifest.group_id,
         layerName=manifest.layer_name,
+        producerNodeId=manifest.producer_node_id,
+        producerNodeType=manifest.producer_node_type,
+        producerDataflowId=manifest.producer_dataflow_id,
+        producerDataflowName=manifest.producer_dataflow_name,
+        upstreamInputs=list(manifest.upstream_inputs) if manifest.upstream_inputs else [],
     )

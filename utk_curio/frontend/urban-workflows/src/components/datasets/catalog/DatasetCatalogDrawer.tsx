@@ -55,6 +55,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
     onUninstall,
     onPublish,
     onUnpublish,
+    onDelete,
     onPickImport,
     handleDatasetDragStart,
     handleDatasetDragEnd,
@@ -196,7 +197,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
                 {!catalog.loading && !catalog.error && items.length === 0 && installingRows.length === 0 ? (
                   <div className={styles.empty}>
                     {tab === "computed"
-                      ? "No computed datasets yet. Run a dataflow node that outputs a table — it will appear here and be installed automatically."
+                      ? "No computed datasets yet. Run a dataflow node that outputs a table — it is saved to your Data Catalog and can be installed into a project from here."
                       : "No datasets match the current filters."}
                   </div>
                 ) : null}
@@ -233,6 +234,7 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
                         onUnpublish={
                           isPublished && isInstalled ? (row) => void onUnpublish(row) : undefined
                         }
+                        onDelete={(row) => void onDelete(row)}
                         onPublish={(datasetId) => void onPublish(datasetId)}
                         onOpenDetails={openDatasetDetails}
                       />

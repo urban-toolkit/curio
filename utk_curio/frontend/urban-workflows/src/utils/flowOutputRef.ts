@@ -10,6 +10,8 @@ export interface FlowOutputRef {
   data_type?: string;
   /** Producing node's friendly display label (attached at save time). */
   node_name?: string;
+  /** Producing node's type slug (attached at save time, for lineage). */
+  node_type?: string;
 }
 
 export function flowOutputRefFromRaw(

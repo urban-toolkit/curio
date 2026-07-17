@@ -74,15 +74,18 @@ export function useDatasetCatalogDrawer(presented: boolean) {
     window.addEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
     return () => window.removeEventListener(DATASET_CATALOG_REFRESH_EVENT, onRefresh);
   }, [catalog.reload, presented]);
-  // Ephemeral "live outputs" — a node's freshly-computed output that hasn't been
-  // installed/saved — surface as computed items with `installed` falsy because
-  // the drawer query folds in session liveOutputs. They're transient and clutter
-  // every list, so drop them from the drawer entirely; installed computed
-  // datasets (installed === true) and hub/imported datasets are kept.
+  // Computed node outputs are account-level Data Catalog assets: once generated
+  // they are saved to the user's store (a real ``dirName``) and shown here as
+  // available — not installed — items so they can be installed into a project
+  // later. Only a genuinely *ephemeral* live output — a session-only row folded
+  // in from ``liveOutputs`` that has NOT been persisted (no store folder) — is
+  // transient noise and dropped. Persisted computed datasets (with a
+  // ``dirName``), installed datasets, and hub/imported datasets are all kept.
   const visibleItems = useMemo(
     () =>
       catalogItems.filter(
-        (item) => !(item.origin === "computed" && item.installed !== true),
+        (item) =>
+          !(item.origin === "computed" && item.installed !== true && !item.dirName),
       ),
     [catalogItems],
   );
@@ -127,9 +130,9 @@ export function useDatasetCatalogDrawer(presented: boolean) {
 
   const computedCount = useMemo(
     () =>
-      catalogItems.filter((item) => item.origin === "computed" || Boolean(item.producerNodeId))
+      visibleItems.filter((item) => item.origin === "computed" || Boolean(item.producerNodeId))
         .length,
-    [catalogItems],
+    [visibleItems],
   );
 
   const tabInstalledCount =
@@ -316,6 +319,42 @@ export function useDatasetCatalogDrawer(presented: boolean) {
     [catalog, ensureProjectId, setDataflowDatasets, showToast],
   );
 
+  const onDelete = useCallback(
+    async (dataset: DatasetCatalogItem) => {
+      const usageCount = dataset.consumerNodeCount ?? 0;
+      const usageNote =
+        usageCount > 0
+          ? `\n\nIt is referenced by ${usageCount} node${usageCount === 1 ? "" : "s"} across your projects; those references will be removed.`
+          : "";
+      const confirmed = window.confirm(
+        `Delete ${dataset.title} from your Data Catalog?\n\nThis permanently removes the dataset. It is not just uninstalled from this project.${usageNote}`,
+      );
+      if (!confirmed) return;
+      setBusyId(dataset.id);
+      try {
+        const result = await datasetCatalogApi.deleteDataset(dataset.id);
+        const removed = new Set([dataset.id, ...(dataset.groupLayerIds ?? [])].map(String));
+        setDataflowDatasets((prev) =>
+          prev.filter((row) => !removed.has(String(row?.datasetId || row?.id))),
+        );
+        await catalog.reload({ bustCache: true });
+        notifyDatasetCatalogRefresh();
+        const n = result?.removedFrom?.length ?? 0;
+        showToast(
+          n > 0
+            ? `Deleted ${dataset.title} from your Data Catalog (removed from ${n} project${n === 1 ? "" : "s"}).`
+            : `Deleted ${dataset.title} from your Data Catalog.`,
+          "success",
+        );
+      } catch (err) {
+        showToast((err as Error)?.message || "Could not delete dataset.", "error");
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [catalog, setDataflowDatasets, showToast],
+  );
+
   const onPickImport = useCallback(
     async (file: File) => {
       if (importInFlightRef.current) return;
@@ -396,6 +435,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
     onUninstall,
     onPublish,
     onUnpublish,
+    onDelete,
     onPickImport,
     handleDatasetDragStart,
     handleDatasetDragEnd,

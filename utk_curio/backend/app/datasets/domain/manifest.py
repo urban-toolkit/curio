@@ -45,6 +45,17 @@ class DatasetManifest:
     # the catalog can present them as a single tabbed entry.
     group_id: str | None = None
     layer_name: str | None = None
+    # Lineage for computed (node-output) datasets, persisted so the account-level
+    # asset stays connected to the workflow, the producing node, and its upstream
+    # inputs independent of any project reference. ``producer_dataflow_id`` also
+    # namespaces the dataset id (``computed.<dataflowId>.<nodeId>``).
+    producer_node_id: str | None = None
+    producer_node_type: str | None = None
+    producer_dataflow_id: str | None = None
+    producer_dataflow_name: str | None = None
+    # Each entry describes one upstream input feeding the producer node:
+    # ``{"nodeId", "nodeType"?}`` and/or ``{"datasetId"}``.
+    upstream_inputs: list[dict[str, Any]] | None = None
 
     @property
     def dir_name(self) -> str:
@@ -112,6 +123,15 @@ def _parse_manifest(raw: dict[str, Any], *, where: str) -> DatasetManifest:
         source_label=str(raw.get("sourceLabel") or raw.get("publisher") or "Data Catalog") or None,
         group_id=str(raw.get("groupId") or "") or None,
         layer_name=str(raw.get("layerName") or "") or None,
+        producer_node_id=str(raw.get("producerNodeId") or "") or None,
+        producer_node_type=str(raw.get("producerNodeType") or "") or None,
+        producer_dataflow_id=str(raw.get("producerDataflowId") or "") or None,
+        producer_dataflow_name=str(raw.get("producerDataflowName") or "") or None,
+        upstream_inputs=(
+            [dict(entry) for entry in raw.get("upstreamInputs") if isinstance(entry, dict)]
+            if isinstance(raw.get("upstreamInputs"), list)
+            else None
+        ),
     )
 
 
@@ -143,6 +163,15 @@ def build_manifest_dict(manifest: DatasetManifest) -> dict[str, Any]:
         "sourceUpdatedAt": manifest.source_updated_at or None,
         "groupId": manifest.group_id or None,
         "layerName": manifest.layer_name or None,
+        "producerNodeId": manifest.producer_node_id or None,
+        "producerNodeType": manifest.producer_node_type or None,
+        "producerDataflowId": manifest.producer_dataflow_id or None,
+        "producerDataflowName": manifest.producer_dataflow_name or None,
+        "upstreamInputs": (
+            [dict(entry) for entry in manifest.upstream_inputs]
+            if manifest.upstream_inputs
+            else None
+        ),
     }
 
 

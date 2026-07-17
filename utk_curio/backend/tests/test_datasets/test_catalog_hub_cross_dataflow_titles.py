@@ -15,6 +15,7 @@ from pathlib import Path
 from utk_curio.backend.app.datasets.domain.dedup import merge_catalog_items
 from utk_curio.backend.app.datasets.infrastructure.catalog_utils import looks_like_generated_filename
 from utk_curio.backend.app.datasets.install.installer import (
+    computed_dataset_id,
     install_computed_file_for_node,
     sanitize_node_id_segment,
 )
@@ -30,7 +31,9 @@ def _install_computed(client, token, project_id, *, node_id, filename, node_titl
     """Install a computed dataset from a shared output file and return its id."""
     shared = Path(os.environ["CURIO_SHARED_DATA"])
     (shared / filename).write_text('{"a": 1}', encoding="utf-8")
-    dataset_id = f"computed.{sanitize_node_id_segment(node_id)}"
+    # The installed store id is namespaced by the installing dataflow; build the
+    # sourceItem id to match so promote/install/publish key on one id.
+    dataset_id = computed_dataset_id(node_id, project_id)
     body = {
         "datasetId": dataset_id,
         "sourceItem": {
@@ -194,4 +197,6 @@ def test_publish_never_titles_computed_with_a_generated_filename(client, user_an
     assert resp.status_code == 201, resp.get_data(as_text=True)
     title = resp.get_json()["title"]
     assert title != "1782757759504 31640Bba.Json"
-    assert title == f"{dataset_id}@1"  # store-folder fallback
+    # Node-scoped folder fallback — never the dataflow-namespaced store id
+    # (whose dataflow segment is an opaque project UUID).
+    assert title == "computed.whatif-data@1"

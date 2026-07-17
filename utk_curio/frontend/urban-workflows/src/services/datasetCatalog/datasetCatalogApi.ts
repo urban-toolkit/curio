@@ -250,6 +250,18 @@ export const datasetCatalogApi = {
   },
 
   /**
+   * Permanently delete an account-level dataset from the user's Data Catalog.
+   * Distinct from {@link uninstallFromDataflow} (which only detaches it from one
+   * dataflow): this cascades an unpublish + ref removal across every dataflow,
+   * then deletes the account-store folder.
+   */
+  deleteDataset(datasetId: string): Promise<{ id: string; deleted: boolean; removedFrom: string[] }> {
+    return apiFetch(`/api/datasets/${encodeURIComponent(datasetId)}`, {
+      method: "DELETE",
+    });
+  },
+
+  /**
    * Export the dataset's serialized data file. Streams the raw file (parquet
    * stays parquet, csv stays csv, etc.) and triggers a browser download.
    */

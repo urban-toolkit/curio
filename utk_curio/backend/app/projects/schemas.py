@@ -22,6 +22,10 @@ class OutputRef:
     # installer titles the computed dataset with it instead of the raw generated
     # filename (see ``_auto_install_computed_outputs``).
     node_name: Optional[str] = None
+    # Producing node's type slug (e.g. ``curio.builtin/autk-grammar``), attached
+    # client-side so the computed dataset's manifest records producer lineage even
+    # when the spec node lookup can't resolve it.
+    node_type: Optional[str] = None
 
 
 @dataclass

@@ -9,6 +9,9 @@ export interface OutputRef {
    * computed datasets by their node (matching execution-time auto-install)
    * instead of the raw generated filename. */
   node_name?: string;
+  /** Producing node's type slug (e.g. ``curio.builtin/autk-grammar``), so the
+   * computed dataset's manifest records producer lineage. */
+  node_type?: string;
 }
 
 export interface GraphPreviewNode {

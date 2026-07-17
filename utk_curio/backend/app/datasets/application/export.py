@@ -17,30 +17,101 @@ from typing import Any
 from utk_curio.backend.app.datasets.domain.constants import FORMAT_TO_EXTENSION
 
 
-def _producer_node_id_for(nodes: list, dataset_id: str) -> str | None:
-    """The node id whose computed output is ``dataset_id`` (``computed.<seg>``)."""
+def _producer_node_id_for(
+    nodes: list, dataset_id: str, dataflow_id: str | None = None
+) -> str | None:
+    """The node id whose computed output is ``dataset_id``.
+
+    Matches on the *node* segment (the last dotted segment), so it works for
+    both the namespaced (``computed.<dataflow>.<node>``) and the legacy
+    (``computed.<node>``) id forms. When the id is namespaced AND *dataflow_id*
+    is supplied, the dataflow segment must also match — so a node id reused in a
+    different dataflow is not misidentified as this dataset's producer.
+    """
     if not dataset_id.startswith("computed."):
         return None
-    from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
+    from utk_curio.backend.app.datasets.install.installer import (
+        dataflow_segment_from_computed_id,
+        node_segment_from_computed_id,
+        sanitize_node_id_segment,
+    )
 
+    node_seg = node_segment_from_computed_id(dataset_id)
+    if node_seg is None:
+        return None
+    df_seg = dataflow_segment_from_computed_id(dataset_id)
+    if df_seg is not None and dataflow_id is not None and sanitize_node_id_segment(dataflow_id) != df_seg:
+        return None
     for node in nodes:
         if not isinstance(node, dict):
             continue
         nid = node.get("id")
-        if nid and f"computed.{sanitize_node_id_segment(nid)}" == dataset_id:
+        if nid and sanitize_node_id_segment(nid) == node_seg:
             return nid
     return None
 
 
+def resolve_upstream_inputs(spec: dict[str, Any], node_id: str) -> list[dict[str, Any]]:
+    """Upstream inputs feeding *node_id* in *spec*'s dataflow.
+
+    Returns one entry per direct upstream source: producer nodes wired into
+    *node_id* (``{"nodeId", "nodeType"?}``) and any dataset refs applied to it
+    (``{"datasetId"}``). Order-stable and de-duplicated. Empty when the spec has
+    no dataflow or the node has no inputs. Backend-derived so lineage is the
+    single source of truth (no frontend contract for upstream).
+    """
+    if not isinstance(spec, dict) or not node_id:
+        return []
+    dataflow = spec.get("dataflow")
+    if not isinstance(dataflow, dict):
+        return []
+
+    nodes = dataflow.get("nodes") or []
+    edges = dataflow.get("edges") or []
+    node_type_by_id = {
+        node["id"]: node.get("type")
+        for node in nodes
+        if isinstance(node, dict) and node.get("id")
+    }
+
+    inputs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for edge in edges:
+        if not isinstance(edge, dict) or edge.get("type") == "Interaction":
+            continue
+        if edge.get("target") != node_id:
+            continue
+        source = edge.get("source")
+        if not source or f"node:{source}" in seen:
+            continue
+        seen.add(f"node:{source}")
+        inputs.append({"nodeId": source, "nodeType": node_type_by_id.get(source)})
+
+    for node in nodes:
+        if not isinstance(node, dict) or node.get("id") != node_id:
+            continue
+        refs = (node.get("metadata") or {}).get("datasetRefs") or []
+        for ref in refs:
+            if isinstance(ref, str) and f"ds:{ref}" not in seen:
+                seen.add(f"ds:{ref}")
+                inputs.append({"datasetId": ref})
+        break
+
+    return inputs
+
+
 def _dataset_producer_in_spec(
-    spec: dict[str, Any], dataset_id: str
+    spec: dict[str, Any], dataset_id: str, dataflow_id: str | None = None
 ) -> dict[str, Any] | None:
     """The producer node (``{nodeId, nodeType}``) for *dataset_id* in *spec*'s
     dataflow, or ``None`` when this dataflow does not produce it.
 
     A computed dataset's id encodes its producer node id
-    (``computed.<sanitized-nodeId>``), so the producing node — and its type —
-    can be recovered from any dataflow that still contains that node.
+    (``computed.<dataflow>.<sanitized-nodeId>``), so the producing node — and its
+    type — can be recovered from the dataflow that still contains that node.
+    Pass *dataflow_id* so a node id reused in another dataflow is not
+    misattributed (the id's dataflow segment must match).
     """
     if not isinstance(spec, dict):
         return None
@@ -48,7 +119,7 @@ def _dataset_producer_in_spec(
     if not isinstance(dataflow, dict):
         return None
     nodes = dataflow.get("nodes") or []
-    producer_id = _producer_node_id_for(nodes, dataset_id)
+    producer_id = _producer_node_id_for(nodes, dataset_id, dataflow_id)
     if producer_id is None:
         return None
     node_type = None
@@ -60,11 +131,15 @@ def _dataset_producer_in_spec(
 
 
 def _dataset_consumer_nodes_in_spec(
-    spec: dict[str, Any], dataset_id: str
+    spec: dict[str, Any], dataset_id: str, dataflow_id: str | None = None
 ) -> list[dict[str, Any]] | None:
     """Consumer node refs (``[{nodeId, nodeType}]``) if *spec*'s dataflow uses
     *dataset_id*, else ``None``. An empty list means the dataflow uses/owns the
     dataset (e.g. produced or installed) but no node consumes it downstream.
+
+    *dataflow_id* is used only to attribute the *producer* correctly (see
+    :func:`_producer_node_id_for`); ref/binding-based usage is still detected in
+    any dataflow so cross-dataflow consumption is reported.
 
     Mirrors the frontend lineage resolver: the dataset enters the flow through
     *carrier* nodes — the computed producer and any Data Loading node that
@@ -99,7 +174,7 @@ def _dataset_consumer_nodes_in_spec(
     seen: set[str] = set()
     carrier_ids: set[str] = set()
 
-    producer_id = _producer_node_id_for(nodes, dataset_id)
+    producer_id = _producer_node_id_for(nodes, dataset_id, dataflow_id)
     if producer_id is not None:
         uses = True
         carrier_ids.add(producer_id)

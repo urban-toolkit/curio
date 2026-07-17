@@ -14,6 +14,7 @@ class ComputedDatasetIndexer:
         *,
         manifest: dict[str, Any] | None = None,
         live_outputs: list[dict[str, Any]] | None = None,
+        dataflow_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Return catalog items for node-computed outputs.
 
@@ -47,12 +48,13 @@ class ComputedDatasetIndexer:
             # Every sandbox output kind is catalogable (including tuple bundles),
             # so there is no kind filter here.
             fmt = computed_output_format(raw, data_type)
-            # Use the same stable node-based ID that install_computed_file_for_node
-            # writes to the manifest so that the live-output item and the
-            # user-store item share the same ID and are correctly deduped.
+            # Use the same stable, dataflow-namespaced ID that
+            # install_computed_file_for_node writes to the manifest so that the
+            # live-output item and the user-store item share the same ID and are
+            # correctly deduped.
             if node_id:
-                from utk_curio.backend.app.datasets.install.installer import sanitize_node_id_segment
-                item_id = f"computed.{sanitize_node_id_segment(node_id)}"
+                from utk_curio.backend.app.datasets.install.installer import computed_dataset_id
+                item_id = computed_dataset_id(node_id, dataflow_id)
             else:
                 item_id = stable_id("computed", f"{node_id}:{raw}")
             items.append(base_item(

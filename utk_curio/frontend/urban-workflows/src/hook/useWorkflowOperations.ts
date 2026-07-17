@@ -588,18 +588,34 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // are persisted only via this save path, so without this they kept the
         // filename title even after a "Play All" rerun.
         const labelByNodeId = new Map<string, string>();
+        const typeByNodeId = new Map<string, string>();
         for (const node of reactFlow.getNodes()) {
-            const label = resolveNodeDisplayLabel(node.data).trim();
-            if (!label) continue;
             // Key by both ids: outputs reference node.id or node.data.nodeId
             // depending on the node type (matches buildSaveableLiveOutputs).
-            if (typeof node.id === "string") labelByNodeId.set(node.id, label);
+            const ids: string[] = [];
+            if (typeof node.id === "string") ids.push(node.id);
             const dataNodeId = (node.data as { nodeId?: unknown })?.nodeId;
-            if (typeof dataNodeId === "string") labelByNodeId.set(dataNodeId, label);
+            if (typeof dataNodeId === "string") ids.push(dataNodeId);
+
+            const label = resolveNodeDisplayLabel(node.data).trim();
+            // The node's type slug feeds the computed dataset's producer lineage.
+            const nodeType = (
+                (node.data as { nodeType?: unknown })?.nodeType ?? node.type ?? ""
+            );
+            const typeStr = typeof nodeType === "string" ? nodeType.trim() : "";
+            for (const id of ids) {
+                if (label) labelByNodeId.set(id, label);
+                if (typeStr) typeByNodeId.set(id, typeStr);
+            }
         }
         return refs.map((ref) => {
             const label = labelByNodeId.get(ref.node_id);
-            return label ? { ...ref, node_name: label } : ref;
+            const nodeType = typeByNodeId.get(ref.node_id);
+            return {
+                ...ref,
+                ...(label ? { node_name: label } : {}),
+                ...(nodeType ? { node_type: nodeType } : {}),
+            };
         });
     };
 

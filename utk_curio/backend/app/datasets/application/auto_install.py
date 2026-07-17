@@ -104,8 +104,6 @@ def auto_install_node_output(
         )
 
     try:
-        from datetime import datetime as _dt, timezone as _tz
-
         from utk_curio.backend.app.datasets.install.bundle import install_node_output
         from utk_curio.backend.app.projects.services import _user_dir_key
 
@@ -113,12 +111,36 @@ def auto_install_node_output(
         # The node's canvas display name becomes the dataset title; ignore blank
         # values so the installer keeps its filename-derived fallback.
         clean_node_name = (node_name or "").strip() or None
+        # Best-effort lineage from the on-disk spec (may lag an unsaved edit; the
+        # save-time installer rewrites the manifest with authoritative lineage).
+        dataflow_name = None
+        upstream_inputs: list[dict] | None = None
+        if dataflow_id:
+            try:
+                from utk_curio.backend.app.projects import storage as project_storage
+                from utk_curio.backend.app.datasets.application.export import (
+                    resolve_upstream_inputs,
+                )
+
+                spec = project_storage.read_spec(user_key, dataflow_id)
+                if isinstance(spec, dict):
+                    dataflow_name = spec.get("name") or None
+                    upstream_inputs = resolve_upstream_inputs(spec, node_id)
+            except Exception:  # noqa: BLE001 — lineage is best-effort on execution
+                logger.debug(
+                    "Could not resolve upstream lineage for node %s (dataflow %s)",
+                    node_id, dataflow_id, exc_info=True,
+                )
         result = install_node_output(
             user_key,
             node_id=node_id,
             path_ref=str(path_ref),
             data_type=data_type,
             node_name=clean_node_name,
+            dataflow_id=dataflow_id,
+            node_type=node_type,
+            dataflow_name=dataflow_name,
+            upstream_inputs=upstream_inputs,
         )
         if result is None:
             return _diagnostic(
@@ -137,25 +159,11 @@ def auto_install_node_output(
             "replaced": result.replaced,
         }
 
-        if dataflow_id:
-            try:
-                from utk_curio.backend.app.projects import storage as project_storage
-
-                now_iso = _dt.now(_tz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                ref = {
-                    "datasetId": result.manifest.id,
-                    "dirName": result.manifest.dir_name,
-                    "origin": "computed",
-                    "producerNodeId": node_id,
-                    "installedAt": now_iso,
-                }
-                project_storage.merge_dataflow_dataset_ref(user_key, dataflow_id, ref)
-            except Exception:  # noqa: BLE001 — dataset is installed; ref merge is best-effort
-                logger.exception(
-                    "Auto-install: dataset installed for node %s but failed to record its "
-                    "spec ref (dataflow %s); it will be reconciled on the next project save",
-                    node_id, dataflow_id,
-                )
+        # Saved to the account-level user store only. Intentionally NO project
+        # spec-ref write: a computed output is an account-level Data Catalog
+        # asset by default and is attached to a project only by an explicit
+        # user install. (The dataset still surfaces in the account catalog via
+        # ``UserDatasetRepository`` and, for the open dataflow, the indexer.)
 
         return _diagnostic(
             "installed", node_id=node_id, data_type=data_type, dataset=installed,

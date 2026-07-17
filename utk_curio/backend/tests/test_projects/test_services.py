@@ -170,9 +170,12 @@ def test_non_guest_can_save_and_update(app, db, user_and_token, tmp_curio):
     assert updated.name == "Renamed"
 
 
-def test_auto_install_skips_non_dict_dataset_refs(app, tmp_curio):
-    """A non-dict entry in client-supplied dataflow.datasets must not 500 the
-    save (review finding B3)."""
+def test_auto_install_computed_outputs_saves_account_level_no_ref(app, tmp_curio):
+    """Computed outputs are saved to the account store with NO project ref, and a
+    non-dict entry in client-supplied dataflow.datasets is left untouched (never
+    iterated), so it can't 500 the save (review finding B3)."""
+    from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
+
     shared = storage._shared_data_dir()
     shared.mkdir(parents=True, exist_ok=True)
     (shared / "b3_out.csv").write_text("a,b\n1,2\n", encoding="utf-8")
@@ -180,11 +183,12 @@ def test_auto_install_skips_non_dict_dataset_refs(app, tmp_curio):
     spec = {"dataflow": {"datasets": ["junk", None, 123]}}
     refs = [OutputRef(node_id="b3node", filename="b3_out.csv")]
 
-    # Must not raise AttributeError on the non-dict refs.
     result = services._auto_install_computed_outputs("1", refs, spec)
 
-    ds = result["dataflow"]["datasets"]
-    assert any(isinstance(r, dict) and r.get("producerNodeId") == "b3node" for r in ds)
+    # The spec's datasets are returned unchanged — no ref written, junk preserved.
+    assert result["dataflow"]["datasets"] == ["junk", None, 123]
+    # The output was saved to the account store (un-namespaced here: no dataflow_id).
+    assert (dataset_dir("1", "computed.b3node@1") / "manifest.json").is_file()
 
 
 def test_prune_sink_node_dataset_refs(app, tmp_curio):
