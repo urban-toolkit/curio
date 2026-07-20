@@ -46,6 +46,7 @@ import {
 } from "../services/datasetCatalog";
 import { agentsApi } from "../api/agentsApi";
 import { readAgentDragCoord, notifyAgentDockRefresh, resolveAgentDropTarget } from "../utils/agentsPaletteEvents";
+import { attachAgentOnDrop } from "../utils/agentDropAttach";
 import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
 
 const CANVAS_EXTENT: [[number, number], [number, number]] = [[-2000, -2000], [6000, 6000]];
@@ -65,6 +66,7 @@ export function MainCanvas() {
         onEdgesDelete,
         onNodesDelete,
         markDirty,
+        saveCurrentProject,
     } = useFlowContext();
     const collab = useCollab();
     const collabRef = useRef(collab);
@@ -309,14 +311,18 @@ export function MainCanvas() {
         const agentCoord = readAgentDragCoord(event.dataTransfer);
         if (agentCoord) {
             event.preventDefault();
-            if (!projectId) {
-                showToast("Save the project before attaching an agent.", "error");
-                return;
-            }
             const target = resolveAgentDropTarget(event.target);
             const where = target.kind === "node" ? "the node" : "the canvas";
-            agentsApi
-                .attach(projectId, agentCoord, target)
+            // For a node target, persist the graph first so the (possibly
+            // freshly-added) node is in the saved spec the backend validates
+            // against — otherwise the attach 400s. See attachAgentOnDrop.
+            attachAgentOnDrop({
+                projectId,
+                target,
+                agentCoord,
+                saveProject: saveCurrentProject,
+                attach: (pid, coord, t) => agentsApi.attach(pid, coord, t),
+            })
                 .then(() => {
                     notifyAgentDockRefresh();
                     markDirty();
@@ -331,7 +337,7 @@ export function MainCanvas() {
         const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
         createCodeNode(type, { position });
         markDirty();
-    }, [screenToFlowPosition, createCodeNode, markDirty, handleCanvasDrop, projectId, showToast]);
+    }, [screenToFlowPosition, createCodeNode, markDirty, handleCanvasDrop, projectId, showToast, saveCurrentProject]);
 
     const handleNodesChange = useCallback((changes: NodeChange[]) => {
         const allowedChanges: NodeChange[] = [];
