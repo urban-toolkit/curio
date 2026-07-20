@@ -46,6 +46,7 @@ import {
 } from "../services/datasetCatalog";
 import { agentsApi } from "../api/agentsApi";
 import { readAgentDragCoord, notifyAgentDockRefresh } from "../utils/agentsPaletteEvents";
+import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
 
 const CANVAS_EXTENT: [[number, number], [number, number]] = [[-2000, -2000], [6000, 6000]];
 
@@ -553,6 +554,7 @@ export function MainCanvas() {
                 {AIModeRef.current ? <WorkflowGoal /> : null}
                 {AIModeRef.current ? <LLMChat /> : null}
             </ReactFlow>
+            {!isSharedView ? <AgentDockOverlay /> : null}
             </div>
             {/*{isComponentsSelected ? (
                 <button
