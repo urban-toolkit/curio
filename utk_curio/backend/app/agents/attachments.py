@@ -97,6 +97,43 @@ def attach(spec: dict, coord: str, target: object, *, attachment_id: str, sessio
     return record
 
 
+def prune_orphaned_attachments(spec: dict) -> list[dict]:
+    """Drop attachments whose target graph element no longer exists.
+
+    A ``node``/``connection`` attachment whose ``targetId`` is not in the spec's
+    node/edge set is orphaned (its node/edge was deleted on the canvas) and is
+    removed; ``canvas`` attachments and still-valid targets are kept. Malformed
+    records (no dict target, unknown kind, missing targetId) are left untouched —
+    only a clearly-orphaned node/connection target is pruned. Mutates *spec* and
+    returns the removed records (empty when nothing was pruned).
+    """
+    if not isinstance(spec, dict):
+        return []
+    records = _dataflow(spec).get("agentAttachments")
+    if not isinstance(records, list):
+        return []
+    node_ids = _node_ids(spec)
+    edge_ids = _edge_ids(spec)
+
+    def _orphaned(rec: dict) -> bool:
+        target = rec.get("target")
+        if not isinstance(target, dict):
+            return False
+        kind = target.get("kind")
+        if kind == "node":
+            return target.get("targetId") not in node_ids
+        if kind == "connection":
+            return target.get("targetId") not in edge_ids
+        return False  # canvas / unknown → never pruned here
+
+    removed = [r for r in records if isinstance(r, dict) and _orphaned(r)]
+    if not removed:
+        return []
+    kept = [r for r in records if r not in removed]
+    spec["dataflow"]["agentAttachments"] = kept
+    return removed
+
+
 def detach(spec: dict, attachment_id: str) -> bool:
     """Remove an attachment by id; return True if it was present."""
     df = spec.setdefault("dataflow", {})
