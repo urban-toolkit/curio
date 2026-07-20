@@ -11,7 +11,7 @@ User-facing overview: ``docs/AGENTS.md``.
 
 from __future__ import annotations
 
-from utk_curio.backend.app.agents import builtin, imports, project_agents, storage
+from utk_curio.backend.app.agents import builtin, imports, project_agents, publications, storage
 from utk_curio.backend.app.agents.manifest import AgentManifest
 from utk_curio.backend.app.projects import storage as projects_storage
 
@@ -25,7 +25,13 @@ class AgentServiceError(Exception):
 
 
 def _manifest_to_card(
-    m: AgentManifest, *, scope: str, imported: bool, installed_in_project: bool
+    m: AgentManifest,
+    *,
+    scope: str,
+    imported: bool,
+    installed_in_project: bool,
+    published: bool = False,
+    publishable: bool = False,
 ) -> dict:
     """Serialize a definition to the camelCase card the drawer consumes."""
     return {
@@ -40,15 +46,19 @@ def _manifest_to_card(
         "provenance": {"publisher": m.provenance.publisher, "trust": m.provenance.trust},
         "imported": imported,
         "installedInProject": installed_in_project,
+        "published": published,
+        "publishable": publishable,
         "scope": scope,
     }
 
 
 def _resolve_definition(user_key: str, coord: str) -> AgentManifest | None:
-    """Resolve a coordinate to a definition — user store first, then the built-in roster."""
+    """Resolve a coordinate — user store, then the built-in roster, then published catalog."""
     m = storage.load_installed_agent_definition(user_key, coord)
     if m is None:
         m = builtin.get_builtin_manifest(coord)
+    if m is None:
+        m = publications.get_published_manifest(coord)
     return m
 
 
@@ -68,14 +78,21 @@ def list_global_catalog(user_key: str, project_id: str | None = None) -> list[di
         spec = projects_storage.read_spec(user_key, project_id)
         if spec is not None:
             installed = set(project_agents.project_agents(spec))
+    # Global Catalog = built-in roster ∪ published definitions (published wins on dupes).
+    by_dir: dict[str, tuple[AgentManifest, bool]] = {}
+    for m in builtin.list_builtin_manifests():
+        by_dir[m.dir_name] = (m, False)
+    for m in publications.list_published():
+        by_dir[m.dir_name] = (m, True)
     return [
         _manifest_to_card(
             m,
             scope="global",
-            imported=m.dir_name in imported,
-            installed_in_project=m.dir_name in installed,
+            imported=dir_name in imported,
+            installed_in_project=dir_name in installed,
+            published=published,
         )
-        for m in builtin.list_builtin_manifests()
+        for dir_name, (m, published) in sorted(by_dir.items())
     ]
 
 
@@ -87,7 +104,18 @@ def list_my_imports(user_key: str) -> list[dict]:
         m = _resolve_definition(user_key, coord)
         if m is None:
             continue
-        out.append(_manifest_to_card(m, scope="my-imports", imported=True, installed_in_project=False))
+        # Publishable only when it is an owned, store-backed definition (not a built-in).
+        store_backed = storage.load_installed_agent_definition(user_key, coord) is not None
+        out.append(
+            _manifest_to_card(
+                m,
+                scope="my-imports",
+                imported=True,
+                installed_in_project=False,
+                published=publications.is_published(coord),
+                publishable=store_backed,
+            )
+        )
     return out
 
 
@@ -147,3 +175,31 @@ def uninstall_from_project(user_key: str, project_id: str, coord: str) -> dict:
         project_agents.set_project_agents(spec, [c for c in current if c != coord])
         projects_storage.write_spec(user_key, project_id, spec)
     return {"agents": project_agents.project_agents(spec)}
+
+
+def publish_agent(user_key: str, coord: str) -> dict:
+    """Publish an owned, store-backed imported definition to the Global Catalog.
+
+    Imported-only (`DEC-030`): the coordinate must resolve to a definition in the
+    user's own store (not a built-in / global / absent one) and be in My Imports.
+    Built-ins are not store-backed, so they are rejected here.
+    """
+    m = storage.load_installed_agent_definition(user_key, coord)
+    if m is None:
+        raise AgentServiceError(
+            "only an owned, imported definition can be published; built-in, global, or "
+            "absent definitions cannot",
+            400,
+        )
+    if coord not in imports.load_imported_agents(user_key):
+        raise AgentServiceError("import the definition before publishing it", 400)
+    publications.publish_from_dir(storage.agent_definition_dir(user_key, coord), coord)
+    return {"coord": coord, "published": True}
+
+
+def unpublish_agent(user_key: str, coord: str) -> dict:
+    """Remove an owned definition from the Global Catalog (only its owner may)."""
+    if storage.load_installed_agent_definition(user_key, coord) is None:
+        raise AgentServiceError("only the owning account can unpublish this definition", 403)
+    publications.unpublish(coord)
+    return {"coord": coord, "published": False}

@@ -164,10 +164,14 @@ The `/api/agents` endpoints ([`app/agents/routes.py`](../utk_curio/backend/app/a
 | `GET /api/agents/projects/<projectId>` | Installed | List the project's installed templates from its `dataflow.agents` lockfile. |
 | `POST /api/agents/projects/<projectId>/install` `{coord}` | Installed | Add it to that project's lockfile. Explicit; never auto-imports. |
 | `DELETE /api/agents/projects/<projectId>/<coord>` | Installed | Remove it from that project's lockfile. |
+| `POST /api/agents/publications` `{coord}` | Publish | Publish an **owned, imported, store-backed** definition to the Global Catalog (imported-only — rejects built-in/global/absent). |
+| `DELETE /api/agents/publications/<coord>` | Publish | Unpublish it (owner only). |
 
 Each endpoint requires auth; project endpoints check ownership (404 if the project isn't the caller's). A card carries `id`, `version`, `dirName`, `name`, `category`, `purpose`, `capabilities`, `hooks`, `provenance`, and the `imported` / `installedInProject` flags the drawer uses to pick the right action controls.
 
-The **Global Catalog** is the 13 built-in agents — the migrated prompt behaviors (Chat, Debug, Node Explainer, Dataflow Explainer, Connection Builder, the planners/validators, etc.). They're defined as a data-driven roster in [`app/agents/builtin.py`](../utk_curio/backend/app/agents/builtin.py), generated from the canonical prompt→agent map over `utk_curio/llm-prompts/*.txt` and validated through the manifest contract, so a built-in can never drift from the schema. A built-in resolves for Import/Install straight from the roster (no prior store copy needed). The generated-content evaluator is intentionally absent (no prompt asset yet). The imported-only **Publish** endpoint is still to come.
+The **Global Catalog** is the 13 built-in agents ∪ any **published** definitions. The built-ins are the migrated prompt behaviors (Chat, Debug, Node Explainer, Dataflow Explainer, Connection Builder, the planners/validators, etc.), defined as a data-driven roster in [`app/agents/builtin.py`](../utk_curio/backend/app/agents/builtin.py), generated from the canonical prompt→agent map over `utk_curio/llm-prompts/*.txt` and validated through the manifest contract. A built-in resolves for Import/Install straight from the roster (no prior store copy needed). The generated-content evaluator is intentionally absent (no prompt asset yet).
+
+**Publish is imported-only** (`DEC-030`): only an owned, imported, store-backed definition can be published — a built-in (or any global/absent) coordinate is rejected. Publishing copies the definition into a deployment-shared catalog at `.curio/agents-catalog/<id>@<version>/` ([`app/agents/publications.py`](../utk_curio/backend/app/agents/publications.py)), where every user's Global Catalog then lists it. A My Imports card carries `publishable` (owned + store-backed) and `published` flags, so the drawer's Publish pill only appears for eligible definitions. Today the store holds only built-ins (which are not publishable), so Publish becomes reachable once user-authored/uploaded imports exist.
 
 ---
 

@@ -70,6 +70,31 @@ def remove_import(coord: str):
     return jsonify(agents_services.remove_import(_user_dir_key(g.user), coord)), 200
 
 
+# ── Publish to the Global Catalog (imported-only) ────────────────────────────
+@agents_bp.route("/publications", methods=["POST"])
+@require_auth
+def publish_agent():
+    body = request.get_json(silent=True) or {}
+    coord = body.get("coord")
+    if not isinstance(coord, str):
+        return _error("body must include 'coord'")
+    try:
+        payload = agents_services.publish_agent(_user_dir_key(g.user), coord)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify(payload), 201
+
+
+@agents_bp.route("/publications/<coord>", methods=["DELETE"])
+@require_auth
+def unpublish_agent(coord: str):
+    try:
+        payload = agents_services.unpublish_agent(_user_dir_key(g.user), coord)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify(payload), 200
+
+
 # ── Installed in this project ────────────────────────────────────────────────
 @agents_bp.route("/projects/<project_id>", methods=["GET"])
 @require_auth

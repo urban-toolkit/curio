@@ -177,3 +177,51 @@ class TestProjectInstall:
             headers=_auth(token),
         )
         assert client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"] == []
+
+
+class TestPublish:
+    def test_publish_owned_import_appears_in_catalog(self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        coord = _write_def(user, "agent.my-custom", "1.0.0")  # owned, store-backed
+        client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
+        r = client.post("/api/agents/publications", json={"coord": coord}, headers=_auth(token))
+        assert r.status_code == 201, r.get_data(as_text=True)
+        cat = client.get("/api/agents/catalog", headers=_auth(token)).get_json()["agents"]
+        pub = next(a for a in cat if a["id"] == "agent.my-custom")
+        assert pub["published"] is True
+
+    def test_publish_builtin_rejected(self, client, user_and_token, tmp_curio):
+        # A built-in is not an owned store-backed import → cannot be published.
+        _, token = user_and_token
+        client.post("/api/agents/imports", json={"coord": "agent.node-explainer@1.0.0"}, headers=_auth(token))
+        r = client.post(
+            "/api/agents/publications",
+            json={"coord": "agent.node-explainer@1.0.0"},
+            headers=_auth(token),
+        )
+        assert r.status_code == 400
+
+    def test_publish_not_imported_rejected(self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        coord = _write_def(user, "agent.my-custom", "1.0.0")  # in store but not imported
+        r = client.post("/api/agents/publications", json={"coord": coord}, headers=_auth(token))
+        assert r.status_code == 400
+
+    def test_publishable_flag_owned_vs_builtin(self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        client.post("/api/agents/imports", json={"coord": "agent.node-explainer@1.0.0"}, headers=_auth(token))
+        coord = _write_def(user, "agent.my-custom", "1.0.0")
+        client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
+        by_id = {a["id"]: a for a in client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]}
+        assert by_id["agent.node-explainer"]["publishable"] is False  # built-in
+        assert by_id["agent.my-custom"]["publishable"] is True  # owned store-backed
+
+    def test_unpublish(self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        coord = _write_def(user, "agent.my-custom", "1.0.0")
+        client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
+        client.post("/api/agents/publications", json={"coord": coord}, headers=_auth(token))
+        r = client.delete(f"/api/agents/publications/{coord}", headers=_auth(token))
+        assert r.status_code == 200
+        cat = client.get("/api/agents/catalog", headers=_auth(token)).get_json()["agents"]
+        assert not any(a["id"] == "agent.my-custom" for a in cat)
