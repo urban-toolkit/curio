@@ -9,6 +9,8 @@ jest.mock("../../api/agentsApi", () => ({
     removeImport: jest.fn(),
     installToProject: jest.fn(),
     uninstallFromProject: jest.fn(),
+    publish: jest.fn(),
+    unpublish: jest.fn(),
   },
 }));
 
@@ -30,6 +32,8 @@ function card(id: string) {
     provenance: { publisher: "curio", trust: "built-in" },
     imported: false,
     installedInProject: false,
+    published: false,
+    publishable: false,
     scope: "global" as const,
   };
 }
@@ -41,6 +45,7 @@ beforeEach(() => {
   api.listProjectAgents.mockResolvedValue({ agents: [card("agent.debug-agent")] });
   api.import.mockResolvedValue({ coord: "x", imported: true });
   api.installToProject.mockResolvedValue({ agents: [] });
+  api.publish.mockResolvedValue({ coord: "x", published: true });
 });
 
 describe("useAgentsCatalogDrawer", () => {
@@ -75,6 +80,15 @@ describe("useAgentsCatalogDrawer", () => {
     expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.node-explainer@1.0.0");
     expect(api.catalog).toHaveBeenCalled(); // reloaded
     expect(result.current.busyCoord).toBeNull();
+  });
+
+  it("publish calls the endpoint then reloads", async () => {
+    const { result } = renderHook(() => useAgentsCatalogDrawer(true, "p1"));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      await result.current.publish("agent.my-custom@1.0.0");
+    });
+    expect(api.publish).toHaveBeenCalledWith("agent.my-custom@1.0.0");
   });
 
   it("surfaces errors without throwing", async () => {

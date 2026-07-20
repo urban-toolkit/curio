@@ -23,6 +23,8 @@ export interface AgentsCatalogDrawerState {
   removeImport: (coord: string) => Promise<void>;
   install: (coord: string) => Promise<void>;
   uninstall: (coord: string) => Promise<void>;
+  publish: (coord: string) => Promise<void>;
+  unpublish: (coord: string) => Promise<void>;
 }
 
 export function useAgentsCatalogDrawer(
@@ -96,5 +98,7 @@ export function useAgentsCatalogDrawer(
       run(coord, () => (projectId ? agentsApi.installToProject(projectId, coord) : Promise.resolve())),
     uninstall: (coord) =>
       run(coord, () => (projectId ? agentsApi.uninstallFromProject(projectId, coord) : Promise.resolve())),
+    publish: (coord) => run(coord, () => agentsApi.publish(coord)),
+    unpublish: (coord) => run(coord, () => agentsApi.unpublish(coord)),
   };
 }

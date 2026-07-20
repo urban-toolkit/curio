@@ -26,6 +26,9 @@ export interface AgentCard {
   provenance: { publisher: string; trust: string | null };
   imported: boolean;
   installedInProject: boolean;
+  published: boolean;
+  /** Eligible for Publish: an owned, store-backed definition (not a built-in). */
+  publishable: boolean;
   scope: "global" | "my-imports" | "installed";
 }
 
@@ -82,5 +85,18 @@ export const agentsApi = {
       `/api/agents/projects/${encodeURIComponent(projectId)}/${coordParam(coord)}`,
       { method: "DELETE" },
     );
+  },
+
+  /** Publish an owned, imported definition to the Global Catalog (imported-only). */
+  publish(coord: string): Promise<{ coord: string; published: boolean }> {
+    return apiFetch("/api/agents/publications", {
+      method: "POST",
+      body: JSON.stringify({ coord }),
+    });
+  },
+
+  /** Unpublish an owned definition (owner only). */
+  unpublish(coord: string): Promise<{ coord: string; published: boolean }> {
+    return apiFetch(`/api/agents/publications/${coordParam(coord)}`, { method: "DELETE" });
   },
 };

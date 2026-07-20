@@ -64,4 +64,19 @@ describe("agentsApi", () => {
       { method: "DELETE" },
     );
   });
+
+  it("publish() POSTs the coord to publications", () => {
+    agentsApi.publish("agent.my-custom@1.0.0");
+    expect(mockFetch).toHaveBeenCalledWith("/api/agents/publications", {
+      method: "POST",
+      body: JSON.stringify({ coord: "agent.my-custom@1.0.0" }),
+    });
+  });
+
+  it("unpublish() DELETEs the escaped coord under publications", () => {
+    agentsApi.unpublish("agent.my-custom@1.0.0");
+    expect(mockFetch).toHaveBeenCalledWith("/api/agents/publications/agent.my-custom%401.0.0", {
+      method: "DELETE",
+    });
+  });
 });

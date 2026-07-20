@@ -10,6 +10,8 @@ jest.mock("../../api/agentsApi", () => ({
     removeImport: jest.fn(),
     installToProject: jest.fn(),
     uninstallFromProject: jest.fn(),
+    publish: jest.fn(),
+    unpublish: jest.fn(),
   },
 }));
 
@@ -31,6 +33,8 @@ function card(id: string, over: Record<string, unknown> = {}) {
     provenance: { publisher: "curio", trust: "built-in" },
     imported: false,
     installedInProject: false,
+    published: false,
+    publishable: false,
     scope: "global",
     ...over,
   };
@@ -41,6 +45,7 @@ beforeEach(() => {
   api.catalog.mockResolvedValue({ agents: [card("agent.node-explainer")] } as any);
   api.listImports.mockResolvedValue({ agents: [card("agent.chat-agent", { scope: "my-imports", imported: true })] } as any);
   api.installToProject.mockResolvedValue({ agents: [] } as any);
+  api.publish.mockResolvedValue({ coord: "x", published: true } as any);
 });
 
 describe("AgentsCatalogDrawer", () => {
@@ -73,6 +78,23 @@ describe("AgentsCatalogDrawer", () => {
     render(<AgentsCatalogDrawer presented projectId={null} onClose={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
     expect(screen.getByRole("button", { name: "Install" })).toBeDisabled();
+  });
+
+  it("shows Publish only for a publishable My Imports card and publishes on click", async () => {
+    api.listImports.mockResolvedValue({
+      agents: [
+        card("agent.my-custom", { scope: "my-imports", imported: true, publishable: true }),
+        card("agent.node-explainer", { scope: "my-imports", imported: true, publishable: false }),
+      ],
+    } as any);
+    render(<AgentsCatalogDrawer presented projectId="p1" onClose={jest.fn()} />);
+    fireEvent.click(screen.getByText("My Imports"));
+    await waitFor(() => expect(screen.getByText("my-custom")).toBeInTheDocument());
+    // Exactly one Publish control — the built-in card (publishable:false) shows none.
+    const publishBtns = screen.getAllByRole("button", { name: /publish/i });
+    expect(publishBtns).toHaveLength(1);
+    fireEvent.click(publishBtns[0]);
+    await waitFor(() => expect(api.publish).toHaveBeenCalledWith("agent.my-custom@1.0.0"));
   });
 
   it("clicking Install calls the install endpoint", async () => {

@@ -35,6 +35,8 @@ function card(id: string) {
     provenance: { publisher: "curio", trust: "built-in" },
     imported: true,
     installedInProject: true,
+    published: false,
+    publishable: true,
     scope: "installed" as const,
   };
 }

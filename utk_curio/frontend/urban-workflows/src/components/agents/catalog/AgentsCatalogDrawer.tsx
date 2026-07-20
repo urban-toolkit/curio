@@ -127,15 +127,18 @@ const AgentRow: React.FC<{
 
         {scope === "my-imports" ? (
           <>
-            {/* Publish is rendered here but gated off until the backend Publish
-                endpoint exists (allowPublish=false → no dead button). */}
+            {/* Publish → Catalog Hub. The pill only shows for eligible (owned,
+                store-backed) definitions — built-ins report publishable=false,
+                so no dead button appears. */}
             <CatalogPublishPill
               dirName={card.dirName}
-              published={false}
-              allowPublish={false}
-              busy={false}
-              onPublish={() => undefined}
+              published={card.published}
+              allowPublish={card.publishable}
+              busy={busy}
+              onPublish={() => state.publish(card.dirName)}
               variant="hub"
+              publishedTitle="Listed in the Agents Catalog Hub"
+              publishActionTitle="Publish this owned definition to the Agents Catalog Hub"
             />
             <button
               type="button"
