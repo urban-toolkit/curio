@@ -1,0 +1,38 @@
+/* Agent-row specifics layered over the shared packageKind* row structure
+   (ToolsMenuPackagePalette.module.css): a category-tinted avatar, a monospace
+   coordinate subtitle, and category-colored chips. Colors match the approved
+   concept and reuse the dataset chip palette where the hue is the same. */
+
+.avatarIcon {
+  /* Inherit the avatar container's category color (do not reuse
+     packageKindDragIcon, which pins a fixed light color). */
+  font-size: 1.4em;
+  color: inherit;
+}
+
+.coord {
+  font-family: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+  font-size: 9px;
+  color: rgba(251, 252, 246, 0.55);
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* ── category-tinted avatars (the drag handle box) ───────────────────────── */
+.avatar_canvas   { color: #fbaa69; background: rgba(251, 170, 105, 0.16); border-color: rgba(251, 170, 105, 0.40); }
+.avatar_data     { color: #7dd49a; background: rgba(76, 175, 114, 0.16);  border-color: rgba(76, 175, 114, 0.40); }
+.avatar_node     { color: #91bde8; background: rgba(91, 155, 213, 0.16);  border-color: rgba(91, 155, 213, 0.40); }
+.avatar_evaluate { color: #bea8f0; background: rgba(155, 127, 218, 0.16); border-color: rgba(155, 127, 218, 0.40); }
+.avatar_package  { color: #70dde8; background: rgba(38, 198, 218, 0.16);  border-color: rgba(38, 198, 218, 0.40); }
+.avatar_default  { color: #fbfcf6; }
+
+/* ── category-colored chips ──────────────────────────────────────────────── */
+.chip_canvas   { background: rgba(251, 170, 105, 0.22); color: #fbaa69; }
+.chip_data     { background: rgba(76, 175, 114, 0.22);  color: #7dd49a; }
+.chip_node     { background: rgba(91, 155, 213, 0.22);  color: #91bde8; }
+.chip_evaluate { background: rgba(155, 127, 218, 0.22); color: #bea8f0; }
+.chip_package  { background: rgba(38, 198, 218, 0.22);  color: #70dde8; }
+.chip_default  { /* inherit the neutral packageKindCategoryChip default */ }
