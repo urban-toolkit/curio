@@ -66,10 +66,28 @@ ENABLE_COLLAB = _env_flag("ENABLE_COLLAB", False)
 COLLAB_CORS_ORIGINS = os.environ.get("COLLAB_CORS_ORIGINS", "*")
 COLLAB_NAMESPACE = os.environ.get("COLLAB_NAMESPACE", "/collab")
 
-GUEST_LLM_API_TYPE = os.environ.get("GUEST_LLM_API_TYPE", "openai_compatible")
-GUEST_LLM_BASE_URL = os.environ.get("GUEST_LLM_BASE_URL", "")
-GUEST_LLM_API_KEY = os.environ.get("GUEST_LLM_API_KEY", "")
-GUEST_LLM_MODEL = os.environ.get("GUEST_LLM_MODEL", "gpt-4o-mini")
+# Default LLM provider — the single source of truth for provider/model/API
+# defaults when a user (or guest) has not configured their own. Seeded from the
+# existing sage200 OpenAI-compatible endpoint documented under the hookable-agents
+# plan's aiconn/ notes, so the app (and the future LangChain runtime) has no
+# separate built-in default: every default flows from this one place. Each value
+# is env-overridable; the API key reuses the AICONN_API_KEY name from the aiconn
+# connection harness.
+DEFAULT_LLM_API_TYPE = os.environ.get("CURIO_DEFAULT_LLM_API_TYPE", "openai_compatible")
+DEFAULT_LLM_BASE_URL = os.environ.get(
+    "CURIO_DEFAULT_LLM_BASE_URL", "https://sage200.evl.uic.edu/v1"
+)
+DEFAULT_LLM_MODEL = os.environ.get("CURIO_DEFAULT_LLM_MODEL", "llama4-nim")
+DEFAULT_LLM_API_KEY = os.environ.get("CURIO_DEFAULT_LLM_API_KEY") or os.environ.get(
+    "AICONN_API_KEY", ""
+)
+
+# Guest LLM config inherits the default provider above unless explicitly
+# overridden, so guests also default to the aiconn provider.
+GUEST_LLM_API_TYPE = os.environ.get("GUEST_LLM_API_TYPE", DEFAULT_LLM_API_TYPE)
+GUEST_LLM_BASE_URL = os.environ.get("GUEST_LLM_BASE_URL", DEFAULT_LLM_BASE_URL)
+GUEST_LLM_API_KEY = os.environ.get("GUEST_LLM_API_KEY", DEFAULT_LLM_API_KEY)
+GUEST_LLM_MODEL = os.environ.get("GUEST_LLM_MODEL", DEFAULT_LLM_MODEL)
 
 
 def _is_dev() -> bool:

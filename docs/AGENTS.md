@@ -9,6 +9,7 @@ This guide is in parts, plus a developer appendix:
 - [1. What is a hookable agent?](#1-what-is-a-hookable-agent) — the model and how it relates to node packages.
 - [2. The agent manifest](#2-the-agent-manifest) — the `manifest.json` contract, field by field.
 - [3. Capabilities](#3-capabilities) — semantic behavior contracts, and why they are never prompt filenames.
+- [4. The default LLM provider](#4-the-default-llm-provider) — the single default every agent (and the LLM chat) falls back to.
 - [Appendix: validating a manifest (developer-only)](#appendix-validating-a-manifest-developer-only).
 
 ---
@@ -104,6 +105,27 @@ node.output.interpret   dataset.fetch.author       connection.propose
 Capability ids are used for catalog discovery, orchestration resolution, compatibility, and substitution — **never for authorization**. Because they are contracts and not assets, a capability id **must not** contain a prompt filename, path separator, underscore, or `.txt`. So `node.explain` is valid; `single_box_explanation_prompt` or `prompts/explain.txt` are rejected. This keeps the "what" (capability) cleanly independent of the "how" (prompt asset), so a prompt can be edited or replaced without changing the capability contract.
 
 `delegatesTo` lets one agent compose over another's capabilities (an orchestrator delegating to specialists, for example). Delegation names a preferred implementation; it never grants permission and never triggers an import or install on its own.
+
+---
+
+## 4. The default LLM provider
+
+An agent's `providerRequirements` declare what it needs from a provider (e.g. `structured-output`); the *actual* provider, model, endpoint, and key come from configuration, not the manifest. Curio resolves this from a **single default** so there is no separate built-in default scattered through the code: when a user has not configured their own provider under **LLM Settings**, the app falls back to `config.DEFAULT_LLM_*`, seeded from the sage200 OpenAI-compatible endpoint.
+
+| Setting | Env var | Default |
+|---|---|---|
+| Provider type | `CURIO_DEFAULT_LLM_API_TYPE` | `openai_compatible` |
+| Base URL | `CURIO_DEFAULT_LLM_BASE_URL` | `https://sage200.evl.uic.edu/v1` |
+| Model | `CURIO_DEFAULT_LLM_MODEL` | `llama4-nim` |
+| API key | `CURIO_DEFAULT_LLM_API_KEY` / `AICONN_API_KEY` | *(unset)* |
+
+Resolution rules (`_resolve_llm_config` in [`app/api/routes.py`](../utk_curio/backend/app/api/routes.py)):
+
+- A user who has configured their own provider under **LLM Settings** keeps that exact config — the default never overrides or contaminates it (a configured Anthropic user never picks up the default base URL).
+- An **unconfigured** user falls back to the default provider above rather than being turned away.
+- **Guests** use `GUEST_LLM_*`, which inherits `DEFAULT_LLM_*` unless separately overridden, so guests default to the same provider.
+
+Operators point the whole install at a different default by setting the env vars above; individual users still override per-account under LLM Settings. The API key is read from `AICONN_API_KEY` (the same name used by the connection harness) when a dedicated `CURIO_DEFAULT_LLM_API_KEY` is not set.
 
 ---
 
