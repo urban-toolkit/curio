@@ -1,0 +1,86 @@
+import React from "react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+
+jest.mock("../../api/agentsApi", () => ({
+  agentsApi: {
+    catalog: jest.fn(),
+    listImports: jest.fn(),
+    listProjectAgents: jest.fn(),
+    import: jest.fn(),
+    removeImport: jest.fn(),
+    installToProject: jest.fn(),
+    uninstallFromProject: jest.fn(),
+  },
+}));
+
+import { agentsApi } from "../../api/agentsApi";
+import { AgentsCatalogDrawer } from "../../components/agents/catalog/AgentsCatalogDrawer";
+
+const api = agentsApi as jest.Mocked<typeof agentsApi>;
+
+function card(id: string, over: Record<string, unknown> = {}) {
+  return {
+    id,
+    version: "1.0.0",
+    dirName: `${id}@1.0.0`,
+    name: id.replace("agent.", ""),
+    category: "node",
+    purpose: "does a thing",
+    capabilities: ["node.explain"],
+    hooks: ["node"],
+    provenance: { publisher: "curio", trust: "built-in" },
+    imported: false,
+    installedInProject: false,
+    scope: "global",
+    ...over,
+  };
+}
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  api.catalog.mockResolvedValue({ agents: [card("agent.node-explainer")] } as any);
+  api.listImports.mockResolvedValue({ agents: [card("agent.chat-agent", { scope: "my-imports", imported: true })] } as any);
+  api.installToProject.mockResolvedValue({ agents: [] } as any);
+});
+
+describe("AgentsCatalogDrawer", () => {
+  it("renders nothing when not presented", () => {
+    const { container } = render(
+      <AgentsCatalogDrawer presented={false} projectId="p1" onClose={jest.fn()} />,
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders the three scopes and the global cards", async () => {
+    render(<AgentsCatalogDrawer presented projectId="p1" onClose={jest.fn()} />);
+    expect(screen.getByText("Global Catalog")).toBeInTheDocument();
+    expect(screen.getByText("My Imports")).toBeInTheDocument();
+    expect(screen.getByText("Installed in this project")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Install" })).toBeInTheDocument();
+  });
+
+  it("switching to My Imports fetches and shows Delete", async () => {
+    render(<AgentsCatalogDrawer presented projectId="p1" onClose={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("My Imports"));
+    await waitFor(() => expect(api.listImports).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByText("chat-agent")).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
+  });
+
+  it("Install disabled without a project", async () => {
+    render(<AgentsCatalogDrawer presented projectId={null} onClose={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Install" })).toBeDisabled();
+  });
+
+  it("clicking Install calls the install endpoint", async () => {
+    render(<AgentsCatalogDrawer presented projectId="p1" onClose={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Install" }));
+    await waitFor(() =>
+      expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.node-explainer@1.0.0"),
+    );
+  });
+});
