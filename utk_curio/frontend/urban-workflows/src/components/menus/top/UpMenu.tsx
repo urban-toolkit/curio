@@ -31,6 +31,7 @@ import {
     faSitemap,
     faCircleQuestion,
     faStore,
+    faRobot,
 } from "@fortawesome/free-solid-svg-icons";
 import logo from "assets/curio-2.png";
 import { UserMenu } from "components/login/UserMenu";
@@ -40,6 +41,7 @@ import { useNavigate } from "react-router-dom";
 import { useUserContext } from "../../../providers/UserProvider";
 import { useToastContext } from "../../../providers/ToastProvider";
 import { useNodeCatalogDrawer } from "../../../providers/NodeCatalogDrawerProvider";
+import { useAgentsCatalogDrawerControls } from "../../../providers/AgentsCatalogDrawerProvider";
 import { useDatasetCatalogDrawer } from "../../../providers/datasetCatalog";
 import { prefetchDatasetCatalog } from "../../../services/datasetCatalog";
 import { getCurrentProjectPackagesList } from "../../../registry/projectPackagesStore";
@@ -101,6 +103,7 @@ export default function UpMenu({
     const { showToast } = useToastContext();
     const ensureWorkflowDeps = useEnsureWorkflowDeps();
     const { openNodeCatalogDrawer } = useNodeCatalogDrawer();
+    const { openAgentsCatalogDrawer } = useAgentsCatalogDrawerControls();
     const { openDatasetCatalogDrawer } = useDatasetCatalogDrawer();
 
     const toggleMenu = (menu: string) => {
@@ -504,6 +507,16 @@ export default function UpMenu({
                             >
                                 <FontAwesomeIcon className={styles.dropDownIcon} icon={faStore} />
                                 <button className={styles.noStyleButton}>Node Catalog</button>
+                            </div>
+                            <div
+                                className={styles.dropDownRow}
+                                onClick={() => {
+                                    openAgentsCatalogDrawer();
+                                    setActiveMenu(null);
+                                }}
+                            >
+                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faRobot} />
+                                <button className={styles.noStyleButton}>Agents Catalog</button>
                             </div>
                             <div
                                 className={styles.dropDownRow}
