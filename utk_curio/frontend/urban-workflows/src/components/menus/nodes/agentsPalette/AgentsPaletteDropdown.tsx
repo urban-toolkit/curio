@@ -59,6 +59,11 @@ export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown() {
     e.dataTransfer.effectAllowed = "copy";
   };
 
+  const openDrawer = () => {
+    openAgentsCatalogDrawer();
+    setOpen(false);
+  };
+
   return (
     <div ref={rootRef} className={styles.root}>
       <button
@@ -77,14 +82,22 @@ export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown() {
         <div className={styles.panel} role="menu" aria-label="Installed agents">
           <div className={styles.title}>AGENTS</div>
           {agents.length === 0 ? (
-            <div className={styles.empty}>No agents installed in this project.</div>
+            <button type="button" className={styles.empty} onClick={openDrawer}>
+              No agents installed — browse the catalog →
+            </button>
           ) : (
             agents.map((a) => (
               <div
                 key={a.dirName}
                 className={styles.row}
+                role="button"
+                tabIndex={0}
                 draggable
                 onDragStart={(e) => onDragStart(e, a.dirName)}
+                onClick={openDrawer}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") openDrawer();
+                }}
                 title={a.purpose || a.capabilities.join(" · ")}
               >
                 <FontAwesomeIcon icon={faRobot} className={styles.rowIcon} />
@@ -97,10 +110,7 @@ export const AgentsPaletteDropdown = memo(function AgentsPaletteDropdown() {
             type="button"
             className={styles.footer}
             aria-label="Get more agents — open the Agents Catalog drawer"
-            onClick={() => {
-              openAgentsCatalogDrawer();
-              setOpen(false);
-            }}
+            onClick={openDrawer}
           >
             Get more agents +
           </button>

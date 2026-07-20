@@ -61,9 +61,19 @@
 }
 
 .empty {
+  display: block;
+  width: 100%;
   padding: 10px 6px;
+  background: none;
+  border: none;
+  text-align: left;
   font-size: 12px;
   color: var(--curio-text-secondary, #5b5c63);
+  cursor: pointer;
+}
+
+.empty:hover {
+  color: var(--curio-accent-sky-fg, #3567c7);
 }
 
 .row {

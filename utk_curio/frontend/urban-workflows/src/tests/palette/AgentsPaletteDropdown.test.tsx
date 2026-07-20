@@ -62,6 +62,23 @@ describe("AgentsPaletteDropdown", () => {
     expect(mockOpenDrawer).toHaveBeenCalled();
   });
 
+  it("clicking a row opens the drawer", async () => {
+    render(<AgentsPaletteDropdown />);
+    await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: /AGENTS/ }));
+    fireEvent.click(await screen.findByText("node-explainer"));
+    expect(mockOpenDrawer).toHaveBeenCalled();
+  });
+
+  it("empty state opens the drawer", async () => {
+    api.listProjectAgents.mockResolvedValue({ agents: [] });
+    render(<AgentsPaletteDropdown />);
+    await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: /AGENTS/ }));
+    fireEvent.click(screen.getByRole("button", { name: /browse the catalog/i }));
+    expect(mockOpenDrawer).toHaveBeenCalled();
+  });
+
   it("a row is a drag source writing the agent coordinate", async () => {
     render(<AgentsPaletteDropdown />);
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
