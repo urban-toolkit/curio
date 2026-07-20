@@ -293,3 +293,59 @@ class TestAttachments:
             headers=_auth(token),
         )
         assert r.status_code == 400
+
+
+class TestRun:
+    def _attach_builtin(self, client, token, project_id, coord="agent.node-explainer@1.0.0"):
+        client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
+        r = client.post(
+            f"/api/agents/projects/{project_id}/attachments",
+            json={"coord": coord, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        )
+        return r.get_json()["attachmentId"]
+
+    def test_run_dispatches_instruction_as_system(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.agents import builtin
+
+        captured = {}
+
+        def _fake_run(config, messages):
+            captured["messages"] = messages
+            return "hello from the model"
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion", _fake_run
+        )
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "explain this node"},
+            headers=_auth(token),
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)
+        assert r.get_json()["reply"] == "hello from the model"
+        msgs = captured["messages"]
+        assert msgs[0]["role"] == "system"
+        assert msgs[0]["content"] == builtin.read_instruction_text("agent.node-explainer@1.0.0")
+        assert msgs[1] == {"role": "user", "content": "explain this node"}
+
+    def test_run_unknown_attachment_404(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/nope/run",
+            json={"message": "hi"},
+            headers=_auth(token),
+        )
+        assert r.status_code == 404
+
+    def test_run_empty_message_400(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "   "},
+            headers=_auth(token),
+        )
+        assert r.status_code == 400

@@ -23,6 +23,7 @@ from utk_curio.backend.app.agents import (
 )
 from utk_curio.backend.app.agents.attachments import AttachmentError
 from utk_curio.backend.app.agents.manifest import AgentManifest
+from utk_curio.backend.app.agents.providers import ProviderConfig, run_chat_completion
 from utk_curio.backend.app.projects import storage as projects_storage
 
 
@@ -268,3 +269,48 @@ def detach_agent(user_key: str, project_id: str, attachment_id: str) -> dict:
     if removed:
         projects_storage.write_spec(user_key, project_id, spec)
     return {"attachmentId": attachment_id, "detached": removed}
+
+
+def _resolve_instruction_text(user_key: str, coord: str) -> str | None:
+    """The agent's instruction prompt text — built-in roster, else the definition's asset."""
+    text = builtin.read_instruction_text(coord)
+    if text is not None:
+        return text
+    m = storage.load_installed_agent_definition(user_key, coord)
+    base = None
+    if m is not None:
+        base = storage.agent_definition_dir(user_key, coord)
+    else:
+        m = publications.get_published_manifest(coord)
+        if m is not None:
+            base = publications.published_agent_dir(coord)
+    if m is None or base is None:
+        return None
+    asset = m.prompts.get("instruction")
+    if asset is None:
+        return None
+    path = base / asset.path
+    return path.read_text(encoding="utf-8") if path.is_file() else None
+
+
+def run_attachment(
+    user_key: str, project_id: str, attachment_id: str, message: str, config: ProviderConfig
+) -> dict:
+    """Run one turn of an attached agent: instruction prompt as system, the user's
+    message as the turn, dispatched through the provider port."""
+    spec = _read_spec_or_404(user_key, project_id)
+    record = attachments.get_attachment(spec, attachment_id)
+    if record is None:
+        raise AgentServiceError(f"attachment {attachment_id!r} not found", 404)
+    coord = record.get("coord", "")
+    instruction = _resolve_instruction_text(user_key, coord)
+    if instruction is None:
+        raise AgentServiceError(
+            f"no instruction prompt available for {coord!r} (not materialized)", 422
+        )
+    messages = [
+        {"role": "system", "content": instruction},
+        {"role": "user", "content": message},
+    ]
+    reply = run_chat_completion(config, messages)
+    return {"attachmentId": attachment_id, "coord": coord, "reply": reply}

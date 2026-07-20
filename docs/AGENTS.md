@@ -169,10 +169,13 @@ The `/api/agents` endpoints ([`app/agents/routes.py`](../utk_curio/backend/app/a
 | `GET /api/agents/projects/<projectId>/attachments` | Attach | List the project's private attachments. |
 | `POST /api/agents/projects/<projectId>/attachments` `{coord, target}` | Attach | Attach an installed template to a `{kind: node\|canvas\|connection, targetId?}`. Requires the template installed (no auto-install). |
 | `DELETE /api/agents/projects/<projectId>/attachments/<attachmentId>` | Attach | Detach the private instance. |
+| `POST /api/agents/projects/<projectId>/attachments/<attachmentId>/run` `{message}` | Run | Run one turn of the attached agent (its instruction prompt as system + your message) via the provider port; returns `{reply}`. |
 
 Each endpoint requires auth; project endpoints check ownership (404 if the project isn't the caller's). A card carries `id`, `version`, `dirName`, `name`, `category`, `purpose`, `capabilities`, `hooks`, `provenance`, and the `imported` / `installedInProject` flags the drawer uses to pick the right action controls.
 
 An **attachment** is a private agent instance bound to a target. It lives in the project's `spec["dataflow"]["agentAttachments"]` (alongside nodes/edges) and carries an `attachmentId` + a `sessionId` + an optimistic `revision` — no version/publish identity (`DEC-031`). Attaching requires the template to be installed in the project (never auto-installs), and a node/connection target must reference an existing node/edge.
+
+**Running** an attachment resolves its source definition's instruction prompt (for a built-in, the file in `utk_curio/llm-prompts/`), sends it as the system turn plus the caller's `message`, and dispatches through the provider port (§4) — so an attached built-in actually executes against the configured provider. Persistent chat history/sessions and the dock/chat UI are the next slice.
 
 The **Global Catalog** is the 13 built-in agents ∪ any **published** definitions. The built-ins are the migrated prompt behaviors (Chat, Debug, Node Explainer, Dataflow Explainer, Connection Builder, the planners/validators, etc.), defined as a data-driven roster in [`app/agents/builtin.py`](../utk_curio/backend/app/agents/builtin.py), generated from the canonical prompt→agent map over `utk_curio/llm-prompts/*.txt` and validated through the manifest contract. A built-in resolves for Import/Install straight from the roster (no prior store copy needed). The generated-content evaluator is intentionally absent (no prompt asset yet).
 

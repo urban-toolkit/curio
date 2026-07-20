@@ -184,3 +184,30 @@ def detach_agent(project_id: str, attachment_id: str):
     except AgentServiceError as exc:
         return _svc_error(exc)
     return jsonify(payload), 200
+
+
+@agents_bp.route("/projects/<project_id>/attachments/<attachment_id>/run", methods=["POST"])
+@require_auth
+def run_attachment(project_id: str, attachment_id: str):
+    """Run one turn of an attached agent and return its reply."""
+    # Lazy import: the provider-config resolver is the request-layer glue in the
+    # main api routes; importing it lazily avoids any startup import ordering.
+    from utk_curio.backend.app.agents.providers import ProviderConfig
+    from utk_curio.backend.app.api.routes import _resolve_llm_config
+
+    body = request.get_json(silent=True) or {}
+    message = body.get("message")
+    if not isinstance(message, str) or not message.strip():
+        return _error("body must include a non-empty 'message'")
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        api_key, api_type, base_url, model = _resolve_llm_config()
+        config = ProviderConfig(api_key=api_key, api_type=api_type, base_url=base_url, model=model)
+        payload = agents_services.run_attachment(
+            _user_dir_key(g.user), project_id, attachment_id, message, config
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify(payload), 200

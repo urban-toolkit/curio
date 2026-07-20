@@ -130,3 +130,12 @@ def get_builtin_manifest(coord: str) -> AgentManifest | None:
     if spec is None:
         return None
     return parse_agent_manifest(build_builtin_manifest(spec), where=spec.agent_id)
+
+
+def read_instruction_text(coord: str) -> str | None:
+    """Read a built-in's instruction prompt text from ``llm-prompts/``, or None."""
+    spec = _by_coord().get(coord)
+    if spec is None:
+        return None
+    path = PROMPT_SOURCE_DIR / spec.prompt_file
+    return path.read_text(encoding="utf-8") if path.is_file() else None
