@@ -29,7 +29,7 @@ Agent package ids always begin with **`agent.`**, which keeps them distinct from
 
 Agents follow the same **catalog model** as node packages and datasets — you browse a shared catalog, import/install into your own scope, and (for definitions you own) publish back to the catalog hub. The manifest is the foundation that model is built on; this document starts there.
 
-Open the drawer from the top menu: **Data → Agents Catalog**. It has the three scope tabs — **Global Catalog**, **My Imports**, **Installed in this project** — reusing the same drawer chrome as the Node and Data catalogs.
+Open the drawer from the top menu: **Data → Agents Catalog**. It has the three scope tabs — **Global Catalog**, **My Imports**, **Installed in this project** — reusing the same drawer chrome as the Node and Data catalogs. The agents installed in the open project also appear in the **AGENTS** palette in the left tools panel (alongside DATA and PACKAGES), with a **Get more agents +** shortcut back to the drawer; palette rows are draggable and action-free.
 
 | Concept | Node package | Hookable agent |
 |---|---|---|

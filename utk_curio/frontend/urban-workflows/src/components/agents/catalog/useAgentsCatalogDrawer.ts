@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { agentsApi, AgentCard } from "../../../api/agentsApi";
+import { notifyAgentsPaletteRefresh } from "../../../utils/agentsPaletteEvents";
 
 /**
  * Self-contained data hook for the Agents Catalog drawer. Owns the active scope,
@@ -70,6 +71,7 @@ export function useAgentsCatalogDrawer(
       setError(null);
       try {
         await fn();
+        notifyAgentsPaletteRefresh(); // keep the AGENTS palette in sync after a lifecycle change
         await fetchScope(scope);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Action failed");
