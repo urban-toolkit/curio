@@ -24,6 +24,27 @@ export function readAgentDragCoord(dt: DataTransfer | null): string | null {
   return coord || null;
 }
 
+/** The attach target for an agent drop. Mirrors the backend contract
+ * (`app/agents/attachments.py`): a node/connection target carries the graph
+ * element's id; canvas is the project-wide fallback. */
+export type AgentDropTarget =
+  | { kind: "node"; targetId: string }
+  | { kind: "canvas" };
+
+/**
+ * Resolve which target an agent was dropped on. React Flow renders every node
+ * wrapper as `.react-flow__node` carrying `data-id={node.id}`, so we walk up from
+ * the drop's DOM target to that wrapper and read the id. Dropping anywhere off a
+ * node (the pane, background) falls back to the canvas.
+ */
+export function resolveAgentDropTarget(eventTarget: EventTarget | null): AgentDropTarget {
+  const el = eventTarget as Element | null;
+  const nodeEl =
+    el && typeof el.closest === "function" ? el.closest(".react-flow__node") : null;
+  const targetId = nodeEl?.getAttribute("data-id");
+  return targetId ? { kind: "node", targetId } : { kind: "canvas" };
+}
+
 /** Refresh signal for the attachment dock, dispatched after attach/detach so the
  * dock re-reads the project's attachments without a reload. */
 export const AGENT_DOCK_REFRESH_EVENT = "curio:agent-dock-refresh";

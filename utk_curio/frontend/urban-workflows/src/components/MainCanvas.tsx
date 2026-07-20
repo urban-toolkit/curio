@@ -45,7 +45,7 @@ import {
     readDatasetDragPayload,
 } from "../services/datasetCatalog";
 import { agentsApi } from "../api/agentsApi";
-import { readAgentDragCoord, notifyAgentDockRefresh } from "../utils/agentsPaletteEvents";
+import { readAgentDragCoord, notifyAgentDockRefresh, resolveAgentDropTarget } from "../utils/agentsPaletteEvents";
 import { AgentDockOverlay } from "./agents/attach/AgentDockOverlay";
 
 const CANVAS_EXTENT: [[number, number], [number, number]] = [[-2000, -2000], [6000, 6000]];
@@ -313,12 +313,14 @@ export function MainCanvas() {
                 showToast("Save the project before attaching an agent.", "error");
                 return;
             }
+            const target = resolveAgentDropTarget(event.target);
+            const where = target.kind === "node" ? "the node" : "the canvas";
             agentsApi
-                .attach(projectId, agentCoord, { kind: "canvas" })
+                .attach(projectId, agentCoord, target)
                 .then(() => {
                     notifyAgentDockRefresh();
                     markDirty();
-                    showToast("Agent attached to the canvas.", "success");
+                    showToast(`Agent attached to ${where}.`, "success");
                 })
                 .catch((e: any) => showToast(e?.message || "Attach failed.", "error"));
             return;
