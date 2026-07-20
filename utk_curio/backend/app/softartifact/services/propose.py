@@ -35,10 +35,10 @@ def _parse_proposal_json(llm_text: str) -> dict:
     except json.JSONDecodeError:
         # how to deal with it though? TODO
         # model returned plain text instead of JSON
-        return {
-            "proposal": f"your AI doesnt return actual json, sad AI here's what it's return: \n {clean} ",
-            "rationale": ""
-        }
+        return (
+            {"dataflow": {"name": "", "nodes": [], "edges": []}},
+            f"Model did not return JSON:\n{clean}",
+        )
     
     #guard if json is not a dictionary 
     if not isinstance(parsed, dict):

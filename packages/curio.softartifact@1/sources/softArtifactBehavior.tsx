@@ -512,7 +512,13 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
       artifactId: null,
       sourceFile: file.name,
       mimeType: file.type || 'application/octet-stream',
-      status: 'empty'
+      status: 'empty',
+      errorMessage: undefined,
+      explanation: undefined,
+      guidance: undefined,
+      suggestions: undefined,
+      proposal: undefined,
+      rationale: undefined,
     });
   }
 
