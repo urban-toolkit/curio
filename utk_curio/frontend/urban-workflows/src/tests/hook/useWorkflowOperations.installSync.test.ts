@@ -41,6 +41,7 @@ import { useWorkflowOperations } from "../../hook/useWorkflowOperations";
 import { projectsApi } from "../../api/projectsApi";
 import { TrillGenerator } from "../../TrillGenerator";
 import { DATASET_CATALOG_REFRESH_EVENT } from "../../services/datasetCatalog/datasetCatalogApi";
+import { AGENT_DOCK_REFRESH_EVENT } from "../../utils/agentsPaletteEvents";
 
 const makeDeps = () =>
   ({
@@ -169,6 +170,38 @@ describe("persistInstalledDataset", () => {
     // The catalog refresh fan-out fired so open palettes/drawers refetch.
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: DATASET_CATALOG_REFRESH_EVENT }),
+    );
+    dispatch.mockRestore();
+  });
+
+  it("fires the agent-dock refresh after an update save so pruned attachment tiles disappear", async () => {
+    // The backend prunes attachments for deleted nodes on save; the dock must
+    // reconcile from the persisted spec without a reload.
+    (projectsApi.create as jest.Mock).mockResolvedValue({
+      id: "proj-1",
+      name: "wf",
+      spec: { dataflow: { datasets: [], packages: [] } },
+    });
+    (projectsApi.update as jest.Mock).mockResolvedValue({
+      id: "proj-1",
+      name: "wf",
+      spec: { dataflow: { datasets: [], packages: [] } },
+    });
+    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
+
+    // Create pins the project id so the next save takes the UPDATE branch.
+    await act(async () => {
+      await result.current.ensureProjectId();
+    });
+
+    const dispatch = jest.spyOn(window, "dispatchEvent");
+    await act(async () => {
+      await result.current.saveCurrentProject();
+    });
+
+    expect(projectsApi.update).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: AGENT_DOCK_REFRESH_EVENT }),
     );
     dispatch.mockRestore();
   });

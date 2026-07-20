@@ -25,6 +25,7 @@ import { fitViewWithMenuOffset } from "../utils/fitViewWithMenuOffset";
 import { TrillGenerator } from "../TrillGenerator";
 import { projectsApi, OutputRef, DatasetInstallWarning } from "../api/projectsApi";
 import { buildSaveableLiveOutputs } from "../utils/saveOutputDataset";
+import { notifyAgentDockRefresh } from "../utils/agentsPaletteEvents";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
 import {
     notifyDatasetCatalogRefresh,
@@ -665,6 +666,11 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                 name,
             });
             syncDatasetsFromSavedSpec(detail.spec);
+            // The backend prunes attachments for deleted nodes/edges (and
+            // preserves the agent lockfile) on save, so reconcile the dock with
+            // the freshly-persisted spec — a just-deleted node's tile disappears
+            // without a reload. Mirrors the dataset-catalog refresh above.
+            notifyAgentDockRefresh();
             setProjectSavedAt(new Date());
             setProjectDirty(false);
             return detail;
