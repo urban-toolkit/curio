@@ -1,5 +1,13 @@
 .root {
   position: relative;
+  /* The palette dock (.paletteDock) is pointer-events: none so clicks fall
+     through its gaps to the canvas; each dropdown must re-enable pointer events
+     on its own subtree — matching the Datasets/Packages palettes. */
+  pointer-events: none;
+}
+
+.root > * {
+  pointer-events: auto;
 }
 
 .trigger {

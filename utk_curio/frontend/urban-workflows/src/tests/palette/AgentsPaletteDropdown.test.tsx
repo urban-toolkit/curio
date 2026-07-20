@@ -91,6 +91,21 @@ describe("AgentsPaletteDropdown", () => {
     expect(setData).toHaveBeenCalledWith(AGENT_DRAG_MIME, "agent.node-explainer@1.0.0");
   });
 
+  // The palette dock is pointer-events: none; the root re-enables events via a
+  // `.root > *` selector, so the trigger and the open panel must stay DIRECT
+  // children of the root. This guards against a refactor that nests them and
+  // silently makes the dropdown click-through to the canvas again.
+  it("keeps the trigger and open panel as direct children of the root", async () => {
+    render(<AgentsPaletteDropdown />);
+    await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
+    const trigger = screen.getByRole("button", { name: /AGENTS/ });
+    const root = trigger.parentElement as HTMLElement;
+    expect(root.className).toContain("root");
+    fireEvent.click(trigger);
+    const panel = await screen.findByRole("menu", { name: /Installed agents/i });
+    expect(panel.parentElement).toBe(root);
+  });
+
   it("refreshes on the palette-refresh event", async () => {
     render(<AgentsPaletteDropdown />);
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalledTimes(1));
