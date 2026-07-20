@@ -87,6 +87,46 @@ class TestMyImports:
         assert client.get("/api/agents/imports").status_code in (401, 403)
 
 
+class TestGlobalCatalog:
+    def test_lists_thirteen_builtins(self, client, user_and_token, tmp_curio):
+        _, token = user_and_token
+        resp = client.get("/api/agents/catalog", headers=_auth(token))
+        assert resp.status_code == 200
+        agents = resp.get_json()["agents"]
+        assert len(agents) == 13
+        assert all(a["scope"] == "global" and a["provenance"]["trust"] == "built-in" for a in agents)
+        assert "agent.node-explainer" in {a["id"] for a in agents}
+
+    def test_import_a_builtin(self, client, user_and_token, tmp_curio):
+        # A built-in resolves without being written to the user store first.
+        _, token = user_and_token
+        coord = "agent.node-explainer@1.0.0"
+        r = client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
+        assert r.status_code == 201, r.get_data(as_text=True)
+        imports_listed = client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]
+        assert [a["dirName"] for a in imports_listed] == [coord]
+        # And the catalog now marks it imported.
+        cat = client.get("/api/agents/catalog", headers=_auth(token)).get_json()["agents"]
+        ne = next(a for a in cat if a["id"] == "agent.node-explainer")
+        assert ne["imported"] is True
+
+    def test_install_a_builtin_into_project(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        coord = "agent.dataflow-task-planner@1.0.0"
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/install",
+            json={"coord": coord},
+            headers=_auth(token),
+        )
+        assert r.status_code == 201, r.get_data(as_text=True)
+        assert r.get_json()["agents"] == [coord]
+        cat = client.get(
+            f"/api/agents/catalog?projectId={alice_project}", headers=_auth(token)
+        ).get_json()["agents"]
+        planner = next(a for a in cat if a["id"] == "agent.dataflow-task-planner")
+        assert planner["installedInProject"] is True
+
+
 class TestProjectInstall:
     def test_install_list_uninstall(self, client, user_and_token, tmp_curio, alice_project):
         user, token = user_and_token

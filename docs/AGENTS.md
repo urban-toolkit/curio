@@ -155,6 +155,7 @@ The `/api/agents` endpoints ([`app/agents/routes.py`](../utk_curio/backend/app/a
 
 | Method + path | Scope | Effect |
 |---|---|---|
+| `GET /api/agents/catalog` `?projectId=` | Global Catalog | List the built-in agent definitions available to import/install (marks which are already imported/installed). |
 | `GET /api/agents/imports` | My Imports | List the account's imported definitions (as cards). |
 | `POST /api/agents/imports` `{coord}` | My Imports | Record `<id>@<version>` as imported. Never installs into a project. |
 | `DELETE /api/agents/imports/<coord>` | My Imports | Drop it from My Imports. |
@@ -162,7 +163,9 @@ The `/api/agents` endpoints ([`app/agents/routes.py`](../utk_curio/backend/app/a
 | `POST /api/agents/projects/<projectId>/install` `{coord}` | Installed | Add it to that project's lockfile. Explicit; never auto-imports. |
 | `DELETE /api/agents/projects/<projectId>/<coord>` | Installed | Remove it from that project's lockfile. |
 
-Each endpoint requires auth; project endpoints check ownership (404 if the project isn't the caller's). A card carries `id`, `version`, `dirName`, `name`, `category`, `purpose`, `capabilities`, `hooks`, `provenance`, and the `imported` / `installedInProject` flags the drawer uses to pick the right action controls. The **Global Catalog** scope and imported-only **Publish** endpoint arrive with the shared catalog source (once the built-in agent definitions are authored).
+Each endpoint requires auth; project endpoints check ownership (404 if the project isn't the caller's). A card carries `id`, `version`, `dirName`, `name`, `category`, `purpose`, `capabilities`, `hooks`, `provenance`, and the `imported` / `installedInProject` flags the drawer uses to pick the right action controls.
+
+The **Global Catalog** is the 13 built-in agents — the migrated prompt behaviors (Chat, Debug, Node Explainer, Dataflow Explainer, Connection Builder, the planners/validators, etc.). They're defined as a data-driven roster in [`app/agents/builtin.py`](../utk_curio/backend/app/agents/builtin.py), generated from the canonical prompt→agent map over `utk_curio/llm-prompts/*.txt` and validated through the manifest contract, so a built-in can never drift from the schema. A built-in resolves for Import/Install straight from the roster (no prior store copy needed). The generated-content evaluator is intentionally absent (no prompt asset yet). The imported-only **Publish** endpoint is still to come.
 
 ---
 

@@ -11,7 +11,7 @@ User-facing overview: ``docs/AGENTS.md``.
 
 from __future__ import annotations
 
-from utk_curio.backend.app.agents import imports, project_agents, storage
+from utk_curio.backend.app.agents import builtin, imports, project_agents, storage
 from utk_curio.backend.app.agents.manifest import AgentManifest
 from utk_curio.backend.app.projects import storage as projects_storage
 
@@ -44,20 +44,47 @@ def _manifest_to_card(
     }
 
 
-def _require_definition(user_key: str, coord: str) -> AgentManifest:
+def _resolve_definition(user_key: str, coord: str) -> AgentManifest | None:
+    """Resolve a coordinate to a definition — user store first, then the built-in roster."""
     m = storage.load_installed_agent_definition(user_key, coord)
+    if m is None:
+        m = builtin.get_builtin_manifest(coord)
+    return m
+
+
+def _require_definition(user_key: str, coord: str) -> AgentManifest:
+    m = _resolve_definition(user_key, coord)
     if m is None:
         raise AgentServiceError(f"no agent definition {coord!r} available", 404)
     return m
 
 
 # ── read ────────────────────────────────────────────────────────────────────
+def list_global_catalog(user_key: str, project_id: str | None = None) -> list[dict]:
+    """The Global Catalog: the built-in agent definitions available to import/install."""
+    imported = imports.load_imported_agents(user_key)
+    installed: set[str] = set()
+    if project_id:
+        spec = projects_storage.read_spec(user_key, project_id)
+        if spec is not None:
+            installed = set(project_agents.project_agents(spec))
+    return [
+        _manifest_to_card(
+            m,
+            scope="global",
+            imported=m.dir_name in imported,
+            installed_in_project=m.dir_name in installed,
+        )
+        for m in builtin.list_builtin_manifests()
+    ]
+
+
 def list_my_imports(user_key: str) -> list[dict]:
-    """Account "My Imports": each imported coordinate whose definition is present."""
+    """Account "My Imports": each imported coordinate whose definition resolves."""
     imported = imports.load_imported_agents(user_key)
     out: list[dict] = []
     for coord in sorted(imported):
-        m = storage.load_installed_agent_definition(user_key, coord)
+        m = _resolve_definition(user_key, coord)
         if m is None:
             continue
         out.append(_manifest_to_card(m, scope="my-imports", imported=True, installed_in_project=False))
@@ -72,7 +99,7 @@ def list_installed_in_project(user_key: str, project_id: str) -> list[dict]:
     imported = imports.load_imported_agents(user_key)
     out: list[dict] = []
     for coord in project_agents.project_agents(spec):
-        m = storage.load_installed_agent_definition(user_key, coord)
+        m = _resolve_definition(user_key, coord)
         if m is None:
             continue
         out.append(

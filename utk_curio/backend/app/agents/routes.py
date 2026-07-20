@@ -28,6 +28,19 @@ def _svc_error(exc: AgentServiceError):
     return jsonify({"error": str(exc)}), exc.status
 
 
+# ── Global Catalog (built-in definitions) ────────────────────────────────────
+@agents_bp.route("/catalog", methods=["GET"])
+@require_auth
+def list_catalog():
+    """The Global Catalog scope — built-in agent definitions available to import/install.
+
+    Optional ``?projectId=`` marks which are already installed in that project.
+    """
+    project_id = request.args.get("projectId") or None
+    agents = agents_services.list_global_catalog(_user_dir_key(g.user), project_id)
+    return jsonify({"agents": agents}), 200
+
+
 # ── My Imports (account scope) ───────────────────────────────────────────────
 @agents_bp.route("/imports", methods=["GET"])
 @require_auth
