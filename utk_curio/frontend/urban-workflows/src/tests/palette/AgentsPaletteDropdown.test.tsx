@@ -7,7 +7,10 @@ jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({ projectId: "p1" }),
 }));
 jest.mock("../../providers/AgentsCatalogDrawerProvider", () => ({
-  useAgentsCatalogDrawerControls: () => ({ openAgentsCatalogDrawer: mockOpenDrawer }),
+  useAgentsCatalogDrawerControls: () => ({
+    openAgentsCatalogDrawer: mockOpenDrawer,
+    isAgentsCatalogDrawerOpen: false,
+  }),
 }));
 jest.mock("../../api/agentsApi", () => ({
   agentsApi: { listProjectAgents: jest.fn() },
@@ -50,59 +53,68 @@ describe("AgentsPaletteDropdown", () => {
   it("shows the installed count and lists agents when opened", async () => {
     render(<AgentsPaletteDropdown />);
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalledWith("p1"));
-    fireEvent.click(screen.getByRole("button", { name: /AGENTS/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Agents/i }));
     expect(await screen.findByText("node-explainer")).toBeInTheDocument();
+    // Row shows the install coordinate (major only) and a category chip.
+    expect(screen.getByText("agent.node-explainer@1")).toBeInTheDocument();
+    expect(screen.getByText("node")).toBeInTheDocument();
   });
 
   it("footer opens the catalog drawer", async () => {
     render(<AgentsPaletteDropdown />);
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: /AGENTS/ }));
-    fireEvent.click(screen.getByRole("button", { name: /Get more agents/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Agents/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Browse Agents Catalog/i }));
     expect(mockOpenDrawer).toHaveBeenCalled();
   });
 
   it("clicking a row opens the drawer", async () => {
     render(<AgentsPaletteDropdown />);
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: /AGENTS/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Agents/i }));
     fireEvent.click(await screen.findByText("node-explainer"));
     expect(mockOpenDrawer).toHaveBeenCalled();
   });
 
-  it("empty state opens the drawer", async () => {
+  it("empty state shows the hint and the catalog footer opens the drawer", async () => {
     api.listProjectAgents.mockResolvedValue({ agents: [] });
     render(<AgentsPaletteDropdown />);
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: /AGENTS/ }));
-    fireEvent.click(screen.getByRole("button", { name: /browse the catalog/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Agents/i }));
+    expect(
+      screen.getByText(/No agents installed in this project yet/i),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Browse Agents Catalog/i }));
     expect(mockOpenDrawer).toHaveBeenCalled();
   });
 
   it("a row is a drag source writing the agent coordinate", async () => {
     render(<AgentsPaletteDropdown />);
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("button", { name: /AGENTS/ }));
-    const row = await screen.findByText("node-explainer");
+    fireEvent.click(screen.getByRole("button", { name: /Agents/i }));
+    await screen.findByText("node-explainer");
+    const dragHandle = screen.getByTitle(/Drag onto a node or the canvas to attach/i);
     const setData = jest.fn();
-    fireEvent.dragStart(row.closest("[draggable]") as Element, {
+    fireEvent.dragStart(dragHandle, {
       dataTransfer: { setData, effectAllowed: "" },
     });
     expect(setData).toHaveBeenCalledWith(AGENT_DRAG_MIME, "agent.node-explainer@1.0.0");
   });
 
   // The palette dock is pointer-events: none; the root re-enables events via a
-  // `.root > *` selector, so the trigger and the open panel must stay DIRECT
-  // children of the root. This guards against a refactor that nests them and
-  // silently makes the dropdown click-through to the canvas again.
-  it("keeps the trigger and open panel as direct children of the root", async () => {
+  // `.root > *` selector, so the trigger's column and the open panel must stay
+  // DIRECT children of the root. This guards against a refactor that nests them
+  // and silently makes the dropdown click-through to the canvas again.
+  it("keeps the trigger column and open panel as direct children of the root", async () => {
     render(<AgentsPaletteDropdown />);
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalled());
-    const trigger = screen.getByRole("button", { name: /AGENTS/ });
-    const root = trigger.parentElement as HTMLElement;
+    const trigger = screen.getByRole("button", { name: /Agents/i });
+    const column = trigger.parentElement as HTMLElement; // .column
+    const root = column.parentElement as HTMLElement;
     expect(root.className).toContain("root");
+    expect(column.parentElement).toBe(root);
     fireEvent.click(trigger);
-    const panel = await screen.findByRole("menu", { name: /Installed agents/i });
+    const panel = await screen.findByRole("region", { name: /Agents palette/i });
     expect(panel.parentElement).toBe(root);
   });
 
