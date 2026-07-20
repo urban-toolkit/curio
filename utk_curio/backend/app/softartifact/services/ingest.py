@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json, os, uuid
 from pathlib import Path
-from .chunk_schema import Chunk
+from .LLM_helper.chunk_schema import Chunk
 from pypdf import PdfReader
 from io import BytesIO
 

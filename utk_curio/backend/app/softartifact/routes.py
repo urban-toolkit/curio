@@ -3,8 +3,8 @@ import os
 from flask import jsonify, request
 
 from .services.ingest import ingest_file
-from .services.get_artifact import get_softartifact_metadata
-from .services.retrieve import search_chunks
+from .services.LLM_helper.get_artifact import get_softartifact_metadata
+from .services.LLM_helper.retrieve import search_chunks
 from .services.explain import explain_artifact
 from .services.inform import inform_artifact
 from .services.propose import propose_trill

@@ -3,7 +3,7 @@ from pathlib import Path
 
 from flask import g
 # import your existing retrieve helper
-from .retrieve import search_chunks 
+from .LLM_helper.retrieve import search_chunks 
 # reuse Curio's LLM helpers (already in api/routes.py)
 from utk_curio.backend.app.api.routes import _resolve_llm_config, _call_llm
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
 
-from .retrieve import search_chunks
+from .LLM_helper.retrieve import search_chunks
 from .explain import _format_passages, _load_prompt
 
 from utk_curio.backend.app.api.routes import (

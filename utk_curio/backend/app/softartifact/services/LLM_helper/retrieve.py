@@ -1,5 +1,5 @@
 from __future__ import annotations
-from .ingest import softartifacts_root
+from ..ingest import softartifacts_root
 import json
 import nltk # natural language processing
 from nltk.tokenize import word_tokenize 

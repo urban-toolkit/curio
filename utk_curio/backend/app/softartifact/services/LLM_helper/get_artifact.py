@@ -1,6 +1,6 @@
 from __future__ import annotations
 import uuid, json, mimetypes
-from .ingest import softartifacts_root
+from ..ingest import softartifacts_root
 from utk_curio.backend.app.common.safe_paths import validate_component
 
 #check if uuid is valid, return true if yes false otherwise
