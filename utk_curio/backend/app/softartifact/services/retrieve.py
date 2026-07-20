@@ -38,9 +38,15 @@ def _tokenize(text):
 def search_chunks(query, artifactId, top_k = 1):
     if top_k is None:
         top_k = 1
+
+    #from artifactId return the chunk that is stored in .curio 
     chunks = _load_chunk(artifactId)
+    if not chunks:
+        return []
 
     texts = [chunk.get("text","") for chunk in chunks]
+    if not any(texts):
+        return []
 
     vectorizer = TfidfVectorizer(tokenizer = _tokenize, lowercase = False)
     chunk_vectors = vectorizer.fit_transform(texts)
@@ -55,9 +61,11 @@ def search_chunks(query, artifactId, top_k = 1):
         reverse = True
     )
 
-    results = [
-        {**text, "score": float(score)}
-        for text, score in ranked
-        if score > 0
-    ][:top_k]
+    results = []
+    for chunk, score in ranked:
+        if score <= 0:
+            continue
+        results.append({**chunk, "score": float(score)})
+        if len(results) >= top_k:
+            break
     return results

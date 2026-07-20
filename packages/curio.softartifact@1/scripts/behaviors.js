@@ -226,7 +226,7 @@ function proposeTrillArtifact(_x5, _x6) {
 function _proposeTrillArtifact() {
   _proposeTrillArtifact = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee8(artifactId, sourceFile) {
     var top_k,
-      mode,
+      role,
       context,
       headers,
       token,
@@ -238,7 +238,7 @@ function _proposeTrillArtifact() {
       while (1) switch (_context8.n) {
         case 0:
           top_k = _args8.length > 2 && _args8[2] !== undefined ? _args8[2] : 8;
-          mode = _args8.length > 3 ? _args8[3] : undefined;
+          role = _args8.length > 3 ? _args8[3] : undefined;
           context = _args8.length > 4 ? _args8[4] : undefined;
           //create a json request
           //json request header
@@ -255,7 +255,7 @@ function _proposeTrillArtifact() {
             artifactId: artifactId,
             sourceFile: sourceFile,
             top_k: top_k,
-            mode: mode
+            role: role
           };
           if (context !== undefined && context !== null) {
             body.context = context;
@@ -541,7 +541,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
               artifactId: artifactId,
               sourceFile: state.sourceFile,
               mimeType: state.mimeType,
-              role: 'propose',
+              role: role,
               proposal: out.proposal,
               rationale: out.rationale
             });
@@ -734,7 +734,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
             _context5.n = 8;
             return runInform(out.artifactId, role);
           case 8:
-            if (!(role === "transform" && out.artifactId)) {
+            if (!((role === "transform" || role === "expand") && out.artifactId)) {
               _context5.n = 9;
               break;
             }
@@ -786,7 +786,13 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
       artifactId: null,
       sourceFile: file.name,
       mimeType: file.type || 'application/octet-stream',
-      status: 'empty'
+      status: 'empty',
+      errorMessage: undefined,
+      explanation: undefined,
+      guidance: undefined,
+      suggestions: undefined,
+      proposal: undefined,
+      rationale: undefined
     });
   };
 

@@ -35,7 +35,7 @@ def _format_passages(spans: list[dict]) -> str:
     lines = []
     for i, s in enumerate(spans, start=1):
         # Fall back to a generated id like "c-1" if index is missing
-        chunk_id = s.get("index ", f"c-{i}")
+        chunk_id = s.get("chunk_id", f"c-{i}")
         # Guard against None text, then strip whitespace
         text = (s.get("text") or "").strip()
         if text:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json, os, uuid
 from pathlib import Path
+from .chunk_schema import Chunk
 
 CHUNK_SIZE = 500
 
@@ -31,6 +32,28 @@ def decode_upload(raw: bytes) -> str:
     return raw.decode("utf-8", errors = "replace")
  
 
+#chunk the plain text into:
+#chunk_id text kind char_start char_end  
+#TODO make it versatile for all the mimetypes
+def chunk_plaintext(text: str, size: int = CHUNK_SIZE) -> list[dict]:
+    text = text.replace("\r\n", "\n")
+    rows: list[dict] = []
+    i = 0
+    pos = 0
+    while pos < len(text):
+        end = min(pos + size, len(text))
+        chunk = Chunk(
+            chunk_id=f"text-{i:04d}",
+            text=text[pos:end],
+            kind="text",
+            char_start=pos,
+            char_end=end,
+        )
+        rows.append(chunk.to_dict())
+        i += 1
+        pos = end
+    return rows
+
 def ingest_file(raw: bytes, filename: str, mime_type: str):
     #plain text and markdown only, other is unaccepted
     if not (filename.lower().endswith((".txt",".md")) or mime_type.startswith("text/")):
@@ -46,9 +69,10 @@ def ingest_file(raw: bytes, filename: str, mime_type: str):
     (artifact_dir / safe_name).write_bytes(raw)
 
     text = decode_upload(raw)
-    chunks = split_text(text)
+    chunks_row = chunk_plaintext(text)
+    # chunks = split_text(text)
 
-    chunks_row = [{"index": i, "text": t} for i, t in enumerate(chunks)]
+    # chunks_row = [{"index": i, "text": t} for i, t in enumerate(chunks)]
     
     (artifact_dir / "chunk.json").write_text(
         json.dumps(chunks_row, ensure_ascii = False, indent = 2),
