@@ -10,6 +10,7 @@ This guide is in parts, plus a developer appendix:
 - [2. The agent manifest](#2-the-agent-manifest) — the `manifest.json` contract, field by field.
 - [3. Capabilities](#3-capabilities) — semantic behavior contracts, and why they are never prompt filenames.
 - [4. The default LLM provider](#4-the-default-llm-provider) — the single default every agent (and the LLM chat) falls back to.
+- [5. Where lifecycle state lives](#5-where-lifecycle-state-lives) — the filesystem layers, mirroring the Node Catalog.
 - [Appendix: validating a manifest (developer-only)](#appendix-validating-a-manifest-developer-only).
 
 ---
@@ -126,6 +127,22 @@ Resolution rules (`_resolve_llm_config` in [`app/api/routes.py`](../utk_curio/ba
 - **Guests** use `GUEST_LLM_*`, which inherits `DEFAULT_LLM_*` unless separately overridden, so guests default to the same provider.
 
 Operators point the whole install at a different default by setting the env vars above; individual users still override per-account under LLM Settings. The API key is read from `AICONN_API_KEY` (the same name used by the connection harness) when a dedicated `CURIO_DEFAULT_LLM_API_KEY` is not set.
+
+---
+
+## 5. Where lifecycle state lives
+
+Agents follow the Node Catalog's storage model exactly: **state lives on the filesystem, not the database.** Curio's database holds only users and the project index; datasets, node packages, and now agents are all files under `.curio/` and inside each project's spec. There are no agent tables and no migrations.
+
+| Layer | On disk | Holds |
+|---|---|---|
+| **Definition artifact** | `.curio/users/<user-key>/agents/<agentId>@<version>/` (`manifest.json` + `prompts/`) | The immutable agent definition — same shape and store as an installed node package. |
+| **My Imports** (account) | `.curio/users/<user-key>/imported-agents.json` — `{ "version": 1, "agents": ["<id>@<version>", …] }` | Which definitions the account has imported. The analogue of `default-packages.json`. |
+| **Installed in this project** | `spec["dataflow"]["agents"]` inside the project's `spec.trill.json` | The project's installed agent templates. The analogue of the `dataflow.packages` lockfile. |
+
+The same tolerances apply as elsewhere in the catalog: a missing registry file is an empty list, a corrupt one is treated as empty (reads never raise), and one invalid definition directory is skipped — never fatal to listing the rest. Directory names and coordinates are validated against the agent-id + semver grammar, and every path resolves through the shared containment guard (`app/common/safe_paths.py`) so a coordinate can't escape the user's store.
+
+The backend modules that own these layers are [`app/agents/storage.py`](../utk_curio/backend/app/agents/storage.py) (definitions), [`app/agents/imports.py`](../utk_curio/backend/app/agents/imports.py) (My Imports), and [`app/agents/project_agents.py`](../utk_curio/backend/app/agents/project_agents.py) (the project lockfile) — mirroring `app/packages/storage.py`, `defaults.py`, and `spec_packages.py` respectively.
 
 ---
 
