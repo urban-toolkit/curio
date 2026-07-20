@@ -454,7 +454,12 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
         # and attachments. No-op on an outputs-only update (effective is existing).
         if data.spec is not None:
             from utk_curio.backend.app.agents.project_agents import preserve_agent_state
+            from utk_curio.backend.app.agents.attachments import prune_orphaned_attachments
             preserve_agent_state(effective_spec, existing_spec)
+            # Drop attachments whose target node/edge was deleted on the canvas
+            # (the carried-forward list is pruned against the new node set).
+            if prune_orphaned_attachments(effective_spec):
+                spec_dirty = True
         if data.outputs is not None:
             output_refs = list(data.outputs)
             # Install into users/<user>/datasets/ and register lean refs in the spec.

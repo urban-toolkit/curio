@@ -444,3 +444,41 @@ class TestSavePreservesAgentState:
         assert r.status_code == 200, r.get_data(as_text=True)
         listed = client.get(f"/api/agents/projects/{alice_project}", headers=_auth(token)).get_json()
         assert listed["agents"] == []
+
+
+class TestPruneAttachmentsOnDelete:
+    """Deleting a node on the canvas (a save whose spec no longer contains it)
+    prunes the attachment bound to that node; canvas attachments survive."""
+
+    def test_node_attachment_pruned_when_its_node_is_deleted(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        coord = "agent.node-explainer@1.0.0"
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token))
+        # Persist a node so a node-target attachment validates against the spec.
+        client.put(
+            f"/api/projects/{alice_project}",
+            json={"name": "p", "spec": {"dataflow": {"nodes": [{"id": "n1"}], "edges": [], "packages": []}}, "outputs": []},
+            headers=_auth(token),
+        )
+        node_att = client.post(
+            f"/api/agents/projects/{alice_project}/attachments",
+            json={"coord": coord, "target": {"kind": "node", "targetId": "n1"}},
+            headers=_auth(token),
+        ).get_json()
+        canvas_att = client.post(
+            f"/api/agents/projects/{alice_project}/attachments",
+            json={"coord": coord, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        ).get_json()
+        # Delete the node: save a spec without n1 (and without agentAttachments).
+        client.put(
+            f"/api/projects/{alice_project}",
+            json={"name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": []},
+            headers=_auth(token),
+        )
+        listed = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        ids = {a["attachmentId"] for a in listed}
+        assert node_att["attachmentId"] not in ids  # pruned
+        assert ids == {canvas_att["attachmentId"]}  # canvas survives
