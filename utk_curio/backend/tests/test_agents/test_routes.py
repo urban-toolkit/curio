@@ -1,0 +1,139 @@
+"""Integration tests for the /api/agents endpoints (Feature 5a)."""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from utk_curio.backend.app.agents import storage
+from utk_curio.backend.app.projects.services import _user_dir_key
+
+
+def _auth(token):
+    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+
+def _write_def(user, agent_id="agent.node-explainer", version="1.0.0"):
+    """Materialize a valid agent definition in the user's FS store."""
+    user_key = _user_dir_key(user)
+    d = storage.user_agents_dir(user_key) / f"{agent_id}@{version}"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "manifest.json").write_text(
+        json.dumps(
+            {
+                "id": agent_id,
+                "name": "Node Explainer",
+                "category": "node",
+                "version": version,
+                "capabilities": [{"id": "node.explain", "contractVersion": "1"}],
+                "compatibleTargets": [{"kind": "node", "requires": []}],
+                "provenance": {"publisher": "curio", "trust": "built-in"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    return f"{agent_id}@{version}"
+
+
+@pytest.fixture()
+def alice_project(client, user_and_token):
+    _, token = user_and_token
+    body = {"name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": []}
+    resp = client.post("/api/projects", json=body, headers=_auth(token))
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    return resp.get_json()["id"]
+
+
+class TestMyImports:
+    def test_empty(self, client, user_and_token, tmp_curio):
+        _, token = user_and_token
+        resp = client.get("/api/agents/imports", headers=_auth(token))
+        assert resp.status_code == 200
+        assert resp.get_json() == {"agents": []}
+
+    def test_import_then_listed(self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        coord = _write_def(user)
+        r = client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
+        assert r.status_code == 201, r.get_data(as_text=True)
+        listed = client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]
+        assert [a["dirName"] for a in listed] == [coord]
+        card = listed[0]
+        assert card["id"] == "agent.node-explainer"
+        assert card["capabilities"] == ["node.explain"]
+        assert card["hooks"] == ["node"]
+        assert card["imported"] is True
+
+    def test_import_unknown_definition_404(self, client, user_and_token, tmp_curio):
+        _, token = user_and_token
+        r = client.post("/api/agents/imports", json={"coord": "agent.ghost@1.0.0"}, headers=_auth(token))
+        assert r.status_code == 404
+
+    def test_import_missing_coord_400(self, client, user_and_token, tmp_curio):
+        _, token = user_and_token
+        r = client.post("/api/agents/imports", json={}, headers=_auth(token))
+        assert r.status_code == 400
+
+    def test_remove_import(self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        coord = _write_def(user)
+        client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
+        r = client.delete(f"/api/agents/imports/{coord}", headers=_auth(token))
+        assert r.status_code == 200
+        assert client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"] == []
+
+    def test_requires_auth(self, client, tmp_curio):
+        assert client.get("/api/agents/imports").status_code in (401, 403)
+
+
+class TestProjectInstall:
+    def test_install_list_uninstall(self, client, user_and_token, tmp_curio, alice_project):
+        user, token = user_and_token
+        coord = _write_def(user)
+        # install
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/install",
+            json={"coord": coord},
+            headers=_auth(token),
+        )
+        assert r.status_code == 201, r.get_data(as_text=True)
+        assert r.get_json()["agents"] == [coord]
+        # list
+        listed = client.get(f"/api/agents/projects/{alice_project}", headers=_auth(token)).get_json()
+        assert [a["dirName"] for a in listed["agents"]] == [coord]
+        assert listed["agents"][0]["installedInProject"] is True
+        # uninstall
+        r = client.delete(f"/api/agents/projects/{alice_project}/{coord}", headers=_auth(token))
+        assert r.status_code == 200
+        assert r.get_json()["agents"] == []
+
+    def test_install_unknown_definition_404(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/install",
+            json={"coord": "agent.ghost@1.0.0"},
+            headers=_auth(token),
+        )
+        assert r.status_code == 404
+
+    def test_install_unknown_project_404(self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        coord = _write_def(user)
+        r = client.post(
+            "/api/agents/projects/does-not-exist/install",
+            json={"coord": coord},
+            headers=_auth(token),
+        )
+        assert r.status_code == 404
+
+    def test_install_is_explicit_not_auto_import(self, client, user_and_token, tmp_curio, alice_project):
+        # Installing into a project must NOT add the agent to My Imports (no chaining).
+        user, token = user_and_token
+        coord = _write_def(user)
+        client.post(
+            f"/api/agents/projects/{alice_project}/install",
+            json={"coord": coord},
+            headers=_auth(token),
+        )
+        assert client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"] == []

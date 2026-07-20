@@ -11,6 +11,7 @@ This guide is in parts, plus a developer appendix:
 - [3. Capabilities](#3-capabilities) — semantic behavior contracts, and why they are never prompt filenames.
 - [4. The default LLM provider](#4-the-default-llm-provider) — the single default every agent (and the LLM chat) falls back to.
 - [5. Where lifecycle state lives](#5-where-lifecycle-state-lives) — the filesystem layers, mirroring the Node Catalog.
+- [6. Catalog & lifecycle API](#6-catalog--lifecycle-api) — the `/api/agents` endpoints.
 - [Appendix: validating a manifest (developer-only)](#appendix-validating-a-manifest-developer-only).
 
 ---
@@ -145,6 +146,23 @@ Agents follow the Node Catalog's storage model exactly: **state lives on the fil
 The same tolerances apply as elsewhere in the catalog: a missing registry file is an empty list, a corrupt one is treated as empty (reads never raise), and one invalid definition directory is skipped — never fatal to listing the rest. Directory names and coordinates are validated against the agent-id + semver grammar, and every path resolves through the shared containment guard (`app/common/safe_paths.py`) so a coordinate can't escape the user's store.
 
 The backend modules that own these layers are [`app/agents/storage.py`](../utk_curio/backend/app/agents/storage.py) (definitions), [`app/agents/imports.py`](../utk_curio/backend/app/agents/imports.py) (My Imports), and [`app/agents/project_agents.py`](../utk_curio/backend/app/agents/project_agents.py) (the project lockfile) — mirroring `app/packages/storage.py`, `defaults.py`, and `spec_packages.py` respectively.
+
+---
+
+## 6. Catalog & lifecycle API
+
+The `/api/agents` endpoints ([`app/agents/routes.py`](../utk_curio/backend/app/agents/routes.py) over [`app/agents/services.py`](../utk_curio/backend/app/agents/services.py)) expose the scopes and lifecycle commands, mirroring `/api/packages`. **Import** (account) and **Install** (project) are separate explicit commands — neither triggers the other.
+
+| Method + path | Scope | Effect |
+|---|---|---|
+| `GET /api/agents/imports` | My Imports | List the account's imported definitions (as cards). |
+| `POST /api/agents/imports` `{coord}` | My Imports | Record `<id>@<version>` as imported. Never installs into a project. |
+| `DELETE /api/agents/imports/<coord>` | My Imports | Drop it from My Imports. |
+| `GET /api/agents/projects/<projectId>` | Installed | List the project's installed templates from its `dataflow.agents` lockfile. |
+| `POST /api/agents/projects/<projectId>/install` `{coord}` | Installed | Add it to that project's lockfile. Explicit; never auto-imports. |
+| `DELETE /api/agents/projects/<projectId>/<coord>` | Installed | Remove it from that project's lockfile. |
+
+Each endpoint requires auth; project endpoints check ownership (404 if the project isn't the caller's). A card carries `id`, `version`, `dirName`, `name`, `category`, `purpose`, `capabilities`, `hooks`, `provenance`, and the `imported` / `installedInProject` flags the drawer uses to pick the right action controls. The **Global Catalog** scope and imported-only **Publish** endpoint arrive with the shared catalog source (once the built-in agent definitions are authored).
 
 ---
 
