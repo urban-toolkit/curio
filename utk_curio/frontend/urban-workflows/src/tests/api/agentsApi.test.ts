@@ -79,4 +79,32 @@ describe("agentsApi", () => {
       method: "DELETE",
     });
   });
+
+  it("listAttachments() GETs the project attachments", () => {
+    agentsApi.listAttachments("p1");
+    expect(mockFetch).toHaveBeenCalledWith("/api/agents/projects/p1/attachments");
+  });
+
+  it("attach() POSTs coord + target", () => {
+    agentsApi.attach("p1", "agent.node-explainer@1.0.0", { kind: "canvas" });
+    expect(mockFetch).toHaveBeenCalledWith("/api/agents/projects/p1/attachments", {
+      method: "POST",
+      body: JSON.stringify({ coord: "agent.node-explainer@1.0.0", target: { kind: "canvas" } }),
+    });
+  });
+
+  it("detachAttachment() DELETEs the attachment", () => {
+    agentsApi.detachAttachment("p1", "att-1");
+    expect(mockFetch).toHaveBeenCalledWith("/api/agents/projects/p1/attachments/att-1", {
+      method: "DELETE",
+    });
+  });
+
+  it("runAttachment() POSTs the message to /run", () => {
+    agentsApi.runAttachment("p1", "att-1", "hi");
+    expect(mockFetch).toHaveBeenCalledWith("/api/agents/projects/p1/attachments/att-1/run", {
+      method: "POST",
+      body: JSON.stringify({ message: "hi" }),
+    });
+  });
 });

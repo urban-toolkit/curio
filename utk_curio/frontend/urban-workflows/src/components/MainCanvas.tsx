@@ -44,6 +44,8 @@ import {
     hasDatasetDrag,
     readDatasetDragPayload,
 } from "../services/datasetCatalog";
+import { agentsApi } from "../api/agentsApi";
+import { readAgentDragCoord, notifyAgentDockRefresh } from "../utils/agentsPaletteEvents";
 
 const CANVAS_EXTENT: [[number, number], [number, number]] = [[-2000, -2000], [6000, 6000]];
 
@@ -54,6 +56,7 @@ export function MainCanvas() {
         nodes,
         edges,
         loading,
+        projectId,
         onNodesChange,
         onEdgesChange,
         onConnect,
@@ -302,13 +305,30 @@ export function MainCanvas() {
             handleCanvasDrop(event);
             return;
         }
+        const agentCoord = readAgentDragCoord(event.dataTransfer);
+        if (agentCoord) {
+            event.preventDefault();
+            if (!projectId) {
+                showToast("Save the project before attaching an agent.", "error");
+                return;
+            }
+            agentsApi
+                .attach(projectId, agentCoord, { kind: "canvas" })
+                .then(() => {
+                    notifyAgentDockRefresh();
+                    markDirty();
+                    showToast("Agent attached to the canvas.", "success");
+                })
+                .catch((e: any) => showToast(e?.message || "Attach failed.", "error"));
+            return;
+        }
         event.preventDefault();
         const type = event.dataTransfer.getData("application/reactflow") as NodeType;
         if (!type) return;
         const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
         createCodeNode(type, { position });
         markDirty();
-    }, [screenToFlowPosition, createCodeNode, markDirty, handleCanvasDrop]);
+    }, [screenToFlowPosition, createCodeNode, markDirty, handleCanvasDrop, projectId, showToast]);
 
     const handleNodesChange = useCallback((changes: NodeChange[]) => {
         const allowedChanges: NodeChange[] = [];
