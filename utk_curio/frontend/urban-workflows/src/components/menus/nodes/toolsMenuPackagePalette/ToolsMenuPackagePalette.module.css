@@ -1,36 +1,13 @@
 /* Package palette panel (adjacent to built-in tools; dropdown opens toward canvas). */
 
-.packagePaletteRoot {
-    display: flex;
-    flex-direction: row;
-    align-items: flex-start;
-    gap: 8px;
-    flex-shrink: 0;
-    pointer-events: none;
-}
+/* Shared tools-palette chrome (paletteShell.module.css). The panel/toolbar and
+   all package-specific classes below stay local — Packages' panel differs
+   structurally (toolbar, groups, edit mode) from the shared centered header. */
+.packagePaletteRoot { composes: root from "../paletteShell/paletteShell.module.css"; }
 
-.packagePaletteRoot > * {
-    pointer-events: auto;
-}
+.packagePaletteColumn { composes: column from "../paletteShell/paletteShell.module.css"; }
 
-.packagePaletteColumn {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 6px;
-    flex-shrink: 0;
-    width: 56px;
-}
-
-.packagePaletteEmptyHint {
-    margin: 0;
-    font-size: 8px;
-    font-weight: 500;
-    color: rgba(251, 252, 246, 0.68);
-    text-align: center;
-    line-height: 1.25;
-    padding: 0 2px;
-}
+.packagePaletteEmptyHint { composes: emptyHint from "../paletteShell/paletteShell.module.css"; }
 
 .packagePaletteFooter {
     flex-shrink: 0;
@@ -39,87 +16,19 @@
     background-color: #1E1F23;
 }
 
-.packageGetPackagesBtn {
-    width: 100%;
-    box-sizing: border-box;
-    min-height: 32px;
-    padding: 8px 10px;
-    border: none;
-    border-radius: 4px;
-    background-color: #FBAA69;
-    color: #1E1F23;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.4px;
-    line-height: 1.2;
-    cursor: pointer;
-    transition: background-color 0.15s ease;
-}
+.packageGetPackagesBtn { composes: catalogButton from "../paletteShell/paletteShell.module.css"; }
 
-.packageGetPackagesBtn:hover {
-    background-color: #fb9a4f;
-}
+.packagePaletteTrigger { composes: trigger from "../paletteShell/paletteShell.module.css"; }
 
-.packageGetPackagesBtn:focus-visible {
-    outline: 2px solid rgba(251, 170, 105, 0.85);
-    outline-offset: 2px;
-}
+.packagePaletteTriggerOpen { composes: triggerOpen from "../paletteShell/paletteShell.module.css"; }
 
-.packagePaletteTrigger {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    padding: 10px 8px;
-    min-width: 56px;
-    background-color: #1E1F23;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 5px;
-    color: #fbfcf6;
-    cursor: pointer;
-    transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
-}
+.packagePaletteTriggerIcon { composes: triggerIcon from "../paletteShell/paletteShell.module.css"; }
 
-.packagePaletteTrigger:hover {
-    background-color: #2c2d32;
-}
+.packagePaletteTriggerLabel { composes: triggerLabel from "../paletteShell/paletteShell.module.css"; }
 
-.packagePaletteTriggerOpen {
-    border-color: rgba(251, 170, 105, 0.85);
-    color: #FBAA69;
-}
+.packagePaletteTriggerCount { composes: triggerCount from "../paletteShell/paletteShell.module.css"; }
 
-.packagePaletteTriggerIcon {
-    font-size: 1.25em;
-}
-
-.packagePaletteTriggerLabel {
-    font-size: 8px;
-    font-weight: 700;
-    letter-spacing: 0.6px;
-    text-transform: uppercase;
-    line-height: 1;
-}
-
-.packagePaletteTriggerCount {
-    font-size: 10px;
-    font-weight: 700;
-    color: #fbfcf6;
-    background-color: rgba(251, 170, 105, 0.25);
-    border-radius: 8px;
-    padding: 1px 6px;
-    line-height: 1.2;
-}
-
-.packagePaletteTriggerOpen .packagePaletteTriggerCount {
-    background-color: rgba(251, 170, 105, 0.35);
-    color: #fbfcf6;
-}
-
-.packagePaletteTriggerChevron {
-    font-size: 10px;
-    opacity: 0.85;
-}
+.packagePaletteTriggerChevron { composes: triggerChevron from "../paletteShell/paletteShell.module.css"; }
 
 .packagePalettePanel {
     width: min(380px, calc(100vw - 120px));
