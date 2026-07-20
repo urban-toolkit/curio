@@ -448,6 +448,13 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
         existing_spec = storage.read_spec(ukey, project_id)
         effective_spec = data.spec if data.spec is not None else existing_spec
         spec_dirty = False
+        # The canvas save (TrillGenerator) does not serialize the backend-owned
+        # agent sections, so carry dataflow.agents / agentAttachments forward
+        # from the on-disk spec — otherwise a client save wipes installed agents
+        # and attachments. No-op on an outputs-only update (effective is existing).
+        if data.spec is not None:
+            from utk_curio.backend.app.agents.project_agents import preserve_agent_state
+            preserve_agent_state(effective_spec, existing_spec)
         if data.outputs is not None:
             output_refs = list(data.outputs)
             # Install into users/<user>/datasets/ and register lean refs in the spec.

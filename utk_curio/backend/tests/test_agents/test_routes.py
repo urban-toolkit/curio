@@ -379,3 +379,68 @@ class TestRun:
             headers=_auth(token),
         )
         assert r.status_code == 400
+
+
+class TestSavePreservesAgentState:
+    """A canvas save (PUT /api/projects/<id>) sends a spec without the agent
+    sections; the backend must not let it wipe installed agents/attachments."""
+
+    def _save_without_agents(self, client, token, project_id):
+        # Mimics TrillGenerator's canvas spec: nodes/edges/packages, no agents.
+        body = {
+            "name": "p",
+            "spec": {"dataflow": {"nodes": [{"id": "n1"}], "edges": [], "packages": []}},
+            "outputs": [],
+        }
+        r = client.put(f"/api/projects/{project_id}", json=body, headers=_auth(token))
+        assert r.status_code == 200, r.get_data(as_text=True)
+
+    def test_installed_agent_survives_a_canvas_save(self, client, user_and_token, tmp_curio, alice_project):
+        user, token = user_and_token
+        coord = _write_def(user, "agent.my-agent")
+        client.post(
+            f"/api/agents/projects/{alice_project}/install",
+            json={"coord": coord},
+            headers=_auth(token),
+        )
+        self._save_without_agents(client, token, alice_project)
+        listed = client.get(f"/api/agents/projects/{alice_project}", headers=_auth(token)).get_json()
+        assert [a["dirName"] for a in listed["agents"]] == [coord]
+
+    def test_attachment_survives_a_canvas_save(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        coord = "agent.node-explainer@1.0.0"
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token))
+        att = client.post(
+            f"/api/agents/projects/{alice_project}/attachments",
+            json={"coord": coord, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        ).get_json()
+        self._save_without_agents(client, token, alice_project)
+        listed = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        assert [a["attachmentId"] for a in listed] == [att["attachmentId"]]
+        # The install lockfile is preserved too.
+        agents = client.get(f"/api/agents/projects/{alice_project}", headers=_auth(token)).get_json()
+        assert [a["dirName"] for a in agents["agents"]] == [coord]
+
+    def test_client_sent_agents_list_is_honored(self, client, user_and_token, tmp_curio, alice_project):
+        # A save that explicitly declares dataflow.agents wins (future client);
+        # an empty list clears the lockfile rather than being carried forward.
+        user, token = user_and_token
+        coord = _write_def(user, "agent.my-agent")
+        client.post(
+            f"/api/agents/projects/{alice_project}/install",
+            json={"coord": coord},
+            headers=_auth(token),
+        )
+        body = {
+            "name": "p",
+            "spec": {"dataflow": {"nodes": [], "edges": [], "packages": [], "agents": []}},
+            "outputs": [],
+        }
+        r = client.put(f"/api/projects/{alice_project}", json=body, headers=_auth(token))
+        assert r.status_code == 200, r.get_data(as_text=True)
+        listed = client.get(f"/api/agents/projects/{alice_project}", headers=_auth(token)).get_json()
+        assert listed["agents"] == []
