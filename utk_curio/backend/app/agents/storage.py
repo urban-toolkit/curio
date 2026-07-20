@@ -17,6 +17,7 @@ User-facing overview: ``docs/AGENTS.md``.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from pathlib import Path
@@ -71,6 +72,30 @@ def agent_definition_dir(user_key: str, dir_name: str) -> Path:
         raise PathTraversalError(
             f"Path traversal blocked: agent path {target!s} escapes base {base!s}"
         )
+    return target
+
+
+def write_definition(
+    user_key: str, dir_name: str, manifest: dict, prompt_files: dict[str, str]
+) -> Path:
+    """Materialize a definition into the user store: ``manifest.json`` + prompt assets.
+
+    Each prompt path must stay contained inside the definition directory. Overwrites
+    an existing definition (idempotent). Returns the definition directory.
+    """
+    target = agent_definition_dir(user_key, dir_name)  # validated + contained
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    for rel, text in prompt_files.items():
+        dest = (target / rel).resolve()
+        if not is_within(dest, target.resolve()):
+            raise PathTraversalError(
+                f"Path traversal blocked: prompt asset {dest!s} escapes {target!s}"
+            )
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(text, encoding="utf-8")
     return target
 
 

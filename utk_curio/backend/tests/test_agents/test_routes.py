@@ -28,7 +28,8 @@ def _write_def(user, agent_id="agent.node-explainer", version="1.0.0"):
                 "version": version,
                 "capabilities": [{"id": "node.explain", "contractVersion": "1"}],
                 "compatibleTargets": [{"kind": "node", "requires": []}],
-                "provenance": {"publisher": "curio", "trust": "built-in"},
+                # These helper-written defs represent user-authored/owned imports.
+                "provenance": {"publisher": "curio", "trust": "imported"},
             }
         ),
         encoding="utf-8",
@@ -292,6 +293,35 @@ class TestAttachments:
             json={"coord": "agent.node-explainer@1.0.0"},
             headers=_auth(token),
         )
+        assert r.status_code == 400
+
+
+class TestMaterialize:
+    def test_installing_a_builtin_materializes_its_bytes(self, client, user_and_token, tmp_curio, alice_project):
+        from utk_curio.backend.app.agents import storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        coord = "agent.node-explainer@1.0.0"
+        # Not in the store before install (it's a built-in resolved from the roster).
+        assert storage.load_installed_agent_definition(_user_dir_key(user), coord) is None
+        client.post(
+            f"/api/agents/projects/{alice_project}/install",
+            json={"coord": coord}, headers=_auth(token),
+        )
+        # After install, the definition + its prompt asset are on disk in the store.
+        d = storage.agent_definition_dir(_user_dir_key(user), coord)
+        assert (d / "manifest.json").is_file()
+        assert (d / "prompts" / "single_box_explanation_prompt.txt").is_file()
+
+    def test_materialized_builtin_is_not_publishable(self, client, user_and_token, tmp_curio):
+        # Even after its bytes are in the store, a built-in stays non-publishable.
+        _, token = user_and_token
+        coord = "agent.node-explainer@1.0.0"
+        client.post("/api/agents/imports", json={"coord": coord}, headers=_auth(token))
+        by_id = {a["id"]: a for a in client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]}
+        assert by_id["agent.node-explainer"]["publishable"] is False
+        r = client.post("/api/agents/publications", json={"coord": coord}, headers=_auth(token))
         assert r.status_code == 400
 
 

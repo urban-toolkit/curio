@@ -124,6 +124,11 @@ def _by_coord() -> dict[str, BuiltinAgentSpec]:
     return {f"{s.agent_id}@{BUILTIN_VERSION}": s for s in BUILTIN_AGENTS}
 
 
+def get_builtin_spec(coord: str) -> BuiltinAgentSpec | None:
+    """Resolve a ``<agentId>@<version>`` coordinate to its roster spec, or None."""
+    return _by_coord().get(coord)
+
+
 def get_builtin_manifest(coord: str) -> AgentManifest | None:
     """Resolve a ``<agentId>@<version>`` coordinate to a built-in manifest, or None."""
     spec = _by_coord().get(coord)

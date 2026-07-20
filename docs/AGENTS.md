@@ -175,7 +175,9 @@ Each endpoint requires auth; project endpoints check ownership (404 if the proje
 
 An **attachment** is a private agent instance bound to a target. It lives in the project's `spec["dataflow"]["agentAttachments"]` (alongside nodes/edges) and carries an `attachmentId` + a `sessionId` + an optimistic `revision` — no version/publish identity (`DEC-031`). Attaching requires the template to be installed in the project (never auto-installs), and a node/connection target must reference an existing node/edge.
 
-**Running** an attachment resolves its source definition's instruction prompt (for a built-in, the file in `utk_curio/llm-prompts/`), sends it as the system turn plus the caller's `message`, and dispatches through the provider port (§4) — so an attached built-in actually executes against the configured provider.
+Installing (or importing) an agent **materializes its prompt bytes into the user store** (`.curio/users/<key>/agents/<id>@<version>/manifest.json` + `prompts/`) — a built-in seeds its instruction from `utk_curio/llm-prompts/`. So an installed agent is self-contained on disk and doesn't depend on the legacy prompt dir at runtime.
+
+**Running** an attachment resolves its source definition's instruction prompt — the materialized store copy first, then the published-catalog copy, falling back to the built-in source — sends it as the system turn plus the caller's `message`, and dispatches through the provider port (§4). Any installed agent that carries an instruction prompt runs; a definition with no prompt asset returns 422.
 
 In the UI: **drag an installed agent from the AGENTS palette onto the canvas** to attach it (it appears as a tile in the canvas **dock**, bottom-left); **click a dock tile** to open its **chat panel** and send messages — each send runs one turn through the run endpoint. The ✕ on a tile detaches. Chat history is in-memory per session for now (persistent sessions are a follow-up); today's palette drop attaches to the canvas (node-target drop is a follow-up).
 

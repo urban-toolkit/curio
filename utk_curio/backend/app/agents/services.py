@@ -80,6 +80,24 @@ def _require_definition(user_key: str, coord: str) -> AgentManifest:
     return m
 
 
+def _materialize_builtin(user_key: str, coord: str) -> None:
+    """Write a built-in's bytes (manifest + instruction prompt) into the user store,
+    so an installed agent is self-contained and runs from its own on-disk assets
+    rather than the legacy ``llm-prompts/`` dir. No-op if already present or not a
+    built-in (store/published defs already carry their bytes)."""
+    if storage.load_installed_agent_definition(user_key, coord) is not None:
+        return
+    spec = builtin.get_builtin_spec(coord)
+    if spec is None:
+        return
+    manifest = builtin.build_builtin_manifest(spec)
+    rel = manifest["prompts"]["instruction"]["path"]
+    text = builtin.read_instruction_text(coord)
+    if text is None:
+        return  # prompt file missing — leave the built-in fallback to handle runtime
+    storage.write_definition(user_key, coord, manifest, {rel: text})
+
+
 # ── read ────────────────────────────────────────────────────────────────────
 def list_global_catalog(user_key: str, project_id: str | None = None) -> list[dict]:
     """The Global Catalog: the built-in agent definitions available to import/install."""
@@ -115,8 +133,8 @@ def list_my_imports(user_key: str) -> list[dict]:
         m = _resolve_definition(user_key, coord)
         if m is None:
             continue
-        # Publishable only when it is an owned, store-backed definition (not a built-in).
-        store_backed = storage.load_installed_agent_definition(user_key, coord) is not None
+        # Publishable only when it is an owned imported definition (trust=imported) —
+        # never a built-in, even after its bytes are materialized into the store.
         out.append(
             _manifest_to_card(
                 m,
@@ -124,7 +142,7 @@ def list_my_imports(user_key: str) -> list[dict]:
                 imported=True,
                 installed_in_project=False,
                 published=publications.is_published(coord),
-                publishable=store_backed,
+                publishable=(m.provenance.trust == "imported"),
             )
         )
     return out
@@ -153,6 +171,7 @@ def list_installed_in_project(user_key: str, project_id: str) -> list[dict]:
 def import_agent(user_key: str, coord: str) -> dict:
     """Record *coord* in the account's My Imports (does not install into a project)."""
     _require_definition(user_key, coord)
+    _materialize_builtin(user_key, coord)
     imports.add_imported_agent(user_key, coord)
     return {"coord": coord, "imported": True}
 
@@ -166,6 +185,7 @@ def remove_import(user_key: str, coord: str) -> dict:
 def install_in_project(user_key: str, project_id: str, coord: str) -> dict:
     """Add *coord* to the project's lockfile (explicit; never auto-imports)."""
     _require_definition(user_key, coord)
+    _materialize_builtin(user_key, coord)
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
         raise AgentServiceError(f"project {project_id!r} has no spec", 404)
@@ -189,17 +209,18 @@ def uninstall_from_project(user_key: str, project_id: str, coord: str) -> dict:
 
 
 def publish_agent(user_key: str, coord: str) -> dict:
-    """Publish an owned, store-backed imported definition to the Global Catalog.
+    """Publish an owned imported definition to the Global Catalog.
 
-    Imported-only (`DEC-030`): the coordinate must resolve to a definition in the
-    user's own store (not a built-in / global / absent one) and be in My Imports.
-    Built-ins are not store-backed, so they are rejected here.
+    Imported-only (`DEC-030`): the coordinate must resolve to a store definition
+    whose provenance trust is ``imported`` (a user-owned definition) and be in My
+    Imports. Built-ins — even after their bytes are materialized into the store —
+    carry trust ``built-in`` and are rejected here.
     """
     m = storage.load_installed_agent_definition(user_key, coord)
-    if m is None:
+    if m is None or m.provenance.trust != "imported":
         raise AgentServiceError(
-            "only an owned, imported definition can be published; built-in, global, or "
-            "absent definitions cannot",
+            "only an owned imported definition (trust=imported) can be published; built-in, "
+            "global, or absent definitions cannot",
             400,
         )
     if coord not in imports.load_imported_agents(user_key):
@@ -272,25 +293,25 @@ def detach_agent(user_key: str, project_id: str, attachment_id: str) -> dict:
 
 
 def _resolve_instruction_text(user_key: str, coord: str) -> str | None:
-    """The agent's instruction prompt text — built-in roster, else the definition's asset."""
-    text = builtin.read_instruction_text(coord)
-    if text is not None:
-        return text
+    """The agent's instruction prompt text.
+
+    Reads the definition's own on-disk asset first — the materialized store copy,
+    then the published-catalog copy — so an installed agent runs from its own
+    bytes. Falls back to the built-in roster's ``llm-prompts/`` source only when a
+    built-in has not been materialized.
+    """
     m = storage.load_installed_agent_definition(user_key, coord)
-    base = None
-    if m is not None:
-        base = storage.agent_definition_dir(user_key, coord)
-    else:
+    base = storage.agent_definition_dir(user_key, coord) if m is not None else None
+    if m is None:
         m = publications.get_published_manifest(coord)
-        if m is not None:
-            base = publications.published_agent_dir(coord)
-    if m is None or base is None:
-        return None
-    asset = m.prompts.get("instruction")
-    if asset is None:
-        return None
-    path = base / asset.path
-    return path.read_text(encoding="utf-8") if path.is_file() else None
+        base = publications.published_agent_dir(coord) if m is not None else None
+    if m is not None and base is not None:
+        asset = m.prompts.get("instruction")
+        if asset is not None:
+            path = base / asset.path
+            if path.is_file():
+                return path.read_text(encoding="utf-8")
+    return builtin.read_instruction_text(coord)
 
 
 def run_attachment(
