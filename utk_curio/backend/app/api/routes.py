@@ -73,6 +73,7 @@ from utk_curio.backend.config import (
     GUEST_LLM_API_KEY,
     GUEST_LLM_MODEL,
 )
+from utk_curio.backend.app.agents.providers import ProviderConfig, run_chat_completion
 
 
 def _resolve_llm_config():
@@ -106,42 +107,16 @@ def _resolve_llm_config():
 
 
 def _call_llm(api_key: str, api_type: str, base_url: str, model: str, messages: list) -> str:
-    """Dispatch an LLM chat completion to the configured provider."""
-    if api_type == "anthropic":
-        import anthropic
-        system_parts = [m["content"] for m in messages if m["role"] == "system"]
-        chat_messages = [m for m in messages if m["role"] != "system"]
-        client = anthropic.Anthropic(api_key=api_key)
-        resp = client.messages.create(
-            model=model,
-            system="\n".join(system_parts) if system_parts else anthropic.NOT_GIVEN,
-            messages=chat_messages,
-            max_tokens=4096,
-        )
-        return resp.content[0].text
-    elif api_type == "gemini":
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
-        system_parts = [m["content"] for m in messages if m["role"] == "system"]
-        chat_messages = [m for m in messages if m["role"] != "system"]
-        history = []
-        for m in chat_messages[:-1]:
-            role = "user" if m["role"] == "user" else "model"
-            history.append({"role": role, "parts": [m["content"]]})
-        last_user_msg = chat_messages[-1]["content"] if chat_messages else ""
-        system_instruction = "\n".join(system_parts) if system_parts else None
-        gen_model = genai.GenerativeModel(model, system_instruction=system_instruction)
-        chat = gen_model.start_chat(history=history)
-        response = chat.send_message(last_user_msg)
-        return response.text
-    else:  # openai_compatible (default)
-        from openai import OpenAI
-        kwargs = {"api_key": api_key or "no-key"}
-        if base_url:
-            kwargs["base_url"] = base_url
-        client = OpenAI(**kwargs)
-        completion = client.chat.completions.create(model=model, messages=messages)
-        return completion.choices[0].message.content
+    """Dispatch an LLM chat completion via the agents provider port.
+
+    Provider dispatch (and the raw provider SDKs) lives in
+    ``app/agents/providers.py`` so LLM behavior stays out of the route layer;
+    this thin wrapper preserves the existing call signature.
+    """
+    return run_chat_completion(
+        ProviderConfig(api_key=api_key, api_type=api_type, base_url=base_url, model=model),
+        messages,
+    )
 
 # The Flask app
 from utk_curio.backend.app.api import bp

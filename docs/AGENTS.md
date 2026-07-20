@@ -128,6 +128,8 @@ Resolution rules (`_resolve_llm_config` in [`app/api/routes.py`](../utk_curio/ba
 
 Operators point the whole install at a different default by setting the env vars above; individual users still override per-account under LLM Settings. The API key is read from `AICONN_API_KEY` (the same name used by the connection harness) when a dedicated `CURIO_DEFAULT_LLM_API_KEY` is not set.
 
+Provider *dispatch* lives in a provider-neutral port, [`app/agents/providers.py`](../utk_curio/backend/app/agents/providers.py) — `run_chat_completion(ProviderConfig, messages)`. It is the single place the `openai` / `anthropic` / `google-generativeai` SDKs are used, so LLM behavior stays out of the route/flow/node layers. A resolved provider config (from LLM Settings or the default above) is handed to the port; callers never import a provider SDK directly. A future LangChain adapter, if adopted, would sit behind this same port without changing callers.
+
 ---
 
 ## 5. Where lifecycle state lives
