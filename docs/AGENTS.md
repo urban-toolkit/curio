@@ -166,8 +166,13 @@ The `/api/agents` endpoints ([`app/agents/routes.py`](../utk_curio/backend/app/a
 | `DELETE /api/agents/projects/<projectId>/<coord>` | Installed | Remove it from that project's lockfile. |
 | `POST /api/agents/publications` `{coord}` | Publish | Publish an **owned, imported, store-backed** definition to the Global Catalog (imported-only — rejects built-in/global/absent). |
 | `DELETE /api/agents/publications/<coord>` | Publish | Unpublish it (owner only). |
+| `GET /api/agents/projects/<projectId>/attachments` | Attach | List the project's private attachments. |
+| `POST /api/agents/projects/<projectId>/attachments` `{coord, target}` | Attach | Attach an installed template to a `{kind: node\|canvas\|connection, targetId?}`. Requires the template installed (no auto-install). |
+| `DELETE /api/agents/projects/<projectId>/attachments/<attachmentId>` | Attach | Detach the private instance. |
 
 Each endpoint requires auth; project endpoints check ownership (404 if the project isn't the caller's). A card carries `id`, `version`, `dirName`, `name`, `category`, `purpose`, `capabilities`, `hooks`, `provenance`, and the `imported` / `installedInProject` flags the drawer uses to pick the right action controls.
+
+An **attachment** is a private agent instance bound to a target. It lives in the project's `spec["dataflow"]["agentAttachments"]` (alongside nodes/edges) and carries an `attachmentId` + a `sessionId` + an optimistic `revision` — no version/publish identity (`DEC-031`). Attaching requires the template to be installed in the project (never auto-installs), and a node/connection target must reference an existing node/edge.
 
 The **Global Catalog** is the 13 built-in agents ∪ any **published** definitions. The built-ins are the migrated prompt behaviors (Chat, Debug, Node Explainer, Dataflow Explainer, Connection Builder, the planners/validators, etc.), defined as a data-driven roster in [`app/agents/builtin.py`](../utk_curio/backend/app/agents/builtin.py), generated from the canonical prompt→agent map over `utk_curio/llm-prompts/*.txt` and validated through the manifest contract. A built-in resolves for Import/Install straight from the roster (no prior store copy needed). The generated-content evaluator is intentionally absent (no prompt asset yet).
 

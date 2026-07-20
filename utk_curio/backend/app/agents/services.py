@@ -11,7 +11,17 @@ User-facing overview: ``docs/AGENTS.md``.
 
 from __future__ import annotations
 
-from utk_curio.backend.app.agents import builtin, imports, project_agents, publications, storage
+import uuid
+
+from utk_curio.backend.app.agents import (
+    attachments,
+    builtin,
+    imports,
+    project_agents,
+    publications,
+    storage,
+)
+from utk_curio.backend.app.agents.attachments import AttachmentError
 from utk_curio.backend.app.agents.manifest import AgentManifest
 from utk_curio.backend.app.projects import storage as projects_storage
 
@@ -203,3 +213,58 @@ def unpublish_agent(user_key: str, coord: str) -> dict:
         raise AgentServiceError("only the owning account can unpublish this definition", 403)
     publications.unpublish(coord)
     return {"coord": coord, "published": False}
+
+
+# ── attachments (private agent instances in the project graph) ───────────────
+def _read_spec_or_404(user_key: str, project_id: str) -> dict:
+    spec = projects_storage.read_spec(user_key, project_id)
+    if spec is None:
+        raise AgentServiceError(f"project {project_id!r} has no spec", 404)
+    return spec
+
+
+def _attachment_card(spec: dict, record: dict, user_key: str) -> dict:
+    """Attachment record + a resolved name/hooks for its source template (best-effort)."""
+    coord = record.get("coord", "")
+    m = _resolve_definition(user_key, coord)
+    return {
+        "attachmentId": record.get("attachmentId"),
+        "coord": coord,
+        "target": record.get("target"),
+        "sessionId": record.get("sessionId"),
+        "revision": record.get("revision", 1),
+        "name": m.name if m else coord,
+        "category": m.category if m else None,
+        "hooks": [t.kind for t in m.compatible_targets] if m else [],
+    }
+
+
+def list_project_attachments(user_key: str, project_id: str) -> list[dict]:
+    spec = _read_spec_or_404(user_key, project_id)
+    return [_attachment_card(spec, r, user_key) for r in attachments.list_attachments(spec)]
+
+
+def attach_agent(user_key: str, project_id: str, coord: str, target: object) -> dict:
+    """Attach an installed template to a target. Requires the template installed
+    in this project (no auto-install), and a valid target."""
+    spec = _read_spec_or_404(user_key, project_id)
+    if coord not in project_agents.project_agents(spec):
+        raise AgentServiceError(
+            "install the agent in this project before attaching it", 400
+        )
+    try:
+        record = attachments.attach(
+            spec, coord, target, attachment_id=uuid.uuid4().hex, session_id=uuid.uuid4().hex
+        )
+    except AttachmentError as exc:
+        raise AgentServiceError(str(exc), 400) from exc
+    projects_storage.write_spec(user_key, project_id, spec)
+    return _attachment_card(spec, record, user_key)
+
+
+def detach_agent(user_key: str, project_id: str, attachment_id: str) -> dict:
+    spec = _read_spec_or_404(user_key, project_id)
+    removed = attachments.detach(spec, attachment_id)
+    if removed:
+        projects_storage.write_spec(user_key, project_id, spec)
+    return {"attachmentId": attachment_id, "detached": removed}

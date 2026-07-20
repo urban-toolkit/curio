@@ -137,3 +137,50 @@ def uninstall_from_project(project_id: str, coord: str):
     except AgentServiceError as exc:
         return _svc_error(exc)
     return jsonify(payload), 200
+
+
+# ── Attachments (private agent instances on a node/canvas/connection) ─────────
+@agents_bp.route("/projects/<project_id>/attachments", methods=["GET"])
+@require_auth
+def list_attachments(project_id: str):
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        att = agents_services.list_project_attachments(_user_dir_key(g.user), project_id)
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify({"attachments": att}), 200
+
+
+@agents_bp.route("/projects/<project_id>/attachments", methods=["POST"])
+@require_auth
+def attach_agent(project_id: str):
+    body = request.get_json(silent=True) or {}
+    coord = body.get("coord")
+    target = body.get("target")
+    if not isinstance(coord, str):
+        return _error("body must include 'coord'")
+    if not isinstance(target, dict):
+        return _error("body must include a 'target' object")
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        payload = agents_services.attach_agent(_user_dir_key(g.user), project_id, coord, target)
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify(payload), 201
+
+
+@agents_bp.route("/projects/<project_id>/attachments/<attachment_id>", methods=["DELETE"])
+@require_auth
+def detach_agent(project_id: str, attachment_id: str):
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        payload = agents_services.detach_agent(_user_dir_key(g.user), project_id, attachment_id)
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify(payload), 200

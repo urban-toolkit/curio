@@ -225,3 +225,71 @@ class TestPublish:
         assert r.status_code == 200
         cat = client.get("/api/agents/catalog", headers=_auth(token)).get_json()["agents"]
         assert not any(a["id"] == "agent.my-custom" for a in cat)
+
+
+class TestAttachments:
+    def test_attach_canvas_then_list_then_detach(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        coord = "agent.node-explainer@1.0.0"  # a built-in
+        client.post(
+            f"/api/agents/projects/{alice_project}/install",
+            json={"coord": coord}, headers=_auth(token),
+        )
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments",
+            json={"coord": coord, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        )
+        assert r.status_code == 201, r.get_data(as_text=True)
+        att = r.get_json()
+        assert att["coord"] == coord
+        assert att["target"] == {"kind": "canvas"}
+        assert att["attachmentId"] and att["sessionId"]
+        assert att["name"] == "Node Explainer"
+
+        listed = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        assert len(listed) == 1 and listed[0]["attachmentId"] == att["attachmentId"]
+
+        d = client.delete(
+            f"/api/agents/projects/{alice_project}/attachments/{att['attachmentId']}",
+            headers=_auth(token),
+        )
+        assert d.status_code == 200 and d.get_json()["detached"] is True
+        assert client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"] == []
+
+    def test_attach_requires_installed_template(self, client, user_and_token, tmp_curio, alice_project):
+        # not installed in the project → 400 (no auto-install)
+        _, token = user_and_token
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments",
+            json={"coord": "agent.node-explainer@1.0.0", "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        )
+        assert r.status_code == 400
+
+    def test_attach_bad_node_target_rejected(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        coord = "agent.node-explainer@1.0.0"
+        client.post(
+            f"/api/agents/projects/{alice_project}/install",
+            json={"coord": coord}, headers=_auth(token),
+        )
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments",
+            json={"coord": coord, "target": {"kind": "node", "targetId": "ghost"}},
+            headers=_auth(token),
+        )
+        assert r.status_code == 400  # node id doesn't exist in the (empty) project
+
+    def test_attach_missing_target_400(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments",
+            json={"coord": "agent.node-explainer@1.0.0"},
+            headers=_auth(token),
+        )
+        assert r.status_code == 400
