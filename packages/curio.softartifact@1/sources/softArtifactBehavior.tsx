@@ -149,7 +149,7 @@ async function informArtifact(artifactId: string, sourceFile: string | null, top
 // Call the backend's /propose_trill endpoint for a given artifact and context
 // if context(dataflow) is none -> suggests a new dataflow
 // if there is a context -> suggest edit to the dataflow 
-async function proposeTrillArtifact(artifactId: string, sourceFile: string | null, top_k = 8, mode: string, context?: any) {
+async function proposeTrillArtifact(artifactId: string, sourceFile: string | null, top_k = 8, role: string, context?: any) {
   //create a json request
   //json request header
   const headers: Record<string, string> = {
@@ -165,7 +165,7 @@ async function proposeTrillArtifact(artifactId: string, sourceFile: string | nul
     artifactId,
     sourceFile,
     top_k,
-    mode
+    role
   }
 
   if (context !== undefined && context !== null) {
@@ -352,7 +352,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
         artifactId,
         sourceFile: state.sourceFile,
         mimeType: state.mimeType,
-        role: 'propose',
+        role: role,
         proposal: out.proposal,
         rationale: out.rationale
       })
@@ -475,8 +475,8 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
         await runInform(out.artifactId, role);
       }
 
-      if (role === "transform" && out.artifactId) {
-        await runPropose(out.artifactId, role)
+      if ((role === "transform" || role === "expand") && out.artifactId) {
+        await runPropose(out.artifactId, role);
       }
 
     } catch (e) {

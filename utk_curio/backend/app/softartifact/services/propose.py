@@ -37,6 +37,7 @@ def _parse_proposal_json(llm_text: str) -> dict:
         # model returned plain text instead of JSON
         return {
             "proposal": f"your AI doesnt return actual json, sad AI here's what it's return: \n {clean} ",
+            "rationale": ""
         }
     
     #guard if json is not a dictionary 

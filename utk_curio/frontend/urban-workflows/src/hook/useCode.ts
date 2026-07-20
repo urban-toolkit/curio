@@ -239,6 +239,7 @@ export function useCode(): IUseCode {
     //apply proposal for soft artifact node 
     const applyProposal = useCallback((dataflow: any) => {
         // load trill expect {dataflow: {nodes,edges,name}}
+        eraseWorkflowSuggestions();  // make sure there's no work Flow suggestion
         loadTrill({ dataflow }, "workflow");
         ensureWorkflowDeps({ dataflow });
     }, [])

@@ -34,12 +34,12 @@ def _format_passages(spans: list[dict]) -> str:
     """
     lines = []
     for i, s in enumerate(spans, start=1):
-        # Fall back to a generated id like "c-1" if chunk_id is missing
-        chunk_id = s.get("chunk_id", f"c-{i}")
+        # Fall back to a generated id like "c-1" if index is missing
+        chunk_id = s.get("index ", f"c-{i}")
         # Guard against None text, then strip whitespace
         text = (s.get("text") or "").strip()
         if text:
-            # Format as "[1] (chunk_id)\n<text>" for easy citation by the LLM
+            # Format as "[1] (index)\n<text>" for easy citation by the LLM
             lines.append(f"[{i}] ({chunk_id})\n{text}")
     # Join all formatted passages with blank lines between them
     return "\n\n".join(lines)
