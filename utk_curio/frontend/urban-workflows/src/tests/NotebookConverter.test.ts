@@ -167,6 +167,33 @@ describe("Testing the addition of Merge Flow", ()=>{
         expect(merge_output).toBe("y = arg[0]\nx = arg[1]\nz = arg[2]\nproduct = x * y * z")
     })
 
+    test("3 dependancies for 1 Merge-Flow, and 3 for another", ()=>{
+        const cellEdges: CellEdge[] = [
+            { source: 0, target: 3, parent_var: "a" },
+            { source: 1, target: 3, parent_var: "b" },
+            { source: 2, target: 3, parent_var: "c" },
+            { source: 3, target: 4 },
+            { source: 4, target: 8, parent_var: "x" },
+            { source: 5, target: 8, parent_var: "p" },
+            { source: 6, target: 8, parent_var: "q" },
+            { source: 8, target: 9 },
+        ];
+        const hasOutgoing = new Set<number>([0, 1, 2, 3, 4, 5, 6, 8]);
+        const incomingSources = new Map<number, number[]>([
+            [3, [0, 1, 2]],
+            [4, [3]],
+            [8, [4, 5, 6]],
+            [9, [8]],
+        ]);
+
+        const node4 = wireCode("x = a + b + c", 4, cellEdges, hasOutgoing, incomingSources);
+        expect(node4).toBe("a = arg[0]\nb = arg[1]\nc = arg[2]\nx = a + b + c\nreturn x");
+        
+        const node8 = wireCode("", 8, cellEdges, hasOutgoing, incomingSources);
+        expect(node8).toBe("");
+    })
+
+
     test("5 dependancies Merge-Flow", ()=>{
         const cellEdges: CellEdge[] = [
             { source: 0, target: 6, parent_var: "a" },
@@ -188,6 +215,52 @@ describe("Testing the addition of Merge Flow", ()=>{
 
         const out = wireCode("print(a+b+c+d+e)", 5, cellEdges, hasOutgoing, incomingSources)
         expect(out).toBe("a = arg[0]\nb = arg[1]\nc = arg[2]\nd = arg[3]\ne = arg[4]\nprint(a+b+c+d+e)")
+    })
+
+    test("7 dependancies Merge-Flow", ()=>{
+        const cellEdges: CellEdge[] = [
+            { source: 0, target: 8, parent_var: "a" },
+            { source: 1, target: 8, parent_var: "b" },
+            { source: 2, target: 8, parent_var: "c" },
+            { source: 3, target: 8, parent_var: "d" },
+            { source: 4, target: 8, parent_var: "e" },
+            { source: 5, target: 8, parent_var: "f" },
+            { source: 6, target: 8, parent_var: "g" },
+            { source: 8, target: 7 } // 7 is the Merge Flow node
+        ];
+
+        const hasOutgoing = new Set<number>([0, 1, 2, 3, 4, 5, 6, 7]);
+        const incomingSources = new Map<number, number[]>([
+            [8, [0, 1, 2, 3, 4, 5, 6]],
+            [7, [8]],
+        ]);
+        const out = wireCode("print(a+b+c+d+e+f+g)", 7, cellEdges, hasOutgoing, incomingSources)
+        expect(out).toBe("a = arg[0]\nb = arg[1]\nc = arg[2]\nd = arg[3]\ne = arg[4][0]\nf = arg[4][1]\ng = arg[4][2]\nprint(a+b+c+d+e+f+g)")
+    })
+
+    test("10 dependancies Merge-Flow", ()=>{
+        const cellEdges: CellEdge[] = [
+            { source: 0, target: 11, parent_var: "a" },
+            { source: 1, target: 11, parent_var: "b" },
+            { source: 2, target: 11, parent_var: "c" },
+            { source: 3, target: 11, parent_var: "d" },
+            { source: 4, target: 11, parent_var: "e" },
+            { source: 5, target: 11, parent_var: "f" },
+            { source: 6, target: 11, parent_var: "g" },
+            { source: 7, target: 11, parent_var: "h" },
+            { source: 8, target: 11, parent_var: "i" },
+            { source: 9, target: 11, parent_var: "j" },
+            { source: 11, target: 10 } // 10 is the Merge Flow node
+        ];
+
+        const hasOutgoing = new Set<number>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        const incomingSources = new Map<number, number[]>([
+            [11, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]],
+            [10, [11]],
+        ]);
+
+        const out = wireCode("print(a+b+c+d+e+f+g+h+i+j)", 10, cellEdges, hasOutgoing, incomingSources)
+        expect(out).toBe("a = arg[0]\nb = arg[1]\nc = arg[2]\nd = arg[3]\ne = arg[4][0]\nf = arg[4][1]\ng = arg[4][2]\nh = arg[4][3]\ni = arg[4][4][0]\nj = arg[4][4][1]\nprint(a+b+c+d+e+f+g+h+i+j)")
     })
 })
 
