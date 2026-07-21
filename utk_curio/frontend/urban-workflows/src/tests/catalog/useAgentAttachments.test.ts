@@ -22,6 +22,8 @@ function att(id: string) {
     target: { kind: "canvas" as const },
     sessionId: "s",
     revision: 1,
+    intent: null,
+    intentEdited: false,
     name: "Node Explainer",
     category: "node",
     hooks: ["node"],

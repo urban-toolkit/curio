@@ -32,8 +32,14 @@ export const AgentDockOverlay: React.FC = () => {
       {selected ? (
         <AgentChatPanel
           attachment={selected}
-          onSend={(message) => ctx.run(selected.attachmentId, message)}
+          turns={ctx.transcripts[selected.attachmentId] ?? []}
+          loadingHistory={ctx.hydratingId === selected.attachmentId}
+          historyError={ctx.hydrateErrors[selected.attachmentId] ?? null}
+          onRetryHistory={() => ctx.hydrateSession(selected.attachmentId)}
+          onSend={(message) => ctx.sendMessage(selected.attachmentId, message)}
           onClose={ctx.closeChat}
+          onSaveIntent={(intent) => ctx.saveIntent(selected.attachmentId, intent)}
+          onClearConversation={() => ctx.clearConversation(selected.attachmentId)}
         />
       ) : null}
     </>

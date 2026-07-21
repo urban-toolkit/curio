@@ -9,6 +9,8 @@ function att(id: string, name: string) {
     target: { kind: "canvas" as const },
     sessionId: "s",
     revision: 1,
+    intent: null,
+    intentEdited: false,
     name,
     category: "node",
     hooks: ["node"],

@@ -46,6 +46,30 @@ export interface AgentAttachment {
   name: string;
   category: string | null;
   hooks: string[];
+  /**
+   * The attachment's initial intent: the user's edit when present, otherwise
+   * the definition's instruction prompt resolved server-side from the actual
+   * prompt source (never duplicated client-side). Null when the definition has
+   * no prompt asset.
+   */
+  intent: string | null;
+  /** True when the intent is a user edit (an override of the prompt source). */
+  intentEdited: boolean;
+}
+
+/** One persisted chat turn of an attachment's session. */
+export interface AgentSessionTurn {
+  role: "user" | "agent";
+  text: string;
+  ts?: string;
+  /** Display-only failure marker; excluded from the agent's context. */
+  error?: boolean;
+}
+
+export interface AgentSession {
+  attachmentId: string;
+  sessionId: string | null;
+  turns: AgentSessionTurn[];
 }
 
 export interface AgentTarget {
@@ -137,6 +161,33 @@ export const agentsApi = {
   ): Promise<{ attachmentId: string; detached: boolean }> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}`,
+      { method: "DELETE" },
+    );
+  },
+
+  /** Set/clear the attachment's editable intent; null/empty restores the prompt source. */
+  updateAttachmentIntent(
+    projectId: string,
+    attachmentId: string,
+    intent: string | null,
+  ): Promise<AgentAttachment> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}`,
+      { method: "PATCH", body: JSON.stringify({ intent }) },
+    );
+  },
+
+  /** The attachment's persisted chat transcript (its session history). */
+  getSession(projectId: string, attachmentId: string): Promise<AgentSession> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/session`,
+    );
+  },
+
+  /** Clear the transcript; the attachment and its session id are kept. */
+  clearSession(projectId: string, attachmentId: string): Promise<AgentSession> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/session`,
       { method: "DELETE" },
     );
   },

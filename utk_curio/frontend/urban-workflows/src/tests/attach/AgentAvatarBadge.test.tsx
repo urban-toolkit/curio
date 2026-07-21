@@ -9,6 +9,8 @@ function attachment(over: Partial<any> = {}): any {
     target: { kind: "canvas" },
     sessionId: "s1",
     revision: 1,
+    intent: null,
+    intentEdited: false,
     name: "Chat",
     category: "node",
     hooks: ["node", "canvas"],

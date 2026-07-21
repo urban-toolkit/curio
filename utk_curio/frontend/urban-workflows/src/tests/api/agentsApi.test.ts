@@ -107,4 +107,29 @@ describe("agentsApi", () => {
       body: JSON.stringify({ message: "hi" }),
     });
   });
+
+  it("updateAttachmentIntent() PATCHes the intent (null clears)", () => {
+    agentsApi.updateAttachmentIntent("p1", "att-1", "focus on cost");
+    expect(mockFetch).toHaveBeenCalledWith("/api/agents/projects/p1/attachments/att-1", {
+      method: "PATCH",
+      body: JSON.stringify({ intent: "focus on cost" }),
+    });
+    agentsApi.updateAttachmentIntent("p1", "att-1", null);
+    expect(mockFetch).toHaveBeenLastCalledWith("/api/agents/projects/p1/attachments/att-1", {
+      method: "PATCH",
+      body: JSON.stringify({ intent: null }),
+    });
+  });
+
+  it("getSession() GETs the attachment's transcript", () => {
+    agentsApi.getSession("p1", "att-1");
+    expect(mockFetch).toHaveBeenCalledWith("/api/agents/projects/p1/attachments/att-1/session");
+  });
+
+  it("clearSession() DELETEs the transcript", () => {
+    agentsApi.clearSession("p1", "att-1");
+    expect(mockFetch).toHaveBeenCalledWith("/api/agents/projects/p1/attachments/att-1/session", {
+      method: "DELETE",
+    });
+  });
 });

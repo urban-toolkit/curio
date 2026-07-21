@@ -15,6 +15,8 @@ function attachment(over: Partial<any>): any {
     target: { kind: "node", targetId: "n1" },
     sessionId: "s1",
     revision: 1,
+    intent: null,
+    intentEdited: false,
     name: "Node Explainer",
     category: "node",
     hooks: ["node"],
