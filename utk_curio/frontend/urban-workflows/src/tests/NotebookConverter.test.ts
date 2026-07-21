@@ -195,6 +195,7 @@ describe("Testing the addition of Merge Flow", ()=>{
 
 
     test("5 dependancies Merge-Flow", ()=>{
+        // A single Merge-Flow Node can have a maximum of 5 connections
         const cellEdges: CellEdge[] = [
             { source: 0, target: 6, parent_var: "a" },
             { source: 1, target: 6, parent_var: "b" },
@@ -217,46 +218,56 @@ describe("Testing the addition of Merge Flow", ()=>{
         expect(out).toBe("a = arg[0]\nb = arg[1]\nc = arg[2]\nd = arg[3]\ne = arg[4]\nprint(a+b+c+d+e)")
     })
 
-    test("7 dependancies Merge-Flow", ()=>{
+    test("9 dependancies Merge-Flow", ()=>{
+        // At 9 dependencies, 2 nested Merge-FLow nodes are needed
         const cellEdges: CellEdge[] = [
-            { source: 0, target: 8, parent_var: "a" },
-            { source: 1, target: 8, parent_var: "b" },
-            { source: 2, target: 8, parent_var: "c" },
-            { source: 3, target: 8, parent_var: "d" },
-            { source: 4, target: 8, parent_var: "e" },
-            { source: 5, target: 8, parent_var: "f" },
-            { source: 6, target: 8, parent_var: "g" },
-            { source: 8, target: 7 } // 7 is the Merge Flow node
-        ];
-
-        const hasOutgoing = new Set<number>([0, 1, 2, 3, 4, 5, 6, 7]);
-        const incomingSources = new Map<number, number[]>([
-            [8, [0, 1, 2, 3, 4, 5, 6]],
-            [7, [8]],
-        ]);
-        const out = wireCode("print(a+b+c+d+e+f+g)", 7, cellEdges, hasOutgoing, incomingSources)
-        expect(out).toBe("a = arg[0]\nb = arg[1]\nc = arg[2]\nd = arg[3]\ne = arg[4][0]\nf = arg[4][1]\ng = arg[4][2]\nprint(a+b+c+d+e+f+g)")
-    })
-
-    test("10 dependancies Merge-Flow", ()=>{
-        const cellEdges: CellEdge[] = [
-            { source: 0, target: 11, parent_var: "a" },
-            { source: 1, target: 11, parent_var: "b" },
-            { source: 2, target: 11, parent_var: "c" },
-            { source: 3, target: 11, parent_var: "d" },
+            { source: 0, target: 10, parent_var: "a" },
+            { source: 1, target: 10, parent_var: "b" },
+            { source: 2, target: 10, parent_var: "c" },
+            { source: 3, target: 10, parent_var: "d" },
             { source: 4, target: 11, parent_var: "e" },
             { source: 5, target: 11, parent_var: "f" },
             { source: 6, target: 11, parent_var: "g" },
             { source: 7, target: 11, parent_var: "h" },
             { source: 8, target: 11, parent_var: "i" },
-            { source: 9, target: 11, parent_var: "j" },
-            { source: 11, target: 10 } // 10 is the Merge Flow node
+            { source: 11, target: 10 }, // inner Merge-Flow node feeds outer merge
+            { source: 10, target: 9 }   // 9 is the final Merge Flow node
         ];
 
-        const hasOutgoing = new Set<number>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        const hasOutgoing = new Set<number>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
         const incomingSources = new Map<number, number[]>([
-            [11, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]],
-            [10, [11]],
+            [11, [4, 5, 6, 7, 8]],    // inner merge's own sources: e,f,g,h,i
+            [10, [0, 1, 2, 3, 11]],   // outer merge: a,b,c,d + inner merge (node 11)
+            [9, [10]],                // final consumer takes outer merge's single output
+        ]);
+        const out = wireCode("print(a+b+c+d+e+f+g+h+i)", 9, cellEdges, hasOutgoing, incomingSources)
+        expect(out).toBe("a = arg[0]\nb = arg[1]\nc = arg[2]\nd = arg[3]\ne = arg[4][0]\nf = arg[4][1]\ng = arg[4][2]\nh = arg[4][3]\ni = arg[4][4]\nprint(a+b+c+d+e+f+g+h+i)")
+    })
+
+    test("10 dependancies Merge-Flow", ()=>{
+        //At 10 dependencies, 3 nested merge flows are needed
+        const cellEdges: CellEdge[] = [
+            { source: 0, target: 11, parent_var: "a" },
+            { source: 1, target: 11, parent_var: "b" },
+            { source: 2, target: 11, parent_var: "c" },
+            { source: 3, target: 11, parent_var: "d" },
+            { source: 4, target: 12, parent_var: "e" },
+            { source: 5, target: 12, parent_var: "f" },
+            { source: 6, target: 12, parent_var: "g" },
+            { source: 7, target: 12, parent_var: "h" },
+            { source: 8, target: 13, parent_var: "i" },
+            { source: 9, target: 13, parent_var: "j" },
+            { source: 13, target: 12 }, // innermost merge feeds middle merge
+            { source: 12, target: 11 }, // middle merge feeds outer merge
+            { source: 11, target: 10 }  // outer merge feeds final consumer, 10
+        ];
+
+        const hasOutgoing = new Set<number>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+        const incomingSources = new Map<number, number[]>([
+            [13, [8, 9]],             // innermost merge: i, j
+            [12, [4, 5, 6, 7, 13]],   // middle merge: e,f,g,h + innermost merge (13)
+            [11, [0, 1, 2, 3, 12]],   // outer merge: a,b,c,d + middle merge (12)
+            [10, [11]],               // final consumer takes outer merge's output
         ]);
 
         const out = wireCode("print(a+b+c+d+e+f+g+h+i+j)", 10, cellEdges, hasOutgoing, incomingSources)
