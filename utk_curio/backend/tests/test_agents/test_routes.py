@@ -587,3 +587,266 @@ class TestAttachCompatibility:
         assert sorted(chat["hooks"]) == ["canvas", "node"]  # fresh roster, not the stale copy
         r = self._attach(client, token, alice_project, coord, {"kind": "canvas"})
         assert r.status_code == 201, r.get_data(as_text=True)
+
+
+class TestIntent:
+    """Attachment intent (memo dev/19): served from the prompt source unless
+    edited; PATCH persists an override used as the run's system turn."""
+
+    def _attach_builtin(self, client, token, project_id, coord="agent.chat-agent@1.0.0"):
+        client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
+        r = client.post(
+            f"/api/agents/projects/{project_id}/attachments",
+            json={"coord": coord, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        )
+        return r.get_json()
+
+    def test_card_intent_is_the_prompt_source(self, client, user_and_token, tmp_curio, alice_project):
+        from utk_curio.backend.app.agents import builtin
+
+        _, token = user_and_token
+        card = self._attach_builtin(client, token, alice_project)
+        # Same file the runtime resolves — no literal duplicated in the test either.
+        assert card["intent"] == builtin.read_instruction_text("agent.chat-agent@1.0.0")
+        assert card["intentEdited"] is False
+
+    def test_patch_persists_and_null_restores(self, client, user_and_token, tmp_curio, alice_project):
+        from utk_curio.backend.app.agents import builtin
+
+        _, token = user_and_token
+        att = self._attach_builtin(client, token, alice_project)
+        att_id = att["attachmentId"]
+        r = client.patch(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}",
+            json={"intent": "focus on runtime cost"},
+            headers=_auth(token),
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)
+        card = r.get_json()
+        assert card["intent"] == "focus on runtime cost"
+        assert card["intentEdited"] is True
+        assert card["revision"] == att["revision"] + 1
+        # Persisted across a fresh GET.
+        listed = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        assert listed[0]["intent"] == "focus on runtime cost"
+        # Clearing falls back to the prompt source.
+        r = client.patch(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}",
+            json={"intent": None},
+            headers=_auth(token),
+        )
+        card = r.get_json()
+        assert card["intent"] == builtin.read_instruction_text("agent.chat-agent@1.0.0")
+        assert card["intentEdited"] is False
+
+    def test_patch_validation_and_404(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        att = self._attach_builtin(client, token, alice_project)
+        att_id = att["attachmentId"]
+        assert client.patch(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}",
+            json={}, headers=_auth(token),
+        ).status_code == 400
+        assert client.patch(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}",
+            json={"intent": 42}, headers=_auth(token),
+        ).status_code == 400
+        assert client.patch(
+            f"/api/agents/projects/{alice_project}/attachments/ghost",
+            json={"intent": "x"}, headers=_auth(token),
+        ).status_code == 404
+
+    def test_run_uses_edited_intent_as_system(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        captured = {}
+
+        def _fake_run(config, messages):
+            captured["messages"] = messages
+            return "ok"
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        _, token = user_and_token
+        att = self._attach_builtin(client, token, alice_project)
+        att_id = att["attachmentId"]
+        client.patch(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}",
+            json={"intent": "answer in one sentence"},
+            headers=_auth(token),
+        )
+        client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "hi"},
+            headers=_auth(token),
+        )
+        assert captured["messages"][0] == {"role": "system", "content": "answer in one sentence"}
+
+
+class TestSession:
+    """Persistent chat sessions (memo dev/20): the transcript survives across
+    requests, feeds bounded context into runs, and dies with its attachment."""
+
+    def _attach_builtin(self, client, token, project_id, coord="agent.chat-agent@1.0.0"):
+        client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
+        r = client.post(
+            f"/api/agents/projects/{project_id}/attachments",
+            json={"coord": coord, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        )
+        return r.get_json()
+
+    def _mock_provider(self, monkeypatch, replies):
+        calls = []
+
+        def _fake_run(config, messages):
+            calls.append(messages)
+            return replies[len(calls) - 1]
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        return calls
+
+    def test_runs_persist_and_get_session_returns_history(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        self._mock_provider(monkeypatch, ["a1", "a2"])
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)["attachmentId"]
+        for msg in ("q1", "q2"):
+            client.post(
+                f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+                json={"message": msg}, headers=_auth(token),
+            )
+        r = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        )
+        assert r.status_code == 200
+        body = r.get_json()
+        assert [(t["role"], t["text"]) for t in body["turns"]] == [
+            ("user", "q1"), ("agent", "a1"), ("user", "q2"), ("agent", "a2"),
+        ]
+        assert body["sessionId"]
+
+    def test_second_run_includes_prior_context(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        calls = self._mock_provider(monkeypatch, ["a1", "a2"])
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)["attachmentId"]
+        for msg in ("q1", "q2"):
+            client.post(
+                f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+                json={"message": msg}, headers=_auth(token),
+            )
+        second = calls[1]
+        assert second[0]["role"] == "system"
+        assert [(m["role"], m["content"]) for m in second[1:]] == [
+            ("user", "q1"), ("assistant", "a1"), ("user", "q2"),
+        ]
+
+    def test_provider_error_persists_marker_and_is_excluded_from_context(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        calls = []
+
+        def _flaky(config, messages):
+            calls.append(messages)
+            if len(calls) == 1:
+                raise RuntimeError("boom")
+            return "recovered"
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _flaky)
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)["attachmentId"]
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        assert r.status_code == 502
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        assert [(t["role"], bool(t.get("error"))) for t in turns] == [("user", False), ("agent", True)]
+        # Retry: the error marker is display-only, not provider context.
+        client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q2"}, headers=_auth(token),
+        )
+        assert [(m["role"], m["content"]) for m in calls[1][1:]] == [
+            ("user", "q1"), ("user", "q2"),
+        ]
+
+    def test_clear_session_keeps_attachment(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        self._mock_provider(monkeypatch, ["a1"])
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)["attachmentId"]
+        client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        r = client.delete(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        )
+        assert r.status_code == 200
+        assert r.get_json()["turns"] == []
+        listed = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        assert [a["attachmentId"] for a in listed] == [att_id]
+
+    def test_session_404_on_unknown_attachment(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        for method in ("get", "delete"):
+            r = getattr(client, method)(
+                f"/api/agents/projects/{alice_project}/attachments/ghost/session",
+                headers=_auth(token),
+            )
+            assert r.status_code == 404
+
+    def test_detach_deletes_transcript_file(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.agents import sessions as sessions_mod
+
+        self._mock_provider(monkeypatch, ["a1"])
+        user, token = user_and_token
+        card = self._attach_builtin(client, token, alice_project)
+        att_id, session_id = card["attachmentId"], card["sessionId"]
+        client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        ukey = _user_dir_key(user)
+        assert sessions_mod._session_path(ukey, alice_project, session_id).exists()
+        client.delete(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}",
+            headers=_auth(token),
+        )
+        assert not sessions_mod._session_path(ukey, alice_project, session_id).exists()
+
+    def test_prune_on_save_deletes_transcript_file(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.agents import sessions as sessions_mod
+
+        self._mock_provider(monkeypatch, ["a1"])
+        user, token = user_and_token
+        coord = "agent.node-explainer@1.0.0"
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token))
+        client.put(
+            f"/api/projects/{alice_project}",
+            json={"name": "p", "spec": {"dataflow": {"nodes": [{"id": "n1"}], "edges": [], "packages": []}}, "outputs": []},
+            headers=_auth(token),
+        )
+        card = client.post(
+            f"/api/agents/projects/{alice_project}/attachments",
+            json={"coord": coord, "target": {"kind": "node", "targetId": "n1"}},
+            headers=_auth(token),
+        ).get_json()
+        att_id, session_id = card["attachmentId"], card["sessionId"]
+        client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        ukey = _user_dir_key(user)
+        assert sessions_mod._session_path(ukey, alice_project, session_id).exists()
+        # Delete the node: the pruned attachment's transcript is GC'd too.
+        client.put(
+            f"/api/projects/{alice_project}",
+            json={"name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": []},
+            headers=_auth(token),
+        )
+        assert not sessions_mod._session_path(ukey, alice_project, session_id).exists()

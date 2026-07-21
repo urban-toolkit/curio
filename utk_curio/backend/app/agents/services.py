@@ -19,6 +19,7 @@ from utk_curio.backend.app.agents import (
     imports,
     project_agents,
     publications,
+    sessions,
     storage,
 )
 from utk_curio.backend.app.agents.attachments import AttachmentError
@@ -258,7 +259,13 @@ def _read_spec_or_404(user_key: str, project_id: str) -> dict:
 
 
 def _attachment_card(spec: dict, record: dict, user_key: str) -> dict:
-    """Attachment record + a resolved name/hooks for its source template (best-effort)."""
+    """Attachment record + a resolved name/hooks for its source template (best-effort).
+
+    ``intent`` is the record's override when the user edited it, else the
+    definition's instruction prompt bytes resolved at read time — so an
+    unedited intent always reflects the actual prompt source (memo ``dev/19``;
+    nothing duplicates prompt text into stored state).
+    """
     coord = record.get("coord", "")
     m = _resolve_definition(user_key, coord)
     return {
@@ -270,6 +277,8 @@ def _attachment_card(spec: dict, record: dict, user_key: str) -> dict:
         "name": m.name if m else coord,
         "category": m.category if m else None,
         "hooks": [t.kind for t in m.compatible_targets] if m else [],
+        "intent": record.get("intent") or _resolve_instruction_text(user_key, coord),
+        "intentEdited": bool(record.get("intent")),
     }
 
 
@@ -308,10 +317,60 @@ def attach_agent(user_key: str, project_id: str, coord: str, target: object) -> 
 
 def detach_agent(user_key: str, project_id: str, attachment_id: str) -> dict:
     spec = _read_spec_or_404(user_key, project_id)
+    record = attachments.get_attachment(spec, attachment_id)
     removed = attachments.detach(spec, attachment_id)
     if removed:
         projects_storage.write_spec(user_key, project_id, spec)
+        # A transcript lives exactly as long as its attachment (dev/20).
+        session_id = (record or {}).get("sessionId")
+        if isinstance(session_id, str):
+            sessions.delete_session(user_key, project_id, session_id)
     return {"attachmentId": attachment_id, "detached": removed}
+
+
+def update_attachment_intent(
+    user_key: str, project_id: str, attachment_id: str, intent: str | None
+) -> dict:
+    """Set/clear the attachment's intent override; empty falls back to the prompt source."""
+    spec = _read_spec_or_404(user_key, project_id)
+    try:
+        record = attachments.set_intent(spec, attachment_id, intent)
+    except AttachmentError as exc:
+        raise AgentServiceError(str(exc), 400) from exc
+    if record is None:
+        raise AgentServiceError(f"attachment {attachment_id!r} not found", 404)
+    projects_storage.write_spec(user_key, project_id, spec)
+    return _attachment_card(spec, record, user_key)
+
+
+def _record_or_404(spec: dict, attachment_id: str) -> dict:
+    record = attachments.get_attachment(spec, attachment_id)
+    if record is None:
+        raise AgentServiceError(f"attachment {attachment_id!r} not found", 404)
+    return record
+
+
+def get_attachment_session(user_key: str, project_id: str, attachment_id: str) -> dict:
+    """The attachment's persisted transcript (empty for a session with no file)."""
+    spec = _read_spec_or_404(user_key, project_id)
+    record = _record_or_404(spec, attachment_id)
+    session_id = record.get("sessionId")
+    turns = (
+        sessions.read_turns(user_key, project_id, session_id)
+        if isinstance(session_id, str)
+        else []
+    )
+    return {"attachmentId": attachment_id, "sessionId": session_id, "turns": turns}
+
+
+def clear_attachment_session(user_key: str, project_id: str, attachment_id: str) -> dict:
+    """Clear the transcript (keeps the attachment and its session id)."""
+    spec = _read_spec_or_404(user_key, project_id)
+    record = _record_or_404(spec, attachment_id)
+    session_id = record.get("sessionId")
+    if isinstance(session_id, str):
+        sessions.clear_turns(user_key, project_id, session_id, attachment_id)
+    return {"attachmentId": attachment_id, "sessionId": session_id, "turns": []}
 
 
 def _resolve_instruction_text(user_key: str, coord: str) -> str | None:
@@ -339,21 +398,50 @@ def _resolve_instruction_text(user_key: str, coord: str) -> str | None:
 def run_attachment(
     user_key: str, project_id: str, attachment_id: str, message: str, config: ProviderConfig
 ) -> dict:
-    """Run one turn of an attached agent: instruction prompt as system, the user's
-    message as the turn, dispatched through the provider port."""
+    """Run one turn of an attached agent through the provider port.
+
+    Session-aware (dev/20): the system turn is the attachment's intent override
+    (dev/19) or the resolved instruction prompt, followed by a bounded window of
+    the session's prior turns, then the new user message. Both sides of the
+    exchange persist to the session file so a reload restores the conversation;
+    a provider failure persists the user turn plus a display-only error marker
+    (excluded from future context) so history matches what the user saw.
+    """
     spec = _read_spec_or_404(user_key, project_id)
-    record = attachments.get_attachment(spec, attachment_id)
-    if record is None:
-        raise AgentServiceError(f"attachment {attachment_id!r} not found", 404)
+    record = _record_or_404(spec, attachment_id)
     coord = record.get("coord", "")
-    instruction = _resolve_instruction_text(user_key, coord)
+    instruction = record.get("intent") or _resolve_instruction_text(user_key, coord)
     if instruction is None:
         raise AgentServiceError(
             f"no instruction prompt available for {coord!r} (not materialized)", 422
         )
+    session_id = record.get("sessionId")
+    has_session = isinstance(session_id, str)
+    prior = sessions.read_turns(user_key, project_id, session_id) if has_session else []
     messages = [
         {"role": "system", "content": instruction},
+        *sessions.context_messages(prior),
         {"role": "user", "content": message},
     ]
-    reply = run_chat_completion(config, messages)
+    user_turn = sessions.make_turn("user", message)
+    try:
+        reply = run_chat_completion(config, messages)
+    except Exception as exc:
+        if has_session:
+            sessions.append_turns(
+                user_key,
+                project_id,
+                session_id,
+                attachment_id,
+                [user_turn, sessions.make_turn("agent", f"(error) {exc}", error=True)],
+            )
+        raise AgentServiceError(f"agent run failed: {exc}", 502) from exc
+    if has_session:
+        sessions.append_turns(
+            user_key,
+            project_id,
+            session_id,
+            attachment_id,
+            [user_turn, sessions.make_turn("agent", reply)],
+        )
     return {"attachmentId": attachment_id, "coord": coord, "reply": reply}

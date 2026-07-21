@@ -186,6 +186,65 @@ def detach_agent(project_id: str, attachment_id: str):
     return jsonify(payload), 200
 
 
+@agents_bp.route("/projects/<project_id>/attachments/<attachment_id>", methods=["PATCH"])
+@require_auth
+def update_attachment(project_id: str, attachment_id: str):
+    """Update the attachment's editable intent. ``{"intent": null|""}`` clears the
+    override so the intent falls back to the definition's prompt source."""
+    body = request.get_json(silent=True) or {}
+    if "intent" not in body:
+        return _error("body must include 'intent' (string or null)")
+    intent = body.get("intent")
+    if intent is not None and not isinstance(intent, str):
+        return _error("'intent' must be a string or null")
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        payload = agents_services.update_attachment_intent(
+            _user_dir_key(g.user), project_id, attachment_id, intent
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify(payload), 200
+
+
+@agents_bp.route(
+    "/projects/<project_id>/attachments/<attachment_id>/session", methods=["GET"]
+)
+@require_auth
+def get_attachment_session(project_id: str, attachment_id: str):
+    """The attachment's persisted chat transcript (its session history)."""
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        payload = agents_services.get_attachment_session(
+            _user_dir_key(g.user), project_id, attachment_id
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify(payload), 200
+
+
+@agents_bp.route(
+    "/projects/<project_id>/attachments/<attachment_id>/session", methods=["DELETE"]
+)
+@require_auth
+def clear_attachment_session(project_id: str, attachment_id: str):
+    """Clear the transcript; the attachment and its session id are kept."""
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        payload = agents_services.clear_attachment_session(
+            _user_dir_key(g.user), project_id, attachment_id
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify(payload), 200
+
+
 @agents_bp.route("/projects/<project_id>/attachments/<attachment_id>/run", methods=["POST"])
 @require_auth
 def run_attachment(project_id: str, attachment_id: str):
