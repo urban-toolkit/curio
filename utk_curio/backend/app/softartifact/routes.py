@@ -83,7 +83,7 @@ def retrieve():
 
 # ── Explain ──────────────────────────────────────────────────────────
 @bp.post("explain")
-@require_auth  # same as /llm/chat — needs logged-in user + LLM config
+@require_auth 
 def explain():
     data = request.get_json(silent = True)
     if not isinstance(data, dict):
@@ -91,13 +91,15 @@ def explain():
 
     artifact_id = data.get("artifact_id") or None
     query = data.get("query") or None
-    top_k = data.get("top_k") or None    
+    top_k = data.get("top_k") or None
+    context = data.get("context") or None    
+    source_file = data.get("sourceFile") or None
 
     if artifact_id is None:
         return jsonify({"error": "missing artifact_id"}), 400
 
 
-    explanation = explain_artifact(artifact_id=artifact_id, query=query, top_k=top_k,source_file= "");
+    explanation = explain_artifact(artifact_id=artifact_id, query=query, top_k=top_k, source_file= source_file, context=context);
     return jsonify(explanation);
     
 

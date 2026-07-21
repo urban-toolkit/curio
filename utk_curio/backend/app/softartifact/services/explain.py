@@ -1,7 +1,7 @@
 # utk_curio/backend/app/softartifact/services/explain.py
 from pathlib import Path
 
-from flask import g
+import json
 # import your existing retrieve helper
 from .LLM_helper.retrieve import search_chunks 
 # reuse Curio's LLM helpers (already in api/routes.py)
@@ -45,7 +45,7 @@ def _format_passages(spans: list[dict]) -> str:
     return "\n\n".join(lines)
 
 
-def explain_artifact(artifact_id, query, top_k, source_file) -> dict:
+def explain_artifact(artifact_id, query, top_k, source_file, context) -> dict:
     """
     Retrieve relevant passages for an artifact and ask the LLM to explain/
     summarize them based on the given query.
@@ -73,7 +73,7 @@ def explain_artifact(artifact_id, query, top_k, source_file) -> dict:
     passages = _format_passages(spans)
     # Build the user-facing portion of the prompt: which file this came from,
     # plus the formatted passages
-    user_text = f"Source file: {source_file or 'document'}\n\nPassages:\n{passages}"
+    user_text = f"Source file: {source_file or 'document'}\n\nPassages:\n{passages} \n Context: {json.dumps(context or {}, indent = 2)}"
 
     # Load the system prompt (instructions for how the LLM should behave)
     system = _load_prompt(PROMPT_PATH)

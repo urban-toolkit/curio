@@ -79,7 +79,7 @@ function artifactStatusLine(state: SoftArtifactState, verifying: boolean): strin
 
 // Calls the backend's /explain endpoint for a given artifact, asking it
 // to summarize/explain the document (using the default query server-side).
-async function explainArtifact(artifact_id: string, sourceFile: string | null, top_k = 8) {
+async function explainArtifact(artifact_id: string, sourceFile: string | null, context?: any, top_k = 8) {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json'
   }
@@ -89,15 +89,21 @@ async function explainArtifact(artifact_id: string, sourceFile: string | null, t
     headers.Authorization = `Bearer ${token}`
   }
 
+  //use DEFAULT QUERY in the API not here 
+  const body: Record<string, unknown> = {
+    artifact_id,
+    top_k,
+    sourceFile
+  }
+
+  if (context !== undefined && context !== null) {
+    body.context = context
+  }
+
   const res = await fetch(`${API_BASE}/explain`, {
     method: "POST",
     headers,
-    body: JSON.stringify({
-      artifact_id: artifact_id,
-      top_k: top_k,
-      sourceFile: sourceFile
-      //No query, use Default query
-    })
+    body: JSON.stringify(body)
   })
 
   // Surface a useful error message if the request failed
@@ -278,7 +284,12 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
 
     setExplaining(true);
     try {
-      const out = await explainArtifact(artifact_id, state.sourceFile);
+      const context =
+        typeof data.getCurrentTrill === "function"
+          ? data.getCurrentTrill() :
+          undefined
+      
+      const out = await explainArtifact(artifact_id, state.sourceFile, context);
 
       persist({ explanation: out.explanation });
 

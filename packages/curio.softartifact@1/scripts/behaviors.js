@@ -104,22 +104,23 @@ function artifactStatusLine(state, verifying) {
 
 // Calls the backend's /explain endpoint for a given artifact, asking it
 // to summarize/explain the document (using the default query server-side).
-function explainArtifact(_x, _x2) {
+function explainArtifact(_x, _x2, _x3) {
   return _explainArtifact.apply(this, arguments);
 } // Call the backend's /inform endpoint for a given artifact
 // to suggest new nodes or guidance using the given artifact 
 function _explainArtifact() {
-  _explainArtifact = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6(artifact_id, sourceFile) {
+  _explainArtifact = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6(artifact_id, sourceFile, context) {
     var top_k,
       headers,
       token,
+      body,
       res,
       err,
       _args6 = arguments;
     return _regenerator().w(function (_context6) {
       while (1) switch (_context6.n) {
         case 0:
-          top_k = _args6.length > 2 && _args6[2] !== undefined ? _args6[2] : 8;
+          top_k = _args6.length > 3 && _args6[3] !== undefined ? _args6[3] : 8;
           headers = {
             'Content-Type': 'application/json'
           }; // Attach auth token if we have one
@@ -127,16 +128,21 @@ function _explainArtifact() {
           if (token) {
             headers.Authorization = "Bearer ".concat(token);
           }
+
+          //use DEFAULT QUERY in the API not here 
+          body = {
+            artifact_id: artifact_id,
+            top_k: top_k,
+            sourceFile: sourceFile
+          };
+          if (context !== undefined && context !== null) {
+            body.context = context;
+          }
           _context6.n = 1;
           return fetch("".concat(API_BASE, "/explain"), {
             method: "POST",
             headers: headers,
-            body: JSON.stringify({
-              artifact_id: artifact_id,
-              top_k: top_k,
-              sourceFile: sourceFile
-              //No query, use Default query
-            })
+            body: JSON.stringify(body)
           });
         case 1:
           res = _context6.v;
@@ -158,7 +164,7 @@ function _explainArtifact() {
   }));
   return _explainArtifact.apply(this, arguments);
 }
-function informArtifact(_x3, _x4) {
+function informArtifact(_x4, _x5) {
   return _informArtifact.apply(this, arguments);
 } // Call the backend's /propose_trill endpoint for a given artifact and context
 // if context(dataflow) is none -> suggests a new dataflow
@@ -219,7 +225,7 @@ function _informArtifact() {
   }));
   return _informArtifact.apply(this, arguments);
 }
-function proposeTrillArtifact(_x5, _x6) {
+function proposeTrillArtifact(_x6, _x7) {
   return _proposeTrillArtifact.apply(this, arguments);
 } // Main hook powering the "soft artifact" node's behavior — handles file
 // upload/ingestion, state persistence, health checks, and the "explain" flow.
@@ -403,7 +409,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
   // stores the explanation, and emits it as node output.
   var runExplain = /*#__PURE__*/function () {
     var _ref = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee(artifact_id, role) {
-      var out, _t;
+      var context, out, _t;
       return _regenerator().w(function (_context) {
         while (1) switch (_context.p = _context.n) {
           case 0:
@@ -417,8 +423,9 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
 
             setExplaining(true);
             _context.p = 2;
+            context = typeof data.getCurrentTrill === "function" ? data.getCurrentTrill() : undefined;
             _context.n = 3;
-            return explainArtifact(artifact_id, state.sourceFile);
+            return explainArtifact(artifact_id, state.sourceFile, context);
           case 3:
             out = _context.v;
             persist({
@@ -452,7 +459,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
         }
       }, _callee, null, [[2, 4, 5, 6]]);
     }));
-    return function runExplain(_x7, _x8) {
+    return function runExplain(_x8, _x9) {
       return _ref.apply(this, arguments);
     };
   }();
@@ -507,7 +514,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
         }
       }, _callee2, null, [[2, 4, 5, 6]]);
     }));
-    return function runInform(_x9, _x0) {
+    return function runInform(_x0, _x1) {
       return _ref2.apply(this, arguments);
     };
   }();
@@ -563,7 +570,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
         }
       }, _callee3, null, [[2, 4, 5, 6]]);
     }));
-    return function runPropose(_x1, _x10) {
+    return function runPropose(_x10, _x11) {
       return _ref3.apply(this, arguments);
     };
   }();
