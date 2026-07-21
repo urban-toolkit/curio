@@ -76,3 +76,33 @@ class TestAttachDetach:
         assert attachments.detach(spec, "a") is True
         assert attachments.list_attachments(spec) == []
         assert attachments.detach(spec, "a") is False
+
+
+class TestSetIntent:
+    def _attached(self):
+        spec = _spec()
+        attachments.attach(spec, "agent.x@1.0.0", {"kind": "canvas"}, attachment_id="a", session_id="s")
+        return spec
+
+    def test_set_and_bump_revision(self):
+        spec = self._attached()
+        rec = attachments.set_intent(spec, "a", "explain gently")
+        assert rec["intent"] == "explain gently"
+        assert rec["revision"] == 2
+
+    def test_clear_with_none_and_empty(self):
+        spec = self._attached()
+        attachments.set_intent(spec, "a", "custom")
+        rec = attachments.set_intent(spec, "a", None)
+        assert "intent" not in rec
+        attachments.set_intent(spec, "a", "again")
+        rec = attachments.set_intent(spec, "a", "   ")
+        assert "intent" not in rec
+        assert rec["revision"] == 5
+
+    def test_unknown_attachment_returns_none(self):
+        assert attachments.set_intent(self._attached(), "ghost", "x") is None
+
+    def test_non_string_intent_raises(self):
+        with pytest.raises(AttachmentError, match="intent"):
+            attachments.set_intent(self._attached(), "a", 42)

@@ -134,6 +134,29 @@ def prune_orphaned_attachments(spec: dict) -> list[dict]:
     return removed
 
 
+def set_intent(spec: dict, attachment_id: str, intent: str | None) -> dict | None:
+    """Set or clear an attachment's intent override and bump its revision.
+
+    ``intent`` is the editable "initial intent" pinned in the chat panel. A
+    non-empty string overrides the definition's instruction prompt for display
+    and runs; ``None``/empty clears the override so the intent falls back to the
+    prompt source. Returns the updated record, or ``None`` when the attachment
+    does not exist.
+    """
+    record = get_attachment(spec, attachment_id)
+    if record is None:
+        return None
+    if intent is not None and not isinstance(intent, str):
+        raise AttachmentError("intent must be a string or null")
+    cleaned = intent.strip() if isinstance(intent, str) else None
+    if cleaned:
+        record["intent"] = cleaned
+    else:
+        record.pop("intent", None)
+    record["revision"] = int(record.get("revision", 1)) + 1
+    return record
+
+
 def detach(spec: dict, attachment_id: str) -> bool:
     """Remove an attachment by id; return True if it was present."""
     df = spec.setdefault("dataflow", {})
