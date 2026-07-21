@@ -53,20 +53,37 @@ describe("AgentsCatalogDrawerProvider", () => {
     );
   });
 
-  it("closes on the drawer's close button", async () => {
+  it("has no Close button (DEC-042); the backdrop dismisses when unpinned", async () => {
     renderProvider();
     fireEvent.click(screen.getByText(/toggle/));
     await waitFor(() => screen.getByRole("dialog", { name: "Agents Catalog" }));
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("button", { name: /close/i })).not.toBeInTheDocument();
+    fireEvent.click(document.querySelector('[class*="backdrop"]') as Element);
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "Agents Catalog" })).not.toBeInTheDocument(),
     );
   });
 
-  it("closes on Escape", async () => {
+  it("closes on Escape when unpinned", async () => {
     renderProvider();
     fireEvent.click(screen.getByText(/toggle/));
     await waitFor(() => screen.getByRole("dialog", { name: "Agents Catalog" }));
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Agents Catalog" })).not.toBeInTheDocument(),
+    );
+  });
+
+  it("pinned blocks the backdrop and Escape dismissals", async () => {
+    renderProvider();
+    fireEvent.click(screen.getByText(/toggle/));
+    await waitFor(() => screen.getByRole("dialog", { name: "Agents Catalog" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pin drawer open" }));
+    fireEvent.click(document.querySelector('[class*="backdrop"]') as Element);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: "Agents Catalog" })).toBeInTheDocument();
+    // Unpin → dismissal works again.
+    fireEvent.click(screen.getByRole("button", { name: "Unpin drawer" }));
     fireEvent.keyDown(window, { key: "Escape" });
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "Agents Catalog" })).not.toBeInTheDocument(),

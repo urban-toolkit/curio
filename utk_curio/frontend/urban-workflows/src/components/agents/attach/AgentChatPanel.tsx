@@ -1,6 +1,14 @@
 import React, { useEffect, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faArrowUp, faPen, faRobot, faTrashCan, faXmark } from "@fortawesome/free-solid-svg-icons";
+import {
+  faArrowUp,
+  faChevronLeft,
+  faChevronRight,
+  faPen,
+  faRobot,
+  faTrashCan,
+  faXmark,
+} from "@fortawesome/free-solid-svg-icons";
 import type { AgentAttachment, AgentSessionTurn } from "../../../api/agentsApi";
 import { agentCategoryKey } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
 import styles from "./AgentChatPanel.module.css";
@@ -10,10 +18,14 @@ const INTENT_CLAMP_CHARS = 280;
 
 /**
  * Chat panel for one attached agent, styled to the approved concept screens
- * (docs/08 anatomy + the docs/03 chat-feedback visual system): tinted-avatar
- * header with a clear close control, the pinned editable INITIAL INTENT block
- * (served from the actual prompt source), dark user bubbles / avatar-prefixed
- * agent rows, and a pill input with a circular ↑ send.
+ * (docs/08 anatomy + the docs/03 chat-feedback visual system).
+ *
+ * Per DEC-042 (dev/21) the opened agent view has ONE dark top header carrying
+ * the master agent identity, the ‹ › agent-cycling arrows (walking all
+ * attachments in the dataflow), the identification details (attached target +
+ * session chip), and Close — no Pin, and no static "Agents Catalog" bar (that
+ * chrome is exclusive to the Agents Roster drawer). Below the header: the
+ * intent-as-first-message transcript and pill input, unchanged.
  *
  * Presentational: the transcript and intent live in AgentAttachmentsProvider
  * (server-persisted session, memo dev/20), so closing/reopening restores the
@@ -22,6 +34,13 @@ const INTENT_CLAMP_CHARS = 280;
 export const AgentChatPanel: React.FC<{
   attachment: AgentAttachment;
   turns: AgentSessionTurn[];
+  /** 1-based position among all attached agents (for the `idx / total` label). */
+  index?: number;
+  /** Total attached agents in the dataflow. */
+  total?: number;
+  /** Cycle to the previous/next attachment; omitted → that arrow is disabled. */
+  onPrev?: () => void;
+  onNext?: () => void;
   /** True while the session history is loading from the server. */
   loadingHistory?: boolean;
   /** History-load failure message; `onRetryHistory` retries the fetch. */
@@ -34,6 +53,10 @@ export const AgentChatPanel: React.FC<{
 }> = ({
   attachment,
   turns,
+  index = 1,
+  total = 1,
+  onPrev,
+  onNext,
   loadingHistory = false,
   historyError = null,
   onRetryHistory,
@@ -120,36 +143,63 @@ export const AgentChatPanel: React.FC<{
   return (
     <div className={styles.panel} role="dialog" aria-label={`Chat with ${attachment.name}`}>
       <div className={styles.header}>
-        <span className={`${styles.avatar} ${tint}`} aria-hidden="true">
-          <FontAwesomeIcon icon={faRobot} />
-        </span>
-        <div className={styles.headerText}>
+        <div className={styles.headerRow}>
+          <button
+            type="button"
+            className={styles.cycleBtn}
+            aria-label="Previous agent"
+            title="Previous agent"
+            disabled={!onPrev}
+            onClick={onPrev}
+          >
+            <FontAwesomeIcon icon={faChevronLeft} />
+          </button>
+          <span className={`${styles.headerBot} ${tint}`} aria-hidden="true">
+            <FontAwesomeIcon icon={faRobot} />
+          </span>
           <span className={styles.title}>{attachment.name}</span>
-          <span className={styles.subtitle}>Attached to {targetLabel}</span>
-        </div>
-        <span className={styles.sessionChip} title={`session ${attachment.sessionId}`}>
-          session {attachment.sessionId.slice(0, 8)}
-        </span>
-        {onClearConversation ? (
+          <span className={styles.position}>
+            {index} / {total}
+          </span>
+          <button
+            type="button"
+            className={styles.cycleBtn}
+            aria-label="Next agent"
+            title="Next agent"
+            disabled={!onNext}
+            onClick={onNext}
+          >
+            <FontAwesomeIcon icon={faChevronRight} />
+          </button>
+          <span className={styles.headerSpacer} />
+          {onClearConversation ? (
+            <button
+              type="button"
+              className={styles.headerBtn}
+              aria-label="Clear conversation"
+              title="Clear conversation"
+              onClick={clearConversation}
+            >
+              <FontAwesomeIcon icon={faTrashCan} />
+            </button>
+          ) : null}
           <button
             type="button"
             className={styles.headerBtn}
-            aria-label="Clear conversation"
-            title="Clear conversation"
-            onClick={clearConversation}
+            aria-label="Close chat"
+            title="Close chat"
+            onClick={onClose}
           >
-            <FontAwesomeIcon icon={faTrashCan} />
+            <FontAwesomeIcon icon={faXmark} />
           </button>
-        ) : null}
-        <button
-          type="button"
-          className={styles.headerBtn}
-          aria-label="Close chat"
-          title="Close chat"
-          onClick={onClose}
-        >
-          <FontAwesomeIcon icon={faXmark} />
-        </button>
+        </div>
+        <div className={styles.headerRow}>
+          <span className={styles.subtitle}>Attached to {targetLabel}</span>
+          <span className={styles.headerSpacer} />
+          <span className={styles.sessionChip} title={`session ${attachment.sessionId}`}>
+            session {attachment.sessionId.slice(0, 8)}
+          </span>
+        </div>
       </div>
 
       <div className={styles.messages} ref={messagesRef}>

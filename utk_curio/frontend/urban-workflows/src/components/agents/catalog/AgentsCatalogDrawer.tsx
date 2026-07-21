@@ -1,4 +1,6 @@
 import React from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faRobot, faThumbtack } from "@fortawesome/free-solid-svg-icons";
 import type { AgentCard } from "../../../api/agentsApi";
 import { CatalogPublishPill } from "../../packages/CatalogPublishPill";
 import tabStyles from "../../packages/publishing/DrawerTabs.module.css";
@@ -8,7 +10,9 @@ import { AgentScope, useAgentsCatalogDrawer } from "./useAgentsCatalogDrawer";
 export interface AgentsCatalogDrawerProps {
   presented: boolean;
   projectId: string | null;
-  onClose: () => void;
+  /** Pinned keeps the drawer open (backdrop/Escape won't dismiss it). */
+  pinned: boolean;
+  onPinToggle: () => void;
 }
 
 const SCOPES: { key: AgentScope; label: string }[] = [
@@ -24,14 +28,20 @@ const SUBTITLE: Record<AgentScope, string> = {
 };
 
 /**
- * Three-scope Agents Catalog drawer. Reuses the DrawerTabs tab styling and the
- * shared CatalogPublishPill so agents match the Data / Node catalog drawers.
- * Data + lifecycle live in ``useAgentsCatalogDrawer``.
+ * Three-scope Agents Catalog drawer (the Agents Roster). Reuses the DrawerTabs
+ * tab styling and the shared CatalogPublishPill so agents match the Data / Node
+ * catalog drawers. Data + lifecycle live in ``useAgentsCatalogDrawer``.
+ *
+ * Per DEC-042 (dev/21) the static dark roster header carries the **Pin button
+ * only** — no Close, no agent identity, no agent-cycling controls. Dismissal is
+ * the backdrop/Escape (gated by the pin); the opened agent view has its own
+ * identity header (AgentChatPanel).
  */
 export const AgentsCatalogDrawer: React.FC<AgentsCatalogDrawerProps> = ({
   presented,
   projectId,
-  onClose,
+  pinned,
+  onPinToggle,
 }) => {
   const c = useAgentsCatalogDrawer(presented, projectId);
   if (!presented) return null;
@@ -39,10 +49,18 @@ export const AgentsCatalogDrawer: React.FC<AgentsCatalogDrawerProps> = ({
   return (
     <div className={styles.drawer} role="dialog" aria-label="Agents Catalog">
       <div className={styles.header}>
-        <span className={styles.title}>Agents Catalog</span>
-        <button type="button" className={styles.closeBtn} aria-label="Close" onClick={onClose}>
-          ✕
+        <button
+          type="button"
+          className={`${styles.pinBtn} ${pinned ? styles.pinBtnActive : ""}`}
+          aria-label={pinned ? "Unpin drawer" : "Pin drawer open"}
+          aria-pressed={pinned}
+          title={pinned ? "Unpin drawer" : "Pin drawer (backdrop won't close)"}
+          onClick={onPinToggle}
+        >
+          <FontAwesomeIcon icon={faThumbtack} aria-hidden />
         </button>
+        <FontAwesomeIcon icon={faRobot} className={styles.titleIcon} aria-hidden />
+        <span className={styles.title}>Agents Catalog</span>
       </div>
 
       <nav className={tabStyles.tabs} aria-label="Agent catalog scopes">

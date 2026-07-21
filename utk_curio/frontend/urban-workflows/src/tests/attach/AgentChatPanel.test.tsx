@@ -139,4 +139,21 @@ describe("AgentChatPanel", () => {
     await waitFor(() => expect(onClearConversation).toHaveBeenCalledTimes(1));
     confirmSpy.mockRestore();
   });
+
+  it("header cycling (DEC-042): shows idx/total and walks prev/next", () => {
+    const onPrev = jest.fn();
+    const onNext = jest.fn();
+    renderPanel({ index: 2, total: 4, onPrev, onNext });
+    expect(screen.getByText("2 / 4")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Previous agent" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next agent" }));
+    expect(onPrev).toHaveBeenCalledTimes(1);
+    expect(onNext).toHaveBeenCalledTimes(1);
+  });
+
+  it("cycling arrows are disabled at the ends (no wrap)", () => {
+    renderPanel({ index: 1, total: 3, onNext: jest.fn() });
+    expect(screen.getByRole("button", { name: "Previous agent" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Next agent" })).toBeEnabled();
+  });
 });

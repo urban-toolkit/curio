@@ -21,13 +21,34 @@
   flex: 1;
 }
 
-.closeBtn {
+/* Roster header controls (DEC-042): the Pin is the only button here. */
+.pinBtn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: none;
-  color: inherit;
-  font-size: 18px;
+  border-radius: 8px;
+  color: var(--curio-text-on-dark, #fff);
+  font-size: 14px;
   cursor: pointer;
-  line-height: 1;
+}
+
+.pinBtn:hover,
+.pinBtn:focus-visible {
+  background: #2c2d33;
+}
+
+.pinBtnActive {
+  color: var(--curio-accent-sky-fg, #7fa7e8);
+  transform: rotate(45deg);
+}
+
+.titleIcon {
+  color: #f2933f; /* the Agents' canvas-orange bot, per the concept */
+  font-size: 16px;
 }
 
 .subtitle {

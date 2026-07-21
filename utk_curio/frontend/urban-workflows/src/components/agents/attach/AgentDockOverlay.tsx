@@ -15,6 +15,16 @@ export const AgentDockOverlay: React.FC = () => {
 
   const canvasAttachments = ctx.attachments.filter((a) => a.target.kind === "canvas");
   const selected = ctx.attachments.find((a) => a.attachmentId === ctx.selectedId) ?? null;
+  // DEC-042: the chat header's ‹ › arrows cycle through ALL attached agents in
+  // the dataflow (node + canvas targets), in list order, without wrapping.
+  const selectedIdx = selected
+    ? ctx.attachments.findIndex((a) => a.attachmentId === selected.attachmentId)
+    : -1;
+  const prev = selectedIdx > 0 ? ctx.attachments[selectedIdx - 1] : null;
+  const next =
+    selectedIdx >= 0 && selectedIdx < ctx.attachments.length - 1
+      ? ctx.attachments[selectedIdx + 1]
+      : null;
 
   const onDetach = (attachmentId: string) => {
     if (ctx.selectedId === attachmentId) ctx.closeChat();
@@ -32,6 +42,10 @@ export const AgentDockOverlay: React.FC = () => {
       {selected ? (
         <AgentChatPanel
           attachment={selected}
+          index={selectedIdx + 1}
+          total={ctx.attachments.length}
+          onPrev={prev ? () => ctx.openChat(prev.attachmentId) : undefined}
+          onNext={next ? () => ctx.openChat(next.attachmentId) : undefined}
           turns={ctx.transcripts[selected.attachmentId] ?? []}
           loadingHistory={ctx.hydratingId === selected.attachmentId}
           historyError={ctx.hydrateErrors[selected.attachmentId] ?? null}

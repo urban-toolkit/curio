@@ -51,13 +51,13 @@ beforeEach(() => {
 describe("AgentsCatalogDrawer", () => {
   it("renders nothing when not presented", () => {
     const { container } = render(
-      <AgentsCatalogDrawer presented={false} projectId="p1" onClose={jest.fn()} />,
+      <AgentsCatalogDrawer presented={false} projectId="p1" pinned={false} onPinToggle={jest.fn()} />,
     );
     expect(container).toBeEmptyDOMElement();
   });
 
   it("renders the three scopes and the global cards", async () => {
-    render(<AgentsCatalogDrawer presented projectId="p1" onClose={jest.fn()} />);
+    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     expect(screen.getByText("Global Catalog")).toBeInTheDocument();
     expect(screen.getByText("My Imports")).toBeInTheDocument();
     expect(screen.getByText("Installed in this project")).toBeInTheDocument();
@@ -66,7 +66,7 @@ describe("AgentsCatalogDrawer", () => {
   });
 
   it("switching to My Imports fetches and shows Delete", async () => {
-    render(<AgentsCatalogDrawer presented projectId="p1" onClose={jest.fn()} />);
+    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
     fireEvent.click(screen.getByText("My Imports"));
     await waitFor(() => expect(api.listImports).toHaveBeenCalled());
@@ -75,7 +75,7 @@ describe("AgentsCatalogDrawer", () => {
   });
 
   it("Install disabled without a project", async () => {
-    render(<AgentsCatalogDrawer presented projectId={null} onClose={jest.fn()} />);
+    render(<AgentsCatalogDrawer presented projectId={null} pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
     expect(screen.getByRole("button", { name: "Install" })).toBeDisabled();
   });
@@ -87,7 +87,7 @@ describe("AgentsCatalogDrawer", () => {
         card("agent.node-explainer", { scope: "my-imports", imported: true, publishable: false }),
       ],
     } as any);
-    render(<AgentsCatalogDrawer presented projectId="p1" onClose={jest.fn()} />);
+    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     fireEvent.click(screen.getByText("My Imports"));
     await waitFor(() => expect(screen.getByText("my-custom")).toBeInTheDocument());
     // Exactly one Publish control — the built-in card (publishable:false) shows none.
@@ -98,11 +98,26 @@ describe("AgentsCatalogDrawer", () => {
   });
 
   it("clicking Install calls the install endpoint", async () => {
-    render(<AgentsCatalogDrawer presented projectId="p1" onClose={jest.fn()} />);
+    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "Install" }));
     await waitFor(() =>
       expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.node-explainer@1.0.0"),
     );
+  });
+
+  it("roster header shows the Pin only (DEC-042): no Close button", async () => {
+    const onPinToggle = jest.fn();
+    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={onPinToggle} />);
+    const pin = screen.getByRole("button", { name: "Pin drawer open" });
+    expect(pin).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByRole("button", { name: /close/i })).not.toBeInTheDocument();
+    fireEvent.click(pin);
+    expect(onPinToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it("a pinned roster header exposes Unpin", () => {
+    render(<AgentsCatalogDrawer presented projectId="p1" pinned onPinToggle={jest.fn()} />);
+    expect(screen.getByRole("button", { name: "Unpin drawer" })).toHaveAttribute("aria-pressed", "true");
   });
 });

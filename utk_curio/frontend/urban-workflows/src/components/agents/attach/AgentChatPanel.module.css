@@ -21,28 +21,67 @@
   overflow: hidden;
 }
 
-/* ── header: white surface, tinted avatar, name + target, session chip ── */
+/* ── header (DEC-042, dev/21): ONE dark top header for the opened agent view —
+   the ‹ › cycling arrows, agent identity, session details, and Close. No Pin,
+   and no static "Agents Catalog" bar (that chrome is roster-drawer-only). ── */
 .header {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  background: var(--curio-card-bg, #fff);
-  border-bottom: 1px solid #ececee;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px 12px;
+  background: var(--curio-top-bar-bg, #1e1f23);
+  color: var(--curio-text-on-dark, #fff);
 }
 
-.avatar {
+.headerRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.headerSpacer {
+  flex: 1;
+}
+
+.cycleBtn {
   flex: none;
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  background: #fff;
-  color: #3567c7; /* overridden by a category tint class */
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: #cfd0d3;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cycleBtn:hover:not(:disabled),
+.cycleBtn:focus-visible {
+  background: #2c2d33;
+  color: #fff;
+}
+
+.cycleBtn:disabled {
+  color: #5c5d66;
+  cursor: default;
+}
+
+.headerBot {
+  flex: none;
   font-size: 16px;
+  color: #3567c7; /* overridden by a category tint class */
+  display: flex;
+  align-items: center;
+}
+
+.position {
+  flex: none;
+  font-size: 11px;
+  color: #9a9ba2;
 }
 
 /* Category tints — same palette as AgentAvatarBadge (icon color, white chip). */
@@ -53,38 +92,31 @@
 .tint_package  { color: #17a2b8; }
 .tint_default  { color: #3567c7; }
 
-.headerText {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
 .title {
   font-size: 13px;
   font-weight: 600;
-  color: var(--curio-text-primary, #1e1f23);
+  color: var(--curio-text-on-dark, #fff);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .subtitle {
   font-size: 11px;
-  color: var(--curio-text-secondary, #8a8b93);
+  color: #b9bac1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .sessionChip {
   flex: none;
   font-size: 10px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: var(--curio-text-secondary, #8a8b93);
-  background: #f7f7f8;
-  border: 1px solid #ececee;
+  color: #b6b7bf;
+  background: #2c2d33;
   border-radius: 999px;
   padding: 2px 8px;
 }
@@ -99,15 +131,15 @@
   border: none;
   border-radius: 8px;
   background: none;
-  color: var(--curio-text-secondary, #8a8b93);
+  color: #cfd0d3;
   font-size: 13px;
   cursor: pointer;
 }
 
 .headerBtn:hover,
 .headerBtn:focus-visible {
-  background: #f2f2f4;
-  color: var(--curio-text-primary, #1e1f23);
+  background: #2c2d33;
+  color: var(--curio-text-on-dark, #fff);
 }
 
 /* ── initial intent, rendered as the conversation's first message ── */

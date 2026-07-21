@@ -28,6 +28,9 @@ const AgentsCatalogDrawerContext = createContext<AgentsCatalogDrawerContextValue
 
 export function AgentsCatalogDrawerProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
+  // DEC-042: the roster header carries the Pin only — pinned blocks the
+  // backdrop/Escape dismissals (programmatic close still works).
+  const [pinned, setPinned] = useState(false);
   const { projectId } = useFlowContext();
 
   const closeAgentsCatalogDrawer = useCallback(() => setOpen(false), []);
@@ -36,11 +39,11 @@ export function AgentsCatalogDrawerProvider({ children }: { children: React.Reac
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape" && !pinned) setOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+  }, [open, pinned]);
 
   const ctx = useMemo(
     () => ({ openAgentsCatalogDrawer, closeAgentsCatalogDrawer, isAgentsCatalogDrawerOpen: open }),
@@ -52,12 +55,18 @@ export function AgentsCatalogDrawerProvider({ children }: { children: React.Reac
       {children}
       {open
         ? createPortal(
-            <div className={styles.backdrop} onClick={closeAgentsCatalogDrawer}>
+            <div
+              className={styles.backdrop}
+              onClick={() => {
+                if (!pinned) closeAgentsCatalogDrawer();
+              }}
+            >
               <div className={styles.panel} onClick={(e) => e.stopPropagation()}>
                 <AgentsCatalogDrawer
                   presented
                   projectId={projectId ?? null}
-                  onClose={closeAgentsCatalogDrawer}
+                  pinned={pinned}
+                  onPinToggle={() => setPinned((v) => !v)}
                 />
               </div>
             </div>,
