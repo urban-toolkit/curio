@@ -4,20 +4,23 @@
    (#ececee), 12px radii, raised white inner panels, dark right-aligned user
    bubbles, avatar-prefixed agent rows, soft chips, 16px gutters. */
 
+/* Full-height right drawer flush with the viewport top (portal to <body>):
+   the dark header sits at the top-bar level, like the concept and the roster
+   drawer. Above the main top menu (z 100–200), below the roster drawer's
+   backdrop (z 1200). */
 .panel {
-  position: absolute;
-  right: 12px;
-  top: 12px;
-  bottom: 12px;
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
   width: 380px;
   max-width: 90vw;
-  z-index: 31;
+  z-index: 1100;
   display: flex;
   flex-direction: column;
   background: var(--curio-card-bg, #fff);
-  border: 1px solid var(--curio-border, #ececee);
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  border-left: 1px solid var(--curio-border, #ececee);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.18);
   overflow: hidden;
 }
 
@@ -28,7 +31,9 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 10px 12px 12px;
+  /* Flush with the viewport top; the extra top padding optically aligns the
+     identity row with the adjacent main top bar. */
+  padding: 14px 12px 12px;
   background: var(--curio-top-bar-bg, #1e1f23);
   color: var(--curio-text-on-dark, #fff);
 }

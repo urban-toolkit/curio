@@ -1,4 +1,5 @@
 import React from "react";
+import { createPortal } from "react-dom";
 import { AgentDock } from "./AgentDock";
 import { AgentChatPanel } from "./AgentChatPanel";
 import { useAgentAttachmentsContext } from "./AgentAttachmentsProvider";
@@ -39,23 +40,30 @@ export const AgentDockOverlay: React.FC = () => {
         onSelect={ctx.openChat}
         onDetach={onDetach}
       />
-      {selected ? (
-        <AgentChatPanel
-          attachment={selected}
-          index={selectedIdx + 1}
-          total={ctx.attachments.length}
-          onPrev={prev ? () => ctx.openChat(prev.attachmentId) : undefined}
-          onNext={next ? () => ctx.openChat(next.attachmentId) : undefined}
-          turns={ctx.transcripts[selected.attachmentId] ?? []}
-          loadingHistory={ctx.hydratingId === selected.attachmentId}
-          historyError={ctx.hydrateErrors[selected.attachmentId] ?? null}
-          onRetryHistory={() => ctx.hydrateSession(selected.attachmentId)}
-          onSend={(message) => ctx.sendMessage(selected.attachmentId, message)}
-          onClose={ctx.closeChat}
-          onSaveIntent={(intent) => ctx.saveIntent(selected.attachmentId, intent)}
-          onClearConversation={() => ctx.clearConversation(selected.attachmentId)}
-        />
-      ) : null}
+      {/* Portal to <body>: the chat is a full-height right drawer flush with
+          the viewport top — its dark header sits at the top-bar level per the
+          concept — instead of being clipped under the main top menu inside the
+          canvas container. */}
+      {selected
+        ? createPortal(
+            <AgentChatPanel
+              attachment={selected}
+              index={selectedIdx + 1}
+              total={ctx.attachments.length}
+              onPrev={prev ? () => ctx.openChat(prev.attachmentId) : undefined}
+              onNext={next ? () => ctx.openChat(next.attachmentId) : undefined}
+              turns={ctx.transcripts[selected.attachmentId] ?? []}
+              loadingHistory={ctx.hydratingId === selected.attachmentId}
+              historyError={ctx.hydrateErrors[selected.attachmentId] ?? null}
+              onRetryHistory={() => ctx.hydrateSession(selected.attachmentId)}
+              onSend={(message) => ctx.sendMessage(selected.attachmentId, message)}
+              onClose={ctx.closeChat}
+              onSaveIntent={(intent) => ctx.saveIntent(selected.attachmentId, intent)}
+              onClearConversation={() => ctx.clearConversation(selected.attachmentId)}
+            />,
+            document.body,
+          )
+        : null}
     </>
   );
 };
