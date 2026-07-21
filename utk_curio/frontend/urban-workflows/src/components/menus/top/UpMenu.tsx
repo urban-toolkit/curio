@@ -31,7 +31,6 @@ import {
     faSitemap,
     faCircleQuestion,
     faStore,
-    faRobot,
 } from "@fortawesome/free-solid-svg-icons";
 import logo from "assets/curio-2.png";
 import { UserMenu } from "components/login/UserMenu";

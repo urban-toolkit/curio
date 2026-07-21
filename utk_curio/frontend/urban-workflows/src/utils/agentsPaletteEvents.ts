@@ -24,6 +24,15 @@ export function readAgentDragCoord(dt: DataTransfer | null): string | null {
   return coord || null;
 }
 
+/** Whether a drag carries an agent payload — detected via ``types`` so it works
+ * during ``dragover`` (where ``getData`` returns "" in most browsers). The drop
+ * handler must set ``dropEffect="copy"`` for these, matching the drag source's
+ * ``effectAllowed="copy"``; a "move" effect makes the browser cancel the drop. */
+export function hasAgentDrag(dt: DataTransfer | null): boolean {
+  if (!dt) return false;
+  return Array.from(dt.types || []).includes(AGENT_DRAG_MIME);
+}
+
 /** The attach target for an agent drop. Mirrors the backend contract
  * (`app/agents/attachments.py`): a node/connection target carries the graph
  * element's id; canvas is the project-wide fallback. */
@@ -31,18 +40,46 @@ export type AgentDropTarget =
   | { kind: "node"; targetId: string }
   | { kind: "canvas" };
 
+export interface XYPoint {
+  x: number;
+  y: number;
+}
+
+/** Minimal node geometry (as returned by React Flow's ``getNodes()``). */
+export interface NodeRect {
+  id: string;
+  position?: XYPoint;
+  positionAbsolute?: XYPoint;
+  width?: number | null;
+  height?: number | null;
+}
+
 /**
- * Resolve which target an agent was dropped on. React Flow renders every node
- * wrapper as `.react-flow__node` carrying `data-id={node.id}`, so we walk up from
- * the drop's DOM target to that wrapper and read the id. Dropping anywhere off a
- * node (the pane, background) falls back to the canvas.
+ * Resolve which node an agent was dropped on by hit-testing the drop point (in
+ * flow coordinates) against each node's bounding box, returning the id of the
+ * topmost containing node or null for empty canvas. Coordinate hit-testing is
+ * used instead of DOM ``closest('.react-flow__node')`` because React Flow's
+ * pane/selection layer is often the actual drop-event target, so the DOM walk
+ * would miss the node and everything would fall back to the canvas.
  */
-export function resolveAgentDropTarget(eventTarget: EventTarget | null): AgentDropTarget {
-  const el = eventTarget as Element | null;
-  const nodeEl =
-    el && typeof el.closest === "function" ? el.closest(".react-flow__node") : null;
-  const targetId = nodeEl?.getAttribute("data-id");
-  return targetId ? { kind: "node", targetId } : { kind: "canvas" };
+export function pickNodeAtPoint(nodes: NodeRect[], point: XYPoint): string | null {
+  // Iterate back-to-front: later nodes render on top, so the last match wins.
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const n = nodes[i];
+    const origin = n.positionAbsolute ?? n.position;
+    if (!origin) continue;
+    const w = n.width ?? 0;
+    const h = n.height ?? 0;
+    if (
+      point.x >= origin.x &&
+      point.x <= origin.x + w &&
+      point.y >= origin.y &&
+      point.y <= origin.y + h
+    ) {
+      return n.id;
+    }
+  }
+  return null;
 }
 
 /** Refresh signal for the attachment dock, dispatched after attach/detach so the

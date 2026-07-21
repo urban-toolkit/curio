@@ -1,39 +1,39 @@
-import React, { useState } from "react";
-import { useFlowContext } from "../../../providers/FlowProvider";
+import React from "react";
 import { AgentDock } from "./AgentDock";
 import { AgentChatPanel } from "./AgentChatPanel";
-import { useAgentAttachments } from "./useAgentAttachments";
+import { useAgentAttachmentsContext } from "./AgentAttachmentsProvider";
 
 /**
- * Canvas overlay that wires the attachments hook to the dock + chat: shows a
- * dock tile per attached agent, and opens a chat panel for the selected one.
- * Mounted once on the canvas.
+ * Canvas overlay for CANVAS-target agents: a persistent dock centered at the
+ * bottom of the canvas. Node-target agents render at their node instead (see
+ * {@link NodeAgentBadges}). The chat panel opens for whichever attachment is
+ * selected — from a dock tile or a node badge.
  */
 export const AgentDockOverlay: React.FC = () => {
-  const { projectId } = useFlowContext();
-  const { attachments, detach, run } = useAgentAttachments(projectId ?? null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const ctx = useAgentAttachmentsContext();
+  if (!ctx) return null;
 
-  const selected = attachments.find((a) => a.attachmentId === selectedId) ?? null;
+  const canvasAttachments = ctx.attachments.filter((a) => a.target.kind === "canvas");
+  const selected = ctx.attachments.find((a) => a.attachmentId === ctx.selectedId) ?? null;
 
   const onDetach = (attachmentId: string) => {
-    if (selectedId === attachmentId) setSelectedId(null);
-    detach(attachmentId);
+    if (ctx.selectedId === attachmentId) ctx.closeChat();
+    ctx.detach(attachmentId);
   };
 
   return (
     <>
       <AgentDock
-        attachments={attachments}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
+        attachments={canvasAttachments}
+        selectedId={ctx.selectedId}
+        onSelect={ctx.openChat}
         onDetach={onDetach}
       />
       {selected ? (
         <AgentChatPanel
           attachment={selected}
-          onSend={(message) => run(selected.attachmentId, message)}
-          onClose={() => setSelectedId(null)}
+          onSend={(message) => ctx.run(selected.attachmentId, message)}
+          onClose={ctx.closeChat}
         />
       ) : null}
     </>

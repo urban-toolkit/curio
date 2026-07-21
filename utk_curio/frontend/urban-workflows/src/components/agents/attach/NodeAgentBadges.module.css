@@ -1,0 +1,14 @@
+/* Container that anchors the agent avatars just below their target node. The
+   UniversalNode wrapper is display:contents, so this absolute box anchors to
+   the .react-flow__node element and rides along with pan/zoom/drag. The avatar
+   chips themselves are the shared AgentAvatarBadge. */
+.badges {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translate(-50%, 6px);
+  z-index: 5;
+  display: flex;
+  gap: 6px;
+  pointer-events: auto;
+}

@@ -49,6 +49,13 @@ class BuiltinAgentSpec:
     prompt_file: str  # filename in llm-prompts/
     capabilities: tuple[str, ...]
     roles: tuple[str, ...] = field(default_factory=tuple)
+    # Compatible attachment target kinds. Empty → derive the single kind from
+    # the category (_TARGET_BY_CATEGORY). Set explicitly for dual-compatible
+    # agents (e.g. Chat attaches to a node OR the canvas).
+    targets: tuple[str, ...] = field(default_factory=tuple)
+
+    def target_kinds(self) -> tuple[str, ...]:
+        return self.targets or (_TARGET_BY_CATEGORY[self.category],)
 
 
 # The 13 releasable prompt-agent migrations (dev/06 canonical map). The blocked
@@ -56,10 +63,12 @@ class BuiltinAgentSpec:
 BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
     BuiltinAgentSpec("agent.chat-agent", "Chat", "node",
                      "Conversational assistant for a node or the canvas.",
-                     "chat_prompt.txt", ("conversation.respond", "attachment.refine"), ("chat",)),
+                     "chat_prompt.txt", ("conversation.respond", "attachment.refine"), ("chat",),
+                     targets=("node", "canvas")),
     BuiltinAgentSpec("agent.debug-agent", "Debug", "node",
-                     "Diagnose errors and propose fixes for a node.",
-                     "debug_prompt.txt", ("code.debug.diagnose", "code.fix.propose"), ("debug",)),
+                     "Diagnose errors and propose fixes for a node or the canvas.",
+                     "debug_prompt.txt", ("code.debug.diagnose", "code.fix.propose"), ("debug",),
+                     targets=("node", "canvas")),
     BuiltinAgentSpec("agent.dataflow-explainer", "Dataflow Explainer", "canvas",
                      "Explain what the whole dataflow does.",
                      "explanation_prompt.txt", ("dataflow.explain",), ("explanation",)),
@@ -108,7 +117,7 @@ def build_builtin_manifest(spec: BuiltinAgentSpec) -> dict:
         "roles": list(spec.roles),
         "capabilities": [{"id": c, "contractVersion": "1"} for c in spec.capabilities],
         "prompts": {"instruction": {"path": f"prompts/{spec.prompt_file}", "variables": []}},
-        "compatibleTargets": [{"kind": _TARGET_BY_CATEGORY[spec.category], "requires": []}],
+        "compatibleTargets": [{"kind": k, "requires": []} for k in spec.target_kinds()],
         "runtime": {"execution": "foreground", "reviewPolicy": "report-only"},
         "providerRequirements": {"capabilities": ["structured-output"]},
         "provenance": {"publisher": "curio", "license": "MIT", "trust": "built-in"},

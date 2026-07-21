@@ -64,13 +64,25 @@ def _manifest_to_card(
 
 
 def _resolve_definition(user_key: str, coord: str) -> AgentManifest | None:
-    """Resolve a coordinate — user store, then the built-in roster, then published catalog."""
-    m = storage.load_installed_agent_definition(user_key, coord)
-    if m is None:
-        m = builtin.get_builtin_manifest(coord)
-    if m is None:
-        m = publications.get_published_manifest(coord)
-    return m
+    """Resolve a coordinate's canonical metadata.
+
+    An **owned/imported** store definition (trust != ``built-in``) is the
+    authority for its coordinate — it may deliberately shadow a built-in id.
+    Otherwise the **built-in roster** wins, so evolving built-in metadata (e.g.
+    a widened ``compatibleTargets``) always takes effect even when a stale copy
+    was materialized into the store by an earlier install. Falls back to the
+    store copy, then the published catalog. (Runtime prompt bytes are resolved
+    separately by ``_resolve_instruction_text``, still store-first.)
+    """
+    store_m = storage.load_installed_agent_definition(user_key, coord)
+    if store_m is not None and store_m.provenance.trust != "built-in":
+        return store_m
+    builtin_m = builtin.get_builtin_manifest(coord)
+    if builtin_m is not None:
+        return builtin_m
+    if store_m is not None:
+        return store_m
+    return publications.get_published_manifest(coord)
 
 
 def _require_definition(user_key: str, coord: str) -> AgentManifest:
@@ -273,6 +285,16 @@ def attach_agent(user_key: str, project_id: str, coord: str, target: object) -> 
     if coord not in project_agents.project_agents(spec):
         raise AgentServiceError(
             "install the agent in this project before attaching it", 400
+        )
+    # Enforce the agent's declared compatibility: a canvas-only agent can only
+    # attach to the canvas, a node-only agent only to nodes, a dual-compatible
+    # agent to either. (attachments.attach still validates the target exists.)
+    manifest = _resolve_definition(user_key, coord)
+    allowed = {t.kind for t in manifest.compatible_targets} if manifest else set()
+    kind = target.get("kind") if isinstance(target, dict) else None
+    if kind and allowed and kind not in allowed:
+        raise AgentServiceError(
+            f"this agent attaches to {', '.join(sorted(allowed))}, not {kind}", 400
         )
     try:
         record = attachments.attach(

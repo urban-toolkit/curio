@@ -11,6 +11,7 @@ import { readCanvasTemplateConfig, resolveEditorTabFlags } from '../utils/canvas
 import { useNodeState } from '../hook/useNodeState';
 import { HandleDef, TIconCardinality } from '../registry/types';
 import { useFlowContext } from '../providers/FlowProvider';
+import { NodeAgentBadges } from './agents/attach/NodeAgentBadges';
 import { useCollab } from '../providers/CollaborationProvider';
 import './Node.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
@@ -264,6 +265,9 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
 
         {!dashboardOn && adapter.outputIconType && <OutputIcon type={adapter.outputIconType as TIconCardinality} />}
       </NodeContainer>
+
+      {/* Agents attached to this node render as avatars at its bottom edge. */}
+      {!dashboardOn && <NodeAgentBadges nodeId={data.nodeId} />}
     </div>
   );
 });

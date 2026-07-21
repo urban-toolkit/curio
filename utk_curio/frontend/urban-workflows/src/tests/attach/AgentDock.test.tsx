@@ -23,7 +23,7 @@ describe("AgentDock", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("renders a tile per attachment and selects on click", () => {
+  it("renders an avatar per attachment and selects on click", () => {
     const onSelect = jest.fn();
     render(
       <AgentDock
@@ -33,9 +33,11 @@ describe("AgentDock", () => {
         onDetach={jest.fn()}
       />,
     );
-    expect(screen.getByText("explainer")).toBeInTheDocument();
-    expect(screen.getByText("debug")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("explainer"));
+    // The agent name is the avatar's accessible label (concept shows avatars,
+    // no visible name text).
+    expect(screen.getByRole("button", { name: /Open chat with explainer/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Open chat with debug/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Open chat with explainer/ }));
     expect(onSelect).toHaveBeenCalledWith("a1");
   });
 

@@ -231,7 +231,7 @@ class TestPublish:
 class TestAttachments:
     def test_attach_canvas_then_list_then_detach(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
-        coord = "agent.node-explainer@1.0.0"  # a built-in
+        coord = "agent.chat-agent@1.0.0"  # dual-compatible built-in (node + canvas)
         client.post(
             f"/api/agents/projects/{alice_project}/install",
             json={"coord": coord}, headers=_auth(token),
@@ -246,7 +246,7 @@ class TestAttachments:
         assert att["coord"] == coord
         assert att["target"] == {"kind": "canvas"}
         assert att["attachmentId"] and att["sessionId"]
-        assert att["name"] == "Node Explainer"
+        assert att["name"] == "Chat"
 
         listed = client.get(
             f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
@@ -326,7 +326,8 @@ class TestMaterialize:
 
 
 class TestRun:
-    def _attach_builtin(self, client, token, project_id, coord="agent.node-explainer@1.0.0"):
+    def _attach_builtin(self, client, token, project_id, coord="agent.chat-agent@1.0.0"):
+        # Chat is dual-compatible (node + canvas), so a canvas attachment is valid.
         client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
         r = client.post(
             f"/api/agents/projects/{project_id}/attachments",
@@ -358,7 +359,7 @@ class TestRun:
         assert r.get_json()["reply"] == "hello from the model"
         msgs = captured["messages"]
         assert msgs[0]["role"] == "system"
-        assert msgs[0]["content"] == builtin.read_instruction_text("agent.node-explainer@1.0.0")
+        assert msgs[0]["content"] == builtin.read_instruction_text("agent.chat-agent@1.0.0")
         assert msgs[1] == {"role": "user", "content": "explain this node"}
 
     def test_run_unknown_attachment_404(self, client, user_and_token, tmp_curio, alice_project):
@@ -409,7 +410,7 @@ class TestSavePreservesAgentState:
 
     def test_attachment_survives_a_canvas_save(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
-        coord = "agent.node-explainer@1.0.0"
+        coord = "agent.chat-agent@1.0.0"  # dual-compatible, so a canvas attachment is valid
         client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token))
         att = client.post(
             f"/api/agents/projects/{alice_project}/attachments",
@@ -452,8 +453,10 @@ class TestPruneAttachmentsOnDelete:
 
     def test_node_attachment_pruned_when_its_node_is_deleted(self, client, user_and_token, tmp_curio, alice_project):
         _, token = user_and_token
-        coord = "agent.node-explainer@1.0.0"
-        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token))
+        node_coord = "agent.node-explainer@1.0.0"  # node-only
+        canvas_coord = "agent.dataflow-explainer@1.0.0"  # canvas-only
+        for c in (node_coord, canvas_coord):
+            client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": c}, headers=_auth(token))
         # Persist a node so a node-target attachment validates against the spec.
         client.put(
             f"/api/projects/{alice_project}",
@@ -462,12 +465,12 @@ class TestPruneAttachmentsOnDelete:
         )
         node_att = client.post(
             f"/api/agents/projects/{alice_project}/attachments",
-            json={"coord": coord, "target": {"kind": "node", "targetId": "n1"}},
+            json={"coord": node_coord, "target": {"kind": "node", "targetId": "n1"}},
             headers=_auth(token),
         ).get_json()
         canvas_att = client.post(
             f"/api/agents/projects/{alice_project}/attachments",
-            json={"coord": coord, "target": {"kind": "canvas"}},
+            json={"coord": canvas_coord, "target": {"kind": "canvas"}},
             headers=_auth(token),
         ).get_json()
         # Delete the node: save a spec without n1 (and without agentAttachments).
@@ -482,3 +485,105 @@ class TestPruneAttachmentsOnDelete:
         ids = {a["attachmentId"] for a in listed}
         assert node_att["attachmentId"] not in ids  # pruned
         assert ids == {canvas_att["attachmentId"]}  # canvas survives
+
+
+class TestAttachCompatibility:
+    """Attach validation enforces the agent's compatibleTargets: canvas-only to
+    canvas, node-only to nodes, dual-compatible to either."""
+
+    def _install(self, client, token, project_id, coord):
+        client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
+
+    def _attach(self, client, token, project_id, coord, target):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments",
+            json={"coord": coord, "target": target},
+            headers=_auth(token),
+        )
+
+    def test_canvas_only_agent_rejected_on_a_node(self, client, user_and_token, tmp_curio, alice_project):
+        # dataflow-explainer is a canvas-category (canvas-only) built-in.
+        _, token = user_and_token
+        coord = "agent.dataflow-explainer@1.0.0"
+        self._install(client, token, alice_project, coord)
+        # Persist a node so the node target would otherwise exist.
+        client.put(
+            f"/api/projects/{alice_project}",
+            json={"name": "p", "spec": {"dataflow": {"nodes": [{"id": "n1"}], "edges": [], "packages": []}}, "outputs": []},
+            headers=_auth(token),
+        )
+        r = self._attach(client, token, alice_project, coord, {"kind": "node", "targetId": "n1"})
+        assert r.status_code == 400
+        assert "canvas" in r.get_data(as_text=True).lower()
+        # …but attaching to the canvas works.
+        assert self._attach(client, token, alice_project, coord, {"kind": "canvas"}).status_code == 201
+
+    def test_node_only_agent_rejected_on_canvas(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        coord = "agent.node-explainer@1.0.0"  # node-only
+        self._install(client, token, alice_project, coord)
+        r = self._attach(client, token, alice_project, coord, {"kind": "canvas"})
+        assert r.status_code == 400
+        assert "node" in r.get_data(as_text=True).lower()
+
+    def test_dual_agent_attaches_to_either(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        coord = "agent.chat-agent@1.0.0"  # dual: node + canvas
+        self._install(client, token, alice_project, coord)
+        client.put(
+            f"/api/projects/{alice_project}",
+            json={"name": "p", "spec": {"dataflow": {"nodes": [{"id": "n1"}], "edges": [], "packages": []}}, "outputs": []},
+            headers=_auth(token),
+        )
+        assert self._attach(client, token, alice_project, coord, {"kind": "canvas"}).status_code == 201
+        assert self._attach(client, token, alice_project, coord, {"kind": "node", "targetId": "n1"}).status_code == 201
+
+    def test_chat_and_debug_declare_both_targets(self, client, user_and_token, tmp_curio):
+        _, token = user_and_token
+        cat = client.get("/api/agents/catalog", headers=_auth(token)).get_json()["agents"]
+        by_id = {a["id"]: a for a in cat}
+        assert sorted(by_id["agent.chat-agent"]["hooks"]) == ["canvas", "node"]
+        assert sorted(by_id["agent.debug-agent"]["hooks"]) == ["canvas", "node"]
+
+    def test_debug_attaches_to_canvas_and_node(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        coord = "agent.debug-agent@1.0.0"
+        self._install(client, token, alice_project, coord)
+        client.put(
+            f"/api/projects/{alice_project}",
+            json={"name": "p", "spec": {"dataflow": {"nodes": [{"id": "n1"}], "edges": [], "packages": []}}, "outputs": []},
+            headers=_auth(token),
+        )
+        assert self._attach(client, token, alice_project, coord, {"kind": "canvas"}).status_code == 201
+        assert self._attach(client, token, alice_project, coord, {"kind": "node", "targetId": "n1"}).status_code == 201
+
+    def test_stale_materialized_builtin_resolves_fresh_roster_metadata(
+        self, client, user_and_token, tmp_curio, alice_project
+    ):
+        # An earlier install materialized Chat when it was node-only. The stale
+        # store copy must NOT override the roster's now-dual compatibleTargets:
+        # the palette shows both pills and a canvas attach is accepted.
+        user, token = user_and_token
+        ukey = _user_dir_key(user)
+        coord = "agent.chat-agent@1.0.0"
+        stale = {
+            "id": "agent.chat-agent",
+            "name": "Chat",
+            "category": "node",
+            "version": "1.0.0",
+            "purpose": "old node-only chat",
+            "capabilities": [{"id": "conversation.respond", "contractVersion": "1"}],
+            "compatibleTargets": [{"kind": "node", "requires": []}],  # STALE
+            "prompts": {"instruction": {"path": "prompts/chat_prompt.txt", "variables": []}},
+            "provenance": {"publisher": "curio", "license": "MIT", "trust": "built-in"},
+        }
+        storage.write_definition(ukey, coord, stale, {"prompts/chat_prompt.txt": "hi"})
+        client.post(
+            f"/api/agents/projects/{alice_project}/install",
+            json={"coord": coord}, headers=_auth(token),
+        )
+        listed = client.get(f"/api/agents/projects/{alice_project}", headers=_auth(token)).get_json()
+        chat = next(a for a in listed["agents"] if a["id"] == "agent.chat-agent")
+        assert sorted(chat["hooks"]) == ["canvas", "node"]  # fresh roster, not the stale copy
+        r = self._attach(client, token, alice_project, coord, {"kind": "canvas"})
+        assert r.status_code == 201, r.get_data(as_text=True)

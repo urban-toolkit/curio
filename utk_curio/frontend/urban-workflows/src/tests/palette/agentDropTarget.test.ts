@@ -1,50 +1,66 @@
-import { resolveAgentDropTarget } from "../../utils/agentsPaletteEvents";
+import { pickNodeAtPoint, hasAgentDrag, AGENT_DRAG_MIME, type NodeRect } from "../../utils/agentsPaletteEvents";
 
 /**
- * `resolveAgentDropTarget` decides whether an agent dropped from the palette
- * attaches to a specific graph node or to the canvas, by walking up the drop's
- * DOM target to React Flow's `.react-flow__node[data-id]` wrapper.
+ * `hasAgentDrag` decides whether `dragover` should set `dropEffect="copy"`. It
+ * must read `dataTransfer.types` (not `getData`, which returns "" mid-drag), or
+ * the browser cancels the agent drop (effectAllowed="copy" vs a "move" effect).
  */
-describe("resolveAgentDropTarget", () => {
-  function buildNode(id: string): { wrapper: HTMLElement; inner: HTMLElement } {
-    const wrapper = document.createElement("div");
-    wrapper.className = "react-flow__node react-flow__node-DATA_POOL";
-    wrapper.setAttribute("data-id", id);
-    const inner = document.createElement("div");
-    inner.className = "node-body";
-    wrapper.appendChild(inner);
-    return { wrapper, inner };
-  }
+describe("hasAgentDrag", () => {
+  const dt = (types: string[]): DataTransfer => ({ types } as unknown as DataTransfer);
 
-  it("returns a node target when dropped on the node wrapper", () => {
-    const { wrapper } = buildNode("n-42");
-    expect(resolveAgentDropTarget(wrapper)).toEqual({ kind: "node", targetId: "n-42" });
+  it("is true when the agent MIME is among the drag types", () => {
+    expect(hasAgentDrag(dt([AGENT_DRAG_MIME]))).toBe(true);
+    expect(hasAgentDrag(dt(["text/plain", AGENT_DRAG_MIME]))).toBe(true);
   });
 
-  it("returns a node target when dropped on a descendant of the node", () => {
-    const { inner } = buildNode("n-7");
-    // A drop lands on the innermost element under the cursor, not the wrapper.
-    expect(resolveAgentDropTarget(inner)).toEqual({ kind: "node", targetId: "n-7" });
+  it("is false for non-agent drags and null", () => {
+    expect(hasAgentDrag(dt(["application/reactflow"]))).toBe(false);
+    expect(hasAgentDrag(dt([]))).toBe(false);
+    expect(hasAgentDrag(null)).toBe(false);
+  });
+});
+
+/**
+ * `pickNodeAtPoint` decides whether an agent dropped from the palette attaches
+ * to a node (by hit-testing the drop point against node geometry, in flow
+ * coordinates) or to the canvas. Coordinate hit-testing avoids the DOM-layer
+ * quirk where React Flow's pane is the drop-event target rather than the node.
+ */
+describe("pickNodeAtPoint", () => {
+  const nodes: NodeRect[] = [
+    { id: "n1", position: { x: 0, y: 0 }, width: 100, height: 50 },
+    { id: "n2", position: { x: 200, y: 200 }, width: 80, height: 40 },
+  ];
+
+  it("returns the id of the node whose box contains the point", () => {
+    expect(pickNodeAtPoint(nodes, { x: 50, y: 25 })).toBe("n1");
+    expect(pickNodeAtPoint(nodes, { x: 210, y: 210 })).toBe("n2");
   });
 
-  it("falls back to the canvas when dropped off any node", () => {
-    const pane = document.createElement("div");
-    pane.className = "react-flow__pane";
-    expect(resolveAgentDropTarget(pane)).toEqual({ kind: "canvas" });
+  it("matches on the node's edges (inclusive)", () => {
+    expect(pickNodeAtPoint(nodes, { x: 0, y: 0 })).toBe("n1");
+    expect(pickNodeAtPoint(nodes, { x: 100, y: 50 })).toBe("n1");
   });
 
-  it("falls back to the canvas when the node wrapper has no id", () => {
-    const wrapper = document.createElement("div");
-    wrapper.className = "react-flow__node"; // no data-id
-    expect(resolveAgentDropTarget(wrapper)).toEqual({ kind: "canvas" });
+  it("returns null over empty canvas", () => {
+    expect(pickNodeAtPoint(nodes, { x: 150, y: 150 })).toBeNull();
+    expect(pickNodeAtPoint([], { x: 0, y: 0 })).toBeNull();
   });
 
-  it("falls back to the canvas for a null target", () => {
-    expect(resolveAgentDropTarget(null)).toEqual({ kind: "canvas" });
+  it("prefers the topmost (last-rendered) node when boxes overlap", () => {
+    const overlapping: NodeRect[] = [
+      { id: "under", position: { x: 0, y: 0 }, width: 100, height: 100 },
+      { id: "over", position: { x: 50, y: 50 }, width: 100, height: 100 },
+    ];
+    expect(pickNodeAtPoint(overlapping, { x: 60, y: 60 })).toBe("over");
   });
 
-  it("falls back to the canvas for a non-Element target (no closest)", () => {
-    // e.g. a text node or a non-DOM EventTarget — must not throw.
-    expect(resolveAgentDropTarget({} as EventTarget)).toEqual({ kind: "canvas" });
+  it("prefers positionAbsolute and tolerates missing geometry", () => {
+    const n: NodeRect[] = [
+      { id: "abs", position: { x: 0, y: 0 }, positionAbsolute: { x: 500, y: 500 }, width: 40, height: 40 },
+      { id: "nogeo", width: 40, height: 40 },
+    ];
+    expect(pickNodeAtPoint(n, { x: 510, y: 510 })).toBe("abs");
+    expect(pickNodeAtPoint(n, { x: 5, y: 5 })).toBeNull(); // "abs" uses absolute; "nogeo" has no origin
   });
 });

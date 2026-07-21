@@ -1,46 +1,21 @@
+/* Canvas-target agents: a persistent bar centered at the TOP of the canvas,
+   just below the top menu bar. Node-target agents render at their node instead
+   (NodeAgentBadges). */
 .dock {
   position: absolute;
-  left: 12px;
-  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 76px;
   z-index: 30;
   display: flex;
-  gap: 6px;
-  align-items: flex-end;
-}
-
-.tile {
-  display: flex;
+  gap: 8px;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  background: var(--curio-card-bg, #fff);
-  border: 1px solid var(--curio-border, #e3e3e6);
-  border-radius: var(--curio-radius-md, 8px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  cursor: pointer;
-  font-size: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+  max-width: min(90vw, 720px);
 }
 
-.tileActive {
-  border-color: var(--curio-accent-sky-fg, #3567c7);
-}
-
-.tileIcon {
-  color: var(--curio-accent-sky-fg, #3567c7);
-}
-
-.tileName {
-  font-weight: 500;
-}
-
-.detach {
-  background: none;
-  border: none;
-  color: var(--curio-text-secondary, #8a8b93);
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1;
-}
+/* Avatar chips are the shared AgentAvatarBadge. */
 
 /* ── chat panel ── */
 .panel {
