@@ -1,6 +1,6 @@
 from __future__ import annotations
 from ..ingest import softartifacts_root
-import json
+from .store import list_chunks
 import nltk # natural language processing
 from nltk.tokenize import word_tokenize 
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -11,21 +11,11 @@ try:
 except LookupError:
     nltk.download('punkt_tab')
 
-#load json chunk accorind to artifactId
+#load json chunk accorind to artifact_id
 #return an array of dictionary accroding to the json
 def _load_chunk(artifactId):
-    chunkPath = softartifacts_root() / artifactId / "chunk.json"
-    if not chunkPath.is_file():
-        return None 
-
-    #reading json file and return the array
-    try:
-        with open(chunkPath, 'r') as f:
-            data = json.load(f);
-    except:
-        return None
-    
-    return data
+    chunks = list_chunks(artifactId)
+    return chunks or None   # search_chunks already treats falsy as []
  
 
 #to tokenize the query and text
@@ -35,12 +25,12 @@ def _tokenize(text):
 
 #scoring each chunk depends on the query
 #using TF_IDF and cosine similarity to score query to text chunk
-def search_chunks(query, artifactId, top_k = 1):
+def search_chunks(query, artifact_id, top_k = 1):
     if top_k is None:
         top_k = 1
 
-    #from artifactId return the chunk that is stored in .curio 
-    chunks = _load_chunk(artifactId)
+    #from artifact_id return the chunk that is stored in .curio 
+    chunks = _load_chunk(artifact_id)
     if not chunks:
         return []
 

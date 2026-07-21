@@ -29,11 +29,11 @@ def _parse_inform_json(llm_text: str) -> dict:
         }
 
 #entry point
-def inform_artifact(artifactId: str, top_k: str, source_file: str, context: any):
-    spans = search_chunks(artifactId=artifactId, query = INFORM_QUERY, top_k = top_k)
+def inform_artifact(artifact_id: str, top_k: str, source_file: str, context: any):
+    spans = search_chunks(artifact_id=artifact_id, query = INFORM_QUERY, top_k = top_k)
     if not spans:
         return{
-            "artifactId": artifactId,
+            "artifact_id": artifact_id,
             "explanation": "the file is too small for anything useful",
             "spans": [],
         }
@@ -61,7 +61,7 @@ def inform_artifact(artifactId: str, top_k: str, source_file: str, context: any)
     parsed = _parse_inform_json(explanation);
 
     return {
-        "artifactId": artifactId,
+        "artifact_id": artifact_id,
         "spans": spans,
         "guidance": parsed.get("guidance", "there's no guidance"),
         "suggestions": parsed.get("suggestions", "there's no suggestion")

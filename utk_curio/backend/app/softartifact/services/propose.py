@@ -59,16 +59,16 @@ def _parse_proposal_json(llm_text: str) -> dict:
     
 
 # receive artifact, try to generate Trill.json based on artifact using LLM promt =D
-def propose_trill(artifactId: str, mode: str = "transform", *, context: object, top_k: int, source_file):
+def propose_trill(artifact_id: str, mode: str = "transform", *, context: object, top_k: int, source_file):
     #mode is transform as fallback
     mode = (mode or "transform").lower()
     if mode not in ("transform", "expand"):
         mode = "transform"
 
-    spans = search_chunks(query=DEFAULT_QUERIES[mode], artifactId=artifactId, top_k=top_k)
+    spans = search_chunks(query=DEFAULT_QUERIES[mode], artifact_id=artifact_id, top_k=top_k)
     if not spans:   
         return{
-            "artifactId": artifactId,
+            "artifact_id": artifact_id,
             "explanation": "the file is too small for any transforming" 
         }
     
@@ -115,7 +115,7 @@ def propose_trill(artifactId: str, mode: str = "transform", *, context: object, 
     proposal, rationale = _parse_proposal_json(raw_text)
     
     return {
-        "artifactId": artifactId,
+        "artifact_id": artifact_id,
         "spans": spans,
         "proposal": proposal,
         "rationale": rationale

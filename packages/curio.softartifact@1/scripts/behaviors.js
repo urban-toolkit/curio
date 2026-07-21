@@ -66,10 +66,10 @@ var API_BASE = "".concat(typeof window !== 'undefined' && ((_curio = window.curi
 // Fresh/blank state for a node that has no artifact yet.
 function defaultState() {
   return {
-    artifactId: null,
+    artifact_id: null,
     role: 'inform',
     sourceFile: null,
-    mimeType: null,
+    mimetype: null,
     status: 'empty'
   };
 }
@@ -109,7 +109,7 @@ function explainArtifact(_x, _x2) {
 } // Call the backend's /inform endpoint for a given artifact
 // to suggest new nodes or guidance using the given artifact 
 function _explainArtifact() {
-  _explainArtifact = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6(artifactId, sourceFile) {
+  _explainArtifact = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6(artifact_id, sourceFile) {
     var top_k,
       headers,
       token,
@@ -132,7 +132,7 @@ function _explainArtifact() {
             method: "POST",
             headers: headers,
             body: JSON.stringify({
-              artifactId: artifactId,
+              artifact_id: artifact_id,
               top_k: top_k,
               sourceFile: sourceFile
               //No query, use Default query
@@ -164,7 +164,7 @@ function informArtifact(_x3, _x4) {
 // if context(dataflow) is none -> suggests a new dataflow
 // if there is a context -> suggest edit to the dataflow 
 function _informArtifact() {
-  _informArtifact = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7(artifactId, sourceFile) {
+  _informArtifact = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7(artifact_id, sourceFile) {
     var top_k,
       context,
       headers,
@@ -186,7 +186,7 @@ function _informArtifact() {
             headers.Authorization = "Bearer ".concat(token);
           }
           body = {
-            artifactId: artifactId,
+            artifact_id: artifact_id,
             sourceFile: sourceFile,
             top_k: top_k
           };
@@ -224,7 +224,7 @@ function proposeTrillArtifact(_x5, _x6) {
 } // Main hook powering the "soft artifact" node's behavior — handles file
 // upload/ingestion, state persistence, health checks, and the "explain" flow.
 function _proposeTrillArtifact() {
-  _proposeTrillArtifact = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee8(artifactId, sourceFile) {
+  _proposeTrillArtifact = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee8(artifact_id, sourceFile) {
     var top_k,
       role,
       context,
@@ -252,7 +252,7 @@ function _proposeTrillArtifact() {
 
           //json request body
           body = {
-            artifactId: artifactId,
+            artifact_id: artifact_id,
             sourceFile: sourceFile,
             top_k: top_k,
             role: role
@@ -380,9 +380,9 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
   var applyArtifactMeta = function applyArtifactMeta(out, role) {
     var _nodeData$softArtifac;
     persist({
-      artifactId: typeof out.artifactId === 'string' ? out.artifactId : null,
+      artifact_id: typeof out.artifact_id === 'string' ? out.artifact_id : null,
       sourceFile: typeof out.sourceFile === 'string' ? out.sourceFile : null,
-      mimeType: typeof out.mimeType === 'string' ? out.mimeType : null,
+      mimetype: typeof out.mimetype === 'string' ? out.mimetype : null,
       status: 'ready',
       errorMessage: undefined
     });
@@ -402,12 +402,12 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
   // Runs the "explain" flow for the current artifact: calls the backend,
   // stores the explanation, and emits it as node output.
   var runExplain = /*#__PURE__*/function () {
-    var _ref = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee(artifactId, role) {
+    var _ref = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee(artifact_id, role) {
       var out, _t;
       return _regenerator().w(function (_context) {
         while (1) switch (_context.p = _context.n) {
           case 0:
-            if (!(role != 'explain' || !artifactId)) {
+            if (!(role != 'explain' || !artifact_id)) {
               _context.n = 1;
               break;
             }
@@ -418,16 +418,16 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
             setExplaining(true);
             _context.p = 2;
             _context.n = 3;
-            return explainArtifact(artifactId, state.sourceFile);
+            return explainArtifact(artifact_id, state.sourceFile);
           case 3:
             out = _context.v;
             persist({
               explanation: out.explanation
             });
             emitOutput({
-              artifactId: artifactId,
+              artifact_id: artifact_id,
               sourceFile: state.sourceFile,
-              mimeType: state.mimeType,
+              mimetype: state.mimetype,
               role: 'explain',
               explanation: out.explanation,
               query: out.query,
@@ -460,12 +460,12 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
   // run 'Inform' flow for the current artifact, call the backend
   // emit the output
   var runInform = /*#__PURE__*/function () {
-    var _ref2 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2(artifactId, role) {
+    var _ref2 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2(artifact_id, role) {
       var out, _t2;
       return _regenerator().w(function (_context2) {
         while (1) switch (_context2.p = _context2.n) {
           case 0:
-            if (!(role != 'inform' || !artifactId)) {
+            if (!(role != 'inform' || !artifact_id)) {
               _context2.n = 1;
               break;
             }
@@ -474,7 +474,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
             setInforming(true);
             _context2.p = 2;
             _context2.n = 3;
-            return informArtifact(artifactId, state.sourceFile);
+            return informArtifact(artifact_id, state.sourceFile);
           case 3:
             out = _context2.v;
             persist({
@@ -482,9 +482,9 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
               suggestions: out.suggestions
             });
             emitOutput({
-              artifactId: artifactId,
+              artifact_id: artifact_id,
               sourceFile: state.sourceFile,
-              mimeType: state.mimeType,
+              mimetype: state.mimetype,
               role: 'inform',
               guidance: out.guidance,
               suggestions: out.suggestions
@@ -515,7 +515,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
   // run propose, either it's transform or expand artifact
   // for now I haven't added context, need to add it  TODO
   var runPropose = /*#__PURE__*/function () {
-    var _ref3 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3(artifactId, role) {
+    var _ref3 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3(artifact_id, role) {
       var context, out, _t3;
       return _regenerator().w(function (_context3) {
         while (1) switch (_context3.p = _context3.n) {
@@ -530,7 +530,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
             _context3.p = 2;
             context = typeof data.getCurrentTrill === "function" ? data.getCurrentTrill() : undefined;
             _context3.n = 3;
-            return proposeTrillArtifact(artifactId, state.sourceFile, 8, role, context);
+            return proposeTrillArtifact(artifact_id, state.sourceFile, 8, role, context);
           case 3:
             out = _context3.v;
             persist({
@@ -538,9 +538,9 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
               rationale: out.rationale
             });
             emitOutput({
-              artifactId: artifactId,
+              artifact_id: artifact_id,
               sourceFile: state.sourceFile,
-              mimeType: state.mimeType,
+              mimetype: state.mimetype,
               role: role,
               proposal: out.proposal,
               rationale: out.rationale
@@ -569,18 +569,18 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
   }();
 
   //on mount effect, run once when the node is reloaded
-  // Verifies with the backend that a previously-saved artifactId still
+  // Verifies with the backend that a previously-saved artifact_id still
   // exists (e.g. after a page refresh). If the backend no longer has it,
   // clears the stale state so the user knows to re-upload.
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(function () {
     var _nodeData$softArtifac2;
-    var artifactId = (_nodeData$softArtifac2 = nodeData.softArtifact) === null || _nodeData$softArtifac2 === void 0 ? void 0 : _nodeData$softArtifac2.artifactId;
-    if (!artifactId) {
+    var artifact_id = (_nodeData$softArtifac2 = nodeData.softArtifact) === null || _nodeData$softArtifac2 === void 0 ? void 0 : _nodeData$softArtifac2.artifact_id;
+    if (!artifact_id) {
       // Nothing was previously ingested — nothing to verify, skip the GET
       console.log("soft artifact Id doesn't exist, skip GET");
       return;
     }
-    console.log('[soft-artifact] mount: verifying', artifactId);
+    console.log('[soft-artifact] mount: verifying', artifact_id);
     // Guards against updating state after unmount (see earlier explanation)
     var cancelled = false;
     setVerifying(true);
@@ -591,7 +591,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
           case 0:
             _context4.p = 0;
             _context4.n = 1;
-            return fetch("".concat(API_BASE, "/artifacts/").concat(encodeURI(artifactId)));
+            return fetch("".concat(API_BASE, "/artifacts/").concat(encodeURI(artifact_id)));
           case 1:
             res = _context4.v;
             if (!cancelled) {
@@ -605,11 +605,11 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
               break;
             }
             persist({
-              artifactId: null,
+              artifact_id: null,
               // clear stale id — backend doesn't have it
               sourceFile: null,
               // optional: clear or keep for context
-              mimeType: null,
+              mimetype: null,
               status: 'error',
               errorMessage: 'artifact missing — re-upload',
               explanation: undefined
@@ -675,9 +675,9 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
           case 1:
             //before any fetch reset everything on the UI
             persist({
-              artifactId: null,
+              artifact_id: null,
               sourceFile: null,
-              mimeType: null,
+              mimetype: null,
               status: 'ingesting',
               errorMessage: undefined,
               explanation: undefined,
@@ -718,28 +718,28 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
             role = (_out$role = out.role) !== null && _out$role !== void 0 ? _out$role : state.role;
             applyArtifactMeta(out, role);
             console.log('[soft-artifact] ingest out:', out);
-            console.log('[soft-artifact] role:', (_out$role2 = out.role) !== null && _out$role2 !== void 0 ? _out$role2 : state.role, 'artifactId:', out.artifactId);
+            console.log('[soft-artifact] role:', (_out$role2 = out.role) !== null && _out$role2 !== void 0 ? _out$role2 : state.role, 'artifact_id:', out.artifact_id);
             // Automatically trigger explanation if this node's role is "explain"
-            if (!(role === "explain" && out.artifactId)) {
+            if (!(role === "explain" && out.artifact_id)) {
               _context5.n = 7;
               break;
             }
             _context5.n = 7;
-            return runExplain(out.artifactId, role);
+            return runExplain(out.artifact_id, role);
           case 7:
-            if (!(role === "inform" && out.artifactId)) {
+            if (!(role === "inform" && out.artifact_id)) {
               _context5.n = 8;
               break;
             }
             _context5.n = 8;
-            return runInform(out.artifactId, role);
+            return runInform(out.artifact_id, role);
           case 8:
-            if (!((role === "transform" || role === "expand") && out.artifactId)) {
+            if (!((role === "transform" || role === "expand") && out.artifact_id)) {
               _context5.n = 9;
               break;
             }
             _context5.n = 9;
-            return runPropose(out.artifactId, role);
+            return runPropose(out.artifact_id, role);
           case 9:
             _context5.n = 11;
             break;
@@ -767,9 +767,9 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
     if (!file) {
       // File cleared — reset artifact state entirely
       persist({
-        artifactId: null,
+        artifact_id: null,
         sourceFile: null,
-        mimeType: null,
+        mimetype: null,
         status: 'empty',
         errorMessage: undefined,
         explanation: undefined,
@@ -783,9 +783,9 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
 
     // New file selected — record its name/type but mark as not-yet-ingested
     persist({
-      artifactId: null,
+      artifact_id: null,
       sourceFile: file.name,
-      mimeType: file.type || 'application/octet-stream',
+      mimetype: file.type || 'application/octet-stream',
       status: 'empty',
       errorMessage: undefined,
       explanation: undefined,

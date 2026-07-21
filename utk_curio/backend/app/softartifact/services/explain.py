@@ -45,7 +45,7 @@ def _format_passages(spans: list[dict]) -> str:
     return "\n\n".join(lines)
 
 
-def explain_artifact(artifactId, query, top_k, source_file) -> dict:
+def explain_artifact(artifact_id, query, top_k, source_file) -> dict:
     """
     Retrieve relevant passages for an artifact and ask the LLM to explain/
     summarize them based on the given query.
@@ -57,13 +57,13 @@ def explain_artifact(artifactId, query, top_k, source_file) -> dict:
     q = (query or "").strip() or DEFAULT_QUERY
 
     # Retrieve the top-k most relevant chunks/spans for this artifact and query
-    spans = search_chunks(artifactId=artifactId, query=q, top_k=top_k)
+    spans = search_chunks(artifact_id=artifact_id, query=q, top_k=top_k)
 
     # If nothing was retrieved, short-circuit and return an empty result
     # instead of calling the LLM with no context
     if not spans:
         return{
-            "artifactId": artifactId,
+            "artifact_id": artifact_id,
             "query": query,
             "spans": [],
             "explanation": "the file is too small for any explanation"
@@ -90,7 +90,7 @@ def explain_artifact(artifactId, query, top_k, source_file) -> dict:
     # Return everything the caller needs: normalized query, raw spans used,
     # and the generated explanation
     return {
-        "artifactId": artifactId,
+        "artifact_id": artifact_id,
         "query": q,
         "spans": spans,
         "explanation": explanation,

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json, os, uuid
 from pathlib import Path
 from .LLM_helper.chunk_schema import Chunk
+from .LLM_helper.store import upsert_softartifact
 from pypdf import PdfReader
 from io import BytesIO
 
@@ -25,7 +26,7 @@ def split_text(text: str, size: int = CHUNK_SIZE) -> list[str]:
     return [text[i : i + size] for i in range(0, len(text), size)]
 
 #Real gigachad Chunking
-#To be implemented 
+#To be implemented TODO 
 def chunk_doc(text: str, filename: str) -> list[str]:
     return[]
 
@@ -81,15 +82,10 @@ def chunk_pdf(raw: bytes) -> list[dict]:
             i += 1
     return chunks
 
-
-#TODO
-def chunk_transcript(text: str) -> list[dict]:
-    return
-
-def ingest_file(raw: bytes, filename: str, mime_type: str):
+def ingest_file(raw: bytes, filename: str, mimetype: str):
     #accepts text, markdown, pdf 
-    if not (filename.lower().endswith((".txt",".md", ".pdf")) or mime_type.startswith("text/") or mime_type == "application/pdf"):
-        raise ValueError(f"v1 ingest supports .txt/.md only (got {filename!r})")
+    if not (filename.lower().endswith((".txt",".md", ".pdf")) or mimetype.startswith("text/") or mimetype == "application/pdf"):
+        raise ValueError(f"v1 ingest supports .txt/.md/.pdf only (got {filename!r})")
  
 
     artifact_id = str(uuid.uuid4())
@@ -101,19 +97,31 @@ def ingest_file(raw: bytes, filename: str, mime_type: str):
     (artifact_dir / safe_name).write_bytes(raw)
 
     chunks_row: list[dict] = []
-    if (filename.lower().endswith(".pdf") or mime_type == "application/pdf"):
+    kind = "text"
+    if (filename.lower().endswith(".pdf") or mimetype == "application/pdf"):
         chunks_row = chunk_pdf(raw)
-    elif (filename.lower().endswith(".txt",".md") or mime_type.startswith("text/")):
+        kind = "pdf"
+    elif (filename.lower().endswith((".txt",".md")) or mimetype.startswith("text/")):
         chunks_row = chunk_plaintext(raw)
+        kind = "text"
 
+    upsert_softartifact({
+        "artifact_id": artifact_id,
+        "source_file": safe_name,
+        "mimetype": mimetype or "application/octet-stream",
+        "kind": kind
+    }, chunks_row)
+
+    # This if for debugging, can delete once hardned s
     (artifact_dir / "chunk.json").write_text(
         json.dumps(chunks_row, ensure_ascii = False, indent = 2),
         encoding = "utf-8"
     )
 
     return {
-        "artifactId": artifact_id,
+        "artifact_id": artifact_id,
         "sourceFile": safe_name,
-        "mimeType": mime_type or "application/octet-stream",
+        "mimetype": mimetype or "application/octet-stream",
+        "kind": kind,
         "status": "ready",
     }

@@ -52,10 +52,10 @@ def ingest():
     return jsonify(result), 200
 
 
-# ── artifacts/<artifactId> ──────────────────────────────────────────────────────────
-@bp.get("/artifacts/<artifactId>")
-def getArtifact(artifactId: str):
-    meta = get_softartifact_metadata(artifactId)
+# ── artifacts/<artifact_id> ──────────────────────────────────────────────────────────
+@bp.get("/artifacts/<artifact_id>")
+def getArtifact(artifact_id: str):
+    meta = get_softartifact_metadata(artifact_id)
     if meta is None:
         return jsonify({"error": "artifact not found"}), 400
     
@@ -70,15 +70,15 @@ def retrieve():
     if not isinstance(data, dict):
         return jsonify({"error": "Request body must be valid JSON"}), 400
 
-    artifactId = data.get("artifactId") or None
+    artifact_id = data.get("artifact_id") or None
     query = data.get("query") or None
     top_k = data.get("top_k") or None
-    if artifactId is None:
-        return jsonify({"error": "missing artifactId"}), 400
+    if artifact_id is None:
+        return jsonify({"error": "missing artifact_id"}), 400
     if query is None:
         return jsonify({"error": "missing query"}), 400
     
-    return jsonify(search_chunks(query, artifactId, top_k));
+    return jsonify(search_chunks(query, artifact_id, top_k));
 
 
 # ── Explain ──────────────────────────────────────────────────────────
@@ -89,15 +89,15 @@ def explain():
     if not isinstance(data, dict):
         return jsonify({"error": "Request body must be valid JSON"}), 400
 
-    artifactId = data.get("artifactId") or None
+    artifact_id = data.get("artifact_id") or None
     query = data.get("query") or None
     top_k = data.get("top_k") or None    
 
-    if artifactId is None:
-        return jsonify({"error": "missing artifactId"}), 400
+    if artifact_id is None:
+        return jsonify({"error": "missing artifact_id"}), 400
 
 
-    explanation = explain_artifact(artifactId=artifactId, query=query, top_k=top_k,source_file= "");
+    explanation = explain_artifact(artifact_id=artifact_id, query=query, top_k=top_k,source_file= "");
     return jsonify(explanation);
     
 
@@ -110,33 +110,33 @@ def inform():
         return jsonify({"error": "Request body must be valid JSON"}), 400
     
     
-    artifactId = data.get("artifactId") or None
+    artifact_id = data.get("artifact_id") or None
     top_k = data.get("top_k") or None
     source_file = data.get("sourceFile") or None
     context = data.get("context") or None
-    if artifactId is None:
-        return jsonify({"error": "missing artifactId"}), 400
+    if artifact_id is None:
+        return jsonify({"error": "missing artifact_id"}), 400
     
-    output = inform_artifact(artifactId=artifactId, top_k=top_k, context=context, source_file = source_file)
+    output = inform_artifact(artifact_id=artifact_id, top_k=top_k, context=context, source_file = source_file)
     return jsonify(output)
 
 # ── Transform ──────────────────────────────────────────────────────────
 @bp.post("propose_trill")
 @require_auth
-def proposeTrill():  # reads artifactId, mode, top_k, sourceFile, context, query
+def proposeTrill():  # reads artifact_id, mode, top_k, sourceFile, context, query
     data = request.get_json(silent = True)
     if not isinstance(data, dict):
         return jsonify({"error": "Request body must be valid JSON"}), 400
     
     #reading the json request 
-    artifactId = data.get("artifactId") or None
+    artifact_id = data.get("artifact_id") or None
     top_k = data.get("top_k") or None
     source_file = data.get("sourceFile") or None
     role = data.get("role") or None
     context = data.get("context") or None          #this is the dataflow itself
     
-    if artifactId is None:
-        return jsonify({"error": "missing artifactId"}), 400 
+    if artifact_id is None:
+        return jsonify({"error": "missing artifact_id"}), 400 
 
-    output = propose_trill(artifactId=artifactId, mode=role, context=context, top_k=top_k, source_file=source_file)   
+    output = propose_trill(artifact_id=artifact_id, mode=role, context=context, top_k=top_k, source_file=source_file)   
     return jsonify(output)

@@ -19,10 +19,10 @@ const API_BASE = `${(typeof window !== 'undefined' && (window as any).curio?.bac
 // Shape of the persisted state for this node — this is what gets saved
 // on the node data so it survives refreshes/reloads.
 interface SoftArtifactState{
-  artifactId: string | null,
+  artifact_id: string | null,
   role: softArtifactRole,
   sourceFile: string | null,
-  mimeType: string | null,
+  mimetype: string | null,
   status: 'empty' | 'ingesting' | 'ready' | 'error',
   errorMessage?: string,
   explanation?: string,                                    // this is for Explain route
@@ -41,10 +41,10 @@ type softArtifactNodeData = NodeBehaviorData & {
 // Fresh/blank state for a node that has no artifact yet.
 function defaultState(): SoftArtifactState{
   return {
-    artifactId: null,
+    artifact_id: null,
     role: 'inform',
     sourceFile: null,
-    mimeType: null,
+    mimetype: null,
     status: 'empty' 
   }
 }
@@ -79,7 +79,7 @@ function artifactStatusLine(state: SoftArtifactState, verifying: boolean): strin
 
 // Calls the backend's /explain endpoint for a given artifact, asking it
 // to summarize/explain the document (using the default query server-side).
-async function explainArtifact(artifactId: string, sourceFile: string | null, top_k = 8) {
+async function explainArtifact(artifact_id: string, sourceFile: string | null, top_k = 8) {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json'
   }
@@ -93,7 +93,7 @@ async function explainArtifact(artifactId: string, sourceFile: string | null, to
     method: "POST",
     headers,
     body: JSON.stringify({
-      artifactId: artifactId,
+      artifact_id: artifact_id,
       top_k: top_k,
       sourceFile: sourceFile
       //No query, use Default query
@@ -112,7 +112,7 @@ async function explainArtifact(artifactId: string, sourceFile: string | null, to
 
 // Call the backend's /inform endpoint for a given artifact
 // to suggest new nodes or guidance using the given artifact 
-async function informArtifact(artifactId: string, sourceFile: string | null, top_k = 8, context?: string) {
+async function informArtifact(artifact_id: string, sourceFile: string | null, top_k = 8, context?: string) {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json'
   };
@@ -123,7 +123,7 @@ async function informArtifact(artifactId: string, sourceFile: string | null, top
   }
 
   const body: Record<string, unknown> = {
-    artifactId,
+    artifact_id,
     sourceFile,
     top_k
   }
@@ -149,7 +149,7 @@ async function informArtifact(artifactId: string, sourceFile: string | null, top
 // Call the backend's /propose_trill endpoint for a given artifact and context
 // if context(dataflow) is none -> suggests a new dataflow
 // if there is a context -> suggest edit to the dataflow 
-async function proposeTrillArtifact(artifactId: string, sourceFile: string | null, top_k = 8, role: string, context?: any) {
+async function proposeTrillArtifact(artifact_id: string, sourceFile: string | null, top_k = 8, role: string, context?: any) {
   //create a json request
   //json request header
   const headers: Record<string, string> = {
@@ -162,7 +162,7 @@ async function proposeTrillArtifact(artifactId: string, sourceFile: string | nul
 
   //json request body
   const body: Record<string, unknown> = {
-    artifactId,
+    artifact_id,
     sourceFile,
     top_k,
     role
@@ -254,9 +254,9 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
   // and forwards it as this node's output.
   const applyArtifactMeta = (out: Record<string, unknown>, role: softArtifactRole) => {
     persist({
-      artifactId: typeof out.artifactId === 'string' ? out.artifactId : null,
+      artifact_id: typeof out.artifact_id === 'string' ? out.artifact_id : null,
       sourceFile: typeof out.sourceFile === 'string' ? out.sourceFile : null,
-      mimeType: typeof out.mimeType === 'string' ? out.mimeType : null,
+      mimetype: typeof out.mimetype === 'string' ? out.mimetype : null,
       status: 'ready',
       errorMessage: undefined,
     });
@@ -273,19 +273,19 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
 
   // Runs the "explain" flow for the current artifact: calls the backend,
   // stores the explanation, and emits it as node output.
-  const runExplain = async (artifactId: string, role: softArtifactRole) => {
-    if (role != 'explain' || !artifactId) return; // only applies to the "explain" role
+  const runExplain = async (artifact_id: string, role: softArtifactRole) => {
+    if (role != 'explain' || !artifact_id) return; // only applies to the "explain" role
 
     setExplaining(true);
     try {
-      const out = await explainArtifact(artifactId, state.sourceFile);
+      const out = await explainArtifact(artifact_id, state.sourceFile);
 
       persist({ explanation: out.explanation });
 
       emitOutput({
-        artifactId,
+        artifact_id,
         sourceFile: state.sourceFile,
-        mimeType: state.mimeType,
+        mimetype: state.mimetype,
         role: 'explain',
         explanation: out.explanation,
         query: out.query,
@@ -304,20 +304,20 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
 
   // run 'Inform' flow for the current artifact, call the backend
   // emit the output
-  const runInform = async (artifactId: string, role: softArtifactRole) => {
-    if (role != 'inform' || !artifactId) return;
+  const runInform = async (artifact_id: string, role: softArtifactRole) => {
+    if (role != 'inform' || !artifact_id) return;
 
     setInforming(true);
     
     try {
-      const out = await informArtifact(artifactId, state.sourceFile);
+      const out = await informArtifact(artifact_id, state.sourceFile);
       
       persist({ guidance: out.guidance, suggestions: out.suggestions });
 
       emitOutput({
-        artifactId,
+        artifact_id,
         sourceFile: state.sourceFile,
-        mimeType: state.mimeType,
+        mimetype: state.mimetype,
         role: 'inform',
         guidance: out.guidance,
         suggestions: out.suggestions
@@ -334,7 +334,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
 
   // run propose, either it's transform or expand artifact
   // for now I haven't added context, need to add it  TODO
-  const runPropose = async (artifactId: string, role: softArtifactRole) => {
+  const runPropose = async (artifact_id: string, role: softArtifactRole) => {
     if (role !== 'transform' && role !== 'expand') return;
 
     setProposing(true);
@@ -344,14 +344,14 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
          ? data.getCurrentTrill() :
           undefined
       
-      const out = await proposeTrillArtifact(artifactId, state.sourceFile, 8, role, context);
+      const out = await proposeTrillArtifact(artifact_id, state.sourceFile, 8, role, context);
 
       persist({ proposal: out.proposal, rationale: out.rationale })
       
       emitOutput({
-        artifactId,
+        artifact_id,
         sourceFile: state.sourceFile,
-        mimeType: state.mimeType,
+        mimetype: state.mimetype,
         role: role,
         proposal: out.proposal,
         rationale: out.rationale
@@ -367,33 +367,33 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
   }
 
   //on mount effect, run once when the node is reloaded
-  // Verifies with the backend that a previously-saved artifactId still
+  // Verifies with the backend that a previously-saved artifact_id still
   // exists (e.g. after a page refresh). If the backend no longer has it,
   // clears the stale state so the user knows to re-upload.
   useEffect(() => {
-    const artifactId = nodeData.softArtifact?.artifactId
-    if (!artifactId) {
+    const artifact_id = nodeData.softArtifact?.artifact_id
+    if (!artifact_id) {
       // Nothing was previously ingested — nothing to verify, skip the GET
       console.log("soft artifact Id doesn't exist, skip GET")
       return;
     }
 
-    console.log('[soft-artifact] mount: verifying', artifactId);
+    console.log('[soft-artifact] mount: verifying', artifact_id);
     // Guards against updating state after unmount (see earlier explanation)
     let cancelled = false;
     setVerifying(true);
 
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/artifacts/${encodeURI(artifactId)}`)
+        const res = await fetch(`${API_BASE}/artifacts/${encodeURI(artifact_id)}`)
         if (cancelled) return
 
         // Backend doesn't recognize this artifact anymore — reset to a clean/error state
         if (res.status === 400) {
           persist({
-            artifactId: null,           // clear stale id — backend doesn't have it
+            artifact_id: null,           // clear stale id — backend doesn't have it
             sourceFile: null,           // optional: clear or keep for context
-            mimeType: null,
+            mimetype: null,
             status: 'error',
             errorMessage: 'artifact missing — re-upload',
             explanation: undefined
@@ -431,9 +431,9 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
     if (!file) return;
 
     //before any fetch reset everything on the UI
-    persist({artifactId: null,
+    persist({artifact_id: null,
         sourceFile: null,
-        mimeType: null,
+        mimetype: null,
         status: 'ingesting',
         errorMessage: undefined,
         explanation: undefined,
@@ -464,19 +464,19 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
       applyArtifactMeta(out, role);
 
       console.log('[soft-artifact] ingest out:', out);
-      console.log('[soft-artifact] role:', out.role ?? state.role, 'artifactId:', out.artifactId);
+      console.log('[soft-artifact] role:', out.role ?? state.role, 'artifact_id:', out.artifact_id);
       // Automatically trigger explanation if this node's role is "explain"
-      if (role === "explain" && out.artifactId) {
-        await runExplain(out.artifactId, role);
+      if (role === "explain" && out.artifact_id) {
+        await runExplain(out.artifact_id, role);
       }
 
       // Automatically trigger explanation if this node's role is "inform"
-      if (role === "inform" && out.artifactId) {
-        await runInform(out.artifactId, role);
+      if (role === "inform" && out.artifact_id) {
+        await runInform(out.artifact_id, role);
       }
 
-      if ((role === "transform" || role === "expand") && out.artifactId) {
-        await runPropose(out.artifactId, role);
+      if ((role === "transform" || role === "expand") && out.artifact_id) {
+        await runPropose(out.artifact_id, role);
       }
 
     } catch (e) {
@@ -493,9 +493,9 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
     setFile(file);
     if (!file) {
       // File cleared — reset artifact state entirely
-      persist({artifactId: null,
+      persist({artifact_id: null,
         sourceFile: null,
-        mimeType: null,
+        mimetype: null,
         status: 'empty',
         errorMessage: undefined,
         explanation: undefined,
@@ -509,9 +509,9 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
 
     // New file selected — record its name/type but mark as not-yet-ingested
     persist({
-      artifactId: null,
+      artifact_id: null,
       sourceFile: file.name,
-      mimeType: file.type || 'application/octet-stream',
+      mimetype: file.type || 'application/octet-stream',
       status: 'empty',
       errorMessage: undefined,
       explanation: undefined,
