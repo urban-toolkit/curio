@@ -1,3 +1,4 @@
+import { outputOnly } from '../../../utk_curio/frontend/urban-workflows/src/adapters/node';
 import { NodeBehaviorData, NodeBehaviorHook } from '../../../utk_curio/frontend/urban-workflows/src/registry/types';
 import React, { useCallback, useEffect, useState } from 'react';
 
@@ -26,10 +27,10 @@ interface SoftArtifactState{
   status: 'empty' | 'ingesting' | 'ready' | 'error',
   errorMessage?: string,
   explanation?: string,                                    // this is for Explain route
-  guidance?: string,                                       //this is for Inform route
-  suggestions?: Record<string, unknown>                    //this is for Inform route
-  proposal?: Record<string, unknown>                       //this is for Transform route
-  rationale?: string                                       //this is for Transform route
+  guidance?: string,                                       // this is for Inform route
+  suggestions?: Record<string, unknown>                    // this is for Inform route
+  proposal?: Record<string, unknown>                       // this is for Transform route
+  rationale?: string                                       // this is for Transform route
 }
 
 // Extends the generic NodeBehaviorData with this package's specific
@@ -118,7 +119,7 @@ async function explainArtifact(artifact_id: string, sourceFile: string | null, c
 
 // Call the backend's /inform endpoint for a given artifact
 // to suggest new nodes or guidance using the given artifact 
-async function informArtifact(artifact_id: string, sourceFile: string | null, top_k = 8, context?: string) {
+async function informArtifact(artifact_id: string, sourceFile: string | null, top_k = 8, context?: any) {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json'
   };
@@ -321,7 +322,12 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
     setInforming(true);
     
     try {
-      const out = await informArtifact(artifact_id, state.sourceFile);
+      const context = 
+        typeof data.getCurrentTrill === "function" ?
+          data.getCurrentTrill() :
+          undefined
+      
+      const out = await informArtifact(artifact_id, state.sourceFile, 8, context);
       
       persist({ guidance: out.guidance, suggestions: out.suggestions });
 
@@ -357,7 +363,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
       
       const out = await proposeTrillArtifact(artifact_id, state.sourceFile, 8, role, context);
 
-      persist({ proposal: out.proposal, rationale: out.rationale })
+      persist({ proposal: out.proposal, rationale: out.rationale})
       
       emitOutput({
         artifact_id,
@@ -401,14 +407,17 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
 
         // Backend doesn't recognize this artifact anymore — reset to a clean/error state
         if (res.status === 400) {
-          persist({
-            artifact_id: null,           // clear stale id — backend doesn't have it
-            sourceFile: null,           // optional: clear or keep for context
-            mimetype: null,
-            status: 'error',
-            errorMessage: 'artifact missing — re-upload',
-            explanation: undefined
-          });
+          persist({artifact_id: null,
+              sourceFile: null,
+              mimetype: null,
+              status: 'ingesting',
+              errorMessage: "missing artifact, reupload",
+              explanation: undefined,
+              guidance: undefined,
+              suggestions: undefined,
+              proposal: undefined,
+              rationale: undefined,
+            });
           setFile(null);
           return;
         }
@@ -623,6 +632,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
         {state.role === 'inform' && informing ? (
           <p style={{ fontSize: 11, marginTop: 8 }}>Informing…</p>
         ) : null}
+
 
         {state.guidance ? (
           <pre style={{ marginTop: 8, fontSize: 10, background: '#f8fafc', padding: 8, whiteSpace: 'pre-wrap' }}>

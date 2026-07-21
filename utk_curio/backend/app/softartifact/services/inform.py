@@ -47,7 +47,7 @@ def inform_artifact(artifact_id: str, top_k: str, source_file: str, context: any
 
 
     passages = _format_passages(spans)
-    user_text = f"Passages: {passages} context: {context_block} sourceFile: {source_file}"
+    user_text = f"Passages: {passages} \n context: {context_block} \n sourceFile: {source_file}"
     
     system = _load_prompt(PROMPT_PATH)  #read the promt from the promt path
     messages = [

@@ -468,7 +468,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
   // emit the output
   var runInform = /*#__PURE__*/function () {
     var _ref2 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2(artifact_id, role) {
-      var out, _t2;
+      var context, out, _t2;
       return _regenerator().w(function (_context2) {
         while (1) switch (_context2.p = _context2.n) {
           case 0:
@@ -480,8 +480,9 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
           case 1:
             setInforming(true);
             _context2.p = 2;
+            context = typeof data.getCurrentTrill === "function" ? data.getCurrentTrill() : undefined;
             _context2.n = 3;
-            return informArtifact(artifact_id, state.sourceFile);
+            return informArtifact(artifact_id, state.sourceFile, 8, context);
           case 3:
             out = _context2.v;
             persist({
@@ -613,13 +614,15 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
             }
             persist({
               artifact_id: null,
-              // clear stale id — backend doesn't have it
               sourceFile: null,
-              // optional: clear or keep for context
               mimetype: null,
-              status: 'error',
-              errorMessage: 'artifact missing — re-upload',
-              explanation: undefined
+              status: 'ingesting',
+              errorMessage: "missing artifact, reupload",
+              explanation: undefined,
+              guidance: undefined,
+              suggestions: undefined,
+              proposal: undefined,
+              rationale: undefined
             });
             setFile(null);
             return _context4.a(2);

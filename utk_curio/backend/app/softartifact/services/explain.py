@@ -71,9 +71,16 @@ def explain_artifact(artifact_id, query, top_k, source_file, context) -> dict:
     
     # Format retrieved spans into a single text block for the LLM prompt
     passages = _format_passages(spans)
+
+    context_block = ""
+    if context:
+        if isinstance(context, dict):
+            context_block = json.dumps(context, indent=2)
+        else:
+            context_block = str(context)
     # Build the user-facing portion of the prompt: which file this came from,
     # plus the formatted passages
-    user_text = f"Source file: {source_file or 'document'}\n\nPassages:\n{passages} \n Context: {json.dumps(context or {}, indent = 2)}"
+    user_text = f"Source file: {source_file or 'document'}\n\nPassages:\n{passages} \n Context: {context_block}"
 
     # Load the system prompt (instructions for how the LLM should behave)
     system = _load_prompt(PROMPT_PATH)
