@@ -1,71 +1,259 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faRobot } from "@fortawesome/free-solid-svg-icons";
-import type { AgentAttachment } from "../../../api/agentsApi";
-import styles from "./AgentDock.module.css";
+import { faArrowUp, faPen, faRobot, faTrashCan, faXmark } from "@fortawesome/free-solid-svg-icons";
+import type { AgentAttachment, AgentSessionTurn } from "../../../api/agentsApi";
+import { agentCategoryKey } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
+import styles from "./AgentChatPanel.module.css";
 
-type Turn = { role: "user" | "agent"; text: string };
+/** Heuristic: prompts longer than this get the clamp + expand toggle. */
+const INTENT_CLAMP_CHARS = 280;
 
 /**
- * Chat panel for one attached agent. Each send runs the agent (one turn) via the
- * provided ``onSend`` and appends the reply. History is in-memory for now
- * (backend run is stateless single-turn; persistent sessions are a follow-up).
+ * Chat panel for one attached agent, styled to the approved concept screens
+ * (docs/08 anatomy + the docs/03 chat-feedback visual system): tinted-avatar
+ * header with a clear close control, the pinned editable INITIAL INTENT block
+ * (served from the actual prompt source), dark user bubbles / avatar-prefixed
+ * agent rows, and a pill input with a circular ↑ send.
+ *
+ * Presentational: the transcript and intent live in AgentAttachmentsProvider
+ * (server-persisted session, memo dev/20), so closing/reopening restores the
+ * conversation. Closing never detaches the agent.
  */
 export const AgentChatPanel: React.FC<{
   attachment: AgentAttachment;
-  onSend: (message: string) => Promise<string>;
+  turns: AgentSessionTurn[];
+  /** True while the session history is loading from the server. */
+  loadingHistory?: boolean;
+  /** History-load failure message; `onRetryHistory` retries the fetch. */
+  historyError?: string | null;
+  onRetryHistory?: () => void;
+  onSend: (message: string) => Promise<void>;
   onClose: () => void;
-}> = ({ attachment, onSend, onClose }) => {
-  const [turns, setTurns] = useState<Turn[]>([]);
+  onSaveIntent?: (intent: string | null) => Promise<void>;
+  onClearConversation?: () => Promise<void>;
+}> = ({
+  attachment,
+  turns,
+  loadingHistory = false,
+  historyError = null,
+  onRetryHistory,
+  onSend,
+  onClose,
+  onSaveIntent,
+  onClearConversation,
+}) => {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [intentExpanded, setIntentExpanded] = useState(false);
+  const [editingIntent, setEditingIntent] = useState(false);
+  const [intentDraft, setIntentDraft] = useState("");
+  const [savingIntent, setSavingIntent] = useState(false);
+  const [intentError, setIntentError] = useState<string | null>(null);
+
+  const tint =
+    styles[`tint_${agentCategoryKey(attachment.category)}` as keyof typeof styles] ??
+    styles.tint_default;
 
   const targetLabel =
     attachment.target.kind === "canvas"
       ? "canvas"
-      : `${attachment.target.kind} · ${attachment.target.targetId ?? ""}`;
+      : `${attachment.target.kind} ${attachment.target.targetId ?? ""}`.trim();
+
+  // Escape dismisses the chat (close only — the attachment is untouched).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   const send = async () => {
     const message = input.trim();
     if (!message || sending) return;
-    setTurns((t) => [...t, { role: "user", text: message }]);
     setInput("");
     setSending(true);
     try {
-      const reply = await onSend(message);
-      setTurns((t) => [...t, { role: "agent", text: reply }]);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "run failed";
-      setTurns((t) => [...t, { role: "agent", text: `(error) ${msg}` }]);
+      await onSend(message);
     } finally {
       setSending(false);
     }
   };
 
+  const startIntentEdit = () => {
+    setIntentDraft(attachment.intent ?? "");
+    setIntentError(null);
+    setEditingIntent(true);
+  };
+
+  const saveIntent = async () => {
+    if (!onSaveIntent || savingIntent) return;
+    setSavingIntent(true);
+    setIntentError(null);
+    try {
+      // An emptied draft clears the override → falls back to the prompt source.
+      await onSaveIntent(intentDraft.trim() ? intentDraft : null);
+      setEditingIntent(false);
+    } catch (e) {
+      setIntentError(e instanceof Error ? e.message : "Failed to save the intent");
+    } finally {
+      setSavingIntent(false);
+    }
+  };
+
+  const clearConversation = async () => {
+    if (!onClearConversation) return;
+    if (!window.confirm("Clear this conversation? The agent stays attached.")) return;
+    await onClearConversation();
+  };
+
+  const intent = attachment.intent;
+  const intentLong = (intent?.length ?? 0) > INTENT_CLAMP_CHARS;
+
   return (
     <div className={styles.panel} role="dialog" aria-label={`Chat with ${attachment.name}`}>
-      <div className={styles.panelHeader}>
-        <FontAwesomeIcon icon={faRobot} />
-        <span className={styles.panelTitle}>{attachment.name}</span>
-        <span className={styles.panelTarget}>{targetLabel}</span>
-        <button type="button" className={styles.panelClose} aria-label="Close" onClick={onClose}>
-          ✕
+      <div className={styles.header}>
+        <span className={`${styles.avatar} ${tint}`} aria-hidden="true">
+          <FontAwesomeIcon icon={faRobot} />
+        </span>
+        <div className={styles.headerText}>
+          <span className={styles.title}>{attachment.name}</span>
+          <span className={styles.subtitle}>Attached to {targetLabel}</span>
+        </div>
+        <span className={styles.sessionChip} title={`session ${attachment.sessionId}`}>
+          session {attachment.sessionId.slice(0, 8)}
+        </span>
+        {onClearConversation ? (
+          <button
+            type="button"
+            className={styles.headerBtn}
+            aria-label="Clear conversation"
+            title="Clear conversation"
+            onClick={clearConversation}
+          >
+            <FontAwesomeIcon icon={faTrashCan} />
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className={styles.headerBtn}
+          aria-label="Close chat"
+          title="Close chat"
+          onClick={onClose}
+        >
+          <FontAwesomeIcon icon={faXmark} />
         </button>
       </div>
 
-      <div className={styles.messages}>
-        {turns.length === 0 ? (
-          <div className={styles.empty}>Ask this agent something to get started.</div>
-        ) : (
-          turns.map((t, i) => (
-            <div key={i} className={t.role === "user" ? styles.msgUser : styles.msgAgent}>
-              {t.text}
+      <div className={styles.intent}>
+        <div className={styles.intentHead}>
+          <span className={styles.intentLabel} id={`intent-label-${attachment.attachmentId}`}>
+            Initial intent
+          </span>
+          {attachment.intentEdited ? (
+            <span className={styles.intentEditedChip}>edited</span>
+          ) : null}
+          {onSaveIntent && !editingIntent ? (
+            <button
+              type="button"
+              className={styles.headerBtn}
+              aria-label="Edit initial intent"
+              title="Edit initial intent"
+              onClick={startIntentEdit}
+            >
+              <FontAwesomeIcon icon={faPen} />
+            </button>
+          ) : null}
+        </div>
+        {editingIntent ? (
+          <>
+            <textarea
+              className={styles.intentTextarea}
+              aria-labelledby={`intent-label-${attachment.attachmentId}`}
+              value={intentDraft}
+              onChange={(e) => setIntentDraft(e.target.value)}
+            />
+            <div className={styles.intentActions}>
+              <button
+                type="button"
+                className={styles.intentSave}
+                disabled={savingIntent}
+                onClick={saveIntent}
+              >
+                {savingIntent ? "Saving…" : "Save"}
+              </button>
+              <button
+                type="button"
+                className={styles.intentCancel}
+                onClick={() => setEditingIntent(false)}
+              >
+                Cancel
+              </button>
+              {intentError ? <span className={styles.intentError}>{intentError}</span> : null}
             </div>
-          ))
+          </>
+        ) : (
+          <>
+            <div
+              className={[
+                styles.intentText,
+                !intentExpanded && intentLong ? styles.intentClamped : "",
+                !intent ? styles.intentPlaceholder : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              {intent ?? "No instruction prompt available for this agent."}
+            </div>
+            {intentLong ? (
+              <button
+                type="button"
+                className={styles.intentToggle}
+                onClick={() => setIntentExpanded((v) => !v)}
+              >
+                {intentExpanded ? "Show less" : "Show more"}
+              </button>
+            ) : null}
+          </>
         )}
       </div>
 
-      <div className={styles.inputRow}>
+      <div className={styles.messages}>
+        {historyError ? (
+          <div className={`${styles.systemLine} ${styles.systemError}`}>
+            {historyError}
+            {onRetryHistory ? (
+              <button type="button" className={styles.retry} onClick={onRetryHistory}>
+                Retry
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        {loadingHistory ? (
+          <div className={styles.systemLine}>Loading conversation…</div>
+        ) : turns.length === 0 && !historyError ? (
+          <div className={styles.systemLine}>Ask this agent something to get started.</div>
+        ) : (
+          turns.map((t, i) =>
+            t.role === "user" ? (
+              <div key={i} className={styles.msgUser}>
+                {t.text}
+              </div>
+            ) : (
+              <div key={i} className={styles.agentRow}>
+                <span className={`${styles.agentRowAvatar} ${tint}`} aria-hidden="true">
+                  <FontAwesomeIcon icon={faRobot} />
+                </span>
+                <div className={`${styles.msgAgent} ${t.error ? styles.msgError : ""}`}>
+                  {t.text}
+                </div>
+              </div>
+            ),
+          )
+        )}
+      </div>
+
+      <div className={styles.footer}>
         <input
           className={styles.input}
           value={input}
@@ -78,8 +266,15 @@ export const AgentChatPanel: React.FC<{
             }
           }}
         />
-        <button type="button" className={styles.send} disabled={sending || !input.trim()} onClick={send}>
-          {sending ? "…" : "Send"}
+        <button
+          type="button"
+          className={styles.send}
+          aria-label="Send"
+          title="Send"
+          disabled={sending || !input.trim()}
+          onClick={send}
+        >
+          {sending ? "…" : <FontAwesomeIcon icon={faArrowUp} />}
         </button>
       </div>
     </div>

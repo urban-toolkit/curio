@@ -1,0 +1,375 @@
+/* Attached-agent chat panel, styled to the approved concept screens
+   (png-concepts/03 + 06) and the "Chat feedback visual system" contract in
+   docs/03-ui-decisions.md: grouped surfaces (#f7f7f8), hairline borders
+   (#ececee), 12px radii, raised white inner panels, dark right-aligned user
+   bubbles, avatar-prefixed agent rows, soft chips, 16px gutters. */
+
+.panel {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  bottom: 12px;
+  width: 380px;
+  max-width: 90vw;
+  z-index: 31;
+  display: flex;
+  flex-direction: column;
+  background: var(--curio-card-bg, #fff);
+  border: 1px solid var(--curio-border, #ececee);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  overflow: hidden;
+}
+
+/* ── header: white surface, tinted avatar, name + target, session chip ── */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--curio-card-bg, #fff);
+  border-bottom: 1px solid #ececee;
+}
+
+.avatar {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: #fff;
+  color: #3567c7; /* overridden by a category tint class */
+  font-size: 16px;
+}
+
+/* Category tints — same palette as AgentAvatarBadge (icon color, white chip). */
+.tint_canvas   { color: #f2933f; }
+.tint_data     { color: #4caf72; }
+.tint_node     { color: #3567c7; }
+.tint_evaluate { color: #7b5bd6; }
+.tint_package  { color: #17a2b8; }
+.tint_default  { color: #3567c7; }
+
+.headerText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--curio-text-primary, #1e1f23);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subtitle {
+  font-size: 11px;
+  color: var(--curio-text-secondary, #8a8b93);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sessionChip {
+  flex: none;
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--curio-text-secondary, #8a8b93);
+  background: #f7f7f8;
+  border: 1px solid #ececee;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.headerBtn {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--curio-text-secondary, #8a8b93);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.headerBtn:hover,
+.headerBtn:focus-visible {
+  background: #f2f2f4;
+  color: var(--curio-text-primary, #1e1f23);
+}
+
+/* ── pinned INITIAL INTENT block ── */
+.intent {
+  padding: 12px 16px;
+  background: var(--curio-card-bg, #fff);
+  border-bottom: 1px solid #ececee;
+}
+
+.intentHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.intentLabel {
+  flex: 1;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--curio-text-secondary, #8a8b93);
+}
+
+.intentEditedChip {
+  font-size: 10px;
+  color: var(--curio-text-secondary, #8a8b93);
+  background: #f7f7f8;
+  border: 1px solid #ececee;
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+/* Raised inner panel for the intent text (white on the grouped surface). */
+.intentText {
+  background: #f7f7f8;
+  border: 1px solid #ececee;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--curio-text-primary, #1e1f23);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.intentClamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.intentPlaceholder {
+  color: var(--curio-text-secondary, #8a8b93);
+  font-style: italic;
+}
+
+.intentToggle {
+  margin-top: 4px;
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--curio-accent-sky-fg, #3567c7);
+  cursor: pointer;
+}
+
+.intentTextarea {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  background: #fff;
+  border: 1px solid #ececee;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  font-family: inherit;
+  color: var(--curio-text-primary, #1e1f23);
+  box-sizing: border-box;
+}
+
+.intentTextarea:focus {
+  outline: 2px solid var(--curio-accent-sky-fg, #3567c7);
+  outline-offset: 1px;
+}
+
+.intentActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  align-items: center;
+}
+
+.intentSave {
+  border: none;
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--curio-accent-sky-fg, #3567c7);
+  color: #fff;
+  cursor: pointer;
+}
+
+.intentSave:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.intentCancel {
+  border: 1px solid #ececee;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #fff;
+  color: var(--curio-text-primary, #1e1f23);
+  cursor: pointer;
+}
+
+.intentError {
+  font-size: 11px;
+  color: #b3423a;
+}
+
+/* ── transcript: grouped surface with bubbles / agent rows ── */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #f7f7f8;
+}
+
+.msgUser {
+  align-self: flex-end;
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--curio-top-bar-bg, #1e1f23);
+  color: var(--curio-text-on-dark, #fff);
+}
+
+.agentRow {
+  align-self: flex-start;
+  display: flex;
+  gap: 8px;
+  max-width: 92%;
+}
+
+.agentRowAvatar {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid #ececee;
+  background: #fff;
+  font-size: 11px;
+}
+
+/* Agent text: raised white inner panel on the grouped surface. */
+.msgAgent {
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid #ececee;
+  background: #fff;
+  font-size: 12.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--curio-text-primary, #1e1f23);
+}
+
+/* Soft status tone for failures — gentle fill + hairline, never saturated. */
+.msgError {
+  background: #fdf3f2;
+  border-color: #f2d6d3;
+  color: #8a3c36;
+}
+
+.systemLine {
+  align-self: center;
+  font-size: 11px;
+  color: var(--curio-text-secondary, #8a8b93);
+  text-align: center;
+  padding: 2px 10px;
+}
+
+.systemError {
+  background: #fdf3f2;
+  border: 1px solid #f2d6d3;
+  border-radius: 999px;
+  color: #8a3c36;
+}
+
+.retry {
+  border: none;
+  background: none;
+  padding: 0 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--curio-accent-sky-fg, #3567c7);
+  cursor: pointer;
+}
+
+/* ── footer: pill input + circular accent send ── */
+.footer {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--curio-card-bg, #fff);
+  border-top: 1px solid #ececee;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 14px;
+  border: 1px solid #ececee;
+  border-radius: 999px;
+  font-size: 12.5px;
+  background: #f7f7f8;
+  color: var(--curio-text-primary, #1e1f23);
+}
+
+.input:focus {
+  outline: 2px solid var(--curio-accent-sky-fg, #3567c7);
+  outline-offset: 1px;
+  background: #fff;
+}
+
+.send {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--curio-accent-sky-fg, #3567c7);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
