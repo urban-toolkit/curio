@@ -1,9 +1,8 @@
-from flask import request, jsonify, g
+from flask import request, jsonify
 from utk_curio.backend.app.notebooks import notebooks_bp
 from utk_curio.backend.app.notebooks.analyzer import analyze_cells
 from utk_curio.backend.app.api.routes import _call_llm
 from utk_curio.backend.app.api.routes import get_loaded_files_metadata
-from utk_curio.backend.app.users.dependencies import require_auth
 
 import importlib.resources
 import re, json
@@ -21,24 +20,7 @@ def analyze_notebook():
     cells = request.get_json(force=True).get('cells', [])
     return jsonify(analyze_cells(cells))
 
-def _resolve_llm_config():
-    """Return (api_key, api_type, base_url, model) for the current authenticated user."""
-    user = g.user
-    if user.is_guest:
-        if not GUEST_LLM_API_KEY:
-            abort(400, description="LLM is not available for guest users at this time.")
-        return GUEST_LLM_API_KEY, GUEST_LLM_API_TYPE, GUEST_LLM_BASE_URL, GUEST_LLM_MODEL
-    if not user.llm_model:
-        abort(400, description="No LLM configured. Set your provider and model in the Projects page.")
-    return (
-        user.llm_api_key or "",
-        user.llm_api_type or "openai_compatible",
-        user.llm_base_url or "",
-        user.llm_model,
-    )
-
 @notebooks_bp.route('/api/llm/analysis', methods=['POST'])
-@require_auth
 def llm_analysis():
     #Retrieve data 
     data = request.get_json()
@@ -47,11 +29,11 @@ def llm_analysis():
     cells = data.get('cells', [])
 
     # We need to hide this before commiting
-    # api_key     = "<Nope>"
-    # api_type    = "openai_compatible"
-    # base_url    = "https://sage200.evl.uic.edu"
-    # model       = 'gemma4'
-    api_key, api_type, base_url, model = _resolve_llm_config()
+    api_key     = "Nope"
+    api_type    = "openai_compatible"
+    base_url    = "https://sage200.evl.uic.edu"
+    model       = 'gemma4'
+    
     print(api_key)
     print(api_type)
     print(base_url)

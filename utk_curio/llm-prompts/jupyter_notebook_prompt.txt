@@ -12,7 +12,6 @@ Classify each code cell into exactly one of these types:
 - DATA_EXPORT
 - DATA_TRANSFORMATION
 - COMPUTATION_ANALYSIS
-- VIS_VEGA
 - DATA_SUMMARY
 
 Return ONLY a JSON array like this exact example:

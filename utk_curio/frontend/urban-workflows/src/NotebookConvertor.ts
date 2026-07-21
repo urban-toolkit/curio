@@ -1,6 +1,6 @@
 import { v4 as uuid } from "uuid";
 import { NodeType } from "./constants";
-import { getToken } from "utils/authApi";
+import { getToken } from "./utils/authApi";
 
 // ── Set up for LLM features ───────────────────────────────────────────
 
@@ -70,6 +70,9 @@ const DATA_LOADING_PATTERN =
 const DATA_EXPORT_PATTERN =
   /\bto_csv\s*\(|\bto_excel\s*\(|\bto_json\s*\(|\bto_parquet\s*\(|\bto_pickle\s*\(|\bto_sql\s*\(|\bto_feather\s*\(|\.to_file\s*\(|\bopen\s*\([^)]*['"]\s*[wa]b?\s*['"]|\bjson\.dump\s*\(|\bpickle\.dump\s*\(|\bnp\.save\w*\s*\(|\bplt\.savefig\s*\(|\bfig\.savefig\s*\(|\bfig\.write_\w+\s*\(|\.upload_file\s*\(|\.upload_fileobj\s*\(|\.put_object\s*\(/;
 
+const MERGE_FLOW_PATTERN = 
+  /^gqCoduV9YG0fYdjdPXmWdZAhSKJ5o6uQ$/;
+
 function isVegaLiteJson(text: string): boolean {
   try {
     const parsed = JSON.parse(text.trim()) as Record<string, unknown>;
@@ -102,6 +105,7 @@ function _validate_node(llm_type: string): NodeType {
 
 // Used to identify all cells whose types must be evaluated by the LLM
 function _type_is_ambiguous(code: string){
+  if (MERGE_FLOW_PATTERN.test(code)) return false;
   if (DATA_LOADING_PATTERN.test(code)) return false;
   if (DATA_EXPORT_PATTERN.test(code)) return false;
   if (isVegaLiteJson(code)) return false;
@@ -177,15 +181,16 @@ export async function getLlmTypes(
 }
 
 // ── Import: Notebook → Trill ─────────────────────────────────────────────────
-type CellEdge = { 
+// Remove once done
+export type CellEdge = { 
   source: number; 
   target: number;
   // We added parentVar
   parent_var?: string
 };
 
-//Only export for tests
-function modified_wireCode(
+// Remove once done
+export function wireCode(
   code: string,
   cellIdx: number,
   cellEdges: CellEdge[],
@@ -198,11 +203,28 @@ function modified_wireCode(
   if (sources.length === 1) {
     const incomingEdge = cellEdges.find(e => e.source === sources[0] && e.target === cellIdx)
     const parentVar = incomingEdge?.parent_var
-    const srcVar = parentVar ?? "arg"
-    out = `${srcVar} = arg\n${out}`
-  } else if (sources.length > 1) {
-    out = `# multiple inputs available via arg\n${out}`;
-  }
+    if (!parentVar) {
+      // No parent_var means sources[0] is a merge node, not a normal cell.
+      // Unpack each of the merge node's own inputs from arg[i].
+      const mergeNodeIdx = sources[0];
+      const mergeSources = incomingSources.get(mergeNodeIdx) ?? [];
+
+      const unpackLines = mergeSources.map((srcIdx, i) => {
+        const srcEdge = cellEdges.find(e => e.source === srcIdx && e.target === mergeNodeIdx);
+        const srcVar = srcEdge?.parent_var ?? "arg";
+        return `${srcVar} = arg[${i}]`;
+      });
+
+      out = `${unpackLines.join("\n")}\n${out}`;
+    } else {
+      out = `${parentVar} = arg\n${out}`;
+    }
+    // const srcVar = parentVar ?? "arg"
+    // out = `${srcVar} = arg\n${out}`
+  } 
+  // else if (sources.length > 1) {
+  //   out = `# multiple inputs available via arg\n${out}`;
+  // }
 
   const outgoingEdge = cellEdges.find(e => e.source === cellIdx)
   const pv = outgoingEdge?.parent_var;
@@ -282,22 +304,56 @@ export async function notebookToTrill(
   }
 
   // ── Step 3: Fallback — naive linear chain ────────────────────────────────
-  // Linear fallback when backend returned no edges
-
-  // I will remove the linear fallback. It does not accuratley distinguish between an unreachable backend
-  // and completley independent cells. Not only that, but I believe that disconnected nodes are a better
-  // alternative to randomly guessing connections and potentially getting them wrong. Also, this is perhaps 
-  // the only time last_var is used. But with the current way to connect nodes using parent_variables, 
-  // using last_var is completley outdated
+  // Linear fallback was removed
 
   // ── Step 4: Build quick-lookup structures from the edge list ────────────
   // Build wiring sets
+
+  // const hasOutgoing = new Set(cellEdges.map((e) => e.source));
+  // const incomingSources = new Map<number, number[]>();
+  // for (const { source, target } of cellEdges) {
+  //   if (!incomingSources.has(target)) incomingSources.set(target, []);
+  //   incomingSources.get(target)!.push(source);
+  // }
+
+  // ── Step 4a: Raw incoming-edge grouping (just for merge detection) ──────
+  const rawIncoming = new Map<number, number[]>();
+  for (const { source, target } of cellEdges) {
+    if (!rawIncoming.has(target)) rawIncoming.set(target, []);
+    rawIncoming.get(target)!.push(source);
+  }
+
+  rawIncoming.forEach((source, targets)=>{
+    console.log(`Raw\n   Source: ${source}\n   Targets: ${targets}`)
+  })
+
+  // ── Step 4b: Insert merge-flow cells for nodes with multiple inputs ─────
+  for (const [target, sources] of rawIncoming) {
+    if (sources.length <= 1) continue;
+
+    const mergeCellIdx = codeCells.length;
+    codeCells.push("gqCoduV9YG0fYdjdPXmWdZAhSKJ5o6uQ");
+
+    cellEdges = cellEdges.map((e) =>
+      sources.includes(e.source) && e.target === target
+        ? { ...e, target: mergeCellIdx }
+        : e
+    );
+
+    cellEdges.push({ source: mergeCellIdx, target});
+  }
+
+  // ── Step 4c: Build final quick-lookup structures (used by wireCode etc.) ─
   const hasOutgoing = new Set(cellEdges.map((e) => e.source));
   const incomingSources = new Map<number, number[]>();
   for (const { source, target } of cellEdges) {
     if (!incomingSources.has(target)) incomingSources.set(target, []);
     incomingSources.get(target)!.push(source);
   }
+
+  console.log(cellEdges)
+  console.log(hasOutgoing)
+  console.log(incomingSources)
 
   // ── Step 5: Compute visual layout ────────────────────────────────────────
   const positions = computeLayout(codeCells.length, cellEdges);
@@ -313,27 +369,24 @@ export async function notebookToTrill(
 
   // The result of the LLM analysis
   const llm_types = await getLlmTypes(ambiguous, backendUrl)
-  
+
+  cellEdges.forEach((edge, index)=>{
+    console.log(`Edge ${index}\n    parent_var: ${edge.parent_var}\n    source: ${edge.source}\n    target: ${edge.target}`)
+  })
   const nodes: TrillNode[] = codeCells.map((code, index) => {
     const spec = altairSpecs[index] ?? null;
     let nodeType;
-    if (spec) {
-      nodeType = NodeType.VIS_VEGA;
-    } else if (isVegaLiteJson(code)){
-      nodeType = NodeType.VIS_VEGA;
-    } else if (DATA_LOADING_PATTERN.test(code)){
-      nodeType = NodeType.DATA_LOADING;
-    } else if(DATA_EXPORT_PATTERN.test(code)){
-      nodeType = NodeType.DATA_EXPORT;
-    } else if (llm_types[index]){
-      nodeType = llm_types[index]
-    } else {
-      nodeType = NodeType.COMPUTATION_ANALYSIS
-    }
+    if (spec)                                   { nodeType = NodeType.VIS_VEGA; }
+    else if (isVegaLiteJson(code))              { nodeType = NodeType.VIS_VEGA; }
+    else if (MERGE_FLOW_PATTERN.test(code))     { nodeType = NodeType.MERGE_FLOW }
+    else if (DATA_LOADING_PATTERN.test(code))   { nodeType = NodeType.DATA_LOADING; }
+    else if (DATA_EXPORT_PATTERN.test(code))    { nodeType = NodeType.DATA_EXPORT; } 
+    else if (llm_types[index])                  { nodeType = llm_types[index] } 
+    else                                        { nodeType = NodeType.COMPUTATION_ANALYSIS }
     const content = spec
       ? JSON.stringify(spec, null, 2)
       : cellEdges.length > 0  // Changed lastVars.length > 0 to cellEdges.length > 0
-        ? modified_wireCode(code, index, cellEdges, hasOutgoing, incomingSources)
+        ? wireCode(code, index, cellEdges, hasOutgoing, incomingSources)
         : code;
 
     return {
@@ -346,13 +399,27 @@ export async function notebookToTrill(
   });
 
   // ── Step 7: Build the edge list ──────────────────────────────────────────
+  const mergeInputCounters: Record<string, number> = {};
+  
   const edgeList: TrillEdge[] = cellEdges
     .filter(({ source, target }) => nodes[source] && nodes[target])
-    .map(({ source, target }) => ({
-      id: uuid(),
-      source: nodeIds[source],
-      target: nodeIds[target],
-    }));
+    .map(({ source, target }) => {
+      const targetNodeId = nodeIds[target];
+      const isMergeTarget = nodes[target]?.type === NodeType.MERGE_FLOW;
+
+      let edgeId = uuid();
+      if (isMergeTarget) {
+        const count = mergeInputCounters[targetNodeId] ?? 0;
+        edgeId = `${edgeId}-in_${count}`;
+        mergeInputCounters[targetNodeId] = count + 1;
+      }
+
+      return {
+        id: edgeId,
+        source: nodeIds[source],
+        target: targetNodeId,
+      };
+    });
     
     // ── Step 8: Assemble and return the final spec ──────────────────────────
   return {

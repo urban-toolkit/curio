@@ -127,7 +127,7 @@ def _last_assigned_var(tree):
 
 class _UsedNamesVisitor(ast.NodeVisitor):
     """Collects Name(Load) references, skipping into function/class bodies."""
-
+    
     def visit_Name(self, node):
         if isinstance(node.ctx, ast.Load):
             self.used.add(node.id)
@@ -249,7 +249,7 @@ def analyze_cells(cells: list[str]) -> dict:
     seen: set[tuple] = set()
 
     for i, cell in enumerate(analysis):
-        for name in cell['used']:
+        for name in sorted(cell['used'], key=lambda n: producer.get(n, -1)):
             # Added, name not in cell['defined']
             if name in producer and name not in cell['defined']:
                 key = (producer[name], i)
