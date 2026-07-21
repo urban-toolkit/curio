@@ -90,10 +90,11 @@ describe("AgentChatPanel", () => {
     expect(screen.getByText(/no instruction prompt available/i)).toBeInTheDocument();
   });
 
-  it("marks an edited intent and clamps long prompt text with a toggle", () => {
+  it("renders the intent as the first message, clamped with a show more/less toggle", () => {
     const long = "x".repeat(400);
     renderPanel({ attachment: { ...attachment, intent: long, intentEdited: true } });
-    expect(screen.getByText("edited")).toBeInTheDocument();
+    const bubble = screen.getByText(long);
+    expect(bubble.className).toMatch(/msgUser/); // plain first-message styling
     const toggle = screen.getByRole("button", { name: /show more/i });
     fireEvent.click(toggle);
     expect(screen.getByRole("button", { name: /show less/i })).toBeInTheDocument();

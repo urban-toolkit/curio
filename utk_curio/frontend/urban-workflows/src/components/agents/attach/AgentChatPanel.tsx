@@ -152,31 +152,15 @@ export const AgentChatPanel: React.FC<{
         </button>
       </div>
 
-      <div className={styles.intent}>
-        <div className={styles.intentHead}>
-          <span className={styles.intentLabel} id={`intent-label-${attachment.attachmentId}`}>
-            Initial intent
-          </span>
-          {attachment.intentEdited ? (
-            <span className={styles.intentEditedChip}>edited</span>
-          ) : null}
-          {onSaveIntent && !editingIntent ? (
-            <button
-              type="button"
-              className={styles.headerBtn}
-              aria-label="Edit initial intent"
-              title="Edit initial intent"
-              onClick={startIntentEdit}
-            >
-              <FontAwesomeIcon icon={faPen} />
-            </button>
-          ) : null}
-        </div>
+      <div className={styles.messages} ref={messagesRef}>
+        {/* The initial intent reads as the conversation's first message (a
+            plain user bubble), collapsed by default, with show more/less and
+            an edit pencil. */}
         {editingIntent ? (
-          <>
+          <div className={styles.intentEditor}>
             <textarea
               className={styles.intentTextarea}
-              aria-labelledby={`intent-label-${attachment.attachmentId}`}
+              aria-label="Initial intent"
               value={intentDraft}
               onChange={(e) => setIntentDraft(e.target.value)}
             />
@@ -198,12 +182,12 @@ export const AgentChatPanel: React.FC<{
               </button>
               {intentError ? <span className={styles.intentError}>{intentError}</span> : null}
             </div>
-          </>
+          </div>
         ) : (
-          <>
+          <div className={styles.intentMsg}>
             <div
               className={[
-                styles.intentText,
+                styles.msgUser,
                 !intentExpanded && intentLong ? styles.intentClamped : "",
                 !intent ? styles.intentPlaceholder : "",
               ]
@@ -212,20 +196,30 @@ export const AgentChatPanel: React.FC<{
             >
               {intent ?? "No instruction prompt available for this agent."}
             </div>
-            {intentLong ? (
-              <button
-                type="button"
-                className={styles.intentToggle}
-                onClick={() => setIntentExpanded((v) => !v)}
-              >
-                {intentExpanded ? "Show less" : "Show more"}
-              </button>
-            ) : null}
-          </>
+            <div className={styles.intentControls}>
+              {intentLong ? (
+                <button
+                  type="button"
+                  className={styles.intentToggle}
+                  onClick={() => setIntentExpanded((v) => !v)}
+                >
+                  {intentExpanded ? "Show less" : "Show more"}
+                </button>
+              ) : null}
+              {onSaveIntent ? (
+                <button
+                  type="button"
+                  className={styles.intentEdit}
+                  aria-label="Edit initial intent"
+                  title="Edit initial intent"
+                  onClick={startIntentEdit}
+                >
+                  <FontAwesomeIcon icon={faPen} />
+                </button>
+              ) : null}
+            </div>
+          </div>
         )}
-      </div>
-
-      <div className={styles.messages} ref={messagesRef}>
         {historyError ? (
           <div className={`${styles.systemLine} ${styles.systemError}`}>
             {historyError}
