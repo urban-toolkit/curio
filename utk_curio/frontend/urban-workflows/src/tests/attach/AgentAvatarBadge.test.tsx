@@ -27,6 +27,19 @@ describe("AgentAvatarBadge", () => {
     expect(tooltip).toHaveAttribute("aria-hidden", "true");
   });
 
+  it("applies the blue focus-border (active) class only when selected", () => {
+    const { rerender } = render(
+      <AgentAvatarBadge attachment={attachment()} active={false} onOpen={jest.fn()} onDetach={jest.fn()} />,
+    );
+    const chip = screen.getByRole("button", { name: /Open chat with Chat/ });
+    const badge = chip.parentElement as HTMLElement;
+    expect(badge.className).not.toMatch(/badgeActive/);
+    rerender(
+      <AgentAvatarBadge attachment={attachment()} active={true} onOpen={jest.fn()} onDetach={jest.fn()} />,
+    );
+    expect(badge.className).toMatch(/badgeActive/);
+  });
+
   it("opens chat on click and detaches on the ✕", () => {
     const onOpen = jest.fn();
     const onDetach = jest.fn();
