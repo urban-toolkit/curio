@@ -10,6 +10,12 @@
   color: inherit;
 }
 
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
 .coord {
   font-family: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
   font-size: 9px;

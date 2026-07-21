@@ -55,9 +55,9 @@ describe("AgentsPaletteDropdown", () => {
     await waitFor(() => expect(api.listProjectAgents).toHaveBeenCalledWith("p1"));
     fireEvent.click(screen.getByRole("button", { name: /Agents/i }));
     expect(await screen.findByText("node-explainer")).toBeInTheDocument();
-    // Row shows the install coordinate (major only) and a category chip.
+    // Row shows the install coordinate (major only) and a compatible-target pill.
     expect(screen.getByText("agent.node-explainer@1")).toBeInTheDocument();
-    expect(screen.getByText("node")).toBeInTheDocument();
+    expect(screen.getByText("Node")).toBeInTheDocument();
   });
 
   it("footer opens the catalog drawer", async () => {

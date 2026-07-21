@@ -13,6 +13,13 @@ function shortCoord(agent: AgentCard): string {
   return `${agent.id}@${major}`;
 }
 
+/** Human label for a compatible-target kind. */
+const HOOK_LABEL: Record<string, string> = {
+  canvas: "Canvas",
+  node: "Node",
+  connection: "Connection",
+};
+
 /**
  * One installed-agent row in the AGENTS palette. Mirrors the Datasets/Packages
  * row structure (reusing the shared ``packageKind*`` classes): a draggable,
@@ -29,10 +36,12 @@ export const AgentPaletteRow = memo(function AgentPaletteRow({
   onOpen?: () => void;
 }) {
   const key = agentCategoryKey(agent.category);
-  const chipClass = rowStyles[`chip_${key}` as keyof typeof rowStyles] ?? rowStyles.chip_default;
   const avatarClass =
     rowStyles[`avatar_${key}` as keyof typeof rowStyles] ?? rowStyles.avatar_default;
   const tooltip = agent.purpose || agent.capabilities.join(" · ");
+  // Show one pill per compatible target kind (Canvas / Node / Connection) so a
+  // dual-compatible agent clearly advertises both. Deduped, order preserved.
+  const hooks = Array.from(new Set(agent.hooks));
 
   const onDragStart = useCallback(
     (event: React.DragEvent) => {
@@ -60,8 +69,20 @@ export const AgentPaletteRow = memo(function AgentPaletteRow({
       >
         <span className={packageStyles.packageKindRowLabel}>{agent.name}</span>
         <span className={rowStyles.coord}>{shortCoord(agent)}</span>
-        <span className={`${packageStyles.packageKindCategoryChip} ${chipClass}`}>
-          {agent.category}
+        <span className={rowStyles.pills}>
+          {hooks.map((h) => {
+            const chipClass =
+              rowStyles[`chip_${agentCategoryKey(h)}` as keyof typeof rowStyles] ??
+              rowStyles.chip_default;
+            return (
+              <span
+                key={h}
+                className={`${packageStyles.packageKindCategoryChip} ${chipClass}`}
+              >
+                {HOOK_LABEL[h] ?? h}
+              </span>
+            );
+          })}
         </span>
       </button>
     </div>
