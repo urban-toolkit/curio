@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faArrowUp, faPen, faRobot, faTrashCan, faXmark } from "@fortawesome/free-solid-svg-icons";
 import type { AgentAttachment, AgentSessionTurn } from "../../../api/agentsApi";
@@ -49,6 +49,7 @@ export const AgentChatPanel: React.FC<{
   const [intentDraft, setIntentDraft] = useState("");
   const [savingIntent, setSavingIntent] = useState(false);
   const [intentError, setIntentError] = useState<string | null>(null);
+  const messagesRef = useRef<HTMLDivElement | null>(null);
 
   const tint =
     styles[`tint_${agentCategoryKey(attachment.category)}` as keyof typeof styles] ??
@@ -58,6 +59,12 @@ export const AgentChatPanel: React.FC<{
     attachment.target.kind === "canvas"
       ? "canvas"
       : `${attachment.target.kind} ${attachment.target.targetId ?? ""}`.trim();
+
+  // Keep the transcript pinned to the newest turn (also after history hydrates).
+  useEffect(() => {
+    const el = messagesRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [turns, loadingHistory]);
 
   // Escape dismisses the chat (close only — the attachment is untouched).
   useEffect(() => {
@@ -218,7 +225,7 @@ export const AgentChatPanel: React.FC<{
         )}
       </div>
 
-      <div className={styles.messages}>
+      <div className={styles.messages} ref={messagesRef}>
         {historyError ? (
           <div className={`${styles.systemLine} ${styles.systemError}`}>
             {historyError}
