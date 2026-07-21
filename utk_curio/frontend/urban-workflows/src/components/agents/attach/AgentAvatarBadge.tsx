@@ -24,7 +24,6 @@ export const AgentAvatarBadge: React.FC<{
       <button
         type="button"
         className={`${styles.avatar} ${tint}`}
-        title={`${attachment.name} — open chat`}
         aria-label={`Open chat with ${attachment.name}`}
         onClick={(e) => {
           e.stopPropagation();
@@ -44,6 +43,10 @@ export const AgentAvatarBadge: React.FC<{
       >
         ✕
       </button>
+      {/* macOS Dock-style name label, shown below the chip on hover. */}
+      <span className={styles.tooltip} aria-hidden="true">
+        {attachment.name}
+      </span>
     </div>
   );
 };

@@ -56,6 +56,44 @@
   opacity: 1;
 }
 
+/* macOS Dock-style name label below the chip, shown on hover/focus. */
+.tooltip {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 8px;
+  z-index: 20;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(20, 21, 25, 0.95);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+}
+
+/* Upward caret joining the label to the chip. */
+.tooltip::before {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-bottom-color: rgba(20, 21, 25, 0.95);
+}
+
+.badge:hover .tooltip,
+.badge:focus-within .tooltip {
+  opacity: 1;
+}
+
 /* Category tints (icon color; the chip stays white). */
 .tint_canvas   { color: #f2933f; }
 .tint_data     { color: #4caf72; }
