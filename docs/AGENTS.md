@@ -173,12 +173,19 @@ The `/api/agents` endpoints ([`app/agents/routes.py`](../utk_curio/backend/app/a
 | `GET /api/agents/projects/<projectId>/attachments/<attachmentId>/session` | Run | The attachment's persisted chat transcript (`{sessionId, turns}`; empty when none). |
 | `DELETE /api/agents/projects/<projectId>/attachments/<attachmentId>/session` | Run | Clear the transcript; the attachment and its session id are kept. |
 | `POST /api/agents/projects/<projectId>/attachments/<attachmentId>/run` `{message}` | Run | Run one turn of the attached agent (intent/instruction as system + bounded prior session context + your message) via the provider port; returns `{reply}` and persists both turns to the session. |
+| `POST /api/agents/projects/<projectId>/attachments/<attachmentId>/run/stream` `{message}` | Run | Same turn, streamed as Server-Sent Events: `event: delta` chunks → `event: done` `{reply}` (or `event: error`). Validation errors return plain JSON statuses before streaming; persistence matches the blocking run. |
 
 Each endpoint requires auth; project endpoints check ownership (404 if the project isn't the caller's). A card carries `id`, `version`, `dirName`, `name`, `category`, `purpose`, `capabilities`, `hooks`, `provenance`, and the `imported` / `installedInProject` flags the drawer uses to pick the right action controls.
 
 An **attachment** is a private agent instance bound to a target. It lives in the project's `spec["dataflow"]["agentAttachments"]` (alongside nodes/edges) and carries an `attachmentId` + a `sessionId` + an optimistic `revision` — no version/publish identity (`DEC-031`). Attaching requires the template to be installed in the project (never auto-installs), and a node/connection target must reference an existing node/edge.
 
 Its card also carries an **`intent`**: the user's edit when present (stored on the record, `intentEdited: true`), otherwise the definition's instruction prompt resolved at read time from the actual prompt bytes — nothing duplicates prompt text into stored state, so an unedited intent always tracks the prompt source. Runs use the same value as the system turn, so the pinned intent is exactly what runs.
+
+**Provider config is resolved inside the `agents/` boundary** (`app/agents/provider_config.py`, the v1 step of `ADR-AG-012`): guest env config → per-user `llm_*` fields → the aiconn sage200 default (`DEC-039`). The legacy `/llm/*` handlers read through a thin shim over this resolver; `app/agents` never imports `app/api` (boundary-tested). The `ProviderProfile` model and encrypted secret store remain v2.
+
+**Runs are quota-gated** (`app/agents/quotas.py`): simple per-account daily FS counters (`CURIO_AGENT_RUNS_PER_DAY`, default 200) admit each run after validation and before provider dispatch; exhaustion returns a stable `429` `{error, quota, resetAt}` that consumes and persists nothing. Advisory counters by design — the atomic reservation/ledger model is v2. Legacy `/llm/chat` is not gated.
+
+**Chat replies stream**: the frontend consumes the SSE endpoint via `agentsApi.runAttachmentStream`, growing a live agent turn per delta; a pre-delta stream failure falls back to the blocking run once, and quota denials render as a soft error turn with the reset time.
 
 **Chat sessions are persistent** (`app/agents/sessions.py`): each attachment's transcript lives in a private sidecar at `.curio/users/<key>/projects/<pid>/agent-sessions/<sessionId>.json` — deliberately **outside** the project spec, so canvas saves and the share pipeline never carry conversation content. `run` includes the last 20 non-error turns as provider context and persists the exchange; a provider failure persists the user turn plus a display-only error marker (excluded from future context) and returns 502. A transcript lives exactly as long as its attachment: detach deletes the file, and the orphan-prune on canvas save GCs the files of pruned attachments (final retention durations remain `OQ-008`).
 
