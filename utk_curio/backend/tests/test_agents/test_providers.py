@@ -253,3 +253,55 @@ class TestStreaming:
         assert next(gen) == "c0"
         gen.close()
         assert len(produced) <= 2  # generator close stops the provider stream
+
+
+class TestMaxOutputTokens:
+    """The effective resources.maxOutputTokens reaches each provider call."""
+
+    def test_openai_compatible_run_and_stream(self, monkeypatch):
+        import types as t
+        from utk_curio.backend.app.agents.providers import (
+            run_chat_completion, stream_chat_completion,
+        )
+
+        seen = {}
+
+        def _create(**kwargs):
+            seen.update(kwargs)
+            if kwargs.get("stream"):
+                return iter([t.SimpleNamespace(choices=[t.SimpleNamespace(delta=t.SimpleNamespace(content="x"))])])
+            return t.SimpleNamespace(choices=[t.SimpleNamespace(message=t.SimpleNamespace(content="x"))])
+
+        class FakeOpenAI:
+            def __init__(self, **kwargs):
+                self.chat = t.SimpleNamespace(completions=t.SimpleNamespace(create=_create))
+
+        monkeypatch.setattr("openai.OpenAI", FakeOpenAI)
+        msgs = [{"role": "user", "content": "hi"}]
+        run_chat_completion(_cfg(), msgs, max_output_tokens=512)
+        assert seen["max_tokens"] == 512
+        seen.clear()
+        list(stream_chat_completion(_cfg(), msgs, max_output_tokens=256))
+        assert seen["max_tokens"] == 256
+        seen.clear()
+        run_chat_completion(_cfg(), msgs)  # unset → provider default (no kwarg)
+        assert "max_tokens" not in seen
+
+    def test_anthropic_uses_effective_or_4096(self, monkeypatch):
+        import types as t
+        from utk_curio.backend.app.agents.providers import run_chat_completion
+
+        seen = {}
+
+        class FakeClient:
+            def __init__(self, api_key):
+                self.messages = t.SimpleNamespace(create=self._create)
+            def _create(self, model, system, messages, max_tokens):
+                seen["max_tokens"] = max_tokens
+                return t.SimpleNamespace(content=[t.SimpleNamespace(text="x")])
+
+        monkeypatch.setitem(sys.modules, "anthropic", t.SimpleNamespace(Anthropic=FakeClient, NOT_GIVEN="NG"))
+        run_chat_completion(_cfg(api_type="anthropic"), [{"role": "user", "content": "hi"}], max_output_tokens=999)
+        assert seen["max_tokens"] == 999
+        run_chat_completion(_cfg(api_type="anthropic"), [{"role": "user", "content": "hi"}])
+        assert seen["max_tokens"] == 4096

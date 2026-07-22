@@ -57,3 +57,46 @@ class TestLimitConfig:
         assert quotas.runs_per_day_limit() == quotas.DEFAULT_RUNS_PER_DAY
         monkeypatch.delenv("CURIO_AGENT_RUNS_PER_DAY")
         assert quotas.runs_per_day_limit() == quotas.DEFAULT_RUNS_PER_DAY
+
+
+class TestAdmit:
+    """Policy-aware admission (memo dev/24): template limits + budget gate."""
+
+    def test_template_limit_denies_independently(self, tmp_curio):
+        from utk_curio.backend.app.agents.quotas import admit
+
+        assert admit(UKEY, account_limit=10, template_key="p1/a@1", template_limit=1) == 1
+        with pytest.raises(QuotaExceeded) as exc:
+            admit(UKEY, account_limit=10, template_key="p1/a@1", template_limit=1)
+        assert exc.value.reason == "quota"
+        assert "project run limit" in str(exc.value)
+        # Another template in the same account still admits.
+        assert admit(UKEY, account_limit=10, template_key="p1/b@1", template_limit=1) == 2
+
+    def test_budget_gate_uses_estimated_spend(self, tmp_curio):
+        from utk_curio.backend.app.agents.quotas import admit
+
+        # $0.30 budget, $0.10/run estimate → 3 runs admitted, 4th denied.
+        for _ in range(3):
+            admit(UKEY, account_limit=10, daily_budget_usd=0.30, estimated_cost_per_run_usd=0.10)
+        with pytest.raises(QuotaExceeded) as exc:
+            admit(UKEY, account_limit=10, daily_budget_usd=0.30, estimated_cost_per_run_usd=0.10)
+        assert exc.value.reason == "budget"
+        assert "budget" in str(exc.value)
+
+    def test_budget_inactive_when_half_configured(self, tmp_curio):
+        from utk_curio.backend.app.agents.quotas import admit
+
+        for _ in range(5):
+            admit(UKEY, account_limit=10, daily_budget_usd=0.01)  # no estimate → inactive
+        assert quotas.runs_used_today(UKEY) == 5
+
+    def test_denial_precedence_and_no_mutation(self, tmp_curio):
+        from utk_curio.backend.app.agents.quotas import admit
+
+        admit(UKEY, account_limit=1)
+        before = quotas._quota_path(UKEY).read_text(encoding="utf-8")
+        with pytest.raises(QuotaExceeded) as exc:
+            admit(UKEY, account_limit=1, daily_budget_usd=0.01, estimated_cost_per_run_usd=1.0)
+        assert exc.value.reason == "quota"  # account limit checked first
+        assert quotas._quota_path(UKEY).read_text(encoding="utf-8") == before

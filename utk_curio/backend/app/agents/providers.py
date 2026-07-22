@@ -38,11 +38,15 @@ class ProviderConfig:
     model: str
 
 
-def run_chat_completion(config: ProviderConfig, messages: list) -> str:
+def run_chat_completion(
+    config: ProviderConfig, messages: list, max_output_tokens: int | None = None
+) -> str:
     """Dispatch an LLM chat completion to the configured provider.
 
     ``messages`` is the OpenAI-style ``[{"role", "content"}, ...]`` list. Returns
-    the assistant reply text.
+    the assistant reply text. ``max_output_tokens`` is the effective resource
+    policy (memo dev/24); when unset the anthropic backend keeps its former
+    4096 and the others use provider defaults.
     """
     api_type = config.api_type
     if api_type == "anthropic":
@@ -54,7 +58,7 @@ def run_chat_completion(config: ProviderConfig, messages: list) -> str:
             model=config.model,
             system="\n".join(system_parts) if system_parts else anthropic.NOT_GIVEN,
             messages=chat_messages,
-            max_tokens=4096,
+            max_tokens=max_output_tokens or 4096,
         )
         return resp.content[0].text
     elif api_type == "gemini":
@@ -70,7 +74,10 @@ def run_chat_completion(config: ProviderConfig, messages: list) -> str:
         system_instruction = "\n".join(system_parts) if system_parts else None
         gen_model = genai.GenerativeModel(config.model, system_instruction=system_instruction)
         chat = gen_model.start_chat(history=history)
-        response = chat.send_message(last_user_msg)
+        send_kwargs = {}
+        if max_output_tokens:
+            send_kwargs["generation_config"] = {"max_output_tokens": max_output_tokens}
+        response = chat.send_message(last_user_msg, **send_kwargs)
         return response.text
     else:  # openai_compatible (default)
         from openai import OpenAI
@@ -78,11 +85,16 @@ def run_chat_completion(config: ProviderConfig, messages: list) -> str:
         if config.base_url:
             kwargs["base_url"] = config.base_url
         client = OpenAI(**kwargs)
-        completion = client.chat.completions.create(model=config.model, messages=messages)
+        create_kwargs = {"model": config.model, "messages": messages}
+        if max_output_tokens:
+            create_kwargs["max_tokens"] = max_output_tokens
+        completion = client.chat.completions.create(**create_kwargs)
         return completion.choices[0].message.content
 
 
-def stream_chat_completion(config: ProviderConfig, messages: list):
+def stream_chat_completion(
+    config: ProviderConfig, messages: list, max_output_tokens: int | None = None
+):
     """Streaming twin of :func:`run_chat_completion`: yields reply-text deltas.
 
     Same provider dispatch and message handling; each yielded string is an
@@ -99,7 +111,7 @@ def stream_chat_completion(config: ProviderConfig, messages: list):
             model=config.model,
             system="\n".join(system_parts) if system_parts else anthropic.NOT_GIVEN,
             messages=chat_messages,
-            max_tokens=4096,
+            max_tokens=max_output_tokens or 4096,
         ) as stream:
             for text in stream.text_stream:
                 if text:
@@ -117,7 +129,10 @@ def stream_chat_completion(config: ProviderConfig, messages: list):
         system_instruction = "\n".join(system_parts) if system_parts else None
         gen_model = genai.GenerativeModel(config.model, system_instruction=system_instruction)
         chat = gen_model.start_chat(history=history)
-        for chunk in chat.send_message(last_user_msg, stream=True):
+        send_kwargs = {}
+        if max_output_tokens:
+            send_kwargs["generation_config"] = {"max_output_tokens": max_output_tokens}
+        for chunk in chat.send_message(last_user_msg, stream=True, **send_kwargs):
             text = getattr(chunk, "text", "")
             if text:
                 yield text
@@ -127,9 +142,10 @@ def stream_chat_completion(config: ProviderConfig, messages: list):
         if config.base_url:
             kwargs["base_url"] = config.base_url
         client = OpenAI(**kwargs)
-        stream = client.chat.completions.create(
-            model=config.model, messages=messages, stream=True
-        )
+        create_kwargs = {"model": config.model, "messages": messages, "stream": True}
+        if max_output_tokens:
+            create_kwargs["max_tokens"] = max_output_tokens
+        stream = client.chat.completions.create(**create_kwargs)
         for chunk in stream:
             choices = getattr(chunk, "choices", None) or []
             delta = choices[0].delta if choices else None

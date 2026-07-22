@@ -21,11 +21,14 @@ DEFAULT_RUNS_PER_DAY = 200
 
 
 class QuotaExceeded(Exception):
-    """Raised when the account's daily run quota is exhausted (→ 429)."""
+    """Raised when a run is denied (→ 429). ``reason`` is ``"quota"`` for a
+    runs/day limit (account or project template) or ``"budget"`` for the
+    estimated daily-budget gate (memo dev/24)."""
 
-    def __init__(self, message: str, reset_at: str):
+    def __init__(self, message: str, reset_at: str, reason: str = "quota"):
         super().__init__(message)
         self.reset_at = reset_at
+        self.reason = reason
 
 
 def runs_per_day_limit() -> int:
@@ -46,7 +49,11 @@ def _now() -> datetime:
 
 
 def _read_window(user_key: str, today: str) -> dict:
-    """The current counter window; a missing/corrupt/stale file reads as fresh."""
+    """The current counter window; a missing/corrupt/stale file reads as fresh.
+
+    ``byTemplate`` holds per-project-template counts keyed ``"<pid>/<coord>"``
+    (memo dev/24 — project-scope runs/day limits); it expires with the window.
+    """
     path = _quota_path(user_key)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -55,34 +62,73 @@ def _read_window(user_key: str, today: str) -> dict:
     if not isinstance(data, dict) or data.get("window") != today or not isinstance(
         data.get("runs"), int
     ):
-        return {"window": today, "runs": 0}
+        return {"window": today, "runs": 0, "byTemplate": {}}
+    if not isinstance(data.get("byTemplate"), dict):
+        data["byTemplate"] = {}
     return data
 
 
-def check_and_count(user_key: str, limit: int | None = None) -> int:
-    """Admit one agent run and count it, or raise :class:`QuotaExceeded`.
+def _reset_at(now: datetime) -> str:
+    return datetime.combine(
+        now.date() + timedelta(days=1), time.min, tzinfo=timezone.utc
+    ).isoformat()
 
-    Returns the runs used so far today (including this one). Called after
-    request validation and before provider dispatch, so a denied run never
-    reaches a provider and an invalid request never consumes quota.
+
+def admit(
+    user_key: str,
+    *,
+    account_limit: int,
+    template_key: str | None = None,
+    template_limit: int | None = None,
+    daily_budget_usd: float | None = None,
+    estimated_cost_per_run_usd: float | None = None,
+) -> int:
+    """Admit one agent run against the effective policy, or raise
+    :class:`QuotaExceeded` (memo dev/24).
+
+    Checks, in order: the account runs/day limit, the project-template
+    runs/day limit (when one applies), and the estimated daily budget (active
+    only when both budget and estimate are configured). Denial consumes and
+    persists nothing. Returns the account runs used today (incl. this one).
+    Called after request validation and before provider dispatch.
     """
-    if limit is None:
-        limit = runs_per_day_limit()
     now = _now()
     today = now.date().isoformat()
     data = _read_window(user_key, today)
-    if data["runs"] >= limit:
-        reset_at = datetime.combine(
-            now.date() + timedelta(days=1), time.min, tzinfo=timezone.utc
-        ).isoformat()
+    if data["runs"] >= account_limit:
         raise QuotaExceeded(
-            f"daily agent-run limit reached ({limit}/day)", reset_at
+            f"daily agent-run limit reached ({account_limit}/day)", _reset_at(now)
         )
+    if template_key is not None and template_limit is not None:
+        used = data["byTemplate"].get(template_key, 0)
+        if isinstance(used, int) and used >= template_limit:
+            raise QuotaExceeded(
+                f"this agent's project run limit is reached ({template_limit}/day)",
+                _reset_at(now),
+            )
+    if daily_budget_usd is not None and estimated_cost_per_run_usd is not None:
+        # Rounded so IEEE noise (3 × 0.1 > 0.3) can't deny a run early.
+        projected = round((data["runs"] + 1) * estimated_cost_per_run_usd, 6)
+        if projected > daily_budget_usd:
+            raise QuotaExceeded(
+                f"daily agent budget reached (estimated ~${projected:.2f} of "
+                f"${daily_budget_usd:.2f})",
+                _reset_at(now),
+                reason="budget",
+            )
     data["runs"] += 1
+    if template_key is not None:
+        used = data["byTemplate"].get(template_key, 0)
+        data["byTemplate"][template_key] = (used if isinstance(used, int) else 0) + 1
     path = _quota_path(user_key)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data), encoding="utf-8")
     return data["runs"]
+
+
+def check_and_count(user_key: str, limit: int | None = None) -> int:
+    """Back-compat shim over :func:`admit` with only the account limit."""
+    return admit(user_key, account_limit=limit if limit is not None else runs_per_day_limit())
 
 
 def runs_used_today(user_key: str) -> int:
