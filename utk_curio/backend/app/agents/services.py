@@ -19,6 +19,7 @@ from utk_curio.backend.app.agents import (
     imports,
     project_agents,
     publications,
+    quotas,
     sessions,
     storage,
 )
@@ -465,6 +466,9 @@ def run_attachment(
     (excluded from future context) so history matches what the user saw.
     """
     coord, session_id, messages = _prepare_run(user_key, project_id, attachment_id, message)
+    # Admission after validation (an invalid request never consumes quota) and
+    # before provider dispatch (a denied run never reaches a provider).
+    quotas.check_and_count(user_key)
     try:
         reply = run_chat_completion(config, messages)
     except Exception as exc:
@@ -489,6 +493,9 @@ def stream_attachment(
     marker. Nothing is persisted per-delta.
     """
     coord, session_id, messages = _prepare_run(user_key, project_id, attachment_id, message)
+    # Eager admission: a quota denial surfaces as a plain 429 before any
+    # streaming begins, and consumes/persists nothing.
+    quotas.check_and_count(user_key)
 
     def _events():
         parts: list[str] = []

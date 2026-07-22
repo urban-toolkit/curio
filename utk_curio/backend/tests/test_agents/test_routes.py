@@ -960,3 +960,77 @@ class TestStreamRun:
         assert [(m["role"], m["content"]) for m in calls[1][1:]] == [
             ("user", "q1"), ("assistant", "ok"), ("user", "q2"),
         ]
+
+
+class TestQuotaAdmission:
+    """Both run paths admit up to the daily limit, then 429 with a stable body
+    (memo dev/22): a denied run consumes nothing and persists nothing."""
+
+    def _attach_builtin(self, client, token, project_id, coord="agent.chat-agent@1.0.0"):
+        client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
+        r = client.post(
+            f"/api/agents/projects/{project_id}/attachments",
+            json={"coord": coord, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        )
+        return r.get_json()["attachmentId"]
+
+    def test_run_denied_after_limit_with_stable_429(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "2")
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion", lambda c, m: "ok"
+        )
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)
+        url = f"/api/agents/projects/{alice_project}/attachments/{att_id}/run"
+        for _ in range(2):
+            assert client.post(url, json={"message": "q"}, headers=_auth(token)).status_code == 200
+        r = client.post(url, json={"message": "q3"}, headers=_auth(token))
+        assert r.status_code == 429
+        body = r.get_json()
+        assert body["quota"] is True
+        assert "resetAt" in body and "limit" in body["error"]
+        # The denied message was not persisted to the session.
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        assert len(turns) == 4  # two admitted exchanges only
+
+    def test_stream_denied_with_plain_429_before_streaming(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "1")
+
+        def _fake_stream(config, messages):
+            yield "ok"
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
+        )
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)
+        url = f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream"
+        first = client.post(url, json={"message": "q"}, headers=_auth(token))
+        first.get_data()
+        assert first.status_code == 200
+        r = client.post(url, json={"message": "q2"}, headers=_auth(token))
+        assert r.status_code == 429
+        assert r.mimetype == "application/json"
+        assert r.get_json()["quota"] is True
+
+    def test_invalid_request_consumes_no_quota(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "1")
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion", lambda c, m: "ok"
+        )
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)
+        # A 404 run (unknown attachment) must not consume the single slot.
+        client.post(
+            f"/api/agents/projects/{alice_project}/attachments/ghost/run",
+            json={"message": "q"}, headers=_auth(token),
+        )
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q"}, headers=_auth(token),
+        )
+        assert r.status_code == 200

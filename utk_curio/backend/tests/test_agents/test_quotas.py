@@ -1,0 +1,59 @@
+"""Tests for the basic quota admission counters (memo dev/22, slice 4)."""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from utk_curio.backend.app.agents import quotas
+from utk_curio.backend.app.agents.quotas import QuotaExceeded, check_and_count
+
+UKEY = "42"
+
+
+class TestAdmission:
+    def test_counts_up_to_limit_then_denies(self, tmp_curio):
+        assert check_and_count(UKEY, limit=2) == 1
+        assert check_and_count(UKEY, limit=2) == 2
+        with pytest.raises(QuotaExceeded) as exc:
+            check_and_count(UKEY, limit=2)
+        assert "2/day" in str(exc.value)
+        assert exc.value.reset_at.endswith("+00:00")
+
+    def test_denial_mutates_nothing(self, tmp_curio):
+        check_and_count(UKEY, limit=1)
+        before = quotas._quota_path(UKEY).read_text(encoding="utf-8")
+        with pytest.raises(QuotaExceeded):
+            check_and_count(UKEY, limit=1)
+        assert quotas._quota_path(UKEY).read_text(encoding="utf-8") == before
+
+    def test_stale_window_resets(self, tmp_curio):
+        check_and_count(UKEY, limit=1)
+        path = quotas._quota_path(UKEY)
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["window"] = "2001-01-01"
+        path.write_text(json.dumps(data), encoding="utf-8")
+        assert check_and_count(UKEY, limit=1) == 1  # fresh window admits again
+
+    def test_corrupt_file_reads_as_fresh_window(self, tmp_curio):
+        path = quotas._quota_path(UKEY)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{not json", encoding="utf-8")
+        assert check_and_count(UKEY, limit=1) == 1
+
+    def test_accounts_are_isolated(self, tmp_curio):
+        check_and_count("42", limit=1)
+        assert check_and_count("43", limit=1) == 1
+
+
+class TestLimitConfig:
+    def test_env_override_and_fallbacks(self, monkeypatch):
+        monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "7")
+        assert quotas.runs_per_day_limit() == 7
+        monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "not-a-number")
+        assert quotas.runs_per_day_limit() == quotas.DEFAULT_RUNS_PER_DAY
+        monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "0")
+        assert quotas.runs_per_day_limit() == quotas.DEFAULT_RUNS_PER_DAY
+        monkeypatch.delenv("CURIO_AGENT_RUNS_PER_DAY")
+        assert quotas.runs_per_day_limit() == quotas.DEFAULT_RUNS_PER_DAY

@@ -17,6 +17,7 @@ from utk_curio.backend.app.projects.services import _user_dir_key
 from utk_curio.backend.app.users.dependencies import require_auth
 
 from utk_curio.backend.app.agents import services as agents_services
+from utk_curio.backend.app.agents.quotas import QuotaExceeded
 from utk_curio.backend.app.agents.services import AgentServiceError
 
 agents_bp = Blueprint("agents_api", __name__, url_prefix="/api/agents")
@@ -270,6 +271,8 @@ def run_attachment(project_id: str, attachment_id: str):
         return _error("project not found", 404)
     except ProviderConfigError as exc:
         return _error(str(exc), 400)
+    except QuotaExceeded as exc:
+        return jsonify({"error": str(exc), "quota": True, "resetAt": exc.reset_at}), 429
     except AgentServiceError as exc:
         return _svc_error(exc)
     return jsonify(payload), 200
@@ -306,6 +309,8 @@ def stream_attachment(project_id: str, attachment_id: str):
         return _error("project not found", 404)
     except ProviderConfigError as exc:
         return _error(str(exc), 400)
+    except QuotaExceeded as exc:
+        return jsonify({"error": str(exc), "quota": True, "resetAt": exc.reset_at}), 429
     except AgentServiceError as exc:
         return _svc_error(exc)
 
