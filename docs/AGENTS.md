@@ -163,7 +163,8 @@ The `/api/agents` endpoints ([`app/agents/routes.py`](../utk_curio/backend/app/a
 | `DELETE /api/agents/imports/<coord>` | My Imports | Drop it from My Imports. |
 | `GET /api/agents/projects/<projectId>` | Installed | List the project's installed templates from its `dataflow.agents` lockfile. |
 | `POST /api/agents/projects/<projectId>/install` `{coord}` | Installed | Add it to that project's lockfile. Explicit; never auto-imports. |
-| `DELETE /api/agents/projects/<projectId>/<coord>` | Installed | Remove it from that project's lockfile. |
+| `DELETE /api/agents/projects/<projectId>/<coord>` | Installed | Remove it from that project's lockfile (also drops its project-default record). |
+| `GET /api/agents/projects/<projectId>/defaults/<coord>` | Installed | The **project-agent-default** scope for one installed template: the per-project `{revision, settings}` record plus the effective policy with provenance (account runs/day quota + today's usage, no-secrets provider summary). Read-only at v1; lazily materialized for older installs. |
 | `POST /api/agents/publications` `{coord}` | Publish | Publish an **owned, imported, store-backed** definition to the Global Catalog (imported-only — rejects built-in/global/absent). |
 | `DELETE /api/agents/publications/<coord>` | Publish | Unpublish it (owner only). |
 | `GET /api/agents/projects/<projectId>/attachments` | Attach | List the project's private attachments. |
@@ -180,6 +181,8 @@ Each endpoint requires auth; project endpoints check ownership (404 if the proje
 An **attachment** is a private agent instance bound to a target. It lives in the project's `spec["dataflow"]["agentAttachments"]` (alongside nodes/edges) and carries an `attachmentId` + a `sessionId` + an optimistic `revision` — no version/publish identity (`DEC-031`). Attaching requires the template to be installed in the project (never auto-installs), and a node/connection target must reference an existing node/edge.
 
 Its card also carries an **`intent`**: the user's edit when present (stored on the record, `intentEdited: true`), otherwise the definition's instruction prompt resolved at read time from the actual prompt bytes — nothing duplicates prompt text into stored state, so an unedited intent always tracks the prompt source. Runs use the same value as the system turn, so the pinned intent is exactly what runs.
+
+**Each install materializes a per-project defaults record** (`spec.dataflow.agentDefaults`, memo `dev/23`): one independent `{revision, settings}` profile per project (seeded from the definition's `settingsDefaults` profile id/version; built-ins empty), preserved across canvas saves like the lockfile, dropped on uninstall, never reset by a reinstall. In the drawer, every *Installed in this project* card carries a labeled **`Project agent settings`** cog opening the read-only scope view; the Cost/Quotas/Resource screens later edit this record.
 
 **Provider config is resolved inside the `agents/` boundary** (`app/agents/provider_config.py`, the v1 step of `ADR-AG-012`): guest env config → per-user `llm_*` fields → the aiconn sage200 default (`DEC-039`). The legacy `/llm/*` handlers read through a thin shim over this resolver; `app/agents` never imports `app/api` (boundary-tested). The `ProviderProfile` model and encrypted secret store remain v2.
 
