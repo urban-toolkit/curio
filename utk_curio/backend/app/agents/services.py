@@ -14,15 +14,18 @@ from __future__ import annotations
 import uuid
 
 from utk_curio.backend.app.agents import (
+    account_settings,
     attachments,
     builtin,
     imports,
+    policy,
     project_agents,
     publications,
     quotas,
     sessions,
     storage,
 )
+from utk_curio.backend.app.agents.policy import PolicyValidationError, StaleRevisionError
 from utk_curio.backend.app.agents.attachments import AttachmentError
 from utk_curio.backend.app.agents.manifest import AgentManifest
 from utk_curio.backend.app.agents.providers import (
@@ -274,8 +277,10 @@ def get_project_agent_defaults(user_key: str, project_id: str, coord: str) -> di
         )
         projects_storage.write_spec(user_key, project_id, spec)
     m = _resolve_definition(user_key, coord)
-    limit = quotas.runs_per_day_limit()
+    acct = account_settings.read_record(user_key)["settings"]
+    eff = policy.effective(acct, record.get("settings") or {})
     used = quotas.runs_used_today(user_key)
+    estimate = eff["cost"]["estimatedCostPerRunUsd"]["value"]
     return {
         "coord": coord,
         "name": m.name if m else coord,
@@ -283,12 +288,80 @@ def get_project_agent_defaults(user_key: str, project_id: str, coord: str) -> di
         "settings": record.get("settings", {}),
         "effective": {
             "quotas": {
-                "runsPerDay": {"value": limit, "usedToday": used, "source": "account"}
+                "runsPerDay": {**eff["quotas"]["runsPerDay"], "usedToday": used}
             },
-            "cost": {"configured": False, "source": "account"},
-            "resources": {"source": "account"},
+            "cost": {
+                **eff["cost"],
+                "estimatedSpendTodayUsd": round(used * estimate, 6)
+                if estimate is not None
+                else None,
+            },
+            "resources": dict(eff["resources"]),
         },
     }
+
+
+def update_project_agent_defaults(
+    user_key: str, project_id: str, coord: str, revision: object, settings: object
+) -> dict:
+    """PATCH the project-agent-default record (memo dev/24): tighten-only
+    against the account-effective policy, optimistic revision, non-policy seed
+    keys (e.g. the manifest profile id) preserved. ``{"settings": {}}`` is
+    `Reset to agent default` for this one template."""
+    if not isinstance(revision, int):
+        raise AgentServiceError("revision must be an integer", 400)
+    spec = _read_spec_or_404(user_key, project_id)
+    if coord not in project_agents.project_agents(spec):
+        raise AgentServiceError(f"{coord!r} is not installed in this project", 404)
+    record = project_agents.agent_defaults(spec).get(coord)
+    if record is None:
+        record = project_agents.materialize_defaults(
+            spec, coord, _defaults_seed(user_key, coord)
+        )
+    if record.get("revision", 1) != revision:
+        raise AgentServiceError(
+            f"project defaults changed (revision {record.get('revision', 1)}, sent {revision})",
+            409,
+        )
+    acct = account_settings.read_record(user_key)["settings"]
+    try:
+        cleaned = policy.validate_patch(settings, "project", policy.effective(acct))
+    except PolicyValidationError as exc:
+        raise AgentServiceError(str(exc), 400) from exc
+    existing = record.get("settings") or {}
+    preserved = {k: v for k, v in existing.items() if k not in policy._FIELDS}
+    record["settings"] = {**preserved, **cleaned}
+    record["revision"] = revision + 1
+    projects_storage.write_spec(user_key, project_id, spec)
+    return get_project_agent_defaults(user_key, project_id, coord)
+
+
+def get_account_settings(user_key: str) -> dict:
+    """The Account-policy scope (memo dev/24): record + effective + ceilings."""
+    record = account_settings.read_record(user_key)
+    return {
+        "revision": record["revision"],
+        "settings": record["settings"],
+        "effective": policy.effective(record["settings"]),
+        "ceilings": policy.deployment_defaults(),
+        "usedToday": quotas.runs_used_today(user_key),
+    }
+
+
+def update_account_settings(user_key: str, revision: object, settings: object) -> dict:
+    """PATCH the account settings record: tighten-only against the deployment
+    ceilings, optimistic revision (409 on stale)."""
+    if not isinstance(revision, int):
+        raise AgentServiceError("revision must be an integer", 400)
+    try:
+        cleaned = policy.validate_patch(settings, "account", policy.effective({}))
+    except PolicyValidationError as exc:
+        raise AgentServiceError(str(exc), 400) from exc
+    try:
+        account_settings.write_settings(user_key, cleaned, revision)
+    except StaleRevisionError as exc:
+        raise AgentServiceError(str(exc), 409) from exc
+    return get_account_settings(user_key)
 
 
 def publish_agent(user_key: str, coord: str) -> dict:
@@ -465,13 +538,36 @@ def _resolve_instruction_text(user_key: str, coord: str) -> str | None:
     return builtin.read_instruction_text(coord)
 
 
+def _run_policy(user_key: str, project_id: str, coord: str, spec: dict) -> dict:
+    """Admission + dispatch inputs from the effective policy (memo dev/24).
+
+    ``template_limit`` applies only when the project scope is the tightest
+    source; the account counter is gated at the account-effective value."""
+    acct = account_settings.read_record(user_key)["settings"]
+    record = project_agents.agent_defaults(spec).get(coord) or {}
+    acc_eff = policy.effective(acct)
+    full_eff = policy.effective(acct, record.get("settings") or {})
+    runs = full_eff["quotas"]["runsPerDay"]
+    return {
+        "admit": {
+            "account_limit": acc_eff["quotas"]["runsPerDay"]["value"],
+            "template_key": f"{project_id}/{coord}",
+            "template_limit": runs["value"] if runs["source"] == "project" else None,
+            "daily_budget_usd": full_eff["cost"]["dailyBudgetUsd"]["value"],
+            "estimated_cost_per_run_usd": full_eff["cost"]["estimatedCostPerRunUsd"]["value"],
+        },
+        "max_output_tokens": full_eff["resources"]["maxOutputTokens"]["value"],
+    }
+
+
 def _prepare_run(
     user_key: str, project_id: str, attachment_id: str, message: str
-) -> tuple[str, str | None, list]:
+) -> tuple[str, str | None, list, dict]:
     """Shared run/stream setup: resolve the attachment, its instruction (intent
-    override → prompt source, dev/19), and the provider messages including the
-    bounded session context (dev/20). Returns ``(coord, session_id, messages)``;
-    ``session_id`` is None for a record without one (stateless fallback)."""
+    override → prompt source, dev/19), the provider messages including the
+    bounded session context (dev/20), and the effective run policy (dev/24).
+    Returns ``(coord, session_id, messages, run_policy)``; ``session_id`` is
+    None for a record without one (stateless fallback)."""
     spec = _read_spec_or_404(user_key, project_id)
     record = _record_or_404(spec, attachment_id)
     coord = record.get("coord", "")
@@ -489,7 +585,7 @@ def _prepare_run(
         *sessions.context_messages(prior),
         {"role": "user", "content": message},
     ]
-    return coord, session_id, messages
+    return coord, session_id, messages, _run_policy(user_key, project_id, coord, spec)
 
 
 def _persist_exchange(
@@ -530,12 +626,16 @@ def run_attachment(
     a provider failure persists the user turn plus a display-only error marker
     (excluded from future context) so history matches what the user saw.
     """
-    coord, session_id, messages = _prepare_run(user_key, project_id, attachment_id, message)
+    coord, session_id, messages, run_policy = _prepare_run(
+        user_key, project_id, attachment_id, message
+    )
     # Admission after validation (an invalid request never consumes quota) and
     # before provider dispatch (a denied run never reaches a provider).
-    quotas.check_and_count(user_key)
+    quotas.admit(user_key, **run_policy["admit"])
     try:
-        reply = run_chat_completion(config, messages)
+        reply = run_chat_completion(
+            config, messages, max_output_tokens=run_policy["max_output_tokens"]
+        )
     except Exception as exc:
         _persist_exchange(
             user_key, project_id, session_id, attachment_id, message, f"(error) {exc}", error=True
@@ -557,15 +657,19 @@ def stream_attachment(
     completion; a failure persists the user turn plus a display-only error
     marker. Nothing is persisted per-delta.
     """
-    coord, session_id, messages = _prepare_run(user_key, project_id, attachment_id, message)
-    # Eager admission: a quota denial surfaces as a plain 429 before any
+    coord, session_id, messages, run_policy = _prepare_run(
+        user_key, project_id, attachment_id, message
+    )
+    # Eager admission: a quota/budget denial surfaces as a plain 429 before any
     # streaming begins, and consumes/persists nothing.
-    quotas.check_and_count(user_key)
+    quotas.admit(user_key, **run_policy["admit"])
 
     def _events():
         parts: list[str] = []
         try:
-            for delta in stream_chat_completion(config, messages):
+            for delta in stream_chat_completion(
+                config, messages, max_output_tokens=run_policy["max_output_tokens"]
+            ):
                 parts.append(delta)
                 yield ("delta", delta)
         except Exception as exc:  # provider failure mid-stream

@@ -341,7 +341,7 @@ class TestRun:
 
         captured = {}
 
-        def _fake_run(config, messages):
+        def _fake_run(config, messages, **kwargs):
             captured["messages"] = messages
             return "hello from the model"
 
@@ -662,7 +662,7 @@ class TestIntent:
     def test_run_uses_edited_intent_as_system(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         captured = {}
 
-        def _fake_run(config, messages):
+        def _fake_run(config, messages, **kwargs):
             captured["messages"] = messages
             return "ok"
 
@@ -699,7 +699,7 @@ class TestSession:
     def _mock_provider(self, monkeypatch, replies):
         calls = []
 
-        def _fake_run(config, messages):
+        def _fake_run(config, messages, **kwargs):
             calls.append(messages)
             return replies[len(calls) - 1]
 
@@ -744,7 +744,7 @@ class TestSession:
     def test_provider_error_persists_marker_and_is_excluded_from_context(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         calls = []
 
-        def _flaky(config, messages):
+        def _flaky(config, messages, **kwargs):
             calls.append(messages)
             if len(calls) == 1:
                 raise RuntimeError("boom")
@@ -872,7 +872,7 @@ class TestStreamRun:
         return out
 
     def test_stream_deltas_then_done_and_persists_once(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        def _fake_stream(config, messages):
+        def _fake_stream(config, messages, **kwargs):
             yield "hel"
             yield "lo"
 
@@ -900,7 +900,7 @@ class TestStreamRun:
         assert [(t["role"], t["text"]) for t in turns] == [("user", "q1"), ("agent", "hello")]
 
     def test_stream_provider_error_emits_error_and_persists_marker(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        def _flaky(config, messages):
+        def _flaky(config, messages, **kwargs):
             yield "par"
             raise RuntimeError("boom")
 
@@ -942,7 +942,7 @@ class TestStreamRun:
     def test_stream_context_includes_prior_session(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         calls = []
 
-        def _fake_stream(config, messages):
+        def _fake_stream(config, messages, **kwargs):
             calls.append(messages)
             yield "ok"
 
@@ -978,7 +978,7 @@ class TestQuotaAdmission:
     def test_run_denied_after_limit_with_stable_429(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "2")
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", lambda c, m: "ok"
+            "utk_curio.backend.app.agents.services.run_chat_completion", lambda c, m, **kw: "ok"
         )
         _, token = user_and_token
         att_id = self._attach_builtin(client, token, alice_project)
@@ -1000,7 +1000,7 @@ class TestQuotaAdmission:
     def test_stream_denied_with_plain_429_before_streaming(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "1")
 
-        def _fake_stream(config, messages):
+        def _fake_stream(config, messages, **kwargs):
             yield "ok"
 
         monkeypatch.setattr(
@@ -1020,7 +1020,7 @@ class TestQuotaAdmission:
     def test_invalid_request_consumes_no_quota(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "1")
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", lambda c, m: "ok"
+            "utk_curio.backend.app.agents.services.run_chat_completion", lambda c, m, **kw: "ok"
         )
         _, token = user_and_token
         att_id = self._attach_builtin(client, token, alice_project)
@@ -1068,17 +1068,18 @@ class TestProjectAgentDefaults:
         assert body["revision"] == 1
         assert body["settings"] == {}  # built-ins carry no settingsDefaults
         q = body["effective"]["quotas"]["runsPerDay"]
-        assert q == {"value": 5, "usedToday": 0, "source": "account"}
+        assert q == {"value": 5, "usedToday": 0, "source": "deployment"}
         assert body["effective"]["cost"]["configured"] is False
+        assert body["effective"]["cost"]["estimatedSpendTodayUsd"] is None
         # No-secrets provider summary from the request user's resolved config.
         res = body["effective"]["resources"]
-        assert res["source"] == "account"
+        assert res["maxOutputTokens"] == {"value": 4096, "source": "deployment"}
         assert "provider" in res and "model" in res
         assert "api_key" not in res and "apiKey" not in res
 
     def test_used_today_reflects_runs(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         monkeypatch.setattr(
-            "utk_curio.backend.app.agents.services.run_chat_completion", lambda c, m: "ok"
+            "utk_curio.backend.app.agents.services.run_chat_completion", lambda c, m, **kw: "ok"
         )
         _, token = user_and_token
         self._install(client, token, alice_project)
@@ -1152,3 +1153,133 @@ class TestProjectAgentDefaults:
         projects_storage.write_spec(ukey, alice_project, spec)
         self._install(client, token, alice_project)  # idempotent reinstall
         assert self._get(client, token, alice_project).get_json()["revision"] == 7
+
+
+class TestSettingsScreensApi:
+    """Account + project policy editing (memo dev/24): tighten-only, revisions,
+    reset-to-default, and end-to-end enforcement of edited values."""
+
+    COORD = "agent.chat-agent@1.0.0"
+
+    def _install_and_attach(self, client, token, project_id):
+        client.post(f"/api/agents/projects/{project_id}/install", json={"coord": self.COORD}, headers=_auth(token))
+        r = client.post(
+            f"/api/agents/projects/{project_id}/attachments",
+            json={"coord": self.COORD, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        )
+        return r.get_json()["attachmentId"]
+
+    def _patch_account(self, client, token, revision, settings):
+        return client.patch(
+            "/api/agents/settings", json={"revision": revision, "settings": settings}, headers=_auth(token)
+        )
+
+    def _patch_project(self, client, token, project_id, revision, settings, coord=None):
+        return client.patch(
+            f"/api/agents/projects/{project_id}/defaults/{coord or self.COORD}",
+            json={"revision": revision, "settings": settings},
+            headers=_auth(token),
+        )
+
+    def test_account_get_patch_roundtrip_and_409(self, client, user_and_token, tmp_curio, monkeypatch):
+        monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "100")
+        _, token = user_and_token
+        body = client.get("/api/agents/settings", headers=_auth(token)).get_json()
+        assert body["revision"] == 1 and body["settings"] == {}
+        assert body["effective"]["quotas"]["runsPerDay"]["source"] == "deployment"
+        assert body["ceilings"]["quotas"]["runsPerDay"] == 100
+        r = self._patch_account(client, token, 1, {"quotas": {"runsPerDay": 30}, "cost": {"estimatedCostPerRunUsd": 0.05}})
+        assert r.status_code == 200, r.get_data(as_text=True)
+        out = r.get_json()
+        assert out["revision"] == 2
+        assert out["effective"]["quotas"]["runsPerDay"] == {"value": 30, "source": "account"}
+        # Stale revision → 409, no change.
+        assert self._patch_account(client, token, 1, {}).status_code == 409
+        assert client.get("/api/agents/settings", headers=_auth(token)).get_json()["revision"] == 2
+
+    def test_tighten_only_400s(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "100")
+        _, token = user_and_token
+        r = self._patch_account(client, token, 1, {"quotas": {"runsPerDay": 500}})
+        assert r.status_code == 400
+        assert "inherited limit" in r.get_json()["error"]
+        self._patch_account(client, token, 1, {"quotas": {"runsPerDay": 30}})
+        self._install_and_attach(client, token, alice_project)
+        r = self._patch_project(client, token, alice_project, 1, {"quotas": {"runsPerDay": 60}})
+        assert r.status_code == 400
+        r = self._patch_project(client, token, alice_project, 1, {"cost": {"estimatedCostPerRunUsd": 1}})
+        assert r.status_code == 400  # estimate is account-only
+
+    def test_project_limit_gates_runs_and_reset_restores(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "100")
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion", lambda c, m, **kw: "ok"
+        )
+        _, token = user_and_token
+        att = self._install_and_attach(client, token, alice_project)
+        r = self._patch_project(client, token, alice_project, 1, {"quotas": {"runsPerDay": 1}})
+        assert r.status_code == 200, r.get_data(as_text=True)
+        assert r.get_json()["effective"]["quotas"]["runsPerDay"] == {
+            "value": 1, "source": "project", "usedToday": 0,
+        }
+        url = f"/api/agents/projects/{alice_project}/attachments/{att}/run"
+        assert client.post(url, json={"message": "q"}, headers=_auth(token)).status_code == 200
+        denied = client.post(url, json={"message": "q"}, headers=_auth(token))
+        assert denied.status_code == 429
+        assert denied.get_json()["reason"] == "quota"
+        assert "project run limit" in denied.get_json()["error"]
+        # Reset to agent default clears the override → runs admit again.
+        r = self._patch_project(client, token, alice_project, 2, {})
+        assert r.get_json()["effective"]["quotas"]["runsPerDay"]["source"] == "deployment"
+        assert client.post(url, json={"message": "q"}, headers=_auth(token)).status_code == 200
+
+    def test_budget_gates_runs_with_budget_reason(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "100")
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion", lambda c, m, **kw: "ok"
+        )
+        _, token = user_and_token
+        att = self._install_and_attach(client, token, alice_project)
+        self._patch_account(client, token, 1, {"cost": {"dailyBudgetUsd": 0.1, "estimatedCostPerRunUsd": 0.06}})
+        url = f"/api/agents/projects/{alice_project}/attachments/{att}/run"
+        assert client.post(url, json={"message": "q"}, headers=_auth(token)).status_code == 200
+        denied = client.post(url, json={"message": "q"}, headers=_auth(token))
+        assert denied.status_code == 429
+        assert denied.get_json()["reason"] == "budget"
+        assert "budget" in denied.get_json()["error"]
+        # The GET view reports the estimated spend so far.
+        body = client.get(
+            f"/api/agents/projects/{alice_project}/defaults/{self.COORD}", headers=_auth(token)
+        ).get_json()
+        assert body["effective"]["cost"]["estimatedSpendTodayUsd"] == 0.06
+
+    def test_max_output_tokens_reaches_the_provider(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        seen = {}
+
+        def _fake(config, messages, max_output_tokens=None):
+            seen["max"] = max_output_tokens
+            return "ok"
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake)
+        _, token = user_and_token
+        att = self._install_and_attach(client, token, alice_project)
+        self._patch_project(client, token, alice_project, 1, {"resources": {"maxOutputTokens": 512}})
+        client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att}/run",
+            json={"message": "q"}, headers=_auth(token),
+        )
+        assert seen["max"] == 512
+
+    def test_patch_preserves_non_policy_seed_keys(self, client, user_and_token, tmp_curio, alice_project):
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        user, token = user_and_token
+        self._install_and_attach(client, token, alice_project)
+        ukey = _user_dir_key(user)
+        spec = projects_storage.read_spec(ukey, alice_project)
+        spec["dataflow"]["agentDefaults"][self.COORD]["settings"]["profileId"] = "seed-p"
+        projects_storage.write_spec(ukey, alice_project, spec)
+        r = self._patch_project(client, token, alice_project, 1, {"quotas": {"runsPerDay": 9}})
+        assert r.status_code == 200
+        assert r.get_json()["settings"] == {"profileId": "seed-p", "quotas": {"runsPerDay": 9}}

@@ -98,6 +98,30 @@ def unpublish_agent(coord: str):
     return jsonify(payload), 200
 
 
+# ── Account agent settings (the Account-policy scope, memo dev/24) ───────────
+@agents_bp.route("/settings", methods=["GET"])
+@require_auth
+def get_agent_settings():
+    return jsonify(agents_services.get_account_settings(_user_dir_key(g.user))), 200
+
+
+@agents_bp.route("/settings", methods=["PATCH"])
+@require_auth
+def update_agent_settings():
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body.get("revision"), int):
+        return _error("body must include an integer 'revision'")
+    if not isinstance(body.get("settings"), dict):
+        return _error("body must include a 'settings' object")
+    try:
+        payload = agents_services.update_account_settings(
+            _user_dir_key(g.user), body["revision"], body["settings"]
+        )
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify(payload), 200
+
+
 # ── Installed in this project ────────────────────────────────────────────────
 @agents_bp.route("/projects/<project_id>", methods=["GET"])
 @require_auth
@@ -170,6 +194,28 @@ def get_project_agent_defaults(project_id: str, coord: str):
         )
     except ProviderConfigError:
         pass  # no provider available (e.g. keyless guest) — summary omitted
+    return jsonify(payload), 200
+
+
+@agents_bp.route("/projects/<project_id>/defaults/<coord>", methods=["PATCH"])
+@require_auth
+def update_project_agent_defaults(project_id: str, coord: str):
+    """Edit one installed template's project defaults (tighten-only, revisioned).
+    ``{"settings": {}}`` is `Reset to agent default` for this template."""
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body.get("revision"), int):
+        return _error("body must include an integer 'revision'")
+    if not isinstance(body.get("settings"), dict):
+        return _error("body must include a 'settings' object")
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        payload = agents_services.update_project_agent_defaults(
+            _user_dir_key(g.user), project_id, coord, body["revision"], body["settings"]
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
     return jsonify(payload), 200
 
 
@@ -303,7 +349,12 @@ def run_attachment(project_id: str, attachment_id: str):
     except ProviderConfigError as exc:
         return _error(str(exc), 400)
     except QuotaExceeded as exc:
-        return jsonify({"error": str(exc), "quota": True, "resetAt": exc.reset_at}), 429
+        return (
+            jsonify(
+                {"error": str(exc), "quota": True, "reason": exc.reason, "resetAt": exc.reset_at}
+            ),
+            429,
+        )
     except AgentServiceError as exc:
         return _svc_error(exc)
     return jsonify(payload), 200
@@ -341,7 +392,12 @@ def stream_attachment(project_id: str, attachment_id: str):
     except ProviderConfigError as exc:
         return _error(str(exc), 400)
     except QuotaExceeded as exc:
-        return jsonify({"error": str(exc), "quota": True, "resetAt": exc.reset_at}), 429
+        return (
+            jsonify(
+                {"error": str(exc), "quota": True, "reason": exc.reason, "resetAt": exc.reset_at}
+            ),
+            429,
+        )
     except AgentServiceError as exc:
         return _svc_error(exc)
 
