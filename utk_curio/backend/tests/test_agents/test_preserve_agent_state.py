@@ -49,3 +49,18 @@ def test_noop_for_missing_specs():
     assert preserve_agent_state(None, _existing()) is None
     same = {"dataflow": {"nodes": []}}
     assert preserve_agent_state(same, None) is same
+
+
+def test_carries_agent_defaults_forward():
+    # The per-template defaults section (memo dev/23) is backend-owned too.
+    existing = {
+        "dataflow": {
+            "agents": ["agent.x@1.0.0"],
+            "agentDefaults": {"agent.x@1.0.0": {"revision": 3, "settings": {"k": "v"}}},
+        }
+    }
+    effective = {"dataflow": {"nodes": [{"id": "n1"}]}}
+    out = preserve_agent_state(effective, existing)
+    assert out["dataflow"]["agentDefaults"] == {
+        "agent.x@1.0.0": {"revision": 3, "settings": {"k": "v"}}
+    }
