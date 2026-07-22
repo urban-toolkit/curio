@@ -64,46 +64,28 @@ import os
 import time
 from utk_curio.backend.config import (
     CURIO_DEFAULT_SAVE_NODE_OUTPUT,
-    DEFAULT_LLM_API_TYPE,
-    DEFAULT_LLM_BASE_URL,
-    DEFAULT_LLM_API_KEY,
-    DEFAULT_LLM_MODEL,
     GUEST_LLM_API_TYPE,
-    GUEST_LLM_BASE_URL,
-    GUEST_LLM_API_KEY,
-    GUEST_LLM_MODEL,
 )
 from utk_curio.backend.app.agents.providers import ProviderConfig, run_chat_completion
 
 
 def _resolve_llm_config():
-    """Return (api_key, api_type, base_url, model) for the current user.
+    """Legacy tuple shim over the agents-owned resolver (``ADR-AG-012`` bridge).
 
-    A user who has configured their own provider keeps that exact config. An
-    unconfigured user (and a guest) falls back to the default provider — seeded
-    from the aiconn sage200 OpenAI-compatible endpoint via ``config.DEFAULT_LLM_*``
-    — rather than being turned away, so the default source is the single one
-    place, not a separate hardcoded default here.
+    Resolution now lives in ``app/agents/provider_config.py`` (memo ``dev/22``);
+    the legacy ``/llm/*`` handlers keep their exact contract — including the
+    400 for guests without a deployed key — by reading through it.
     """
-    user = g.user
-    if user.is_guest:
-        if not GUEST_LLM_API_KEY:
-            abort(400, description="LLM is not available for guest users at this time.")
-        return GUEST_LLM_API_KEY, GUEST_LLM_API_TYPE, GUEST_LLM_BASE_URL, GUEST_LLM_MODEL
-    if not user.llm_model:
-        # Unconfigured → the default provider (aiconn), not an error.
-        return (
-            DEFAULT_LLM_API_KEY,
-            DEFAULT_LLM_API_TYPE,
-            DEFAULT_LLM_BASE_URL,
-            DEFAULT_LLM_MODEL,
-        )
-    return (
-        user.llm_api_key or "",
-        user.llm_api_type or "openai_compatible",
-        user.llm_base_url or "",
-        user.llm_model,
+    from utk_curio.backend.app.agents.provider_config import (
+        ProviderConfigError,
+        resolve_provider_config,
     )
+
+    try:
+        cfg = resolve_provider_config(g.user)
+    except ProviderConfigError as exc:
+        abort(400, description=str(exc))
+    return cfg.api_key, cfg.api_type, cfg.base_url, cfg.model
 
 
 def _call_llm(api_key: str, api_type: str, base_url: str, model: str, messages: list) -> str:

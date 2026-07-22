@@ -249,10 +249,10 @@ def clear_attachment_session(project_id: str, attachment_id: str):
 @require_auth
 def run_attachment(project_id: str, attachment_id: str):
     """Run one turn of an attached agent and return its reply."""
-    # Lazy import: the provider-config resolver is the request-layer glue in the
-    # main api routes; importing it lazily avoids any startup import ordering.
-    from utk_curio.backend.app.agents.providers import ProviderConfig
-    from utk_curio.backend.app.api.routes import _resolve_llm_config
+    from utk_curio.backend.app.agents.provider_config import (
+        ProviderConfigError,
+        resolve_provider_config,
+    )
 
     body = request.get_json(silent=True) or {}
     message = body.get("message")
@@ -260,13 +260,14 @@ def run_attachment(project_id: str, attachment_id: str):
         return _error("body must include a non-empty 'message'")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
-        api_key, api_type, base_url, model = _resolve_llm_config()
-        config = ProviderConfig(api_key=api_key, api_type=api_type, base_url=base_url, model=model)
+        config = resolve_provider_config(g.user)
         payload = agents_services.run_attachment(
             _user_dir_key(g.user), project_id, attachment_id, message, config
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
+    except ProviderConfigError as exc:
+        return _error(str(exc), 400)
     except AgentServiceError as exc:
         return _svc_error(exc)
     return jsonify(payload), 200
