@@ -83,3 +83,8 @@ def check_and_count(user_key: str, limit: int | None = None) -> int:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data), encoding="utf-8")
     return data["runs"]
+
+
+def runs_used_today(user_key: str) -> int:
+    """Runs counted in the current window (0 for a missing/stale/corrupt file)."""
+    return _read_window(user_key, _now().date().isoformat())["runs"]

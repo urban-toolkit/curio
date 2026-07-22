@@ -1034,3 +1034,121 @@ class TestQuotaAdmission:
             json={"message": "q"}, headers=_auth(token),
         )
         assert r.status_code == 200
+
+
+class TestProjectAgentDefaults:
+    """Project-agent-default scope (memo dev/23): materialized at install,
+    read-only effective view, dropped at uninstall, lazy for legacy installs."""
+
+    COORD = "agent.chat-agent@1.0.0"
+
+    def _install(self, client, token, project_id, coord=None):
+        r = client.post(
+            f"/api/agents/projects/{project_id}/install",
+            json={"coord": coord or self.COORD},
+            headers=_auth(token),
+        )
+        assert r.status_code == 201, r.get_data(as_text=True)
+
+    def _get(self, client, token, project_id, coord=None):
+        return client.get(
+            f"/api/agents/projects/{project_id}/defaults/{coord or self.COORD}",
+            headers=_auth(token),
+        )
+
+    def test_install_materializes_and_get_returns_effective_view(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        monkeypatch.setenv("CURIO_AGENT_RUNS_PER_DAY", "5")
+        _, token = user_and_token
+        self._install(client, token, alice_project)
+        r = self._get(client, token, alice_project)
+        assert r.status_code == 200, r.get_data(as_text=True)
+        body = r.get_json()
+        assert body["coord"] == self.COORD
+        assert body["name"] == "Chat"
+        assert body["revision"] == 1
+        assert body["settings"] == {}  # built-ins carry no settingsDefaults
+        q = body["effective"]["quotas"]["runsPerDay"]
+        assert q == {"value": 5, "usedToday": 0, "source": "account"}
+        assert body["effective"]["cost"]["configured"] is False
+        # No-secrets provider summary from the request user's resolved config.
+        res = body["effective"]["resources"]
+        assert res["source"] == "account"
+        assert "provider" in res and "model" in res
+        assert "api_key" not in res and "apiKey" not in res
+
+    def test_used_today_reflects_runs(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion", lambda c, m: "ok"
+        )
+        _, token = user_and_token
+        self._install(client, token, alice_project)
+        att = client.post(
+            f"/api/agents/projects/{alice_project}/attachments",
+            json={"coord": self.COORD, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        ).get_json()["attachmentId"]
+        client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att}/run",
+            json={"message": "q"}, headers=_auth(token),
+        )
+        body = self._get(client, token, alice_project).get_json()
+        assert body["effective"]["quotas"]["runsPerDay"]["usedToday"] == 1
+
+    def test_not_installed_404_and_uninstall_drops(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        assert self._get(client, token, alice_project).status_code == 404
+        self._install(client, token, alice_project)
+        assert self._get(client, token, alice_project).status_code == 200
+        client.delete(
+            f"/api/agents/projects/{alice_project}/{self.COORD}", headers=_auth(token)
+        )
+        assert self._get(client, token, alice_project).status_code == 404
+
+    def test_lazy_materialization_for_legacy_installs(self, client, user_and_token, tmp_curio, alice_project):
+        # A lockfile entry written before the defaults section existed.
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        user, token = user_and_token
+        self._install(client, token, alice_project)
+        ukey = _user_dir_key(user)
+        spec = projects_storage.read_spec(ukey, alice_project)
+        del spec["dataflow"]["agentDefaults"]
+        projects_storage.write_spec(ukey, alice_project, spec)
+        r = self._get(client, token, alice_project)
+        assert r.status_code == 200
+        assert r.get_json()["revision"] == 1
+        # And it persisted.
+        spec = projects_storage.read_spec(ukey, alice_project)
+        assert self.COORD in spec["dataflow"]["agentDefaults"]
+
+    def test_records_are_per_project_and_survive_saves(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        self._install(client, token, alice_project)
+        # A canvas save without agent sections must not wipe the record.
+        client.put(
+            f"/api/projects/{alice_project}",
+            json={"name": "p", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": []},
+            headers=_auth(token),
+        )
+        assert self._get(client, token, alice_project).status_code == 200
+        # A second project gets its own independent record.
+        other = client.post(
+            "/api/projects",
+            json={"name": "p2", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": []},
+            headers=_auth(token),
+        ).get_json()["id"]
+        assert self._get(client, token, other).status_code == 404
+        self._install(client, token, other)
+        assert self._get(client, token, other).status_code == 200
+
+    def test_reinstall_does_not_reset_the_record(self, client, user_and_token, tmp_curio, alice_project):
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        user, token = user_and_token
+        self._install(client, token, alice_project)
+        ukey = _user_dir_key(user)
+        spec = projects_storage.read_spec(ukey, alice_project)
+        spec["dataflow"]["agentDefaults"][self.COORD]["revision"] = 7
+        projects_storage.write_spec(ukey, alice_project, spec)
+        self._install(client, token, alice_project)  # idempotent reinstall
+        assert self._get(client, token, alice_project).get_json()["revision"] == 7

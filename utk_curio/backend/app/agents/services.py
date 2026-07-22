@@ -200,30 +200,95 @@ def remove_import(user_key: str, coord: str) -> dict:
     return {"coord": coord, "imported": False}
 
 
+def _defaults_seed(user_key: str, coord: str) -> dict:
+    """Seed for a fresh project-default record from the definition's
+    ``settingsDefaults`` (built-ins carry none → empty)."""
+    m = _resolve_definition(user_key, coord)
+    if m is None:
+        return {}
+    seed: dict = {}
+    if m.settings_profile_id:
+        seed["profileId"] = m.settings_profile_id
+    if m.settings_profile_version:
+        seed["profileVersion"] = m.settings_profile_version
+    return seed
+
+
 def install_in_project(user_key: str, project_id: str, coord: str) -> dict:
-    """Add *coord* to the project's lockfile (explicit; never auto-imports)."""
+    """Add *coord* to the project's lockfile (explicit; never auto-imports).
+
+    Also materializes the project-agent-default record (memo dev/23) — an
+    independent per-project profile the settings screens later edit. Idempotent:
+    reinstalling never resets an existing record.
+    """
     _require_definition(user_key, coord)
     _materialize_builtin(user_key, coord)
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
         raise AgentServiceError(f"project {project_id!r} has no spec", 404)
     current = project_agents.project_agents(spec)
+    dirty = False
     if coord not in current:
         project_agents.set_project_agents(spec, current + [coord])
+        dirty = True
+    if coord not in project_agents.agent_defaults(spec):
+        project_agents.materialize_defaults(spec, coord, _defaults_seed(user_key, coord))
+        dirty = True
+    if dirty:
         projects_storage.write_spec(user_key, project_id, spec)
     return {"agents": project_agents.project_agents(spec)}
 
 
 def uninstall_from_project(user_key: str, project_id: str, coord: str) -> dict:
-    """Remove *coord* from the project's lockfile."""
+    """Remove *coord* from the project's lockfile and drop its defaults record."""
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
         raise AgentServiceError(f"project {project_id!r} has no spec", 404)
     current = project_agents.project_agents(spec)
+    dirty = False
     if coord in current:
         project_agents.set_project_agents(spec, [c for c in current if c != coord])
+        dirty = True
+    if project_agents.drop_defaults(spec, coord):
+        dirty = True
+    if dirty:
         projects_storage.write_spec(user_key, project_id, spec)
     return {"agents": project_agents.project_agents(spec)}
+
+
+def get_project_agent_defaults(user_key: str, project_id: str, coord: str) -> dict:
+    """The project-agent-default scope for one installed template (memo dev/23).
+
+    Returns the per-project record plus the server-computed **effective** v1
+    policy with provenance: the account runs/day quota (+ today's usage) and a
+    no-secrets provider summary. Lazily materializes the record for installs
+    that predate the section. 404 when the coord isn't installed here.
+    """
+    spec = _read_spec_or_404(user_key, project_id)
+    if coord not in project_agents.project_agents(spec):
+        raise AgentServiceError(f"{coord!r} is not installed in this project", 404)
+    record = project_agents.agent_defaults(spec).get(coord)
+    if record is None:
+        record = project_agents.materialize_defaults(
+            spec, coord, _defaults_seed(user_key, coord)
+        )
+        projects_storage.write_spec(user_key, project_id, spec)
+    m = _resolve_definition(user_key, coord)
+    limit = quotas.runs_per_day_limit()
+    used = quotas.runs_used_today(user_key)
+    return {
+        "coord": coord,
+        "name": m.name if m else coord,
+        "revision": record.get("revision", 1),
+        "settings": record.get("settings", {}),
+        "effective": {
+            "quotas": {
+                "runsPerDay": {"value": limit, "usedToday": used, "source": "account"}
+            },
+            "cost": {"configured": False, "source": "account"},
+            "resources": {"source": "account"},
+        },
+    }
 
 
 def publish_agent(user_key: str, coord: str) -> dict:

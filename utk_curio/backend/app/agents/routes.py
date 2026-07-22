@@ -142,6 +142,37 @@ def uninstall_from_project(project_id: str, coord: str):
     return jsonify(payload), 200
 
 
+@agents_bp.route("/projects/<project_id>/defaults/<coord>", methods=["GET"])
+@require_auth
+def get_project_agent_defaults(project_id: str, coord: str):
+    """The project-agent-default scope for one installed template (memo dev/23):
+    the per-project record plus the effective policy with provenance. Read-only
+    at v1 — the Cost/Quotas/Resource screens later edit it."""
+    from utk_curio.backend.app.agents.provider_config import (
+        ProviderConfigError,
+        resolve_provider_config,
+    )
+
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        payload = agents_services.get_project_agent_defaults(
+            _user_dir_key(g.user), project_id, coord
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    # No-secrets provider summary (needs the request user, so it lives here).
+    try:
+        cfg = resolve_provider_config(g.user)
+        payload["effective"]["resources"].update(
+            {"provider": cfg.api_type, "model": cfg.model}
+        )
+    except ProviderConfigError:
+        pass  # no provider available (e.g. keyless guest) — summary omitted
+    return jsonify(payload), 200
+
+
 # ── Attachments (private agent instances on a node/canvas/connection) ─────────
 @agents_bp.route("/projects/<project_id>/attachments", methods=["GET"])
 @require_auth
