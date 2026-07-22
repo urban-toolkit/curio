@@ -8,7 +8,9 @@ separate explicit endpoints; nothing auto-chains.
 
 from __future__ import annotations
 
-from flask import Blueprint, g, jsonify, request
+import json
+
+from flask import Blueprint, Response, g, jsonify, request, stream_with_context
 
 from utk_curio.backend.app.projects import repositories as projects_repo
 from utk_curio.backend.app.projects.services import _user_dir_key
@@ -271,3 +273,51 @@ def run_attachment(project_id: str, attachment_id: str):
     except AgentServiceError as exc:
         return _svc_error(exc)
     return jsonify(payload), 200
+
+
+@agents_bp.route(
+    "/projects/<project_id>/attachments/<attachment_id>/run/stream", methods=["POST"]
+)
+@require_auth
+def stream_attachment(project_id: str, attachment_id: str):
+    """Run one turn and stream the reply as Server-Sent Events (memo dev/22).
+
+    Emits repeated ``event: delta`` chunks, then ``event: done`` with the full
+    reply; a provider failure emits ``event: error`` and ends the stream.
+    Validation errors (404/422/…) return normal JSON statuses before any
+    streaming starts. Session persistence matches the blocking run.
+    """
+    from utk_curio.backend.app.agents.provider_config import (
+        ProviderConfigError,
+        resolve_provider_config,
+    )
+
+    body = request.get_json(silent=True) or {}
+    message = body.get("message")
+    if not isinstance(message, str) or not message.strip():
+        return _error("body must include a non-empty 'message'")
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        config = resolve_provider_config(g.user)
+        events = agents_services.stream_attachment(
+            _user_dir_key(g.user), project_id, attachment_id, message, config
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except ProviderConfigError as exc:
+        return _error(str(exc), 400)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+
+    def _sse():
+        for kind, payload in events:
+            data = {"text": payload} if kind == "delta" else (
+                {"reply": payload} if kind == "done" else {"error": payload}
+            )
+            yield f"event: {kind}\ndata: {json.dumps(data)}\n\n"
+
+    return Response(
+        stream_with_context(_sse()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

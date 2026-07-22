@@ -24,7 +24,11 @@ from utk_curio.backend.app.agents import (
 )
 from utk_curio.backend.app.agents.attachments import AttachmentError
 from utk_curio.backend.app.agents.manifest import AgentManifest
-from utk_curio.backend.app.agents.providers import ProviderConfig, run_chat_completion
+from utk_curio.backend.app.agents.providers import (
+    ProviderConfig,
+    run_chat_completion,
+    stream_chat_completion,
+)
 from utk_curio.backend.app.projects import storage as projects_storage
 
 
@@ -395,6 +399,59 @@ def _resolve_instruction_text(user_key: str, coord: str) -> str | None:
     return builtin.read_instruction_text(coord)
 
 
+def _prepare_run(
+    user_key: str, project_id: str, attachment_id: str, message: str
+) -> tuple[str, str | None, list]:
+    """Shared run/stream setup: resolve the attachment, its instruction (intent
+    override → prompt source, dev/19), and the provider messages including the
+    bounded session context (dev/20). Returns ``(coord, session_id, messages)``;
+    ``session_id`` is None for a record without one (stateless fallback)."""
+    spec = _read_spec_or_404(user_key, project_id)
+    record = _record_or_404(spec, attachment_id)
+    coord = record.get("coord", "")
+    instruction = record.get("intent") or _resolve_instruction_text(user_key, coord)
+    if instruction is None:
+        raise AgentServiceError(
+            f"no instruction prompt available for {coord!r} (not materialized)", 422
+        )
+    session_id = record.get("sessionId")
+    if not isinstance(session_id, str):
+        session_id = None
+    prior = sessions.read_turns(user_key, project_id, session_id) if session_id else []
+    messages = [
+        {"role": "system", "content": instruction},
+        *sessions.context_messages(prior),
+        {"role": "user", "content": message},
+    ]
+    return coord, session_id, messages
+
+
+def _persist_exchange(
+    user_key: str,
+    project_id: str,
+    session_id: str | None,
+    attachment_id: str,
+    message: str,
+    reply: str,
+    *,
+    error: bool = False,
+) -> None:
+    """Persist one exchange to the session (no-op without a session id). Error
+    markers are display-only history, excluded from future context (dev/20)."""
+    if session_id is None:
+        return
+    sessions.append_turns(
+        user_key,
+        project_id,
+        session_id,
+        attachment_id,
+        [
+            sessions.make_turn("user", message),
+            sessions.make_turn("agent", reply, error=error),
+        ],
+    )
+
+
 def run_attachment(
     user_key: str, project_id: str, attachment_id: str, message: str, config: ProviderConfig
 ) -> dict:
@@ -407,41 +464,52 @@ def run_attachment(
     a provider failure persists the user turn plus a display-only error marker
     (excluded from future context) so history matches what the user saw.
     """
-    spec = _read_spec_or_404(user_key, project_id)
-    record = _record_or_404(spec, attachment_id)
-    coord = record.get("coord", "")
-    instruction = record.get("intent") or _resolve_instruction_text(user_key, coord)
-    if instruction is None:
-        raise AgentServiceError(
-            f"no instruction prompt available for {coord!r} (not materialized)", 422
-        )
-    session_id = record.get("sessionId")
-    has_session = isinstance(session_id, str)
-    prior = sessions.read_turns(user_key, project_id, session_id) if has_session else []
-    messages = [
-        {"role": "system", "content": instruction},
-        *sessions.context_messages(prior),
-        {"role": "user", "content": message},
-    ]
-    user_turn = sessions.make_turn("user", message)
+    coord, session_id, messages = _prepare_run(user_key, project_id, attachment_id, message)
     try:
         reply = run_chat_completion(config, messages)
     except Exception as exc:
-        if has_session:
-            sessions.append_turns(
+        _persist_exchange(
+            user_key, project_id, session_id, attachment_id, message, f"(error) {exc}", error=True
+        )
+        raise AgentServiceError(f"agent run failed: {exc}", 502) from exc
+    _persist_exchange(user_key, project_id, session_id, attachment_id, message, reply)
+    return {"attachmentId": attachment_id, "coord": coord, "reply": reply}
+
+
+def stream_attachment(
+    user_key: str, project_id: str, attachment_id: str, message: str, config: ProviderConfig
+):
+    """Streaming twin of :func:`run_attachment` (memo dev/22).
+
+    Validates eagerly (404/422 raise before any streaming starts), then returns
+    a generator of ``("delta", text)`` events ending in ``("done", full_reply)``
+    — or ``("error", message)`` on a provider failure. Persistence semantics are
+    identical to ``run_attachment``: the full exchange is written once at
+    completion; a failure persists the user turn plus a display-only error
+    marker. Nothing is persisted per-delta.
+    """
+    coord, session_id, messages = _prepare_run(user_key, project_id, attachment_id, message)
+
+    def _events():
+        parts: list[str] = []
+        try:
+            for delta in stream_chat_completion(config, messages):
+                parts.append(delta)
+                yield ("delta", delta)
+        except Exception as exc:  # provider failure mid-stream
+            _persist_exchange(
                 user_key,
                 project_id,
                 session_id,
                 attachment_id,
-                [user_turn, sessions.make_turn("agent", f"(error) {exc}", error=True)],
+                message,
+                f"(error) {exc}",
+                error=True,
             )
-        raise AgentServiceError(f"agent run failed: {exc}", 502) from exc
-    if has_session:
-        sessions.append_turns(
-            user_key,
-            project_id,
-            session_id,
-            attachment_id,
-            [user_turn, sessions.make_turn("agent", reply)],
-        )
-    return {"attachmentId": attachment_id, "coord": coord, "reply": reply}
+            yield ("error", f"agent run failed: {exc}")
+            return
+        reply = "".join(parts)
+        _persist_exchange(user_key, project_id, session_id, attachment_id, message, reply)
+        yield ("done", reply)
+
+    return _events()

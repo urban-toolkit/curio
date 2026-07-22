@@ -850,3 +850,113 @@ class TestSession:
             headers=_auth(token),
         )
         assert not sessions_mod._session_path(ukey, alice_project, session_id).exists()
+
+
+class TestStreamRun:
+    """SSE run path (memo dev/22): deltas → done, persistence parity with run."""
+
+    def _attach_builtin(self, client, token, project_id, coord="agent.chat-agent@1.0.0"):
+        client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
+        r = client.post(
+            f"/api/agents/projects/{project_id}/attachments",
+            json={"coord": coord, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        )
+        return r.get_json()["attachmentId"]
+
+    def _events(self, resp):
+        out = []
+        for block in resp.get_data(as_text=True).strip().split("\n\n"):
+            lines = dict(l.split(": ", 1) for l in block.splitlines() if ": " in l)
+            out.append((lines["event"], json.loads(lines["data"])))
+        return out
+
+    def test_stream_deltas_then_done_and_persists_once(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        def _fake_stream(config, messages):
+            yield "hel"
+            yield "lo"
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
+        )
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        assert r.status_code == 200
+        assert r.mimetype == "text/event-stream"
+        events = self._events(r)
+        assert events == [
+            ("delta", {"text": "hel"}),
+            ("delta", {"text": "lo"}),
+            ("done", {"reply": "hello"}),
+        ]
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        assert [(t["role"], t["text"]) for t in turns] == [("user", "q1"), ("agent", "hello")]
+
+    def test_stream_provider_error_emits_error_and_persists_marker(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        def _flaky(config, messages):
+            yield "par"
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.stream_chat_completion", _flaky
+        )
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        events = self._events(r)
+        assert events[0] == ("delta", {"text": "par"})
+        assert events[-1][0] == "error"
+        assert "boom" in events[-1][1]["error"]
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        # The partial text is NOT persisted — user turn + display-only marker.
+        assert [(t["role"], bool(t.get("error"))) for t in turns] == [("user", False), ("agent", True)]
+        assert "boom" in turns[1]["text"]
+
+    def test_stream_validation_errors_are_plain_json(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/ghost/run/stream",
+            json={"message": "hi"}, headers=_auth(token),
+        )
+        assert r.status_code == 404
+        att_id = self._attach_builtin(client, token, alice_project)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
+            json={"message": "   "}, headers=_auth(token),
+        )
+        assert r.status_code == 400
+
+    def test_stream_context_includes_prior_session(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        calls = []
+
+        def _fake_stream(config, messages):
+            calls.append(messages)
+            yield "ok"
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
+        )
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)
+        for msg in ("q1", "q2"):
+            r = client.post(
+                f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
+                json={"message": msg}, headers=_auth(token),
+            )
+            r.get_data()  # consume the stream so the exchange persists
+        assert [(m["role"], m["content"]) for m in calls[1][1:]] == [
+            ("user", "q1"), ("assistant", "ok"), ("user", "q2"),
+        ]
