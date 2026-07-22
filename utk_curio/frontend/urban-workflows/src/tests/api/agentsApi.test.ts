@@ -193,4 +193,11 @@ describe("agentsApi", () => {
       ).rejects.toThrow("boom");
     });
   });
+
+  it("getProjectAgentDefaults() GETs the escaped defaults path", () => {
+    agentsApi.getProjectAgentDefaults("p1", "agent.chat-agent@1.0.0");
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/agents/projects/p1/defaults/agent.chat-agent%401.0.0",
+    );
+  });
 });

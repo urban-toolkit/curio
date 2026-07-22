@@ -79,6 +79,19 @@ export interface AgentTarget {
   targetId?: string;
 }
 
+/** The project-agent-default scope for one installed template (memo dev/23). */
+export interface ProjectAgentDefaults {
+  coord: string;
+  name: string;
+  revision: number;
+  settings: Record<string, unknown>;
+  effective: {
+    quotas: { runsPerDay: { value: number; usedToday: number; source: string } };
+    cost: { configured: boolean; source: string };
+    resources: { source: string; provider?: string; model?: string };
+  };
+}
+
 /** ``@``/``.`` are legal in a coordinate but must be escaped in a path param. */
 function coordParam(coord: string): string {
   return encodeURIComponent(coord);
@@ -141,6 +154,13 @@ export const agentsApi = {
   /** Unpublish an owned definition (owner only). */
   unpublish(coord: string): Promise<{ coord: string; published: boolean }> {
     return apiFetch(`/api/agents/publications/${coordParam(coord)}`, { method: "DELETE" });
+  },
+
+  /** The project-agent-default scope for one installed template (read-only at v1). */
+  getProjectAgentDefaults(projectId: string, coord: string): Promise<ProjectAgentDefaults> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/defaults/${coordParam(coord)}`,
+    );
   },
 
   /** List the project's private attachments. */

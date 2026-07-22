@@ -12,6 +12,7 @@ jest.mock("../../api/agentsApi", () => ({
     uninstallFromProject: jest.fn(),
     publish: jest.fn(),
     unpublish: jest.fn(),
+    getProjectAgentDefaults: jest.fn(),
   },
 }));
 
@@ -46,6 +47,17 @@ beforeEach(() => {
   api.listImports.mockResolvedValue({ agents: [card("agent.chat-agent", { scope: "my-imports", imported: true })] } as any);
   api.installToProject.mockResolvedValue({ agents: [] } as any);
   api.publish.mockResolvedValue({ coord: "x", published: true } as any);
+  api.getProjectAgentDefaults.mockResolvedValue({
+    coord: "agent.chat-agent@1.0.0",
+    name: "Chat",
+    revision: 1,
+    settings: {},
+    effective: {
+      quotas: { runsPerDay: { value: 200, usedToday: 0, source: "account" } },
+      cost: { configured: false, source: "account" },
+      resources: { source: "account" },
+    },
+  } as any);
 });
 
 describe("AgentsCatalogDrawer", () => {
@@ -119,5 +131,29 @@ describe("AgentsCatalogDrawer", () => {
   it("a pinned roster header exposes Unpin", () => {
     render(<AgentsCatalogDrawer presented projectId="p1" pinned onPinToggle={jest.fn()} />);
     expect(screen.getByRole("button", { name: "Unpin drawer" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("installed scope shows the labeled Project agent settings cog (dev/23)", async () => {
+    api.listProjectAgents = jest.fn().mockResolvedValue({
+      agents: [card("agent.chat-agent", { scope: "installed", installedInProject: true })],
+    } as any);
+    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    fireEvent.click(screen.getByText("Installed in this project"));
+    await waitFor(() => expect(screen.getByText("chat-agent")).toBeInTheDocument());
+    const cog = screen.getByRole("button", { name: /project agent settings/i });
+    expect(cog).toBeEnabled();
+    fireEvent.click(cog);
+    await waitFor(() =>
+      expect(screen.getByText("Project agent default")).toBeInTheDocument(),
+    );
+  });
+
+  it("global and My Imports scopes show no settings cog", async () => {
+    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: /project agent settings/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("My Imports"));
+    await waitFor(() => expect(screen.getByText("chat-agent")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: /project agent settings/i })).not.toBeInTheDocument();
   });
 });

@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faRobot, faThumbtack } from "@fortawesome/free-solid-svg-icons";
+import { faGear, faRobot, faThumbtack } from "@fortawesome/free-solid-svg-icons";
 import type { AgentCard } from "../../../api/agentsApi";
+import { ProjectAgentSettingsModal } from "../settings/ProjectAgentSettingsModal";
 import { CatalogPublishPill } from "../../packages/CatalogPublishPill";
 import tabStyles from "../../packages/publishing/DrawerTabs.module.css";
 import styles from "./AgentsCatalogDrawer.module.css";
@@ -44,6 +45,8 @@ export const AgentsCatalogDrawer: React.FC<AgentsCatalogDrawerProps> = ({
   onPinToggle,
 }) => {
   const c = useAgentsCatalogDrawer(presented, projectId);
+  // Installed-scope card whose Project agent settings modal is open (dev/23).
+  const [settingsCoord, setSettingsCoord] = useState<string | null>(null);
   if (!presented) return null;
 
   return (
@@ -88,10 +91,25 @@ export const AgentsCatalogDrawer: React.FC<AgentsCatalogDrawerProps> = ({
       ) : (
         <div className={styles.list}>
           {c.cards.map((card) => (
-            <AgentRow key={card.dirName} card={card} scope={c.scope} state={c} hasProject={!!projectId} />
+            <AgentRow
+              key={card.dirName}
+              card={card}
+              scope={c.scope}
+              state={c}
+              hasProject={!!projectId}
+              onOpenSettings={() => setSettingsCoord(card.dirName)}
+            />
           ))}
         </div>
       )}
+
+      {settingsCoord && projectId ? (
+        <ProjectAgentSettingsModal
+          projectId={projectId}
+          coord={settingsCoord}
+          onClose={() => setSettingsCoord(null)}
+        />
+      ) : null}
     </div>
   );
 };
@@ -101,7 +119,8 @@ const AgentRow: React.FC<{
   scope: AgentScope;
   state: ReturnType<typeof useAgentsCatalogDrawer>;
   hasProject: boolean;
-}> = ({ card, scope, state, hasProject }) => {
+  onOpenSettings: () => void;
+}> = ({ card, scope, state, hasProject, onOpenSettings }) => {
   const busy = state.busyCoord === card.dirName;
   return (
     <div className={styles.card}>
@@ -122,6 +141,19 @@ const AgentRow: React.FC<{
             Global → Install (or Uninstall if already in project)
             My Imports → Install + Publish pill + Delete
             Installed → Uninstall */}
+        {/* Project-agent-default scope entry (dev/23): labeled cog, installed
+            scope only — palette rows and other scopes stay action-free. */}
+        {scope === "installed" ? (
+          <button
+            type="button"
+            className={styles.btnSecondary}
+            disabled={!hasProject}
+            aria-haspopup="dialog"
+            onClick={onOpenSettings}
+          >
+            <FontAwesomeIcon icon={faGear} aria-hidden /> Project agent settings
+          </button>
+        ) : null}
         {scope === "installed" || card.installedInProject ? (
           <button
             type="button"
