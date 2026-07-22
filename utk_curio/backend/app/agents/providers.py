@@ -80,3 +80,59 @@ def run_chat_completion(config: ProviderConfig, messages: list) -> str:
         client = OpenAI(**kwargs)
         completion = client.chat.completions.create(model=config.model, messages=messages)
         return completion.choices[0].message.content
+
+
+def stream_chat_completion(config: ProviderConfig, messages: list):
+    """Streaming twin of :func:`run_chat_completion`: yields reply-text deltas.
+
+    Same provider dispatch and message handling; each yielded string is an
+    incremental chunk of the assistant reply (memo ``dev/22``, SSE runtime).
+    Callers that stop iterating close the underlying provider stream.
+    """
+    api_type = config.api_type
+    if api_type == "anthropic":
+        import anthropic
+        system_parts = [m["content"] for m in messages if m["role"] == "system"]
+        chat_messages = [m for m in messages if m["role"] != "system"]
+        client = anthropic.Anthropic(api_key=config.api_key)
+        with client.messages.stream(
+            model=config.model,
+            system="\n".join(system_parts) if system_parts else anthropic.NOT_GIVEN,
+            messages=chat_messages,
+            max_tokens=4096,
+        ) as stream:
+            for text in stream.text_stream:
+                if text:
+                    yield text
+    elif api_type == "gemini":
+        import google.generativeai as genai
+        genai.configure(api_key=config.api_key)
+        system_parts = [m["content"] for m in messages if m["role"] == "system"]
+        chat_messages = [m for m in messages if m["role"] != "system"]
+        history = []
+        for m in chat_messages[:-1]:
+            role = "user" if m["role"] == "user" else "model"
+            history.append({"role": role, "parts": [m["content"]]})
+        last_user_msg = chat_messages[-1]["content"] if chat_messages else ""
+        system_instruction = "\n".join(system_parts) if system_parts else None
+        gen_model = genai.GenerativeModel(config.model, system_instruction=system_instruction)
+        chat = gen_model.start_chat(history=history)
+        for chunk in chat.send_message(last_user_msg, stream=True):
+            text = getattr(chunk, "text", "")
+            if text:
+                yield text
+    else:  # openai_compatible (default)
+        from openai import OpenAI
+        kwargs = {"api_key": config.api_key or "no-key"}
+        if config.base_url:
+            kwargs["base_url"] = config.base_url
+        client = OpenAI(**kwargs)
+        stream = client.chat.completions.create(
+            model=config.model, messages=messages, stream=True
+        )
+        for chunk in stream:
+            choices = getattr(chunk, "choices", None) or []
+            delta = choices[0].delta if choices else None
+            text = getattr(delta, "content", None) if delta is not None else None
+            if text:
+                yield text

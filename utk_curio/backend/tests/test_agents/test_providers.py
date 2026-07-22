@@ -166,3 +166,90 @@ class TestProviderConfig:
         cfg = _cfg()
         with pytest.raises(Exception):
             cfg.model = "other"  # type: ignore[misc]
+
+
+class TestStreaming:
+    """stream_chat_completion yields reply deltas per backend (memo dev/22)."""
+
+    def test_openai_compatible_streams_deltas(self, monkeypatch):
+        import types as t
+        from utk_curio.backend.app.agents.providers import stream_chat_completion
+
+        seen = {}
+
+        def _chunk(text):
+            return t.SimpleNamespace(choices=[t.SimpleNamespace(delta=t.SimpleNamespace(content=text))])
+
+        def _create(model, messages, stream):
+            seen["model"], seen["messages"], seen["stream"] = model, messages, stream
+            return iter([_chunk("he"), _chunk(None), _chunk("llo")])
+
+        class FakeOpenAI:
+            def __init__(self, **kwargs):
+                seen["kwargs"] = kwargs
+                self.chat = t.SimpleNamespace(completions=t.SimpleNamespace(create=_create))
+
+        monkeypatch.setattr("openai.OpenAI", FakeOpenAI)
+        msgs = [{"role": "user", "content": "hi"}]
+        out = list(stream_chat_completion(_cfg(model="llama4-nim"), msgs))
+        assert out == ["he", "llo"]  # empty deltas skipped
+        assert seen["stream"] is True
+        assert seen["messages"] == msgs
+
+    def test_anthropic_streams_text_events(self, monkeypatch):
+        import types as t
+        from utk_curio.backend.app.agents.providers import stream_chat_completion
+
+        seen = {}
+
+        class FakeStream:
+            text_stream = iter(["a", "", "b"])
+            def __enter__(self):
+                return self
+            def __exit__(self, *a):
+                return False
+
+        class FakeClient:
+            def __init__(self, api_key):
+                seen["api_key"] = api_key
+                self.messages = t.SimpleNamespace(stream=self._stream)
+            def _stream(self, model, system, messages, max_tokens):
+                seen["model"], seen["system"], seen["messages"] = model, system, messages
+                return FakeStream()
+
+        fake_mod = t.SimpleNamespace(Anthropic=FakeClient, NOT_GIVEN="NOT_GIVEN")
+        monkeypatch.setitem(sys.modules, "anthropic", fake_mod)
+        out = list(
+            stream_chat_completion(
+                _cfg(api_type="anthropic", model="c"),
+                [{"role": "system", "content": "sys"}, {"role": "user", "content": "hi"}],
+            )
+        )
+        assert out == ["a", "b"]
+        assert seen["system"] == "sys"
+        assert seen["messages"] == [{"role": "user", "content": "hi"}]
+
+    def test_stopping_iteration_stops_consumption(self, monkeypatch):
+        import types as t
+        from utk_curio.backend.app.agents.providers import stream_chat_completion
+
+        produced = []
+
+        def _chunks():
+            for i in range(100):
+                produced.append(i)
+                yield t.SimpleNamespace(
+                    choices=[t.SimpleNamespace(delta=t.SimpleNamespace(content=f"c{i}"))]
+                )
+
+        class FakeOpenAI:
+            def __init__(self, **kwargs):
+                self.chat = t.SimpleNamespace(
+                    completions=t.SimpleNamespace(create=lambda model, messages, stream: _chunks())
+                )
+
+        monkeypatch.setattr("openai.OpenAI", FakeOpenAI)
+        gen = stream_chat_completion(_cfg(), [{"role": "user", "content": "hi"}])
+        assert next(gen) == "c0"
+        gen.close()
+        assert len(produced) <= 2  # generator close stops the provider stream
