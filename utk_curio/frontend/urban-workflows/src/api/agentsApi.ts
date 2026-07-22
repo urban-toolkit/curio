@@ -1,4 +1,6 @@
-import { apiFetch } from "../utils/authApi";
+import { apiFetch, getToken } from "../utils/authApi";
+
+const BACKEND_URL = process.env.BACKEND_URL || "";
 
 /**
  * REST client for ``/api/agents`` — the three-scope Agents Catalog and its
@@ -202,5 +204,71 @@ export const agentsApi = {
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/run`,
       { method: "POST", body: JSON.stringify({ message }) },
     );
+  },
+
+  /**
+   * Run one turn and stream the reply as it is generated (memo dev/22).
+   *
+   * POSTs to the SSE endpoint via raw fetch (EventSource cannot POST), calls
+   * `onDelta` per text chunk, and resolves with the full reply on the `done`
+   * event. Pre-stream failures (quota 429, 404, …) throw an Error carrying
+   * `status`/`body` like `apiFetch`; a mid-stream `error` event throws too.
+   */
+  async runAttachmentStream(
+    projectId: string,
+    attachmentId: string,
+    message: string,
+    onDelta: (text: string) => void,
+  ): Promise<string> {
+    const token = getToken();
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(
+      `${BACKEND_URL}/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/run/stream`,
+      { method: "POST", headers, body: JSON.stringify({ message }) },
+    );
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({} as Record<string, unknown>));
+      const err = new Error((body as { error?: string }).error || `HTTP ${res.status}`);
+      (err as Error & { status?: number; body?: unknown }).status = res.status;
+      (err as Error & { status?: number; body?: unknown }).body = body;
+      throw err;
+    }
+    if (!res.body) throw new Error("streaming not supported");
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let reply: string | null = null;
+
+    const handleFrame = (frame: string) => {
+      let event = "message";
+      let data = "";
+      for (const line of frame.split("\n")) {
+        if (line.startsWith("event: ")) event = line.slice(7).trim();
+        else if (line.startsWith("data: ")) data += line.slice(6);
+      }
+      if (!data) return;
+      const payload = JSON.parse(data) as { text?: string; reply?: string; error?: string };
+      if (event === "delta" && payload.text) onDelta(payload.text);
+      else if (event === "done") reply = payload.reply ?? "";
+      else if (event === "error") throw new Error(payload.error || "agent run failed");
+    };
+
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let sep = buffer.indexOf("\n\n");
+      while (sep >= 0) {
+        const frame = buffer.slice(0, sep);
+        buffer = buffer.slice(sep + 2);
+        handleFrame(frame);
+        sep = buffer.indexOf("\n\n");
+      }
+    }
+    if (buffer.trim()) handleFrame(buffer);
+    if (reply === null) throw new Error("stream ended without a reply");
+    return reply;
   },
 };

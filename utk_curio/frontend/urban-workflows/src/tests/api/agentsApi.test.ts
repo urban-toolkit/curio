@@ -132,4 +132,65 @@ describe("agentsApi", () => {
       method: "DELETE",
     });
   });
+
+  describe("runAttachmentStream()", () => {
+    const realFetch = global.fetch;
+    afterEach(() => {
+      global.fetch = realFetch;
+    });
+
+    function streamResponse(frames: string[], ok = true, status = 200, body: unknown = {}) {
+      const encoder = new TextEncoder();
+      const chunks = frames.map((f) => encoder.encode(f));
+      let i = 0;
+      return {
+        ok,
+        status,
+        json: () => Promise.resolve(body),
+        body: {
+          getReader: () => ({
+            read: () =>
+              Promise.resolve(
+                i < chunks.length ? { done: false, value: chunks[i++] } : { done: true, value: undefined },
+              ),
+          }),
+        },
+      } as unknown as Response;
+    }
+
+    it("parses delta/done frames and resolves the full reply", async () => {
+      global.fetch = jest.fn().mockResolvedValue(
+        streamResponse([
+          'event: delta\ndata: {"text": "he"}\n\n',
+          'event: delta\ndata: {"text": "llo"}\n\nevent: done\ndata: {"reply": "hello"}\n\n',
+        ]),
+      );
+      const deltas: string[] = [];
+      const reply = await agentsApi.runAttachmentStream("p1", "att-1", "hi", (t) => deltas.push(t));
+      expect(deltas).toEqual(["he", "llo"]);
+      expect(reply).toBe("hello");
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/agents/projects/p1/attachments/att-1/run/stream"),
+        expect.objectContaining({ method: "POST", body: JSON.stringify({ message: "hi" }) }),
+      );
+    });
+
+    it("throws with status/body on a pre-stream HTTP error (quota 429)", async () => {
+      global.fetch = jest.fn().mockResolvedValue(
+        streamResponse([], false, 429, { error: "daily agent-run limit reached (2/day)", quota: true }),
+      );
+      await expect(
+        agentsApi.runAttachmentStream("p1", "att-1", "hi", () => undefined),
+      ).rejects.toMatchObject({ status: 429, message: expect.stringContaining("limit") });
+    });
+
+    it("throws on a mid-stream error event", async () => {
+      global.fetch = jest.fn().mockResolvedValue(
+        streamResponse(['event: delta\ndata: {"text": "par"}\n\nevent: error\ndata: {"error": "boom"}\n\n']),
+      );
+      await expect(
+        agentsApi.runAttachmentStream("p1", "att-1", "hi", () => undefined),
+      ).rejects.toThrow("boom");
+    });
+  });
 });

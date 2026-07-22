@@ -11,6 +11,7 @@ jest.mock("../../api/agentsApi", () => ({
     attach: jest.fn(),
     detachAttachment: jest.fn(),
     runAttachment: jest.fn(),
+    runAttachmentStream: jest.fn(),
     updateAttachmentIntent: jest.fn(),
     getSession: jest.fn(),
     clearSession: jest.fn(),
@@ -77,6 +78,11 @@ beforeEach(() => {
     ],
   });
   api.runAttachment.mockResolvedValue({ attachmentId: "a1", coord: "c", reply: "fresh" });
+  api.runAttachmentStream.mockImplementation(async (_p, _a, _m, onDelta) => {
+    onDelta("fre");
+    onDelta("sh");
+    return "fresh";
+  });
   api.detachAttachment.mockResolvedValue({ attachmentId: "a1", detached: true });
   api.clearSession.mockResolvedValue({ attachmentId: "a1", sessionId: "s1", turns: [] });
   api.updateAttachmentIntent.mockResolvedValue({ ...attachment, intent: "x", intentEdited: true });
@@ -117,7 +123,20 @@ describe("AgentAttachmentsProvider chat state", () => {
     );
   });
 
-  it("a failed run appends an error turn", async () => {
+  it("a pre-delta stream failure falls back to the blocking run once", async () => {
+    api.runAttachmentStream.mockRejectedValue(new Error("stream broke"));
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    fireEvent.click(screen.getByText("send"));
+    await waitFor(() =>
+      expect(screen.getByTestId("turns")).toHaveTextContent("user:hi|agent:fresh"),
+    );
+    expect(api.runAttachment).toHaveBeenCalledTimes(1);
+  });
+
+  it("a failed run (stream + fallback) appends an error turn", async () => {
+    api.runAttachmentStream.mockRejectedValue(new Error("stream broke"));
     api.runAttachment.mockRejectedValue(new Error("provider down"));
     renderProvider();
     fireEvent.click(screen.getByText("open"));
@@ -125,6 +144,43 @@ describe("AgentAttachmentsProvider chat state", () => {
     fireEvent.click(screen.getByText("send"));
     await waitFor(() =>
       expect(screen.getByTestId("turns")).toHaveTextContent("agent:(error) provider down"),
+    );
+  });
+
+  it("an HTTP error (quota 429) renders directly without a fallback", async () => {
+    const denial = Object.assign(new Error("daily agent-run limit reached (200/day)"), {
+      status: 429,
+      body: { quota: true, resetAt: "2026-07-23T00:00:00+00:00" },
+    });
+    api.runAttachmentStream.mockRejectedValue(denial);
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    fireEvent.click(screen.getByText("send"));
+    await waitFor(() =>
+      expect(screen.getByTestId("turns")).toHaveTextContent(/daily agent-run limit reached.*resets/),
+    );
+    expect(api.runAttachment).not.toHaveBeenCalled();
+  });
+
+  it("deltas grow the live agent turn before done finalizes it", async () => {
+    let release: () => void = () => undefined;
+    api.runAttachmentStream.mockImplementation(async (_p, _a, _m, onDelta) => {
+      onDelta("fre");
+      await new Promise<void>((r) => {
+        release = r;
+      });
+      onDelta("sh");
+      return "fresh";
+    });
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    fireEvent.click(screen.getByText("send"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("user:hi|agent:fre"));
+    release();
+    await waitFor(() =>
+      expect(screen.getByTestId("turns")).toHaveTextContent("user:hi|agent:fresh"),
     );
   });
 

@@ -109,18 +109,61 @@ export const AgentAttachmentsProvider: React.FC<{
     [hydrateSession],
   );
 
+  const replaceLastAgentTurn = useCallback((attachmentId: string, text: string) => {
+    setTranscripts((prev) => {
+      const turns = prev[attachmentId] ?? [];
+      const last = turns[turns.length - 1];
+      if (!last || last.role !== "agent") return prev;
+      return { ...prev, [attachmentId]: [...turns.slice(0, -1), { ...last, text }] };
+    });
+  }, []);
+
+  const appendErrorTurn = useCallback(
+    (attachmentId: string, e: unknown) => {
+      const msg = e instanceof Error ? e.message : "run failed";
+      const body = (e as { body?: { resetAt?: string } } | null)?.body;
+      const reset = body?.resetAt ? ` — resets ${new Date(body.resetAt).toLocaleString()}` : "";
+      appendTurns(attachmentId, [{ role: "agent", text: `(error) ${msg}${reset}`, error: true }]);
+    },
+    [appendTurns],
+  );
+
+  // Streams the reply into a live agent turn (memo dev/22). A failure before
+  // any delta with no HTTP status (transport / stream-unsupported / provider
+  // stream error) falls back to the blocking run once; HTTP errors (quota 429,
+  // 404, …) surface directly as a soft error turn.
   const sendMessage = useCallback(
     async (attachmentId: string, message: string) => {
+      const pid = projectRef.current;
+      if (!pid) throw new Error("no project");
       appendTurns(attachmentId, [{ role: "user", text: message }]);
+      let streamed = "";
       try {
-        const reply = await state.run(attachmentId, message);
-        appendTurns(attachmentId, [{ role: "agent", text: reply }]);
+        const reply = await agentsApi.runAttachmentStream(pid, attachmentId, message, (delta) => {
+          if (!streamed) appendTurns(attachmentId, [{ role: "agent", text: delta }]);
+          else replaceLastAgentTurn(attachmentId, streamed + delta);
+          streamed += delta;
+        });
+        if (!streamed) appendTurns(attachmentId, [{ role: "agent", text: reply }]);
+        else replaceLastAgentTurn(attachmentId, reply);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "run failed";
-        appendTurns(attachmentId, [{ role: "agent", text: `(error) ${msg}`, error: true }]);
+        const status = (e as { status?: number } | null)?.status;
+        if (!streamed && status === undefined) {
+          // Pre-delta stream failure → one blocking-run fallback.
+          try {
+            const reply = await state.run(attachmentId, message);
+            appendTurns(attachmentId, [{ role: "agent", text: reply }]);
+          } catch (e2) {
+            appendErrorTurn(attachmentId, e2);
+          }
+          return;
+        }
+        // Mid-stream failure keeps the partial text visible; HTTP errors
+        // (e.g. the stable quota 429) render directly.
+        appendErrorTurn(attachmentId, e);
       }
     },
-    [appendTurns, state.run],
+    [appendTurns, replaceLastAgentTurn, appendErrorTurn, state.run],
   );
 
   const saveIntent = useCallback(
