@@ -18,7 +18,10 @@ from flask import Flask, g
 from werkzeug.exceptions import HTTPException
 
 import utk_curio.backend.config as cfg
-import utk_curio.backend.app.api.routes as routes
+# Resolution moved into the agents boundary (memo dev/22, ADR-AG-012 v1 step);
+# these tests patch the moved module while still calling the legacy shim in
+# app/api/routes, proving the bridge keeps the exact /llm/* contract.
+import utk_curio.backend.app.agents.provider_config as provider_config
 from utk_curio.backend.app.api.routes import _resolve_llm_config
 
 
@@ -60,10 +63,10 @@ class TestConfigDefaults:
 
 class TestResolveLlmConfig:
     def test_unconfigured_user_falls_back_to_default(self, monkeypatch):
-        monkeypatch.setattr(routes, "DEFAULT_LLM_API_KEY", "seed-key")
-        monkeypatch.setattr(routes, "DEFAULT_LLM_API_TYPE", "openai_compatible")
-        monkeypatch.setattr(routes, "DEFAULT_LLM_BASE_URL", "https://sage200.evl.uic.edu/v1")
-        monkeypatch.setattr(routes, "DEFAULT_LLM_MODEL", "llama4-nim")
+        monkeypatch.setattr(provider_config, "DEFAULT_LLM_API_KEY", "seed-key")
+        monkeypatch.setattr(provider_config, "DEFAULT_LLM_API_TYPE", "openai_compatible")
+        monkeypatch.setattr(provider_config, "DEFAULT_LLM_BASE_URL", "https://sage200.evl.uic.edu/v1")
+        monkeypatch.setattr(provider_config, "DEFAULT_LLM_MODEL", "llama4-nim")
         with _ctx():
             g.user = _fake_user()  # no llm_model → unconfigured
             assert _resolve_llm_config() == (
@@ -75,13 +78,13 @@ class TestResolveLlmConfig:
 
     def test_configured_user_keeps_own_config(self, monkeypatch):
         # A configured provider must NOT get the default base_url injected.
-        monkeypatch.setattr(routes, "DEFAULT_LLM_BASE_URL", "https://sage200.evl.uic.edu/v1")
+        monkeypatch.setattr(provider_config, "DEFAULT_LLM_BASE_URL", "https://sage200.evl.uic.edu/v1")
         with _ctx():
             g.user = _fake_user(llm_api_type="anthropic", llm_model="claude-x", llm_api_key="k")
             assert _resolve_llm_config() == ("k", "anthropic", "", "claude-x")
 
     def test_configured_openai_compatible_user_keeps_base_url(self, monkeypatch):
-        monkeypatch.setattr(routes, "DEFAULT_LLM_BASE_URL", "https://sage200.evl.uic.edu/v1")
+        monkeypatch.setattr(provider_config, "DEFAULT_LLM_BASE_URL", "https://sage200.evl.uic.edu/v1")
         with _ctx():
             g.user = _fake_user(
                 llm_api_type="openai_compatible",
@@ -91,10 +94,10 @@ class TestResolveLlmConfig:
             assert _resolve_llm_config() == ("", "openai_compatible", "http://localhost:11434/v1", "llama3.2")
 
     def test_guest_uses_guest_config(self, monkeypatch):
-        monkeypatch.setattr(routes, "GUEST_LLM_API_KEY", "gkey")
-        monkeypatch.setattr(routes, "GUEST_LLM_API_TYPE", "openai_compatible")
-        monkeypatch.setattr(routes, "GUEST_LLM_BASE_URL", "https://sage200.evl.uic.edu/v1")
-        monkeypatch.setattr(routes, "GUEST_LLM_MODEL", "llama4-nim")
+        monkeypatch.setattr(provider_config, "GUEST_LLM_API_KEY", "gkey")
+        monkeypatch.setattr(provider_config, "GUEST_LLM_API_TYPE", "openai_compatible")
+        monkeypatch.setattr(provider_config, "GUEST_LLM_BASE_URL", "https://sage200.evl.uic.edu/v1")
+        monkeypatch.setattr(provider_config, "GUEST_LLM_MODEL", "llama4-nim")
         with _ctx():
             g.user = _fake_user(is_guest=True)
             assert _resolve_llm_config() == (
@@ -105,7 +108,7 @@ class TestResolveLlmConfig:
             )
 
     def test_guest_without_key_aborts(self, monkeypatch):
-        monkeypatch.setattr(routes, "GUEST_LLM_API_KEY", "")
+        monkeypatch.setattr(provider_config, "GUEST_LLM_API_KEY", "")
         with _ctx():
             g.user = _fake_user(is_guest=True)
             with pytest.raises(HTTPException) as exc:
