@@ -48,7 +48,9 @@ class TestConfigDefaults:
         if not os.environ.get("CURIO_DEFAULT_LLM_BASE_URL"):
             assert cfg.DEFAULT_LLM_BASE_URL == "https://sage200.evl.uic.edu/v1"
         if not os.environ.get("CURIO_DEFAULT_LLM_MODEL"):
-            assert cfg.DEFAULT_LLM_MODEL == "llama4-nim"
+            # gemma4 is the intentional default since 2026-07-23 (memo 17 §3.3
+            # amendment); llama4-nim remains available on the same endpoint.
+            assert cfg.DEFAULT_LLM_MODEL == "gemma4"
         if not os.environ.get("CURIO_DEFAULT_LLM_API_TYPE"):
             assert cfg.DEFAULT_LLM_API_TYPE == "openai_compatible"
 

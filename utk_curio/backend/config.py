@@ -77,7 +77,7 @@ DEFAULT_LLM_API_TYPE = os.environ.get("CURIO_DEFAULT_LLM_API_TYPE", "openai_comp
 DEFAULT_LLM_BASE_URL = os.environ.get(
     "CURIO_DEFAULT_LLM_BASE_URL", "https://sage200.evl.uic.edu/v1"
 )
-DEFAULT_LLM_MODEL = os.environ.get("CURIO_DEFAULT_LLM_MODEL", "llama4-nim")
+DEFAULT_LLM_MODEL = os.environ.get("CURIO_DEFAULT_LLM_MODEL", "gemma4")
 DEFAULT_LLM_API_KEY = os.environ.get("CURIO_DEFAULT_LLM_API_KEY") or os.environ.get(
     "AICONN_API_KEY", ""
 )
