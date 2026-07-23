@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faGear, faRobot, faThumbtack } from "@fortawesome/free-solid-svg-icons";
 import type { AgentCard } from "../../../api/agentsApi";
-import { ProjectAgentSettingsModal } from "../settings/ProjectAgentSettingsModal";
+import { AgentSettingsModal } from "../settings/AgentSettingsModal";
 import { CatalogPublishPill } from "../../packages/CatalogPublishPill";
 import tabStyles from "../../packages/publishing/DrawerTabs.module.css";
 import styles from "./AgentsCatalogDrawer.module.css";
@@ -47,6 +47,8 @@ export const AgentsCatalogDrawer: React.FC<AgentsCatalogDrawerProps> = ({
   const c = useAgentsCatalogDrawer(presented, projectId);
   // Installed-scope card whose Project agent settings modal is open (dev/23).
   const [settingsCoord, setSettingsCoord] = useState<string | null>(null);
+  // Account-policy scope (dev/24), opened from the roster header cog.
+  const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
   if (!presented) return null;
 
   return (
@@ -64,6 +66,16 @@ export const AgentsCatalogDrawer: React.FC<AgentsCatalogDrawerProps> = ({
         </button>
         <FontAwesomeIcon icon={faRobot} className={styles.titleIcon} aria-hidden />
         <span className={styles.title}>Agents Catalog</span>
+        {/* Account-policy entry (docs/02 cog #1; the DEC-042-sanctioned header
+            control besides the Pin). */}
+        <button
+          type="button"
+          className={styles.headerSettingsBtn}
+          aria-haspopup="dialog"
+          onClick={() => setAccountSettingsOpen(true)}
+        >
+          <FontAwesomeIcon icon={faGear} aria-hidden /> Agent settings
+        </button>
       </div>
 
       <nav className={tabStyles.tabs} aria-label="Agent catalog scopes">
@@ -104,11 +116,15 @@ export const AgentsCatalogDrawer: React.FC<AgentsCatalogDrawerProps> = ({
       )}
 
       {settingsCoord && projectId ? (
-        <ProjectAgentSettingsModal
+        <AgentSettingsModal
+          scope="project"
           projectId={projectId}
           coord={settingsCoord}
           onClose={() => setSettingsCoord(null)}
         />
+      ) : null}
+      {accountSettingsOpen ? (
+        <AgentSettingsModal scope="account" onClose={() => setAccountSettingsOpen(false)} />
       ) : null}
     </div>
   );

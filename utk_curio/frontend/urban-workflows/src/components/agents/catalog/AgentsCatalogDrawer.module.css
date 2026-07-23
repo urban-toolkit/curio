@@ -154,3 +154,23 @@
 .error {
   color: var(--curio-accent-peach-fg, #e86a3c);
 }
+
+/* Account-policy entry in the roster header (dev/24) — labeled cog. */
+.headerSettingsBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: none;
+  color: var(--curio-text-on-dark, #fff);
+  cursor: pointer;
+}
+
+.headerSettingsBtn:hover,
+.headerSettingsBtn:focus-visible {
+  background: #2c2d33;
+}

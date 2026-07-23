@@ -200,4 +200,19 @@ describe("agentsApi", () => {
       "/api/agents/projects/p1/defaults/agent.chat-agent%401.0.0",
     );
   });
+
+  it("agent settings: GET/PATCH account + PATCH project defaults", () => {
+    agentsApi.getAgentSettings();
+    expect(mockFetch).toHaveBeenCalledWith("/api/agents/settings");
+    agentsApi.updateAgentSettings(3, { quotas: { runsPerDay: 10 } });
+    expect(mockFetch).toHaveBeenLastCalledWith("/api/agents/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ revision: 3, settings: { quotas: { runsPerDay: 10 } } }),
+    });
+    agentsApi.updateProjectAgentDefaults("p1", "agent.chat-agent@1.0.0", 2, {});
+    expect(mockFetch).toHaveBeenLastCalledWith(
+      "/api/agents/projects/p1/defaults/agent.chat-agent%401.0.0",
+      { method: "PATCH", body: JSON.stringify({ revision: 2, settings: {} }) },
+    );
+  });
 });

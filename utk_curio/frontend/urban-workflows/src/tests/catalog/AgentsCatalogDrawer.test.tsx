@@ -13,6 +13,9 @@ jest.mock("../../api/agentsApi", () => ({
     publish: jest.fn(),
     unpublish: jest.fn(),
     getProjectAgentDefaults: jest.fn(),
+    updateProjectAgentDefaults: jest.fn(),
+    getAgentSettings: jest.fn(),
+    updateAgentSettings: jest.fn(),
   },
 }));
 
@@ -47,16 +50,29 @@ beforeEach(() => {
   api.listImports.mockResolvedValue({ agents: [card("agent.chat-agent", { scope: "my-imports", imported: true })] } as any);
   api.installToProject.mockResolvedValue({ agents: [] } as any);
   api.publish.mockResolvedValue({ coord: "x", published: true } as any);
+  const effective = {
+    quotas: { runsPerDay: { value: 200, usedToday: 0, source: "deployment" } },
+    cost: {
+      dailyBudgetUsd: { value: null, source: null },
+      estimatedCostPerRunUsd: { value: null, source: null },
+      configured: false,
+      estimatedSpendTodayUsd: null,
+    },
+    resources: { maxOutputTokens: { value: 4096, source: "deployment" } },
+  };
   api.getProjectAgentDefaults.mockResolvedValue({
     coord: "agent.chat-agent@1.0.0",
     name: "Chat",
     revision: 1,
     settings: {},
-    effective: {
-      quotas: { runsPerDay: { value: 200, usedToday: 0, source: "account" } },
-      cost: { configured: false, source: "account" },
-      resources: { source: "account" },
-    },
+    effective,
+  } as any);
+  api.getAgentSettings.mockResolvedValue({
+    revision: 1,
+    settings: {},
+    effective,
+    ceilings: { quotas: { runsPerDay: 200 }, resources: { maxOutputTokens: 4096 }, cost: {} },
+    usedToday: 0,
   } as any);
 });
 
@@ -155,5 +171,12 @@ describe("AgentsCatalogDrawer", () => {
     fireEvent.click(screen.getByText("My Imports"));
     await waitFor(() => expect(screen.getByText("chat-agent")).toBeInTheDocument());
     expect(screen.queryByRole("button", { name: /project agent settings/i })).not.toBeInTheDocument();
+  });
+
+  it("the roster header's Agent settings cog opens the account scope (dev/24)", async () => {
+    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /agent settings/i }));
+    await waitFor(() => expect(screen.getByText("Account policy")).toBeInTheDocument());
   });
 });

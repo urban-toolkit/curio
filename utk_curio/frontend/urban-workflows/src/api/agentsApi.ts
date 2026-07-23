@@ -79,17 +79,50 @@ export interface AgentTarget {
   targetId?: string;
 }
 
-/** The project-agent-default scope for one installed template (memo dev/23). */
+/** Editable policy fields (memo dev/24). Absent/omitted = inherit. */
+export interface AgentPolicySettings {
+  quotas?: { runsPerDay?: number };
+  cost?: { dailyBudgetUsd?: number; estimatedCostPerRunUsd?: number };
+  resources?: { maxOutputTokens?: number };
+}
+
+/** A resolved policy field: value + which scope supplied it. */
+export interface EffectiveField {
+  value: number | null;
+  source: "deployment" | "account" | "project" | null;
+}
+
+export interface EffectivePolicy {
+  quotas: { runsPerDay: EffectiveField & { usedToday?: number } };
+  cost: {
+    dailyBudgetUsd: EffectiveField;
+    estimatedCostPerRunUsd: EffectiveField;
+    configured: boolean;
+    estimatedSpendTodayUsd?: number | null;
+  };
+  resources: { maxOutputTokens: EffectiveField; provider?: string; model?: string };
+}
+
+/** The Account-policy scope (GET/PATCH /api/agents/settings). */
+export interface AccountAgentSettings {
+  revision: number;
+  settings: AgentPolicySettings & Record<string, unknown>;
+  effective: EffectivePolicy;
+  ceilings: {
+    quotas: { runsPerDay: number };
+    resources: { maxOutputTokens: number };
+    cost: Record<string, number | null>;
+  };
+  usedToday: number;
+}
+
+/** The project-agent-default scope for one installed template (memos dev/23/24). */
 export interface ProjectAgentDefaults {
   coord: string;
   name: string;
   revision: number;
-  settings: Record<string, unknown>;
-  effective: {
-    quotas: { runsPerDay: { value: number; usedToday: number; source: string } };
-    cost: { configured: boolean; source: string };
-    resources: { source: string; provider?: string; model?: string };
-  };
+  settings: AgentPolicySettings & Record<string, unknown>;
+  effective: EffectivePolicy;
 }
 
 /** ``@``/``.`` are legal in a coordinate but must be escaped in a path param. */
@@ -156,11 +189,40 @@ export const agentsApi = {
     return apiFetch(`/api/agents/publications/${coordParam(coord)}`, { method: "DELETE" });
   },
 
-  /** The project-agent-default scope for one installed template (read-only at v1). */
+  /** The project-agent-default scope for one installed template. */
   getProjectAgentDefaults(projectId: string, coord: string): Promise<ProjectAgentDefaults> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/defaults/${coordParam(coord)}`,
     );
+  },
+
+  /** Edit one template's project defaults (tighten-only, revisioned; {} = reset). */
+  updateProjectAgentDefaults(
+    projectId: string,
+    coord: string,
+    revision: number,
+    settings: AgentPolicySettings,
+  ): Promise<ProjectAgentDefaults> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/defaults/${coordParam(coord)}`,
+      { method: "PATCH", body: JSON.stringify({ revision, settings }) },
+    );
+  },
+
+  /** The Account-policy scope. */
+  getAgentSettings(): Promise<AccountAgentSettings> {
+    return apiFetch("/api/agents/settings");
+  },
+
+  /** Edit the account agent policy (tighten-only vs deployment; revisioned). */
+  updateAgentSettings(
+    revision: number,
+    settings: AgentPolicySettings,
+  ): Promise<AccountAgentSettings> {
+    return apiFetch("/api/agents/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ revision, settings }),
+    });
   },
 
   /** List the project's private attachments. */
