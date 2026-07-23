@@ -14,9 +14,12 @@ def _connect():
     chunk_id    VARCHAR,
     text        VARCHAR,
     kind        VARCHAR,
+    SPEAKER     VARCHAR,
     page        INTEGER,
     char_start  INTEGER,
     char_end    INTEGER,
+    t_start     DOUBLE,
+    t_end       DOUBLE,
     PRIMARY KEY (artifact_id, chunk_id)
 );
                 """)
@@ -54,9 +57,12 @@ def upsert_softartifact(meta: dict, chunks: list[dict]):
                 c.get("chunk_id"),
                 c.get("text"),
                 c.get("kind"),
+                c.get("speaker"),
                 c.get("page"),
                 c.get("char_start"),
                 c.get("char_end"),
+                c.get("t_start"),
+                c.get("t_end")
             )
             for c in chunks
         ]
@@ -64,8 +70,8 @@ def upsert_softartifact(meta: dict, chunks: list[dict]):
         con.executemany(
             """
             INSERT INTO chunks (
-                artifact_id, chunk_id, text, kind, page, char_start, char_end
-            ) VALUES(?, ?, ?, ?, ?, ?, ?)
+                artifact_id, chunk_id, text, kind, speaker, page, char_start, char_end, t_start, t_end
+            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows
         )
