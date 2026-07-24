@@ -163,6 +163,27 @@ class TestNoteBookAnalyzer:
         actual_edges = {(e["source"], e["target"]) for e in output["edges"]}
         expected_edges = {(1,4)}
         assert actual_edges == expected_edges, f"Actual result: {actual_edges}"
+    
+    # <--------------------------Test Comments-------------------------------->
+    def test_hash_inside_string_not_stripped(self):
+        cells = ['s = "value #1"\nprint(s)']
+        output = analyze_cells(cells)
+        # should not raise, and defined/used should reflect valid parse
+        expected = ["s"]
+        actual = output["analysis"][0]["defined"]
+        assert expected == actual, f"Actual: {actual}\nExpected: {expected}"
+
+    
+    def test_comments(self):
+        cells = [
+            "# x = 5\nprint(5)",
+            "print(x)"
+        ]
+        output = analyze_cells(cells)
+
+        actual_edges = {(e["source"], e["target"]) for e in output["edges"]}
+        expected_edges = set()
+        assert actual_edges == expected_edges, f"Actual result: {actual_edges}"
 
 # pytest utk_curio/backend/tests/test_notebook_analyzer.py
 # pytest utk_curio/backend/tests/test_notebook_analyzer.py::TestNoteBookAnalyzer::test_AST_trials

@@ -8,8 +8,6 @@ You will recieve a json of ambigious cells. The JSON will be formatted as follow
 
 Classify each code cell into exactly one of these types:
 
-- DATA_LOADING
-- DATA_EXPORT
 - DATA_TRANSFORMATION
 - COMPUTATION_ANALYSIS
 - DATA_SUMMARY

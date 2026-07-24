@@ -207,9 +207,18 @@ def _try_altair_to_spec(code, last_var, external_vars=()):
 
 
 # ── Improved Public API ───────────────────────────────────────────────────────
-def analyze_cells(cells: list[str]) -> dict:
+def analyze_cells(raw_cells: list[str]) -> dict:
     analysis = []
     import_names_per_cell = []
+
+    # ── Cleaning the data of any comments─────────────────────────────────
+    
+    # Naive regex approach to stripping "FULL LINE" comments
+    # Trailing inline comments are left unhandled. The regex
+    # required may generate syntactical mistakes in the code.
+    cells:list[str] = []
+    for code in raw_cells:
+        cells.append(re.sub(r'(?m)^\s*#.*\n?', '', code))
 
     # ── Pass 1: Static analysis───────────────────────────────────────────
     for code in cells:

@@ -16,6 +16,7 @@ because each call is fully isolated in a child process.
 import contextlib
 import os
 import threading
+import re
 
 _globals_cache: dict = {}
 _exec_lock = threading.Lock()
@@ -233,7 +234,10 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
                 # `data.input` because the merge-flow output effect hadn't
                 # propagated yet). Cheap substring check — false positives
                 # are harmless because we only act when arg is truly None.
-                if incomingInput is None and 'arg' in code:
+
+                cleaned = re.sub(r'#.*', '', code)
+                ARG_PATTERN = r"\barg\b"
+                if incomingInput is None and re.search(ARG_PATTERN, cleaned):
                     raise RuntimeError(
                         "This node received no input but its code references `arg`. "
                         "Make sure every upstream node has produced output (state "

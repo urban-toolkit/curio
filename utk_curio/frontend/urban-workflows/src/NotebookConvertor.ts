@@ -208,7 +208,7 @@ export function wireCode(
       // Unpack each of the merge node's own inputs from arg[i].
       const mergeNodeIdx = sources[0];
       const mergeSources = incomingSources.get(mergeNodeIdx) ?? [];
-
+      
       const unpackLines = mergeSources.map((srcIdx, i) => {
         const srcEdge = cellEdges.find(e => e.source === srcIdx && e.target === mergeNodeIdx);
         const srcVar = srcEdge?.parent_var ?? "arg";
@@ -376,13 +376,13 @@ export async function notebookToTrill(
   const nodes: TrillNode[] = codeCells.map((code, index) => {
     const spec = altairSpecs[index] ?? null;
     let nodeType;
-    if (spec)                                   { nodeType = NodeType.VIS_VEGA; }
-    else if (isVegaLiteJson(code))              { nodeType = NodeType.VIS_VEGA; }
-    else if (MERGE_FLOW_PATTERN.test(code))     { nodeType = NodeType.MERGE_FLOW }
-    else if (DATA_LOADING_PATTERN.test(code))   { nodeType = NodeType.DATA_LOADING; }
-    else if (DATA_EXPORT_PATTERN.test(code))    { nodeType = NodeType.DATA_EXPORT; } 
-    else if (llm_types[index])                  { nodeType = llm_types[index] } 
-    else                                        { nodeType = NodeType.COMPUTATION_ANALYSIS }
+    if (spec) /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  */{ nodeType = NodeType.VIS_VEGA; }
+    else if (isVegaLiteJson(code))                                              { nodeType = NodeType.VIS_VEGA; }
+    else if (MERGE_FLOW_PATTERN.test(code))/* - - - - - - - - - - - - - - - - */{ nodeType = NodeType.MERGE_FLOW }
+    else if (DATA_LOADING_PATTERN.test(code) && !incomingSources.has(index))    { nodeType = NodeType.DATA_LOADING; }
+    else if (DATA_EXPORT_PATTERN.test(code) && !hasOutgoing.has(index))/*- - -*/{ nodeType = NodeType.DATA_EXPORT; } 
+    else if (llm_types[index])                                                  { nodeType = llm_types[index] } 
+    else/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */{ nodeType = NodeType.COMPUTATION_ANALYSIS }
     const content = spec
       ? JSON.stringify(spec, null, 2)
       : cellEdges.length > 0  // Changed lastVars.length > 0 to cellEdges.length > 0
