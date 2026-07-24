@@ -269,19 +269,32 @@ def detach_agent(project_id: str, attachment_id: str):
 @agents_bp.route("/projects/<project_id>/attachments/<attachment_id>", methods=["PATCH"])
 @require_auth
 def update_attachment(project_id: str, attachment_id: str):
-    """Update the attachment's editable intent. ``{"intent": null|""}`` clears the
-    override so the intent falls back to the definition's prompt source."""
+    """Update the attachment's editable fields.
+
+    ``{"intent": null|""}`` clears the override so the intent falls back to the
+    definition's prompt source. ``{"title": "..."}`` manually renames the
+    conversation (memo dev/25) — non-empty only; a manual title always wins
+    over auto-generation and survives conversation clears.
+    """
     body = request.get_json(silent=True) or {}
-    if "intent" not in body:
-        return _error("body must include 'intent' (string or null)")
+    if "intent" not in body and "title" not in body:
+        return _error("body must include 'intent' (string or null) or 'title' (string)")
     intent = body.get("intent")
-    if intent is not None and not isinstance(intent, str):
+    if "intent" in body and intent is not None and not isinstance(intent, str):
         return _error("'intent' must be a string or null")
+    title = body.get("title")
+    if "title" in body and (not isinstance(title, str) or not title.strip()):
+        return _error("'title' must be a non-empty string")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
-        payload = agents_services.update_attachment_intent(
-            _user_dir_key(g.user), project_id, attachment_id, intent
-        )
+        if "intent" in body:
+            payload = agents_services.update_attachment_intent(
+                _user_dir_key(g.user), project_id, attachment_id, intent
+            )
+        if "title" in body:
+            payload = agents_services.update_attachment_title(
+                _user_dir_key(g.user), project_id, attachment_id, title
+            )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
     except AgentServiceError as exc:

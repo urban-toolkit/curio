@@ -422,6 +422,10 @@ def _attachment_card(spec: dict, record: dict, user_key: str) -> dict:
         "hooks": [t.kind for t in m.compatible_targets] if m else [],
         "intent": record.get("intent") or _resolve_instruction_text(user_key, coord),
         "intentEdited": bool(record.get("intent")),
+        # Conversation title (memo dev/25): the custom portion only — the
+        # client composes "<name>: <title>" at display time.
+        "title": record.get("title") or None,
+        "titleEdited": bool(record.get("titleEdited")),
     }
 
 
@@ -486,6 +490,22 @@ def update_attachment_intent(
     return _attachment_card(spec, record, user_key)
 
 
+def update_attachment_title(
+    user_key: str, project_id: str, attachment_id: str, title: str
+) -> dict:
+    """Manually rename the conversation (memo dev/25). A manual title always
+    wins over auto-generation and survives conversation clears."""
+    spec = _read_spec_or_404(user_key, project_id)
+    try:
+        record = attachments.set_title(spec, attachment_id, title, edited=True)
+    except AttachmentError as exc:
+        raise AgentServiceError(str(exc), 400) from exc
+    if record is None:
+        raise AgentServiceError(f"attachment {attachment_id!r} not found", 404)
+    projects_storage.write_spec(user_key, project_id, spec)
+    return _attachment_card(spec, record, user_key)
+
+
 def _record_or_404(spec: dict, attachment_id: str) -> dict:
     record = attachments.get_attachment(spec, attachment_id)
     if record is None:
@@ -513,6 +533,12 @@ def clear_attachment_session(user_key: str, project_id: str, attachment_id: str)
     session_id = record.get("sessionId")
     if isinstance(session_id, str):
         sessions.clear_turns(user_key, project_id, session_id, attachment_id)
+    # An auto-generated title describes the conversation that was just cleared
+    # — drop it so the next first message regenerates one. A manual title is
+    # the user's deliberate name for the instance and is kept (memo dev/25).
+    if record.get("title") and not record.get("titleEdited"):
+        attachments.set_title(spec, attachment_id, None, edited=False)
+        projects_storage.write_spec(user_key, project_id, spec)
     return {"attachmentId": attachment_id, "sessionId": session_id, "turns": []}
 
 
@@ -536,6 +562,65 @@ def _resolve_instruction_text(user_key: str, coord: str) -> str | None:
             if path.is_file():
                 return path.read_text(encoding="utf-8")
     return builtin.read_instruction_text(coord)
+
+
+# ── conversation titles (memo dev/25) ────────────────────────────────────────
+TITLE_PROMPT = (
+    "Summarize the user's request as a short descriptive title of three or "
+    "four words. Reply with the title only — no quotes and no trailing period."
+)
+# A 3–4 word title needs very few tokens; keep the utility call cheap.
+TITLE_MAX_OUTPUT_TOKENS = 16
+
+
+def sanitize_title(raw: object) -> str | None:
+    """Normalize LLM title output to plain display text, or ``None`` to discard.
+
+    The model output is untrusted: collapse whitespace/newlines, strip wrapping
+    quotes/backticks and a trailing period, truncate to
+    ``attachments.TITLE_MAX_CHARS``, and reject anything empty after cleaning.
+    """
+    if not isinstance(raw, str):
+        return None
+    text = " ".join(raw.split())
+    text = text.strip("\"'`“”‘’ ").rstrip(".").strip()
+    if len(text) > attachments.TITLE_MAX_CHARS:
+        text = text[: attachments.TITLE_MAX_CHARS].rstrip()
+    return text or None
+
+
+def _generate_conversation_title(
+    user_key: str, project_id: str, attachment_id: str, message: str, config: ProviderConfig
+) -> None:
+    """Best-effort auto title from the first user message (memo dev/25).
+
+    Runs after the reply is persisted so it never delays the answer; a provider
+    failure or rejected output leaves the attachment untitled, silently. The
+    precondition (untitled, not manually edited) is re-checked on a fresh spec
+    read so a manual rename that landed mid-run wins.
+    """
+    try:
+        raw = run_chat_completion(
+            config,
+            [
+                {"role": "system", "content": TITLE_PROMPT},
+                {"role": "user", "content": message},
+            ],
+            max_output_tokens=TITLE_MAX_OUTPUT_TOKENS,
+        )
+        title = sanitize_title(raw)
+        if title is None:
+            return
+        spec = projects_storage.read_spec(user_key, project_id)
+        if spec is None:
+            return
+        record = attachments.get_attachment(spec, attachment_id)
+        if record is None or record.get("title") or record.get("titleEdited"):
+            return
+        attachments.set_title(spec, attachment_id, title, edited=False)
+        projects_storage.write_spec(user_key, project_id, spec)
+    except Exception:
+        pass  # a missing title is a cosmetic gap, never a run error
 
 
 def _run_policy(user_key: str, project_id: str, coord: str, spec: dict) -> dict:
@@ -562,12 +647,15 @@ def _run_policy(user_key: str, project_id: str, coord: str, spec: dict) -> dict:
 
 def _prepare_run(
     user_key: str, project_id: str, attachment_id: str, message: str
-) -> tuple[str, str | None, list, dict]:
+) -> tuple[str, str | None, list, dict, bool]:
     """Shared run/stream setup: resolve the attachment, its instruction (intent
     override → prompt source, dev/19), the provider messages including the
     bounded session context (dev/20), and the effective run policy (dev/24).
-    Returns ``(coord, session_id, messages, run_policy)``; ``session_id`` is
-    None for a record without one (stateless fallback)."""
+    Returns ``(coord, session_id, messages, run_policy, wants_title)``;
+    ``session_id`` is None for a record without one (stateless fallback), and
+    ``wants_title`` is True when this message is the conversation's first —
+    an untitled, never-manually-renamed attachment with no prior user turn —
+    so a title should be auto-generated after the reply (memo dev/25)."""
     spec = _read_spec_or_404(user_key, project_id)
     record = _record_or_404(spec, attachment_id)
     coord = record.get("coord", "")
@@ -585,7 +673,12 @@ def _prepare_run(
         *sessions.context_messages(prior),
         {"role": "user", "content": message},
     ]
-    return coord, session_id, messages, _run_policy(user_key, project_id, coord, spec)
+    wants_title = (
+        not record.get("title")
+        and not record.get("titleEdited")
+        and not any(t.get("role") == "user" for t in prior)
+    )
+    return coord, session_id, messages, _run_policy(user_key, project_id, coord, spec), wants_title
 
 
 def _persist_exchange(
@@ -626,7 +719,7 @@ def run_attachment(
     a provider failure persists the user turn plus a display-only error marker
     (excluded from future context) so history matches what the user saw.
     """
-    coord, session_id, messages, run_policy = _prepare_run(
+    coord, session_id, messages, run_policy, wants_title = _prepare_run(
         user_key, project_id, attachment_id, message
     )
     # Admission after validation (an invalid request never consumes quota) and
@@ -642,6 +735,8 @@ def run_attachment(
         )
         raise AgentServiceError(f"agent run failed: {exc}", 502) from exc
     _persist_exchange(user_key, project_id, session_id, attachment_id, message, reply)
+    if wants_title:
+        _generate_conversation_title(user_key, project_id, attachment_id, message, config)
     return {"attachmentId": attachment_id, "coord": coord, "reply": reply}
 
 
@@ -657,7 +752,7 @@ def stream_attachment(
     completion; a failure persists the user turn plus a display-only error
     marker. Nothing is persisted per-delta.
     """
-    coord, session_id, messages, run_policy = _prepare_run(
+    coord, session_id, messages, run_policy, wants_title = _prepare_run(
         user_key, project_id, attachment_id, message
     )
     # Eager admission: a quota/budget denial surfaces as a plain 429 before any
@@ -686,6 +781,10 @@ def stream_attachment(
             return
         reply = "".join(parts)
         _persist_exchange(user_key, project_id, session_id, attachment_id, message, reply)
+        # Title before the done frame: the reply text already streamed via
+        # deltas, and the client's post-send refresh must see the title.
+        if wants_title:
+            _generate_conversation_title(user_key, project_id, attachment_id, message, config)
         yield ("done", reply)
 
     return _events()

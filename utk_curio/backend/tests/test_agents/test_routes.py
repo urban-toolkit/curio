@@ -339,10 +339,12 @@ class TestRun:
     def test_run_dispatches_instruction_as_system(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         from utk_curio.backend.app.agents import builtin
 
-        captured = {}
+        # A first run also fires the post-reply title call (memo dev/25), so
+        # capture every call and assert on the conversation run (the first).
+        calls = []
 
         def _fake_run(config, messages, **kwargs):
-            captured["messages"] = messages
+            calls.append(messages)
             return "hello from the model"
 
         monkeypatch.setattr(
@@ -357,7 +359,7 @@ class TestRun:
         )
         assert r.status_code == 200, r.get_data(as_text=True)
         assert r.get_json()["reply"] == "hello from the model"
-        msgs = captured["messages"]
+        msgs = calls[0]
         assert msgs[0]["role"] == "system"
         assert msgs[0]["content"] == builtin.read_instruction_text("agent.chat-agent@1.0.0")
         assert msgs[1] == {"role": "user", "content": "explain this node"}
@@ -660,10 +662,12 @@ class TestIntent:
         ).status_code == 404
 
     def test_run_uses_edited_intent_as_system(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        captured = {}
+        # calls[0] is the conversation run; a first run adds a title call after
+        # it (memo dev/25).
+        calls = []
 
         def _fake_run(config, messages, **kwargs):
-            captured["messages"] = messages
+            calls.append(messages)
             return "ok"
 
         monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
@@ -680,7 +684,7 @@ class TestIntent:
             json={"message": "hi"},
             headers=_auth(token),
         )
-        assert captured["messages"][0] == {"role": "system", "content": "answer in one sentence"}
+        assert calls[0][0] == {"role": "system", "content": "answer in one sentence"}
 
 
 class TestSession:
@@ -697,9 +701,15 @@ class TestSession:
         return r.get_json()
 
     def _mock_provider(self, monkeypatch, replies):
+        from utk_curio.backend.app.agents import services as services_mod
+
         calls = []
 
         def _fake_run(config, messages, **kwargs):
+            # Answer the post-first-run title call (memo dev/25) out of band so
+            # `replies`/`calls` keep tracking the conversation runs only.
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Session Test Title"
             calls.append(messages)
             return replies[len(calls) - 1]
 
@@ -879,6 +889,12 @@ class TestStreamRun:
         monkeypatch.setattr(
             "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
         )
+        # The first stream run fires the post-reply title call (memo dev/25);
+        # stub the blocking port so it never reaches a real provider.
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion",
+            lambda c, m, **kw: "Stream Title",
+        )
         _, token = user_and_token
         att_id = self._attach_builtin(client, token, alice_project)
         r = client.post(
@@ -949,6 +965,12 @@ class TestStreamRun:
         monkeypatch.setattr(
             "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
         )
+        # Stub the blocking port: the first run's title call must not reach a
+        # real provider (memo dev/25).
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion",
+            lambda c, m, **kw: "Stream Title",
+        )
         _, token = user_and_token
         att_id = self._attach_builtin(client, token, alice_project)
         for msg in ("q1", "q2"):
@@ -1005,6 +1027,12 @@ class TestQuotaAdmission:
 
         monkeypatch.setattr(
             "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
+        )
+        # The admitted first run's title call must not reach a real provider —
+        # and must not consume the single quota slot (memo dev/25).
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion",
+            lambda c, m, **kw: "Stream Title",
         )
         _, token = user_and_token
         att_id = self._attach_builtin(client, token, alice_project)
@@ -1255,10 +1283,12 @@ class TestSettingsScreensApi:
         assert body["effective"]["cost"]["estimatedSpendTodayUsd"] == 0.06
 
     def test_max_output_tokens_reaches_the_provider(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
-        seen = {}
+        # seen[0] is the conversation run; a first run adds the small-capped
+        # title call after it (memo dev/25).
+        seen = []
 
         def _fake(config, messages, max_output_tokens=None):
-            seen["max"] = max_output_tokens
+            seen.append(max_output_tokens)
             return "ok"
 
         monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake)
@@ -1269,7 +1299,7 @@ class TestSettingsScreensApi:
             f"/api/agents/projects/{alice_project}/attachments/{att}/run",
             json={"message": "q"}, headers=_auth(token),
         )
-        assert seen["max"] == 512
+        assert seen[0] == 512
 
     def test_patch_preserves_non_policy_seed_keys(self, client, user_and_token, tmp_curio, alice_project):
         from utk_curio.backend.app.projects import storage as projects_storage

@@ -18,6 +18,10 @@ from utk_curio.backend.app.agents.storage import AGENT_DIR_RE
 
 _TARGET_KINDS = ("node", "canvas", "connection")
 
+# Longest stored conversation title (memo dev/25). Manual edits over the cap
+# are rejected; auto-generated titles are truncated by the service sanitizer.
+TITLE_MAX_CHARS = 40
+
 
 class AttachmentError(ValueError):
     """Raised when an attachment record or target is malformed."""
@@ -153,6 +157,46 @@ def set_intent(spec: dict, attachment_id: str, intent: str | None) -> dict | Non
         record["intent"] = cleaned
     else:
         record.pop("intent", None)
+    record["revision"] = int(record.get("revision", 1)) + 1
+    return record
+
+
+def set_title(spec: dict, attachment_id: str, title: str | None, *, edited: bool) -> dict | None:
+    """Set or clear the attachment's conversation title and bump its revision.
+
+    The title is the per-instance custom portion displayed as
+    ``"<template name>: <title>"`` (memo dev/25); the template name is never
+    stored here. Manual writes (``edited=True``) require a non-empty title
+    within ``TITLE_MAX_CHARS``, always win, and set ``titleEdited`` so no
+    automatic path may touch the title again. Auto writes (``edited=False``)
+    are skipped when a title already exists or was manually edited; an auto
+    ``None`` clears an auto-generated title only (conversation clear). Returns
+    the record — unchanged (no revision bump) when the write was skipped — or
+    ``None`` when the attachment does not exist.
+    """
+    record = get_attachment(spec, attachment_id)
+    if record is None:
+        return None
+    if title is not None and not isinstance(title, str):
+        raise AttachmentError("title must be a string or null")
+    cleaned = title.strip() if isinstance(title, str) else None
+    if edited:
+        if not cleaned:
+            raise AttachmentError("title must be a non-empty string")
+        if len(cleaned) > TITLE_MAX_CHARS:
+            raise AttachmentError(f"title must be at most {TITLE_MAX_CHARS} characters")
+        record["title"] = cleaned
+        record["titleEdited"] = True
+    elif record.get("titleEdited"):
+        return record  # a manual title always wins
+    elif cleaned:
+        if record.get("title"):
+            return record  # already auto-titled — first writer wins
+        record["title"] = cleaned[:TITLE_MAX_CHARS].rstrip()
+    elif "title" not in record:
+        return record  # nothing to clear
+    else:
+        record.pop("title", None)
     record["revision"] = int(record.get("revision", 1)) + 1
     return record
 
