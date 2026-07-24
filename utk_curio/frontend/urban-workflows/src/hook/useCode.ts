@@ -229,7 +229,7 @@ export function useCode(): IUseCode {
 
     }
 
-        //get the current trill (for soft artifact node behavior =D)
+    //get the current trill (for soft artifact node behavior =D)
     const getCurrentTrill = useCallback(() => {
         return TrillGenerator.generateTrill(
             nodes, edges, workflowNameRef.current, workflowGoal
@@ -242,7 +242,7 @@ export function useCode(): IUseCode {
         eraseWorkflowSuggestions();  // make sure there's no work Flow suggestion
         loadTrill({ dataflow }, "workflow");
         ensureWorkflowDeps({ dataflow });
-    }, [])
+    }, [eraseWorkflowSuggestions, loadTrill, ensureWorkflowDeps])
 
     const cancelProposal = useCallback(() => {
         eraseWorkflowSuggestions();

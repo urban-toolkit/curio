@@ -288,7 +288,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
     data.outputCallback?.(data.nodeId, json);
   };
 
-  //persist + emitOutput
+  // persist + emitOutput
   // Called after a successful ingest: saves the returned artifact metadata
   // and forwards it as this node's output.
   const applyArtifactMeta = (out: Record<string, unknown>, role: softArtifactRole) => {
@@ -310,6 +310,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
     }
   };
 
+  // load chunks, persist the chunks 
   const loadChunks = async (artifact_id: string) => {
     const res = await fetch(`${API_BASE}/artifacts/${artifact_id}/chunks`);
     if (!res.ok) { persist({chunks: undefined}); return; }
@@ -389,7 +390,6 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
   }
 
   // run propose, either it's transform or expand artifact
-  // for now I haven't added context, need to add it  TODO
   const runPropose = async (artifact_id: string, role: softArtifactRole) => {
     if (role !== 'transform' && role !== 'expand') return;
 
@@ -674,7 +674,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
         ))}
       </div>
       )}
-      
+
       {/* Explanation output (shown only in "explain" flow) */}
       <div>
         {state.role === 'explain' && explaining ? (
