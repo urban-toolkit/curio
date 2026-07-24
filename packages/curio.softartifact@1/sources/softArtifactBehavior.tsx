@@ -13,6 +13,16 @@ function getToken(): string | undefined {
 // what happens to the uploaded document (just pass it through, explain it, etc.)
 type softArtifactRole = 'inform' | 'explain' | 'transform' | 'expand';
 
+// for retrieving chunk
+type ChunkRow = {
+  chunk_id: string;
+  kind?: string;
+  text?: string;
+  page?: number | null;
+  speaker?: string | null;
+  t_start?: number | null;
+};
+
 // Base URL for all softartifact API calls. Falls back to relative path
 // if window.curio.backendUrl isn't set (e.g. during SSR or testing).
 const API_BASE = `${(typeof window !== 'undefined' && (window as any).curio?.backendUrl) || ''}/api/softartifact`;
@@ -26,6 +36,7 @@ interface SoftArtifactState{
   mimetype: string | null,
   status: 'empty' | 'ingesting' | 'ready' | 'error',
   errorMessage?: string,
+  chunks?: ChunkRow[];
   explanation?: string,                                    // this is for Explain route
   guidance?: string,                                       // this is for Inform route
   suggestions?: Record<string, unknown>                    // this is for Inform route
@@ -76,6 +87,27 @@ function artifactStatusLine(state: SoftArtifactState, verifying: boolean): strin
     default:
       return "the state input is incorrect";  
   }
+}
+
+// labeling the chunks
+// if kind == pdf -> return page {number of page}
+// if kind == transcript -> return {speaker name} @ time 
+function chunkLabel(c: ChunkRow): string {
+  // convert from time in the chunks into actual time
+  // put inside here for the readability 
+  function fmtTime(sec?: number | null): string {
+    if (sec == null || Number.isNaN(sec)) return "?";
+    const s = Math.floor(sec);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const r = s % 60;
+    return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(r).padStart(2,"0")}`;
+  }
+
+  if (c.kind === "pdf_page" && c.page != null) return `page ${c.page}`;
+  if (c.kind === "transcript_turn")
+    return `${c.speaker || "speaker"} @ ${fmtTime(c.t_start)}`;
+  return c.chunk_id;
 }
 
 // Calls the backend's /explain endpoint for a given artifact, asking it
@@ -206,7 +238,7 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
   const [verifying, setVerifying] = useState(false); //short-lived UI while the GET api get run 
   const [explaining, setExplaining] = useState<boolean>(false);  // true while /explain call is in flight
   const [informing, setInforming] = useState<boolean>(false);  // true while /inform call is in flight
-  const [proposing, setProposing] = useState<boolean>(false);
+  const [proposing, setProposing] = useState<boolean>(false);  // true while either transform or expand node call is in flight 
 
 
   //health API call
@@ -278,6 +310,13 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
     }
   };
 
+  const loadChunks = async (artifact_id: string) => {
+    const res = await fetch(`${API_BASE}/artifacts/${artifact_id}/chunks`);
+    if (!res.ok) { persist({chunks: undefined}); return; }
+    
+    const out = await res.json();
+    persist({chunks: out.chunks})    
+  }
   // Runs the "explain" flow for the current artifact: calls the backend,
   // stores the explanation, and emits it as node output.
   const runExplain = async (artifact_id: string, role: softArtifactRole) => {
@@ -499,6 +538,8 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
         await runPropose(out.artifact_id, role);
       }
 
+      await loadChunks(out.artifact_id);
+
     } catch (e) {
       persist({
         status: 'error',
@@ -614,7 +655,26 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
           {artifactStatusLine(state, verifying)}
         </button>
       </div>
-
+        
+      {state.chunks && state.chunks.length > 0 && (
+      <div style={{ marginTop: 10, maxHeight: 180, overflowY: "auto",
+                    border: "1px solid #e2e8f0", borderRadius: 6, padding: 8 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", marginBottom: 6 }}>
+          Chunks ({state.chunks.length})
+        </div>
+          
+        {state.chunks.map((c) => (
+          <div key={c.chunk_id} style={{ fontSize: 11, marginBottom: 6 }}>
+            <div style={{ fontWeight: 600 }}>{chunkLabel(c)}</div>
+            <div style={{ color: "#64748b", whiteSpace: "nowrap",
+                          overflow: "hidden", textOverflow: "ellipsis" }}>
+              {(c.text || "").slice(0, 120)}
+            </div>
+          </div>
+        ))}
+      </div>
+      )}
+      
       {/* Explanation output (shown only in "explain" flow) */}
       <div>
         {state.role === 'explain' && explaining ? (

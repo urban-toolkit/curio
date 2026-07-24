@@ -5,6 +5,7 @@ from flask import jsonify, request
 from .services.ingest import ingest_file
 from .services.LLM_helper.get_artifact import get_softartifact_metadata
 from .services.LLM_helper.retrieve import search_chunks
+from .services.LLM_helper.store import list_chunks
 from .services.explain import explain_artifact
 from .services.inform import inform_artifact
 from .services.propose import propose_trill
@@ -142,3 +143,10 @@ def proposeTrill():  # reads artifact_id, mode, top_k, sourceFile, context, quer
 
     output = propose_trill(artifact_id=artifact_id, mode=role, context=context, top_k=top_k, source_file=source_file)   
     return jsonify(output)
+
+@bp.get("/artifacts/<artifact_id>/chunks")
+def list_artifact_chunks(artifact_id: str):
+    meta = get_softartifact_metadata(artifact_id)
+    if meta is None:
+        return jsonify({"error": "artifact not found"}), 404
+    return jsonify({"artifact_id": artifact_id, "chunks": list_chunks(artifact_id)}), 200

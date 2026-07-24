@@ -53,6 +53,8 @@ function getToken() {
 // The different "modes" this artifact node can operate in — determines
 // what happens to the uploaded document (just pass it through, explain it, etc.)
 
+// for retrieving chunk
+
 // Base URL for all softartifact API calls. Falls back to relative path
 // if window.curio.backendUrl isn't set (e.g. during SSR or testing).
 var API_BASE = "".concat(typeof window !== 'undefined' && ((_curio = window.curio) === null || _curio === void 0 ? void 0 : _curio.backendUrl) || '', "/api/softartifact");
@@ -102,6 +104,25 @@ function artifactStatusLine(state, verifying) {
   }
 }
 
+// labeling the chunks
+// if kind == pdf -> return page {number of page}
+// if kind == transcript -> return {speaker name} @ time 
+function chunkLabel(c) {
+  // convert from time in the chunks into actual time
+  // put inside here for the readability 
+  function fmtTime(sec) {
+    if (sec == null || Number.isNaN(sec)) return "?";
+    var s = Math.floor(sec);
+    var h = Math.floor(s / 3600);
+    var m = Math.floor(s % 3600 / 60);
+    var r = s % 60;
+    return "".concat(String(h).padStart(2, "0"), ":").concat(String(m).padStart(2, "0"), ":").concat(String(r).padStart(2, "0"));
+  }
+  if (c.kind === "pdf_page" && c.page != null) return "page ".concat(c.page);
+  if (c.kind === "transcript_turn") return "".concat(c.speaker || "speaker", " @ ").concat(fmtTime(c.t_start));
+  return c.chunk_id;
+}
+
 // Calls the backend's /explain endpoint for a given artifact, asking it
 // to summarize/explain the document (using the default query server-side).
 function explainArtifact(_x, _x2, _x3) {
@@ -109,18 +130,18 @@ function explainArtifact(_x, _x2, _x3) {
 } // Call the backend's /inform endpoint for a given artifact
 // to suggest new nodes or guidance using the given artifact 
 function _explainArtifact() {
-  _explainArtifact = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6(artifact_id, sourceFile, context) {
+  _explainArtifact = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7(artifact_id, sourceFile, context) {
     var top_k,
       headers,
       token,
       body,
       res,
       err,
-      _args6 = arguments;
-    return _regenerator().w(function (_context6) {
-      while (1) switch (_context6.n) {
+      _args7 = arguments;
+    return _regenerator().w(function (_context7) {
+      while (1) switch (_context7.n) {
         case 0:
-          top_k = _args6.length > 3 && _args6[3] !== undefined ? _args6[3] : 8;
+          top_k = _args7.length > 3 && _args7[3] !== undefined ? _args7[3] : 8;
           headers = {
             'Content-Type': 'application/json'
           }; // Attach auth token if we have one
@@ -138,70 +159,9 @@ function _explainArtifact() {
           if (context !== undefined && context !== null) {
             body.context = context;
           }
-          _context6.n = 1;
+          _context7.n = 1;
           return fetch("".concat(API_BASE, "/explain"), {
             method: "POST",
-            headers: headers,
-            body: JSON.stringify(body)
-          });
-        case 1:
-          res = _context6.v;
-          if (res.ok) {
-            _context6.n = 3;
-            break;
-          }
-          _context6.n = 2;
-          return res.json()["catch"](function () {
-            return {};
-          });
-        case 2:
-          err = _context6.v;
-          throw new Error(err.error || err.hint || "HTTP ".concat(res.status));
-        case 3:
-          return _context6.a(2, res.json());
-      }
-    }, _callee6);
-  }));
-  return _explainArtifact.apply(this, arguments);
-}
-function informArtifact(_x4, _x5) {
-  return _informArtifact.apply(this, arguments);
-} // Call the backend's /propose_trill endpoint for a given artifact and context
-// if context(dataflow) is none -> suggests a new dataflow
-// if there is a context -> suggest edit to the dataflow 
-function _informArtifact() {
-  _informArtifact = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7(artifact_id, sourceFile) {
-    var top_k,
-      context,
-      headers,
-      token,
-      body,
-      res,
-      err,
-      _args7 = arguments;
-    return _regenerator().w(function (_context7) {
-      while (1) switch (_context7.n) {
-        case 0:
-          top_k = _args7.length > 2 && _args7[2] !== undefined ? _args7[2] : 8;
-          context = _args7.length > 3 ? _args7[3] : undefined;
-          headers = {
-            'Content-Type': 'application/json'
-          };
-          token = getToken();
-          if (token) {
-            headers.Authorization = "Bearer ".concat(token);
-          }
-          body = {
-            artifact_id: artifact_id,
-            sourceFile: sourceFile,
-            top_k: top_k
-          };
-          if (context !== undefined && context !== null && context !== '') {
-            body.context = context;
-          }
-          _context7.n = 1;
-          return fetch("".concat(API_BASE, "/inform"), {
-            method: 'POST',
             headers: headers,
             body: JSON.stringify(body)
           });
@@ -223,16 +183,16 @@ function _informArtifact() {
       }
     }, _callee7);
   }));
-  return _informArtifact.apply(this, arguments);
+  return _explainArtifact.apply(this, arguments);
 }
-function proposeTrillArtifact(_x6, _x7) {
-  return _proposeTrillArtifact.apply(this, arguments);
-} // Main hook powering the "soft artifact" node's behavior — handles file
-// upload/ingestion, state persistence, health checks, and the "explain" flow.
-function _proposeTrillArtifact() {
-  _proposeTrillArtifact = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee8(artifact_id, sourceFile) {
+function informArtifact(_x4, _x5) {
+  return _informArtifact.apply(this, arguments);
+} // Call the backend's /propose_trill endpoint for a given artifact and context
+// if context(dataflow) is none -> suggests a new dataflow
+// if there is a context -> suggest edit to the dataflow 
+function _informArtifact() {
+  _informArtifact = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee8(artifact_id, sourceFile) {
     var top_k,
-      role,
       context,
       headers,
       token,
@@ -244,8 +204,69 @@ function _proposeTrillArtifact() {
       while (1) switch (_context8.n) {
         case 0:
           top_k = _args8.length > 2 && _args8[2] !== undefined ? _args8[2] : 8;
-          role = _args8.length > 3 ? _args8[3] : undefined;
-          context = _args8.length > 4 ? _args8[4] : undefined;
+          context = _args8.length > 3 ? _args8[3] : undefined;
+          headers = {
+            'Content-Type': 'application/json'
+          };
+          token = getToken();
+          if (token) {
+            headers.Authorization = "Bearer ".concat(token);
+          }
+          body = {
+            artifact_id: artifact_id,
+            sourceFile: sourceFile,
+            top_k: top_k
+          };
+          if (context !== undefined && context !== null && context !== '') {
+            body.context = context;
+          }
+          _context8.n = 1;
+          return fetch("".concat(API_BASE, "/inform"), {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(body)
+          });
+        case 1:
+          res = _context8.v;
+          if (res.ok) {
+            _context8.n = 3;
+            break;
+          }
+          _context8.n = 2;
+          return res.json()["catch"](function () {
+            return {};
+          });
+        case 2:
+          err = _context8.v;
+          throw new Error(err.error || err.hint || "HTTP ".concat(res.status));
+        case 3:
+          return _context8.a(2, res.json());
+      }
+    }, _callee8);
+  }));
+  return _informArtifact.apply(this, arguments);
+}
+function proposeTrillArtifact(_x6, _x7) {
+  return _proposeTrillArtifact.apply(this, arguments);
+} // Main hook powering the "soft artifact" node's behavior — handles file
+// upload/ingestion, state persistence, health checks, and the "explain" flow.
+function _proposeTrillArtifact() {
+  _proposeTrillArtifact = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee9(artifact_id, sourceFile) {
+    var top_k,
+      role,
+      context,
+      headers,
+      token,
+      body,
+      res,
+      err,
+      _args9 = arguments;
+    return _regenerator().w(function (_context9) {
+      while (1) switch (_context9.n) {
+        case 0:
+          top_k = _args9.length > 2 && _args9[2] !== undefined ? _args9[2] : 8;
+          role = _args9.length > 3 ? _args9[3] : undefined;
+          context = _args9.length > 4 ? _args9[4] : undefined;
           //create a json request
           //json request header
           headers = {
@@ -268,29 +289,29 @@ function _proposeTrillArtifact() {
           }
 
           //call API endpoint
-          _context8.n = 1;
+          _context9.n = 1;
           return fetch("".concat(API_BASE, "/propose_trill"), {
             method: 'POST',
             headers: headers,
             body: JSON.stringify(body)
           });
         case 1:
-          res = _context8.v;
+          res = _context9.v;
           if (res.ok) {
-            _context8.n = 3;
+            _context9.n = 3;
             break;
           }
-          _context8.n = 2;
+          _context9.n = 2;
           return res.json()["catch"](function () {
             return {};
           });
         case 2:
-          err = _context8.v;
+          err = _context9.v;
           throw new Error(err.error || err.hint || "HTTP ".concat(res.status));
         case 3:
-          return _context8.a(2, res.json());
+          return _context9.a(2, res.json());
       }
-    }, _callee8);
+    }, _callee9);
   }));
   return _proposeTrillArtifact.apply(this, arguments);
 }
@@ -327,7 +348,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
   var _useState11 = (0,react__WEBPACK_IMPORTED_MODULE_0__.useState)(false),
     _useState12 = _slicedToArray(_useState11, 2),
     proposing = _useState12[0],
-    setProposing = _useState12[1];
+    setProposing = _useState12[1]; // true while either transform or expand node call is in flight 
 
   //health API call
   (0,react__WEBPACK_IMPORTED_MODULE_0__.useEffect)(function () {
@@ -404,30 +425,64 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
       })); // downstream Simple View gets JSON again    
     }
   };
-
+  var loadChunks = /*#__PURE__*/function () {
+    var _ref = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee(artifact_id) {
+      var res, out;
+      return _regenerator().w(function (_context) {
+        while (1) switch (_context.n) {
+          case 0:
+            _context.n = 1;
+            return fetch("".concat(API_BASE, "/artifacts/").concat(artifact_id, "/chunks"));
+          case 1:
+            res = _context.v;
+            if (res.ok) {
+              _context.n = 2;
+              break;
+            }
+            persist({
+              chunks: undefined
+            });
+            return _context.a(2);
+          case 2:
+            _context.n = 3;
+            return res.json();
+          case 3:
+            out = _context.v;
+            persist({
+              chunks: out.chunks
+            });
+          case 4:
+            return _context.a(2);
+        }
+      }, _callee);
+    }));
+    return function loadChunks(_x8) {
+      return _ref.apply(this, arguments);
+    };
+  }();
   // Runs the "explain" flow for the current artifact: calls the backend,
   // stores the explanation, and emits it as node output.
   var runExplain = /*#__PURE__*/function () {
-    var _ref = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee(artifact_id, role) {
+    var _ref2 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2(artifact_id, role) {
       var context, out, _t;
-      return _regenerator().w(function (_context) {
-        while (1) switch (_context.p = _context.n) {
+      return _regenerator().w(function (_context2) {
+        while (1) switch (_context2.p = _context2.n) {
           case 0:
             if (!(role != 'explain' || !artifact_id)) {
-              _context.n = 1;
+              _context2.n = 1;
               break;
             }
-            return _context.a(2);
+            return _context2.a(2);
           case 1:
             // only applies to the "explain" role
 
             setExplaining(true);
-            _context.p = 2;
+            _context2.p = 2;
             context = typeof data.getCurrentTrill === "function" ? data.getCurrentTrill() : undefined;
-            _context.n = 3;
+            _context2.n = 3;
             return explainArtifact(artifact_id, state.sourceFile, context);
           case 3:
-            out = _context.v;
+            out = _context2.v;
             persist({
               explanation: out.explanation
             });
@@ -440,51 +495,51 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
               query: out.query,
               spans: out.spans
             });
-            _context.n = 5;
+            _context2.n = 5;
             break;
           case 4:
-            _context.p = 4;
-            _t = _context.v;
+            _context2.p = 4;
+            _t = _context2.v;
             // Surface any failure as node error state
             persist({
               status: 'error',
               errorMessage: _t instanceof Error ? _t.message : String(_t)
             });
           case 5:
-            _context.p = 5;
+            _context2.p = 5;
             setExplaining(false);
-            return _context.f(5);
+            return _context2.f(5);
           case 6:
-            return _context.a(2);
+            return _context2.a(2);
         }
-      }, _callee, null, [[2, 4, 5, 6]]);
+      }, _callee2, null, [[2, 4, 5, 6]]);
     }));
-    return function runExplain(_x8, _x9) {
-      return _ref.apply(this, arguments);
+    return function runExplain(_x9, _x0) {
+      return _ref2.apply(this, arguments);
     };
   }();
 
   // run 'Inform' flow for the current artifact, call the backend
   // emit the output
   var runInform = /*#__PURE__*/function () {
-    var _ref2 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2(artifact_id, role) {
+    var _ref3 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3(artifact_id, role) {
       var context, out, _t2;
-      return _regenerator().w(function (_context2) {
-        while (1) switch (_context2.p = _context2.n) {
+      return _regenerator().w(function (_context3) {
+        while (1) switch (_context3.p = _context3.n) {
           case 0:
             if (!(role != 'inform' || !artifact_id)) {
-              _context2.n = 1;
+              _context3.n = 1;
               break;
             }
-            return _context2.a(2);
+            return _context3.a(2);
           case 1:
             setInforming(true);
-            _context2.p = 2;
+            _context3.p = 2;
             context = typeof data.getCurrentTrill === "function" ? data.getCurrentTrill() : undefined;
-            _context2.n = 3;
+            _context3.n = 3;
             return informArtifact(artifact_id, state.sourceFile, 8, context);
           case 3:
-            out = _context2.v;
+            out = _context3.v;
             persist({
               guidance: out.guidance,
               suggestions: out.suggestions
@@ -497,50 +552,50 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
               guidance: out.guidance,
               suggestions: out.suggestions
             });
-            _context2.n = 5;
+            _context3.n = 5;
             break;
           case 4:
-            _context2.p = 4;
-            _t2 = _context2.v;
+            _context3.p = 4;
+            _t2 = _context3.v;
             persist({
               status: 'error',
               errorMessage: _t2 instanceof Error ? _t2.message : String(_t2)
             });
           case 5:
-            _context2.p = 5;
+            _context3.p = 5;
             setInforming(false);
-            return _context2.f(5);
+            return _context3.f(5);
           case 6:
-            return _context2.a(2);
+            return _context3.a(2);
         }
-      }, _callee2, null, [[2, 4, 5, 6]]);
+      }, _callee3, null, [[2, 4, 5, 6]]);
     }));
-    return function runInform(_x0, _x1) {
-      return _ref2.apply(this, arguments);
+    return function runInform(_x1, _x10) {
+      return _ref3.apply(this, arguments);
     };
   }();
 
   // run propose, either it's transform or expand artifact
   // for now I haven't added context, need to add it  TODO
   var runPropose = /*#__PURE__*/function () {
-    var _ref3 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3(artifact_id, role) {
+    var _ref4 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4(artifact_id, role) {
       var context, out, _t3;
-      return _regenerator().w(function (_context3) {
-        while (1) switch (_context3.p = _context3.n) {
+      return _regenerator().w(function (_context4) {
+        while (1) switch (_context4.p = _context4.n) {
           case 0:
             if (!(role !== 'transform' && role !== 'expand')) {
-              _context3.n = 1;
+              _context4.n = 1;
               break;
             }
-            return _context3.a(2);
+            return _context4.a(2);
           case 1:
             setProposing(true);
-            _context3.p = 2;
+            _context4.p = 2;
             context = typeof data.getCurrentTrill === "function" ? data.getCurrentTrill() : undefined;
-            _context3.n = 3;
+            _context4.n = 3;
             return proposeTrillArtifact(artifact_id, state.sourceFile, 8, role, context);
           case 3:
-            out = _context3.v;
+            out = _context4.v;
             persist({
               proposal: out.proposal,
               rationale: out.rationale
@@ -553,26 +608,26 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
               proposal: out.proposal,
               rationale: out.rationale
             });
-            _context3.n = 5;
+            _context4.n = 5;
             break;
           case 4:
-            _context3.p = 4;
-            _t3 = _context3.v;
+            _context4.p = 4;
+            _t3 = _context4.v;
             persist({
               status: 'error',
               errorMessage: _t3 instanceof Error ? _t3.message : String(_t3)
             });
           case 5:
-            _context3.p = 5;
+            _context4.p = 5;
             setProposing(false);
-            return _context3.f(5);
+            return _context4.f(5);
           case 6:
-            return _context3.a(2);
+            return _context4.a(2);
         }
-      }, _callee3, null, [[2, 4, 5, 6]]);
+      }, _callee4, null, [[2, 4, 5, 6]]);
     }));
-    return function runPropose(_x10, _x11) {
-      return _ref3.apply(this, arguments);
+    return function runPropose(_x11, _x12) {
+      return _ref4.apply(this, arguments);
     };
   }();
 
@@ -592,24 +647,24 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
     // Guards against updating state after unmount (see earlier explanation)
     var cancelled = false;
     setVerifying(true);
-    _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4() {
+    _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5() {
       var _nodeData$softArtifac3, _nodeData$softArtifac4, res, out, role, _t4;
-      return _regenerator().w(function (_context4) {
-        while (1) switch (_context4.p = _context4.n) {
+      return _regenerator().w(function (_context5) {
+        while (1) switch (_context5.p = _context5.n) {
           case 0:
-            _context4.p = 0;
-            _context4.n = 1;
+            _context5.p = 0;
+            _context5.n = 1;
             return fetch("".concat(API_BASE, "/artifacts/").concat(encodeURI(artifact_id)));
           case 1:
-            res = _context4.v;
+            res = _context5.v;
             if (!cancelled) {
-              _context4.n = 2;
+              _context5.n = 2;
               break;
             }
-            return _context4.a(2);
+            return _context5.a(2);
           case 2:
             if (!(res.status === 400)) {
-              _context4.n = 3;
+              _context5.n = 3;
               break;
             }
             persist({
@@ -625,40 +680,40 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
               rationale: undefined
             });
             setFile(null);
-            return _context4.a(2);
+            return _context5.a(2);
           case 3:
             if (res.ok) {
-              _context4.n = 4;
+              _context5.n = 4;
               break;
             }
-            return _context4.a(2);
+            return _context5.a(2);
           case 4:
-            _context4.n = 5;
+            _context5.n = 5;
             return res.json();
           case 5:
-            out = _context4.v;
+            out = _context5.v;
             if (!cancelled) {
-              _context4.n = 6;
+              _context5.n = 6;
               break;
             }
-            return _context4.a(2);
+            return _context5.a(2);
           case 6:
             role = (_nodeData$softArtifac3 = (_nodeData$softArtifac4 = nodeData.softArtifact) === null || _nodeData$softArtifac4 === void 0 ? void 0 : _nodeData$softArtifac4.role) !== null && _nodeData$softArtifac3 !== void 0 ? _nodeData$softArtifac3 : state.role;
             applyArtifactMeta(out, role);
-            _context4.n = 8;
+            _context5.n = 8;
             break;
           case 7:
-            _context4.p = 7;
-            _t4 = _context4.v;
+            _context5.p = 7;
+            _t4 = _context5.v;
             console.log("verifying unsuccesful with on mount effect softartifact node");
           case 8:
-            _context4.p = 8;
+            _context5.p = 8;
             if (!cancelled) setVerifying(false);
-            return _context4.f(8);
+            return _context5.f(8);
           case 9:
-            return _context4.a(2);
+            return _context5.a(2);
         }
-      }, _callee4, null, [[0, 7, 8, 9]]);
+      }, _callee5, null, [[0, 7, 8, 9]]);
     }))();
 
     // Cleanup: mark this effect run as stale if the component unmounts
@@ -672,16 +727,16 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
   // then applies the returned metadata and (if role is "explain") kicks
   // off the explain flow automatically.
   var onIngest = /*#__PURE__*/function () {
-    var _ref5 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5() {
+    var _ref6 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6() {
       var _out$role, _out$role2, form, res, err, out, role, _t5;
-      return _regenerator().w(function (_context5) {
-        while (1) switch (_context5.p = _context5.n) {
+      return _regenerator().w(function (_context6) {
+        while (1) switch (_context6.p = _context6.n) {
           case 0:
             if (file) {
-              _context5.n = 1;
+              _context6.n = 1;
               break;
             }
-            return _context5.a(2);
+            return _context6.a(2);
           case 1:
             //before any fetch reset everything on the UI
             persist({
@@ -697,76 +752,79 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
               rationale: undefined
             });
             //ingesting the using API_BASE/ingest 
-            _context5.p = 2;
+            _context6.p = 2;
             form = new FormData();
             form.append('file', file);
             form.append('role', state.role);
-            _context5.n = 3;
+            _context6.n = 3;
             return fetch("".concat(API_BASE, "/ingest"), {
               method: 'POST',
               headers: {},
               body: form
             });
           case 3:
-            res = _context5.v;
+            res = _context6.v;
             if (res.ok) {
-              _context5.n = 5;
+              _context6.n = 5;
               break;
             }
-            _context5.n = 4;
+            _context6.n = 4;
             return res.json()["catch"](function () {
               return {};
             });
           case 4:
-            err = _context5.v;
+            err = _context6.v;
             throw new Error(err.error || "HTTP  ".concat(res.status));
           case 5:
-            _context5.n = 6;
+            _context6.n = 6;
             return res.json();
           case 6:
-            out = _context5.v;
+            out = _context6.v;
             role = (_out$role = out.role) !== null && _out$role !== void 0 ? _out$role : state.role;
             applyArtifactMeta(out, role);
             console.log('[soft-artifact] ingest out:', out);
             console.log('[soft-artifact] role:', (_out$role2 = out.role) !== null && _out$role2 !== void 0 ? _out$role2 : state.role, 'artifact_id:', out.artifact_id);
             // Automatically trigger explanation if this node's role is "explain"
             if (!(role === "explain" && out.artifact_id)) {
-              _context5.n = 7;
+              _context6.n = 7;
               break;
             }
-            _context5.n = 7;
+            _context6.n = 7;
             return runExplain(out.artifact_id, role);
           case 7:
             if (!(role === "inform" && out.artifact_id)) {
-              _context5.n = 8;
+              _context6.n = 8;
               break;
             }
-            _context5.n = 8;
+            _context6.n = 8;
             return runInform(out.artifact_id, role);
           case 8:
             if (!((role === "transform" || role === "expand") && out.artifact_id)) {
-              _context5.n = 9;
+              _context6.n = 9;
               break;
             }
-            _context5.n = 9;
+            _context6.n = 9;
             return runPropose(out.artifact_id, role);
           case 9:
-            _context5.n = 11;
-            break;
+            _context6.n = 10;
+            return loadChunks(out.artifact_id);
           case 10:
-            _context5.p = 10;
-            _t5 = _context5.v;
+            _context6.n = 12;
+            break;
+          case 11:
+            _context6.p = 11;
+            _t5 = _context6.v;
             persist({
               status: 'error',
               errorMessage: _t5 instanceof Error ? _t5.message : String(_t5)
             });
-          case 11:
-            return _context5.a(2);
+          case 12:
+            return _context6.a(2);
         }
-      }, _callee5, null, [[2, 10]]);
+      }, _callee6, null, [[2, 11]]);
     }));
     return function onIngest() {
-      return _ref5.apply(this, arguments);
+      return _ref6.apply(this, arguments);
     };
   }();
 
@@ -894,7 +952,42 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
       background: !file || state.status === 'ingesting' ? '#e2e8f0' : '#2563eb',
       color: !file || state.status === 'ingesting' ? '#94a3b8' : '#fff'
     }
-  }, artifactStatusLine(state, verifying))), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, state.role === 'explain' && explaining ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", {
+  }, artifactStatusLine(state, verifying))), state.chunks && state.chunks.length > 0 && /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    style: {
+      marginTop: 10,
+      maxHeight: 180,
+      overflowY: "auto",
+      border: "1px solid #e2e8f0",
+      borderRadius: 6,
+      padding: 8
+    }
+  }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    style: {
+      fontSize: 11,
+      fontWeight: 600,
+      color: "#64748b",
+      marginBottom: 6
+    }
+  }, "Chunks (", state.chunks.length, ")"), state.chunks.map(function (c) {
+    return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+      key: c.chunk_id,
+      style: {
+        fontSize: 11,
+        marginBottom: 6
+      }
+    }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+      style: {
+        fontWeight: 600
+      }
+    }, chunkLabel(c)), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+      style: {
+        color: "#64748b",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis"
+      }
+    }, (c.text || "").slice(0, 120)));
+  })), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, state.role === 'explain' && explaining ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", {
     style: {
       fontSize: 11,
       marginTop: 8
