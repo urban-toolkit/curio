@@ -118,8 +118,8 @@ function chunkLabel(c) {
     var r = s % 60;
     return "".concat(String(h).padStart(2, "0"), ":").concat(String(m).padStart(2, "0"), ":").concat(String(r).padStart(2, "0"));
   }
-  if (c.kind === "pdf_page" && c.page != null) return "page ".concat(c.page);
-  if (c.kind === "transcript_turn") return "".concat(c.speaker || "speaker", " @ ").concat(fmtTime(c.t_start));
+  if (c.kind === "pdf_page" && c.page != null) return "".concat(c.chunk_id, " page ").concat(c.page);
+  if (c.kind === "transcript_turn") return "".concat(c.chunk_id, " ").concat(c.speaker || "speaker", " @ ").concat(fmtTime(c.t_start));
   return c.chunk_id;
 }
 
@@ -401,7 +401,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
     (_data$outputCallback = data.outputCallback) === null || _data$outputCallback === void 0 || _data$outputCallback.call(data, data.nodeId, json);
   };
 
-  //persist + emitOutput
+  // persist + emitOutput
   // Called after a successful ingest: saves the returned artifact metadata
   // and forwards it as this node's output.
   var applyArtifactMeta = function applyArtifactMeta(out, role) {
@@ -425,6 +425,8 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
       })); // downstream Simple View gets JSON again    
     }
   };
+
+  // load chunks, persist the chunks 
   var loadChunks = /*#__PURE__*/function () {
     var _ref = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee(artifact_id) {
       var res, out;
@@ -576,7 +578,6 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
   }();
 
   // run propose, either it's transform or expand artifact
-  // for now I haven't added context, need to add it  TODO
   var runPropose = /*#__PURE__*/function () {
     var _ref4 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4(artifact_id, role) {
       var context, out, _t3;

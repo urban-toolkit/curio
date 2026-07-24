@@ -104,9 +104,9 @@ function chunkLabel(c: ChunkRow): string {
     return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(r).padStart(2,"0")}`;
   }
 
-  if (c.kind === "pdf_page" && c.page != null) return `page ${c.page}`;
+  if (c.kind === "pdf_page" && c.page != null) return `${c.chunk_id} page ${c.page}`;
   if (c.kind === "transcript_turn")
-    return `${c.speaker || "speaker"} @ ${fmtTime(c.t_start)}`;
+    return `${c.chunk_id} ${c.speaker || "speaker"} @ ${fmtTime(c.t_start)}`;
   return c.chunk_id;
 }
 

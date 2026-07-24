@@ -144,6 +144,7 @@ def proposeTrill():  # reads artifact_id, mode, top_k, sourceFile, context, quer
     output = propose_trill(artifact_id=artifact_id, mode=role, context=context, top_k=top_k, source_file=source_file)   
     return jsonify(output)
 
+# ── GET CHUNKS ──────────────────────────────────────────────────────────
 @bp.get("/artifacts/<artifact_id>/chunks")
 def list_artifact_chunks(artifact_id: str):
     meta = get_softartifact_metadata(artifact_id)
