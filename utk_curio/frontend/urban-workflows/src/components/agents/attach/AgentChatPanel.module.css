@@ -107,6 +107,66 @@
   min-width: 0;
 }
 
+/* ── click-to-rename conversation title (memo dev/25): the affordance is the
+   title itself — hover underline, no edit button or icon. ── */
+.titleButton {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.titleButton:hover,
+.titleButton:focus-visible {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.titleEditing {
+  display: inline-flex;
+  align-items: center;
+  flex: 1;
+  overflow: visible;
+}
+
+/* The fixed "<name>: " prefix rendered beside the editable custom portion. */
+.titlePrefix {
+  flex: none;
+  white-space: pre;
+}
+
+.titleInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  background: #2c2d33;
+  color: var(--curio-text-on-dark, #fff);
+}
+
+.titleInput:focus {
+  outline: 2px solid var(--curio-accent-sky-fg, #3567c7);
+  outline-offset: 1px;
+}
+
+/* Rename failure: soft status tone on the dark header, subtitle row. */
+.titleError {
+  flex: none;
+  font-size: 11px;
+  color: #f2a6a0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .subtitle {
   font-size: 11px;
   color: #b9bac1;

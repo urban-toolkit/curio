@@ -11,6 +11,8 @@ function attachment(over: Partial<any> = {}): any {
     revision: 1,
     intent: null,
     intentEdited: false,
+    title: null,
+    titleEdited: false,
     name: "Chat",
     category: "node",
     hooks: ["node", "canvas"],
@@ -40,6 +42,24 @@ describe("AgentAvatarBadge", () => {
       <AgentAvatarBadge attachment={attachment()} active={true} onOpen={jest.fn()} onDetach={jest.fn()} />,
     );
     expect(badge.className).toMatch(/badgeActive/);
+  });
+
+  it("composes '<name>: <title>' into the tooltip and both aria-labels (memo dev/25)", () => {
+    render(
+      <AgentAvatarBadge
+        attachment={attachment({ title: "Dataset Import Help" })}
+        active={false}
+        onOpen={jest.fn()}
+        onDetach={jest.fn()}
+      />,
+    );
+    expect(screen.getByText("Chat: Dataset Import Help")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Open chat with Chat: Dataset Import Help" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Detach Chat: Dataset Import Help" }),
+    ).toBeInTheDocument();
   });
 
   it("opens chat on click and detaches on the ✕", () => {

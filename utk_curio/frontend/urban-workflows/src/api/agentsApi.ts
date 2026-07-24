@@ -57,6 +57,15 @@ export interface AgentAttachment {
   intent: string | null;
   /** True when the intent is a user edit (an override of the prompt source). */
   intentEdited: boolean;
+  /**
+   * The conversation title's custom portion (memo dev/25) — displayed as
+   * "<name>: <title>" via `attachmentDisplayName`. Auto-generated server-side
+   * from the first user message, or a manual rename. Null while untitled.
+   */
+  title: string | null;
+  /** True when the title is a manual rename: it survives conversation clears
+   * and is never overwritten by auto-generation. */
+  titleEdited: boolean;
 }
 
 /** One persisted chat turn of an attachment's session. */
@@ -258,6 +267,19 @@ export const agentsApi = {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}`,
       { method: "PATCH", body: JSON.stringify({ intent }) },
+    );
+  },
+
+  /** Manually rename the conversation title (memo dev/25): non-empty only;
+   * a manual title always wins over auto-generation and survives clears. */
+  updateAttachmentTitle(
+    projectId: string,
+    attachmentId: string,
+    title: string,
+  ): Promise<AgentAttachment> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}`,
+      { method: "PATCH", body: JSON.stringify({ title }) },
     );
   },
 

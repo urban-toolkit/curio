@@ -59,6 +59,7 @@ export const AgentDockOverlay: React.FC = () => {
               onSend={(message) => ctx.sendMessage(selected.attachmentId, message)}
               onClose={ctx.closeChat}
               onSaveIntent={(intent) => ctx.saveIntent(selected.attachmentId, intent)}
+              onSaveTitle={(title) => ctx.saveTitle(selected.attachmentId, title)}
               onClearConversation={() => ctx.clearConversation(selected.attachmentId)}
             />,
             document.body,

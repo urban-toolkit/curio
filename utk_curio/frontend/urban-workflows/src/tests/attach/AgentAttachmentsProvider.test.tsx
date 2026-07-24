@@ -13,6 +13,7 @@ jest.mock("../../api/agentsApi", () => ({
     runAttachment: jest.fn(),
     runAttachmentStream: jest.fn(),
     updateAttachmentIntent: jest.fn(),
+    updateAttachmentTitle: jest.fn(),
     getSession: jest.fn(),
     clearSession: jest.fn(),
   },
@@ -37,6 +38,8 @@ const attachment = {
   hooks: ["node"],
   intent: "prompt text",
   intentEdited: false,
+  title: null,
+  titleEdited: false,
 };
 
 /** Minimal consumer: exposes open/close/send/detach/clear and prints the state. */
@@ -51,9 +54,11 @@ const Harness: React.FC = () => {
       <button onClick={() => void ctx.sendMessage("a1", "hi")}>send</button>
       <button onClick={() => void ctx.detach("a1")}>detach</button>
       <button onClick={() => void ctx.clearConversation("a1")}>clear</button>
+      <button onClick={() => void ctx.saveTitle("a1", "New Name")}>rename</button>
       <div data-testid="selected">{ctx.selectedId ?? "none"}</div>
       <div data-testid="hydrating">{ctx.hydratingId ?? "none"}</div>
       <div data-testid="turns">{turns.map((t) => `${t.role}:${t.text}`).join("|")}</div>
+      <div data-testid="titles">{ctx.attachments.map((a) => a.title ?? "∅").join(",")}</div>
     </div>
   );
 };
@@ -86,6 +91,11 @@ beforeEach(() => {
   api.detachAttachment.mockResolvedValue({ attachmentId: "a1", detached: true });
   api.clearSession.mockResolvedValue({ attachmentId: "a1", sessionId: "s1", turns: [] });
   api.updateAttachmentIntent.mockResolvedValue({ ...attachment, intent: "x", intentEdited: true });
+  api.updateAttachmentTitle.mockResolvedValue({
+    ...attachment,
+    title: "New Name",
+    titleEdited: true,
+  });
 });
 
 describe("AgentAttachmentsProvider chat state", () => {
@@ -204,5 +214,71 @@ describe("AgentAttachmentsProvider chat state", () => {
     });
     expect(api.clearSession).toHaveBeenCalledWith("p1", "a1");
     expect(screen.getByTestId("turns")).toHaveTextContent("");
+  });
+});
+
+describe("AgentAttachmentsProvider conversation titles (memo dev/25)", () => {
+  it("saveTitle PATCHes the title then reloads the listing", async () => {
+    renderProvider();
+    await waitFor(() => expect(screen.getByTestId("titles")).toHaveTextContent("∅"));
+    api.listAttachments.mockResolvedValue({
+      attachments: [{ ...attachment, title: "New Name", titleEdited: true }],
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByText("rename"));
+    });
+    expect(api.updateAttachmentTitle).toHaveBeenCalledWith("p1", "a1", "New Name");
+    await waitFor(() => expect(screen.getByTestId("titles")).toHaveTextContent("New Name"));
+  });
+
+  it("a send on an untitled attachment reloads the listing afterwards", async () => {
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    const before = api.listAttachments.mock.calls.length;
+    // The server minted a title during the first exchange.
+    api.listAttachments.mockResolvedValue({
+      attachments: [{ ...attachment, title: "Fresh Title" }],
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByText("send"));
+    });
+    await waitFor(() =>
+      expect(api.listAttachments.mock.calls.length).toBe(before + 1),
+    );
+    await waitFor(() => expect(screen.getByTestId("titles")).toHaveTextContent("Fresh Title"));
+  });
+
+  it("a send on an already-titled attachment does not reload", async () => {
+    api.listAttachments.mockResolvedValue({
+      attachments: [{ ...attachment, title: "Already Titled" }],
+    });
+    renderProvider();
+    await waitFor(() =>
+      expect(screen.getByTestId("titles")).toHaveTextContent("Already Titled"),
+    );
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    const before = api.listAttachments.mock.calls.length;
+    await act(async () => {
+      fireEvent.click(screen.getByText("send"));
+    });
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("agent:fresh"));
+    expect(api.listAttachments.mock.calls.length).toBe(before);
+  });
+
+  it("a failed send does not reload even when untitled", async () => {
+    api.runAttachmentStream.mockRejectedValue(
+      Object.assign(new Error("denied"), { status: 429 }),
+    );
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    const before = api.listAttachments.mock.calls.length;
+    await act(async () => {
+      fireEvent.click(screen.getByText("send"));
+    });
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("denied"));
+    expect(api.listAttachments.mock.calls.length).toBe(before);
   });
 });

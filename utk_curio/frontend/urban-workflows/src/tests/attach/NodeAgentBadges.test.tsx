@@ -17,6 +17,8 @@ function attachment(over: Partial<any>): any {
     revision: 1,
     intent: null,
     intentEdited: false,
+    title: null,
+    titleEdited: false,
     name: "Node Explainer",
     category: "node",
     hooks: ["node"],

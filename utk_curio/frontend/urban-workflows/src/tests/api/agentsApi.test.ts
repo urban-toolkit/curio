@@ -121,6 +121,14 @@ describe("agentsApi", () => {
     });
   });
 
+  it("updateAttachmentTitle() PATCHes the manual conversation title (memo dev/25)", () => {
+    agentsApi.updateAttachmentTitle("p1", "att-1", "Dataset Import Help");
+    expect(mockFetch).toHaveBeenCalledWith("/api/agents/projects/p1/attachments/att-1", {
+      method: "PATCH",
+      body: JSON.stringify({ title: "Dataset Import Help" }),
+    });
+  });
+
   it("getSession() GETs the attachment's transcript", () => {
     agentsApi.getSession("p1", "att-1");
     expect(mockFetch).toHaveBeenCalledWith("/api/agents/projects/p1/attachments/att-1/session");

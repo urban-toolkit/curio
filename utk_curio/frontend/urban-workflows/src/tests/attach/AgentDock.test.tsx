@@ -11,6 +11,8 @@ function att(id: string, name: string) {
     revision: 1,
     intent: null,
     intentEdited: false,
+    title: null,
+    titleEdited: false,
     name,
     category: "node",
     hooks: ["node"],

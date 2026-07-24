@@ -24,6 +24,8 @@ function att(id: string) {
     revision: 1,
     intent: null,
     intentEdited: false,
+    title: null,
+    titleEdited: false,
     name: "Node Explainer",
     category: "node",
     hooks: ["node"],

@@ -35,6 +35,9 @@ export interface AgentAttachmentsContextValue extends AgentAttachmentsState {
   sendMessage: (attachmentId: string, message: string) => Promise<void>;
   /** Persist the attachment's editable intent (null/empty → prompt source). */
   saveIntent: (attachmentId: string, intent: string | null) => Promise<void>;
+  /** Persist a manual conversation title (memo dev/25): always wins over
+   * auto-generation and survives conversation clears. */
+  saveTitle: (attachmentId: string, title: string) => Promise<void>;
   /** Clear the server transcript and the local cache (keeps the attachment). */
   clearConversation: (attachmentId: string) => Promise<void>;
 }
@@ -136,8 +139,13 @@ export const AgentAttachmentsProvider: React.FC<{
     async (attachmentId: string, message: string) => {
       const pid = projectRef.current;
       if (!pid) throw new Error("no project");
+      // The first successful exchange may mint an auto title server-side
+      // (memo dev/25); refresh the listing afterwards only while the
+      // attachment is untitled so titled sends stay reload-free.
+      const untitled = !state.attachments.find((a) => a.attachmentId === attachmentId)?.title;
       appendTurns(attachmentId, [{ role: "user", text: message }]);
       let streamed = "";
+      let succeeded = false;
       try {
         const reply = await agentsApi.runAttachmentStream(pid, attachmentId, message, (delta) => {
           if (!streamed) appendTurns(attachmentId, [{ role: "agent", text: delta }]);
@@ -146,6 +154,7 @@ export const AgentAttachmentsProvider: React.FC<{
         });
         if (!streamed) appendTurns(attachmentId, [{ role: "agent", text: reply }]);
         else replaceLastAgentTurn(attachmentId, reply);
+        succeeded = true;
       } catch (e) {
         const status = (e as { status?: number } | null)?.status;
         if (!streamed && status === undefined) {
@@ -153,17 +162,19 @@ export const AgentAttachmentsProvider: React.FC<{
           try {
             const reply = await state.run(attachmentId, message);
             appendTurns(attachmentId, [{ role: "agent", text: reply }]);
+            succeeded = true;
           } catch (e2) {
             appendErrorTurn(attachmentId, e2);
           }
-          return;
+        } else {
+          // Mid-stream failure keeps the partial text visible; HTTP errors
+          // (e.g. the stable quota 429) render directly.
+          appendErrorTurn(attachmentId, e);
         }
-        // Mid-stream failure keeps the partial text visible; HTTP errors
-        // (e.g. the stable quota 429) render directly.
-        appendErrorTurn(attachmentId, e);
       }
+      if (succeeded && untitled) await state.reload();
     },
-    [appendTurns, replaceLastAgentTurn, appendErrorTurn, state.run],
+    [appendTurns, replaceLastAgentTurn, appendErrorTurn, state.run, state.reload, state.attachments],
   );
 
   const saveIntent = useCallback(
@@ -171,6 +182,16 @@ export const AgentAttachmentsProvider: React.FC<{
       const pid = projectRef.current;
       if (!pid) throw new Error("no project");
       await agentsApi.updateAttachmentIntent(pid, attachmentId, intent);
+      await state.reload();
+    },
+    [state.reload],
+  );
+
+  const saveTitle = useCallback(
+    async (attachmentId: string, title: string) => {
+      const pid = projectRef.current;
+      if (!pid) throw new Error("no project");
+      await agentsApi.updateAttachmentTitle(pid, attachmentId, title);
       await state.reload();
     },
     [state.reload],
@@ -213,6 +234,7 @@ export const AgentAttachmentsProvider: React.FC<{
       hydrateSession,
       sendMessage,
       saveIntent,
+      saveTitle,
       clearConversation,
     }),
     [
@@ -226,6 +248,7 @@ export const AgentAttachmentsProvider: React.FC<{
       hydrateSession,
       sendMessage,
       saveIntent,
+      saveTitle,
       clearConversation,
     ],
   );

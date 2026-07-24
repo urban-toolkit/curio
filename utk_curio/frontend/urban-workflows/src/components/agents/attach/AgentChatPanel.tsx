@@ -11,6 +11,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import type { AgentAttachment, AgentSessionTurn } from "../../../api/agentsApi";
 import { agentCategoryKey } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
+import { attachmentDisplayName, TITLE_MAX_CHARS } from "./attachmentDisplayName";
 import styles from "./AgentChatPanel.module.css";
 
 /** Heuristic: prompts longer than this get the clamp + expand toggle. */
@@ -49,6 +50,9 @@ export const AgentChatPanel: React.FC<{
   onSend: (message: string) => Promise<void>;
   onClose: () => void;
   onSaveIntent?: (intent: string | null) => Promise<void>;
+  /** Persist a manual conversation title (memo dev/25). Omitted → the header
+   * title is a plain, non-editable label. */
+  onSaveTitle?: (title: string) => Promise<void>;
   onClearConversation?: () => Promise<void>;
 }> = ({
   attachment,
@@ -63,6 +67,7 @@ export const AgentChatPanel: React.FC<{
   onSend,
   onClose,
   onSaveIntent,
+  onSaveTitle,
   onClearConversation,
 }) => {
   const [input, setInput] = useState("");
@@ -72,6 +77,17 @@ export const AgentChatPanel: React.FC<{
   const [intentDraft, setIntentDraft] = useState("");
   const [savingIntent, setSavingIntent] = useState(false);
   const [intentError, setIntentError] = useState<string | null>(null);
+  // Inline click-to-edit conversation title (memo dev/25): only the custom
+  // portion after "<name>: " is editable; the template-name prefix is fixed.
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  /** Optimistic value shown between commit and the reloaded attachment. */
+  const [pendingTitle, setPendingTitle] = useState<string | null>(null);
+  const [titleError, setTitleError] = useState<string | null>(null);
+  const titleEditDone = useRef(true);
+  const wasEditingTitle = useRef(false);
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
+  const titleButtonRef = useRef<HTMLButtonElement | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
 
   const tint =
@@ -89,14 +105,41 @@ export const AgentChatPanel: React.FC<{
     if (el) el.scrollTop = el.scrollHeight;
   }, [turns, loadingHistory]);
 
-  // Escape dismisses the chat (close only — the attachment is untouched).
+  // Escape dismisses the chat (close only — the attachment is untouched);
+  // while renaming, Escape cancels the edit instead (handled on the input).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && !editingTitle) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, editingTitle]);
+
+  // Cycling to another agent discards any in-progress rename state.
+  useEffect(() => {
+    titleEditDone.current = true;
+    setEditingTitle(false);
+    setPendingTitle(null);
+    setTitleError(null);
+  }, [attachment.attachmentId]);
+
+  // The reloaded attachment is authoritative: once its title changes (the
+  // save round-tripped), it supersedes the optimistic value.
+  useEffect(() => {
+    setPendingTitle(null);
+  }, [attachment.title]);
+
+  // Entering edit mode focuses the input with the current value selected;
+  // leaving it hands focus back to the title control.
+  useEffect(() => {
+    if (editingTitle) {
+      titleInputRef.current?.focus();
+      titleInputRef.current?.select();
+    } else if (wasEditingTitle.current) {
+      titleButtonRef.current?.focus();
+    }
+    wasEditingTitle.current = editingTitle;
+  }, [editingTitle]);
 
   const send = async () => {
     const message = input.trim();
@@ -137,11 +180,41 @@ export const AgentChatPanel: React.FC<{
     await onClearConversation();
   };
 
+  const displayedTitle = pendingTitle ?? attachment.title;
+
+  const startTitleEdit = () => {
+    if (!onSaveTitle) return;
+    titleEditDone.current = false;
+    setTitleDraft(displayedTitle ?? "");
+    setTitleError(null);
+    setEditingTitle(true);
+  };
+
+  // Enter and blur both commit, so a guard keeps the pair to one save; an
+  // empty or unchanged draft is a cancel (deleting a title is out of scope).
+  const finishTitleEdit = (commit: boolean) => {
+    if (titleEditDone.current) return;
+    titleEditDone.current = true;
+    setEditingTitle(false);
+    const next = titleDraft.trim();
+    if (!commit || !onSaveTitle || !next || next === (displayedTitle ?? "")) return;
+    setPendingTitle(next);
+    onSaveTitle(next).catch((e) => {
+      setPendingTitle(null);
+      setTitleError(e instanceof Error ? e.message : "Failed to rename the conversation");
+    });
+  };
+
   const intent = attachment.intent;
   const intentLong = (intent?.length ?? 0) > INTENT_CLAMP_CHARS;
 
+  const displayName = attachmentDisplayName({
+    name: attachment.name,
+    title: displayedTitle ?? null,
+  });
+
   return (
-    <div className={styles.panel} role="dialog" aria-label={`Chat with ${attachment.name}`}>
+    <div className={styles.panel} role="dialog" aria-label={`Chat with ${displayName}`}>
       <div className={styles.header}>
         <div className={styles.headerRow}>
           <button
@@ -157,7 +230,46 @@ export const AgentChatPanel: React.FC<{
           <span className={`${styles.headerBot} ${tint}`} aria-hidden="true">
             <FontAwesomeIcon icon={faRobot} />
           </span>
-          <span className={styles.title}>{attachment.name}</span>
+          {/* Click-to-rename conversation title (memo dev/25): a single click
+              (or Enter/Space when focused) swaps the custom portion for an
+              inline input; the "<name>: " prefix stays static. No edit icon —
+              the affordance is the title itself. */}
+          {editingTitle ? (
+            <span className={`${styles.title} ${styles.titleEditing}`}>
+              <span className={styles.titlePrefix}>{attachment.name}: </span>
+              <input
+                ref={titleInputRef}
+                className={styles.titleInput}
+                aria-label="Conversation title"
+                maxLength={TITLE_MAX_CHARS}
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    finishTitleEdit(true);
+                  } else if (e.key === "Escape") {
+                    e.stopPropagation();
+                    finishTitleEdit(false);
+                  }
+                }}
+                onBlur={() => finishTitleEdit(true)}
+              />
+            </span>
+          ) : onSaveTitle ? (
+            <button
+              type="button"
+              ref={titleButtonRef}
+              className={`${styles.title} ${styles.titleButton}`}
+              aria-label="Rename conversation title"
+              title="Click to rename"
+              onClick={startTitleEdit}
+            >
+              {displayName}
+            </button>
+          ) : (
+            <span className={styles.title}>{displayName}</span>
+          )}
           <span className={styles.position}>
             {index} / {total}
           </span>
@@ -195,6 +307,7 @@ export const AgentChatPanel: React.FC<{
         </div>
         <div className={styles.headerRow}>
           <span className={styles.subtitle}>Attached to {targetLabel}</span>
+          {titleError ? <span className={styles.titleError}>{titleError}</span> : null}
           <span className={styles.headerSpacer} />
           <span className={styles.sessionChip} title={`session ${attachment.sessionId}`}>
             session {attachment.sessionId.slice(0, 8)}

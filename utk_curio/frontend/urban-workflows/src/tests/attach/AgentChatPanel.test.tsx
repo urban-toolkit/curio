@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { AgentChatPanel } from "../../components/agents/attach/AgentChatPanel";
 import type { AgentAttachment, AgentSessionTurn } from "../../api/agentsApi";
 
@@ -14,6 +14,8 @@ const attachment: AgentAttachment = {
   hooks: ["node"],
   intent: "Explain the selected node's code and outputs.",
   intentEdited: false,
+  title: null,
+  titleEdited: false,
 };
 
 const noTurns: AgentSessionTurn[] = [];
@@ -155,5 +157,127 @@ describe("AgentChatPanel", () => {
     renderPanel({ index: 1, total: 3, onNext: jest.fn() });
     expect(screen.getByRole("button", { name: "Previous agent" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Next agent" })).toBeEnabled();
+  });
+});
+
+describe("AgentChatPanel conversation title (memo dev/25)", () => {
+  const titled = { ...attachment, title: "Dataset Import Help" };
+
+  it("shows the composed '<name>: <title>' in the header and dialog label", () => {
+    renderPanel({ attachment: titled, onSaveTitle: jest.fn() });
+    expect(
+      screen.getByRole("button", { name: "Rename conversation title" }),
+    ).toHaveTextContent("Node Explainer: Dataset Import Help");
+    expect(
+      screen.getByRole("dialog", { name: "Chat with Node Explainer: Dataset Import Help" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the plain name when untitled, and a plain non-button label without onSaveTitle", () => {
+    const first = renderPanel({ onSaveTitle: jest.fn() });
+    expect(
+      screen.getByRole("button", { name: "Rename conversation title" }),
+    ).toHaveTextContent(/^Node Explainer$/);
+    first.unmount();
+    renderPanel({ attachment: titled });
+    expect(
+      screen.queryByRole("button", { name: "Rename conversation title" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Node Explainer: Dataset Import Help")).toBeInTheDocument();
+  });
+
+  it("a single click swaps only the custom portion for an input, prefix fixed", () => {
+    renderPanel({ attachment: titled, onSaveTitle: jest.fn() });
+    fireEvent.click(screen.getByRole("button", { name: "Rename conversation title" }));
+    const input = screen.getByRole("textbox", { name: "Conversation title" });
+    expect(input).toHaveValue("Dataset Import Help");
+    expect(input).toHaveAttribute("maxlength", "40");
+    // The template-name prefix stays as static text, not inside the input.
+    expect(screen.getByText("Node Explainer:")).toBeInTheDocument();
+  });
+
+  it("Enter commits the trimmed title and shows it optimistically", async () => {
+    const onSaveTitle = jest.fn().mockResolvedValue(undefined);
+    renderPanel({ attachment: titled, onSaveTitle });
+    fireEvent.click(screen.getByRole("button", { name: "Rename conversation title" }));
+    const input = screen.getByRole("textbox", { name: "Conversation title" });
+    fireEvent.change(input, { target: { value: "  Renamed Chat  " } });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+    expect(onSaveTitle).toHaveBeenCalledWith("Renamed Chat");
+    expect(
+      screen.getByRole("button", { name: "Rename conversation title" }),
+    ).toHaveTextContent("Node Explainer: Renamed Chat");
+  });
+
+  it("blur commits too, and Enter + blur together save only once", async () => {
+    const onSaveTitle = jest.fn().mockResolvedValue(undefined);
+    renderPanel({ attachment: titled, onSaveTitle });
+    fireEvent.click(screen.getByRole("button", { name: "Rename conversation title" }));
+    const input = screen.getByRole("textbox", { name: "Conversation title" });
+    fireEvent.change(input, { target: { value: "Blur Saved" } });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+      fireEvent.blur(input);
+    });
+    expect(onSaveTitle).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename conversation title" }));
+    const input2 = screen.getByRole("textbox", { name: "Conversation title" });
+    fireEvent.change(input2, { target: { value: "Blur Saved Again" } });
+    await act(async () => {
+      fireEvent.blur(input2);
+    });
+    expect(onSaveTitle).toHaveBeenLastCalledWith("Blur Saved Again");
+  });
+
+  it("Escape cancels the edit without saving and without closing the panel", () => {
+    const onSaveTitle = jest.fn();
+    const onClose = jest.fn();
+    renderPanel({ attachment: titled, onSaveTitle, onClose });
+    fireEvent.click(screen.getByRole("button", { name: "Rename conversation title" }));
+    const input = screen.getByRole("textbox", { name: "Conversation title" });
+    fireEvent.change(input, { target: { value: "discarded" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(onSaveTitle).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: "Rename conversation title" }),
+    ).toHaveTextContent("Node Explainer: Dataset Import Help");
+  });
+
+  it("empty and unchanged submits are cancels — nothing is saved", () => {
+    const onSaveTitle = jest.fn();
+    renderPanel({ attachment: titled, onSaveTitle });
+    fireEvent.click(screen.getByRole("button", { name: "Rename conversation title" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Conversation title" }), {
+      target: { value: "   " },
+    });
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Conversation title" }), {
+      key: "Enter",
+    });
+    expect(onSaveTitle).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename conversation title" }));
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Conversation title" }), {
+      key: "Enter",
+    });
+    expect(onSaveTitle).not.toHaveBeenCalled();
+  });
+
+  it("a failed save restores the previous title and shows the error", async () => {
+    const onSaveTitle = jest.fn().mockRejectedValue(new Error("rename failed"));
+    renderPanel({ attachment: titled, onSaveTitle });
+    fireEvent.click(screen.getByRole("button", { name: "Rename conversation title" }));
+    const input = screen.getByRole("textbox", { name: "Conversation title" });
+    fireEvent.change(input, { target: { value: "Will Fail" } });
+    await act(async () => {
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+    expect(screen.getByText("rename failed")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Rename conversation title" }),
+    ).toHaveTextContent("Node Explainer: Dataset Import Help");
   });
 });
