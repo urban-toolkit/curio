@@ -713,6 +713,10 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
           <p style={{ fontSize: 11, marginTop: 8 }}>Transforming…</p>
         ) : null}
 
+        {state.role === 'expand' && proposing ? (
+          <p style={{ fontSize: 11, marginTop: 8 }}>Expanding…</p>
+        ) : null}
+
         {state.proposal?.dataflow ? (
           <div>
           <p>{state.rationale}</p>

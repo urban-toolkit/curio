@@ -1,7 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
 
-from .LLM_helper.retrieve import search_chunks
+from .LLM_helper.retrieve import search_chunks, _load_chunk
 from .explain import _format_passages, _load_prompt
 
 from utk_curio.backend.app.api.routes import (
@@ -65,14 +65,15 @@ def propose_trill(artifact_id: str, mode: str = "transform", *, context: object,
     if mode not in ("transform", "expand"):
         mode = "transform"
 
-    spans = search_chunks(query=DEFAULT_QUERIES[mode], artifact_id=artifact_id, top_k=top_k)
-    if not spans:   
+    # spans = search_chunks(query=DEFAULT_QUERIES[mode], artifact_id=artifact_id, top_k=top_k) 
+    testing_spans = _load_chunk(artifactId = artifact_id)
+    if not testing_spans:   
         return{
             "artifact_id": artifact_id,
-            "explanation": "the file is too small for any transforming" 
+            "proposal": "the file is too small for any transforming" 
         }
     
-    passages = _format_passages(spans)
+    passages = _format_passages(testing_spans)
 
     # registry → string for the prompt
     node_types = json.dumps(
@@ -116,7 +117,7 @@ def propose_trill(artifact_id: str, mode: str = "transform", *, context: object,
     
     return {
         "artifact_id": artifact_id,
-        "spans": spans,
+        "spans": testing_spans,
         "proposal": proposal,
         "rationale": rationale
     }   

@@ -25,9 +25,9 @@ def _tokenize(text):
 
 #scoring each chunk depends on the query
 #using TF_IDF and cosine similarity to score query to text chunk
-def search_chunks(query, artifact_id, top_k = 1):
+def search_chunks(query, artifact_id, top_k = 8):
     if top_k is None:
-        top_k = 1
+        top_k = 8
 
     #from artifact_id return the chunk that is stored in .curio 
     chunks = _load_chunk(artifact_id)

@@ -1027,7 +1027,12 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
       fontSize: 11,
       marginTop: 8
     }
-  }, "Transforming\u2026") : null, (_state$proposal = state.proposal) !== null && _state$proposal !== void 0 && _state$proposal.dataflow ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", null, state.rationale), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", null, "Review before applying"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
+  }, "Transforming\u2026") : null, state.role === 'expand' && proposing ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", {
+    style: {
+      fontSize: 11,
+      marginTop: 8
+    }
+  }, "Expanding\u2026") : null, (_state$proposal = state.proposal) !== null && _state$proposal !== void 0 && _state$proposal.dataflow ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", null, state.rationale), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("p", null, "Review before applying"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("button", {
     disabled: typeof data.applyProposal !== "function",
     onClick: function onClick() {
       var _data$applyProposal;
