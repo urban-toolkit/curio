@@ -124,7 +124,7 @@ Build Entry Template and are append-only.
 
 ---
 
-## BL-P4-20260720-08: Prune orphaned attachments on node/edge delete
+## BL-P4-20260720-08: Prune orphaned attachments on node/edge delete (filed as memo `dev/32`)
 
 - Date / author: 2026-07-20 / Karla
 - Status: verified
@@ -141,7 +141,7 @@ Build Entry Template and are append-only.
 
 ---
 
-## BL-P4-20260720-09: Refresh dock on save + save-before-attach for node drops
+## BL-P4-20260720-09: Refresh dock on save + save-before-attach for node drops (filed as memo `dev/33`)
 
 - Date / author: 2026-07-20 / Karla
 - Status: verified
@@ -159,7 +159,7 @@ Build Entry Template and are append-only.
 
 ---
 
-## BL-P4-20260721-10: Attachment compatibility enforcement, canvas/node dock split, DnD reliability, badge tooltips
+## BL-P4-20260721-10: Attachment compatibility enforcement, canvas/node dock split, DnD reliability, badge tooltips (filed as memo `dev/34`)
 
 - Date / author: 2026-07-21 / Karla
 - Status: verified
@@ -256,3 +256,38 @@ Build Entry Template and are append-only.
 - Issues/regressions discovered: the panel was absolutely positioned inside the canvas container (which extends beneath the main top menu), so the new dark header's identity row rendered clipped under the menu — only line 2 was visible.
 - Resolution (**Amendment `COMMIT-c4f2339`**, filed as memo `dev/28`): the panel renders via a portal to `<body>` as a full-height right drawer flush with the viewport top (`position: fixed`, z-index 1100 — above the top menu, below the roster drawer's backdrop), so the dark chat header sits at the top-bar level exactly as the concept shows; flush-drawer styling (left hairline + leftward shadow) replaces the floating rounded card. Attach suites 30 passed; `tsc` clean.
 - Follow-up work: none for this decision — `dev/21` acceptance criteria met (concepts were regenerated in the same-day design pass).
+
+---
+
+## BL-P4-20260723-15: Conversation titles — auto-generated + click-to-rename (memo `dev/25`)
+
+- Date / author: 2026-07-23 (implemented) / Karla — *entry filed retroactively 2026-07-27: this slice landed in a parallel session with its memo (`dev/25`) but without the build-log entry tracking rules 1/13 require; filed during the traceability sweep that also produced memos `dev/29`–`dev/34`.*
+- Status: verified
+- Requirements: `REQ-DOCK`/`REQ-CHAT` (distinguishable instances across tooltip/badges/header), `REQ-A11Y` (aria-labels updated with the composed title; keyboard-accessible inline rename), `REQ-STATE-002`
+- Design decisions/artifacts: memo `dev/25` (binding as amended: clear-conversation clears **auto** titles only; a manual title always wins and survives clears); reuse of the `intent`/`intentEdited` pattern (`dev/19`), `preserve_agent_state` (`dev/29` — `title` rides in `agentAttachments` for free), the run-path structure (`dev/20`/`dev/22`)
+- Tasks: `TASK-P4-conversation-titles`
+- Risks/questions: title generation must never delay or fail the reply (best-effort, post-reply, failure-silent); model output treated as untrusted (sanitized plain text, ~40-char cap)
+- Design-to-code decision or deviation: per memo — `title` + `titleEdited` stored on the attachment record (custom portion only; composition to `"<Template Name>: <Custom Title>"` happens at display time in one frontend helper, `attachmentDisplayName`); auto-generation is a second small non-streaming `run_chat_completion` (fixed 3–4-word-title prompt, small `max_output_tokens`) fired after the reply persists, only when the session had no prior user turn and `title is None and not titleEdited` (re-checked under the spec lock, so a mid-stream manual edit wins); the existing `PATCH …/attachments/<aid>` accepts `title` (trim/empty/cap validation, sets `titleEdited`, bumps `revision`); the chat-header title is the single-click (and Enter/Space) inline editor with the template-name prefix static; `sendMessage` reloads the listing only while the attachment is untitled; catalog drawer and settings modal stay template-name-only.
+- Files/modules changed: backend `app/agents/{attachments.py (set_title + title cap),services.py (generation, precedence, clear-conversation rule, card fields),routes.py (PATCH title)}`; frontend `api/agentsApi.ts` (`title`/`titleEdited`, `updateAttachmentTitle`), `components/agents/attach/{attachmentDisplayName.ts (new),AgentAvatarBadge.tsx,AgentChatPanel.tsx,AgentAttachmentsProvider.tsx (saveTitle + conditional reload)}`
+- Tests added/updated: backend `test_conversation_titles.py` (~408 lines: generation trigger/idempotence, sanitizer, precedence incl. manual-beats-auto races, clear-conversation rules, PATCH validation) + `test_routes.py` additions; frontend `attachmentDisplayName.test.ts`, badge/header/provider/api test additions
+- Verification evidence (re-run 2026-07-27 during this filing): `pytest test_agents/` → 226 passed; `npx jest src/tests/{attach,api,catalog}` → 183 passed (12 suites).
+- Commit/PR: `COMMIT-7d2c1e3` (backend storage/generation/PATCH), `COMMIT-0a764a0` (frontend display/rename/refresh)
+- Issues/regressions discovered: none recorded.
+- Follow-up work: optional "reset title" affordance to re-enable auto-generation after a manual rename (explicitly out of scope in `dev/25` §2).
+
+---
+
+## BL-P4-20260727-16: Share-surface regression suite + shared-payload sanitization (rule 9 evidence; memo `dev/35`)
+
+- Date / author: 2026-07-27 / Karla
+- Status: verified
+- Requirements: `REQ-SHARE-001`/`REQ-SHARE-002` (no agent-private data as a new shared surface), `REQ-PRIVACY`
+- Design decisions/artifacts: `DEC-032` (D-0 = B), memo `dev/12` §sharing, tracking rule 9 (this entry is the evidence it mandates); `_AGENT_SPEC_KEYS` single source (`dev/29`/`dev/30`)
+- Tasks: `TASK-SHARE-regression`
+- Risks/questions: `RISK-SHARE-001`/`RISK-SHARE-002` — **realized and fixed**: the unauthenticated shared route served the raw spec, exposing the lockfile, attachment intents/titles/session ids, and `agentDefaults`.
+- Design-to-code decision or deviation: test-first — the suite was written against the live behavior and failed (proving the leak), then pure `project_agents.strip_agent_state` (sanitized copy over `_AGENT_SPEC_KEYS`, so future backend-owned sections are auto-excluded) was wired into `load_shared_project`; on-disk spec untouched, shared viewers keep the full non-agent graph. Sidecar stores (transcripts, account settings, quotas) were already un-exposed by construction (`DEC-040`, `dev/20`) — the suite locks the endpoint side with owner-only 404 checks.
+- Files/modules changed: `app/agents/project_agents.py` (`strip_agent_state`), `app/projects/services.py` (`load_shared_project` sanitization)
+- Tests added/updated: `test_share_regression.py` (5: strip unit + malformed tolerance, end-to-end no-sections/no-private-strings on the shared payload, disk non-mutation, owner-only attachments/session/defaults endpoints)
+- Verification evidence: suite failed pre-fix (3 failures demonstrating the leak), 5 passed post-fix; full backend `pytest tests --ignore=tests/test_frontend` → 734 passed (existing share tests unaffected).
+- Commit/PR: `COMMIT-6fe7133`
+- Follow-up work: none — the rule-9 evidence gap flagged in the `2.1` status pass is closed.

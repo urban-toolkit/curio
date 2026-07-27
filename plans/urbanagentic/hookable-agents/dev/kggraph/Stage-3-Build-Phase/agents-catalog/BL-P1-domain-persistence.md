@@ -34,7 +34,7 @@ Build Entry Template and are append-only.
 
 ---
 
-## BL-P1-20260719-02: Filesystem-backed definition / import / project-template storage
+## BL-P1-20260719-02: Filesystem-backed definition / import / project-template storage (filed as memo `dev/30`)
 
 - Date / author: 2026-07-19 / Karla
 - Status: verified

@@ -114,7 +114,7 @@ Build Entry Template and are append-only.
 
 ---
 
-## BL-P3-20260720-07: AGENTS palette approved restyle + shared palette shell
+## BL-P3-20260720-07: AGENTS palette approved restyle + shared palette shell (filed as memo `dev/31`)
 
 - Date / author: 2026-07-20 / Karla
 - Status: verified

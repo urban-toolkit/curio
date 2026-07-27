@@ -1,6 +1,6 @@
 # Implementation Memo: Auto-Generated Descriptive Titles for Agent Conversation Instances
 
-Status: IMPLEMENTED 2026-07-23 (backend + frontend + tests, including manual rename)
+Status: IMPLEMENTED 2026-07-23 (backend + frontend + tests, including manual rename) — build-log entry `BL-P4-20260723-15` (filed 2026-07-27); commits `7d2c1e3`/`0a764a0`
 Branch context: `feat/hookable-agents`
 Date: 2026-07-23
 
