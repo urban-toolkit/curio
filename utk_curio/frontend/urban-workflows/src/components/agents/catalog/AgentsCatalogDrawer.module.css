@@ -174,3 +174,21 @@
 .headerSettingsBtn:focus-visible {
   background: #2c2d33;
 }
+
+/* Footer upload-import entry (dev/36), per the approved concept's footer button. */
+.importPackageBtn {
+  margin: 8px 16px 16px;
+  padding: 10px 0;
+  border: none;
+  border-radius: 10px;
+  background: var(--curio-top-bar-bg, #1e1f23);
+  color: var(--curio-text-on-dark, #fff);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.importPackageBtn:hover,
+.importPackageBtn:focus-visible {
+  background: #2c2d33;
+}

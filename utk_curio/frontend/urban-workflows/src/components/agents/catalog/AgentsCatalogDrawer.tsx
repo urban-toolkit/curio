@@ -3,6 +3,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faGear, faRobot, faThumbtack } from "@fortawesome/free-solid-svg-icons";
 import type { AgentCard } from "../../../api/agentsApi";
 import { AgentSettingsModal } from "../settings/AgentSettingsModal";
+import { AgentImportModal } from "./AgentImportModal";
 import { CatalogPublishPill } from "../../packages/CatalogPublishPill";
 import tabStyles from "../../packages/publishing/DrawerTabs.module.css";
 import styles from "./AgentsCatalogDrawer.module.css";
@@ -49,6 +50,8 @@ export const AgentsCatalogDrawer: React.FC<AgentsCatalogDrawerProps> = ({
   const [settingsCoord, setSettingsCoord] = useState<string | null>(null);
   // Account-policy scope (dev/24), opened from the roster header cog.
   const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
+  // Upload-import (dev/36), opened from the footer's Import package button.
+  const [importOpen, setImportOpen] = useState(false);
   if (!presented) return null;
 
   return (
@@ -115,6 +118,22 @@ export const AgentsCatalogDrawer: React.FC<AgentsCatalogDrawerProps> = ({
         </div>
       )}
 
+      {/* Upload-import entry (dev/36) — the concept's footer button. */}
+      <button type="button" className={styles.importPackageBtn} onClick={() => setImportOpen(true)}>
+        Import package
+      </button>
+
+      {importOpen ? (
+        <AgentImportModal
+          onClose={() => setImportOpen(false)}
+          onImported={() => {
+            setImportOpen(false);
+            // The new definition lives in My Imports — show it.
+            c.setScope("my-imports");
+            void c.reload();
+          }}
+        />
+      ) : null}
       {settingsCoord && projectId ? (
         <AgentSettingsModal
           scope="project"

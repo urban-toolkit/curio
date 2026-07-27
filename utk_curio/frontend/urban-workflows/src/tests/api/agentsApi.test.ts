@@ -223,4 +223,12 @@ describe("agentsApi", () => {
       { method: "PATCH", body: JSON.stringify({ revision: 2, settings: {} }) },
     );
   });
+
+  it("uploadImport() POSTs the manifest + prompt texts (dev/36)", () => {
+    agentsApi.uploadImport({ id: "agent.x" }, { "prompts/i.txt": "text" });
+    expect(mockFetch).toHaveBeenCalledWith("/api/agents/imports/upload", {
+      method: "POST",
+      body: JSON.stringify({ manifest: { id: "agent.x" }, prompts: { "prompts/i.txt": "text" } }),
+    });
+  });
 });

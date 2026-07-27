@@ -1,0 +1,75 @@
+/* Import agent package modal (memo dev/36). */
+
+.body {
+  padding: 4px 8px 8px;
+  min-width: 380px;
+}
+
+.title {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--curio-text-primary, #1e1f23);
+}
+
+.hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--curio-text-secondary, #8a8b93);
+}
+
+.picker input {
+  font-size: 12px;
+}
+
+.summary {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--curio-text-primary, #1e1f23);
+  background: #f7f7f8;
+  border: 1px solid #ececee;
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.error {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: #b3423a;
+  white-space: pre-wrap;
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.cancel {
+  border: 1px solid #ececee;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #fff;
+  color: var(--curio-text-primary, #1e1f23);
+  cursor: pointer;
+}
+
+.import {
+  border: none;
+  border-radius: 999px;
+  padding: 6px 18px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--curio-top-bar-bg, #1e1f23);
+  color: var(--curio-text-on-dark, #fff);
+  cursor: pointer;
+}
+
+.import:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

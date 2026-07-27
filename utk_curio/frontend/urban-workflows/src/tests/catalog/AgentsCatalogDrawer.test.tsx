@@ -15,6 +15,7 @@ jest.mock("../../api/agentsApi", () => ({
     getProjectAgentDefaults: jest.fn(),
     updateProjectAgentDefaults: jest.fn(),
     getAgentSettings: jest.fn(),
+    uploadImport: jest.fn(),
     updateAgentSettings: jest.fn(),
   },
 }));
@@ -178,5 +179,14 @@ describe("AgentsCatalogDrawer", () => {
     await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: /agent settings/i }));
     await waitFor(() => expect(screen.getByText("Account policy")).toBeInTheDocument());
+  });
+
+  it("the footer Import package button opens the upload modal (dev/36)", async () => {
+    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Import package" }));
+    await waitFor(() =>
+      expect(screen.getByRole("dialog", { name: "Import agent package" })).toBeInTheDocument(),
+    );
   });
 });

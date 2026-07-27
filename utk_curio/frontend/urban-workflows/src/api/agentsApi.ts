@@ -159,6 +159,22 @@ export const agentsApi = {
     });
   },
 
+  /**
+   * Upload a user-authored definition (memo dev/36): the manifest plus its
+   * prompt texts. The server forces trust to "imported", stamps digests from
+   * the bytes, and rejects duplicates/oversize/mismatched files. Returns the
+   * new (publishable) My Imports card. Nothing auto-installs or publishes.
+   */
+  uploadImport(
+    manifest: Record<string, unknown>,
+    prompts: Record<string, string>,
+  ): Promise<AgentCard> {
+    return apiFetch("/api/agents/imports/upload", {
+      method: "POST",
+      body: JSON.stringify({ manifest, prompts }),
+    });
+  },
+
   /** Drop a coordinate from My Imports. */
   removeImport(coord: string): Promise<{ coord: string; imported: boolean }> {
     return apiFetch(`/api/agents/imports/${coordParam(coord)}`, { method: "DELETE" });
