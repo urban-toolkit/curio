@@ -43,6 +43,3 @@ _curio_*.mjs
 # debugging a failing run, not something to track in git.
 docs/examples/dataflows/expected_outputs/*_browser_log.txt
 docs/examples/dataflows/expected_outputs/*_actual.png
-
-# Internal planning working material — never committed (polished version lives in /docs).
-plans/
