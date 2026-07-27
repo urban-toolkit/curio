@@ -67,6 +67,22 @@ def import_agent():
     return jsonify(payload), 201
 
 
+@agents_bp.route("/imports/upload", methods=["POST"])
+@require_auth
+def upload_import():
+    """Upload a user-authored definition (memo dev/36): a JSON body with the
+    manifest and its prompt texts. Creates an owned, publishable My Imports
+    entry; nothing auto-installs or auto-publishes."""
+    body = request.get_json(silent=True) or {}
+    try:
+        payload = agents_services.upload_import(
+            _user_dir_key(g.user), body.get("manifest"), body.get("prompts") or {}
+        )
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify(payload), 201
+
+
 @agents_bp.route("/imports/<coord>", methods=["DELETE"])
 @require_auth
 def remove_import(coord: str):

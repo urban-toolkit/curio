@@ -127,3 +127,45 @@ def list_installed_agent_definitions(user_key: str) -> list[AgentManifest]:
             log.warning("Skipping invalid agent definition at %s", child, exc_info=True)
     out.sort(key=lambda m: (m.agent_id, m.version))
     return out
+
+
+def write_definition_atomic(
+    user_key: str, dir_name: str, manifest: dict, prompt_files: dict[str, str]
+) -> Path:
+    """Atomic variant of :func:`write_definition` for user uploads (memo dev/36).
+
+    Stages the definition in a temp directory inside the user's agents store and
+    ``os.replace``s it into place, so a failed/interrupted upload never leaves a
+    partially visible artifact (``RISK-IMPORT-001``). Refuses to replace an
+    existing definition — uploads are immutable (``DEC-029``); callers pre-check
+    and surface a 409.
+    """
+    import os
+    import shutil
+    import tempfile
+
+    target = agent_definition_dir(user_key, dir_name)  # validated + contained
+    if target.exists():
+        raise FileExistsError(f"definition {dir_name!r} already exists")
+    base = user_agents_dir(user_key)
+    base.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=".upload-", dir=base))
+    try:
+        (staging / "manifest.json").write_text(
+            json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+        for rel, text in prompt_files.items():
+            dest = (staging / rel).resolve()
+            if not is_within(dest, staging.resolve()):
+                raise PathTraversalError(
+                    f"Path traversal blocked: prompt asset {dest!s} escapes {staging!s}"
+                )
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(text, encoding="utf-8")
+        os.replace(staging, target)
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    return target
