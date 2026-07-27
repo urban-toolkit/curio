@@ -1,0 +1,26 @@
+# Project proposal: Real time system to detect hazardous wheather conditions in the state of Illinois
+
+## Problem statement
+
+Driving in hazardous weather conditions can be dangerous for all drivers, regardless of skill level. With the heavy reliance on cars and public transportation for daily travel, the ability to monitor and predict severe weather events is critical. 
+Identifying when storms, violent winds, or other extreme weather patterns will affect a given road and suggesting safer alternative routes can reduce disruptions in transportation and significantly improve driver safety.
+
+Current route-finding methods typically calculate risk only at the time a query is made. However, there is a need for systems that can predict whether extreme weather conditions will affect a selected route at the actual time a driver will be traveling.
+
+## Objectives: 
+
+### Primary:
+Develop an interactive visualization tool that helps users identify the safest route between two points using real-time and simulated weather data.
+
+### Secondary:
+Create a detaild process log (Knowledge graph) for documenting collaborative design evolution
+
+### Tertiary:
+
+To have a comprehensive research framework for systematic visualization design
+
+## Target Audience:
+
+Domain Experts: Weather researchers, transportation planners.
+
+General Public: Commuters and travelers moving between two points within a city or between cities who use GPS devices or smartphones to receive advanced hazard alerts.

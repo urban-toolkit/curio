@@ -1,0 +1,282 @@
+{
+    "Extracted_Entities": {
+        "metadata": {
+            "file_name": "Interview-log.txt",
+            "file_type": "text/plain",
+            "file_path": "files/design-study-routes/Week-1/Deliverables/Interview-log-txt/Interview-log.txt"
+        },
+        "entities": [
+            {
+                "entity_category": "Person",
+                "items": [
+                    {
+                        "entity_type": "Domain_Expert",
+                        "items": [
+                            {
+                                "text": "Dr. Ashish Sharma (Domain Expert)"
+                            },
+                            {
+                                "text": "Dr. Abhinav Wadhwa (Domain Expert)"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Audience",
+                        "items": [
+                            {
+                                "text": "Dr. Fabio Miranda (Observer, Computer Expert)"
+                            },
+                            {
+                                "text": "Kazi Shahrukh (Observer)"
+                            },
+                            {
+                                "text": "Vamsi Dath (Observer, Computer Expert)"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Computer_Expert",
+                        "items": [
+                            {
+                                "text": "Kirill Makienko (Computer Expert)"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "User",
+                        "items": [
+                            {
+                                "text": "user"
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "entity_category": "Event",
+                "items": [
+                    {
+                        "entity_type": "Online_Meeting",
+                        "items": [
+                            {
+                                "text": "Session 1: Initial interview (Video call)"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Inference",
+                        "items": [
+                            {
+                                "text": "the query is made"
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "entity_category": "Artifact",
+                "items": [
+                    {
+                        "entity_type": "Log",
+                        "items": [
+                            {
+                                "text": "Interview log"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Note",
+                        "items": [
+                            {
+                                "text": "Notes"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Software",
+                        "items": [
+                            {
+                                "text": "real-time extreme weather route planning software"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "System",
+                        "items": [
+                            {
+                                "text": "analogue systems"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Data",
+                        "items": [
+                            {
+                                "text": "every weather datapoint"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Poster",
+                        "items": [
+                            {
+                                "text": "a poster"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Visualization",
+                        "items": [
+                            {
+                                "text": "Final visualization"
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "entity_category": "Concept",
+                "items": [
+                    {
+                        "entity_type": "Time_Component",
+                        "items": [
+                            {
+                                "text": "Date: 23/09/2025"
+                            },
+                            {
+                                "text": "week 1 day 2"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Design_Concept",
+                        "items": [
+                            {
+                                "text": "Goal"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Task",
+                        "items": [
+                            {
+                                "text": "Understand on a high level current work done"
+                            },
+                            {
+                                "text": "should warn"
+                            },
+                            {
+                                "text": "distance"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Scope",
+                        "items": [
+                            {
+                                "text": "by Dr. Sharma and Dr. Wadhwa"
+                            },
+                            {
+                                "text": "for navigation"
+                            },
+                            {
+                                "text": "in the aeronautical industry"
+                            },
+                            {
+                                "text": "not for land transport"
+                            },
+                            {
+                                "text": "for traffic avoidance"
+                            },
+                            {
+                                "text": "not for weather avoidance"
+                            },
+                            {
+                                "text": "based on weather thresholds"
+                            },
+                            {
+                                "text": "for the route"
+                            },
+                            {
+                                "text": "from the time"
+                            },
+                            {
+                                "text": "not for the estimated time"
+                            },
+                            {
+                                "text": "in relation to a presence of a storm in an area"
+                            },
+                            {
+                                "text": "about any weather events"
+                            },
+                            {
+                                "text": "if new route is selected"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Problem",
+                        "items": [
+                            {
+                                "text": "what next step they would like to take"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "State",
+                        "items": [
+                            {
+                                "text": "excited to get this project going"
+                            },
+                            {
+                                "text": "exists"
+                            },
+                            {
+                                "text": "There is previous work on systems"
+                            },
+                            {
+                                "text": "will be traveling"
+                            },
+                            {
+                                "text": "there is"
+                            },
+                            {
+                                "text": "which has"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Solution",
+                        "items": [
+                            {
+                                "text": "provide alternate routes"
+                            },
+                            {
+                                "text": "present them with alternate routes with approx route duration, time delay"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Location",
+                        "items": [
+                            {
+                                "text": "through a point"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Outcome",
+                        "items": [
+                            {
+                                "text": "in-depth review of all affected routes"
+                            },
+                            {
+                                "text": "Initial insights"
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+}

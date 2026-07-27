@@ -577,6 +577,13 @@ def load_shared_project(project_id: str) -> dict:
     if spec is None:
         raise repo.NotFoundError(f"Project {project_id} not found")
 
+    # Rule 9 (DEC-032, memo dev/12): the shared surface must carry no
+    # agent-private data — strip the backend-owned agent sections (install
+    # lockfile, attachments incl. intents/titles/session ids, project
+    # defaults) from the served copy. The on-disk spec is untouched.
+    from utk_curio.backend.app.agents.project_agents import strip_agent_state
+    spec = strip_agent_state(spec)
+
     manifest = storage.read_manifest(ukey, project_id)
     output_refs: List[OutputRef] = []
     if manifest and "outputs" in manifest:

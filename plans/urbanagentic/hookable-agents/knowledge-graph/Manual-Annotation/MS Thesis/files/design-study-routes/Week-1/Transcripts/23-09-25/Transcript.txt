@@ -1,0 +1,591 @@
+ Audio file
+audio1600335532.m4a
+Transcript
+00:00:00 Kirill Makienko
+One thing, let me record this meeting so I can later just, you know, take notes on it.
+00:00:06 Kirill Makienko
+So my name is Kirill Makienko
+00:00:09 Kirill Makienko
+I'm a Mexican CS student.
+00:00:11 Kirill Makienko
+I'm another an undergrad and I'm here at the at UIC working under Fabian Iranda for the semester, right?
+00:00:19 Kirill Makienko
+So the project we've been thinking about was
+00:00:24 Kirill Makienko
+relating to cleats about creating a some visualization for right for like flood for like floods viewing things.
+00:00:41 Kirill Makienko
+But Dr.
+00:00:42 Kirill Makienko
+Fabian Miranda told me that you had like something different in mind, right?
+00:00:47 Kirill Makienko
+Something about like tracking routes that are in like extreme weather.
+00:00:55 Ashish Sharma
+Yeah.
+00:00:56 Ashish Sharma
+Yeah.
+00:00:58 Kirill Makienko
+So I would love to like meet the what's the motivation behind the project.
+00:01:04 Kirill Makienko
+What's your current like workflow currently?
+00:01:08 Kirill Makienko
+What could I do to like automate it or make it easier for you to progress your your research, right?
+00:01:14 Ashish Sharma
+Yeah.
+00:01:16 Ashish Sharma
+Okay.
+00:01:17 Ashish Sharma
+So maybe should I?
+00:01:20 Ashish Sharma
+speak or you have thought?
+00:01:22 Kirill Makienko
+Please, you go ahead.
+00:01:23 Ashish Sharma
+So I think, Carol, what I was thinking is, every state faces severe weather.
+00:01:33 Ashish Sharma
+And when you have severe weather that could be tornadoes, square lines or high impact weather in any form of, that really disrupts multiple sectors.
+00:01:46 Ashish Sharma
+And we were thinking of disruption on route transportation.
+00:01:49 Ashish Sharma
+So imagine a tornado passing from west to east, and then there is an interest rate and so on, on a highway.
+00:02:00 Ashish Sharma
+Can we track the CV weather going or convict or high impact convection happening, a lot of rainfall dumping?
+00:02:08 Ashish Sharma
+A lot of trucks and heavy duty vehicles have to stop, every vehicle have to stop on the side so that the CV weather passes.
+00:02:15 Ashish Sharma
+How can we create a warning system where
+00:02:18 Ashish Sharma
+we can observe the severe weather.
+00:02:21 Ashish Sharma
+And when the severe weather passes, then you can go from there, go from there or provide an alternate path.
+00:02:29 Ashish Sharma
+Analogy to this is an aviation industry.
+00:02:32 Ashish Sharma
+When a severe weather, there is a route already defined from, say, going from Chicago to Florida.
+00:02:39 Ashish Sharma
+And then when there is a severe weather that comes in the way, which is sudden, then
+00:02:45 Ashish Sharma
+the aviation industry reroutes that their craft to go from a different election, right?
+00:02:52 Ashish Sharma
+How can we replicate something like this over the road?
+00:02:57 Ashish Sharma
+So either rerouting or creating a warnings for the commuters that we would not like you to travel during this time.
+00:03:05 Ashish Sharma
+If you pass this region during this period of time, you will face severe weather.
+00:03:10 Ashish Sharma
+And the risk due to severe weather is this much.
+00:03:17 Ashish Sharma
+So imagine in aviation industry, what they do, this routes are already, the coordinates are already defined.
+00:03:23 Ashish Sharma
+So for us, the coordinates are the road network, right?
+00:03:26 Ashish Sharma
+Those are already.
+00:03:29 Ashish Sharma
+Okay.
+00:03:30 Ashish Sharma
+But for when the congestion happens, you reroute the traffic from going from one location to another because of congestion that we see already on Google Maps.
+00:03:38 Ashish Sharma
+Imagine this for severe weather, you are rerouting the traffic based on severe weather.
+00:03:44 Kirill Makienko
+Okay.
+00:03:45 Ashish Sharma
+So either rerouting, either you give the choice to the user.
+00:03:48 Ashish Sharma
+If you really want to drive right now, you have to take the reroute that will take you two more hours, or you wait for half an hour to go, and which is the shortest distance for you to go, and so on.
+00:04:01 Kirill Makienko
+Okay.
+00:04:01 Ashish Sharma
+Rerouting algorithms, developing rerouting algorithms based on severe weather.
+00:04:07 Ashish Sharma
+So for that, there are two parts.
+00:04:09 Ashish Sharma
+First developing rerouting algorithms, and then before that is to track the storms.
+00:04:14 Ashish Sharma
+or the high impact weather for the software engineers to think of rerouting.
+00:04:23 Kirill Makienko
+Okay.
+00:04:24 Ashish Sharma
+Yeah.
+00:04:25 Kirill Makienko
+Okay, yeah, I can see it.
+00:04:27 Kirill Makienko
+And have you...
+00:04:30 Ashish Sharma
+So if you're looking at data for weather related studies, we have been running one kilometer resolution weather simulations for the whole state of Illinois.
+00:04:43 Ashish Sharma
+So state of Lenoi is our testbed.
+00:04:45 Ashish Sharma
+So you can use that data.
+00:04:47 Ashish Sharma
+We can give you access to the data to analyze few events and from those events developing those algorithms.
+00:04:58 Ashish Sharma
+And then those algorithms should sit whenever severe weather hits, whenever threshold is hit, kicked in, then that really helps rerouting.
+00:05:07 Kirill Makienko
+Yeah, I was just going to ask if you have like being your work that you have done, if you have like any sort of data that could help me, for example, do something that could given any pattern, right?
+00:05:19 Ashish Sharma
+Yeah, so if I can get my screen share access.
+00:05:22 Kirill Makienko
+Yeah, I just granted.
+00:05:24 Ashish Sharma
+Okay, so this is the map, for example, you're going say from Chicago, Chicago to say, Springfield,
+00:05:38 Ashish Sharma
+Springfield.
+00:05:39 Ashish Sharma
+Okay.
+00:05:41 Ashish Sharma
+You see this route, right?
+00:05:43 Ashish Sharma
+You can also see an alternate route, right?
+00:05:48 Kirill Makienko
+Yes.
+00:05:48 Ashish Sharma
+We can compute, let's say, wind speed on these routes right now.
+00:05:56 Ashish Sharma
+We are already showing the wind speed, but collected load.
+00:06:06 Ashish Sharma
+You see their routing algorithms can really tell you from comparing two paths, which is the route that is recommended.
+00:06:16 Ashish Sharma
+But imagine a storm going from here to there, right?
+00:06:19 Ashish Sharma
+Can we provide much more information for a commuter going from Springfield to Chicago?
+00:06:25 Ashish Sharma
+Or even if you go from, say, Juliet to Chicago, even at a such a smaller distances, because the convective storms are very small, intense and small.
+00:06:38 Ashish Sharma
+How can we inform departments of transportation or push warnings into people's cell phones that, guys, there's a severe weather coming and don't go?
+00:06:48 Ashish Sharma
+Because it has happened to me in the past, I was going, I was driving from, where is a Champaign, Champaign to Bloomington.
+00:06:56 Ashish Sharma
+I was at my friend's house in Bloomington and Mohammed, this area we were passing and there were some square lines passing from here.
+00:07:04 Ashish Sharma
+It was such a severe weather.
+00:07:07 Ashish Sharma
+We were so afraid to drive even 100 meters.
+00:07:09 Ashish Sharma
+We had to stop and we were afraid to even stop that where should we stop because there are those boards telling us directions, maybe they fall.
+00:07:19 Ashish Sharma
+So how can I tell the
+00:07:23 Ashish Sharma
+commuters to stop here rather than just getting close to the storm.
+00:07:28 Kirill Makienko
+Okay.
+00:07:29 Ashish Sharma
+So we can think of those frameworks for decision supports system, but first step is to understand and track the storms.
+00:07:40 Ashish Sharma
+And then then I just wanted to be open.
+00:07:42 Ashish Sharma
+Like what do you think?
+00:07:43 Ashish Sharma
+What's the best way to do it if we want to create a decision support system and we want people to
+00:07:49 Ashish Sharma
+provide advance warning, not a day before, maybe half an hour before, an hour before or two hours before the storm will pass here.
+00:07:56 Ashish Sharma
+So commuters, please be aware.
+00:07:59 Fabio Miranda
+So Ashish, this data that you're showing us, this is static data, right?
+00:08:03 Fabio Miranda
+What?
+00:08:04 Ashish Sharma
+Do you mean static?
+00:08:07 Fabio Miranda
+The wind speed here is for a given time step, right?
+00:08:11 Ashish Sharma
+So wind speed here is, sorry, wind speed here is today's speed right now.
+00:08:18 Ashish Sharma
+So this is the forecasting system.
+00:08:20 Ashish Sharma
+So let's look at the wind speed.
+00:08:22 Fabio Miranda
+But what I mean is, as the truck goes from point A to B, yes.
+00:08:29 Fabio Miranda
+Is it using the same time or is it changing according to the, you know?
+00:08:34 Fabio Miranda
+route of the.
+00:08:35 Ashish Sharma
+That would be interesting if we can change it according to route, right?
+00:08:38 Ashish Sharma
+Because if you go from point A to point B, it starts says, for example, 2am here, 2pm here, you'll reach 4pm.
+00:08:45 Ashish Sharma
+So what, and then we know the speed of the roads, road networks, right?
+00:08:49 Ashish Sharma
+The designated speed.
+00:08:51 Ashish Sharma
+How can we assign, imagine on the road, red, green, blue, warning systems?
+00:08:59 Ashish Sharma
+So by the time you reach here, it would be red.
+00:09:03 Ashish Sharma
+Or
+00:09:04 Ashish Sharma
+Alternatively, the way congestion maps are, it's red right now here, right?
+00:09:07 Ashish Sharma
+That is that is easy to do to do show red right now at a at a future location because we know the weather, but it's very interesting to show future red that will come there in that in that in that segment of the road.
+00:09:22 Fabio Miranda
+Yeah.
+00:09:23 Fabio Miranda
+Is there a way to sample us this data maybe?
+00:09:29 Fabio Miranda
+Yeah.
+00:09:31 Fabio Miranda
+in whatever format you guys.
+00:09:33 Ashish Sharma
+Yeah, NetCDF.
+00:09:35 Fabio Miranda
+Yeah.
+00:09:36 Ashish Sharma
+So at the end of the day, we want to implement here, these things here.
+00:09:41 Ashish Sharma
+I believe we'll ask Winston, he would have these data sets in NetCDF, but he will might also have in GeoJSON format and TIF formats.
+00:09:52 Fabio Miranda
+That's perfect.
+00:09:53 Fabio Miranda
+And can we agree on some time range?
+00:09:56 Fabio Miranda
+What would be the time range of interest?
+00:10:01 Ashish Sharma
+So, Fabio, I think we started doing these simulations, live simulations starting June, I believe.
+00:10:09 Ashish Sharma
+June to September, we have the data.
+00:10:11 Ashish Sharma
+But the art is to learn from the past data so that we can create algorithms which will predict right now and for feature.
+00:10:20 Ashish Sharma
+So I don't know how to frame it in a computer size language, but we have the data to train the model and see, okay, can we predict it for the next
+00:10:29 Ashish Sharma
+next few days, whenever see where weather is about to hit.
+00:10:33 Fabio Miranda
+Yeah, well, maybe to make it manageable for a kilo, if we can just focus on past dates and then just pretend, you know, we have data for 12 p.m.
+00:10:47 Fabio Miranda
+Well, we have data from eight to four.
+00:10:51 Fabio Miranda
+But we pretend that the person is living at 12 and everything after 12 is some prediction, because then we can decouple prediction from the visualization routing problem.
+00:11:04 Ashish Sharma
+Yes, so for example, I just loaded.
+00:11:07 Ashish Sharma
+say, forecast of rainfall, right?
+00:11:10 Ashish Sharma
+So forecast of rainfall, and I'm looking.
+00:11:13 Ashish Sharma
+So this is the rain, this is the rain events which we are showing, right?
+00:11:20 Ashish Sharma
+So if the rain events are happening, let's put here, right?
+00:11:27 Ashish Sharma
+So IAT, right?
+00:11:29 Ashish Sharma
+IAT, this rain event is happening.
+00:11:31 Ashish Sharma
+So how can we advise
+00:11:38 Ashish Sharma
+trucks who are going from on IAT for long distances, right, to avoid this patch.
+00:11:47 Ashish Sharma
+Yeah.
+00:11:48 Ashish Sharma
+Like, define the problem.
+00:11:49 Ashish Sharma
+Yeah, here.
+00:11:50 Ashish Sharma
+I think we have not zoomed out.
+00:11:52 Ashish Sharma
+So this is IAT patch.
+00:11:55 Ashish Sharma
+If it is happening here, it doesn't matter to us.
+00:11:58 Ashish Sharma
+On IAT, it matters right now.
+00:12:02 Ashish Sharma
+So this is a very severe event would happen for an hour, let's say.
+00:12:06 Ashish Sharma
+So how can we tell commuters from Davenport to coming to Chicago that there is a severe weather happening at 7:00 AM on September 24th?
+00:12:19 Ashish Sharma
+So that they can think of.
+00:12:24 Ashish Sharma
+Yeah.
+00:12:26 Fabio Miranda
+So what's the variable here?
+00:12:28 Fabio Miranda
+Is this right?
+00:12:29 Ashish Sharma
+This is rainfall.
+00:12:31 Ashish Sharma
+So we have rainfall.
+00:12:32 Ashish Sharma
+We have every variable.
+00:12:33 Ashish Sharma
+We have rainfall, temperature, humidity, wind speed.
+00:12:37 Ashish Sharma
+So we need to come up with some threshold where when you're looking in the model.
+00:12:42 Ashish Sharma
+So the threshold has to be two ways, right?
+00:12:44 Ashish Sharma
+It has to be spatially gridded as well.
+00:12:48 Ashish Sharma
+So it has to be big enough.
+00:12:50 Ashish Sharma
+And if you find one grid point, which is a lot more value, it won't make a difference.
+00:12:56 Ashish Sharma
+We need to have some spatial presence.
+00:12:58 Ashish Sharma
+for that.
+00:12:59 Ashish Sharma
+So think of this like hurricane.
+00:13:01 Ashish Sharma
+Hurricane you're tracking, but hurricane will extend for a long period of time.
+00:13:05 Ashish Sharma
+It's easy to track.
+00:13:08 Ashish Sharma
+How do we track these storms of this size and we specify a threshold above this threshold, if it is at least this big and passing through these larger interstates, how can we capture them?
+00:13:24 Ashish Sharma
+Then we can think of a smaller roads within the city of Chicago, but let's focus on interstates maybe.
+00:13:30 Fabio Miranda
+Is this threshold the same for the entire state?
+00:13:33 Ashish Sharma
+I think we have to create a threshold.
+00:13:36 Ashish Sharma
+I think this is where we need some thinking to think of what threshold which has become dangerous for commuters.
+00:13:46 Ashish Sharma
+So when once someone plays with the data, they need to think about the severity of this term.
+00:13:52 Ashish Sharma
+maybe then look at the wind vectors there, how intense is the wind?
+00:13:56 Ashish Sharma
+And then we come up with an argument with this much wind, this is extreme.
+00:14:02 Ashish Sharma
+This much rainfall also it is extreme.
+00:14:04 Ashish Sharma
+When rainfall and wind are coupled by this much, then it's an extreme, then we like to look at it.
+00:14:08 Fabio Miranda
+Yeah.
+00:14:10 Fabio Miranda
+And I imagine that the threshold will be different if it's a highway or some in the road, right?
+00:14:17 Ashish Sharma
+Yes, highway, I think when there is no vegetation I have driven, but when we drive on the highway, there's nothing and there is a cross flow happening, the cars will just shake complete a lot.
+00:14:31 Ashish Sharma
+And if you're driving at a very high speed, you might even lose the balance.
+00:14:35 Ashish Sharma
+So
+00:14:37 Ashish Sharma
+When I drive my car, I even get a warning as soon as a storm appearing 50 miles, 50 miles radius.
+00:14:42 Kirill Makienko
+Also, should we like consider different threshold for, for example, trucks?
+00:14:49 Kirill Makienko
+We know with like their like big cargo base that could like fall over because of wind or should we like for now just consider one overgeneration.
+00:14:57 Ashish Sharma
+You can just.
+00:14:59 Ashish Sharma
+consider something average when we show here.
+00:15:01 Ashish Sharma
+That is something interesting.
+00:15:03 Ashish Sharma
+We have this larger project where we are working with these agent based models where they could look at different thresholds of different weights of vehicles that where it would impact them and how.
+00:15:14 Ashish Sharma
+So yeah, that's a good question, but I think we can keep it a little bit simple right now.
+00:15:19 Ashish Sharma
+We can use that level of complexity next.
+00:15:21 Fabio Miranda
+Yeah.
+00:15:22 Fabio Miranda
+We can never add more complexity.
+00:15:25 Fabio Miranda
+So you mentioned the trees along the highway, right?
+00:15:29 Fabio Miranda
+Later on, is there a way it should attack the trees from the street level?
+00:15:35 Fabio Miranda
+So that, you know, that acts as a some factor that will reduce the threshold for that specific highway.
+00:15:45 Ashish Sharma
+Yes.
+00:15:47 Fabio Miranda
+Sounds perfect.
+00:15:48 Fabio Miranda
+So I think the
+00:15:51 Fabio Miranda
+the true pressing things that we will need.
+00:15:53 Fabio Miranda
+Well, we already got the tasks and a general scheme of what we need to build.
+00:16:00 Ashish Sharma
+What kind of format of data do you need?
+00:16:03 Ashish Sharma
+NetCDF, GeoJson, TIFF.
+00:16:05 Fabio Miranda
+I think, well, maybe TIF and NetCDF.
+00:16:11 Fabio Miranda
+Okay.
+00:16:12 Ashish Sharma
+So I asked Vincent to provide that information to the access to three months of data set to, yeah.
+00:16:20 Fabio Miranda
+That's perfect.
+00:16:21 Fabio Miranda
+And maybe, you know, Kiro can follow up so that we have that on top of our mind.
+00:16:27 Fabio Miranda
+And I think we, yeah, we got enough from today to start building this.
+00:16:32 Ashish Sharma
+Yes, wonderful.
+00:16:33 Ashish Sharma
+Thank you.
+00:16:34 Ashish Sharma
+Thank you.
+00:16:34 Ashish Sharma
+Cool.
+00:16:35 Vamsi Dath
+I have one more clarification to ask.
+00:16:37 Vamsi Dath
+Yeah, sorry.
+00:16:38 Vamsi Dath
+So, hi, Ashis, I'm Omsi.
+00:16:40 Vamsi Dath
+I'm also actually working on the project as well.
+00:16:43 Vamsi Dath
+So, in that example which you're showing, right, like the civil rainfall at around 7 A.m.,
+00:16:49 Vamsi Dath
+So if you can see, I mean, I don't know if it is for that particular case or not, from 6 to 8, it's actually cutting too many highways between, I mean, two points, right?
+00:17:00 Vamsi Dath
+Let us say Davenport in Chicago.
+00:17:02 Vamsi Dath
+Yes.
+00:17:03 Vamsi Dath
+Then the storm actually would impact multiple roads going from Davenport to Chicago.
+00:17:07 Vamsi Dath
+So it would impact the alternative paths as well.
+00:17:10 Vamsi Dath
+So, yeah, so in your solution, like, is it comple?
+00:17:13 Vamsi Dath
+I mean,
+00:17:14 Vamsi Dath
+Is it a need to actually assess for all of those roads and so and show the impact?
+00:17:19 Ashish Sharma
+So algorithm should assess for all the road networks, but wherever user wants to go from point A to point B, it should show the risk and maybe potential less risky pathways.
+00:17:31 Ashish Sharma
+So it's a complicated problem that we're asking, but we can break it down a little bit.
+00:17:36 Ashish Sharma
+Because when user will not say, okay, I just want to go from here, it has to show for, it has to regret for the whole database, figure out wherever these hotspots are of, and maybe every time the frame is moving, they should follow that.
+00:17:53 Ashish Sharma
+And when the risk goes, they should drop that risk, right?
+00:17:56 Ashish Sharma
+And if user asks for going for directions from point A to point B during that time, then we tell the risk.
+00:18:04 Ashish Sharma
+So maybe there should be a flow chart or a should be prepared first before we try to execute this.
+00:18:15 Vamsi Dath
+Okay, so correct me if I'm wrong.
+00:18:18 Vamsi Dath
+Firstly, you are expecting a high-level solution as in even before selecting any two points as AI mean, starting at an ending point, you want to see the impact of that particular event on all of those parts, I mean, within a state.
+00:18:33 Ashish Sharma
+But you don't have to show that to the viewer, because you have to do that as a prior work, right?
+00:18:39 Ashish Sharma
+Because if a user might ask any two locations anytime.
+00:18:44 Vamsi Dath
+All right, so that should be in hand, but then the actual visualization would only show it after selection of those set points.
+00:18:50 Ashish Sharma
+Yeah, so and from a software engineering lens, I don't know if that's the right way or you would like to only do when the user selects point A to point B and then you look at, okay, does there any strong passes here?
+00:19:02 Ashish Sharma
+Maybe if that is easier, that is fine too.
+00:19:06 Ashish Sharma
+From okay, I think data data, uh, crigging and data and analysis per perspective.
+00:19:13 Ashish Sharma
+There is no point looking at the whole map.
+00:19:15 Ashish Sharma
+But if we know these are the two locations that user want to go, then at that time dynamically we calculate that and figure it out and then push that information.
+00:19:23 Ashish Sharma
+So that's for software engineers to tell me which is the easier path to do it.
+00:19:28 Ashish Sharma
+And because we would want
+00:19:30 Ashish Sharma
+We don't want it to be static.
+00:19:32 Ashish Sharma
+It's a dynamic program, right?
+00:19:33 Ashish Sharma
+We want the less lag time to give this information to the user.
+00:19:40 Abhinav Wadhwa
+Ashish, I have something to show.
+00:19:42 Abhinav Wadhwa
+I remember this from Curtis poster.
+00:19:45 Abhinav Wadhwa
+I'm just sharing my screen.
+00:19:47 Ashish Sharma
+By the way, I have to drop at five four minutes.
+00:19:49 Ashish Sharma
+I have to talk to NSF product.
+00:19:54 Abhinav Wadhwa
+Yeah, I'll just quickly show.
+00:19:56 Abhinav Wadhwa
+So Bamsi to your questions, this see how one of our partners in Kleeds are doing from NSF, they're doing, NCAR, they're doing this.
+00:20:05 Abhinav Wadhwa
+So you have a storm passing, you have the whole road network, and you have categorized all the roads based on whatever risk they are on.
+00:20:14 Abhinav Wadhwa
+And then after this, the routing algorithm starts.
+00:20:18 Abhinav Wadhwa
+So you see here, they have categorized all those.
+00:20:22 Abhinav Wadhwa
+I'll share you this poster.
+00:20:23 Abhinav Wadhwa
+This is there in Atreets drive as well.
+00:20:26 Abhinav Wadhwa
+I just downloaded it from there.
+00:20:27 Abhinav Wadhwa
+And then they provide the alternative summary of each highway.
+00:20:30 Abhinav Wadhwa
+For example, it is I-70.
+00:20:32 Abhinav Wadhwa
+This is a time period.
+00:20:33 Abhinav Wadhwa
+This is a time period they are at risk.
+00:20:36 Abhinav Wadhwa
+So this is their internal dashboard.
+00:20:37 Abhinav Wadhwa
+They have not made it public.
+00:20:39 Abhinav Wadhwa
+And as I remember, you were starting that it is kind of very compute extensive task, but yeah, so this is how they provide summary.
+00:20:50 Abhinav Wadhwa
+So if you think this could be a good reference, you can use this.
+00:20:53 Ashish Sharma
+So we don't want to just provide somebody.
+00:20:55 Ashish Sharma
+We want it to be interactive with the user.
+00:20:58 Ashish Sharma
+That's the next level we want to go.
+00:21:01 Fabio Miranda
+OK.
+00:21:02 Ashish Sharma
+Yeah, I'll just quickly share this.
+00:21:03 Ashish Sharma
+Play with it.
+00:21:04 Ashish Sharma
+And then, OK, I want, we want it to effectively think of replace Google Maps where people see congestion, but we want to tell the routing based on weather.
+00:21:14 Fabio Miranda
+Right.
+00:21:14 Fabio Miranda
+Yeah.
+00:21:15 Fabio Miranda
+So that was amazing.
+00:21:19 Fabio Miranda
+I will debrief with the folks here, but I will ask here to follow up with you guys for the data, the link as well, as I've now the presentation that you showed us.
+00:21:32 Fabio Miranda
+But yeah, that was more than enough for the tasks that we will, for the system that we will build.
+00:21:38 Fabio Miranda
+Yeah.
+00:21:40 Ashish Sharma
+And then maybe you can pick one thing, right?
+00:21:43 Ashish Sharma
+What severe weather care are you focusing on to because there are hundreds rides of severe weathers?
+00:21:49 Fabio Miranda
+Yeah.
+00:21:50 Fabio Miranda
+I think we will make it generic so that, you know, you set the threshold for wind or flood or rain.
+00:21:57 Fabio Miranda
+And then we sort of iterate all these things.
+00:22:01 Fabio Miranda
+Okay, wonderful.
+00:22:03 Fabio Miranda
+But sounds great.
+00:22:04 Fabio Miranda
+Avnav and Ashish.
+00:22:06 Fabio Miranda
+Thank you so much.
+00:22:06 Fabio Miranda
+I will talk with the others here now.
+00:22:09 Ashish Sharma
+You take care guys.
+00:22:11 Ashish Sharma
+Bye.
+00:22:11 Fabio Miranda
+Thank you.
+00:22:11 Fabio Miranda
+Bye.
+00:22:12 Kirill Makienko
+Thank you.
+
+
+
+

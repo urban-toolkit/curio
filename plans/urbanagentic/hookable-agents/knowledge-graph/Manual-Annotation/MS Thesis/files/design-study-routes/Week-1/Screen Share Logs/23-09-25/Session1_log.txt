@@ -1,0 +1,11 @@
+# Screen share log for session from 23-09-25 at 10 AM CST
+
+At 5:24 in the recording, Dr. Sharma began sharing his screen to demonstrate their weather analysis tool, AerisIQ (https://aerisiq.climate-dpi.org/), as an example of a shortcoming in their current research.
+
+In the recording, Dr. Sharma explained that AerisIQ is a running weather simulation which, among other uses, can inform a user about weather conditions along a route between two points of their choosing.
+
+He further described that the current state-of-the-art approach calculates weather conditions on a route using data available at the departure time.  
+This means that if the travel time between two points is two hours, the weather data applied to the route is still that of the selected departure moment, rather than adjusting dynamically along the way.
+
+At 19:55, Dr. Wadhwa presented a poster showing that, given a storm reading, an analysis could be made of all affected routes in the surrounding area.  
+A comment was made noting that the data in this analysis was static, and that the desired improvement for the new visualization would be to make all data fully user-interactive.

@@ -1,0 +1,22 @@
+Week 1 (22-9-2025 - 29-09-2025) - Written on 29-09-2025
+
+This week was the start of the project and served as the basis to get to know the know what the project is going to be. 
+
+I recieved instructions on what documentation I should be working troughout the week and what information should I be filling, and in filling all the documentation i've been defining what does the project
+pretend to achieve, its scope and the research questions Im going to be answering in regards to the visualization that Im building. 
+
+Ive been told that I should keep any mention of the knowledge graph away from the visualization colaboration, the knowledge graph is something that Vamsi is going to be developing with all the information
+he is obtaning from our projects.
+
+I've been working on my approach to make a simulation to calculate whether at any point for any given route hazardous weather is going to exist at the same time as a driver passes, and thinking on how to 
+make the algorithm as cheap as possibe, at the same time I've been generating documentation for every interaction I've had with the domain experts and setteling down on the research questions im going to 
+answer. I've been sent back some documents for corrections and by the end of the week I  got a much larger project definition template and task abastraction template which I'll be working on troughtout next week.
+
+I hope to be able to have a meeting with the domain experts next week to present my approach to this problem and seek their advice on data I should count and things that they may not care about, I'll be 
+working on creating an executive slide in which I present my approach in about 15 minutes so the domain experts have the opportunity to ask mr about my approach and correct things, I'm basing this timeframe on 
+the first meeting we had with the Domain Experts where they only could attend for 30 minutes so delivering my approach quick and efficently is very important if I want to recieve meaningfull feedback.
+
+Also next week I'll keep working on the project proposal and abstracting all the tasks Ill be doing for the project. 
+
+Currently I'm waiting for the domain experts to give me access to their data so I can start with the data modelling, and if I manage to have a meeting early in the week and they approve of the project,
+I also could start working on parts that probably wont need any changes such as the frontend, so I can start building as soon as possible seeing that the project timeline is quite adjusted.

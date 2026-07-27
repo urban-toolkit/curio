@@ -1,0 +1,2751 @@
+[Stefan Cobeli] 15:18:25
+Yeah, may, uh, if you have 2 minutes more, may I ask you a question?
+
+[Stefan Cobeli] 15:18:29
+was… it would be great if we could submit the paper
+
+[Stefan Cobeli] 15:18:36
+This March 31st.
+
+[Stefan Cobeli] 15:18:37
+on this topic, right? So, you know, with Suraf, we…
+
+[Stefan Cobeli] 15:18:43
+proposal that we would build that, uh, human-centered tool to fix networks, right?
+
+[Maryam Hosseini] 15:18:49
+Mm-hmm.
+
+[Stefan Cobeli] 15:18:50
+Uh, so, you know, GNM plus some software visualization in order to fix networks.
+
+[Stefan Cobeli] 15:18:55
+This is motivated by the fact that, you know, when a stakeholder wants to fix an at work, it's a laborious, uh, effort.
+
+[Stefan Cobeli] 15:19:05
+Right? Um, so maybe we can start thinking about what software organizations and interfaces and interactions we can build
+
+[Maryam Hosseini] 15:19:06
+Yes.
+
+[Stefan Cobeli] 15:19:16
+Uh, that combine both GMNs.
+
+[Stefan Cobeli] 15:19:19
+Uh, and visualization.
+
+[Stefan Cobeli] 15:19:21
+in order to facilitate the…
+
+[Stefan Cobeli] 15:19:24
+fixing of these networks, right? So…
+
+[Stefan Cobeli] 15:19:28
+It's not only GNNs, otherwise Stefan is not going to graduate.
+
+[Stefan Cobeli] 15:19:33
+Uh, but it's also not…
+
+[Stefan Cobeli] 15:19:35
+just visualization advice, you know, it's not that interesting.
+
+[Stefan Cobeli] 15:19:39
+So, maybe what…
+
+[Stefan Cobeli] 15:19:42
+One thing that Stefan can do is, if you could write a…
+
+[Stefan Cobeli] 15:19:48
+abstract. In the next couple of weeks.
+
+[Stefan Cobeli] 15:19:53
+Uh, of how you imagine creating a interface.
+
+[Stefan Cobeli] 15:19:58
+to support the…
+
+[Stefan Cobeli] 15:20:01
+fixing of these networks, right? So I think you have already experienced enough with GNNs.
+
+[Stefan Cobeli] 15:20:08
+to know their strengths.
+
+[Stefan Cobeli] 15:20:10
+Uh, in guiding the…
+
+[Stefan Cobeli] 15:20:15
+fixing up your networks, right?
+
+[Stefan Cobeli] 15:20:17
+And I think one thing that we can play for this newspaper
+
+[Stefan Cobeli] 15:20:22
+Mary and Tribe is… so, do you remember that we sort of framed this into…
+
+[Stefan Cobeli] 15:20:29
+fixing, detecting… I think we had 3 stages, right, that we wrote in the proposal.
+
+[Stefan Cobeli] 15:20:35
+Uh, and maybe we can have, uh, end-to-end
+
+[Stefan Cobeli] 15:20:39
+pipeline, too, that…
+
+[Stefan Cobeli] 15:20:41
+you know, encompass all of these, um, stages, right? Uh, and then we can see how GNNs can be applied to each one of these, uh, stages.
+
+[Maryam Hosseini] 15:20:51
+Mm-hmm.
+
+[Stefan Cobeli] 15:20:51
+So, maybe it would be a good option for Stefan to one, uh…
+
+[Stefan Cobeli] 15:20:57
+revisit what he has been…
+
+[Stefan Cobeli] 15:21:00
+doing in terms of GNN, without visualization, and two,
+
+[Stefan Cobeli] 15:21:05
+revisiting this, uh, stages.
+
+[Stefan Cobeli] 15:21:08
+that we got, uh, and then framing this as a visualization.
+
+[Maryam Hosseini] 15:21:17
+Also, there was a paper…
+
+[Maryam Hosseini] 15:21:21
+Uh, can you hear me? I think I lost you. Okay, perfect.
+
+[Stefan Cobeli] 15:21:23
+Baptiste.
+
+[Maryam Hosseini] 15:21:24
+There was a paper that I sent to you and Surav, which was…
+
+[Maryam Hosseini] 15:21:29
+Um, using DNNs for some type of, like, a similar thing.
+
+[Maryam Hosseini] 15:21:34
+It wasn't the exact topic, but it was very similar, I think.
+
+[Stefan Cobeli] 15:21:39
+it was for segmentation, right?
+
+[Maryam Hosseini] 15:21:40
+Yeah.
+
+[Stefan Cobeli] 15:21:42
+Yeah, well, you know, I think someone needs to lead this, uh…
+
+[Stefan Cobeli] 15:21:48
+In the sense that, you know, they must run myself and you.
+
+[Stefan Cobeli] 15:21:54
+Uh, all busy, right?
+
+[Stefan Cobeli] 15:21:55
+And Stephanie's busy, too.
+
+[Maryam Hosseini] 15:21:58
+Of course.
+
+[Stefan Cobeli] 15:21:58
+But no, the ball needs to drop in somewhere.
+
+[Stefan Cobeli] 15:22:03
+In the… and I think he's eager to publish this.
+
+[Maryam Hosseini] 15:22:06
+Perfect, yeah.
+
+[Stefan Cobeli] 15:22:06
+Uh, we had the meeting earlier today,
+
+[Stefan Cobeli] 15:22:10
+And we were thinking about papers for this.
+
+[Maryam Hosseini] 15:22:13
+Mm-hmm.
+
+[Stefan Cobeli] 15:22:13
+Uh, and Stefan was the one that brought this up, so… it would be good to…
+
+[Maryam Hosseini] 15:22:18
+That's a nice idea, yeah.
+
+[Stefan Cobeli] 15:22:20
+Yeah, and I see this one is an opportunity. So, if we get that oppose or rejected,
+
+[Maryam Hosseini] 15:22:22
+Of course.
+
+[Stefan Cobeli] 15:22:24
+Right? The one that we submitted.
+
+[Stefan Cobeli] 15:22:26
+the HCMPS, uh, right? If we get that rejected, at least this will put us with some more complete preliminary work.
+
+[Maryam Hosseini] 15:22:29
+The NSF.
+
+[Maryam Hosseini] 15:22:30
+Mm-hmm.
+
+[Stefan Cobeli] 15:22:37
+Uh, for ACE resubmission.
+
+[Stefan Cobeli] 15:22:40
+Uh, right? Do you agree?
+
+[Maryam Hosseini] 15:22:42
+That's good, yeah, I do.
+
+[Stefan Cobeli] 15:22:44
+So…
+
+[Stefan Cobeli] 15:22:47
+Step to feel confident. So…
+
+[Stefan Cobeli] 15:22:49
+revising what you already did with PEMA, right?
+
+[Stefan Cobeli] 15:22:54
+Uh, framing this in terms of this pipeline, in which we have
+
+[Stefan Cobeli] 15:22:58
+And again, you have to remember the pipeline.
+
+[Stefan Cobeli] 15:23:01
+or reaching out to me so that I can sample.
+
+[Stefan Cobeli] 15:23:04
+Um, and then coming up with some very sharp abstract
+
+[Stefan Cobeli] 15:23:08
+of what would the visualization do look like in order to support this
+
+[Stefan Cobeli] 15:23:13
+Network fixing.
+
+[Stefan Cobeli] 15:23:18
+maybe, like, Stephen, you can talk with Raven and see, like, what sort of the support you need from him, in terms of the models.
+
+[Stefan Cobeli] 15:23:27
+So maybe, like, some things we need, right? Because we need to probably, let's say, get some fixing data, integrate that into your visualization support, right?
+
+[Stefan Cobeli] 15:23:37
+feedback. So, first, I think design is important, as Prime was saying, but…
+
+[Stefan Cobeli] 15:23:41
+With the design, maybe see what will be the complexity when you want to sort of add
+
+[Stefan Cobeli] 15:23:48
+let's say you… let's say, ideally, you have a model which can tell you fixes, let's say, right?
+
+[Stefan Cobeli] 15:23:53
+How do you incorporate that into your business interface?
+
+[Stefan Cobeli] 15:23:57
+Yeah. I think it does think about those complexities, and maybe then talk with women, like, how we can help you.
+
+[Stefan Cobeli] 15:24:04
+to, uh, easily integrate that, like, what form do you need from him, right? Yeah. And Steph, I think it's a good option, because now we have type 1 with Neuro…
+
+[Stefan Cobeli] 15:24:15
+Ridley. People are true with the LLMs, paper 3 with the networks.
+
+[Stefan Cobeli] 15:24:21
+And all of those are using, you know, neural rendering, LLMs, and GenMs.
+
+[Stefan Cobeli] 15:24:27
+That's already a certification.
+
+[Stefan Cobeli] 15:24:30
+Um, well, hopefully.
+
+[Stefan Cobeli] 15:24:31
+You have to… you have to talk with the innics in the committee.
+
+[Stefan Cobeli] 15:24:37
+Uh, so I think that was the catching up that we…
+
+[Stefan Cobeli] 15:24:41
+want them to do with you, Srag and FEMA, uh, maybe…
+
+[Stefan Cobeli] 15:24:48
+you know, Marion, you did mention that you cannot meet every…
+
+[Stefan Cobeli] 15:24:53
+on the Friday at 3.30… 3 PM in Chicago, right?
+
+[Stefan Cobeli] 15:24:57
+So, maybe…
+
+[Maryam Hosseini] 15:24:58
+So, I know, give me one second.
+
+[Stefan Cobeli] 15:25:01
+Yeah.
+
+[Maryam Hosseini] 15:25:01
+Um, yeah, every other…
+
+[Maryam Hosseini] 15:25:05
+Actually…
+
+[Maryam Hosseini] 15:25:07
+Right. Because they…
+
+[Maryam Hosseini] 15:25:09
+they pushed our…
+
+[Maryam Hosseini] 15:25:11
+Um, the PhD committee meetings to 12 to 1, which was the one I was already right now in.
+
+[Maryam Hosseini] 15:25:18
+Um, so I have my…
+
+[Maryam Hosseini] 15:25:22
+like, one to two.
+
+[Maryam Hosseini] 15:25:24
+available now, on Fridays.
+
+[Stefan Cobeli] 15:25:28
+So, once you choose Chicago?
+
+[Maryam Hosseini] 15:25:32
+1 to 2, no, at the same time we are right now.
+
+[Stefan Cobeli] 15:25:35
+Oh, okay, so bridge path. Okay, then we maybe meet every other Friday?
+
+[Stefan Cobeli] 15:25:41
+Okay. Uh…
+
+[Maryam Hosseini] 15:25:41
+Okay, works for me.
+
+[Stefan Cobeli] 15:25:43
+Yeah, and I think it would be good, because, you know, there are 3 projects that I…
+
+[Stefan Cobeli] 15:25:50
+am thinking, right? So there's the network.
+
+[Stefan Cobeli] 15:25:52
+Uh, with, uh, Stefan,
+
+[Maryam Hosseini] 15:25:54
+Mm-hmm.
+
+[Stefan Cobeli] 15:25:55
+but also the work with Hiro and Wesley, uh, that they're going to be talking just a little bit, the faculty, maybe you want to have to quit, but, uh, they're also involved in graph neural networks and surags and payments experience will be invaluable.
+
+[Stefan Cobeli] 15:26:10
+Uh, in that, so maybe we can use the…
+
+[Stefan Cobeli] 15:26:13
+every two weeks, one hour.
+
+[Maryam Hosseini] 15:26:15
+Mm-hmm.
+
+[Stefan Cobeli] 15:26:16
+to talk about these genes.
+
+[Maryam Hosseini] 15:26:19
+Perfect, yep.
+
+[Stefan Cobeli] 15:26:19
+Um, yeah.
+
+[Stefan Cobeli] 15:26:22
+Oh, uh…
+
+[Stefan Cobeli] 15:26:23
+So, 2 weeks? Sure.
+
+[Stefan Cobeli] 15:26:26
+Uh, Twix abstract,
+
+[Stefan Cobeli] 15:26:29
+recapping what we did, how that connects with the VM62 across these three stakes.
+
+[Stefan Cobeli] 15:26:35
+And if you don't remember the three stages, let me know, because I can send you the paper.
+
+[Stefan Cobeli] 15:26:42
+I didn't know we had the word… Oh, the, the, the… oh, we also have a Google Doc, but you mean the three stages of time to network?
+
+[Stefan Cobeli] 15:26:47
+No, the very stages of… In your proposal.
+
+[Stefan Cobeli] 15:26:52
+You know, I… so, or maybe, uh… with this, that some of the Google…
+
+[Stefan Cobeli] 15:27:00
+doc notes, because I do remember that we framed this into 3 different stages.
+
+[Stefan Cobeli] 15:27:05
+It was, like, fixing detection, but I don't remember exactly, but if you can…
+
+[Stefan Cobeli] 15:27:11
+revisit this, and if you don't find it,
+
+[Stefan Cobeli] 15:27:14
+Rachel. Sure.
+
+[Stefan Cobeli] 15:27:16
+Sounds good. Uh…
+
+[Stefan Cobeli] 15:27:19
+Mary. Thank you.
+
+[Maryam Hosseini] 15:27:19
+Yes.
+
+[Maryam Hosseini] 15:27:22
+Thank you.
+
+[Stefan Cobeli] 15:27:23
+Yeah, so…
+
+[Maryam Hosseini] 15:27:28
+Yeah,
+
+[Peyman Baghershahi] 15:27:28
+Yeah. Uh, so, um, do we need a baseline for this type of work?
+
+[Maryam Hosseini] 15:27:35
+I think we did.
+
+[Peyman Baghershahi] 15:27:36
+to compare with, I mean…
+
+[Maryam Hosseini] 15:27:39
+baseline in what? Like, baseline of, let's say, what a good network is,
+
+[Maryam Hosseini] 15:27:44
+baseline of a model that can, you know, like, let's say, fix this type of networks.
+
+[Maryam Hosseini] 15:27:49
+In what part you are looking first?
+
+[Peyman Baghershahi] 15:27:51
+The second part.
+
+[Maryam Hosseini] 15:27:53
+I am not aware of any existing, at least I am not aware of, because I haven't also searched for it in the past.
+
+[Peyman Baghershahi] 15:27:54
+A model that does the same thing.
+
+[Maryam Hosseini] 15:28:01
+year and a half, but I'm not aware of any specific model that is publicly available.
+
+[Peyman Baghershahi] 15:28:02
+Okay.
+
+[Peyman Baghershahi] 15:28:06
+Okay.
+
+[Maryam Hosseini] 15:28:07
+that can do such a thing. Uh, like fixing the topology.
+
+[Maryam Hosseini] 15:28:11
+There are some packages available, but they have global solutions. So the global solution can be
+
+[Peyman Baghershahi] 15:28:12
+Yeah.
+
+[Maryam Hosseini] 15:28:18
+like, closing the gaps.
+
+[Maryam Hosseini] 15:28:20
+removing, you know, like, the, um, uh, branches.
+
+[Peyman Baghershahi] 15:28:25
+Okay.
+
+[Maryam Hosseini] 15:28:25
+with some threshold, um, extending the line, things that are a global solution, which doesn't guarantee that
+
+[Maryam Hosseini] 15:28:33
+the problems are fixed. There are, like, just some type of, like, a tool solution out there.
+
+[Peyman Baghershahi] 15:28:38
+Okay.
+
+[Maryam Hosseini] 15:28:39
+This is what I'm aware of.
+
+[Peyman Baghershahi] 15:28:40
+Okay.
+
+[Maryam Hosseini] 15:28:41
+what I think this type of problem needs is
+
+[Maryam Hosseini] 15:28:45
+actually more of a local solution.
+
+[Maryam Hosseini] 15:28:47
+Because you need to, for each part of the network, you need to…
+
+[Maryam Hosseini] 15:28:51
+take that parameters of that part,
+
+[Maryam Hosseini] 15:28:54
+So how, you know, how, um, long?
+
+[Maryam Hosseini] 15:28:58
+the branches are. What do you define as continuous?
+
+[Maryam Hosseini] 15:29:01
+What is the distance between two, um, parallel, let's say, parts of the sidewalks, that if you want to close a gap, you are not actually bridging these two together in some way that you are not supposed to. So there are things that are very local.
+
+[Maryam Hosseini] 15:29:16
+to that network, and even to some areas, if you're looking citywide, right?
+
+[Maryam Hosseini] 15:29:21
+So none of those, at least…
+
+[Maryam Hosseini] 15:29:25
+um… from what I understand, none of those global solutions works for this.
+
+[Maryam Hosseini] 15:29:31
+But if you know of any papers of any tools, or maybe we actually need to do some, like, a very quick lead review?
+
+[Maryam Hosseini] 15:29:39
+not literature review, even search, and want some of those, you know, like, the, um…
+
+[Maryam Hosseini] 15:29:45
+search engines and whatever, like, databases that we have.
+
+[Peyman Baghershahi] 15:29:50
+Yeah, actually, the reason that I'm asking this is that
+
+[Peyman Baghershahi] 15:29:53
+Now, currently, I believe that we are still using the GCN model, but I know that there are more advanced architectures, and there are some techniques that actually
+
+[Peyman Baghershahi] 15:30:01
+I approached some kind of geometric information. So, I was thinking that if we don't need to prove that, for example, this is the best method there compared to the other baselines, then we can
+
+[Peyman Baghershahi] 15:30:14
+Just move on to those, uh, advanced models, and we can, let's say, take advantage of these techniques to maybe improve the results before, uh,
+
+[Peyman Baghershahi] 15:30:25
+Yeah, moving on to the next steps of, let's say, building the, uh, doing the fixing and, uh…
+
+[Peyman Baghershahi] 15:30:30
+So on.
+
+[Maryam Hosseini] 15:30:32
+So this was going… this is going to target which part?
+
+[Peyman Baghershahi] 15:30:36
+Uh, the genin part that we are doing the detection.
+
+[Maryam Hosseini] 15:30:37
+Okay, got it, got it.
+
+[Peyman Baghershahi] 15:30:39
+Yeah. And also, yeah, and also, the JNN part, along with some other information, I mean,
+
+[Stefan Cobeli] 15:30:40
+Yeah, I think…
+
+[Peyman Baghershahi] 15:30:46
+This is kind of a framework, right? So, uh, if…
+
+[Maryam Hosseini] 15:30:49
+Mm-hmm.
+
+[Peyman Baghershahi] 15:30:50
+it's not gonna be compared with other methods, then it's just like an application.
+
+[Peyman Baghershahi] 15:30:55
+Then I… then we can, for example, involve some… let's say, positional encodings and so on.
+
+[Maryam Hosseini] 15:31:00
+Mm-hmm.
+
+[Peyman Baghershahi] 15:31:00
+Uh, into the Model 2.
+
+[Stefan Cobeli] 15:31:03
+So, uh, David, I think there are two things. Um, so let's say what Mariam was saying is the actual baseline, right? What can solve the problem?
+
+[Stefan Cobeli] 15:31:12
+But what you are saying, maybe, let's say, one could involve, um,
+
+[Stefan Cobeli] 15:31:18
+Our model, let's say RJN, RGCN, for example, um, just to compare, right, to show that how good your
+
+[Stefan Cobeli] 15:31:26
+proposed model is versus any nine…
+
+[Stefan Cobeli] 15:31:28
+Let's say GMX, for instance.
+
+[Stefan Cobeli] 15:31:31
+Once you… once you have your more, let's say, what you're calling it, subsequent one.
+
+[Stefan Cobeli] 15:31:36
+So I think one baseline, like, sort of baseline would be that, but let's say, as we…
+
+[Stefan Cobeli] 15:31:43
+We'll take the model as input to the tool, right? Same way, we'll take the baseline model as an input, too.
+
+[Stefan Cobeli] 15:31:49
+Because they both are the same.
+
+[Peyman Baghershahi] 15:31:49
+Yeah, that's what I'm saying, that, for example, if we are not going to, let's say, include, uh,
+
+[Maryam Hosseini] 15:31:52
+Sorry.
+
+[Peyman Baghershahi] 15:31:55
+Uh, other baselines, if there is no comparison there, then we can just easily, maybe, uh, include some other, uh,
+
+[Peyman Baghershahi] 15:32:03
+Advanced techniques for maybe positional encoding, and maybe for… oh, sorry, yeah.
+
+[Maryam Hosseini] 15:32:09
+Sorry, sorry, I need to run. I will, yeah, I will re-sync with you.
+
+[Peyman Baghershahi] 15:32:10
+I don't know, that's fine.
+
+[Peyman Baghershahi] 15:32:13
+Sure. Thank you.
+
+[Peyman Baghershahi] 15:32:15
+Bye.
+
+[Maryam Hosseini] 15:32:15
+Thank you
+
+[Stefan Cobeli] 15:32:16
+Thank you, Anne. But, uh…
+
+[Peyman Baghershahi] 15:32:17
+Yes.
+
+[Stefan Cobeli] 15:32:19
+So, Pema, maybe we revisit this in two weeks? Yeah.
+
+[Peyman Baghershahi] 15:32:23
+Okay.
+
+[Stefan Cobeli] 15:32:24
+And maybe… and then Stefan can lead the whole discussion. But, yeah, sorry. But I would, yeah, I would recommend payment, maybe even Steven can talk in between.
+
+[Stefan Cobeli] 15:32:35
+Okay, and discuss, like, what…
+
+[Peyman Baghershahi] 15:32:35
+Okay. Okay.
+
+[Peyman Baghershahi] 15:32:37
+Okay? Yeah.
+
+[Stefan Cobeli] 15:32:38
+And also, one more thing is, I think, what other baseline could be? Which is more from visualization perspective, right?
+
+[Stefan Cobeli] 15:32:45
+Is there any existing tool which could support similar data, similar models, similar, uh, like, let's say, applications?
+
+[Stefan Cobeli] 15:32:54
+So, but that, I think, is more of…
+
+[Stefan Cobeli] 15:32:56
+more of, like, motivation, right? Like, there's no tool, or cloud, blah.
+
+[Stefan Cobeli] 15:33:00
+But, you know, depends on the paper that we want to write, right? Uh, you know, if it's just… and hopefully two papers, right? One ML paper and the other ais paper.
+
+[Stefan Cobeli] 15:33:11
+I think of this paper as…
+
+[Stefan Cobeli] 15:33:14
+you know, not easier, but since there are no tools targeting this specific task, right, fixing networks,
+
+[Stefan Cobeli] 15:33:21
+you know, whatever we come up with,
+
+[Stefan Cobeli] 15:33:24
+Uh, it's going to be better than what's out there, right?
+
+[Stefan Cobeli] 15:33:29
+Uh, but then, while we do this?
+
+[Stefan Cobeli] 15:33:32
+We can also improve the model, the GNM model, the TouchNet model, right? So, we do this
+
+[Stefan Cobeli] 15:33:38
+things in parallel. Uh, so everyone wins.
+
+[Peyman Baghershahi] 15:33:40
+Okay.
+
+[Stefan Cobeli] 15:33:42
+At the end.
+
+[Peyman Baghershahi] 15:33:43
+Yeah.
+
+[Stefan Cobeli] 15:33:45
+Uh, cool. So, Stefan, Cubix?
+
+[Stefan Cobeli] 15:33:48
+Maybe we will do a sketchup with everyone.
+
+[Stefan Cobeli] 15:33:51
+Uh, so, Pema, uh…
+
+[Peyman Baghershahi] 15:33:53
+Yes.
+
+[Stefan Cobeli] 15:33:56
+Yeah, okay, yeah. I think Pavan is also, uh, so with Jen's one, Pavan is also working on that. So, uh, Piven will have some experience. Yeah. So, basically, basically, uh, yeah, they're working on similar stuff, and…
+
+[Stefan Cobeli] 15:34:10
+they'll explain, like, some of the findings. Yeah.
+
+[Stefan Cobeli] 15:34:13
+Yeah, I don't know… I don't also know the problem or the findings yet. So, what's it? I'm gonna share…
+
+[Stefan Cobeli] 15:34:22
+I mean, if you can join.
+
+[Stefan Cobeli] 15:34:27
+So, uh, Pima and Srat, uh, once he's going to present his findings,
+
+[Peyman Baghershahi] 15:34:32
+Sure.
+
+[Stefan Cobeli] 15:34:32
+Uh, but no, basically what we are doing, what we are trying to do here is
+
+[Stefan Cobeli] 15:34:37
+there is… in order to build a visualization system, right? So let me give you some examples. Let me share my screen.
+
+[Stefan Cobeli] 15:34:48
+And let me give you the context.
+
+[Peyman Baghershahi] 15:34:50
+Okay.
+
+[Stefan Cobeli] 15:34:51
+Um, so, let's see…
+
+[Stefan Cobeli] 15:35:07
+Yeah. I wanted to just share the timeline.
+
+[Stefan Cobeli] 15:35:12
+So,
+
+[Stefan Cobeli] 15:35:14
+All right, so, um…
+
+[Stefan Cobeli] 15:35:17
+to my answer at. Basically,
+
+[Stefan Cobeli] 15:35:19
+Every time that we need to build a visualization system,
+
+[Stefan Cobeli] 15:35:22
+we did this in collaboration with domain experts, right?
+
+[Stefan Cobeli] 15:35:27
+Uh, so basically, we talk with the domain expert to try to understand a little bit about that.
+
+[Stefan Cobeli] 15:35:33
+domain, right? Uh, how they…
+
+[Stefan Cobeli] 15:35:38
+Um, assess…
+
+[Stefan Cobeli] 15:35:40
+whatever task they are interested in, and this is done through interviews, right? Either interviews or exchange of artifacts.
+
+[Stefan Cobeli] 15:35:50
+And these effects can be sketches, Jupyter notebooks,
+
+[Stefan Cobeli] 15:35:54
+Um…
+
+[Stefan Cobeli] 15:35:56
+you know, meeting notes, etc. And then, in this process, uh, we…
+
+[Stefan Cobeli] 15:36:03
+Build.
+
+[Stefan Cobeli] 15:36:07
+A…
+
+[Stefan Cobeli] 15:36:07
+the outcome of this process is usually…
+
+[Stefan Cobeli] 15:36:12
+Ayy…
+
+[Stefan Cobeli] 15:36:14
+It's usually something like this, right? A2, a system,
+
+[Stefan Cobeli] 15:36:19
+that is going to be used to explore some sort of data.
+
+[Stefan Cobeli] 15:36:22
+In this specific case, the data is somewhat accessed.
+
+[Stefan Cobeli] 15:36:26
+We have… the paper describes the computation of the sunlight axis, as well as this exploration of the satellite taxes, right?
+
+[Stefan Cobeli] 15:36:33
+Uh, but this is very much a collaborative process between computer scientists and domain experts.
+
+[Stefan Cobeli] 15:36:41
+Right? Computer scientists trying to understand requirements, tasks, data, domain experts, trying to, you know, make sure that they are clear enough.
+
+[Stefan Cobeli] 15:36:51
+So that the computer scientists can build something like this.
+
+[Stefan Cobeli] 15:36:56
+All right, so this is sort of the context.
+
+[Stefan Cobeli] 15:37:00
+Uh… all I did.
+
+[Stefan Cobeli] 15:37:04
+worse.
+
+[Stefan Cobeli] 15:37:05
+you know, this is a collaborative process.
+
+[Stefan Cobeli] 15:37:09
+Can we build some sort of knowledge graph?
+
+[Stefan Cobeli] 15:37:13
+out of this collaboration.
+
+[Stefan Cobeli] 15:37:15
+Right? And so, let's say, uh, an entity can be a Jupyter notebook.
+
+[Stefan Cobeli] 15:37:21
+An entity can be, you know, a meeting, an entity can be, you know, a sketch.
+
+[Stefan Cobeli] 15:37:30
+entity can be a prototype, etc.
+
+[Stefan Cobeli] 15:37:33
+In their relationships can be, you know, computer scientists,
+
+[Stefan Cobeli] 15:37:37
+dressed with Egypta notebook to AE.
+
+[Stefan Cobeli] 15:37:42
+domain aspect, or vice versa, right? So…
+
+[Stefan Cobeli] 15:37:46
+what we were hoping to do was, can we model this collaboration between domain experience, computer centers,
+
+[Stefan Cobeli] 15:37:54
+Through a knowledge graph.
+
+[Stefan Cobeli] 15:37:56
+And this can have two, um… this can be useful in two ways.
+
+[Stefan Cobeli] 15:38:04
+One retrospectively, meaning that, well, I built a system,
+
+[Stefan Cobeli] 15:38:08
+But now I want to revisit the steps that I…
+
+[Stefan Cobeli] 15:38:13
+took in order to build the system, right?
+
+[Stefan Cobeli] 15:38:15
+Can I find some pain points in this entire process through this knowledge graph?
+
+[Stefan Cobeli] 15:38:20
+And then you can also use this, uh…
+
+[Stefan Cobeli] 15:38:25
+In our prospective way.
+
+[Stefan Cobeli] 15:38:27
+Meaning? Well, I want to build a new system.
+
+[Stefan Cobeli] 15:38:30
+can I use whatever knowledge I have?
+
+[Stefan Cobeli] 15:38:33
+Previously, in order to facilitate this next
+
+[Stefan Cobeli] 15:38:36
+system, right? Um, so that's the context that Wonzi is working.
+
+[Stefan Cobeli] 15:38:43
+AMP!
+
+[Stefan Cobeli] 15:38:44
+So, they might as well do the questions about this? Yeah, I think, like, it's… so what I understand, um,
+
+[Stefan Cobeli] 15:38:52
+It's more of, let's say, uh, if you want to design some new
+
+[Stefan Cobeli] 15:38:58
+interdisciplinary tools, you need to talk with many dominant experts, and how this process gets optimized so that you eventually get a working tool, right?
+
+[Stefan Cobeli] 15:39:08
+And that process sort of optimization kind of is being encoded by the knowledge graph.
+
+[Stefan Cobeli] 15:39:13
+Yeah. We hope to include that. We hope to encode through a knowledge graph, yeah. And what do we have? We have surveys, we have, um, transcript, transcripts, we have… Communications by email. Converse email, so we have not only service, like, everything. Certainly, transcript, emails, everything.
+
+[Stefan Cobeli] 15:39:29
+Yeah, and so in… to switch to… once it's work, what we are doing now is…
+
+[Stefan Cobeli] 15:39:35
+We started 3 processes.
+
+[Stefan Cobeli] 15:39:38
+In which we ask a few people to engage with domain experts, right? No, in parallel, and we are recording all of this
+
+[Stefan Cobeli] 15:39:47
+processes. So, once it's coordinating the, uh, recording of transcripts, the video mode, the videos, the sketches, everything.
+
+[Stefan Cobeli] 15:39:59
+And what we hope is, now that we have this base of data,
+
+[Stefan Cobeli] 15:40:04
+Uh… can we build a knowledge graph out of this? So, one side comment, uh, does it need to be IRP approved?
+
+[Stefan Cobeli] 15:40:13
+Uh, no. Well, maybe. So many users, right? Yeah. So, you know,
+
+[Stefan Cobeli] 15:40:18
+None of these design studies
+
+[Stefan Cobeli] 15:40:21
+that we did before to build all of these tools.
+
+[Stefan Cobeli] 15:40:24
+we, as of fire, be approval. I think, you know, it's… since it's not, um…
+
+[Stefan Cobeli] 15:40:30
+And there is some way that we can move around, uh, this. Just curious, because I'm not an expert on IoT things, so… Yeah, I think it's fine without RMB. Uh, so none of the designs that we did…
+
+[Stefan Cobeli] 15:40:42
+we had to do… but if we were to ask for a survey in a broad audience, then we would need to do… but since we are treating them as experts,
+
+[Stefan Cobeli] 15:40:51
+Right? Uh, no.
+
+[Stefan Cobeli] 15:40:54
+Without Army. Uh, so, once I don't want to share your screen, and maybe…
+
+[Stefan Cobeli] 15:41:00
+guide us through the… before that, I mean, some additional points on the motivation, actually. Because, like, uh, the design studies or the papers that Professor Fabio was showing earlier, the first initial paper,
+
+[Stefan Cobeli] 15:41:10
+So those papers are usually written in a retrospective manner, in a way after… post the project is already developed, and thus you might actually miss out on information that is, like, generally, like, generated through the process.
+
+[Stefan Cobeli] 15:41:23
+So, you can't be actually… I mean, in a way, we need to conduct these design studies so that we observe them through the timeline, right?
+
+[Stefan Cobeli] 15:41:31
+So…
+
+[Stefan Cobeli] 15:41:33
+Industry, please share your screen. Uh, industry for this, you know, you have this whole community, visualization slash visual analytics,
+
+[Stefan Cobeli] 15:41:43
+That is very much built
+
+[Stefan Cobeli] 15:41:45
+on doing deals in a very ad hoc way, right? Unstructured way,
+
+[Stefan Cobeli] 15:41:51
+Because, you know, it draws very much from HCI, right? And HCI, it's more qualitative, uh…
+
+[Stefan Cobeli] 15:41:56
+And I think the very nice thing that we can do here is…
+
+[Stefan Cobeli] 15:42:01
+you know, can we provide some sort of support for this design study, right?
+
+[Stefan Cobeli] 15:42:06
+in terms of this knowledge graph. So basically, it will be more of, let's say, uh, if someone wants to build a similar tool, then what parts of the knowledge graph
+
+[Stefan Cobeli] 15:42:17
+be more meaningful to the designer, maybe that can be just… Yeah, as a recommendation, system. I'm looking at this as a recommendation system,
+
+[Stefan Cobeli] 15:42:27
+but also as a retros… as a way to document
+
+[Stefan Cobeli] 15:42:31
+the process, right? You know, for instance, as a visualization researcher, if I'm building a system, just the fact that I can query something to say… to ask how many times
+
+[Stefan Cobeli] 15:42:43
+Did I ask for the domain expert for a Jupyter notebook? I mean, that in itself is useful. How many times did I meet with the domain? That in each of it's useful.
+
+[Stefan Cobeli] 15:42:54
+So basically, you, uh…
+
+[Stefan Cobeli] 15:42:55
+So, probably you can import an agent, right? Because you are building a knowledge graph.
+
+[Stefan Cobeli] 15:42:59
+that could guide the agent somehow. So, you can build an agent.
+
+[Stefan Cobeli] 15:43:03
+You have all the unstructured data. The agent will go and try to find the answer. Like, for this particular quiet type of system. People do that, like, they… let's say, for example, Argonne, they are building something on
+
+[Stefan Cobeli] 15:43:14
+environment, for example. Like, they have all these reports from government and all these…
+
+[Stefan Cobeli] 15:43:18
+So now you put an agent, like some real-time agent there,
+
+[Stefan Cobeli] 15:43:21
+then they will do all these things for you, like summarize, blah. But…
+
+[Stefan Cobeli] 15:43:25
+You might not know if they're correct or not, so then the knowledge graph might help to sort of guide them more structured. So, that's the…
+
+[Stefan Cobeli] 15:43:33
+Yeah, we want the knowledge graph so that it can provide some structure and rounding for this.
+
+[Stefan Cobeli] 15:43:39
+But, you know, we are running into problems here.
+
+[Stefan Cobeli] 15:43:42
+Uh, basically, to sum it up, like, you can use it to actually, like, analyze the current design study which you're working on, one, and maybe you can use it for traceability, as in to search certain aspects of it, right? Like, let us say, we only want to focus on
+
+[Stefan Cobeli] 15:43:56
+like the Jupyter notebook, or how…
+
+[Stefan Cobeli] 15:43:59
+changes, I mean, which particular stages of the results today has actually shown an effect on them? And also, you can conduct the cross-comparison, which is of, like, my special interest as well. I think at this point, we're convinced that this problem is sort of important, I think.
+
+[Stefan Cobeli] 15:44:11
+Well, let's see, yeah, let's see. So there is a general flow in which these design studies usually happen. I think you can skip as well, then. So, this is just how you structure this design study, right? So…
+
+[Stefan Cobeli] 15:44:23
+Yeah, the first few weeks, you kind of abstract the tasks, so it's very HCI-driven, uh, this.
+
+[Stefan Cobeli] 15:44:29
+But, yeah. Yeah, so that's the reason, I mean, yeah, connecting those
+
+[Stefan Cobeli] 15:44:34
+Isn't study…
+
+[Stefan Cobeli] 15:44:39
+What, uh, was it? Maybe you jump to the… so these are the aspects that, once it has been collecting, right?
+
+[Stefan Cobeli] 15:44:46
+What was maybe you shift…
+
+[Stefan Cobeli] 15:44:48
+Should the knowledge graph that you've built on.
+
+[Stefan Cobeli] 15:44:52
+So, um, I'm going to give you some context of James' work. Yeah. So what, uh… so, Piment, do you want to talk about it?
+
+[Peyman Baghershahi] 15:45:01
+Yeah, yeah, I can hear you. Yeah, basic.
+
+[Stefan Cobeli] 15:45:02
+So, can you summarize what we're doing with Jim? I'll leave it.
+
+[Peyman Baghershahi] 15:45:05
+Yeah, basically, when you, uh, whenever we are doing this kind of interviews,
+
+[Peyman Baghershahi] 15:45:09
+Uh, there is this questionnaire, uh, that you have to fill up, right? And, uh, there are these people…
+
+[Stefan Cobeli] 15:45:14
+But, uh, pretty much, uh, what, what, in what context is these interviews?
+
+[Peyman Baghershahi] 15:45:16
+Yes.
+
+[Peyman Baghershahi] 15:45:20
+Basically, this one…
+
+[Stefan Cobeli] 15:45:21
+In the context of problems.
+
+[Peyman Baghershahi] 15:45:22
+Yes. Yeah. This one, uh, particularly this one is, uh, on, uh…
+
+[Peyman Baghershahi] 15:45:29
+transportation systems, so I… non-emergency transportation systems.
+
+[Peyman Baghershahi] 15:45:34
+This is a specific case study is that, but what we are proposing is kind of more general, just for, uh, kind of thematic analysis, uh, that whenever we have these questioners and we want to go through all of these questioners, we have to
+
+[Peyman Baghershahi] 15:45:48
+Um, uh, listen to all of these transcripts, or look at, uh, look at the transcripts, find the
+
+[Peyman Baghershahi] 15:45:53
+let's say, uh, the important points,
+
+[Peyman Baghershahi] 15:45:57
+Like a question, uh, is referring to, or there are some kind of, um,
+
+[Peyman Baghershahi] 15:46:03
+Referrals to other agencies, in this case, there are some services, there are some agencies that, uh,
+
+[Peyman Baghershahi] 15:46:12
+kind of they are liable for, uh, what is happening, uh, that, uh, some ambulance was late, or some other complaints were made.
+
+[Peyman Baghershahi] 15:46:20
+So, instead of going through all of these transcripts, we want to, uh, we want to do the process by
+
+[Peyman Baghershahi] 15:46:26
+uh, kind of an automatic method.
+
+[Peyman Baghershahi] 15:46:31
+like using agentic models.
+
+[Peyman Baghershahi] 15:46:33
+Uh, so we are kind of removing the, uh, role of a human to go through the transcripts. So, to find the causal loop diagrams.
+
+[Peyman Baghershahi] 15:46:45
+What is… what is, uh, making this…
+
+[Peyman Baghershahi] 15:46:47
+What is affecting, uh, this, uh, let's say, latencies or something like that?
+
+[Stefan Cobeli] 15:46:53
+Yep, but can you… in this data sent to whom?
+
+[Peyman Baghershahi] 15:46:57
+Uh, the data is sent to whom?
+
+[Stefan Cobeli] 15:47:02
+No, no, the surveys. Who is going to fill those surveys?
+
+[Peyman Baghershahi] 15:47:05
+Oh, there are some volunteers.
+
+[Peyman Baghershahi] 15:47:08
+who volunteer for, uh, filling up these questioners. Basically, these are those persons…
+
+[Peyman Baghershahi] 15:47:14
+Uh, who are, let's say, they are the responsibilities.
+
+[Peyman Baghershahi] 15:47:17
+And they have the authority, uh, to, uh, let's say, control these transportation systems and so on.
+
+[Peyman Baghershahi] 15:47:24
+Let's say, for example, there are, um,
+
+[Peyman Baghershahi] 15:47:27
+medical cares, uh…
+
+[Peyman Baghershahi] 15:47:28
+Uh, that's work in this system that they call the ambulance, they call, uh, some kind of non-emergency, uh, medical services.
+
+[Peyman Baghershahi] 15:47:38
+And, uh, if there is some issue, uh,
+
+[Peyman Baghershahi] 15:47:42
+then that person… those… those type of people are being asked to fill up these, uh, questioners.
+
+[Stefan Cobeli] 15:47:50
+I say, well, you know, this is very similar to the problem that we are having, you know, we have a different context, right? And the different goal.
+
+[Stefan Cobeli] 15:47:59
+But, uh, do you guys have any preliminary results?
+
+[Stefan Cobeli] 15:48:05
+I think everyone has some. So basically, what he's saying is causal loop dragged up, basically a knowledge graph.
+
+[Stefan Cobeli] 15:48:11
+So you expect entities from the surveys?
+
+[Stefan Cobeli] 15:48:14
+Uh, and then you're just trying to let the entities how one is related to one. So, would you…
+
+[Stefan Cobeli] 15:48:21
+Uh, so, once you, uh, payment strategy, what you see on the screen right now is basically…
+
+[Stefan Cobeli] 15:48:29
+or attempt to generate the knowledge graph out of a transcript, right? This is only one of the documents that was generated out of those photos. So, I mean, and there is still a problem about the multi-model thing, as in…
+
+[Stefan Cobeli] 15:48:40
+I still have the videos and the audio recordings, which I might be wanting to link it up, right? Yeah, but let's focus on this. You can see that how granularity here is the problem, right? So if you zoom… zoom, uh, what is it?
+
+[Stefan Cobeli] 15:48:54
+Uh, I mean, this is just… this is not necessarily a very useful
+
+[Stefan Cobeli] 15:49:00
+for a visualization researcher, right, in terms of, you know, sharing results.
+
+[Stefan Cobeli] 15:49:06
+Uh, to be determined on a case-by-case basis, and the relationship is internal.
+
+[Stefan Cobeli] 15:49:11
+I mean, that's not useful. That's, uh, meaningless, right?
+
+[Stefan Cobeli] 15:49:15
+So, what we were…
+
+[Stefan Cobeli] 15:49:18
+thinking. Can you show us something meaningful? Like, we are here?
+
+[Stefan Cobeli] 15:49:24
+That's much business.
+
+[Stefan Cobeli] 15:49:37
+And how did you generate this… this entities? Oh, so I used that, uh, NDC paper.
+
+[Stefan Cobeli] 15:49:43
+exactly to find canonicalized paper, but then…
+
+[Stefan Cobeli] 15:49:45
+I just used the first half of it, like, uh, the open information extraction thing.
+
+[Stefan Cobeli] 15:49:51
+At the very first stage. So, so, and, and…
+
+[Stefan Cobeli] 15:49:54
+Here, one example of a meaningful, yeah, maybe basic thing. No, 5 million responsibility advisor.
+
+[Stefan Cobeli] 15:50:01
+Right. I mean, it's basic, but it's already something…
+
+[Stefan Cobeli] 15:50:06
+Um… that's interesting. Cairo, Rome, computer expert.
+
+[Stefan Cobeli] 15:50:12
+uh… provides knowledge on data manipulation. So, no, that's interesting.
+
+[Stefan Cobeli] 15:50:17
+And that has me extracted from the transcripts.
+
+[Stefan Cobeli] 15:50:22
+But we need…
+
+[Stefan Cobeli] 15:50:24
+you know, it's a very…
+
+[Stefan Cobeli] 15:50:30
+not so well-structured knowledge graph, right? We just put whatever was in the transcript there without taking impact on the multi-modality.
+
+[Stefan Cobeli] 15:50:40
+And hope it for the best. I think Pimon probably can say more, but I think…
+
+[Stefan Cobeli] 15:50:46
+Two things could happen. One thing is…
+
+[Stefan Cobeli] 15:50:48
+Maybe, uh… so, uh, so this tool I'm not very familiar with, but we will now use LLMs to accept entities.
+
+[Stefan Cobeli] 15:50:55
+But they give some examples to them. Like, what is an entity? Like, let's say…
+
+[Stefan Cobeli] 15:51:00
+If you take a transcript,
+
+[Stefan Cobeli] 15:51:02
+You define what entity is, like, as some example, and what relationship, like, Fabio and, uh, this one, right?
+
+[Stefan Cobeli] 15:51:09
+So maybe you can extract, like, 10 such examples in each of them, and they can kind of extract similar entities for you.
+
+[Stefan Cobeli] 15:51:16
+So, but do you… so one thing that we were discussing is, you know, yes, we can provide a sort of set of entities, right?
+
+[Stefan Cobeli] 15:51:25
+Um… some examples, like, not really… But how do them go beyond that?
+
+[Stefan Cobeli] 15:51:31
+Right, because… So I think they can, they can.
+
+[Stefan Cobeli] 15:51:33
+So I think payment party can say more, but you can also define some sort of ontology, too. Like, let's say it's a bigger spectrum, right? Uh-huh. There, you don't define
+
+[Stefan Cobeli] 15:51:43
+Um, maybe the specific examples, but what type of things you want, right? And then you ask them, oh, exact similar types for me. So, uh, Payman, do you have…
+
+[Stefan Cobeli] 15:51:54
+example… well, for someone outside of Giannetric, uh, do you guys have any examples of that? Uh, how that would be operationalized, uh,
+
+[Peyman Baghershahi] 15:52:04
+You've been… you've been extracting the entities?
+
+[Stefan Cobeli] 15:52:07
+Yeah.
+
+[Peyman Baghershahi] 15:52:08
+Yeah, basically, um, because, let's say, when we… when you work with these LLMs,
+
+[Stefan Cobeli] 15:52:13
+Uh-huh.
+
+[Peyman Baghershahi] 15:52:14
+Then, uh, they, they try to…
+
+[Peyman Baghershahi] 15:52:17
+Uh, extract based on the few shots, based on the examples that they are provided with, right? So, uh, the important point is to provide the right examples.
+
+[Stefan Cobeli] 15:52:21
+Uh-huh.
+
+[Peyman Baghershahi] 15:52:26
+So, in this case, for example, in the problem that you currently have, let's say that there are these collaborators, right?
+
+[Peyman Baghershahi] 15:52:33
+And, uh, you… at this stage, up to this point, uh, we still are using some few shots, some examples, uh, which are human annotated, right?
+
+[Peyman Baghershahi] 15:52:42
+So, I believe that you, uh, you already have some annotations, some human annotations. So, you will just pass this annotations as few shots to these examples and to these LLMs, and they will
+
+[Peyman Baghershahi] 15:52:54
+Understand them based on the in-context learning paradigm that they, uh, involve.
+
+[Peyman Baghershahi] 15:53:00
+in the… in the generation, uh, section.
+
+[Peyman Baghershahi] 15:53:02
+So, that is… that is… that is the most important part of extracting the entities. Otherwise, if we don't have the appropriate type of entities,
+
+[Peyman Baghershahi] 15:53:12
+Then they will go back and find any type of, let's say,
+
+[Peyman Baghershahi] 15:53:16
+Uh, because we… it's…
+
+[Peyman Baghershahi] 15:53:18
+We also have a task named Entity Detection.
+
+[Stefan Cobeli] 15:53:21
+Uh-huh.
+
+[Peyman Baghershahi] 15:53:22
+So, if you don't provide the right examples, then they will, uh, return any type of, uh,
+
+[Peyman Baghershahi] 15:53:29
+Uh, noun, for example, in a sentence, or in a context, uh, which is unique, kind of.
+
+[Peyman Baghershahi] 15:53:34
+And it is more, uh, uni… I would say it is less frequent to use. Not to…
+
+[Peyman Baghershahi] 15:53:40
+Uh, it doesn't extract ease or ANDs, so in these kinds of things.
+
+[Peyman Baghershahi] 15:53:46
+But maybe if you include, let's say, for example,
+
+[Peyman Baghershahi] 15:53:50
+Uh, I don't know, in this context, maybe, uh, you said Jupyter Notebook.
+
+[Peyman Baghershahi] 15:53:55
+Right? So, Jupyter Notebook will be an entity.
+
+[Peyman Baghershahi] 15:53:58
+But what defines whether this entity is… does matter to you or not,
+
+[Peyman Baghershahi] 15:54:05
+are those references? And those references are, uh, currently in our work, are human annotated.
+
+[Stefan Cobeli] 15:54:12
+This is the process that you guys are going through in the transportation scenario?
+
+[Peyman Baghershahi] 15:54:16
+Yeah, in a transportation scenario, yes.
+
+[Stefan Cobeli] 15:54:18
+Okay, and once you have a few short examples there. These were the ones that are, like,
+
+[Stefan Cobeli] 15:54:24
+that they used to, uh… Can I just make a comment? Can you get rid of example 5?
+
+[Stefan Cobeli] 15:54:29
+For political purposes.
+
+[Stefan Cobeli] 15:54:33
+Okay. Yeah, good.
+
+[Stefan Cobeli] 15:54:36
+So, this was in the previous paper, right? Yeah, that was from the previous one. Yeah, I think this makes sense. So, basically, we're doing exactly the same thing. I think, uh…
+
+[Stefan Cobeli] 15:54:43
+So, when they went to the service, so what they do now, they do manually, right? So we have some manual example from there.
+
+[Stefan Cobeli] 15:54:50
+And we did exactly similar. Like, we took the… took the survey, and they have this theoretical analysis,
+
+[Stefan Cobeli] 15:54:56
+So we've got, oh, this is the… these are the… and then they build the causal diagram, like, which is knowledge graph, basically.
+
+[Stefan Cobeli] 15:55:02
+by hand. Like, oh, this is… and that takes huge time, right, to do that.
+
+[Stefan Cobeli] 15:55:06
+I said, in what you're doing is you have some sort of agent to speed that up based on the examples that you have, and how many examples do you give?
+
+[Stefan Cobeli] 15:55:15
+Yeah, so payment, do you, uh… if…
+
+[Peyman Baghershahi] 15:55:18
+Currently, we don't have… we don't have many exact examples. We have, let's say, uh…
+
+[Stefan Cobeli] 15:55:23
+30, right?
+
+[Peyman Baghershahi] 15:55:24
+39. 39.
+
+[Stefan Cobeli] 15:55:25
+Okay. Uh, because, no, in the context that we are working, we have, like, you know,
+
+[Stefan Cobeli] 15:55:31
+Very few. One, two, three. Uh, yeah. Um…
+
+[Stefan Cobeli] 15:55:37
+But, no, we have, like, one to three examples. We have all knowledge, right?
+
+[Stefan Cobeli] 15:55:46
+of previous…
+
+[Stefan Cobeli] 15:55:48
+The same studies that we have been through, we didn't capture that through transcripts,
+
+[Stefan Cobeli] 15:55:53
+But that's something that we can extend externalize, you know, somehow.
+
+[Stefan Cobeli] 15:55:57
+Would that still be useful?
+
+[Stefan Cobeli] 15:55:59
+Meaning that…
+
+[Peyman Baghershahi] 15:56:00
+I believe… I believe that for… it's not applicable to our case. For example, maybe it's applicable to your case, because…
+
+[Stefan Cobeli] 15:56:02
+Yep.
+
+[Peyman Baghershahi] 15:56:07
+I believe that what you… I'm just saying, based on what you just described of the whole process.
+
+[Peyman Baghershahi] 15:56:13
+So, I believe that there are some specific stages of, uh, ending up with that application.
+
+[Peyman Baghershahi] 15:56:19
+Uh, so if this…
+
+[Peyman Baghershahi] 15:56:22
+And these stages are being repeated every time.
+
+[Peyman Baghershahi] 15:56:25
+Uh, that these, for example, experts and the computer scientists are, uh, doing this collaboration,
+
+[Peyman Baghershahi] 15:56:31
+Then you have a bank of entities already. Anything out of this bank of entities is just some noise.
+
+[Peyman Baghershahi] 15:56:39
+You can, instead of generate some annotations, some human annotations, you can just easily model the whole process,
+
+[Peyman Baghershahi] 15:56:45
+And, uh, make it… expand it as much as possible, so think of every, every, any, every type of, let's say, collaboration and any type of entity which might appear there.
+
+[Peyman Baghershahi] 15:56:56
+And then you can just easily feed them through the LLM. So, instead of having the… because in our case, we don't know what are the agencies, what are the authorities.
+
+[Peyman Baghershahi] 15:57:07
+But in your case, I think because that the whole process is being repeated many times, and let's say, for example, this expert doesn't bring something from, uh…
+
+[Peyman Baghershahi] 15:57:17
+from nowhere, right?
+
+[Peyman Baghershahi] 15:57:19
+there must be some kind of logic, there must be kind of reasoning behind all of this process.
+
+[Peyman Baghershahi] 15:57:26
+Uh, so, in your case, I think you don't need examples, but maybe a bank of entities.
+
+[Stefan Cobeli] 15:57:31
+Right, but one thing for them?
+
+[Stefan Cobeli] 15:57:34
+I think the process is very important, which is not in our case, right? That's right. So they need the timeline. Yeah.
+
+[Stefan Cobeli] 15:57:40
+So, it's sort of like, uh, federal notes does work with you, um, payment.
+
+[Stefan Cobeli] 15:57:45
+Like, basically, they reach out, right?
+
+[Stefan Cobeli] 15:57:48
+But even if you build the… I would say it's not daily knowledge graph, I think it will be some sort of, like, dynamic knowledge graph, right?
+
+[Stefan Cobeli] 15:57:54
+Because you need to know, let's say, how many times an interaction happened,
+
+[Stefan Cobeli] 15:58:00
+How many times, let's say, you went to go back and forth, right? So you need to summarize this process
+
+[Stefan Cobeli] 15:58:05
+Uh, on the knowledge graph.
+
+[Peyman Baghershahi] 15:58:06
+Uh, I mean… I mean, whatever happens on the knowledge graph,
+
+[Peyman Baghershahi] 15:58:10
+Whatever you said just now, it's all about the relations. It's not about the entities. What I'm saying is about the entities. I mean,
+
+[Peyman Baghershahi] 15:58:19
+There aren't many entities out of this scope. There is a specific scope, you can just say these are the entities, and then leave the model, for example, if you are using the GNNs,
+
+[Stefan Cobeli] 15:58:21
+Great.
+
+[Peyman Baghershahi] 15:58:29
+To find the relations, not the entities. That is really important, because doing both of the tasks together, it's hard, but finding the relations among these entities, it's…
+
+[Peyman Baghershahi] 15:58:38
+way more easier.
+
+[Stefan Cobeli] 15:58:41
+So, and what if we can scope the entities?
+
+[Stefan Cobeli] 15:58:45
+Well, let's say that 90% of the entities, right?
+
+[Peyman Baghershahi] 15:58:48
+Okay.
+
+[Stefan Cobeli] 15:58:49
+Uh, but we cannot go… we do not know 100% of the entities.
+
+[Stefan Cobeli] 15:58:56
+Kim, the LLM still…?
+
+[Stefan Cobeli] 15:59:00
+provide us with those 10%
+
+[Stefan Cobeli] 15:59:03
+that we might not be aware of?
+
+[Peyman Baghershahi] 15:59:06
+Yeah, yeah, actually, that is a process of generalization, right? So, if you are using, for example, any type of training,
+
+[Peyman Baghershahi] 15:59:14
+Uh, then you can, uh, do this task of… you can do… you can separate it with… to two tasks, let's say. The first task is to extract those entities, then you have this bank of entities, you extract some entities and train your model to…
+
+[Peyman Baghershahi] 15:59:26
+Uh, be able to detect the entities, okay? Then later on, uh, you…
+
+[Peyman Baghershahi] 15:59:31
+Now, you put this model that is trained as a module in the whole framework, and then try to solve the relation extraction.
+
+[Peyman Baghershahi] 15:59:40
+Then you try to construct a knowledge graph out of that. So…
+
+[Stefan Cobeli] 15:59:42
+I… yeah.
+
+[Peyman Baghershahi] 15:59:43
+It's kind of a process which is broke down to two steps.
+
+[Stefan Cobeli] 15:59:46
+Yeah, but I don't think that this is very, like, let's say, domain-specific. I think
+
+[Stefan Cobeli] 15:59:53
+the transcripts will have very general knowledge, so I think you could do that without training.
+
+[Peyman Baghershahi] 15:59:58
+No, I mean, I mean, uh, no, I…
+
+[Peyman Baghershahi] 16:00:00
+When I say training, I don't mean exactly with gradient descent or something, okay?
+
+[Peyman Baghershahi] 16:00:05
+So, uh, even training can be in context learning.
+
+[Stefan Cobeli] 16:00:08
+Yes, yes. It's not fine-tuning, right? It might be…
+
+[Peyman Baghershahi] 16:00:10
+Yes, it's a fine-tuning, it's just, let's say, for example, you fit this example, this bank of entities,
+
+[Peyman Baghershahi] 16:00:16
+to the model, and then when it returns the… when it observes all of these examples, then the next time that it wants to extract those entities, it just extracts the right entities, not anything possible.
+
+[Stefan Cobeli] 16:00:28
+But one thing is, let's say, of course, like, one task would be entity reduction, right? That could be one task.
+
+[Stefan Cobeli] 16:00:35
+quanta's comp relationship detection, we would like to wear the task.
+
+[Stefan Cobeli] 16:00:37
+But eventually, you need to do a post-purchasing. Like, after… but we are having the same issue, right, Bevan?
+
+[Stefan Cobeli] 16:00:43
+Like, you need to do a postcards instead.
+
+[Peyman Baghershahi] 16:00:44
+Yeah, post-processing, yes. Basically…
+
+[Stefan Cobeli] 16:00:46
+Because it's generated, right? So any generating model, whatever it produces, most of them is correct.
+
+[Stefan Cobeli] 16:00:50
+But you need to do some fixes, like, on the… like, you have to put some rules, and then maybe, like, maybe…
+
+[Stefan Cobeli] 16:00:58
+fix 1% or 2% of the bonus growth. So, what you are then proposing is there is this two-step.
+
+[Stefan Cobeli] 16:01:06
+took tests. So, first is generating the entities.
+
+[Stefan Cobeli] 16:01:09
+based on some set of examples that we have from previous experiences, right?
+
+[Stefan Cobeli] 16:01:14
+Those are the, uh, um, that's the fuel shock, uh, learning, right? And then, the second task is, um, finding the relationships, right?
+
+[Peyman Baghershahi] 16:01:25
+Yeah, yeah.
+
+[Stefan Cobeli] 16:01:26
+That's a hard task, though, because it's, let's say, because you have timeline, uh-huh, so I think that would be… that will be a harder task, right?
+
+[Stefan Cobeli] 16:01:34
+take the time into account, and… No, but each transcript… so, each task is for one specific time step. Okay, that's how good that's good.
+
+[Stefan Cobeli] 16:01:43
+Right, so you task, it's a timestamp. Yeah, yeah, yeah.
+
+[Stefan Cobeli] 16:01:46
+Does that… uh…
+
+[Stefan Cobeli] 16:01:50
+Uh, yeah, so, like, the artifacts which are generally evolved in, like, one of the stages, it usually maybe overlap with the second stage, but it does not evolve, like, across the design study, right?
+
+[Stefan Cobeli] 16:02:00
+So, let's do that, uh…
+
+[Stefan Cobeli] 16:02:03
+So, uh, are you saying something like, so if I use some, uh, prong engineering so that I can, uh, use the named entity recognition aspect of LLMs and then, like, recognize the entities,
+
+[Stefan Cobeli] 16:02:14
+And then… yeah, use something like this where I can just specify
+
+[Stefan Cobeli] 16:02:19
+which entities would I want to look at, and then…
+
+[Stefan Cobeli] 16:02:22
+I think it will be nice to… Yeah, it will be nice to spend, let's say, let's say, a time to get some entities manually, right? Like, from your transcripts. This goes beyond the 5 that you have there, right?
+
+[Stefan Cobeli] 16:02:36
+What are all the entities that we can collectively think
+
+[Stefan Cobeli] 16:02:40
+that goes into these design studies, right? And maybe it's a list of 100 things, or maybe if you get enough.
+
+[Stefan Cobeli] 16:02:46
+And then, so this is task one. And then task two becomes, okay, now what are the relationships?
+
+[Stefan Cobeli] 16:02:51
+And so this… that's true also involves the field shot learning, right?
+
+[Peyman Baghershahi] 16:02:57
+Yeah.
+
+[Stefan Cobeli] 16:02:57
+So, and Tusto might be even more complex than that, so what we did is we were doing a, um, paper on
+
+[Stefan Cobeli] 16:03:04
+like, medical notes, even? Like, on, like, this… this… again, same thing. You're putting a graph, and then we're creating relationships between entities.
+
+[Stefan Cobeli] 16:03:14
+And then we use DNN, and it was… has to be, like, a… like, oh, you… you try to get the encodings first from LLM, then use DN on top of this, then you get the relationship.
+
+[Stefan Cobeli] 16:03:22
+But it might not be that complex in this case, because the transcripts are more, um, how to say, relationships are more obvious, right, than there. Like, there is kind of subtle, because…
+
+[Stefan Cobeli] 16:03:31
+You need to know how the disease sort of progressed, and you need to get a more complicated type of relationship.
+
+[Stefan Cobeli] 16:03:37
+Sounds perfect. Can you share that back? Yeah! Yeah? So, is that paper also covering the…
+
+[Stefan Cobeli] 16:03:44
+Chupa. Yeah, yeah, intersection, and then, uh, both the English intersection and English on both.
+
+[Stefan Cobeli] 16:03:50
+So, Payment, like, can you share that paper? I mean, of course, I had the paper with them in serious.
+
+[Peyman Baghershahi] 16:03:54
+Yeah.
+
+[Stefan Cobeli] 16:03:55
+Yeah, and then all. But it's easier than that. I think you don't need to do that complicated stuff like that. So I think it's… for his case, I think it's easier. Yeah.
+
+[Stefan Cobeli] 16:04:04
+What I would do, I… and if you want, you can correct me, what I would do, I would take a look at maybe one transcript.
+
+[Stefan Cobeli] 16:04:10
+at least give the possible, uh, take the possible, um, entities out of that. Use that as a feature. Yeah. And then he'll get the rest of the things. And I think it is very good introduction. Let's say if it takes time is an entity,
+
+[Stefan Cobeli] 16:04:22
+It will detect Stephan in some of that task, for sure.
+
+[Stefan Cobeli] 16:04:25
+Like, let's… how do you… well, I'll leave that with, uh, was… so, uh, Wazi, can you make sure that you get that paper?
+
+[Stefan Cobeli] 16:04:34
+Another one that came on just yet on the Zoom. Oh, no, actually, oh, actually, you are on Zoom.
+
+[Stefan Cobeli] 16:04:38
+So, if you get that paper,
+
+[Stefan Cobeli] 16:04:46
+Although it's on the chat. You're sharing screen, that's why you can't see. You have to stop.
+
+[Stefan Cobeli] 16:04:52
+Oh yeah, I'll stop sharing.
+
+[Stefan Cobeli] 16:04:58
+Yeah, but with Jim, I think, uh, Piven, you are not using any GNN on something, right? So you're just…
+
+[Peyman Baghershahi] 16:05:04
+No, not currently.
+
+[Peyman Baghershahi] 16:05:06
+Not currently.
+
+[Stefan Cobeli] 16:05:06
+Yeah, so you'll let them two good relationships. And they're also very good, like, in terms of getting the relationship.
+
+[Stefan Cobeli] 16:05:11
+Sometimes it does a mistake, but most often, it's actually good. Our radio was initially to actually, I mean…
+
+[Stefan Cobeli] 16:05:17
+to produce a schema out of this paper, so that that can be used as a GNN, right?
+
+[Stefan Cobeli] 16:05:21
+As an input for the GNN. So, there was one more paper, uh, which I wanted to show, actually.
+
+[Stefan Cobeli] 16:05:31
+So maybe you should ask me. Yeah, you might ask me.
+
+[Stefan Cobeli] 16:05:35
+Actually, schema design itself is a problem, because when you start with this kind of work, nobody knows what should be a good schema. Yeah.
+
+[Stefan Cobeli] 16:05:41
+So, the outcome of the paper… I mean, of the research would be, like, a thesis, or sorry, schema or something.
+
+[Stefan Cobeli] 16:05:52
+Yeah, so there is this one example, uh, which I was studying, like, last semester.
+
+[Stefan Cobeli] 16:05:56
+Where, uh, I mean, you could extract certain entities, I mean, certain code snippets as entities, right? And then
+
+[Stefan Cobeli] 16:06:02
+Specify the flow between them, so that…
+
+[Stefan Cobeli] 16:06:05
+You can then feed it to an LLM, sorry, feed it to a GNN so as to capture, I mean,
+
+[Stefan Cobeli] 16:06:09
+which particular nodes are having, uh…
+
+[Stefan Cobeli] 16:06:12
+higher impact on the decision, or like, let us say, what probability of that code being a…
+
+[Stefan Cobeli] 16:06:19
+So it was essentially used in bug detection, but then it was, uh, I mean, the initial code was actually changed into certain schematic representation in a way.
+
+[Stefan Cobeli] 16:06:29
+Because, like, in code terms, like, the schema would be a function, or a character, or a variable, right?
+
+[Stefan Cobeli] 16:06:34
+So they're already predefined in code terms, but then in case, like, in case of a design study,
+
+[Stefan Cobeli] 16:06:40
+the sympathization, right? Yeah, codes are a little different, because in code, let's say the relationship is kind of defined. We know the flow, right? So here, this is not defined.
+
+[Stefan Cobeli] 16:06:51
+I think that's the main complexity. Yeah, so that's what we'll… that… I mean, that will be the finding of the paper, right? As in, uh, we find the symbolization so that
+
+[Stefan Cobeli] 16:06:59
+let us say in the future, if we want to analyze a different design study, you use this particular symbolization as a base, so that you can then feed it to a GNN to predict something out of the…
+
+[Stefan Cobeli] 16:07:09
+the current design space. So, but no, since the experts are saying that the two-step approach is the… is what they are doing in the transportation, let's do that.
+
+[Stefan Cobeli] 16:07:19
+Uh, so do you feel confident?
+
+[Stefan Cobeli] 16:07:22
+I mean, uh, I need to look through the documents and then generate some of the entities and a few short examples for the first time. Yeah, yeah. And then if you need, like, prevents, uh, kind of advice, you can just kind of contact him.
+
+[Stefan Cobeli] 16:07:32
+But it's a two-step process, right? Entity extraction and the relationship extraction.
+
+[Stefan Cobeli] 16:07:39
+Um, and maybe the paper that Pima shared on Zoom, uh, can give us a pointer.
+
+[Peyman Baghershahi] 16:07:45
+Yeah.
+
+[Stefan Cobeli] 16:07:45
+you know, the methodology that they use it.
+
+[Peyman Baghershahi] 16:07:48
+This is actually a training method, maybe you don't need a training, but if you need training, this is an end-to-end method.
+
+[Peyman Baghershahi] 16:07:53
+It means that it does both tasks together.
+
+[Peyman Baghershahi] 16:07:57
+But it's still separated, I mean, they have different, uh, kind of objectives.
+
+[Stefan Cobeli] 16:08:02
+So here, like, let's say in this paper,
+
+[Stefan Cobeli] 16:08:05
+We are proposing a model which is being trained on the transcript data. But I don't think we… like, as of now, I understood, because with Jane also, we're not training anything. We're just using LLM.
+
+[Stefan Cobeli] 16:08:15
+And we are getting pretty good results. Of course, you have to still kind of do some things, right? Sounds good. Well, whilst they feel confident?
+
+[Stefan Cobeli] 16:08:23
+Oh yeah, I mean, I understand the part where I would check with the graph, but then there are still questions, right, as in…
+
+[Stefan Cobeli] 16:08:30
+Uh, let us say in this case, uh, the example graph that I've actually presented, it was taking Professor Fabio as an advisor to Kirillin.
+
+[Stefan Cobeli] 16:08:37
+But then these do not fit under the definition of…
+
+[Stefan Cobeli] 16:08:42
+Jupiter, or stuff like that. So, we might be missing out on relationships or entities that's… No, but that's the… so, that's a good point. So, uh, Paimon and Srav, so…
+
+[Stefan Cobeli] 16:08:53
+How do you refine the output from… how much do you refine the output from the LLM in the transportation case?
+
+[Stefan Cobeli] 16:09:00
+Right, so you have a few shot examples, you use that to fit into the LLM,
+
+[Stefan Cobeli] 16:09:07
+extracts relationships and entities, right? How much do you have to refine depth?
+
+[Stefan Cobeli] 16:09:13
+Yeah, so, uh, when you are going…
+
+[Peyman Baghershahi] 16:09:14
+that… yeah, go ahead, please.
+
+[Stefan Cobeli] 16:09:16
+Oh, sorry. So, uh, I think one challenge we're facing is the evaluation, right? Okay, what is the ground truth?
+
+[Stefan Cobeli] 16:09:22
+And then we came up with two things, right, Vivan?
+
+[Peyman Baghershahi] 16:09:25
+Yes.
+
+[Stefan Cobeli] 16:09:25
+Uh, one thing was that they… they came up with a ground rule. Somebody actually animated everything. So, it's, of course, it's not a golden truth, but it's…
+
+[Stefan Cobeli] 16:09:35
+an expert truth, right? So we'll take that into account, and then we were saying that, uh, maybe
+
+[Stefan Cobeli] 16:09:41
+The service is a… and so I think it might be useful for you guys, too.
+
+[Stefan Cobeli] 16:09:44
+So, surveys, uh, they are, they are, let's say, a dataset, right? You can think about a dataset.
+
+[Stefan Cobeli] 16:09:49
+And I am putting an agent to concept my knowledge graph, let's say. They call it causal diagram.
+
+[Stefan Cobeli] 16:09:55
+From this survey data, right?
+
+[Stefan Cobeli] 16:09:57
+So now, we are trying to do the similar thing with papers.
+
+[Stefan Cobeli] 16:10:02
+So then we match these two.
+
+[Stefan Cobeli] 16:10:04
+Like, this will be a validation, kind of, externally. Like, okay, in the papers, maybe they actually use the entities…
+
+[Stefan Cobeli] 16:10:10
+And then these causal diagrams come from the paper, and we're validating them in the survey. Viman, do you want to add anything?
+
+[Peyman Baghershahi] 16:10:16
+Yeah, that's for the evaluation part. Yeah, but about the refinement, um, yeah, actually,
+
+[Peyman Baghershahi] 16:10:23
+The point is this, if what I said about the bank, a bank of entities, uh, when you construct this bank, uh, then it's not easy to say, for example, if you have, for example, 1,000 professors and 1,000 advisors,
+
+[Peyman Baghershahi] 16:10:36
+Uh, you don't put all of the advisors there. What you say is a person, okay? The person is a keyword.
+
+[Peyman Baghershahi] 16:10:42
+Uh, that you put it as the entity. So there must be some kind of considerations. These are, um,
+
+[Peyman Baghershahi] 16:10:47
+So, the better is your bank, the more generalized is your bank, the better are the entities that you extract.
+
+[Peyman Baghershahi] 16:10:53
+So, uh, when you say that, for example, um, Dr. Fabio is connected to someone,
+
+[Peyman Baghershahi] 16:11:00
+Okay, so here, the name Fabio is, uh, let's say something not general.
+
+[Peyman Baghershahi] 16:11:05
+Right? It doesn't happen everywhere, but if you say, for example, some advisor or a person
+
+[Peyman Baghershahi] 16:11:12
+instead of the name, then that would be the general case. And the LLM understands that. The LLM understands that, for example, this… when you have this doctor, someone,
+
+[Peyman Baghershahi] 16:11:21
+then that someone is, uh, the advisor, or, um…
+
+[Peyman Baghershahi] 16:11:24
+It can detect that entity. So, think about it as not, um…
+
+[Peyman Baghershahi] 16:11:28
+Um, about one example, whenever you are constructing this bank, this bank must be some kind of a…
+
+[Peyman Baghershahi] 16:11:36
+dictionary, okay? So, the dictionary, the key is, uh, the person, the value could be anyone.
+
+[Stefan Cobeli] 16:11:37
+Yep.
+
+[Peyman Baghershahi] 16:11:43
+Okay, anyone, any advisor, any type of person. So, these are not exactly the same things that you find in a single transcript, but when you… when it ends up…
+
+[Peyman Baghershahi] 16:11:55
+think about it this way. So, you are reducing the human load.
+
+[Peyman Baghershahi] 16:11:58
+Right? So, uh, it's…
+
+[Peyman Baghershahi] 16:12:01
+It's always… still, there are… there is always some human load as well. So that human load, in this case, it's just…
+
+[Peyman Baghershahi] 16:12:09
+to this generalization. From the types of entities that you are looking for,
+
+[Peyman Baghershahi] 16:12:15
+To the types of entities which are more general, let's say, that you have to put in your bank.
+
+[Peyman Baghershahi] 16:12:19
+Okay.
+
+[Stefan Cobeli] 16:12:21
+Sounds perfect. Uh…
+
+[Stefan Cobeli] 16:12:23
+Was it? Good? So, pay my ass right.
+
+[Stefan Cobeli] 16:12:26
+you know, if you see connections with transportation, and if you want to use that as another context that you're applying,
+
+[Stefan Cobeli] 16:12:34
+you know, feel free. So, once we will lead that,
+
+[Stefan Cobeli] 16:12:38
+Uh, but uh… I mean, something that… right now, there is zero structure, right?
+
+[Stefan Cobeli] 16:12:45
+And we will try to provide some sort of structure, whether that's going to be more impactful than, you know, MYC vehicles, probably not.
+
+[Peyman Baghershahi] 16:12:52
+Yeah.
+
+[Stefan Cobeli] 16:12:53
+But, no, still, uh, it's a whole scientific field that needs…
+
+[Stefan Cobeli] 16:12:59
+structure, and hopefully Knowledge Graph will provide that. Yeah, I think it's a good step, because, like, what I said, like, if someone comes up with an agent to structure all of this, right, for the students, they will… they need the knowledge graph.
+
+[Stefan Cobeli] 16:13:10
+We were just talking about it today, like, because many sort of outputs are… cannot be… so we are working on a problem, it's called memorization, like, how… how, like, deadline can memorize things, and then you want to reduce the memorization, right? Because you want to generalize some of the data.
+
+[Stefan Cobeli] 16:13:26
+And then we are talking about how to validate them, maybe through Donald's graph. So you have to come back to normalcy graph again and again, on this thing, so…
+
+[Stefan Cobeli] 16:13:34
+I think it's very useful, very, very useful, actually. Cool. Sounds good. So, one more question I had was, like, uh, should the nodes be, like,
+
+[Stefan Cobeli] 16:13:41
+Should the graph be a document-linking one, as in the Jupyter notebook is edited by
+
+[Stefan Cobeli] 16:13:45
+let us say computer expert, things like that, or should I go within the document and create some graphs like these?
+
+[Stefan Cobeli] 16:13:51
+Which would be… I think you can just give one… one relation example, right? You don't need the graph.
+
+[Stefan Cobeli] 16:13:58
+into one relation example, like, let's say you… if you want to give… one of your concert relations, similar way, like, your concert entities, you can give some relationship example.
+
+[Stefan Cobeli] 16:14:06
+or Fabio is advising Stephen, right? Oh, February is sending, um, Jupyter Notebook to…
+
+[Stefan Cobeli] 16:14:11
+Ashi's saying, who is the human expert. So, you can just kind of create some examples, what do you want as a relationship.
+
+[Stefan Cobeli] 16:14:18
+in those, right? And they're very good at internalization.
+
+[Stefan Cobeli] 16:14:21
+So you will see, like, they will… yeah, and I think you can verify, okay, now you can generate easily. Like, even you can generate with realms.
+
+[Stefan Cobeli] 16:14:28
+manually. And generally, let them see, like, how many are… how many are actually validated by that, right? Yeah.
+
+[Stefan Cobeli] 16:14:33
+Then use that as a starting point to generate for other students.
+
+[Stefan Cobeli] 16:14:37
+So you can use it as a pretty short example.
+
+[Stefan Cobeli] 16:14:40
+But if you can do it manually, it will be great. Like, if you can validate, like, all this data is kind of clean, and you're… it's a good featured example.
+
+[Stefan Cobeli] 16:14:48
+That would be great. Sounds great.
+
+[Stefan Cobeli] 16:14:51
+And other questions.
+
+[Stefan Cobeli] 16:14:53
+So I should be using some software like Neo4J, like the browser thing, and then add notes and relationships. I mean, no, I don't think you should do personalize that like that, so…
+
+[Stefan Cobeli] 16:15:03
+what I got is, what are the examples, right? Then providing those examples that you shot examples to the LLM for two different tasks.
+
+[Stefan Cobeli] 16:15:12
+Entity extraction and relationship
+
+[Stefan Cobeli] 16:15:15
+extraction, right? Um…
+
+[Stefan Cobeli] 16:15:19
+And then there, in between, there is some sort of refining, and then later on, evaluation.
+
+[Stefan Cobeli] 16:15:24
+Um, and then the other thing… the other thing we can think of is the multi-modality of this, alright? So, right now, we're just…
+
+[Stefan Cobeli] 16:15:32
+using transcript, but there's the Jupyter notebook, there's the video, etc.
+
+[Stefan Cobeli] 16:15:37
+And that's slip.
+
+[Stefan Cobeli] 16:15:40
+Yeah, for video crawl, you can get the transcripts too, right? I have the video and the transcript, so… Yeah, yeah.
+
+[Stefan Cobeli] 16:15:48
+Yeah.
+
+[Stefan Cobeli] 16:15:50
+I mean, I can manually insert them as a relationship, and…
+
+[Peyman Baghershahi] 16:15:52
+I don't think that you need to go deep into the videos or transcripts, just that you know that some video was sent to someone, or…
+
+[Peyman Baghershahi] 16:15:59
+Someone, uh, made this video is enough. Because you can't be that much granular. I mean, it's…
+
+[Peyman Baghershahi] 16:16:05
+Yeah, it depends on the details.
+
+[Stefan Cobeli] 16:16:07
+For example, image too, right? You can use something for some… doing some caption generation, and use the caption as your… as your description, right?
+
+[Stefan Cobeli] 16:16:14
+So, I think… I think it depends on…
+
+[Stefan Cobeli] 16:16:16
+How much bodily transfer you need for your task, right?
+
+[Stefan Cobeli] 16:16:21
+So that's the complexity. Let's say if your task was
+
+[Stefan Cobeli] 16:16:24
+to predict something based on all these, like, videos, images, then it will be very hard task, right?
+
+[Stefan Cobeli] 16:16:30
+But if the task is, like, something similar, yeah, I don't need to… you don't need to do all this, right? You can just do the captions, you can just take…
+
+[Stefan Cobeli] 16:16:36
+As many as information as possible, from the video, from the… based on the newsletter information, yeah. Basically, if I want to just capture the design studies start to end, then I might be interested in
+
+[Stefan Cobeli] 16:16:45
+Like, the particulars of advisor, Advisor's expert, and expert works on…
+
+[Stefan Cobeli] 16:16:51
+That he knows is much better, because I have the relationships I may feel. Yeah. Interesting.
+
+[Stefan Cobeli] 16:16:55
+But that's the examples that we have created right here. The…
+
+[Stefan Cobeli] 16:17:01
+the bank… knowledge bank that the payment set, I follow up here.
+
+[Stefan Cobeli] 16:17:06
+The bank at the bank. Yeah, so in each grid, what's the format of this entity bank?
+
+[Stefan Cobeli] 16:17:10
+It's like just a JSON… Yeah, just like what… I think, what is it? It's just a text file, right? Okay.
+
+[Peyman Baghershahi] 16:17:13
+Yep.
+
+[Peyman Baghershahi] 16:17:16
+Yeah, actually, working with LLMs is just mostly, like, trial and error.
+
+[Peyman Baghershahi] 16:17:20
+So, you try with a list,
+
+[Stefan Cobeli] 16:17:20
+Okay.
+
+[Peyman Baghershahi] 16:17:22
+then it doesn't work, you go with the JSON, then it does… it does better. So choose based on, um, uh, let's say, what works better, because…
+
+[Peyman Baghershahi] 16:17:30
+Uh, they are very sensitive to the type of prompt that they receive.
+
+[Stefan Cobeli] 16:17:33
+Uh-huh.
+
+[Peyman Baghershahi] 16:17:34
+And, uh, we don't know, actually. It's quite black box, and the larger is the model, the more black is it.
+
+[Peyman Baghershahi] 16:17:41
+So…
+
+[Stefan Cobeli] 16:17:41
+Yeah. So, which is something related to what Stephan is doing, right? The… try and neighborhood. So, Stefan's building a system…
+
+[Peyman Baghershahi] 16:17:47
+Yeah.
+
+[Stefan Cobeli] 16:17:50
+to track provenance of this trienevo when training.
+
+[Stefan Cobeli] 16:17:54
+a LLM… when using LLM in this particular case, password-based,
+
+[Stefan Cobeli] 16:17:59
+different transportation surveys, but different from the ones that you are working with.
+
+[Stefan Cobeli] 16:18:03
+Uh, maybe there's also some relationship we can explore, uh, later on. Uh, cool.
+
+[Stefan Cobeli] 16:18:09
+So, one's any more questions?
+
+[Stefan Cobeli] 16:18:13
+So, if you want to answer up. There's another thing.
+
+[Peyman Baghershahi] 16:18:17
+Yes.
+
+[Stefan Cobeli] 16:18:18
+So, many…
+
+[Stefan Cobeli] 16:18:20
+So, Tema.
+
+[Stefan Cobeli] 16:18:24
+Uh… so Rav and I, we're working on…
+
+[Stefan Cobeli] 16:18:29
+Yes.
+
+[Stefan Cobeli] 16:18:34
+No, not yet.
+
+[Stefan Cobeli] 16:18:37
+She is going to graduate from next semester.
+
+[Stefan Cobeli] 16:18:41
+So, yeah, let me share my screen here.
+
+[Stefan Cobeli] 16:18:44
+I think, uh, Pivot, let me, uh, kind of… I think I mentioned this to you.
+
+[Stefan Cobeli] 16:18:48
+So, basically, we are doing, let's say, from the GN perspective, the problem scope is this.
+
+[Stefan Cobeli] 16:18:54
+Um, we have, let's say,
+
+[Stefan Cobeli] 16:18:57
+R1 system, right? The billionaire, uh…
+
+[Stefan Cobeli] 16:19:02
+So, uh, so some built-in environment.
+
+[Stefan Cobeli] 16:19:05
+And then, uh, what we can do, like, let's say, can we, um…
+
+[Stefan Cobeli] 16:19:10
+kind of protect
+
+[Stefan Cobeli] 16:19:11
+people's health in terms of heat.
+
+[Stefan Cobeli] 16:19:13
+Right? So what can you do? Maybe you can come up with an app to say, hey,
+
+[Stefan Cobeli] 16:19:18
+take this root instead, because this root will be a cooler root than the other roots, right?
+
+[Stefan Cobeli] 16:19:23
+So you need data from climate, data from traffic, I mean, not traffic exactly, like, the network data.
+
+[Stefan Cobeli] 16:19:30
+And then you need data from probably people's behavior, right?
+
+[Stefan Cobeli] 16:19:34
+data from the neighborhood itself. So we have all this kind of data, like health data, all those, climate data, plant data. How can we combine them to give this kind of solutions?
+
+[Stefan Cobeli] 16:19:43
+And this is one part of it, it's more on the individual level, and you can think of a community-level design, right?
+
+[Peyman Baghershahi] 16:19:44
+Mm-hmm.
+
+[Stefan Cobeli] 16:19:49
+Oh, can you put more trees somewhere, so that it becomes cooler? Can you put, like, can you make me… make some path more accessible, so that that becomes…
+
+[Stefan Cobeli] 16:19:59
+better path, right, for people as a whole.
+
+[Stefan Cobeli] 16:20:01
+So we are proposing these two things in a single framework.
+
+[Stefan Cobeli] 16:20:05
+But then, a good, a really interesting part in our one system is
+
+[Stefan Cobeli] 16:20:10
+How can you, uh, kind of plan different scenarios?
+
+[Stefan Cobeli] 16:20:14
+Like, for example, if you… a plant tree here versus there, uh, what would be better, right? Because the design costs a lot, so you need to plan this scenario beforehand.
+
+[Peyman Baghershahi] 16:20:23
+Mm-hmm.
+
+[Stefan Cobeli] 16:20:23
+Right, so they do that a lot. And then if you think in terms of mapping to GLN, it will be a counterfactual explanation.
+
+[Stefan Cobeli] 16:20:29
+Right? So what will be a counterfactual? So that you can, uh, you can get better answers, right? Better things for that.
+
+[Peyman Baghershahi] 16:20:35
+I see.
+
+[Stefan Cobeli] 16:20:36
+So this is the gist, and payment, I think that the opportunity here, and that's why we were so excited, is that counterfactuals, and we found out this last year, counterfactuals has been used in machine learning graph new networks, etc., right?
+
+[Stefan Cobeli] 16:20:50
+But this has also been used in urban planning. Uh, so planners, they…
+
+[Stefan Cobeli] 16:20:57
+and even counterfactual, the word itself comes from the planning, uh… domain, right? And I didn't know that before I spoke to him. Yeah.
+
+[Stefan Cobeli] 16:21:07
+And I think no one… it hasn't been explored that much, right? The fact that both communities are using counterfactuals,
+
+[Stefan Cobeli] 16:21:16
+in completely different contexts. Context.
+
+[Stefan Cobeli] 16:21:18
+with different meanings, uh, but no, it's interesting, it's, uh…
+
+[Stefan Cobeli] 16:21:24
+a nice thing. But no, in this context,
+
+[Stefan Cobeli] 16:21:28
+Um…
+
+[Stefan Cobeli] 16:21:30
+Kiddo is working.
+
+[Stefan Cobeli] 16:21:33
+is taking the first steps towards this routing problem, right? So, I'm gonna share my screen.
+
+[Peyman Baghershahi] 16:21:38
+Nice.
+
+[Stefan Cobeli] 16:21:41
+Um…
+
+[Stefan Cobeli] 16:21:43
+So, basically, let's see…
+
+[Stefan Cobeli] 16:21:49
+Oh, cute.
+
+[Stefan Cobeli] 16:21:50
+Where's the… what… what were the images? Uh, I sent it to them. Oh, oh, yeah.
+
+[Stefan Cobeli] 16:21:58
+Yeah, so, sort of Infima, um…
+
+[Stefan Cobeli] 16:22:05
+So, video is working, uh, on this problem. Basically, we got from Ashish that was on that proposal as well,
+
+[Stefan Cobeli] 16:22:17
+a simulation.
+
+[Stefan Cobeli] 16:22:18
+for, I think, a period of 3 months, right? And what Ashish was interested in was
+
+[Stefan Cobeli] 16:22:25
+computing routes that minimize a bunch of, uh, um…
+
+[Stefan Cobeli] 16:22:31
+That satisfied a bunch of front strengths, right? So he was interested in the fastest route, right?
+
+[Stefan Cobeli] 16:22:36
+But he was also interested in the route that minimizes heat. The route that minimized humidity, the route that minimized wind.
+
+[Stefan Cobeli] 16:22:46
+In what, uh… I think would be awesome would be…
+
+[Stefan Cobeli] 16:22:52
+to also influence Kirlo's work.
+
+[Stefan Cobeli] 16:22:55
+with maybe… right now, he's using some very standard routing algorithms, right?
+
+[Stefan Cobeli] 16:23:00
+Well, can we also use this to generate some preliminary work for potential proposals, right? As of now, he's using given to points. What's the fastest route, or using
+
+[Stefan Cobeli] 16:23:14
+graph with some weights based on the climate data, right?
+
+[Stefan Cobeli] 16:23:18
+Um… But these are… these are algorithms, like, uh, what did you use? So, no, just what I'm doing is, uh, you know, giving the graph, you know, the city.
+
+[Stefan Cobeli] 16:23:26
+I apply some waste to it, and I just solve it with this track.
+
+[Peyman Baghershahi] 16:23:30
+You can…
+
+[Stefan Cobeli] 16:23:31
+Okay, so yeah, it's… So basically, like, uh, Kevin, did you hear what he said?
+
+[Peyman Baghershahi] 16:23:35
+Yeah, I clearly, uh, you know, this is interesting, actually. I… I liked it.
+
+[Peyman Baghershahi] 16:23:40
+And, uh, my suggestion is that if you're not using algorithms, maybe try with, uh, weighted shortest pass.
+
+[Peyman Baghershahi] 16:23:47
+You just wait…
+
+[Stefan Cobeli] 16:23:47
+Yeah, that's what we are doing now. That's what he's doing, pretty dice extra.
+
+[Peyman Baghershahi] 16:23:49
+Yeah. Okay, yeah. This is… this is very…
+
+[Peyman Baghershahi] 16:23:53
+This is interesting, yeah.
+
+[Stefan Cobeli] 16:23:55
+But one… I think there are two things here, right? One thing is, let's say, um,
+
+[Stefan Cobeli] 16:24:00
+Uh, weight computation, you have to depend on the data, right? Like, okay, where the weights are coming from.
+
+[Stefan Cobeli] 16:24:05
+That is one. Can I just open up parenthesis here? So, there is the problem as well, that as you go along the route, the weather changes, right? Right. It's dynamic. Yeah, so it's also… there's also this dynamic component, yeah. Can I send you another picture? Yeah, I think the second company, so one is Dynamic, second component is…
+
+[Stefan Cobeli] 16:24:23
+How do you come up with the weights when you have different objectives?
+
+[Stefan Cobeli] 16:24:28
+You cannot simply just, kind of,
+
+[Stefan Cobeli] 16:24:31
+at the weights, right? So let's say I want
+
+[Stefan Cobeli] 16:24:33
+a hit-air root, I want a humidity everywhere route, I want a weather-aver route, window route, everything together.
+
+[Stefan Cobeli] 16:24:39
+Then you need to probably learn something, right? Like, oh, what's sort of best for… so these weights should be learned, then.
+
+[Stefan Cobeli] 16:24:46
+You don't know how to… so you… if you combine them, the combination will be, depending on some heuristics, right?
+
+[Stefan Cobeli] 16:24:52
+Either it will be submission or something, right? Some…
+
+[Stefan Cobeli] 16:24:55
+So you… maybe the experts will say, oh, you should take care of this one versus the other one.
+
+[Stefan Cobeli] 16:25:00
+But then the… you see there's a problem?
+
+[Stefan Cobeli] 16:25:03
+then it's, like, you have to… so, my, my, my, uh, like, my…
+
+[Stefan Cobeli] 16:25:08
+sort of intuition is, maybe someone has to come up with some sort of adaptive model, right?
+
+[Stefan Cobeli] 16:25:13
+Where the adaption will happen, based on both objectives and both the dynamicness of the data.
+
+[Stefan Cobeli] 16:25:20
+What do you think?
+
+[Stefan Cobeli] 16:25:22
+But it might not be a model model, right? Could be a forecasting model, right? So that, like, you can forecast well.
+
+[Stefan Cobeli] 16:25:28
+You don't have to learn something out of it, right?
+
+[Peyman Baghershahi] 16:25:31
+Hmm.
+
+[Stefan Cobeli] 16:25:32
+I mean, you can use… you can make use of the weather forecasting or things like that. Yeah, but the data's up there. But the thing is, what we're saying is…
+
+[Peyman Baghershahi] 16:25:33
+Yeah.
+
+[Stefan Cobeli] 16:25:41
+How are they going to get to the weight? Yeah, how you contribute to the objective? Like, what's the… what's the good objective here? You want to minimize everything?
+
+[Stefan Cobeli] 16:25:48
+But then… then what it's doing is, let's say, if you take one objective, you can work out the weights, right?
+
+[Stefan Cobeli] 16:25:52
+Or do we have a different objective? What is the combination of poets?
+
+[Stefan Cobeli] 16:25:55
+How do you know? Summission is not enough, right? Submission means you are…
+
+[Stefan Cobeli] 16:25:59
+just doing something very… there's going to be a bias hope.
+
+[Stefan Cobeli] 16:26:03
+As far as I know, the standard way to do this is a weighted sum, right?
+
+[Stefan Cobeli] 16:26:07
+So, you introduce, right, somebody at deciding which parameter is more important than the other, right? I, uh, just googled a bit.
+
+[Stefan Cobeli] 16:26:15
+I see there's a method called entropy-based weighting, which tries to minimize this.
+
+[Stefan Cobeli] 16:26:21
+Uh…
+
+[Stefan Cobeli] 16:26:24
+Bye.
+
+[Stefan Cobeli] 16:26:26
+the workflow in my head. You try to minimize this buyout, right? When making the… Yeah, but this bias is basically based on the values of the, uh, things, right? Values of the parameters.
+
+[Stefan Cobeli] 16:26:36
+But the main problem is whether it is actually helping with the objective or not. So what's the ultimate goal?
+
+[Stefan Cobeli] 16:26:42
+are we healthy after taking these treatments, right?
+
+[Stefan Cobeli] 16:26:44
+But that has no connection with how we are modeling this, um…
+
+[Stefan Cobeli] 16:26:49
+It's like, whatever, entropy or whatever, right? So, what you were saying is a good thing, based on…
+
+[Stefan Cobeli] 16:26:54
+the differences in the values of these parameters, right? So let's say heat is computed between, I don't know, like,
+
+[Stefan Cobeli] 16:27:01
+like, if you do finite, maybe if you're in Chicago, maybe 10 to 90, right?
+
+[Stefan Cobeli] 16:27:07
+So it's a very different, um, very different, um, values when you take wind, for example. Wind has very different values, right? Yeah. So then you take this sort of diversity in the data, and then somehow combine this with some models, but whatever you come up with, that is detached from your actual objective.
+
+[Stefan Cobeli] 16:27:24
+So then we have to think about, like, what my actual activity is, and how can we learn a nice combination of these weights, right?
+
+[Stefan Cobeli] 16:27:30
+And then, of course, we won't get from the actual IT team, we have to get some proxy object, but still, it will be something
+
+[Stefan Cobeli] 16:27:35
+we have to think, right? So, there is a true, then, challenges, right? One is, how do we combine all of these variables, right? And the other one is how do we account for this
+
+[Stefan Cobeli] 16:27:47
+temporal dynamic. Dynamic, yeah. …uh, factor. Um…
+
+[Stefan Cobeli] 16:27:52
+I think temporal factor?
+
+[Peyman Baghershahi] 16:27:52
+there is this… there is a paper, let me… let me just find this paper.
+
+[Peyman Baghershahi] 16:27:57
+It's for, uh, ETA detection by GNNs. I believe that, uh, what they do is kind of relevant to what you are looking for, because they are kind of, uh,
+
+[Peyman Baghershahi] 16:28:10
+predicting the ETA, expected time arrival,
+
+[Peyman Baghershahi] 16:28:13
+between two, uh, two locations within the cities, and they use this kind of urban, uh, routes.
+
+[Peyman Baghershahi] 16:28:20
+And I believe that they are using GNNs, so if they are using GNNs and they are expecting ETA, then you can also, uh,
+
+[Peyman Baghershahi] 16:28:28
+Uh, just change that ETA,
+
+[Peyman Baghershahi] 16:28:31
+To the objective that you're looking for, so instead of having ETA, you have a multi-label prediction. So, what are your multi-labels? Those are, let's say, for example, heat,
+
+[Peyman Baghershahi] 16:28:44
+their humidity, and so on and so forth, and then what you need at the end is just to wait or give all of the options to the user.
+
+[Peyman Baghershahi] 16:28:52
+Uh, to say, for example, if… wait, which one of these is more important for you,
+
+[Peyman Baghershahi] 16:28:56
+And then, based on that, the objective is trained. Let me, let me send you, uh… let me see if I can find the paper.
+
+[Stefan Cobeli] 16:29:05
+If the code is open…
+
+[Stefan Cobeli] 16:29:08
+Hmm.
+
+[Stefan Cobeli] 16:29:10
+Yeah, but this is a very interesting problem, right? That's what we sort of proposed, right? I mean, a very, uh, kind of variant of that. Yeah, and so the image that I'm showing now is that Kyudio, basically, in order to account for this temporarily,
+
+[Stefan Cobeli] 16:29:26
+temporality of the data, right? He segmented
+
+[Stefan Cobeli] 16:29:30
+several slices of the data, which are these components that you see, and all of these components are…
+
+[Stefan Cobeli] 16:29:36
+how far can I get within 15 minutes, right? And based on that, he rerun the route thing.
+
+[Stefan Cobeli] 16:29:44
+algorithm, right? Oh, I see, I see.
+
+[Stefan Cobeli] 16:29:47
+So basically, like, uh, so you kind of, uh…
+
+[Stefan Cobeli] 16:29:50
+you decrease the search space.
+
+[Stefan Cobeli] 16:29:54
+by doing that? Like, what was the…
+
+[Stefan Cobeli] 16:29:56
+What does the… so my thinking behind this was, uh, given, you know, I have…
+
+[Stefan Cobeli] 16:30:00
+for you, uh, readings every 12 hours, right? So I have every, every 15 minutes, so I know what's the word meant to be every 15 minutes, right?
+
+[Stefan Cobeli] 16:30:07
+So, um…
+
+[Stefan Cobeli] 16:30:09
+So basically, you consider the weather conditions as weights,
+
+[Stefan Cobeli] 16:30:13
+within the yellow circle, and then you update the weights within the orange circle, and then you again update the weights.
+
+[Stefan Cobeli] 16:30:18
+Yeah. Instead of updating, like, every time. Yeah. But is it for efficiency? Like, what is…
+
+[Stefan Cobeli] 16:30:24
+What is it called? Right now, this one, this image is just minimizing rain.
+
+[Stefan Cobeli] 16:30:29
+This is, like, my one objective.
+
+[Stefan Cobeli] 16:30:31
+Just one, uh…
+
+[Stefan Cobeli] 16:30:33
+One more. So basically, in the starter equivalent.
+
+[Stefan Cobeli] 16:30:36
+Then, there might be certain weather conditions, but then they change on the 15, right? Or even dynamicness standard, so that… Yeah, 15 would be taken into consideration when they're in Switch Pakistan. This is our forecasting, and then you go on that, right?
+
+[Stefan Cobeli] 16:30:51
+Some forecasting on the, uh, yeah, how much time you will reach there, how much time you need to reach there, but you kind of approximate that by 15 minutes, and then kind of forecasting there, and then…
+
+[Stefan Cobeli] 16:31:02
+So, maybe… so, uh, one thing, can you…
+
+[Peyman Baghershahi] 16:31:05
+Yeah, this is… this is actually the paper. So, uh, what they do is actually constructing this, uh, knowledge… sorry, they're constructing this graph out of the map,
+
+[Peyman Baghershahi] 16:31:16
+And they try to find the ETA. So, what I believe you can do is maybe, uh, to just change the weights
+
+[Peyman Baghershahi] 16:31:23
+Overall, of the… I mean, change the attributes of every one of these nodes. So every node within your root has a kind of temperature, it has the humidity, heat, and so on. Any type of feature that you're looking for.
+
+[Peyman Baghershahi] 16:31:36
+And then you just minimize the same problem that they are doing.
+
+[Peyman Baghershahi] 16:31:41
+Uh, to find, um, the objective that's…
+
+[Peyman Baghershahi] 16:31:44
+that is… that best suits your problem.
+
+[Peyman Baghershahi] 16:31:47
+Just, yeah, I think this is a very useful paper for you.
+
+[Stefan Cobeli] 16:31:51
+Yeah, so let's use that. Yeah, and it's something that I actually, like, not this in particular, but I…
+
+[Stefan Cobeli] 16:31:57
+highly similar notion that you…
+
+[Stefan Cobeli] 16:32:00
+And having some sort of model which I can then train to minimize.
+
+[Stefan Cobeli] 16:32:05
+to minimize everything so I can have the most optimal path, right? So this is…
+
+[Stefan Cobeli] 16:32:11
+Yeah, as an idea floating. Yeah, let's not have ideas in this topic. Let's follow the expects. Yeah, yeah, of course.
+
+[Stefan Cobeli] 16:32:20
+they direct me to the right place right now, yeah. Yeah, yeah.
+
+[Stefan Cobeli] 16:32:24
+Cool, this is exciting. This was actually implemented in Google Maps.
+
+[Stefan Cobeli] 16:32:28
+Yeah.
+
+[Peyman Baghershahi] 16:32:31
+Yeah, this person, uh, this, the right, uh, the author of this paper, Saurav knows him, uh, is one of the…
+
+[Peyman Baghershahi] 16:32:38
+Uh, most famous guys in graphical networks. Peter,
+
+[Peyman Baghershahi] 16:32:43
+Belikovich.
+
+[Stefan Cobeli] 16:32:43
+Oh, I will do it, yeah.
+
+[Stefan Cobeli] 16:32:48
+a deep mind longer. Yeah, Peter is, like, he's, uh, one of the rising stars.
+
+[Peyman Baghershahi] 16:32:50
+Yeah.
+
+[Stefan Cobeli] 16:32:54
+Nice. So he wrote the GAT paper, the graph financial
+
+[Stefan Cobeli] 16:32:58
+Mm-hmm. He wrote this.
+
+[Stefan Cobeli] 16:32:59
+Nice. Cool. Uh, well… Hey, it was a very nice discussion, though, right? Yes, so many problems. So, maybe Pima Yasrah.
+
+[Stefan Cobeli] 16:33:10
+If we keep these meetings every two weeks, maybe we use, like, 20 minutes
+
+[Stefan Cobeli] 16:33:16
+talk about the same 20 minutes to talk about the knowledge graph, 20 minutes for the routing, right? And then we, you know,
+
+[Stefan Cobeli] 16:33:25
+Keep up the… Yeah, I will keep, like, 3 to 4.30, I will do that in case.
+
+[Peyman Baghershahi] 16:33:30
+Okay.
+
+[Stefan Cobeli] 16:33:31
+But this was…
+
+[Stefan Cobeli] 16:33:34
+very helpful to all of the projects.
+
+[Stefan Cobeli] 16:33:36
+Uh, as, you know, we'll keep you guys…
+
+[Stefan Cobeli] 16:33:41
+up-to-date with respect to everything, but no, our goal is…
+
+[Stefan Cobeli] 16:33:46
+Um… what's the goal? So, the knowledge graph…
+
+[Stefan Cobeli] 16:33:49
+We hope to submit by December, right? Uh, if you guys want to join, that's going to be great.
+
+[Stefan Cobeli] 16:33:57
+Uh, the work with the sidewalk.
+
+[Stefan Cobeli] 16:33:59
+hopefully match. Yeah, no, he was the… in this regard, uh, and then the… The heat one? Yeah, the hit one. Oh, so there's another thing.
+
+[Stefan Cobeli] 16:34:13
+So, I was talking with Kazik. Kazik is doing some scenario planning, and one of the things that we also thought about was
+
+[Stefan Cobeli] 16:34:22
+to submit the counterfactuals.
+
+[Stefan Cobeli] 16:34:24
+You know, some sort of system to enable urban planners to click and try different scenarios, right? Uh, for this 20…
+
+[Stefan Cobeli] 16:34:36
+26. So, is it… will be like, let's say you have a model, and then you are building the counterfactuals for the model. Let's say, for example,
+
+[Stefan Cobeli] 16:34:43
+The model is giving, um, let's say, output 20, and you want to change a few things in the input data, so the model will give you an output of 40. Is that good? Yeah, yeah, so that's basically the code. So maybe connecting that with the hit-aware thing that we proposed,
+
+[Stefan Cobeli] 16:34:59
+And the step that Kaz is already, uh, doing.
+
+[Stefan Cobeli] 16:35:02
+Uh, but no, specifically, it's been, you know, maybe the first
+
+[Stefan Cobeli] 16:35:06
+that is trying to sell this idea of contact factors for planning and contact factors for machine learning. I have not seen anything so far, like, on this. I mean, I think it would be helpful, because, no, we were going to…
+
+[Stefan Cobeli] 16:35:17
+you know, uh, polish this narrative of combining these two things. And maybe the visualization part is the link that can combine.
+
+[Stefan Cobeli] 16:35:26
+Uh, both. Yeah. Uh, cool. I will give you guys an update. Yeah, let's keep talking.
+
+[Peyman Baghershahi] 16:35:32
+Yep.
+
+[Stefan Cobeli] 16:35:32
+Um, yeah, stupid. Sounds good. Alright, thank you, Bema. Thanks, everyone!
+
+[Peyman Baghershahi] 16:35:35
+Thank you. Thank you, everyone.
+

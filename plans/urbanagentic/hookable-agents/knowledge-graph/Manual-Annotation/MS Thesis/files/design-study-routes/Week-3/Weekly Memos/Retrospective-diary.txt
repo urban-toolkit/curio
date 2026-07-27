@@ -1,0 +1,6 @@
+This week had more tasks to be done.
+My original approach was competly changed so I had to think about other ways of approaching this problem with new limitations.
+
+Until Friday I couldn't fully think about a new way of calculating and predicting the weather. I've bounced some Ideas with Vamsi.
+
+On monday I went with Vamsi to collect data to DPI and in retrospective I'm glad that on the big picture we agree on the project.

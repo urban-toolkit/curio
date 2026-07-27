@@ -1,0 +1,168 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <style>
+      .ui { font-family: Inter, Arial, Helvetica, sans-serif; }
+      .title { font-family: Inter, Arial, Helvetica, sans-serif; fill: #111827; font-size: 22px; font-weight: 700; }
+      .subtitle { font-family: Inter, Arial, Helvetica, sans-serif; fill: #4B5563; font-size: 14px; }
+      .section { font-family: Inter, Arial, Helvetica, sans-serif; fill: #111827; font-size: 15px; font-weight: 700; }
+      .text { font-family: Inter, Arial, Helvetica, sans-serif; fill: #111827; font-size: 13px; }
+      .small { font-family: Inter, Arial, Helvetica, sans-serif; fill: #4B5563; font-size: 12px; }
+      .tiny { font-family: Inter, Arial, Helvetica, sans-serif; fill: #6B7280; font-size: 10.5px; }
+      .card { fill: #fff; stroke: #D1D5DB; stroke-width: 1; }
+      .shadow { filter: drop-shadow(0 2px 6px rgba(17, 24, 39, .12)); }
+      .arrow { fill: none; stroke-width: 2.2; stroke-dasharray: 7 6; marker-end: url(#arrow); }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#111827"/>
+    </marker>
+    <symbol id="bot-head" viewBox="0 0 28 28">
+      <rect x="5" y="8" width="18" height="14" rx="5" fill="currentColor"/>
+      <rect x="9" y="12" width="3.5" height="3.5" rx="1.7" fill="#fff"/>
+      <rect x="15.5" y="12" width="3.5" height="3.5" rx="1.7" fill="#fff"/>
+      <path d="M11 18 C13 19.5 15 19.5 17 18" fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/>
+      <path d="M14 8 V4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="14" cy="3.5" r="2" fill="currentColor"/>
+    </symbol>
+  </defs>
+
+  <rect width="1600" height="900" fill="#F7F8FA"/>
+  <text x="48" y="62" class="title">Hookable Agents: Attachment Flows</text>
+  <text x="48" y="88" class="subtitle">Each flow uses the same grammar: select agent, reveal compatible hook, attach, show persistent tab or canvas dock, refine when opened.</text>
+
+  <!-- Column headers -->
+  <g transform="translate(48 125)">
+    <rect width="354" height="34" rx="7" fill="#111827"/>
+    <text x="177" y="23" class="small" text-anchor="middle" fill="#fff">1. Select from Agents Catalog</text>
+  </g>
+  <g transform="translate(438 125)">
+    <rect width="354" height="34" rx="7" fill="#111827"/>
+    <text x="177" y="23" class="small" text-anchor="middle" fill="#fff">2. Attach to compatible hook</text>
+  </g>
+  <g transform="translate(828 125)">
+    <rect width="354" height="34" rx="7" fill="#111827"/>
+    <text x="177" y="23" class="small" text-anchor="middle" fill="#fff">3. Agent remains visible</text>
+  </g>
+  <g transform="translate(1218 125)">
+    <rect width="334" height="34" rx="7" fill="#111827"/>
+    <text x="167" y="23" class="small" text-anchor="middle" fill="#fff">4. Open and refine</text>
+  </g>
+
+  <!-- Flow 1 -->
+  <text x="48" y="205" class="section">Flow A: Dataset Finder attaches to a Data Load node</text>
+  <g transform="translate(48 226)" class="shadow">
+    <rect width="280" height="86" rx="8" fill="#ECFDF5" stroke="#16A34A" stroke-width="1.5"/>
+    <g color="#16A34A" transform="translate(16 16)"><use href="#bot-head" width="28" height="28"/></g>
+    <text x="56" y="29" class="section">Dataset Finder</text>
+    <text x="56" y="50" class="small">Hook: Data Load node</text>
+    <text x="56" y="69" class="tiny">Review: confirm datasets</text>
+  </g>
+  <path class="arrow" d="M342 270 C386 270 386 270 430 270" stroke="#16A34A"/>
+  <g transform="translate(438 218)" class="shadow">
+    <rect width="250" height="110" rx="8" fill="#fff" stroke="#16A34A" stroke-width="1.7"/>
+    <rect x="14" y="14" width="62" height="21" rx="5" fill="#ECFDF5" stroke="#BBF7D0"/>
+    <text x="45" y="29" class="tiny" text-anchor="middle" fill="#166534">DATA</text>
+    <text x="14" y="58" class="section">Load climate + census</text>
+    <text x="14" y="79" class="small">Compatible hook is highlighted.</text>
+    <circle cx="250" cy="55" r="7" fill="#16A34A"/>
+  </g>
+  <path class="arrow" d="M704 270 C748 270 748 270 814 270" stroke="#16A34A"/>
+  <g transform="translate(828 218)" class="shadow">
+    <rect width="250" height="110" rx="8" fill="#fff" stroke="#C9D0DA"/>
+    <text x="16" y="34" class="section">Load climate + census</text>
+    <text x="16" y="56" class="small">Agent tab appears below.</text>
+    <rect x="16" y="76" width="148" height="28" rx="6" fill="#ECFDF5" stroke="#16A34A"/>
+    <g color="#16A34A" transform="translate(25 80)"><use href="#bot-head" width="20" height="20"/></g>
+    <text x="55" y="95" class="tiny" fill="#166534">Dataset Finder</text>
+  </g>
+  <path class="arrow" d="M1090 270 C1134 270 1134 270 1204 270" stroke="#16A34A"/>
+  <g transform="translate(1218 208)" class="shadow">
+    <rect width="290" height="132" rx="8" fill="#fff" stroke="#D1D5DB"/>
+    <text x="16" y="31" class="section">Dataset Finder</text>
+    <text x="16" y="54" class="small">Sources: internal catalog, web, APIs.</text>
+    <text x="16" y="76" class="small">Region: selected city boundary.</text>
+    <text x="16" y="98" class="small">Action: propose dataset candidates.</text>
+    <rect x="160" y="104" width="112" height="22" rx="5" fill="#16A34A"/>
+    <text x="216" y="119" class="tiny" text-anchor="middle" fill="#fff">Find datasets</text>
+  </g>
+
+  <!-- Flow 2 -->
+  <text x="48" y="425" class="section">Flow B: Node Explainer attaches to a node</text>
+  <g transform="translate(48 446)" class="shadow">
+    <rect width="280" height="86" rx="8" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.5"/>
+    <g color="#2563EB" transform="translate(16 16)"><use href="#bot-head" width="28" height="28"/></g>
+    <text x="56" y="29" class="section">Node Explainer</text>
+    <text x="56" y="50" class="small">Hook: any code or output node</text>
+    <text x="56" y="69" class="tiny">Review: suggestions only</text>
+  </g>
+  <path class="arrow" d="M342 490 C386 490 386 490 430 490" stroke="#2563EB"/>
+  <g transform="translate(438 438)" class="shadow">
+    <rect width="250" height="110" rx="8" fill="#fff" stroke="#2563EB" stroke-width="1.7"/>
+    <rect x="14" y="14" width="70" height="21" rx="5" fill="#EFF6FF" stroke="#BFDBFE"/>
+    <text x="49" y="29" class="tiny" text-anchor="middle" fill="#1D4ED8">PYTHON</text>
+    <text x="14" y="58" class="section">Compute index</text>
+    <text x="14" y="79" class="small">Node hook is highlighted.</text>
+    <circle cx="250" cy="55" r="7" fill="#2563EB"/>
+  </g>
+  <path class="arrow" d="M704 490 C748 490 748 490 814 490" stroke="#2563EB"/>
+  <g transform="translate(828 438)" class="shadow">
+    <rect width="250" height="110" rx="8" fill="#fff" stroke="#C9D0DA"/>
+    <text x="16" y="34" class="section">Compute index</text>
+    <text x="16" y="56" class="small">Multiple agents can attach.</text>
+    <rect x="16" y="76" width="140" height="28" rx="6" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.5"/>
+    <g color="#2563EB" transform="translate(25 80)"><use href="#bot-head" width="20" height="20"/></g>
+    <text x="55" y="95" class="tiny" fill="#1D4ED8">Node Explainer</text>
+    <rect x="164" y="76" width="78" height="28" rx="6" fill="#F5F3FF" stroke="#7C3AED"/>
+    <text x="203" y="95" class="tiny" text-anchor="middle" fill="#6D28D9">Evaluator</text>
+  </g>
+  <path class="arrow" d="M1090 490 C1134 490 1134 490 1204 490" stroke="#2563EB"/>
+  <g transform="translate(1218 428)" class="shadow">
+    <rect width="290" height="132" rx="8" fill="#fff" stroke="#D1D5DB"/>
+    <text x="16" y="31" class="section">Node Explainer</text>
+    <text x="16" y="54" class="small">Reads node code and output.</text>
+    <text x="16" y="76" class="small">Reads upstream lineage.</text>
+    <text x="16" y="98" class="small">Refine explanation style.</text>
+    <rect x="156" y="104" width="116" height="22" rx="5" fill="#2563EB"/>
+    <text x="214" y="119" class="tiny" text-anchor="middle" fill="#fff">Save refinement</text>
+  </g>
+
+  <!-- Flow 3 -->
+  <text x="48" y="645" class="section">Flow C: Dataflow Builder attaches to the canvas</text>
+  <g transform="translate(48 666)" class="shadow">
+    <rect width="280" height="86" rx="8" fill="#FFF4E8" stroke="#FF6F00" stroke-width="1.5"/>
+    <g color="#FF6F00" transform="translate(16 16)"><use href="#bot-head" width="28" height="28"/></g>
+    <text x="56" y="29" class="section">Dataflow Builder</text>
+    <text x="56" y="50" class="small">Hook: whole canvas</text>
+    <text x="56" y="69" class="tiny">Review: confirm graph changes</text>
+  </g>
+  <path class="arrow" d="M342 710 C386 710 386 710 430 710" stroke="#FF6F00"/>
+  <g transform="translate(438 642)" class="shadow">
+    <rect width="250" height="132" rx="8" fill="#FBFBFC" stroke="#FF6F00" stroke-width="1.7" stroke-dasharray="8 6"/>
+    <text x="16" y="32" class="section">Current dataflow canvas</text>
+    <circle cx="56" cy="74" r="20" fill="#fff" stroke="#C9D0DA"/>
+    <circle cx="126" cy="74" r="20" fill="#fff" stroke="#C9D0DA"/>
+    <circle cx="196" cy="74" r="20" fill="#fff" stroke="#C9D0DA"/>
+    <path d="M76 74 H106 M146 74 H176" stroke="#111827" stroke-width="1.6"/>
+    <text x="16" y="116" class="small">Canvas hook boundary appears.</text>
+  </g>
+  <path class="arrow" d="M704 710 C748 710 748 710 814 710" stroke="#FF6F00"/>
+  <g transform="translate(828 642)" class="shadow">
+    <rect width="250" height="132" rx="8" fill="#FBFBFC" stroke="#C9D0DA"/>
+    <rect x="16" y="16" width="218" height="42" rx="7" fill="#FFF4E8" stroke="#FF6F00"/>
+    <g color="#FF6F00" transform="translate(28 24)"><use href="#bot-head" width="24" height="24"/></g>
+    <text x="64" y="40" class="small" fill="#C2410C">Dataflow Builder dock</text>
+    <text x="16" y="86" class="small">Dock stays visible above graph.</text>
+    <text x="16" y="108" class="small">It owns plan, revise, solve.</text>
+  </g>
+  <path class="arrow" d="M1090 710 C1134 710 1134 710 1204 710" stroke="#FF6F00"/>
+  <g transform="translate(1218 648)" class="shadow">
+    <rect width="290" height="132" rx="8" fill="#fff" stroke="#D1D5DB"/>
+    <text x="16" y="31" class="section">Dataflow Builder</text>
+    <text x="16" y="54" class="small">Mission and planning template.</text>
+    <text x="16" y="76" class="small">Graph changes require confirmation.</text>
+    <rect x="38" y="104" width="80" height="22" rx="5" fill="#fff" stroke="#FED7AA"/>
+    <text x="78" y="119" class="tiny" text-anchor="middle" fill="#C2410C">Replan</text>
+    <rect x="128" y="104" width="80" height="22" rx="5" fill="#FF6F00"/>
+    <text x="168" y="119" class="tiny" text-anchor="middle" fill="#fff">Solve</text>
+  </g>
+</svg>
+

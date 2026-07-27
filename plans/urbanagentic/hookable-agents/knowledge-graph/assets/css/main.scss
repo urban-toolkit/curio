@@ -1,0 +1,258 @@
+---
+---
+
+@import "minimal-mistakes/skins/default"; // skin
+@import "minimal-mistakes"; // main partials
+
+/* Custom styles for better table rendering and navigation */
+
+/* Fix table rendering issues */
+table {
+  border-collapse: collapse !important;
+  width: 100% !important;
+  margin: 1.5em 0 !important;
+}
+
+table th,
+table td {
+  border: 1px solid #ddd !important;
+  padding: 8px 12px !important;
+  text-align: left !important;
+}
+
+table th {
+  background-color: #f8f9fa !important;
+  font-weight: 600 !important;
+}
+
+table tr:nth-child(even) {
+  background-color: #f9f9f9 !important;
+}
+
+table tr:hover {
+  background-color: #f5f5f5 !important;
+}
+
+/* NAVIGATION HIGHLIGHTING - RESET ALL BORDERS AND OVERRIDE THEME */
+.sidebar .nav__list .current,
+.sidebar .nav__list a.current {
+  font-weight: bold !important;
+  color: #1565c0 !important;
+  background-color: #e3f2fd !important;
+  border: none !important;
+  border-left: 3px solid #1565c0 !important;
+  padding-left: 0.5em !important;
+  padding-right: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  border-radius: 3px !important;
+  margin: 1px 0 !important;
+  display: inline-block !important;
+  width: auto !important;
+  box-shadow: none !important;
+}
+
+/* STAGE HIGHLIGHTING - RESET ALL BORDERS AND OVERRIDE THEME */
+.sidebar .nav__list .stage-current,
+.sidebar .nav__list a.stage-current,
+.sidebar .nav__list .nav__sub-title.stage-current {
+  font-weight: bold !important;
+  color: #7b1fa2 !important;
+  background-color: #f3e5f5 !important;
+  border: none !important;
+  border-left: 3px solid #7b1fa2 !important;
+  padding: 0.25em !important;
+  border-radius: 3px !important;
+  margin: 1px 0 !important;
+  font-size: 1.02em !important;
+  display: inline-block !important;
+  width: auto !important;
+  box-shadow: none !important;
+}
+
+.nav__list a:hover {
+  background-color: #f5f5f5 !important;
+  border-radius: 4px !important;
+  transition: all 0.2s ease !important;
+}
+
+.nav__list > li > a {
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+}
+
+/* Custom styles for active navigation highlighting */
+.nav__list .nav__items {
+  
+  /* Make stage titles more prominent */
+  > li > a {
+    font-weight: 600;
+    color: #2c3e50;
+    text-transform: uppercase;
+    font-size: 0.9em;
+    letter-spacing: 0.5px;
+  }
+  
+  /* Style sub-items */
+  ul li a {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    
+    &:hover {
+      background-color: #f5f5f5;
+      color: #1976d2;
+    }
+  }
+}
+
+/* Table styling improvements */
+table {
+  border-collapse: collapse;
+  margin: 1.5em 0;
+  
+  th, td {
+    border: 1px solid #ddd;
+    padding: 12px 8px;
+    text-align: left;
+  }
+  
+  th {
+    background-color: #f8f9fa;
+    font-weight: 600;
+  }
+  
+  tr:nth-child(even) {
+    background-color: #f9f9f9;
+  }
+  
+  tr:hover {
+    background-color: #f5f5f5;
+  }
+}
+
+/* Stage progress indicator */
+.stage-progress {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  background: linear-gradient(90deg, #e8f5e8 0%, #f0f8ff 100%);
+  border-radius: 8px;
+  margin: 1rem 0;
+  border-left: 4px solid #28a745;
+}
+
+/* Content improvements */
+.page__content {
+  h1, h2, h3, h4 {
+    margin-top: 2em;
+    margin-bottom: 0.5em;
+  }
+  
+  h1 {
+    border-bottom: 2px solid #e9ecef;
+    padding-bottom: 0.5rem;
+  }
+  
+  h2 {
+    color: #2c3e50;
+  }
+  
+  h3 {
+    color: #34495e;
+  }
+}
+
+/* FULL WIDTH LAYOUT - Proper implementation without conflicts */
+@media (min-width: 80em) {
+  .layout--single .sidebar {
+    width: 18% !important;
+    padding-right: 1em !important;
+  }
+  
+  .layout--single .page {
+    float: right !important;
+    width: 80% !important;
+    padding-left: 1em !important;
+  }
+}
+
+/* Override masthead and page constraints */
+.masthead__inner-wrap,
+.page__inner-wrap {
+  max-width: none !important;
+  padding: 0 1em !important;
+}
+
+/* Remove any margin/padding that creates empty space */
+.page {
+  margin: 0 !important;
+}
+
+.page__content {
+  margin-bottom: 1em !important;
+}
+
+/* Ensure the main container uses full width */
+.initial-content {
+  max-width: none !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Fix any container that might limit width */
+.container {
+  max-width: none !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 1em !important;
+}
+
+/* Make sure iframe uses available space */
+iframe {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+/* Override article tag constraints */
+article {
+  max-width: none !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Override section and main content areas */
+section {
+  max-width: none !important;
+  width: 100% !important;
+  margin: 0 !important;
+}
+
+main {
+  max-width: none !important;
+  width: 100% !important;
+  margin: 0 !important;
+}
+
+/* Override any .page__content article specifically */
+.page__content article {
+  max-width: none !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Ensure iframe isolation from parent styles */
+iframe {
+  /* Reset any inherited styles that might affect the iframe content */
+  all: unset !important;
+  display: block !important;
+  width: 100% !important;
+  height: 900px !important;
+  border: 1px solid #ddd !important;
+  border-radius: 8px !important;
+}

@@ -1,0 +1,510 @@
+[Fabio Miranda] 13:34:34
+Hello.
+
+[Fabio Miranda] 13:34:36
+Is transcription open?
+
+[Fabio Miranda] 13:34:38
+But that, uh…
+
+[karla] 13:34:40
+kitchens.
+
+[Fabio Miranda] 13:34:44
+Next slide, please.
+
+[Gustavo Moreira] 13:34:49
+Isso que eu fiz foi se você gravar a sessão, ele gera um transcript gravado que detecta o idioma.
+
+[Fabio Miranda] 13:34:55
+Ah, mudou.
+
+[Fabio Miranda] 13:34:56
+Mudou.
+
+[Fabio Miranda] 13:34:57
+Ah, mudou. Beleza mudou.
+
+[Fabio Miranda] 13:35:00
+É.
+
+[Fabio Miranda] 13:35:02
+Então agora está gravando. Depois eu vou mandar outro um script naquele grupo lá. Mas acho que a ideia é, a gente tem um.
+
+[Fabio Miranda] 13:35:10
+Agent catalogue, do mesmo jeito que a gente tem data catalogue e o.
+
+[Fabio Miranda] 13:35:18
+Novo de catalogue.
+
+[Fabio Miranda] 13:35:19
+E aí a gente podia fazer isso em duas etapas. A primeira etapa: a gente pensa: Como é que.
+
+[Fabio Miranda] 13:35:25
+Vai ser a interface desse agent catalogue. Do mesmo jeito que a gente pensou como é que seria a interface do datacatalogue e do node catalogue.
+
+[Fabio Miranda] 13:35:35
+Esse é o primeiro passo.
+
+[Fabio Miranda] 13:35:37
+Aí. O segundo passo.
+
+[Fabio Miranda] 13:35:39
+Ou a gente faz isso em paralelo, é pensar em quais seriam os potenciais agents. Os mais básicos que a gente poderia criar.
+
+[Fabio Miranda] 13:35:50
+Incorporar no cúrio.
+
+[Fabio Miranda] 13:35:52
+Eu acho que esses agents, no final das contas, vão ser só.
+
+[Fabio Miranda] 13:35:56
+Diferentes, prontas.
+
+[Fabio Miranda] 13:35:58
+Para isso.
+
+[Fabio Miranda] 13:36:00
+Então a gente primeiro pensa como que vai ser? A interface cria algumas sketchs.
+
+[Fabio Miranda] 13:36:06
+Desse Agents Catalogue.
+
+[Fabio Miranda] 13:36:07
+E aí? Depois a gente pensa no.
+
+[Fabio Miranda] 13:36:10
+Nos Agents. Mesmo.
+
+[Fabio Miranda] 13:36:12
+E a gente poderia dar a opção do usuário de criar os agents deles. Então, do mesmo jeito que a gente tem os packs, Nods, data, etc. A gente pensa como que o usuário vai poder criar esses agents.
+
+[Fabio Miranda] 13:36:27
+Criar e salvar e compartilhar esses Agents.
+
+[Fabio Miranda] 13:36:30
+Faz sentido.
+
+[karla] 13:36:31
+Sim.
+
+[Fabio Miranda] 13:36:32
+Jóia, Gustavo. Faz sentido.
+
+[Gustavo Moreira] 13:36:38
+Faz sentido. Sim.
+
+[Fabio Miranda] 13:36:40
+Caramba! Deixa, eu.
+
+[Fabio Miranda] 13:36:46
+Deixa eu salvar os transcripts. Aqui.
+
+[Fabio Miranda] 13:36:47
+É.
+
+[Fabio Miranda] 13:36:48
+Deixa eu ver aqui.
+
+[Fabio Miranda] 13:36:52
+The Agents.
+
+[Gustavo Moreira] 13:36:56
+Estou pensando que tipo assim, eu não sei.
+
+[Gustavo Moreira] 13:37:01
+É.
+
+[Gustavo Moreira] 13:37:04
+Eu acho que faz sentido. Eu estou pensando demais aqui. Mas.
+
+[Gustavo Moreira] 13:37:09
+É o.
+
+[Gustavo Moreira] 13:37:10
+Acho que o ponto é a gente tentar.
+
+[Gustavo Moreira] 13:37:13
+Fazer isso de uma maneira que seja simples. Porque.
+
+[Gustavo Moreira] 13:37:17
+E aí?
+
+[Gustavo Moreira] 13:37:18
+Lidar com esses agentes.
+
+[Gustavo Moreira] 13:37:20
+Isso torna bastante complicado, né? Você tem.
+
+[Gustavo Moreira] 13:37:22
+Vários tipos de arquitetura que você gosta de seguir e tal.
+
+[Fabio Miranda] 13:37:26
+Aham!
+
+[Gustavo Moreira] 13:37:26
+Vários tipos de Prompt. Você pode construir.
+
+[Gustavo Moreira] 13:37:28
+Eu acho que talvez seja identificar alguns tipos de agentes específicos e.
+
+[Gustavo Moreira] 13:37:33
+Quebrar esses tipos em.
+
+[Gustavo Moreira] 13:37:36
+Em algumas arquiteturas de agentes diferentes que você pode recombinar para construir o seu agente.
+
+[Gustavo Moreira] 13:37:40
+Talvez seja melhor do que.
+
+[Gustavo Moreira] 13:37:43
+Deixar tudo muito livre para o usuário, definir prompts e coisas de muito baixo nível.
+
+[Gustavo Moreira] 13:37:48
+Aí você meio que monta o seu agente lá e.
+
+[Fabio Miranda] 13:37:51
+Uhum.
+
+[Gustavo Moreira] 13:37:52
+Isso, obviamente vai ter impacto na quantidade de crédito que você consome.
+
+[Fabio Miranda] 13:37:56
+Sim.
+
+[Gustavo Moreira] 13:37:56
+É um.
+
+[Fabio Miranda] 13:37:57
+Eu acho que pode ser o segundo passo. Então o primeiro passo é como vai ser a interface.
+
+[Fabio Miranda] 13:38:03
+O segundo passo pode ser como que a gente estrutura. Esses agentes.
+
+[Fabio Miranda] 13:38:08
+E o texto.
+
+[karla] 13:38:09
+Seriam construentes, porque a gente pode criar uma construinte de Token. A gente pode criar formas de medir.
+
+[Fabio Miranda] 13:38:10
+Isso.
+
+[karla] 13:38:15
+Como está sendo usado?
+
+[karla] 13:38:17
+Pra gente limitar, tá entendendo?
+
+[Gustavo Moreira] 13:38:19
+Uhum.
+
+[karla] 13:38:20
+A gente pode limitar, dependendo do agente. Também.
+
+[Fabio Miranda] 13:38:24
+Então. Mas a gente tem que pensar quais são os constranções.
+
+[Fabio Miranda] 13:38:29
+E.
+
+[Fabio Miranda] 13:38:30
+E aí a gente começa a discutir de pouco em pouco.
+
+[Fabio Miranda] 13:38:36
+Adicionar constraints, retirar certas constraints. E a gente meio que vai alinhando ao longo do tempo. Mas acho que a gente tem que começar com.
+
+[Fabio Miranda] 13:38:46
+Sketches.
+
+[Fabio Miranda] 13:38:48
+Dessa interface.
+
+[Fabio Miranda] 13:38:51
+E aí a gente vê.
+
+[Fabio Miranda] 13:38:54
+Essas.
+
+[Fabio Miranda] 13:38:57
+Restrições ao longo do tempo.
+
+[Gustavo Moreira] 13:38:59
+É? Eu acho que o segundo passo depois desses caras, na verdade, seria.
+
+[Gustavo Moreira] 13:39:04
+Entender o que esses agentes vão fazer. Que tipo de ações eles podem fazer?
+
+[Fabio Miranda] 13:39:07
+É assim.
+
+[Fabio Miranda] 13:39:08
+É.
+
+[Fabio Miranda] 13:39:09
+Esse aí seria junto com o segundo passo de constran. À medida que a gente vai entendendo os constran a gente vai entendendo as limitações desses agentes.
+
+[Gustavo Moreira] 13:39:12
+E aí?
+
+[Fabio Miranda] 13:39:19
+Porque pelo que eu.
+
+[Fabio Miranda] 13:39:23
+Estou vendo das minhas interações com o Claudi e o.
+
+[Fabio Miranda] 13:39:27
+Vídeo estúdio com Claudi.
+
+[Fabio Miranda] 13:39:30
+Esses agentes não são nada mais nada menos que um prompt refinado. Sabe.
+
+[Fabio Miranda] 13:39:35
+E.
+
+[Fabio Miranda] 13:39:36
+Prompt refinado. E aí você tem algumas condições de quando que a gente termina.
+
+[Fabio Miranda] 13:39:42
+Quantos agentes você lança? Mas basicamente é tudo um bando de prompt.
+
+[Fabio Miranda] 13:39:49
+E aí acho que o mais difícil é como que você estabelece a interação entre o agente.
+
+[Fabio Miranda] 13:39:56
+E.
+
+[Fabio Miranda] 13:39:56
+A sua interface.
+
+[Fabio Miranda] 13:40:00
+Por exemplo, como que o agente vai receber uma descrição do Dataflow.
+
+[Fabio Miranda] 13:40:05
+Como que o agente vai receber o código dentro de um dataflow, essas coisas, essas coisas. A gente vai pensando ao longo do tempo.
+
+[Fabio Miranda] 13:40:13
+É.
+
+[Fabio Miranda] 13:40:14
+Mas.
+
+[Fabio Miranda] 13:40:15
+Carla, você acha que. Como é que você acha que esse plano.
+
+[Fabio Miranda] 13:40:20
+É. É.
+
+[Fabio Miranda] 13:40:21
+O pão.
+
+[Fabio Miranda] 13:40:26
+Confiante. Você se sentiria embarcando nesse plano?
+
+[karla] 13:40:33
+Eu estou pensando nos desenhos de como seria.
+
+[karla] 13:40:38
+O que eu estou vendo que seria mais desafiado. É como lidar com as conexões.
+
+[karla] 13:40:44
+Ela estava pensando em uma nova forma de visualizar, além dos nodes, visualizar como eles estão conectados dentro do package.
+
+[Fabio Miranda] 13:40:52
+Isso também. Mas isso aí é meio que portugonal ao agente.
+
+[Fabio Miranda] 13:40:59
+Acho que isso aí.
+
+[karla] 13:41:00
+É no caso. Digamos que a gente vai criar um date flow.
+
+[karla] 13:41:04
+A gente teria uma forma de visualizar esse Dataflow e editar da forma que o usuário possa. Eu quero cancelar essa conexão. Eu não quero essa conexão.
+
+[Fabio Miranda] 13:41:14
+É um.
+
+[karla] 13:41:14
+Aí.
+
+[karla] 13:41:14
+Por exemplo, Luiza ficou pensando numa forma de mostrar o datflow meio fade out.
+
+[Fabio Miranda] 13:41:18
+Uhum.
+
+[Fabio Miranda] 13:41:20
+Uhum.
+
+[karla] 13:41:21
+Se fosse.
+
+[karla] 13:41:23
+Um modo temporário em que o usuário vai.
+
+[karla] 13:41:26
+Selecionando.
+
+[karla] 13:41:28
+Quais as conexões e os nós que fazem sentido.
+
+[Fabio Miranda] 13:41:31
+Então. Mas vamos fazer isso aí no segundo passo, vamos tentar fazer primeiro, ter o básico dos agentes.
+
+[Fabio Miranda] 13:41:38
+Aí. Depois desse básico dos agentes, a gente pensa no segundo passo, que é: Ah, beleza. Agora a gente tem esse dataflow funcionando mais ou menos.
+
+[Fabio Miranda] 13:41:46
+Como que a gente melhora a visualização desse dataflows.
+
+[karla] 13:41:50
+Então a gente iria criar o Dataflow sem a confirmação do usuário. Inicialmente. Depois a gente pensa na como o usuário vai.
+
+[Fabio Miranda] 13:41:50
+É.
+
+[Fabio Miranda] 13:42:00
+Eu acho que.
+
+[karla] 13:42:00
+Interagir o feedback, né? O feedback.
+
+[Fabio Miranda] 13:42:01
+Isso. Mas acho que antes disso, a gente tem que pensar na interface do This Agent.
+
+[Fabio Miranda] 13:42:08
+Catalogue.
+
+[Fabio Miranda] 13:42:09
+Depois a gente pensa.
+
+[Fabio Miranda] 13:42:11
+Quais vão ser as restrições desses agentes. Aí, o terceiro passo.
+
+[Fabio Miranda] 13:42:17
+É isso que você descreveu agora? Como que o agente interfere.
+
+[Fabio Miranda] 13:42:23
+No.
+
+[Fabio Miranda] 13:42:25
+No canvas em si. Aí a gente pode pensar nesse payout, essas coisas de diferentes maneiras. Mas esse é o terceiro passo.
+
+[Fabio Miranda] 13:42:32
+Vamos primeiro pensar na interface desses agentes.
+
+[Fabio Miranda] 13:42:37
+Como que vai ser o menu na direita? A lista de agentes, essas coisas.
+
+[Fabio Miranda] 13:42:42
+Depois a gente pensa como que vai ser.
+
+[Fabio Miranda] 13:42:46
+As restrições de cada agente. Como que a gente define a ação de um agente.
+
+[Fabio Miranda] 13:42:51
+Aí. No terceiro passo, a gente vê essa coisa das visualizações.
+
+[Fabio Miranda] 13:42:58
+Beleza.
+
+[karla] 13:42:59
+Certo.
+
+[Fabio Miranda] 13:43:02
+Agent Catalogue. Deixa eu ir. Salvando aqui.
+
+[Fabio Miranda] 13:43:06
+É.
+
+[Fabio Miranda] 13:43:08
+Então eu acho que a gente podia meio que.
+
+[Fabio Miranda] 13:43:12
+Pegar essa semana para pensar nessas sketches.
+
+[Fabio Miranda] 13:43:17
+Semana que vem, a gente já conversa e modifica alguma coisa nessas sketchs.
+
+[Fabio Miranda] 13:43:23
+E a gente já começa a implementar.
+
+[Fabio Miranda] 13:43:25
+Ah, esse agente.
+
+[Fabio Miranda] 13:43:27
+Catalogue.
+
+[karla] 13:43:31
+Beleza.
+
+[Fabio Miranda] 13:43:31
+E jóia.
+
+[Fabio Miranda] 13:43:33
+Beleza.
+
+[Fabio Miranda] 13:43:33
+Alguma.
+
+[Fabio Miranda] 13:43:35
+Sugestão, dúvida.
+
+[karla] 13:43:38
+Acho que era o que eu tinha. Era sobre aquela questão do direito a catalogue. Mas aí a gente.
+
+[karla] 13:43:45
+Conversa aí.
+
+[Fabio Miranda] 13:43:46
+Então. Mas você pode. Vai testando.
+
+[Fabio Miranda] 13:43:50
+É.
+
+[Fabio Miranda] 13:43:50
+Talvez não seja bom você testar, porque eu ainda não fiz o Manja do coisa. Mas eu vou talvez fazer.
+
+[karla] 13:43:58
+Eu tava usando. Eu falei pra ela baixar a brunch, e ela já tava fazendo uns testes. Já.
+
+[Fabio Miranda] 13:44:05
+Ah, beleza. Então você vai ser bom. Sei lá. Passa hoje amanhã testando.
+
+[Fabio Miranda] 13:44:10
+Aí vai anotando, sei lá, num papel, os erros ou qualquer.
+
+[Fabio Miranda] 13:44:16
+Problema que você ache aí amanhã a gente pode conversar de novo. Você me passa? O que você achou aí? A gente anota lá nos ixos.
+
+[Fabio Miranda] 13:44:23
+E aí? Amanhã eu faço. Munch para o Brand principal.
+
+[Fabio Miranda] 13:44:26
+E aí você testa já naquele endereço que a gente estava usando.
+
+[Fabio Miranda] 13:44:33
+E aí, enquanto isso.
+
+[Fabio Miranda] 13:44:35
+A Carla. Se você pensar nessas sketchs do Agent Catalogue.
+
+[Fabio Miranda] 13:44:39
+E aí a gente vai conversando. Vamos conversar amanhã. Também. Aí o Gustavo dá as opiniões dele sobre a interface antes da gente pular.
+
+[Fabio Miranda] 13:44:48
+Para os agentes em si.
+
+[Fabio Miranda] 13:44:51
+Beleza.
+
+[karla] 13:44:53
+Beleza.
+
+[Fabio Miranda] 13:44:54
+Jóia é.
+
+[Fabio Miranda] 13:44:56
+Então vamos mandar o transcript aqui deixa, eu salvar aqui.
+

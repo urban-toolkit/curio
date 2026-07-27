@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <style>
+      .ui { font-family: Inter, Arial, Helvetica, sans-serif; }
+      .title { font-family: Inter, Arial, Helvetica, sans-serif; fill: #111827; font-size: 22px; font-weight: 700; }
+      .subtitle { font-family: Inter, Arial, Helvetica, sans-serif; fill: #4B5563; font-size: 14px; }
+      .frame-title { font-family: Inter, Arial, Helvetica, sans-serif; fill: #111827; font-size: 15px; font-weight: 700; }
+      .text { font-family: Inter, Arial, Helvetica, sans-serif; fill: #111827; font-size: 12px; }
+      .tiny { font-family: Inter, Arial, Helvetica, sans-serif; fill: #6B7280; font-size: 10px; }
+      .frame { fill: #fff; stroke: #D1D5DB; stroke-width: 1; }
+      .node { fill: #fff; stroke: #C9D0DA; stroke-width: 1.2; }
+      .shadow { filter: drop-shadow(0 2px 6px rgba(17, 24, 39, .12)); }
+    </style>
+    <pattern id="grid" width="16" height="16" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1" fill="#DDE2EA"/>
+    </pattern>
+    <symbol id="bot-head" viewBox="0 0 28 28">
+      <rect x="5" y="8" width="18" height="14" rx="5" fill="currentColor"/>
+      <rect x="9" y="12" width="3.5" height="3.5" rx="1.7" fill="#fff"/>
+      <rect x="15.5" y="12" width="3.5" height="3.5" rx="1.7" fill="#fff"/>
+      <path d="M11 18 C13 19.5 15 19.5 17 18" fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/>
+      <path d="M14 8 V4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="14" cy="3.5" r="2" fill="currentColor"/>
+    </symbol>
+  </defs>
+
+  <rect width="1600" height="900" fill="#F7F8FA"/>
+  <text x="48" y="62" class="title">Hookable Agents: Interaction States</text>
+  <text x="48" y="88" class="subtitle">The same UI elements move from browseable catalog to visible attachment to selected refinement.</text>
+
+  <!-- Frame 1 -->
+  <g transform="translate(48 128)">
+    <rect width="700" height="330" rx="8" class="frame"/>
+    <text x="24" y="35" class="frame-title">Default view</text>
+    <text x="24" y="57" class="tiny">Agents are available, but no target is active.</text>
+    <rect x="24" y="82" width="170" height="218" rx="7" fill="#F9FAFB" stroke="#D1D5DB"/>
+    <text x="40" y="110" class="text" style="font-weight:700">Agents Catalog</text>
+    <rect x="40" y="128" width="138" height="28" rx="6" fill="#fff" stroke="#D1D5DB"/>
+    <text x="56" y="146" class="tiny">Search agents</text>
+    <rect x="40" y="172" width="138" height="42" rx="6" fill="#ECFDF5" stroke="#BBF7D0"/>
+    <text x="54" y="198" class="tiny" fill="#166534">Dataset Finder</text>
+    <rect x="40" y="224" width="138" height="42" rx="6" fill="#EFF6FF" stroke="#BFDBFE"/>
+    <text x="54" y="250" class="tiny" fill="#1D4ED8">Node Explainer</text>
+    <rect x="222" y="82" width="440" height="218" rx="7" fill="#FBFBFC" stroke="#D1D5DB"/>
+    <rect x="222" y="82" width="440" height="218" fill="url(#grid)" opacity=".8"/>
+    <rect x="280" y="150" width="130" height="64" rx="7" class="node"/>
+    <text x="296" y="184" class="text">Data Load</text>
+    <rect x="480" y="150" width="130" height="64" rx="7" class="node"/>
+    <text x="496" y="184" class="text">Compute</text>
+    <path d="M410 182 H480" stroke="#111827" stroke-width="1.8"/>
+  </g>
+
+  <!-- Frame 2 -->
+  <g transform="translate(852 128)">
+    <rect width="700" height="330" rx="8" class="frame"/>
+    <text x="24" y="35" class="frame-title">Attached-agent visible state</text>
+    <text x="24" y="57" class="tiny">Tabs stay under the node after the agent is connected.</text>
+    <rect x="66" y="96" width="568" height="184" rx="7" fill="#FBFBFC" stroke="#D1D5DB"/>
+    <rect x="66" y="96" width="568" height="184" fill="url(#grid)" opacity=".8"/>
+    <g class="shadow" transform="translate(150 145)">
+      <rect width="170" height="72" rx="7" class="node"/>
+      <text x="16" y="40" class="text" style="font-weight:700">Data Load</text>
+    </g>
+    <g transform="translate(150 226)" class="shadow">
+      <rect width="148" height="28" rx="6" fill="#ECFDF5" stroke="#16A34A"/>
+      <g color="#16A34A" transform="translate(10 4)"><use href="#bot-head" width="20" height="20"/></g>
+      <text x="40" y="18" class="tiny" fill="#166534">Dataset Finder</text>
+    </g>
+    <g class="shadow" transform="translate(400 145)">
+      <rect width="170" height="72" rx="7" class="node"/>
+      <text x="16" y="40" class="text" style="font-weight:700">Compute</text>
+    </g>
+    <g transform="translate(400 226)" class="shadow">
+      <rect width="142" height="28" rx="6" fill="#EFF6FF" stroke="#2563EB"/>
+      <g color="#2563EB" transform="translate(10 4)"><use href="#bot-head" width="20" height="20"/></g>
+      <text x="40" y="18" class="tiny" fill="#1D4ED8">Node Explainer</text>
+    </g>
+  </g>
+
+  <!-- Frame 3 -->
+  <g transform="translate(48 510)">
+    <rect width="700" height="330" rx="8" class="frame"/>
+    <text x="24" y="35" class="frame-title">Attached-agent selected state</text>
+    <text x="24" y="57" class="tiny">A selected tab has a stronger outline and keeps its target highlighted.</text>
+    <rect x="66" y="96" width="568" height="184" rx="7" fill="#FBFBFC" stroke="#D1D5DB"/>
+    <rect x="66" y="96" width="568" height="184" fill="url(#grid)" opacity=".8"/>
+    <g class="shadow" transform="translate(245 132)">
+      <rect width="210" height="88" rx="7" fill="#fff" stroke="#2563EB" stroke-width="1.8"/>
+      <text x="16" y="42" class="text" style="font-weight:700">Compute vulnerability index</text>
+      <text x="16" y="62" class="tiny">Target remains visible.</text>
+    </g>
+    <g transform="translate(245 230)" class="shadow">
+      <rect width="148" height="30" rx="6" fill="#EFF6FF" stroke="#2563EB" stroke-width="2"/>
+      <g color="#2563EB" transform="translate(10 5)"><use href="#bot-head" width="20" height="20"/></g>
+      <text x="40" y="20" class="tiny" fill="#1D4ED8">Node Explainer</text>
+    </g>
+    <path d="M394 245 C470 245 512 200 588 190" fill="none" stroke="#2563EB" stroke-width="1.6" stroke-dasharray="5 6"/>
+    <rect x="520" y="128" width="92" height="42" rx="6" fill="#EFF6FF" stroke="#2563EB"/>
+    <text x="566" y="154" class="tiny" text-anchor="middle" fill="#1D4ED8">open detail</text>
+  </g>
+
+  <!-- Frame 4 -->
+  <g transform="translate(852 510)">
+    <rect width="700" height="330" rx="8" class="frame"/>
+    <text x="24" y="35" class="frame-title">Refinement sidebar open state</text>
+    <text x="24" y="57" class="tiny">The sidebar lets users inspect and refine the attached agent in context.</text>
+    <rect x="44" y="88" width="390" height="210" rx="7" fill="#FBFBFC" stroke="#D1D5DB"/>
+    <rect x="44" y="88" width="390" height="210" fill="url(#grid)" opacity=".8"/>
+    <g transform="translate(110 142)" class="shadow">
+      <rect width="190" height="78" rx="7" fill="#fff" stroke="#2563EB" stroke-width="1.8"/>
+      <text x="16" y="39" class="text" style="font-weight:700">Compute vulnerability</text>
+    </g>
+    <g transform="translate(110 230)" class="shadow">
+      <rect width="148" height="30" rx="6" fill="#EFF6FF" stroke="#2563EB" stroke-width="2"/>
+      <g color="#2563EB" transform="translate(10 5)"><use href="#bot-head" width="20" height="20"/></g>
+      <text x="40" y="20" class="tiny" fill="#1D4ED8">Node Explainer</text>
+    </g>
+    <rect x="456" y="88" width="200" height="210" rx="7" fill="#fff" stroke="#D1D5DB"/>
+    <text x="476" y="120" class="text" style="font-weight:700">Node Explainer</text>
+    <text x="476" y="140" class="tiny">Attached to selected node</text>
+    <rect x="476" y="162" width="160" height="42" rx="6" fill="#EFF6FF" stroke="#BFDBFE"/>
+    <text x="492" y="186" class="tiny" fill="#1D4ED8">Reads code and output</text>
+    <rect x="476" y="216" width="160" height="42" rx="6" fill="#fff" stroke="#D1D5DB"/>
+    <text x="492" y="240" class="tiny">Refine prompt/context</text>
+    <rect x="476" y="270" width="74" height="22" rx="5" fill="#fff" stroke="#D1D5DB"/>
+    <text x="513" y="285" class="tiny" text-anchor="middle">Run</text>
+    <rect x="560" y="270" width="76" height="22" rx="5" fill="#FF6F00"/>
+    <text x="598" y="285" class="tiny" text-anchor="middle" fill="#fff">Save</text>
+  </g>
+</svg>
+

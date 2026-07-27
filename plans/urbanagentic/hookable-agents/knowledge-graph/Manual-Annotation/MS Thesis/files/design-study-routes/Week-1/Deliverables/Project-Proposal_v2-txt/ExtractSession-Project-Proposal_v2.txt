@@ -1,0 +1,26 @@
+# [Proposal]: [System] [to_detect] [Problem] [in] [Location]
+
+## [Design_Concept]
+
+[Problem] [for] [User], [applies_to] [Scope]. [State], [Solution] [related_to] [Priority]. 
+[identify]  [Weather_Event], [Weather_Event], [Weather_Event] [affects] [Urban_Infrastructure] [Solution] [related_to] [Outcome] and [Priority] [related_to] [Outcome].
+
+[Time_Component] [Technical_Concept] [Scope] [Solution] [Scope] [Inference]. [State] [System] [extend] [Solution] [Inference].
+
+## [Design_Concept]: 
+
+### [Priority]:
+[Development] [Tool] [extend] [User] [Solution] [using] [Data] and [Data].
+
+### [Priority]:
+[Development][Algorithm] [implemented] [Software] [extend] [Task] [Task] [Weather_Event]
+
+### [Priority]:
+
+[Development] [Framework] [for] [Design_Concept]
+
+## [Design_Concept]:
+
+[Domain_Expert]: [Domain_Expert], [Domain_Expert].
+
+[User]: [User] [User] [State] [Scope] [Location] [Scope] [Location] [Scope] [Solution].

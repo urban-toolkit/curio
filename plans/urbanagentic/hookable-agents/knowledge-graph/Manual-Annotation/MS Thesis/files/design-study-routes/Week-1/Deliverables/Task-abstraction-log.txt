@@ -1,0 +1,10 @@
+# Domain Problem → Domain Task (Explicit) → Abstract Task → Lower-Level Tasks
+
+| **Problem** | **Domain Problem** | **Domain Task (Explicit)** | **Abstract Task** | **Lower-Level Tasks** |
+|-------------|--------------------|----------------------------|-------------------|------------------------|
+| **Problem 1** | There is no live software that notifies the user about severe weather events in their route, for the user to take precaution and have the ability to re route - <br> "The aviation industry reroutes the aircraft to go from a different direction, right? How can we replicate something like this over the road?" - | Correlate: Find if there is a severe weather incident in the user's route at the estimated time they'll be traversing that route - | Retrieve: Get the user route and all the weather data within the duration of the route within a distance of the route, <br> Filter: Identify every "Severe weather events", <br> Aggregate: Check if any severe weather event and agent car coincide at any point |  |
+| **Problem 2** | There is no threshold to define what counts as severe weather - <br> "I think we have to create a threshold. I think this is where we need some thinking to think of what threshold has become dangerous for commuters." - | Define: Create a general threshold with which we could argue that it's dangerous to be on the road - | Filter: Get all the weather data in our area of interest, <br> Calculate: Let the user decide the threshold and apply it to the route calculation. |  |
+| **Problem 3** | Can we have this system be quick enough as to be able to provide this service - <br> "We want the less lag time to give this information to the user." - | Identify: Find what are the most computationally expensive calculations and minimize them. - | Develop: Create a solution on paper on how to attend to the stated problems, <br> Identify: Look at which processes could generate the most calculations, <br> Optimize: Check the way to reduce those processes |  |
+
+
+

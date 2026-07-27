@@ -1,0 +1,21 @@
+# Interview log
+
+## Session 1: Initial interview (Video call)
+
+## Date: 23/09/2025 (week 1 day 2)
+
+## Participants: 
+Dr. Fabio Miranda (Observer, Computer Expert), Dr. Ashish Sharma (Domain Expert), Dr. Abhinav Wadhwa (Domain Expert), Kazi Shahrukh (Observer), Vamsi Dath (Observer, Computer Expert), Kirill Makienko (Computer Expert)
+
+## Goal:
+Understand on a high level current work done by Dr. Sharma and Dr. Wadhwa and what next step they would like to take
+
+## Notes:
+* Dr. Sharma is excited to get this project going
+* Dr. Sharma described how real-time extreme weather route planning software exists for navigation in the aeronautical industry but not for land transport.
+* Mentioned how analogue systems for traffic avoidance exist but not for weather avoidance
+* There is previous work on systems that provide alternate routes based on weather thresholds, but every weather datapoint for the route is from the time the query is made and not for the estimated time in which the user will be traveling through a point
+* Dr. Wadhwa mentioned there is a poster which has an in-depth review of all affected routes in relation to a presence of a storm in an area.
+
+## Initial insights:
+Final visualization should warn user about any weather events and present them with alternate routes with approx route duration, time delay if new route is selected and distance

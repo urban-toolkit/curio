@@ -1,0 +1,60 @@
+stages:
+  - title: "Stage 1: Abstract Phase (Weeks 1-2)"
+    url: /Stage-1-Abstract-Phase/README
+    children:
+      - title: "Project Proposal"
+        url: /Stage-1-Abstract-Phase/1.1-Project-Proposal-Transport-Example
+      - title: "Interview Log"
+        url: /Stage-1-Abstract-Phase/1.2-Interview-Log
+      - title: "Task Abstraction Log"
+        url: /Stage-1-Abstract-Phase/1.3-Task-Abstraction-Log
+      - title: "Task Taxonomies"
+        url: /Stage-1-Abstract-Phase/1.4-Task-Taxonomies
+
+  - title: "Stage 2: Design Phase (Weeks 3-4)"
+    url: /Stage-2-Design-Phase/README
+    children:
+      - title: "Hand-Drawn Sketch Log"
+        url: /Stage-2-Design-Phase/2.1-Hand-Drawn-Sketch-Log
+      - title: "Data Cleaning Log"
+        url: /Stage-2-Design-Phase/2.2-Data-Cleaning-Log
+      - title: "Digital Sketch (Figma Notes)"
+        url: /Stage-2-Design-Phase/2.3-Digital-Sketch-Figma-Notes
+      - title: "Prototype (VegaLite)"
+        url: /Stage-2-Design-Phase/2.4-Digital-Prototype-VegaLite
+
+  - title: "Stage 3: Build Phase (Weeks 5-6)"
+    url: /Stage-3-Build-Phase/README
+    children:
+      - title: "Interactive Viz (Transport)"
+        url: /Stage-3-Build-Phase/3.1-Interactive-Viz-Dashboard
+      - title: "Build Log"
+        url: /Stage-3-Build-Phase/3.2-Build-Log
+
+  - title: "Stage 4: Evaluate Phase (Weeks 7-8)"
+    url: /Stage-4-Evaluate-Phase/README
+    children:
+      - title: "Usability Test Script"
+        url: /Stage-4-Evaluate-Phase/4.1-Usability-Test-Script
+      - title: "Usability Test Notes"
+        url: /Stage-4-Evaluate-Phase/4.2-Usability-Test-Notes
+
+  - title: "Stage 5: Post Design Study (Week 9)"
+    url: /Stage-5-Post-Design-Study/README
+    children:
+      - title: "Lessons Learned"
+        url: /Stage-5-Post-Design-Study/5.1-Lessons-Learned
+      - title: "Collaboration Notes"
+        url: /Stage-5-Post-Design-Study/5.2-Key-Elements-of-Collaboration
+
+  - title: "Training Materials"
+    children:
+      - title: "Case Studies"
+        url: /Training-Materials/Case-Studies/README
+      - title: "Templates"
+        url: /Templates/README
+  
+  - title: "Additional Resources"
+    children:
+      - title: "Manual Annotaions"
+        url: /Manual-Annotation/README

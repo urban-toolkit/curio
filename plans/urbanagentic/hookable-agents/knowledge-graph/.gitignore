@@ -1,0 +1,6 @@
+_site/
+**/Meeting Recordings/
+
+# macOS system files
+.DS_Store
+**/.DS_Store

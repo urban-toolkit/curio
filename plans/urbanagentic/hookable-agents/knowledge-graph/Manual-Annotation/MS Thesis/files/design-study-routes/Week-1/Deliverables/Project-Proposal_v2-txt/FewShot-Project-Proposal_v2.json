@@ -1,0 +1,345 @@
+{
+    "Extracted_Entities": {
+        "metadata": {
+            "file_name": "Project-Proposal_v2.txt",
+            "file_type": "text/plain",
+            "file_path": "files/design-study-routes/Week-1/Deliverables/Project-Proposal_v2-txt/Project-Proposal_v2.txt"
+        },
+        "entities": [
+            {
+                "entity_category": "Person",
+                "items": [
+                    {
+                        "entity_type": "User",
+                        "items": [
+                            {
+                                "text": "all drivers"
+                            },
+                            {
+                                "text": "user"
+                            },
+                            {
+                                "text": "General Public"
+                            },
+                            {
+                                "text": "Commuters"
+                            },
+                            {
+                                "text": "travelers"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Domain_Expert",
+                        "items": [
+                            {
+                                "text": "Domain Experts"
+                            },
+                            {
+                                "text": "Weather researchers"
+                            },
+                            {
+                                "text": "transportation planners"
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "entity_category": "Event",
+                "items": [
+                    {
+                        "entity_type": "Inference",
+                        "items": [
+                            {
+                                "text": "at the time a query is made"
+                            },
+                            {
+                                "text": "at the actual time a driver will be traveling"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Development",
+                        "items": [
+                            {
+                                "text": "Develop"
+                            },
+                            {
+                                "text": "Create"
+                            },
+                            {
+                                "text": "To have"
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "entity_category": "Artifact",
+                "items": [
+                    {
+                        "entity_type": "Proposal",
+                        "items": [
+                            {
+                                "text": "Project Proposal"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "System",
+                        "items": [
+                            {
+                                "text": "Real time system"
+                            },
+                            {
+                                "text": "systems"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Location",
+                        "items": [
+                            {
+                                "text": "Location"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Tool",
+                        "items": [
+                            {
+                                "text": "interactive visualization tool"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Data",
+                        "items": [
+                            {
+                                "text": "real-time"
+                            },
+                            {
+                                "text": "simulated weather data"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Algorithm",
+                        "items": [
+                            {
+                                "text": "algorithm"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Software",
+                        "items": [
+                            {
+                                "text": "existing mapping software"
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "entity_category": "Concept",
+                "items": [
+                    {
+                        "entity_type": "Problem",
+                        "items": [
+                            {
+                                "text": "hazardous wheather conditions"
+                            },
+                            {
+                                "text": "Driving in hazardous weather conditions"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Location",
+                        "items": [
+                            {
+                                "text": "state of Illinois"
+                            },
+                            {
+                                "text": "a city"
+                            },
+                            {
+                                "text": "cities"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Design_Concept",
+                        "items": [
+                            {
+                                "text": "Problem statement"
+                            },
+                            {
+                                "text": "Objectives"
+                            },
+                            {
+                                "text": "systematic visualization design"
+                            },
+                            {
+                                "text": "Target Audience"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Scope",
+                        "items": [
+                            {
+                                "text": "regardless of skill level"
+                            },
+                            {
+                                "text": "typically"
+                            },
+                            {
+                                "text": "only at"
+                            },
+                            {
+                                "text": "within"
+                            },
+                            {
+                                "text": "between"
+                            },
+                            {
+                                "text": "who use GPS devices or smartphones"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "State",
+                        "items": [
+                            {
+                                "text": "With the heavy reliance on cars and public transportation for daily travel"
+                            },
+                            {
+                                "text": "there is a need"
+                            },
+                            {
+                                "text": "moving between two points"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Solution",
+                        "items": [
+                            {
+                                "text": "ability to monitor and predict severe weather events"
+                            },
+                            {
+                                "text": "suggesting safer alternative routes"
+                            },
+                            {
+                                "text": "calculate risk"
+                            },
+                            {
+                                "text": "predict whether extreme weather conditions will affect a selected route"
+                            },
+                            {
+                                "text": "identify the safest route between two points"
+                            },
+                            {
+                                "text": "to receive advanced hazard alerts"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Priority",
+                        "items": [
+                            {
+                                "text": "critical"
+                            },
+                            {
+                                "text": "significantly"
+                            },
+                            {
+                                "text": "Primary"
+                            },
+                            {
+                                "text": "Secondary"
+                            },
+                            {
+                                "text": "Tertiary"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Weather_Event",
+                        "items": [
+                            {
+                                "text": "storms"
+                            },
+                            {
+                                "text": "violent winds"
+                            },
+                            {
+                                "text": "other extreme weather patterns"
+                            },
+                            {
+                                "text": "extreme weather events"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Urban_Infrastructure",
+                        "items": [
+                            {
+                                "text": "a given road"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Outcome",
+                        "items": [
+                            {
+                                "text": "reduce disruptions in transportation"
+                            },
+                            {
+                                "text": "improve driver safety"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Time_Component",
+                        "items": [
+                            {
+                                "text": "Current"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Technical_Concept",
+                        "items": [
+                            {
+                                "text": "route-finding methods"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Task",
+                        "items": [
+                            {
+                                "text": "find"
+                            },
+                            {
+                                "text": "avoid"
+                            }
+                        ]
+                    },
+                    {
+                        "entity_type": "Framework",
+                        "items": [
+                            {
+                                "text": "comprehensive research framework"
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+}

@@ -1,0 +1,23 @@
+This meeting was in person at the DPI offices.
+
+Attending: Jaggi Yetedore, Dr. Ashish Sharma, Dr. Abhinav Wadhwa, Winston, Vamsi Dath, Kirill Makienko
+
+This isnt a full transcription but a summary of the topic discussed.
+
+First Dr Abhinav introduced us to everyone working for the Cleets project, and we started explaining what the project was about
+
+We were waiting on Winston to download the data from the server and copy it to the SSD we brought.
+
+Dr. Ashish entered the room and we started discussing details about the project, they mentioned that they are working with mapbox as well as google maps,
+They expressed an interest in this project being a base framework on which upon they can further build
+
+Winston showed Kirill and Vamsi the server room
+
+Kirill started talking about his approach to the problem and Dr. Abhinav clarified a very important detail:
+Kirill's original approach assumed that DPI had a model which projected the weather / predicted future weather that he could use to his advantage.
+Dr. Abhinav clarified that no such model exists (yet) and its expected from Kirill to either create data for the in between two of the data readings or to create a simple model to 
+project the weather and use that in between the hour long readings for the driver simulation algorithm to work.
+
+Finally Winston showed Vamsi and Kirill how the data was organized and which folders to look into.
+
+Vamsi and Kirill left the building and went back to the campus while discussing about the requirement changes

@@ -1,0 +1,19 @@
+title: "Design Study Lite Handbook"
+description: "A step-by-step handbook for running design studies"
+baseurl: "" # Let GitHub Pages workflow set this automatically
+url: "https://urban-toolkit.github.io" # the base hostname & protocol for your site
+
+theme: minimal-mistakes-jekyll
+
+plugins:
+  - jekyll-include-cache
+  - jekyll-redirect-from
+  - jekyll-readme-index
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: single
+      sidebar:
+        nav: "stages"

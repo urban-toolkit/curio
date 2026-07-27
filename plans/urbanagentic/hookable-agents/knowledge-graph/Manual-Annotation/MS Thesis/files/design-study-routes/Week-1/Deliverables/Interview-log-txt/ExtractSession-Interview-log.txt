@@ -1,0 +1,21 @@
+# [Log]
+
+## [Online_Meeting]
+
+## [Time_Component] ([Time_Component])
+
+## [Audience]: 
+[Audience], [Domain_Expert], [Domain_Expert], [Audience], [Audience], [Computer_Expert]
+
+## [Design_Concept]:
+[Task] [Scope] and [Problem]
+
+## [Note]:
+* [Domain_Expert] is [State]
+* [Domain_Expert] [describe] how [Software] [State] [Scope] [Scope] but [Scope].
+* [describe] how [System] [Scope] [State] but [Scope]
+* [State] that [Solution] [Scope], but [Scope] [Data] [Scope] is [Scope] [Inference] and [Scope] [in_which] the [User] [State] [Location]
+* [Domain_Expert] [describe] [State] [Poster] [State] an [Outcome] [Scope].
+
+## [Outcome]:
+[Visualization] [Task] [User] [Scope] and [Solution] [Scope] and [Task]

@@ -117,6 +117,26 @@ def drop_defaults(spec: dict, coord: str) -> bool:
 _AGENT_SPEC_KEYS = ("agents", "agentAttachments", "agentDefaults")
 
 
+def strip_agent_state(spec: dict | None) -> dict | None:
+    """A sanitized copy of *spec* without the backend-owned agent sections.
+
+    The share surface (tracking rule 9; ``DEC-032``, memo ``dev/12``): the
+    agents feature must introduce no agent-private data — the install lockfile,
+    attachments (intents, titles, session ids), or project defaults — as a new
+    shared surface. The shared-link route serves the spec, so it must serve
+    this copy. Non-mutating; tolerates missing/malformed specs.
+    """
+    if not isinstance(spec, dict):
+        return spec
+    dataflow = spec.get("dataflow")
+    if not isinstance(dataflow, dict):
+        return spec
+    return {
+        **spec,
+        "dataflow": {k: v for k, v in dataflow.items() if k not in _AGENT_SPEC_KEYS},
+    }
+
+
 def preserve_agent_state(effective_spec: dict | None, existing_spec: dict | None) -> dict | None:
     """Carry the backend-owned agent sections forward across a client save.
 

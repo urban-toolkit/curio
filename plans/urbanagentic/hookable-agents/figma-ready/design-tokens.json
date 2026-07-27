@@ -1,0 +1,54 @@
+{
+  "_note": "Mirrors the live Curio tokens (styles/curioTokens.css) used by the svg-concepts screens.",
+  "color": {
+    "dark": "#1E1F23",
+    "canvas": "#F0F0F0",
+    "canvasGrid": "#C9CACD",
+    "panel": "#FFFFFF",
+    "border": "#E5E5E7",
+    "borderStrong": "#D0D0D5",
+    "text": "#1E1F23",
+    "textSecondary": "#6B6B76",
+    "textMuted": "#9E9E9E",
+    "onDark": "#FBFCF6",
+    "peach": "#FBAA69",
+    "saveGreen": "#5CB85C",
+    "orange": "#E86A3C",
+    "orangeSoft": "#FFE3DA",
+    "blue": "#3567C7",
+    "blueSoft": "#DCE8FF",
+    "green": "#2F8F4A",
+    "greenSoft": "#DFF2E1",
+    "purple": "#7A4BD1",
+    "purpleSoft": "#EADCFB",
+    "danger": "#FF6B6B",
+    "nodeBarData": "#3498DB",
+    "nodeBarCompute": "#8E44AD",
+    "nodeBarVis": "#1ABC9C"
+  },
+  "radius": {
+    "small": 4,
+    "medium": 6,
+    "large": 8,
+    "card": 10,
+    "pill": 9999
+  },
+  "spacing": {
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24
+  },
+  "geometry": {
+    "topBarHeight": 65,
+    "drawerWidth": 560,
+    "frame": { "width": 1672, "height": 941 }
+  },
+  "type": {
+    "fontFamily": "Rubik, -apple-system, Helvetica, Arial, sans-serif",
+    "monoFamily": "Roboto Mono, Menlo, monospace",
+    "weights": { "light": 300, "regular": 400, "medium": 500, "semibold": 600, "bold": 700 },
+    "sizes": { "badge": 9, "tiny": 10, "small": 12, "body": 13, "label": 14, "title": 18, "h1": 30 }
+  }
+}

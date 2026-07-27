@@ -1,0 +1,16 @@
+Date: 23/09/2025 (Week 1, day 2)
+Participants:  Dr. Fabio Miranda, Sicheng Wu (Winston), Dr. Abhinav Wadhwa, Kazi Shahrukh, Vamsi Dath, Kirill Makienko
+Goal: Create general chat to discuss proposals and to obtain the weather simulation data
+Notes: Right after the meeting Winston asked for a public ssh key to configure a profile on the CLEETS server
+Aditional materials: Dr. Fabio Miranda sent me this link to generate the ssh key  https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent
+
+
+Date: 24/09/2025 (Week 1, day 3)
+Participants:  Dr. Fabio Miranda, Sicheng Wu (Winston), Dr. Abhinav Wadhwa, Kazi Shahrukh, Vamsi Dath, Kirill Makienko
+Goal: Get ssh access to the DPI server to copy the data and start the data modelling process.
+Notes: Kirill tried accesing via ssh to the CLEETS Server and the connection timed out, it was determined the CLEETS Server only could be accessed from the same network
+
+Date: 25/09/2025 (Week 1, day 4)
+Participants:  Dr. Fabio Miranda, Sicheng Wu (Winston), Dr. Abhinav Wadhwa, Kazi Shahrukh, Vamsi Dath, Kirill Makienko
+Goal: Winston and Dr. Miranda adviced Kirill in trying cisco VPN to try to connect to the server, but UIUC credentials are required to access the network trough the VPN
+Winston and Dr. Ahinav will set GLOBUS to share the data or Kirill and Vamsi will go on monday 29-09-2025 to the DPI to copy the data to a portable HDD

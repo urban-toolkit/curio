@@ -1,0 +1,5 @@
+Date: 23/09/2025 (Week 1, day 2)
+Participants:  Dr. Fabio Miranda, Sicheng Wu (Winston), Dr. Abhinav Wadhwa, Kazi Shahrukh, Vamsi Dath, Kirill Makienko
+Goal: Create general chat to discuss proposals and to obtain the weather simulation data
+Notes: Right after the meeting Winston asked for a public ssh key to configure a profile on the CLEETS server
+Aditional materials: Dr. Fabio Miranda sent me this link to generate the ssh key  https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent
