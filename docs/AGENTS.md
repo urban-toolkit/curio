@@ -159,6 +159,7 @@ The `/api/agents` endpoints ([`app/agents/routes.py`](../utk_curio/backend/app/a
 |---|---|---|
 | `GET /api/agents/catalog` `?projectId=` | Global Catalog | List the built-in agent definitions available to import/install (marks which are already imported/installed). |
 | `GET /api/agents/imports` | My Imports | List the account's imported definitions (as cards). |
+| `POST /api/agents/imports/upload` `{manifest, prompts}` | My Imports | Upload a **user-authored definition** (memo `dev/36`): manifest + prompt texts as JSON (no archives). Trust forced to `imported`, digests stamped from the bytes, exact file correspondence, size limits, 409 on an existing coordinate (immutable — bump the version), atomic write. Registers in My Imports; never installs or publishes. |
 | `POST /api/agents/imports` `{coord}` | My Imports | Record `<id>@<version>` as imported. Never installs into a project. |
 | `DELETE /api/agents/imports/<coord>` | My Imports | Drop it from My Imports. |
 | `GET /api/agents/projects/<projectId>` | Installed | List the project's installed templates from its `dataflow.agents` lockfile. |
@@ -207,7 +208,7 @@ In the UI: **drag an installed agent from the AGENTS palette onto a node** to at
 
 The **Global Catalog** is the 13 built-in agents ∪ any **published** definitions. The built-ins are the migrated prompt behaviors (Chat, Debug, Node Explainer, Dataflow Explainer, Connection Builder, the planners/validators, etc.), defined as a data-driven roster in [`app/agents/builtin.py`](../utk_curio/backend/app/agents/builtin.py), generated from the canonical prompt→agent map over `utk_curio/llm-prompts/*.txt` and validated through the manifest contract. A built-in resolves for Import/Install straight from the roster (no prior store copy needed). The generated-content evaluator is intentionally absent (no prompt asset yet).
 
-**Publish is imported-only** (`DEC-030`): only an owned, imported, store-backed definition can be published — a built-in (or any global/absent) coordinate is rejected. Publishing copies the definition into a deployment-shared catalog at `.curio/agents-catalog/<id>@<version>/` ([`app/agents/publications.py`](../utk_curio/backend/app/agents/publications.py)), where every user's Global Catalog then lists it. A My Imports card carries `publishable` (owned + store-backed) and `published` flags, so the drawer's Publish pill only appears for eligible definitions. Today the store holds only built-ins (which are not publishable), so Publish becomes reachable once user-authored/uploaded imports exist.
+**Publish is imported-only** (`DEC-030`): only an owned, imported, store-backed definition can be published — a built-in (or any global/absent) coordinate is rejected. Publishing copies the definition into a deployment-shared catalog at `.curio/agents-catalog/<id>@<version>/` ([`app/agents/publications.py`](../utk_curio/backend/app/agents/publications.py)), where every user's Global Catalog then lists it. A My Imports card carries `publishable` (owned + store-backed) and `published` flags, so the drawer's Publish pill only appears for eligible definitions. **Publish is user-reachable**: upload-import (memo `dev/36`, the drawer's `Import package` button) creates owned `imported`-trust definitions, which are exactly what Publish accepts.
 
 ---
 

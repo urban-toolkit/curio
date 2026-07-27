@@ -165,3 +165,20 @@ Build Entry Template and are append-only.
 - Commit/PR: `COMMIT-5c7fc32` (record+resolver), `COMMIT-a121650` (admission+port), `COMMIT-ee11790` (API), `COMMIT-acb4316` (shell+cogs), `COMMIT-763d728` (docs)
 - Issues/regressions discovered: none; prior run-path mocks updated for the new `max_output_tokens` kwarg.
 - Follow-up work: **none for v1 — this closes the `DEC-038` v1 cut.** v2: attachment-scope tighten-only settings, reservations/ledgers, alerts/pricing dates, token metering ("Actual" cost), provider profiles + secret store, governance screens.
+
+---
+
+## BL-P3-20260727-10: Upload-import — user-authored definitions (memo `dev/36`; v2 entry slice)
+
+- Date / author: 2026-07-27 / Karla
+- Status: verified
+- Requirements: `REQ-IMPORT-002` (explicit account import), `REQ-PUBLISH-002` (imported-only publish — now user-reachable), `REQ-PROMPT-001` (digest-verified prompt assets)
+- Design decisions/artifacts: `DEC-029` (immutability → 409 on collision, rule 7 recorded), `DEC-030` (nothing auto-chains), `DEC-040` (FS store), `RISK-IMPORT-001` (scope decision: **JSON-body upload, no archives** — the extraction attack surface is avoided entirely; archive upload, if ever wanted, is a later P6-hardened addition); memo `dev/36`
+- Tasks: `TASK-P3-upload-import`
+- Risks/questions: `RISK-IMPORT-001` (addressed by scope + atomic staging), `RISK-PROMPT-001` (digests stamped server-side from the uploaded bytes; client digests ignored), forced `imported` trust so an upload can never corrupt publish gating or roster-first resolution
+- Design-to-code decision or deviation: `POST /api/agents/imports/upload` `{manifest, prompts}` → `services.upload_import` (fail-closed: manifest contract via `parse_agent_manifest`, forced provenance trust, digest stamping, exact file↔manifest correspondence, ≤16 files/≤256KB each/≤1MB total → 413, existing store coordinate → 409 incl. materialized built-ins) → `storage.write_definition_atomic` (temp-dir staging + `os.replace`, cleanup on failure — no partially visible artifact) → My Imports registration → the first `publishable: true` card. Frontend: the concept's footer `Import package` button + `AgentImportModal` (multi-file picker, pure `buildUploadPayload`, verbatim server errors, success → My Imports + reload).
+- Files/modules changed: backend `app/agents/{storage.py (write_definition_atomic),services.py (upload_import),routes.py}`; frontend `api/agentsApi.ts`, `components/agents/catalog/{buildUploadPayload.ts,AgentImportModal.tsx,AgentImportModal.module.css (new),AgentsCatalogDrawer.tsx,AgentsCatalogDrawer.module.css}`; `docs/AGENTS.md`
+- Tests added/updated: `test_upload_import.py` (10, incl. **the full loop**: upload → publish → Global Catalog → install → attach → run with the uploaded instruction as the system turn; forced trust; duplicate/built-in-shadow 409; missing/extra file 400; traversal rejection; size 413; no auto-chain); frontend `AgentImportModal.test.tsx` (6 helper+modal), drawer wiring + api tests
+- Verification evidence: `pytest test_agents/` → 241 passed; `npx jest` full → 550 passed; `tsc --noEmit` clean.
+- Commit/PR: `COMMIT-c630c01` (backend), `COMMIT-018df3d` (frontend + drawer)
+- Follow-up work: this closes the "Publish reachability awaits upload-import" deferral. v2 governance (prompt editing/evaluation/audit) now has real owned content to operate on.
