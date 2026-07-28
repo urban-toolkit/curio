@@ -208,6 +208,26 @@ In the UI: **drag an installed agent from the AGENTS palette onto a node** to at
 
 The **Global Catalog** is the 13 built-in agents ∪ any **published** definitions. The built-ins are the migrated prompt behaviors (Chat, Debug, Node Explainer, Dataflow Explainer, Connection Builder, the planners/validators, etc.), defined as a data-driven roster in [`app/agents/builtin.py`](../utk_curio/backend/app/agents/builtin.py), generated from the canonical prompt→agent map over `utk_curio/llm-prompts/*.txt` and validated through the manifest contract. A built-in resolves for Import/Install straight from the roster (no prior store copy needed). The generated-content evaluator is intentionally absent (no prompt asset yet).
 
+Each built-in declares its system preamble asset and the context it reads (`inputs.reads`), grounded in what its legacy call site passed:
+
+| Built-in | Capabilities | `inputs.reads` | Preamble |
+|---|---|---|---|
+| Chat | `conversation.respond`, `attachment.refine` | `userMessage` | default |
+| Debug | `code.debug.diagnose`, `code.fix.propose` | `dataflowContext` | default |
+| Dataflow Explainer | `dataflow.explain` | `dataflowContext` | default |
+| Node Explainer | `node.explain`, `node.output.interpret` | `nodeContext` | default |
+| Node Content Builder | `node.content.generate` | `dataflowContext`, `nodeId`, `subtask`, `workflowGoal` | default |
+| Execution Subtask Planner | `execution.followup.plan` | `nodeContent`, `nodeType`, `currentTask` | default |
+| Dataflow Task Planner | `workflow.plan.create` | `currentTask`, `dataflowContext` | default |
+| Connection Builder | `connection.propose` | `workflowGoal`, `nodeId`, `subtask`, `connectionSide`, `dataflowContext` | default |
+| Workflow Suggester | `workflow.suggest` | `dataflowContext`, `workflowGoal` | default |
+| Plan Coherence Validator | `workflow.coherence.validate` | `workflowGoal`, `dataflowContext` | default |
+| Syntax Analysis | `code.syntax.analyze` | `codeContext` | `syntax_analysis_preamble.txt` |
+| Task Refresh | `workflow.plan.refresh` | `currentTask`, `keywords`, `dataflowContext` | default |
+| Keyword Binding | `workflow.keyword.bind` | `keywords`, `dataflowContext` | default |
+
+("default" = `default_preamble.txt`. At run time the system turn composes the preamble + the instruction — or the attachment's edited intent in place of the instruction.)
+
 **Publish is imported-only** (`DEC-030`): only an owned, imported, store-backed definition can be published — a built-in (or any global/absent) coordinate is rejected. Publishing copies the definition into a deployment-shared catalog at `.curio/agents-catalog/<id>@<version>/` ([`app/agents/publications.py`](../utk_curio/backend/app/agents/publications.py)), where every user's Global Catalog then lists it. A My Imports card carries `publishable` (owned + store-backed) and `published` flags, so the drawer's Publish pill only appears for eligible definitions. **Publish is user-reachable**: upload-import (memo `dev/36`, the drawer's `Import package` button) creates owned `imported`-trust definitions, which are exactly what Publish accepts.
 
 ---

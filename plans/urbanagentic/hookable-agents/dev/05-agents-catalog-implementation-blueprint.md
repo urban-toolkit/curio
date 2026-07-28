@@ -1450,22 +1450,22 @@ The `capabilities` array is semantic registry metadata. It answers what behavior
 
 ### Required roster and contracts
 
-| Agent ID | Semantic capabilities | Instruction file | System file | Hook | Output/review contract |
-| --- | --- | --- | --- | --- | --- |
-| `agent.chat-agent` | `conversation.respond`, `attachment.refine` | `chat_prompt.txt` | `default_preamble.txt` | Canvas/selected target | Chat message; no direct mutation. |
-| `agent.debug-agent` | `code.debug.diagnose`, `code.fix.propose` | `debug_prompt.txt` | `default_preamble.txt` | Failed/code node | Diagnostics and proposed fix; fix requires review. |
-| `agent.dataflow-explainer` | `dataflow.explain` | `explanation_prompt.txt` | `default_preamble.txt` | Canvas | Structured explanation/report only. |
-| `agent.node-explainer` | `node.explain`, `node.output.interpret` | `single_box_explanation_prompt.txt` | `default_preamble.txt` | Node | Structured node explanation/report only. |
-| `agent.node-content-builder` | `node.content.generate` | `new_content_prompt.txt` | `default_preamble.txt` | Node/canvas | Node-content proposal; review before apply. |
-| `agent.execution-subtask-planner` | `execution.followup.plan` | `new_subtask_from_exec_prompt.txt` | `default_preamble.txt` | Executed node/canvas | Typed subtask proposals. |
-| `agent.dataflow-task-planner` | `workflow.plan.create` | `new_subtasks_prompt.txt` | `default_preamble.txt` | Canvas | Ordered task plan. |
-| `agent.connection-builder` | `connection.propose` | `new_connection_prompt.txt` | `default_preamble.txt` | Connection/selected nodes | Connection proposal; review before apply. |
-| `agent.workflow-suggester` | `workflow.suggest` | `workflow_suggestions_prompt.txt` | `default_preamble.txt` | Canvas | Ranked workflow/resource suggestions. |
-| `agent.plan-coherence-validator` | `workflow.coherence.validate` | `evaluate_coherence_subtasks_prompt.txt` | `default_preamble.txt` | Canvas | Findings, severity, affected task IDs. |
-| `agent.generated-content-evaluator` | `content.quality.evaluate` | `evaluate_generated_content_prompt.txt` | `default_preamble.txt` | Node/canvas | Typed quality evaluation; blocked pending source asset/contract. |
-| `agent.syntax-analysis-agent` | `code.syntax.analyze` | `syntax_analysis_prompt.txt` | `syntax_analysis_preamble.txt` | Code node | Syntax findings with locations/severity. |
-| `agent.task-refresh-agent` | `workflow.plan.refresh` | `task_refresh_prompt.txt` | `default_preamble.txt` | Canvas | Revised task-plan proposal. |
-| `agent.keyword-binding-agent` | `workflow.keyword.bind` | `keywords_binding_prompt.txt` | `default_preamble.txt` | Canvas/nodes | Keyword-to-node binding proposals. |
+| Agent ID | Semantic capabilities | Instruction file | System file | `inputs.reads` | Hook | Output/review contract |
+| --- | --- | --- | --- | --- | --- | --- |
+| `agent.chat-agent` | `conversation.respond`, `attachment.refine` | `chat_prompt.txt` | `default_preamble.txt` | `userMessage` | Canvas/selected target | Chat message; no direct mutation. |
+| `agent.debug-agent` | `code.debug.diagnose`, `code.fix.propose` | `debug_prompt.txt` | `default_preamble.txt` | `dataflowContext` | Failed/code node | Diagnostics and proposed fix; fix requires review. |
+| `agent.dataflow-explainer` | `dataflow.explain` | `explanation_prompt.txt` | `default_preamble.txt` | `dataflowContext` | Canvas | Structured explanation/report only. |
+| `agent.node-explainer` | `node.explain`, `node.output.interpret` | `single_box_explanation_prompt.txt` | `default_preamble.txt` | `nodeContext` | Node | Structured node explanation/report only. |
+| `agent.node-content-builder` | `node.content.generate` | `new_content_prompt.txt` | `default_preamble.txt` | `dataflowContext`, `nodeId`, `subtask`, `workflowGoal` | Node/canvas | Node-content proposal; review before apply. |
+| `agent.execution-subtask-planner` | `execution.followup.plan` | `new_subtask_from_exec_prompt.txt` | `default_preamble.txt` | `nodeContent`, `nodeType`, `currentTask` | Executed node/canvas | Typed subtask proposals. |
+| `agent.dataflow-task-planner` | `workflow.plan.create` | `new_subtasks_prompt.txt` | `default_preamble.txt` | `currentTask`, `dataflowContext` | Canvas | Ordered task plan. |
+| `agent.connection-builder` | `connection.propose` | `new_connection_prompt.txt` | `default_preamble.txt` | `workflowGoal`, `nodeId`, `subtask`, `connectionSide`, `dataflowContext` | Connection/selected nodes | Connection proposal; review before apply. |
+| `agent.workflow-suggester` | `workflow.suggest` | `workflow_suggestions_prompt.txt` | `default_preamble.txt` | `dataflowContext`, `workflowGoal` | Canvas | Ranked workflow/resource suggestions. |
+| `agent.plan-coherence-validator` | `workflow.coherence.validate` | `evaluate_coherence_subtasks_prompt.txt` | `default_preamble.txt` | `workflowGoal`, `dataflowContext` | Canvas | Findings, severity, affected task IDs. |
+| `agent.generated-content-evaluator` | `content.quality.evaluate` | `evaluate_generated_content_prompt.txt` | `default_preamble.txt` | *(blocked with the contract — `OQ-007`)* | Node/canvas | Typed quality evaluation; blocked pending source asset/contract. |
+| `agent.syntax-analysis-agent` | `code.syntax.analyze` | `syntax_analysis_prompt.txt` | `syntax_analysis_preamble.txt` | `codeContext` | Code node | Syntax findings with locations/severity. |
+| `agent.task-refresh-agent` | `workflow.plan.refresh` | `task_refresh_prompt.txt` | `default_preamble.txt` | `currentTask`, `keywords`, `dataflowContext` | Canvas | Revised task-plan proposal. |
+| `agent.keyword-binding-agent` | `workflow.keyword.bind` | `keywords_binding_prompt.txt` | `default_preamble.txt` | `keywords`, `dataflowContext` | Canvas/nodes | Keyword-to-node binding proposals. |
 
 ### Current-call migration map
 
