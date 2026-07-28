@@ -1,31 +1,35 @@
-"""Server-authoritative tool contracts + grant resolution (memo ``dev/39``).
+"""Server-authoritative tool contracts + grant resolution + read execution
+(memos ``dev/39``/``dev/41``).
 
 Manifest ``tools`` entries are untrusted *requirements*, never grants
 (`DEC-017`, `REQ-PERM-001`); this module owns what actually exists and what a
 run may be granted. Per `ADR-AG-007` a contract only *names* a domain-owned
-operation — implementations stay in their domains; nothing here executes.
+operation — the read executors below are thin wrappers over the owning
+domain's functions (``projects.storage``, ``project_agents``), and the one
+mutate contract is executed **only** by the review-before-apply apply endpoint
+(memo dev/41), never here and never by the model loop.
 
-The registry deliberately **ships empty** (v1 of this tranche): no current
-agent executes tools, and a tool without a consumer would be dead code with a
-security surface (`RISK-SEC-001`). What must exist first — and does — is the
-typed contract shape, the grammar, and the grant pipe the T2b/P5 composites
-will populate.
-
-Grant policy (v1): ``granted = requested ∩ registry ∩ policy`` where policy
-admits ``read``-effect contracts only. A ``mutate`` contract can never be
-granted until the review-before-apply application flow exists (`DEC-006`,
-`REQ-REVIEW-001`) — fail-closed by construction. Granted ids are pinned on the
-execution record (``pins.tools``, the tools half of `REQ-CAP-002`).
+Grant policy: ``granted = requested ∩ registry ∩ policy``. ``read`` contracts
+execute inside the bounded run loop; ``mutate`` contracts are grantable **for
+proposal purposes only** — requesting one mints a review proposal, and
+execution authority lives solely in the authenticated apply endpoint
+(`DEC-006`/`REQ-REVIEW-001` — the gate is structural, not a flag). Granted ids
+are pinned on the execution record (``pins.tools``, `REQ-CAP-002`).
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Iterable
 
 from utk_curio.backend.app.agents.manifest import ToolRequirement
 
 _EFFECTS = ("read", "mutate")
+
+# Tool results are untrusted context data: bounded, truncated with a marker.
+TOOL_RESULT_MAX_CHARS = 32_000
+_TRUNCATION_MARKER = "\n…[truncated: result exceeded the tool output bound]"
 
 
 @dataclass(frozen=True)
@@ -42,21 +46,51 @@ class ToolContract:
             raise ValueError(f"tool effect must be one of {_EFFECTS}, got {self.effect!r}")
 
 
-# The server-owned allowlist (DEC-017). Empty by design — see the module
-# docstring; the first real contract lands with its first consumer.
-REGISTRY: dict[str, ToolContract] = {}
+# The server-owned allowlist (DEC-017). Three contracts, each with a named
+# consumer in the built-in roster (dev/41 §4.3) — nothing speculative.
+REGISTRY: dict[str, ToolContract] = {
+    "dataflow.read": ToolContract(
+        id="dataflow.read",
+        contract_version="1",
+        effect="read",
+        description=(
+            "Read the project's saved dataflow spec (agent-private sections "
+            "removed). No params."
+        ),
+    ),
+    "node.read": ToolContract(
+        id="node.read",
+        contract_version="1",
+        effect="read",
+        description=(
+            'Read one node from the saved spec. Params: {"nodeId": "..."} — '
+            "defaults to the node this agent is attached to."
+        ),
+    ),
+    "node.content.write": ToolContract(
+        id="node.content.write",
+        contract_version="1",
+        effect="mutate",
+        description=(
+            'Propose replacing one node\'s content. Params: {"nodeId": "...", '
+            '"content": "..."}. The user reviews the proposal before anything '
+            "is applied; nothing changes without their explicit approval."
+        ),
+    ),
+}
 
 
 def resolve_grants(requested: Iterable[ToolRequirement]) -> list[str]:
     """The tool ids this run is granted: requested ∩ registry ∩ policy.
 
-    v1 policy grants ``read``-effect contracts only; anything unregistered or
-    ``mutate``-effect resolves to "not granted" silently (required-ness is
-    :func:`missing_required`'s concern)."""
+    Both effects are grantable (dev/41): ``read`` executes inside the bounded
+    loop; ``mutate`` may only be *proposed* — execution authority is the apply
+    endpoint alone. Anything unregistered resolves to "not granted" silently
+    (required-ness is :func:`missing_required`'s concern)."""
     granted: list[str] = []
     for req in requested:
         contract = REGISTRY.get(req.id)
-        if contract is not None and contract.effect == "read" and contract.id not in granted:
+        if contract is not None and contract.id not in granted:
             granted.append(contract.id)
     return granted
 
@@ -67,3 +101,61 @@ def missing_required(requested: Iterable[ToolRequirement]) -> list[str]:
     requested = list(requested)
     granted = set(resolve_grants(requested))
     return [r.id for r in requested if r.required and r.id not in granted]
+
+
+def grant_descriptions(granted: Iterable[str]) -> list[tuple[str, str]]:
+    """(id, description) pairs for the grant-aware tail instruction."""
+    out: list[tuple[str, str]] = []
+    for tool_id in granted:
+        contract = REGISTRY.get(tool_id)
+        if contract is not None:
+            out.append((contract.id, contract.description))
+    return out
+
+
+def _truncate(text: str) -> str:
+    if len(text) <= TOOL_RESULT_MAX_CHARS:
+        return text
+    return text[:TOOL_RESULT_MAX_CHARS] + _TRUNCATION_MARKER
+
+
+def execute_read_tool(
+    tool_id: str, *, user_key: str, project_id: str, target: dict | None, params: dict
+) -> tuple[str, str]:
+    """Execute one granted read contract; returns ``(status, text)``, never
+    raises (a tool failure is data the model recovers from, not a run error).
+
+    Implementations stay domain-owned (`ADR-AG-007`): these are thin wrappers
+    over ``projects.storage`` reads. Output is untrusted context data —
+    bounded, and the dataflow read passes ``strip_agent_state`` so
+    agent-private sections never enter model context (the rule-9 posture
+    applies to tool output too).
+    """
+    from utk_curio.backend.app.agents import project_agents
+    from utk_curio.backend.app.projects import storage as projects_storage
+
+    try:
+        spec = projects_storage.read_spec(user_key, project_id)
+        if spec is None:
+            return "error", "no saved project spec is available"
+        if tool_id == "dataflow.read":
+            stripped = project_agents.strip_agent_state(spec)
+            return "ok", _truncate(json.dumps(stripped, ensure_ascii=False))
+        if tool_id == "node.read":
+            node_id = params.get("nodeId")
+            if not isinstance(node_id, str) or not node_id:
+                node_id = (
+                    target.get("targetId")
+                    if isinstance(target, dict) and target.get("kind") == "node"
+                    else None
+                )
+            if not node_id:
+                return "error", "no nodeId given and this agent is not attached to a node"
+            nodes = (spec.get("dataflow") or {}).get("nodes") or []
+            node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
+            if node is None:
+                return "error", f"node {node_id!r} not found in the saved spec"
+            return "ok", _truncate(json.dumps(node, ensure_ascii=False))
+        return "error", f"unknown read tool {tool_id!r}"
+    except Exception as exc:  # tool failures are data, never run errors
+        return "error", f"tool failed: {exc}"

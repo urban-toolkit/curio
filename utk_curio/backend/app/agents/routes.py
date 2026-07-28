@@ -440,7 +440,7 @@ def stream_attachment(project_id: str, attachment_id: str):
                 data = {"text": payload}
             elif kind == "error":
                 data = {"error": payload}
-            else:  # execution / content / done already carry typed dict payloads
+            else:  # execution / content / tool_* / done carry typed dict payloads
                 data = payload
             yield f"event: {kind}\ndata: {json.dumps(data)}\n\n"
 

@@ -1388,6 +1388,236 @@ class TestToolGrants:
         assert turns[1]["execution"]["pins"]["tools"] == ["ghost.tool"]
 
 
+class TestToolLoop:
+    """The bounded read-tool execution loop (memo dev/41): granted reads
+    execute with normalized events; everything else refuses loudly to the
+    model, invisibly to the user; grant-less runs stay byte-identical to T2."""
+
+    def _save_node(self, client, token, project_id, node):
+        r = client.put(
+            f"/api/projects/{project_id}",
+            json={"name": "p", "spec": {"dataflow": {"nodes": [node], "edges": [], "packages": []}}, "outputs": []},
+            headers=_auth(token),
+        )
+        assert r.status_code == 200, r.get_data(as_text=True)
+
+    def _install_attach(self, client, token, project_id, coord, target):
+        client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
+        r = client.post(
+            f"/api/agents/projects/{project_id}/attachments",
+            json={"coord": coord, "target": target},
+            headers=_auth(token),
+        )
+        assert r.status_code == 201, r.get_data(as_text=True)
+        return r.get_json()["attachmentId"]
+
+    def _sse_events(self, resp):
+        out = []
+        for block in resp.get_data(as_text=True).strip().split("\n\n"):
+            lines = dict(l.split(": ", 1) for l in block.splitlines() if ": " in l)
+            out.append((lines["event"], json.loads(lines["data"])))
+        return out
+
+    TOOL_TAIL = '```curio.v1\n{"toolRequest": {"tool": "node.read", "params": {}}}\n```'
+
+    def test_granted_read_tool_executes_with_events_and_record(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        calls = []
+
+        def _fake_stream(config, messages, usage_out=None, **kwargs):
+            calls.append(messages)
+            if usage_out is not None:
+                usage_out.update({"inputTokens": len(calls), "outputTokens": len(calls) * 2})
+            if len(calls) == 1:
+                yield "Let me look at the node.\n"
+                yield self.TOOL_TAIL
+            else:
+                yield "It prints 1."
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
+        )
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion",
+            lambda c, m, **kw: "Loop Title",
+        )
+        _, token = user_and_token
+        self._save_node(client, token, alice_project, {"id": "n1", "type": "CODE", "content": "print(1)"})
+        att_id = self._install_attach(
+            client, token, alice_project, "agent.node-explainer@1.0.0",
+            {"kind": "node", "targetId": "n1"},
+        )
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
+            json={"message": "explain"}, headers=_auth(token),
+        )
+        events = self._sse_events(r)
+        kinds = [k for k, _ in events]
+        # Normalized ordering (dev/03:344 vocabulary over the T1 envelope).
+        assert kinds.index("tool_requested") < kinds.index("tool_started") < kinds.index("tool_result")
+        assert kinds.index("tool_result") < kinds.index("done")
+        tool_result = next(p for k, p in events if k == "tool_result")
+        assert tool_result == {"tool": "node.read", "status": "ok"}
+        deltas = "".join(p["text"] for k, p in events if k == "delta")
+        assert "curio.v1" not in deltas  # the request tail never flashed
+        done = events[-1][1]
+        assert done["reply"] == "Let me look at the node.\n\nIt prints 1."
+        # The grant-aware instruction listed the granted tool.
+        assert "- node.read:" in calls[0][0]["content"]
+        # The tool result (node JSON) reached the second call as framed data.
+        second_ctx = calls[1][-1]["content"]
+        assert second_ctx.startswith("[tool result] node.read: ok")
+        assert "print(1)" in second_ctx
+        # Execution record: toolCalls + usage summed across both rounds.
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        execution = turns[1]["execution"]
+        assert execution["usage"] == {"inputTokens": 3, "outputTokens": 6}
+        (call,) = execution["toolCalls"]
+        assert call["tool"] == "node.read" and call["status"] == "ok"
+        assert isinstance(call["durationMs"], int)
+        assert turns[1]["text"] == "Let me look at the node.\n\nIt prints 1."
+
+    def test_ungranted_request_is_refused_to_the_model_only(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        calls = []
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            if len(calls) == 1:
+                return '```curio.v1\n{"toolRequest": {"tool": "dataflow.read", "params": {}}}\n```'
+            return "Done without it."
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        _, token = user_and_token
+        # Chat agent declares no tools → nothing granted.
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.chat-agent@1.0.0"}, headers=_auth(token))
+        att_id = client.post(
+            f"/api/agents/projects/{alice_project}/attachments",
+            json={"coord": "agent.chat-agent@1.0.0", "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        ).get_json()["attachmentId"]
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q"}, headers=_auth(token),
+        )
+        assert r.status_code == 200
+        assert r.get_json()["reply"] == "Done without it."
+        assert "not granted" in calls[1][-1]["content"]
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        (call,) = turns[1]["execution"]["toolCalls"]
+        assert call["status"] == "refused"
+
+    def test_round_cap_bounds_the_loop(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        calls = []
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            return f"Round {len(calls)}.\n" + TestToolLoop.TOOL_TAIL  # always wants more
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        _, token = user_and_token
+        self._save_node(client, token, alice_project, {"id": "n1", "content": "x"})
+        att_id = self._install_attach(
+            client, token, alice_project, "agent.node-explainer@1.0.0",
+            {"kind": "node", "targetId": "n1"},
+        )
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q"}, headers=_auth(token),
+        )
+        assert r.status_code == 200
+        assert len(calls) == 3  # MAX_TOOL_ROUNDS executions + the final call
+        # The last tool result told the model to answer with what it has.
+        assert "answer with what you have" in calls[2][-1]["content"]
+        body = r.get_json()
+        # The dangling third request was dropped; all round text kept.
+        assert body["reply"] == "Round 1.\n\nRound 2.\n\nRound 3."
+        assert body["content"] == []
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        assert len(turns[1]["execution"]["toolCalls"]) == 2
+
+    def test_mutate_request_never_executes_in_the_loop(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        calls = []
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            if len(calls) == 1:
+                return (
+                    '```curio.v1\n{"toolRequest": {"tool": "node.content.write", '
+                    '"params": {"nodeId": "n1", "content": "pwned"}}}\n```'
+                )
+            return "Proposed."
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        user, token = user_and_token
+        self._save_node(client, token, alice_project, {"id": "n1", "content": "original"})
+        att_id = self._install_attach(
+            client, token, alice_project, "agent.node-content-builder@1.0.0",
+            {"kind": "node", "targetId": "n1"},
+        )
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q"}, headers=_auth(token),
+        )
+        assert r.status_code == 200
+        # The spec is untouched: the loop NEVER executes a mutation (DEC-006).
+        spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
+        assert spec["dataflow"]["nodes"][0]["content"] == "original"
+
+    def test_grantless_system_turn_is_byte_identical_to_t2(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.agents import builtin
+        from utk_curio.backend.app.agents import content as content_mod
+        from utk_curio.backend.app.agents import services as services_mod
+
+        calls = []
+
+        def _fake_run(config, messages, **kwargs):
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            return "ok"
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        _, token = user_and_token
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.chat-agent@1.0.0"}, headers=_auth(token))
+        att_id = client.post(
+            f"/api/agents/projects/{alice_project}/attachments",
+            json={"coord": "agent.chat-agent@1.0.0", "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        ).get_json()["attachmentId"]
+        client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q"}, headers=_auth(token),
+        )
+        preamble = builtin.read_prompt_text("agent.chat-agent@1.0.0", "system")
+        instruction = builtin.read_instruction_text("agent.chat-agent@1.0.0")
+        assert calls[0][0]["content"] == (
+            f"{preamble}\n\n{instruction}\n\n{content_mod.TAIL_INSTRUCTION}"
+        )
+
+
 class TestStructuredContent:
     """Structured-tail protocol end-to-end (memo dev/39, DEC-043): a valid
     terminal curio.v1 block becomes typed parts on the turn and the envelope;

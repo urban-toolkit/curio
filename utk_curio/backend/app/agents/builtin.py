@@ -61,6 +61,10 @@ class BuiltinAgentSpec:
     # the category (_TARGET_BY_CATEGORY). Set explicitly for dual-compatible
     # agents (e.g. Chat attaches to a node OR the canvas).
     targets: tuple[str, ...] = field(default_factory=tuple)
+    # Typed tool requirements (memo dev/41) — declarations, never grants
+    # (DEC-017); grounded in the agent's declared reads / legacy behavior.
+    # All optional: a missing grant degrades to the pre-tool blind behavior.
+    tools: tuple[str, ...] = field(default_factory=tuple)
 
     def target_kinds(self) -> tuple[str, ...]:
         return self.targets or (_TARGET_BY_CATEGORY[self.category],)
@@ -76,20 +80,22 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
     BuiltinAgentSpec("agent.debug-agent", "Debug", "node",
                      "Diagnose errors and propose fixes for a node or the canvas.",
                      "debug_prompt.txt", ("code.debug.diagnose", "code.fix.propose"), ("debug",),
-                     targets=("node", "canvas"), reads=("dataflowContext",)),
+                     targets=("node", "canvas"), reads=("dataflowContext",),
+                     tools=("dataflow.read",)),
     BuiltinAgentSpec("agent.dataflow-explainer", "Dataflow Explainer", "canvas",
                      "Explain what the whole dataflow does.",
                      "explanation_prompt.txt", ("dataflow.explain",), ("explanation",),
-                     reads=("dataflowContext",)),
+                     reads=("dataflowContext",), tools=("dataflow.read",)),
     BuiltinAgentSpec("agent.node-explainer", "Node Explainer", "node",
                      "Explain what a node or its output does.",
                      "single_box_explanation_prompt.txt",
                      ("node.explain", "node.output.interpret"), ("explanation",),
-                     reads=("nodeContext",)),
+                     reads=("nodeContext",), tools=("node.read",)),
     BuiltinAgentSpec("agent.node-content-builder", "Node Content Builder", "node",
                      "Generate node content for a target.",
                      "new_content_prompt.txt", ("node.content.generate",), ("authoring",),
-                     reads=("dataflowContext", "nodeId", "subtask", "workflowGoal")),
+                     reads=("dataflowContext", "nodeId", "subtask", "workflowGoal"),
+                     tools=("dataflow.read", "node.read", "node.content.write")),
     BuiltinAgentSpec("agent.execution-subtask-planner", "Execution Subtask Planner", "canvas",
                      "Plan follow-up subtasks from an execution.",
                      "new_subtask_from_exec_prompt.txt", ("execution.followup.plan",), ("planning",),
@@ -105,7 +111,7 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
     BuiltinAgentSpec("agent.workflow-suggester", "Workflow Suggester", "canvas",
                      "Suggest workflow next steps.",
                      "workflow_suggestions_prompt.txt", ("workflow.suggest",), ("planning",),
-                     reads=("dataflowContext", "workflowGoal")),
+                     reads=("dataflowContext", "workflowGoal"), tools=("dataflow.read",)),
     BuiltinAgentSpec("agent.plan-coherence-validator", "Plan Coherence Validator", "evaluate",
                      "Validate that a plan's subtasks are coherent.",
                      "evaluate_coherence_subtasks_prompt.txt", ("workflow.coherence.validate",), ("validation",),
@@ -141,6 +147,8 @@ def build_builtin_manifest(spec: BuiltinAgentSpec) -> dict:
         },
         "compatibleTargets": [{"kind": k, "requires": []} for k in spec.target_kinds()],
         "inputs": {"reads": list(spec.reads), "requiredConfig": []},
+        # Typed tool requirements (dev/41) — all optional declarations.
+        "tools": [{"id": t} for t in spec.tools],
         "runtime": {"execution": "foreground", "reviewPolicy": "report-only"},
         "providerRequirements": {"capabilities": ["structured-output"]},
         "provenance": {"publisher": "curio", "license": "MIT", "trust": "built-in"},

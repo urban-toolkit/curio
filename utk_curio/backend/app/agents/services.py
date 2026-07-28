@@ -794,18 +794,35 @@ def _prompt_digest(m: AgentManifest | None) -> str | None:
 
 
 def _execution_record(
-    execution_id: str, pins: dict, usage: dict, started: float, status: str
+    execution_id: str,
+    pins: dict,
+    usage: dict,
+    started: float,
+    status: str,
+    tool_calls: list | None = None,
 ) -> dict:
     """Assemble the per-run execution record persisted on the agent turn
-    (memo dev/37). ``usage`` is the provider port's ``usage_out`` sink —
-    Actual counts or ``None``, never estimated (memo dev/11)."""
-    return {
+    (memo dev/37). ``usage`` is Actual counts or ``None``, never estimated
+    (memo dev/11) — summed across loop rounds when tools ran (dev/41), which
+    is also when ``toolCalls`` (additive) records what executed."""
+    record = {
         "executionId": execution_id,
         "pins": pins,
         "usage": dict(usage) if usage else None,
         "durationMs": int((time.monotonic() - started) * 1000),
         "status": status,
     }
+    if tool_calls:
+        record["toolCalls"] = list(tool_calls)
+    return record
+
+
+def _add_usage(total: dict, sink: dict) -> None:
+    """Sum one provider call's sink into the run's usage total (dev/41 — a
+    tool loop makes several calls; the execution record carries their sum)."""
+    for key in ("inputTokens", "outputTokens"):
+        if isinstance(sink.get(key), int):
+            total[key] = total.get(key, 0) + sink[key]
 
 
 def _record_usage(user_key: str, usage_sink: dict) -> None:
@@ -822,16 +839,18 @@ def _prepare_run(
     """Shared run/stream setup: resolve the attachment, its instruction (intent
     override → prompt source, dev/19), the provider messages including the
     bounded session context (dev/20), and the effective run policy (dev/24).
-    Returns ``(coord, session_id, messages, run_policy, wants_title, pins)``;
-    ``session_id`` is None for a record without one (stateless fallback),
-    ``wants_title`` is True when this message is the conversation's first —
-    an untitled, never-manually-renamed attachment with no prior user turn —
-    so a title should be auto-generated after the reply (memo dev/25), and
+    Returns ``(coord, session_id, messages, run_policy, wants_title, pins,
+    loop_ctx)``; ``session_id`` is None for a record without one (stateless
+    fallback), ``wants_title`` is True when this message is the conversation's
+    first — an untitled, never-manually-renamed attachment with no prior user
+    turn — so a title should be auto-generated after the reply (memo dev/25),
     ``pins`` are the DEC-031 reproducibility pins resolved from what actually
     dispatches (memo dev/37): coord, prompt digest, intent-edited flag,
-    provider/model, granted tools (dev/39), and the effective-policy snapshot.
-    No secrets. A required manifest tool that resolves no grant refuses the
-    run here — validation stage, before admission, so it consumes no quota."""
+    provider/model, granted tools (dev/39), and the effective-policy snapshot
+    (no secrets), and ``loop_ctx`` carries what the dev/41 tool loop needs
+    (granted ids + the attachment target). A required manifest tool that
+    resolves no grant refuses the run here — validation stage, before
+    admission, so it consumes no quota."""
     spec = _read_spec_or_404(user_key, project_id)
     record = _record_or_404(spec, attachment_id)
     coord = record.get("coord", "")
@@ -852,10 +871,14 @@ def _prepare_run(
     # only, so the preamble still applies.
     preamble = _resolve_prompt_text(user_key, coord, "system")
     system_content = f"{preamble}\n\n{instruction}" if preamble else instruction
-    # Structured-tail protocol (memo dev/39): the runtime-owned instruction
-    # composes AFTER the preamble + intent, so an edited intent can neither
-    # strip nor spoof it. Optional in tone; costs a few hundred prompt tokens.
-    system_content = f"{system_content}\n\n{content.TAIL_INSTRUCTION}"
+    # Structured-tail protocol (memos dev/39/41): the runtime-owned
+    # instruction composes AFTER the preamble + intent, so an edited intent
+    # can neither strip nor spoof it. Grant-less runs keep the T2 instruction
+    # byte-identical; granted runs get the toolRequest paragraph.
+    granted = tools.resolve_grants(requested_tools)
+    system_content = (
+        f"{system_content}\n\n{content.tail_instruction(tools.grant_descriptions(granted))}"
+    )
     session_id = record.get("sessionId")
     if not isinstance(session_id, str):
         session_id = None
@@ -877,12 +900,12 @@ def _prepare_run(
         "intentEdited": bool(record.get("intent")),
         "provider": config.api_type,
         "model": config.model,
-        # Granted tool ids (dev/39): requested ∩ registry ∩ policy — empty
-        # while the registry ships empty; the pin is the record either way.
-        "tools": tools.resolve_grants(requested_tools),
+        # Granted tool ids (dev/39): requested ∩ registry ∩ policy.
+        "tools": granted,
         "policy": run_policy["policy_pins"],
     }
-    return coord, session_id, messages, run_policy, wants_title, pins
+    loop_ctx = {"granted": granted, "target": record.get("target")}
+    return coord, session_id, messages, run_policy, wants_title, pins, loop_ctx
 
 
 def _persist_exchange(
@@ -915,6 +938,62 @@ def _persist_exchange(
     )
 
 
+# How many tool executions one run may make (memo dev/41): total provider
+# calls per run ≤ MAX_TOOL_ROUNDS + 1. A runtime constant until someone needs
+# to tune it (REQ-QUOTA-001 notes tool quotas as the eventual policy home).
+MAX_TOOL_ROUNDS = 2
+
+
+def _execute_tool_request(
+    user_key: str, project_id: str, loop_ctx: dict, req: dict, tool_calls: list
+) -> tuple[str, str]:
+    """Handle one model toolRequest inside the loop (memo dev/41).
+
+    Only granted read contracts execute; everything else resolves to a
+    synthetic result the model can recover from — loudly to the model,
+    invisibly to the user, never a run error. Appends to ``tool_calls``
+    (the execution record's tool history)."""
+    tool_id = req.get("tool", "")
+    started = time.monotonic()
+    if tool_id not in loop_ctx["granted"]:
+        status, text = "refused", f"tool {tool_id!r} is not granted for this run"
+    else:
+        contract = tools.REGISTRY.get(tool_id)
+        if contract is None or contract.effect != "read":
+            # Mutate handling (proposals) arrives with the review flow; the
+            # loop never executes a mutation either way (DEC-006).
+            status, text = (
+                "refused",
+                f"tool {tool_id!r} mutates project state and cannot run directly",
+            )
+        else:
+            status, text = tools.execute_read_tool(
+                tool_id,
+                user_key=user_key,
+                project_id=project_id,
+                target=loop_ctx.get("target"),
+                params=req.get("params") or {},
+            )
+    tool_calls.append(
+        {
+            "tool": tool_id,
+            "status": status,
+            "durationMs": int((time.monotonic() - started) * 1000),
+        }
+    )
+    return status, text
+
+
+def _tool_result_message(tool_id: str, status: str, text: str, *, final: bool) -> dict:
+    """The tool result fed back as provider context (untrusted data, framed)."""
+    suffix = (
+        "\nNo further tool calls are available this turn — answer with what you have."
+        if final
+        else ""
+    )
+    return {"role": "user", "content": f"[tool result] {tool_id}: {status}\n{text}{suffix}"}
+
+
 def run_attachment(
     user_key: str, project_id: str, attachment_id: str, message: str, config: ProviderConfig
 ) -> dict:
@@ -927,24 +1006,55 @@ def run_attachment(
     a provider failure persists the user turn plus a display-only error marker
     (excluded from future context) so history matches what the user saw.
     """
-    coord, session_id, messages, run_policy, wants_title, pins = _prepare_run(
+    coord, session_id, messages, run_policy, wants_title, pins, loop_ctx = _prepare_run(
         user_key, project_id, attachment_id, message, config
     )
     # Admission after validation (an invalid request never consumes quota) and
     # before provider dispatch (a denied run never reaches a provider).
     quotas.admit(user_key, **run_policy["admit"])
     execution_id = uuid.uuid4().hex
-    usage_sink: dict = {}
+    usage_total: dict = {}
+    tool_calls: list = []
+    folded: list[str] = []
+    final_parts: list = []
+    messages_work = list(messages)
+    rounds_used = 0
     started = time.monotonic()
     try:
-        reply = run_chat_completion(
-            config,
-            messages,
-            max_output_tokens=run_policy["max_output_tokens"],
-            usage_out=usage_sink,
-        )
+        # The bounded tool loop (memo dev/41): parse → execute granted read
+        # tool → re-prompt, at most MAX_TOOL_ROUNDS executions per run.
+        while True:
+            usage_sink: dict = {}
+            reply = run_chat_completion(
+                config,
+                messages_work,
+                max_output_tokens=run_policy["max_output_tokens"],
+                usage_out=usage_sink,
+            )
+            _record_usage(user_key, usage_sink)
+            _add_usage(usage_total, usage_sink)
+            visible, parts = content.extract_content(reply)
+            if visible:
+                folded.append(visible)
+            req = parts[0] if parts and parts[0].get("type") == "toolRequest" else None
+            if req is None:
+                final_parts = parts
+                break
+            if rounds_used >= MAX_TOOL_ROUNDS:
+                break  # dangling request at the cap: dropped, text kept
+            rounds_used += 1
+            status, text = _execute_tool_request(
+                user_key, project_id, loop_ctx, req, tool_calls
+            )
+            messages_work.append({"role": "assistant", "content": reply})
+            messages_work.append(
+                _tool_result_message(
+                    req["tool"], status, text, final=rounds_used >= MAX_TOOL_ROUNDS
+                )
+            )
     except Exception as exc:
         _record_usage(user_key, usage_sink)
+        _add_usage(usage_total, usage_sink)
         _persist_exchange(
             user_key,
             project_id,
@@ -953,33 +1063,32 @@ def run_attachment(
             message,
             f"(error) {exc}",
             error=True,
-            execution=_execution_record(execution_id, pins, usage_sink, started, "error"),
+            execution=_execution_record(
+                execution_id, pins, usage_total, started, "error", tool_calls
+            ),
         )
         raise AgentServiceError(f"agent run failed: {exc}", 502) from exc
-    _record_usage(user_key, usage_sink)
-    execution = _execution_record(execution_id, pins, usage_sink, started, "ok")
-    # Structured tail (dev/39): a valid terminal block becomes typed parts and
-    # leaves the visible text; anything else passes through untouched.
-    visible, parts = content.extract_content(reply)
+    reply_text = "\n\n".join(folded)
+    execution = _execution_record(execution_id, pins, usage_total, started, "ok", tool_calls)
     _persist_exchange(
         user_key,
         project_id,
         session_id,
         attachment_id,
         message,
-        visible,
+        reply_text,
         execution=execution,
-        parts=parts,
+        parts=final_parts,
     )
     if wants_title:
         _generate_conversation_title(user_key, project_id, attachment_id, message, config)
     return {
         "attachmentId": attachment_id,
         "coord": coord,
-        "reply": visible,
+        "reply": reply_text,
         "executionId": execution_id,
         "usage": execution["usage"],
-        "content": parts,
+        "content": final_parts,
     }
 
 
@@ -998,7 +1107,7 @@ def stream_attachment(
     completion; a failure persists the user turn plus a display-only error
     marker. Nothing is persisted per-delta.
     """
-    coord, session_id, messages, run_policy, wants_title, pins = _prepare_run(
+    coord, session_id, messages, run_policy, wants_title, pins, loop_ctx = _prepare_run(
         user_key, project_id, attachment_id, message, config
     )
     # Eager admission: a quota/budget denial surfaces as a plain 429 before any
@@ -1017,65 +1126,42 @@ def stream_attachment(
                 return buf[:-k], buf[-k:]
         return buf, ""
 
-    def _events():
+    def _stream_round(messages_work: list, usage_sink: dict, result: dict):
+        """Stream one provider round: yields ("delta", text) with the dev/39
+        tail withholding, then leaves {reply, visible, parts} in *result*."""
         chunks: list[str] = []
-        usage_sink: dict = {}
-        started = time.monotonic()
-        # The typed-envelope handshake (memo dev/37): the execution identity
-        # arrives before the first delta so a client can correlate the stream
-        # with the record that will land on the transcript.
-        yield ("execution", {"executionId": execution_id})
-        # Tail withholding (memo dev/39): a candidate terminal curio.v1 block
-        # must not flash into the live transcript and then vanish; it is
-        # accumulated silently and either becomes a content event or — on a
-        # false positive / invalid block — is flushed as ordinary deltas.
         buf = ""  # pass-mode text not yet emitted
         withheld: str | None = None  # not None → holding a candidate tail
-        try:
-            for delta in stream_chat_completion(
-                config,
-                messages,
-                max_output_tokens=run_policy["max_output_tokens"],
-                usage_out=usage_sink,
-            ):
-                chunks.append(delta)
-                if withheld is not None:
-                    withheld += delta
-                    close = withheld.find("\n```", len(marker))
-                    if close != -1 and withheld[close + 4 :].strip():
-                        # Closed fence followed by more content: not terminal —
-                        # flush the closed block verbatim and rescan the rest.
-                        yield ("delta", withheld[: close + 4])
-                        buf = withheld[close + 4 :]
-                        withheld = None
-                    else:
-                        continue
+        for delta in stream_chat_completion(
+            config,
+            messages_work,
+            max_output_tokens=run_policy["max_output_tokens"],
+            usage_out=usage_sink,
+        ):
+            chunks.append(delta)
+            if withheld is not None:
+                withheld += delta
+                close = withheld.find("\n```", len(marker))
+                if close != -1 and withheld[close + 4 :].strip():
+                    # Closed fence followed by more content: not terminal —
+                    # flush the closed block verbatim and rescan the rest.
+                    yield ("delta", withheld[: close + 4])
+                    buf = withheld[close + 4 :]
+                    withheld = None
                 else:
-                    buf += delta
-                idx = buf.find(marker)
-                if idx != -1:
-                    if buf[:idx]:
-                        yield ("delta", buf[:idx])
-                    withheld = buf[idx:]
-                    buf = ""
-                else:
-                    emit, buf = _hold_split(buf)
-                    if emit:
-                        yield ("delta", emit)
-        except Exception as exc:  # provider failure mid-stream
-            _record_usage(user_key, usage_sink)
-            _persist_exchange(
-                user_key,
-                project_id,
-                session_id,
-                attachment_id,
-                message,
-                f"(error) {exc}",
-                error=True,
-                execution=_execution_record(execution_id, pins, usage_sink, started, "error"),
-            )
-            yield ("error", f"agent run failed: {exc}")
-            return
+                    continue
+            else:
+                buf += delta
+            idx = buf.find(marker)
+            if idx != -1:
+                if buf[:idx]:
+                    yield ("delta", buf[:idx])
+                withheld = buf[idx:]
+                buf = ""
+            else:
+                emit, buf = _hold_split(buf)
+                if emit:
+                    yield ("delta", emit)
         reply = "".join(chunks)
         visible, parts = content.extract_content(reply)
         if withheld is not None and not parts:
@@ -1084,31 +1170,98 @@ def stream_attachment(
             yield ("delta", withheld)
         elif withheld is None and buf:
             yield ("delta", buf)  # stream ended on a partial fence prefix
-        _record_usage(user_key, usage_sink)
-        execution = _execution_record(execution_id, pins, usage_sink, started, "ok")
+        result["reply"] = reply
+        result["visible"] = visible
+        result["parts"] = parts
+
+    def _events():
+        usage_total: dict = {}
+        tool_calls: list = []
+        folded: list[str] = []
+        final_parts: list = []
+        messages_work = list(messages)
+        rounds_used = 0
+        usage_sink: dict = {}
+        started = time.monotonic()
+        # The typed-envelope handshake (memo dev/37): the execution identity
+        # arrives before the first delta so a client can correlate the stream
+        # with the record that will land on the transcript.
+        yield ("execution", {"executionId": execution_id})
+        try:
+            # The bounded tool loop (memo dev/41): each round streams its own
+            # deltas; a toolRequest tail becomes tool events, never text.
+            while True:
+                usage_sink = {}
+                result: dict = {}
+                yield from _stream_round(messages_work, usage_sink, result)
+                _record_usage(user_key, usage_sink)
+                _add_usage(usage_total, usage_sink)
+                if result["visible"]:
+                    folded.append(result["visible"])
+                parts = result["parts"]
+                req = parts[0] if parts and parts[0].get("type") == "toolRequest" else None
+                if req is None:
+                    final_parts = parts
+                    break
+                if rounds_used >= MAX_TOOL_ROUNDS:
+                    break  # dangling request at the cap: dropped, text kept
+                rounds_used += 1
+                yield ("tool_requested", {"tool": req["tool"]})
+                yield ("tool_started", {"tool": req["tool"]})
+                status, text = _execute_tool_request(
+                    user_key, project_id, loop_ctx, req, tool_calls
+                )
+                yield ("tool_result", {"tool": req["tool"], "status": status})
+                messages_work.append({"role": "assistant", "content": result["reply"]})
+                messages_work.append(
+                    _tool_result_message(
+                        req["tool"], status, text, final=rounds_used >= MAX_TOOL_ROUNDS
+                    )
+                )
+        except Exception as exc:  # provider failure mid-stream
+            _record_usage(user_key, usage_sink)
+            _add_usage(usage_total, usage_sink)
+            _persist_exchange(
+                user_key,
+                project_id,
+                session_id,
+                attachment_id,
+                message,
+                f"(error) {exc}",
+                error=True,
+                execution=_execution_record(
+                    execution_id, pins, usage_total, started, "error", tool_calls
+                ),
+            )
+            yield ("error", f"agent run failed: {exc}")
+            return
+        reply_text = "\n\n".join(folded)
+        execution = _execution_record(
+            execution_id, pins, usage_total, started, "ok", tool_calls
+        )
         _persist_exchange(
             user_key,
             project_id,
             session_id,
             attachment_id,
             message,
-            visible,
+            reply_text,
             execution=execution,
-            parts=parts,
+            parts=final_parts,
         )
         # Title before the done frame: the reply text already streamed via
         # deltas, and the client's post-send refresh must see the title.
         if wants_title:
             _generate_conversation_title(user_key, project_id, attachment_id, message, config)
-        if parts:
-            yield ("content", {"parts": parts})
+        if final_parts:
+            yield ("content", {"parts": final_parts})
         yield (
             "done",
             {
-                "reply": visible,
+                "reply": reply_text,
                 "executionId": execution_id,
                 "usage": execution["usage"],
-                "content": parts,
+                "content": final_parts,
             },
         )
 
