@@ -134,3 +134,43 @@ def check_and_count(user_key: str, limit: int | None = None) -> int:
 def runs_used_today(user_key: str) -> int:
     """Runs counted in the current window (0 for a missing/stale/corrupt file)."""
     return _read_window(user_key, _now().date().isoformat())["runs"]
+
+
+def _usage_counts(data: dict) -> dict:
+    """The window's Actual usage counters, normalized (missing/malformed → 0)."""
+    usage = data.get("usage")
+    if not isinstance(usage, dict):
+        usage = {}
+    return {
+        key: usage[key] if isinstance(usage.get(key), int) else 0
+        for key in ("inputTokens", "outputTokens")
+    }
+
+
+def record_usage(user_key: str, input_tokens: object, output_tokens: object) -> None:
+    """Add one run's Actual token usage to the daily window (memo dev/37).
+
+    Advisory, like the run counters (ledgers are the T3 replacement): recorded
+    post-run, so a denial never counts and racing writers may briefly
+    under-count. Only provider-reported integers are added — never estimates
+    (memo dev/11). The counters include internal housekeeping calls (e.g. the
+    dev/25 title call), so they may exceed what the transcript's execution
+    records sum to.
+    """
+    if not (isinstance(input_tokens, int) and isinstance(output_tokens, int)):
+        return
+    now = _now()
+    data = _read_window(user_key, now.date().isoformat())
+    usage = _usage_counts(data)
+    usage["inputTokens"] += input_tokens
+    usage["outputTokens"] += output_tokens
+    data["usage"] = usage
+    path = _quota_path(user_key)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+
+def usage_today(user_key: str) -> dict:
+    """Actual tokens counted in the current window (zeros for a missing/stale/
+    corrupt file or a window that predates usage capture)."""
+    return _usage_counts(_read_window(user_key, _now().date().isoformat()))

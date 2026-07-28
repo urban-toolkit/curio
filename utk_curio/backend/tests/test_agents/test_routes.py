@@ -915,11 +915,15 @@ class TestStreamRun:
         assert r.status_code == 200
         assert r.mimetype == "text/event-stream"
         events = self._events(r)
-        assert events == [
-            ("delta", {"text": "hel"}),
-            ("delta", {"text": "lo"}),
-            ("done", {"reply": "hello"}),
-        ]
+        # The execution handshake precedes the first delta (memo dev/37) and
+        # done carries the enriched typed payload.
+        assert events[0][0] == "execution"
+        execution_id = events[0][1]["executionId"]
+        assert execution_id
+        assert events[1:3] == [("delta", {"text": "hel"}), ("delta", {"text": "lo"})]
+        assert events[3] == (
+            "done", {"reply": "hello", "executionId": execution_id, "usage": None}
+        )
         turns = client.get(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
             headers=_auth(token),
@@ -941,7 +945,8 @@ class TestStreamRun:
             json={"message": "q1"}, headers=_auth(token),
         )
         events = self._events(r)
-        assert events[0] == ("delta", {"text": "par"})
+        assert events[0][0] == "execution"
+        assert events[1] == ("delta", {"text": "par"})
         assert events[-1][0] == "error"
         assert "boom" in events[-1][1]["error"]
         turns = client.get(
@@ -1141,12 +1146,27 @@ class TestExecutionRecords:
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
             json={"message": "q1"}, headers=_auth(token),
         )
-        r.get_data()  # consume the stream so the exchange persists
+        blocks = [b for b in r.get_data(as_text=True).strip().split("\n\n")]
+        events = [
+            (lines["event"], json.loads(lines["data"]))
+            for lines in (dict(l.split(": ", 1) for l in b.splitlines() if ": " in l) for b in blocks)
+        ]
         turns = self._turns(client, token, alice_project, att_id)
         execution = turns[1]["execution"]
         assert execution["status"] == "ok"
         assert execution["usage"] == {"inputTokens": 7, "outputTokens": 9}
         assert execution["pins"]["coord"] == "agent.chat-agent@1.0.0"
+        # The SSE envelope correlates with the persisted record (memo dev/37):
+        # execution first, done enriched with the same id and Actual usage.
+        assert events[0] == ("execution", {"executionId": execution["executionId"]})
+        assert events[-1] == (
+            "done",
+            {
+                "reply": "hello",
+                "executionId": execution["executionId"],
+                "usage": {"inputTokens": 7, "outputTokens": 9},
+            },
+        )
 
     def test_stream_error_records_error_execution(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         def _flaky(config, messages, **kwargs):
@@ -1179,6 +1199,41 @@ class TestExecutionRecords:
         assert len(calls) == 1  # the conversation run; the title call is untracked
         turns = self._turns(client, token, alice_project, att_id)
         assert sum(1 for t in turns if "execution" in t) == 1
+
+    def test_daily_usage_counters_include_the_title_call(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # The counters cover every provider call this account paid for — the
+        # conversation run (12/34) plus the recordless title call (5/3) — so
+        # they may exceed what the transcript's execution records sum to.
+        from utk_curio.backend.app.agents import quotas
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        self._mock_provider(monkeypatch, usage={"inputTokens": 12, "outputTokens": 34})
+        user, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)
+        client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        assert quotas.usage_today(_user_dir_key(user)) == {
+            "inputTokens": 17, "outputTokens": 37,
+        }
+
+    def test_settings_payloads_expose_usage_today(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        self._mock_provider(monkeypatch, usage={"inputTokens": 12, "outputTokens": 34})
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)
+        client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        expected = {"inputTokens": 17, "outputTokens": 37}  # run + title call
+        acct = client.get("/api/agents/settings", headers=_auth(token)).get_json()
+        assert acct["usageToday"] == expected
+        proj = client.get(
+            f"/api/agents/projects/{alice_project}/defaults/agent.chat-agent@1.0.0",
+            headers=_auth(token),
+        ).get_json()
+        assert proj["effective"]["quotas"]["usageToday"] == expected
 
     def test_uploaded_definition_prompt_digest_is_pinned(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         # A digest-stamped definition (upload-import, memo dev/36) pins the

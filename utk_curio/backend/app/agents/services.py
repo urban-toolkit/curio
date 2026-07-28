@@ -398,7 +398,9 @@ def get_project_agent_defaults(user_key: str, project_id: str, coord: str) -> di
         "settings": record.get("settings", {}),
         "effective": {
             "quotas": {
-                "runsPerDay": {**eff["quotas"]["runsPerDay"], "usedToday": used}
+                "runsPerDay": {**eff["quotas"]["runsPerDay"], "usedToday": used},
+                # Actual tokens counted this window (memo dev/37).
+                "usageToday": quotas.usage_today(user_key),
             },
             "cost": {
                 **eff["cost"],
@@ -455,6 +457,8 @@ def get_account_settings(user_key: str) -> dict:
         "effective": policy.effective(record["settings"]),
         "ceilings": policy.deployment_defaults(),
         "usedToday": quotas.runs_used_today(user_key),
+        # Actual tokens counted this window (memo dev/37) — never estimated.
+        "usageToday": quotas.usage_today(user_key),
     }
 
 
@@ -719,6 +723,9 @@ def _generate_conversation_title(
     read so a manual rename that landed mid-run wins.
     """
     try:
+        # The title call is internal housekeeping, not an execution (dev/37):
+        # it writes no execution record, but its tokens still cost — count them.
+        usage_sink: dict = {}
         raw = run_chat_completion(
             config,
             [
@@ -726,7 +733,9 @@ def _generate_conversation_title(
                 {"role": "user", "content": message},
             ],
             max_output_tokens=TITLE_MAX_OUTPUT_TOKENS,
+            usage_out=usage_sink,
         )
+        _record_usage(user_key, usage_sink)
         title = sanitize_title(raw)
         if title is None:
             return
@@ -796,6 +805,14 @@ def _execution_record(
         "durationMs": int((time.monotonic() - started) * 1000),
         "status": status,
     }
+
+
+def _record_usage(user_key: str, usage_sink: dict) -> None:
+    """Fold one provider call's Actual usage into the daily counters (dev/37)."""
+    if usage_sink:
+        quotas.record_usage(
+            user_key, usage_sink.get("inputTokens"), usage_sink.get("outputTokens")
+        )
 
 
 def _prepare_run(
@@ -908,6 +925,7 @@ def run_attachment(
             usage_out=usage_sink,
         )
     except Exception as exc:
+        _record_usage(user_key, usage_sink)
         _persist_exchange(
             user_key,
             project_id,
@@ -919,6 +937,7 @@ def run_attachment(
             execution=_execution_record(execution_id, pins, usage_sink, started, "error"),
         )
         raise AgentServiceError(f"agent run failed: {exc}", 502) from exc
+    _record_usage(user_key, usage_sink)
     execution = _execution_record(execution_id, pins, usage_sink, started, "ok")
     _persist_exchange(
         user_key, project_id, session_id, attachment_id, message, reply, execution=execution
@@ -940,11 +959,13 @@ def stream_attachment(
     """Streaming twin of :func:`run_attachment` (memo dev/22).
 
     Validates eagerly (404/422 raise before any streaming starts), then returns
-    a generator of ``("delta", text)`` events ending in ``("done", full_reply)``
-    — or ``("error", message)`` on a provider failure. Persistence semantics are
-    identical to ``run_attachment``: the full exchange is written once at
-    completion; a failure persists the user turn plus a display-only error
-    marker. Nothing is persisted per-delta.
+    a generator opening with ``("execution", {executionId})`` (memo dev/37),
+    followed by ``("delta", text)`` events ending in
+    ``("done", {reply, executionId, usage})`` — or ``("error", message)`` on a
+    provider failure. Persistence semantics are identical to
+    ``run_attachment``: the full exchange is written once at completion; a
+    failure persists the user turn plus a display-only error marker. Nothing
+    is persisted per-delta.
     """
     coord, session_id, messages, run_policy, wants_title, pins = _prepare_run(
         user_key, project_id, attachment_id, message, config
@@ -958,6 +979,10 @@ def stream_attachment(
         parts: list[str] = []
         usage_sink: dict = {}
         started = time.monotonic()
+        # The typed-envelope handshake (memo dev/37): the execution identity
+        # arrives before the first delta so a client can correlate the stream
+        # with the record that will land on the transcript.
+        yield ("execution", {"executionId": execution_id})
         try:
             for delta in stream_chat_completion(
                 config,
@@ -968,6 +993,7 @@ def stream_attachment(
                 parts.append(delta)
                 yield ("delta", delta)
         except Exception as exc:  # provider failure mid-stream
+            _record_usage(user_key, usage_sink)
             _persist_exchange(
                 user_key,
                 project_id,
@@ -981,6 +1007,7 @@ def stream_attachment(
             yield ("error", f"agent run failed: {exc}")
             return
         reply = "".join(parts)
+        _record_usage(user_key, usage_sink)
         execution = _execution_record(execution_id, pins, usage_sink, started, "ok")
         _persist_exchange(
             user_key, project_id, session_id, attachment_id, message, reply, execution=execution
@@ -989,6 +1016,6 @@ def stream_attachment(
         # deltas, and the client's post-send refresh must see the title.
         if wants_title:
             _generate_conversation_title(user_key, project_id, attachment_id, message, config)
-        yield ("done", reply)
+        yield ("done", {"reply": reply, "executionId": execution_id, "usage": execution["usage"]})
 
     return _events()

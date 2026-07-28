@@ -100,3 +100,46 @@ class TestAdmit:
             admit(UKEY, account_limit=1, daily_budget_usd=0.01, estimated_cost_per_run_usd=1.0)
         assert exc.value.reason == "quota"  # account limit checked first
         assert quotas._quota_path(UKEY).read_text(encoding="utf-8") == before
+
+
+class TestUsageCounters:
+    """Daily Actual-token counters in the quota window (memo dev/37).
+    Advisory like the run counters; ledgers replace them in T3."""
+
+    def test_record_and_read_accumulates(self, tmp_curio):
+        assert quotas.usage_today(UKEY) == {"inputTokens": 0, "outputTokens": 0}
+        quotas.record_usage(UKEY, 10, 20)
+        quotas.record_usage(UKEY, 1, 2)
+        assert quotas.usage_today(UKEY) == {"inputTokens": 11, "outputTokens": 22}
+
+    def test_non_integer_usage_is_ignored(self, tmp_curio):
+        quotas.record_usage(UKEY, None, 5)
+        quotas.record_usage(UKEY, "10", 5)
+        assert quotas.usage_today(UKEY) == {"inputTokens": 0, "outputTokens": 0}
+
+    def test_usage_resets_with_the_window(self, tmp_curio):
+        quotas.record_usage(UKEY, 10, 20)
+        path = quotas._quota_path(UKEY)
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["window"] = "2001-01-01"
+        path.write_text(json.dumps(data), encoding="utf-8")
+        assert quotas.usage_today(UKEY) == {"inputTokens": 0, "outputTokens": 0}
+
+    def test_usage_survives_an_admit_write(self, tmp_curio):
+        # admit() rewrites the window file; the usage counters must ride along.
+        quotas.record_usage(UKEY, 10, 20)
+        check_and_count(UKEY, limit=5)
+        assert quotas.usage_today(UKEY) == {"inputTokens": 10, "outputTokens": 20}
+
+    def test_window_predating_usage_capture_reads_zero(self, tmp_curio):
+        # An old window without the "usage" key (or with a malformed one)
+        # reads as zeros — no migrations (memo dev/37).
+        check_and_count(UKEY, limit=5)
+        assert quotas.usage_today(UKEY) == {"inputTokens": 0, "outputTokens": 0}
+        path = quotas._quota_path(UKEY)
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["usage"] = "junk"
+        path.write_text(json.dumps(data), encoding="utf-8")
+        assert quotas.usage_today(UKEY) == {"inputTokens": 0, "outputTokens": 0}
+        quotas.record_usage(UKEY, 3, 4)
+        assert quotas.usage_today(UKEY) == {"inputTokens": 3, "outputTokens": 4}

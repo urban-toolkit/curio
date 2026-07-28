@@ -396,10 +396,13 @@ def run_attachment(project_id: str, attachment_id: str):
 def stream_attachment(project_id: str, attachment_id: str):
     """Run one turn and stream the reply as Server-Sent Events (memo dev/22).
 
-    Emits repeated ``event: delta`` chunks, then ``event: done`` with the full
-    reply; a provider failure emits ``event: error`` and ends the stream.
-    Validation errors (404/422/…) return normal JSON statuses before any
-    streaming starts. Session persistence matches the blocking run.
+    Emits ``event: execution`` (``{executionId}``, memo dev/37) before the
+    first delta, repeated ``event: delta`` chunks, then ``event: done`` with
+    ``{reply, executionId, usage}``; a provider failure emits ``event: error``
+    and ends the stream. Additive and backward-compatible — old clients skip
+    unknown event names. Validation errors (404/422/…) return normal JSON
+    statuses before any streaming starts. Session persistence matches the
+    blocking run.
     """
     from utk_curio.backend.app.agents.provider_config import (
         ProviderConfigError,
@@ -432,9 +435,12 @@ def stream_attachment(project_id: str, attachment_id: str):
 
     def _sse():
         for kind, payload in events:
-            data = {"text": payload} if kind == "delta" else (
-                {"reply": payload} if kind == "done" else {"error": payload}
-            )
+            if kind == "delta":
+                data = {"text": payload}
+            elif kind == "error":
+                data = {"error": payload}
+            else:  # execution / done already carry their typed dict payloads
+                data = payload
             yield f"event: {kind}\ndata: {json.dumps(data)}\n\n"
 
     return Response(
