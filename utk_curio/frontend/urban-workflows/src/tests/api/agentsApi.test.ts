@@ -174,13 +174,44 @@ describe("agentsApi", () => {
         ]),
       );
       const deltas: string[] = [];
-      const reply = await agentsApi.runAttachmentStream("p1", "att-1", "hi", (t) => deltas.push(t));
+      const result = await agentsApi.runAttachmentStream("p1", "att-1", "hi", (t) => deltas.push(t));
       expect(deltas).toEqual(["he", "llo"]);
-      expect(reply).toBe("hello");
+      expect(result.reply).toBe("hello");
+      // An old server's plain done frame leaves the dev/37 fields absent.
+      expect(result.executionId).toBeUndefined();
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining("/api/agents/projects/p1/attachments/att-1/run/stream"),
         expect.objectContaining({ method: "POST", body: JSON.stringify({ message: "hi" }) }),
       );
+    });
+
+    it("parses the execution event and the enriched done payload (memo dev/37)", async () => {
+      global.fetch = jest.fn().mockResolvedValue(
+        streamResponse([
+          'event: execution\ndata: {"executionId": "e1"}\n\n',
+          'event: delta\ndata: {"text": "hello"}\n\n',
+          'event: done\ndata: {"reply": "hello", "executionId": "e1", "usage": {"inputTokens": 7, "outputTokens": 9}}\n\n',
+        ]),
+      );
+      const result = await agentsApi.runAttachmentStream("p1", "att-1", "hi", () => undefined);
+      expect(result).toEqual({
+        reply: "hello",
+        executionId: "e1",
+        usage: { inputTokens: 7, outputTokens: 9 },
+      });
+    });
+
+    it("skips unknown event names (forward tolerance)", async () => {
+      global.fetch = jest.fn().mockResolvedValue(
+        streamResponse([
+          'event: card\ndata: {"kind": "preview"}\n\n', // a T2 event this client predates
+          'event: delta\ndata: {"text": "hello"}\n\nevent: done\ndata: {"reply": "hello"}\n\n',
+        ]),
+      );
+      const deltas: string[] = [];
+      const result = await agentsApi.runAttachmentStream("p1", "att-1", "hi", (t) => deltas.push(t));
+      expect(deltas).toEqual(["hello"]);
+      expect(result.reply).toBe("hello");
     });
 
     it("throws with status/body on a pre-stream HTTP error (quota 429)", async () => {

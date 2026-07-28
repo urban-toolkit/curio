@@ -58,6 +58,15 @@ const Harness: React.FC = () => {
       <div data-testid="selected">{ctx.selectedId ?? "none"}</div>
       <div data-testid="hydrating">{ctx.hydratingId ?? "none"}</div>
       <div data-testid="turns">{turns.map((t) => `${t.role}:${t.text}`).join("|")}</div>
+      <div data-testid="executions">
+        {turns
+          .map((t) =>
+            t.execution
+              ? `${t.execution.executionId}:${t.execution.usage?.inputTokens ?? "∅"}/${t.execution.usage?.outputTokens ?? "∅"}`
+              : "∅",
+          )
+          .join("|")}
+      </div>
       <div data-testid="titles">{ctx.attachments.map((a) => a.title ?? "∅").join(",")}</div>
     </div>
   );
@@ -86,7 +95,7 @@ beforeEach(() => {
   api.runAttachmentStream.mockImplementation(async (_p, _a, _m, onDelta) => {
     onDelta("fre");
     onDelta("sh");
-    return "fresh";
+    return { reply: "fresh", executionId: "e1", usage: { inputTokens: 7, outputTokens: 9 } };
   });
   api.detachAttachment.mockResolvedValue({ attachmentId: "a1", detached: true });
   api.clearSession.mockResolvedValue({ attachmentId: "a1", sessionId: "s1", turns: [] });
@@ -131,6 +140,33 @@ describe("AgentAttachmentsProvider chat state", () => {
         "user:old-q|agent:old-a|user:hi|agent:fresh",
       ),
     );
+  });
+
+  it("the finalized turn keeps the run's executionId and Actual usage", async () => {
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    fireEvent.click(screen.getByText("send"));
+    await waitFor(() =>
+      expect(screen.getByTestId("turns")).toHaveTextContent("agent:fresh"),
+    );
+    // Hydrated turns have no record (old session); the new run's does.
+    expect(screen.getByTestId("executions")).toHaveTextContent("∅|∅|∅|e1:7/9");
+  });
+
+  it("a done frame without execution fields finalizes a plain turn", async () => {
+    api.runAttachmentStream.mockImplementation(async (_p, _a, _m, onDelta) => {
+      onDelta("fresh");
+      return { reply: "fresh" }; // old server: no executionId/usage
+    });
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    fireEvent.click(screen.getByText("send"));
+    await waitFor(() =>
+      expect(screen.getByTestId("turns")).toHaveTextContent("agent:fresh"),
+    );
+    expect(screen.getByTestId("executions")).toHaveTextContent("∅|∅|∅|∅");
   });
 
   it("a pre-delta stream failure falls back to the blocking run once", async () => {
@@ -181,7 +217,7 @@ describe("AgentAttachmentsProvider chat state", () => {
         release = r;
       });
       onDelta("sh");
-      return "fresh";
+      return { reply: "fresh" };
     });
     renderProvider();
     fireEvent.click(screen.getByText("open"));

@@ -68,6 +68,32 @@ export interface AgentAttachment {
   titleEdited: boolean;
 }
 
+/** Actual provider-reported token usage (memo dev/37) — never an estimate. */
+export interface AgentUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
+/**
+ * The per-run execution record riding an agent turn (memo dev/37): identity,
+ * DEC-031 reproducibility pins, duration, status, and Actual usage (null when
+ * the provider reports none). Turns that predate the record simply lack it.
+ */
+export interface AgentExecution {
+  executionId: string;
+  pins?: {
+    coord?: string;
+    promptSha256?: string | null;
+    intentEdited?: boolean;
+    provider?: string;
+    model?: string;
+    policy?: Record<string, number | null>;
+  };
+  usage: AgentUsage | null;
+  durationMs?: number;
+  status: "ok" | "error";
+}
+
 /** One persisted chat turn of an attachment's session. */
 export interface AgentSessionTurn {
   role: "user" | "agent";
@@ -75,6 +101,8 @@ export interface AgentSessionTurn {
   ts?: string;
   /** Display-only failure marker; excluded from the agent's context. */
   error?: boolean;
+  /** Execution record for agent turns produced by a run (memo dev/37). */
+  execution?: AgentExecution;
 }
 
 export interface AgentSession {
@@ -102,7 +130,11 @@ export interface EffectiveField {
 }
 
 export interface EffectivePolicy {
-  quotas: { runsPerDay: EffectiveField & { usedToday?: number } };
+  quotas: {
+    runsPerDay: EffectiveField & { usedToday?: number };
+    /** Actual tokens counted this window (memo dev/37); absent on old payloads. */
+    usageToday?: AgentUsage;
+  };
   cost: {
     dailyBudgetUsd: EffectiveField;
     estimatedCostPerRunUsd: EffectiveField;
@@ -123,6 +155,8 @@ export interface AccountAgentSettings {
     cost: Record<string, number | null>;
   };
   usedToday: number;
+  /** Actual tokens counted this window (memo dev/37); absent on old payloads. */
+  usageToday?: AgentUsage;
 }
 
 /** The project-agent-default scope for one installed template (memos dev/23/24). */
@@ -319,7 +353,14 @@ export const agentsApi = {
     projectId: string,
     attachmentId: string,
     message: string,
-  ): Promise<{ attachmentId: string; coord: string; reply: string }> {
+  ): Promise<{
+    attachmentId: string;
+    coord: string;
+    reply: string;
+    /** Execution identity + Actual usage (memo dev/37); absent on old servers. */
+    executionId?: string;
+    usage?: AgentUsage | null;
+  }> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/run`,
       { method: "POST", body: JSON.stringify({ message }) },
@@ -330,16 +371,19 @@ export const agentsApi = {
    * Run one turn and stream the reply as it is generated (memo dev/22).
    *
    * POSTs to the SSE endpoint via raw fetch (EventSource cannot POST), calls
-   * `onDelta` per text chunk, and resolves with the full reply on the `done`
-   * event. Pre-stream failures (quota 429, 404, …) throw an Error carrying
-   * `status`/`body` like `apiFetch`; a mid-stream `error` event throws too.
+   * `onDelta` per text chunk, and resolves on the `done` event with the full
+   * reply plus the run's execution identity and Actual usage when the server
+   * sends them (memo dev/37; absent from old servers). Unknown event names are
+   * skipped, so the parser tolerates future envelope additions. Pre-stream
+   * failures (quota 429, 404, …) throw an Error carrying `status`/`body` like
+   * `apiFetch`; a mid-stream `error` event throws too.
    */
   async runAttachmentStream(
     projectId: string,
     attachmentId: string,
     message: string,
     onDelta: (text: string) => void,
-  ): Promise<string> {
+  ): Promise<{ reply: string; executionId?: string; usage?: AgentUsage | null }> {
     const token = getToken();
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -360,6 +404,8 @@ export const agentsApi = {
     const decoder = new TextDecoder();
     let buffer = "";
     let reply: string | null = null;
+    let executionId: string | undefined;
+    let usage: AgentUsage | null | undefined;
 
     const handleFrame = (frame: string) => {
       let event = "message";
@@ -369,10 +415,20 @@ export const agentsApi = {
         else if (line.startsWith("data: ")) data += line.slice(6);
       }
       if (!data) return;
-      const payload = JSON.parse(data) as { text?: string; reply?: string; error?: string };
+      const payload = JSON.parse(data) as {
+        text?: string;
+        reply?: string;
+        error?: string;
+        executionId?: string;
+        usage?: AgentUsage | null;
+      };
       if (event === "delta" && payload.text) onDelta(payload.text);
-      else if (event === "done") reply = payload.reply ?? "";
-      else if (event === "error") throw new Error(payload.error || "agent run failed");
+      else if (event === "execution") executionId = payload.executionId;
+      else if (event === "done") {
+        reply = payload.reply ?? "";
+        executionId = payload.executionId ?? executionId;
+        usage = payload.usage;
+      } else if (event === "error") throw new Error(payload.error || "agent run failed");
     };
 
     for (;;) {
@@ -389,6 +445,6 @@ export const agentsApi = {
     }
     if (buffer.trim()) handleFrame(buffer);
     if (reply === null) throw new Error("stream ended without a reply");
-    return reply;
+    return { reply, executionId, usage };
   },
 };

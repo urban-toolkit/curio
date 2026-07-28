@@ -32,6 +32,7 @@ const accountPayload = {
   effective,
   ceilings: { quotas: { runsPerDay: 100 }, resources: { maxOutputTokens: 4096 }, cost: {} },
   usedToday: 3,
+  usageToday: { inputTokens: 120, outputTokens: 45 },
 };
 
 const projectPayload = {
@@ -68,7 +69,20 @@ describe("AgentSettingsModal — account scope", () => {
     await waitFor(() => expect(screen.getByText("Account policy")).toBeInTheDocument());
     expect(screen.getByText(/effective 100 · from deployment/)).toBeInTheDocument();
     expect(screen.getByText(/≤ 100/)).toBeInTheDocument();
-    expect(screen.getByText(/3 runs used today/)).toBeInTheDocument();
+    // Actual tokens next to the run count (memo dev/37) — never an estimate.
+    expect(
+      screen.getByText(/3 runs · 120 in \/ 45 out tokens today \(actual\)/),
+    ).toBeInTheDocument();
+  });
+
+  it("shows zero usage when the server payload predates usage capture", async () => {
+    const { usageToday: _dropped, ...legacy } = accountPayload;
+    api.getAgentSettings.mockResolvedValue(legacy as any);
+    render(<AgentSettingsModal scope="account" onClose={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText("Account policy")).toBeInTheDocument());
+    expect(
+      screen.getByText(/3 runs · 0 in \/ 0 out tokens today \(actual\)/),
+    ).toBeInTheDocument();
   });
 
   it("saves a draft with the revision and applies the response", async () => {
@@ -121,7 +135,10 @@ describe("AgentSettingsModal — account scope", () => {
     await waitFor(() => expect(screen.getByLabelText(/runs per day/i)).toBeInTheDocument());
     fireEvent.click(screen.getByText("Cost"));
     expect(screen.getByText(/inactive until both a budget and an estimate/i)).toBeInTheDocument();
-    expect(screen.getByText(/actual cost is not available in v1/i)).toBeInTheDocument();
+    // Honest Actual line (memo dev/37): tokens are real, USD awaits the T3
+    // price table — no fake numbers anywhere.
+    expect(screen.getByText(/Actual: 165 tokens today/)).toBeInTheDocument();
+    expect(screen.getByText(/USD pricing arrives with the price table/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(/daily budget/i), { target: { value: "5" } });
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(onClose).not.toHaveBeenCalled(); // dirty + declined confirm

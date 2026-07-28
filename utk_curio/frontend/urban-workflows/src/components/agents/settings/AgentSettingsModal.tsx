@@ -3,6 +3,7 @@ import ModalShell from "../../ModalShell";
 import {
   agentsApi,
   type AgentPolicySettings,
+  type AgentUsage,
   type EffectivePolicy,
 } from "../../../api/agentsApi";
 import styles from "./AgentSettingsModal.module.css";
@@ -26,9 +27,13 @@ interface Loaded {
   settings: AgentPolicySettings & Record<string, unknown>;
   effective: EffectivePolicy;
   usedToday: number;
+  /** Actual tokens counted today (memo dev/37); zeros when the server has none. */
+  usageToday: AgentUsage;
   ceilings?: { quotas: { runsPerDay: number }; resources: { maxOutputTokens: number } };
   name?: string;
 }
+
+const NO_USAGE: AgentUsage = { inputTokens: 0, outputTokens: 0 };
 
 /** Draft field values as strings; "" = inherit (no override). */
 type Drafts = {
@@ -89,7 +94,7 @@ export const AgentSettingsModal: React.FC<{
       let loaded: Loaded;
       if (scope === "account") {
         const r = await agentsApi.getAgentSettings();
-        loaded = { ...r, usedToday: r.usedToday };
+        loaded = { ...r, usedToday: r.usedToday, usageToday: r.usageToday ?? NO_USAGE };
       } else {
         if (!projectId || !coord) throw new Error("no project");
         const r = await agentsApi.getProjectAgentDefaults(projectId, coord);
@@ -98,6 +103,7 @@ export const AgentSettingsModal: React.FC<{
           settings: r.settings,
           effective: r.effective,
           usedToday: r.effective.quotas.runsPerDay.usedToday ?? 0,
+          usageToday: r.effective.quotas.usageToday ?? NO_USAGE,
           name: r.name,
         };
       }
@@ -129,6 +135,7 @@ export const AgentSettingsModal: React.FC<{
     settings: AgentPolicySettings & Record<string, unknown>;
     effective: EffectivePolicy;
     usedToday?: number;
+    usageToday?: AgentUsage;
     ceilings?: Loaded["ceilings"];
     name?: string;
   }) => {
@@ -137,6 +144,7 @@ export const AgentSettingsModal: React.FC<{
       settings: r.settings,
       effective: r.effective,
       usedToday: r.usedToday ?? r.effective.quotas.runsPerDay.usedToday ?? 0,
+      usageToday: r.usageToday ?? r.effective.quotas.usageToday ?? NO_USAGE,
       ceilings: r.ceilings ?? data?.ceilings,
       name: r.name ?? data?.name,
     };
@@ -255,7 +263,10 @@ export const AgentSettingsModal: React.FC<{
                   eff.quotas.runsPerDay,
                   data.ceilings ? `≤ ${data.ceilings.quotas.runsPerDay}` : undefined,
                 )}
-                <p className={styles.meta}>{data.usedToday} runs used today.</p>
+                <p className={styles.meta}>
+                  {data.usedToday} runs · {data.usageToday.inputTokens} in /{" "}
+                  {data.usageToday.outputTokens} out tokens today (actual).
+                </p>
               </section>
             ) : null}
 
@@ -279,8 +290,11 @@ export const AgentSettingsModal: React.FC<{
                     ? `Estimated spend today: ${data.usedToday} runs × $${eff.cost.estimatedCostPerRunUsd.value} ≈ $${(
                         eff.cost.estimatedSpendTodayUsd ??
                         data.usedToday * (eff.cost.estimatedCostPerRunUsd.value ?? 0)
-                      ).toFixed(2)} · Actual: not available in v1`
-                    : "The budget gate is inactive until both a budget and an estimate are set. Actual cost is not available in v1."}
+                      ).toFixed(2)}`
+                    : "The budget gate is inactive until both a budget and an estimate are set."}
+                  {` · Actual: ${
+                    data.usageToday.inputTokens + data.usageToday.outputTokens
+                  } tokens today — USD pricing arrives with the price table.`}
                 </p>
               </section>
             ) : null}
