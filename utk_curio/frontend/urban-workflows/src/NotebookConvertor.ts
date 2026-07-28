@@ -171,8 +171,6 @@ export async function getLlmTypes(
     data.forEach((cell) => {
       llmTypes[cell.index] = _validate_node(cell.codeType);
     });
-
-    console.log(llmTypes)
   }catch(err){
     console.log(`LLM fetch error: ${err}`)
     // No fallback, return an empty dictionary
@@ -307,25 +305,12 @@ export async function notebookToTrill(
   // Linear fallback was removed
 
   // ── Step 4: Build quick-lookup structures from the edge list ────────────
-  // Build wiring sets
-
-  // const hasOutgoing = new Set(cellEdges.map((e) => e.source));
-  // const incomingSources = new Map<number, number[]>();
-  // for (const { source, target } of cellEdges) {
-  //   if (!incomingSources.has(target)) incomingSources.set(target, []);
-  //   incomingSources.get(target)!.push(source);
-  // }
-
   // ── Step 4a: Raw incoming-edge grouping (just for merge detection) ──────
   const rawIncoming = new Map<number, number[]>();
   for (const { source, target } of cellEdges) {
     if (!rawIncoming.has(target)) rawIncoming.set(target, []);
     rawIncoming.get(target)!.push(source);
   }
-
-  rawIncoming.forEach((source, targets)=>{
-    console.log(`Raw\n   Source: ${source}\n   Targets: ${targets}`)
-  })
 
   // ── Step 4b: Insert merge-flow cells for nodes with multiple inputs ─────
   for (const [target, sources] of rawIncoming) {
@@ -351,10 +336,6 @@ export async function notebookToTrill(
     incomingSources.get(target)!.push(source);
   }
 
-  console.log(cellEdges)
-  console.log(hasOutgoing)
-  console.log(incomingSources)
-
   // ── Step 5: Compute visual layout ────────────────────────────────────────
   const positions = computeLayout(codeCells.length, cellEdges);
 
@@ -370,9 +351,6 @@ export async function notebookToTrill(
   // The result of the LLM analysis
   const llm_types = await getLlmTypes(ambiguous, backendUrl)
 
-  cellEdges.forEach((edge, index)=>{
-    console.log(`Edge ${index}\n    parent_var: ${edge.parent_var}\n    source: ${edge.source}\n    target: ${edge.target}`)
-  })
   const nodes: TrillNode[] = codeCells.map((code, index) => {
     const spec = altairSpecs[index] ?? null;
     let nodeType;

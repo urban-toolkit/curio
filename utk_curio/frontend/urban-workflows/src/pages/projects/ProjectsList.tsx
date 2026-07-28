@@ -5,7 +5,9 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faStore } from "@fortawesome/free-solid-svg-icons";
 import { useUserContext } from "../../providers/UserProvider";
 import { projectsApi, ProjectSummary } from "../../api/projectsApi";
+import { packagesApi} from "../../api/packagesApi";
 import { notebookToTrill } from "../../NotebookConvertor";
+import { getNotebookRequirements} from "../../RequirementExtractor";
 import logo from "assets/curio-2.png";
 import DataflowThumbnail from "../../components/DataflowThumbnail";
 import LlmSettingsModal from "../../components/LlmSettingsModal";
@@ -110,11 +112,20 @@ const ProjectsList: React.FC = () => {
     const reader = new FileReader();
     reader.onload = async (event: ProgressEvent<FileReader>) => {
       try {
+        // Creating the Notebook
         const json = JSON.parse(event.target?.result as string) as Record<string, unknown>;        
         const trillSpec = await notebookToTrill(json, process.env.BACKEND_URL as string);
         const name = file.name.replace(/\.ipynb$/i, "");
         await projectsApi.create({ name, spec: trillSpec as unknown as Record<string, unknown>, outputs: [] });
         loadProjects();
+
+        // Extracting the required imports of the notebook
+        try{
+          const importNames:string[] = await getNotebookRequirements(json, process.env.BACKEND_URL as string)
+          const stats = await packagesApi.addMultipleLibraries("python", importNames);
+        } catch (err){
+          console.error("Failed to extract the required imports:", err);
+        }
       } catch (err) {
         console.error("Failed to import Jupyter notebook:", err);
       }
