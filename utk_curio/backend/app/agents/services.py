@@ -112,11 +112,14 @@ def _materialize_builtin(user_key: str, coord: str) -> None:
     if spec is None:
         return
     manifest = builtin.build_builtin_manifest(spec)
-    rel = manifest["prompts"]["instruction"]["path"]
-    text = builtin.read_instruction_text(coord)
-    if text is None:
+    instruction = builtin.read_prompt_text(coord, "instruction")
+    if instruction is None:
         return  # prompt file missing — leave the built-in fallback to handle runtime
-    storage.write_definition(user_key, coord, manifest, {rel: text})
+    files = {manifest["prompts"]["instruction"]["path"]: instruction}
+    preamble = builtin.read_prompt_text(coord, "system")
+    if preamble is not None:
+        files[manifest["prompts"]["system"]["path"]] = preamble
+    storage.write_definition(user_key, coord, manifest, files)
 
 
 # ── upload-import (user-authored definitions, memo dev/36) ───────────────────
@@ -648,8 +651,8 @@ def clear_attachment_session(user_key: str, project_id: str, attachment_id: str)
     return {"attachmentId": attachment_id, "sessionId": session_id, "turns": []}
 
 
-def _resolve_instruction_text(user_key: str, coord: str) -> str | None:
-    """The agent's instruction prompt text.
+def _resolve_prompt_text(user_key: str, coord: str, name: str) -> str | None:
+    """A definition's prompt asset text (``"instruction"`` or ``"system"``).
 
     Reads the definition's own on-disk asset first — the materialized store copy,
     then the published-catalog copy — so an installed agent runs from its own
@@ -662,12 +665,21 @@ def _resolve_instruction_text(user_key: str, coord: str) -> str | None:
         m = publications.get_published_manifest(coord)
         base = publications.published_agent_dir(coord) if m is not None else None
     if m is not None and base is not None:
-        asset = m.prompts.get("instruction")
+        asset = m.prompts.get(name)
         if asset is not None:
             path = base / asset.path
             if path.is_file():
                 return path.read_text(encoding="utf-8")
-    return builtin.read_instruction_text(coord)
+        elif name == "system":
+            # A definition that declares no preamble runs without one — do NOT
+            # fall back to the built-in default for a resolvable non-roster def.
+            return builtin.read_prompt_text(coord, name)
+    return builtin.read_prompt_text(coord, name)
+
+
+def _resolve_instruction_text(user_key: str, coord: str) -> str | None:
+    """The agent's instruction prompt text (see ``_resolve_prompt_text``)."""
+    return _resolve_prompt_text(user_key, coord, "instruction")
 
 
 # ── conversation titles (memo dev/25) ────────────────────────────────────────
@@ -770,12 +782,17 @@ def _prepare_run(
         raise AgentServiceError(
             f"no instruction prompt available for {coord!r} (not materialized)", 422
         )
+    # Migration parity (dev/06): the legacy call sites composed the system
+    # preamble + the prompt; an edited intent replaces the instruction portion
+    # only, so the preamble still applies.
+    preamble = _resolve_prompt_text(user_key, coord, "system")
+    system_content = f"{preamble}\n\n{instruction}" if preamble else instruction
     session_id = record.get("sessionId")
     if not isinstance(session_id, str):
         session_id = None
     prior = sessions.read_turns(user_key, project_id, session_id) if session_id else []
     messages = [
-        {"role": "system", "content": instruction},
+        {"role": "system", "content": system_content},
         *sessions.context_messages(prior),
         {"role": "user", "content": message},
     ]

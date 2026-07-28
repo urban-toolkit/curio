@@ -27,3 +27,5 @@ Build Entry Template and are append-only.
 - Resolution: path corrected; all prompt files resolve.
 - Follow-up work: materialize built-in prompt bytes into the user store on install; orchestration/composite agents (P5 remainder, v2); imported-only Publish.
 - Remaining risks/questions: built-in prompt path is nominal until materialization; categories/hooks assigned per a small mapping (refine against final UX).
+
+**Amendment (2026-07-27, memo `dev/38`):** the roster manifests were missing the `dev/05` System-file column and `inputs` — every built-in now declares `prompts.system` (`default_preamble.txt`; the syntax agent its own preamble) and grounded `inputs.reads` (from each legacy call site's actual context); install materializes both assets; and the run path restores the legacy `preamble + prompt` composition (`dev/06` parity — an edited intent replaces the instruction portion only). Tests: `TestPreambleAndInputs`, `TestMaterializePreamble`, updated run-path assertions; 245 agents tests green.

@@ -46,9 +46,17 @@ class BuiltinAgentSpec:
     name: str
     category: str
     purpose: str
-    prompt_file: str  # filename in llm-prompts/
+    prompt_file: str  # instruction filename in llm-prompts/
     capabilities: tuple[str, ...]
     roles: tuple[str, ...] = field(default_factory=tuple)
+    # System preamble filename in llm-prompts/ — the dev/05 roster's "System
+    # file" column: default_preamble.txt for all but the syntax agent. Every
+    # legacy call site composed preamble + prompt, so migration parity
+    # (dev/06) requires the asset and its runtime composition.
+    preamble_file: str = "default_preamble.txt"
+    # inputs.reads — the context the agent consumes, grounded in what each
+    # legacy call site actually passed (dev/06 migration map).
+    reads: tuple[str, ...] = field(default_factory=tuple)
     # Compatible attachment target kinds. Empty → derive the single kind from
     # the category (_TARGET_BY_CATEGORY). Set explicitly for dual-compatible
     # agents (e.g. Chat attaches to a node OR the canvas).
@@ -64,45 +72,56 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
     BuiltinAgentSpec("agent.chat-agent", "Chat", "node",
                      "Conversational assistant for a node or the canvas.",
                      "chat_prompt.txt", ("conversation.respond", "attachment.refine"), ("chat",),
-                     targets=("node", "canvas")),
+                     targets=("node", "canvas"), reads=("userMessage",)),
     BuiltinAgentSpec("agent.debug-agent", "Debug", "node",
                      "Diagnose errors and propose fixes for a node or the canvas.",
                      "debug_prompt.txt", ("code.debug.diagnose", "code.fix.propose"), ("debug",),
-                     targets=("node", "canvas")),
+                     targets=("node", "canvas"), reads=("dataflowContext",)),
     BuiltinAgentSpec("agent.dataflow-explainer", "Dataflow Explainer", "canvas",
                      "Explain what the whole dataflow does.",
-                     "explanation_prompt.txt", ("dataflow.explain",), ("explanation",)),
+                     "explanation_prompt.txt", ("dataflow.explain",), ("explanation",),
+                     reads=("dataflowContext",)),
     BuiltinAgentSpec("agent.node-explainer", "Node Explainer", "node",
                      "Explain what a node or its output does.",
                      "single_box_explanation_prompt.txt",
-                     ("node.explain", "node.output.interpret"), ("explanation",)),
+                     ("node.explain", "node.output.interpret"), ("explanation",),
+                     reads=("nodeContext",)),
     BuiltinAgentSpec("agent.node-content-builder", "Node Content Builder", "node",
                      "Generate node content for a target.",
-                     "new_content_prompt.txt", ("node.content.generate",), ("authoring",)),
+                     "new_content_prompt.txt", ("node.content.generate",), ("authoring",),
+                     reads=("dataflowContext", "nodeId", "subtask", "workflowGoal")),
     BuiltinAgentSpec("agent.execution-subtask-planner", "Execution Subtask Planner", "canvas",
                      "Plan follow-up subtasks from an execution.",
-                     "new_subtask_from_exec_prompt.txt", ("execution.followup.plan",), ("planning",)),
+                     "new_subtask_from_exec_prompt.txt", ("execution.followup.plan",), ("planning",),
+                     reads=("nodeContent", "nodeType", "currentTask")),
     BuiltinAgentSpec("agent.dataflow-task-planner", "Dataflow Task Planner", "canvas",
                      "Create a workflow plan from a goal.",
-                     "new_subtasks_prompt.txt", ("workflow.plan.create",), ("planning",)),
+                     "new_subtasks_prompt.txt", ("workflow.plan.create",), ("planning",),
+                     reads=("currentTask", "dataflowContext")),
     BuiltinAgentSpec("agent.connection-builder", "Connection Builder", "node",
                      "Suggest and create valid node connections.",
-                     "new_connection_prompt.txt", ("connection.propose",), ("authoring",)),
+                     "new_connection_prompt.txt", ("connection.propose",), ("authoring",),
+                     reads=("workflowGoal", "nodeId", "subtask", "connectionSide", "dataflowContext")),
     BuiltinAgentSpec("agent.workflow-suggester", "Workflow Suggester", "canvas",
                      "Suggest workflow next steps.",
-                     "workflow_suggestions_prompt.txt", ("workflow.suggest",), ("planning",)),
+                     "workflow_suggestions_prompt.txt", ("workflow.suggest",), ("planning",),
+                     reads=("dataflowContext", "workflowGoal")),
     BuiltinAgentSpec("agent.plan-coherence-validator", "Plan Coherence Validator", "evaluate",
                      "Validate that a plan's subtasks are coherent.",
-                     "evaluate_coherence_subtasks_prompt.txt", ("workflow.coherence.validate",), ("validation",)),
+                     "evaluate_coherence_subtasks_prompt.txt", ("workflow.coherence.validate",), ("validation",),
+                     reads=("workflowGoal", "dataflowContext")),
     BuiltinAgentSpec("agent.syntax-analysis-agent", "Syntax Analysis", "evaluate",
                      "Analyze code syntax.",
-                     "syntax_analysis_prompt.txt", ("code.syntax.analyze",), ("validation",)),
+                     "syntax_analysis_prompt.txt", ("code.syntax.analyze",), ("validation",),
+                     preamble_file="syntax_analysis_preamble.txt", reads=("codeContext",)),
     BuiltinAgentSpec("agent.task-refresh-agent", "Task Refresh", "canvas",
                      "Refresh a workflow plan.",
-                     "task_refresh_prompt.txt", ("workflow.plan.refresh",), ("planning",)),
+                     "task_refresh_prompt.txt", ("workflow.plan.refresh",), ("planning",),
+                     reads=("currentTask", "keywords", "dataflowContext")),
     BuiltinAgentSpec("agent.keyword-binding-agent", "Keyword Binding", "canvas",
                      "Bind keywords for a workflow.",
-                     "keywords_binding_prompt.txt", ("workflow.keyword.bind",), ("planning",)),
+                     "keywords_binding_prompt.txt", ("workflow.keyword.bind",), ("planning",),
+                     reads=("keywords", "dataflowContext")),
 )
 
 
@@ -116,8 +135,12 @@ def build_builtin_manifest(spec: BuiltinAgentSpec) -> dict:
         "purpose": spec.purpose,
         "roles": list(spec.roles),
         "capabilities": [{"id": c, "contractVersion": "1"} for c in spec.capabilities],
-        "prompts": {"instruction": {"path": f"prompts/{spec.prompt_file}", "variables": []}},
+        "prompts": {
+            "system": {"path": f"prompts/{spec.preamble_file}", "variables": []},
+            "instruction": {"path": f"prompts/{spec.prompt_file}", "variables": []},
+        },
         "compatibleTargets": [{"kind": k, "requires": []} for k in spec.target_kinds()],
+        "inputs": {"reads": list(spec.reads), "requiredConfig": []},
         "runtime": {"execution": "foreground", "reviewPolicy": "report-only"},
         "providerRequirements": {"capabilities": ["structured-output"]},
         "provenance": {"publisher": "curio", "license": "MIT", "trust": "built-in"},
@@ -146,10 +169,20 @@ def get_builtin_manifest(coord: str) -> AgentManifest | None:
     return parse_agent_manifest(build_builtin_manifest(spec), where=spec.agent_id)
 
 
-def read_instruction_text(coord: str) -> str | None:
-    """Read a built-in's instruction prompt text from ``llm-prompts/``, or None."""
+def read_prompt_text(coord: str, name: str) -> str | None:
+    """Read a built-in's prompt asset text from ``llm-prompts/``, or None.
+
+    ``name`` is the manifest prompt key: ``"instruction"`` (the agent's task
+    prompt) or ``"system"`` (its preamble).
+    """
     spec = _by_coord().get(coord)
     if spec is None:
         return None
-    path = PROMPT_SOURCE_DIR / spec.prompt_file
+    filename = spec.prompt_file if name == "instruction" else spec.preamble_file
+    path = PROMPT_SOURCE_DIR / filename
     return path.read_text(encoding="utf-8") if path.is_file() else None
+
+
+def read_instruction_text(coord: str) -> str | None:
+    """Read a built-in's instruction prompt text from ``llm-prompts/``, or None."""
+    return read_prompt_text(coord, "instruction")

@@ -361,7 +361,11 @@ class TestRun:
         assert r.get_json()["reply"] == "hello from the model"
         msgs = calls[0]
         assert msgs[0]["role"] == "system"
-        assert msgs[0]["content"] == builtin.read_instruction_text("agent.chat-agent@1.0.0")
+        # dev/06 parity: the system turn composes the preamble + instruction,
+        # exactly as every legacy call site did.
+        preamble = builtin.read_prompt_text("agent.chat-agent@1.0.0", "system")
+        instruction = builtin.read_instruction_text("agent.chat-agent@1.0.0")
+        assert msgs[0]["content"] == f"{preamble}\n\n{instruction}"
         assert msgs[1] == {"role": "user", "content": "explain this node"}
 
     def test_run_unknown_attachment_404(self, client, user_and_token, tmp_curio, alice_project):
@@ -684,7 +688,14 @@ class TestIntent:
             json={"message": "hi"},
             headers=_auth(token),
         )
-        assert calls[0][0] == {"role": "system", "content": "answer in one sentence"}
+        # The edited intent replaces the instruction portion; the preamble still applies.
+        from utk_curio.backend.app.agents import builtin
+
+        preamble = builtin.read_prompt_text("agent.chat-agent@1.0.0", "system")
+        assert calls[0][0] == {
+            "role": "system",
+            "content": f"{preamble}\n\nanswer in one sentence",
+        }
 
 
 class TestSession:
@@ -1313,3 +1324,20 @@ class TestSettingsScreensApi:
         r = self._patch_project(client, token, alice_project, 1, {"quotas": {"runsPerDay": 9}})
         assert r.status_code == 200
         assert r.get_json()["settings"] == {"profileId": "seed-p", "quotas": {"runsPerDay": 9}}
+
+
+class TestMaterializePreamble:
+    """Install materializes BOTH prompt assets (instruction + system preamble)."""
+
+    def test_install_writes_preamble_and_instruction(self, client, user_and_token, tmp_curio, alice_project):
+        from utk_curio.backend.app.agents import storage as agents_storage
+
+        user, token = user_and_token
+        coord = "agent.syntax-analysis-agent@1.0.0"
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token)
+        )
+        assert r.status_code == 201, r.get_data(as_text=True)
+        d = agents_storage.agent_definition_dir(_user_dir_key(user), coord)
+        assert (d / "prompts/syntax_analysis_prompt.txt").is_file()
+        assert (d / "prompts/syntax_analysis_preamble.txt").is_file()

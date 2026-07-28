@@ -60,3 +60,32 @@ class TestManifests:
         assert m is not None and m.agent_id == "agent.node-explainer"
         assert builtin.get_builtin_manifest("agent.node-explainer@9.9.9") is None
         assert builtin.get_builtin_manifest("curio.builtin@1") is None
+
+
+class TestPreambleAndInputs:
+    """The dev/05 roster's System-file column + grounded inputs (dev/06 parity):
+    every built-in manifest carries its preamble asset and non-empty reads."""
+
+    def test_every_builtin_declares_system_asset_and_reads(self):
+        from utk_curio.backend.app.agents import builtin
+
+        for m in builtin.list_builtin_manifests():
+            assert "system" in m.prompts, m.agent_id
+            assert m.prompts["system"].path.startswith("prompts/"), m.agent_id
+            assert m.inputs_reads, f"{m.agent_id} has no inputs.reads"
+
+    def test_syntax_agent_uses_its_own_preamble(self):
+        from utk_curio.backend.app.agents import builtin
+
+        m = builtin.get_builtin_manifest("agent.syntax-analysis-agent@1.0.0")
+        assert m.prompts["system"].path == "prompts/syntax_analysis_preamble.txt"
+        others = builtin.get_builtin_manifest("agent.chat-agent@1.0.0")
+        assert others.prompts["system"].path == "prompts/default_preamble.txt"
+
+    def test_preamble_text_readable_for_all_builtins(self):
+        from utk_curio.backend.app.agents import builtin
+
+        for spec in builtin.BUILTIN_AGENTS:
+            coord = f"{spec.agent_id}@1.0.0"
+            assert builtin.read_prompt_text(coord, "system"), coord
+            assert builtin.read_prompt_text(coord, "instruction"), coord
