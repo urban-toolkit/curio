@@ -995,6 +995,227 @@ class TestStreamRun:
         ]
 
 
+class TestExecutionRecords:
+    """Execution records on agent turns (memo dev/37): every completed run
+    pins its DEC-031 reproducibility inputs and Actual usage on the transcript
+    — the transcript IS the run history."""
+
+    def _attach_builtin(self, client, token, project_id, coord="agent.chat-agent@1.0.0"):
+        client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
+        r = client.post(
+            f"/api/agents/projects/{project_id}/attachments",
+            json={"coord": coord, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        )
+        return r.get_json()["attachmentId"]
+
+    def _mock_provider(self, monkeypatch, reply="ok", usage=None):
+        """Stub the blocking port; ``usage`` (when given) is written into the
+        ``usage_out`` sink for conversation runs. Title calls answer out of
+        band and report a token cost of their own."""
+        from utk_curio.backend.app.agents import services as services_mod
+
+        calls = []
+
+        def _fake_run(config, messages, usage_out=None, **kwargs):
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                if usage_out is not None:
+                    usage_out.update({"inputTokens": 5, "outputTokens": 3})
+                return "Exec Title"
+            calls.append(messages)
+            if usage is not None and usage_out is not None:
+                usage_out.update(usage)
+            return reply
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        return calls
+
+    def _turns(self, client, token, project_id, att_id):
+        return client.get(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+
+    def test_run_persists_execution_record_with_pins_and_usage(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.agents import policy
+        from utk_curio.backend.config import DEFAULT_LLM_API_TYPE, DEFAULT_LLM_MODEL
+
+        self._mock_provider(monkeypatch, usage={"inputTokens": 12, "outputTokens": 34})
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        assert r.status_code == 200
+        body = r.get_json()
+        # The blocking response carries the same two new fields (memo dev/37).
+        assert body["executionId"]
+        assert body["usage"] == {"inputTokens": 12, "outputTokens": 34}
+        turns = self._turns(client, token, alice_project, att_id)
+        assert "execution" not in turns[0]  # user turns carry no record
+        execution = turns[1]["execution"]
+        assert execution["executionId"] == body["executionId"]
+        assert execution["status"] == "ok"
+        assert execution["usage"] == {"inputTokens": 12, "outputTokens": 34}
+        assert isinstance(execution["durationMs"], int) and execution["durationMs"] >= 0
+        pins = execution["pins"]
+        assert pins["coord"] == "agent.chat-agent@1.0.0"
+        assert pins["intentEdited"] is False
+        # Built-in roster manifests carry no prompt digest — tolerated null.
+        assert pins["promptSha256"] is None
+        # Unconfigured test user → the deployment-default provider (DEC-039).
+        assert pins["provider"] == DEFAULT_LLM_API_TYPE
+        assert pins["model"] == DEFAULT_LLM_MODEL
+        assert pins["policy"] == {
+            "runsPerDay": policy.deployment_defaults()["quotas"]["runsPerDay"],
+            "maxOutputTokens": policy.DEPLOYMENT_MAX_OUTPUT_TOKENS,
+            "dailyBudgetUsd": None,
+            "estimatedCostPerRunUsd": None,
+        }
+
+    def test_run_usage_null_when_provider_reports_none(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        self._mock_provider(monkeypatch)  # sink never touched (proxy strips usage)
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        assert r.get_json()["usage"] is None
+        turns = self._turns(client, token, alice_project, att_id)
+        # Actual-or-absent (memo dev/11): never estimated into the field.
+        assert turns[1]["execution"]["usage"] is None
+        assert turns[1]["execution"]["status"] == "ok"
+
+    def test_provider_error_records_error_execution(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        def _boom(config, messages, **kwargs):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _boom)
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        assert r.status_code == 502
+        turns = self._turns(client, token, alice_project, att_id)
+        execution = turns[1]["execution"]
+        assert execution["status"] == "error"
+        assert execution["usage"] is None
+        assert execution["pins"]["coord"] == "agent.chat-agent@1.0.0"
+
+    def test_edited_intent_is_pinned(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        self._mock_provider(monkeypatch)
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)
+        client.patch(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}",
+            json={"intent": "custom instructions"}, headers=_auth(token),
+        )
+        client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        turns = self._turns(client, token, alice_project, att_id)
+        assert turns[1]["execution"]["pins"]["intentEdited"] is True
+
+    def test_stream_persists_execution_record(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        def _fake_stream(config, messages, usage_out=None, **kwargs):
+            yield "hel"
+            yield "lo"
+            if usage_out is not None:
+                usage_out.update({"inputTokens": 7, "outputTokens": 9})
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
+        )
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion",
+            lambda c, m, **kw: "Stream Title",
+        )
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        r.get_data()  # consume the stream so the exchange persists
+        turns = self._turns(client, token, alice_project, att_id)
+        execution = turns[1]["execution"]
+        assert execution["status"] == "ok"
+        assert execution["usage"] == {"inputTokens": 7, "outputTokens": 9}
+        assert execution["pins"]["coord"] == "agent.chat-agent@1.0.0"
+
+    def test_stream_error_records_error_execution(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        def _flaky(config, messages, **kwargs):
+            yield "par"
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.stream_chat_completion", _flaky
+        )
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        r.get_data()
+        turns = self._turns(client, token, alice_project, att_id)
+        assert turns[1]["execution"]["status"] == "error"
+
+    def test_title_call_writes_no_execution_record(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # The dev/25 auto-title call is internal housekeeping, not an execution:
+        # a first run makes two provider calls but exactly one record exists.
+        calls = self._mock_provider(monkeypatch, usage={"inputTokens": 1, "outputTokens": 2})
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)
+        client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        assert len(calls) == 1  # the conversation run; the title call is untracked
+        turns = self._turns(client, token, alice_project, att_id)
+        assert sum(1 for t in turns if "execution" in t) == 1
+
+    def test_uploaded_definition_prompt_digest_is_pinned(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # A digest-stamped definition (upload-import, memo dev/36) pins the
+        # exact prompt bytes that dispatched (DEC-031).
+        import hashlib
+
+        self._mock_provider(monkeypatch)
+        user, token = user_and_token
+        prompt_text = "You explain things."
+        digest = hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()
+        r = client.post(
+            "/api/agents/imports/upload",
+            json={
+                "manifest": {
+                    "id": "agent.pinned",
+                    "name": "Pinned",
+                    "category": "canvas",
+                    "version": "1.0.0",
+                    "capabilities": [{"id": "chat.reply", "contractVersion": "1"}],
+                    "compatibleTargets": [{"kind": "canvas", "requires": []}],
+                    "prompts": {"instruction": {"path": "prompts/instruction.txt", "variables": []}},
+                    "provenance": {"publisher": "alice", "trust": "imported"},
+                },
+                "prompts": {"prompts/instruction.txt": prompt_text},
+            },
+            headers=_auth(token),
+        )
+        assert r.status_code == 201, r.get_data(as_text=True)
+        att_id = self._attach_builtin(client, token, alice_project, coord="agent.pinned@1.0.0")
+        client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        turns = self._turns(client, token, alice_project, att_id)
+        assert turns[1]["execution"]["pins"]["promptSha256"] == digest
+
+
 class TestQuotaAdmission:
     """Both run paths admit up to the daily limit, then 429 with a stable body
     (memo dev/22): a denied run consumes nothing and persists nothing."""
@@ -1298,7 +1519,7 @@ class TestSettingsScreensApi:
         # title call after it (memo dev/25).
         seen = []
 
-        def _fake(config, messages, max_output_tokens=None):
+        def _fake(config, messages, max_output_tokens=None, **kwargs):
             seen.append(max_output_tokens)
             return "ok"
 

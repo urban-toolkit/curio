@@ -85,3 +85,21 @@ class TestTurnsAndContext:
              {"role": "agent", "text": "ok"}]
         )
         assert msgs == [{"role": "assistant", "content": "ok"}]
+
+    def test_make_turn_carries_execution_record(self):
+        # Execution records ride the agent turn (memo dev/37); a turn made
+        # without one is byte-identical to before — additive, no migrations.
+        execution = {"executionId": "e1", "status": "ok"}
+        turn = sessions.make_turn("agent", "a1", execution=execution)
+        assert turn["execution"] == execution
+        assert "execution" not in sessions.make_turn("agent", "a1")
+
+    def test_context_ignores_execution_keys(self):
+        # Provider context must be byte-identical whether or not turns carry
+        # execution records (memo dev/37 regression).
+        plain = [sessions.make_turn("user", "q1"), sessions.make_turn("agent", "a1")]
+        recorded = [
+            sessions.make_turn("user", "q1"),
+            sessions.make_turn("agent", "a1", execution={"executionId": "e1", "status": "ok"}),
+        ]
+        assert sessions.context_messages(recorded) == sessions.context_messages(plain)

@@ -11,6 +11,7 @@ User-facing overview: ``docs/AGENTS.md``.
 
 from __future__ import annotations
 
+import time
 import uuid
 
 from utk_curio.backend.app.agents import (
@@ -760,20 +761,57 @@ def _run_policy(user_key: str, project_id: str, coord: str, spec: dict) -> dict:
             "estimated_cost_per_run_usd": full_eff["cost"]["estimatedCostPerRunUsd"]["value"],
         },
         "max_output_tokens": full_eff["resources"]["maxOutputTokens"]["value"],
+        # Flat effective-policy snapshot pinned on the execution record
+        # (DEC-031): what was admitted, not where each value came from.
+        "policy_pins": {
+            "runsPerDay": runs["value"],
+            "maxOutputTokens": full_eff["resources"]["maxOutputTokens"]["value"],
+            "dailyBudgetUsd": full_eff["cost"]["dailyBudgetUsd"]["value"],
+            "estimatedCostPerRunUsd": full_eff["cost"]["estimatedCostPerRunUsd"]["value"],
+        },
+    }
+
+
+def _prompt_digest(user_key: str, coord: str) -> str | None:
+    """The resolved definition's instruction-prompt sha256 (a DEC-031 pin).
+
+    Read from the manifest asset, not recomputed — the digest identifies the
+    definition bytes that were dispatched. ``None`` when the manifest carries
+    no digest (tolerated; pre-upload-import definitions may be unstamped)."""
+    m = _resolve_definition(user_key, coord)
+    asset = m.prompts.get("instruction") if m is not None else None
+    return asset.sha256 if asset is not None else None
+
+
+def _execution_record(
+    execution_id: str, pins: dict, usage: dict, started: float, status: str
+) -> dict:
+    """Assemble the per-run execution record persisted on the agent turn
+    (memo dev/37). ``usage`` is the provider port's ``usage_out`` sink —
+    Actual counts or ``None``, never estimated (memo dev/11)."""
+    return {
+        "executionId": execution_id,
+        "pins": pins,
+        "usage": dict(usage) if usage else None,
+        "durationMs": int((time.monotonic() - started) * 1000),
+        "status": status,
     }
 
 
 def _prepare_run(
-    user_key: str, project_id: str, attachment_id: str, message: str
-) -> tuple[str, str | None, list, dict, bool]:
+    user_key: str, project_id: str, attachment_id: str, message: str, config: ProviderConfig
+) -> tuple[str, str | None, list, dict, bool, dict]:
     """Shared run/stream setup: resolve the attachment, its instruction (intent
     override → prompt source, dev/19), the provider messages including the
     bounded session context (dev/20), and the effective run policy (dev/24).
-    Returns ``(coord, session_id, messages, run_policy, wants_title)``;
-    ``session_id`` is None for a record without one (stateless fallback), and
+    Returns ``(coord, session_id, messages, run_policy, wants_title, pins)``;
+    ``session_id`` is None for a record without one (stateless fallback),
     ``wants_title`` is True when this message is the conversation's first —
     an untitled, never-manually-renamed attachment with no prior user turn —
-    so a title should be auto-generated after the reply (memo dev/25)."""
+    so a title should be auto-generated after the reply (memo dev/25), and
+    ``pins`` are the DEC-031 reproducibility pins resolved from what actually
+    dispatches (memo dev/37): coord, prompt digest, intent-edited flag,
+    provider/model, and the effective-policy snapshot. No secrets."""
     spec = _read_spec_or_404(user_key, project_id)
     record = _record_or_404(spec, attachment_id)
     coord = record.get("coord", "")
@@ -801,7 +839,16 @@ def _prepare_run(
         and not record.get("titleEdited")
         and not any(t.get("role") == "user" for t in prior)
     )
-    return coord, session_id, messages, _run_policy(user_key, project_id, coord, spec), wants_title
+    run_policy = _run_policy(user_key, project_id, coord, spec)
+    pins = {
+        "coord": coord,
+        "promptSha256": _prompt_digest(user_key, coord),
+        "intentEdited": bool(record.get("intent")),
+        "provider": config.api_type,
+        "model": config.model,
+        "policy": run_policy["policy_pins"],
+    }
+    return coord, session_id, messages, run_policy, wants_title, pins
 
 
 def _persist_exchange(
@@ -813,9 +860,11 @@ def _persist_exchange(
     reply: str,
     *,
     error: bool = False,
+    execution: dict | None = None,
 ) -> None:
     """Persist one exchange to the session (no-op without a session id). Error
-    markers are display-only history, excluded from future context (dev/20)."""
+    markers are display-only history, excluded from future context (dev/20).
+    The execution record rides the agent turn (memo dev/37)."""
     if session_id is None:
         return
     sessions.append_turns(
@@ -825,7 +874,7 @@ def _persist_exchange(
         attachment_id,
         [
             sessions.make_turn("user", message),
-            sessions.make_turn("agent", reply, error=error),
+            sessions.make_turn("agent", reply, error=error, execution=execution),
         ],
     )
 
@@ -842,25 +891,47 @@ def run_attachment(
     a provider failure persists the user turn plus a display-only error marker
     (excluded from future context) so history matches what the user saw.
     """
-    coord, session_id, messages, run_policy, wants_title = _prepare_run(
-        user_key, project_id, attachment_id, message
+    coord, session_id, messages, run_policy, wants_title, pins = _prepare_run(
+        user_key, project_id, attachment_id, message, config
     )
     # Admission after validation (an invalid request never consumes quota) and
     # before provider dispatch (a denied run never reaches a provider).
     quotas.admit(user_key, **run_policy["admit"])
+    execution_id = uuid.uuid4().hex
+    usage_sink: dict = {}
+    started = time.monotonic()
     try:
         reply = run_chat_completion(
-            config, messages, max_output_tokens=run_policy["max_output_tokens"]
+            config,
+            messages,
+            max_output_tokens=run_policy["max_output_tokens"],
+            usage_out=usage_sink,
         )
     except Exception as exc:
         _persist_exchange(
-            user_key, project_id, session_id, attachment_id, message, f"(error) {exc}", error=True
+            user_key,
+            project_id,
+            session_id,
+            attachment_id,
+            message,
+            f"(error) {exc}",
+            error=True,
+            execution=_execution_record(execution_id, pins, usage_sink, started, "error"),
         )
         raise AgentServiceError(f"agent run failed: {exc}", 502) from exc
-    _persist_exchange(user_key, project_id, session_id, attachment_id, message, reply)
+    execution = _execution_record(execution_id, pins, usage_sink, started, "ok")
+    _persist_exchange(
+        user_key, project_id, session_id, attachment_id, message, reply, execution=execution
+    )
     if wants_title:
         _generate_conversation_title(user_key, project_id, attachment_id, message, config)
-    return {"attachmentId": attachment_id, "coord": coord, "reply": reply}
+    return {
+        "attachmentId": attachment_id,
+        "coord": coord,
+        "reply": reply,
+        "executionId": execution_id,
+        "usage": execution["usage"],
+    }
 
 
 def stream_attachment(
@@ -875,18 +946,24 @@ def stream_attachment(
     completion; a failure persists the user turn plus a display-only error
     marker. Nothing is persisted per-delta.
     """
-    coord, session_id, messages, run_policy, wants_title = _prepare_run(
-        user_key, project_id, attachment_id, message
+    coord, session_id, messages, run_policy, wants_title, pins = _prepare_run(
+        user_key, project_id, attachment_id, message, config
     )
     # Eager admission: a quota/budget denial surfaces as a plain 429 before any
     # streaming begins, and consumes/persists nothing.
     quotas.admit(user_key, **run_policy["admit"])
+    execution_id = uuid.uuid4().hex
 
     def _events():
         parts: list[str] = []
+        usage_sink: dict = {}
+        started = time.monotonic()
         try:
             for delta in stream_chat_completion(
-                config, messages, max_output_tokens=run_policy["max_output_tokens"]
+                config,
+                messages,
+                max_output_tokens=run_policy["max_output_tokens"],
+                usage_out=usage_sink,
             ):
                 parts.append(delta)
                 yield ("delta", delta)
@@ -899,11 +976,15 @@ def stream_attachment(
                 message,
                 f"(error) {exc}",
                 error=True,
+                execution=_execution_record(execution_id, pins, usage_sink, started, "error"),
             )
             yield ("error", f"agent run failed: {exc}")
             return
         reply = "".join(parts)
-        _persist_exchange(user_key, project_id, session_id, attachment_id, message, reply)
+        execution = _execution_record(execution_id, pins, usage_sink, started, "ok")
+        _persist_exchange(
+            user_key, project_id, session_id, attachment_id, message, reply, execution=execution
+        )
         # Title before the done frame: the reply text already streamed via
         # deltas, and the client's post-send refresh must see the title.
         if wants_title:

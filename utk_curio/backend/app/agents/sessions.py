@@ -60,7 +60,9 @@ def read_turns(user_key: str, project_id: str, session_id: str) -> list[dict]:
     return [t for t in turns if isinstance(t, dict)] if isinstance(turns, list) else []
 
 
-def make_turn(role: str, text: str, *, error: bool = False) -> dict:
+def make_turn(
+    role: str, text: str, *, error: bool = False, execution: dict | None = None
+) -> dict:
     if role not in TURN_ROLES:
         raise SessionError(f"turn role must be one of {TURN_ROLES}, got {role!r}")
     turn: dict = {
@@ -70,6 +72,10 @@ def make_turn(role: str, text: str, *, error: bool = False) -> dict:
     }
     if error:
         turn["error"] = True
+    if execution is not None:
+        # Execution record (memo dev/37): the transcript IS the run history —
+        # id, DEC-031 pins, duration, status, Actual usage ride the agent turn.
+        turn["execution"] = execution
     return turn
 
 
