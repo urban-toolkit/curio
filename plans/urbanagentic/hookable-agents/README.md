@@ -56,6 +56,7 @@ The plan requires parity and regression coverage before removing those paths. Th
 - `figma-ready/`: vector handoff metadata and tokens.
 - `Agentic-Functionality-Workbook.xlsx` and `workbook-assets/`: earlier walkthrough artifacts.
 - `sources/render_hookable_agents_png_concepts.py`: deterministic PNG/SVG renderer.
+- `examples/`: hand-testable agent packages for the upload-import feature (`dev/36`) — see `examples/README.md` for the walkthrough.
 - `sources/build_functionality_workbook.py`: deterministic workbook builder.
 - `png-ideas/`: visual references from the current Curio UI.
 
