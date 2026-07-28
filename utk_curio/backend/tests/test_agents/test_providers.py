@@ -180,7 +180,7 @@ class TestStreaming:
         def _chunk(text):
             return t.SimpleNamespace(choices=[t.SimpleNamespace(delta=t.SimpleNamespace(content=text))])
 
-        def _create(model, messages, stream):
+        def _create(model, messages, stream, **kwargs):
             seen["model"], seen["messages"], seen["stream"] = model, messages, stream
             return iter([_chunk("he"), _chunk(None), _chunk("llo")])
 
@@ -245,7 +245,7 @@ class TestStreaming:
         class FakeOpenAI:
             def __init__(self, **kwargs):
                 self.chat = t.SimpleNamespace(
-                    completions=t.SimpleNamespace(create=lambda model, messages, stream: _chunks())
+                    completions=t.SimpleNamespace(create=lambda **kwargs: _chunks())
                 )
 
         monkeypatch.setattr("openai.OpenAI", FakeOpenAI)
@@ -305,3 +305,87 @@ class TestMaxOutputTokens:
         assert seen["max_tokens"] == 999
         run_chat_completion(_cfg(api_type="anthropic"), [{"role": "user", "content": "hi"}])
         assert seen["max_tokens"] == 4096
+
+class TestUsageCapture:
+    """Actual token usage flows into the caller's sink (memo dev/37)."""
+
+    def test_openai_non_stream_and_stream_usage(self, monkeypatch):
+        import types as t
+        from utk_curio.backend.app.agents.providers import (
+            run_chat_completion, stream_chat_completion,
+        )
+
+        usage_obj = t.SimpleNamespace(prompt_tokens=11, completion_tokens=7)
+
+        def _create(**kwargs):
+            if kwargs.get("stream"):
+                assert kwargs["stream_options"] == {"include_usage": True}
+                final = t.SimpleNamespace(choices=[], usage=usage_obj)
+                delta = t.SimpleNamespace(
+                    choices=[t.SimpleNamespace(delta=t.SimpleNamespace(content="x"))], usage=None
+                )
+                return iter([delta, final])
+            return t.SimpleNamespace(
+                choices=[t.SimpleNamespace(message=t.SimpleNamespace(content="x"))],
+                usage=usage_obj,
+            )
+
+        class FakeOpenAI:
+            def __init__(self, **kwargs):
+                self.chat = t.SimpleNamespace(completions=t.SimpleNamespace(create=_create))
+
+        monkeypatch.setattr("openai.OpenAI", FakeOpenAI)
+        msgs = [{"role": "user", "content": "hi"}]
+        sink = {}
+        run_chat_completion(_cfg(), msgs, usage_out=sink)
+        assert sink == {"inputTokens": 11, "outputTokens": 7}
+        sink = {}
+        assert list(stream_chat_completion(_cfg(), msgs, usage_out=sink)) == ["x"]
+        assert sink == {"inputTokens": 11, "outputTokens": 7}
+
+    def test_anthropic_stream_usage_from_final_message(self, monkeypatch):
+        import types as t
+        from utk_curio.backend.app.agents.providers import stream_chat_completion
+
+        class FakeStream:
+            text_stream = iter(["a"])
+            def __enter__(self):
+                return self
+            def __exit__(self, *a):
+                return False
+            def get_final_message(self):
+                return t.SimpleNamespace(usage=t.SimpleNamespace(input_tokens=3, output_tokens=5))
+
+        class FakeClient:
+            def __init__(self, api_key):
+                self.messages = t.SimpleNamespace(stream=lambda **kw: FakeStream())
+
+        monkeypatch.setitem(
+            sys.modules, "anthropic", t.SimpleNamespace(Anthropic=FakeClient, NOT_GIVEN="NG")
+        )
+        sink = {}
+        out = list(
+            stream_chat_completion(
+                _cfg(api_type="anthropic"), [{"role": "user", "content": "hi"}], usage_out=sink
+            )
+        )
+        assert out == ["a"]
+        assert sink == {"inputTokens": 3, "outputTokens": 5}
+
+    def test_missing_usage_leaves_sink_empty(self, monkeypatch):
+        import types as t
+        from utk_curio.backend.app.agents.providers import run_chat_completion
+
+        def _create(**kwargs):
+            return t.SimpleNamespace(
+                choices=[t.SimpleNamespace(message=t.SimpleNamespace(content="x"))], usage=None
+            )
+
+        class FakeOpenAI:
+            def __init__(self, **kwargs):
+                self.chat = t.SimpleNamespace(completions=t.SimpleNamespace(create=_create))
+
+        monkeypatch.setattr("openai.OpenAI", FakeOpenAI)
+        sink = {}
+        run_chat_completion(_cfg(), [{"role": "user", "content": "hi"}], usage_out=sink)
+        assert sink == {}

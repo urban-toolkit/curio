@@ -38,8 +38,23 @@ class ProviderConfig:
     model: str
 
 
+def _capture_usage(usage_out: dict | None, input_tokens, output_tokens) -> None:
+    """Record Actual token usage into the caller's sink (memo dev/37).
+
+    Best-effort: only populated when the provider reports both counts; the sink
+    stays empty otherwise. Never estimated (memo dev/11's labeling rule)."""
+    if usage_out is None:
+        return
+    if isinstance(input_tokens, int) and isinstance(output_tokens, int):
+        usage_out["inputTokens"] = input_tokens
+        usage_out["outputTokens"] = output_tokens
+
+
 def run_chat_completion(
-    config: ProviderConfig, messages: list, max_output_tokens: int | None = None
+    config: ProviderConfig,
+    messages: list,
+    max_output_tokens: int | None = None,
+    usage_out: dict | None = None,
 ) -> str:
     """Dispatch an LLM chat completion to the configured provider.
 
@@ -60,6 +75,10 @@ def run_chat_completion(
             messages=chat_messages,
             max_tokens=max_output_tokens or 4096,
         )
+        usage = getattr(resp, "usage", None)
+        _capture_usage(
+            usage_out, getattr(usage, "input_tokens", None), getattr(usage, "output_tokens", None)
+        )
         return resp.content[0].text
     elif api_type == "gemini":
         import google.generativeai as genai
@@ -78,6 +97,12 @@ def run_chat_completion(
         if max_output_tokens:
             send_kwargs["generation_config"] = {"max_output_tokens": max_output_tokens}
         response = chat.send_message(last_user_msg, **send_kwargs)
+        meta = getattr(response, "usage_metadata", None)
+        _capture_usage(
+            usage_out,
+            getattr(meta, "prompt_token_count", None),
+            getattr(meta, "candidates_token_count", None),
+        )
         return response.text
     else:  # openai_compatible (default)
         from openai import OpenAI
@@ -89,11 +114,18 @@ def run_chat_completion(
         if max_output_tokens:
             create_kwargs["max_tokens"] = max_output_tokens
         completion = client.chat.completions.create(**create_kwargs)
+        usage = getattr(completion, "usage", None)
+        _capture_usage(
+            usage_out, getattr(usage, "prompt_tokens", None), getattr(usage, "completion_tokens", None)
+        )
         return completion.choices[0].message.content
 
 
 def stream_chat_completion(
-    config: ProviderConfig, messages: list, max_output_tokens: int | None = None
+    config: ProviderConfig,
+    messages: list,
+    max_output_tokens: int | None = None,
+    usage_out: dict | None = None,
 ):
     """Streaming twin of :func:`run_chat_completion`: yields reply-text deltas.
 
@@ -116,6 +148,15 @@ def stream_chat_completion(
             for text in stream.text_stream:
                 if text:
                     yield text
+            try:
+                usage = getattr(stream.get_final_message(), "usage", None)
+                _capture_usage(
+                    usage_out,
+                    getattr(usage, "input_tokens", None),
+                    getattr(usage, "output_tokens", None),
+                )
+            except Exception:
+                pass  # usage is best-effort; the reply already streamed
     elif api_type == "gemini":
         import google.generativeai as genai
         genai.configure(api_key=config.api_key)
@@ -132,21 +173,41 @@ def stream_chat_completion(
         send_kwargs = {}
         if max_output_tokens:
             send_kwargs["generation_config"] = {"max_output_tokens": max_output_tokens}
+        last_chunk = None
         for chunk in chat.send_message(last_user_msg, stream=True, **send_kwargs):
+            last_chunk = chunk
             text = getattr(chunk, "text", "")
             if text:
                 yield text
+        meta = getattr(last_chunk, "usage_metadata", None)
+        _capture_usage(
+            usage_out,
+            getattr(meta, "prompt_token_count", None),
+            getattr(meta, "candidates_token_count", None),
+        )
     else:  # openai_compatible (default)
         from openai import OpenAI
         kwargs = {"api_key": config.api_key or "no-key"}
         if config.base_url:
             kwargs["base_url"] = config.base_url
         client = OpenAI(**kwargs)
-        create_kwargs = {"model": config.model, "messages": messages, "stream": True}
+        create_kwargs = {
+            "model": config.model,
+            "messages": messages,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
         if max_output_tokens:
             create_kwargs["max_tokens"] = max_output_tokens
         stream = client.chat.completions.create(**create_kwargs)
         for chunk in stream:
+            usage = getattr(chunk, "usage", None)
+            if usage is not None:
+                _capture_usage(
+                    usage_out,
+                    getattr(usage, "prompt_tokens", None),
+                    getattr(usage, "completion_tokens", None),
+                )
             choices = getattr(chunk, "choices", None) or []
             delta = choices[0].delta if choices else None
             text = getattr(delta, "content", None) if delta is not None else None
