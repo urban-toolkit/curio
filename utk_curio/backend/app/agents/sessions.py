@@ -61,7 +61,12 @@ def read_turns(user_key: str, project_id: str, session_id: str) -> list[dict]:
 
 
 def make_turn(
-    role: str, text: str, *, error: bool = False, execution: dict | None = None
+    role: str,
+    text: str,
+    *,
+    error: bool = False,
+    execution: dict | None = None,
+    content: list | None = None,
 ) -> dict:
     if role not in TURN_ROLES:
         raise SessionError(f"turn role must be one of {TURN_ROLES}, got {role!r}")
@@ -76,6 +81,10 @@ def make_turn(
         # Execution record (memo dev/37): the transcript IS the run history —
         # id, DEC-031 pins, duration, status, Actual usage ride the agent turn.
         turn["execution"] = execution
+    if content:
+        # Typed content parts (memo dev/39): validated structured content —
+        # suggested prompts, cards — rides the agent turn it belongs to.
+        turn["content"] = content
     return turn
 
 

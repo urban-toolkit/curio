@@ -365,7 +365,10 @@ class TestRun:
         # exactly as every legacy call site did.
         preamble = builtin.read_prompt_text("agent.chat-agent@1.0.0", "system")
         instruction = builtin.read_instruction_text("agent.chat-agent@1.0.0")
-        assert msgs[0]["content"] == f"{preamble}\n\n{instruction}"
+        from utk_curio.backend.app.agents import content as content_mod
+
+        # dev/39: the runtime-owned structured-tail instruction composes last.
+        assert msgs[0]["content"] == f"{preamble}\n\n{instruction}\n\n{content_mod.TAIL_INSTRUCTION}"
         assert msgs[1] == {"role": "user", "content": "explain this node"}
 
     def test_run_unknown_attachment_404(self, client, user_and_token, tmp_curio, alice_project):
@@ -688,13 +691,15 @@ class TestIntent:
             json={"message": "hi"},
             headers=_auth(token),
         )
-        # The edited intent replaces the instruction portion; the preamble still applies.
+        # The edited intent replaces the instruction portion; the preamble
+        # still applies, and the dev/39 tail instruction composes last.
         from utk_curio.backend.app.agents import builtin
+        from utk_curio.backend.app.agents import content as content_mod
 
         preamble = builtin.read_prompt_text("agent.chat-agent@1.0.0", "system")
         assert calls[0][0] == {
             "role": "system",
-            "content": f"{preamble}\n\nanswer in one sentence",
+            "content": f"{preamble}\n\nanswer in one sentence\n\n{content_mod.TAIL_INSTRUCTION}",
         }
 
 
@@ -922,7 +927,8 @@ class TestStreamRun:
         assert execution_id
         assert events[1:3] == [("delta", {"text": "hel"}), ("delta", {"text": "lo"})]
         assert events[3] == (
-            "done", {"reply": "hello", "executionId": execution_id, "usage": None}
+            "done",
+            {"reply": "hello", "executionId": execution_id, "usage": None, "content": []},
         )
         turns = client.get(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
@@ -1165,6 +1171,7 @@ class TestExecutionRecords:
                 "reply": "hello",
                 "executionId": execution["executionId"],
                 "usage": {"inputTokens": 7, "outputTokens": 9},
+                "content": [],
             },
         )
 
@@ -1269,6 +1276,189 @@ class TestExecutionRecords:
         )
         turns = self._turns(client, token, alice_project, att_id)
         assert turns[1]["execution"]["pins"]["promptSha256"] == digest
+
+
+class TestStructuredContent:
+    """Structured-tail protocol end-to-end (memo dev/39, DEC-043): a valid
+    terminal curio.v1 block becomes typed parts on the turn and the envelope;
+    anything else fails open to visible text."""
+
+    TAIL = '```curio.v1\n{"suggestedPrompts": {"primary": "Next step", "alternatives": ["Alt"]}}\n```'
+    PARTS = [{"type": "suggestedPrompts", "primary": "Next step", "alternatives": ["Alt"]}]
+
+    def _attach_builtin(self, client, token, project_id, coord="agent.chat-agent@1.0.0"):
+        client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
+        r = client.post(
+            f"/api/agents/projects/{project_id}/attachments",
+            json={"coord": coord, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        )
+        return r.get_json()["attachmentId"]
+
+    def _mock_run(self, monkeypatch, replies):
+        from utk_curio.backend.app.agents import services as services_mod
+
+        calls = []
+
+        def _fake_run(config, messages, **kwargs):
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Content Title"
+            calls.append(messages)
+            return replies[len(calls) - 1]
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        return calls
+
+    def _mock_stream(self, monkeypatch, deltas):
+        def _fake_stream(config, messages, **kwargs):
+            yield from deltas
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
+        )
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion",
+            lambda c, m, **kw: "Stream Title",
+        )
+
+    def _turns(self, client, token, project_id, att_id):
+        return client.get(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+
+    def _sse_events(self, resp):
+        out = []
+        for block in resp.get_data(as_text=True).strip().split("\n\n"):
+            lines = dict(l.split(": ", 1) for l in block.splitlines() if ": " in l)
+            out.append((lines["event"], json.loads(lines["data"])))
+        return out
+
+    def test_run_strips_valid_tail_and_persists_parts(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        calls = self._mock_run(monkeypatch, [f"Answer.\n{self.TAIL}", "second"])
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        body = r.get_json()
+        assert body["reply"] == "Answer."
+        assert body["content"] == self.PARTS
+        turns = self._turns(client, token, alice_project, att_id)
+        assert turns[1]["text"] == "Answer."
+        assert turns[1]["content"] == self.PARTS
+        # The tail never re-enters provider context on the next turn.
+        client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q2"}, headers=_auth(token),
+        )
+        assert {"role": "assistant", "content": "Answer."} in calls[1]
+        # (Only the system turn mentions curio.v1 — via the tail instruction.)
+        assert not any("curio.v1" in m["content"] for m in calls[1] if m["role"] != "system")
+
+    def test_run_invalid_tail_stays_visible_verbatim(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        reply = "Answer.\n```curio.v1\n{broken\n```"
+        self._mock_run(monkeypatch, [reply])
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        body = r.get_json()
+        assert body["reply"] == reply  # fail-open: nothing stripped
+        assert body["content"] == []
+        turns = self._turns(client, token, alice_project, att_id)
+        assert turns[1]["text"] == reply
+        assert "content" not in turns[1]
+
+    def test_stream_withholds_tail_and_emits_content_event(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # The fence marker is split across delta boundaries on purpose.
+        self._mock_stream(
+            monkeypatch,
+            ["Answer.\n``", '`curio.v1\n{"suggestedPrompts": {"primary": "Next step", ', '"alternatives": ["Alt"]}}', "\n```"],
+        )
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        events = self._sse_events(r)
+        deltas = "".join(p["text"] for kind, p in events if kind == "delta")
+        # The tail never flashed into the live transcript.
+        assert "curio.v1" not in deltas
+        assert deltas == "Answer.\n"
+        kinds = [k for k, _ in events]
+        assert kinds.index("content") < kinds.index("done")
+        content_event = next(p for k, p in events if k == "content")
+        assert content_event == {"parts": self.PARTS}
+        done = events[-1][1]
+        assert done["reply"] == "Answer."
+        assert done["content"] == self.PARTS
+        turns = self._turns(client, token, alice_project, att_id)
+        assert turns[1]["text"] == "Answer."
+        assert turns[1]["content"] == self.PARTS
+
+    def test_stream_mid_reply_block_is_flushed_not_typed(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # A closed block followed by prose is body text (false positive).
+        full = "Syntax:\n" + self.TAIL + "\nUse it like so."
+        self._mock_stream(monkeypatch, ["Syntax:\n", self.TAIL, "\nUse it like so."])
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        events = self._sse_events(r)
+        assert "content" not in [k for k, _ in events]
+        deltas = "".join(p["text"] for kind, p in events if kind == "delta")
+        assert deltas == full  # everything streamed, nothing swallowed
+        assert events[-1][1]["reply"] == full
+        assert events[-1][1]["content"] == []
+
+    def test_stream_invalid_terminal_tail_is_flushed(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        full = "Answer.\n```curio.v1\n{broken\n```"
+        self._mock_stream(monkeypatch, ["Answer.\n", "```curio.v1\n{broken\n```"])
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        events = self._sse_events(r)
+        assert "content" not in [k for k, _ in events]
+        deltas = "".join(p["text"] for kind, p in events if kind == "delta")
+        assert deltas == full
+        assert events[-1][1]["reply"] == full
+
+    def test_stream_ending_on_partial_marker_is_flushed(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        self._mock_stream(monkeypatch, ["Answer ``", "`cu"])
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        events = self._sse_events(r)
+        deltas = "".join(p["text"] for kind, p in events if kind == "delta")
+        assert deltas == "Answer ```cu"
+        assert events[-1][1]["reply"] == "Answer ```cu"
+
+    def test_legacy_json_reply_passes_through_untouched(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # Planner-style agents whose whole reply is machine JSON (no fence):
+        # byte-identical passthrough for their legacy consumers.
+        reply = '{"dataflow": {"nodes": [], "edges": []}}'
+        self._mock_run(monkeypatch, [reply])
+        _, token = user_and_token
+        att_id = self._attach_builtin(client, token, alice_project)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        assert r.get_json()["reply"] == reply
+        assert r.get_json()["content"] == []
 
 
 class TestQuotaAdmission:

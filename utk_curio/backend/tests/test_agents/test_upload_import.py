@@ -110,7 +110,13 @@ class TestUploadImport:
             headers=_auth(token),
         )
         assert r.status_code == 200, r.get_data(as_text=True)
-        assert calls[0][0] == {"role": "system", "content": INSTRUCTION}
+        from utk_curio.backend.app.agents import content as content_mod
+
+        # dev/39: the runtime-owned structured-tail instruction composes last.
+        assert calls[0][0] == {
+            "role": "system",
+            "content": f"{INSTRUCTION}\n\n{content_mod.TAIL_INSTRUCTION}",
+        }
 
     def test_trust_is_forced_to_imported(self, client, user_and_token, tmp_curio):
         _, token = user_and_token

@@ -18,6 +18,7 @@ from utk_curio.backend.app.agents import (
     account_settings,
     attachments,
     builtin,
+    content,
     imports,
     policy,
     project_agents,
@@ -842,6 +843,10 @@ def _prepare_run(
     # only, so the preamble still applies.
     preamble = _resolve_prompt_text(user_key, coord, "system")
     system_content = f"{preamble}\n\n{instruction}" if preamble else instruction
+    # Structured-tail protocol (memo dev/39): the runtime-owned instruction
+    # composes AFTER the preamble + intent, so an edited intent can neither
+    # strip nor spoof it. Optional in tone; costs a few hundred prompt tokens.
+    system_content = f"{system_content}\n\n{content.TAIL_INSTRUCTION}"
     session_id = record.get("sessionId")
     if not isinstance(session_id, str):
         session_id = None
@@ -878,10 +883,12 @@ def _persist_exchange(
     *,
     error: bool = False,
     execution: dict | None = None,
+    parts: list | None = None,
 ) -> None:
     """Persist one exchange to the session (no-op without a session id). Error
     markers are display-only history, excluded from future context (dev/20).
-    The execution record rides the agent turn (memo dev/37)."""
+    The execution record (dev/37) and content parts (dev/39) ride the agent
+    turn."""
     if session_id is None:
         return
     sessions.append_turns(
@@ -891,7 +898,7 @@ def _persist_exchange(
         attachment_id,
         [
             sessions.make_turn("user", message),
-            sessions.make_turn("agent", reply, error=error, execution=execution),
+            sessions.make_turn("agent", reply, error=error, execution=execution, content=parts),
         ],
     )
 
@@ -939,17 +946,28 @@ def run_attachment(
         raise AgentServiceError(f"agent run failed: {exc}", 502) from exc
     _record_usage(user_key, usage_sink)
     execution = _execution_record(execution_id, pins, usage_sink, started, "ok")
+    # Structured tail (dev/39): a valid terminal block becomes typed parts and
+    # leaves the visible text; anything else passes through untouched.
+    visible, parts = content.extract_content(reply)
     _persist_exchange(
-        user_key, project_id, session_id, attachment_id, message, reply, execution=execution
+        user_key,
+        project_id,
+        session_id,
+        attachment_id,
+        message,
+        visible,
+        execution=execution,
+        parts=parts,
     )
     if wants_title:
         _generate_conversation_title(user_key, project_id, attachment_id, message, config)
     return {
         "attachmentId": attachment_id,
         "coord": coord,
-        "reply": reply,
+        "reply": visible,
         "executionId": execution_id,
         "usage": execution["usage"],
+        "content": parts,
     }
 
 
@@ -960,12 +978,13 @@ def stream_attachment(
 
     Validates eagerly (404/422 raise before any streaming starts), then returns
     a generator opening with ``("execution", {executionId})`` (memo dev/37),
-    followed by ``("delta", text)`` events ending in
-    ``("done", {reply, executionId, usage})`` — or ``("error", message)`` on a
-    provider failure. Persistence semantics are identical to
-    ``run_attachment``: the full exchange is written once at completion; a
-    failure persists the user turn plus a display-only error marker. Nothing
-    is persisted per-delta.
+    followed by ``("delta", text)`` events, optionally ``("content", {parts})``
+    when the reply carried a valid structured tail (memo dev/39), ending in
+    ``("done", {reply, executionId, usage, content})`` — or
+    ``("error", message)`` on a provider failure. Persistence semantics are
+    identical to ``run_attachment``: the full exchange is written once at
+    completion; a failure persists the user turn plus a display-only error
+    marker. Nothing is persisted per-delta.
     """
     coord, session_id, messages, run_policy, wants_title, pins = _prepare_run(
         user_key, project_id, attachment_id, message, config
@@ -975,14 +994,31 @@ def stream_attachment(
     quotas.admit(user_key, **run_policy["admit"])
     execution_id = uuid.uuid4().hex
 
+    marker = content.TAIL_FENCE
+
+    def _hold_split(buf: str) -> tuple[str, str]:
+        """Emit-now / keep split: retain the longest trailing suffix of *buf*
+        that could still be the start of the tail-fence marker (≤ ~16 chars
+        held back at any moment — imperceptible in the live transcript)."""
+        for k in range(min(len(marker) - 1, len(buf)), 0, -1):
+            if marker.startswith(buf[-k:]):
+                return buf[:-k], buf[-k:]
+        return buf, ""
+
     def _events():
-        parts: list[str] = []
+        chunks: list[str] = []
         usage_sink: dict = {}
         started = time.monotonic()
         # The typed-envelope handshake (memo dev/37): the execution identity
         # arrives before the first delta so a client can correlate the stream
         # with the record that will land on the transcript.
         yield ("execution", {"executionId": execution_id})
+        # Tail withholding (memo dev/39): a candidate terminal curio.v1 block
+        # must not flash into the live transcript and then vanish; it is
+        # accumulated silently and either becomes a content event or — on a
+        # false positive / invalid block — is flushed as ordinary deltas.
+        buf = ""  # pass-mode text not yet emitted
+        withheld: str | None = None  # not None → holding a candidate tail
         try:
             for delta in stream_chat_completion(
                 config,
@@ -990,8 +1026,30 @@ def stream_attachment(
                 max_output_tokens=run_policy["max_output_tokens"],
                 usage_out=usage_sink,
             ):
-                parts.append(delta)
-                yield ("delta", delta)
+                chunks.append(delta)
+                if withheld is not None:
+                    withheld += delta
+                    close = withheld.find("\n```", len(marker))
+                    if close != -1 and withheld[close + 4 :].strip():
+                        # Closed fence followed by more content: not terminal —
+                        # flush the closed block verbatim and rescan the rest.
+                        yield ("delta", withheld[: close + 4])
+                        buf = withheld[close + 4 :]
+                        withheld = None
+                    else:
+                        continue
+                else:
+                    buf += delta
+                idx = buf.find(marker)
+                if idx != -1:
+                    if buf[:idx]:
+                        yield ("delta", buf[:idx])
+                    withheld = buf[idx:]
+                    buf = ""
+                else:
+                    emit, buf = _hold_split(buf)
+                    if emit:
+                        yield ("delta", emit)
         except Exception as exc:  # provider failure mid-stream
             _record_usage(user_key, usage_sink)
             _persist_exchange(
@@ -1006,16 +1064,40 @@ def stream_attachment(
             )
             yield ("error", f"agent run failed: {exc}")
             return
-        reply = "".join(parts)
+        reply = "".join(chunks)
+        visible, parts = content.extract_content(reply)
+        if withheld is not None and not parts:
+            # Invalid or non-terminal tail: fail-open (dev/39 §4.2) — the
+            # withheld text is the model's, so it streams after all.
+            yield ("delta", withheld)
+        elif withheld is None and buf:
+            yield ("delta", buf)  # stream ended on a partial fence prefix
         _record_usage(user_key, usage_sink)
         execution = _execution_record(execution_id, pins, usage_sink, started, "ok")
         _persist_exchange(
-            user_key, project_id, session_id, attachment_id, message, reply, execution=execution
+            user_key,
+            project_id,
+            session_id,
+            attachment_id,
+            message,
+            visible,
+            execution=execution,
+            parts=parts,
         )
         # Title before the done frame: the reply text already streamed via
         # deltas, and the client's post-send refresh must see the title.
         if wants_title:
             _generate_conversation_title(user_key, project_id, attachment_id, message, config)
-        yield ("done", {"reply": reply, "executionId": execution_id, "usage": execution["usage"]})
+        if parts:
+            yield ("content", {"parts": parts})
+        yield (
+            "done",
+            {
+                "reply": visible,
+                "executionId": execution_id,
+                "usage": execution["usage"],
+                "content": parts,
+            },
+        )
 
     return _events()
