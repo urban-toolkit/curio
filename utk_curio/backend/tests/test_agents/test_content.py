@@ -146,6 +146,79 @@ class TestParseParts:
         assert content.parse_parts(json.dumps(payload)) is None
 
 
+class TestToolRequestPart:
+    """toolRequest parsing (memo dev/41): one per reply, exclusive, bounded."""
+
+    def test_valid_tool_request_parses(self):
+        parts = content.parse_parts(
+            json.dumps({"toolRequest": {"tool": "dataflow.read", "params": {}}})
+        )
+        assert parts == [{"type": "toolRequest", "tool": "dataflow.read", "params": {}}]
+
+    def test_params_default_to_empty_object(self):
+        (part,) = content.parse_parts(json.dumps({"toolRequest": {"tool": "node.read"}}))
+        assert part["params"] == {}
+
+    def test_tool_id_grammar_enforced(self):
+        for bad in ("Read", "dataflow", "dataflow/read", "dataflow_read"):
+            assert content.parse_parts(json.dumps({"toolRequest": {"tool": bad}})) is None
+
+    def test_params_size_bounded(self):
+        payload = {"toolRequest": {"tool": "node.read", "params": {"x": "y" * 2000}}}
+        assert content.parse_parts(json.dumps(payload)) is None
+
+    def test_request_is_exclusive_other_parts_dropped(self):
+        # A request turn is a request turn (dev/41 §4.1).
+        payload = {
+            "toolRequest": {"tool": "dataflow.read", "params": {}},
+            **PROMPTS,
+        }
+        parts = content.parse_parts(json.dumps(payload))
+        assert [p["type"] for p in parts] == ["toolRequest"]
+
+    def test_malformed_request_invalidates_the_block(self):
+        payload = {"toolRequest": {"params": {}}, **PROMPTS}  # missing tool id
+        assert content.parse_parts(json.dumps(payload)) is None
+
+    def test_model_emitted_proposal_invalidates_the_block(self):
+        # The review flow can never be spoofed from the tail (dev/41 §4.1).
+        for key in ("proposal", "proposals"):
+            payload = {key: {"tool": "node.content.write"}, **PROMPTS}
+            assert content.parse_parts(json.dumps(payload)) is None
+
+
+class TestTailInstruction:
+    def test_grantless_instruction_is_byte_identical(self):
+        # Regression pin (dev/41): runs without grants are unchanged from T2.
+        assert content.tail_instruction() == content.TAIL_INSTRUCTION
+        assert content.tail_instruction([]) == content.TAIL_INSTRUCTION
+
+    def test_granted_instruction_enumerates_exactly_the_grants(self):
+        text = content.tail_instruction(
+            [("dataflow.read", "Read the saved spec."), ("node.read", "Read one node.")]
+        )
+        assert text.startswith(content.TAIL_INSTRUCTION)
+        assert "- dataflow.read: Read the saved spec." in text
+        assert "- node.read: Read one node." in text
+        assert '"toolRequest"' in text
+
+
+class TestProposalPart:
+    def test_builder_shape_and_summary_bound(self):
+        part = content.make_proposal_part(
+            proposal_id="p1",
+            tool="node.content.write",
+            summary="x" * 300,
+            preview="new content",
+            node_id="n1",
+            content_sha256="abc",
+        )
+        assert part["type"] == "proposal"
+        assert part["status"] == "pending"
+        assert len(part["summary"]) == 200
+        assert part["pins"] == {"nodeId": "n1", "contentSha256": "abc"}
+
+
 class TestExtractContent:
     def test_valid_tail_is_stripped_and_typed(self):
         reply = "Answer.\n" + _tail(PROMPTS)

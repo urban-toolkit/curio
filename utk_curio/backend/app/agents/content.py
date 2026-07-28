@@ -27,6 +27,7 @@ Part types (v1) and their bounds — the single place limits are named:
 from __future__ import annotations
 
 import json
+import re
 
 TAIL_FENCE = "```curio.v1"
 TAIL_MAX_BYTES = 4096
@@ -39,6 +40,16 @@ _CARD_TITLE_MAX_CHARS = 120
 _CARD_LINE_MAX_CHARS = 300
 _CARD_MAX_LINES = 10
 _MAX_CARDS = 4
+
+# toolRequest bounds (memo dev/41): one request per reply, small params.
+_TOOL_PARAMS_MAX_BYTES = 1024
+# Tool ids share the capability grammar (mirrors manifest.CAPABILITY_ID_RE —
+# duplicated here so the content contract stays import-light).
+_TOOL_ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$")
+
+# Proposal display bounds (runtime-emitted part, memo dev/41).
+_PROPOSAL_SUMMARY_MAX_CHARS = 200
+PROPOSAL_CONTENT_MAX_CHARS = 65536
 
 # The runtime-owned instruction appended to every attachment run's system turn
 # (after the preamble + intent composition, dev/38 — so an edited intent can
@@ -134,12 +145,35 @@ def _parse_card(raw: object) -> dict | None:
     return {"type": "card", "kind": kind.strip(), "title": title.strip(), "lines": lines}
 
 
+def _parse_tool_request(raw: object) -> dict | None:
+    if not isinstance(raw, dict):
+        return None
+    tool = raw.get("tool")
+    if not (isinstance(tool, str) and _TOOL_ID_RE.match(tool)):
+        return None
+    params = raw.get("params", {})
+    if not isinstance(params, dict):
+        return None
+    try:
+        if len(json.dumps(params).encode("utf-8")) > _TOOL_PARAMS_MAX_BYTES:
+            return None
+    except (TypeError, ValueError):
+        return None
+    return {"type": "toolRequest", "tool": tool, "params": params}
+
+
 def parse_parts(body: str) -> list[dict] | None:
     """Validate a tail body into typed parts, or ``None`` when the whole block
     is invalid (bad JSON, over bounds, a malformed known part, or nothing
     usable). Unknown top-level keys are ignored — forward tolerance — but a
     *known* key that fails its contract invalidates the block (fail-open to
-    text beats attaching half-validated content)."""
+    text beats attaching half-validated content).
+
+    Two dev/41 rules: a ``proposal`` key is **runtime-emitted only** — a model
+    that writes one invalidates the block (fail-open; the review flow can
+    never be spoofed from the tail). A valid ``toolRequest`` is exclusive: a
+    request turn is a request turn, so other parts alongside it are dropped.
+    """
     if not isinstance(body, str) or len(body.encode("utf-8")) > TAIL_MAX_BYTES:
         return None
     try:
@@ -148,6 +182,13 @@ def parse_parts(body: str) -> list[dict] | None:
         return None
     if not isinstance(payload, dict):
         return None
+    if "proposal" in payload or "proposals" in payload:
+        return None  # never accepted from the model (memo dev/41 §4.1)
+    if "toolRequest" in payload:
+        request = _parse_tool_request(payload["toolRequest"])
+        if request is None:
+            return None
+        return [request]
     parts: list[dict] = []
     if "cards" in payload:
         cards_raw = payload["cards"]
@@ -182,3 +223,56 @@ def extract_content(reply: str) -> tuple[str, list[dict]]:
     if parts is None:
         return reply, []
     return visible, parts
+
+
+def tail_instruction(grants: list[tuple[str, str]] | None = None) -> str:
+    """The system-turn tail instruction for one run (memo dev/41).
+
+    Grant-less runs get :data:`TAIL_INSTRUCTION` byte-identical (regression-
+    pinned); runs with granted tools get an appended paragraph enumerating
+    exactly the granted ids with their registry descriptions and the
+    ``toolRequest`` syntax. The list is server-resolved grants — never the
+    manifest's raw declarations.
+    """
+    if not grants:
+        return TAIL_INSTRUCTION
+    lines = "\n".join(f"- {tool_id}: {description}" for tool_id, description in grants)
+    return (
+        f"{TAIL_INSTRUCTION}\n\n"
+        "You may also use these tools, granted for this conversation:\n"
+        f"{lines}\n"
+        "To use one, end your reply with exactly one fenced block of this form "
+        "instead (one tool per reply; you will receive the result and can then "
+        "answer):\n"
+        "```curio.v1\n"
+        '{"toolRequest": {"tool": "<tool id>", "params": {}}}\n'
+        "```"
+    )
+
+
+def make_proposal_part(
+    *,
+    proposal_id: str,
+    tool: str,
+    summary: str,
+    preview: str,
+    node_id: str,
+    content_sha256: str,
+    status: str = "pending",
+) -> dict:
+    """The runtime-emitted ``proposal`` part (memo dev/41 — review-before-apply).
+
+    Minted only by the runtime when a granted mutate tool is requested; the
+    parser above rejects any model-authored proposal. ``content_sha256`` pins
+    the target's *current* content — the revision-safety basis the apply
+    endpoint re-checks (`REQ-REVIEW-001`).
+    """
+    return {
+        "type": "proposal",
+        "proposalId": proposal_id,
+        "tool": tool,
+        "summary": summary[:_PROPOSAL_SUMMARY_MAX_CHARS],
+        "preview": preview,
+        "pins": {"nodeId": node_id, "contentSha256": content_sha256},
+        "status": status,
+    }
