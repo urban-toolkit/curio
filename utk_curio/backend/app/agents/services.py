@@ -26,6 +26,7 @@ from utk_curio.backend.app.agents import (
     quotas,
     sessions,
     storage,
+    tools,
 )
 from utk_curio.backend.app.agents.policy import PolicyValidationError, StaleRevisionError
 from utk_curio.backend.app.agents.attachments import AttachmentError
@@ -782,13 +783,12 @@ def _run_policy(user_key: str, project_id: str, coord: str, spec: dict) -> dict:
     }
 
 
-def _prompt_digest(user_key: str, coord: str) -> str | None:
+def _prompt_digest(m: AgentManifest | None) -> str | None:
     """The resolved definition's instruction-prompt sha256 (a DEC-031 pin).
 
     Read from the manifest asset, not recomputed — the digest identifies the
     definition bytes that were dispatched. ``None`` when the manifest carries
     no digest (tolerated; pre-upload-import definitions may be unstamped)."""
-    m = _resolve_definition(user_key, coord)
     asset = m.prompts.get("instruction") if m is not None else None
     return asset.sha256 if asset is not None else None
 
@@ -829,10 +829,19 @@ def _prepare_run(
     so a title should be auto-generated after the reply (memo dev/25), and
     ``pins`` are the DEC-031 reproducibility pins resolved from what actually
     dispatches (memo dev/37): coord, prompt digest, intent-edited flag,
-    provider/model, and the effective-policy snapshot. No secrets."""
+    provider/model, granted tools (dev/39), and the effective-policy snapshot.
+    No secrets. A required manifest tool that resolves no grant refuses the
+    run here — validation stage, before admission, so it consumes no quota."""
     spec = _read_spec_or_404(user_key, project_id)
     record = _record_or_404(spec, attachment_id)
     coord = record.get("coord", "")
+    manifest = _resolve_definition(user_key, coord)
+    requested_tools = manifest.tools if manifest is not None else []
+    missing = tools.missing_required(requested_tools)
+    if missing:
+        raise AgentServiceError(
+            f"required tool(s) not available for this agent: {', '.join(sorted(missing))}", 422
+        )
     instruction = record.get("intent") or _resolve_instruction_text(user_key, coord)
     if instruction is None:
         raise AgentServiceError(
@@ -864,10 +873,13 @@ def _prepare_run(
     run_policy = _run_policy(user_key, project_id, coord, spec)
     pins = {
         "coord": coord,
-        "promptSha256": _prompt_digest(user_key, coord),
+        "promptSha256": _prompt_digest(manifest),
         "intentEdited": bool(record.get("intent")),
         "provider": config.api_type,
         "model": config.model,
+        # Granted tool ids (dev/39): requested ∩ registry ∩ policy — empty
+        # while the registry ships empty; the pin is the record either way.
+        "tools": tools.resolve_grants(requested_tools),
         "policy": run_policy["policy_pins"],
     }
     return coord, session_id, messages, run_policy, wants_title, pins

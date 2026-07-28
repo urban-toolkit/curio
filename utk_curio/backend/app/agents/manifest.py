@@ -167,6 +167,15 @@ class ToolRequirement:
         if not isinstance(raw, dict):
             raise AgentManifestError(f"{where}: expected object, got {type(raw).__name__}")
         tool_id = _require_str(raw.get("id"), where=f"{where}.id")
+        # Tool ids share the capability-id grammar (dotted lowercase; DEC-017
+        # — server-allowlisted typed ids, never paths or executable names).
+        if not CAPABILITY_ID_RE.match(tool_id) or any(
+            s in tool_id for s in _FORBIDDEN_CAPABILITY_SUBSTRINGS
+        ):
+            raise AgentManifestError(
+                f"{where}.id {tool_id!r} must be dot-separated lowercase segments "
+                f"matching {CAPABILITY_ID_RE.pattern}"
+            )
         required_raw = raw.get("required", False)
         if not isinstance(required_raw, bool):
             raise AgentManifestError(f"{where}.required must be a boolean when present")
@@ -309,6 +318,11 @@ def parse_agent_manifest(raw: object, *, where: str = "manifest") -> AgentManife
     if not isinstance(tools_raw, list):
         raise AgentManifestError(f"{where}.tools must be a list")
     tools = [ToolRequirement.from_json(t, where=f"{where}.tools[{i}]") for i, t in enumerate(tools_raw)]
+    seen_tools: set[str] = set()
+    for tool in tools:
+        if tool.id in seen_tools:
+            raise AgentManifestError(f"{where}.tools: duplicate tool id {tool.id!r}")
+        seen_tools.add(tool.id)
 
     provider_raw = raw.get("providerRequirements", {}) or {}
     if not isinstance(provider_raw, dict):

@@ -1078,6 +1078,8 @@ class TestExecutionRecords:
         # Unconfigured test user → the deployment-default provider (DEC-039).
         assert pins["provider"] == DEFAULT_LLM_API_TYPE
         assert pins["model"] == DEFAULT_LLM_MODEL
+        # dev/39: granted tools are pinned; the registry ships empty.
+        assert pins["tools"] == []
         assert pins["policy"] == {
             "runsPerDay": policy.deployment_defaults()["quotas"]["runsPerDay"],
             "maxOutputTokens": policy.DEPLOYMENT_MAX_OUTPUT_TOKENS,
@@ -1276,6 +1278,114 @@ class TestExecutionRecords:
         )
         turns = self._turns(client, token, alice_project, att_id)
         assert turns[1]["execution"]["pins"]["promptSha256"] == digest
+
+
+class TestToolGrants:
+    """Tool-contract substrate on the run path (memo dev/39): declarations are
+    never grants; required-but-ungranted refuses the run before admission."""
+
+    def _upload_install_attach(self, client, token, project_id, tools_section):
+        coord = "agent.tooled@1.0.0"
+        r = client.post(
+            "/api/agents/imports/upload",
+            json={
+                "manifest": {
+                    "id": "agent.tooled",
+                    "name": "Tooled",
+                    "category": "canvas",
+                    "version": "1.0.0",
+                    "capabilities": [{"id": "chat.reply", "contractVersion": "1"}],
+                    "compatibleTargets": [{"kind": "canvas", "requires": []}],
+                    "prompts": {"instruction": {"path": "prompts/i.txt", "variables": []}},
+                    "tools": tools_section,
+                    "provenance": {"publisher": "alice", "trust": "imported"},
+                },
+                "prompts": {"prompts/i.txt": "You help."},
+            },
+            headers=_auth(token),
+        )
+        assert r.status_code == 201, r.get_data(as_text=True)
+        client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
+        att = client.post(
+            f"/api/agents/projects/{project_id}/attachments",
+            json={"coord": coord, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        )
+        return att.get_json()["attachmentId"]
+
+    def test_required_ungranted_tool_refuses_the_run_without_consuming_quota(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.agents import quotas
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion",
+            lambda c, m, **kw: "never reached",
+        )
+        user, token = user_and_token
+        att_id = self._upload_install_attach(
+            client, token, alice_project, [{"id": "ghost.tool", "required": True}]
+        )
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        assert r.status_code == 422
+        assert "ghost.tool" in r.get_json()["error"]
+        # Validation-stage refusal: no quota consumed, nothing persisted.
+        assert quotas.runs_used_today(_user_dir_key(user)) == 0
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        assert turns == []
+
+    def test_optional_ungranted_tool_runs_and_pins_no_grant(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion",
+            lambda c, m, **kw: "ok",
+        )
+        _, token = user_and_token
+        att_id = self._upload_install_attach(
+            client, token, alice_project, [{"id": "ghost.tool", "required": False}]
+        )
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        assert r.status_code == 200
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        assert turns[1]["execution"]["pins"]["tools"] == []
+
+    def test_registered_read_tool_is_granted_and_pinned(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.agents import tools as tools_mod
+        from utk_curio.backend.app.agents.tools import ToolContract
+
+        monkeypatch.setitem(
+            tools_mod.REGISTRY,
+            "ghost.tool",
+            ToolContract(id="ghost.tool", contract_version="1", effect="read", description="d"),
+        )
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion",
+            lambda c, m, **kw: "ok",
+        )
+        _, token = user_and_token
+        att_id = self._upload_install_attach(
+            client, token, alice_project, [{"id": "ghost.tool", "required": True}]
+        )
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q1"}, headers=_auth(token),
+        )
+        assert r.status_code == 200
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        assert turns[1]["execution"]["pins"]["tools"] == ["ghost.tool"]
 
 
 class TestStructuredContent:

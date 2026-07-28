@@ -221,6 +221,39 @@ class TestOtherFields:
             parse_agent_manifest(raw)
 
 
+class TestToolRequirements:
+    """Manifest tools are typed, allowlisted requirements (dev/39, DEC-017):
+    capability-id grammar, no duplicates, never grants."""
+
+    def test_valid_tools_parse_with_required_flag(self):
+        raw = _valid_manifest()
+        raw["tools"] = [{"id": "catalog.search"}, {"id": "dataset.read", "required": True}]
+        m = parse_agent_manifest(raw)
+        assert [(t.id, t.required) for t in m.tools] == [
+            ("catalog.search", False),
+            ("dataset.read", True),
+        ]
+
+    def test_tool_id_must_match_the_capability_grammar(self):
+        for bad in ("Search", "catalog", "catalog/search", "catalog_search", "fetch_prompt.txt"):
+            raw = _valid_manifest()
+            raw["tools"] = [{"id": bad}]
+            with pytest.raises(AgentManifestError, match="tools"):
+                parse_agent_manifest(raw)
+
+    def test_duplicate_tool_ids_rejected(self):
+        raw = _valid_manifest()
+        raw["tools"] = [{"id": "catalog.search"}, {"id": "catalog.search", "required": True}]
+        with pytest.raises(AgentManifestError, match="duplicate tool id"):
+            parse_agent_manifest(raw)
+
+    def test_required_must_be_boolean(self):
+        raw = _valid_manifest()
+        raw["tools"] = [{"id": "catalog.search", "required": "yes"}]
+        with pytest.raises(AgentManifestError, match="required"):
+            parse_agent_manifest(raw)
+
+
 class TestLoadFromDisk:
     def test_loads_valid_dir(self, tmp_path):
         d = tmp_path / "agent.node-explainer@1.0.0"
