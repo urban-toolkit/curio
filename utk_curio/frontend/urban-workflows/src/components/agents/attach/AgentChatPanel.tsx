@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faArrowUp,
@@ -9,9 +9,16 @@ import {
   faTrashCan,
   faXmark,
 } from "@fortawesome/free-solid-svg-icons";
-import type { AgentAttachment, AgentSessionTurn } from "../../../api/agentsApi";
+import type {
+  AgentAttachment,
+  AgentCardPart,
+  AgentSessionTurn,
+  AgentSuggestedPromptsPart,
+} from "../../../api/agentsApi";
 import { agentCategoryKey } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
 import { attachmentDisplayName, TITLE_MAX_CHARS } from "./attachmentDisplayName";
+import { AgentChatCard } from "../content/AgentChatCard";
+import { SafeAgentContent } from "../content/SafeAgentContent";
 import styles from "./AgentChatPanel.module.css";
 
 /** Heuristic: prompts longer than this get the clamp + expand toggle. */
@@ -89,6 +96,26 @@ export const AgentChatPanel: React.FC<{
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const titleButtonRef = useRef<HTMLButtonElement | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
+  /** The last value this panel prefilled — so a prefill may replace a prior
+   * prefill, but never a draft the user actually typed (memo dev/39). */
+  const lastPrefill = useRef("");
+
+  // SUGGESTED PROMPTS (memo dev/39, docs/08): only the newest turn's part
+  // counts — once the user replies, earlier follow-ups are stale noise.
+  const suggested = useMemo<AgentSuggestedPromptsPart | null>(() => {
+    const last = turns[turns.length - 1];
+    if (!last || last.role !== "agent" || last.error) return null;
+    const part = (last.content ?? []).find((p) => p.type === "suggestedPrompts");
+    return (part as AgentSuggestedPromptsPart | undefined) ?? null;
+  }, [turns]);
+
+  // The primary prompt prefills the input, editable with send active — but a
+  // user-typed draft always wins over any prefill.
+  useEffect(() => {
+    const primary = suggested?.primary ?? "";
+    setInput((prev) => (prev === "" || prev === lastPrefill.current ? primary : prev));
+    lastPrefill.current = primary;
+  }, [suggested, attachment.attachmentId]);
 
   const tint =
     styles[`tint_${agentCategoryKey(attachment.category)}` as keyof typeof styles] ??
@@ -409,13 +436,38 @@ export const AgentChatPanel: React.FC<{
                   <FontAwesomeIcon icon={faRobot} />
                 </span>
                 <div className={`${styles.msgAgent} ${t.error ? styles.msgError : ""}`}>
-                  {t.text}
+                  {/* Agent rich content renders ONLY through the safe renderer
+                      (REQ-SEC-002); error markers are server-composed plain
+                      text. Cards are informational plain data (docs/08). */}
+                  {t.error ? t.text : <SafeAgentContent text={t.text} />}
+                  {(t.content ?? [])
+                    .filter((p): p is AgentCardPart => p.type === "card")
+                    .map((card, j) => (
+                      <AgentChatCard key={j} card={card} tintClassName={tint} />
+                    ))}
                 </div>
               </div>
             ),
           )
         )}
       </div>
+
+      {suggested && suggested.alternatives.length > 0 ? (
+        <div className={styles.suggestedRow} role="group" aria-label="Suggested prompts">
+          <span className={styles.suggestedLabel}>Suggested prompts</span>
+          {suggested.alternatives.map((alt, i) => (
+            <button
+              key={i}
+              type="button"
+              className={styles.suggestedChip}
+              title={alt}
+              onClick={() => setInput(alt)}
+            >
+              {alt}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       <div className={styles.footer}>
         <input

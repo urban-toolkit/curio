@@ -468,3 +468,70 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ── structured content (memo dev/39) ──────────────────────────────────── */
+
+/* Markdown from the safe renderer: keep the bubble rhythm tight. */
+.msgAgent p {
+  margin: 0 0 6px;
+}
+.msgAgent p:last-child {
+  margin-bottom: 0;
+}
+.msgAgent pre {
+  background: #fff;
+  border: 1px solid #ececee;
+  border-radius: 8px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  font-size: 0.8rem;
+}
+.msgAgent code {
+  font-size: 0.82em;
+}
+
+/* SUGGESTED PROMPTS chips (docs/03 soft-token treatment): filled soft
+   surfaces with hairlines, above the input row. */
+.suggestedRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px 0;
+  background: var(--curio-card-bg, #fff);
+  border-top: 1px solid #ececee;
+}
+
+.suggestedLabel {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8a8a8e;
+  margin-right: 2px;
+}
+
+.suggestedChip {
+  border: 1px solid #ececee;
+  background: #f7f7f8;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 0.78rem;
+  color: #333;
+  cursor: pointer;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suggestedChip:hover,
+.suggestedChip:focus-visible {
+  background: #eef1f6;
+  border-color: #d8dde6;
+}
+
+/* The chips row visually joins the footer beneath it. */
+.suggestedRow + .footer {
+  border-top: none;
+}

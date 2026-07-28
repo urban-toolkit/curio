@@ -113,12 +113,22 @@ export const AgentAttachmentsProvider: React.FC<{
   );
 
   const replaceLastAgentTurn = useCallback(
-    (attachmentId: string, text: string, execution?: AgentSessionTurn["execution"]) => {
+    (
+      attachmentId: string,
+      text: string,
+      execution?: AgentSessionTurn["execution"],
+      content?: AgentSessionTurn["content"],
+    ) => {
       setTranscripts((prev) => {
         const turns = prev[attachmentId] ?? [];
         const last = turns[turns.length - 1];
         if (!last || last.role !== "agent") return prev;
-        const updated = { ...last, text, ...(execution ? { execution } : {}) };
+        const updated = {
+          ...last,
+          text,
+          ...(execution ? { execution } : {}),
+          ...(content && content.length ? { content } : {}),
+        };
         return { ...prev, [attachmentId]: [...turns.slice(0, -1), updated] };
       });
     },
@@ -157,15 +167,22 @@ export const AgentAttachmentsProvider: React.FC<{
           streamed += delta;
         });
         // The finalized turn keeps the run's execution identity + Actual usage
-        // (memo dev/37) so the local transcript matches the persisted one.
+        // (memo dev/37) and its typed content parts (memo dev/39) so the
+        // local transcript matches the persisted one.
         const execution = result.executionId
           ? { executionId: result.executionId, usage: result.usage ?? null, status: "ok" as const }
           : undefined;
+        const content = result.content && result.content.length ? result.content : undefined;
         if (!streamed)
           appendTurns(attachmentId, [
-            { role: "agent", text: result.reply, ...(execution ? { execution } : {}) },
+            {
+              role: "agent",
+              text: result.reply,
+              ...(execution ? { execution } : {}),
+              ...(content ? { content } : {}),
+            },
           ]);
-        else replaceLastAgentTurn(attachmentId, result.reply, execution);
+        else replaceLastAgentTurn(attachmentId, result.reply, execution, content);
         succeeded = true;
       } catch (e) {
         const status = (e as { status?: number } | null)?.status;

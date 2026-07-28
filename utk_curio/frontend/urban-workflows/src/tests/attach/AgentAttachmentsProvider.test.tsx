@@ -67,6 +67,11 @@ const Harness: React.FC = () => {
           )
           .join("|")}
       </div>
+      <div data-testid="contents">
+        {turns
+          .map((t) => (t.content?.length ? t.content.map((p) => p.type).join(",") : "∅"))
+          .join("|")}
+      </div>
       <div data-testid="titles">{ctx.attachments.map((a) => a.title ?? "∅").join(",")}</div>
     </div>
   );
@@ -152,6 +157,24 @@ describe("AgentAttachmentsProvider chat state", () => {
     );
     // Hydrated turns have no record (old session); the new run's does.
     expect(screen.getByTestId("executions")).toHaveTextContent("∅|∅|∅|e1:7/9");
+  });
+
+  it("the finalized turn keeps the run's typed content parts", async () => {
+    const parts = [
+      { type: "suggestedPrompts" as const, primary: "Next", alternatives: ["Alt"] },
+    ];
+    api.runAttachmentStream.mockImplementation(async (_p, _a, _m, onDelta) => {
+      onDelta("fresh");
+      return { reply: "fresh", executionId: "e1", usage: null, content: parts };
+    });
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    fireEvent.click(screen.getByText("send"));
+    await waitFor(() =>
+      expect(screen.getByTestId("turns")).toHaveTextContent("agent:fresh"),
+    );
+    expect(screen.getByTestId("contents")).toHaveTextContent("∅|∅|∅|suggestedPrompts");
   });
 
   it("a done frame without execution fields finalizes a plain turn", async () => {

@@ -281,3 +281,89 @@ describe("AgentChatPanel conversation title (memo dev/25)", () => {
     ).toHaveTextContent("Node Explainer: Dataset Import Help");
   });
 });
+
+describe("AgentChatPanel structured content (memo dev/39)", () => {
+  const promptsTurns: AgentSessionTurn[] = [
+    { role: "user", text: "find data" },
+    {
+      role: "agent",
+      text: "Here are the options.",
+      content: [
+        {
+          type: "suggestedPrompts",
+          primary: "Build the NOAA node",
+          alternatives: ["Show the fetch code", "Use the catalog copy"],
+        },
+      ],
+    },
+  ];
+
+  it("renders agent markdown through the safe renderer", () => {
+    const { container } = renderPanel({
+      turns: [{ role: "agent", text: "Some **bold** answer" }],
+    });
+    expect(container.querySelector("strong")?.textContent).toBe("bold");
+  });
+
+  it("renders cards from the agent turn's content", () => {
+    renderPanel({
+      turns: [
+        {
+          role: "agent",
+          text: "Done.",
+          content: [
+            { type: "card", kind: "result", title: "Created node", lines: ["n1 → canvas"] },
+          ],
+        },
+      ],
+    });
+    expect(screen.getByText("Created node")).toBeInTheDocument();
+    expect(screen.getByText("n1 → canvas")).toBeInTheDocument();
+  });
+
+  it("prefills the primary prompt and renders the chip row", () => {
+    renderPanel({ turns: promptsTurns });
+    expect(screen.getByDisplayValue("Build the NOAA node")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Suggested prompts" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show the fetch code" })).toBeInTheDocument();
+    // The prefilled primary makes Send active immediately (docs/08).
+    expect(screen.getByRole("button", { name: "Send" })).not.toBeDisabled();
+  });
+
+  it("clicking a chip replaces the input draft", () => {
+    renderPanel({ turns: promptsTurns });
+    fireEvent.click(screen.getByRole("button", { name: "Use the catalog copy" }));
+    expect(screen.getByDisplayValue("Use the catalog copy")).toBeInTheDocument();
+  });
+
+  it("a user-typed draft is never overwritten by a prefill", () => {
+    const { rerender, props } = renderPanel({ turns: [{ role: "user", text: "q" }] });
+    fireEvent.change(screen.getByPlaceholderText(/message this agent/i), {
+      target: { value: "my own words" },
+    });
+    rerender(<AgentChatPanel {...props} turns={promptsTurns} />);
+    expect(screen.getByDisplayValue("my own words")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Build the NOAA node")).toBeNull();
+  });
+
+  it("suggestions are stale once the user replied (no chip row)", () => {
+    renderPanel({
+      turns: [...promptsTurns, { role: "user", text: "next question" }],
+    });
+    expect(screen.queryByRole("group", { name: "Suggested prompts" })).toBeNull();
+  });
+
+  it("no chip row when alternatives are empty (prefill only)", () => {
+    renderPanel({
+      turns: [
+        {
+          role: "agent",
+          text: "ok",
+          content: [{ type: "suggestedPrompts", primary: "Only one", alternatives: [] }],
+        },
+      ],
+    });
+    expect(screen.queryByRole("group", { name: "Suggested prompts" })).toBeNull();
+    expect(screen.getByDisplayValue("Only one")).toBeInTheDocument();
+  });
+});

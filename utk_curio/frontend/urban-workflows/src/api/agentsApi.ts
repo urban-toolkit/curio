@@ -94,6 +94,32 @@ export interface AgentExecution {
   status: "ok" | "error";
 }
 
+/**
+ * Typed content parts riding an agent turn (memo dev/39): validated
+ * structured content produced by the runtime's tail protocol. Unknown part
+ * types must be tolerated (forward compatibility with later contracts).
+ */
+export interface AgentSuggestedPromptsPart {
+  type: "suggestedPrompts";
+  /** The most useful next prompt — prefilled (editable) into the input. */
+  primary: string;
+  /** Up to 3 alternatives, rendered as the SUGGESTED PROMPTS chip row. */
+  alternatives: string[];
+}
+
+/** An informational inline card (docs/08): plain data, no actions, no markup. */
+export interface AgentCardPart {
+  type: "card";
+  kind: string; // "result" today; unknown kinds render the generic shell
+  title: string;
+  lines: string[];
+}
+
+export type AgentContentPart =
+  | AgentSuggestedPromptsPart
+  | AgentCardPart
+  | { type: string };
+
 /** One persisted chat turn of an attachment's session. */
 export interface AgentSessionTurn {
   role: "user" | "agent";
@@ -103,6 +129,8 @@ export interface AgentSessionTurn {
   error?: boolean;
   /** Execution record for agent turns produced by a run (memo dev/37). */
   execution?: AgentExecution;
+  /** Typed content parts for agent turns (memo dev/39); absent on old turns. */
+  content?: AgentContentPart[];
 }
 
 export interface AgentSession {
@@ -360,6 +388,8 @@ export const agentsApi = {
     /** Execution identity + Actual usage (memo dev/37); absent on old servers. */
     executionId?: string;
     usage?: AgentUsage | null;
+    /** Typed content parts (memo dev/39); absent on old servers. */
+    content?: AgentContentPart[];
   }> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/run`,
@@ -383,7 +413,12 @@ export const agentsApi = {
     attachmentId: string,
     message: string,
     onDelta: (text: string) => void,
-  ): Promise<{ reply: string; executionId?: string; usage?: AgentUsage | null }> {
+  ): Promise<{
+    reply: string;
+    executionId?: string;
+    usage?: AgentUsage | null;
+    content?: AgentContentPart[];
+  }> {
     const token = getToken();
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -406,6 +441,7 @@ export const agentsApi = {
     let reply: string | null = null;
     let executionId: string | undefined;
     let usage: AgentUsage | null | undefined;
+    let content: AgentContentPart[] | undefined;
 
     const handleFrame = (frame: string) => {
       let event = "message";
@@ -421,13 +457,17 @@ export const agentsApi = {
         error?: string;
         executionId?: string;
         usage?: AgentUsage | null;
+        parts?: AgentContentPart[];
+        content?: AgentContentPart[];
       };
       if (event === "delta" && payload.text) onDelta(payload.text);
       else if (event === "execution") executionId = payload.executionId;
+      else if (event === "content") content = payload.parts;
       else if (event === "done") {
         reply = payload.reply ?? "";
         executionId = payload.executionId ?? executionId;
         usage = payload.usage;
+        content = payload.content ?? content;
       } else if (event === "error") throw new Error(payload.error || "agent run failed");
     };
 
@@ -445,6 +485,6 @@ export const agentsApi = {
     }
     if (buffer.trim()) handleFrame(buffer);
     if (reply === null) throw new Error("stream ended without a reply");
-    return { reply, executionId, usage };
+    return { reply, executionId, usage, content };
   },
 };

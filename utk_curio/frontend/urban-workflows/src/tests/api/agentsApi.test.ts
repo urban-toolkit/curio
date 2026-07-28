@@ -201,6 +201,34 @@ describe("agentsApi", () => {
       });
     });
 
+    it("parses the content event and the done content field (memo dev/39)", async () => {
+      const parts = [
+        { type: "suggestedPrompts", primary: "Next", alternatives: ["Alt"] },
+      ];
+      global.fetch = jest.fn().mockResolvedValue(
+        streamResponse([
+          'event: execution\ndata: {"executionId": "e1"}\n\n',
+          'event: delta\ndata: {"text": "hi"}\n\n',
+          `event: content\ndata: ${JSON.stringify({ parts })}\n\n`,
+          `event: done\ndata: ${JSON.stringify({ reply: "hi", executionId: "e1", usage: null, content: parts })}\n\n`,
+        ]),
+      );
+      const result = await agentsApi.runAttachmentStream("p1", "att-1", "hi", () => undefined);
+      expect(result.content).toEqual(parts);
+      expect(result.reply).toBe("hi");
+    });
+
+    it("takes content from the content event when done omits it (old-server shape)", async () => {
+      const parts = [{ type: "card", kind: "result", title: "T", lines: [] }];
+      global.fetch = jest.fn().mockResolvedValue(
+        streamResponse([
+          `event: content\ndata: ${JSON.stringify({ parts })}\n\nevent: done\ndata: {"reply": "hi"}\n\n`,
+        ]),
+      );
+      const result = await agentsApi.runAttachmentStream("p1", "att-1", "hi", () => undefined);
+      expect(result.content).toEqual(parts);
+    });
+
     it("skips unknown event names (forward tolerance)", async () => {
       global.fetch = jest.fn().mockResolvedValue(
         streamResponse([
