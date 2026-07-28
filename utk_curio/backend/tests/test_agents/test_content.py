@@ -1,0 +1,168 @@
+"""Tests for the typed content-part contracts + structured-tail parser
+(memo dev/39, DEC-043)."""
+
+from __future__ import annotations
+
+import json
+
+from utk_curio.backend.app.agents import content
+
+
+def _tail(payload: object) -> str:
+    return f"```curio.v1\n{json.dumps(payload)}\n```"
+
+
+PROMPTS = {"suggestedPrompts": {"primary": "Do the thing", "alternatives": ["Or this"]}}
+
+
+class TestSplitTail:
+    def test_no_fence_returns_reply_untouched(self):
+        assert content.split_tail("plain reply") == ("plain reply", None)
+
+    def test_terminal_block_is_split(self):
+        reply = "Here you go.\n\n" + _tail(PROMPTS)
+        visible, body = content.split_tail(reply)
+        assert visible == "Here you go."
+        assert json.loads(body) == PROMPTS
+
+    def test_trailing_whitespace_after_close_is_tolerated(self):
+        reply = "Text\n" + _tail(PROMPTS) + "\n  \n"
+        visible, body = content.split_tail(reply)
+        assert visible == "Text"
+        assert body is not None
+
+    def test_mid_reply_block_is_body_text(self):
+        reply = "Example:\n" + _tail(PROMPTS) + "\nAnd more prose after."
+        assert content.split_tail(reply) == (reply, None)
+
+    def test_reply_that_is_only_a_block(self):
+        reply = _tail(PROMPTS)
+        visible, body = content.split_tail(reply)
+        assert visible == ""
+        assert body is not None
+
+    def test_unclosed_fence_is_not_a_tail(self):
+        reply = "Text\n```curio.v1\n{\"suggestedPrompts\":"
+        assert content.split_tail(reply) == (reply, None)
+
+    def test_fence_not_at_line_start_is_not_a_tail(self):
+        reply = "inline ```curio.v1\n{}\n```"
+        assert content.split_tail(reply) == (reply, None)
+
+    def test_last_terminal_block_wins_over_earlier_quoted_one(self):
+        reply = "Syntax:\n" + _tail({"x": 1}) + "\nUse it like so.\n" + _tail(PROMPTS)
+        visible, body = content.split_tail(reply)
+        assert visible.endswith("Use it like so.")
+        assert json.loads(body) == PROMPTS
+
+
+class TestParseParts:
+    def test_suggested_prompts_parse(self):
+        parts = content.parse_parts(json.dumps(PROMPTS))
+        assert parts == [
+            {"type": "suggestedPrompts", "primary": "Do the thing", "alternatives": ["Or this"]}
+        ]
+
+    def test_alternatives_optional_and_deduped(self):
+        payload = {
+            "suggestedPrompts": {
+                "primary": "P",
+                "alternatives": ["A", "A", "P"],
+            }
+        }
+        (part,) = content.parse_parts(json.dumps(payload))
+        # Duplicates and primary-echoes are dropped, order kept.
+        assert part["alternatives"] == ["A"]
+
+    def test_cards_parse_in_order_before_prompts(self):
+        payload = {
+            "cards": [{"kind": "result", "title": "Created node", "lines": ["a", "b"]}],
+            **PROMPTS,
+        }
+        parts = content.parse_parts(json.dumps(payload))
+        assert [p["type"] for p in parts] == ["card", "suggestedPrompts"]
+        assert parts[0] == {
+            "type": "card",
+            "kind": "result",
+            "title": "Created node",
+            "lines": ["a", "b"],
+        }
+
+    def test_card_lines_optional(self):
+        payload = {"cards": [{"kind": "result", "title": "T"}]}
+        (card,) = content.parse_parts(json.dumps(payload))
+        assert card["lines"] == []
+
+    def test_unknown_top_level_keys_are_ignored(self):
+        payload = {**PROMPTS, "futurePartType": {"x": 1}}
+        parts = content.parse_parts(json.dumps(payload))
+        assert [p["type"] for p in parts] == ["suggestedPrompts"]
+
+    def test_unknown_only_payload_is_invalid(self):
+        assert content.parse_parts(json.dumps({"futurePartType": {}})) is None
+
+    def test_bad_json_is_invalid(self):
+        assert content.parse_parts("{not json") is None
+
+    def test_non_object_payload_is_invalid(self):
+        assert content.parse_parts(json.dumps([1, 2])) is None
+
+    def test_bounds_primary_length(self):
+        payload = {"suggestedPrompts": {"primary": "x" * 201}}
+        assert content.parse_parts(json.dumps(payload)) is None
+
+    def test_bounds_alternative_count(self):
+        payload = {"suggestedPrompts": {"primary": "P", "alternatives": ["a", "b", "c", "d"]}}
+        assert content.parse_parts(json.dumps(payload)) is None
+
+    def test_bounds_empty_primary(self):
+        payload = {"suggestedPrompts": {"primary": "   "}}
+        assert content.parse_parts(json.dumps(payload)) is None
+
+    def test_bounds_card_count_and_fields(self):
+        card = {"kind": "result", "title": "T"}
+        assert content.parse_parts(json.dumps({"cards": [card] * 5})) is None
+        assert content.parse_parts(json.dumps({"cards": [{"kind": "", "title": "T"}]})) is None
+        assert (
+            content.parse_parts(json.dumps({"cards": [{"kind": "k", "title": "x" * 121}]}))
+            is None
+        )
+        assert (
+            content.parse_parts(
+                json.dumps({"cards": [{"kind": "k", "title": "T", "lines": ["y" * 301]}]})
+            )
+            is None
+        )
+
+    def test_bounds_block_size(self):
+        payload = {"suggestedPrompts": {"primary": "P"}, "pad": "x" * 5000}
+        assert content.parse_parts(json.dumps(payload)) is None
+
+    def test_one_malformed_known_part_invalidates_the_block(self):
+        # Fail-open to text beats attaching half-validated content.
+        payload = {
+            "cards": [{"kind": "result", "title": "ok"}, {"kind": "bad"}],  # second lacks title
+        }
+        assert content.parse_parts(json.dumps(payload)) is None
+
+
+class TestExtractContent:
+    def test_valid_tail_is_stripped_and_typed(self):
+        reply = "Answer.\n" + _tail(PROMPTS)
+        visible, parts = content.extract_content(reply)
+        assert visible == "Answer."
+        assert parts[0]["type"] == "suggestedPrompts"
+
+    def test_invalid_tail_stays_visible_verbatim(self):
+        reply = "Answer.\n```curio.v1\n{broken\n```"
+        visible, parts = content.extract_content(reply)
+        assert visible == reply  # fail-open: nothing stripped, nothing lost
+        assert parts == []
+
+    def test_no_tail_passthrough(self):
+        assert content.extract_content("plain") == ("plain", [])
+
+    def test_reply_that_is_only_a_valid_block_yields_empty_text(self):
+        visible, parts = content.extract_content(_tail(PROMPTS))
+        assert visible == ""
+        assert len(parts) == 1
