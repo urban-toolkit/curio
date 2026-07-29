@@ -5,8 +5,11 @@
 .badges {
   position: absolute;
   top: 100%;
-  left: 50%;
-  transform: translate(-50%, 6px);
+  /* Left-aligned to the node's edge (memo dev/45): the row grows rightward,
+     so badge positions never shift with the number of attached agents
+     (the previous 50%/-50% center anchor re-centered the row per count). */
+  left: 0;
+  transform: translateY(6px);
   z-index: 5;
   display: flex;
   gap: 6px;
