@@ -114,3 +114,54 @@ class TestAccountSettingsRecord:
         account_settings.write_settings(UKEY, {}, 1)
         with pytest.raises(StaleRevisionError):
             account_settings.write_settings(UKEY, {}, 1)
+
+
+class TestAttachmentScope:
+    """The third, attached-instance policy layer (memo dev/42): resolves like
+    the second — downward only — and validates against the project-effective
+    parent."""
+
+    def test_attachment_layer_wins_only_downward(self):
+        eff = policy.effective(
+            {"quotas": {"runsPerDay": 50}},
+            {"quotas": {"runsPerDay": 20}},
+            {"quotas": {"runsPerDay": 5}},
+        )
+        assert eff["quotas"]["runsPerDay"] == {"value": 5, "source": "attachment"}
+        # A looser stored attachment value is clamped at read, never leaks.
+        eff = policy.effective(
+            {"quotas": {"runsPerDay": 50}},
+            {"quotas": {"runsPerDay": 20}},
+            {"quotas": {"runsPerDay": 999}},
+        )
+        assert eff["quotas"]["runsPerDay"] == {"value": 20, "source": "attachment"}
+
+    def test_absent_attachment_settings_change_nothing(self):
+        two = policy.effective({"quotas": {"runsPerDay": 50}}, {"quotas": {"runsPerDay": 20}})
+        three = policy.effective(
+            {"quotas": {"runsPerDay": 50}}, {"quotas": {"runsPerDay": 20}}, None
+        )
+        assert two == three
+
+    def test_attachment_budget_and_tokens_resolve(self):
+        eff = policy.effective(
+            {"cost": {"dailyBudgetUsd": 5.0}},
+            None,
+            {"cost": {"dailyBudgetUsd": 1.0}, "resources": {"maxOutputTokens": 256}},
+        )
+        assert eff["cost"]["dailyBudgetUsd"] == {"value": 1.0, "source": "attachment"}
+        assert eff["resources"]["maxOutputTokens"] == {"value": 256, "source": "attachment"}
+
+    def test_validate_patch_attachment_scope_tighten_only(self):
+        parent = policy.effective({"quotas": {"runsPerDay": 20}})
+        cleaned = policy.validate_patch({"quotas": {"runsPerDay": 5}}, "attachment", parent)
+        assert cleaned == {"quotas": {"runsPerDay": 5}}
+        with pytest.raises(policy.PolicyValidationError, match="may not exceed"):
+            policy.validate_patch({"quotas": {"runsPerDay": 21}}, "attachment", parent)
+
+    def test_estimate_is_not_editable_at_the_attachment_scope(self):
+        parent = policy.effective({})
+        with pytest.raises(policy.PolicyValidationError, match="not editable"):
+            policy.validate_patch(
+                {"cost": {"estimatedCostPerRunUsd": 0.1}}, "attachment", parent
+            )

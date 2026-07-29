@@ -1,18 +1,19 @@
-"""Effective agent policy: resolution + downward-only validation (memo ``dev/24``).
+"""Effective agent policy: resolution + downward-only validation (memos
+``dev/24``/``dev/42``).
 
 One resolver serves both the settings screens (display) and run admission
 (enforcement), so what a user sees is exactly what runs hit. Resolution per
-field is ``project ?? account ?? deployment``, **clamped downward at read** —
-a stored value looser than its parent scope's effective value can never leak
-through, even if it was legal when written. ``validate_patch`` additionally
-rejects loosening at write time with field-specific messages (memo ``dev/11``'s
-tighten-only rule).
+field is ``attachment ?? project ?? account ?? deployment``, **clamped
+downward at read** — a stored value looser than its parent scope's effective
+value can never leak through, even if it was legal when written.
+``validate_patch`` additionally rejects loosening at write time with
+field-specific messages (memo ``dev/11``'s tighten-only rule).
 
 v1 fields (all optional per scope):
-  quotas.runsPerDay              int > 0    account + project
-  cost.dailyBudgetUsd            number > 0 account + project
-  cost.estimatedCostPerRunUsd    number > 0 account only (pricing, not per-template)
-  resources.maxOutputTokens      int > 0    account + project
+  quotas.runsPerDay              int > 0    account + project + attachment
+  cost.dailyBudgetUsd            number > 0 account + project + attachment
+  cost.estimatedCostPerRunUsd    number > 0 account only (pricing, not per-instance)
+  resources.maxOutputTokens      int > 0    account + project + attachment
 """
 
 from __future__ import annotations
@@ -23,14 +24,14 @@ from utk_curio.backend.app.agents import quotas
 
 DEPLOYMENT_MAX_OUTPUT_TOKENS = 4096
 
-# section -> {key: (numeric_kind, account_allowed, project_allowed)}
-_FIELDS: dict[str, dict[str, tuple[str, bool, bool]]] = {
-    "quotas": {"runsPerDay": ("int", True, True)},
+# section -> {key: (numeric_kind, account_allowed, project_allowed, attachment_allowed)}
+_FIELDS: dict[str, dict[str, tuple[str, bool, bool, bool]]] = {
+    "quotas": {"runsPerDay": ("int", True, True, True)},
     "cost": {
-        "dailyBudgetUsd": ("number", True, True),
-        "estimatedCostPerRunUsd": ("number", True, False),
+        "dailyBudgetUsd": ("number", True, True, True),
+        "estimatedCostPerRunUsd": ("number", True, False, False),
     },
-    "resources": {"maxOutputTokens": ("int", True, True)},
+    "resources": {"maxOutputTokens": ("int", True, True, True)},
 }
 
 
@@ -61,7 +62,13 @@ def deployment_defaults() -> dict:
     }
 
 
-def _resolve(section: str, key: str, account: dict | None, project: dict | None) -> dict:
+def _resolve(
+    section: str,
+    key: str,
+    account: dict | None,
+    project: dict | None,
+    attachment: dict | None,
+) -> dict:
     dep = deployment_defaults()[section][key]
     value, source = dep, ("deployment" if dep is not None else None)
     acc = _value(account, section, key)
@@ -72,14 +79,26 @@ def _resolve(section: str, key: str, account: dict | None, project: dict | None)
     if proj is not None:
         value = min(proj, value) if value is not None else proj
         source = "project"
+    att = _value(attachment, section, key)
+    if att is not None:
+        value = min(att, value) if value is not None else att
+        source = "attachment"
     return {"value": value, "source": source}
 
 
-def effective(account_settings: dict | None, project_settings: dict | None = None) -> dict:
-    """The resolved policy with per-field provenance."""
+def effective(
+    account_settings: dict | None,
+    project_settings: dict | None = None,
+    attachment_settings: dict | None = None,
+) -> dict:
+    """The resolved policy with per-field provenance (memo dev/42: the third,
+    attached-instance layer resolves exactly like the second — downward only)."""
     out: dict = {}
     for section, keys in _FIELDS.items():
-        out[section] = {key: _resolve(section, key, account_settings, project_settings) for key in keys}
+        out[section] = {
+            key: _resolve(section, key, account_settings, project_settings, attachment_settings)
+            for key in keys
+        }
     budget = out["cost"]["dailyBudgetUsd"]["value"]
     estimate = out["cost"]["estimatedCostPerRunUsd"]["value"]
     # The estimated-budget gate is active only when both halves are configured.
@@ -87,16 +106,20 @@ def effective(account_settings: dict | None, project_settings: dict | None = Non
     return out
 
 
+_SCOPE_INDEX = {"account": 1, "project": 2, "attachment": 3}
+
+
 def validate_patch(settings: object, scope: str, parent_effective: dict) -> dict:
     """Validate a scope's settings payload against its parent's effective policy.
 
     Returns the cleaned settings dict (known fields only). *parent_effective*
     is ``effective(...)`` of the scope above: the deployment view for the
-    account scope, the account view for the project scope.
+    account scope, the account view for the project scope, the
+    project-effective view for the attachment scope (memo dev/42).
     """
     if not isinstance(settings, dict):
         raise PolicyValidationError("settings must be an object")
-    allowed_idx = 1 if scope == "account" else 2
+    allowed_idx = _SCOPE_INDEX.get(scope, 2)
     cleaned: dict = {}
     for section, body in settings.items():
         keys = _FIELDS.get(section)
