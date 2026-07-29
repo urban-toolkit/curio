@@ -2054,6 +2054,160 @@ class TestStructuredContent:
         assert r.get_json()["content"] == []
 
 
+class TestAttachmentSettings:
+    """The Attached-instance policy scope (memo dev/42): tighten-only
+    overrides on the attachment record, enforced per attachment."""
+
+    COORD = "agent.chat-agent@1.0.0"
+
+    def _attach(self, client, token, project_id):
+        client.post(f"/api/agents/projects/{project_id}/install", json={"coord": self.COORD}, headers=_auth(token))
+        r = client.post(
+            f"/api/agents/projects/{project_id}/attachments",
+            json={"coord": self.COORD, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        )
+        return r.get_json()["attachmentId"]
+
+    def _mock_run(self, monkeypatch):
+        from utk_curio.backend.app.agents import services as services_mod
+
+        seen = []
+
+        def _fake_run(config, messages, max_output_tokens=None, **kwargs):
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            seen.append(max_output_tokens)
+            return "ok"
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        return seen
+
+    def _get(self, client, token, project_id, att_id):
+        return client.get(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/settings",
+            headers=_auth(token),
+        )
+
+    def _patch(self, client, token, project_id, att_id, revision, settings):
+        return client.patch(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/settings",
+            json={"revision": revision, "settings": settings},
+            headers=_auth(token),
+        )
+
+    def test_get_returns_three_layer_effective(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        att_id = self._attach(client, token, alice_project)
+        body = self._get(client, token, alice_project, att_id).get_json()
+        assert body["attachmentId"] == att_id
+        assert body["settings"] == {}
+        assert body["revision"] == 1
+        assert body["effective"]["quotas"]["runsPerDay"]["source"] == "deployment"
+        assert body["effective"]["quotas"]["runsPerDay"]["usedToday"] == 0
+        assert "actualSpendTodayUsd" in body["effective"]["cost"]
+
+    def test_patch_tightens_and_binds(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        att_id = self._attach(client, token, alice_project)
+        r = self._patch(client, token, alice_project, att_id, 1, {"quotas": {"runsPerDay": 3}})
+        assert r.status_code == 200, r.get_data(as_text=True)
+        body = r.get_json()
+        assert body["settings"] == {"quotas": {"runsPerDay": 3}}
+        assert body["effective"]["quotas"]["runsPerDay"] == {
+            "value": 3, "source": "attachment", "usedToday": 0,
+        }
+        assert body["revision"] == 2
+
+    def test_patch_loosening_is_a_400(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        att_id = self._attach(client, token, alice_project)
+        r = self._patch(
+            client, token, alice_project, att_id, 1, {"quotas": {"runsPerDay": 999999}}
+        )
+        assert r.status_code == 400
+        assert "may not exceed" in r.get_json()["error"]
+
+    def test_estimate_not_editable_here(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        att_id = self._attach(client, token, alice_project)
+        r = self._patch(
+            client, token, alice_project, att_id, 1, {"cost": {"estimatedCostPerRunUsd": 0.1}}
+        )
+        assert r.status_code == 400
+        assert "not editable" in r.get_json()["error"]
+
+    def test_shared_revision_an_intent_edit_stales_a_settings_draft(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        att_id = self._attach(client, token, alice_project)
+        # An intent edit bumps the record's shared revision…
+        client.patch(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}",
+            json={"intent": "edited"}, headers=_auth(token),
+        )
+        # …so a settings PATCH drafted against revision 1 conflicts.
+        r = self._patch(client, token, alice_project, att_id, 1, {"quotas": {"runsPerDay": 3}})
+        assert r.status_code == 409
+
+    def test_clear_overrides_restores_the_project_profile(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        att_id = self._attach(client, token, alice_project)
+        self._patch(client, token, alice_project, att_id, 1, {"quotas": {"runsPerDay": 3}})
+        r = self._patch(client, token, alice_project, att_id, 2, {})
+        assert r.status_code == 200
+        body = r.get_json()
+        assert body["settings"] == {}
+        assert body["effective"]["quotas"]["runsPerDay"]["source"] == "deployment"
+
+    def test_attachment_limit_enforced_per_attachment(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        self._mock_run(monkeypatch)
+        _, token = user_and_token
+        att_a = self._attach(client, token, alice_project)
+        att_b = self._attach(client, token, alice_project)
+        self._patch(client, token, alice_project, att_a, 1, {"quotas": {"runsPerDay": 1}})
+        url_a = f"/api/agents/projects/{alice_project}/attachments/{att_a}/run"
+        url_b = f"/api/agents/projects/{alice_project}/attachments/{att_b}/run"
+        assert client.post(url_a, json={"message": "q"}, headers=_auth(token)).status_code == 200
+        r = client.post(url_a, json={"message": "q"}, headers=_auth(token))
+        assert r.status_code == 429
+        assert "attachment's run limit" in r.get_json()["error"]
+        assert r.get_json()["reason"] == "quota"
+        # The sibling attachment of the same template keeps running.
+        assert client.post(url_b, json={"message": "q"}, headers=_auth(token)).status_code == 200
+        # The binding-scope meter shows THIS attachment's count.
+        body = self._get(client, token, alice_project, att_a).get_json()
+        assert body["effective"]["quotas"]["runsPerDay"]["usedToday"] == 1
+
+    def test_tightened_max_output_tokens_reaches_the_provider_and_pins(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        seen = self._mock_run(monkeypatch)
+        _, token = user_and_token
+        att_id = self._attach(client, token, alice_project)
+        self._patch(
+            client, token, alice_project, att_id, 1, {"resources": {"maxOutputTokens": 256}}
+        )
+        client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q"}, headers=_auth(token),
+        )
+        assert seen[0] == 256
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        # DEC-031: the pins reflect the instance tightening, structurally.
+        assert turns[1]["execution"]["pins"]["policy"]["maxOutputTokens"] == 256
+
+    def test_settings_die_with_the_attachment(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        att_id = self._attach(client, token, alice_project)
+        self._patch(client, token, alice_project, att_id, 1, {"quotas": {"runsPerDay": 3}})
+        client.delete(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}",
+            headers=_auth(token),
+        )
+        assert self._get(client, token, alice_project, att_id).status_code == 404
+
+
 class TestLedgerAndPricing:
     """T3 (memo dev/40, DEC-044) on the run path: reservations settle with
     pinned prices, costUsd rides the execution record, the settings payloads

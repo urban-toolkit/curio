@@ -719,6 +719,95 @@ def clear_attachment_session(user_key: str, project_id: str, attachment_id: str)
     return {"attachmentId": attachment_id, "sessionId": session_id, "turns": []}
 
 
+# ── attachment settings (the Attached-instance scope, memo dev/42) ───────────
+def get_attachment_settings(
+    user_key: str, project_id: str, attachment_id: str, config: "ProviderConfig | None" = None
+) -> dict:
+    """The Attached-instance policy scope: the record's tighten-only overrides
+    plus the three-layer effective view. ``usedToday`` meters the **binding**
+    scope — an attachment-source limit shows this attachment's ledger count,
+    a project-source limit the template count, otherwise the account count —
+    so the meter always measures what the limit actually counts."""
+    spec = _read_spec_or_404(user_key, project_id)
+    record = _record_or_404(spec, attachment_id)
+    coord = record.get("coord", "")
+    m = _resolve_definition(user_key, coord)
+    acct = account_settings.read_record(user_key)["settings"]
+    project_record = project_agents.agent_defaults(spec).get(coord) or {}
+    attachment_settings = record.get("settings") or {}
+    eff = policy.effective(acct, project_record.get("settings") or {}, attachment_settings)
+    agg = ledger.aggregates(user_key)
+    runs = eff["quotas"]["runsPerDay"]
+    if runs["source"] == "attachment":
+        used = agg["byAttachment"].get(attachment_id, 0)
+    elif runs["source"] == "project":
+        used = agg["byTemplate"].get(f"{project_id}/{coord}", 0)
+    else:
+        used = agg["runs"]
+    estimate = eff["cost"]["estimatedCostPerRunUsd"]["value"]
+    summary = _pricing_summary(config)
+    return {
+        "attachmentId": attachment_id,
+        "coord": coord,
+        "name": m.name if m else coord,
+        "revision": record.get("revision", 1),
+        "settings": attachment_settings,
+        "effective": {
+            "quotas": {
+                "runsPerDay": {**runs, "usedToday": used},
+                "usageToday": quotas.usage_today(user_key),
+            },
+            "cost": {
+                **eff["cost"],
+                # Estimated spend is account-wide runs × the account estimate,
+                # exactly as the project scope reports it (memo dev/24).
+                "estimatedSpendTodayUsd": round(agg["runs"] * estimate, 6)
+                if estimate is not None
+                else None,
+                "actualSpendTodayUsd": _actual_spend_today(
+                    user_key, bool(summary and summary["priced"])
+                ),
+                "pricing": summary,
+            },
+            "resources": dict(eff["resources"]),
+        },
+    }
+
+
+def update_attachment_settings(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    revision: object,
+    settings: object,
+    config: "ProviderConfig | None" = None,
+) -> dict:
+    """PATCH the attachment's tighten-only overrides (memo dev/42): validated
+    against the **project-effective** policy, optimistic on the record's
+    shared revision (an intent/title edit invalidates a stale settings draft
+    — one record, one token), ``{"settings": {}}`` = *Clear overrides*."""
+    if not isinstance(revision, int):
+        raise AgentServiceError("revision must be an integer", 400)
+    spec = _read_spec_or_404(user_key, project_id)
+    record = _record_or_404(spec, attachment_id)
+    if record.get("revision", 1) != revision:
+        raise AgentServiceError(
+            f"attachment changed (revision {record.get('revision', 1)}, sent {revision})",
+            409,
+        )
+    coord = record.get("coord", "")
+    acct = account_settings.read_record(user_key)["settings"]
+    project_record = project_agents.agent_defaults(spec).get(coord) or {}
+    parent = policy.effective(acct, project_record.get("settings") or {})
+    try:
+        cleaned = policy.validate_patch(settings, "attachment", parent)
+    except PolicyValidationError as exc:
+        raise AgentServiceError(str(exc), 400) from exc
+    attachments.set_settings(spec, attachment_id, cleaned)
+    projects_storage.write_spec(user_key, project_id, spec)
+    return get_attachment_settings(user_key, project_id, attachment_id, config)
+
+
 # ── review-before-apply (memo dev/41) ────────────────────────────────────────
 def apply_proposal(
     user_key: str, project_id: str, attachment_id: str, proposal_id: str
@@ -917,27 +1006,39 @@ def _generate_conversation_title(
         pass  # a missing title is a cosmetic gap, never a run error
 
 
-def _run_policy(user_key: str, project_id: str, coord: str, spec: dict) -> dict:
-    """Admission + dispatch inputs from the effective policy (memo dev/24).
+def _run_policy(
+    user_key: str,
+    project_id: str,
+    coord: str,
+    spec: dict,
+    attachment_record: dict | None = None,
+) -> dict:
+    """Admission + dispatch inputs from the effective policy (memos dev/24/42).
 
-    ``template_limit`` applies only when the project scope is the tightest
-    source; the account counter is gated at the account-effective value."""
+    ``template_limit``/``attachment_limit`` apply only when their scope is the
+    tightest source; the account counter is gated at the account-effective
+    value. The attachment key is always recorded (ledger attribution)."""
     acct = account_settings.read_record(user_key)["settings"]
     record = project_agents.agent_defaults(spec).get(coord) or {}
+    attachment_settings = (attachment_record or {}).get("settings") or {}
     acc_eff = policy.effective(acct)
-    full_eff = policy.effective(acct, record.get("settings") or {})
+    full_eff = policy.effective(acct, record.get("settings") or {}, attachment_settings)
     runs = full_eff["quotas"]["runsPerDay"]
+    attachment_id = (attachment_record or {}).get("attachmentId")
     return {
         "admit": {
             "account_limit": acc_eff["quotas"]["runsPerDay"]["value"],
             "template_key": f"{project_id}/{coord}",
             "template_limit": runs["value"] if runs["source"] == "project" else None,
+            "attachment_key": attachment_id if isinstance(attachment_id, str) else None,
+            "attachment_limit": runs["value"] if runs["source"] == "attachment" else None,
             "daily_budget_usd": full_eff["cost"]["dailyBudgetUsd"]["value"],
             "estimated_cost_per_run_usd": full_eff["cost"]["estimatedCostPerRunUsd"]["value"],
         },
         "max_output_tokens": full_eff["resources"]["maxOutputTokens"]["value"],
         # Flat effective-policy snapshot pinned on the execution record
-        # (DEC-031): what was admitted, not where each value came from.
+        # (DEC-031): what was admitted, not where each value came from —
+        # instance tightening flows in with zero pins-code changes (dev/42).
         "policy_pins": {
             "runsPerDay": runs["value"],
             "maxOutputTokens": full_eff["resources"]["maxOutputTokens"]["value"],
@@ -1053,7 +1154,7 @@ def _prepare_run(
         and not record.get("titleEdited")
         and not any(t.get("role") == "user" for t in prior)
     )
-    run_policy = _run_policy(user_key, project_id, coord, spec)
+    run_policy = _run_policy(user_key, project_id, coord, spec, record)
     pins = {
         "coord": coord,
         "promptSha256": _prompt_digest(manifest),

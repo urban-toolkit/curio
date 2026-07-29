@@ -372,6 +372,50 @@ def clear_attachment_session(project_id: str, attachment_id: str):
 
 
 @agents_bp.route(
+    "/projects/<project_id>/attachments/<attachment_id>/settings", methods=["GET"]
+)
+@require_auth
+def get_attachment_settings(project_id: str, attachment_id: str):
+    """The Attached-instance policy scope (memo dev/42): tighten-only
+    overrides + the three-layer effective view with binding-scope metering."""
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        payload = agents_services.get_attachment_settings(
+            _user_dir_key(g.user), project_id, attachment_id, _optional_provider_config()
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify(payload), 200
+
+
+@agents_bp.route(
+    "/projects/<project_id>/attachments/<attachment_id>/settings", methods=["PATCH"]
+)
+@require_auth
+def update_attachment_settings(project_id: str, attachment_id: str):
+    """Edit the attachment's tighten-only overrides (memo dev/42);
+    ``{"settings": {}}`` is `Clear overrides` for this instance."""
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body.get("revision"), int):
+        return _error("body must include an integer 'revision'")
+    if not isinstance(body.get("settings"), dict):
+        return _error("body must include a 'settings' object")
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        payload = agents_services.update_attachment_settings(
+            _user_dir_key(g.user), project_id, attachment_id,
+            body["revision"], body["settings"], _optional_provider_config(),
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify(payload), 200
+
+
+@agents_bp.route(
     "/projects/<project_id>/attachments/<attachment_id>/proposals/<proposal_id>/apply",
     methods=["POST"],
 )
