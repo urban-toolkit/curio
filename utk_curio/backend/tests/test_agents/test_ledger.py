@@ -115,6 +115,43 @@ class TestLimits:
         assert _day_file().read_text(encoding="utf-8") == before
 
 
+class TestAttachmentLimits:
+    """Per-attachment enforcement records (memo dev/42): one field on the
+    reserve entry, one derived aggregate, gated in the same critical section."""
+
+    def test_attachment_counts_are_attributed(self, tmp_curio):
+        ledger.reserve(UKEY, account_limit=10, attachment_key="a1")
+        ledger.reserve(UKEY, account_limit=10, attachment_key="a1")
+        ledger.reserve(UKEY, account_limit=10, attachment_key="a2")
+        agg = ledger.aggregates(UKEY)
+        assert agg["byAttachment"] == {"a1": 2, "a2": 1}
+
+    def test_attachment_limit_gates_only_that_attachment(self, tmp_curio):
+        ledger.reserve(UKEY, account_limit=10, attachment_key="a1", attachment_limit=1)
+        with pytest.raises(QuotaExceeded) as exc:
+            ledger.reserve(UKEY, account_limit=10, attachment_key="a1", attachment_limit=1)
+        assert "attachment's run limit" in str(exc.value)
+        assert exc.value.reason == "quota"
+        # A sibling attachment of the same template keeps running.
+        ledger.reserve(UKEY, account_limit=10, attachment_key="a2", attachment_limit=1)
+
+    def test_key_without_limit_records_but_never_gates(self, tmp_curio):
+        for _ in range(3):
+            ledger.reserve(UKEY, account_limit=10, attachment_key="a1")
+        assert ledger.aggregates(UKEY)["byAttachment"]["a1"] == 3
+
+    def test_pre_dev42_entries_count_nothing_per_attachment(self, tmp_curio):
+        # Old reserve entries lack attachmentKey (or carry null) — tolerated.
+        ledger.reserve(UKEY, account_limit=10)  # attachment_key omitted → null
+        with open(_day_file(), "a", encoding="utf-8") as handle:
+            handle.write(
+                json.dumps({"kind": "reserve", "reservationId": "old", "ts": "t"}) + "\n"
+            )
+        agg = ledger.aggregates(UKEY)
+        assert agg["runs"] == 2
+        assert agg["byAttachment"] == {}
+
+
 class TestBudgetLadder:
     def test_estimate_holds_gate_the_budget(self, tmp_curio):
         # $0.30 budget, $0.10/run estimate → 3 admitted, 4th denied — the

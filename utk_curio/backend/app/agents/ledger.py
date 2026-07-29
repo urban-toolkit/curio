@@ -199,6 +199,7 @@ def _cost_usd(price: dict | None, usage: dict | None) -> float | None:
 def _aggregate(entries: list[dict]) -> dict:
     runs = 0
     by_template: dict[str, int] = {}
+    by_attachment: dict[str, int] = {}
     usage = dict(_ZERO_USAGE)
     actual = 0.0
     reserves: dict[str, float | None] = {}  # reservationId -> holdUsd
@@ -222,6 +223,9 @@ def _aggregate(entries: list[dict]) -> dict:
             template_key = entry.get("templateKey")
             if isinstance(template_key, str):
                 by_template[template_key] = by_template.get(template_key, 0) + 1
+            attachment_key = entry.get("attachmentKey")
+            if isinstance(attachment_key, str):  # absent on pre-dev/42 entries
+                by_attachment[attachment_key] = by_attachment.get(attachment_key, 0) + 1
         elif kind == "settle":
             rid = entry.get("reservationId")
             if not isinstance(rid, str) or rid in settled:
@@ -247,6 +251,7 @@ def _aggregate(entries: list[dict]) -> dict:
     return {
         "runs": runs,
         "byTemplate": by_template,
+        "byAttachment": by_attachment,
         "usage": usage,
         "actualSpendUsd": round(actual, 6),
         "heldUsd": round(held, 6),
@@ -305,6 +310,8 @@ def reserve(
     account_limit: int,
     template_key: str | None = None,
     template_limit: int | None = None,
+    attachment_key: str | None = None,
+    attachment_limit: int | None = None,
     daily_budget_usd: float | None = None,
     estimated_cost_per_run_usd: float | None = None,
     price: dict | None = None,
@@ -313,11 +320,14 @@ def reserve(
     """Atomically admit one run, or raise :class:`QuotaExceeded`.
 
     One critical section owns admission: read the day's aggregates, check the
-    account limit → the template limit → the budget spend ladder, append the
-    reserve entry. Two concurrent last-slot attempts serialize; exactly one
-    admits (`REQ-QUOTA-001`). *price* is the immutable snapshot pinned for
-    settlement (`dev/05`:1242); a table edit mid-day never rewrites what an
-    earlier run was charged. Denial appends and consumes nothing."""
+    account limit → the template limit → the attachment limit (dev/42) → the
+    budget spend ladder, append the reserve entry. Two concurrent last-slot
+    attempts serialize; exactly one admits (`REQ-QUOTA-001`). *price* is the
+    immutable snapshot pinned for settlement (`dev/05`:1242); a table edit
+    mid-day never rewrites what an earlier run was charged.
+    ``attachment_key`` is always recorded when given (attribution);
+    ``attachment_limit`` gates only when an attachment-scope runs/day limit
+    binds. Denial appends and consumes nothing."""
     now = _now()
     day = now.date().isoformat()
     with _locked(user_key):
@@ -336,6 +346,12 @@ def reserve(
             if agg["byTemplate"].get(template_key, 0) >= template_limit:
                 raise QuotaExceeded(
                     f"this agent's project run limit is reached ({template_limit}/day)",
+                    _reset_at(now),
+                )
+        if attachment_key is not None and attachment_limit is not None:
+            if agg["byAttachment"].get(attachment_key, 0) >= attachment_limit:
+                raise QuotaExceeded(
+                    f"this attachment's run limit is reached ({attachment_limit}/day)",
                     _reset_at(now),
                 )
         hold: float | None = None
@@ -374,6 +390,7 @@ def reserve(
                 "reservationId": rid,
                 "ts": now.isoformat(),
                 "templateKey": template_key,
+                "attachmentKey": attachment_key,
                 "holdUsd": hold,
                 "holdSource": "estimate" if hold is not None else None,
                 "price": price,
