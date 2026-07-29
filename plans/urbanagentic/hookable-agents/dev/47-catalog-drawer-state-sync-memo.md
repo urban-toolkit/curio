@@ -1,7 +1,7 @@
 # Implementation Memo: Agents Catalog Drawer — Tab Transitions + Installation-State Consistency
 
 Date: 2026-07-29
-Status: proposed (implementing in the same session — explicit fix request)
+Status: implemented (COMMIT-942e5c31 backend, COMMIT-ab9e92d7 frontend)
 Feature slice: rendering transition + state synchronization only; layout and the approved per-scope action patterns are untouched.
 
 ## 1. Problem Statement (root causes, confirmed in code)
@@ -32,12 +32,14 @@ Backend: `list_my_imports` with `projectId` marks an imported+installed built-in
 
 ## 5. Acceptance Criteria
 
-- [ ] Tab changes never blank or flash previously loaded content; only a scope's first fetch shows `Loading…`.
-- [ ] An imported + installed agent (Node Content Builder verified by test) shows **Uninstall** on every tab that lists it; imported/installed/published states come from one source of truth (lockfile / imports registry / publications) on every scope.
-- [ ] A lifecycle action updates all tabs and the palette immediately and consistently.
-- [ ] Layout, per-scope actions, and drawer chrome unchanged.
+- [x] Tab changes never blank or flash previously loaded content; only a scope's first fetch shows `Loading…` (cached-tab-switch + first-visit tests).
+- [x] An imported + installed agent (Node Content Builder verified by test) shows **Uninstall** on every tab that lists it; imported/installed/published states come from one source of truth (lockfile / imports registry / publications) on every scope (`TestMyImportsInstalledState`, drawer Uninstall-flip test).
+- [x] A lifecycle action updates all tabs and the palette immediately and consistently (all-three-endpoints refresh test; palette already synced via `notifyAgentsPaletteRefresh`).
+- [x] Layout, per-scope actions, and drawer chrome unchanged (all pre-existing drawer/row/settings tests pass unmodified).
 
 ## 6. Commits
 
-1. `fix(agents): My Imports reads installed state from the project lockfile, with tests`.
-2. `fix(agents): drawer per-scope cache — stale-while-revalidate tabs, race guard, all-scope refresh after actions, with tests` (+ this memo).
+1. `COMMIT-942e5c31` — My Imports reads installed state from the project lockfile (backend + route + 3 tests + this memo).
+2. `COMMIT-ab9e92d7` — drawer per-scope cache: stale-while-revalidate tabs, race guard, all-scope refresh after actions (+ 6 tests).
+
+Verification: backend `pytest tests --ignore=tests/test_frontend` → 405 passed (test_agents); frontend `npx jest` full → 617 passed (56 suites); tsc unchanged (pre-existing tsconfig deprecation warnings only).

@@ -201,3 +201,21 @@ Build Entry Template and are append-only.
 - Issues/regressions discovered: none.
 - Follow-up work: per-attachment budget *attribution* (only if the account-wide budget semantic proves insufficient); the Imported-definition scope remains v2 governance (`DEC-036`/`DEC-038`).
 - Remaining risks/questions: none new.
+
+---
+
+## BL-P3-20260729-12: Catalog drawer tab transitions + installation-state consistency (memo dev/47)
+
+- Date / author: 2026-07-29 / Karla
+- Status: verified
+- Requirements: post-implementation testing feedback (explicit fix request) — smooth tab changes, one source of truth for imported/installed/published, immediate cross-surface consistency (tabs, drawer, Agents Palette)
+- Design decisions/artifacts: memo `dev/47` — no new DEC consumed; follows the Nodes/Datasets drawers' load-once/reload-in-place transition behavior and the lockfile-as-truth precedent already used by the Global scope
+- Tasks: `TASK-P3-drawer-state-sync`
+- Risks/questions: none new — the palette was already synchronized (`notifyAgentsPaletteRefresh`); pre-existing `AgentRow` action logic untouched (it was fed wrong data, not wrong itself)
+- Design-to-code decision or deviation: **(1) Backend truth** — `services.list_my_imports(user_key, project_id=None)` reads `project_agents.project_agents(spec)` (the lockfile) and marks `installedInProject` per coordinate; `GET /api/agents/imports?projectId=` passes it through; without a project the prior behavior (all `false`) is preserved. This closes the hardcoded `installed_in_project=False` that made an installed Node Content Builder show an active Install on My Imports. **(2) Frontend cache** — `useAgentsCatalogDrawer` becomes a per-scope `cardsByScope` cache with stale-while-revalidate tabs: switching renders the cache instantly, refreshes in the background, and `loading` is true only for a scope's first-ever fetch; a per-scope request sequence (`seqRef`) drops out-of-order responses; errors keep cached rows (banner over content); every lifecycle action refreshes **all** scopes in parallel (`Promise.allSettled`) after `notifyAgentsPaletteRefresh`, so all tabs agree immediately; the cache invalidates wholesale on `projectId` change. `agentsApi.listImports(projectId?)` forwards the query param.
+- Files/modules changed: backend `app/agents/{services.py,routes.py}`; frontend `api/agentsApi.ts`, `components/agents/catalog/useAgentsCatalogDrawer.ts`
+- Tests added/updated: backend `test_routes.py` `TestMyImportsInstalledState` (3: imported+installed→true with projectId, imported-only→false, no projectId→false); frontend drawer suite +6 (cached tab renders instantly with no `Loading…` reset; installed import shows Uninstall — the Node Content Builder regression by name; My Imports fetched with the open project id; a lifecycle action re-hits all three list endpoints; refresh error keeps cached rows; out-of-order response dropped)
+- Verification evidence: backend agents suite 405 passed; frontend `npx jest` full → 617 passed (56 suites); tsc unchanged (pre-existing tsconfig deprecation warnings only)
+- Commit/PR: `COMMIT-942e5c31` (backend), `COMMIT-ab9e92d7` (frontend)
+- Issues/regressions discovered: none.
+- Follow-up work: none for this slice.
