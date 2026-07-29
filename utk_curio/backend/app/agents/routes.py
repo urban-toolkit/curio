@@ -48,7 +48,13 @@ def list_catalog():
 @agents_bp.route("/imports", methods=["GET"])
 @require_auth
 def list_imports():
-    return jsonify({"agents": agents_services.list_my_imports(_user_dir_key(g.user))}), 200
+    """Optional ``?projectId=`` marks which imports are installed in that
+    project (memo dev/47 — the lockfile is the one source of truth)."""
+    project_id = request.args.get("projectId") or None
+    return (
+        jsonify({"agents": agents_services.list_my_imports(_user_dir_key(g.user), project_id)}),
+        200,
+    )
 
 
 @agents_bp.route("/imports", methods=["POST"])

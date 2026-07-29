@@ -274,9 +274,19 @@ def list_global_catalog(user_key: str, project_id: str | None = None) -> list[di
     ]
 
 
-def list_my_imports(user_key: str) -> list[dict]:
-    """Account "My Imports": each imported coordinate whose definition resolves."""
+def list_my_imports(user_key: str, project_id: str | None = None) -> list[dict]:
+    """Account "My Imports": each imported coordinate whose definition resolves.
+
+    With *project_id*, ``installedInProject`` is read from the project's
+    lockfile — the same single source of truth the Global scope uses (memo
+    dev/47; previously hardcoded False, so an installed agent's row could
+    show an active Install on this tab)."""
     imported = imports.load_imported_agents(user_key)
+    installed: set[str] = set()
+    if project_id:
+        spec = projects_storage.read_spec(user_key, project_id)
+        if spec is not None:
+            installed = set(project_agents.project_agents(spec))
     out: list[dict] = []
     for coord in sorted(imported):
         m = _resolve_definition(user_key, coord)
@@ -289,7 +299,7 @@ def list_my_imports(user_key: str) -> list[dict]:
                 m,
                 scope="my-imports",
                 imported=True,
-                installed_in_project=False,
+                installed_in_project=coord in installed,
                 published=publications.is_published(coord),
                 publishable=(m.provenance.trust == "imported"),
             )

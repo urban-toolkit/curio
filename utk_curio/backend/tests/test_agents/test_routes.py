@@ -1388,6 +1388,46 @@ class TestToolGrants:
         assert turns[1]["execution"]["pins"]["tools"] == ["ghost.tool"]
 
 
+class TestMyImportsInstalledState:
+    """My Imports reads installedInProject from the project lockfile — the one
+    source of truth (memo dev/47; the Node Content Builder regression)."""
+
+    COORD = "agent.node-content-builder@1.0.0"
+
+    def test_imported_and_installed_shows_installed(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        client.post("/api/agents/imports", json={"coord": self.COORD}, headers=_auth(token))
+        client.post(
+            f"/api/agents/projects/{alice_project}/install",
+            json={"coord": self.COORD}, headers=_auth(token),
+        )
+        cards = client.get(
+            f"/api/agents/imports?projectId={alice_project}", headers=_auth(token)
+        ).get_json()["agents"]
+        card = next(c for c in cards if c["dirName"] == self.COORD)
+        assert card["installedInProject"] is True
+
+    def test_imported_but_not_installed_shows_not_installed(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        client.post("/api/agents/imports", json={"coord": self.COORD}, headers=_auth(token))
+        cards = client.get(
+            f"/api/agents/imports?projectId={alice_project}", headers=_auth(token)
+        ).get_json()["agents"]
+        card = next(c for c in cards if c["dirName"] == self.COORD)
+        assert card["installedInProject"] is False
+
+    def test_without_project_id_behaves_as_before(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        client.post("/api/agents/imports", json={"coord": self.COORD}, headers=_auth(token))
+        client.post(
+            f"/api/agents/projects/{alice_project}/install",
+            json={"coord": self.COORD}, headers=_auth(token),
+        )
+        cards = client.get("/api/agents/imports", headers=_auth(token)).get_json()["agents"]
+        card = next(c for c in cards if c["dirName"] == self.COORD)
+        assert card["installedInProject"] is False  # no project context given
+
+
 class TestRunContext:
     """The ephemeral grounded-context pipeline (memo dev/44): client-composed
     live-canvas inputs ride one provider message per send — fresh every time,
