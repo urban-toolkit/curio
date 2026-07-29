@@ -3,6 +3,7 @@ import ModalShell from "../../ModalShell";
 import {
   agentsApi,
   type AgentPolicySettings,
+  type AgentPricingSummary,
   type AgentUsage,
   type EffectivePolicy,
 } from "../../../api/agentsApi";
@@ -29,6 +30,9 @@ interface Loaded {
   usedToday: number;
   /** Actual tokens counted today (memo dev/37); zeros when the server has none. */
   usageToday: AgentUsage;
+  /** Actual USD settled today (memo dev/40); null until anything real exists. */
+  actualSpendTodayUsd: number | null;
+  pricing: AgentPricingSummary | null;
   ceilings?: { quotas: { runsPerDay: number }; resources: { maxOutputTokens: number } };
   name?: string;
 }
@@ -94,7 +98,13 @@ export const AgentSettingsModal: React.FC<{
       let loaded: Loaded;
       if (scope === "account") {
         const r = await agentsApi.getAgentSettings();
-        loaded = { ...r, usedToday: r.usedToday, usageToday: r.usageToday ?? NO_USAGE };
+        loaded = {
+          ...r,
+          usedToday: r.usedToday,
+          usageToday: r.usageToday ?? NO_USAGE,
+          actualSpendTodayUsd: r.actualSpendTodayUsd ?? null,
+          pricing: r.pricing ?? null,
+        };
       } else {
         if (!projectId || !coord) throw new Error("no project");
         const r = await agentsApi.getProjectAgentDefaults(projectId, coord);
@@ -104,6 +114,8 @@ export const AgentSettingsModal: React.FC<{
           effective: r.effective,
           usedToday: r.effective.quotas.runsPerDay.usedToday ?? 0,
           usageToday: r.effective.quotas.usageToday ?? NO_USAGE,
+          actualSpendTodayUsd: r.effective.cost.actualSpendTodayUsd ?? null,
+          pricing: r.effective.cost.pricing ?? null,
           name: r.name,
         };
       }
@@ -136,6 +148,8 @@ export const AgentSettingsModal: React.FC<{
     effective: EffectivePolicy;
     usedToday?: number;
     usageToday?: AgentUsage;
+    actualSpendTodayUsd?: number | null;
+    pricing?: AgentPricingSummary | null;
     ceilings?: Loaded["ceilings"];
     name?: string;
   }) => {
@@ -145,6 +159,9 @@ export const AgentSettingsModal: React.FC<{
       effective: r.effective,
       usedToday: r.usedToday ?? r.effective.quotas.runsPerDay.usedToday ?? 0,
       usageToday: r.usageToday ?? r.effective.quotas.usageToday ?? NO_USAGE,
+      actualSpendTodayUsd:
+        r.actualSpendTodayUsd ?? r.effective.cost.actualSpendTodayUsd ?? null,
+      pricing: r.pricing ?? r.effective.cost.pricing ?? null,
       ceilings: r.ceilings ?? data?.ceilings,
       name: r.name ?? data?.name,
     };
@@ -285,16 +302,33 @@ export const AgentSettingsModal: React.FC<{
                     {eff.cost.estimatedCostPerRunUsd.value ?? "not set"} (account-scope setting).
                   </p>
                 )}
+                {/* Gate status (memo dev/40): estimate-gated, actual-gated,
+                    fail-closed (a budget with neither estimate nor price
+                    blocks runs — REQ-COST-001), or off. */}
                 <p className={styles.meta}>
                   {eff.cost.configured
                     ? `Estimated spend today: ${data.usedToday} runs × $${eff.cost.estimatedCostPerRunUsd.value} ≈ $${(
                         eff.cost.estimatedSpendTodayUsd ??
                         data.usedToday * (eff.cost.estimatedCostPerRunUsd.value ?? 0)
-                      ).toFixed(2)}`
-                    : "The budget gate is inactive until both a budget and an estimate are set."}
-                  {` · Actual: ${
-                    data.usageToday.inputTokens + data.usageToday.outputTokens
-                  } tokens today — USD pricing arrives with the price table.`}
+                      ).toFixed(2)} (estimated)`
+                    : eff.cost.dailyBudgetUsd.value != null && data.pricing?.priced
+                      ? "The budget gate is active on actual provider-priced spend."
+                      : eff.cost.dailyBudgetUsd.value != null
+                        ? "A daily budget is set but no estimate or price is configured — runs are blocked until one is provided or the budget is cleared."
+                        : "The budget gate is inactive until a daily budget is set."}
+                </p>
+                {/* The Actual line (memos dev/11/37/40): provider-grounded or
+                    honestly absent — never an estimate, never a fake $0.00. */}
+                <p className={styles.meta}>
+                  {data.pricing?.priced && data.actualSpendTodayUsd != null
+                    ? `Actual: $${data.actualSpendTodayUsd.toFixed(4)} today · ${data.usageToday.inputTokens} in / ${data.usageToday.outputTokens} out tokens (provider-reported)${
+                        data.pricing.effectiveDate
+                          ? ` · pricing effective ${data.pricing.effectiveDate}`
+                          : ""
+                      }`
+                    : `Actual: ${data.usageToday.inputTokens} in / ${data.usageToday.outputTokens} out tokens today — no USD price configured${
+                        data.pricing ? ` for ${data.pricing.provider} · ${data.pricing.model}` : ""
+                      }.`}
                 </p>
               </section>
             ) : null}

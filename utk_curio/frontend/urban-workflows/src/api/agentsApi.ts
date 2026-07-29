@@ -190,6 +190,15 @@ export interface EffectiveField {
   source: "deployment" | "account" | "project" | null;
 }
 
+/** No-secrets pricing view for the Cost screen (memo dev/40): the caller's
+ * provider/model, whether a deployment price exists, and its effective date. */
+export interface AgentPricingSummary {
+  provider: string;
+  model: string;
+  priced: boolean;
+  effectiveDate: string | null;
+}
+
 export interface EffectivePolicy {
   quotas: {
     runsPerDay: EffectiveField & { usedToday?: number };
@@ -201,6 +210,10 @@ export interface EffectivePolicy {
     estimatedCostPerRunUsd: EffectiveField;
     configured: boolean;
     estimatedSpendTodayUsd?: number | null;
+    /** Actual USD settled this window (memo dev/40) — Actual or null, never
+     * an estimate and never a fabricated $0.00 for unpriced deployments. */
+    actualSpendTodayUsd?: number | null;
+    pricing?: AgentPricingSummary | null;
   };
   resources: { maxOutputTokens: EffectiveField; provider?: string; model?: string };
 }
@@ -218,6 +231,9 @@ export interface AccountAgentSettings {
   usedToday: number;
   /** Actual tokens counted this window (memo dev/37); absent on old payloads. */
   usageToday?: AgentUsage;
+  /** Actual USD settled this window (memo dev/40); null until real. */
+  actualSpendTodayUsd?: number | null;
+  pricing?: AgentPricingSummary | null;
 }
 
 /** The project-agent-default scope for one installed template (memos dev/23/24). */

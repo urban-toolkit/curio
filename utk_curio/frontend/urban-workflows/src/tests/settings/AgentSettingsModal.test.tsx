@@ -134,15 +134,100 @@ describe("AgentSettingsModal — account scope", () => {
     render(<AgentSettingsModal scope="account" onClose={onClose} />);
     await waitFor(() => expect(screen.getByLabelText(/runs per day/i)).toBeInTheDocument());
     fireEvent.click(screen.getByText("Cost"));
-    expect(screen.getByText(/inactive until both a budget and an estimate/i)).toBeInTheDocument();
-    // Honest Actual line (memo dev/37): tokens are real, USD awaits the T3
-    // price table — no fake numbers anywhere.
-    expect(screen.getByText(/Actual: 165 tokens today/)).toBeInTheDocument();
-    expect(screen.getByText(/USD pricing arrives with the price table/)).toBeInTheDocument();
+    expect(screen.getByText(/inactive until a daily budget is set/i)).toBeInTheDocument();
+    // Honest Actual line (memos dev/11/37/40): tokens are real; without a
+    // deployment price the missing USD is named, never faked.
+    expect(
+      screen.getByText(/Actual: 120 in \/ 45 out tokens today — no USD price configured/),
+    ).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(/daily budget/i), { target: { value: "5" } });
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(onClose).not.toHaveBeenCalled(); // dirty + declined confirm
     confirmSpy.mockRestore();
+  });
+});
+
+describe("AgentSettingsModal — Actual USD states (memo dev/40)", () => {
+  it("priced deployments show Actual USD, tokens, and the effective date", async () => {
+    api.getAgentSettings.mockResolvedValue({
+      ...accountPayload,
+      actualSpendTodayUsd: 4.5,
+      pricing: {
+        provider: "anthropic",
+        model: "claude-sonnet-5",
+        priced: true,
+        effectiveDate: "2026-07-01",
+      },
+    } as any);
+    render(<AgentSettingsModal scope="account" onClose={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText("Account policy")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Cost"));
+    expect(
+      screen.getByText(/Actual: \$4\.5000 today · 120 in \/ 45 out tokens \(provider-reported\) · pricing effective 2026-07-01/),
+    ).toBeInTheDocument();
+  });
+
+  it("unpriced deployments name the missing price for the provider · model", async () => {
+    api.getAgentSettings.mockResolvedValue({
+      ...accountPayload,
+      actualSpendTodayUsd: null,
+      pricing: {
+        provider: "openai_compatible",
+        model: "gemma4",
+        priced: false,
+        effectiveDate: null,
+      },
+    } as any);
+    render(<AgentSettingsModal scope="account" onClose={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText("Account policy")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Cost"));
+    expect(
+      screen.getByText(/no USD price configured for openai_compatible · gemma4/),
+    ).toBeInTheDocument();
+  });
+
+  it("a budget with neither estimate nor price shows the fail-closed state", async () => {
+    api.getAgentSettings.mockResolvedValue({
+      ...accountPayload,
+      effective: {
+        ...effective,
+        cost: {
+          ...effective.cost,
+          dailyBudgetUsd: { value: 5, source: "account" },
+        },
+      },
+      pricing: {
+        provider: "openai_compatible",
+        model: "gemma4",
+        priced: false,
+        effectiveDate: null,
+      },
+    } as any);
+    render(<AgentSettingsModal scope="account" onClose={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText("Account policy")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Cost"));
+    expect(screen.getByText(/runs are blocked until one is provided/)).toBeInTheDocument();
+  });
+
+  it("a budget with a price gates on actual spend", async () => {
+    api.getAgentSettings.mockResolvedValue({
+      ...accountPayload,
+      actualSpendTodayUsd: 0,
+      effective: {
+        ...effective,
+        cost: {
+          ...effective.cost,
+          dailyBudgetUsd: { value: 5, source: "account" },
+        },
+      },
+      pricing: { provider: "anthropic", model: "m", priced: true, effectiveDate: null },
+    } as any);
+    render(<AgentSettingsModal scope="account" onClose={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText("Account policy")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Cost"));
+    expect(
+      screen.getByText(/budget gate is active on actual provider-priced spend/),
+    ).toBeInTheDocument();
   });
 });
 
