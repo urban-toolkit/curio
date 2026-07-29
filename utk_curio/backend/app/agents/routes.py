@@ -354,6 +354,47 @@ def clear_attachment_session(project_id: str, attachment_id: str):
     return jsonify(payload), 200
 
 
+@agents_bp.route(
+    "/projects/<project_id>/attachments/<attachment_id>/proposals/<proposal_id>/apply",
+    methods=["POST"],
+)
+@require_auth
+def apply_proposal(project_id: str, attachment_id: str, proposal_id: str):
+    """Apply a pending review proposal (memo dev/41) — the only mutation path.
+
+    Explicit, owner-authenticated, revision-safe: a drifted target returns a
+    409 and marks the proposal stale. Consumes no quota."""
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        payload = agents_services.apply_proposal(
+            _user_dir_key(g.user), project_id, attachment_id, proposal_id
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify(payload), 200
+
+
+@agents_bp.route(
+    "/projects/<project_id>/attachments/<attachment_id>/proposals/<proposal_id>",
+    methods=["DELETE"],
+)
+@require_auth
+def dismiss_proposal(project_id: str, attachment_id: str, proposal_id: str):
+    """Dismiss a pending review proposal without applying it."""
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        payload = agents_services.dismiss_proposal(
+            _user_dir_key(g.user), project_id, attachment_id, proposal_id
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify(payload), 200
+
+
 @agents_bp.route("/projects/<project_id>/attachments/<attachment_id>/run", methods=["POST"])
 @require_auth
 def run_attachment(project_id: str, attachment_id: str):

@@ -1618,6 +1618,259 @@ class TestToolLoop:
         )
 
 
+class TestReviewProposals:
+    """Review-before-apply (memo dev/41, DEC-006/REQ-REVIEW-001): the model
+    proposes, only the authenticated endpoint applies, digest-checked."""
+
+    COORD = "agent.node-content-builder@1.0.0"
+
+    def _mutate_tail(self, node_id="n1", new_content="print(2)"):
+        return (
+            '```curio.v1\n{"toolRequest": {"tool": "node.content.write", '
+            f'"params": {{"nodeId": "{node_id}", "content": "{new_content}"}}}}}}\n```'
+        )
+
+    def _setup(self, client, token, project_id, monkeypatch, replies=None):
+        """Save a node, attach the builder, and mock a mint-then-answer run."""
+        r = client.put(
+            f"/api/projects/{project_id}",
+            json={"name": "p", "spec": {"dataflow": {"nodes": [{"id": "n1", "content": "print(1)"}], "edges": [], "packages": []}}, "outputs": []},
+            headers=_auth(token),
+        )
+        assert r.status_code == 200
+        client.post(f"/api/agents/projects/{project_id}/install", json={"coord": self.COORD}, headers=_auth(token))
+        att_id = client.post(
+            f"/api/agents/projects/{project_id}/attachments",
+            json={"coord": self.COORD, "target": {"kind": "node", "targetId": "n1"}},
+            headers=_auth(token),
+        ).get_json()["attachmentId"]
+        calls = []
+        script = replies or [self._mutate_tail(), "Proposed — review it above."]
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            return script[min(len(calls) - 1, len(script) - 1)]
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        return att_id, calls
+
+    def _run(self, client, token, project_id, att_id, message="write it"):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/run",
+            json={"message": message}, headers=_auth(token),
+        )
+
+    def _turns(self, client, token, project_id, att_id):
+        return client.get(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+
+    def _spec_node_content(self, user, project_id, node_id="n1"):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        spec = projects_storage.read_spec(_user_dir_key(user), project_id)
+        node = next(n for n in spec["dataflow"]["nodes"] if n["id"] == node_id)
+        return node.get("content")
+
+    def _proposal_from_run(self, response):
+        body = response.get_json()
+        return next(p for p in body["content"] if p["type"] == "proposal")
+
+    def test_mutate_request_mints_a_pending_proposal(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, calls = self._setup(client, token, alice_project, monkeypatch)
+        r = self._run(client, token, alice_project, att_id)
+        assert r.status_code == 200
+        proposal = self._proposal_from_run(r)
+        assert proposal["status"] == "pending"
+        assert proposal["pins"]["nodeId"] == "n1"
+        assert proposal["preview"] == "print(2)"
+        # Nothing mutated; the model was told it awaits review.
+        assert self._spec_node_content(user, alice_project) == "print(1)"
+        assert "awaits the user's explicit review" in calls[1][-1]["content"]
+        # The proposal part persisted with the turn; the mirror is pending.
+        turns = self._turns(client, token, alice_project, att_id)
+        persisted = next(p for p in turns[1]["content"] if p["type"] == "proposal")
+        assert persisted["proposalId"] == proposal["proposalId"]
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        assert cards[0]["activeProposal"]["status"] == "pending"
+
+    def test_stream_emits_review_required_before_done(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        _, token = user_and_token
+        att_id, _ = self._setup(client, token, alice_project, monkeypatch)
+        script = [self._mutate_tail(), "Proposed."]
+        calls = []
+
+        def _fake_stream(config, messages, **kwargs):
+            calls.append(messages)
+            yield script[min(len(calls) - 1, 1)]
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
+        )
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
+            json={"message": "write it"}, headers=_auth(token),
+        )
+        events = []
+        for block in r.get_data(as_text=True).strip().split("\n\n"):
+            lines = dict(l.split(": ", 1) for l in block.splitlines() if ": " in l)
+            events.append((lines["event"], json.loads(lines["data"])))
+        kinds = [k for k, _ in events]
+        assert kinds.index("tool_result") < kinds.index("review_required") < kinds.index("done")
+        review = next(p for k, p in events if k == "review_required")
+        assert review["tool"] == "node.content.write"
+        assert review["proposalId"]
+        done = events[-1][1]
+        assert any(p["type"] == "proposal" for p in done["content"])
+
+    def test_apply_executes_the_write_and_logs_a_result_turn(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.agents import quotas
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        att_id, _ = self._setup(client, token, alice_project, monkeypatch)
+        proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
+        runs_before = quotas.runs_used_today(_user_dir_key(user))
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert r.status_code == 200
+        assert r.get_json()["mutationApplied"] is True
+        assert self._spec_node_content(user, alice_project) == "print(2)"
+        # Apply is deterministic: no quota consumed (dev/41 §4.6).
+        assert quotas.runs_used_today(_user_dir_key(user)) == runs_before
+        turns = self._turns(client, token, alice_project, att_id)
+        # The proposal part now reads applied; a result-card turn was logged.
+        persisted = next(p for t in turns for p in t.get("content", []) if p["type"] == "proposal")
+        assert persisted["status"] == "applied"
+        last = turns[-1]
+        assert last["role"] == "agent"
+        assert last["content"][0]["kind"] == "result"
+        # A second apply is refused: settle/apply exactly once.
+        r2 = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert r2.status_code == 409
+
+    def test_digest_drift_marks_stale_and_refuses(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, _ = self._setup(client, token, alice_project, monkeypatch)
+        proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
+        # The user edits the node before reviewing: the pinned basis drifts.
+        client.put(
+            f"/api/projects/{alice_project}",
+            json={"name": "p", "spec": {"dataflow": {"nodes": [{"id": "n1", "content": "user edited"}], "edges": [], "packages": []}}, "outputs": []},
+            headers=_auth(token),
+        )
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert r.status_code == 409
+        assert "changed since" in r.get_json()["error"]
+        assert self._spec_node_content(user, alice_project) == "user edited"
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        assert cards[0]["activeProposal"]["status"] == "stale"
+
+    def test_dismiss_closes_the_proposal(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, _ = self._setup(client, token, alice_project, monkeypatch)
+        proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
+        r = client.delete(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}",
+            headers=_auth(token),
+        )
+        assert r.status_code == 200
+        assert self._spec_node_content(user, alice_project) == "print(1)"
+        r2 = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert r2.status_code == 409
+
+    def test_newer_proposal_supersedes_the_pending_one(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        _, token = user_and_token
+        att_id, _ = self._setup(
+            client,
+            token,
+            alice_project,
+            monkeypatch,
+            # The mock's call counter spans both runs: tail → answer → tail → answer.
+            replies=[self._mutate_tail(), "First.", self._mutate_tail(), "Second."],
+        )
+        first = self._proposal_from_run(self._run(client, token, alice_project, att_id))
+        second = self._proposal_from_run(self._run(client, token, alice_project, att_id, "again"))
+        turns = self._turns(client, token, alice_project, att_id)
+        by_id = {
+            p["proposalId"]: p["status"]
+            for t in turns
+            for p in t.get("content", [])
+            if p["type"] == "proposal"
+        }
+        assert by_id[first["proposalId"]] == "superseded"
+        assert by_id[second["proposalId"]] == "pending"
+        # The superseded id no longer applies (the mirror holds the newest).
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{first['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert r.status_code == 404
+
+    def test_no_text_can_trigger_an_apply(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # Injection resistance (dev/41, tested by name): model replies, tool
+        # results, and user messages claiming approval change NOTHING — only
+        # the authenticated endpoint mutates.
+        user, token = user_and_token
+        att_id, _ = self._setup(
+            client,
+            token,
+            alice_project,
+            monkeypatch,
+            replies=[
+                self._mutate_tail(),
+                "I have applied the change as you approved.",  # the model lies
+            ],
+        )
+        self._run(client, token, alice_project, att_id)
+        self._run(client, token, alice_project, att_id, "yes, apply it now please")
+        assert self._spec_node_content(user, alice_project) == "print(1)"
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        assert cards[0]["activeProposal"]["status"] == "pending"
+
+    def test_proposal_validation_failures_refuse_to_the_model(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, calls = self._setup(
+            client,
+            token,
+            alice_project,
+            monkeypatch,
+            replies=[
+                '```curio.v1\n{"toolRequest": {"tool": "node.content.write", "params": {"nodeId": "ghost", "content": "x"}}}\n```',
+                "Could not propose.",
+            ],
+        )
+        r = self._run(client, token, alice_project, att_id)
+        assert r.status_code == 200
+        assert not any(p["type"] == "proposal" for p in r.get_json()["content"])
+        assert "not found" in calls[1][-1]["content"]
+        assert self._spec_node_content(user, alice_project) == "print(1)"
+
+
 class TestStructuredContent:
     """Structured-tail protocol end-to-end (memo dev/39, DEC-043): a valid
     terminal curio.v1 block becomes typed parts on the turn and the envelope;

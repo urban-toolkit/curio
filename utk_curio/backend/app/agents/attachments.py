@@ -212,3 +212,28 @@ def detach(spec: dict, attachment_id: str) -> bool:
         return False
     df["agentAttachments"] = kept
     return True
+
+
+# ── review proposals (memo dev/41) ───────────────────────────────────────────
+def set_active_proposal(spec: dict, attachment_id: str, proposal: dict | None) -> dict | None:
+    """Set (or clear with ``None``) the attachment's single active proposal.
+
+    The mirror exists for fast lookup + supersede semantics; the transcript's
+    proposal part remains the display record. Returns the attachment record,
+    or ``None`` when the attachment does not exist."""
+    record = get_attachment(spec, attachment_id)
+    if record is None:
+        return None
+    if proposal is None:
+        record.pop("activeProposal", None)
+    else:
+        record["activeProposal"] = proposal
+    return record
+
+
+def get_active_proposal(spec: dict, attachment_id: str) -> dict | None:
+    record = get_attachment(spec, attachment_id)
+    if record is None:
+        return None
+    proposal = record.get("activeProposal")
+    return proposal if isinstance(proposal, dict) else None

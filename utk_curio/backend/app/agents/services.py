@@ -542,6 +542,21 @@ def _attachment_card(spec: dict, record: dict, user_key: str) -> dict:
         # client composes "<name>: <title>" at display time.
         "title": record.get("title") or None,
         "titleEdited": bool(record.get("titleEdited")),
+        # Review proposal mirror (memo dev/41) — status card wiring only; the
+        # transcript's proposal part remains the display record.
+        "activeProposal": _proposal_summary(record.get("activeProposal")),
+    }
+
+
+def _proposal_summary(proposal: object) -> dict | None:
+    if not isinstance(proposal, dict):
+        return None
+    return {
+        "proposalId": proposal.get("proposalId"),
+        "tool": proposal.get("tool"),
+        "nodeId": proposal.get("nodeId"),
+        "summary": proposal.get("summary"),
+        "status": proposal.get("status"),
     }
 
 
@@ -656,6 +671,103 @@ def clear_attachment_session(user_key: str, project_id: str, attachment_id: str)
         attachments.set_title(spec, attachment_id, None, edited=False)
         projects_storage.write_spec(user_key, project_id, spec)
     return {"attachmentId": attachment_id, "sessionId": session_id, "turns": []}
+
+
+# ── review-before-apply (memo dev/41) ────────────────────────────────────────
+def apply_proposal(
+    user_key: str, project_id: str, attachment_id: str, proposal_id: str
+) -> dict:
+    """Apply a pending proposal — the ONLY path that executes a mutate tool.
+
+    Explicit, authenticated, revision-safe (`REQ-REVIEW-001`/`DEC-006`): the
+    pinned content digest is re-checked against the saved spec; drift marks
+    the proposal ``stale`` and returns 409 instead of applying. Success
+    executes the domain-owned write under the project's spec write path, logs
+    a result-card turn (docs/08 — results are logged as chat turns), and
+    consumes no quota (deterministic, no provider work). No model/tool/user
+    *text* can reach this path — only this endpoint."""
+    import hashlib
+
+    spec = _read_spec_or_404(user_key, project_id)
+    record = _record_or_404(spec, attachment_id)
+    proposal = attachments.get_active_proposal(spec, attachment_id)
+    if proposal is None or proposal.get("proposalId") != proposal_id:
+        raise AgentServiceError(f"proposal {proposal_id!r} not found", 404)
+    status = proposal.get("status")
+    if status != "pending":
+        raise AgentServiceError(f"this proposal is {status!r} and can no longer be applied", 409)
+    session_id = record.get("sessionId")
+    node_id = proposal.get("nodeId")
+    nodes = (spec.get("dataflow") or {}).get("nodes") or []
+    node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
+    current = (node.get("content") if node is not None else None) or ""
+    basis = hashlib.sha256(current.encode("utf-8")).hexdigest()
+    if node is None or basis != proposal.get("contentSha256"):
+        proposal["status"] = "stale"
+        projects_storage.write_spec(user_key, project_id, spec)
+        if isinstance(session_id, str):
+            sessions.update_proposal_status(
+                user_key, project_id, session_id, proposal_id, "stale"
+            )
+        raise AgentServiceError(
+            "the node changed since this was proposed — ask the agent to propose again", 409
+        )
+    # The domain-owned mutation (ADR-AG-007): one node's content, nothing else.
+    node["content"] = proposal.get("content", "")
+    proposal["status"] = "applied"
+    projects_storage.write_spec(user_key, project_id, spec)
+    if isinstance(session_id, str):
+        sessions.update_proposal_status(user_key, project_id, session_id, proposal_id, "applied")
+        # The transcript logs the mutation (mutation_applied, dev/03:344).
+        sessions.append_turns(
+            user_key,
+            project_id,
+            session_id,
+            attachment_id,
+            [
+                sessions.make_turn(
+                    "agent",
+                    f"Applied: node content updated ({node_id}).",
+                    content=[
+                        {
+                            "type": "card",
+                            "kind": "result",
+                            "title": "Applied: node content updated",
+                            "lines": [f"node {node_id}", f"proposal {proposal_id[:8]}"],
+                        }
+                    ],
+                )
+            ],
+        )
+    return {
+        "attachmentId": attachment_id,
+        "proposalId": proposal_id,
+        "status": "applied",
+        "mutationApplied": True,
+    }
+
+
+def dismiss_proposal(
+    user_key: str, project_id: str, attachment_id: str, proposal_id: str
+) -> dict:
+    """Dismiss a pending proposal (keeps its outcome visible on the card)."""
+    spec = _read_spec_or_404(user_key, project_id)
+    record = _record_or_404(spec, attachment_id)
+    proposal = attachments.get_active_proposal(spec, attachment_id)
+    if proposal is None or proposal.get("proposalId") != proposal_id:
+        raise AgentServiceError(f"proposal {proposal_id!r} not found", 404)
+    if proposal.get("status") != "pending":
+        raise AgentServiceError(
+            f"this proposal is {proposal.get('status')!r} and can no longer be dismissed", 409
+        )
+    proposal["status"] = "dismissed"
+    projects_storage.write_spec(user_key, project_id, spec)
+    session_id = record.get("sessionId")
+    if isinstance(session_id, str):
+        sessions.update_proposal_status(
+            user_key, project_id, session_id, proposal_id, "dismissed"
+        )
+    return {"attachmentId": attachment_id, "proposalId": proposal_id, "status": "dismissed"}
 
 
 def _resolve_prompt_text(user_key: str, coord: str, name: str) -> str | None:
@@ -904,7 +1016,12 @@ def _prepare_run(
         "tools": granted,
         "policy": run_policy["policy_pins"],
     }
-    loop_ctx = {"granted": granted, "target": record.get("target")}
+    loop_ctx = {
+        "granted": granted,
+        "target": record.get("target"),
+        "attachment_id": attachment_id,
+        "session_id": session_id,
+    }
     return coord, session_id, messages, run_policy, wants_title, pins, loop_ctx
 
 
@@ -944,28 +1061,111 @@ def _persist_exchange(
 MAX_TOOL_ROUNDS = 2
 
 
+def _mint_proposal(
+    user_key: str, project_id: str, loop_ctx: dict, req: dict
+) -> tuple[str, str, dict | None]:
+    """Turn a granted mutate toolRequest into a review proposal (memo dev/41).
+
+    The loop never executes a mutation (`DEC-006`): validation failures come
+    back as tool results the model recovers from; success mints a ``proposal``
+    part (persisted with the turn) plus the attachment's ``activeProposal``
+    mirror, pinning the target's current content digest as the revision-safety
+    basis the apply endpoint re-checks (`REQ-REVIEW-001`).
+    Returns ``(status, text_for_model, proposal_part | None)``."""
+    import hashlib
+
+    session_id = loop_ctx.get("session_id")
+    if not isinstance(session_id, str):
+        return "refused", "proposals need a persistent conversation; this attachment has none", None
+    if req.get("tool") != "node.content.write":
+        return "refused", f"no proposal flow exists for tool {req.get('tool')!r}", None
+    params = req.get("params") or {}
+    node_id = params.get("nodeId")
+    if not isinstance(node_id, str) or not node_id:
+        target = loop_ctx.get("target")
+        node_id = (
+            target.get("targetId")
+            if isinstance(target, dict) and target.get("kind") == "node"
+            else None
+        )
+    if not node_id:
+        return "refused", "no nodeId given and this agent is not attached to a node", None
+    proposed = params.get("content")
+    if not isinstance(proposed, str) or not proposed.strip():
+        return "refused", "params.content must be a non-empty string", None
+    if len(proposed) > content.PROPOSAL_CONTENT_MAX_CHARS:
+        return "refused", "params.content exceeds the proposal size bound", None
+    spec = projects_storage.read_spec(user_key, project_id)
+    if spec is None:
+        return "refused", "no saved project spec is available", None
+    nodes = (spec.get("dataflow") or {}).get("nodes") or []
+    node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
+    if node is None:
+        return "refused", f"node {node_id!r} not found in the saved spec", None
+    basis = hashlib.sha256((node.get("content") or "").encode("utf-8")).hexdigest()
+    attachment_id = loop_ctx["attachment_id"]
+    # Newest supersedes: a still-pending earlier proposal is closed out in
+    # both places it lives (mirror + its transcript part).
+    previous = attachments.get_active_proposal(spec, attachment_id)
+    if previous is not None and previous.get("status") == "pending":
+        sessions.update_proposal_status(
+            user_key, project_id, session_id, previous.get("proposalId", ""), "superseded"
+        )
+    proposal_id = uuid.uuid4().hex
+    summary = f"Replace the content of node {node_id!r}"
+    part = content.make_proposal_part(
+        proposal_id=proposal_id,
+        tool="node.content.write",
+        summary=summary,
+        preview=proposed,
+        node_id=node_id,
+        content_sha256=basis,
+    )
+    attachments.set_active_proposal(
+        spec,
+        attachment_id,
+        {
+            "proposalId": proposal_id,
+            "tool": "node.content.write",
+            "nodeId": node_id,
+            "content": proposed,
+            "contentSha256": basis,
+            "summary": summary,
+            "status": "pending",
+        },
+    )
+    projects_storage.write_spec(user_key, project_id, spec)
+    return (
+        "proposed",
+        f"proposal {proposal_id} created for node {node_id!r}; it awaits the user's "
+        "explicit review — do NOT assume it was applied",
+        part,
+    )
+
+
 def _execute_tool_request(
-    user_key: str, project_id: str, loop_ctx: dict, req: dict, tool_calls: list
+    user_key: str, project_id: str, loop_ctx: dict, req: dict, tool_calls: list, minted: list
 ) -> tuple[str, str]:
     """Handle one model toolRequest inside the loop (memo dev/41).
 
-    Only granted read contracts execute; everything else resolves to a
-    synthetic result the model can recover from — loudly to the model,
-    invisibly to the user, never a run error. Appends to ``tool_calls``
-    (the execution record's tool history)."""
+    Only granted read contracts execute; a granted mutate contract mints a
+    review proposal (never executes — `DEC-006`); everything else resolves to
+    a synthetic result the model can recover from — loudly to the model,
+    invisibly to the user, never a run error. Appends to ``tool_calls`` (the
+    execution record's tool history) and ``minted`` (proposal parts for the
+    persisted turn)."""
     tool_id = req.get("tool", "")
     started = time.monotonic()
     if tool_id not in loop_ctx["granted"]:
         status, text = "refused", f"tool {tool_id!r} is not granted for this run"
     else:
         contract = tools.REGISTRY.get(tool_id)
-        if contract is None or contract.effect != "read":
-            # Mutate handling (proposals) arrives with the review flow; the
-            # loop never executes a mutation either way (DEC-006).
-            status, text = (
-                "refused",
-                f"tool {tool_id!r} mutates project state and cannot run directly",
-            )
+        if contract is None:
+            status, text = "refused", f"tool {tool_id!r} is not available"
+        elif contract.effect == "mutate":
+            status, text, part = _mint_proposal(user_key, project_id, loop_ctx, req)
+            if part is not None:
+                minted.append(part)
         else:
             status, text = tools.execute_read_tool(
                 tool_id,
@@ -1015,6 +1215,7 @@ def run_attachment(
     execution_id = uuid.uuid4().hex
     usage_total: dict = {}
     tool_calls: list = []
+    minted: list = []
     folded: list[str] = []
     final_parts: list = []
     messages_work = list(messages)
@@ -1044,7 +1245,7 @@ def run_attachment(
                 break  # dangling request at the cap: dropped, text kept
             rounds_used += 1
             status, text = _execute_tool_request(
-                user_key, project_id, loop_ctx, req, tool_calls
+                user_key, project_id, loop_ctx, req, tool_calls, minted
             )
             messages_work.append({"role": "assistant", "content": reply})
             messages_work.append(
@@ -1069,6 +1270,7 @@ def run_attachment(
         )
         raise AgentServiceError(f"agent run failed: {exc}", 502) from exc
     reply_text = "\n\n".join(folded)
+    run_parts = minted + final_parts  # proposals ride the turn (dev/41)
     execution = _execution_record(execution_id, pins, usage_total, started, "ok", tool_calls)
     _persist_exchange(
         user_key,
@@ -1078,7 +1280,7 @@ def run_attachment(
         message,
         reply_text,
         execution=execution,
-        parts=final_parts,
+        parts=run_parts,
     )
     if wants_title:
         _generate_conversation_title(user_key, project_id, attachment_id, message, config)
@@ -1088,7 +1290,7 @@ def run_attachment(
         "reply": reply_text,
         "executionId": execution_id,
         "usage": execution["usage"],
-        "content": final_parts,
+        "content": run_parts,
     }
 
 
@@ -1177,6 +1379,7 @@ def stream_attachment(
     def _events():
         usage_total: dict = {}
         tool_calls: list = []
+        minted: list = []
         folded: list[str] = []
         final_parts: list = []
         messages_work = list(messages)
@@ -1209,7 +1412,7 @@ def stream_attachment(
                 yield ("tool_requested", {"tool": req["tool"]})
                 yield ("tool_started", {"tool": req["tool"]})
                 status, text = _execute_tool_request(
-                    user_key, project_id, loop_ctx, req, tool_calls
+                    user_key, project_id, loop_ctx, req, tool_calls, minted
                 )
                 yield ("tool_result", {"tool": req["tool"], "status": status})
                 messages_work.append({"role": "assistant", "content": result["reply"]})
@@ -1236,6 +1439,7 @@ def stream_attachment(
             yield ("error", f"agent run failed: {exc}")
             return
         reply_text = "\n\n".join(folded)
+        run_parts = minted + final_parts  # proposals ride the turn (dev/41)
         execution = _execution_record(
             execution_id, pins, usage_total, started, "ok", tool_calls
         )
@@ -1247,21 +1451,31 @@ def stream_attachment(
             message,
             reply_text,
             execution=execution,
-            parts=final_parts,
+            parts=run_parts,
         )
         # Title before the done frame: the reply text already streamed via
         # deltas, and the client's post-send refresh must see the title.
         if wants_title:
             _generate_conversation_title(user_key, project_id, attachment_id, message, config)
-        if final_parts:
-            yield ("content", {"parts": final_parts})
+        # A pending mutation pauses at review (dev/03:344 review_required).
+        for part in minted:
+            yield (
+                "review_required",
+                {
+                    "proposalId": part["proposalId"],
+                    "tool": part["tool"],
+                    "summary": part["summary"],
+                },
+            )
+        if run_parts:
+            yield ("content", {"parts": run_parts})
         yield (
             "done",
             {
                 "reply": reply_text,
                 "executionId": execution_id,
                 "usage": execution["usage"],
-                "content": final_parts,
+                "content": run_parts,
             },
         )
 

@@ -105,6 +105,46 @@ def append_turns(
     return turns
 
 
+def update_proposal_status(
+    user_key: str, project_id: str, session_id: str, proposal_id: str, status: str
+) -> bool:
+    """Set the status of one persisted proposal part (memo dev/41).
+
+    The transcript stays the display record of a proposal's lifecycle: apply/
+    dismiss/supersede update the part in place (the one sanctioned turn edit —
+    it changes proposal state, never text). Returns True when a part was
+    updated; a missing session/part is False, never an error."""
+    turns = read_turns(user_key, project_id, session_id)
+    changed = False
+    for turn in turns:
+        for part in turn.get("content") or []:
+            if (
+                isinstance(part, dict)
+                and part.get("type") == "proposal"
+                and part.get("proposalId") == proposal_id
+                and part.get("status") != status
+            ):
+                part["status"] = status
+                changed = True
+    if not changed:
+        return False
+    path = _session_path(user_key, project_id, session_id)
+    data = {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        pass
+    attachment_id = data.get("attachmentId") if isinstance(data, dict) else None
+    path.write_text(
+        json.dumps(
+            {"sessionId": session_id, "attachmentId": attachment_id, "turns": turns},
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return True
+
+
 def clear_turns(user_key: str, project_id: str, session_id: str, attachment_id: str) -> None:
     """Empty the transcript but keep the session file/id."""
     path = _session_path(user_key, project_id, session_id)
