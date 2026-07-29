@@ -21,7 +21,7 @@ The three v1 policy screens don't exist. Concretely: the account has no editable
 **Out of scope (v2, per `DEC-038`/memo 11)**
 
 - Prompt quality / editor / audit screens; evaluation; governance chains.
-- Attachment-scope settings (`Attachment settings` in the chat header): tighten-only per-instance overrides need per-attachment enforcement records; deferred — no enforcement gap, since project + account scopes gate every run. Logged as the P6-adjacent follow-up.
+- ~~Attachment-scope settings (`Attachment settings` in the chat header): tighten-only per-instance overrides need per-attachment enforcement records; deferred — no enforcement gap, since project + account scopes gate every run. Logged as the P6-adjacent follow-up.~~ **Closed 2026-07-28** (memo `dev/42`, `BL-P3-20260728-11`): the `DEC-044` ledger supplied the enforcement records (one `attachmentKey` field + a derived aggregate); the Attached-instance scope is implemented end-to-end.
 - Reservations/ledgers, alerts, pricing effective dates, token/price metering ("Actual" cost), provider profiles (`ADR-AG-012` v2 remainder), concurrency/rate windows.
 - Deployment-scope editing: env vars stay the deployment ceiling/default.
 
