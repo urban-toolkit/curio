@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { Node } from "reactflow";
 import { v4 as uuid } from "uuid";
 
@@ -52,7 +52,15 @@ export function useCode(): IUseCode {
     const { addNode, setOutputs, setInteractions, applyNewPropagation, applyNewOutput, loadParsedTrill } = useFlowContext();
     const { loadNodeProvenance } = useProvenanceContext();
     const { getPosition } = usePosition();
-    const {nodes, edges, workflowGoal, workflowNameRef, eraseWorkflowSuggestions } = useFlowContext(); //for softartifact 
+
+    // for softartifact nodes, extract dataflow, put it into useRef 
+    // in order to make getCurrentTrill() and applyProposal() 'apply proposal is for transform and expand role in soft artifact'
+    const { nodes, edges, workflowGoal, workflowNameRef, eraseWorkflowSuggestions } = useFlowContext();     
+    const nodesRef = useRef(nodes); const edgesRef = useRef(edges);
+    const workflowGoalRef = useRef(workflowGoal);
+
+    nodesRef.current = nodes; edgesRef.current = edges; workflowGoalRef.current = workflowGoal;
+
     const ensureWorkflowDeps = useEnsureWorkflowDeps(); //for softartifact 
 
     const outputCallback = useCallback(
@@ -232,11 +240,13 @@ export function useCode(): IUseCode {
     //get the current trill (for soft artifact node behavior =D)
     const getCurrentTrill = useCallback(() => {
         return TrillGenerator.generateTrill(
-            nodes, edges, workflowNameRef.current, workflowGoal
+            nodesRef.current, edgesRef.current, workflowNameRef.current, workflowGoalRef.current
         ); 
-    }, [nodes, edges, workflowNameRef, workflowGoal])
+    }, [workflowNameRef])
 
-    //apply proposal for soft artifact node 
+    // apply proposal for soft artifact node 
+    // prosoal shape is:
+    // dataflow: {nodes, edges, name}
     const applyProposal = useCallback((dataflow: any) => {
         // load trill expect {dataflow: {nodes,edges,name}}
         eraseWorkflowSuggestions();  // make sure there's no work Flow suggestion
@@ -244,6 +254,7 @@ export function useCode(): IUseCode {
         ensureWorkflowDeps({ dataflow });
     }, [eraseWorkflowSuggestions, loadTrill, ensureWorkflowDeps])
 
+    // cancel the given prosposal from the softArtifact node 
     const cancelProposal = useCallback(() => {
         eraseWorkflowSuggestions();
     }, [eraseWorkflowSuggestions]);

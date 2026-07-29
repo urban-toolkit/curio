@@ -593,6 +593,7 @@ var useSoftArtifactBehavior = function useSoftArtifactBehavior(data, nodeState) 
             setProposing(true);
             _context4.p = 2;
             context = typeof data.getCurrentTrill === "function" ? data.getCurrentTrill() : undefined;
+            if (context !== undefined) console.log(context);else console.log("undefined");
             _context4.n = 3;
             return proposeTrillArtifact(artifact_id, state.sourceFile, 8, role, context);
           case 3:

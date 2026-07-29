@@ -400,6 +400,9 @@ export const useSoftArtifactBehavior: NodeBehaviorHook = (data, nodeState) => {
          ? data.getCurrentTrill() :
           undefined
       
+      if (context !== undefined) console.log(context);
+      else console.log("undefined");
+      
       const out = await proposeTrillArtifact(artifact_id, state.sourceFile, 8, role, context);
 
       persist({ proposal: out.proposal, rationale: out.rationale})
