@@ -66,6 +66,9 @@ export interface AgentAttachment {
   /** True when the title is a manual rename: it survives conversation clears
    * and is never overwritten by auto-generation. */
   titleEdited: boolean;
+  /** The manifest's declared inputs (dev/38) — drives the client-side
+   * grounded-context composer (memo dev/44). */
+  reads?: string[];
   /** The attachment's single review proposal, newest wins (memo dev/41);
    * null/absent when none exists. Status wiring for the review card. */
   activeProposal?: {
@@ -490,6 +493,8 @@ export const agentsApi = {
     projectId: string,
     attachmentId: string,
     message: string,
+    /** Ephemeral grounded context (memo dev/44) — composed fresh per send. */
+    context?: string | null,
   ): Promise<{
     attachmentId: string;
     coord: string;
@@ -502,7 +507,7 @@ export const agentsApi = {
   }> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/run`,
-      { method: "POST", body: JSON.stringify({ message }) },
+      { method: "POST", body: JSON.stringify(context ? { message, context } : { message }) },
     );
   },
 
@@ -526,6 +531,8 @@ export const agentsApi = {
      * `tool_started`, `tool_result`, `review_required`) — transient system-
      * line display only; the durable state arrives with `done`/rehydration. */
     onEvent?: (name: string, payload: Record<string, unknown>) => void,
+    /** Ephemeral grounded context (memo dev/44) — composed fresh per send. */
+    context?: string | null,
   ): Promise<{
     reply: string;
     executionId?: string;
@@ -537,7 +544,7 @@ export const agentsApi = {
     if (token) headers["Authorization"] = `Bearer ${token}`;
     const res = await fetch(
       `${BACKEND_URL}/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/run/stream`,
-      { method: "POST", headers, body: JSON.stringify({ message }) },
+      { method: "POST", headers, body: JSON.stringify(context ? { message, context } : { message }) },
     );
     if (!res.ok) {
       const body = await res.json().catch(() => ({} as Record<string, unknown>));

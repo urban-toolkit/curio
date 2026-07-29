@@ -82,9 +82,9 @@ export function useAgentAttachments(projectId: string | null): AgentAttachmentsS
   );
 
   const run = useCallback(
-    async (attachmentId: string, message: string) => {
+    async (attachmentId: string, message: string, context?: string | null) => {
       if (!projectId) throw new Error("no project");
-      const r = await agentsApi.runAttachment(projectId, attachmentId, message);
+      const r = await agentsApi.runAttachment(projectId, attachmentId, message, context);
       return r.reply;
     },
     [projectId],

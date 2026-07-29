@@ -54,6 +54,7 @@ const Harness: React.FC = () => {
       <button onClick={() => ctx.openChat("a1")}>open</button>
       <button onClick={() => ctx.closeChat()}>close</button>
       <button onClick={() => void ctx.sendMessage("a1", "hi")}>send</button>
+      <button onClick={() => void ctx.sendMessage("a1", "hi", "LIVE-TRILL")}>send-ctx</button>
       <button onClick={() => void ctx.detach("a1")}>detach</button>
       <button onClick={() => void ctx.clearConversation("a1")}>clear</button>
       <button onClick={() => void ctx.saveTitle("a1", "New Name")}>rename</button>
@@ -377,5 +378,35 @@ describe("AgentAttachmentsProvider review proposals (memo dev/41)", () => {
       fireEvent.click(screen.getByText("apply"));
     });
     expect(api.getSession).toHaveBeenCalledWith("p1", "a1");
+  });
+});
+
+describe("AgentAttachmentsProvider grounded context (memo dev/44)", () => {
+  it("sendMessage forwards the composed context to the stream call", async () => {
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    await act(async () => {
+      fireEvent.click(screen.getByText("send-ctx"));
+    });
+    expect(api.runAttachmentStream).toHaveBeenCalledWith(
+      "p1",
+      "a1",
+      "hi",
+      expect.any(Function),
+      expect.any(Function),
+      "LIVE-TRILL",
+    );
+  });
+
+  it("the blocking fallback carries the same context", async () => {
+    api.runAttachmentStream.mockRejectedValue(new Error("stream broke"));
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    await act(async () => {
+      fireEvent.click(screen.getByText("send-ctx"));
+    });
+    expect(api.runAttachment).toHaveBeenCalledWith("p1", "a1", "hi", "LIVE-TRILL");
   });
 });

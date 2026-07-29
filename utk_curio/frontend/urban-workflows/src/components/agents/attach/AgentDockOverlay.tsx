@@ -1,9 +1,11 @@
 import React, { useState } from "react";
 import { createPortal } from "react-dom";
+import { useReactFlow } from "reactflow";
 import { AgentDock } from "./AgentDock";
 import { AgentChatPanel } from "./AgentChatPanel";
 import { useAgentAttachmentsContext } from "./AgentAttachmentsProvider";
 import { AgentSettingsModal } from "../settings/AgentSettingsModal";
+import { composeAgentRunContext } from "./agentRunContext";
 import { useFlowContext } from "../../../providers/FlowProvider";
 
 /**
@@ -14,7 +16,8 @@ import { useFlowContext } from "../../../providers/FlowProvider";
  */
 export const AgentDockOverlay: React.FC = () => {
   const ctx = useAgentAttachmentsContext();
-  const { projectId } = useFlowContext();
+  const { projectId, workflowGoal, workflowNameRef } = useFlowContext();
+  const { getNodes, getEdges } = useReactFlow();
   // Attachment id whose settings modal is open (memo dev/42), or null.
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
   if (!ctx) return null;
@@ -61,7 +64,20 @@ export const AgentDockOverlay: React.FC = () => {
               loadingHistory={ctx.hydratingId === selected.attachmentId}
               historyError={ctx.hydrateErrors[selected.attachmentId] ?? null}
               onRetryHistory={() => ctx.hydrateSession(selected.attachmentId)}
-              onSend={(message) => ctx.sendMessage(selected.attachmentId, message)}
+              onSend={(message) =>
+                // Grounded context (memo dev/44): composed from the LIVE
+                // canvas on every send — unsaved nodes included, never stale.
+                ctx.sendMessage(
+                  selected.attachmentId,
+                  message,
+                  composeAgentRunContext(selected, {
+                    nodes: getNodes(),
+                    edges: getEdges(),
+                    workflowName: workflowNameRef.current,
+                    workflowGoal,
+                  }),
+                )
+              }
               onClose={ctx.closeChat}
               onOpenSettings={
                 projectId ? () => setSettingsFor(selected.attachmentId) : undefined

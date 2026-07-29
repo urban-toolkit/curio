@@ -72,7 +72,7 @@ describe("useAgentAttachments", () => {
     await act(async () => {
       reply = await result.current.run("a1", "explain");
     });
-    expect(api.runAttachment).toHaveBeenCalledWith("p1", "a1", "explain");
+    expect(api.runAttachment).toHaveBeenCalledWith("p1", "a1", "explain", undefined);
     expect(reply).toBe("the reply");
   });
 

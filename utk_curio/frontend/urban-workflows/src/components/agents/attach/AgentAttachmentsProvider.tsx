@@ -31,8 +31,10 @@ export interface AgentAttachmentsContextValue extends AgentAttachmentsState {
   /** Per-attachment history-load errors (retry via hydrateSession). */
   hydrateErrors: Record<string, string>;
   hydrateSession: (attachmentId: string) => Promise<void>;
-  /** Run one turn: appends the user turn, the reply (or an error marker). */
-  sendMessage: (attachmentId: string, message: string) => Promise<void>;
+  /** Run one turn: appends the user turn, the reply (or an error marker).
+   * `context` is the ephemeral grounded canvas state (memo dev/44), composed
+   * fresh by the caller on every send. */
+  sendMessage: (attachmentId: string, message: string, context?: string | null) => Promise<void>;
   /** Persist the attachment's editable intent (null/empty → prompt source). */
   saveIntent: (attachmentId: string, intent: string | null) => Promise<void>;
   /** Persist a manual conversation title (memo dev/25): always wins over
@@ -159,7 +161,7 @@ export const AgentAttachmentsProvider: React.FC<{
   // stream error) falls back to the blocking run once; HTTP errors (quota 429,
   // 404, …) surface directly as a soft error turn.
   const sendMessage = useCallback(
-    async (attachmentId: string, message: string) => {
+    async (attachmentId: string, message: string, context?: string | null) => {
       const pid = projectRef.current;
       if (!pid) throw new Error("no project");
       // The first successful exchange may mint an auto title server-side
@@ -198,6 +200,7 @@ export const AgentAttachmentsProvider: React.FC<{
             streamed += delta;
           },
           onEvent,
+          context,
         );
         // The finalized turn keeps the run's execution identity + Actual usage
         // (memo dev/37) and its typed content parts (memo dev/39) so the
@@ -223,7 +226,7 @@ export const AgentAttachmentsProvider: React.FC<{
         if (!streamed && status === undefined) {
           // Pre-delta stream failure → one blocking-run fallback.
           try {
-            const reply = await state.run(attachmentId, message);
+            const reply = await state.run(attachmentId, message, context);
             appendTurns(attachmentId, [{ role: "agent", text: reply }]);
             succeeded = true;
           } catch (e2) {
