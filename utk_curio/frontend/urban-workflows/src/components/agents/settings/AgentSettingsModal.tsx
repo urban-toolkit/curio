@@ -20,8 +20,14 @@ import styles from "./AgentSettingsModal.module.css";
  * exists in any scope.
  */
 
-type Scope = "account" | "project";
+type Scope = "account" | "project" | "attachment";
 type Tab = "cost" | "quotas" | "resources";
+
+const SCOPE_BANNER: Record<Scope, string> = {
+  account: "Account policy",
+  project: "Project agent default",
+  attachment: "Attached instance",
+};
 
 interface Loaded {
   revision: number;
@@ -35,6 +41,7 @@ interface Loaded {
   pricing: AgentPricingSummary | null;
   ceilings?: { quotas: { runsPerDay: number }; resources: { maxOutputTokens: number } };
   name?: string;
+  coord?: string;
 }
 
 const NO_USAGE: AgentUsage = { inputTokens: 0, outputTokens: 0 };
@@ -78,11 +85,14 @@ function settingsFrom(drafts: Drafts, scope: Scope): AgentPolicySettings {
 
 export const AgentSettingsModal: React.FC<{
   scope: Scope;
-  /** Required for the project scope. */
+  /** Required for the project and attachment scopes. */
   projectId?: string;
+  /** Required for the project scope. */
   coord?: string;
+  /** Required for the attachment scope (memo dev/42). */
+  attachmentId?: string;
   onClose: () => void;
-}> = ({ scope, projectId, coord, onClose }) => {
+}> = ({ scope, projectId, coord, attachmentId, onClose }) => {
   const [data, setData] = useState<Loaded | null>(null);
   const [drafts, setDrafts] = useState<Drafts>(draftsFrom({}));
   const [tab, setTab] = useState<Tab>("quotas");
@@ -106,8 +116,11 @@ export const AgentSettingsModal: React.FC<{
           pricing: r.pricing ?? null,
         };
       } else {
-        if (!projectId || !coord) throw new Error("no project");
-        const r = await agentsApi.getProjectAgentDefaults(projectId, coord);
+        if (!projectId) throw new Error("no project");
+        const r =
+          scope === "attachment"
+            ? await agentsApi.getAttachmentSettings(projectId, attachmentId as string)
+            : await agentsApi.getProjectAgentDefaults(projectId, coord as string);
         loaded = {
           revision: r.revision,
           settings: r.settings,
@@ -117,6 +130,7 @@ export const AgentSettingsModal: React.FC<{
           actualSpendTodayUsd: r.effective.cost.actualSpendTodayUsd ?? null,
           pricing: r.effective.cost.pricing ?? null,
           name: r.name,
+          coord: r.coord,
         };
       }
       setData(loaded);
@@ -177,6 +191,15 @@ export const AgentSettingsModal: React.FC<{
     try {
       if (scope === "account") {
         applyResponse(await agentsApi.updateAgentSettings(data.revision, settings));
+      } else if (scope === "attachment") {
+        applyResponse(
+          await agentsApi.updateAttachmentSettings(
+            projectId as string,
+            attachmentId as string,
+            data.revision,
+            settings,
+          ),
+        );
       } else {
         applyResponse(
           await agentsApi.updateProjectAgentDefaults(
@@ -204,7 +227,11 @@ export const AgentSettingsModal: React.FC<{
   const save = () => void persist(settingsFrom(drafts, scope));
 
   const resetToDefault = () => {
-    if (!window.confirm("Reset this agent's project defaults to inherit everything?")) return;
+    const question =
+      scope === "attachment"
+        ? "Clear this attachment's overrides and fall back to the project profile?"
+        : "Reset this agent's project defaults to inherit everything?";
+    if (!window.confirm(question)) return;
     void persist({});
   };
 
@@ -233,13 +260,17 @@ export const AgentSettingsModal: React.FC<{
       <div
         className={styles.body}
         role="dialog"
-        aria-label={scope === "account" ? "Agent settings (account policy)" : `Project agent settings for ${data?.name ?? coord}`}
+        aria-label={
+          scope === "account"
+            ? "Agent settings (account policy)"
+            : scope === "attachment"
+              ? `Attachment settings for ${data?.name ?? attachmentId}`
+              : `Project agent settings for ${data?.name ?? coord}`
+        }
       >
-        <p className={styles.scope}>
-          {scope === "account" ? "Account policy" : "Project agent default"}
-        </p>
+        <p className={styles.scope}>{SCOPE_BANNER[scope]}</p>
         <h2 className={styles.title}>{scope === "account" ? "Agent settings" : data?.name ?? coord}</h2>
-        {scope === "project" ? <p className={styles.coord}>{coord}</p> : null}
+        {scope !== "account" ? <p className={styles.coord}>{coord ?? data?.coord ?? ""}</p> : null}
 
         <nav className={styles.tabs} aria-label="Settings screens">
           {(
@@ -355,14 +386,14 @@ export const AgentSettingsModal: React.FC<{
             {notice ? <p className={styles.notice}>{notice}</p> : null}
 
             <div className={styles.footer}>
-              {scope === "project" ? (
+              {scope !== "account" ? (
                 <button
                   type="button"
                   className={styles.resetBtn}
                   disabled={saving}
                   onClick={resetToDefault}
                 >
-                  Reset to agent default
+                  {scope === "attachment" ? "Clear overrides" : "Reset to agent default"}
                 </button>
               ) : null}
               <span className={styles.footerSpacer} />

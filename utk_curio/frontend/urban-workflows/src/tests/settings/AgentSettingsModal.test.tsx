@@ -285,3 +285,82 @@ describe("AgentSettingsModal — project scope", () => {
     }
   });
 });
+
+describe("AgentSettingsModal — attachment scope (memo dev/42)", () => {
+  const attachmentPayload = {
+    attachmentId: "att-1",
+    coord: "agent.chat-agent@1.0.0",
+    name: "Chat",
+    revision: 1,
+    settings: {},
+    effective,
+  };
+
+  beforeEach(() => {
+    (api as any).getAttachmentSettings = jest
+      .fn()
+      .mockResolvedValue(attachmentPayload as any);
+    (api as any).updateAttachmentSettings = jest.fn().mockResolvedValue({
+      ...attachmentPayload,
+      revision: 2,
+      settings: { quotas: { runsPerDay: 3 } },
+      effective: {
+        ...effective,
+        quotas: { runsPerDay: { value: 3, source: "attachment", usedToday: 0 } },
+      },
+    } as any);
+  });
+
+  const renderAttachment = () =>
+    render(
+      <AgentSettingsModal
+        scope="attachment"
+        projectId="p1"
+        attachmentId="att-1"
+        onClose={jest.fn()}
+      />,
+    );
+
+  it("shows the Attached instance banner and the estimate as read-only", async () => {
+    renderAttachment();
+    await waitFor(() => expect(screen.getByText("Attached instance")).toBeInTheDocument());
+    expect(screen.getByText("Chat")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Cost"));
+    expect(screen.queryByLabelText(/estimated cost per run/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/account-scope setting/)).toBeInTheDocument();
+  });
+
+  it("saves against the attachment settings and shows the attachment source", async () => {
+    renderAttachment();
+    await waitFor(() => expect(screen.getByLabelText(/runs per day/i)).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText(/runs per day/i), { target: { value: "3" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect((api as any).updateAttachmentSettings).toHaveBeenCalledWith(
+        "p1", "att-1", 1, { quotas: { runsPerDay: 3 } },
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.getByText(/effective 3 · from attachment/)).toBeInTheDocument(),
+    );
+  });
+
+  it("Clear overrides PATCHes an empty settings object", async () => {
+    const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
+    renderAttachment();
+    await waitFor(() => expect(screen.getByLabelText(/runs per day/i)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Clear overrides" }));
+    await waitFor(() =>
+      expect((api as any).updateAttachmentSettings).toHaveBeenCalledWith("p1", "att-1", 1, {}),
+    );
+    confirmSpy.mockRestore();
+  });
+
+  it("carries no Publish/Release/Share controls", async () => {
+    renderAttachment();
+    await waitFor(() => expect(screen.getByText("Chat")).toBeInTheDocument());
+    for (const name of [/publish/i, /release/i, /share/i]) {
+      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+    }
+  });
+});

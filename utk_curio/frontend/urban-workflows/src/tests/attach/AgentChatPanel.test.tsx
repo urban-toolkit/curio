@@ -404,3 +404,20 @@ describe("AgentChatPanel review + tool activity (memo dev/41)", () => {
     expect(screen.getByText("node.read · ok")).toBeInTheDocument();
   });
 });
+
+describe("AgentChatPanel attachment settings cog (memo dev/42)", () => {
+  it("renders the labeled cog beneath the header and opens settings", () => {
+    const onOpenSettings = jest.fn();
+    renderPanel({ onOpenSettings });
+    const cog = screen.getByRole("button", { name: /attachment settings/i });
+    // DEC-042: the cog lives in the content area, never the dark header.
+    expect(cog.className).toMatch(/attachmentSettingsBtn/);
+    fireEvent.click(cog);
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("no cog when the callback is absent", () => {
+    renderPanel();
+    expect(screen.queryByRole("button", { name: /attachment settings/i })).toBeNull();
+  });
+});

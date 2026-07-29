@@ -535,3 +535,27 @@
 .suggestedRow + .footer {
   border-top: none;
 }
+
+/* ⚙ Attachment settings cog (memo dev/42) — a quiet labeled control at the
+   top of the content area, beneath the DEC-042 header. */
+.attachmentSettingsBtn {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #ececee;
+  background: #f7f7f8;
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 0.76rem;
+  color: #555;
+  cursor: pointer;
+  min-height: 28px;
+}
+
+.attachmentSettingsBtn:hover,
+.attachmentSettingsBtn:focus-visible {
+  background: #eef1f6;
+  border-color: #d8dde6;
+  color: #333;
+}

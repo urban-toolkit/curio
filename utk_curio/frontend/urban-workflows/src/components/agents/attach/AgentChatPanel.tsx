@@ -4,6 +4,7 @@ import {
   faArrowUp,
   faChevronLeft,
   faChevronRight,
+  faGear,
   faPen,
   faRobot,
   faTrashCan,
@@ -60,6 +61,10 @@ export const AgentChatPanel: React.FC<{
   onClose: () => void;
   /** Transient tool-activity lines for the in-flight send (memo dev/41). */
   toolActivity?: string[];
+  /** Opens the shared settings modal at the Attached-instance scope (memo
+   * dev/42) — the labeled cog beneath the header (the docs/08 anatomy slot;
+   * never in the DEC-042 header itself). Omitted → no cog. */
+  onOpenSettings?: () => void;
   /** Review-before-apply actions (memo dev/41); omitted → cards render inert. */
   onApplyProposal?: (proposalId: string) => Promise<void>;
   onDismissProposal?: (proposalId: string) => Promise<void>;
@@ -81,6 +86,7 @@ export const AgentChatPanel: React.FC<{
   onSend,
   onClose,
   toolActivity = [],
+  onOpenSettings,
   onApplyProposal,
   onDismissProposal,
   onSaveIntent,
@@ -353,6 +359,19 @@ export const AgentChatPanel: React.FC<{
       </div>
 
       <div className={styles.messages} ref={messagesRef}>
+        {/* ⚙ Attachment settings (docs/08 anatomy, memo dev/42): the labeled
+            cog sits at the top of the white content area, beneath the DEC-042
+            header — never in it. */}
+        {onOpenSettings ? (
+          <button
+            type="button"
+            className={styles.attachmentSettingsBtn}
+            aria-haspopup="dialog"
+            onClick={onOpenSettings}
+          >
+            <FontAwesomeIcon icon={faGear} aria-hidden="true" /> Attachment settings
+          </button>
+        ) : null}
         {/* The initial intent reads as the conversation's first message (a
             plain user bubble), collapsed by default, with show more/less and
             an edit pencil. */}

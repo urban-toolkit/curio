@@ -1,8 +1,10 @@
-import React from "react";
+import React, { useState } from "react";
 import { createPortal } from "react-dom";
 import { AgentDock } from "./AgentDock";
 import { AgentChatPanel } from "./AgentChatPanel";
 import { useAgentAttachmentsContext } from "./AgentAttachmentsProvider";
+import { AgentSettingsModal } from "../settings/AgentSettingsModal";
+import { useFlowContext } from "../../../providers/FlowProvider";
 
 /**
  * Canvas overlay for CANVAS-target agents: a persistent dock centered at the
@@ -12,6 +14,9 @@ import { useAgentAttachmentsContext } from "./AgentAttachmentsProvider";
  */
 export const AgentDockOverlay: React.FC = () => {
   const ctx = useAgentAttachmentsContext();
+  const { projectId } = useFlowContext();
+  // Attachment id whose settings modal is open (memo dev/42), or null.
+  const [settingsFor, setSettingsFor] = useState<string | null>(null);
   if (!ctx) return null;
 
   const canvasAttachments = ctx.attachments.filter((a) => a.target.kind === "canvas");
@@ -58,6 +63,9 @@ export const AgentDockOverlay: React.FC = () => {
               onRetryHistory={() => ctx.hydrateSession(selected.attachmentId)}
               onSend={(message) => ctx.sendMessage(selected.attachmentId, message)}
               onClose={ctx.closeChat}
+              onOpenSettings={
+                projectId ? () => setSettingsFor(selected.attachmentId) : undefined
+              }
               toolActivity={ctx.toolActivity[selected.attachmentId] ?? []}
               onApplyProposal={(proposalId) =>
                 ctx.applyProposal(selected.attachmentId, proposalId)
@@ -68,6 +76,17 @@ export const AgentDockOverlay: React.FC = () => {
               onSaveIntent={(intent) => ctx.saveIntent(selected.attachmentId, intent)}
               onSaveTitle={(title) => ctx.saveTitle(selected.attachmentId, title)}
               onClearConversation={() => ctx.clearConversation(selected.attachmentId)}
+            />,
+            document.body,
+          )
+        : null}
+      {settingsFor && projectId
+        ? createPortal(
+            <AgentSettingsModal
+              scope="attachment"
+              projectId={projectId}
+              attachmentId={settingsFor}
+              onClose={() => setSettingsFor(null)}
             />,
             document.body,
           )

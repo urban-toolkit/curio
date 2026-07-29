@@ -187,7 +187,7 @@ export interface AgentPolicySettings {
 /** A resolved policy field: value + which scope supplied it. */
 export interface EffectiveField {
   value: number | null;
-  source: "deployment" | "account" | "project" | null;
+  source: "deployment" | "account" | "project" | "attachment" | null;
 }
 
 /** No-secrets pricing view for the Cost screen (memo dev/40): the caller's
@@ -238,6 +238,17 @@ export interface AccountAgentSettings {
 
 /** The project-agent-default scope for one installed template (memos dev/23/24). */
 export interface ProjectAgentDefaults {
+  coord: string;
+  name: string;
+  revision: number;
+  settings: AgentPolicySettings & Record<string, unknown>;
+  effective: EffectivePolicy;
+}
+
+/** The Attached-instance policy scope (memo dev/42): tighten-only overrides
+ * on one attachment, sharing the record's optimistic revision. */
+export interface AttachmentAgentSettings {
+  attachmentId: string;
   coord: string;
   name: string;
   revision: number;
@@ -407,6 +418,30 @@ export const agentsApi = {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}`,
       { method: "PATCH", body: JSON.stringify({ title }) },
+    );
+  },
+
+  /** The Attached-instance policy scope for one attachment (memo dev/42). */
+  getAttachmentSettings(
+    projectId: string,
+    attachmentId: string,
+  ): Promise<AttachmentAgentSettings> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/settings`,
+    );
+  },
+
+  /** Edit the attachment's tighten-only overrides ({} = Clear overrides);
+   * revisioned on the record's shared token (409 on any concurrent edit). */
+  updateAttachmentSettings(
+    projectId: string,
+    attachmentId: string,
+    revision: number,
+    settings: AgentPolicySettings,
+  ): Promise<AttachmentAgentSettings> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/settings`,
+      { method: "PATCH", body: JSON.stringify({ revision, settings }) },
     );
   },
 
