@@ -469,11 +469,14 @@ def run_attachment(project_id: str, attachment_id: str):
     message = body.get("message")
     if not isinstance(message, str) or not message.strip():
         return _error("body must include a non-empty 'message'")
+    run_context = body.get("context")
+    if run_context is not None and not isinstance(run_context, str):
+        return _error("'context' must be a string when present")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
         config = resolve_provider_config(g.user)
         payload = agents_services.run_attachment(
-            _user_dir_key(g.user), project_id, attachment_id, message, config
+            _user_dir_key(g.user), project_id, attachment_id, message, config, run_context
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
@@ -516,11 +519,14 @@ def stream_attachment(project_id: str, attachment_id: str):
     message = body.get("message")
     if not isinstance(message, str) or not message.strip():
         return _error("body must include a non-empty 'message'")
+    run_context = body.get("context")
+    if run_context is not None and not isinstance(run_context, str):
+        return _error("'context' must be a string when present")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
         config = resolve_provider_config(g.user)
         events = agents_services.stream_attachment(
-            _user_dir_key(g.user), project_id, attachment_id, message, config
+            _user_dir_key(g.user), project_id, attachment_id, message, config, run_context
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)

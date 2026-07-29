@@ -1388,6 +1388,203 @@ class TestToolGrants:
         assert turns[1]["execution"]["pins"]["tools"] == ["ghost.tool"]
 
 
+class TestRunContext:
+    """The ephemeral grounded-context pipeline (memo dev/44): client-composed
+    live-canvas inputs ride one provider message per send — fresh every time,
+    never persisted, byte-identical runs without it."""
+
+    def _attach(self, client, token, project_id, coord="agent.node-content-builder@1.0.0"):
+        r = client.put(
+            f"/api/projects/{project_id}",
+            json={"name": "p", "spec": {"dataflow": {"nodes": [{"id": "n1", "content": "x"}], "edges": [], "packages": []}}, "outputs": []},
+            headers=_auth(token),
+        )
+        assert r.status_code == 200
+        client.post(f"/api/agents/projects/{project_id}/install", json={"coord": coord}, headers=_auth(token))
+        r = client.post(
+            f"/api/agents/projects/{project_id}/attachments",
+            json={"coord": coord, "target": {"kind": "node", "targetId": "n1"}},
+            headers=_auth(token),
+        )
+        return r.get_json()["attachmentId"]
+
+    def _mock_run(self, monkeypatch):
+        from utk_curio.backend.app.agents import services as services_mod
+
+        calls = []
+
+        def _fake_run(config, messages, **kwargs):
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            return "ok"
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        return calls
+
+    def test_context_rides_one_message_before_the_user_turn(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        calls = self._mock_run(monkeypatch)
+        _, token = user_and_token
+        att_id = self._attach(client, token, alice_project)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "write it", "context": "Current Trill: {...}\n Node ID: n1"},
+            headers=_auth(token),
+        )
+        assert r.status_code == 200
+        msgs = calls[0]
+        assert msgs[-1] == {"role": "user", "content": "write it"}
+        assert msgs[-2]["role"] == "user"
+        assert msgs[-2]["content"].startswith("[attachment context — current canvas state]\n")
+        assert "Current Trill" in msgs[-2]["content"]
+        # Ephemeral: the transcript persists only what the user saw.
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        assert [t["text"] for t in turns] == ["write it", "ok"]
+
+    def test_context_is_recomposed_not_replayed(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        calls = self._mock_run(monkeypatch)
+        _, token = user_and_token
+        att_id = self._attach(client, token, alice_project)
+        url = f"/api/agents/projects/{alice_project}/attachments/{att_id}/run"
+        client.post(url, json={"message": "q1", "context": "STATE-A"}, headers=_auth(token))
+        client.post(url, json={"message": "q2", "context": "STATE-B"}, headers=_auth(token))
+        second = calls[1]
+        joined = "\n".join(m["content"] for m in second)
+        assert "STATE-B" in joined
+        assert "STATE-A" not in joined  # never stale, never replayed from history
+
+    def test_absent_context_is_byte_identical(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        calls = self._mock_run(monkeypatch)
+        _, token = user_and_token
+        att_id = self._attach(client, token, alice_project)
+        url = f"/api/agents/projects/{alice_project}/attachments/{att_id}/run"
+        client.post(url, json={"message": "q1"}, headers=_auth(token))
+        # system + user only — no context frame anywhere (regression pin).
+        assert [m["role"] for m in calls[0]] == ["system", "user"]
+        assert not any("[attachment context" in m["content"] for m in calls[0])
+
+    def test_context_is_bounded_with_a_visible_marker(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.agents import services as services_mod
+
+        calls = self._mock_run(monkeypatch)
+        _, token = user_and_token
+        att_id = self._attach(client, token, alice_project)
+        big = "x" * (services_mod.CONTEXT_MAX_CHARS + 500)
+        client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "q", "context": big}, headers=_auth(token),
+        )
+        ctx_msg = calls[0][-2]["content"]
+        assert "truncated: context exceeded" in ctx_msg
+        assert len(ctx_msg) < services_mod.CONTEXT_MAX_CHARS + 200
+
+    def test_non_string_context_is_a_400(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        att_id = self._attach(client, token, alice_project)
+        for url_suffix in ("run", "run/stream"):
+            r = client.post(
+                f"/api/agents/projects/{alice_project}/attachments/{att_id}/{url_suffix}",
+                json={"message": "q", "context": {"not": "a string"}},
+                headers=_auth(token),
+            )
+            assert r.status_code == 400
+            assert "'context'" in r.get_json()["error"]
+
+    def test_stream_carries_the_context_too(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        calls = []
+
+        def _fake_stream(config, messages, **kwargs):
+            calls.append(messages)
+            yield "ok"
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream
+        )
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion",
+            lambda c, m, **kw: "Title",
+        )
+        _, token = user_and_token
+        att_id = self._attach(client, token, alice_project)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
+            json={"message": "q", "context": "LIVE-TRILL"}, headers=_auth(token),
+        )
+        r.get_data()
+        assert "LIVE-TRILL" in calls[0][-2]["content"]
+
+    def test_attachment_card_exposes_the_declared_reads(self, client, user_and_token, tmp_curio, alice_project):
+        _, token = user_and_token
+        self._attach(client, token, alice_project)
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        # The dev/38 grounded mapping for Node Content Builder, verbatim.
+        assert cards[0]["reads"] == ["dataflowContext", "nodeId", "subtask", "workflowGoal"]
+
+
+class TestMaterializationHeal:
+    """Stale built-in store copies self-heal on install/import (memo dev/44)."""
+
+    def test_pre_dev38_copy_gains_the_system_asset(self, client, user_and_token, tmp_curio, alice_project):
+        import json as _json
+
+        from utk_curio.backend.app.agents import builtin, storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        ukey = _user_dir_key(user)
+        coord = "agent.node-content-builder@1.0.0"
+        # Fabricate the stale pre-dev/38 store copy: instruction only.
+        spec = builtin.get_builtin_spec(coord)
+        manifest = builtin.build_builtin_manifest(spec)
+        stale = dict(manifest)
+        stale["prompts"] = {"instruction": manifest["prompts"]["instruction"]}
+        storage.write_definition(
+            ukey, coord, stale,
+            {manifest["prompts"]["instruction"]["path"]: "old instruction bytes"},
+        )
+        client.post(
+            f"/api/agents/projects/{alice_project}/install",
+            json={"coord": coord}, headers=_auth(token),
+        )
+        healed = storage.load_installed_agent_definition(ukey, coord)
+        assert set(healed.prompts) == {"system", "instruction"}
+        base = storage.agent_definition_dir(ukey, coord)
+        for asset in healed.prompts.values():
+            assert (base / asset.path).is_file()
+
+    def test_complete_copy_is_untouched(self, client, user_and_token, tmp_curio, alice_project):
+        from utk_curio.backend.app.agents import storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        ukey = _user_dir_key(user)
+        coord = "agent.node-content-builder@1.0.0"
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token))
+        manifest_path = storage.agent_definition_dir(ukey, coord) / "manifest.json"
+        before = manifest_path.stat().st_mtime_ns, manifest_path.read_bytes()
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": coord}, headers=_auth(token))
+        assert (manifest_path.stat().st_mtime_ns, manifest_path.read_bytes()) == before
+
+    def test_imported_shadow_is_never_overwritten(self, client, user_and_token, tmp_curio):
+        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        ukey = _user_dir_key(user)
+        # An owned imported definition deliberately shadowing a built-in coord.
+        coord = _write_def(user, "agent.node-content-builder")
+        services_mod._materialize_builtin(ukey, coord)
+        from utk_curio.backend.app.agents import storage
+
+        kept = storage.load_installed_agent_definition(ukey, coord)
+        assert kept.provenance.trust == "imported"  # bytes untouched
+
+
 class TestToolLoop:
     """The bounded read-tool execution loop (memo dev/41): granted reads
     execute with normalized events; everything else refuses loudly to the

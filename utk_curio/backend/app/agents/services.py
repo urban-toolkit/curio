@@ -107,16 +107,30 @@ def _require_definition(user_key: str, coord: str) -> AgentManifest:
 
 
 def _materialize_builtin(user_key: str, coord: str) -> None:
-    """Write a built-in's bytes (manifest + instruction prompt) into the user store,
+    """Write a built-in's bytes (manifest + prompt assets) into the user store,
     so an installed agent is self-contained and runs from its own on-disk assets
-    rather than the legacy ``llm-prompts/`` dir. No-op if already present or not a
-    built-in (store/published defs already carry their bytes)."""
-    if storage.load_installed_agent_definition(user_key, coord) is not None:
-        return
+    rather than the legacy ``llm-prompts/`` dir.
+
+    Heals stale copies (memo dev/44): a built-in store copy that predates a
+    roster asset (e.g. the pre-dev/38 missing system preamble) is rewritten to
+    the current roster set on the next install/import — idempotent, and never
+    touches a non-built-in definition (an owned import deliberately shadowing
+    a built-in coord keeps its own bytes)."""
+    existing = storage.load_installed_agent_definition(user_key, coord)
+    if existing is not None and existing.provenance.trust != "built-in":
+        return  # owned/imported shadow — its bytes are authoritative
     spec = builtin.get_builtin_spec(coord)
     if spec is None:
         return
     manifest = builtin.build_builtin_manifest(spec)
+    if existing is not None:
+        base = storage.agent_definition_dir(user_key, coord)
+        declared = manifest["prompts"]
+        complete = set(existing.prompts) == set(declared) and all(
+            (base / asset["path"]).is_file() for asset in declared.values()
+        )
+        if complete:
+            return  # current copy already matches the roster asset set
     instruction = builtin.read_prompt_text(coord, "instruction")
     if instruction is None:
         return  # prompt file missing — leave the built-in fallback to handle runtime
@@ -582,6 +596,9 @@ def _attachment_card(spec: dict, record: dict, user_key: str) -> dict:
         "name": m.name if m else coord,
         "category": m.category if m else None,
         "hooks": [t.kind for t in m.compatible_targets] if m else [],
+        # The manifest's declared inputs (dev/38) — drives the client-side
+        # grounded-context composer (memo dev/44).
+        "reads": list(m.inputs_reads) if m else [],
         "intent": record.get("intent") or _resolve_instruction_text(user_key, coord),
         "intentEdited": bool(record.get("intent")),
         # Conversation title (memo dev/25): the custom portion only — the
@@ -1095,7 +1112,12 @@ def _add_usage(total: dict, sink: dict) -> None:
 
 
 def _prepare_run(
-    user_key: str, project_id: str, attachment_id: str, message: str, config: ProviderConfig
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    message: str,
+    config: ProviderConfig,
+    run_context: str | None = None,
 ) -> tuple[str, str | None, list, dict, bool, dict]:
     """Shared run/stream setup: resolve the attachment, its instruction (intent
     override → prompt source, dev/19), the provider messages including the
@@ -1144,9 +1166,19 @@ def _prepare_run(
     if not isinstance(session_id, str):
         session_id = None
     prior = sessions.read_turns(user_key, project_id, session_id) if session_id else []
+    # Ephemeral grounded context (memo dev/44): the client-composed live-canvas
+    # inputs ride ONE provider message per send — recomputed fresh each time
+    # (never stale), never persisted (the transcript stays what the user saw),
+    # never replayed from history. Absent → byte-identical to before.
+    context_block = _bounded_context(run_context)
     messages = [
         {"role": "system", "content": system_content},
         *sessions.context_messages(prior),
+        *(
+            [{"role": "user", "content": f"{_CONTEXT_FRAME}{context_block}"}]
+            if context_block
+            else []
+        ),
         {"role": "user", "content": message},
     ]
     wants_title = (
@@ -1208,6 +1240,22 @@ def _persist_exchange(
 # calls per run ≤ MAX_TOOL_ROUNDS + 1. A runtime constant until someone needs
 # to tune it (REQ-QUOTA-001 notes tool quotas as the eventual policy home).
 MAX_TOOL_ROUNDS = 2
+
+# Ephemeral run context (memo dev/44): the client-composed grounded inputs
+# (live Trill, node id, subtask, …) framed as one provider message per send.
+# Bounded server-side; legacy call sites sent unbounded payloads, this names
+# the limit and truncates visibly instead of failing.
+CONTEXT_MAX_CHARS = 120_000
+_CONTEXT_TRUNCATION_MARKER = "\n…[truncated: context exceeded the run-context bound]"
+_CONTEXT_FRAME = "[attachment context — current canvas state]\n"
+
+
+def _bounded_context(run_context: str | None) -> str | None:
+    if not isinstance(run_context, str) or not run_context.strip():
+        return None
+    if len(run_context) <= CONTEXT_MAX_CHARS:
+        return run_context
+    return run_context[:CONTEXT_MAX_CHARS] + _CONTEXT_TRUNCATION_MARKER
 
 
 def _mint_proposal(
@@ -1344,7 +1392,12 @@ def _tool_result_message(tool_id: str, status: str, text: str, *, final: bool) -
 
 
 def run_attachment(
-    user_key: str, project_id: str, attachment_id: str, message: str, config: ProviderConfig
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    message: str,
+    config: ProviderConfig,
+    run_context: str | None = None,
 ) -> dict:
     """Run one turn of an attached agent through the provider port.
 
@@ -1356,7 +1409,7 @@ def run_attachment(
     (excluded from future context) so history matches what the user saw.
     """
     coord, session_id, messages, run_policy, wants_title, pins, loop_ctx = _prepare_run(
-        user_key, project_id, attachment_id, message, config
+        user_key, project_id, attachment_id, message, config, run_context
     )
     execution_id = uuid.uuid4().hex
     # Atomic admission (dev/40): after validation (an invalid request never
@@ -1458,7 +1511,12 @@ def run_attachment(
 
 
 def stream_attachment(
-    user_key: str, project_id: str, attachment_id: str, message: str, config: ProviderConfig
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    message: str,
+    config: ProviderConfig,
+    run_context: str | None = None,
 ):
     """Streaming twin of :func:`run_attachment` (memo dev/22).
 
@@ -1473,7 +1531,7 @@ def stream_attachment(
     marker. Nothing is persisted per-delta.
     """
     coord, session_id, messages, run_policy, wants_title, pins, loop_ctx = _prepare_run(
-        user_key, project_id, attachment_id, message, config
+        user_key, project_id, attachment_id, message, config, run_context
     )
     execution_id = uuid.uuid4().hex
     # Eager atomic admission (dev/40): a quota/budget denial surfaces as a
