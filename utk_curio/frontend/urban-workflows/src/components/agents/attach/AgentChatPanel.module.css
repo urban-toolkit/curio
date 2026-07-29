@@ -13,8 +13,11 @@
   right: 0;
   top: 0;
   bottom: 0;
-  width: 380px;
-  max-width: 90vw;
+  /* Catalog-drawer sizing parity (memo dev/46): the Agents Catalog panel's
+     exact dimensions, in the same scale family as the Nodes/Datasets
+     drawers. Content scales (85% bubbles, min-width:0 columns). */
+  width: 560px;
+  max-width: 92vw;
   z-index: 1100;
   display: flex;
   flex-direction: column;
