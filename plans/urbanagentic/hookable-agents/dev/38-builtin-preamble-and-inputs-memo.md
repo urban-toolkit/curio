@@ -42,3 +42,13 @@ New `TestPreambleAndInputs` (all 13 manifests declare the system asset + non-emp
 ## 4. Traceability
 
 - Amends `BL-P5-20260719-01` (the roster) and the `BL-P4-…-02` run contract; `dev/05` roster table + `dev/06` parity rule are the sources; `RISK-PROMPT-002` (composition divergence) addressed.
+
+## 5. Post-Implementation Testing Amendment (2026-07-29, memo dev/44)
+
+Feature testing found that declaring the reads was necessary but not sufficient: **nothing supplied them at run time** — an attached Node Content Builder received preamble + instruction + the user's free text only, never the Trill/nodeId/subtask/task its legacy call site pushed. Verified findings and corrections (implemented in memo `dev/44`, `BL-P2-20260729-10`):
+
+- **Preamble: correct as shipped** — verified empirically, including for stale pre-dev/38 store copies (the runtime's roster fallback composed the full 18.5 KB default preamble). The perceived preamble failure was the missing inputs.
+- **Inputs: now supplied** — the client composes each attachment's declared reads from the **live canvas** on every send (unsaved nodes included) and the runtime frames them as one ephemeral provider message; Node Content Builder reproduces the legacy `clickGenerateContentNode` framing byte-for-byte, target-content blanking included. Reads with no chat-time source (`connectionSide`, panel-owned `keywords`/`currentTask`) are documented omissions — the user's message carries that intent in chat.
+- **Store hygiene**: `_materialize_builtin` now heals stale built-in copies to the current roster asset set on install/import (this section's "materialization writes both assets" is thereby true for pre-dev/38 copies too).
+
+The §2 mapping table remains the authoritative reads contract; `dev/44` §3.3 records its chat-time realization per agent.
