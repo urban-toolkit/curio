@@ -40,6 +40,14 @@ export interface AgentAttachmentsContextValue extends AgentAttachmentsState {
   saveTitle: (attachmentId: string, title: string) => Promise<void>;
   /** Clear the server transcript and the local cache (keeps the attachment). */
   clearConversation: (attachmentId: string) => Promise<void>;
+  /** Transient tool-activity lines for the live send (memo dev/41): shown as
+   * system lines while streaming, never persisted, gone on rehydrate. */
+  toolActivity: Record<string, string[]>;
+  /** Apply a pending review proposal (the only mutation path); refreshes the
+   * transcript + listing so the outcome and result turn arrive together. */
+  applyProposal: (attachmentId: string, proposalId: string) => Promise<void>;
+  /** Dismiss a pending review proposal without applying it. */
+  dismissProposal: (attachmentId: string, proposalId: string) => Promise<void>;
 }
 
 const AgentAttachmentsContext = createContext<AgentAttachmentsContextValue | null>(null);
@@ -57,6 +65,7 @@ export const AgentAttachmentsProvider: React.FC<{
   const [transcripts, setTranscripts] = useState<Record<string, AgentSessionTurn[]>>({});
   const [hydratingId, setHydratingId] = useState<string | null>(null);
   const [hydrateErrors, setHydrateErrors] = useState<Record<string, string>>({});
+  const [toolActivity, setToolActivity] = useState<Record<string, string[]>>({});
   const hydratedRef = useRef<Set<string>>(new Set());
   const projectRef = useRef<string | null>(effectiveProjectId);
 
@@ -160,12 +169,36 @@ export const AgentAttachmentsProvider: React.FC<{
       appendTurns(attachmentId, [{ role: "user", text: message }]);
       let streamed = "";
       let succeeded = false;
+      let sawProposal = false;
+      setToolActivity((prev) => ({ ...prev, [attachmentId]: [] }));
+      const onEvent = (name: string, payload: Record<string, unknown>) => {
+        // Transient system lines (dev/41): "<tool> …" then "<tool> · <status>".
+        const tool = typeof payload.tool === "string" ? payload.tool : "";
+        const line =
+          name === "tool_requested"
+            ? `${tool} …`
+            : name === "tool_result"
+              ? `${tool} · ${payload.status ?? ""}`
+              : null;
+        if (line)
+          setToolActivity((prev) => ({
+            ...prev,
+            [attachmentId]: [...(prev[attachmentId] ?? []), line],
+          }));
+        if (name === "review_required") sawProposal = true;
+      };
       try {
-        const result = await agentsApi.runAttachmentStream(pid, attachmentId, message, (delta) => {
-          if (!streamed) appendTurns(attachmentId, [{ role: "agent", text: delta }]);
-          else replaceLastAgentTurn(attachmentId, streamed + delta);
-          streamed += delta;
-        });
+        const result = await agentsApi.runAttachmentStream(
+          pid,
+          attachmentId,
+          message,
+          (delta) => {
+            if (!streamed) appendTurns(attachmentId, [{ role: "agent", text: delta }]);
+            else replaceLastAgentTurn(attachmentId, streamed + delta);
+            streamed += delta;
+          },
+          onEvent,
+        );
         // The finalized turn keeps the run's execution identity + Actual usage
         // (memo dev/37) and its typed content parts (memo dev/39) so the
         // local transcript matches the persisted one.
@@ -173,6 +206,7 @@ export const AgentAttachmentsProvider: React.FC<{
           ? { executionId: result.executionId, usage: result.usage ?? null, status: "ok" as const }
           : undefined;
         const content = result.content && result.content.length ? result.content : undefined;
+        sawProposal = sawProposal || Boolean(content?.some((p) => p.type === "proposal"));
         if (!streamed)
           appendTurns(attachmentId, [
             {
@@ -200,10 +234,48 @@ export const AgentAttachmentsProvider: React.FC<{
           // (e.g. the stable quota 429) render directly.
           appendErrorTurn(attachmentId, e);
         }
+      } finally {
+        // The live tool lines are transient: gone once the turn finalizes
+        // (the durable record is execution.toolCalls, dev/41).
+        setToolActivity((prev) => ({ ...prev, [attachmentId]: [] }));
       }
-      if (succeeded && untitled) await state.reload();
+      // A minted proposal changes the attachment's activeProposal mirror.
+      if (succeeded && (untitled || sawProposal)) await state.reload();
     },
     [appendTurns, replaceLastAgentTurn, appendErrorTurn, state.run, state.reload, state.attachments],
+  );
+
+  const applyProposal = useCallback(
+    async (attachmentId: string, proposalId: string) => {
+      const pid = projectRef.current;
+      if (!pid) throw new Error("no project");
+      try {
+        await agentsApi.applyProposal(pid, attachmentId, proposalId);
+      } finally {
+        // Success appends the result turn + statuses; a 409 marked it stale —
+        // either way the transcript and listing are the truth: refresh both
+        // (dropping the once-guard so the session refetches).
+        hydratedRef.current.delete(attachmentId);
+        await hydrateSession(attachmentId);
+        await state.reload();
+      }
+    },
+    [hydrateSession, state.reload],
+  );
+
+  const dismissProposal = useCallback(
+    async (attachmentId: string, proposalId: string) => {
+      const pid = projectRef.current;
+      if (!pid) throw new Error("no project");
+      try {
+        await agentsApi.dismissProposal(pid, attachmentId, proposalId);
+      } finally {
+        hydratedRef.current.delete(attachmentId);
+        await hydrateSession(attachmentId);
+        await state.reload();
+      }
+    },
+    [hydrateSession, state.reload],
   );
 
   const saveIntent = useCallback(
@@ -265,6 +337,9 @@ export const AgentAttachmentsProvider: React.FC<{
       saveIntent,
       saveTitle,
       clearConversation,
+      toolActivity,
+      applyProposal,
+      dismissProposal,
     }),
     [
       state,
@@ -279,6 +354,9 @@ export const AgentAttachmentsProvider: React.FC<{
       saveIntent,
       saveTitle,
       clearConversation,
+      toolActivity,
+      applyProposal,
+      dismissProposal,
     ],
   );
 

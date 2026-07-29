@@ -12,12 +12,14 @@ import {
 import type {
   AgentAttachment,
   AgentCardPart,
+  AgentProposalPart,
   AgentSessionTurn,
   AgentSuggestedPromptsPart,
 } from "../../../api/agentsApi";
 import { agentCategoryKey } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
 import { attachmentDisplayName, TITLE_MAX_CHARS } from "./attachmentDisplayName";
 import { AgentChatCard } from "../content/AgentChatCard";
+import { AgentReviewCard } from "../content/AgentReviewCard";
 import { SafeAgentContent } from "../content/SafeAgentContent";
 import styles from "./AgentChatPanel.module.css";
 
@@ -56,6 +58,11 @@ export const AgentChatPanel: React.FC<{
   onRetryHistory?: () => void;
   onSend: (message: string) => Promise<void>;
   onClose: () => void;
+  /** Transient tool-activity lines for the in-flight send (memo dev/41). */
+  toolActivity?: string[];
+  /** Review-before-apply actions (memo dev/41); omitted → cards render inert. */
+  onApplyProposal?: (proposalId: string) => Promise<void>;
+  onDismissProposal?: (proposalId: string) => Promise<void>;
   onSaveIntent?: (intent: string | null) => Promise<void>;
   /** Persist a manual conversation title (memo dev/25). Omitted → the header
    * title is a plain, non-editable label. */
@@ -73,6 +80,9 @@ export const AgentChatPanel: React.FC<{
   onRetryHistory,
   onSend,
   onClose,
+  toolActivity = [],
+  onApplyProposal,
+  onDismissProposal,
   onSaveIntent,
   onSaveTitle,
   onClearConversation,
@@ -438,18 +448,35 @@ export const AgentChatPanel: React.FC<{
                 <div className={`${styles.msgAgent} ${t.error ? styles.msgError : ""}`}>
                   {/* Agent rich content renders ONLY through the safe renderer
                       (REQ-SEC-002); error markers are server-composed plain
-                      text. Cards are informational plain data (docs/08). */}
+                      text. Cards are informational plain data (docs/08);
+                      proposals render the review card (dev/41). */}
                   {t.error ? t.text : <SafeAgentContent text={t.text} />}
                   {(t.content ?? [])
                     .filter((p): p is AgentCardPart => p.type === "card")
                     .map((card, j) => (
                       <AgentChatCard key={j} card={card} tintClassName={tint} />
                     ))}
+                  {(t.content ?? [])
+                    .filter((p): p is AgentProposalPart => p.type === "proposal")
+                    .map((part, j) => (
+                      <AgentReviewCard
+                        key={part.proposalId ?? j}
+                        part={part}
+                        tintClassName={tint}
+                        onApply={onApplyProposal}
+                        onDismiss={onDismissProposal}
+                      />
+                    ))}
                 </div>
               </div>
             ),
           )
         )}
+        {toolActivity.map((line, i) => (
+          <div key={`tool-${i}`} className={styles.systemLine}>
+            {line}
+          </div>
+        ))}
       </div>
 
       {suggested && suggested.alternatives.length > 0 ? (

@@ -16,6 +16,8 @@ jest.mock("../../api/agentsApi", () => ({
     updateAttachmentTitle: jest.fn(),
     getSession: jest.fn(),
     clearSession: jest.fn(),
+    applyProposal: jest.fn(),
+    dismissProposal: jest.fn(),
   },
 }));
 
@@ -55,6 +57,9 @@ const Harness: React.FC = () => {
       <button onClick={() => void ctx.detach("a1")}>detach</button>
       <button onClick={() => void ctx.clearConversation("a1")}>clear</button>
       <button onClick={() => void ctx.saveTitle("a1", "New Name")}>rename</button>
+      <button onClick={() => void ctx.applyProposal("a1", "p1").catch(() => undefined)}>
+        apply
+      </button>
       <div data-testid="selected">{ctx.selectedId ?? "none"}</div>
       <div data-testid="hydrating">{ctx.hydratingId ?? "none"}</div>
       <div data-testid="turns">{turns.map((t) => `${t.role}:${t.text}`).join("|")}</div>
@@ -339,5 +344,38 @@ describe("AgentAttachmentsProvider conversation titles (memo dev/25)", () => {
     });
     await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("denied"));
     expect(api.listAttachments.mock.calls.length).toBe(before);
+  });
+});
+
+describe("AgentAttachmentsProvider review proposals (memo dev/41)", () => {
+  it("applyProposal calls the endpoint then refreshes transcript and listing", async () => {
+    api.applyProposal.mockResolvedValue({ attachmentId: "a1", proposalId: "p1", status: "applied" });
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    api.getSession.mockClear();
+    api.listAttachments.mockClear();
+    await act(async () => {
+      fireEvent.click(screen.getByText("apply"));
+    });
+    expect(api.applyProposal).toHaveBeenCalledWith("p1", "a1", "p1");
+    // The transcript (statuses + result turn) and the listing (activeProposal
+    // mirror) are both refreshed so the outcome arrives together.
+    expect(api.getSession).toHaveBeenCalledWith("p1", "a1");
+    expect(api.listAttachments).toHaveBeenCalled();
+  });
+
+  it("a 409 conflict still refreshes (the proposal was marked stale server-side)", async () => {
+    api.applyProposal.mockRejectedValue(
+      Object.assign(new Error("the node changed since this was proposed"), { status: 409 }),
+    );
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    api.getSession.mockClear();
+    await act(async () => {
+      fireEvent.click(screen.getByText("apply"));
+    });
+    expect(api.getSession).toHaveBeenCalledWith("p1", "a1");
   });
 });

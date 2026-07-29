@@ -1,0 +1,111 @@
+/* The review card shares the docs/03 chat-feedback surface with AgentChatCard
+   and adds the system review controls (Apply/Dismiss) — the sanctioned
+   exception family to "no agent action buttons" (docs/08, DEC-035 pattern). */
+
+.card {
+  background: #f7f7f8;
+  border: 1px solid #ececee;
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-top: 8px;
+  max-width: 100%;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.accentDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+
+.kind {
+  font-weight: 400;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8a8a8e;
+}
+
+.preview {
+  background: #fff;
+  border: 1px solid #ececee;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-top: 8px;
+  font-size: 0.8rem;
+  color: #444;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.apply {
+  border: none;
+  border-radius: 8px;
+  padding: 6px 16px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fff;
+  background: #2f7d4f;
+  cursor: pointer;
+}
+
+.apply:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.dismiss {
+  border: 1px solid #ececee;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 0.8rem;
+  color: #555;
+  background: #fff;
+  cursor: pointer;
+}
+
+.dismiss:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.outcome {
+  margin-top: 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #6a6a6e;
+}
+
+.outcome_applied {
+  color: #2f7d4f;
+}
+
+.outcome_stale {
+  color: #b0632a;
+}
+
+.error {
+  margin-top: 8px;
+  font-size: 0.76rem;
+  color: #b3423f;
+}

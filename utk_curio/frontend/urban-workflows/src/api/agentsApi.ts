@@ -66,6 +66,15 @@ export interface AgentAttachment {
   /** True when the title is a manual rename: it survives conversation clears
    * and is never overwritten by auto-generation. */
   titleEdited: boolean;
+  /** The attachment's single review proposal, newest wins (memo dev/41);
+   * null/absent when none exists. Status wiring for the review card. */
+  activeProposal?: {
+    proposalId: string;
+    tool: string;
+    nodeId: string;
+    summary: string;
+    status: AgentProposalStatus;
+  } | null;
 }
 
 /** Actual provider-reported token usage (memo dev/37) — never an estimate. */
@@ -115,9 +124,33 @@ export interface AgentCardPart {
   lines: string[];
 }
 
+export type AgentProposalStatus =
+  | "pending"
+  | "applied"
+  | "dismissed"
+  | "superseded"
+  | "stale";
+
+/**
+ * A review-before-apply proposal (memo dev/41): runtime-minted when a granted
+ * mutate tool is requested. Only the authenticated apply endpoint executes
+ * it; the part is the transcript's display record of the outcome.
+ */
+export interface AgentProposalPart {
+  type: "proposal";
+  proposalId: string;
+  tool: string;
+  summary: string;
+  /** The full proposed content (plain text — rendered inert). */
+  preview: string;
+  pins: { nodeId: string; contentSha256: string };
+  status: AgentProposalStatus;
+}
+
 export type AgentContentPart =
   | AgentSuggestedPromptsPart
   | AgentCardPart
+  | AgentProposalPart
   | { type: string };
 
 /** One persisted chat turn of an attachment's session. */
@@ -361,6 +394,31 @@ export const agentsApi = {
     );
   },
 
+  /** Apply a pending review proposal (memo dev/41) — the only mutation path;
+   * revision-safe (409 when the target drifted, marking the proposal stale). */
+  applyProposal(
+    projectId: string,
+    attachmentId: string,
+    proposalId: string,
+  ): Promise<{ attachmentId: string; proposalId: string; status: AgentProposalStatus }> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}/apply`,
+      { method: "POST" },
+    );
+  },
+
+  /** Dismiss a pending review proposal without applying it. */
+  dismissProposal(
+    projectId: string,
+    attachmentId: string,
+    proposalId: string,
+  ): Promise<{ attachmentId: string; proposalId: string; status: AgentProposalStatus }> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}`,
+      { method: "DELETE" },
+    );
+  },
+
   /** The attachment's persisted chat transcript (its session history). */
   getSession(projectId: string, attachmentId: string): Promise<AgentSession> {
     return apiFetch(
@@ -413,6 +471,10 @@ export const agentsApi = {
     attachmentId: string,
     message: string,
     onDelta: (text: string) => void,
+    /** Optional observer for the dev/41 tool/review events (`tool_requested`,
+     * `tool_started`, `tool_result`, `review_required`) — transient system-
+     * line display only; the durable state arrives with `done`/rehydration. */
+    onEvent?: (name: string, payload: Record<string, unknown>) => void,
   ): Promise<{
     reply: string;
     executionId?: string;
@@ -463,6 +525,13 @@ export const agentsApi = {
       if (event === "delta" && payload.text) onDelta(payload.text);
       else if (event === "execution") executionId = payload.executionId;
       else if (event === "content") content = payload.parts;
+      else if (
+        event === "tool_requested" ||
+        event === "tool_started" ||
+        event === "tool_result" ||
+        event === "review_required"
+      )
+        onEvent?.(event, payload as Record<string, unknown>);
       else if (event === "done") {
         reply = payload.reply ?? "";
         executionId = payload.executionId ?? executionId;

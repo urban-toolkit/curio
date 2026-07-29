@@ -141,6 +141,19 @@ describe("agentsApi", () => {
     });
   });
 
+  it("applyProposal() POSTs the apply action; dismissProposal() DELETEs (memo dev/41)", () => {
+    agentsApi.applyProposal("p1", "att-1", "prop-1");
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/agents/projects/p1/attachments/att-1/proposals/prop-1/apply",
+      { method: "POST" },
+    );
+    agentsApi.dismissProposal("p1", "att-1", "prop-1");
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/agents/projects/p1/attachments/att-1/proposals/prop-1",
+      { method: "DELETE" },
+    );
+  });
+
   describe("runAttachmentStream()", () => {
     const realFetch = global.fetch;
     afterEach(() => {
@@ -227,6 +240,27 @@ describe("agentsApi", () => {
       );
       const result = await agentsApi.runAttachmentStream("p1", "att-1", "hi", () => undefined);
       expect(result.content).toEqual(parts);
+    });
+
+    it("routes tool/review events to onEvent (memo dev/41)", async () => {
+      global.fetch = jest.fn().mockResolvedValue(
+        streamResponse([
+          'event: tool_requested\ndata: {"tool": "node.read"}\n\n',
+          'event: tool_started\ndata: {"tool": "node.read"}\n\n',
+          'event: tool_result\ndata: {"tool": "node.read", "status": "ok"}\n\n',
+          'event: review_required\ndata: {"proposalId": "p1", "tool": "node.content.write", "summary": "s"}\n\n',
+          'event: delta\ndata: {"text": "hi"}\n\nevent: done\ndata: {"reply": "hi"}\n\n',
+        ]),
+      );
+      const seen: Array<[string, unknown]> = [];
+      const result = await agentsApi.runAttachmentStream(
+        "p1", "att-1", "hi", () => undefined, (name, payload) => seen.push([name, payload]),
+      );
+      expect(seen.map(([n]) => n)).toEqual([
+        "tool_requested", "tool_started", "tool_result", "review_required",
+      ]);
+      expect(seen[2][1]).toEqual({ tool: "node.read", status: "ok" });
+      expect(result.reply).toBe("hi");
     });
 
     it("skips unknown event names (forward tolerance)", async () => {

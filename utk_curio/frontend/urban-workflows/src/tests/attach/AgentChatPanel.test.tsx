@@ -367,3 +367,40 @@ describe("AgentChatPanel structured content (memo dev/39)", () => {
     expect(screen.getByDisplayValue("Only one")).toBeInTheDocument();
   });
 });
+
+describe("AgentChatPanel review + tool activity (memo dev/41)", () => {
+  it("renders a proposal part as the review card and wires apply", () => {
+    const onApplyProposal = jest.fn().mockResolvedValue(undefined);
+    renderPanel({
+      turns: [
+        {
+          role: "agent",
+          text: "Here is my proposal.",
+          content: [
+            {
+              type: "proposal",
+              proposalId: "p1",
+              tool: "node.content.write",
+              summary: "Replace the content of node 'n1'",
+              preview: "print(2)",
+              pins: { nodeId: "n1", contentSha256: "abc" },
+              status: "pending",
+            },
+          ],
+        },
+      ],
+      onApplyProposal,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(onApplyProposal).toHaveBeenCalledWith("p1");
+  });
+
+  it("shows transient tool-activity system lines", () => {
+    renderPanel({
+      turns: [{ role: "user", text: "q" }],
+      toolActivity: ["node.read …", "node.read · ok"],
+    });
+    expect(screen.getByText("node.read …")).toBeInTheDocument();
+    expect(screen.getByText("node.read · ok")).toBeInTheDocument();
+  });
+});

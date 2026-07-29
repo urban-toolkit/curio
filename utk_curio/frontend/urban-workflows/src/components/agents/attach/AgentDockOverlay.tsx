@@ -58,6 +58,13 @@ export const AgentDockOverlay: React.FC = () => {
               onRetryHistory={() => ctx.hydrateSession(selected.attachmentId)}
               onSend={(message) => ctx.sendMessage(selected.attachmentId, message)}
               onClose={ctx.closeChat}
+              toolActivity={ctx.toolActivity[selected.attachmentId] ?? []}
+              onApplyProposal={(proposalId) =>
+                ctx.applyProposal(selected.attachmentId, proposalId)
+              }
+              onDismissProposal={(proposalId) =>
+                ctx.dismissProposal(selected.attachmentId, proposalId)
+              }
               onSaveIntent={(intent) => ctx.saveIntent(selected.attachmentId, intent)}
               onSaveTitle={(title) => ctx.saveTitle(selected.attachmentId, title)}
               onClearConversation={() => ctx.clearConversation(selected.attachmentId)}
