@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within, act } from "@testing-library/react";
 
 jest.mock("../../api/agentsApi", () => ({
   agentsApi: {
@@ -49,7 +49,9 @@ beforeEach(() => {
   jest.clearAllMocks();
   api.catalog.mockResolvedValue({ agents: [card("agent.node-explainer")] } as any);
   api.listImports.mockResolvedValue({ agents: [card("agent.chat-agent", { scope: "my-imports", imported: true })] } as any);
+  api.listProjectAgents.mockResolvedValue({ agents: [] } as any);
   api.installToProject.mockResolvedValue({ agents: [] } as any);
+  api.uninstallFromProject.mockResolvedValue({ agents: [] } as any);
   api.publish.mockResolvedValue({ coord: "x", published: true } as any);
   const effective = {
     quotas: { runsPerDay: { value: 200, usedToday: 0, source: "deployment" } },
@@ -195,5 +197,90 @@ describe("AgentsCatalogDrawer", () => {
     await waitFor(() =>
       expect(screen.getByRole("dialog", { name: "Import agent package" })).toBeInTheDocument(),
     );
+  });
+});
+
+describe("AgentsCatalogDrawer tab transitions + state sync (memo dev/47)", () => {
+  it("a previously visited tab renders its cache instantly — no Loading reset", async () => {
+    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("My Imports"));
+    await waitFor(() => expect(screen.getByText("chat-agent")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Global Catalog"));
+    // Cached rows are visible immediately; no Loading… flash, no blanking.
+    expect(screen.getByText("node-explainer")).toBeInTheDocument();
+    expect(screen.queryByText("Loading…")).toBeNull();
+  });
+
+  it("an imported AND installed agent shows Uninstall on My Imports (Node Content Builder regression)", async () => {
+    api.listImports.mockResolvedValue({
+      agents: [
+        card("agent.node-content-builder", {
+          scope: "my-imports",
+          imported: true,
+          installedInProject: true,
+        }),
+      ],
+    } as any);
+    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("My Imports"));
+    await waitFor(() => expect(screen.getByText("node-content-builder")).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Uninstall" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Install" })).toBeNull();
+  });
+
+  it("My Imports is fetched with the open project's id (lockfile truth)", async () => {
+    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    fireEvent.click(screen.getByText("My Imports"));
+    await waitFor(() => expect(api.listImports).toHaveBeenCalledWith("p1"));
+  });
+
+  it("a lifecycle action refreshes every scope so all tabs agree", async () => {
+    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    api.catalog.mockClear();
+    api.listImports.mockClear();
+    api.listProjectAgents.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Install" }));
+    await waitFor(() => expect(api.installToProject).toHaveBeenCalledWith("p1", "agent.node-explainer@1.0.0"));
+    await waitFor(() => {
+      expect(api.catalog).toHaveBeenCalled();
+      expect(api.listImports).toHaveBeenCalled();
+      expect(api.listProjectAgents).toHaveBeenCalled();
+    });
+  });
+
+  it("a refresh error keeps the cached rows (banner over content)", async () => {
+    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    api.listImports.mockRejectedValue(new Error("network down"));
+    fireEvent.click(screen.getByText("My Imports"));
+    // First visit fails → error banner; switch back: Global cache intact.
+    await waitFor(() => expect(screen.getByText("network down")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Global Catalog"));
+    expect(screen.getByText("node-explainer")).toBeInTheDocument();
+  });
+
+  it("out-of-order responses are dropped (race guard)", async () => {
+    let resolveSlow: (v: unknown) => void = () => undefined;
+    const slow = new Promise((r) => {
+      resolveSlow = r;
+    });
+    // First Global fetch hangs; the revisit's fetch resolves fresh data first.
+    api.catalog
+      .mockImplementationOnce(() => slow as any)
+      .mockResolvedValue({ agents: [card("agent.fresh-agent")] } as any);
+    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    fireEvent.click(screen.getByText("My Imports"));
+    await waitFor(() => expect(screen.getByText("chat-agent")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Global Catalog"));
+    await waitFor(() => expect(screen.getByText("fresh-agent")).toBeInTheDocument());
+    // The slow FIRST response lands late: it must be dropped, not repainted.
+    await act(async () => {
+      resolveSlow({ agents: [card("agent.stale-agent")] });
+    });
+    expect(screen.queryByText("stale-agent")).toBeNull();
+    expect(screen.getByText("fresh-agent")).toBeInTheDocument();
   });
 });

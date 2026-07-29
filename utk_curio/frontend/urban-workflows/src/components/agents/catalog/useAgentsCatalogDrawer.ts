@@ -1,15 +1,28 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { agentsApi, AgentCard } from "../../../api/agentsApi";
 import { notifyAgentsPaletteRefresh } from "../../../utils/agentsPaletteEvents";
 
 /**
- * Self-contained data hook for the Agents Catalog drawer. Owns the active scope,
- * the cards for that scope, and the lifecycle actions — all over ``agentsApi``.
- * Deliberately light on provider coupling (only ``projectId``) so it is easy to
- * test and reuse.
+ * Self-contained data hook for the Agents Catalog drawer. Owns the active
+ * scope, a **per-scope card cache**, and the lifecycle actions — all over
+ * ``agentsApi``.
+ *
+ * Transition + consistency semantics (memo dev/47):
+ * - **Stale-while-revalidate tabs**: each scope keeps its last-known rows;
+ *   switching tabs renders the cache instantly and refreshes in the
+ *   background. `loading` is true only for a scope's FIRST ever fetch — tab
+ *   changes never blank previously loaded content.
+ * - **Race guard**: a per-scope request sequence drops out-of-order
+ *   responses, so rapid tab switching can never paint stale data.
+ * - **All-scope refresh after actions**: install/uninstall/import/publish
+ *   refresh every scope in parallel (and notify the AGENTS palette), so all
+ *   tabs agree immediately.
+ * - Errors keep the cached rows (banner over content, never instead of it).
  */
 
 export type AgentScope = "global" | "my-imports" | "installed";
+
+const ALL_SCOPES: AgentScope[] = ["global", "my-imports", "installed"];
 
 export interface AgentsCatalogDrawerState {
   scope: AgentScope;
@@ -32,40 +45,72 @@ export function useAgentsCatalogDrawer(
   projectId: string | null,
 ): AgentsCatalogDrawerState {
   const [scope, setScope] = useState<AgentScope>("global");
-  const [cards, setCards] = useState<AgentCard[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [cardsByScope, setCardsByScope] = useState<
+    Partial<Record<AgentScope, AgentCard[]>>
+  >({});
+  const [fetching, setFetching] = useState(false);
   const [busyCoord, setBusyCoord] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const seqRef = useRef<Record<AgentScope, number>>({
+    global: 0,
+    "my-imports": 0,
+    installed: 0,
+  });
+
+  // A project switch invalidates every scope's cache (installed state is
+  // per-project; My Imports marks installs against the open project too).
+  useEffect(() => {
+    setCardsByScope({});
+  }, [projectId]);
 
   const fetchScope = useCallback(
     async (s: AgentScope) => {
-      setLoading(true);
-      setError(null);
-      try {
-        let resp: { agents: AgentCard[] };
-        if (s === "global") {
-          resp = await agentsApi.catalog(projectId ?? undefined);
-        } else if (s === "my-imports") {
-          resp = await agentsApi.listImports();
-        } else {
-          resp = projectId ? await agentsApi.listProjectAgents(projectId) : { agents: [] };
-        }
-        setCards(resp.agents);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to load agents");
-        setCards([]);
-      } finally {
-        setLoading(false);
+      const seq = ++seqRef.current[s];
+      let resp: { agents: AgentCard[] };
+      if (s === "global") {
+        resp = await agentsApi.catalog(projectId ?? undefined);
+      } else if (s === "my-imports") {
+        resp = await agentsApi.listImports(projectId ?? undefined);
+      } else {
+        resp = projectId ? await agentsApi.listProjectAgents(projectId) : { agents: [] };
       }
+      if (seqRef.current[s] !== seq) return; // out-of-order response — dropped
+      setCardsByScope((prev) => ({ ...prev, [s]: resp.agents }));
     },
     [projectId],
   );
 
-  const reload = useCallback(() => fetchScope(scope), [fetchScope, scope]);
+  const refreshScope = useCallback(
+    async (s: AgentScope) => {
+      setError(null);
+      setFetching(true);
+      try {
+        await fetchScope(s);
+      } catch (e) {
+        // Cached rows stay — the banner renders over content, not instead.
+        setError(e instanceof Error ? e.message : "Failed to load agents");
+      } finally {
+        setFetching(false);
+      }
+    },
+    [fetchScope],
+  );
+
+  const refreshAll = useCallback(async () => {
+    setError(null);
+    const results = await Promise.allSettled(ALL_SCOPES.map((s) => fetchScope(s)));
+    const failed = results.find(
+      (r): r is PromiseRejectedResult => r.status === "rejected",
+    );
+    if (failed) {
+      const reason = failed.reason;
+      setError(reason instanceof Error ? reason.message : "Failed to refresh agents");
+    }
+  }, [fetchScope]);
 
   useEffect(() => {
-    if (presented) fetchScope(scope);
-  }, [presented, scope, fetchScope]);
+    if (presented) void refreshScope(scope);
+  }, [presented, scope, refreshScope]);
 
   const run = useCallback(
     async (coord: string, fn: () => Promise<unknown>) => {
@@ -73,16 +118,20 @@ export function useAgentsCatalogDrawer(
       setError(null);
       try {
         await fn();
-        notifyAgentsPaletteRefresh(); // keep the AGENTS palette in sync after a lifecycle change
-        await fetchScope(scope);
+        notifyAgentsPaletteRefresh(); // keep the AGENTS palette in sync
+        await refreshAll(); // every tab agrees immediately (dev/47)
       } catch (e) {
         setError(e instanceof Error ? e.message : "Action failed");
       } finally {
         setBusyCoord(null);
       }
     },
-    [fetchScope, scope],
+    [refreshAll],
   );
+
+  const cards = cardsByScope[scope] ?? [];
+  // First-ever fetch for this scope only — cached tabs render instantly.
+  const loading = cardsByScope[scope] === undefined && fetching;
 
   return {
     scope,
@@ -91,7 +140,7 @@ export function useAgentsCatalogDrawer(
     loading,
     busyCoord,
     error,
-    reload,
+    reload: refreshAll,
     importAgent: (coord) => run(coord, () => agentsApi.import(coord)),
     removeImport: (coord) => run(coord, () => agentsApi.removeImport(coord)),
     install: (coord) =>

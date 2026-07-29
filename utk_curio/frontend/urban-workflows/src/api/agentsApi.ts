@@ -271,9 +271,11 @@ export const agentsApi = {
     return apiFetch(`/api/agents/catalog${q}`);
   },
 
-  /** Account "My Imports". */
-  listImports(): Promise<AgentListResponse> {
-    return apiFetch("/api/agents/imports");
+  /** Account "My Imports". Pass a projectId to mark which are installed in
+   * that project (memo dev/47 — the lockfile is the one source of truth). */
+  listImports(projectId?: string): Promise<AgentListResponse> {
+    const q = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+    return apiFetch(`/api/agents/imports${q}`);
   },
 
   /** Record a definition coordinate in My Imports (does not install into a project). */
