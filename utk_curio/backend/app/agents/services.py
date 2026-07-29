@@ -20,7 +20,9 @@ from utk_curio.backend.app.agents import (
     builtin,
     content,
     imports,
+    ledger,
     policy,
+    pricing,
     project_agents,
     publications,
     quotas,
@@ -371,7 +373,9 @@ def uninstall_from_project(user_key: str, project_id: str, coord: str) -> dict:
     return {"agents": project_agents.project_agents(spec)}
 
 
-def get_project_agent_defaults(user_key: str, project_id: str, coord: str) -> dict:
+def get_project_agent_defaults(
+    user_key: str, project_id: str, coord: str, config: "ProviderConfig | None" = None
+) -> dict:
     """The project-agent-default scope for one installed template (memo dev/23).
 
     Returns the per-project record plus the server-computed **effective** v1
@@ -393,6 +397,7 @@ def get_project_agent_defaults(user_key: str, project_id: str, coord: str) -> di
     eff = policy.effective(acct, record.get("settings") or {})
     used = quotas.runs_used_today(user_key)
     estimate = eff["cost"]["estimatedCostPerRunUsd"]["value"]
+    summary = _pricing_summary(config)
     return {
         "coord": coord,
         "name": m.name if m else coord,
@@ -409,6 +414,11 @@ def get_project_agent_defaults(user_key: str, project_id: str, coord: str) -> di
                 "estimatedSpendTodayUsd": round(used * estimate, 6)
                 if estimate is not None
                 else None,
+                # Actual USD settled this window (memo dev/40) — Actual or null.
+                "actualSpendTodayUsd": _actual_spend_today(
+                    user_key, bool(summary and summary["priced"])
+                ),
+                "pricing": summary,
             },
             "resources": dict(eff["resources"]),
         },
@@ -416,7 +426,12 @@ def get_project_agent_defaults(user_key: str, project_id: str, coord: str) -> di
 
 
 def update_project_agent_defaults(
-    user_key: str, project_id: str, coord: str, revision: object, settings: object
+    user_key: str,
+    project_id: str,
+    coord: str,
+    revision: object,
+    settings: object,
+    config: "ProviderConfig | None" = None,
 ) -> dict:
     """PATCH the project-agent-default record (memo dev/24): tighten-only
     against the account-effective policy, optimistic revision, non-policy seed
@@ -447,12 +462,36 @@ def update_project_agent_defaults(
     record["settings"] = {**preserved, **cleaned}
     record["revision"] = revision + 1
     projects_storage.write_spec(user_key, project_id, spec)
-    return get_project_agent_defaults(user_key, project_id, coord)
+    return get_project_agent_defaults(user_key, project_id, coord, config)
 
 
-def get_account_settings(user_key: str) -> dict:
+def _pricing_summary(config: ProviderConfig | None) -> dict | None:
+    """No-secrets pricing view for the Cost screen (memo dev/40): the caller's
+    provider/model, whether a deployment price exists, and its effective date.
+    ``None`` when no provider config resolves (e.g. keyless guests)."""
+    if config is None:
+        return None
+    snapshot = pricing.price_snapshot(config.api_type, config.model)
+    return {
+        "provider": config.api_type,
+        "model": config.model,
+        "priced": snapshot is not None,
+        "effectiveDate": snapshot.get("effectiveDate") if snapshot else None,
+    }
+
+
+def _actual_spend_today(user_key: str, priced: bool) -> float | None:
+    """Actual USD settled this window — a number once anything real exists to
+    show (a price is configured, or priced spend already accrued); ``None``
+    otherwise, so the UI never renders a fake $0.00 for unpriced deployments."""
+    spend = ledger.aggregates(user_key)["actualSpendUsd"]
+    return spend if (priced or spend > 0) else None
+
+
+def get_account_settings(user_key: str, config: ProviderConfig | None = None) -> dict:
     """The Account-policy scope (memo dev/24): record + effective + ceilings."""
     record = account_settings.read_record(user_key)
+    summary = _pricing_summary(config)
     return {
         "revision": record["revision"],
         "settings": record["settings"],
@@ -461,10 +500,17 @@ def get_account_settings(user_key: str) -> dict:
         "usedToday": quotas.runs_used_today(user_key),
         # Actual tokens counted this window (memo dev/37) — never estimated.
         "usageToday": quotas.usage_today(user_key),
+        # Actual USD settled this window (memo dev/40) — Actual or null.
+        "actualSpendTodayUsd": _actual_spend_today(
+            user_key, bool(summary and summary["priced"])
+        ),
+        "pricing": summary,
     }
 
 
-def update_account_settings(user_key: str, revision: object, settings: object) -> dict:
+def update_account_settings(
+    user_key: str, revision: object, settings: object, config: ProviderConfig | None = None
+) -> dict:
     """PATCH the account settings record: tighten-only against the deployment
     ceilings, optimistic revision (409 on stale)."""
     if not isinstance(revision, int):
@@ -477,7 +523,7 @@ def update_account_settings(user_key: str, revision: object, settings: object) -
         account_settings.write_settings(user_key, cleaned, revision)
     except StaleRevisionError as exc:
         raise AgentServiceError(str(exc), 409) from exc
-    return get_account_settings(user_key)
+    return get_account_settings(user_key, config)
 
 
 def publish_agent(user_key: str, coord: str) -> dict:
@@ -838,7 +884,8 @@ def _generate_conversation_title(
     """
     try:
         # The title call is internal housekeeping, not an execution (dev/37):
-        # it writes no execution record, but its tokens still cost — count them.
+        # it writes no execution record and holds no reservation, but its
+        # tokens still cost — the ledger counts them (dev/40).
         usage_sink: dict = {}
         raw = run_chat_completion(
             config,
@@ -849,7 +896,12 @@ def _generate_conversation_title(
             max_output_tokens=TITLE_MAX_OUTPUT_TOKENS,
             usage_out=usage_sink,
         )
-        _record_usage(user_key, usage_sink)
+        ledger.record_housekeeping_usage(
+            user_key,
+            usage_sink,
+            price=pricing.price_snapshot(config.api_type, config.model),
+            note="title-call",
+        )
         title = sanitize_title(raw)
         if title is None:
             return
@@ -912,15 +964,19 @@ def _execution_record(
     started: float,
     status: str,
     tool_calls: list | None = None,
+    cost_usd: float | None = None,
 ) -> dict:
     """Assemble the per-run execution record persisted on the agent turn
     (memo dev/37). ``usage`` is Actual counts or ``None``, never estimated
     (memo dev/11) — summed across loop rounds when tools ran (dev/41), which
-    is also when ``toolCalls`` (additive) records what executed."""
+    is also when ``toolCalls`` (additive) records what executed. ``costUsd``
+    (dev/40) is the ledger settlement's Actual USD — null unless a deployment
+    price existed for the run."""
     record = {
         "executionId": execution_id,
         "pins": pins,
         "usage": dict(usage) if usage else None,
+        "costUsd": cost_usd,
         "durationMs": int((time.monotonic() - started) * 1000),
         "status": status,
     }
@@ -931,18 +987,10 @@ def _execution_record(
 
 def _add_usage(total: dict, sink: dict) -> None:
     """Sum one provider call's sink into the run's usage total (dev/41 — a
-    tool loop makes several calls; the execution record carries their sum)."""
+    tool loop makes several calls; the run settles their sum, dev/40)."""
     for key in ("inputTokens", "outputTokens"):
         if isinstance(sink.get(key), int):
             total[key] = total.get(key, 0) + sink[key]
-
-
-def _record_usage(user_key: str, usage_sink: dict) -> None:
-    """Fold one provider call's Actual usage into the daily counters (dev/37)."""
-    if usage_sink:
-        quotas.record_usage(
-            user_key, usage_sink.get("inputTokens"), usage_sink.get("outputTokens")
-        )
 
 
 def _prepare_run(
@@ -1209,10 +1257,17 @@ def run_attachment(
     coord, session_id, messages, run_policy, wants_title, pins, loop_ctx = _prepare_run(
         user_key, project_id, attachment_id, message, config
     )
-    # Admission after validation (an invalid request never consumes quota) and
-    # before provider dispatch (a denied run never reaches a provider).
-    quotas.admit(user_key, **run_policy["admit"])
     execution_id = uuid.uuid4().hex
+    # Atomic admission (dev/40): after validation (an invalid request never
+    # consumes quota), before provider dispatch (a denied run never reaches a
+    # provider). The reservation IS this execution (one id), and the price
+    # snapshot pinned here is what settlement charges.
+    reservation = ledger.reserve(
+        user_key,
+        price=pricing.price_snapshot(config.api_type, config.model),
+        reservation_id=execution_id,
+        **run_policy["admit"],
+    )
     usage_total: dict = {}
     tool_calls: list = []
     minted: list = []
@@ -1232,7 +1287,6 @@ def run_attachment(
                 max_output_tokens=run_policy["max_output_tokens"],
                 usage_out=usage_sink,
             )
-            _record_usage(user_key, usage_sink)
             _add_usage(usage_total, usage_sink)
             visible, parts = content.extract_content(reply)
             if visible:
@@ -1254,8 +1308,11 @@ def run_attachment(
                 )
             )
     except Exception as exc:
-        _record_usage(user_key, usage_sink)
         _add_usage(usage_total, usage_sink)
+        # An error settles too: the hold releases and the truth is recorded.
+        settled = ledger.settle(
+            user_key, reservation, usage=usage_total or None, status="error"
+        )
         _persist_exchange(
             user_key,
             project_id,
@@ -1265,13 +1322,18 @@ def run_attachment(
             f"(error) {exc}",
             error=True,
             execution=_execution_record(
-                execution_id, pins, usage_total, started, "error", tool_calls
+                execution_id, pins, usage_total, started, "error", tool_calls,
+                cost_usd=settled["costUsd"],
             ),
         )
         raise AgentServiceError(f"agent run failed: {exc}", 502) from exc
     reply_text = "\n\n".join(folded)
     run_parts = minted + final_parts  # proposals ride the turn (dev/41)
-    execution = _execution_record(execution_id, pins, usage_total, started, "ok", tool_calls)
+    settled = ledger.settle(user_key, reservation, usage=usage_total or None, status="ok")
+    execution = _execution_record(
+        execution_id, pins, usage_total, started, "ok", tool_calls,
+        cost_usd=settled["costUsd"],
+    )
     _persist_exchange(
         user_key,
         project_id,
@@ -1312,10 +1374,15 @@ def stream_attachment(
     coord, session_id, messages, run_policy, wants_title, pins, loop_ctx = _prepare_run(
         user_key, project_id, attachment_id, message, config
     )
-    # Eager admission: a quota/budget denial surfaces as a plain 429 before any
-    # streaming begins, and consumes/persists nothing.
-    quotas.admit(user_key, **run_policy["admit"])
     execution_id = uuid.uuid4().hex
+    # Eager atomic admission (dev/40): a quota/budget denial surfaces as a
+    # plain 429 before any streaming begins, and consumes/persists nothing.
+    reservation = ledger.reserve(
+        user_key,
+        price=pricing.price_snapshot(config.api_type, config.model),
+        reservation_id=execution_id,
+        **run_policy["admit"],
+    )
 
     marker = content.TAIL_FENCE
 
@@ -1397,7 +1464,6 @@ def stream_attachment(
                 usage_sink = {}
                 result: dict = {}
                 yield from _stream_round(messages_work, usage_sink, result)
-                _record_usage(user_key, usage_sink)
                 _add_usage(usage_total, usage_sink)
                 if result["visible"]:
                     folded.append(result["visible"])
@@ -1422,8 +1488,10 @@ def stream_attachment(
                     )
                 )
         except Exception as exc:  # provider failure mid-stream
-            _record_usage(user_key, usage_sink)
             _add_usage(usage_total, usage_sink)
+            settled = ledger.settle(
+                user_key, reservation, usage=usage_total or None, status="error"
+            )
             _persist_exchange(
                 user_key,
                 project_id,
@@ -1433,15 +1501,20 @@ def stream_attachment(
                 f"(error) {exc}",
                 error=True,
                 execution=_execution_record(
-                    execution_id, pins, usage_total, started, "error", tool_calls
+                    execution_id, pins, usage_total, started, "error", tool_calls,
+                    cost_usd=settled["costUsd"],
                 ),
             )
             yield ("error", f"agent run failed: {exc}")
             return
         reply_text = "\n\n".join(folded)
         run_parts = minted + final_parts  # proposals ride the turn (dev/41)
+        settled = ledger.settle(
+            user_key, reservation, usage=usage_total or None, status="ok"
+        )
         execution = _execution_record(
-            execution_id, pins, usage_total, started, "ok", tool_calls
+            execution_id, pins, usage_total, started, "ok", tool_calls,
+            cost_usd=settled["costUsd"],
         )
         _persist_exchange(
             user_key,

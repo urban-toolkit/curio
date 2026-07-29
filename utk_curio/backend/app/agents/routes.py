@@ -114,11 +114,33 @@ def unpublish_agent(coord: str):
     return jsonify(payload), 200
 
 
+def _optional_provider_config():
+    """The caller's resolved provider config for the no-secrets pricing view
+    (memo dev/40) — None when none resolves (e.g. keyless guests), never an
+    error: settings screens must load regardless."""
+    from utk_curio.backend.app.agents.provider_config import (
+        ProviderConfigError,
+        resolve_provider_config,
+    )
+
+    try:
+        return resolve_provider_config(g.user)
+    except ProviderConfigError:
+        return None
+
+
 # ── Account agent settings (the Account-policy scope, memo dev/24) ───────────
 @agents_bp.route("/settings", methods=["GET"])
 @require_auth
 def get_agent_settings():
-    return jsonify(agents_services.get_account_settings(_user_dir_key(g.user))), 200
+    return (
+        jsonify(
+            agents_services.get_account_settings(
+                _user_dir_key(g.user), _optional_provider_config()
+            )
+        ),
+        200,
+    )
 
 
 @agents_bp.route("/settings", methods=["PATCH"])
@@ -131,7 +153,8 @@ def update_agent_settings():
         return _error("body must include a 'settings' object")
     try:
         payload = agents_services.update_account_settings(
-            _user_dir_key(g.user), body["revision"], body["settings"]
+            _user_dir_key(g.user), body["revision"], body["settings"],
+            _optional_provider_config(),
         )
     except AgentServiceError as exc:
         return _svc_error(exc)
@@ -188,28 +211,21 @@ def get_project_agent_defaults(project_id: str, coord: str):
     """The project-agent-default scope for one installed template (memo dev/23):
     the per-project record plus the effective policy with provenance. Read-only
     at v1 — the Cost/Quotas/Resource screens later edit it."""
-    from utk_curio.backend.app.agents.provider_config import (
-        ProviderConfigError,
-        resolve_provider_config,
-    )
-
+    cfg = _optional_provider_config()
     try:
         projects_repo.get_for_user(project_id, g.user.id)
         payload = agents_services.get_project_agent_defaults(
-            _user_dir_key(g.user), project_id, coord
+            _user_dir_key(g.user), project_id, coord, cfg
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
     except AgentServiceError as exc:
         return _svc_error(exc)
     # No-secrets provider summary (needs the request user, so it lives here).
-    try:
-        cfg = resolve_provider_config(g.user)
+    if cfg is not None:
         payload["effective"]["resources"].update(
             {"provider": cfg.api_type, "model": cfg.model}
         )
-    except ProviderConfigError:
-        pass  # no provider available (e.g. keyless guest) — summary omitted
     return jsonify(payload), 200
 
 
@@ -226,7 +242,8 @@ def update_project_agent_defaults(project_id: str, coord: str):
     try:
         projects_repo.get_for_user(project_id, g.user.id)
         payload = agents_services.update_project_agent_defaults(
-            _user_dir_key(g.user), project_id, coord, body["revision"], body["settings"]
+            _user_dir_key(g.user), project_id, coord, body["revision"], body["settings"],
+            _optional_provider_config(),
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)
