@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faGear, faRobot, faThumbtack } from "@fortawesome/free-solid-svg-icons";
 import type { AgentCard } from "../../../api/agentsApi";
@@ -10,11 +10,18 @@ import styles from "./AgentsCatalogDrawer.module.css";
 import { AgentScope, useAgentsCatalogDrawer } from "./useAgentsCatalogDrawer";
 
 export interface AgentsCatalogDrawerProps {
+  /** When true, the scrim fades in and the panel slides in from the right
+   * (memo dev/43 — the same two-phase presentation as the Nodes/Datasets
+   * drawers). The drawer stays mounted while false during the exit slide. */
   presented: boolean;
   projectId: string | null;
   /** Pinned keeps the drawer open (backdrop/Escape won't dismiss it). */
   pinned: boolean;
   onPinToggle: () => void;
+  /** Scrim-click dismissal (gated by the pin). */
+  onRequestClose?: () => void;
+  /** Called once the exit transition finishes (the owner unmounts then). */
+  onExitComplete?: () => void;
 }
 
 const SCOPES: { key: AgentScope; label: string }[] = [
@@ -44,18 +51,56 @@ export const AgentsCatalogDrawer: React.FC<AgentsCatalogDrawerProps> = ({
   projectId,
   pinned,
   onPinToggle,
+  onRequestClose,
+  onExitComplete,
 }) => {
   const c = useAgentsCatalogDrawer(presented, projectId);
+  const panelRef = useRef<HTMLElement>(null);
   // Installed-scope card whose Project agent settings modal is open (dev/23).
   const [settingsCoord, setSettingsCoord] = useState<string | null>(null);
   // Account-policy scope (dev/24), opened from the roster header cog.
   const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
   // Upload-import (dev/36), opened from the footer's Import package button.
   const [importOpen, setImportOpen] = useState(false);
-  if (!presented) return null;
+
+  useEffect(() => {
+    if (!presented) return;
+    panelRef.current?.focus();
+  }, [presented]);
+
+  // The exit slide reports completion from the panel's own transform
+  // transition (memo dev/43); the owner's timer is the fallback.
+  const handlePanelTransitionEnd = useCallback(
+    (e: React.TransitionEvent<HTMLElement>) => {
+      if (e.target !== panelRef.current || e.propertyName !== "transform" || presented) return;
+      onExitComplete?.();
+    },
+    [onExitComplete, presented],
+  );
 
   return (
-    <div className={styles.drawer} role="dialog" aria-label="Agents Catalog">
+    <div
+      className={`${styles.overlayRoot} ${presented ? styles.overlayRootPresented : ""}`}
+      data-curio-agents-catalog-drawer="true"
+      aria-hidden={!presented}
+    >
+      <button
+        type="button"
+        className={styles.scrim}
+        aria-label="Close agents catalog"
+        onClick={() => {
+          if (!pinned) onRequestClose?.();
+        }}
+      />
+      <aside
+        ref={panelRef}
+        className={styles.panel}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Agents Catalog"
+        tabIndex={-1}
+        onTransitionEnd={handlePanelTransitionEnd}
+      >
       <div className={styles.header}>
         <button
           type="button"
@@ -145,6 +190,7 @@ export const AgentsCatalogDrawer: React.FC<AgentsCatalogDrawerProps> = ({
       {accountSettingsOpen ? (
         <AgentSettingsModal scope="account" onClose={() => setAccountSettingsOpen(false)} />
       ) : null}
+      </aside>
     </div>
   );
 };

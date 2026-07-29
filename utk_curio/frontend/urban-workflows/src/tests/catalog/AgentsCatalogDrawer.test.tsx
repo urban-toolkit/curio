@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 
 jest.mock("../../api/agentsApi", () => ({
   agentsApi: {
@@ -78,11 +78,15 @@ beforeEach(() => {
 });
 
 describe("AgentsCatalogDrawer", () => {
-  it("renders nothing when not presented", () => {
+  it("is hidden (not accessible) when not presented", () => {
+    // dev/43: the drawer stays mounted through the exit slide; while not
+    // presented it is aria-hidden and pointer-inert, never abruptly removed.
     const { container } = render(
       <AgentsCatalogDrawer presented={false} projectId="p1" pinned={false} onPinToggle={jest.fn()} />,
     );
-    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByRole("dialog", { name: "Agents Catalog" })).not.toBeInTheDocument();
+    const root = container.querySelector("[data-curio-agents-catalog-drawer]");
+    expect(root).toHaveAttribute("aria-hidden", "true");
   });
 
   it("renders the three scopes and the global cards", async () => {
@@ -140,7 +144,10 @@ describe("AgentsCatalogDrawer", () => {
     render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={onPinToggle} />);
     const pin = screen.getByRole("button", { name: "Pin drawer open" });
     expect(pin).toHaveAttribute("aria-pressed", "false");
-    expect(screen.queryByRole("button", { name: /close/i })).not.toBeInTheDocument();
+    // DEC-042: no Close button inside the drawer (the scrim outside the
+    // dialog carries the dismissal, like the other catalog drawers).
+    const dialog = screen.getByRole("dialog", { name: "Agents Catalog" });
+    expect(within(dialog).queryByRole("button", { name: /close/i })).not.toBeInTheDocument();
     fireEvent.click(pin);
     expect(onPinToggle).toHaveBeenCalledTimes(1);
   });

@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({ projectId: "p1" }),
@@ -53,15 +53,46 @@ describe("AgentsCatalogDrawerProvider", () => {
     );
   });
 
-  it("has no Close button (DEC-042); the backdrop dismisses when unpinned", async () => {
+  it("has no Close button inside the drawer (DEC-042); the scrim dismisses when unpinned", async () => {
     renderProvider();
     fireEvent.click(screen.getByText(/toggle/));
     await waitFor(() => screen.getByRole("dialog", { name: "Agents Catalog" }));
-    expect(screen.queryByRole("button", { name: /close/i })).not.toBeInTheDocument();
-    fireEvent.click(document.querySelector('[class*="backdrop"]') as Element);
+    const dialog = screen.getByRole("dialog", { name: "Agents Catalog" });
+    expect(within(dialog).queryByRole("button", { name: /close/i })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close agents catalog" }));
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "Agents Catalog" })).not.toBeInTheDocument(),
     );
+  });
+
+  it("stays mounted through the exit slide and unmounts on exit completion", async () => {
+    renderProvider();
+    fireEvent.click(screen.getByText(/toggle/));
+    await waitFor(() => screen.getByRole("dialog", { name: "Agents Catalog" }));
+    fireEvent.keyDown(window, { key: "Escape" });
+    // Immediately after close: no longer accessible (aria-hidden), but still
+    // in the DOM sliding out — no abrupt removal (dev/43).
+    expect(screen.queryByRole("dialog", { name: "Agents Catalog" })).not.toBeInTheDocument();
+    const root = document.querySelector("[data-curio-agents-catalog-drawer]");
+    expect(root).toBeInTheDocument();
+    // The panel's transform transitionend settles the close and unmounts.
+    const panel = root!.querySelector("aside") as Element;
+    fireEvent.transitionEnd(panel, { propertyName: "transform" });
+    await waitFor(() =>
+      expect(document.querySelector("[data-curio-agents-catalog-drawer]")).toBeNull(),
+    );
+  });
+
+  it("reopening during the exit slide cancels the pending unmount", async () => {
+    renderProvider();
+    fireEvent.click(screen.getByText(/toggle/));
+    await waitFor(() => screen.getByRole("dialog", { name: "Agents Catalog" }));
+    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.click(screen.getByText(/toggle/)); // reopen mid-exit
+    await waitFor(() => screen.getByRole("dialog", { name: "Agents Catalog" }));
+    // Well past the exit timer, the drawer is still open.
+    await new Promise((r) => setTimeout(r, 450));
+    expect(screen.getByRole("dialog", { name: "Agents Catalog" })).toBeInTheDocument();
   });
 
   it("closes on Escape when unpinned", async () => {
@@ -79,7 +110,7 @@ describe("AgentsCatalogDrawerProvider", () => {
     fireEvent.click(screen.getByText(/toggle/));
     await waitFor(() => screen.getByRole("dialog", { name: "Agents Catalog" }));
     fireEvent.click(screen.getByRole("button", { name: "Pin drawer open" }));
-    fireEvent.click(document.querySelector('[class*="backdrop"]') as Element);
+    fireEvent.click(screen.getByRole("button", { name: "Close agents catalog" }));
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.getByRole("dialog", { name: "Agents Catalog" })).toBeInTheDocument();
     // Unpin → dismissal works again.
