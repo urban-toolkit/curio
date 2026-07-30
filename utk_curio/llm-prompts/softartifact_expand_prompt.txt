@@ -67,6 +67,14 @@ Every controllable new node ships with real executable content: no empty shells,
 Python nodes (DATA_TRANSFORMATION, COMPUTATION_ANALYSIS, DATA_EXPORT, ...):
 - Curio runs the content as a script body. Upstream data is pre-bound to the variable `arg`, and the script must end with a top-level `return <value>` to emit output downstream.
 - Read from `arg`; never reassign `arg` to a new empty object. Only reference columns the upstream node or the document supports.
+- The Python value you return MUST match the node's declared "out" type:
+  DATAFRAME -> pandas.DataFrame, GEODATAFRAME -> geopandas.GeoDataFrame,
+  VALUE -> a single number or string, LIST -> a list, JSON -> a dict.
+  Declaring "out": "DATAFRAME" while returning a dict, Series, or scalar is invalid.
+- Never return .to_dict(), .to_json(), or nested stats dicts when "out" is DATAFRAME
+  or when the next node is VIS_VEGA. Keep a tidy DataFrame, e.g.:
+    return df.groupby("slopeRangeID")["conditionScore"].describe().reset_index()
+  (not .to_dict()).
 - Include every import you use.
 - You may define helper functions, but call them on the full input and return the result at top level:
     def enrich(df):
@@ -80,6 +88,13 @@ DATA_LOADING (only when the document names a dataset the canvas does not load ye
 - Reuse the path style of existing loaders when possible; choose the reader from the file extension (.csv -> pandas.read_csv, spatial files -> geopandas.read_file, etc.).
 
 VIS_VEGA:
+- VIS_VEGA accepts ONLY a DataFrame. The node feeding it must return a pandas DataFrame
+  (columns = encoding fields). Returning a dict/Series/scalar (including
+  groupby(...).describe().to_dict()) is invalid. Convert summaries into tidy frames first, e.g.
+    stats = df.groupby("region")["conditionScore"].mean().reset_index()
+    return stats
+  or wrap a stats dict: return pd.DataFrame([scores]).
+- Every field named in the Vega-Lite encoding must exist as a column of that upstream DataFrame.
 - Content is a Vega-Lite JSON spec only (as an escaped JSON string). No Python.
 - Do NOT include a "data" field; Curio injects the upstream DataFrame automatically.
 - If x or y encodes a high-cardinality categorical field (locations, names, ids with many distinct values), the spec MUST aggregate and keep only the top N categories (about 10-20) using transforms, e.g. aggregate + window rank + filter. A bare {"mark": "bar", "encoding": {...}} over all categories is invalid.
