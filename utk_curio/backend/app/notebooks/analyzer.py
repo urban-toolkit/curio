@@ -272,3 +272,23 @@ def analyze_cells(raw_cells: list[str]) -> dict:
                 producer[name] = i
 
     return {'analysis': analysis, 'edges': edges}
+
+    # producer: dict[str, int] = {}
+    # edges: list[dict] = []
+    # edge_index: dict[tuple, int] = {}  # (source, target) -> index into edges list
+
+    # for i, cell in enumerate(analysis):
+    #     for name in sorted(cell['used'], key=lambda n: producer.get(n, -1)):
+    #         if name in producer and name not in cell['defined']:
+    #             key = (producer[name], i)
+    #             if key not in edge_index:
+    #                 edge_index[key] = len(edges)
+    #                 edges.append({'source': producer[name], 'target': i, 'parent_var': name})
+    #             else:
+    #                 edges[edge_index[key]]['parent_var'] += f", {name}"
+    #     import_names = import_names_per_cell[i]
+    #     for name in cell['defined']:
+    #         if name not in import_names:
+    #             producer[name] = i
+
+    # return {'analysis': analysis, 'edges': edges}

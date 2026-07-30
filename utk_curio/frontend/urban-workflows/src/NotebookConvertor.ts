@@ -179,7 +179,7 @@ export async function getLlmTypes(
 }
 
 // ── Import: Notebook → Trill ─────────────────────────────────────────────────
-// Remove once done
+// Export meant for testing
 export type CellEdge = { 
   source: number; 
   target: number;
@@ -187,7 +187,7 @@ export type CellEdge = {
   parent_var?: string
 };
 
-// Remove once done
+// Export meant for testing
 export function wireCode(
   code: string,
   cellIdx: number,
@@ -215,20 +215,29 @@ export function wireCode(
 
       out = `${unpackLines.join("\n")}\n${out}`;
     } else {
-      out = `${parentVar} = arg\n${out}`;
+      // Check whether the source fans out multiple distinct vars.
+      // If so, it will return a dict; pull our var out by key instead of assuming arg IS the var.
+      const sourceOutgoingVars = new Set(
+        cellEdges.filter(e => e.source === sources[0]).map(e => e.parent_var).filter(Boolean)
+      );
+      if (sourceOutgoingVars.size > 1) {
+        out = `${parentVar} = arg["${parentVar}"]\n${out}`;
+      } else {
+        out = `${parentVar} = arg\n${out}`;
+      }
     }
-    // const srcVar = parentVar ?? "arg"
-    // out = `${srcVar} = arg\n${out}`
   } 
-  // else if (sources.length > 1) {
-  //   out = `# multiple inputs available via arg\n${out}`;
-  // }
 
-  const outgoingEdge = cellEdges.find(e => e.source === cellIdx)
-  const pv = outgoingEdge?.parent_var;
+  const outgoingEdges = cellEdges.filter(e => e.source === cellIdx);
+  const distinctVars = Array.from(new Set(outgoingEdges.map(e => e.parent_var).filter(Boolean)));
 
-  if (hasOutgoing.has(cellIdx) && pv) {
-    out = `${out}\nreturn ${pv}`;
+  if (hasOutgoing.has(cellIdx) && distinctVars.length > 0) {
+    if (distinctVars.length === 1) {
+      out = `${out}\nreturn ${distinctVars[0]}`;
+    } else {
+      const dictBody = distinctVars.map(v => `"${v}": ${v}`).join(", ");
+      out = `${out}\nreturn {${dictBody}}`;
+    }
   }
   return out;
 }

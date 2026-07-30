@@ -41,7 +41,6 @@ class TestNoteBookAnalyzer:
         assert actual_edges == expected_edges, f"This is what our edges are {actual_edges}"
 
     # <-------------------------Branching Notebooks-------------------------->
-    @pytest.mark.xfail(reason="Our current algorithm can't handle this test case")
     def test_edges_simple_branches_one(self):
         '''Data branches off into different nodes starting at the second node'''
         '''Note: The 2nd cell on the notebook handles 3 different types of output'''
@@ -55,13 +54,28 @@ class TestNoteBookAnalyzer:
         output = analyze_cells(cells)
 
         actual_edges = {(e["source"], e["target"]) for e in output["edges"]}
-        expected_edges = set()
+        expected_edges = {(0,1), (1,2), (1,3), (1,4)}
+        assert actual_edges == expected_edges
 
-        assert 1 == 1 ,f"Our current algorithm cannot possible deal with this yet. Don't even try"
+    @pytest.mark.xfail(reason="Our current algorithm gets the edges right. However, limitations with curio make this incredibly difficult to convert")
+    def test_edge_with_multiple_parent_vars(self):
+        '''Data branches off into different nodes starting at the second node'''
+        '''Tests when the downstream nodes needs multiple variables from a singular upstream node'''
+        cells = [
+            "x = 1\ny=2",
+            'print(f"{x + y}")'
+        ]
+        output = analyze_cells(cells)
+        actual_edges = {(e["source"], e["target"]) for e in output["edges"]}
+        expected_edges = {(0,1)}
+
+        assert actual_edges == expected_edges
+        assert output["edges"][0]["parent_var"] == "y, x"
+
 
     def test_edges_simple_branches_two(self):
         '''Data branches off into different nodes starting at the second node'''
-        '''Note: Notebook cells give at most 2 types of output'''
+        '''Note: Notebook cells give at most 1 type of output'''
         cells = [
             "import pandas as pd\nimport numpy as np\n\ndf = pd.read_csv(\"/Users/andresquesada/desktop/CPS.csv\")\ndf",
             "HS_only = df[df[\"Elementary, Middle, or High School\"] == 'HS']",
@@ -165,45 +179,4 @@ class TestNoteBookAnalyzer:
         assert actual_edges == expected_edges, f"Actual result: {actual_edges}"
 
 # pytest utk_curio/backend/tests/test_notebook/test_notebook_analyzer.py
-# pytest utk_curio/backend/tests/test_notebook/test_notebook_analyzer.py::TestNoteBookAnalyzer::test_AST_trials
-
-# Insert Tests for Out of Order, Tricky installs, Linear Fallback (Another independent cell test)
-
-    # <---------------------Trying to use an AST--------------------->
-    @pytest.mark.xfail(reason = "This is to play around")
-    def test_AST_trials(self):
-        cells = [
-            "import pandas as pd\nimport numpy as np\n\ndf = pd.read_csv(\"/Users/andresquesada/desktop/CPS.csv\")\ndf",
-            "df_clean = df.rename(columns=lambda c: c.strip()).copy()\ndf_clean[\"Average Student Attendance\"] = pd.to_numeric(\n    df_clean[\"Average Student Attendance\"].astype(str).str.replace(\"%\", \"\"), errors=\"coerce\"\n)\ndf_clean[\"Graduation Rate %\"] = pd.to_numeric(df_clean[\"Graduation Rate %\"], errors=\"coerce\")\ndf_clean[\"College Eligibility %\"] = pd.to_numeric(df_clean[\"College Eligibility %\"], errors=\"coerce\")\ndf_clean[\"Safety Score\"] = pd.to_numeric(df_clean[\"Safety Score\"], errors=\"coerce\")\ndf_clean[\"Instruction Score\"] = pd.to_numeric(df_clean[\"Instruction Score\"], errors=\"coerce\")\ndf_clean[\"Teachers Score\"] = pd.to_numeric(df_clean[\"Teachers Score\"], errors=\"coerce\")\ndf_clean[\"Family Involvement Score\"] = pd.to_numeric(df_clean[\"Family Involvement Score\"], errors=\"coerce\")",
-            "numeric_cols = [\n    \"Average Student Attendance\", \"Graduation Rate %\",\n    \"College Eligibility %\", \"Safety Score\",\n    \"Instruction Score\", \"Teachers Score\", \"Family Involvement Score\"\n]\n\ndf_zscores = df_clean[[\"Name of School\", \"Elementary, Middle, or High School\"] + numeric_cols].copy()\nfor col in numeric_cols:\n    mean = df_zscores[col].mean()\n    std = df_zscores[col].std()\n    df_zscores[f\"{col}_z\"] = (df_zscores[col] - mean) / std",
-            "z_cols = [c for c in df_zscores.columns if c.endswith(\"_z\")]\n\ndf_scored = df_zscores.copy()\ndf_scored[\"composite_score\"] = df_scored[z_cols].mean(axis=1)\ndf_scored[\"performance_tier\"] = pd.cut(\n    df_scored[\"composite_score\"],\n    bins=[-np.inf, -1, 0, 1, np.inf],\n    labels=[\"Low\", \"Below Average\", \"Above Average\", \"High\"]\n)",
-            "tier_summary = (\n    df_scored\n    .groupby([\"Elementary, Middle, or High School\", \"performance_tier\"])\n    .agg(\n        school_count=(\"Name of School\", \"count\"),\n        avg_composite=(\"composite_score\", \"mean\")\n    )\n    .round(3)\n    .reset_index()\n)\ntier_summary",
-            "tier_pivot = tier_summary.pivot_table(\n    index=\"Elementary, Middle, or High School\",\n    columns=\"performance_tier\",\n    values=\"school_count\",\n    fill_value=0\n)\n\ntier_pivot[\"dominant_tier\"] = tier_pivot.idxmax(axis=1)\ntier_pivot[\"total_schools\"] = tier_pivot.drop(columns=\"dominant_tier\").sum(axis=1)\ntier_pivot = tier_pivot.reset_index()\ntier_pivot"
-        ]
-
-        # code = cells[0]
-        code = """if x:
-    ...
-elif y:
-    ...
-else:
-    ...
-"""
-        tree = ast.parse(code)
-
-        lines_list = code.splitlines()
-
-        print(ast.dump(tree, indent=4))
-        # How we iterate accross an AST
-        for node in ast.iter_child_nodes(tree):
-            start = node.lineno - 1          # lineno is 1-indexed
-            end = node.end_lineno            # end_lineno is also 1-indexed, so slice up to it
-            node_source = "\n".join(lines_list[start:end])
-
-            print()
-            print(f"Code: {node_source}")
-            print(type(node))
-            if(isinstance(node, ast.If)):
-                print(ast.dump(node, indent=4))
-        assert 1 != 1
 
