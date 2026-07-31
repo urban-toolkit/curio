@@ -206,26 +206,16 @@ export function wireCode(
       // Unpack each of the merge node's own inputs from arg[i].
       const mergeNodeIdx = sources[0];
       const mergeSources = incomingSources.get(mergeNodeIdx) ?? [];
-      
-      // Fix the Merge Flow branch here
+
       const unpackLines = mergeSources.map((srcIdx, i) => {
         const srcEdge = cellEdges.find(e => e.source === srcIdx && e.target === mergeNodeIdx);
         const srcVar = srcEdge?.parent_var ?? "arg";
-        return `${srcVar} = arg[${i}]`;
+        return `${srcVar} = arg[${i}]["${srcVar}"]`;
       });
 
       out = `${unpackLines.join("\n")}\n${out}`;
     } else {
-      // Check whether the source fans out multiple distinct vars.
-      // If so, it will return a dict; pull our var out by key instead of assuming arg IS the var.
-      const sourceOutgoingVars = new Set(
-        cellEdges.filter(e => e.source === sources[0]).map(e => e.parent_var).filter(Boolean)
-      );
-      if (sourceOutgoingVars.size > 1) {
-        out = `${parentVar} = arg["${parentVar}"]\n${out}`;
-      } else {
-        out = `${parentVar} = arg\n${out}`;
-      }
+      out = `${parentVar} = arg["${parentVar}"]\n${out}`;
     }
   } 
 
@@ -233,16 +223,12 @@ export function wireCode(
   const distinctVars = Array.from(new Set(outgoingEdges.map(e => e.parent_var).filter(Boolean)));
 
   if (hasOutgoing.has(cellIdx) && distinctVars.length > 0) {
-    if (distinctVars.length === 1) {
-      out = `${out}\nreturn ${distinctVars[0]}`;
-    } else {
-      const MULTIPLE_PARENTS_PATTERN = /,/;
-      const dictBody = distinctVars.map(v =>
-        MULTIPLE_PARENTS_PATTERN.test(v!) ?
-          `"${v}": (${v})` : `"${v}": ${v}`
-      ).join(", ");
-      out = `${out}\nreturn {${dictBody}}`;
-    }
+    const MULTIPLE_PARENTS_PATTERN = /,/;
+    const dictBody = distinctVars.map(v =>
+      MULTIPLE_PARENTS_PATTERN.test(v!) ?
+        `"${v}": (${v})` : `"${v}": ${v}`
+    ).join(", ");
+    out = `${out}\nreturn {${dictBody}}`;
   }
   return out;
 }

@@ -123,7 +123,7 @@ describe("Testing the addition of Merge Flow", ()=>{
             hasOutgoing,
             incomingSources,
         );
-        expect(sourceCode).toBe("x = compute_something()\nreturn x");
+        expect(sourceCode).toBe('x = compute_something()\nreturn {"x": x}');
 
         // Target cell (1): has single incoming source, should get `x = arg` prepended
         const targetCode = wireCode(
@@ -133,7 +133,7 @@ describe("Testing the addition of Merge Flow", ()=>{
             hasOutgoing,
             incomingSources,
         );
-        expect(targetCode).toBe("x = arg\ny = x + 1");
+        expect(targetCode).toBe('x = arg["x"]\ny = x + 1');
     });
 
     test("Merge-Flow", ()=>{
@@ -156,15 +156,15 @@ describe("Testing the addition of Merge Flow", ()=>{
         const source2 = wireCode("y = compute_something()", 1, cellEdges, hasOutgoing, incomingSources);
         const source3 = wireCode("z = compute_something()", 2, cellEdges, hasOutgoing, incomingSources);
 
-        expect(source1).toBe("x = compute_something()\nreturn x");
-        expect(source2).toBe("y = compute_something()\nreturn y");
-        expect(source3).toBe("z = compute_something()\nreturn z");
+        expect(source1).toBe('x = compute_something()\nreturn {"x": x}');
+        expect(source2).toBe('y = compute_something()\nreturn {"y": y}');
+        expect(source3).toBe('z = compute_something()\nreturn {"z": z}');
 
         const merge_flow_out = wireCode("", 4, cellEdges, hasOutgoing, incomingSources)
         expect(merge_flow_out).toBe("")
 
         const merge_output = wireCode("product = x * y * z", 3, cellEdges, hasOutgoing, incomingSources);
-        expect(merge_output).toBe("y = arg[0]\nx = arg[1]\nz = arg[2]\nproduct = x * y * z")
+        expect(merge_output).toBe('y = arg[0]["y"]\nx = arg[1]["x"]\nz = arg[2]["z"]\nproduct = x * y * z')
     })
 
     test("3 dependancies for 1 Merge-Flow, and 3 for another", ()=>{
@@ -187,7 +187,7 @@ describe("Testing the addition of Merge Flow", ()=>{
         ]);
 
         const node4 = wireCode("x = a + b + c", 4, cellEdges, hasOutgoing, incomingSources);
-        expect(node4).toBe("a = arg[0]\nb = arg[1]\nc = arg[2]\nx = a + b + c\nreturn x");
+        expect(node4).toBe('a = arg[0]["a"]\nb = arg[1]["b"]\nc = arg[2]["c"]\nx = a + b + c\nreturn {"x": x}');
         
         const node8 = wireCode("", 8, cellEdges, hasOutgoing, incomingSources);
         expect(node8).toBe("");
@@ -215,9 +215,6 @@ describe("Testing the addition of Merge Flow", ()=>{
         expect(merge_node_out).toBe("gqCoduV9YG0fYdjdPXmWdZAhSKJ5o6uQ")
 
         const out = wireCode("print(a+b+c+d+e)", 5, cellEdges, hasOutgoing, incomingSources)
-        expect(out).toBe("a = arg[0]\nb = arg[1]\nc = arg[2]\nd = arg[3]\ne = arg[4]\nprint(a+b+c+d+e)")
+        expect(out).toBe('a = arg[0]["a"]\nb = arg[1]["b"]\nc = arg[2]["c"]\nd = arg[3]["d"]\ne = arg[4]["e"]\nprint(a+b+c+d+e)')
     })
 })
-
-// cd utk_curio/frontend/urban-workflows
-// npm test -- NotebookConverter

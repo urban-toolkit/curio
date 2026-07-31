@@ -57,7 +57,6 @@ class TestNoteBookAnalyzer:
         expected_edges = {(0,1), (1,2), (1,3), (1,4)}
         assert actual_edges == expected_edges
 
-    @pytest.mark.xfail(reason="Our current algorithm gets the edges right. However, limitations with curio make this incredibly difficult to convert")
     def test_edge_with_multiple_parent_vars(self):
         '''Data branches off into different nodes starting at the second node'''
         '''Tests when the downstream nodes needs multiple variables from a singular upstream node'''
@@ -70,7 +69,7 @@ class TestNoteBookAnalyzer:
         expected_edges = {(0,1)}
 
         assert actual_edges == expected_edges
-        assert output["edges"][0]["parent_var"] == "y, x"
+        assert output["edges"][0]["parent_var"] == "x, y"
 
 
     def test_edges_simple_branches_two(self):
@@ -177,6 +176,4 @@ class TestNoteBookAnalyzer:
         actual_edges = {(e["source"], e["target"]) for e in output["edges"]}
         expected_edges = {(1,4)}
         assert actual_edges == expected_edges, f"Actual result: {actual_edges}"
-
-# pytest utk_curio/backend/tests/test_notebook/test_notebook_analyzer.py
 
