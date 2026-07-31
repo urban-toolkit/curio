@@ -207,6 +207,7 @@ export function wireCode(
       const mergeNodeIdx = sources[0];
       const mergeSources = incomingSources.get(mergeNodeIdx) ?? [];
       
+      // Fix the Merge Flow branch here
       const unpackLines = mergeSources.map((srcIdx, i) => {
         const srcEdge = cellEdges.find(e => e.source === srcIdx && e.target === mergeNodeIdx);
         const srcVar = srcEdge?.parent_var ?? "arg";
@@ -235,7 +236,11 @@ export function wireCode(
     if (distinctVars.length === 1) {
       out = `${out}\nreturn ${distinctVars[0]}`;
     } else {
-      const dictBody = distinctVars.map(v => `"${v}": ${v}`).join(", ");
+      const MULTIPLE_PARENTS_PATTERN = /,/;
+      const dictBody = distinctVars.map(v =>
+        MULTIPLE_PARENTS_PATTERN.test(v!) ?
+          `"${v}": (${v})` : `"${v}": ${v}`
+      ).join(", ");
       out = `${out}\nreturn {${dictBody}}`;
     }
   }
