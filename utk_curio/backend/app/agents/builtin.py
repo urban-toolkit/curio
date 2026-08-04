@@ -1,7 +1,10 @@
-"""Built-in agent definitions — the 13 prompt-agent migrations.
+"""Built-in agent definitions — the 13 prompt-agent migrations + composites.
 
 Data-driven roster generated from the canonical prompt→agent map (plan memo
-``dev/06``) over the existing prompt files in ``utk_curio/llm-prompts/*.txt``.
+``dev/06``) over the existing prompt files in ``utk_curio/llm-prompts/*.txt``,
+plus the P5 composites (memo ``dev/48``: ``agent.node-builder``), whose
+instruction assets are net-new but live in the same directory so resolution
+and materialization work unchanged.
 Each roster entry is turned into a manifest dict and validated through
 ``parse_agent_manifest``, so the built-ins can never drift from the manifest
 contract. This roster is the **Global Catalog** source (real content the drawer
@@ -65,13 +68,22 @@ class BuiltinAgentSpec:
     # (DEC-017); grounded in the agent's declared reads / legacy behavior.
     # All optional: a missing grant degrades to the pre-tool blind behavior.
     tools: tuple[str, ...] = field(default_factory=tuple)
+    # Preferred delegate agents, in preference order (memo dev/48 / dev/15
+    # §3.2). Expresses composition only — grants nothing; resolution is
+    # current-project-only at run time.
+    delegates_to: tuple[str, ...] = field(default_factory=tuple)
+    # runtime.reviewPolicy. The default keeps the thirteen migrated manifests
+    # byte-identical; composites that mint mutation proposals declare
+    # "review-before-apply".
+    review_policy: str = "report-only"
 
     def target_kinds(self) -> tuple[str, ...]:
         return self.targets or (_TARGET_BY_CATEGORY[self.category],)
 
 
-# The 13 releasable prompt-agent migrations (dev/06 canonical map). The blocked
-# generated-content evaluator is deliberately omitted.
+# The 13 releasable prompt-agent migrations (dev/06 canonical map) + the P5
+# composites (dev/48). The blocked generated-content evaluator is deliberately
+# omitted.
 BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
     BuiltinAgentSpec("agent.chat-agent", "Chat", "node",
                      "Conversational assistant for a node or the canvas.",
@@ -128,12 +140,25 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      "Bind keywords for a workflow.",
                      "keywords_binding_prompt.txt", ("workflow.keyword.bind",), ("planning",),
                      reads=("keywords", "dataflowContext")),
+    # The first P5 composite (memo dev/48; spec dev/15 §3.4). Net-new
+    # instruction — no migrated prompt source. dev/15 deviations recorded in
+    # the memo: "connection" target and agent.package-recommendation deferred.
+    BuiltinAgentSpec("agent.node-builder", "Node Builder", "node",
+                     "Create computation, transform, visualization, or data-fetch nodes as "
+                     "reviewable proposals; delegates content generation to Node Content Builder.",
+                     "node_build_instruction.txt",
+                     ("node.build", "dataset.fetch.author"), ("authoring",),
+                     targets=("canvas",),
+                     reads=("nodeIntent", "targetContext", "externalSelection"),
+                     tools=("dataflow.read", "node.create", "node.template.create"),
+                     delegates_to=("agent.node-content-builder", "agent.execution-subtask-planner"),
+                     review_policy="review-before-apply"),
 )
 
 
 def build_builtin_manifest(spec: BuiltinAgentSpec) -> dict:
     """Turn a roster entry into a manifest dict (camelCase)."""
-    return {
+    manifest = {
         "id": spec.agent_id,
         "name": spec.name,
         "category": spec.category,
@@ -149,10 +174,15 @@ def build_builtin_manifest(spec: BuiltinAgentSpec) -> dict:
         "inputs": {"reads": list(spec.reads), "requiredConfig": []},
         # Typed tool requirements (dev/41) — all optional declarations.
         "tools": [{"id": t} for t in spec.tools],
-        "runtime": {"execution": "foreground", "reviewPolicy": "report-only"},
+        "runtime": {"execution": "foreground", "reviewPolicy": spec.review_policy},
         "providerRequirements": {"capabilities": ["structured-output"]},
         "provenance": {"publisher": "curio", "license": "MIT", "trust": "built-in"},
     }
+    # Only composites carry the key — the thirteen migrated manifests stay
+    # byte-identical (memo dev/48 regression requirement).
+    if spec.delegates_to:
+        manifest["delegatesTo"] = list(spec.delegates_to)
+    return manifest
 
 
 def list_builtin_manifests() -> list[AgentManifest]:

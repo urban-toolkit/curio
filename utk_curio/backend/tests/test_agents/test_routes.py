@@ -89,14 +89,17 @@ class TestMyImports:
 
 
 class TestGlobalCatalog:
-    def test_lists_thirteen_builtins(self, client, user_and_token, tmp_curio):
+    def test_lists_all_builtins(self, client, user_and_token, tmp_curio):
         _, token = user_and_token
         resp = client.get("/api/agents/catalog", headers=_auth(token))
         assert resp.status_code == 200
         agents = resp.get_json()["agents"]
-        assert len(agents) == 13
+        # 13 migrations + agent.node-builder (dev/48).
+        assert len(agents) == 14
         assert all(a["scope"] == "global" and a["provenance"]["trust"] == "built-in" for a in agents)
-        assert "agent.node-explainer" in {a["id"] for a in agents}
+        ids = {a["id"] for a in agents}
+        assert "agent.node-explainer" in ids
+        assert "agent.node-builder" in ids
 
     def test_import_a_builtin(self, client, user_and_token, tmp_curio):
         # A built-in resolves without being written to the user store first.

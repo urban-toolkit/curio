@@ -1,4 +1,5 @@
-"""Tests for the built-in agent roster (the 13 prompt-agent migrations)."""
+"""Tests for the built-in agent roster (the 13 prompt-agent migrations + the
+P5 composites, memo dev/48)."""
 
 from __future__ import annotations
 
@@ -25,16 +26,24 @@ _EXPECTED = {
 
 
 class TestRoster:
-    def test_thirteen_agents(self):
-        assert len(builtin.BUILTIN_AGENTS) == 13
+    def test_fourteen_agents(self):
+        # 13 migrations + agent.node-builder (dev/48).
+        assert len(builtin.BUILTIN_AGENTS) == 14
 
     def test_evaluator_excluded(self):
         ids = {s.agent_id for s in builtin.BUILTIN_AGENTS}
         assert "agent.generated-content-evaluator" not in ids  # blocked by OQ-007
 
     def test_matches_dev06_map(self):
-        got = {s.agent_id: (s.prompt_file, list(s.capabilities)) for s in builtin.BUILTIN_AGENTS}
+        got = {
+            s.agent_id: (s.prompt_file, list(s.capabilities))
+            for s in builtin.BUILTIN_AGENTS
+            if s.agent_id in _EXPECTED
+        }
         assert got == _EXPECTED
+        # Exactly one non-migration entry so far: the dev/48 composite.
+        extras = {s.agent_id for s in builtin.BUILTIN_AGENTS} - set(_EXPECTED)
+        assert extras == {"agent.node-builder"}
 
     def test_every_prompt_file_exists(self):
         for spec in builtin.BUILTIN_AGENTS:
@@ -44,7 +53,7 @@ class TestRoster:
 class TestManifests:
     def test_all_validate(self):
         manifests = builtin.list_builtin_manifests()
-        assert len(manifests) == 13
+        assert len(manifests) == 14
         assert all(isinstance(m, AgentManifest) for m in manifests)
 
     def test_coords_and_capabilities(self):
@@ -89,3 +98,47 @@ class TestPreambleAndInputs:
             coord = f"{spec.agent_id}@1.0.0"
             assert builtin.read_prompt_text(coord, "system"), coord
             assert builtin.read_prompt_text(coord, "instruction"), coord
+
+
+class TestNodeBuilderComposite:
+    """The dev/48 roster entry — spec per dev/15 §3.4 minus recorded deviations."""
+
+    COORD = "agent.node-builder@1.0.0"
+
+    def test_manifest_surface(self):
+        m = builtin.get_builtin_manifest(self.COORD)
+        assert m is not None
+        assert m.capability_ids == ["node.build", "dataset.fetch.author"]
+        assert m.delegates_to == [
+            "agent.node-content-builder",
+            "agent.execution-subtask-planner",
+        ]
+        # dev/15 deviation (memo §2): canvas only until a connection-attach UI exists.
+        assert [t.kind for t in m.compatible_targets] == ["canvas"]
+        assert [t.id for t in m.tools] == [
+            "dataflow.read", "node.create", "node.template.create",
+        ]
+        assert m.provenance.trust == "built-in"
+
+    def test_review_policy_and_thirteen_byte_parity(self):
+        # The composite declares review-before-apply; every migrated manifest
+        # dict stays byte-identical (no delegatesTo key, report-only runtime) —
+        # the dev/48 regression requirement.
+        nb = builtin.build_builtin_manifest(builtin.get_builtin_spec(self.COORD))
+        assert nb["runtime"] == {"execution": "foreground", "reviewPolicy": "review-before-apply"}
+        assert nb["delegatesTo"] == [
+            "agent.node-content-builder", "agent.execution-subtask-planner",
+        ]
+        for spec in builtin.BUILTIN_AGENTS:
+            if spec.agent_id == "agent.node-builder":
+                continue
+            raw = builtin.build_builtin_manifest(spec)
+            assert "delegatesTo" not in raw, spec.agent_id
+            assert raw["runtime"] == {"execution": "foreground", "reviewPolicy": "report-only"}
+
+    def test_net_new_instruction_resolves(self):
+        # Net-new asset (dev/15 §3.3: no migrated source) — reads through the
+        # same PROMPT_SOURCE_DIR path as every migration.
+        text = builtin.read_prompt_text(self.COORD, "instruction")
+        assert text and "Reuse first" in text
+        assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
