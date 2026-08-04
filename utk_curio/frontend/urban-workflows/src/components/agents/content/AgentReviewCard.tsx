@@ -6,7 +6,16 @@ const OUTCOME_LABEL: Record<string, string> = {
   applied: "Applied",
   dismissed: "Dismissed",
   superseded: "Superseded by a newer proposal",
-  stale: "The node changed since this was proposed — ask the agent to propose again",
+  stale: "The target changed since this was proposed — ask the agent to propose again",
+};
+
+/** What one Apply click does, per proposal kind — stated on the card. */
+const EFFECT_LINE: Record<string, string> = {
+  "node.create": "Applying adds this node to the canvas.",
+  "project.install":
+    "Applying installs only this project template — nothing is imported, attached, run, or published.",
+  "node.template.create":
+    "Applying registers the node type in this project and adds its first node.",
 };
 
 /**
@@ -49,7 +58,23 @@ export const AgentReviewCard: React.FC<{
         <span>{part.summary}</span>
         <span className={styles.kind}>review</span>
       </div>
+      {part.tool === "node.template.create" && part.justification ? (
+        // The adequacy gate (dev/48 §3.2b): the model's reasoning is what the
+        // user judges — rendered verbatim FIRST, above the definition.
+        <div className={styles.justification} aria-label="Why a new node type is needed">
+          {part.justification}
+        </div>
+      ) : null}
+      {part.tool === "node.template.create" && part.template ? (
+        <div className={styles.meta}>
+          {part.template.label} · {part.template.engine}
+          {part.template.description ? ` — ${part.template.description}` : ""}
+        </div>
+      ) : null}
       <div className={styles.preview}>{part.preview}</div>
+      {EFFECT_LINE[part.tool] ? (
+        <div className={styles.meta}>{EFFECT_LINE[part.tool]}</div>
+      ) : null}
       {pending && (onApply || onDismiss) ? (
         <div className={styles.actions}>
           {onApply ? (

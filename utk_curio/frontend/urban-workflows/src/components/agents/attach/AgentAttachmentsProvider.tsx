@@ -9,6 +9,7 @@ import React, {
 } from "react";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { agentsApi, type AgentSessionTurn } from "../../../api/agentsApi";
+import { notifyAgentCanvasMutation } from "../../../utils/agentCanvasEvents";
 import { useAgentAttachments, type AgentAttachmentsState } from "./useAgentAttachments";
 
 /**
@@ -174,14 +175,21 @@ export const AgentAttachmentsProvider: React.FC<{
       let sawProposal = false;
       setToolActivity((prev) => ({ ...prev, [attachmentId]: [] }));
       const onEvent = (name: string, payload: Record<string, unknown>) => {
-        // Transient system lines (dev/41): "<tool> …" then "<tool> · <status>".
+        // Transient system lines (dev/41 tools; dev/48 delegates): live during
+        // the run, gone on finalize — the durable record is the execution.
         const tool = typeof payload.tool === "string" ? payload.tool : "";
+        const capability = typeof payload.capability === "string" ? payload.capability : "";
+        const coord = typeof payload.coord === "string" ? payload.coord : "";
         const line =
           name === "tool_requested"
             ? `${tool} …`
             : name === "tool_result"
               ? `${tool} · ${payload.status ?? ""}`
-              : null;
+              : name === "delegate_requested"
+                ? `delegating ${capability} …`
+                : name === "delegate_result"
+                  ? `${coord || capability} · ${payload.status ?? ""}`
+                  : null;
         if (line)
           setToolActivity((prev) => ({
             ...prev,
@@ -253,7 +261,24 @@ export const AgentAttachmentsProvider: React.FC<{
       const pid = projectRef.current;
       if (!pid) throw new Error("no project");
       try {
-        await agentsApi.applyProposal(pid, attachmentId, proposalId);
+        const result = await agentsApi.applyProposal(pid, attachmentId, proposalId);
+        // The apply→canvas bridge (dev/48 §3.3): the saved spec was mutated;
+        // carry the same mutation to the LIVE canvas in this user action so
+        // the next save can't clobber it. The apply response is the only
+        // payload source.
+        if (result.createdNode) {
+          notifyAgentCanvasMutation({
+            kind: "node-created",
+            node: result.createdNode,
+            createdPackageDir: result.createdTemplate?.packageDir,
+          });
+        } else if (result.appliedContent) {
+          notifyAgentCanvasMutation({
+            kind: "node-content-applied",
+            nodeId: result.appliedContent.nodeId,
+            content: result.appliedContent.content,
+          });
+        }
       } finally {
         // Success appends the result turn + statuses; a 409 marked it stale —
         // either way the transcript and listing are the truth: refresh both

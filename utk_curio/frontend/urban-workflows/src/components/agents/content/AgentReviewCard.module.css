@@ -109,3 +109,24 @@
   font-size: 0.76rem;
   color: #b3423f;
 }
+
+/* dev/48 — the node.template.create adequacy gate: the model's reasoning,
+   rendered verbatim above the definition. */
+.justification {
+  margin-top: 8px;
+  padding: 8px 10px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  background: #fdf7ec;
+  border-left: 3px solid #d9a441;
+  border-radius: 4px;
+  color: #4c4335;
+}
+
+/* Secondary metadata / effect lines under the preview. */
+.meta {
+  margin-top: 6px;
+  font-size: 0.74rem;
+  color: #6b7280;
+}

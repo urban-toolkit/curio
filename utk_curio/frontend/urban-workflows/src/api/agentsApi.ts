@@ -142,12 +142,44 @@ export type AgentProposalStatus =
 export interface AgentProposalPart {
   type: "proposal";
   proposalId: string;
+  /** "node.content.write" | "node.create" | "node.template.create" | "project.install" | future kinds. */
   tool: string;
   summary: string;
   /** The full proposed content (plain text — rendered inert). */
   preview: string;
-  pins: { nodeId: string; contentSha256: string };
+  /** Tool-specific revision-safety basis (dev/41 digest pins; dev/48 nodeType/coord/slug pins). */
+  pins: Record<string, string>;
   status: AgentProposalStatus;
+  /** node.template.create only (dev/48 §3.2b): the model's written reasoning — what the user judges. */
+  justification?: string;
+  /** node.template.create only: the proposed type definition summary. */
+  template?: { label: string; engine: string; description?: string };
+}
+
+/** The node payload an apply response carries for the canvas bridge (dev/48 §3.3). */
+export interface AgentCreatedNodePayload {
+  id: string;
+  type: string;
+  content: string;
+  goal?: string;
+  x: number;
+  y: number;
+}
+
+/** Apply-endpoint response (dev/41 base + the dev/48 bridge payloads). */
+export interface AgentApplyResult {
+  attachmentId: string;
+  proposalId: string;
+  status: AgentProposalStatus;
+  mutationApplied?: boolean;
+  /** node.create / node.template.create: the inserted node, for the live canvas. */
+  createdNode?: AgentCreatedNodePayload;
+  /** node.template.create: the registered template ({id, label, packageDir, …}). */
+  createdTemplate?: { id: string; label: string; packageDir?: string };
+  /** node.content.write: the applied content, for the live node. */
+  appliedContent?: { nodeId: string; content: string };
+  /** project.install: the installed agent coordinate. */
+  installedCoord?: string;
 }
 
 export type AgentContentPart =
@@ -456,7 +488,7 @@ export const agentsApi = {
     projectId: string,
     attachmentId: string,
     proposalId: string,
-  ): Promise<{ attachmentId: string; proposalId: string; status: AgentProposalStatus }> {
+  ): Promise<AgentApplyResult> {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}/apply`,
       { method: "POST" },
@@ -589,7 +621,10 @@ export const agentsApi = {
         event === "tool_requested" ||
         event === "tool_started" ||
         event === "tool_result" ||
-        event === "review_required"
+        event === "review_required" ||
+        event === "delegate_requested" ||
+        event === "delegate_started" ||
+        event === "delegate_result"
       )
         onEvent?.(event, payload as Record<string, unknown>);
       else if (event === "done") {

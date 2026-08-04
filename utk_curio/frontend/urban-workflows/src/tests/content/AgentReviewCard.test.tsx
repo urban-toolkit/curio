@@ -69,3 +69,67 @@ describe("AgentReviewCard (review-before-apply, memo dev/41)", () => {
     expect(screen.getByText(label)).toBeInTheDocument();
   });
 });
+
+describe("AgentReviewCard — dev/48 proposal kinds", () => {
+  it("node.create shows the creation effect line", () => {
+    const create: AgentProposalPart = {
+      type: "proposal",
+      proposalId: "p2",
+      tool: "node.create",
+      summary: "Create a new Computation Analysis node",
+      preview: "print('new')",
+      pins: { nodeType: "curio.builtin/computation-analysis" },
+      status: "pending",
+    };
+    render(<AgentReviewCard part={create} onApply={jest.fn()} onDismiss={jest.fn()} />);
+    expect(screen.getByText("Create a new Computation Analysis node")).toBeInTheDocument();
+    expect(screen.getByText("Applying adds this node to the canvas.")).toBeInTheDocument();
+  });
+
+  it("project.install states the install-only effect", () => {
+    const install: AgentProposalPart = {
+      type: "proposal",
+      proposalId: "p3",
+      tool: "project.install",
+      summary: "Install Node Content Builder in this project",
+      preview: "Capability node.content.generate requires Node Content Builder…",
+      pins: { coord: "agent.node-content-builder@1.0.0" },
+      status: "pending",
+    };
+    render(<AgentReviewCard part={install} onApply={jest.fn()} />);
+    expect(
+      screen.getByText(/installs only this project template/),
+    ).toBeInTheDocument();
+  });
+
+  it("node.template.create renders the justification FIRST and the two-effects line", () => {
+    const template: AgentProposalPart = {
+      type: "proposal",
+      proposalId: "p4",
+      tool: "node.template.create",
+      summary: "Create a new custom node type · Sentiment Scorer",
+      preview: "print('score')",
+      pins: { templateSlug: "sentiment-scorer" },
+      status: "pending",
+      justification: "Considered computation-analysis: it cannot hold streaming output.",
+      template: { label: "Sentiment Scorer", engine: "python", description: "Scores text." },
+    };
+    const { container } = render(<AgentReviewCard part={template} onApply={jest.fn()} />);
+    const justification = screen.getByLabelText("Why a new node type is needed");
+    expect(justification).toHaveTextContent("cannot hold streaming output");
+    // The reasoning is what the user judges: it precedes the code preview.
+    const text = container.textContent ?? "";
+    expect(text.indexOf("cannot hold streaming output")).toBeLessThan(
+      text.indexOf("print('score')"),
+    );
+    expect(screen.getByText(/Sentiment Scorer · python — Scores text\./)).toBeInTheDocument();
+    expect(
+      screen.getByText("Applying registers the node type in this project and adds its first node."),
+    ).toBeInTheDocument();
+  });
+
+  it("plain node.content.write cards carry no effect line (unchanged dev/41 shape)", () => {
+    render(<AgentReviewCard part={part()} onApply={jest.fn()} />);
+    expect(screen.queryByText(/Applying/)).toBeNull();
+  });
+});

@@ -6,6 +6,7 @@ import { AgentChatPanel } from "./AgentChatPanel";
 import { useAgentAttachmentsContext } from "./AgentAttachmentsProvider";
 import { AgentSettingsModal } from "../settings/AgentSettingsModal";
 import { composeAgentRunContext } from "./agentRunContext";
+import { useAgentCanvasMutations } from "./useAgentCanvasMutations";
 import { useFlowContext } from "../../../providers/FlowProvider";
 
 /**
@@ -18,6 +19,10 @@ export const AgentDockOverlay: React.FC = () => {
   const ctx = useAgentAttachmentsContext();
   const { projectId, workflowGoal, workflowNameRef } = useFlowContext();
   const { getNodes, getEdges } = useReactFlow();
+  // The apply→canvas bridge listener (dev/48 §3.3): applied node creations
+  // and content writes land on the LIVE canvas from here, where React Flow
+  // is reachable.
+  useAgentCanvasMutations();
   // Attachment id whose settings modal is open (memo dev/42), or null.
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
   if (!ctx) return null;

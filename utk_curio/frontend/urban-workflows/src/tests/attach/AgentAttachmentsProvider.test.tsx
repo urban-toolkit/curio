@@ -410,3 +410,111 @@ describe("AgentAttachmentsProvider grounded context (memo dev/44)", () => {
     expect(api.runAttachment).toHaveBeenCalledWith("p1", "a1", "hi", "LIVE-TRILL");
   });
 });
+
+describe("AgentAttachmentsProvider apply→canvas bridge (memo dev/48 §3.3)", () => {
+  const events: unknown[] = [];
+  let unsubscribe: () => void = () => undefined;
+
+  beforeEach(() => {
+    events.length = 0;
+    const { subscribeAgentCanvasMutations } = jest.requireActual(
+      "../../utils/agentCanvasEvents",
+    );
+    unsubscribe = subscribeAgentCanvasMutations((m: unknown) => events.push(m));
+  });
+
+  afterEach(() => unsubscribe());
+
+  it("a createdNode apply response dispatches node-created (with the template dir)", async () => {
+    api.applyProposal.mockResolvedValue({
+      attachmentId: "a1",
+      proposalId: "p1",
+      status: "applied",
+      mutationApplied: true,
+      createdNode: { id: "nid", type: "curio.agent.scorer/scorer", content: "c", x: 1, y: 2 },
+      createdTemplate: { id: "curio.agent.scorer/scorer", label: "Scorer", packageDir: "curio.agent.scorer@1" },
+    });
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    await act(async () => {
+      fireEvent.click(screen.getByText("apply"));
+    });
+    expect(events).toEqual([
+      {
+        kind: "node-created",
+        node: { id: "nid", type: "curio.agent.scorer/scorer", content: "c", x: 1, y: 2 },
+        createdPackageDir: "curio.agent.scorer@1",
+      },
+    ]);
+  });
+
+  it("an appliedContent apply response dispatches node-content-applied (the dev/41 clobber fix)", async () => {
+    api.applyProposal.mockResolvedValue({
+      attachmentId: "a1",
+      proposalId: "p1",
+      status: "applied",
+      mutationApplied: true,
+      appliedContent: { nodeId: "n1", content: "print(2)" },
+    });
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    await act(async () => {
+      fireEvent.click(screen.getByText("apply"));
+    });
+    expect(events).toEqual([
+      { kind: "node-content-applied", nodeId: "n1", content: "print(2)" },
+    ]);
+  });
+
+  it("a plain apply response (project.install / legacy) dispatches nothing", async () => {
+    api.applyProposal.mockResolvedValue({
+      attachmentId: "a1",
+      proposalId: "p1",
+      status: "applied",
+      installedCoord: "agent.node-content-builder@1.0.0",
+    });
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    await act(async () => {
+      fireEvent.click(screen.getByText("apply"));
+    });
+    expect(events).toEqual([]);
+  });
+});
+
+describe("AgentAttachmentsProvider delegate activity lines (memo dev/48)", () => {
+  it("delegate events render transient lines and clear on finalize", async () => {
+    const seen: string[][] = [];
+    api.runAttachmentStream.mockImplementation(async (_p, _a, _m, onDelta, onEvent) => {
+      onEvent?.("delegate_requested", { capability: "node.content.generate" });
+      onEvent?.("delegate_started", { capability: "node.content.generate", coord: "agent.node-content-builder@1.0.0" });
+      onEvent?.("delegate_result", { capability: "node.content.generate", coord: "agent.node-content-builder@1.0.0", status: "ok", durationMs: 12 });
+      onDelta("done");
+      return { reply: "done", executionId: "e9", usage: null };
+    });
+    const Probe: React.FC = () => {
+      const ctx = useAgentAttachmentsContext();
+      if (!ctx) return null;
+      seen.push(ctx.toolActivity["a1"] ?? []);
+      return (
+        <button onClick={() => void ctx.sendMessage("a1", "go")}>send-delegate</button>
+      );
+    };
+    render(
+      <AgentAttachmentsProvider>
+        <Probe />
+      </AgentAttachmentsProvider>,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByText("send-delegate"));
+    });
+    const flat = seen.flat();
+    expect(flat).toContain("delegating node.content.generate …");
+    expect(flat).toContain("agent.node-content-builder@1.0.0 · ok");
+    // Transient: cleared once the turn finalizes.
+    expect(seen[seen.length - 1]).toEqual([]);
+  });
+});
