@@ -3184,3 +3184,126 @@ class TestNodeCreate:
         self._run(client, token, alice_project, att_id)
         self._run(client, token, alice_project, att_id, message="yes, apply it now please")
         assert len(self._spec_nodes(user, alice_project)) == 1
+
+
+class TestNodeTemplateCreate:
+    """dev/48 §3.2b — the justified creation fallback: reviewed, factory-
+    backed, transactional (template + first node together or neither)."""
+
+    COORD = "agent.node-builder@1.0.0"
+
+    def _template_tail(self, label="Sentiment Scorer", justification="Considered curio.builtin/computation-analysis: it cannot hold the required streaming shape.", content="print('score')"):
+        import json as _json
+
+        payload = {
+            "toolRequest": {
+                "tool": "node.template.create",
+                "params": {
+                    "justification": justification,
+                    "template": {
+                        "label": label,
+                        "description": "Scores text sentiment.",
+                        "engine": "python",
+                        "content": content,
+                    },
+                },
+            }
+        }
+        return f"```curio.v1\n{_json.dumps(payload)}\n```"
+
+    def _setup(self, client, user, token, project_id, monkeypatch, replies=None):
+        helper = TestNodeCreate()
+        return helper._setup(
+            client, user=user, token=token, project_id=project_id,
+            monkeypatch=monkeypatch,
+            replies=replies or [self._template_tail(), "Proposed — review it above."],
+        )
+
+    def _run(self, client, token, project_id, att_id, message="make a scorer node"):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/run",
+            json={"message": message}, headers=_auth(token),
+        )
+
+    def _proposal_from_run(self, response):
+        body = response.get_json()
+        return next(p for p in body["content"] if p["type"] == "proposal")
+
+    def test_mint_requires_justification(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, calls = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=[self._template_tail(justification="  "), "done"],
+        )
+        r = self._run(client, token, alice_project, att_id)
+        assert all(p["type"] != "proposal" for p in r.get_json()["content"])
+        assert "the review needs your reasoning" in calls[1][-1]["content"]
+
+    def test_mint_refuses_reuse_territory_collision(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, calls = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=[self._template_tail(label="Computation Analysis"), "done"],
+        )
+        self._run(client, token, alice_project, att_id)
+        assert "reuse territory" in calls[1][-1]["content"]
+
+    def test_proposal_carries_justification_for_the_review_card(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, _ = self._setup(client, user, token, alice_project, monkeypatch)
+        proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
+        assert proposal["tool"] == "node.template.create"
+        assert "cannot hold the required streaming shape" in proposal["justification"]
+        assert proposal["template"]["label"] == "Sentiment Scorer"
+        assert proposal["pins"] == {"templateSlug": "sentiment-scorer"}
+
+    def test_apply_registers_template_installs_and_inserts_node(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.packages.storage import user_packageages_dir
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        att_id, _ = self._setup(client, user, token, alice_project, monkeypatch)
+        proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
+        resp = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["createdTemplate"]["id"] == "curio.agent.sentiment-scorer/sentiment-scorer"
+        assert body["createdNode"]["type"] == "curio.agent.sentiment-scorer/sentiment-scorer"
+        # Both effects landed: store package + project lockfile + spec node.
+        assert (user_packageages_dir(key) / "curio.agent.sentiment-scorer@1").is_dir()
+        assert "curio.agent.sentiment-scorer@1" in packages_services.get_project_lockfile(key, alice_project)
+        nodes = TestNodeCreate()._spec_nodes(user, alice_project)
+        assert any(n.get("type") == "curio.agent.sentiment-scorer/sentiment-scorer" for n in nodes)
+        # Round-trip (dev/48): the created type is instantiable by plain
+        # node.create in a later run — it is now an available template.
+        available = {t["id"] for t in packages_services.available_templates(key, alice_project)}
+        assert "curio.agent.sentiment-scorer/sentiment-scorer" in available
+
+    def test_factory_failure_at_apply_is_transactional_409(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.packages.storage import user_packageages_dir
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        att_id, _ = self._setup(client, user, token, alice_project, monkeypatch)
+        proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
+        # A colliding store package appears between mint and apply → the
+        # installer's collision handling surfaces verbatim.
+        (user_packageages_dir(key) / "curio.agent.sentiment-scorer@1").mkdir(parents=True)
+        resp = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 409
+        # Nothing half-applied: proposal stale, no node inserted.
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        assert cards[0]["activeProposal"]["status"] == "stale"
+        nodes = TestNodeCreate()._spec_nodes(user, alice_project)
+        assert all(n.get("type") != "curio.agent.sentiment-scorer/sentiment-scorer" for n in nodes)

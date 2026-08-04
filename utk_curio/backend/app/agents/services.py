@@ -872,6 +872,10 @@ def apply_proposal(
         return _apply_project_install(
             user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
         )
+    if tool == "node.template.create":
+        return _apply_node_template_create(
+            user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
+        )
     raise AgentServiceError(f"no apply flow exists for tool {tool!r}", 409)
 
 
@@ -964,6 +968,161 @@ def _apply_node_content_write(
     }
 
 
+_TEMPLATE_ENGINES = ("python", "javascript")
+
+
+def _mint_node_template_create(
+    user_key: str, project_id: str, loop_ctx: dict, req: dict
+) -> tuple[str, str, dict | None]:
+    """The dev/48 §3.2b creation fallback: a reviewed proposal for a NEW
+    custom node type. The runtime cannot judge adequacy — the review card is
+    the adequacy gate, so a written justification is mandatory, and a label
+    that collides with an available template is refused as reuse territory."""
+    from utk_curio.backend.app.packages import services as packages_services
+
+    params = req.get("params") or {}
+    justification = params.get("justification")
+    if not isinstance(justification, str) or not justification.strip():
+        return (
+            "refused",
+            "the review needs your reasoning — state which existing templates you "
+            "considered and why they don't fit (params.justification)",
+            None,
+        )
+    template = params.get("template")
+    if not isinstance(template, dict):
+        return "refused", "params.template must be an object", None
+    label = str(template.get("label") or "").strip()
+    slug = packages_services.template_slug(label)
+    if not slug:
+        return "refused", "template.label must be a non-empty name", None
+    engine = template.get("engine") or "python"
+    if engine not in _TEMPLATE_ENGINES:
+        return "refused", "template.engine must be 'python' or 'javascript'", None
+    code = template.get("content")
+    if not isinstance(code, str) or not code.strip():
+        return "refused", "template.content must be a non-empty string", None
+    if len(code) > content.PROPOSAL_CONTENT_MAX_CHARS:
+        return "refused", "template.content exceeds the proposal size bound", None
+    try:
+        existing = packages_services.available_templates(user_key, project_id)
+    except Exception as exc:
+        return "refused", f"the node template registry is unavailable: {exc}", None
+    collision = next(
+        (
+            t
+            for t in existing
+            if t["id"].rsplit("/", 1)[-1] == slug
+            or t["label"].strip().lower() == label.lower()
+        ),
+        None,
+    )
+    if collision is not None:
+        return (
+            "refused",
+            f"a template like this already exists ({collision['id']}) — that is reuse "
+            "territory: propose a node.create with it instead",
+            None,
+        )
+    spec = projects_storage.read_spec(user_key, project_id)
+    if spec is None:
+        return "refused", "no saved project spec is available", None
+    proposal_id = uuid.uuid4().hex
+    summary = f"Create a new custom node type · {label}"
+    description = str(template.get("description") or "").strip()
+    part = content.make_proposal_part(
+        proposal_id=proposal_id,
+        tool="node.template.create",
+        summary=summary,
+        preview=code,
+        pins={"templateSlug": slug},
+    )
+    # The justification + definition ride the part for the review card —
+    # the justification is what the user judges (memo dev/48 §3.2b).
+    part["justification"] = justification.strip()
+    part["template"] = {"label": label, "engine": engine, "description": description}
+    _store_proposal(
+        user_key,
+        project_id,
+        spec,
+        loop_ctx,
+        {
+            "proposalId": proposal_id,
+            "tool": "node.template.create",
+            "justification": justification.strip(),
+            "template": {
+                "label": label,
+                "engine": engine,
+                "description": description,
+                "content": code,
+            },
+            "summary": summary,
+            "status": "pending",
+        },
+        part,
+    )
+    return (
+        "proposed",
+        f"proposal {proposal_id} created for a new custom node type {label!r}; it "
+        "awaits the user's explicit review — do NOT assume the type or node exists",
+        part,
+    )
+
+
+def _apply_node_template_create(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    proposal_id: str,
+    spec: dict,
+    proposal: dict,
+    session_id: object,
+) -> dict:
+    """The dev/48 §3.2b apply: ONE explicit review covering both stated
+    effects — register the template through the EXISTING package factory
+    (atomic staging; store + project lockfile), then insert the first node.
+    Template first, node only on success: a factory failure 409s with the
+    verbatim error and nothing is half-registered."""
+    from utk_curio.backend.app.packages import services as packages_services
+
+    template = proposal.get("template") or {}
+    try:
+        created_template = packages_services.create_template_package(
+            user_key, project_id, template
+        )
+    except packages_services.PackageServiceError as exc:
+        raise _mark_stale(
+            user_key, project_id, proposal_id, spec, proposal, session_id,
+            f"the node type could not be registered: {exc}",
+        ) from exc
+    # The factory path wrote the spec (lockfile); re-read before inserting the
+    # node so we don't clobber the new package entry.
+    spec = _read_spec_or_404(user_key, project_id)
+    proposal = attachments.get_active_proposal(spec, attachment_id) or proposal
+    created = _insert_node(spec, created_template["id"], template.get("content", ""), None)
+    proposal["status"] = "applied"
+    projects_storage.write_spec(user_key, project_id, spec)
+    label = created_template["label"]
+    _log_applied_turn(
+        user_key, project_id, session_id, attachment_id, proposal_id,
+        f"Applied: node type registered and node created ({created['id']}).",
+        "Applied: custom node type created",
+        [
+            f"{label} · {created_template['id']}",
+            f"node {created['id']}",
+            f"proposal {proposal_id[:8]}",
+        ],
+    )
+    return {
+        "attachmentId": attachment_id,
+        "proposalId": proposal_id,
+        "status": "applied",
+        "mutationApplied": True,
+        "createdTemplate": created_template,
+        "createdNode": dict(created),
+    }
+
+
 def _apply_project_install(
     user_key: str,
     project_id: str,
@@ -1016,6 +1175,30 @@ _NODE_PLACEMENT_X_OFFSET = 420
 _NODE_PLACEMENT_DEFAULT = (80.0, 80.0)
 
 
+def _insert_node(spec: dict, node_type: str, node_content: str, goal: str | None) -> dict:
+    """Append one server-minted node to the spec's dataflow (dev/48): fresh
+    uuid id (collision-impossible, never from any param), placed right of the
+    current node extent. The caller writes the spec."""
+    dataflow = spec.setdefault("dataflow", {})
+    nodes = dataflow.setdefault("nodes", [])
+    xs = [
+        (n.get("x"), n.get("y"))
+        for n in nodes
+        if isinstance(n, dict) and isinstance(n.get("x"), (int, float))
+    ]
+    if xs:
+        max_x, at_y = max(xs, key=lambda p: p[0])
+        x = float(max_x) + _NODE_PLACEMENT_X_OFFSET
+        y = float(at_y) if isinstance(at_y, (int, float)) else _NODE_PLACEMENT_DEFAULT[1]
+    else:
+        x, y = _NODE_PLACEMENT_DEFAULT
+    created = {"id": str(uuid.uuid4()), "type": node_type, "content": node_content, "x": x, "y": y}
+    if goal:
+        created["goal"] = goal
+    nodes.append(created)
+    return created
+
+
 def _apply_node_create(
     user_key: str,
     project_id: str,
@@ -1038,31 +1221,14 @@ def _apply_node_create(
             user_key, project_id, proposal_id, spec, proposal, session_id,
             f"the node type is no longer available ({err}) — ask the agent to propose again",
         )
-    dataflow = spec.setdefault("dataflow", {})
-    nodes = dataflow.setdefault("nodes", [])
-    xs = [
-        (n.get("x"), n.get("y"))
-        for n in nodes
-        if isinstance(n, dict) and isinstance(n.get("x"), (int, float))
-    ]
-    if xs:
-        max_x, at_y = max(xs, key=lambda p: p[0])
-        x = float(max_x) + _NODE_PLACEMENT_X_OFFSET
-        y = float(at_y) if isinstance(at_y, (int, float)) else _NODE_PLACEMENT_DEFAULT[1]
-    else:
-        x, y = _NODE_PLACEMENT_DEFAULT
-    node_id = str(uuid.uuid4())
-    created = {"id": node_id, "type": node_type, "content": proposal.get("content", ""), "x": x, "y": y}
-    if proposal.get("goal"):
-        created["goal"] = proposal["goal"]
-    nodes.append(created)
+    created = _insert_node(spec, node_type, proposal.get("content", ""), proposal.get("goal"))
     proposal["status"] = "applied"
     projects_storage.write_spec(user_key, project_id, spec)
     _log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,
-        f"Applied: node created ({node_id}).",
+        f"Applied: node created ({created['id']}).",
         "Applied: node created",
-        [f"{entry['label']} · {node_type}", f"node {node_id}", f"proposal {proposal_id[:8]}"],
+        [f"{entry['label']} · {node_type}", f"node {created['id']}", f"proposal {proposal_id[:8]}"],
     )
     return {
         "attachmentId": attachment_id,
@@ -1507,6 +1673,8 @@ def _mint_proposal(
         return _mint_node_content_write(user_key, project_id, loop_ctx, req)
     if tool == "node.create":
         return _mint_node_create(user_key, project_id, loop_ctx, req)
+    if tool == "node.template.create":
+        return _mint_node_template_create(user_key, project_id, loop_ctx, req)
     return "refused", f"no proposal flow exists for tool {tool!r}", None
 
 

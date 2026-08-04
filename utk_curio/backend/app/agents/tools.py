@@ -92,6 +92,24 @@ REGISTRY: dict[str, ToolContract] = {
             "reviews the proposal; nothing is added without their approval."
         ),
     ),
+    # dev/48 §3.2b — consumer: agent.node-builder. The justified creation
+    # fallback: ONLY when no available template fits; the apply endpoint
+    # executes it solely through the existing package factory.
+    "node.template.create": ToolContract(
+        id="node.template.create",
+        contract_version="1",
+        effect="mutate",
+        description=(
+            "Propose a NEW custom node type — only after the Available node "
+            "templates list has been considered and none can adequately hold "
+            'the task. Params: {"justification": "...", "template": {"label": '
+            '"...", "description": "...", "engine": "python"|"javascript", '
+            '"content": "..."}}. justification must name the closest existing '
+            "templates and why each is inadequate — the user judges it during "
+            "review. Applying registers the node type in this project AND "
+            "adds its first node; nothing happens without the user's approval."
+        ),
+    ),
 }
 
 
