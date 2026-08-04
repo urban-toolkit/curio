@@ -127,6 +127,29 @@ export interface AgentCardPart {
   lines: string[];
 }
 
+/** One dev/50 candidate row (docs/06 row contract) — informational metadata,
+ * bounded and scheme-allowlisted server-side, sanitized again at render. */
+export interface AgentDatasetCandidateRow {
+  name: string;
+  sourceType: "api" | "endpoint" | "portal" | "catalog" | "document" | "database";
+  url?: string;
+  provider?: string;
+  format?: string;
+  coverage?: string;
+  requirement?: string;
+  fit?: { score: number; rationale: string };
+  /** Catalog lane only: the id dataset.install proposals reference. */
+  datasetId?: string;
+  installed?: boolean;
+}
+
+/** The dev/50 two-lane suggestions part. Selection and confirmation live
+ * client-side — the rows carry no actions (docs/06). */
+export interface AgentDatasetCandidatesPart {
+  type: "datasetCandidates";
+  lanes: { external: AgentDatasetCandidateRow[]; catalog: AgentDatasetCandidateRow[] };
+}
+
 export type AgentProposalStatus =
   | "pending"
   | "applied"
@@ -186,6 +209,7 @@ export type AgentContentPart =
   | AgentSuggestedPromptsPart
   | AgentCardPart
   | AgentProposalPart
+  | AgentDatasetCandidatesPart
   | { type: string };
 
 /** One persisted chat turn of an attachment's session. */

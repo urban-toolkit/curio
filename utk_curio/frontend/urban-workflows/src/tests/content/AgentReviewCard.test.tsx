@@ -133,3 +133,21 @@ describe("AgentReviewCard — dev/48 proposal kinds", () => {
     expect(screen.queryByText(/Applying/)).toBeNull();
   });
 });
+
+describe("AgentReviewCard — dev/50 dataset.install kind", () => {
+  it("states the dataset-only effect", () => {
+    const install: AgentProposalPart = {
+      type: "proposal",
+      proposalId: "p5",
+      tool: "dataset.install",
+      summary: "Install dataset · Cities",
+      preview: "Cities · csv · imported",
+      pins: { datasetId: "imported.abc@1" },
+      status: "pending",
+    };
+    render(<AgentReviewCard part={install} onApply={jest.fn()} />);
+    expect(
+      screen.getByText(/installs only this dataset into the project's Data Catalog/),
+    ).toBeInTheDocument();
+  });
+});

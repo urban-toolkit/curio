@@ -300,3 +300,83 @@ class TestDelegationInstruction:
         )
         assert "- node.content.generate — handled by Node Content Builder" in text
         assert '"delegateRequest"' in text
+
+
+class TestDatasetCandidatesPart:
+    """dev/50 — the docs/06 two-lane suggestions contract: bounded,
+    scheme-allowlisted, informational rows; coexists with suggestedPrompts;
+    any malformed row fails the whole block open to text."""
+
+    def _row(self, lane="catalog", **over):
+        base = {
+            "name": "Cities",
+            "sourceType": "catalog" if lane == "catalog" else "api",
+        }
+        if lane == "catalog":
+            base["datasetId"] = "imported.abc@1"
+        base.update(over)
+        return base
+
+    def test_two_lanes_parse_and_coexist_with_prompts(self):
+        payload = {
+            "datasetCandidates": {
+                "lanes": {
+                    "external": [
+                        {
+                            "name": "NOAA Climate Data API",
+                            "sourceType": "api",
+                            "url": "https://api.noaa.gov",
+                            "provider": "NOAA",
+                            "format": "json",
+                            "fit": {"score": 90, "rationale": "direct match"},
+                            "requirement": "API token required",
+                        }
+                    ],
+                    "catalog": [self._row(installed=True)],
+                }
+            },
+            "suggestedPrompts": {"primary": "Install Cities from the catalog"},
+        }
+        parts = content.parse_parts(json.dumps(payload))
+        types = [p["type"] for p in parts]
+        assert types == ["datasetCandidates", "suggestedPrompts"]
+        lanes = parts[0]["lanes"]
+        assert lanes["external"][0]["fit"] == {"score": 90, "rationale": "direct match"}
+        assert lanes["catalog"][0]["datasetId"] == "imported.abc@1"
+        assert lanes["catalog"][0]["installed"] is True
+
+    def test_catalog_rows_require_dataset_id(self):
+        payload = {"datasetCandidates": {"lanes": {"catalog": [
+            {"name": "Cities", "sourceType": "catalog"},
+        ]}}}
+        assert content.parse_parts(json.dumps(payload)) is None
+
+    def test_unsafe_url_schemes_invalidate_the_block(self):
+        for url in ("javascript:alert(1)", "data:text/html,x", "ftp://x", "//evil"):
+            payload = {"datasetCandidates": {"lanes": {"external": [
+                {"name": "X", "sourceType": "api", "url": url},
+            ]}}}
+            assert content.parse_parts(json.dumps(payload)) is None, url
+
+    def test_row_and_lane_bounds(self):
+        too_many = [self._row() for _ in range(9)]
+        assert content.parse_parts(json.dumps(
+            {"datasetCandidates": {"lanes": {"catalog": too_many}}}
+        )) is None
+        assert content.parse_parts(json.dumps(
+            {"datasetCandidates": {"lanes": {"catalog": [self._row(name="x" * 121)]}}}
+        )) is None
+        assert content.parse_parts(json.dumps(
+            {"datasetCandidates": {"lanes": {"external": [
+                {"name": "X", "sourceType": "spaceship"},
+            ]}}}
+        )) is None
+        assert content.parse_parts(json.dumps(
+            {"datasetCandidates": {"lanes": {"external": [
+                {"name": "X", "sourceType": "api", "fit": {"score": 250, "rationale": "r"}},
+            ]}}}
+        )) is None
+
+    def test_empty_lanes_are_invalid(self):
+        payload = {"datasetCandidates": {"lanes": {"external": [], "catalog": []}}}
+        assert content.parse_parts(json.dumps(payload)) is None

@@ -55,6 +55,17 @@ _TOOL_ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$")
 _PROPOSAL_SUMMARY_MAX_CHARS = 200
 PROPOSAL_CONTENT_MAX_CHARS = 65536
 
+# datasetCandidates bounds (memo dev/50 — the docs/06 two-lane row contract).
+# Rows are informational display metadata; every string is bounded here and
+# URLs are scheme-allowlisted at parse time (REQ-SEC-002 belt-and-braces —
+# rendering still goes through the sanitizer).
+_CANDIDATE_LANES = ("external", "catalog")
+_CANDIDATE_SOURCE_TYPES = ("api", "endpoint", "portal", "catalog", "document", "database")
+_CANDIDATES_MAX_ROWS_PER_LANE = 8
+_CANDIDATE_NAME_MAX_CHARS = 120
+_CANDIDATE_TEXT_MAX_CHARS = 160
+_CANDIDATE_URL_MAX_CHARS = 300
+
 # The runtime-owned instruction appended to every attachment run's system turn
 # (after the preamble + intent composition, dev/38 — so an edited intent can
 # neither strip nor spoof it). Deliberately optional in tone, and it invites
@@ -166,6 +177,88 @@ def _parse_tool_request(raw: object) -> dict | None:
     return {"type": "toolRequest", "tool": tool, "params": params}
 
 
+def _bounded_str(value: object, max_chars: int) -> str | None:
+    """A non-empty, bounded string — or ``None`` (absent/invalid alike)."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text or len(text) > max_chars:
+        return None
+    return text
+
+
+def _parse_candidate_row(raw: object, lane: str) -> dict | None:
+    if not isinstance(raw, dict):
+        return None
+    name = _bounded_str(raw.get("name"), _CANDIDATE_NAME_MAX_CHARS)
+    if name is None:
+        return None
+    source_type = raw.get("sourceType")
+    if source_type not in _CANDIDATE_SOURCE_TYPES:
+        return None
+    row: dict = {"name": name, "sourceType": source_type}
+    url = raw.get("url")
+    if url is not None:
+        url_text = _bounded_str(url, _CANDIDATE_URL_MAX_CHARS)
+        # Scheme allowlist at parse time: display metadata only, and never a
+        # javascript:/data: vector even before the sanitizer sees it.
+        if url_text is None or not (
+            url_text.startswith("http://") or url_text.startswith("https://")
+        ):
+            return None
+        row["url"] = url_text
+    for key in ("provider", "format", "coverage", "requirement"):
+        if raw.get(key) is not None:
+            text = _bounded_str(raw.get(key), _CANDIDATE_TEXT_MAX_CHARS)
+            if text is None:
+                return None
+            row[key] = text
+    fit = raw.get("fit")
+    if fit is not None:
+        if not isinstance(fit, dict):
+            return None
+        rationale = _bounded_str(fit.get("rationale"), _CANDIDATE_TEXT_MAX_CHARS)
+        score = fit.get("score")
+        if rationale is None or not isinstance(score, (int, float)) or not (0 <= score <= 100):
+            return None
+        row["fit"] = {"score": round(float(score)), "rationale": rationale}
+    if lane == "catalog":
+        dataset_id = _bounded_str(raw.get("datasetId"), _CANDIDATE_NAME_MAX_CHARS)
+        if dataset_id is None:
+            return None  # catalog rows are tool-grounded: the id is mandatory
+        row["datasetId"] = dataset_id
+        row["installed"] = bool(raw.get("installed"))
+    return row
+
+
+def _parse_dataset_candidates(raw: object) -> dict | None:
+    """The dev/50 two-lane suggestions part (docs/06). Informational rows —
+    selection, multi-select, and confirmation live client-side; a malformed
+    row invalidates the whole block (fail-open to text, the T2 rule)."""
+    if not isinstance(raw, dict):
+        return None
+    lanes_raw = raw.get("lanes")
+    if not isinstance(lanes_raw, dict):
+        return None
+    lanes: dict = {}
+    total = 0
+    for lane in _CANDIDATE_LANES:
+        rows_raw = lanes_raw.get(lane, [])
+        if not isinstance(rows_raw, list) or len(rows_raw) > _CANDIDATES_MAX_ROWS_PER_LANE:
+            return None
+        rows = []
+        for row_raw in rows_raw:
+            row = _parse_candidate_row(row_raw, lane)
+            if row is None:
+                return None
+            rows.append(row)
+        lanes[lane] = rows
+        total += len(rows)
+    if total == 0:
+        return None
+    return {"type": "datasetCandidates", "lanes": lanes}
+
+
 def _parse_delegate_request(raw: object) -> dict | None:
     if not isinstance(raw, dict):
         return None
@@ -220,6 +313,11 @@ def parse_parts(body: str) -> list[dict] | None:
             return None
         return [request]
     parts: list[dict] = []
+    if "datasetCandidates" in payload:
+        candidates = _parse_dataset_candidates(payload["datasetCandidates"])
+        if candidates is None:
+            return None
+        parts.append(candidates)
     if "cards" in payload:
         cards_raw = payload["cards"]
         if not isinstance(cards_raw, list) or len(cards_raw) > _MAX_CARDS:

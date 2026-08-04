@@ -16,6 +16,8 @@ const EFFECT_LINE: Record<string, string> = {
     "Applying installs only this project template — nothing is imported, attached, run, or published.",
   "node.template.create":
     "Applying registers the node type in this project and adds its first node.",
+  "dataset.install":
+    "Applying installs only this dataset into the project's Data Catalog — no agent is installed.",
 };
 
 /**

@@ -13,6 +13,7 @@ import {
 import type {
   AgentAttachment,
   AgentCardPart,
+  AgentDatasetCandidatesPart,
   AgentProposalPart,
   AgentSessionTurn,
   AgentSuggestedPromptsPart,
@@ -20,6 +21,7 @@ import type {
 import { agentCategoryKey } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
 import { attachmentDisplayName, TITLE_MAX_CHARS } from "./attachmentDisplayName";
 import { AgentChatCard } from "../content/AgentChatCard";
+import { AgentDatasetCandidatesCard } from "../content/AgentDatasetCandidatesCard";
 import { AgentReviewCard } from "../content/AgentReviewCard";
 import { SafeAgentContent } from "../content/SafeAgentContent";
 import styles from "./AgentChatPanel.module.css";
@@ -132,6 +134,14 @@ export const AgentChatPanel: React.FC<{
     setInput((prev) => (prev === "" || prev === lastPrefill.current ? primary : prev));
     lastPrefill.current = primary;
   }, [suggested, attachment.attachmentId]);
+
+  // Candidate-selection composition (dev/50): the two-lane card composes the
+  // confirmation prompt through the same prefill rule — an explicit selection
+  // updates a prefill, never a draft the user actually typed.
+  const composePrompt = (prompt: string) => {
+    setInput((prev) => (prev === "" || prev === lastPrefill.current ? prompt : prev));
+    lastPrefill.current = prompt;
+  };
 
   const tint =
     styles[`tint_${agentCategoryKey(attachment.category)}` as keyof typeof styles] ??
@@ -474,6 +484,19 @@ export const AgentChatPanel: React.FC<{
                     .filter((p): p is AgentCardPart => p.type === "card")
                     .map((card, j) => (
                       <AgentChatCard key={j} card={card} tintClassName={tint} />
+                    ))}
+                  {(t.content ?? [])
+                    .filter(
+                      (p): p is AgentDatasetCandidatesPart =>
+                        p.type === "datasetCandidates",
+                    )
+                    .map((part, j) => (
+                      <AgentDatasetCandidatesCard
+                        key={`cand-${j}`}
+                        part={part}
+                        tintClassName={tint}
+                        onComposePrompt={composePrompt}
+                      />
                     ))}
                   {(t.content ?? [])
                     .filter((p): p is AgentProposalPart => p.type === "proposal")
