@@ -43,6 +43,10 @@ _MAX_CARDS = 4
 
 # toolRequest bounds (memo dev/41): one request per reply, small params.
 _TOOL_PARAMS_MAX_BYTES = 1024
+# delegateRequest bounds (memo dev/48): one request per reply; inputs carry a
+# node's intent + context so they get more room than tool params (the whole
+# tail is still capped at TAIL_MAX_BYTES).
+_DELEGATE_INPUTS_MAX_BYTES = 3072
 # Tool ids share the capability grammar (mirrors manifest.CAPABILITY_ID_RE —
 # duplicated here so the content contract stays import-light).
 _TOOL_ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$")
@@ -162,6 +166,23 @@ def _parse_tool_request(raw: object) -> dict | None:
     return {"type": "toolRequest", "tool": tool, "params": params}
 
 
+def _parse_delegate_request(raw: object) -> dict | None:
+    if not isinstance(raw, dict):
+        return None
+    capability = raw.get("capability")
+    if not (isinstance(capability, str) and _TOOL_ID_RE.match(capability)):
+        return None
+    inputs = raw.get("inputs", {})
+    if not isinstance(inputs, dict):
+        return None
+    try:
+        if len(json.dumps(inputs).encode("utf-8")) > _DELEGATE_INPUTS_MAX_BYTES:
+            return None
+    except (TypeError, ValueError):
+        return None
+    return {"type": "delegateRequest", "capability": capability, "inputs": inputs}
+
+
 def parse_parts(body: str) -> list[dict] | None:
     """Validate a tail body into typed parts, or ``None`` when the whole block
     is invalid (bad JSON, over bounds, a malformed known part, or nothing
@@ -169,10 +190,12 @@ def parse_parts(body: str) -> list[dict] | None:
     *known* key that fails its contract invalidates the block (fail-open to
     text beats attaching half-validated content).
 
-    Two dev/41 rules: a ``proposal`` key is **runtime-emitted only** — a model
-    that writes one invalidates the block (fail-open; the review flow can
-    never be spoofed from the tail). A valid ``toolRequest`` is exclusive: a
-    request turn is a request turn, so other parts alongside it are dropped.
+    Request rules (dev/41, dev/48): a ``proposal`` key is **runtime-emitted
+    only** — a model that writes one invalidates the block (fail-open; the
+    review flow can never be spoofed from the tail). A valid ``toolRequest``
+    or ``delegateRequest`` is exclusive: a request turn is a request turn, so
+    other parts alongside it are dropped — and both requests in one tail is
+    an invalid block (one request per reply).
     """
     if not isinstance(body, str) or len(body.encode("utf-8")) > TAIL_MAX_BYTES:
         return None
@@ -184,8 +207,15 @@ def parse_parts(body: str) -> list[dict] | None:
         return None
     if "proposal" in payload or "proposals" in payload:
         return None  # never accepted from the model (memo dev/41 §4.1)
+    if "toolRequest" in payload and "delegateRequest" in payload:
+        return None  # one request per reply (memo dev/48)
     if "toolRequest" in payload:
         request = _parse_tool_request(payload["toolRequest"])
+        if request is None:
+            return None
+        return [request]
+    if "delegateRequest" in payload:
+        request = _parse_delegate_request(payload["delegateRequest"])
         if request is None:
             return None
         return [request]
@@ -246,6 +276,27 @@ def tail_instruction(grants: list[tuple[str, str]] | None = None) -> str:
         "answer):\n"
         "```curio.v1\n"
         '{"toolRequest": {"tool": "<tool id>", "params": {}}}\n'
+        "```"
+    )
+
+
+def delegation_instruction(entries: list[tuple[str, str]]) -> str:
+    """The delegation paragraph for one run's system tail (memo dev/48).
+
+    Composed only when the agent's manifest names delegates that resolve to
+    visible definitions — the entries are ``(capability_id, delegate name)``
+    pairs the runtime resolved server-side, never the manifest's raw list.
+    """
+    lines = "\n".join(f"- {cap} — handled by {name}" for cap, name in entries)
+    return (
+        "You may also delegate these specialized capabilities, granted for "
+        "this conversation:\n"
+        f"{lines}\n"
+        "To delegate, end your reply with exactly one fenced block of this "
+        "form instead (one request per reply; you will receive the delegate's "
+        "result and can then continue):\n"
+        "```curio.v1\n"
+        '{"delegateRequest": {"capability": "<capability id>", "inputs": {}}}\n'
         "```"
     )
 

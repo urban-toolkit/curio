@@ -19,6 +19,7 @@ from utk_curio.backend.app.agents import (
     attachments,
     builtin,
     content,
+    delegation,
     imports,
     ledger,
     policy,
@@ -867,6 +868,10 @@ def apply_proposal(
         return _apply_node_content_write(
             user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
         )
+    if tool == "project.install":
+        return _apply_project_install(
+            user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
+        )
     raise AgentServiceError(f"no apply flow exists for tool {tool!r}", 409)
 
 
@@ -956,6 +961,52 @@ def _apply_node_content_write(
         # The frontend canvas bridge (dev/48 §3.3) applies this to the LIVE
         # node too, so the next canvas save can't clobber the mutation.
         "appliedContent": {"nodeId": node_id, "content": proposal.get("content", "")},
+    }
+
+
+def _apply_project_install(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    proposal_id: str,
+    spec: dict,
+    proposal: dict,
+    session_id: object,
+) -> dict:
+    """The dev/48 missing-specialist apply: the reviewed ``Install in
+    project`` (`REQ-ORCH-001`). Reuses the existing install service — one
+    project template, nothing imported/attached/run/published/granted.
+    Already-installed re-applies are idempotent success, not an error."""
+    coord = proposal.get("coord", "")
+    already = coord in set(project_agents.project_agents(spec))
+    if not already:
+        try:
+            # The existing reviewed-install service (spec re-read + written
+            # inside; our in-hand spec is only used for the mirror below).
+            install_in_project(user_key, project_id, coord)
+        except AgentServiceError as exc:
+            raise _mark_stale(
+                user_key, project_id, proposal_id, spec, proposal, session_id,
+                f"the install could not be applied: {exc}",
+            ) from exc
+        # The install wrote the spec; re-read so the mirror update below
+        # does not clobber the new template entry.
+        spec = _read_spec_or_404(user_key, project_id)
+        proposal = attachments.get_active_proposal(spec, attachment_id) or proposal
+    proposal["status"] = "applied"
+    projects_storage.write_spec(user_key, project_id, spec)
+    _log_applied_turn(
+        user_key, project_id, session_id, attachment_id, proposal_id,
+        f"Applied: {coord} installed in this project.",
+        "Applied: agent installed",
+        [coord, f"proposal {proposal_id[:8]}"],
+    )
+    return {
+        "attachmentId": attachment_id,
+        "proposalId": proposal_id,
+        "status": "applied",
+        "mutationApplied": True,
+        "installedCoord": coord,
     }
 
 
@@ -1208,13 +1259,16 @@ def _execution_record(
     status: str,
     tool_calls: list | None = None,
     cost_usd: float | None = None,
+    delegations: list | None = None,
 ) -> dict:
     """Assemble the per-run execution record persisted on the agent turn
     (memo dev/37). ``usage`` is Actual counts or ``None``, never estimated
     (memo dev/11) — summed across loop rounds when tools ran (dev/41), which
     is also when ``toolCalls`` (additive) records what executed. ``costUsd``
     (dev/40) is the ledger settlement's Actual USD — null unless a deployment
-    price existed for the run."""
+    price existed for the run. ``delegations`` (additive, dev/48) lists the
+    run's child execution records — each with its own pins, usage, costUsd,
+    and ``parentExecutionId`` back-link."""
     record = {
         "executionId": execution_id,
         "pins": pins,
@@ -1225,6 +1279,8 @@ def _execution_record(
     }
     if tool_calls:
         record["toolCalls"] = list(tool_calls)
+    if delegations:
+        record["delegations"] = list(delegations)
     return record
 
 
@@ -1294,6 +1350,13 @@ def _prepare_run(
         templates_block = _available_templates_block(user_key, project_id)
         if templates_block:
             system_content = f"{system_content}\n\n{templates_block}"
+    # Delegation (dev/48, DEC-046): offered only when the manifest names
+    # delegates that resolve to visible definitions — server-resolved, never
+    # the manifest's raw list.
+    if manifest is not None and manifest.delegates_to:
+        entries = delegation.visible_capability_entries(user_key, manifest)
+        if entries:
+            system_content = f"{system_content}\n\n{content.delegation_instruction(entries)}"
     session_id = record.get("sessionId")
     if not isinstance(session_id, str):
         session_id = None
@@ -1334,6 +1397,10 @@ def _prepare_run(
         "target": record.get("target"),
         "attachment_id": attachment_id,
         "session_id": session_id,
+        # Delegation context (dev/48): the parent's identity + manifest for
+        # delegatesTo resolution inside the loop.
+        "coord": coord,
+        "manifest": manifest,
     }
     return coord, session_id, messages, run_policy, wants_title, pins, loop_ctx
 
@@ -1655,6 +1722,106 @@ def _tool_result_message(tool_id: str, status: str, text: str, *, final: bool) -
     return {"role": "user", "content": f"[tool result] {tool_id}: {status}\n{text}{suffix}"}
 
 
+def _delegate_result_message(
+    coord: str | None, capability: str, status: str, text: str, *, final: bool
+) -> dict:
+    """The delegate's result fed back as provider context (untrusted data,
+    framed — memo dev/48 §3.4)."""
+    who = f"{coord} ({capability})" if coord else capability
+    suffix = (
+        "\nNo further tool calls are available this turn — answer with what you have."
+        if final
+        else ""
+    )
+    return {"role": "user", "content": f"[delegate result] {who}: {status}\n{text}{suffix}"}
+
+
+def _mint_project_install(
+    user_key: str, project_id: str, loop_ctx: dict, coord: str, name: str, capability: str
+) -> tuple[str, str, dict | None]:
+    """The missing-specialist proposal (dev/48 §3.4, `REQ-ORCH-001`): a
+    reviewed ``Install in project`` — never a silent install, never an
+    install call from the loop. Returns ``(status, text, part | None)``."""
+    session_id = loop_ctx.get("session_id")
+    if not isinstance(session_id, str):
+        return (
+            "refused",
+            f"specialist {coord} is not installed and this attachment has no "
+            "conversation to carry an install proposal — ask the user to install it",
+            None,
+        )
+    spec = projects_storage.read_spec(user_key, project_id)
+    if spec is None:
+        return "refused", "no saved project spec is available", None
+    proposal_id = uuid.uuid4().hex
+    summary = f"Install {name} in this project"
+    preview = (
+        f"Capability {capability} is handled by {name} ({coord}), which is not "
+        "installed in this project. Applying installs only this project template — "
+        "it does not import, attach, run, publish, or grant anything."
+    )
+    part = content.make_proposal_part(
+        proposal_id=proposal_id,
+        tool="project.install",
+        summary=summary,
+        preview=preview,
+        pins={"coord": coord},
+    )
+    _store_proposal(
+        user_key,
+        project_id,
+        spec,
+        loop_ctx,
+        {
+            "proposalId": proposal_id,
+            "tool": "project.install",
+            "coord": coord,
+            "summary": summary,
+            "status": "pending",
+        },
+        part,
+    )
+    return (
+        "proposed",
+        f"specialist {coord} is not installed in this project; an Install proposal "
+        f"({proposal_id}) awaits the user's explicit review — do NOT assume it was "
+        "installed or that the delegate ran",
+        part,
+    )
+
+
+def _resolve_delegate_request(
+    user_key: str, project_id: str, loop_ctx: dict, req: dict, minted: list
+) -> tuple[str, str, "delegation.Resolution | None"]:
+    """Resolution half of one delegateRequest (memo dev/48): ``("ok", ...)``
+    with the resolution when a child run may start; otherwise the refusal /
+    missing-specialist result to feed back (proposals appended to *minted*)."""
+    capability = req.get("capability", "")
+    manifest = loop_ctx.get("manifest")
+    if manifest is None or not manifest.delegates_to:
+        return "refused", "this agent declares no delegates", None
+    resolution = delegation.resolve(user_key, project_id, manifest, capability)
+    if resolution.outcome == "ok":
+        return "ok", "", resolution
+    if resolution.outcome == "not-installed":
+        status, text, part = _mint_project_install(
+            user_key,
+            project_id,
+            loop_ctx,
+            resolution.coord,
+            resolution.manifest.name if resolution.manifest else resolution.coord,
+            capability,
+        )
+        if part is not None:
+            minted.append(part)
+        return status, text, None
+    return (
+        "refused",
+        f"no delegate of this agent declares capability {capability!r}",
+        None,
+    )
+
+
 def run_attachment(
     user_key: str,
     project_id: str,
@@ -1688,6 +1855,7 @@ def run_attachment(
     )
     usage_total: dict = {}
     tool_calls: list = []
+    delegations: list = []
     minted: list = []
     folded: list[str] = []
     final_parts: list = []
@@ -1695,8 +1863,9 @@ def run_attachment(
     rounds_used = 0
     started = time.monotonic()
     try:
-        # The bounded tool loop (memo dev/41): parse → execute granted read
-        # tool → re-prompt, at most MAX_TOOL_ROUNDS executions per run.
+        # The bounded tool loop (memos dev/41/48): parse → execute granted
+        # read tool / mint proposal / run depth-1 delegate → re-prompt, at
+        # most MAX_TOOL_ROUNDS request executions per run (one shared budget).
         while True:
             usage_sink: dict = {}
             reply = run_chat_completion(
@@ -1709,21 +1878,51 @@ def run_attachment(
             visible, parts = content.extract_content(reply)
             if visible:
                 folded.append(visible)
-            req = parts[0] if parts and parts[0].get("type") == "toolRequest" else None
+            req = (
+                parts[0]
+                if parts and parts[0].get("type") in ("toolRequest", "delegateRequest")
+                else None
+            )
             if req is None:
                 final_parts = parts
                 break
             if rounds_used >= MAX_TOOL_ROUNDS:
                 break  # dangling request at the cap: dropped, text kept
             rounds_used += 1
+            final = rounds_used >= MAX_TOOL_ROUNDS
+            if req["type"] == "delegateRequest":
+                status, text, resolution = _resolve_delegate_request(
+                    user_key, project_id, loop_ctx, req, minted
+                )
+                if resolution is not None:
+                    status, text, child = delegation.run_delegate(
+                        user_key,
+                        project_id,
+                        resolution.coord,
+                        req["capability"],
+                        req.get("inputs") or {},
+                        config,
+                        parent_execution_id=execution_id,
+                        parent_coord=loop_ctx["coord"],
+                        attachment_id=loop_ctx.get("attachment_id"),
+                    )
+                    delegations.append(child)
+                    result_msg = _delegate_result_message(
+                        resolution.coord, req["capability"], status, text, final=final
+                    )
+                else:
+                    result_msg = _delegate_result_message(
+                        None, req["capability"], status, text, final=final
+                    )
+                messages_work.append({"role": "assistant", "content": reply})
+                messages_work.append(result_msg)
+                continue
             status, text = _execute_tool_request(
                 user_key, project_id, loop_ctx, req, tool_calls, minted
             )
             messages_work.append({"role": "assistant", "content": reply})
             messages_work.append(
-                _tool_result_message(
-                    req["tool"], status, text, final=rounds_used >= MAX_TOOL_ROUNDS
-                )
+                _tool_result_message(req["tool"], status, text, final=final)
             )
     except Exception as exc:
         _add_usage(usage_total, usage_sink)
@@ -1741,7 +1940,7 @@ def run_attachment(
             error=True,
             execution=_execution_record(
                 execution_id, pins, usage_total, started, "error", tool_calls,
-                cost_usd=settled["costUsd"],
+                cost_usd=settled["costUsd"], delegations=delegations,
             ),
         )
         raise AgentServiceError(f"agent run failed: {exc}", 502) from exc
@@ -1750,7 +1949,7 @@ def run_attachment(
     settled = ledger.settle(user_key, reservation, usage=usage_total or None, status="ok")
     execution = _execution_record(
         execution_id, pins, usage_total, started, "ok", tool_calls,
-        cost_usd=settled["costUsd"],
+        cost_usd=settled["costUsd"], delegations=delegations,
     )
     _persist_exchange(
         user_key,
@@ -1869,6 +2068,7 @@ def stream_attachment(
     def _events():
         usage_total: dict = {}
         tool_calls: list = []
+        delegations: list = []
         minted: list = []
         folded: list[str] = []
         final_parts: list = []
@@ -1881,8 +2081,9 @@ def stream_attachment(
         # with the record that will land on the transcript.
         yield ("execution", {"executionId": execution_id})
         try:
-            # The bounded tool loop (memo dev/41): each round streams its own
-            # deltas; a toolRequest tail becomes tool events, never text.
+            # The bounded tool loop (memos dev/41/48): each round streams its
+            # own deltas; a toolRequest tail becomes tool events and a
+            # delegateRequest tail becomes delegate events, never text.
             while True:
                 usage_sink = {}
                 result: dict = {}
@@ -1891,13 +2092,65 @@ def stream_attachment(
                 if result["visible"]:
                     folded.append(result["visible"])
                 parts = result["parts"]
-                req = parts[0] if parts and parts[0].get("type") == "toolRequest" else None
+                req = (
+                    parts[0]
+                    if parts and parts[0].get("type") in ("toolRequest", "delegateRequest")
+                    else None
+                )
                 if req is None:
                     final_parts = parts
                     break
                 if rounds_used >= MAX_TOOL_ROUNDS:
                     break  # dangling request at the cap: dropped, text kept
                 rounds_used += 1
+                final = rounds_used >= MAX_TOOL_ROUNDS
+                if req["type"] == "delegateRequest":
+                    yield ("delegate_requested", {"capability": req["capability"]})
+                    status, text, resolution = _resolve_delegate_request(
+                        user_key, project_id, loop_ctx, req, minted
+                    )
+                    if resolution is not None:
+                        yield (
+                            "delegate_started",
+                            {"capability": req["capability"], "coord": resolution.coord},
+                        )
+                        status, text, child = delegation.run_delegate(
+                            user_key,
+                            project_id,
+                            resolution.coord,
+                            req["capability"],
+                            req.get("inputs") or {},
+                            config,
+                            parent_execution_id=execution_id,
+                            parent_coord=loop_ctx["coord"],
+                            attachment_id=loop_ctx.get("attachment_id"),
+                        )
+                        delegations.append(child)
+                        yield (
+                            "delegate_result",
+                            {
+                                "capability": req["capability"],
+                                "coord": resolution.coord,
+                                "status": status,
+                                "durationMs": child.get("durationMs"),
+                            },
+                        )
+                        result_msg = _delegate_result_message(
+                            resolution.coord, req["capability"], status, text, final=final
+                        )
+                    else:
+                        yield (
+                            "delegate_result",
+                            {"capability": req["capability"], "status": status},
+                        )
+                        result_msg = _delegate_result_message(
+                            None, req["capability"], status, text, final=final
+                        )
+                    messages_work.append(
+                        {"role": "assistant", "content": result["reply"]}
+                    )
+                    messages_work.append(result_msg)
+                    continue
                 yield ("tool_requested", {"tool": req["tool"]})
                 yield ("tool_started", {"tool": req["tool"]})
                 status, text = _execute_tool_request(
@@ -1906,9 +2159,7 @@ def stream_attachment(
                 yield ("tool_result", {"tool": req["tool"], "status": status})
                 messages_work.append({"role": "assistant", "content": result["reply"]})
                 messages_work.append(
-                    _tool_result_message(
-                        req["tool"], status, text, final=rounds_used >= MAX_TOOL_ROUNDS
-                    )
+                    _tool_result_message(req["tool"], status, text, final=final)
                 )
         except Exception as exc:  # provider failure mid-stream
             _add_usage(usage_total, usage_sink)
@@ -1925,7 +2176,7 @@ def stream_attachment(
                 error=True,
                 execution=_execution_record(
                     execution_id, pins, usage_total, started, "error", tool_calls,
-                    cost_usd=settled["costUsd"],
+                    cost_usd=settled["costUsd"], delegations=delegations,
                 ),
             )
             yield ("error", f"agent run failed: {exc}")
@@ -1937,7 +2188,7 @@ def stream_attachment(
         )
         execution = _execution_record(
             execution_id, pins, usage_total, started, "ok", tool_calls,
-            cost_usd=settled["costUsd"],
+            cost_usd=settled["costUsd"], delegations=delegations,
         )
         _persist_exchange(
             user_key,

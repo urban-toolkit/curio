@@ -250,3 +250,53 @@ class TestExtractContent:
         visible, parts = content.extract_content(_tail(PROMPTS))
         assert visible == ""
         assert len(parts) == 1
+
+
+class TestDelegateRequestPart:
+    """dev/48 §3.4 — the model surface for depth-1 delegation."""
+
+    def test_valid_request_is_exclusive(self):
+        body = '{"delegateRequest": {"capability": "node.content.generate", "inputs": {"intent": "x"}}, "suggestedPrompts": {"primary": "next"}}'
+        parts = content.parse_parts(body)
+        assert parts == [
+            {
+                "type": "delegateRequest",
+                "capability": "node.content.generate",
+                "inputs": {"intent": "x"},
+            }
+        ]
+
+    def test_capability_grammar_enforced(self):
+        for bad in ("NotACap", "cap", "a..b", "a.b/c", ""):
+            body = f'{{"delegateRequest": {{"capability": "{bad}", "inputs": {{}}}}}}'
+            assert content.parse_parts(body) is None
+
+    def test_inputs_must_be_bounded_object(self):
+        assert content.parse_parts('{"delegateRequest": {"capability": "a.b", "inputs": []}}') is None
+        big = "x" * 4000
+        assert (
+            content.parse_parts(
+                f'{{"delegateRequest": {{"capability": "a.b", "inputs": {{"k": "{big}"}}}}}}'
+            )
+            is None
+        )
+
+    def test_both_requests_in_one_tail_invalidates_the_block(self):
+        body = (
+            '{"toolRequest": {"tool": "dataflow.read", "params": {}}, '
+            '"delegateRequest": {"capability": "a.b", "inputs": {}}}'
+        )
+        assert content.parse_parts(body) is None
+
+    def test_inputs_default_to_empty(self):
+        parts = content.parse_parts('{"delegateRequest": {"capability": "a.b"}}')
+        assert parts[0]["inputs"] == {}
+
+
+class TestDelegationInstruction:
+    def test_names_entries_and_syntax(self):
+        text = content.delegation_instruction(
+            [("node.content.generate", "Node Content Builder")]
+        )
+        assert "- node.content.generate — handled by Node Content Builder" in text
+        assert '"delegateRequest"' in text
