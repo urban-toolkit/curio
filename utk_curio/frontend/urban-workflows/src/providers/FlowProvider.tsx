@@ -136,6 +136,11 @@ interface FlowContextProps {
     updateDataNode: (nodeId: string, newData: any) => void;
     updateWarnings: (trill_spec: any) => void;
     updateDefaultCode: (nodeId: string, content: string) => void;
+    /** Set one node's content for BOTH the editor (``defaultCode``) and the
+     * serializer (``code``) through provider state — the agent apply→canvas
+     * bridge's content path (dev/51; RF-store writes get clobbered by the
+     * controlled re-sync). Merges into ``data``, never replaces it. */
+    applyNodeContent: (nodeId: string, content: string) => void;
     updateSubtasks: (trill: any) => void;
     cleanCanvas: () => void;
     flagBasedOnKeyword: (keywordIndex?: number) => void;
@@ -251,6 +256,7 @@ export const FlowContext = createContext<FlowContextProps>({
     updateSubtasks: () => {},
     updateKeywords: () => {},
     updateDefaultCode: () => {},
+    applyNodeContent: () => {},
     updateWarnings: () => {},
     cleanCanvas: () => {},
     acceptSuggestion: () => {},
@@ -512,6 +518,22 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             nds.map(n => n.id === nodeId ? { ...n, data: { ...n.data, dashboardPinned: value } } : n)
         );
     }, [setDashboardPins, setNodes]);
+
+    // The bridge's content path (dev/51): both fields, one provider-state
+    // update — ``defaultCode`` drives the Monaco editor's value and ``code``
+    // is what TrillGenerator serializes on save.
+    const applyNodeContent = useCallback(
+        (nodeId: string, content: string) => {
+            setNodes((nds: Node[]) =>
+                nds.map((n) =>
+                    n.id === nodeId
+                        ? { ...n, data: { ...n.data, code: content, defaultCode: content } }
+                        : n,
+                ),
+            );
+        },
+        [setNodes],
+    );
 
     const addNode = useCallback(
         (node: Node, customWorkflowName?: string, provenance?: boolean) => {
@@ -1560,6 +1582,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 loading,
 
                 ...workflowOps,
+                applyNodeContent,
                 defaultSaveOutputDataset,
                 setDefaultSaveOutputDataset,
 

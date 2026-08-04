@@ -6,10 +6,20 @@ jest.mock("../../hook/useCode", () => ({
   useCode: () => ({ createCodeNode: mockCreateCodeNode }),
 }));
 
+const mockApplyNodeContent = jest.fn();
+jest.mock("../../providers/FlowProvider", () => ({
+  useFlowContext: () => ({ applyNodeContent: mockApplyNodeContent }),
+}));
+
 const mockGetNodes = jest.fn(() => [] as Array<{ id: string }>);
-const mockSetNodes = jest.fn();
+const mockSetCenter = jest.fn();
+const mockGetZoom = jest.fn(() => 0.8);
 jest.mock("reactflow", () => ({
-  useReactFlow: () => ({ getNodes: mockGetNodes, setNodes: mockSetNodes }),
+  useReactFlow: () => ({
+    getNodes: mockGetNodes,
+    setCenter: mockSetCenter,
+    getZoom: mockGetZoom,
+  }),
 }));
 
 const mockRefreshPackageRegistry = jest.fn(() => Promise.resolve());
@@ -60,7 +70,7 @@ describe("agentCanvasEvents", () => {
   });
 });
 
-describe("useAgentCanvasMutations (the apply→canvas bridge, dev/48 §3.3)", () => {
+describe("useAgentCanvasMutations (the apply→canvas bridge, dev/48 §3.3 + dev/51)", () => {
   it("node-created inserts through the existing factory with the SERVER id", () => {
     render(<Host />);
     act(() => notifyAgentCanvasMutation({ kind: "node-created", node: NODE }));
@@ -75,11 +85,27 @@ describe("useAgentCanvasMutations (the apply→canvas bridge, dev/48 §3.3)", ()
     expect(mockSetCurrentProjectPackages).not.toHaveBeenCalled();
   });
 
+  it("centers the viewport on the created node at the current zoom (dev/51 defect 1)", () => {
+    render(<Host />);
+    act(() => notifyAgentCanvasMutation({ kind: "node-created", node: NODE }));
+    expect(mockSetCenter).toHaveBeenCalledWith(675, 160, { zoom: 0.8, duration: 400 });
+  });
+
   it("a double event is a no-op when the node already exists live", () => {
     mockGetNodes.mockReturnValue([{ id: "server-minted-id" }]);
     render(<Host />);
     act(() => notifyAgentCanvasMutation({ kind: "node-created", node: NODE }));
     expect(mockCreateCodeNode).not.toHaveBeenCalled();
+  });
+
+  it("a re-fired event before the store syncs is a no-op (dev/51 defect 3)", () => {
+    // The store never reports the node (sync lag) — the processed-ids ref
+    // must still stop the second insert.
+    mockGetNodes.mockReturnValue([]);
+    render(<Host />);
+    act(() => notifyAgentCanvasMutation({ kind: "node-created", node: NODE }));
+    act(() => notifyAgentCanvasMutation({ kind: "node-created", node: NODE }));
+    expect(mockCreateCodeNode).toHaveBeenCalledTimes(1);
   });
 
   it("a created TEMPLATE lands in the store + registry BEFORE the node inserts", async () => {
@@ -103,7 +129,7 @@ describe("useAgentCanvasMutations (the apply→canvas bridge, dev/48 §3.3)", ()
     expect(Array.from(stored)).toEqual(["curio.builtin@1", "curio.agent.scorer@1"]);
   });
 
-  it("node-content-applied updates the live node's serialized content (the dev/41 clobber fix)", () => {
+  it("node-content-applied routes through FlowProvider.applyNodeContent (dev/51 defect 2)", () => {
     render(<Host />);
     act(() =>
       notifyAgentCanvasMutation({
@@ -112,15 +138,6 @@ describe("useAgentCanvasMutations (the apply→canvas bridge, dev/48 §3.3)", ()
         content: "print(2)",
       }),
     );
-    expect(mockSetNodes).toHaveBeenCalledTimes(1);
-    const updater = mockSetNodes.mock.calls[0][0] as (nds: unknown[]) => unknown[];
-    const updated = updater([
-      { id: "n1", data: { code: "print(1)", other: true } },
-      { id: "n2", data: { code: "keep" } },
-    ]) as Array<{ id: string; data: Record<string, unknown> }>;
-    expect(updated[0].data.code).toBe("print(2)");
-    expect(updated[0].data.defaultCode).toBe("print(2)");
-    expect(updated[0].data.other).toBe(true);
-    expect(updated[1].data.code).toBe("keep");
+    expect(mockApplyNodeContent).toHaveBeenCalledWith("n1", "print(2)");
   });
 });

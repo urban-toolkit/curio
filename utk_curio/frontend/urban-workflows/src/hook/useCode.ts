@@ -280,6 +280,11 @@ export function useCode(): IUseCode {
                 pythonInterpreter: pythonInterpreter,
                 jsInterpreter: jsInterpreter,
                 defaultCode: code,
+                // The serializer (TrillGenerator) reads ``data.code``; seed it
+                // with the provided content so a programmatically-created node
+                // round-trips through save without an editor touch (dev/51).
+                // ``undefined`` when no code is given — palette drops unchanged.
+                code: code,
                 description,
                 templateId,
                 templateName,
