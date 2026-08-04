@@ -1,3 +1,10 @@
+> **Status: brainstorm material — consolidated, not a plan of record.**
+> This session was reviewed against the plan of record on 2026-08-04; see
+> `dev/49-dataflow-researcher-consolidation-memo.md` for what matched existing documentation, what
+> conflicted (two boundary slips, resolved), and the surviving new requirements (DR-1…DR-6, owned
+> by the future Dataflow Builder memo and a future research-node memo). Do not implement from
+> this file directly.
+
 **Question:**
 
 How can the node builder work to have a similar result as in the video 'plans/urbanagentic/dataflow-builder/Screen Recording 20260629 at 31522 PM 1.mp4’?

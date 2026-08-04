@@ -1,7 +1,11 @@
 # Implementation Memo: Node Builder — the First P5 Composite (`node.build` + the delegation seam)
 
 Date: 2026-07-30
-Status: proposed
+Status: implemented 2026-08-04 — COMMIT-ed671bc1 (roster), COMMIT-8b025fd2 (node.create),
+COMMIT-a7c73372 (delegation, DEC-046), COMMIT-bec6afdb (node.template.create),
+COMMIT-7a0b193d (frontend bridge). Verification: backend `pytest tests
+--ignore=tests/test_frontend` → 951 passed; frontend `npx jest` → 630 passed (57 suites);
+injection-resistance + rule-9 share suites included.
 Feature slice: the first Phase-5 composite agent. `agent.node-builder` joins the roster with the
 spec'd manifest surface (dev/15 §3.4), the first **graph-shape mutation** (`node.create`, reviewed),
 and the first **real delegation** (a bounded, synchronous, depth-1 child run of
@@ -32,6 +36,16 @@ justified fallback.**
    nodes with existing ones where that yields a coherent, reusable solution. That composition is
    a later memo (dev/16's runtime slice); nothing here may block it, and the factory-backed
    creation path below is exactly the seam it will reuse.
+
+**Consolidation note (dev/49, 2026-08-04).** The `dataflow-researcher` session's Plan→Revise→
+Solve→Run direction was consolidated against this memo: Node Builder's role under Dataflow
+Builder orchestration is per-step template instantiation/configuration exactly as specified here
+(edges remain Connection Builder territory — the session sentence suggesting Node Builder wires
+connections is resolved against it, per dev/15); the agentic research node is ordinary tier-1
+reuse once its package exists (DR-6). The orchestration deltas (graph-level proposals, persisted
+phase state, semantic replan, solve scheduling, builder panel) belong to the future Dataflow
+Builder memo — see `49-dataflow-researcher-consolidation-memo.md` (DR-1…DR-5); nothing in it
+changes this memo's requirements.
 
 New decision required: **DEC-046** — delegation runtime disposition (§3.4): the first delegation
 slice is **direct provider-port code** — a single-level, synchronous, bounded child run sharing the
@@ -413,29 +427,29 @@ Frontend (`npx jest` via the curio-feat conda env):
 
 ## 8. Acceptance Criteria
 
-- [ ] `agent.node-builder` is browsable, importable, installable, attachable (canvas), and runnable
+- [x] `agent.node-builder` is browsable, importable, installable, attachable (canvas), and runnable
       with the net-new instruction + preamble; the thirteen prior manifests are byte-identical.
-- [ ] Asking for a new node yields a reviewable `node.create` proposal; **only** the authenticated
+- [x] Asking for a new node yields a reviewable `node.create` proposal; **only** the authenticated
       apply endpoint mutates; apply inserts the node into the saved spec **and** the live canvas in
       one action, with a result-card turn; the id is server-minted at apply.
-- [ ] **Reuse-first is enforced end-to-end**: `node.create` instantiates only registered templates
+- [x] **Reuse-first is enforced end-to-end**: `node.create` instantiates only registered templates
       available to the project (registry-validated at mint *and* apply, no template-id constant in
       the agents module); `node.template.create` is the sole creation path — reviewed, refused
       without a written justification, executed only through the existing package factory; the
       frontend renders both outcomes through the existing `UniversalNode`/`nodeRegistry` path (the
       new-type case via the same registry-bootstrap refresh the Save-as flow uses).
-- [ ] Applied `node.content.write` content now reaches the live canvas too, and a subsequent canvas
+- [x] Applied `node.content.write` content now reaches the live canvas too, and a subsequent canvas
       save no longer clobbers either mutation (regression-tested).
-- [ ] A `delegateRequest` for `node.content.generate` runs Node Content Builder as a depth-1 child:
+- [x] A `delegateRequest` for `node.content.generate` runs Node Content Builder as a depth-1 child:
       own execution record + ledger pair + policy admission, `parentExecutionId` link, framed
       untrusted result, `delegate_*` events; a child failure never fails the parent run.
-- [ ] A missing installed delegate yields a reviewed `Install in project` proposal; nothing
+- [x] A missing installed delegate yields a reviewed `Install in project` proposal; nothing
       auto-imports/installs/attaches/runs (`REQ-ORCH-001`); resolution is current-project-only and
       deterministic by `delegatesTo` order.
-- [ ] DEC-046 recorded (dev/03 table + 2.1); deviations from dev/15 recorded in §2 (connection
+- [x] DEC-046 recorded (dev/03 table + 2.1); deviations from dev/15 recorded in §2 (connection
       target deferred; package-recommendation delegate deferred; profile families not a runtime
       concept yet).
-- [ ] No new sharing surface; injection-resistance and rule-9 suites pass.
+- [x] No new sharing surface; injection-resistance and rule-9 suites pass.
 
 ## 9. Recommended Commit Breakdown
 
