@@ -842,14 +842,13 @@ def apply_proposal(
     """Apply a pending proposal — the ONLY path that executes a mutate tool.
 
     Explicit, authenticated, revision-safe (`REQ-REVIEW-001`/`DEC-006`): the
-    pinned content digest is re-checked against the saved spec; drift marks
-    the proposal ``stale`` and returns 409 instead of applying. Success
-    executes the domain-owned write under the project's spec write path, logs
-    a result-card turn (docs/08 — results are logged as chat turns), and
-    consumes no quota (deterministic, no provider work). No model/tool/user
-    *text* can reach this path — only this endpoint."""
-    import hashlib
-
+    pinned revision basis is re-checked against current state (content digest
+    for ``node.content.write``; template availability for ``node.create``);
+    drift marks the proposal ``stale`` and returns 409 instead of applying.
+    Success executes the domain-owned write under the project's spec write
+    path, logs a result-card turn (docs/08 — results are logged as chat
+    turns), and consumes no quota (deterministic, no provider work). No
+    model/tool/user *text* can reach this path — only this endpoint."""
     spec = _read_spec_or_404(user_key, project_id)
     record = _record_or_404(spec, attachment_id)
     proposal = attachments.get_active_proposal(spec, attachment_id)
@@ -859,53 +858,169 @@ def apply_proposal(
     if status != "pending":
         raise AgentServiceError(f"this proposal is {status!r} and can no longer be applied", 409)
     session_id = record.get("sessionId")
+    tool = proposal.get("tool", "node.content.write")
+    if tool == "node.create":
+        return _apply_node_create(
+            user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
+        )
+    if tool == "node.content.write":
+        return _apply_node_content_write(
+            user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
+        )
+    raise AgentServiceError(f"no apply flow exists for tool {tool!r}", 409)
+
+
+def _mark_stale(
+    user_key: str,
+    project_id: str,
+    proposal_id: str,
+    spec: dict,
+    proposal: dict,
+    session_id: object,
+    message: str,
+) -> AgentServiceError:
+    """Shared apply-drift path: proposal → ``stale`` in both homes, 409 out."""
+    proposal["status"] = "stale"
+    projects_storage.write_spec(user_key, project_id, spec)
+    if isinstance(session_id, str):
+        sessions.update_proposal_status(user_key, project_id, session_id, proposal_id, "stale")
+    return AgentServiceError(message, 409)
+
+
+def _log_applied_turn(
+    user_key: str,
+    project_id: str,
+    session_id: object,
+    attachment_id: str,
+    proposal_id: str,
+    text: str,
+    title: str,
+    lines: list[str],
+) -> None:
+    """Mark applied + append the result-card turn (mutation_applied, dev/03:344)."""
+    if not isinstance(session_id, str):
+        return
+    sessions.update_proposal_status(user_key, project_id, session_id, proposal_id, "applied")
+    sessions.append_turns(
+        user_key,
+        project_id,
+        session_id,
+        attachment_id,
+        [
+            sessions.make_turn(
+                "agent",
+                text,
+                content=[{"type": "card", "kind": "result", "title": title, "lines": lines}],
+            )
+        ],
+    )
+
+
+def _apply_node_content_write(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    proposal_id: str,
+    spec: dict,
+    proposal: dict,
+    session_id: object,
+) -> dict:
+    """The dev/41 apply: one node's content, digest-checked, nothing else."""
+    import hashlib
+
     node_id = proposal.get("nodeId")
     nodes = (spec.get("dataflow") or {}).get("nodes") or []
     node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
     current = (node.get("content") if node is not None else None) or ""
     basis = hashlib.sha256(current.encode("utf-8")).hexdigest()
     if node is None or basis != proposal.get("contentSha256"):
-        proposal["status"] = "stale"
-        projects_storage.write_spec(user_key, project_id, spec)
-        if isinstance(session_id, str):
-            sessions.update_proposal_status(
-                user_key, project_id, session_id, proposal_id, "stale"
-            )
-        raise AgentServiceError(
-            "the node changed since this was proposed — ask the agent to propose again", 409
+        raise _mark_stale(
+            user_key, project_id, proposal_id, spec, proposal, session_id,
+            "the node changed since this was proposed — ask the agent to propose again",
         )
     # The domain-owned mutation (ADR-AG-007): one node's content, nothing else.
     node["content"] = proposal.get("content", "")
     proposal["status"] = "applied"
     projects_storage.write_spec(user_key, project_id, spec)
-    if isinstance(session_id, str):
-        sessions.update_proposal_status(user_key, project_id, session_id, proposal_id, "applied")
-        # The transcript logs the mutation (mutation_applied, dev/03:344).
-        sessions.append_turns(
-            user_key,
-            project_id,
-            session_id,
-            attachment_id,
-            [
-                sessions.make_turn(
-                    "agent",
-                    f"Applied: node content updated ({node_id}).",
-                    content=[
-                        {
-                            "type": "card",
-                            "kind": "result",
-                            "title": "Applied: node content updated",
-                            "lines": [f"node {node_id}", f"proposal {proposal_id[:8]}"],
-                        }
-                    ],
-                )
-            ],
-        )
+    _log_applied_turn(
+        user_key, project_id, session_id, attachment_id, proposal_id,
+        f"Applied: node content updated ({node_id}).",
+        "Applied: node content updated",
+        [f"node {node_id}", f"proposal {proposal_id[:8]}"],
+    )
     return {
         "attachmentId": attachment_id,
         "proposalId": proposal_id,
         "status": "applied",
         "mutationApplied": True,
+        # The frontend canvas bridge (dev/48 §3.3) applies this to the LIVE
+        # node too, so the next canvas save can't clobber the mutation.
+        "appliedContent": {"nodeId": node_id, "content": proposal.get("content", "")},
+    }
+
+
+# Placement for server-minted nodes (dev/48): right of the current extent,
+# aligned with the rightmost node's row. Offsets match typical node width.
+_NODE_PLACEMENT_X_OFFSET = 420
+_NODE_PLACEMENT_DEFAULT = (80.0, 80.0)
+
+
+def _apply_node_create(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    proposal_id: str,
+    spec: dict,
+    proposal: dict,
+    session_id: object,
+) -> dict:
+    """The dev/48 apply: insert ONE new node of a re-validated template.
+
+    The node id is server-minted HERE (collision-impossible, never from any
+    param); the template is re-validated against the packages registry — a
+    package uninstalled between mint and apply is the creation analogue of
+    dev/41's digest drift (409 + ``stale``)."""
+    node_type = proposal.get("nodeType")
+    entry, err = _available_template(user_key, project_id, node_type)
+    if entry is None:
+        raise _mark_stale(
+            user_key, project_id, proposal_id, spec, proposal, session_id,
+            f"the node type is no longer available ({err}) — ask the agent to propose again",
+        )
+    dataflow = spec.setdefault("dataflow", {})
+    nodes = dataflow.setdefault("nodes", [])
+    xs = [
+        (n.get("x"), n.get("y"))
+        for n in nodes
+        if isinstance(n, dict) and isinstance(n.get("x"), (int, float))
+    ]
+    if xs:
+        max_x, at_y = max(xs, key=lambda p: p[0])
+        x = float(max_x) + _NODE_PLACEMENT_X_OFFSET
+        y = float(at_y) if isinstance(at_y, (int, float)) else _NODE_PLACEMENT_DEFAULT[1]
+    else:
+        x, y = _NODE_PLACEMENT_DEFAULT
+    node_id = str(uuid.uuid4())
+    created = {"id": node_id, "type": node_type, "content": proposal.get("content", ""), "x": x, "y": y}
+    if proposal.get("goal"):
+        created["goal"] = proposal["goal"]
+    nodes.append(created)
+    proposal["status"] = "applied"
+    projects_storage.write_spec(user_key, project_id, spec)
+    _log_applied_turn(
+        user_key, project_id, session_id, attachment_id, proposal_id,
+        f"Applied: node created ({node_id}).",
+        "Applied: node created",
+        [f"{entry['label']} · {node_type}", f"node {node_id}", f"proposal {proposal_id[:8]}"],
+    )
+    return {
+        "attachmentId": attachment_id,
+        "proposalId": proposal_id,
+        "status": "applied",
+        "mutationApplied": True,
+        # Consumed by the frontend canvas bridge (dev/48 §3.3) — the apply
+        # response is the only carrier of the created node.
+        "createdNode": dict(created),
     }
 
 
@@ -1172,6 +1287,13 @@ def _prepare_run(
     system_content = (
         f"{system_content}\n\n{content.tail_instruction(tools.grant_descriptions(granted))}"
     )
+    # Reuse-first (dev/48): a node.create grant carries the live template
+    # roster, composed fresh per run from the packages registry — the prompt
+    # bytes never bake in template ids, and the model is never left to guess.
+    if "node.create" in granted:
+        templates_block = _available_templates_block(user_key, project_id)
+        if templates_block:
+            system_content = f"{system_content}\n\n{templates_block}"
     session_id = record.get("sessionId")
     if not isinstance(session_id, str):
         session_id = None
@@ -1214,6 +1336,36 @@ def _prepare_run(
         "session_id": session_id,
     }
     return coord, session_id, messages, run_policy, wants_title, pins, loop_ctx
+
+
+# Bounds for the run-time template roster (dev/48): plenty for every real
+# project, small enough to never crowd the context.
+_TEMPLATES_BLOCK_MAX_ENTRIES = 60
+_TEMPLATES_BLOCK_DESC_CHARS = 140
+
+
+def _available_templates_block(user_key: str, project_id: str) -> str | None:
+    """The grant-aware "Available node templates" listing appended to a
+    node.create run's system content — authorable templates only, composed
+    from the packages-domain helper so it is never stale (memo dev/48)."""
+    from utk_curio.backend.app.packages import services as packages_services
+
+    try:
+        templates = packages_services.available_templates(user_key, project_id)
+    except Exception:  # a broken registry degrades to no listing, not a 500
+        return None
+    entries = [t for t in templates if t.get("authorable")][:_TEMPLATES_BLOCK_MAX_ENTRIES]
+    if not entries:
+        return None
+    lines = []
+    for t in entries:
+        desc = (t.get("description") or "")[:_TEMPLATES_BLOCK_DESC_CHARS]
+        suffix = f": {desc}" if desc else ""
+        lines.append(f"- {t['id']} — {t['label']}{suffix}")
+    return (
+        "Available node templates (a node.create nodeType MUST be exactly one "
+        "of these ids):\n" + "\n".join(lines)
+    )
 
 
 def _persist_exchange(
@@ -1271,21 +1423,54 @@ def _bounded_context(run_context: str | None) -> str | None:
 def _mint_proposal(
     user_key: str, project_id: str, loop_ctx: dict, req: dict
 ) -> tuple[str, str, dict | None]:
-    """Turn a granted mutate toolRequest into a review proposal (memo dev/41).
+    """Turn a granted mutate toolRequest into a review proposal (memos dev/41,
+    dev/48 — a per-tool dispatch over one shared persistence path).
 
     The loop never executes a mutation (`DEC-006`): validation failures come
     back as tool results the model recovers from; success mints a ``proposal``
     part (persisted with the turn) plus the attachment's ``activeProposal``
-    mirror, pinning the target's current content digest as the revision-safety
-    basis the apply endpoint re-checks (`REQ-REVIEW-001`).
+    mirror, carrying the tool's revision-safety basis the apply endpoint
+    re-checks (`REQ-REVIEW-001`).
     Returns ``(status, text_for_model, proposal_part | None)``."""
-    import hashlib
-
     session_id = loop_ctx.get("session_id")
     if not isinstance(session_id, str):
         return "refused", "proposals need a persistent conversation; this attachment has none", None
-    if req.get("tool") != "node.content.write":
-        return "refused", f"no proposal flow exists for tool {req.get('tool')!r}", None
+    tool = req.get("tool")
+    if tool == "node.content.write":
+        return _mint_node_content_write(user_key, project_id, loop_ctx, req)
+    if tool == "node.create":
+        return _mint_node_create(user_key, project_id, loop_ctx, req)
+    return "refused", f"no proposal flow exists for tool {tool!r}", None
+
+
+def _store_proposal(
+    user_key: str,
+    project_id: str,
+    spec: dict,
+    loop_ctx: dict,
+    proposal: dict,
+    part: dict,
+) -> None:
+    """Shared proposal persistence (dev/41 semantics, unchanged): newest
+    supersedes a still-pending earlier proposal in both places it lives
+    (mirror + its transcript part), then the mirror + spec are written."""
+    attachment_id = loop_ctx["attachment_id"]
+    session_id = loop_ctx["session_id"]
+    previous = attachments.get_active_proposal(spec, attachment_id)
+    if previous is not None and previous.get("status") == "pending":
+        sessions.update_proposal_status(
+            user_key, project_id, session_id, previous.get("proposalId", ""), "superseded"
+        )
+    attachments.set_active_proposal(spec, attachment_id, proposal)
+    projects_storage.write_spec(user_key, project_id, spec)
+
+
+def _mint_node_content_write(
+    user_key: str, project_id: str, loop_ctx: dict, req: dict
+) -> tuple[str, str, dict | None]:
+    """The dev/41 mutation: replace one existing node's content, digest-pinned."""
+    import hashlib
+
     params = req.get("params") or {}
     node_id = params.get("nodeId")
     if not isinstance(node_id, str) or not node_id:
@@ -1310,14 +1495,6 @@ def _mint_proposal(
     if node is None:
         return "refused", f"node {node_id!r} not found in the saved spec", None
     basis = hashlib.sha256((node.get("content") or "").encode("utf-8")).hexdigest()
-    attachment_id = loop_ctx["attachment_id"]
-    # Newest supersedes: a still-pending earlier proposal is closed out in
-    # both places it lives (mirror + its transcript part).
-    previous = attachments.get_active_proposal(spec, attachment_id)
-    if previous is not None and previous.get("status") == "pending":
-        sessions.update_proposal_status(
-            user_key, project_id, session_id, previous.get("proposalId", ""), "superseded"
-        )
     proposal_id = uuid.uuid4().hex
     summary = f"Replace the content of node {node_id!r}"
     part = content.make_proposal_part(
@@ -1325,12 +1502,13 @@ def _mint_proposal(
         tool="node.content.write",
         summary=summary,
         preview=proposed,
-        node_id=node_id,
-        content_sha256=basis,
+        pins={"nodeId": node_id, "contentSha256": basis},
     )
-    attachments.set_active_proposal(
+    _store_proposal(
+        user_key,
+        project_id,
         spec,
-        attachment_id,
+        loop_ctx,
         {
             "proposalId": proposal_id,
             "tool": "node.content.write",
@@ -1340,12 +1518,88 @@ def _mint_proposal(
             "summary": summary,
             "status": "pending",
         },
+        part,
     )
-    projects_storage.write_spec(user_key, project_id, spec)
     return (
         "proposed",
         f"proposal {proposal_id} created for node {node_id!r}; it awaits the user's "
         "explicit review — do NOT assume it was applied",
+        part,
+    )
+
+
+def _available_template(user_key: str, project_id: str, node_type: object) -> tuple[dict | None, str]:
+    """Resolve ``node_type`` against the packages-domain availability helper
+    (dev/48 reuse-first: the agents module owns no template knowledge).
+    Returns ``(entry | None, error_text)``."""
+    from utk_curio.backend.app.packages import services as packages_services
+
+    if not isinstance(node_type, str) or not node_type:
+        return None, "params.nodeType must be a non-empty template id string"
+    try:
+        templates = packages_services.available_templates(user_key, project_id)
+    except Exception as exc:  # unavailable registry is data, not a run error
+        return None, f"the node template registry is unavailable: {exc}"
+    entry = next((t for t in templates if t["id"] == node_type), None)
+    if entry is None:
+        return None, (
+            f"nodeType {node_type!r} is not an available template for this project — "
+            "choose an id from the Available node templates list"
+        )
+    if not entry.get("authorable"):
+        return None, (
+            f"template {node_type!r} does not hold authored content — choose an "
+            "authorable template from the Available node templates list"
+        )
+    return entry, ""
+
+
+def _mint_node_create(
+    user_key: str, project_id: str, loop_ctx: dict, req: dict
+) -> tuple[str, str, dict | None]:
+    """The dev/48 graph-shape mutation: propose ONE new node of an existing,
+    project-available template. No digest pin — the node id is server-minted
+    at apply (there is no target whose drift can corrupt); the template is
+    re-validated at apply instead (`REQ-REVIEW-001` stays structural)."""
+    params = req.get("params") or {}
+    # Any model-supplied "id" is ignored: ids are server-minted at apply only.
+    entry, err = _available_template(user_key, project_id, params.get("nodeType"))
+    if entry is None:
+        return "refused", err, None
+    proposed = params.get("content")
+    if not isinstance(proposed, str) or not proposed.strip():
+        return "refused", "params.content must be a non-empty string", None
+    if len(proposed) > content.PROPOSAL_CONTENT_MAX_CHARS:
+        return "refused", "params.content exceeds the proposal size bound", None
+    goal = params.get("goal")
+    goal = goal.strip() if isinstance(goal, str) and goal.strip() else None
+    spec = projects_storage.read_spec(user_key, project_id)
+    if spec is None:
+        return "refused", "no saved project spec is available", None
+    proposal_id = uuid.uuid4().hex
+    summary = f"Create a new {entry['label']} node"
+    part = content.make_proposal_part(
+        proposal_id=proposal_id,
+        tool="node.create",
+        summary=summary,
+        preview=proposed,
+        pins={"nodeType": entry["id"]},
+    )
+    proposal = {
+        "proposalId": proposal_id,
+        "tool": "node.create",
+        "nodeType": entry["id"],
+        "content": proposed,
+        "summary": summary,
+        "status": "pending",
+    }
+    if goal:
+        proposal["goal"] = goal
+    _store_proposal(user_key, project_id, spec, loop_ctx, proposal, part)
+    return (
+        "proposed",
+        f"proposal {proposal_id} created for a new {entry['label']} node; it awaits "
+        "the user's explicit review — do NOT assume it was applied",
         part,
     )
 

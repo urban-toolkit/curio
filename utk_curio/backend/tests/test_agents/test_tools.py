@@ -17,13 +17,17 @@ def _req(tool_id: str, required: bool = False) -> ToolRequirement:
 
 
 class TestRegistry:
-    def test_registry_holds_exactly_the_dev41_contracts(self):
+    def test_registry_holds_exactly_the_named_contracts(self):
         # Each contract has a named consumer in the built-in roster (dev/41
-        # §4.3) — nothing speculative lives here.
-        assert set(tools.REGISTRY) == {"dataflow.read", "node.read", "node.content.write"}
+        # §4.3; node.create → agent.node-builder, dev/48) — nothing
+        # speculative lives here.
+        assert set(tools.REGISTRY) == {
+            "dataflow.read", "node.read", "node.content.write", "node.create",
+        }
         assert tools.REGISTRY["dataflow.read"].effect == "read"
         assert tools.REGISTRY["node.read"].effect == "read"
         assert tools.REGISTRY["node.content.write"].effect == "mutate"
+        assert tools.REGISTRY["node.create"].effect == "mutate"
 
     def test_contract_validates_effect(self):
         with pytest.raises(ValueError):

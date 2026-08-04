@@ -184,6 +184,58 @@ def get_project_lockfile(user_key: str, project_id: str) -> set[str]:
     return project_packages(spec, _installed_majors_by_pkg(user_key))
 
 
+def available_templates(user_key: str, project_id: str) -> list[dict]:
+    """The node templates a project may instantiate (memo dev/48).
+
+    Scope = the seeded ``curio.builtin@<highest-major>`` store package (always
+    present on every canvas) plus every package in the project's package
+    lockfile. Each entry is ``{"id", "label", "description", "authorable"}``
+    where ``id`` is the canonical UNVERSIONED ``<packageId>/<templateId>``
+    node type the canvas stores in ``data.nodeType``. This is the single
+    source of template knowledge for agent node creation (`ADR-AG-007`) —
+    the agents module owns none of its own. Unreadable packages are skipped
+    (they cannot provide working nodes); a project without a spec resolves
+    to the builtin templates only.
+    """
+    from utk_curio.backend.app.packages.manifest import (
+        ManifestError,
+        load_packageage_manifest,
+    )
+
+    try:
+        wanted = set(get_project_lockfile(user_key, project_id))
+    except PackageServiceError:
+        wanted = set()
+    # Prefer the highest seeded builtin major when several exist.
+    paths = sorted(
+        list_user_packageages(user_key), key=lambda p: p.name, reverse=True
+    )
+    out: list[dict] = []
+    seen: set[str] = set()
+    for path in paths:
+        pkg_id = path.name.split("@", 1)[0]
+        if pkg_id != BUILTIN_PACKAGE_ID and path.name not in wanted:
+            continue
+        try:
+            manifest = load_packageage_manifest(path)
+        except (ManifestError, OSError):
+            continue
+        for t in manifest.templates:
+            canonical = f"{manifest.package_id}/{t.template_id}"
+            if canonical in seen:
+                continue
+            seen.add(canonical)
+            out.append(
+                {
+                    "id": canonical,
+                    "label": t.label,
+                    "description": t.description,
+                    "authorable": bool(t.has_code or t.has_grammar),
+                }
+            )
+    return sorted(out, key=lambda e: e["id"])
+
+
 def _write_lockfile(user_key: str, project_id: str, dirs: Iterable[str]) -> dict:
     # Hold the per-project spec lock across the read-modify-write so a concurrent
     # dataset auto-install (merge_dataflow_dataset_ref) or project save can't

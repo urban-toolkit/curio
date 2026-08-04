@@ -210,13 +210,24 @@ class TestProposalPart:
             tool="node.content.write",
             summary="x" * 300,
             preview="new content",
-            node_id="n1",
-            content_sha256="abc",
+            pins={"nodeId": "n1", "contentSha256": "abc"},
         )
         assert part["type"] == "proposal"
         assert part["status"] == "pending"
         assert len(part["summary"]) == 200
         assert part["pins"] == {"nodeId": "n1", "contentSha256": "abc"}
+
+    def test_creation_pins_carry_node_type_only(self):
+        # dev/48: node.create pins no digest — the id is server-minted at
+        # apply; the template is re-validated there instead.
+        part = content.make_proposal_part(
+            proposal_id="p2",
+            tool="node.create",
+            summary="Create a new Computation Analysis node",
+            preview="print('hi')",
+            pins={"nodeType": "curio.builtin/computation-analysis"},
+        )
+        assert part["pins"] == {"nodeType": "curio.builtin/computation-analysis"}
 
 
 class TestExtractContent:

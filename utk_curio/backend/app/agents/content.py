@@ -256,16 +256,18 @@ def make_proposal_part(
     tool: str,
     summary: str,
     preview: str,
-    node_id: str,
-    content_sha256: str,
+    pins: dict,
     status: str = "pending",
 ) -> dict:
-    """The runtime-emitted ``proposal`` part (memo dev/41 — review-before-apply).
+    """The runtime-emitted ``proposal`` part (memos dev/41, dev/48).
 
     Minted only by the runtime when a granted mutate tool is requested; the
-    parser above rejects any model-authored proposal. ``content_sha256`` pins
-    the target's *current* content — the revision-safety basis the apply
-    endpoint re-checks (`REQ-REVIEW-001`).
+    parser above rejects any model-authored proposal. ``pins`` carries the
+    tool-specific revision-safety basis the apply endpoint re-checks
+    (`REQ-REVIEW-001`): ``{nodeId, contentSha256}`` for ``node.content.write``
+    (the target's current content digest); ``{nodeType}`` for ``node.create``
+    (no digest — the node id is server-minted at apply, so there is no target
+    whose drift can corrupt; the template is re-validated at apply instead).
     """
     return {
         "type": "proposal",
@@ -273,6 +275,6 @@ def make_proposal_part(
         "tool": tool,
         "summary": summary[:_PROPOSAL_SUMMARY_MAX_CHARS],
         "preview": preview,
-        "pins": {"nodeId": node_id, "contentSha256": content_sha256},
+        "pins": dict(pins),
         "status": status,
     }

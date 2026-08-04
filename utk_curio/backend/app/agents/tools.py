@@ -46,8 +46,8 @@ class ToolContract:
             raise ValueError(f"tool effect must be one of {_EFFECTS}, got {self.effect!r}")
 
 
-# The server-owned allowlist (DEC-017). Three contracts, each with a named
-# consumer in the built-in roster (dev/41 §4.3) — nothing speculative.
+# The server-owned allowlist (DEC-017). Each contract has a named consumer in
+# the built-in roster (dev/41 §4.3, dev/48) — nothing speculative.
 REGISTRY: dict[str, ToolContract] = {
     "dataflow.read": ToolContract(
         id="dataflow.read",
@@ -75,6 +75,21 @@ REGISTRY: dict[str, ToolContract] = {
             'Propose replacing one node\'s content. Params: {"nodeId": "...", '
             '"content": "..."}. The user reviews the proposal before anything '
             "is applied; nothing changes without their explicit approval."
+        ),
+    ),
+    # dev/48 — consumer: agent.node-builder. Reuse-first: nodeType must come
+    # from the run's "Available node templates" list (composed at run time
+    # from the packages registry — this module owns no template knowledge).
+    "node.create": ToolContract(
+        id="node.create",
+        contract_version="1",
+        effect="mutate",
+        description=(
+            "Propose adding ONE new node to the canvas. Params: "
+            '{"nodeType": "<packageId>/<templateId>", "content": "...", '
+            '"goal": "..."} (goal optional). nodeType must be an id from the '
+            '"Available node templates" list — never invented. The user '
+            "reviews the proposal; nothing is added without their approval."
         ),
     ),
 }
