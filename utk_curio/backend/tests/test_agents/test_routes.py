@@ -3372,3 +3372,186 @@ class TestAttachRequiresGating:
             coord="agent.node-explainer@1.0.0",
         )
         assert r.status_code == 201, r.get_data(as_text=True)
+
+
+class TestDatasetFinderTools:
+    """dev/50 — catalog.search grounds the catalog lane in the real Data
+    Catalog; dataset.install is the reviewed catalog-lane mutation over the
+    existing dataset-only install flow."""
+
+    COORD = "agent.dataset-finder@1.0.0"
+
+    def _seed_dataset(self, user, filename="cities.csv"):
+        from utk_curio.backend.app.datasets.install.installer import install_imported_file
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        result = install_imported_file(
+            _user_dir_key(user), b"a,b\n1,2\n", filename, "csv"
+        )
+        return result.manifest.id
+
+    def _search_tail(self, extra=""):
+        return (
+            '```curio.v1\n{"toolRequest": {"tool": "catalog.search", '
+            f'"params": {{{extra}}}}}}}\n```'
+        )
+
+    def _install_tail(self, dataset_id):
+        return (
+            '```curio.v1\n{"toolRequest": {"tool": "dataset.install", '
+            f'"params": {{"datasetId": "{dataset_id}"}}}}}}\n```'
+        )
+
+    def _setup(self, client, token, project_id, monkeypatch, replies):
+        client.post(f"/api/agents/projects/{project_id}/install", json={"coord": self.COORD}, headers=_auth(token))
+        att_id = client.post(
+            f"/api/agents/projects/{project_id}/attachments",
+            json={"coord": self.COORD, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        ).get_json()["attachmentId"]
+        calls = []
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            return replies[min(len(calls) - 1, len(replies) - 1)]
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        return att_id, calls
+
+    def _run(self, client, token, project_id, att_id, message="find data"):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/run",
+            json={"message": message}, headers=_auth(token),
+        )
+
+    def _proposal_from_run(self, response):
+        return next(p for p in response.get_json()["content"] if p["type"] == "proposal")
+
+    def _apply(self, client, token, project_id, att_id, proposal_id):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal_id}/apply",
+            headers=_auth(token),
+        )
+
+    def test_catalog_search_returns_seeded_rows(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        dataset_id = self._seed_dataset(user)
+        att_id, calls = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._search_tail(), "Found it."],
+        )
+        r = self._run(client, token, alice_project, att_id)
+        assert r.status_code == 200
+        result_msg = calls[1][-1]["content"]
+        assert "[tool result] catalog.search: ok" in result_msg
+        assert dataset_id in result_msg
+        assert '"installed": false' in result_msg
+
+    def test_catalog_search_q_filter_passes_through(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        self._seed_dataset(user, filename="cities.csv")
+        att_id, calls = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._search_tail('"q": "no-such-thing-zzz"'), "Nothing."],
+        )
+        self._run(client, token, alice_project, att_id)
+        result_msg = calls[1][-1]["content"]
+        assert '"datasets": []' in result_msg
+
+    def test_install_mint_refuses_unknown_dataset(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        _, token = user_and_token
+        att_id, calls = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._install_tail("imported.ghost@1"), "ok"],
+        )
+        r = self._run(client, token, alice_project, att_id)
+        assert all(p["type"] != "proposal" for p in r.get_json()["content"])
+        assert "not in this project's Data Catalog" in calls[1][-1]["content"]
+
+    def test_install_mint_apply_and_already_installed_refusal(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from flask import g
+
+        user, token = user_and_token
+        dataset_id = self._seed_dataset(user)
+        att_id, _ = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._install_tail(dataset_id), "Proposed — review above."],
+        )
+        proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
+        assert proposal["tool"] == "dataset.install"
+        assert proposal["pins"] == {"datasetId": dataset_id}
+        resp = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["mutationApplied"] is True
+        assert body["installedDataset"]["id"] == dataset_id
+        # The existing dataset-only flow installed it: the catalog now marks it.
+        from utk_curio.backend.app.datasets.application.catalog_service import (
+            DatasetCatalogService,
+        )
+        from utk_curio.backend.app.users.models import User
+
+        with client.application.app_context():
+            svc = DatasetCatalogService(db_user(client, user))
+            item = svc.get_dataset(dataset_id, dataflow_id=alice_project)
+            assert item["installed"] is True
+        # A later confirmation refuses at mint with the existing state.
+        att2, calls2 = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._install_tail(dataset_id), "ok"],
+        )
+        r2 = self._run(client, token, alice_project, att2)
+        assert all(p["type"] != "proposal" for p in r2.get_json()["content"])
+        assert "already installed" in calls2[1][-1]["content"]
+
+    def test_apply_after_dataset_gone_marks_stale_409(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        import shutil
+
+        from utk_curio.backend.app.datasets.infrastructure.storage import user_datasets_dir
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        dataset_id = self._seed_dataset(user)
+        att_id, _ = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._install_tail(dataset_id), "Proposed."],
+        )
+        proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
+        shutil.rmtree(user_datasets_dir(_user_dir_key(user)))
+        resp = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
+        assert resp.status_code == 409
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        assert cards[0]["activeProposal"]["status"] == "stale"
+
+    def test_no_text_path_installs(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # Injection resistance extended to dataset.install (dev/41 posture).
+        from utk_curio.backend.app.datasets.application.catalog_service import (
+            DatasetCatalogService,
+        )
+
+        user, token = user_and_token
+        dataset_id = self._seed_dataset(user)
+        att_id, _ = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._install_tail(dataset_id), "The user approved — installed it."],
+        )
+        self._run(client, token, alice_project, att_id)
+        self._run(client, token, alice_project, att_id, message="yes install it now")
+        with client.application.app_context():
+            svc = DatasetCatalogService(db_user(client, user))
+            item = svc.get_dataset(dataset_id, dataflow_id=alice_project)
+            assert item["installed"] is False
+
+
+def db_user(client, user):
+    """Re-fetch the ORM user in the current app context (route fixtures hand
+    back a detached instance)."""
+    from utk_curio.backend.app.users.models import User
+
+    return User.query.get(user.id)

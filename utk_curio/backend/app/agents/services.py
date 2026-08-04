@@ -900,6 +900,10 @@ def apply_proposal(
         return _apply_node_template_create(
             user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
         )
+    if tool == "dataset.install":
+        return _apply_dataset_install(
+            user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
+        )
     raise AgentServiceError(f"no apply flow exists for tool {tool!r}", 409)
 
 
@@ -1144,6 +1148,151 @@ def _apply_node_template_create(
         "mutationApplied": True,
         "createdTemplate": created_template,
         "createdNode": dict(created),
+    }
+
+
+def _resolve_catalog_dataset(project_id: str, dataset_id: object) -> tuple[dict | None, str]:
+    """Resolve a dataset id against the project's Data Catalog (dev/50 —
+    the datasets domain is the single truth; `ADR-AG-007`). Returns
+    ``(item | None, error_text)``. The acting user rides the request context
+    (the datasets service is user-object keyed)."""
+    from flask import g
+
+    from utk_curio.backend.app.datasets.application.catalog_service import (
+        DatasetCatalogService,
+    )
+    from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
+
+    if not isinstance(dataset_id, str) or not dataset_id.strip():
+        return None, "params.datasetId must be a non-empty dataset id string"
+    try:
+        item = DatasetCatalogService(getattr(g, "user", None)).get_dataset(
+            dataset_id.strip(), dataflow_id=project_id
+        )
+    except DatasetCatalogError:
+        return None, (
+            f"dataset {dataset_id!r} is not in this project's Data Catalog — "
+            "propose only ids from catalog.search results"
+        )
+    except Exception as exc:  # a broken catalog is data, not a run error
+        return None, f"the Data Catalog is unavailable: {exc}"
+    return item, ""
+
+
+def _mint_dataset_install(
+    user_key: str, project_id: str, loop_ctx: dict, req: dict
+) -> tuple[str, str, dict | None]:
+    """The dev/50 catalog-lane mutation: propose installing ONE catalog
+    dataset through the existing dataset-only install flow. An
+    already-installed dataset refuses at mint with the existing state —
+    honest chat instead of a dead proposal (docs/06 idempotence)."""
+    params = req.get("params") or {}
+    item, err = _resolve_catalog_dataset(project_id, params.get("datasetId"))
+    if item is None:
+        return "refused", err, None
+    if item.get("installed"):
+        return (
+            "refused",
+            f"dataset {item.get('title')!r} is already installed in this project — "
+            "tell the user instead of proposing",
+            None,
+        )
+    spec = projects_storage.read_spec(user_key, project_id)
+    if spec is None:
+        return "refused", "no saved project spec is available", None
+    dataset_id = str(params.get("datasetId")).strip()
+    name = str(item.get("title") or dataset_id)
+    proposal_id = uuid.uuid4().hex
+    summary = f"Install dataset · {name}"
+    preview_bits = [name]
+    if item.get("format"):
+        preview_bits.append(str(item["format"]))
+    if item.get("origin"):
+        preview_bits.append(str(item["origin"]))
+    part = content.make_proposal_part(
+        proposal_id=proposal_id,
+        tool="dataset.install",
+        summary=summary,
+        preview=" · ".join(preview_bits),
+        pins={"datasetId": dataset_id},
+    )
+    _store_proposal(
+        user_key,
+        project_id,
+        spec,
+        loop_ctx,
+        {
+            "proposalId": proposal_id,
+            "tool": "dataset.install",
+            "datasetId": dataset_id,
+            "datasetName": name,
+            "summary": summary,
+            "status": "pending",
+        },
+        part,
+    )
+    return (
+        "proposed",
+        f"proposal {proposal_id} created to install dataset {name!r}; it awaits the "
+        "user's explicit review — do NOT assume it was installed",
+        part,
+    )
+
+
+def _apply_dataset_install(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    proposal_id: str,
+    spec: dict,
+    proposal: dict,
+    session_id: object,
+) -> dict:
+    """The dev/50 apply: the EXISTING dataset-only install flow (duplicate
+    collapse, authorization, OSM groups — all the domain service's own
+    semantics). A dataset gone from the catalog between mint and apply is
+    the drift analogue: 409 + ``stale``. No agent is ever installed here."""
+    from flask import g
+
+    from utk_curio.backend.app.datasets.application.catalog_service import (
+        DatasetCatalogService,
+    )
+
+    dataset_id = proposal.get("datasetId", "")
+    item, err = _resolve_catalog_dataset(project_id, dataset_id)
+    if item is None:
+        raise _mark_stale(
+            user_key, project_id, proposal_id, spec, proposal, session_id,
+            f"the dataset is no longer available ({err}) — ask the agent to search again",
+        )
+    try:
+        DatasetCatalogService(getattr(g, "user", None)).install_dataset(
+            project_id, dataset_id
+        )
+    except Exception as exc:
+        raise _mark_stale(
+            user_key, project_id, proposal_id, spec, proposal, session_id,
+            f"the dataset could not be installed: {exc}",
+        ) from exc
+    # The install wrote the spec (dataset refs); re-read so the proposal
+    # mirror update below does not clobber the new entries.
+    spec = _read_spec_or_404(user_key, project_id)
+    proposal = attachments.get_active_proposal(spec, attachment_id) or proposal
+    proposal["status"] = "applied"
+    projects_storage.write_spec(user_key, project_id, spec)
+    name = str(item.get("title") or dataset_id)
+    _log_applied_turn(
+        user_key, project_id, session_id, attachment_id, proposal_id,
+        f"Applied: dataset installed ({name}).",
+        "Applied: dataset installed",
+        [name, dataset_id, f"proposal {proposal_id[:8]}"],
+    )
+    return {
+        "attachmentId": attachment_id,
+        "proposalId": proposal_id,
+        "status": "applied",
+        "mutationApplied": True,
+        "installedDataset": {"id": dataset_id, "name": name},
     }
 
 
@@ -1699,6 +1848,8 @@ def _mint_proposal(
         return _mint_node_create(user_key, project_id, loop_ctx, req)
     if tool == "node.template.create":
         return _mint_node_template_create(user_key, project_id, loop_ctx, req)
+    if tool == "dataset.install":
+        return _mint_dataset_install(user_key, project_id, loop_ctx, req)
     return "refused", f"no proposal flow exists for tool {tool!r}", None
 
 

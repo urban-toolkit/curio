@@ -77,6 +77,35 @@ REGISTRY: dict[str, ToolContract] = {
             "is applied; nothing changes without their explicit approval."
         ),
     ),
+    # dev/50 — consumer: agent.dataset-finder. Grounds the "From your Data
+    # Catalog" lane in the real catalog (the datasets domain owns the data;
+    # this module owns none of its own).
+    "catalog.search": ToolContract(
+        id="catalog.search",
+        contract_version="1",
+        effect="read",
+        description=(
+            "Search the project's Data Catalog. Params (all optional): "
+            '{"q": "<text>", "format": "<fmt>", "origin": "<origin>"}. '
+            "Returns dataset rows with id, name, format, origin, installed "
+            "state, and description — catalog-lane candidates must come from "
+            "these results only."
+        ),
+    ),
+    # dev/50 — consumer: agent.dataset-finder. The catalog lane's reviewed
+    # handoff: applying installs ONE dataset through the existing
+    # dataset-only flow; never an agent.
+    "dataset.install": ToolContract(
+        id="dataset.install",
+        contract_version="1",
+        effect="mutate",
+        description=(
+            "Propose installing ONE dataset from the Data Catalog into this "
+            'project. Params: {"datasetId": "<id from catalog.search results>"}. '
+            "The user reviews the proposal; nothing is installed without "
+            "their approval, and this never installs an agent."
+        ),
+    ),
     # dev/48 — consumer: agent.node-builder. Reuse-first: nodeType must come
     # from the run's "Available node templates" list (composed at run time
     # from the packages registry — this module owns no template knowledge).
@@ -152,6 +181,56 @@ def _truncate(text: str) -> str:
     return text[:TOOL_RESULT_MAX_CHARS] + _TRUNCATION_MARKER
 
 
+# catalog.search bounds (dev/50): plenty for ranking, small enough to never
+# crowd the context; description is display metadata, not a document.
+_CATALOG_SEARCH_MAX_ROWS = 40
+_CATALOG_DESC_MAX_CHARS = 200
+_CATALOG_PARAM_MAX_CHARS = 200
+
+
+def _catalog_search_rows(user_key: str, project_id: str, params: dict) -> list[dict]:
+    """Bounded catalog rows for the dev/50 read tool.
+
+    Thin wrapper over the datasets domain (`ADR-AG-007`): the acting user
+    rides the request context (the datasets service is user-object keyed,
+    unlike the key-based agents/packages stores), and the listing is the
+    same `list_catalog` the Data Catalog drawer browses — one truth.
+    """
+    from flask import g
+
+    from utk_curio.backend.app.datasets.application.catalog_service import (
+        DatasetCatalogService,
+    )
+
+    user = getattr(g, "user", None)
+
+    def _param(name: str) -> str | None:
+        value = params.get(name)
+        if isinstance(value, str) and value.strip():
+            return value.strip()[:_CATALOG_PARAM_MAX_CHARS]
+        return None
+
+    listing = DatasetCatalogService(user).list_catalog(
+        dataflow_id=project_id,
+        q=_param("q"),
+        fmt=_param("format"),
+        origin=_param("origin"),
+    )
+    rows = []
+    for item in (listing.get("items") or [])[:_CATALOG_SEARCH_MAX_ROWS]:
+        rows.append(
+            {
+                "id": item.get("id"),
+                "name": item.get("title"),
+                "format": item.get("format"),
+                "origin": item.get("origin"),
+                "installed": bool(item.get("installed")),
+                "description": (item.get("description") or "")[:_CATALOG_DESC_MAX_CHARS],
+            }
+        )
+    return rows
+
+
 def execute_read_tool(
     tool_id: str, *, user_key: str, project_id: str, target: dict | None, params: dict
 ) -> tuple[str, str]:
@@ -189,6 +268,9 @@ def execute_read_tool(
             if node is None:
                 return "error", f"node {node_id!r} not found in the saved spec"
             return "ok", _truncate(json.dumps(node, ensure_ascii=False))
+        if tool_id == "catalog.search":
+            rows = _catalog_search_rows(user_key, project_id, params)
+            return "ok", _truncate(json.dumps({"datasets": rows}, ensure_ascii=False))
         return "error", f"unknown read tool {tool_id!r}"
     except Exception as exc:  # tool failures are data, never run errors
         return "error", f"tool failed: {exc}"

@@ -23,13 +23,15 @@ class TestRegistry:
         # speculative lives here.
         assert set(tools.REGISTRY) == {
             "dataflow.read", "node.read", "node.content.write", "node.create",
-            "node.template.create",
+            "node.template.create", "catalog.search", "dataset.install",
         }
         assert tools.REGISTRY["dataflow.read"].effect == "read"
         assert tools.REGISTRY["node.read"].effect == "read"
         assert tools.REGISTRY["node.content.write"].effect == "mutate"
         assert tools.REGISTRY["node.create"].effect == "mutate"
         assert tools.REGISTRY["node.template.create"].effect == "mutate"
+        assert tools.REGISTRY["catalog.search"].effect == "read"
+        assert tools.REGISTRY["dataset.install"].effect == "mutate"
 
     def test_contract_validates_effect(self):
         with pytest.raises(ValueError):
