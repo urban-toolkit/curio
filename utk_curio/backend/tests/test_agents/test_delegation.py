@@ -421,3 +421,72 @@ class TestDelegateStreamEvents:
         assert requested["capability"] == "node.content.generate"
         result = next(p for k, p in events if k == "delegate_result")
         assert result["coord"] == NCB and result["status"] == "ok"
+
+
+class TestDec047DatasetFinderHandoff:
+    """DEC-047 (memo dev/50): the external handoff is user-mediated — Dataset
+    Finder's delegation seam is reused ONLY for resolution + the reviewed
+    install proposal, never for child-minted proposals."""
+
+    FINDER = "agent.dataset-finder@1.0.0"
+
+    def test_missing_node_builder_yields_reviewed_install_proposal(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        pid = _project(client, token)
+        client.post(f"/api/agents/projects/{pid}/install", json={"coord": self.FINDER}, headers=_auth(token))
+        att_id = client.post(
+            f"/api/agents/projects/{pid}/attachments",
+            json={"coord": self.FINDER, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        ).get_json()["attachmentId"]
+        calls = []
+        script = [_delegate_tail(capability="dataset.fetch.author"), "Awaiting the install review."]
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            return script[min(len(calls) - 1, 1)]
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        r = _run(client, token, pid, att_id, message="confirm the NOAA pick")
+        assert r.status_code == 200
+        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
+        # The missing specialist is Node Builder — the reviewed install path.
+        assert proposal["tool"] == "project.install"
+        assert proposal["pins"] == {"coord": NB}
+        # REQ-ORCH-001: nothing installed, no child ever ran (2 calls only).
+        from utk_curio.backend.app.agents import project_agents
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        spec = projects_storage.read_spec(_user_dir_key(user), pid)
+        assert NB not in set(project_agents.project_agents(spec))
+        assert len(calls) == 2
+
+    def test_finder_tail_offers_fetch_author_delegation(self, client, user_and_token, tmp_curio, monkeypatch):
+        # The delegation paragraph offers dataset.fetch.author (visible via
+        # Node Builder) so the DEC-047 fallback is reachable from the model.
+        _, token = user_and_token
+        pid = _project(client, token)
+        client.post(f"/api/agents/projects/{pid}/install", json={"coord": self.FINDER}, headers=_auth(token))
+        att_id = client.post(
+            f"/api/agents/projects/{pid}/attachments",
+            json={"coord": self.FINDER, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        ).get_json()["attachmentId"]
+        calls = []
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            return "ok"
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        _run(client, token, pid, att_id)
+        system = calls[0][0]["content"]
+        assert "dataset.fetch.author — handled by Node Builder" in system
