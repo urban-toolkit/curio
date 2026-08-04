@@ -15,6 +15,24 @@ context), `DEC-006`/`REQ-REVIEW-001` (review-before-apply is structural), `DEC-0
 (server-allowlisted tools; declarations grant nothing), `ADR-AG-007` (domain-owned tool
 implementations), `docs/06:65-74` (reviewable node preview before any graph mutation).
 
+**Binding node-creation policy (owner updates, 2026-07-30/31): reuse first, create only as a
+justified fallback.**
+1. Node Builder first scans the existing node registry and **reuses** a suitable type whenever
+   possible — built-in templates capable of executing/containing the required code, and custom
+   templates from any package **within the permitted scope** (the project's package lockfile plus
+   the seeded `curio.builtin@<major>`).
+2. A **new custom node type may be created only when no existing built-in or scoped custom
+   template can adequately fulfill the task** — as a reviewed proposal carrying the model's
+   written justification (which templates were considered and why each is inadequate), applied
+   through the **existing package factory** (`packages/factory.py`, the same build+install path
+   the palette's Save-as-template flow uses). The human review is the adequacy gate; the runtime
+   never auto-creates.
+3. Future (non-normative, recorded for the program): the **Package Recommendation Agent** may use
+   Node Builder to assemble innovative, self-contained node packages — combining newly created
+   nodes with existing ones where that yields a coherent, reusable solution. That composition is
+   a later memo (dev/16's runtime slice); nothing here may block it, and the factory-backed
+   creation path below is exactly the seam it will reuse.
+
 New decision required: **DEC-046** — delegation runtime disposition (§3.4): the first delegation
 slice is **direct provider-port code** — a single-level, synchronous, bounded child run sharing the
 parent's loop-round budget — not a LangChain/LangGraph executor. `DEC-007`'s adapter adoption
@@ -63,7 +81,9 @@ never a silent install or a dead end.
   all thirteen existing manifests byte-identical); new roster entry `agent.node-builder`; net-new
   instruction asset `llm-prompts/node_build_instruction.txt` (+ existing `default_preamble.txt`),
   so `read_prompt_text`/materialization heal work unchanged.
-- `tools.py`: registry entry `node.create` (mutate) with its server-owned nodeType allowlist.
+- `tools.py`: registry entries `node.create` and `node.template.create` (both mutate); nodeType
+  and template-draft validation delegate to thin helpers over the existing packages domain
+  (`ADR-AG-007`) — no allowlist or template knowledge of their own.
 - `services.py`: `_mint_proposal` grows a per-tool dispatch (`node.content.write` → existing branch;
   `node.create` → new branch; `project.install` → delegation's missing-specialist branch);
   `apply_proposal` grows the matching apply dispatch; the run loop handles a `delegateRequest` part
@@ -104,6 +124,12 @@ never a silent install or a dead end.
   runtime concept; Node Builder rides the existing three-scope policy system like every built-in.
 - Edge/connection creation by the agent (`node.create` creates an unconnected node; connections
   remain Connection Builder / user territory until a consumer defines reviewed edge semantics).
+- **Unreviewed or non-factory node-type creation** (owner policy above): `node.create`
+  instantiates registered templates only; the creation fallback (`node.template.create`, §3.2b)
+  is reviewed, justification-carrying, and executes solely through the existing package factory —
+  no parallel template-registration path, no registry writes from the agents module.
+- Package *assembly* (multi-node reusable packages, the Package Recommendation composition) —
+  future memo per the policy note above.
 
 ## 3. Recommended Implementation Approach
 
@@ -118,7 +144,7 @@ BuiltinAgentSpec(
     ("node.build", "dataset.fetch.author"), ("authoring",),
     targets=("canvas",),                       # dev/15 also names "connection" — deferred (no UI)
     reads=("nodeIntent", "targetContext", "externalSelection"),
-    tools=("dataflow.read", "node.create"),
+    tools=("dataflow.read", "node.create", "node.template.create"),
     delegates_to=("agent.node-content-builder", "agent.execution-subtask-planner"),
     review_policy="review-before-apply",
 )
@@ -128,20 +154,68 @@ BuiltinAgentSpec(
 `()` / `"report-only"` keep the thirteen existing manifests **byte-identical** — regression-tested).
 The net-new instruction (dev/15 §3.3: no migrated source) is authored in `llm-prompts/` beside the
 migration assets so `PROMPT_SOURCE_DIR` resolution, upload-independence, and the
-`_materialize_builtin` heal all work unchanged. It teaches: the allowed nodeType ids and when each
-fits; delegate content generation via `delegateRequest` when content is nontrivial; then emit ONE
-`node.create` toolRequest; never claim the node exists before the user applies.
+`_materialize_builtin` heal all work unchanged. It teaches the reuse-first procedure: pick a nodeType **only from the available-templates list the
+runtime appends at run time** (§3.2 — the prompt bytes never bake in template ids, so newly
+installed packages need no prompt edit); delegate content generation via `delegateRequest` when
+content is nontrivial; then emit ONE `node.create` toolRequest; **only when no listed template can
+adequately hold the task**, fall back to `node.template.create` with a written justification
+naming the templates considered (§3.2b); never claim a node or type exists before the user
+applies; never invent a type id.
 
-### 3.2 `node.create` — the first graph-shape mutation
+### 3.2 `node.create` — the first graph-shape mutation (existing node types only)
 
-Registry entry (mutate): params `{"nodeType": <allowlisted id>, "content": <str>, "goal"?: <str>}`.
-The server-owned allowlist is a new constant in `tools.py` naming the canonical authorable ids
-(mirroring the frontend `NodeType` enum values): `curio.builtin/data-loading`,
-`data-transformation`, `computation-analysis`, `data-summary`, `vis-vega`, `vis-simple`,
-`js-computation`. A `dataset.fetch.author` outcome is a `data-loading` node whose content is the
-fetch code — no special node kind (dev/15: Node Builder owns the executable fetch node).
+Tool contract (mutate): params `{"nodeType": <canonical template id>, "content": <str>,
+"goal"?: <str>}`. `nodeType` is a canonical `<packageId>/<templateId>` (the same identifiers the
+canvas already uses — `constants.ts` `NodeType` values are exactly these strings), validated
+against the **existing package registry**, never a hardcoded list:
 
-**Proposal minting** (`_mint_proposal` dispatch branch): validate nodeType against the allowlist,
+- A new thin read helper in the packages domain (`ADR-AG-007`; e.g.
+  `packages.services.available_template_ids(user_key, project_id)`) enumerates the canonical
+  template ids of the seeded `curio.builtin@<major>` package plus every package in the project's
+  package lockfile (`get_project_lockfile`), reading `TemplateManifest` entries the domain already
+  parses (`packages/manifest.py:150`). The agents module consumes this helper; it owns no template
+  knowledge of its own.
+- Minting refuses a `nodeType` outside that set, and refuses `content` for a template that is not
+  content-authorable (`has_code`/`has_grammar` false) — reuse over invention, fail-closed.
+- So the model picks only real, currently-available types, the run's tail instruction lists the
+  available templates (id + label + one-line description from the manifest, bounded) when
+  `node.create` is granted — composed server-side at run time from the same helper, so it is never
+  stale and never hallucination-fed.
+
+A `dataset.fetch.author` outcome is an ordinary `curio.builtin/data-loading` node whose content is
+the fetch code — an existing template instantiated, not a new node kind (dev/15: Node Builder owns
+the executable fetch node). Only when no available template fits does the agent fall back to
+§3.2b — never to an invented type id.
+
+### 3.2b `node.template.create` — the justified creation fallback (factory-backed, reviewed)
+
+Tool contract (mutate): params `{"justification": <str>, "template": {label, description, engine,
+editor, inputPorts, outputPorts, content}}`. The tail instruction states the order of operations
+explicitly: request this **only after** `node.create`'s available-templates list has been
+considered, and the justification must name the closest existing templates and why each is
+inadequate — the runtime cannot judge adequacy, so the **review card is the adequacy gate**: it
+renders the justification verbatim above the template definition, and the user's Apply is the
+policy decision.
+
+**Minting**: validate the draft against the same constraints the palette Save-as flow enforces
+(engine ∈ {python, javascript}, editor/ports shapes per `TemplateManifest.from_json`, content
+bounds); refuse a label/slug that collides with an available template (that is reuse territory —
+the refusal text says so). Summary: "Create a new custom node type · \<label\>".
+
+**Apply** (one explicit review covering both stated effects, printed on the card): drive the
+**existing factory** — build a single-template draft-package envelope using the same conventions
+as `palettePackageFactoryDraft.ts` (`buildFactoryInstallEnvelope`; server-side equivalent over
+`build_packageage_archive` + the factory install service), install it to the user store **and the
+project's package lockfile**, then insert the first instance node into the saved spec (server-
+minted id + placement, exactly §3.2's apply). Response carries `createdTemplate` + `createdNode`;
+the canvas bridge (§3.3) additionally registers the new descriptor client-side through the
+existing package-registry bootstrap refresh (`registry/packageRegistryBootstrap.ts` — the same
+pulse the Save-as flow triggers) before inserting the node, so `UniversalNode` resolves it without
+a reload. Factory validation failures surface as refusal results at mint or as a 409 with the
+factory's verbatim error at apply — never a half-registered package (the factory's atomic staging
+already guarantees this).
+
+**Proposal minting** (`_mint_proposal` dispatch branch): validate nodeType via the helper as above,
 content non-empty and ≤ `PROPOSAL_CONTENT_MAX_CHARS`, spec exists. Summary: "Create a new
 \<label\> node". **Revision basis for a creation**: there is no target whose drift can corrupt —
 the node id is generated server-side **at apply time** (collision-impossible), so the proposal pins
@@ -149,7 +223,9 @@ no content digest; `REQ-REVIEW-001` is satisfied by the unchanged structural gat
 authenticated apply endpoint, explicit user action). State this reasoning in code where the digest
 would otherwise be.
 
-**Apply** (`apply_proposal` dispatch branch): under the spec write path — generate the node id,
+**Apply** (`apply_proposal` dispatch branch): under the spec write path — **re-validate the
+template against the helper** (a package uninstalled between mint and apply → 409, proposal
+`stale`, card explains — the creation analogue of dev/41's digest drift), generate the node id,
 compute a placement to the right of the current node extent, append
 `{id, type: nodeType, content, goal, x, y}` to `dataflow.nodes`, mark `applied`, append the result
 card turn ("Applied: node created · \<id\>"), and return the **`createdNode` payload** in the apply
@@ -162,8 +238,10 @@ New `utils/agentCanvasEvents.ts` (typed mirror of `agentsPaletteEvents.ts`):
 content})`. `AgentAttachmentsProvider.applyProposal` reads the apply response and dispatches it. A
 listener hook (`useAgentCanvasMutations`, mounted in `AgentDockOverlay`, which already holds
 `useReactFlow` + `useFlowContext`) applies it to the live canvas: `node-created` →
-`FlowProvider.addNode` with `CURIO_UNIVERSAL_NODE_TYPE`, `data.nodeType` = the canonical id,
-`data.code` = content, `data.goal`, position from the payload; `node-content-applied` → update the
+`FlowProvider.addNode` with `CURIO_UNIVERSAL_NODE_TYPE`, `data.nodeType` = the canonical template
+id, `data.code` = content, `data.goal`, position from the payload — rendered by the existing
+`UniversalNode` + client `nodeRegistry` descriptor lookup, which is guaranteed to resolve because
+validation ran against the same project package set (no new node component, no registry writes); `node-content-applied` → update the
 matching live node's `data.code`. Saved spec and live canvas now agree the moment apply succeeds —
 the next canvas save re-posts the same state instead of clobbering it. The `node.content.write`
 half is a **bug fix to shipped dev/41 behavior** and gets its own regression test.
@@ -242,8 +320,11 @@ graph executor pays; that memo re-opens `DEC-007` with this slice's usage data i
 - **Review cards.** `node.create`: title "Create a new \<label\> node", the content as the
   plain-text preview (existing SafeAgentContent path), Apply/Dismiss system controls unchanged.
   `project.install`: title "Install \<Agent Name\> in this project", one-line rationale (which
-  capability needed it), Apply = the reviewed install. Applied/stale/dismissed/superseded chips
-  identical to dev/41.
+  capability needed it), Apply = the reviewed install. `node.template.create`: title "Create a new
+  custom node type · \<label\>", the **justification rendered verbatim first** (it is what the
+  user is judging), then the template definition (engine, editor, ports) and content preview, and
+  an explicit two-effects line ("registers the node type in this project + adds the first node").
+  Applied/stale/dismissed/superseded chips identical to dev/41.
 - **After apply.** The created node appears immediately on the canvas at the computed position —
   no reload, no flicker, selected state untouched; the transcript shows the result card. Same-turn
   consistency for `node.content.write` (live editor shows the applied content).
@@ -262,8 +343,18 @@ graph executor pays; that memo re-opens `DEC-007` with this slice's usage data i
 - Round budget exhausted before the model emits `node.create` → final-round suffix already forces a
   text answer ("no further tool calls"); the model reports what it would create.
 - `node.create` with an id-spoofing param (`"id"` in params) → ignored; ids are server-minted at
-  apply only. nodeType outside the allowlist → refusal result. Content at the bound → accepted;
-  over → refused.
+  apply only. nodeType not in the project's available template set (or content on a
+  non-authorable template) → refusal result. Content at the bound → accepted; over → refused.
+- Package providing the proposed template uninstalled between mint and apply → apply re-validation
+  409s, proposal `stale`. Package installed mid-conversation → next run's tail lists it (composed
+  fresh per run).
+- `node.template.create` whose label/slug collides with an available template → refusal steering
+  to reuse; collides with an existing store package id → the factory's collision handling
+  verbatim (409 at apply, proposal `stale`). Malformed ports/engine → factory-shaped refusal at
+  mint. Factory build fails at apply → 409 with the verbatim error, nothing half-registered,
+  no node inserted (the two effects are one transaction: template first, node only on success).
+- Justification empty or missing → mint refuses (`the review needs your reasoning — state which
+  existing templates you considered and why they don't fit`).
 - Apply with the project deleted mid-review → existing 404 path. Two pending proposals → newest
   supersedes (unchanged).
 - Canvas bridge fires but the node id already exists live (double event, hot reload) → no-op.
@@ -290,11 +381,23 @@ Backend (`utk_curio/backend`, pytest):
   structural test); child execution record pins + `parentExecutionId` + own ledger pair
   (attribution: child coord policy, parent attachmentKey); child failure → framed result, parent
   completes.
-- **node.create**: mint (allowlist, bounds, no digest, summary) → `review_required`; apply inserts
-  under the lock with server-minted id + placement, result card, `mutation_applied`, response
-  carries `createdNode`; params-id spoof ignored; injection resistance re-run (no text path
-  reaches apply — the dev/41 test extended to the new tools); `project.install` apply = reviewed
-  install, idempotent second apply; dismiss paths.
+- **packages helper**: `available_template_ids` returns `curio.builtin` + lockfile-package
+  templates only (a package installed to the store but not the project is absent); authorability
+  flags surfaced; bounded output.
+- **node.create**: mint validates via the helper — never a hardcoded list (assert no template-id
+  constant exists in the agents module); refusals for unknown template / non-authorable content;
+  bounds, no digest, summary → `review_required`; apply re-validates (uninstalled package → 409 +
+  `stale`), inserts under the lock with server-minted id + placement, result card,
+  `mutation_applied`, response carries `createdNode`; params-id spoof ignored; injection
+  resistance re-run (no text path reaches apply — the dev/41 test extended to the new tools);
+  grant-time tail lists available templates (and changes when the lockfile changes);
+  `project.install` apply = reviewed install, idempotent second apply; dismiss paths.
+- **node.template.create**: mint validates draft shape via the packages domain + refuses
+  missing/empty justification and reuse-territory collisions; apply drives the real factory
+  (build + store install + project lockfile + first node insertion, transactional — template
+  registered and node inserted together or neither); factory failure → 409 verbatim + `stale`;
+  reuse-first ordering asserted in the tail instruction text; the created type is instantiable by
+  a plain `node.create` in the next run (round-trip test).
 - **Loop**: delegate round consumes the shared round budget; SSE ordering
   `delegate_requested/started/result` (stream test).
 
@@ -315,6 +418,12 @@ Frontend (`npx jest` via the curio-feat conda env):
 - [ ] Asking for a new node yields a reviewable `node.create` proposal; **only** the authenticated
       apply endpoint mutates; apply inserts the node into the saved spec **and** the live canvas in
       one action, with a result-card turn; the id is server-minted at apply.
+- [ ] **Reuse-first is enforced end-to-end**: `node.create` instantiates only registered templates
+      available to the project (registry-validated at mint *and* apply, no template-id constant in
+      the agents module); `node.template.create` is the sole creation path — reviewed, refused
+      without a written justification, executed only through the existing package factory; the
+      frontend renders both outcomes through the existing `UniversalNode`/`nodeRegistry` path (the
+      new-type case via the same registry-bootstrap refresh the Save-as flow uses).
 - [ ] Applied `node.content.write` content now reaches the live canvas too, and a subsequent canvas
       save no longer clobbers either mutation (regression-tested).
 - [ ] A `delegateRequest` for `node.content.generate` runs Node Content Builder as a depth-1 child:
@@ -331,10 +440,11 @@ Frontend (`npx jest` via the curio-feat conda env):
 ## 9. Recommended Commit Breakdown
 
 1. `Roster + manifest surface: delegates_to/review_policy fields, agent.node-builder entry, net-new instruction asset, with byte-parity regression tests`
-2. `node.create: registry contract + proposal mint/apply dispatch + createdNode payload, with tests (dev/48)`
+2. `node.create: registry contract + packages-domain availability helper + proposal mint/apply dispatch + createdNode payload, with tests (dev/48)`
 3. `Delegation seam: delegateRequest part, delegation.py resolution + depth-1 child run, project.install proposal, ledger/record wiring, SSE events, with tests (DEC-046)`
-4. `Frontend: apply→canvas bridge (node-created + node-content-applied regression fix), review-card kinds, delegate activity lines, with tests`
-5. `Docs + ledgers: dev/48 implemented, DEC-046 in dev/03 + 2.1, BL-P5 entry, docs/AGENTS.md`
+4. `node.template.create: justified creation fallback over the existing package factory (mint validation, transactional apply, round-trip), with tests`
+5. `Frontend: apply→canvas bridge (node-created + node-content-applied regression fix), review-card kinds incl. the justification-first template card, registry-bootstrap refresh, delegate activity lines, with tests`
+6. `Docs + ledgers: dev/48 implemented, DEC-046 in dev/03 + 2.1, BL-P5 entry, docs/AGENTS.md`
 
 ## 10. Engineering Quality Checklist
 
@@ -342,8 +452,10 @@ Frontend (`npx jest` via the curio-feat conda env):
       flag anywhere whose flip lets the model mutate or install.
 - [ ] Depth-1 delegation is structural (no child tail instruction, child output never parsed), not
       a counter.
-- [ ] One source of truth per fact: lockfile (installed + resolution), roster manifest (contract),
-      apply response (`createdNode`), turn parts + mirror (proposals).
+- [ ] One source of truth per fact: agents lockfile (installed + delegation resolution), package
+      registry/lockfile (creatable node types — via the packages-domain helper, no duplicate
+      template knowledge), roster manifest (contract), apply response (`createdNode`), turn parts
+      + mirror (proposals).
 - [ ] No duplicated business logic: proposal/apply become a dispatch over existing machinery; the
       canvas bridge mirrors the palette-events utility; child runs reuse `_resolve_prompt_text`,
       policy, ledger, and record helpers.
@@ -352,5 +464,10 @@ Frontend (`npx jest` via the curio-feat conda env):
 - [ ] Types explicit end-to-end (registry contract, part grammar, apply payload, TS event types).
 - [ ] Accessibility: new card kinds and delegate lines follow the existing aria-live/labeling
       patterns.
+- [ ] Reuse-first is structural, not just prompted: instantiation validates against the registry,
+      creation is a distinct reviewed contract that cannot fire without a justification, and both
+      execute only domain-owned packages code (factory + install services) — the agents module
+      writes nothing to the registry itself.
 - [ ] The LangChain seam is one module boundary (`delegation.py`), documented for the Dataflow
-      Builder revisit (DEC-046).
+      Builder revisit (DEC-046); the factory-backed creation seam is likewise one contract, ready
+      for the Package Recommendation composition to reuse.

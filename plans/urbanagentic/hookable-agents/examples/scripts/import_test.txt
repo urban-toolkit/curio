@@ -1,0 +1,101 @@
+ cd utk_curio/backend && python3 - << 'EOF'                                                  
+   import json, os, tempfile                                                                   
+   from pathlib import Path                                                                    
+                                                                                               
+   # Isolated workspace, same as the test fixtures.                                            
+   tmp = tempfile.mkdtemp()                                                                    
+   os.environ["CURIO_LAUNCH_CWD"] = tmp                                                        
+                                                                                               
+   pkg = Path("/Users/karla/coding/curio-feat/plans/urbanagentic/hookable-agents/examples/ag   
+   ent.dataflow-scribe@1.0.0")                                                                 
+   manifest = json.loads((pkg / "manifest.json").read_text())                                  
+   manifest.pop("$schema", None)  # editor-only key; the modal sends the manifest as-is,       
+   contract ignores unknowns? verify below                                                     
+   prompts = {                                                                                 
+       "prompts/instruction.txt": (pkg / "prompts/instruction.txt").read_text(),               
+       "prompts/preamble.txt": (pkg / "prompts/preamble.txt").read_text(),                     
+   }                                                                                           
+                                                                                               
+   from utk_curio.backend.app.agents import services, storage                                  
+                                                                                               
+   # 1. Upload — the exact service the drawer's Import button hits.                            
+   card = services.upload_import("42", manifest, prompts)                                      
+   assert card["dirName"] == "agent.dataflow-scribe@1.0.0"                                     
+   assert card["publishable"] is True and card["imported"] is True                             
+   assert card["provenance"]["trust"] == "imported"                                            
+                                                                                               
+   # 2. Bytes + stamped digests on disk.                                                       
+   d = storage.agent_definition_dir("42", card["dirName"])                                     
+   stored = json.loads((d / "manifest.json").read_text())                                      
+   import hashlib                                                                              
+   for name, rel in (("system", "prompts/preamble.txt"), ("instruction",                       
+   "prompts/instruction.txt")):                                                                
+       assert stored["prompts"][name]["sha256"] ==                                             
+   hashlib.sha256(prompts[rel].encode()).hexdigest()
+   # 3. Duplicate upload → immutability error.                                                 
+   try:                                                                                        
+       services.upload_import("42", manifest, prompts)                                         
+       raise SystemExit("FAIL: duplicate accepted")                                            
+   except services.AgentServiceError as e:                                                     
+       assert e.status == 409                                                                  
+                                                                                               
+   # 4. Publish (imported-only) accepts it.                                                    
+   pub = services.publish_agent("42", card["dirName"])                                         
+   assert pub["published"] is True                                                             
+                                                                                               
+   print("EXAMPLE PACKAGE VERIFIED: upload -> stamped digests -> 409 on duplicate -> publish   
+   OK")                                                                                        
+   EOF 
+   Verify the example against the real upload service
+
+
+
+
+
+   python3 - << 'EOF'                                                                                              
+   import sys, json, os, tempfile, hashlib                                                                         
+   sys.path.insert(0, "/Users/karla/coding/curio-feat")                                                            
+   from pathlib import Path                                                                                        
+                                                                                                                   
+   tmp = tempfile.mkdtemp()                                                                                        
+   os.environ["CURIO_LAUNCH_CWD"] = tmp                                                                            
+                                                                                                                   
+   pkg = Path("/Users/karla/coding/curio-feat/plans/urbanagentic/hookable-agents/examples/agent.dataflow-scribe@   
+   1.0.0")                                                                                                         
+   manifest = json.loads((pkg / "manifest.json").read_text())                                                      
+   prompts = {                                                                                                     
+       "prompts/instruction.txt": (pkg / "prompts/instruction.txt").read_text(),                                   
+       "prompts/preamble.txt": (pkg / "prompts/preamble.txt").read_text(),                                         
+   }                                                                                                               
+                                                                                                                   
+   from utk_curio.backend.app.agents import services, storage                                                      
+                                                                                                                   
+   # 1. Upload — the exact service the drawer's Import button hits (manifest sent                                  
+   #    verbatim, $schema key included, as the modal would).                                                       
+   card = services.upload_import("42", manifest, prompts)                                                          
+   assert card["dirName"] == "agent.dataflow-scribe@1.0.0"                                                         
+   assert card["publishable"] is True and card["imported"] is True                                                 
+   assert card["provenance"]["trust"] == "imported"                                                                
+                                                                                                                   
+   # 2. Bytes + stamped digests on disk.                                                                           
+   d = storage.agent_definition_dir("42", card["dirName"])                                                         
+   stored = json.loads((d / "manifest.json").read_text())                                                          
+   for name, rel in (("system", "prompts/preamble.txt"), ("instruction", "prompts/instruction.txt")):              
+       assert stored["prompts"][name]["sha256"] == hashlib.sha256(prompts[rel].encode()).hexdigest()               
+                                                                                                                   
+   # 3. Duplicate upload → immutability 409.                                                                       
+   try:                                                                                                            
+       services.upload_import("42", manifest, prompts)                                                             
+       raise SystemExit("FAIL: duplicate accepted")                                                                
+   except services.AgentServiceError as e:                                                                         
+       assert e.status == 409                                       
+
+   # 4. Publish (imported-only) accepts it.                                                                        
+   pub = services.publish_agent("42", card["dirName"])                                                             
+   assert pub["published"] is True                                                                                 
+                                                                                                                   
+   print("EXAMPLE PACKAGE VERIFIED: upload → stamped digests → 409 on duplicate → publish OK")                     
+   EOF                                                                                                             
+   Verify example package end-to-end                                                                               
+                                                                                                                   
+ Contains brace with quote character (expansion obfuscation)
