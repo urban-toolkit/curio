@@ -26,9 +26,9 @@ _EXPECTED = {
 
 
 class TestRoster:
-    def test_fourteen_agents(self):
-        # 13 migrations + agent.node-builder (dev/48).
-        assert len(builtin.BUILTIN_AGENTS) == 14
+    def test_fifteen_agents(self):
+        # 13 migrations + agent.node-builder (dev/48) + agent.dataset-finder (dev/50).
+        assert len(builtin.BUILTIN_AGENTS) == 15
 
     def test_evaluator_excluded(self):
         ids = {s.agent_id for s in builtin.BUILTIN_AGENTS}
@@ -41,9 +41,9 @@ class TestRoster:
             if s.agent_id in _EXPECTED
         }
         assert got == _EXPECTED
-        # Exactly one non-migration entry so far: the dev/48 composite.
+        # The composites are the only non-migration entries (dev/48, dev/50).
         extras = {s.agent_id for s in builtin.BUILTIN_AGENTS} - set(_EXPECTED)
-        assert extras == {"agent.node-builder"}
+        assert extras == {"agent.node-builder", "agent.dataset-finder"}
 
     def test_every_prompt_file_exists(self):
         for spec in builtin.BUILTIN_AGENTS:
@@ -53,7 +53,7 @@ class TestRoster:
 class TestManifests:
     def test_all_validate(self):
         manifests = builtin.list_builtin_manifests()
-        assert len(manifests) == 14
+        assert len(manifests) == 15
         assert all(isinstance(m, AgentManifest) for m in manifests)
 
     def test_coords_and_capabilities(self):
@@ -129,16 +129,49 @@ class TestNodeBuilderComposite:
         assert nb["delegatesTo"] == [
             "agent.node-content-builder", "agent.execution-subtask-planner",
         ]
+        composites = {"agent.node-builder", "agent.dataset-finder"}
         for spec in builtin.BUILTIN_AGENTS:
-            if spec.agent_id == "agent.node-builder":
+            if spec.agent_id in composites:
                 continue
             raw = builtin.build_builtin_manifest(spec)
             assert "delegatesTo" not in raw, spec.agent_id
             assert raw["runtime"] == {"execution": "foreground", "reviewPolicy": "report-only"}
+            # requires stays empty for every migrated agent (dev/50 parity).
+            assert all(t["requires"] == [] for t in raw["compatibleTargets"]), spec.agent_id
 
     def test_net_new_instruction_resolves(self):
         # Net-new asset (dev/15 §3.3: no migrated source) — reads through the
         # same PROMPT_SOURCE_DIR path as every migration.
         text = builtin.read_prompt_text(self.COORD, "instruction")
         assert text and "Reuse first" in text
+        assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
+
+
+class TestDatasetFinderComposite:
+    """The dev/50 roster entry — spec per dev/15 §3.4 + docs/06, minus
+    recorded deviations."""
+
+    COORD = "agent.dataset-finder@1.0.0"
+
+    def test_manifest_surface(self):
+        m = builtin.get_builtin_manifest(self.COORD)
+        assert m is not None
+        assert m.capability_ids == ["dataset.discover", "dataset.select"]
+        assert m.delegates_to == [
+            "agent.node-builder",
+            "agent.workflow-suggester",
+            "agent.keyword-binding-agent",
+        ]
+        by_kind = {t.kind: t for t in m.compatible_targets}
+        assert set(by_kind) == {"node", "canvas"}
+        # The docs/06 Data-Load gate: requires rides the node target only.
+        assert by_kind["node"].requires == ["data-loading"]
+        assert by_kind["canvas"].requires == []
+        assert [t.id for t in m.tools] == ["catalog.search", "dataset.install"]
+        assert m.provenance.trust == "built-in"
+
+    def test_net_new_instruction_resolves(self):
+        text = builtin.read_prompt_text(self.COORD, "instruction")
+        assert text and "two lanes" in text.lower()
+        assert "never author" in text.lower() or "never authors" in text.lower()
         assert builtin.read_prompt_text(self.COORD, "system")  # default preamble

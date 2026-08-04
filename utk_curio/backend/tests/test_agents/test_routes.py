@@ -94,8 +94,8 @@ class TestGlobalCatalog:
         resp = client.get("/api/agents/catalog", headers=_auth(token))
         assert resp.status_code == 200
         agents = resp.get_json()["agents"]
-        # 13 migrations + agent.node-builder (dev/48).
-        assert len(agents) == 14
+        # 13 migrations + the composites (dev/48 node-builder, dev/50 dataset-finder).
+        assert len(agents) == 15
         assert all(a["scope"] == "global" and a["provenance"]["trust"] == "built-in" for a in agents)
         ids = {a["id"] for a in agents}
         assert "agent.node-explainer" in ids
@@ -3307,3 +3307,68 @@ class TestNodeTemplateCreate:
         assert cards[0]["activeProposal"]["status"] == "stale"
         nodes = TestNodeCreate()._spec_nodes(user, alice_project)
         assert all(n.get("type") != "curio.agent.sentiment-scorer/sentiment-scorer" for n in nodes)
+
+
+class TestAttachRequiresGating:
+    """dev/50 — compatibleTargets[].requires gets runtime meaning: a node
+    target must match a declared template-id suffix; empty requires = any
+    node (every pre-dev/50 agent byte-identical)."""
+
+    FINDER = "agent.dataset-finder@1.0.0"
+
+    def _project_with_nodes(self, client, token):
+        body = {
+            "name": "p",
+            "spec": {"dataflow": {"nodes": [
+                {"id": "load1", "type": "curio.builtin/data-loading", "content": ""},
+                {"id": "comp1", "type": "curio.builtin/computation-analysis", "content": ""},
+                {"id": "legacy1", "type": "DATA_LOADING", "content": ""},
+                {"id": "ver1", "type": "curio.builtin/data-loading@1", "content": ""},
+            ], "edges": [], "packages": []}},
+            "outputs": [],
+        }
+        resp = client.post("/api/projects", json=body, headers=_auth(token))
+        assert resp.status_code == 201
+        return resp.get_json()["id"]
+
+    def _attach(self, client, token, pid, target, coord=None):
+        client.post(f"/api/agents/projects/{pid}/install", json={"coord": coord or self.FINDER}, headers=_auth(token))
+        return client.post(
+            f"/api/agents/projects/{pid}/attachments",
+            json={"coord": coord or self.FINDER, "target": target},
+            headers=_auth(token),
+        )
+
+    def test_data_loading_node_attaches(self, client, user_and_token, tmp_curio):
+        _, token = user_and_token
+        pid = self._project_with_nodes(client, token)
+        r = self._attach(client, token, pid, {"kind": "node", "targetId": "load1"})
+        assert r.status_code == 201, r.get_data(as_text=True)
+
+    def test_other_node_is_refused_naming_the_requirement(self, client, user_and_token, tmp_curio):
+        _, token = user_and_token
+        pid = self._project_with_nodes(client, token)
+        r = self._attach(client, token, pid, {"kind": "node", "targetId": "comp1"})
+        assert r.status_code == 400
+        assert "data-loading" in r.get_json()["error"]
+
+    def test_versioned_and_legacy_type_spellings_match(self, client, user_and_token, tmp_curio):
+        _, token = user_and_token
+        pid = self._project_with_nodes(client, token)
+        assert self._attach(client, token, pid, {"kind": "node", "targetId": "ver1"}).status_code == 201
+        assert self._attach(client, token, pid, {"kind": "node", "targetId": "legacy1"}).status_code == 201
+
+    def test_canvas_attach_needs_no_node(self, client, user_and_token, tmp_curio):
+        _, token = user_and_token
+        pid = self._project_with_nodes(client, token)
+        assert self._attach(client, token, pid, {"kind": "canvas"}).status_code == 201
+
+    def test_empty_requires_agents_attach_to_any_node(self, client, user_and_token, tmp_curio):
+        # Regression: pre-dev/50 agents (empty requires) are unaffected.
+        _, token = user_and_token
+        pid = self._project_with_nodes(client, token)
+        r = self._attach(
+            client, token, pid, {"kind": "node", "targetId": "comp1"},
+            coord="agent.node-explainer@1.0.0",
+        )
+        assert r.status_code == 201, r.get_data(as_text=True)

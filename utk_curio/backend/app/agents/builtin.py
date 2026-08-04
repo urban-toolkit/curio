@@ -68,6 +68,10 @@ class BuiltinAgentSpec:
     # (DEC-017); grounded in the agent's declared reads / legacy behavior.
     # All optional: a missing grant degrades to the pre-tool blind behavior.
     tools: tuple[str, ...] = field(default_factory=tuple)
+    # compatibleTargets[].requires for the "node" kind (memo dev/50): template
+    # id suffixes the target node's canonical type must match (e.g.
+    # "data-loading"). Empty = any node — every prior agent byte-identical.
+    node_requires: tuple[str, ...] = field(default_factory=tuple)
     # Preferred delegate agents, in preference order (memo dev/48 / dev/15
     # §3.2). Expresses composition only — grants nothing; resolution is
     # current-project-only at run time.
@@ -153,6 +157,23 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      tools=("dataflow.read", "node.create", "node.template.create"),
                      delegates_to=("agent.node-content-builder", "agent.execution-subtask-planner"),
                      review_policy="review-before-apply"),
+    # The second P5 composite (memo dev/50; spec dev/15 §3.4 + docs/06). Two-
+    # lane discovery: catalog picks → reviewed dataset.install; external picks
+    # → the DEC-047 user-mediated Node Builder handoff. Never authors fetch
+    # code. Deviations recorded in the memo (canvas target added for mission-
+    # first discovery; foreground-only; no auto-install).
+    BuiltinAgentSpec("agent.dataset-finder", "Dataset Finder", "data",
+                     "Discover and select datasets across external sources and the Data "
+                     "Catalog; hand external picks to Node Builder. Never authors fetch code.",
+                     "discovery_instruction.txt",
+                     ("dataset.discover", "dataset.select"), ("discovery", "selection"),
+                     targets=("node", "canvas"),
+                     reads=("mission", "nodeContext", "catalog"),
+                     tools=("catalog.search", "dataset.install"),
+                     delegates_to=("agent.node-builder", "agent.workflow-suggester",
+                                   "agent.keyword-binding-agent"),
+                     review_policy="review-before-apply",
+                     node_requires=("data-loading",)),
 )
 
 
@@ -170,7 +191,13 @@ def build_builtin_manifest(spec: BuiltinAgentSpec) -> dict:
             "system": {"path": f"prompts/{spec.preamble_file}", "variables": []},
             "instruction": {"path": f"prompts/{spec.prompt_file}", "variables": []},
         },
-        "compatibleTargets": [{"kind": k, "requires": []} for k in spec.target_kinds()],
+        "compatibleTargets": [
+            {
+                "kind": k,
+                "requires": list(spec.node_requires) if k == "node" else [],
+            }
+            for k in spec.target_kinds()
+        ],
         "inputs": {"reads": list(spec.reads), "requiredConfig": []},
         # Typed tool requirements (dev/41) — all optional declarations.
         "tools": [{"id": t} for t in spec.tools],

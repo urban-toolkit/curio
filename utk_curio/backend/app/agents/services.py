@@ -657,6 +657,30 @@ def attach_agent(user_key: str, project_id: str, coord: str, target: object) -> 
         raise AgentServiceError(
             f"this agent attaches to {', '.join(sorted(allowed))}, not {kind}", 400
         )
+    # compatibleTargets[].requires (memo dev/50): a node target must match one
+    # of the declared template-id suffixes (e.g. "data-loading" accepts any
+    # <packageId>/data-loading node). Empty requires = any node — every
+    # pre-dev/50 agent behaves identically.
+    if kind == "node" and manifest is not None:
+        node_target = next(
+            (t for t in manifest.compatible_targets if t.kind == "node"), None
+        )
+        if node_target is not None and node_target.requires:
+            target_id = target.get("targetId") if isinstance(target, dict) else None
+            nodes = (spec.get("dataflow") or {}).get("nodes") or []
+            node = next(
+                (n for n in nodes if isinstance(n, dict) and n.get("id") == target_id), None
+            )
+            node_type = str((node or {}).get("type") or "")
+            # Canonical suffix, tolerant of versioned ids and legacy enum names
+            # ("pkg/tmpl@1" → "tmpl"; "DATA_LOADING" → "data-loading").
+            suffix = node_type.rsplit("/", 1)[-1].split("@", 1)[0].lower().replace("_", "-")
+            if suffix not in {r.lower() for r in node_target.requires}:
+                raise AgentServiceError(
+                    f"this agent attaches to {', '.join(sorted(node_target.requires))} "
+                    f"nodes; that node is {node_type or 'untyped'}",
+                    400,
+                )
     try:
         record = attachments.attach(
             spec, coord, target, attachment_id=uuid.uuid4().hex, session_id=uuid.uuid4().hex
