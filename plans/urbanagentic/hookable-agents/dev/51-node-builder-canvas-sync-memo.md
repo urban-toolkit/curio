@@ -1,8 +1,9 @@
 # Implementation Memo: Node Builder — Post-Creation Canvas Synchronization (dev/48 bridge fixes)
 
 Date: 2026-08-04
-Status: proposed (implementing in the same session — explicit fix request; post-implementation
-testing feedback on the dev/48 apply→canvas bridge)
+Status: implemented 2026-08-04 — COMMIT-e48603dc. Verification: frontend `npx jest` → 635 passed
+(58 suites), including the new real-provider integration regression
+(`agentCanvasBridge.integration.test.tsx`) that reproduced defect 2 before the fix.
 
 ## 1. Problem Statement (root causes, reproduced)
 
