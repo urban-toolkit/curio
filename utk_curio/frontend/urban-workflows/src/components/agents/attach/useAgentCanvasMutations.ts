@@ -44,7 +44,7 @@ const CENTER_ANIMATION_MS = 400;
  */
 export function useAgentCanvasMutations(): void {
   const { createCodeNode } = useCode();
-  const { applyNodeContent, onEdgesChange } = useFlowContext();
+  const { applyNodeContent, onEdgesChange, applyRemoveChanges } = useFlowContext();
   const reactFlow = useReactFlow();
   const { getNodes, setCenter, getZoom } = reactFlow;
   // Event-level idempotence: survives the store-sync lag between an insert
@@ -74,6 +74,19 @@ export function useAgentCanvasMutations(): void {
       if (processedRef.current.has(mutation.planId)) return;
       processedRef.current.add(mutation.planId);
       const live = new Set(getNodes().map((n) => n.id));
+      // Removals FIRST (dev/59): victims leave through the canvas's own
+      // removal machinery (selection/provenance/dependent cleanup behave
+      // exactly like a manual delete) before inserts wire to survivors.
+      // Already-absent victims (user deleted them live) are a no-op.
+      const removedNodeIds = (mutation.removedNodeIds ?? []).filter((id) => live.has(id));
+      if (removedNodeIds.length) {
+        applyRemoveChanges(removedNodeIds.map((id) => ({ id, type: "remove" as const })));
+      }
+      if (mutation.removedEdgeIds?.length) {
+        onEdgesChange(
+          mutation.removedEdgeIds.map((id) => ({ id, type: "remove" as const })),
+        );
+      }
       for (const node of mutation.nodes) {
         if (!live.has(node.id)) insertNode(node);
       }

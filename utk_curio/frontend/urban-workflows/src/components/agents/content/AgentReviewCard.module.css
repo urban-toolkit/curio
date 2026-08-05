@@ -130,3 +130,25 @@
   font-size: 0.74rem;
   color: #6b7280;
 }
+
+/* dev/59 (DEC-049.2) — the destructive Removes section: reviewed by name. */
+.removals {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: #fdf0ef;
+  border-left: 3px solid #c0392b;
+  border-radius: 4px;
+}
+
+.removalsTitle {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #922b21;
+}
+
+.removalsList {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 0.74rem;
+  color: #6e2f28;
+}

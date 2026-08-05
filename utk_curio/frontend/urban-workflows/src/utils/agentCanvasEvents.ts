@@ -32,11 +32,15 @@ export type AgentCanvasMutation =
     }
   | { kind: "node-content-applied"; nodeId: string; content: string }
   | {
-      /** dev/52: a whole applied plan graph — bulk nodes + edges, then a fit. */
+      /** dev/52: a whole applied plan graph — bulk nodes + edges, then a
+       * fit. dev/59: removals apply FIRST (the live graph drops victims
+       * before inserts wire to survivors). */
       kind: "graph-created";
       planId: string;
       nodes: AgentCreatedNode[];
       edges: Array<{ id: string; source: string; target: string }>;
+      removedNodeIds?: string[];
+      removedEdgeIds?: string[];
     };
 
 export const AGENT_CANVAS_MUTATION_EVENT = "curio:agent-canvas-mutation";

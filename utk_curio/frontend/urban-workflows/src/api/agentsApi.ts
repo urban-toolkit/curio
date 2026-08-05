@@ -195,6 +195,11 @@ export interface AgentProposalPart {
     templateId?: string;
     nodes: Array<{ ref: string; nodeType: string; title: string; intent: string }>;
     edgeCount: number;
+    /** dev/59 (DEC-049.2): removals reviewed by NAME — every victim listed
+     * with a content flag; present only on destructive revisions. */
+    removals?: Array<{ id: string; label: string; nodeType?: string; contentChars: number }>;
+    removedEdgeCount?: number;
+    cascadeCount?: number;
   };
 }
 
@@ -232,10 +237,13 @@ export interface AgentApplyResult {
   appliedContent?: { nodeId: string; content: string };
   /** project.install: the installed agent coordinate. */
   installedCoord?: string;
-  /** dataflow.plan.write (dev/52): the inserted plan graph, for the live canvas. */
+  /** dataflow.plan.write (dev/52; removals per dev/59): the applied plan
+   * graph delta, for the live canvas. */
   appliedGraph?: {
     nodes: AgentCreatedNodePayload[];
     edges: Array<{ id: string; source: string; target: string }>;
+    removedNodeIds?: string[];
+    removedEdgeIds?: string[];
   };
   /** dataflow.plan.write: the builder session after apply. */
   builderSession?: AgentBuilderSession | null;

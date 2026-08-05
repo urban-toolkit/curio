@@ -180,3 +180,43 @@ describe("AgentReviewCard — dev/52 dataflow.plan.write kind", () => {
     expect(screen.getByRole("button", { name: "Apply" })).toBeInTheDocument();
   });
 });
+
+describe("AgentReviewCard — dev/59 destructive revision (DEC-049.2)", () => {
+  const revision: AgentProposalPart = {
+    type: "proposal",
+    proposalId: "p7",
+    tool: "dataflow.plan.write",
+    summary: "Apply plan · 1 nodes, 1 edges, removes 1 node",
+    preview: "API Fetch · curio.builtin/computation-analysis — fetch\n− Remove: Load CSV",
+    pins: { baseGraphDigest: "abc" },
+    status: "pending",
+    plan: {
+      goal: "replace the loader",
+      nodes: [{ ref: "a", nodeType: "curio.builtin/computation-analysis", title: "API Fetch", intent: "fetch" }],
+      edgeCount: 1,
+      removals: [
+        { id: "old-loader", label: "Load CSV", nodeType: "curio.builtin/computation-analysis", contentChars: 10 },
+        { id: "scratch", label: "Scratch", contentChars: 0 },
+      ],
+      cascadeCount: 1,
+    },
+  };
+
+  it("names every victim with a content flag and the cascade", () => {
+    render(<AgentReviewCard part={revision} onApply={jest.fn()} onDismiss={jest.fn()} />);
+    const section = screen.getByRole("group", { name: "Nodes this plan removes" });
+    expect(section).toHaveTextContent("Removes 2 nodes (and 1 connected edge)");
+    expect(section).toHaveTextContent("Load CSV · curio.builtin/computation-analysis — contains 10 chars of content");
+    expect(section).toHaveTextContent("Scratch — empty");
+    expect(
+      screen.getByText("Applying adds 1 node and removes 2 — removal deletes their content and cannot be undone."),
+    ).toBeInTheDocument();
+  });
+
+  it("additive plans render no Removes section (regression)", () => {
+    const additive = { ...revision, plan: { ...revision.plan!, removals: undefined, cascadeCount: undefined } };
+    render(<AgentReviewCard part={additive} onApply={jest.fn()} />);
+    expect(screen.queryByRole("group", { name: "Nodes this plan removes" })).toBeNull();
+    expect(screen.getByText(/existing work is untouched/)).toBeInTheDocument();
+  });
+});

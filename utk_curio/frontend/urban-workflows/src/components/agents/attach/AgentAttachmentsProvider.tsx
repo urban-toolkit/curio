@@ -305,12 +305,15 @@ export const AgentAttachmentsProvider: React.FC<{
             content: result.appliedContent.content,
           });
         } else if (result.appliedGraph) {
-          // dev/52: a whole applied plan — bulk insert + edges + fit.
+          // dev/52: a whole applied plan — bulk insert + edges + fit;
+          // dev/59: removals ride the same event, applied first.
           notifyAgentCanvasMutation({
             kind: "graph-created",
             planId: proposalId,
             nodes: result.appliedGraph.nodes,
             edges: result.appliedGraph.edges,
+            removedNodeIds: result.appliedGraph.removedNodeIds,
+            removedEdgeIds: result.appliedGraph.removedEdgeIds,
           });
         }
       } finally {

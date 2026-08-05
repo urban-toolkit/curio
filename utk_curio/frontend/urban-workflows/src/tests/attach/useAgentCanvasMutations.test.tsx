@@ -8,10 +8,12 @@ jest.mock("../../hook/useCode", () => ({
 
 const mockApplyNodeContent = jest.fn();
 const mockOnEdgesChange = jest.fn();
+const mockApplyRemoveChanges = jest.fn();
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({
     applyNodeContent: mockApplyNodeContent,
     onEdgesChange: mockOnEdgesChange,
+    applyRemoveChanges: mockApplyRemoveChanges,
   }),
 }));
 
@@ -207,5 +209,56 @@ describe("graph-created (dev/52 — a whole applied plan)", () => {
       "curio.builtin/computation-analysis",
       expect.objectContaining({ nodeId: "gb" }),
     );
+  });
+});
+
+describe("graph-created removals (dev/59)", () => {
+  const REVISION = {
+    kind: "graph-created" as const,
+    planId: "rev-1",
+    nodes: [
+      { id: "new-a", type: "curio.builtin/computation-analysis", content: "", goal: "New — n", x: 500, y: 60 },
+    ],
+    edges: [{ id: "e-new", source: "new-a", target: "cleaner" }],
+    removedNodeIds: ["old-loader"],
+    removedEdgeIds: ["edge-1"],
+  };
+
+  it("applies removals through the canvas's own machinery BEFORE inserts", () => {
+    const order: string[] = [];
+    mockGetNodes.mockReturnValue([{ id: "old-loader" }, { id: "cleaner" }]);
+    mockApplyRemoveChanges.mockImplementation(() => order.push("remove-nodes"));
+    mockOnEdgesChange.mockImplementation((changes: Array<{ type: string }>) =>
+      order.push(changes[0]?.type === "remove" ? "remove-edges" : "add-edges"),
+    );
+    mockCreateCodeNode.mockImplementation(() => order.push("insert"));
+    render(<Host />);
+    act(() => notifyAgentCanvasMutation(REVISION));
+    expect(mockApplyRemoveChanges).toHaveBeenCalledWith([
+      { id: "old-loader", type: "remove" },
+    ]);
+    expect(order.indexOf("remove-nodes")).toBeLessThan(order.indexOf("insert"));
+    expect(order.indexOf("remove-edges")).toBeLessThan(order.indexOf("insert"));
+  });
+
+  it("already-absent victims are a no-op (user deleted them live)", () => {
+    mockGetNodes.mockReturnValue([{ id: "cleaner" }]); // victim already gone
+    render(<Host />);
+    act(() => notifyAgentCanvasMutation({ ...REVISION, planId: "rev-2" }));
+    expect(mockApplyRemoveChanges).not.toHaveBeenCalled();
+    expect(mockCreateCodeNode).toHaveBeenCalledTimes(1);
+  });
+
+  it("additive payloads never touch the removal machinery (regression)", () => {
+    render(<Host />);
+    act(() =>
+      notifyAgentCanvasMutation({
+        kind: "graph-created",
+        planId: "rev-3",
+        nodes: REVISION.nodes,
+        edges: [],
+      }),
+    );
+    expect(mockApplyRemoveChanges).not.toHaveBeenCalled();
   });
 });
