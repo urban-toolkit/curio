@@ -1,8 +1,8 @@
 # Implementation Memo: Plan Correction Rounds — the Primary Path Made Self-Correcting (dev/52 follow-up)
 
 Date: 2026-08-05
-Status: proposed (implementing in the same session — explicit fix request: "still not working.
-Do not create fallbacks!")
+Status: implemented 2026-08-05 — COMMIT-d1ecbb36. Verification: backend `pytest tests
+--ignore=tests/test_frontend` → 1008 passed; frontend `npx jest` → 655 passed (60 suites).
 
 ## 1. Problem Statement (root cause, reproduced)
 
@@ -58,7 +58,7 @@ loop already re-prompts on tool results; plan validation failures must use the s
   tail as before (regression).
 - stream: no raw-tail deltas during correction; `plan_revision` then `review_required` ordering;
   cap path releases the tail then the card.
-- [ ] A realistic imperfect first attempt ends in a minted, applyable plan proposal — or a loud,
+- [x] A realistic imperfect first attempt ends in a minted, applyable plan proposal — or a loud,
       explained failure. Nothing silent, no fallback paths.
 
 ## 4. Commits
