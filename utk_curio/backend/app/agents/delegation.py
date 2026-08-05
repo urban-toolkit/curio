@@ -90,6 +90,16 @@ def resolve(user_key: str, project_id: str, parent: AgentManifest, capability: s
         m = services._resolve_definition(user_key, coord)
         if m is not None and capability in m.capability_ids:
             return Resolution("ok", coord, m)
+    if missing is None:
+        # Nothing installed matches anywhere: the missing-specialist proposal
+        # targets a VISIBLE definition declaring the capability (dev/03:366 —
+        # "a definition already visible to that actor"), roster order.
+        from utk_curio.backend.app.agents import builtin
+
+        for m in builtin.list_builtin_manifests():
+            if capability in m.capability_ids:
+                missing = Resolution("not-installed", m.dir_name, m)
+                break
     return missing or Resolution("unresolvable")
 
 

@@ -115,14 +115,25 @@ class TestResolution:
         r = delegation.resolve(key, pid_a, self._manifest(key), "node.content.generate")
         assert r.outcome == "not-installed"  # never another project's template
 
-    def test_undeclared_capability_is_unresolvable(self, client, user_and_token, tmp_curio):
+    def test_capability_nobody_declares_is_unresolvable(self, client, user_and_token, tmp_curio):
         user, token = user_and_token
         key = _user_dir_key(user)
         pid = _project(client, token)
         client.post(f"/api/agents/projects/{pid}/install", json={"coord": NCB}, headers=_auth(token))
-        r = delegation.resolve(key, pid, self._manifest(key), "dataset.discover")
+        r = delegation.resolve(key, pid, self._manifest(key), "ghost.capability")
         assert r.outcome == "unresolvable"
         assert r.coord is None
+
+    def test_visible_roster_capability_beyond_delegates_to_is_missing_specialist(self, client, user_and_token, tmp_curio):
+        # dev/03:366 (widened in dev/52): capability discovery is not scoped
+        # by delegatesTo — a visible definition declaring the capability
+        # yields the reviewed install proposal, never an execution.
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        pid = _project(client, token)
+        r = delegation.resolve(key, pid, self._manifest(key), "dataset.discover")
+        assert r.outcome == "not-installed"
+        assert r.coord == "agent.dataset-finder@1.0.0"
 
     def test_delegates_to_order_is_preference_order(self, client, user_and_token, tmp_curio):
         user, token = user_and_token
@@ -311,7 +322,7 @@ class TestMissingSpecialist:
         pid = _project(client, token)
         att_id, calls = _setup(
             client, token, pid, monkeypatch,
-            replies=[_delegate_tail(capability="dataset.discover"), "ok"],
+            replies=[_delegate_tail(capability="ghost.capability"), "ok"],
         )
         r = _run(client, token, pid, att_id)
         assert r.status_code == 200
@@ -526,13 +537,17 @@ class TestCapabilityFirstResolution:
         assert r.coord == NB
 
     def test_capability_first_never_crosses_projects(self, client, user_and_token, tmp_curio):
+        # Installed in ANOTHER project only → never "ok" from here; the
+        # visible-roster fallback yields the reviewed install proposal for
+        # THIS project instead (execution never crosses projects).
         user, token = user_and_token
         key = _user_dir_key(user)
         pid_a = _project(client, token)
         pid_b = _project(client, token)
         client.post(f"/api/agents/projects/{pid_b}/install", json={"coord": "agent.chat-agent@1.0.0"}, headers=_auth(token))
         r = delegation.resolve(key, pid_a, self._manifest(), "conversation.respond")
-        assert r.outcome == "unresolvable"
+        assert r.outcome == "not-installed"
+        assert r.coord == "agent.chat-agent@1.0.0"
 
     def test_missing_delegates_to_entry_still_preferred_over_fallback_absence(self, client, user_and_token, tmp_curio):
         # Nothing installed declares dataset.discover, but dataset-finder (a

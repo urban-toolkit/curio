@@ -462,6 +462,41 @@ def dismiss_proposal(project_id: str, attachment_id: str, proposal_id: str):
     return jsonify(payload), 200
 
 
+@agents_bp.route(
+    "/projects/<project_id>/attachments/<attachment_id>/solve", methods=["POST"]
+)
+@require_auth
+def solve_attachment(project_id: str, attachment_id: str):
+    """The dev/52 Solve batch (DEC-048): one explicit, owner-authenticated
+    action fills the applied plan's pending nodes through bounded-concurrency
+    depth-1 children. The endpoint consumes no quota; each child reserves
+    under its own policy. Body: optional ``{"nodeIds": [...]}`` for Retry."""
+    from utk_curio.backend.app.agents.provider_config import (
+        ProviderConfigError,
+        resolve_provider_config,
+    )
+
+    body = request.get_json(silent=True) or {}
+    node_ids = body.get("nodeIds")
+    if node_ids is not None and not (
+        isinstance(node_ids, list) and all(isinstance(n, str) for n in node_ids)
+    ):
+        return _error("'nodeIds' must be a list of node id strings when present")
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        config = resolve_provider_config(g.user)
+        payload = agents_services.solve_attachment(
+            _user_dir_key(g.user), project_id, attachment_id, config, node_ids
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except ProviderConfigError as exc:
+        return _error(str(exc), 400)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify(payload), 200
+
+
 @agents_bp.route("/projects/<project_id>/attachments/<attachment_id>/run", methods=["POST"])
 @require_auth
 def run_attachment(project_id: str, attachment_id: str):

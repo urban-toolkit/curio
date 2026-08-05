@@ -1723,6 +1723,201 @@ def dismiss_proposal(
     return {"attachmentId": attachment_id, "proposalId": proposal_id, "status": "dismissed"}
 
 
+# Solve concurrency (dev/52, DEC-048): the dev/15 manifest's
+# maxParallelChildren — a runtime constant until policy demands tuning.
+_SOLVE_MAX_WORKERS = 3
+# A hard-crashed solve leaves the transient "solving" phase behind; a marker
+# older than this is treated as stale so the user is never wedged.
+_SOLVE_STALE_SECONDS = 15 * 60
+
+
+def solve_attachment(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    config: ProviderConfig,
+    node_ids: list[str] | None = None,
+) -> dict:
+    """The dev/52 Solve batch (DEC-048): ONE explicit, authenticated user
+    action authorizes filling the applied plan's pending nodes.
+
+    The endpoint is the review: it is scoped to plan-created placeholder
+    nodes (the builder session's ``nodeRuns``) and digest-guarded per node
+    (only still-empty content is written — user edits are ``skipped``,
+    never overwritten). Each node runs a depth-1 child under
+    ``delegation.run_delegate`` with every dev/48 guarantee (own ledger pair
+    under the child's policy, ``parentExecutionId``, failure isolation) —
+    coordinated by a bounded worker pool. The endpoint itself consumes no
+    quota; children reserve individually. Retry = the same endpoint with the
+    failed subset.
+    """
+    import time as _time
+    from concurrent.futures import ThreadPoolExecutor
+
+    spec = _read_spec_or_404(user_key, project_id)
+    record = _record_or_404(spec, attachment_id)
+    session = record.get("builderSession") or {}
+    if not session.get("appliedPlanId"):
+        raise AgentServiceError("nothing to solve — apply a plan first", 409)
+    now = _time.time()
+    if session.get("phase") == "solving" and now - float(session.get("solvingSince") or 0) < _SOLVE_STALE_SECONDS:
+        raise AgentServiceError("a solve is already running for this plan", 409)
+    node_runs: dict = session.get("nodeRuns") or {}
+    targets = [
+        node_id
+        for node_id, status in node_runs.items()
+        if status in ("pending", "failed") and (node_ids is None or node_id in node_ids)
+    ]
+    if not targets:
+        raise AgentServiceError("no pending or failed plan nodes to solve", 409)
+    nodes_by_id = {
+        n.get("id"): n
+        for n in (spec.get("dataflow") or {}).get("nodes") or []
+        if isinstance(n, dict)
+    }
+    # The in-flight guard persists before any provider work.
+    session["phase"] = "solving"
+    session["solvingSince"] = now
+    projects_storage.write_spec(user_key, project_id, spec)
+
+    solve_execution_id = uuid.uuid4().hex
+    manifest = _resolve_definition(user_key, record.get("coord", ""))
+    results: dict[str, dict] = {}
+    applied_contents: list[dict] = []
+    delegations: list = []
+    started = time.monotonic()
+    try:
+        resolution = delegation.resolve(
+            user_key, project_id, manifest, "node.content.generate"
+        ) if manifest is not None else delegation.Resolution("unresolvable")
+        if resolution.outcome != "ok":
+            # Missing specialist: ONE reviewed install proposal (not per node),
+            # every target failed — the panel explains and Retry works after
+            # the user applies the install (REQ-ORCH-001).
+            if resolution.outcome == "not-installed":
+                loop_ctx = {
+                    "attachment_id": attachment_id,
+                    "session_id": record.get("sessionId"),
+                }
+                status, text, part = _mint_project_install(
+                    user_key, project_id, loop_ctx,
+                    resolution.coord,
+                    resolution.manifest.name if resolution.manifest else resolution.coord,
+                    "node.content.generate",
+                )
+                reason = "specialist not installed — an install proposal awaits review"
+            else:
+                reason = "no installed agent declares node.content.generate"
+            for node_id in targets:
+                results[node_id] = {"status": "failed", "error": reason}
+        else:
+            goals = [
+                str(nodes_by_id[t].get("goal") or "") for t in targets if t in nodes_by_id
+            ]
+
+            def _solve_one(node_id: str):
+                node = nodes_by_id.get(node_id)
+                if node is None:
+                    return node_id, "skipped", None, None
+                if (node.get("content") or "").strip():
+                    return node_id, "skipped", None, None  # user content preserved
+                inputs = {
+                    "nodeType": node.get("type"),
+                    "intent": node.get("goal"),
+                    "planSiblings": goals[:20],
+                }
+                status, text, child = delegation.run_delegate(
+                    user_key, project_id, resolution.coord,
+                    "node.content.generate", inputs, config,
+                    parent_execution_id=solve_execution_id,
+                    parent_coord=record.get("coord", ""),
+                    attachment_id=attachment_id,
+                )
+                return node_id, ("solved" if status == "ok" else "failed"), text, child
+
+            with ThreadPoolExecutor(max_workers=_SOLVE_MAX_WORKERS) as pool:
+                for node_id, status, text, child in pool.map(_solve_one, targets):
+                    if child is not None:
+                        delegations.append(child)
+                    if status == "solved":
+                        results[node_id] = {"status": "solved"}
+                        applied_contents.append({"nodeId": node_id, "content": text})
+                    elif status == "failed":
+                        results[node_id] = {"status": "failed", "error": (text or "")[:300]}
+                    else:
+                        results[node_id] = {"status": "skipped"}
+    finally:
+        # One batched spec write: contents (re-guarded against the CURRENT
+        # spec under the read-modify-write), statuses, and the exit phase.
+        spec = _read_spec_or_404(user_key, project_id)
+        record = _record_or_404(spec, attachment_id)
+        session = record.get("builderSession") or {}
+        node_runs = session.get("nodeRuns") or {}
+        current_nodes = {
+            n.get("id"): n
+            for n in (spec.get("dataflow") or {}).get("nodes") or []
+            if isinstance(n, dict)
+        }
+        for item in applied_contents:
+            node = current_nodes.get(item["nodeId"])
+            if node is None:
+                results[item["nodeId"]] = {"status": "skipped"}  # deleted meanwhile
+                continue
+            if (node.get("content") or "").strip():
+                results[item["nodeId"]] = {"status": "skipped"}  # user edit wins
+                continue
+            node["content"] = item["content"]
+        applied_contents = [
+            i for i in applied_contents if results.get(i["nodeId"], {}).get("status") == "solved"
+        ]
+        for node_id, outcome in results.items():
+            if node_id in node_runs:
+                node_runs[node_id] = outcome["status"] if outcome["status"] != "skipped" else "skipped"
+        session["nodeRuns"] = node_runs
+        session.pop("solvingSince", None)
+        session["phase"] = (
+            "ready"
+            if all(s not in ("pending", "failed") for s in node_runs.values())
+            else "applied"
+        )
+        record["builderSession"] = session
+        projects_storage.write_spec(user_key, project_id, spec)
+    solved = sum(1 for r in results.values() if r["status"] == "solved")
+    session_id = record.get("sessionId")
+    if isinstance(session_id, str):
+        sessions.append_turns(
+            user_key, project_id, session_id, attachment_id,
+            [
+                sessions.make_turn(
+                    "agent",
+                    f"Solved {solved} of {len(targets)} plan nodes.",
+                    content=[{
+                        "type": "card",
+                        "kind": "result",
+                        "title": f"Solve: {solved} of {len(targets)} nodes",
+                        "lines": [
+                            f"{node_id[:8]} · {outcome['status']}"
+                            for node_id, outcome in list(results.items())[:10]
+                        ],
+                    }],
+                    execution=_execution_record(
+                        solve_execution_id,
+                        {"coord": record.get("coord", ""), "provider": config.api_type,
+                         "model": config.model, "tools": [], "intentEdited": False},
+                        {}, started, "ok", delegations=delegations,
+                    ),
+                )
+            ],
+        )
+    return {
+        "attachmentId": attachment_id,
+        "executionId": solve_execution_id,
+        "results": results,
+        "appliedContents": applied_contents,
+        "builderSession": session,
+    }
+
+
 def _resolve_prompt_text(user_key: str, coord: str, name: str) -> str | None:
     """A definition's prompt asset text (``"instruction"`` or ``"system"``).
 

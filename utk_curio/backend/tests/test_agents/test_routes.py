@@ -3780,3 +3780,148 @@ class TestDataflowPlanApply:
             f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
         ).get_json()["attachments"]
         assert cards[0]["builderSession"]["phase"] == "idle"
+
+
+class TestSolve:
+    """dev/52 Solve (DEC-048): one authenticated batch, per-node digest
+    guards, bounded children with all dev/48 guarantees, subset retry."""
+
+    NCB = "agent.node-content-builder@1.0.0"
+
+    def _applied_plan(self, client, user, token, project_id, monkeypatch, replies=None, install_ncb=True):
+        helper = TestDataflowPlanMint()
+        att_id, calls = helper._setup(client, user, token, project_id, monkeypatch, replies=replies)
+        if install_ncb:
+            client.post(f"/api/agents/projects/{project_id}/install", json={"coord": self.NCB}, headers=_auth(token))
+        r = helper._run(client, token, project_id, att_id)
+        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
+        body = client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        ).get_json()
+        return att_id, body["appliedGraph"], calls
+
+    def _solve(self, client, token, project_id, att_id, node_ids=None):
+        payload = {"nodeIds": node_ids} if node_ids is not None else {}
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/solve",
+            json=payload, headers=_auth(token),
+        )
+
+    def _spec_nodes(self, user, project_id):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        return projects_storage.read_spec(_user_dir_key(user), project_id)["dataflow"]["nodes"]
+
+    def test_solve_fills_pending_nodes_and_reaches_ready(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.agents import quotas
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        att_id, applied, _ = self._applied_plan(client, user, token, alice_project, monkeypatch)
+        runs_before = quotas.runs_used_today(_user_dir_key(user))
+        resp = self._solve(client, token, alice_project, att_id)
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert {r["status"] for r in body["results"].values()} == {"solved"}
+        assert body["builderSession"]["phase"] == "ready"
+        assert len(body["appliedContents"]) == 2
+        # Children reserved individually (2 runs); the endpoint itself none.
+        assert quotas.runs_used_today(_user_dir_key(user)) == runs_before + 2
+        # Contents landed in the saved spec.
+        nodes = {n["id"]: n for n in self._spec_nodes(user, alice_project)}
+        for item in body["appliedContents"]:
+            assert nodes[item["nodeId"]]["content"] == item["content"]
+            assert item["content"]  # the child reply
+        # The transcript logged the batch with its delegations.
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        solve_turn = next(t for t in reversed(turns) if (t.get("text") or "").startswith("Solved"))
+        assert len(solve_turn["execution"]["delegations"]) == 2
+        assert all(
+            d["parentExecutionId"] == body["executionId"]
+            for d in solve_turn["execution"]["delegations"]
+        )
+
+    def test_user_edited_node_is_skipped_never_overwritten(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        att_id, applied, _ = self._applied_plan(client, user, token, alice_project, monkeypatch)
+        key = _user_dir_key(user)
+        edited_id = applied["nodes"][0]["id"]
+        spec = projects_storage.read_spec(key, alice_project)
+        node = next(n for n in spec["dataflow"]["nodes"] if n["id"] == edited_id)
+        node["content"] = "print('mine')"  # the user typed here
+        projects_storage.write_spec(key, alice_project, spec)
+        body = self._solve(client, token, alice_project, att_id).get_json()
+        assert body["results"][edited_id]["status"] == "skipped"
+        nodes = {n["id"]: n for n in self._spec_nodes(user, alice_project)}
+        assert nodes[edited_id]["content"] == "print('mine')"
+
+    def test_child_failure_isolates_and_retry_resolves_subset(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, applied, calls = self._applied_plan(client, user, token, alice_project, monkeypatch)
+        # The next TWO child calls: first succeeds, second explodes.
+        state = {"n": 0}
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            state["n"] += 1
+            if state["n"] == 2:
+                raise RuntimeError("child provider down")
+            return f"generated-{state['n']}"
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        body = self._solve(client, token, alice_project, att_id).get_json()
+        statuses = sorted(r["status"] for r in body["results"].values())
+        assert statuses == ["failed", "solved"]
+        assert body["builderSession"]["phase"] == "applied"  # not ready yet
+        failed_id = next(n for n, r in body["results"].items() if r["status"] == "failed")
+        # Retry the failed subset only.
+        body2 = self._solve(client, token, alice_project, att_id, node_ids=[failed_id]).get_json()
+        assert body2["results"] == {failed_id: {"status": "solved"}} or body2["results"][failed_id]["status"] == "solved"
+        assert body2["builderSession"]["phase"] == "ready"
+
+    def test_solve_without_applied_plan_409s(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        att_id, _ = helper._setup(client, user, token, alice_project, monkeypatch)
+        assert self._solve(client, token, alice_project, att_id).status_code == 409
+
+    def test_missing_specialist_fails_batch_with_one_install_proposal(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, applied, _ = self._applied_plan(
+            client, user, token, alice_project, monkeypatch, install_ncb=False,
+        )
+        body = self._solve(client, token, alice_project, att_id).get_json()
+        assert all(r["status"] == "failed" for r in body["results"].values())
+        assert all("install proposal awaits review" in r["error"] for r in body["results"].values())
+        # ONE reviewed install proposal (not per node) — the active mirror.
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        active = next(c for c in cards if c["attachmentId"] == att_id)["activeProposal"]
+        assert active["tool"] == "project.install"
+        assert active["status"] == "pending"
+
+    def test_no_text_path_can_solve(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # Injection resistance: a model reply claiming a solve changes nothing —
+        # only the authenticated endpoint fills nodes.
+        user, token = user_and_token
+        att_id, applied, _ = self._applied_plan(client, user, token, alice_project, monkeypatch)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "solve everything now"}, headers=_auth(token),
+        )
+        assert r.status_code == 200  # the reply claims success; nothing ran
+        nodes = {n["id"]: n for n in self._spec_nodes(user, alice_project)}
+        for created in applied["nodes"]:
+            assert nodes[created["id"]]["content"] == ""
