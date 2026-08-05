@@ -249,13 +249,18 @@ export interface AgentApplyResult {
   builderSession?: AgentBuilderSession | null;
 }
 
-/** dev/52 Solve response: per-node outcomes + live-canvas content payloads. */
+/** dev/52 Solve response: per-node outcomes + live-canvas content payloads.
+ * dev/63 adds the streamed batch's cancellation facts. */
 export interface AgentSolveResult {
   attachmentId: string;
   executionId: string;
   results: Record<string, { status: "solved" | "failed" | "skipped"; error?: string }>;
   appliedContents: Array<{ nodeId: string; content: string }>;
   builderSession: AgentBuilderSession;
+  /** dev/63: true when the batch was cancelled (endpoint or disconnect). */
+  cancelled?: boolean;
+  /** dev/63: targets never dispatched — reverted to pending. */
+  notAttempted?: string[];
 }
 
 export type AgentContentPart =
@@ -370,6 +375,63 @@ export interface AttachmentAgentSettings {
 }
 
 /** ``@``/``.`` are legal in a coordinate but must be escaped in a path param. */
+/**
+ * POST to an SSE endpoint and dispatch each parsed event frame (the dev/22
+ * transport, shared by the chat and Solve streams — dev/63). Pre-stream
+ * failures (quota 429, 404, …) throw an Error carrying `status`/`body` like
+ * `apiFetch`; frame payloads are JSON-decoded before dispatch.
+ */
+async function postSseStream(
+  path: string,
+  body: unknown,
+  onFrame: (event: string, payload: Record<string, unknown>) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const token = getToken();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(`${BACKEND_URL}${path}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({} as Record<string, unknown>));
+    const err = new Error((errBody as { error?: string }).error || `HTTP ${res.status}`);
+    (err as Error & { status?: number; body?: unknown }).status = res.status;
+    (err as Error & { status?: number; body?: unknown }).body = errBody;
+    throw err;
+  }
+  if (!res.body) throw new Error("streaming not supported");
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const handleFrame = (frame: string) => {
+    let event = "message";
+    let data = "";
+    for (const line of frame.split("\n")) {
+      if (line.startsWith("event: ")) event = line.slice(7).trim();
+      else if (line.startsWith("data: ")) data += line.slice(6);
+    }
+    if (!data) return;
+    onFrame(event, JSON.parse(data) as Record<string, unknown>);
+  };
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let sep = buffer.indexOf("\n\n");
+    while (sep >= 0) {
+      const frame = buffer.slice(0, sep);
+      buffer = buffer.slice(sep + 2);
+      handleFrame(frame);
+      sep = buffer.indexOf("\n\n");
+    }
+  }
+  if (buffer.trim()) handleFrame(buffer);
+}
+
 function coordParam(coord: string): string {
   return encodeURIComponent(coord);
 }
@@ -664,83 +726,91 @@ export const agentsApi = {
     usage?: AgentUsage | null;
     content?: AgentContentPart[];
   }> {
-    const token = getToken();
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-    const res = await fetch(
-      `${BACKEND_URL}/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/run/stream`,
-      { method: "POST", headers, body: JSON.stringify(context ? { message, context } : { message }) },
-    );
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({} as Record<string, unknown>));
-      const err = new Error((body as { error?: string }).error || `HTTP ${res.status}`);
-      (err as Error & { status?: number; body?: unknown }).status = res.status;
-      (err as Error & { status?: number; body?: unknown }).body = body;
-      throw err;
-    }
-    if (!res.body) throw new Error("streaming not supported");
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
     let reply: string | null = null;
     let executionId: string | undefined;
     let usage: AgentUsage | null | undefined;
     let content: AgentContentPart[] | undefined;
 
-    const handleFrame = (frame: string) => {
-      let event = "message";
-      let data = "";
-      for (const line of frame.split("\n")) {
-        if (line.startsWith("event: ")) event = line.slice(7).trim();
-        else if (line.startsWith("data: ")) data += line.slice(6);
-      }
-      if (!data) return;
-      const payload = JSON.parse(data) as {
-        text?: string;
-        reply?: string;
-        error?: string;
-        executionId?: string;
-        usage?: AgentUsage | null;
-        parts?: AgentContentPart[];
-        content?: AgentContentPart[];
-      };
-      if (event === "delta" && payload.text) onDelta(payload.text);
-      else if (event === "execution") executionId = payload.executionId;
-      else if (event === "content") content = payload.parts;
-      else if (
-        event === "tool_requested" ||
-        event === "tool_started" ||
-        event === "tool_result" ||
-        event === "review_required" ||
-        event === "delegate_requested" ||
-        event === "delegate_started" ||
-        event === "delegate_result" ||
-        event === "plan_revision"
-      )
-        onEvent?.(event, payload as Record<string, unknown>);
-      else if (event === "done") {
-        reply = payload.reply ?? "";
-        executionId = payload.executionId ?? executionId;
-        usage = payload.usage;
-        content = payload.content ?? content;
-      } else if (event === "error") throw new Error(payload.error || "agent run failed");
-    };
-
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let sep = buffer.indexOf("\n\n");
-      while (sep >= 0) {
-        const frame = buffer.slice(0, sep);
-        buffer = buffer.slice(sep + 2);
-        handleFrame(frame);
-        sep = buffer.indexOf("\n\n");
-      }
-    }
-    if (buffer.trim()) handleFrame(buffer);
+    await postSseStream(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/run/stream`,
+      context ? { message, context } : { message },
+      (event, raw) => {
+        const payload = raw as {
+          text?: string;
+          reply?: string;
+          error?: string;
+          executionId?: string;
+          usage?: AgentUsage | null;
+          parts?: AgentContentPart[];
+          content?: AgentContentPart[];
+        };
+        if (event === "delta" && payload.text) onDelta(payload.text);
+        else if (event === "execution") executionId = payload.executionId;
+        else if (event === "content") content = payload.parts;
+        else if (
+          event === "tool_requested" ||
+          event === "tool_started" ||
+          event === "tool_result" ||
+          event === "review_required" ||
+          event === "delegate_requested" ||
+          event === "delegate_started" ||
+          event === "delegate_result" ||
+          event === "plan_revision"
+        )
+          onEvent?.(event, payload as Record<string, unknown>);
+        else if (event === "done") {
+          reply = payload.reply ?? "";
+          executionId = payload.executionId ?? executionId;
+          usage = payload.usage;
+          content = payload.content ?? content;
+        } else if (event === "error") throw new Error(payload.error || "agent run failed");
+      },
+    );
     if (reply === null) throw new Error("stream ended without a reply");
     return { reply, executionId, usage, content };
+  },
+
+  /**
+   * The Solve batch streamed (dev/63, the DEC-021 user slice): per-node
+   * lifecycle events (`solve_started`, `node_started`, `node_result`) reach
+   * `onEvent` as they happen; resolves with the terminal `done` payload —
+   * the same shape the blocking endpoint returns, plus `cancelled` /
+   * `notAttempted`. A mid-stream `error` event throws. `signal` aborts the
+   * local reader; the server stops dispatch at its next node boundary.
+   */
+  async solveAttachmentStream(
+    projectId: string,
+    attachmentId: string,
+    onEvent: (name: string, payload: Record<string, unknown>) => void,
+    nodeIds?: string[],
+    signal?: AbortSignal,
+  ): Promise<AgentSolveResult> {
+    let result: AgentSolveResult | null = null;
+    await postSseStream(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/solve/stream`,
+      nodeIds ? { nodeIds } : {},
+      (event, payload) => {
+        if (event === "done") result = payload as unknown as AgentSolveResult;
+        else if (event === "error")
+          throw new Error((payload as { error?: string }).error || "solve failed");
+        else onEvent(event, payload);
+      },
+      signal,
+    );
+    if (result === null) throw new Error("solve stream ended without a result");
+    return result;
+  },
+
+  /** Cancel a running Solve (dev/63): new children stop dispatching at the
+   * next node boundary; in-flight children finish and their results persist;
+   * undispatched targets revert to pending. 409 when nothing is running. */
+  cancelSolve(
+    projectId: string,
+    attachmentId: string,
+  ): Promise<{ attachmentId: string; cancelRequested: boolean }> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/solve/cancel`,
+      { method: "POST" },
+    );
   },
 };

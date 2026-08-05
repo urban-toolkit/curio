@@ -30,6 +30,12 @@ const PHASE_RANK: Record<string, number> = {
 export const AgentBuilderStrip: React.FC<{
   attachment: AgentAttachment;
   onSolve: (nodeIds?: string[]) => Promise<unknown>;
+  /** dev/63: the live batch's transient per-node statuses (nodeId → status,
+   * including "solving") — overlays the persisted nodeRuns for display. */
+  solveProgress?: Record<string, string>;
+  /** dev/63: cancel the running solve — in-flight children finish; the rest
+   * revert to pending. Omitted → no Cancel control. */
+  onCancelSolve?: () => Promise<void>;
   onComposePrompt: (prompt: string) => void;
   /** The dev/41 system review actions — surfaced here during plan_review
    * (dev/53) so the Apply control lives where the phase indicator points,
@@ -37,16 +43,28 @@ export const AgentBuilderStrip: React.FC<{
    * is missing). Omitted → the transcript card is the only review surface. */
   onApplyProposal?: (proposalId: string) => Promise<void>;
   onDismissProposal?: (proposalId: string) => Promise<void>;
-}> = ({ attachment, onSolve, onComposePrompt, onApplyProposal, onDismissProposal }) => {
+}> = ({
+  attachment,
+  onSolve,
+  solveProgress,
+  onCancelSolve,
+  onComposePrompt,
+  onApplyProposal,
+  onDismissProposal,
+}) => {
   const { playAllNodes } = useFlowContext();
   const [solving, setSolving] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const session = attachment.builderSession ?? { phase: "idle" as const };
   const phase = session.phase ?? "idle";
   const nodeRuns = session.nodeRuns ?? {};
-  const entries = Object.entries(nodeRuns);
+  // The live overlay wins per node while the batch streams (dev/63); the
+  // persisted session takes back over on the terminal refetch.
+  const entries = Object.entries({ ...nodeRuns, ...(solveProgress ?? {}) });
   const pending = entries.filter(([, s]) => s === "pending").map(([id]) => id);
   const failed = entries.filter(([, s]) => s === "failed").map(([id]) => id);
   const unresolved = pending.length + failed.length;
@@ -54,12 +72,34 @@ export const AgentBuilderStrip: React.FC<{
   const solve = async (nodeIds?: string[]) => {
     setSolving(true);
     setError(null);
+    setNotice(null);
     try {
-      await onSolve(nodeIds);
+      const result = (await onSolve(nodeIds)) as
+        | { cancelled?: boolean; notAttempted?: string[] }
+        | undefined;
+      if (result?.cancelled) {
+        const skipped = result.notAttempted?.length ?? 0;
+        setNotice(
+          skipped
+            ? `Cancelled — ${skipped} node${skipped === 1 ? "" : "s"} not attempted`
+            : "Cancelled — all dispatched nodes finished",
+        );
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Solve failed");
     } finally {
       setSolving(false);
+      setCancelling(false);
+    }
+  };
+
+  const cancel = async () => {
+    if (!onCancelSolve || cancelling) return;
+    setCancelling(true);
+    try {
+      await onCancelSolve();
+    } catch {
+      setCancelling(false);
     }
   };
 
@@ -179,6 +219,16 @@ export const AgentBuilderStrip: React.FC<{
               ? `Retry ${failed.length} failed`
               : "Solve"}
         </button>
+        {onCancelSolve && (solving || phase === "solving") ? (
+          <button
+            type="button"
+            className={styles.run}
+            disabled={cancelling}
+            onClick={() => void cancel()}
+          >
+            {cancelling ? "Cancelling…" : "Cancel"}
+          </button>
+        ) : null}
         <button
           type="button"
           className={styles.run}
@@ -192,6 +242,7 @@ export const AgentBuilderStrip: React.FC<{
       {solveDisabledReason && phase !== "ready" ? (
         <div className={styles.hint}>{solveDisabledReason}</div>
       ) : null}
+      {notice ? <div className={styles.hint}>{notice}</div> : null}
       {error ? <div className={styles.error}>{error}</div> : null}
     </div>
   );

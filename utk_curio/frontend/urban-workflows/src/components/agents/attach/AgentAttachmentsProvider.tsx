@@ -49,11 +49,20 @@ export interface AgentAttachmentsContextValue extends AgentAttachmentsState {
   /** Apply a pending review proposal (the only mutation path); refreshes the
    * transcript + listing so the outcome and result turn arrive together. */
   applyProposal: (attachmentId: string, proposalId: string) => Promise<void>;
-  /** dev/52 Solve: one authenticated batch; optional nodeIds = the Retry subset. */
+  /** dev/52 Solve: one authenticated batch; optional nodeIds = the Retry
+   * subset. Streams per-node progress (dev/63) — see `solveProgress`. */
   solveAttachment: (
     attachmentId: string,
     nodeIds?: string[],
   ) => Promise<import("../../../api/agentsApi").AgentSolveResult>;
+  /** Transient per-node solve statuses for the LIVE batch (dev/63):
+   * attachmentId → nodeId → solving|solved|failed|skipped. Display overlay
+   * only — cleared on the terminal event; the persisted builderSession stays
+   * the truth. */
+  solveProgress: Record<string, Record<string, string>>;
+  /** Cancel the running solve (dev/63): in-flight children finish and
+   * persist; undispatched targets revert to pending. */
+  cancelSolve: (attachmentId: string) => Promise<void>;
   /** Dismiss a pending review proposal without applying it. */
   dismissProposal: (attachmentId: string, proposalId: string) => Promise<void>;
 }
@@ -74,6 +83,9 @@ export const AgentAttachmentsProvider: React.FC<{
   const [hydratingId, setHydratingId] = useState<string | null>(null);
   const [hydrateErrors, setHydrateErrors] = useState<Record<string, string>>({});
   const [toolActivity, setToolActivity] = useState<Record<string, string[]>>({});
+  // dev/63: the live solve's per-node overlay + its abort handle.
+  const [solveProgress, setSolveProgress] = useState<Record<string, Record<string, string>>>({});
+  const solveAbortRef = useRef<Map<string, AbortController>>(new Map());
   const hydratedRef = useRef<Set<string>>(new Set());
   const projectRef = useRef<string | null>(effectiveProjectId);
 
@@ -332,19 +344,46 @@ export const AgentAttachmentsProvider: React.FC<{
     async (attachmentId: string, nodeIds?: string[]) => {
       const pid = projectRef.current;
       if (!pid) throw new Error("no project");
+      // Streaming is THE solve path (dev/63): per-node progress overlays the
+      // pills, and each solved node's content reaches the LIVE canvas the
+      // moment its child finishes — the same bridge path as node.content.write
+      // applies (dev/51 semantics). The persisted session is refetched at the
+      // end either way; the overlay is display-only.
+      const controller = new AbortController();
+      solveAbortRef.current.set(attachmentId, controller);
+      const mark = (nodeId: string, status: string) =>
+        setSolveProgress((prev) => ({
+          ...prev,
+          [attachmentId]: { ...(prev[attachmentId] ?? {}), [nodeId]: status },
+        }));
       try {
-        const result = await agentsApi.solveAttachment(pid, attachmentId, nodeIds);
-        // Solved contents reach the LIVE canvas through the same bridge
-        // path as node.content.write applies (dev/51 semantics).
-        for (const item of result.appliedContents) {
-          notifyAgentCanvasMutation({
-            kind: "node-content-applied",
-            nodeId: item.nodeId,
-            content: item.content,
-          });
-        }
+        const result = await agentsApi.solveAttachmentStream(
+          pid,
+          attachmentId,
+          (name, payload) => {
+            const nodeId = typeof payload.nodeId === "string" ? payload.nodeId : null;
+            if (name === "node_started" && nodeId) mark(nodeId, "solving");
+            else if (name === "node_result" && nodeId) {
+              mark(nodeId, typeof payload.status === "string" ? payload.status : "failed");
+              if (payload.status === "solved" && typeof payload.content === "string") {
+                notifyAgentCanvasMutation({
+                  kind: "node-content-applied",
+                  nodeId,
+                  content: payload.content,
+                });
+              }
+            }
+          },
+          nodeIds,
+          controller.signal,
+        );
         return result;
       } finally {
+        solveAbortRef.current.delete(attachmentId);
+        setSolveProgress((prev) => {
+          const { [attachmentId]: _gone, ...rest } = prev;
+          return rest;
+        });
         // The solve result turn + the builder session both refresh.
         hydratedRef.current.delete(attachmentId);
         await hydrateSession(attachmentId);
@@ -353,6 +392,22 @@ export const AgentAttachmentsProvider: React.FC<{
     },
     [hydrateSession, state.reload],
   );
+
+  const cancelSolve = useCallback(async (attachmentId: string) => {
+    const pid = projectRef.current;
+    if (!pid) return;
+    try {
+      // The durable signal: the server stops dispatching at the next node
+      // boundary; the stream then ends normally with `done.cancelled` — no
+      // abort needed, so in-flight pills still resolve.
+      await agentsApi.cancelSolve(pid, attachmentId);
+    } catch {
+      // No solve running (finished meanwhile) — fine. If the endpoint is
+      // unreachable, at least stop listening: the server halts dispatch at
+      // its next yield to the gone client.
+      solveAbortRef.current.get(attachmentId)?.abort();
+    }
+  }, []);
 
   const dismissProposal = useCallback(
     async (attachmentId: string, proposalId: string) => {
@@ -431,6 +486,8 @@ export const AgentAttachmentsProvider: React.FC<{
       toolActivity,
       applyProposal,
       solveAttachment,
+      solveProgress,
+      cancelSolve,
       dismissProposal,
     }),
     [
@@ -449,6 +506,8 @@ export const AgentAttachmentsProvider: React.FC<{
       toolActivity,
       applyProposal,
       solveAttachment,
+      solveProgress,
+      cancelSolve,
       dismissProposal,
     ],
   );

@@ -73,6 +73,10 @@ export const AgentChatPanel: React.FC<{
   onDismissProposal?: (proposalId: string) => Promise<void>;
   /** dev/52 Solve (Dataflow Builder attachments only); omitted → no strip. */
   onSolve?: (nodeIds?: string[]) => Promise<unknown>;
+  /** dev/63: the live batch's per-node status overlay (nodeId → status). */
+  solveProgress?: Record<string, string>;
+  /** dev/63: cancel the running solve. */
+  onCancelSolve?: () => Promise<void>;
   onSaveIntent?: (intent: string | null) => Promise<void>;
   /** Persist a manual conversation title (memo dev/25). Omitted → the header
    * title is a plain, non-editable label. */
@@ -95,6 +99,8 @@ export const AgentChatPanel: React.FC<{
   onApplyProposal,
   onDismissProposal,
   onSolve,
+  solveProgress,
+  onCancelSolve,
   onSaveIntent,
   onSaveTitle,
   onClearConversation,
@@ -378,6 +384,8 @@ export const AgentChatPanel: React.FC<{
         <AgentBuilderStrip
           attachment={attachment}
           onSolve={onSolve}
+          solveProgress={solveProgress}
+          onCancelSolve={onCancelSolve}
           onComposePrompt={composePrompt}
           onApplyProposal={onApplyProposal}
           onDismissProposal={onDismissProposal}

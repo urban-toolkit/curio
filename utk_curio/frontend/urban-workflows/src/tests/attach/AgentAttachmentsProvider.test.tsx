@@ -18,6 +18,8 @@ jest.mock("../../api/agentsApi", () => ({
     clearSession: jest.fn(),
     applyProposal: jest.fn(),
     dismissProposal: jest.fn(),
+    solveAttachmentStream: jest.fn(),
+    cancelSolve: jest.fn(),
   },
 }));
 
@@ -61,6 +63,13 @@ const Harness: React.FC = () => {
       <button onClick={() => void ctx.applyProposal("a1", "p1").catch(() => undefined)}>
         apply
       </button>
+      <button onClick={() => void ctx.solveAttachment("a1").catch(() => undefined)}>solve</button>
+      <button onClick={() => void ctx.cancelSolve("a1")}>cancel-solve</button>
+      <div data-testid="solve-progress">
+        {Object.entries(ctx.solveProgress["a1"] ?? {})
+          .map(([n, st]) => `${n}:${st}`)
+          .join("|") || "∅"}
+      </div>
       <div data-testid="selected">{ctx.selectedId ?? "none"}</div>
       <div data-testid="hydrating">{ctx.hydratingId ?? "none"}</div>
       <div data-testid="turns">{turns.map((t) => `${t.role}:${t.text}`).join("|")}</div>
@@ -550,5 +559,68 @@ describe("AgentAttachmentsProvider stream fallback payload parity (dev/53)", () 
     expect(screen.getByTestId("executions")).toHaveTextContent("e7:5/6");
     // A minted proposal still triggers the listing reload (activeProposal).
     expect(api.listAttachments.mock.calls.length).toBeGreaterThan(1);
+  });
+});
+
+describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
+  const events: unknown[] = [];
+  let unsubscribe: () => void = () => undefined;
+
+  beforeEach(() => {
+    events.length = 0;
+    const { subscribeAgentCanvasMutations } = jest.requireActual(
+      "../../utils/agentCanvasEvents",
+    );
+    unsubscribe = subscribeAgentCanvasMutations((m: unknown) => events.push(m));
+  });
+
+  afterEach(() => unsubscribe());
+
+  it("overlays per-node progress, applies solved content live, and clears on done", async () => {
+    let emit: (name: string, payload: Record<string, unknown>) => void = () => undefined;
+    let finish: (r: unknown) => void = () => undefined;
+    api.solveAttachmentStream.mockImplementation(
+      (_p: string, _a: string, onEvent: (n: string, pl: Record<string, unknown>) => void) => {
+        emit = onEvent;
+        return new Promise((res) => {
+          finish = res;
+        }) as ReturnType<typeof api.solveAttachmentStream>;
+      },
+    );
+    renderProvider();
+    fireEvent.click(screen.getByText("solve"));
+    await waitFor(() => expect(api.solveAttachmentStream).toHaveBeenCalled());
+    act(() => {
+      emit("node_started", { nodeId: "n1" });
+      emit("node_result", { nodeId: "n1", status: "solved", content: "print(9)" });
+      emit("node_started", { nodeId: "n2" });
+    });
+    // The live overlay: n1 terminal, n2 in flight.
+    expect(screen.getByTestId("solve-progress")).toHaveTextContent("n1:solved|n2:solving");
+    // Solved content reached the canvas bridge AS the node finished.
+    expect(events).toEqual([
+      { kind: "node-content-applied", nodeId: "n1", content: "print(9)" },
+    ]);
+    await act(async () => {
+      finish({
+        attachmentId: "a1",
+        executionId: "e1",
+        results: { n1: { status: "solved" } },
+        appliedContents: [{ nodeId: "n1", content: "print(9)" }],
+        builderSession: { phase: "ready" },
+      });
+    });
+    // Terminal: the overlay clears — the refetched session is the truth.
+    expect(screen.getByTestId("solve-progress")).toHaveTextContent("∅");
+    expect(events).toHaveLength(1); // no double-apply from the done payload
+  });
+
+  it("cancelSolve posts the cancel endpoint for the attachment", async () => {
+    api.cancelSolve.mockResolvedValue({ attachmentId: "a1", cancelRequested: true });
+    renderProvider();
+    await act(async () => {
+      fireEvent.click(screen.getByText("cancel-solve"));
+    });
+    expect(api.cancelSolve).toHaveBeenCalledWith("p1", "a1");
   });
 });

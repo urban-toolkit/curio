@@ -295,6 +295,77 @@ describe("agentsApi", () => {
     });
   });
 
+  describe("solveAttachmentStream() (dev/63)", () => {
+    const realFetch = global.fetch;
+    afterEach(() => {
+      global.fetch = realFetch;
+    });
+
+    function streamResponse(frames: string[]) {
+      const encoder = new TextEncoder();
+      const chunks = frames.map((f) => encoder.encode(f));
+      let i = 0;
+      return {
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({}),
+        body: {
+          getReader: () => ({
+            read: () =>
+              Promise.resolve(
+                i < chunks.length ? { done: false, value: chunks[i++] } : { done: true, value: undefined },
+              ),
+          }),
+        },
+      } as unknown as Response;
+    }
+
+    it("dispatches per-node lifecycle events and resolves with the done payload", async () => {
+      global.fetch = jest.fn().mockResolvedValue(
+        streamResponse([
+          'event: solve_started\ndata: {"executionId": "e1", "targets": ["n1"]}\n\n',
+          'event: node_started\ndata: {"nodeId": "n1"}\n\n',
+          'event: node_result\ndata: {"nodeId": "n1", "status": "solved", "content": "code"}\n\n',
+          'event: done\ndata: {"attachmentId": "a1", "executionId": "e1", "results": {"n1": {"status": "solved"}}, "appliedContents": [], "builderSession": {"phase": "ready"}, "cancelled": false, "notAttempted": []}\n\n',
+        ]),
+      );
+      const seen: Array<[string, unknown]> = [];
+      const result = await agentsApi.solveAttachmentStream("p1", "att-1", (n, p) => seen.push([n, p]));
+      expect(seen.map(([n]) => n)).toEqual(["solve_started", "node_started", "node_result"]);
+      expect(seen[2][1]).toEqual({ nodeId: "n1", status: "solved", content: "code" });
+      expect(result.cancelled).toBe(false);
+      expect(result.builderSession.phase).toBe("ready");
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/agents/projects/p1/attachments/att-1/solve/stream"),
+        expect.objectContaining({ method: "POST", body: JSON.stringify({}) }),
+      );
+    });
+
+    it("posts the retry subset and throws on a mid-stream error event", async () => {
+      global.fetch = jest.fn().mockResolvedValue(
+        streamResponse([
+          'event: solve_started\ndata: {"executionId": "e1", "targets": ["n1"]}\n\n',
+          'event: error\ndata: {"error": "boom"}\n\n',
+        ]),
+      );
+      await expect(
+        agentsApi.solveAttachmentStream("p1", "att-1", () => undefined, ["n1"]),
+      ).rejects.toThrow("boom");
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ body: JSON.stringify({ nodeIds: ["n1"] }) }),
+      );
+    });
+  });
+
+  it("cancelSolve() posts the cancel endpoint (dev/63)", () => {
+    agentsApi.cancelSolve("p1", "att-1");
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/agents/projects/p1/attachments/att-1/solve/cancel",
+      { method: "POST" },
+    );
+  });
+
   it("getProjectAgentDefaults() GETs the escaped defaults path", () => {
     agentsApi.getProjectAgentDefaults("p1", "agent.chat-agent@1.0.0");
     expect(mockFetch).toHaveBeenCalledWith(

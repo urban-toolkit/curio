@@ -134,6 +134,68 @@ describe("AgentBuilderStrip (dev/52 DR-5)", () => {
   });
 });
 
+describe("AgentBuilderStrip streamed solve (dev/63)", () => {
+  it("the live overlay wins per node while the batch streams", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={attachment({
+          phase: "applied",
+          appliedPlanId: "p1",
+          nodeRuns: { "node-aaaa-1": "pending", "node-bbbb-2": "pending" },
+        })}
+        onSolve={jest.fn()}
+        solveProgress={{ "node-aaaa-1": "solving", "node-bbbb-2": "solved" }}
+        onCancelSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+      />,
+    );
+    expect(screen.getByText("solving")).toBeInTheDocument();
+    expect(screen.getByText("solved")).toBeInTheDocument();
+    expect(screen.queryByText("pending")).toBeNull();
+    // No live solve → no Cancel control.
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+  });
+
+  it("Cancel appears during a solve and disables after the click", async () => {
+    const onCancelSolve = jest.fn().mockResolvedValue(undefined);
+    render(
+      <AgentBuilderStrip
+        attachment={attachment({
+          phase: "solving",
+          appliedPlanId: "p1",
+          nodeRuns: { "node-aaaa-1": "pending" },
+        })}
+        onSolve={jest.fn()}
+        onCancelSolve={onCancelSolve}
+        onComposePrompt={jest.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(onCancelSolve).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: "Cancelling…" })).toBeDisabled();
+  });
+
+  it("a cancelled result surfaces the not-attempted notice", async () => {
+    const onSolve = jest.fn().mockResolvedValue({ cancelled: true, notAttempted: ["a", "b"] });
+    render(
+      <AgentBuilderStrip
+        attachment={attachment({
+          phase: "applied",
+          appliedPlanId: "p1",
+          nodeRuns: { "node-aaaa-1": "pending" },
+        })}
+        onSolve={onSolve}
+        onCancelSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Solve" }));
+    await waitFor(() =>
+      expect(screen.getByText("Cancelled — 2 nodes not attempted")).toBeInTheDocument(),
+    );
+  });
+});
+
 describe("AgentBuilderStrip plan-review controls (dev/53)", () => {
   const withReview = (): AgentAttachment => ({
     ...attachment({ phase: "plan_review", planProposalId: "pp1" }),
