@@ -619,6 +619,9 @@ def _attachment_card(spec: dict, record: dict, user_key: str) -> dict:
         # Review proposal mirror (memo dev/41) — status card wiring only; the
         # transcript's proposal part remains the display record.
         "activeProposal": _proposal_summary(record.get("activeProposal")),
+        # The Dataflow Builder orchestration session (dev/52 DR-2) — drives
+        # the phase-aware builder panel; absent for every other agent.
+        "builderSession": record.get("builderSession"),
     }
 
 
@@ -902,6 +905,10 @@ def apply_proposal(
         )
     if tool == "dataset.install":
         return _apply_dataset_install(
+            user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
+        )
+    if tool == "dataflow.plan.write":
+        return _apply_dataflow_plan(
             user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
         )
     raise AgentServiceError(f"no apply flow exists for tool {tool!r}", 409)
@@ -1373,6 +1380,144 @@ def _mint_dataset_install(
     )
 
 
+# Plan layout (dev/52): topological columns right of the existing extent.
+_PLAN_COLUMN_OFFSET = 420
+_PLAN_ROW_OFFSET = 240
+
+
+def _plan_depths(nodes: list[dict], edges: list[dict]) -> dict[str, int]:
+    """Longest-path depth per plan ref (plans are small DAGs; a cycle — which
+    the grammar allows structurally — degrades to BFS-capped depths, never an
+    infinite loop)."""
+    refs = [n["ref"] for n in nodes]
+    incoming: dict[str, list[str]] = {r: [] for r in refs}
+    for e in edges:
+        incoming[e["to"]].append(e["from"])
+    depths: dict[str, int] = {}
+
+    def depth_of(ref: str, seen: frozenset) -> int:
+        if ref in depths:
+            return depths[ref]
+        if ref in seen:
+            return 0  # cycle guard
+        parents = incoming.get(ref, [])
+        d = 0 if not parents else 1 + max(depth_of(p, seen | {ref}) for p in parents)
+        depths[ref] = d
+        return d
+
+    for r in refs:
+        depth_of(r, frozenset())
+    return depths
+
+
+def _apply_dataflow_plan(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    proposal_id: str,
+    spec: dict,
+    proposal: dict,
+    session_id: object,
+) -> dict:
+    """The dev/52 apply: insert the whole ADDITIVE plan graph atomically.
+
+    Whole-graph revision safety: the pinned shape digest (node-id + edge-id
+    sets) is re-computed — any node/edge added or removed since the mint →
+    409 + ``stale``. Templates re-validated (a package uninstalled between
+    mint and apply is the same drift). Server-minted ids for every node; no
+    code path here touches an existing node or edge."""
+    from utk_curio.backend.app.packages import services as packages_services
+
+    plan = proposal.get("plan") or {}
+    if _graph_shape_digest(spec) != proposal.get("baseGraphDigest"):
+        raise _mark_stale(
+            user_key, project_id, proposal_id, spec, proposal, session_id,
+            "the canvas changed since this plan was proposed — ask the agent to replan",
+        )
+    try:
+        available = {t["id"] for t in packages_services.available_templates(user_key, project_id)}
+    except Exception as exc:
+        raise _mark_stale(
+            user_key, project_id, proposal_id, spec, proposal, session_id,
+            f"the node template registry is unavailable: {exc}",
+        ) from exc
+    missing = [n["nodeType"] for n in plan.get("nodes", []) if n["nodeType"] not in available]
+    if missing:
+        raise _mark_stale(
+            user_key, project_id, proposal_id, spec, proposal, session_id,
+            f"plan node type(s) no longer available: {', '.join(sorted(set(missing)))} — "
+            "ask the agent to replan",
+        )
+    dataflow = spec.setdefault("dataflow", {})
+    nodes = dataflow.setdefault("nodes", [])
+    edges = dataflow.setdefault("edges", [])
+    xs = [n.get("x") for n in nodes if isinstance(n, dict) and isinstance(n.get("x"), (int, float))]
+    ys = [n.get("y") for n in nodes if isinstance(n, dict) and isinstance(n.get("y"), (int, float))]
+    base_x = (max(xs) + _PLAN_COLUMN_OFFSET) if xs else 80.0
+    base_y = min(ys) if ys else 80.0
+    depths = _plan_depths(plan.get("nodes", []), plan.get("edges", []))
+    rows: dict[int, int] = {}
+    ref_to_id: dict[str, str] = {}
+    created_nodes: list[dict] = []
+    for plan_node in plan.get("nodes", []):
+        depth = depths.get(plan_node["ref"], 0)
+        row = rows.get(depth, 0)
+        rows[depth] = row + 1
+        node_id = str(uuid.uuid4())
+        ref_to_id[plan_node["ref"]] = node_id
+        created = {
+            "id": node_id,
+            "type": plan_node["nodeType"],
+            "content": plan_node.get("content", ""),
+            "goal": f"{plan_node['title']} — {plan_node['intent']}",
+            "x": float(base_x + depth * _PLAN_COLUMN_OFFSET),
+            "y": float(base_y + row * _PLAN_ROW_OFFSET),
+        }
+        nodes.append(created)
+        created_nodes.append(created)
+    created_edges: list[dict] = []
+    for plan_edge in plan.get("edges", []):
+        edge = {
+            "id": str(uuid.uuid4()),
+            "source": ref_to_id[plan_edge["from"]],
+            "target": ref_to_id[plan_edge["to"]],
+        }
+        edges.append(edge)
+        created_edges.append(edge)
+    proposal["status"] = "applied"
+    # The builder session (DR-2): applied phase, pending solve set.
+    record = attachments.get_attachment(spec, attachment_id)
+    node_runs = {
+        n["id"]: "pending" for n in created_nodes if not (n.get("content") or "").strip()
+    }
+    if record is not None:
+        record["builderSession"] = {
+            "phase": "ready" if not node_runs else "applied",
+            "appliedPlanId": proposal_id,
+            "nodeRuns": node_runs,
+        }
+    projects_storage.write_spec(user_key, project_id, spec)
+    _log_applied_turn(
+        user_key, project_id, session_id, attachment_id, proposal_id,
+        f"Applied: plan added {len(created_nodes)} nodes and {len(created_edges)} connections.",
+        "Applied: dataflow plan",
+        [
+            f"{len(created_nodes)} nodes · {len(created_edges)} connections",
+            f"{len(node_runs)} pending for Solve",
+            f"proposal {proposal_id[:8]}",
+        ],
+    )
+    return {
+        "attachmentId": attachment_id,
+        "proposalId": proposal_id,
+        "status": "applied",
+        "mutationApplied": True,
+        # Consumed by the frontend bridge (dev/52): bulk insert + edges + fit.
+        "appliedGraph": {"nodes": created_nodes, "edges": created_edges},
+        "builderSession": record.get("builderSession") if record else None,
+    }
+
+
 def _apply_dataset_install(
     user_key: str,
     project_id: str,
@@ -1562,6 +1707,13 @@ def dismiss_proposal(
             f"this proposal is {proposal.get('status')!r} and can no longer be dismissed", 409
         )
     proposal["status"] = "dismissed"
+    # A dismissed plan review returns the builder session to its prior phase
+    # (dev/52 DR-2): applied when an earlier plan landed, else idle.
+    if proposal.get("tool") == "dataflow.plan.write":
+        session = record.get("builderSession") or {}
+        session["phase"] = "applied" if session.get("appliedPlanId") else "idle"
+        session.pop("planProposalId", None)
+        record["builderSession"] = session
     projects_storage.write_spec(user_key, project_id, spec)
     session_id = record.get("sessionId")
     if isinstance(session_id, str):

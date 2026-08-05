@@ -3666,3 +3666,117 @@ class TestDataflowPlanMint:
         body = self._run(client, token, alice_project, att_id).get_json()
         assert all(p["type"] != "proposal" for p in body["content"])
         assert any(p["type"] == "dataflowPlan" for p in body["content"])
+
+
+class TestDataflowPlanApply:
+    """dev/52 — the atomic, ADDITIVE plan apply: whole-graph digest safety,
+    server ids, topological placement, builder-session phases."""
+
+    def _mint(self, client, user, token, project_id, monkeypatch, **kw):
+        helper = TestDataflowPlanMint()
+        att_id, _ = helper._setup(client, user, token, project_id, monkeypatch, **kw)
+        r = helper._run(client, token, project_id, att_id)
+        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
+        return att_id, proposal
+
+    def _apply(self, client, token, project_id, att_id, proposal_id):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal_id}/apply",
+            headers=_auth(token),
+        )
+
+    def _spec(self, user, project_id):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        return projects_storage.read_spec(_user_dir_key(user), project_id)
+
+    def test_apply_inserts_graph_additively_with_server_ids(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        resp = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
+        assert resp.status_code == 200
+        body = resp.get_json()
+        applied = body["appliedGraph"]
+        assert len(applied["nodes"]) == 2 and len(applied["edges"]) == 1
+        spec = self._spec(user, alice_project)
+        nodes = spec["dataflow"]["nodes"]
+        edges = spec["dataflow"]["edges"]
+        # Additive: the pre-existing node is untouched, in place.
+        assert nodes[0] == {"id": "n1", "content": "print(1)", "x": 10, "y": 20}
+        assert len(nodes) == 3 and len(edges) == 1
+        load = next(n for n in nodes if n.get("goal", "").startswith("Load"))
+        analyze = next(n for n in nodes if n.get("goal", "").startswith("Analyze"))
+        # Server-minted ids wired through the ref map; topological columns.
+        assert edges[0]["source"] == load["id"] and edges[0]["target"] == analyze["id"]
+        assert analyze["x"] == load["x"] + 420
+        assert load["content"] == "" and load["goal"] == "Load — load the data"
+        # Builder session: applied phase, both nodes pending for Solve.
+        session = body["builderSession"]
+        assert session["phase"] == "applied"
+        assert set(session["nodeRuns"]) == {load["id"], analyze["id"]}
+        assert set(session["nodeRuns"].values()) == {"pending"}
+        # The session is visible on the attachment card (panel wiring).
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        assert cards[0]["builderSession"]["phase"] == "applied"
+
+    def test_graph_shape_drift_marks_stale_409(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        # A node appears between mint and apply → shape digest drift.
+        key = _user_dir_key(user)
+        spec = projects_storage.read_spec(key, alice_project)
+        spec["dataflow"]["nodes"].append({"id": "user-added", "content": ""})
+        projects_storage.write_spec(key, alice_project, spec)
+        resp = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
+        assert resp.status_code == 409
+        assert "replan" in resp.get_json()["error"]
+        assert len(self._spec(user, alice_project)["dataflow"]["nodes"]) == 2  # nothing inserted
+
+    def test_content_only_edits_do_not_invalidate_the_plan(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        key = _user_dir_key(user)
+        spec = projects_storage.read_spec(key, alice_project)
+        spec["dataflow"]["nodes"][0]["content"] = "print(999)"  # content edit only
+        projects_storage.write_spec(key, alice_project, spec)
+        resp = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
+        assert resp.status_code == 200  # deliberate: additive plans survive content edits
+
+    def test_plan_with_full_content_lands_ready(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        nodes = [{"ref": "a", "nodeType": "curio.builtin/computation-analysis",
+                  "title": "Done", "intent": "already coded", "content": "print('x')"}]
+        helper = TestDataflowPlanMint()
+        att_id, _ = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["plan.\n" + helper._plan_tail(nodes=nodes, edges=[])],
+        )
+        r = helper._run(client, token, alice_project, att_id)
+        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
+        body = self._apply(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
+        assert body["builderSession"]["phase"] == "ready"
+        assert body["builderSession"]["nodeRuns"] == {}
+        node = next(n for n in self._spec(user, alice_project)["dataflow"]["nodes"] if n.get("goal", "").startswith("Done"))
+        assert node["content"] == "print('x')"
+
+    def test_dismissed_plan_returns_the_session_to_idle(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        resp = client.delete(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 200
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        assert cards[0]["builderSession"]["phase"] == "idle"
