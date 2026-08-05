@@ -1,9 +1,10 @@
 # Implementation Memo: Node-Content Extraction — Response-Formatting Artifacts Removed (dev/52 follow-up)
 
 Date: 2026-08-05
-Status: proposed (implementing in the same session — explicit fix request; post-implementation
-testing feedback on the Solve flow: generated node content arrives wrapped in Markdown code
-fences / language identifiers / explanatory prose, per the user's screenshot)
+Status: implemented 2026-08-05 — COMMIT (see log). Verification: backend `pytest tests
+--ignore=tests/test_frontend` → 1032 passed; frontend `npx jest` → 660 passed (61 suites).
+Note: only the dev/57 hunks of `styles.tsx` were staged — the user's unrelated uncommitted
+edits in that file remain untouched.
 
 ## 1. Problem Statement
 
@@ -46,7 +47,7 @@ mirror, replacing the legacy replaceAll):
   preserved, backtick-free content never altered.
 - Routes: Solve writes clean content from a wrapped child reply; a `node.create` proposal
   minted from wrapped params previews and applies clean code.
-- [ ] Generated node content contains only executable content across Solve, proposals, and the
+- [x] Generated node content contains only executable content across Solve, proposals, and the
       legacy Get Code path; unwrapped responses are never altered.
 
 ## 4. Commits
