@@ -451,3 +451,46 @@ class TestDataflowPlanPart:
         bad_node = self._plan()
         del bad_node["nodes"][0]["intent"]
         assert content.parse_parts(json.dumps({"dataflowPlan": bad_node})) is None
+
+
+class TestPlanTailDiagnosis:
+    """dev/54 — verbose plan diagnosis: precise, model-correctable errors."""
+
+    def test_non_plan_tails_are_not_diagnosed(self):
+        assert content.plan_tail_diagnosis(None) is None
+        assert content.plan_tail_diagnosis('{"suggestedPrompts": {"primary": "P"}}') is None
+        assert content.plan_tail_diagnosis("just prose") is None
+
+    def test_json_breakage_is_a_correctable_error(self):
+        errors = content.plan_tail_diagnosis('{"dataflowPlan": {"goal": "g", nodes: []}}')
+        assert errors and "not valid JSON" in errors[0]
+
+    def test_field_errors_name_field_index_and_bound(self):
+        import json as _json
+
+        plan = {
+            "goal": "g",
+            "nodes": [
+                {"ref": "n1", "nodeType": "curio.builtin/data-loading",
+                 "title": "Load", "intent": "fine"},
+                {"ref": "n1", "nodeType": "curio.builtin/data-loading",
+                 "title": "dup", "intent": "fine"},
+                {"ref": "n2", "nodeType": "curio.builtin/data-loading",
+                 "title": "ok", "intent": "x" * 301},
+            ],
+            "edges": [{"from": "n1", "to": "ghost"}],
+        }
+        errors = content.plan_tail_diagnosis(_json.dumps({"dataflowPlan": plan}))
+        joined = "\n".join(errors)
+        assert "nodes[2].intent is 301 chars (max 300)" in joined
+        assert "refs must be unique" in joined
+        assert "edges[0].to references unknown ref 'ghost'" in joined
+
+    def test_valid_plan_diagnoses_clean(self):
+        import json as _json
+
+        plan = {"goal": "g", "nodes": [
+            {"ref": "n1", "nodeType": "curio.builtin/data-loading",
+             "title": "Load", "intent": "load"},
+        ], "edges": []}
+        assert content.plan_tail_diagnosis(_json.dumps({"dataflowPlan": plan})) == []

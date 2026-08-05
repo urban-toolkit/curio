@@ -276,65 +276,145 @@ def _parse_dataset_candidates(raw: object) -> dict | None:
     return {"type": "datasetCandidates", "lanes": lanes}
 
 
-def _parse_dataflow_plan(raw: object) -> dict | None:
-    """The dev/52 typed plan part (DR-1): a connected, ADDITIVE graph of
-    placeholder nodes. Plan-local ``ref`` handles; edges must reference plan
-    refs (additive graphs are self-contained in v1). A malformed anything
-    fails the whole block open to text (the T2 rule)."""
+def _field_error(where: str, value: object, max_chars: int) -> str | None:
+    """A precise, model-correctable description of what is wrong, or None."""
+    if not isinstance(value, str):
+        return f"{where} must be a string"
+    text = value.strip()
+    if not text:
+        return f"{where} must not be empty"
+    if len(text) > max_chars:
+        return f"{where} is {len(text)} chars (max {max_chars})"
+    return None
+
+
+def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
+    """The dev/52 typed plan part (DR-1), with field-level errors (dev/54):
+    the loop feeds them back so an imperfect first attempt self-corrects.
+    Returns ``(plan, [])`` on success or ``(None, errors)``."""
+    errors: list[str] = []
     if not isinstance(raw, dict):
-        return None
-    goal = _bounded_str(raw.get("goal"), _PLAN_GOAL_MAX_CHARS)
-    if goal is None:
-        return None
-    plan: dict = {"type": "dataflowPlan", "goal": goal}
+        return None, ["dataflowPlan must be an object"]
+    err = _field_error("goal", raw.get("goal"), _PLAN_GOAL_MAX_CHARS)
+    if err:
+        errors.append(err)
+    plan: dict = {"type": "dataflowPlan", "goal": str(raw.get("goal") or "").strip()}
     if raw.get("templateId") is not None:
-        template_id = _bounded_str(raw.get("templateId"), _PLAN_TEMPLATE_ID_MAX_CHARS)
-        if template_id is None:
-            return None
-        plan["templateId"] = template_id
+        err = _field_error("templateId", raw.get("templateId"), _PLAN_TEMPLATE_ID_MAX_CHARS)
+        if err:
+            errors.append(err)
+        else:
+            plan["templateId"] = str(raw.get("templateId")).strip()
     nodes_raw = raw.get("nodes")
-    if not isinstance(nodes_raw, list) or not nodes_raw or len(nodes_raw) > _PLAN_MAX_NODES:
-        return None
+    if not isinstance(nodes_raw, list) or not nodes_raw:
+        errors.append("nodes must be a non-empty list")
+        nodes_raw = []
+    elif len(nodes_raw) > _PLAN_MAX_NODES:
+        errors.append(f"nodes has {len(nodes_raw)} entries (max {_PLAN_MAX_NODES})")
+        nodes_raw = []
     nodes: list[dict] = []
     refs: set[str] = set()
-    for node_raw in nodes_raw:
+    for i, node_raw in enumerate(nodes_raw):
+        where = f"nodes[{i}]"
         if not isinstance(node_raw, dict):
-            return None
-        ref = _bounded_str(node_raw.get("ref"), _PLAN_REF_MAX_CHARS)
-        node_type = _bounded_str(node_raw.get("nodeType"), _PLAN_NODE_TYPE_MAX_CHARS)
-        title = _bounded_str(node_raw.get("title"), _PLAN_TITLE_MAX_CHARS)
-        intent = _bounded_str(node_raw.get("intent"), _PLAN_INTENT_MAX_CHARS)
-        if ref is None or node_type is None or title is None or intent is None:
-            return None
+            errors.append(f"{where} must be an object")
+            continue
+        node_errors = [
+            e
+            for e in (
+                _field_error(f"{where}.ref", node_raw.get("ref"), _PLAN_REF_MAX_CHARS),
+                _field_error(f"{where}.nodeType", node_raw.get("nodeType"), _PLAN_NODE_TYPE_MAX_CHARS),
+                _field_error(f"{where}.title", node_raw.get("title"), _PLAN_TITLE_MAX_CHARS),
+                _field_error(f"{where}.intent", node_raw.get("intent"), _PLAN_INTENT_MAX_CHARS),
+            )
+            if e
+        ]
+        if node_errors:
+            errors.extend(node_errors)
+            continue
+        ref = str(node_raw["ref"]).strip()
         if ref in refs:
-            return None  # plan-local handles must be unique
+            errors.append(f"{where}.ref {ref!r} is used by an earlier node — refs must be unique")
+            continue
         refs.add(ref)
-        node = {"ref": ref, "nodeType": node_type, "title": title, "intent": intent}
+        node = {
+            "ref": ref,
+            "nodeType": str(node_raw["nodeType"]).strip(),
+            "title": str(node_raw["title"]).strip(),
+            "intent": str(node_raw["intent"]).strip(),
+        }
         node_content = node_raw.get("content")
         if node_content is not None:
-            if not isinstance(node_content, str) or len(node_content) > PROPOSAL_CONTENT_MAX_CHARS:
-                return None
-            node["content"] = node_content
+            if not isinstance(node_content, str):
+                errors.append(f"{where}.content must be a string")
+            elif len(node_content) > PROPOSAL_CONTENT_MAX_CHARS:
+                errors.append(
+                    f"{where}.content is {len(node_content)} chars (max {PROPOSAL_CONTENT_MAX_CHARS})"
+                )
+            else:
+                node["content"] = node_content
         nodes.append(node)
     plan["nodes"] = nodes
     edges_raw = raw.get("edges", [])
-    if not isinstance(edges_raw, list) or len(edges_raw) > _PLAN_MAX_EDGES:
-        return None
+    if not isinstance(edges_raw, list):
+        errors.append("edges must be a list")
+        edges_raw = []
+    elif len(edges_raw) > _PLAN_MAX_EDGES:
+        errors.append(f"edges has {len(edges_raw)} entries (max {_PLAN_MAX_EDGES})")
+        edges_raw = []
     edges: list[dict] = []
     seen_edges: set[tuple[str, str]] = set()
-    for edge_raw in edges_raw:
+    for i, edge_raw in enumerate(edges_raw):
+        where = f"edges[{i}]"
         if not isinstance(edge_raw, dict):
-            return None
-        src = edge_raw.get("from")
-        dst = edge_raw.get("to")
-        if src not in refs or dst not in refs or src == dst:
-            return None
+            errors.append(f"{where} must be an object")
+            continue
+        src, dst = edge_raw.get("from"), edge_raw.get("to")
+        if src not in refs:
+            errors.append(f"{where}.from references unknown ref {src!r}")
+            continue
+        if dst not in refs:
+            errors.append(f"{where}.to references unknown ref {dst!r}")
+            continue
+        if src == dst:
+            errors.append(f"{where} connects {src!r} to itself")
+            continue
         if (src, dst) in seen_edges:
-            return None
+            errors.append(f"{where} duplicates an earlier {src!r}→{dst!r} edge")
+            continue
         seen_edges.add((src, dst))
         edges.append({"from": src, "to": dst})
     plan["edges"] = edges
-    return plan
+    if errors:
+        return None, errors
+    return plan, []
+
+
+def _parse_dataflow_plan(raw: object) -> dict | None:
+    """Strict-parse contract (the T2 rule): valid plan or None — the verbose
+    sibling carries the correction detail (dev/54)."""
+    plan, errors = _parse_dataflow_plan_verbose(raw)
+    return plan if not errors else None
+
+
+def plan_tail_diagnosis(tail_body: str | None) -> list[str] | None:
+    """Classify a terminal tail body as a plan attempt (dev/54).
+
+    ``None`` — not a plan attempt (no ``dataflowPlan`` mention, or a valid
+    non-plan payload): generic fail-open applies untouched. ``[]`` — a valid
+    plan. ``[errors]`` — a plan attempt with correctable problems, JSON
+    breakage included: exactly what the corrective round feeds back.
+    """
+    if not isinstance(tail_body, str) or "dataflowPlan" not in tail_body:
+        return None
+    try:
+        payload = json.loads(tail_body)
+    except (ValueError, TypeError) as exc:
+        return [f"the block is not valid JSON: {exc}"]
+    if not isinstance(payload, dict) or "dataflowPlan" not in payload:
+        return None
+    _, errors = _parse_dataflow_plan_verbose(payload["dataflowPlan"])
+    return errors
 
 
 def _parse_delegate_request(raw: object) -> dict | None:

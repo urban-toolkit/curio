@@ -194,7 +194,9 @@ export const AgentAttachmentsProvider: React.FC<{
                 ? `delegating ${capability} …`
                 : name === "delegate_result"
                   ? `${coord || capability} · ${payload.status ?? ""}`
-                  : null;
+                  : name === "plan_revision"
+                    ? `revising the plan (attempt ${payload.attempt ?? "?"}) …`
+                    : null;
         if (line)
           setToolActivity((prev) => ({
             ...prev,

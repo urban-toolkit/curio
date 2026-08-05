@@ -3925,3 +3925,152 @@ class TestSolve:
         nodes = {n["id"]: n for n in self._spec_nodes(user, alice_project)}
         for created in applied["nodes"]:
             assert nodes[created["id"]]["content"] == ""
+
+
+class TestPlanCorrectionRounds:
+    """dev/54 — the primary path made self-correcting: imperfect plan
+    attempts feed precise errors back and re-round; failure at the cap is
+    loud, never silent."""
+
+    def _bad_json_tail(self):
+        # A realistic slip: unquoted key — JSON breakage.
+        return '```curio.v1\n{"dataflowPlan": {"goal": "g", nodes: []}}\n```'
+
+    def _wrong_id_tail(self):
+        import json as _json
+
+        plan = {"goal": "g", "nodes": [
+            {"ref": "a", "nodeType": "data-loading",  # missing package prefix
+             "title": "Load", "intent": "load"},
+        ], "edges": []}
+        return f"```curio.v1\n{_json.dumps({'dataflowPlan': plan})}\n```"
+
+    def test_invalid_json_then_corrected_mints(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        att_id, calls = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=[
+                "Attempt one.\n" + self._bad_json_tail(),
+                "Here we go.\n" + helper._plan_tail(),
+            ],
+        )
+        r = helper._run(client, token, alice_project, att_id)
+        assert r.status_code == 200
+        body = r.get_json()
+        proposal = next(p for p in body["content"] if p["type"] == "proposal")
+        assert proposal["tool"] == "dataflow.plan.write"
+        # The correction round carried the precise error.
+        correction = calls[1][-1]["content"]
+        assert "[plan validation]" in correction
+        assert "not valid JSON" in correction
+        # The invalid attempt never reached the user: no raw tail, no
+        # attempt-one prose in the persisted reply.
+        assert "curio.v1" not in body["reply"]
+        assert "Attempt one." not in body["reply"]
+        assert body["reply"].startswith("Here we go.")
+
+    def test_wrong_template_id_then_corrected_mints(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # The previously dead one-shot mint refusal now self-corrects.
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        att_id, calls = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=[
+                "Try.\n" + self._wrong_id_tail(),
+                "Fixed.\n" + helper._plan_tail(),
+            ],
+        )
+        r = helper._run(client, token, alice_project, att_id)
+        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
+        assert proposal["status"] == "pending"
+        assert "not an available template" in calls[1][-1]["content"]
+
+    def test_persistent_failure_caps_loudly(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        att_id, calls = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Nope.\n" + self._bad_json_tail()],  # repeats forever
+        )
+        r = helper._run(client, token, alice_project, att_id)
+        body = r.get_json()
+        # Two corrective rounds consumed the shared budget; the third attempt
+        # fails LOUDLY: the raw tail is released (fail-open transparency) and
+        # the error card explains.
+        assert len(calls) == 3
+        assert all(p["type"] != "proposal" for p in body["content"])
+        card = next(p for p in body["content"] if p["type"] == "card")
+        assert card["title"] == "Plan not proposable"
+        assert "not valid JSON" in card["lines"][0]
+        assert "curio.v1" in body["reply"]  # the model's text is never lost
+
+    def test_plan_rounds_share_the_tool_budget(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # A tool round plus corrective rounds draw from ONE budget: read tool
+        # (1) + correction (2) + still-bad plan → cap.
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        read_tail = '```curio.v1\n{"toolRequest": {"tool": "dataflow.read", "params": {}}}\n```'
+        att_id, calls = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=[read_tail, "Plan.\n" + self._bad_json_tail()],
+        )
+        r = helper._run(client, token, alice_project, att_id)
+        body = r.get_json()
+        # calls: tool round, bad plan, corrected?-no (script repeats bad) → cap.
+        assert len(calls) == 3
+        assert any(p["type"] == "card" and p["title"] == "Plan not proposable" for p in body["content"])
+
+    def test_ungranted_agents_keep_failopen_behavior(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # Regression: a non-plan agent's invalid plan-ish tail streams as raw
+        # text exactly as before — no corrections, no cards.
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        att_id, calls = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            coord="agent.chat-agent@1.0.0",
+            replies=["idea!\n" + self._bad_json_tail()],
+        )
+        body = helper._run(client, token, alice_project, att_id).get_json()
+        assert len(calls) == 1
+        assert "curio.v1" in body["reply"]
+        assert all(p.get("type") != "card" for p in body["content"])
+
+    def test_stream_correction_holds_raw_tail_and_emits_plan_revision(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        import json as _json
+
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        att_id, _ = helper._setup(client, user, token, alice_project, monkeypatch, replies=["ignored"])
+        script = [
+            "Attempt.\n" + self._bad_json_tail(),
+            "Done.\n" + helper._plan_tail(),
+        ]
+        calls = []
+
+        def _fake_stream(config, messages, **kwargs):
+            calls.append(messages)
+            reply = script[min(len(calls) - 1, 1)]
+            for i in range(0, len(reply), 9):
+                yield reply[i : i + 9]
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
+            json={"message": "plan it"}, headers=_auth(token),
+        )
+        events = []
+        for block in r.get_data(as_text=True).strip().split("\n\n"):
+            lines = dict(l.split(": ", 1) for l in block.splitlines() if ": " in l)
+            events.append((lines["event"], _json.loads(lines["data"])))
+        kinds = [k for k, _ in events]
+        assert (
+            kinds.index("plan_revision")
+            < kinds.index("review_required")
+            < kinds.index("done")
+        )
+        # The invalid tail never streamed as text.
+        text = "".join(p.get("text", "") for k, p in events if k == "delta")
+        assert "curio.v1" not in text
+        done = events[-1][1]
+        assert any(p["type"] == "proposal" for p in done["content"])

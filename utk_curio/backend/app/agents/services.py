@@ -1264,32 +1264,61 @@ def _mint_dataflow_plan(
     return "proposed", "", part
 
 
-def _maybe_mint_plan(
-    user_key: str, project_id: str, loop_ctx: dict, parts: list, minted: list
-) -> list:
-    """Post-loop hook (dev/52): a validated ``dataflowPlan`` part on the final
-    reply becomes the plan proposal in one step — the runtime mints, the
-    model never requests. Ungranted plan parts pass through untouched
-    (informational; no mutation path exists for them). A mint refusal
-    becomes a visible error card — the loop has ended, so there is no round
-    to feed it back to."""
+def _plan_correction_message(errors: list[str]) -> dict:
+    """The corrective round's feedback (dev/54): precise, model-actionable,
+    and explicit that the invalid block never reached the user."""
+    listed = "\n".join(f"- {e}" for e in errors[:10])
+    return {
+        "role": "user",
+        "content": (
+            "[plan validation] Your dataflowPlan block was invalid and was NOT "
+            "shown to the user. Fix exactly these problems and resend the "
+            "COMPLETE corrected block (all nodes and edges, same fence syntax):\n"
+            + listed
+        ),
+    }
+
+
+def _handle_plan_reply(
+    user_key: str,
+    project_id: str,
+    loop_ctx: dict,
+    reply: str,
+    parts: list,
+    minted: list,
+    rounds_used: int,
+) -> tuple[str, list]:
+    """In-loop plan handling (dev/52 mint, dev/54 correction rounds).
+
+    Returns ``(kind, payload)``: ``("none", parts)`` — not a plan situation
+    (ungranted agents keep the informational part; generic fail-open
+    untouched); ``("mint", parts_without_plan)`` — the proposal was minted
+    (appended to *minted*); ``("correct", errors)`` — feed the errors back
+    and re-round (shares the MAX_TOOL_ROUNDS budget); ``("cap", parts+card)``
+    — budget exhausted: fail loudly, never silently."""
+    if "dataflow.plan.write" not in loop_ctx.get("granted", []):
+        return "none", parts
     plan_part = next((p for p in parts if p.get("type") == "dataflowPlan"), None)
-    if plan_part is None or "dataflow.plan.write" not in loop_ctx.get("granted", []):
-        return parts
-    remaining = [p for p in parts if p is not plan_part]
-    status, error_text, part = _mint_dataflow_plan(user_key, project_id, loop_ctx, plan_part)
-    if part is not None:
-        minted.append(part)
-        return remaining
-    remaining.append(
-        {
-            "type": "card",
-            "kind": "error",
-            "title": "Plan not proposable",
-            "lines": [error_text[:300]],
-        }
-    )
-    return remaining
+    if plan_part is not None:
+        status, error_text, part = _mint_dataflow_plan(user_key, project_id, loop_ctx, plan_part)
+        if part is not None:
+            minted.append(part)
+            return "mint", [p for p in parts if p is not plan_part]
+        errors = [error_text]
+    else:
+        _, tail_body = content.split_tail(reply)
+        errors = content.plan_tail_diagnosis(tail_body)
+        if not errors:  # not a plan attempt — nothing plan-shaped to do
+            return "none", parts
+    if rounds_used < MAX_TOOL_ROUNDS:
+        return "correct", errors
+    card = {
+        "type": "card",
+        "kind": "error",
+        "title": "Plan not proposable",
+        "lines": [e[:300] for e in errors[:10]],
+    }
+    return "cap", [p for p in parts if p.get("type") != "dataflowPlan"] + [card]
 
 
 def _resolve_catalog_dataset(project_id: str, dataset_id: object) -> tuple[dict | None, str]:
@@ -2701,16 +2730,29 @@ def run_attachment(
             )
             _add_usage(usage_total, usage_sink)
             visible, parts = content.extract_content(reply)
-            if visible:
-                folded.append(visible)
             req = (
                 parts[0]
                 if parts and parts[0].get("type") in ("toolRequest", "delegateRequest")
                 else None
             )
             if req is None:
-                final_parts = parts
+                # Plan handling (dev/52 mint; dev/54 correction rounds).
+                kind, payload = _handle_plan_reply(
+                    user_key, project_id, loop_ctx, reply, parts, minted, rounds_used
+                )
+                if kind == "correct":
+                    # Corrective prose is not folded: the invalid attempt never
+                    # reaches the user; the final round's text is the truth.
+                    rounds_used += 1
+                    messages_work.append({"role": "assistant", "content": reply})
+                    messages_work.append(_plan_correction_message(payload))
+                    continue
+                if visible:
+                    folded.append(visible)
+                final_parts = payload
                 break
+            if visible:
+                folded.append(visible)
             if rounds_used >= MAX_TOOL_ROUNDS:
                 break  # dangling request at the cap: dropped, text kept
             rounds_used += 1
@@ -2770,9 +2812,6 @@ def run_attachment(
         )
         raise AgentServiceError(f"agent run failed: {exc}", 502) from exc
     reply_text = "\n\n".join(folded)
-    # A validated dataflowPlan on the final reply mints the plan proposal in
-    # one step (dev/52) — runtime-minted, never model-requested.
-    final_parts = _maybe_mint_plan(user_key, project_id, loop_ctx, final_parts, minted)
     run_parts = minted + final_parts  # proposals ride the turn (dev/41)
     settled = ledger.settle(user_key, reservation, usage=usage_total or None, status="ok")
     execution = _execution_record(
@@ -2845,9 +2884,15 @@ def stream_attachment(
                 return buf[:-k], buf[-k:]
         return buf, ""
 
-    def _stream_round(messages_work: list, usage_sink: dict, result: dict):
+    def _stream_round(
+        messages_work: list, usage_sink: dict, result: dict, hold_plan_tail: bool = False
+    ):
         """Stream one provider round: yields ("delta", text) with the dev/39
-        tail withholding, then leaves {reply, visible, parts} in *result*."""
+        tail withholding, then leaves {reply, visible, parts} in *result*.
+        ``hold_plan_tail`` (dev/54): an INVALID tail that looks like a plan
+        attempt is held (``result["heldPlanTail"]``) instead of flushed — the
+        correction round must not leak raw plan JSON to the user; the caller
+        releases it at the round cap (fail-open transparency)."""
         chunks: list[str] = []
         buf = ""  # pass-mode text not yet emitted
         withheld: str | None = None  # not None → holding a candidate tail
@@ -2884,9 +2929,14 @@ def stream_attachment(
         reply = "".join(chunks)
         visible, parts = content.extract_content(reply)
         if withheld is not None and not parts:
-            # Invalid or non-terminal tail: fail-open (dev/39 §4.2) — the
-            # withheld text is the model's, so it streams after all.
-            yield ("delta", withheld)
+            if hold_plan_tail and '"dataflowPlan"' in withheld:
+                # A failed plan attempt (dev/54): held for the correction
+                # round instead of leaking raw JSON into the chat.
+                result["heldPlanTail"] = withheld
+            else:
+                # Invalid or non-terminal tail: fail-open (dev/39 §4.2) — the
+                # withheld text is the model's, so it streams after all.
+                yield ("delta", withheld)
         elif withheld is None and buf:
             yield ("delta", buf)  # stream ended on a partial fence prefix
         result["reply"] = reply
@@ -2915,10 +2965,13 @@ def stream_attachment(
             while True:
                 usage_sink = {}
                 result: dict = {}
-                yield from _stream_round(messages_work, usage_sink, result)
+                yield from _stream_round(
+                    messages_work,
+                    usage_sink,
+                    result,
+                    hold_plan_tail="dataflow.plan.write" in loop_ctx.get("granted", []),
+                )
                 _add_usage(usage_total, usage_sink)
-                if result["visible"]:
-                    folded.append(result["visible"])
                 parts = result["parts"]
                 req = (
                     parts[0]
@@ -2926,8 +2979,32 @@ def stream_attachment(
                     else None
                 )
                 if req is None:
-                    final_parts = parts
+                    # Plan handling (dev/52 mint; dev/54 correction rounds).
+                    kind, payload = _handle_plan_reply(
+                        user_key, project_id, loop_ctx, result["reply"], parts, minted, rounds_used
+                    )
+                    if kind == "correct":
+                        rounds_used += 1
+                        yield (
+                            "plan_revision",
+                            {"attempt": rounds_used, "errors": len(payload)},
+                        )
+                        messages_work.append(
+                            {"role": "assistant", "content": result["reply"]}
+                        )
+                        messages_work.append(_plan_correction_message(payload))
+                        continue
+                    if kind == "cap" and result.get("heldPlanTail"):
+                        # Fail-open transparency at the cap: the held tail is
+                        # the model's text — released, then explained by the
+                        # error card in `payload`.
+                        yield ("delta", result["heldPlanTail"])
+                    if result["visible"]:
+                        folded.append(result["visible"])
+                    final_parts = payload
                     break
+                if result["visible"]:
+                    folded.append(result["visible"])
                 if rounds_used >= MAX_TOOL_ROUNDS:
                     break  # dangling request at the cap: dropped, text kept
                 rounds_used += 1
@@ -3010,9 +3087,6 @@ def stream_attachment(
             yield ("error", f"agent run failed: {exc}")
             return
         reply_text = "\n\n".join(folded)
-        # A validated dataflowPlan on the final reply mints the plan proposal
-        # in one step (dev/52) — runtime-minted, never model-requested.
-        final_parts = _maybe_mint_plan(user_key, project_id, loop_ctx, final_parts, minted)
         run_parts = minted + final_parts  # proposals ride the turn (dev/41)
         settled = ledger.settle(
             user_key, reservation, usage=usage_total or None, status="ok"

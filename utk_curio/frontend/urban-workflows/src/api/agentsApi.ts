@@ -707,7 +707,8 @@ export const agentsApi = {
         event === "review_required" ||
         event === "delegate_requested" ||
         event === "delegate_started" ||
-        event === "delegate_result"
+        event === "delegate_result" ||
+        event === "plan_revision"
       )
         onEvent?.(event, payload as Record<string, unknown>);
       else if (event === "done") {
