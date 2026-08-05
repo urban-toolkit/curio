@@ -140,7 +140,7 @@ triggers the existing `playAllNodes`. Reload restores the phase and progress.
   DEC-044 ledger derives aggregates from entries, so shared-reservation bookkeeping adds
   nothing — recorded).
 - SSE: none new in v1 — Solve is a synchronous batch endpoint returning outcomes; progressive
-  streaming joins later with `DEC-021` (recorded deviation from the session's live progress;
+  streaming joins later with `DEC-021` (delivered by `dev/63`/`DEC-050` — recorded deviation from the session's live progress;
   the panel shows per-node results as the response lands).
 
 **Frontend (`utk_curio/frontend/urban-workflows/src/`)**
@@ -172,7 +172,7 @@ triggers the existing `playAllNodes`. Reload restores the phase and progress.
   **additive-only** — "planning must not clear the canvas" holds structurally, and Revise =
   a new additive plan proposal superseding the pending one; a reconciliation engine that
   proposes removals is its own memo once additive plans prove out (dev/49 DR-2 remainder).
-- Background execution, cancellation mid-solve, streamed solve progress (`DEC-021`).
+- Background execution, cancellation mid-solve, streamed solve progress (`DEC-021`). (Progress + cancellation since delivered by `dev/63`/`DEC-050`; background execution remains open.)
   type-checker at interaction time; the spec never validated edge types server-side —
   parity kept, noted for the validation-agent track, OQ-011).
 - `agent.package-recommendation` in `delegatesTo` (dev/16 runtime slice, as in dev/48).

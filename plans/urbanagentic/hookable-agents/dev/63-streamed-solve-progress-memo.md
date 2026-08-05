@@ -1,7 +1,14 @@
 # Implementation Memo: Streamed Solve Progress with Cancellation (dev/52 follow-up; the user-facing slice of DEC-021)
 
 Date: 2026-08-05
-Status: proposed
+Status: implemented 2026-08-05 — COMMIT-8618fa7b (backend), COMMIT-bc3c0e28 (frontend),
+docs in the ledger commit. Verification: backend 1058 passed (8 skipped), frontend 677
+passed (62 suites), tsc clean for touched files. One recorded deviation from §3: user
+Cancel posts the endpoint but does NOT abort the fetch — the stream ends naturally with
+`done.cancelled` so in-flight pills still resolve (no AbortError special-casing); the abort
+is the fallback when the cancel endpoint is unreachable, and the disconnect path covers tab
+close. Ledger: DEC-050 (dev/03 + 2.1), BL-P5-20260805-06; dev/52's deviation closed by
+pointer.
 
 ## 1. Problem Statement
 
@@ -195,15 +202,15 @@ Full backend + frontend suites green.
 
 ## 8. Acceptance Criteria
 
-- [ ] Clicking Solve shows per-node pills advancing live (pending → solving → outcome),
+- [x] Clicking Solve shows per-node pills advancing live (pending → solving → outcome),
       and solved nodes' content appears on the canvas as each completes.
-- [ ] Cancel stops new children from starting; in-flight children finish and persist; the
+- [x] Cancel stops new children from starting; in-flight children finish and persist; the
       strip returns to Solve/Retry with unstarted nodes pending; the transcript card states
       solved/failed/not-attempted counts.
-- [ ] Closing the tab mid-solve does not wedge the session: partial results persist, the
+- [x] Closing the tab mid-solve does not wedge the session: partial results persist, the
       phase exits `solving`, and no further children dispatch after the next boundary.
-- [ ] The blocking `/solve` endpoint behaves byte-identically (existing tests untouched).
-- [ ] DEC-021 remains open: no lease/heartbeat/background machinery was added or implied.
+- [x] The blocking `/solve` endpoint behaves byte-identically (existing tests untouched).
+- [x] DEC-021 remains open: no lease/heartbeat/background machinery was added or implied.
 
 ## 9. Recommended Commit Breakdown
 
