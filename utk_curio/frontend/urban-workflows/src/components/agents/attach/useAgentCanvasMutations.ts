@@ -88,6 +88,9 @@ export function useAgentCanvasMutations(): void {
             targetHandle: "in",
             type: EdgeType.UNIDIRECTIONAL_EDGE,
             markerEnd: { type: "arrow" },
+            // Parity with loadTrill's add_edge (dev/58): the edge components
+            // read display flags off `data` — it must always exist.
+            data: {},
           } as never,
         })),
       );

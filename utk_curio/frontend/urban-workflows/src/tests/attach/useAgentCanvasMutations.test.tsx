@@ -176,6 +176,10 @@ describe("graph-created (dev/52 — a whole applied plan)", () => {
       expect(changes).toHaveLength(1);
       expect(changes[0].type).toBe("add");
       expect(changes[0].item).toMatchObject({ id: "e1", source: "ga", target: "gb" });
+      // dev/58: the edge components read display flags off `data` — the
+      // bridge must always provide it (loadTrill parity), or the first
+      // render of the inserted edge crashes the canvas.
+      expect(changes[0].item.data).toEqual({});
       act(() => {
         jest.runAllTimers();
       });
