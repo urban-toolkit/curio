@@ -131,7 +131,15 @@ def _materialize_builtin(user_key: str, coord: str) -> None:
             (base / asset["path"]).is_file() for asset in declared.values()
         )
         if complete:
-            return  # current copy already matches the roster asset set
+            # Completeness isn't freshness (dev/60): a roster prompt UPDATE
+            # must reach the materialized copy too — rewrite on byte drift.
+            fresh = all(
+                (base / asset["path"]).read_text(encoding="utf-8")
+                == (builtin.read_prompt_text(coord, key) or "")
+                for key, asset in declared.items()
+            )
+            if fresh:
+                return  # matches the roster asset set AND bytes
     instruction = builtin.read_prompt_text(coord, "instruction")
     if instruction is None:
         return  # prompt file missing — leave the built-in fallback to handle runtime
@@ -2138,16 +2146,23 @@ def solve_attachment(
 def _resolve_prompt_text(user_key: str, coord: str, name: str) -> str | None:
     """A definition's prompt asset text (``"instruction"`` or ``"system"``).
 
-    Reads the definition's own on-disk asset first — the materialized store copy,
-    then the published-catalog copy — so an installed agent runs from its own
-    bytes. Falls back to the built-in roster's ``llm-prompts/`` source only when a
-    built-in has not been materialized.
+    **Built-in trust follows the ROSTER bytes** (dev/60) — the same rule
+    ``_resolve_definition`` applies to metadata, for the same reason: an
+    updated built-in prompt must take effect for existing installs (the store
+    copy is a materialization cache, not an authority). Owned/imported
+    definitions — including deliberate shadows of a built-in coordinate —
+    run from their own on-disk bytes, store copy first, then the published
+    catalog.
     """
     m = storage.load_installed_agent_definition(user_key, coord)
     base = storage.agent_definition_dir(user_key, coord) if m is not None else None
     if m is None:
         m = publications.get_published_manifest(coord)
         base = publications.published_agent_dir(coord) if m is not None else None
+    if m is not None and m.provenance.trust == "built-in":
+        roster = builtin.read_prompt_text(coord, name)
+        if roster is not None:
+            return roster
     if m is not None and base is not None:
         asset = m.prompts.get(name)
         if asset is not None:

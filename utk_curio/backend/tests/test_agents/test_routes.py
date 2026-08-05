@@ -4540,3 +4540,117 @@ class TestDestructiveReplan:
         assert "removeContentSha256" not in proposal["pins"]
         assert "removals" not in proposal["plan"]
         assert proposal["summary"] == "Apply plan · 1 nodes, 0 edges"
+
+
+class TestBuiltinPromptPropagation:
+    """dev/60 — roster bytes reach existing installs: the user's 'clear the
+    canvas' refusal came from a STALE materialized instruction."""
+
+    COORD = "agent.dataflow-builder@1.0.0"
+
+    def _install_with_stale_instruction(self, client, user, token, project_id):
+        from utk_curio.backend.app.agents import builtin, storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        client.post(f"/api/agents/projects/{project_id}/install", json={"coord": self.COORD}, headers=_auth(token))
+        att_id = client.post(
+            f"/api/agents/projects/{project_id}/attachments",
+            json={"coord": self.COORD, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        ).get_json()["attachmentId"]
+        # Simulate a pre-dev/59 install: overwrite the materialized copy with
+        # the superseded posture.
+        key = _user_dir_key(user)
+        base = storage.agent_definition_dir(key, self.COORD)
+        spec = builtin.get_builtin_spec(self.COORD)
+        stale = "Plans are ADDITIVE: removals are theirs to make on the canvas."
+        (base / "prompts" / spec.prompt_file).write_text(stale, encoding="utf-8")
+        return att_id, key, base, spec
+
+    def test_run_composes_current_roster_bytes_over_a_stale_store_copy(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, _, _, _ = self._install_with_stale_instruction(client, user, token, alice_project)
+        calls = []
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            return "ok"
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "clear the canvas"}, headers=_auth(token),
+        )
+        assert r.status_code == 200
+        system = calls[0][0]["content"]
+        # The dev/59 posture — not the stale materialized bytes.
+        assert "Never remove uninvited" in system
+        assert "removals are theirs to make" not in system
+
+    def test_reinstall_heals_drifted_bytes_on_disk(self, client, user_and_token, tmp_curio, alice_project):
+        user, token = user_and_token
+        _, key, base, spec = self._install_with_stale_instruction(client, user, token, alice_project)
+        # A fresh install (another project is enough) re-materializes.
+        body = {"name": "p2", "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}}, "outputs": []}
+        p2 = client.post("/api/projects", json=body, headers=_auth(token)).get_json()["id"]
+        client.post(f"/api/agents/projects/{p2}/install", json={"coord": self.COORD}, headers=_auth(token))
+        from utk_curio.backend.app.agents import builtin
+
+        on_disk = (base / "prompts" / spec.prompt_file).read_text(encoding="utf-8")
+        assert on_disk == builtin.read_prompt_text(self.COORD, "instruction")
+
+    def test_owned_import_shadow_keeps_its_bytes(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # A deliberate user shadow of a built-in coord is authoritative for
+        # its OWN bytes — dev/60 must not steamroll it (regression).
+        import json as _json
+
+        user, token = user_and_token
+        manifest = {
+            "id": "agent.dataflow-builder", "name": "My Builder", "category": "canvas",
+            "version": "1.0.0", "purpose": "mine",
+            "capabilities": [{"id": "dataflow.orchestrate", "contractVersion": "1"}],
+            "prompts": {
+                "system": {"path": "prompts/preamble.txt", "variables": []},
+                "instruction": {"path": "prompts/mine.txt", "variables": []},
+            },
+            "compatibleTargets": [{"kind": "canvas", "requires": []}],
+            "inputs": {"reads": ["mission"], "requiredConfig": []},
+            "runtime": {"execution": "foreground", "reviewPolicy": "report-only"},
+            "providerRequirements": {"capabilities": ["structured-output"]},
+            "provenance": {"publisher": "me", "license": "MIT", "trust": "imported"},
+        }
+        r = client.post(
+            "/api/agents/imports/upload",
+            json={"manifest": manifest, "prompts": {
+                "prompts/preamble.txt": "my preamble",
+                "prompts/mine.txt": "MY OWN INSTRUCTION BYTES",
+            }},
+            headers=_auth(token),
+        )
+        assert r.status_code == 201, r.get_data(as_text=True)
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": self.COORD}, headers=_auth(token))
+        att_id = client.post(
+            f"/api/agents/projects/{alice_project}/attachments",
+            json={"coord": self.COORD, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        ).get_json()["attachmentId"]
+        calls = []
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            return "ok"
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run",
+            json={"message": "hi"}, headers=_auth(token),
+        )
+        assert "MY OWN INSTRUCTION BYTES" in calls[0][0]["content"]
