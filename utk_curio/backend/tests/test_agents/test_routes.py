@@ -4324,3 +4324,219 @@ class TestGeneratedContentExtraction:
             headers=_auth(token),
         )
         assert resp.get_json()["createdNode"]["content"] == "print('tidy')"
+
+
+class TestDestructiveReplan:
+    """dev/59 (DEC-049) — reviewed removals and rewires: per-victim digest
+    pins, cascade, attachment pruning, nodeRuns hygiene, existing-id wiring."""
+
+    COORD = "agent.dataflow-builder@1.0.0"
+
+    def _revision_tail(self, remove=("old-loader",), nodes=None, edges=None, remove_edges=None):
+        import json as _json
+
+        plan = {"goal": "replace the loader"}
+        if nodes is not None:
+            plan["nodes"] = nodes
+        if edges is not None:
+            plan["edges"] = edges
+        if remove:
+            plan["removeNodes"] = list(remove)
+        if remove_edges:
+            plan["removeEdges"] = list(remove_edges)
+        return f"```curio.v1\n{_json.dumps({'dataflowPlan': plan})}\n```"
+
+    def _new_node(self, ref="a", title="API Fetch"):
+        return {"ref": ref, "nodeType": "curio.builtin/computation-analysis",
+                "title": title, "intent": "fetch from the api"}
+
+    def _setup(self, client, user, token, project_id, monkeypatch, replies):
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        TestNodeCreate()._write_builtin_package(_user_dir_key(user))
+        spec = {"dataflow": {"nodes": [
+            {"id": "old-loader", "type": "curio.builtin/computation-analysis",
+             "content": "load_csv()", "goal": "Load CSV", "x": 10, "y": 20},
+            {"id": "cleaner", "type": "curio.builtin/computation-analysis",
+             "content": "clean()", "goal": "Clean", "x": 430, "y": 20},
+        ], "edges": [
+            {"id": "edge-1", "source": "old-loader", "target": "cleaner"},
+        ], "packages": []}}
+        r = client.put(
+            f"/api/projects/{project_id}",
+            json={"name": "p", "spec": spec, "outputs": []},
+            headers=_auth(token),
+        )
+        assert r.status_code == 200
+        client.post(f"/api/agents/projects/{project_id}/install", json={"coord": self.COORD}, headers=_auth(token))
+        att_id = client.post(
+            f"/api/agents/projects/{project_id}/attachments",
+            json={"coord": self.COORD, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        ).get_json()["attachmentId"]
+        calls = []
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            return replies[min(len(calls) - 1, len(replies) - 1)]
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        return att_id, calls
+
+    def _run(self, client, token, project_id, att_id, message="replace the loader"):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/run",
+            json={"message": message}, headers=_auth(token),
+        )
+
+    def _proposal(self, response):
+        return next(p for p in response.get_json()["content"] if p["type"] == "proposal")
+
+    def _apply(self, client, token, project_id, att_id, proposal_id):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal_id}/apply",
+            headers=_auth(token),
+        )
+
+    def _spec(self, user, project_id):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        return projects_storage.read_spec(_user_dir_key(user), project_id)
+
+    def test_replace_flow_end_to_end(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, _ = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Revising.\n" + self._revision_tail(
+                nodes=[self._new_node()],
+                edges=[{"from": "a", "to": "cleaner"}],  # wire to an EXISTING node
+            )],
+        )
+        proposal = self._proposal(self._run(client, token, alice_project, att_id))
+        # DEC-049: victim pinned by content; the card data names it.
+        assert "old-loader" in proposal["pins"]["removeContentSha256"]
+        (removal,) = proposal["plan"]["removals"]
+        assert removal == {"id": "old-loader", "label": "Load CSV",
+                           "nodeType": "curio.builtin/computation-analysis",
+                           "contentChars": len("load_csv()")}
+        assert proposal["plan"]["cascadeCount"] == 1  # edge-1 dies with it
+        assert "removes 1 node" in proposal["summary"]
+        body = self._apply(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
+        applied = body["appliedGraph"]
+        assert applied["removedNodeIds"] == ["old-loader"]
+        assert applied["removedEdgeIds"] == ["edge-1"]
+        spec = self._spec(user, alice_project)
+        ids = {n["id"] for n in spec["dataflow"]["nodes"]}
+        assert "old-loader" not in ids and "cleaner" in ids
+        # The preserved node is byte-identical (the session's contract).
+        cleaner = next(n for n in spec["dataflow"]["nodes"] if n["id"] == "cleaner")
+        assert cleaner["content"] == "clean()" and cleaner["x"] == 430
+        # The new edge wires the created node to the EXISTING cleaner.
+        (edge,) = spec["dataflow"]["edges"]
+        assert edge["target"] == "cleaner"
+        assert edge["source"] == applied["nodes"][0]["id"]
+
+    def test_editing_a_victim_after_mint_makes_apply_stale(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        att_id, _ = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Revising.\n" + self._revision_tail(nodes=[self._new_node()])],
+        )
+        proposal = self._proposal(self._run(client, token, alice_project, att_id))
+        # The user edits the doomed node's content (shape digest unchanged!).
+        key = _user_dir_key(user)
+        spec = projects_storage.read_spec(key, alice_project)
+        next(n for n in spec["dataflow"]["nodes"] if n["id"] == "old-loader")["content"] = "precious_new_work()"
+        projects_storage.write_spec(key, alice_project, spec)
+        resp = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
+        assert resp.status_code == 409
+        assert "about to remove changed" in resp.get_json()["error"]
+        # Nothing died: the edited node and its edge survive.
+        spec = self._spec(user, alice_project)
+        assert any(n["id"] == "old-loader" for n in spec["dataflow"]["nodes"])
+        assert any(e["id"] == "edge-1" for e in spec["dataflow"]["edges"])
+
+    def test_removal_prunes_attachments_and_node_runs(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, _ = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Revising.\n" + self._revision_tail(nodes=[self._new_node()])],
+        )
+        # A node-target attachment on the victim (dies with it, dev/32) …
+        client.post(f"/api/agents/projects/{alice_project}/install", json={"coord": "agent.node-explainer@1.0.0"}, headers=_auth(token))
+        victim_att = client.post(
+            f"/api/agents/projects/{alice_project}/attachments",
+            json={"coord": "agent.node-explainer@1.0.0", "target": {"kind": "node", "targetId": "old-loader"}},
+            headers=_auth(token),
+        ).get_json()["attachmentId"]
+        # … and a stale nodeRuns entry for it in the builder session.
+        from utk_curio.backend.app.agents import attachments as attachments_mod
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        key = _user_dir_key(user)
+        spec = projects_storage.read_spec(key, alice_project)
+        record = attachments_mod.get_attachment(spec, att_id)
+        record["builderSession"] = {"phase": "applied", "appliedPlanId": "prev",
+                                    "nodeRuns": {"old-loader": "pending", "cleaner": "solved"}}
+        projects_storage.write_spec(key, alice_project, spec)
+        proposal = self._proposal(self._run(client, token, alice_project, att_id))
+        body = self._apply(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
+        # The victim's attachment is gone; the builder's survives.
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        card_ids = {c["attachmentId"] for c in cards}
+        assert victim_att not in card_ids and att_id in card_ids
+        # nodeRuns: victim dropped, survivor kept, new pending node joined.
+        runs = body["builderSession"]["nodeRuns"]
+        assert "old-loader" not in runs
+        assert runs["cleaner"] == "solved"
+        assert "pending" in runs.values().__iter__().__next__() or any(
+            s == "pending" for s in runs.values()
+        )
+
+    def test_remove_only_plan_applies(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, _ = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Cleanup.\n" + self._revision_tail(remove=("old-loader", "cleaner"))],
+        )
+        proposal = self._proposal(self._run(client, token, alice_project, att_id))
+        body = self._apply(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
+        assert sorted(body["appliedGraph"]["removedNodeIds"]) == ["cleaner", "old-loader"]
+        assert self._spec(user, alice_project)["dataflow"]["nodes"] == []
+        assert body["builderSession"]["phase"] == "ready"
+
+    def test_unknown_removal_targets_feed_correction_rounds(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, calls = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=[
+                "Revising.\n" + self._revision_tail(remove=("ghost-node",), nodes=[self._new_node()]),
+                "Fixed.\n" + self._revision_tail(nodes=[self._new_node()]),
+            ],
+        )
+        proposal = self._proposal(self._run(client, token, alice_project, att_id))
+        assert proposal["status"] == "pending"
+        feedback = calls[1][-1]["content"]
+        assert "'ghost-node' is not a node in the saved dataflow" in feedback
+
+    def test_additive_plans_carry_no_removal_pins(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, _ = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Adding.\n" + self._revision_tail(remove=(), nodes=[self._new_node()])],
+        )
+        proposal = self._proposal(self._run(client, token, alice_project, att_id))
+        assert "removeContentSha256" not in proposal["pins"]
+        assert "removals" not in proposal["plan"]
+        assert proposal["summary"] == "Apply plan · 1 nodes, 0 edges"

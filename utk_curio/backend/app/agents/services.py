@@ -1222,19 +1222,80 @@ def _mint_dataflow_plan(
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
         return "refused", "no saved project spec is available", None
+    # Revision validation against the saved spec (dev/59): removal targets and
+    # existing-id edge endpoints must be real; the grammar could only check
+    # shape. Errors feed the same correction rounds as every plan failure.
+    import hashlib
+
+    dataflow = spec.get("dataflow") or {}
+    existing_nodes = {
+        n.get("id"): n for n in dataflow.get("nodes") or [] if isinstance(n, dict)
+    }
+    existing_edges = [e for e in dataflow.get("edges") or [] if isinstance(e, dict)]
+    existing_edge_ids = {str(e.get("id")) for e in existing_edges}
+    remove_nodes = plan.get("removeNodes", [])
+    remove_edges = plan.get("removeEdges", [])
+    revision_errors: list[str] = []
+    for node_id in remove_nodes:
+        if node_id not in existing_nodes:
+            revision_errors.append(
+                f"removeNodes: {node_id!r} is not a node in the saved dataflow — "
+                "use real node ids (dataflow.read shows them)"
+            )
+    for edge_id in remove_edges:
+        if edge_id not in existing_edge_ids:
+            revision_errors.append(
+                f"removeEdges: {edge_id!r} is not an edge in the saved dataflow"
+            )
+    plan_refs = {n["ref"] for n in plan["nodes"]}
+    for i, edge in enumerate(plan["edges"]):
+        for label in ("from", "to"):
+            endpoint = edge[label]
+            if endpoint not in plan_refs and endpoint not in existing_nodes:
+                revision_errors.append(
+                    f"edges[{i}].{label} {endpoint!r} is neither a plan ref nor an "
+                    "existing node id"
+                )
+    if revision_errors:
+        return "refused", "\n- ".join(["the plan's revision targets are invalid:"] + revision_errors), None
+    remove_node_set = set(remove_nodes)
+    # The cascade: edges incident to removed nodes die with them (dev/59) —
+    # computed here for the review card, recomputed at apply as the truth.
+    cascade_edge_ids = [
+        str(e.get("id"))
+        for e in existing_edges
+        if (e.get("source") in remove_node_set or e.get("target") in remove_node_set)
+        and str(e.get("id")) not in set(remove_edges)
+    ]
     digest = _graph_shape_digest(spec)
+    pins: dict = {"baseGraphDigest": digest}
+    if remove_nodes:
+        # DEC-049.1: every victim pinned by its content at mint — editing a
+        # doomed node between mint and apply makes the apply 409 + stale.
+        pins["removeContentSha256"] = {
+            node_id: hashlib.sha256(
+                (existing_nodes[node_id].get("content") or "").encode("utf-8")
+            ).hexdigest()
+            for node_id in remove_nodes
+        }
     proposal_id = uuid.uuid4().hex
     n_nodes, n_edges = len(plan["nodes"]), len(plan["edges"])
     summary = f"Apply plan · {n_nodes} nodes, {n_edges} edges"
-    preview = "\n".join(
+    if remove_nodes or remove_edges:
+        summary += f", removes {len(remove_nodes)} node{'s' if len(remove_nodes) != 1 else ''}"
+    preview_lines = [
         f"{node['title']} · {node['nodeType']} — {node['intent']}" for node in plan["nodes"]
-    )
+    ]
+    for node_id in remove_nodes:
+        victim = existing_nodes[node_id]
+        label = (victim.get("goal") or node_id)[:80]
+        preview_lines.append(f"− Remove: {label} · {victim.get('type') or 'untyped'}")
     part = content.make_proposal_part(
         proposal_id=proposal_id,
         tool="dataflow.plan.write",
         summary=summary,
-        preview=preview,
-        pins={"baseGraphDigest": digest},
+        preview="\n".join(preview_lines),
+        pins=pins,
     )
     # The display copy for the review card (bounded upstream by the grammar).
     part["plan"] = {
@@ -1246,6 +1307,20 @@ def _mint_dataflow_plan(
         ],
         "edgeCount": n_edges,
     }
+    if remove_nodes or remove_edges:
+        # DEC-049.2: removals reviewed by NAME — every victim listed with a
+        # content flag; the cascade counted.
+        part["plan"]["removals"] = [
+            {
+                "id": node_id,
+                "label": (existing_nodes[node_id].get("goal") or node_id)[:80],
+                "nodeType": existing_nodes[node_id].get("type"),
+                "contentChars": len(existing_nodes[node_id].get("content") or ""),
+            }
+            for node_id in remove_nodes
+        ]
+        part["plan"]["removedEdgeCount"] = len(remove_edges)
+        part["plan"]["cascadeCount"] = len(cascade_edge_ids)
     # The builder session (DR-2) transitions on the SAME spec write: the
     # attachment record is rule-9 share-stripped and save-preserved already.
     record = attachments.get_attachment(spec, loop_ctx["attachment_id"])
@@ -1263,6 +1338,12 @@ def _mint_dataflow_plan(
             "tool": "dataflow.plan.write",
             "plan": plan,
             "baseGraphDigest": digest,
+            # DEC-049.1: the apply re-checks each victim against this mirror.
+            **(
+                {"removeContentSha256": pins["removeContentSha256"]}
+                if "removeContentSha256" in pins
+                else {}
+            ),
             "summary": summary,
             "status": "pending",
         },
@@ -1455,7 +1536,10 @@ def _plan_depths(nodes: list[dict], edges: list[dict]) -> dict[str, int]:
     refs = [n["ref"] for n in nodes]
     incoming: dict[str, list[str]] = {r: [] for r in refs}
     for e in edges:
-        incoming[e["to"]].append(e["from"])
+        # dev/59: endpoints may name EXISTING nodes — only plan-local wiring
+        # contributes to layout depth (existing nodes keep their positions).
+        if e["to"] in incoming and e["from"] in incoming:
+            incoming[e["to"]].append(e["from"])
     depths: dict[str, int] = {}
 
     def depth_of(ref: str, seen: frozenset) -> int:
@@ -1482,13 +1566,18 @@ def _apply_dataflow_plan(
     proposal: dict,
     session_id: object,
 ) -> dict:
-    """The dev/52 apply: insert the whole ADDITIVE plan graph atomically.
+    """The dev/52 apply, extended by dev/59 revisions: atomically remove the
+    plan's listed victims (+ their edge cascade) and insert the new graph.
 
-    Whole-graph revision safety: the pinned shape digest (node-id + edge-id
-    sets) is re-computed — any node/edge added or removed since the mint →
-    409 + ``stale``. Templates re-validated (a package uninstalled between
-    mint and apply is the same drift). Server-minted ids for every node; no
-    code path here touches an existing node or edge."""
+    Revision safety both ways: the pinned shape digest (node-id + edge-id
+    sets) catches structural drift, and every removal victim is pinned by its
+    content at mint (DEC-049.1) — editing a doomed node between mint and
+    apply 409s + ``stale`` naming it, so user work never dies to a stale
+    review. Templates re-validated; server-minted ids for every new node; the
+    apply touches ONLY listed elements — unlisted nodes keep their ids,
+    positions, and content by construction."""
+    import hashlib
+
     from utk_curio.backend.app.packages import services as packages_services
 
     plan = proposal.get("plan") or {}
@@ -1497,6 +1586,26 @@ def _apply_dataflow_plan(
             user_key, project_id, proposal_id, spec, proposal, session_id,
             "the canvas changed since this plan was proposed — ask the agent to replan",
         )
+    # DEC-049.1: per-victim content digests.
+    remove_nodes = plan.get("removeNodes", [])
+    victim_pins = proposal.get("removeContentSha256") or {}
+    spec_nodes_by_id = {
+        n.get("id"): n
+        for n in (spec.get("dataflow") or {}).get("nodes") or []
+        if isinstance(n, dict)
+    }
+    for node_id in remove_nodes:
+        victim = spec_nodes_by_id.get(node_id)
+        current = hashlib.sha256(
+            ((victim or {}).get("content") or "").encode("utf-8")
+        ).hexdigest()
+        if victim is None or current != victim_pins.get(node_id):
+            label = ((victim or {}).get("goal") or node_id)[:60]
+            raise _mark_stale(
+                user_key, project_id, proposal_id, spec, proposal, session_id,
+                f"the node you were about to remove changed ({label}) — "
+                "ask the agent to replan",
+            )
     try:
         available = {t["id"] for t in packages_services.available_templates(user_key, project_id)}
     except Exception as exc:
@@ -1514,6 +1623,23 @@ def _apply_dataflow_plan(
     dataflow = spec.setdefault("dataflow", {})
     nodes = dataflow.setdefault("nodes", [])
     edges = dataflow.setdefault("edges", [])
+    # Removals first (dev/59): listed edges + the recomputed cascade of edges
+    # incident to removed nodes, then the victims themselves — in place, so
+    # unlisted elements are untouched by construction.
+    remove_node_set = set(remove_nodes)
+    removed_edge_ids = set(plan.get("removeEdges", []))
+    for e in edges:
+        if isinstance(e, dict) and (
+            e.get("source") in remove_node_set or e.get("target") in remove_node_set
+        ):
+            removed_edge_ids.add(str(e.get("id")))
+    if removed_edge_ids:
+        edges[:] = [e for e in edges if str(e.get("id")) not in removed_edge_ids]
+    if remove_node_set:
+        nodes[:] = [n for n in nodes if n.get("id") not in remove_node_set]
+        # Agent attachments on removed nodes die with them, exactly as manual
+        # canvas deletion (dev/32).
+        attachments.prune_orphaned_attachments(spec)
     xs = [n.get("x") for n in nodes if isinstance(n, dict) and isinstance(n.get("x"), (int, float))]
     ys = [n.get("y") for n in nodes if isinstance(n, dict) and isinstance(n.get("y"), (int, float))]
     base_x = (max(xs) + _PLAN_COLUMN_OFFSET) if xs else 80.0
@@ -1542,31 +1668,49 @@ def _apply_dataflow_plan(
     for plan_edge in plan.get("edges", []):
         edge = {
             "id": str(uuid.uuid4()),
-            "source": ref_to_id[plan_edge["from"]],
-            "target": ref_to_id[plan_edge["to"]],
+            # dev/59: endpoints resolve through the ref map ∪ existing ids.
+            "source": ref_to_id.get(plan_edge["from"], plan_edge["from"]),
+            "target": ref_to_id.get(plan_edge["to"], plan_edge["to"]),
         }
         edges.append(edge)
         created_edges.append(edge)
     proposal["status"] = "applied"
-    # The builder session (DR-2): applied phase, pending solve set.
+    # The builder session (DR-2, merged per dev/59): removed victims leave
+    # nodeRuns; surviving prior entries persist; new pending nodes join.
     record = attachments.get_attachment(spec, attachment_id)
+    prior_runs = (
+        (record.get("builderSession") or {}).get("nodeRuns") or {} if record else {}
+    )
     node_runs = {
-        n["id"]: "pending" for n in created_nodes if not (n.get("content") or "").strip()
+        node_id: status
+        for node_id, status in prior_runs.items()
+        if node_id not in remove_node_set
     }
+    node_runs.update(
+        {n["id"]: "pending" for n in created_nodes if not (n.get("content") or "").strip()}
+    )
+    unresolved = any(s in ("pending", "failed") for s in node_runs.values())
     if record is not None:
         record["builderSession"] = {
-            "phase": "ready" if not node_runs else "applied",
+            "phase": "applied" if unresolved else "ready",
             "appliedPlanId": proposal_id,
             "nodeRuns": node_runs,
         }
     projects_storage.write_spec(user_key, project_id, spec)
+    removed_summary = (
+        f", removed {len(remove_node_set)} node{'s' if len(remove_node_set) != 1 else ''}"
+        if remove_node_set or removed_edge_ids
+        else ""
+    )
     _log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,
-        f"Applied: plan added {len(created_nodes)} nodes and {len(created_edges)} connections.",
+        f"Applied: plan added {len(created_nodes)} nodes and "
+        f"{len(created_edges)} connections{removed_summary}.",
         "Applied: dataflow plan",
         [
-            f"{len(created_nodes)} nodes · {len(created_edges)} connections",
-            f"{len(node_runs)} pending for Solve",
+            f"+{len(created_nodes)} nodes · +{len(created_edges)} connections"
+            + (f" · −{len(remove_node_set)} nodes" if remove_node_set else ""),
+            f"{sum(1 for s in node_runs.values() if s == 'pending')} pending for Solve",
             f"proposal {proposal_id[:8]}",
         ],
     )
@@ -1575,8 +1719,13 @@ def _apply_dataflow_plan(
         "proposalId": proposal_id,
         "status": "applied",
         "mutationApplied": True,
-        # Consumed by the frontend bridge (dev/52): bulk insert + edges + fit.
-        "appliedGraph": {"nodes": created_nodes, "edges": created_edges},
+        # Consumed by the frontend bridge (dev/52; removals per dev/59).
+        "appliedGraph": {
+            "nodes": created_nodes,
+            "edges": created_edges,
+            "removedNodeIds": sorted(remove_node_set),
+            "removedEdgeIds": sorted(removed_edge_ids),
+        },
         "builderSession": record.get("builderSession") if record else None,
     }
 
