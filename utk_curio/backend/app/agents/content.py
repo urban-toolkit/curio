@@ -476,16 +476,22 @@ def extract_plan_attempt(reply: str) -> tuple[str, object]:
 
     Scans every fenced block (models emit ```json / bare fences, often
     mid-reply with prose after) for a plan payload: ``{"dataflowPlan": …}``,
-    the toolRequest form, or the bare plan object. Returns
-    ``(reply_with_the_block_stripped, payload)`` where payload is the raw
-    plan dict, the unparseable block body (``str`` — so the JSON error still
-    feeds back), or ``None`` when the reply carries no plan attempt.
+    the toolRequest form, or the bare plan object — additive OR remove-only
+    (dev/59's ``removeNodes``/``removeEdges`` carry no ``nodes`` key, dev/61).
+    Returns ``(reply_with_the_block_stripped, payload)`` where payload is the
+    raw plan dict, the unparseable block body (``str`` — so the JSON error
+    still feeds back), or ``None`` when the reply carries no plan attempt.
     """
     if not isinstance(reply, str) or "```" not in reply:
         return reply, None
     for match in reversed(list(_FENCE_RE.finditer(reply))):
         body = match.group(1)
-        marked = "dataflowPlan" in body or "dataflow.plan.write" in body
+        marked = (
+            "dataflowPlan" in body
+            or "dataflow.plan.write" in body
+            or '"removeNodes"' in body
+            or '"removeEdges"' in body
+        )
         bare_shape = '"goal"' in body and '"nodes"' in body
         if not marked and not bare_shape:
             continue
@@ -506,8 +512,13 @@ def extract_plan_attempt(reply: str) -> tuple[str, object]:
         if isinstance(req, dict) and req.get("tool") == "dataflow.plan.write":
             params = req.get("params") or {}
             return stripped, params.get("dataflowPlan", params)
-        if "goal" in payload and "nodes" in payload:
-            return stripped, payload  # the bare plan object itself
+        if ("goal" in payload and "nodes" in payload) or (
+            "removeNodes" in payload or "removeEdges" in payload
+        ):
+            # The bare plan object itself — a remove-only payload missing
+            # ``goal`` is still claimed so the verbose parser's field error
+            # feeds the corrective round instead of the block leaking.
+            return stripped, payload
     return reply, None
 
 
@@ -519,8 +530,9 @@ def plan_tail_diagnosis(tail_body: str | None) -> list[str] | None:
     plan. ``[errors]`` — a plan attempt with correctable problems, JSON
     breakage included: exactly what the corrective round feeds back.
     """
-    if not isinstance(tail_body, str) or (
-        "dataflowPlan" not in tail_body and "dataflow.plan.write" not in tail_body
+    if not isinstance(tail_body, str) or not any(
+        marker in tail_body
+        for marker in ("dataflowPlan", "dataflow.plan.write", '"removeNodes"', '"removeEdges"')
     ):
         return None
     try:

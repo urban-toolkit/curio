@@ -4236,6 +4236,32 @@ class TestFenceAgnosticPlanRecognition:
         assert "not an available template" in feedback
         assert "curio.v1" in feedback  # the fence guidance
 
+    def test_remove_only_bare_json_fence_mints(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # dev/61 — the "clear the canvas" scenario: a BARE remove-only plan
+        # (no "nodes" key) in a ```json fence must mint, not leak.
+        import json as _json
+
+        user, token = user_and_token
+        helper = TestDestructiveReplan()
+        plan = {"goal": "clear the canvas",
+                "removeNodes": ["old-loader", "cleaner"], "removeEdges": []}
+        reply = (
+            "Removing everything:\n\n```json\n"
+            + _json.dumps(plan, indent=2)
+            + "\n```\n\nReview and apply the plan."
+        )
+        att_id, _ = helper._setup(
+            client, user, token, alice_project, monkeypatch, replies=[reply],
+        )
+        body = helper._run(client, token, alice_project, att_id, message="clear the canvas").get_json()
+        proposal = next(p for p in body["content"] if p["type"] == "proposal")
+        assert {v["id"] for v in proposal["plan"]["removals"]} == {"old-loader", "cleaner"}
+        assert "```" not in body["reply"]
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        assert cards[0]["builderSession"]["phase"] == "plan_review"
+
     def test_ungranted_agents_keep_json_fences_verbatim(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         helper = TestDataflowPlanMint()

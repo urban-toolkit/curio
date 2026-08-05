@@ -469,6 +469,11 @@ class TestPlanTailDiagnosis:
         errors = content.plan_tail_diagnosis('{"dataflowPlan": {"goal": "g", nodes: []}}')
         assert errors and "not valid JSON" in errors[0]
 
+    def test_broken_remove_only_body_is_diagnosed(self):
+        # dev/61 — the removal keys mark a plan attempt too.
+        errors = content.plan_tail_diagnosis('{"goal": "clear", "removeNodes": [old]}')
+        assert errors and "not valid JSON" in errors[0]
+
     def test_field_errors_name_field_index_and_bound(self):
         import json as _json
 
@@ -541,6 +546,34 @@ class TestExtractPlanAttempt:
         reply = "Some code:\n```python\nprint(1)\n```"
         assert content.extract_plan_attempt(reply) == (reply, None)
         assert content.extract_plan_attempt("no fences at all") == ("no fences at all", None)
+
+    def test_remove_only_bare_json_fence_is_recognized(self):
+        # dev/61 — the "clear the canvas" leak: a bare remove-only plan
+        # carries no "nodes" key at all.
+        plan = {"goal": "clear the canvas",
+                "removeNodes": ["old-loader", "cleaner"], "removeEdges": []}
+        reply = (
+            "Removing everything:\n\n```json\n"
+            + json.dumps(plan, indent=2)
+            + "\n```\n\nReview and apply the plan."
+        )
+        stripped, raw = content.extract_plan_attempt(reply)
+        assert raw == plan
+        assert "```" not in stripped and "Removing everything:" in stripped
+
+    def test_remove_only_without_goal_is_still_claimed(self):
+        # Claimed so the parser's goal error feeds the corrective round.
+        plan = {"removeNodes": ["old-loader"]}
+        _, raw = content.extract_plan_attempt("```json\n" + json.dumps(plan) + "\n```")
+        assert raw == plan
+        parsed, errors = content.parse_dataflow_plan_verbose(raw)
+        assert parsed is None and any("goal" in e for e in errors)
+
+    def test_broken_json_remove_only_fence_returns_the_body(self):
+        reply = '```json\n{"goal": "clear", "removeNodes": [old-loader]}\n```'
+        stripped, raw = content.extract_plan_attempt(reply)
+        assert isinstance(raw, str) and "removeNodes" in raw
+        assert "```" not in stripped
 
 
 class TestExtractNodeContent:
