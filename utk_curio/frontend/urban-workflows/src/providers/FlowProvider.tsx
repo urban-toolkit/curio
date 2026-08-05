@@ -123,6 +123,9 @@ interface FlowContextProps {
     loading: boolean;
 
     applyRemoveChanges: (changes: NodeRemoveChange[]) => void;
+    // Reviewed plan removals (dev/62): victims + their edge cascade leave in
+    // one operation, without the manual "remove the edges first" guard.
+    applyReviewedRemovals: (nodeIds: string[], edgeIds: string[]) => void;
     loadParsedTrill: (workflowName: string, task: string, node: any, edges: any, provenance?: boolean, merge?: boolean, packages?: string[], description?: string, datasets?: any[]) => void;
     packages: string[];
     setPackages: (pkgs: string[]) => void;
@@ -247,6 +250,7 @@ export const FlowContext = createContext<FlowContextProps>({
     setWorkflowGoal: () => {},
 
     applyRemoveChanges: () => { },
+    applyReviewedRemovals: () => { },
     setWorkflowName: () => { },
     setAllMinimized: () => { },
     setExpandStatus: () => { },

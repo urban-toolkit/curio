@@ -8,12 +8,12 @@ jest.mock("../../hook/useCode", () => ({
 
 const mockApplyNodeContent = jest.fn();
 const mockOnEdgesChange = jest.fn();
-const mockApplyRemoveChanges = jest.fn();
+const mockApplyReviewedRemovals = jest.fn();
 jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({
     applyNodeContent: mockApplyNodeContent,
     onEdgesChange: mockOnEdgesChange,
-    applyRemoveChanges: mockApplyRemoveChanges,
+    applyReviewedRemovals: mockApplyReviewedRemovals,
   }),
 }));
 
@@ -224,28 +224,26 @@ describe("graph-created removals (dev/59)", () => {
     removedEdgeIds: ["edge-1"],
   };
 
-  it("applies removals through the canvas's own machinery BEFORE inserts", () => {
+  it("applies removals through the REVIEWED path (nodes + edges in one call) BEFORE inserts", () => {
+    // dev/62: victims and their cascade leave together — never through the
+    // guarded manual path, which would refuse every connected victim.
     const order: string[] = [];
     mockGetNodes.mockReturnValue([{ id: "old-loader" }, { id: "cleaner" }]);
-    mockApplyRemoveChanges.mockImplementation(() => order.push("remove-nodes"));
-    mockOnEdgesChange.mockImplementation((changes: Array<{ type: string }>) =>
-      order.push(changes[0]?.type === "remove" ? "remove-edges" : "add-edges"),
-    );
+    mockApplyReviewedRemovals.mockImplementation(() => order.push("remove"));
     mockCreateCodeNode.mockImplementation(() => order.push("insert"));
     render(<Host />);
     act(() => notifyAgentCanvasMutation(REVISION));
-    expect(mockApplyRemoveChanges).toHaveBeenCalledWith([
-      { id: "old-loader", type: "remove" },
-    ]);
-    expect(order.indexOf("remove-nodes")).toBeLessThan(order.indexOf("insert"));
-    expect(order.indexOf("remove-edges")).toBeLessThan(order.indexOf("insert"));
+    expect(mockApplyReviewedRemovals).toHaveBeenCalledWith(["old-loader"], ["edge-1"]);
+    expect(order.indexOf("remove")).toBeLessThan(order.indexOf("insert"));
   });
 
-  it("already-absent victims are a no-op (user deleted them live)", () => {
+  it("already-absent victims are filtered from the call (user deleted them live)", () => {
     mockGetNodes.mockReturnValue([{ id: "cleaner" }]); // victim already gone
     render(<Host />);
     act(() => notifyAgentCanvasMutation({ ...REVISION, planId: "rev-2" }));
-    expect(mockApplyRemoveChanges).not.toHaveBeenCalled();
+    // The edge cascade still routes through the reviewed path (it no-ops on
+    // absent edges internally); the gone victim never reappears in the call.
+    expect(mockApplyReviewedRemovals).toHaveBeenCalledWith([], ["edge-1"]);
     expect(mockCreateCodeNode).toHaveBeenCalledTimes(1);
   });
 
@@ -259,6 +257,6 @@ describe("graph-created removals (dev/59)", () => {
         edges: [],
       }),
     );
-    expect(mockApplyRemoveChanges).not.toHaveBeenCalled();
+    expect(mockApplyReviewedRemovals).not.toHaveBeenCalled();
   });
 });

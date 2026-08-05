@@ -34,6 +34,7 @@ jest.mock('../../hook/useWorkflowOperations', () => ({
     beginPendingInstall: jest.fn(),
     endPendingInstall: jest.fn(),
     applyRemoveChanges: jest.fn(),
+    applyReviewedRemovals: jest.fn(),
     allMinimized: false,
     setAllMinimized: jest.fn(),
     expandStatus: {},

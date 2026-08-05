@@ -414,6 +414,30 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         return onNodesChange(allowedChanges);
     }, [reactFlow, showToast, onNodesDelete, onNodesChange]);
 
+    // A reviewed plan apply (dev/62, DEC-049): the user authorized every
+    // victim by name and the edge cascade arrived with them, so the manual
+    // "remove the edges first" guard does not apply — the edges leave in the
+    // same operation. Bookkeeping parity with manual deletion: onEdgesDelete
+    // (collab broadcast, provenance, survivor-input reset) and onNodesDelete
+    // (output pruning, provenance, broadcast). Already-absent elements no-op.
+    const applyReviewedRemovals = useCallback((nodeIds: string[], edgeIds: string[]) => {
+        const edgeSet = new Set(edgeIds);
+        const victimEdges = reactFlow.getEdges().filter((e: Edge) => edgeSet.has(e.id));
+        if (victimEdges.length) {
+            onEdgesDelete(victimEdges);
+            setEdges((prev: Edge[]) => prev.filter((e: Edge) => !edgeSet.has(e.id)));
+        }
+        const nodeSet = new Set(nodeIds);
+        const changes: NodeRemoveChange[] = reactFlow
+            .getNodes()
+            .filter((n: Node) => nodeSet.has(n.id))
+            .map((n: Node) => ({ id: n.id, type: "remove" as const }));
+        if (changes.length) {
+            onNodesDelete(changes);
+            onNodesChange(changes);
+        }
+    }, [reactFlow, onEdgesDelete, setEdges, onNodesDelete, onNodesChange]);
+
     // ---------------------------------------------------------------------------
     // Suggestion Management
     // ---------------------------------------------------------------------------
@@ -1031,6 +1055,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         acceptSuggestion,
         eraseWorkflowSuggestions,
         applyRemoveChanges,
+        applyReviewedRemovals,
 
         // Project operations
         saveCurrentProject,
