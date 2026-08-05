@@ -1,9 +1,10 @@
 # Implementation Memo: Reviewed Removals vs. the Manual Delete Guard — the Bridge Gets Its Own Removal Path (dev/59 follow-up)
 
 Date: 2026-08-05
-Status: proposed (implementing in the same session — explicit fix report: applying a
-remove-only plan spams "Connected boxes cannot be removed" warnings, victims stay on the
-canvas until a refresh)
+Status: implemented 2026-08-05 — COMMIT-281c5b59. Verification: frontend `npx jest` →
+669 passed, 62 suites (+4: reviewed-removals hook suite incl. the manual-guard regression
+pin; bridge tests reworked to the one-call reviewed path); `tsc --noEmit` clean for the
+touched files.
 
 ## 1. Problem Statement
 
@@ -131,10 +132,10 @@ callers.
 
 ## 8. Acceptance Criteria
 
-- [ ] Applying the clear-canvas plan empties the canvas live: no "Connected boxes cannot be
+- [x] Applying the clear-canvas plan empties the canvas live: no "Connected boxes cannot be
       removed" toasts, no refresh required.
-- [ ] Replace flows rewire to survivors whose inputs are reset, live.
-- [ ] Manual delete behavior (guard + warning) is byte-identical.
+- [x] Replace flows rewire to survivors whose inputs are reset, live.
+- [x] Manual delete behavior (guard + warning) is byte-identical.
 
 ## 9. Recommended Commit Breakdown
 
