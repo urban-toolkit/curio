@@ -1,7 +1,10 @@
 # Implementation Memo: Fence-Agnostic Plan Recognition (dev/52 follow-up, fourth round)
 
 Date: 2026-08-05
-Status: proposed (implementing in the same session — explicit fix request)
+Status: implemented 2026-08-05 — COMMIT-a59447a3. Verification: backend `pytest tests
+--ignore=tests/test_frontend` → 1022 passed; the reported scenario (a valid plan in a ```json
+fence with trailing prose) is regression-pinned end-to-end, run and stream, including the
+persisted-text strip and the strip-button mirror.
 
 ## 1. Problem Statement (root cause, reproduced)
 
@@ -43,7 +46,7 @@ machinery never engaged.
 - routes: a valid ```json-fenced plan mints (persisted reply keeps the prose, drops the JSON);
   an invalid one corrects (feedback includes the curio.v1 fence guidance) then mints; ungranted
   agents keep byte-identical text (regression); stream variant mints with `review_required`.
-- [ ] A plan emitted in ANY common shape — curio.v1 tail, toolRequest form, ```json fence,
+- [x] A plan emitted in ANY common shape — curio.v1 tail, toolRequest form, ```json fence,
       bare fence, mid-reply — ends in an applyable proposal or an explained failure.
 
 ## 4. Commits
