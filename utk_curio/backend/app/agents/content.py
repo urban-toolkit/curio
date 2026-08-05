@@ -71,6 +71,8 @@ _PLAN_REF_MAX_CHARS = 32
 _PLAN_TITLE_MAX_CHARS = 120
 _PLAN_INTENT_MAX_CHARS = 300
 _PLAN_NODE_TYPE_MAX_CHARS = 120
+# dev/59 revision fields: existing node/edge ids (uuids in practice).
+_PLAN_REMOVAL_ID_MAX_CHARS = 64
 
 # datasetCandidates bounds (memo dev/50 — the docs/06 two-lane row contract).
 # Rows are informational display metadata; every string is bounded here and
@@ -295,9 +297,40 @@ def _field_error(where: str, value: object, max_chars: int) -> str | None:
     return None
 
 
+def _parse_removal_list(
+    raw: object, key: str, max_entries: int, errors: list[str]
+) -> list[str]:
+    """A bounded, deduplicated list of existing-element ids (dev/59) —
+    existence against the saved spec is the MINT's check, not the grammar's."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        errors.append(f"{key} must be a list of ids")
+        return []
+    if len(raw) > max_entries:
+        errors.append(f"{key} has {len(raw)} entries (max {max_entries})")
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for i, value in enumerate(raw):
+        err = _field_error(f"{key}[{i}]", value, _PLAN_REMOVAL_ID_MAX_CHARS)
+        if err:
+            errors.append(err)
+            continue
+        entry = str(value).strip()
+        if entry in seen:
+            errors.append(f"{key}[{i}] duplicates {entry!r}")
+            continue
+        seen.add(entry)
+        out.append(entry)
+    return out
+
+
 def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
-    """The dev/52 typed plan part (DR-1), with field-level errors (dev/54):
-    the loop feeds them back so an imperfect first attempt self-corrects.
+    """The dev/52 typed plan part (DR-1), with field-level errors (dev/54)
+    and the dev/59 revision fields (``removeNodes``/``removeEdges``; edge
+    endpoints may name existing nodes). The loop feeds errors back so an
+    imperfect first attempt self-corrects.
     Returns ``(plan, [])`` on success or ``(None, errors)``."""
     errors: list[str] = []
     if not isinstance(raw, dict):
@@ -312,9 +345,14 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
             errors.append(err)
         else:
             plan["templateId"] = str(raw.get("templateId")).strip()
+    # dev/59: revision fields parse first — a remove-only plan is valid.
+    remove_nodes = _parse_removal_list(raw.get("removeNodes"), "removeNodes", _PLAN_MAX_NODES, errors)
+    remove_edges = _parse_removal_list(raw.get("removeEdges"), "removeEdges", _PLAN_MAX_EDGES, errors)
     nodes_raw = raw.get("nodes")
-    if not isinstance(nodes_raw, list) or not nodes_raw:
-        errors.append("nodes must be a non-empty list")
+    if nodes_raw is None and (remove_nodes or remove_edges):
+        nodes_raw = []  # a remove-only revision carries no new nodes
+    if not isinstance(nodes_raw, list) or (not nodes_raw and not (remove_nodes or remove_edges)):
+        errors.append("nodes must be a non-empty list (unless the plan only removes)")
         nodes_raw = []
     elif len(nodes_raw) > _PLAN_MAX_NODES:
         errors.append(f"nodes has {len(nodes_raw)} entries (max {_PLAN_MAX_NODES})")
@@ -371,18 +409,29 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         edges_raw = []
     edges: list[dict] = []
     seen_edges: set[tuple[str, str]] = set()
+    removed = set(remove_nodes)
     for i, edge_raw in enumerate(edges_raw):
         where = f"edges[{i}]"
         if not isinstance(edge_raw, dict):
             errors.append(f"{where} must be an object")
             continue
         src, dst = edge_raw.get("from"), edge_raw.get("to")
-        if src not in refs:
-            errors.append(f"{where}.from references unknown ref {src!r}")
+        endpoint_errors = []
+        for label, value in (("from", src), ("to", dst)):
+            # dev/59: an endpoint outside the plan refs names an EXISTING
+            # node — its existence is the mint's spec check; the grammar
+            # verifies the string shape and that it isn't a removal victim.
+            err = _field_error(f"{where}.{label}", value, _PLAN_REMOVAL_ID_MAX_CHARS)
+            if err:
+                endpoint_errors.append(err)
+            elif str(value).strip() in removed:
+                endpoint_errors.append(
+                    f"{where}.{label} references {value!r}, which this plan removes"
+                )
+        if endpoint_errors:
+            errors.extend(endpoint_errors)
             continue
-        if dst not in refs:
-            errors.append(f"{where}.to references unknown ref {dst!r}")
-            continue
+        src, dst = str(src).strip(), str(dst).strip()
         if src == dst:
             errors.append(f"{where} connects {src!r} to itself")
             continue
@@ -392,6 +441,11 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         seen_edges.add((src, dst))
         edges.append({"from": src, "to": dst})
     plan["edges"] = edges
+    # dev/59: keys present only when used — additive plans stay byte-identical.
+    if remove_nodes:
+        plan["removeNodes"] = remove_nodes
+    if remove_edges:
+        plan["removeEdges"] = remove_edges
     if errors:
         return None, errors
     return plan, []

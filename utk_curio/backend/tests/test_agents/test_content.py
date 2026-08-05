@@ -433,9 +433,13 @@ class TestDataflowPlanPart:
         dup = self._plan(n_nodes=2)
         dup["nodes"][1]["ref"] = "n0"
         assert content.parse_parts(json.dumps({"dataflowPlan": dup})) is None
-        dangling = self._plan(n_nodes=2)
-        dangling["edges"] = [{"from": "n0", "to": "ghost"}]
-        assert content.parse_parts(json.dumps({"dataflowPlan": dangling})) is None
+        # dev/59: an endpoint outside the plan refs names an EXISTING node —
+        # grammar-valid; existence is the mint's spec check.
+        existing = self._plan(n_nodes=2)
+        existing["edges"] = [{"from": "n0", "to": "some-existing-node-id"}]
+        parts = content.parse_parts(json.dumps({"dataflowPlan": existing}))
+        assert parts is not None
+        assert parts[0]["edges"][-1] == {"from": "n0", "to": "some-existing-node-id"}
         self_edge = self._plan(n_nodes=2)
         self_edge["edges"] = [{"from": "n0", "to": "n0"}]
         assert content.parse_parts(json.dumps({"dataflowPlan": self_edge})) is None
@@ -478,13 +482,14 @@ class TestPlanTailDiagnosis:
                 {"ref": "n2", "nodeType": "curio.builtin/data-loading",
                  "title": "ok", "intent": "x" * 301},
             ],
-            "edges": [{"from": "n1", "to": "ghost"}],
+            "edges": [{"from": "n1", "to": "n2"}],
+            "removeNodes": ["victim-1", "victim-1"],
         }
         errors = content.plan_tail_diagnosis(_json.dumps({"dataflowPlan": plan}))
         joined = "\n".join(errors)
         assert "nodes[2].intent is 301 chars (max 300)" in joined
         assert "refs must be unique" in joined
-        assert "edges[0].to references unknown ref 'ghost'" in joined
+        assert "removeNodes[1] duplicates 'victim-1'" in joined
 
     def test_valid_plan_diagnoses_clean(self):
         import json as _json
@@ -580,3 +585,59 @@ class TestExtractNodeContent:
     def test_non_string_and_empty(self):
         assert content.extract_node_content(None) == ""
         assert content.extract_node_content("   ") == ""
+
+
+class TestDataflowPlanRevisionGrammar:
+    """dev/59 — removeNodes/removeEdges + existing-id endpoints: additive
+    plans byte-identical, remove-only plans valid, victims unreferencable."""
+
+    def _plan(self, **over):
+        plan = {
+            "goal": "revise",
+            "nodes": [
+                {"ref": "a", "nodeType": "curio.builtin/computation-analysis",
+                 "title": "New", "intent": "does new things"},
+            ],
+            "edges": [],
+        }
+        plan.update(over)
+        return plan
+
+    def test_additive_plans_are_byte_identical(self):
+        (part,) = content.parse_parts(json.dumps({"dataflowPlan": self._plan()}))
+        assert "removeNodes" not in part and "removeEdges" not in part
+
+    def test_revision_fields_parse(self):
+        plan = self._plan(
+            removeNodes=["old-node-1"],
+            removeEdges=["old-edge-1"],
+            edges=[{"from": "a", "to": "existing-cleaner-id"}],
+        )
+        (part,) = content.parse_parts(json.dumps({"dataflowPlan": plan}))
+        assert part["removeNodes"] == ["old-node-1"]
+        assert part["removeEdges"] == ["old-edge-1"]
+        assert part["edges"] == [{"from": "a", "to": "existing-cleaner-id"}]
+
+    def test_remove_only_plan_is_valid(self):
+        plan = {"goal": "cleanup", "removeNodes": ["old-1", "old-2"]}
+        (part,) = content.parse_parts(json.dumps({"dataflowPlan": plan}))
+        assert part["nodes"] == [] and part["removeNodes"] == ["old-1", "old-2"]
+
+    def test_fully_empty_plan_stays_invalid(self):
+        assert content.parse_parts(json.dumps({"dataflowPlan": {"goal": "g"}})) is None
+
+    def test_edge_to_a_removal_victim_is_an_error(self):
+        plan = self._plan(
+            removeNodes=["victim-1"],
+            edges=[{"from": "a", "to": "victim-1"}],
+        )
+        errors = content.plan_tail_diagnosis(json.dumps({"dataflowPlan": plan}))
+        assert any("which this plan removes" in e for e in errors)
+
+    def test_removal_duplicates_and_bounds(self):
+        dup = self._plan(removeNodes=["x", "x"])
+        errors = content.plan_tail_diagnosis(json.dumps({"dataflowPlan": dup}))
+        assert any("duplicates 'x'" in e for e in errors)
+        too_many = self._plan(removeNodes=[f"n{i}" for i in range(201)])
+        errors = content.plan_tail_diagnosis(json.dumps({"dataflowPlan": too_many}))
+        assert any("max 200" in e for e in errors)
