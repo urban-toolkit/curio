@@ -54,13 +54,17 @@ def _candidate_coords(agent_id: str, installed: set[str]) -> list[str]:
 
 
 def resolve(user_key: str, project_id: str, parent: AgentManifest, capability: str) -> Resolution:
-    """Resolve *capability* over ``parent.delegates_to`` ∩ this project's
-    installed templates, in ``delegatesTo`` order (dev/15: order = preference).
+    """Resolve *capability* against this project's installed templates —
+    capability-first with ``delegatesTo`` as preference (dev/03:366; the
+    dev/49-recorded widening landed in memo dev/52).
 
-    Never consults other projects. A delegate that declares the capability
-    but is not installed here resolves as ``not-installed`` (the missing-
-    specialist outcome); a capability no delegate declares is
-    ``unresolvable``.
+    Order: (1) the parent's ``delegatesTo`` entries, in declaration order
+    (dev/15: order = preference); (2) ANY other template installed in THIS
+    project that declares the capability, in sorted-coord order
+    (deterministic tie-break). Never consults other projects. When nothing
+    installed matches but a ``delegatesTo`` entry is visible in the catalog,
+    the outcome is ``not-installed`` (the missing-specialist proposal path);
+    a capability nobody declares is ``unresolvable``.
     """
     from utk_curio.backend.app.agents import project_agents, services
     from utk_curio.backend.app.projects import storage as projects_storage
@@ -68,7 +72,8 @@ def resolve(user_key: str, project_id: str, parent: AgentManifest, capability: s
     spec = projects_storage.read_spec(user_key, project_id)
     installed = set(project_agents.project_agents(spec)) if spec else set()
     missing: Resolution | None = None
-    for agent_id in parent.delegates_to:
+    preferred_ids = list(parent.delegates_to)
+    for agent_id in preferred_ids:
         for coord in _candidate_coords(agent_id, installed):
             m = services._resolve_definition(user_key, coord)
             if m is not None and capability in m.capability_ids:
@@ -77,6 +82,14 @@ def resolve(user_key: str, project_id: str, parent: AgentManifest, capability: s
             visible_coord, visible_m = find_visible(user_key, agent_id)
             if visible_m is not None and capability in visible_m.capability_ids:
                 missing = Resolution("not-installed", visible_coord, visible_m)
+    # Capability-first fallback: any other installed template declaring it.
+    preferred = set(preferred_ids)
+    for coord in sorted(installed):
+        if coord.split("@", 1)[0] in preferred:
+            continue  # already walked above
+        m = services._resolve_definition(user_key, coord)
+        if m is not None and capability in m.capability_ids:
+            return Resolution("ok", coord, m)
     return missing or Resolution("unresolvable")
 
 

@@ -174,6 +174,24 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                    "agent.keyword-binding-agent"),
                      review_policy="review-before-apply",
                      node_requires=("data-loading",)),
+    # The third P5 composite (memo dev/52; spec dev/15 §3.4 + dev/49 DR-1…5).
+    # Plan → Revise → Solve → Run: additive graph-level plan proposals, the
+    # persisted builder session, and the authenticated Solve batch (DEC-048).
+    # Deviation recorded: agent.package-recommendation deferred (dev/16).
+    BuiltinAgentSpec("agent.dataflow-builder", "Dataflow Builder", "canvas",
+                     "Plan a connected dataflow from a goal as one reviewable proposal; "
+                     "solve unresolved nodes through delegated specialists. Never mutates "
+                     "without review.",
+                     "orchestration_instruction.txt",
+                     ("dataflow.orchestrate",), ("orchestration",),
+                     reads=("mission", "graphContext", "installedTemplates"),
+                     tools=("dataflow.read", "dataflow.plan.write"),
+                     delegates_to=("agent.dataset-finder", "agent.node-builder",
+                                   "agent.connection-builder", "agent.dataflow-task-planner",
+                                   "agent.execution-subtask-planner", "agent.task-refresh-agent",
+                                   "agent.workflow-suggester", "agent.plan-coherence-validator",
+                                   "agent.dataflow-explainer"),
+                     review_policy="review-before-apply"),
 )
 
 

@@ -94,8 +94,8 @@ class TestGlobalCatalog:
         resp = client.get("/api/agents/catalog", headers=_auth(token))
         assert resp.status_code == 200
         agents = resp.get_json()["agents"]
-        # 13 migrations + the composites (dev/48 node-builder, dev/50 dataset-finder).
-        assert len(agents) == 15
+        # 13 migrations + the three composites (dev/48, dev/50, dev/52).
+        assert len(agents) == 16
         assert all(a["scope"] == "global" and a["provenance"]["trust"] == "built-in" for a in agents)
         ids = {a["id"] for a in agents}
         assert "agent.node-explainer" in ids

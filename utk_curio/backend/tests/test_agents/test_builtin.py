@@ -26,9 +26,9 @@ _EXPECTED = {
 
 
 class TestRoster:
-    def test_fifteen_agents(self):
-        # 13 migrations + agent.node-builder (dev/48) + agent.dataset-finder (dev/50).
-        assert len(builtin.BUILTIN_AGENTS) == 15
+    def test_sixteen_agents(self):
+        # 13 migrations + the three composites (dev/48, dev/50, dev/52).
+        assert len(builtin.BUILTIN_AGENTS) == 16
 
     def test_evaluator_excluded(self):
         ids = {s.agent_id for s in builtin.BUILTIN_AGENTS}
@@ -43,7 +43,7 @@ class TestRoster:
         assert got == _EXPECTED
         # The composites are the only non-migration entries (dev/48, dev/50).
         extras = {s.agent_id for s in builtin.BUILTIN_AGENTS} - set(_EXPECTED)
-        assert extras == {"agent.node-builder", "agent.dataset-finder"}
+        assert extras == {"agent.node-builder", "agent.dataset-finder", "agent.dataflow-builder"}
 
     def test_every_prompt_file_exists(self):
         for spec in builtin.BUILTIN_AGENTS:
@@ -53,7 +53,7 @@ class TestRoster:
 class TestManifests:
     def test_all_validate(self):
         manifests = builtin.list_builtin_manifests()
-        assert len(manifests) == 15
+        assert len(manifests) == 16
         assert all(isinstance(m, AgentManifest) for m in manifests)
 
     def test_coords_and_capabilities(self):
@@ -129,7 +129,7 @@ class TestNodeBuilderComposite:
         assert nb["delegatesTo"] == [
             "agent.node-content-builder", "agent.execution-subtask-planner",
         ]
-        composites = {"agent.node-builder", "agent.dataset-finder"}
+        composites = {"agent.node-builder", "agent.dataset-finder", "agent.dataflow-builder"}
         for spec in builtin.BUILTIN_AGENTS:
             if spec.agent_id in composites:
                 continue
@@ -174,4 +174,30 @@ class TestDatasetFinderComposite:
         text = builtin.read_prompt_text(self.COORD, "instruction")
         assert text and "two lanes" in text.lower()
         assert "never author" in text.lower() or "never authors" in text.lower()
+        assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
+
+
+class TestDataflowBuilderComposite:
+    """The dev/52 roster entry — spec per dev/15 §3.4 minus recorded deviations."""
+
+    COORD = "agent.dataflow-builder@1.0.0"
+
+    def test_manifest_surface(self):
+        m = builtin.get_builtin_manifest(self.COORD)
+        assert m is not None
+        assert m.capability_ids == ["dataflow.orchestrate"]
+        assert m.delegates_to == [
+            "agent.dataset-finder", "agent.node-builder", "agent.connection-builder",
+            "agent.dataflow-task-planner", "agent.execution-subtask-planner",
+            "agent.task-refresh-agent", "agent.workflow-suggester",
+            "agent.plan-coherence-validator", "agent.dataflow-explainer",
+        ]
+        assert [t.kind for t in m.compatible_targets] == ["canvas"]
+        assert [t.id for t in m.tools] == ["dataflow.read", "dataflow.plan.write"]
+        assert m.provenance.trust == "built-in"
+
+    def test_net_new_instruction_resolves(self):
+        text = builtin.read_prompt_text(self.COORD, "instruction")
+        assert text and "ADDITIVE" in text
+        assert "dataflowPlan" in text
         assert builtin.read_prompt_text(self.COORD, "system")  # default preamble

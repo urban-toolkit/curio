@@ -490,3 +490,56 @@ class TestDec047DatasetFinderHandoff:
         _run(client, token, pid, att_id)
         system = calls[0][0]["content"]
         assert "dataset.fetch.author — handled by Node Builder" in system
+
+
+class TestCapabilityFirstResolution:
+    """dev/52 — the dev/03:366 widening: capability-first discovery over ALL
+    current-project templates, with delegatesTo as preference."""
+
+    DFB = "agent.dataflow-builder@1.0.0"
+
+    def _manifest(self):
+        return builtin.get_builtin_manifest(self.DFB)
+
+    def test_non_delegates_to_installed_template_resolves(self, client, user_and_token, tmp_curio):
+        # Chat declares conversation.respond and is NOT in dataflow-builder's
+        # delegatesTo — capability-first finds it once installed.
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        pid = _project(client, token)
+        client.post(f"/api/agents/projects/{pid}/install", json={"coord": "agent.chat-agent@1.0.0"}, headers=_auth(token))
+        r = delegation.resolve(key, pid, self._manifest(), "conversation.respond")
+        assert r.outcome == "ok"
+        assert r.coord == "agent.chat-agent@1.0.0"
+
+    def test_delegates_to_preference_still_wins(self, client, user_and_token, tmp_curio):
+        # node-content-builder is NCB's capability via node-builder's list; for
+        # dataflow-builder, node.build is declared by node-builder (in its
+        # delegatesTo) — install both node-builder and a hypothetical rival:
+        # preference order must pick the delegatesTo entry first.
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        pid = _project(client, token)
+        client.post(f"/api/agents/projects/{pid}/install", json={"coord": NB}, headers=_auth(token))
+        r = delegation.resolve(key, pid, self._manifest(), "node.build")
+        assert r.outcome == "ok"
+        assert r.coord == NB
+
+    def test_capability_first_never_crosses_projects(self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        pid_a = _project(client, token)
+        pid_b = _project(client, token)
+        client.post(f"/api/agents/projects/{pid_b}/install", json={"coord": "agent.chat-agent@1.0.0"}, headers=_auth(token))
+        r = delegation.resolve(key, pid_a, self._manifest(), "conversation.respond")
+        assert r.outcome == "unresolvable"
+
+    def test_missing_delegates_to_entry_still_preferred_over_fallback_absence(self, client, user_and_token, tmp_curio):
+        # Nothing installed declares dataset.discover, but dataset-finder (a
+        # delegatesTo entry) is visible → missing-specialist, not unresolvable.
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        pid = _project(client, token)
+        r = delegation.resolve(key, pid, self._manifest(), "dataset.discover")
+        assert r.outcome == "not-installed"
+        assert r.coord == "agent.dataset-finder@1.0.0"
