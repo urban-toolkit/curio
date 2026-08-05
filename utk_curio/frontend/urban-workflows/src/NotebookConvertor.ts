@@ -112,7 +112,7 @@ function _type_is_ambiguous(code: string){
   return true;
 }
 
-// Delete the export once your done
+// Export for testing purposes
 // Confers the cell types with the LLM
 export async function getLlmTypes(
   ambiguousCells: Cell[],
@@ -318,7 +318,7 @@ export async function notebookToTrill(
       "NotebookConvertor: backend unreachable, falling back to linear chain."
     );
   }
-  
+
   // ── Step 3: Build quick-lookup structures from the edge list ────────────
   // ── Step 3a: Raw incoming-edge grouping (just for merge detection) ──────
   const rawIncoming = new Map<number, number[]>();
