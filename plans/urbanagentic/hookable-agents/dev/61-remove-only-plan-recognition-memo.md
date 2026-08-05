@@ -1,8 +1,9 @@
 # Implementation Memo: Remove-Only Plan Recognition — the Scanner Learns dev/59's Grammar (dev/56 + dev/59 follow-up)
 
 Date: 2026-08-05
-Status: proposed (implementing in the same session — explicit fix request: "clear the canvas"
-now produces a plan whose JSON leaks raw into the transcript, no Apply button, pills stuck)
+Status: implemented 2026-08-05 — COMMIT-478b1179. Verification: backend `pytest tests
+--ignore=tests/test_frontend` → 1052 passed (+5: 3 scanner, 1 diagnosis, 1 route regression
+pinning the user's exact "clear the canvas" payload).
 
 ## 1. Problem Statement
 
@@ -116,11 +117,11 @@ card and strip, pills flipping READY → REVIEW on mint and back to READY after 
 
 ## 8. Acceptance Criteria
 
-- [ ] "Clear the canvas" yields a review card naming every node to remove, with the Apply
+- [x] "Clear the canvas" yields a review card naming every node to remove, with the Apply
       button on card and strip, and pills on REVIEW — no raw JSON block in the transcript.
-- [ ] A malformed remove-only attempt feeds the corrective rounds (loud cap card at budget),
+- [x] A malformed remove-only attempt feeds the corrective rounds (loud cap card at budget),
       never a silent leak.
-- [ ] Additive-plan recognition and ungranted-agent behavior are byte-identical.
+- [x] Additive-plan recognition and ungranted-agent behavior are byte-identical.
 
 ## 9. Recommended Commit Breakdown
 
