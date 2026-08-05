@@ -1,8 +1,10 @@
 # Implementation Memo: Destructive Replan Reconciliation (Dataflow Builder — the dev/52 additive-only deferral)
 
 Date: 2026-08-05
-Status: implemented 2026-08-05 — COMMIT-d0bd2d14 (grammar), COMMIT-12e5771d (mint + apply,
-DEC-049), COMMIT-97fa6c41 (frontend), docs in the closing commit. Verification: backend
+Status: implemented 2026-08-05 — the five planned commits landed as four: COMMIT-d0bd2d14
+(§9 commit 1, grammar), COMMIT-12e5771d (§9 commits 2+3 combined — mint and apply share one
+test class and the apply is untestable without the mint), COMMIT-97fa6c41 (§9 commit 4,
+frontend), COMMIT-941e6698 (§9 commit 5, docs + ledgers + instruction). Verification: backend
 `pytest tests --ignore=tests/test_frontend` → 1044 passed; frontend `npx jest` → 665 passed
 (61 suites); injection-resistance + rule-9 suites included.
 Feature slice: the recorded dev/52 deferral (dev/49 DR-2 remainder). Dataflow Builder plans gain
