@@ -4169,3 +4169,111 @@ class TestPlanToolRequestForm:
 
         big = {"toolRequest": {"tool": "node.read", "params": {"x": "y" * 2000}}}
         assert content_mod.parse_parts(_json.dumps(big)) is None
+
+
+class TestFenceAgnosticPlanRecognition:
+    """dev/56 — the user's exact scenario: a valid plan in a ```json fence
+    with prose after it must mint; the runtime meets the model where it
+    writes."""
+
+    def _json_fence_reply(self, bad_type=False, trailing="Click the Apply button above to place it."):
+        import json as _json
+
+        plan = {
+            "goal": "heat analysis",
+            "nodes": [
+                {"ref": "a",
+                 "nodeType": "data-loading" if bad_type else "curio.builtin/computation-analysis",
+                 "title": "Load", "intent": "load the data"},
+                {"ref": "b", "nodeType": "curio.builtin/computation-analysis",
+                 "title": "Analyze", "intent": "compute stats"},
+            ],
+            "edges": [{"from": "a", "to": "b"}],
+        }
+        return (
+            "Here is your plan:\n\n```json\n"
+            + _json.dumps({"dataflowPlan": plan}, indent=2)
+            + "\n```\n\n"
+            + trailing
+        )
+
+    def test_valid_json_fence_plan_mints_and_strips_the_block(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        att_id, _ = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=[self._json_fence_reply()],
+        )
+        r = helper._run(client, token, alice_project, att_id)
+        body = r.get_json()
+        proposal = next(p for p in body["content"] if p["type"] == "proposal")
+        assert proposal["tool"] == "dataflow.plan.write"
+        assert proposal["status"] == "pending"
+        # The prose stays; the raw JSON block is gone — the card is the home.
+        assert "Here is your plan:" in body["reply"]
+        assert "```" not in body["reply"]
+        # The mirror drives the strip Apply button too.
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        assert cards[0]["activeProposal"]["tool"] == "dataflow.plan.write"
+        assert cards[0]["builderSession"]["phase"] == "plan_review"
+
+    def test_invalid_json_fence_plan_corrects_with_fence_guidance(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        att_id, calls = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=[
+                self._json_fence_reply(bad_type=True),
+                "Fixed.\n" + helper._plan_tail(),
+            ],
+        )
+        r = helper._run(client, token, alice_project, att_id)
+        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
+        assert proposal["status"] == "pending"
+        feedback = calls[1][-1]["content"]
+        assert "not an available template" in feedback
+        assert "curio.v1" in feedback  # the fence guidance
+
+    def test_ungranted_agents_keep_json_fences_verbatim(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        att_id, calls = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            coord="agent.chat-agent@1.0.0",
+            replies=[self._json_fence_reply()],
+        )
+        body = helper._run(client, token, alice_project, att_id).get_json()
+        assert len(calls) == 1
+        assert "```json" in body["reply"]  # byte-identical for non-plan agents
+        assert all(p["type"] != "proposal" for p in body["content"])
+
+    def test_stream_json_fence_plan_mints_with_review_required(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        import json as _json
+
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        att_id, _ = helper._setup(client, user, token, alice_project, monkeypatch, replies=["ignored"])
+        reply = self._json_fence_reply()
+        calls = []
+
+        def _fake_stream(config, messages, **kwargs):
+            calls.append(messages)
+            for i in range(0, len(reply), 11):
+                yield reply[i : i + 11]
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run/stream",
+            json={"message": "plan it"}, headers=_auth(token),
+        )
+        events = []
+        for block in r.get_data(as_text=True).strip().split("\n\n"):
+            lines = dict(l.split(": ", 1) for l in block.splitlines() if ": " in l)
+            events.append((lines["event"], _json.loads(lines["data"])))
+        kinds = [k for k, _ in events]
+        assert "review_required" in kinds
+        done = events[-1][1]
+        assert any(p["type"] == "proposal" for p in done["content"])
+        assert "```" not in done["reply"]

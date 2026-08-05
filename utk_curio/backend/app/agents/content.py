@@ -411,6 +411,52 @@ def parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
     return _parse_dataflow_plan_verbose(raw)
 
 
+# Any fenced block, any info string ("json", "", "curio.v1", …), any position.
+_FENCE_RE = re.compile(r"```[A-Za-z0-9.\-]*\n(.*?)\n```", re.DOTALL)
+
+
+def extract_plan_attempt(reply: str) -> tuple[str, object]:
+    """Fence-agnostic plan-attempt recognition (dev/56) — consulted only by
+    the plan handler for plan-granted agents, and only after the terminal
+    curio.v1 tail paths found nothing.
+
+    Scans every fenced block (models emit ```json / bare fences, often
+    mid-reply with prose after) for a plan payload: ``{"dataflowPlan": …}``,
+    the toolRequest form, or the bare plan object. Returns
+    ``(reply_with_the_block_stripped, payload)`` where payload is the raw
+    plan dict, the unparseable block body (``str`` — so the JSON error still
+    feeds back), or ``None`` when the reply carries no plan attempt.
+    """
+    if not isinstance(reply, str) or "```" not in reply:
+        return reply, None
+    for match in reversed(list(_FENCE_RE.finditer(reply))):
+        body = match.group(1)
+        marked = "dataflowPlan" in body or "dataflow.plan.write" in body
+        bare_shape = '"goal"' in body and '"nodes"' in body
+        if not marked and not bare_shape:
+            continue
+        if len(body.encode("utf-8")) > PLAN_TAIL_MAX_BYTES:
+            continue
+        stripped = (reply[: match.start()] + reply[match.end() :]).strip()
+        try:
+            payload = json.loads(body)
+        except (ValueError, TypeError):
+            if marked:
+                return stripped, body  # a plan-ish block with broken JSON: diagnose it
+            continue  # a broken unmarked block is too ambiguous to claim
+        if not isinstance(payload, dict):
+            continue
+        if "dataflowPlan" in payload:
+            return stripped, payload["dataflowPlan"]
+        req = payload.get("toolRequest")
+        if isinstance(req, dict) and req.get("tool") == "dataflow.plan.write":
+            params = req.get("params") or {}
+            return stripped, params.get("dataflowPlan", params)
+        if "goal" in payload and "nodes" in payload:
+            return stripped, payload  # the bare plan object itself
+    return reply, None
+
+
 def plan_tail_diagnosis(tail_body: str | None) -> list[str] | None:
     """Classify a terminal tail body as a plan attempt (dev/54).
 

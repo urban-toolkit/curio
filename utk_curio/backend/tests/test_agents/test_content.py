@@ -494,3 +494,45 @@ class TestPlanTailDiagnosis:
              "title": "Load", "intent": "load"},
         ], "edges": []}
         assert content.plan_tail_diagnosis(_json.dumps({"dataflowPlan": plan})) == []
+
+
+class TestExtractPlanAttempt:
+    """dev/56 — fence-agnostic plan-attempt recognition."""
+
+    def _plan(self):
+        return {"goal": "g", "nodes": [
+            {"ref": "n1", "nodeType": "curio.builtin/data-loading",
+             "title": "Load", "intent": "load"},
+        ], "edges": []}
+
+    def test_json_fence_mid_reply_with_trailing_prose(self):
+        reply = (
+            "Here is your plan:\n\n```json\n"
+            + json.dumps({"dataflowPlan": self._plan()}, indent=2)
+            + "\n```\n\nClick Apply above to place it."
+        )
+        stripped, raw = content.extract_plan_attempt(reply)
+        assert raw == self._plan()
+        assert "```" not in stripped
+        assert "Here is your plan:" in stripped and "Click Apply above" in stripped
+
+    def test_bare_fence_and_bare_plan_object(self):
+        reply = "Plan:\n```\n" + json.dumps(self._plan()) + "\n```"
+        _, raw = content.extract_plan_attempt(reply)
+        assert raw == self._plan()
+
+    def test_tool_request_form_in_json_fence(self):
+        body = json.dumps({"toolRequest": {"tool": "dataflow.plan.write", "params": {"dataflowPlan": self._plan()}}})
+        _, raw = content.extract_plan_attempt("x\n```json\n" + body + "\n```")
+        assert raw == self._plan()
+
+    def test_broken_json_planish_fence_returns_the_body(self):
+        reply = 'Try:\n```json\n{"dataflowPlan": {"goal": "g", nodes: []}}\n```'
+        stripped, raw = content.extract_plan_attempt(reply)
+        assert isinstance(raw, str) and "dataflowPlan" in raw
+        assert "```" not in stripped
+
+    def test_non_plan_replies_untouched(self):
+        reply = "Some code:\n```python\nprint(1)\n```"
+        assert content.extract_plan_attempt(reply) == (reply, None)
+        assert content.extract_plan_attempt("no fences at all") == ("no fences at all", None)

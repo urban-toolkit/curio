@@ -1290,35 +1290,62 @@ def _handle_plan_reply(
 ) -> tuple[str, list]:
     """In-loop plan handling (dev/52 mint, dev/54 correction rounds).
 
-    Returns ``(kind, payload)``: ``("none", parts)`` — not a plan situation
-    (ungranted agents keep the informational part; generic fail-open
-    untouched); ``("mint", parts_without_plan)`` — the proposal was minted
-    (appended to *minted*); ``("correct", errors)`` — feed the errors back
-    and re-round (shares the MAX_TOOL_ROUNDS budget); ``("cap", parts+card)``
-    — budget exhausted: fail loudly, never silently."""
+    Returns ``(kind, payload, visible_override)``: ``("none", parts, None)``
+    — not a plan situation (ungranted agents keep the informational part;
+    generic fail-open untouched); ``("mint", parts, override?)`` — the
+    proposal was minted (appended to *minted*; the override strips a scanned
+    fence block from the persisted text, dev/56); ``("correct", errors,
+    None)`` — feed the errors back and re-round (shares the MAX_TOOL_ROUNDS
+    budget); ``("cap", parts+card, None)`` — budget exhausted: fail loudly,
+    never silently."""
     if "dataflow.plan.write" not in loop_ctx.get("granted", []):
-        return "none", parts
+        return "none", parts, None
+    visible_override: str | None = None
+    fence_guidance = (
+        "put the plan in a ```curio.v1 fenced block as the VERY LAST thing in "
+        "your reply (not ```json)"
+    )
     plan_part = next((p for p in parts if p.get("type") == "dataflowPlan"), None)
     if plan_part is not None:
         status, error_text, part = _mint_dataflow_plan(user_key, project_id, loop_ctx, plan_part)
         if part is not None:
             minted.append(part)
-            return "mint", [p for p in parts if p is not plan_part]
+            return "mint", [p for p in parts if p is not plan_part], None
         errors = [error_text]
     else:
         _, tail_body = content.split_tail(reply)
         errors = content.plan_tail_diagnosis(tail_body)
-        if not errors:  # not a plan attempt — nothing plan-shaped to do
-            return "none", parts
+        if not errors:
+            # No terminal-tail attempt — the fence-agnostic scanner (dev/56):
+            # models emit ```json / bare fences, often mid-reply.
+            stripped, raw = content.extract_plan_attempt(reply)
+            if raw is None:
+                return "none", parts, None  # genuinely not a plan attempt
+            if isinstance(raw, str):
+                errors = (content.plan_tail_diagnosis(raw) or []) + [fence_guidance]
+            else:
+                plan, plan_errors = content.parse_dataflow_plan_verbose(raw)
+                if not plan_errors:
+                    status, error_text, part = _mint_dataflow_plan(
+                        user_key, project_id, loop_ctx, plan
+                    )
+                    if part is not None:
+                        minted.append(part)
+                        # The review card is the plan's home — the raw JSON
+                        # block is stripped from the persisted text.
+                        return "mint", parts, stripped
+                    errors = [error_text, fence_guidance]
+                else:
+                    errors = plan_errors + [fence_guidance]
     if rounds_used < MAX_TOOL_ROUNDS:
-        return "correct", errors
+        return "correct", errors, None
     card = {
         "type": "card",
         "kind": "error",
         "title": "Plan not proposable",
         "lines": [e[:300] for e in errors[:10]],
     }
-    return "cap", [p for p in parts if p.get("type") != "dataflowPlan"] + [card]
+    return "cap", [p for p in parts if p.get("type") != "dataflowPlan"] + [card], None
 
 
 def _resolve_catalog_dataset(project_id: str, dataset_id: object) -> tuple[dict | None, str]:
@@ -2762,7 +2789,7 @@ def run_attachment(
             )
             if req is None:
                 # Plan handling (dev/52 mint; dev/54 correction rounds).
-                kind, payload = _handle_plan_reply(
+                kind, payload, visible_override = _handle_plan_reply(
                     user_key, project_id, loop_ctx, reply, parts, minted, rounds_used
                 )
                 if kind == "correct":
@@ -2772,8 +2799,9 @@ def run_attachment(
                     messages_work.append({"role": "assistant", "content": reply})
                     messages_work.append(_plan_correction_message(payload))
                     continue
-                if visible:
-                    folded.append(visible)
+                effective_visible = visible_override if visible_override is not None else visible
+                if effective_visible:
+                    folded.append(effective_visible)
                 final_parts = payload
                 break
             if visible:
@@ -3007,7 +3035,7 @@ def stream_attachment(
                 )
                 if req is None:
                     # Plan handling (dev/52 mint; dev/54 correction rounds).
-                    kind, payload = _handle_plan_reply(
+                    kind, payload, visible_override = _handle_plan_reply(
                         user_key, project_id, loop_ctx, result["reply"], parts, minted, rounds_used
                     )
                     if kind == "correct":
@@ -3026,8 +3054,11 @@ def stream_attachment(
                         # the model's text — released, then explained by the
                         # error card in `payload`.
                         yield ("delta", result["heldPlanTail"])
-                    if result["visible"]:
-                        folded.append(result["visible"])
+                    effective_visible = (
+                        visible_override if visible_override is not None else result["visible"]
+                    )
+                    if effective_visible:
+                        folded.append(effective_visible)
                     final_parts = payload
                     break
                 if result["visible"]:
