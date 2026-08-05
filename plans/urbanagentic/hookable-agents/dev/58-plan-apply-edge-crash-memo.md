@@ -1,9 +1,8 @@
 # Implementation Memo: Plan-Apply Edge Crash (dev/52 bridge follow-up)
 
 Date: 2026-08-05
-Status: proposed (implementing in the same session — explicit fix request with screenshot:
-`TypeError: Cannot read properties of undefined (reading 'keywordHighlighted') at
-UniDirectionalEdge` on Apply; the saved spec was correct, so a refresh showed the graph)
+Status: implemented 2026-08-05 — see log. Verification: frontend `npx jest` → 660 passed
+(61 suites); the bridge edge-item shape is regression-pinned.
 
 ## 1. Problem Statement (root cause, from the user's stack trace)
 
@@ -25,7 +24,7 @@ never crash).
 
 - Bridge unit test asserts the inserted edge item carries `data: {}`.
 - Edge components render without `data` (regression for any future data-less path).
-- [ ] Applying a plan paints the graph live with no runtime error overlay.
+- [x] Applying a plan paints the graph live with no runtime error overlay.
 
 ## 4. Commits
 
