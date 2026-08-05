@@ -184,6 +184,13 @@ export class TrillGenerator {
                 trill_node.metadata.keywords = node.data.keywords;
             }
 
+            if (node.data.softArtifact != undefined) {
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.softArtifact = node.data.softArtifact;
+            }
+
             trill.dataflow.nodes.push(trill_node)
         }
 

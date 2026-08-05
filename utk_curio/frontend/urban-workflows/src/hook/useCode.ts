@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { Node } from "reactflow";
 import { v4 as uuid } from "uuid";
 
@@ -9,6 +9,7 @@ import { JavaScriptInterpreter } from "../JavaScriptInterpreter";
 import { TrillGenerator } from "../TrillGenerator";
 import { usePosition } from "./usePosition";
 import { AccessLevelType, EdgeType, CURIO_UNIVERSAL_NODE_TYPE } from "../constants";
+import { useEnsureWorkflowDeps } from "./useEnsureWorkflowDeps";
 
 // Module-level singletons so every node shares the same interpreter
 // connection pool. Exported so collaboration's remote-graph handler can
@@ -39,6 +40,7 @@ type CreateCodeNodeOptions = {
     dashboardY?: number;
     dashboardWidth?: number;
     dashboardHeight?: number;
+    softArtifact?: Record<string, unknown>;
 };
 
 interface IUseCode {
@@ -51,12 +53,24 @@ export function useCode(): IUseCode {
     const { loadNodeProvenance } = useProvenanceContext();
     const { getPosition } = usePosition();
 
+    // for softartifact nodes, extract dataflow, put it into useRef 
+    // in order to make getCurrentTrill() and applyProposal() 'apply proposal is for transform and expand role in soft artifact'
+    const { nodes, edges, workflowGoal, workflowNameRef, eraseWorkflowSuggestions } = useFlowContext();     
+    const nodesRef = useRef(nodes); const edgesRef = useRef(edges);
+    const workflowGoalRef = useRef(workflowGoal);
+
+    nodesRef.current = nodes; edgesRef.current = edges; workflowGoalRef.current = workflowGoal;
+
+    const ensureWorkflowDeps = useEnsureWorkflowDeps(); //for softartifact 
+
     const outputCallback = useCallback(
         (nodeId: string, output: string) => {
             applyNewOutput({nodeId: nodeId, output: output});
         },
         [setOutputs]
     );
+
+    
 
     const interactionsCallback = useCallback((interactions: any, nodeId: string) => {
         setInteractions((prevInteractions: IInteraction[]) => {
@@ -135,6 +149,9 @@ export function useCode(): IUseCode {
 
             if(node.metadata != undefined && node.metadata.keywords != undefined)
                 nodeMeta.keywords = node.metadata.keywords;
+
+            if (node.metadata?.softArtifact != undefined)
+                nodeMeta.softArtifact = node.metadata.softArtifact;
 
             if(typeof parsedWidth === "number")
                 nodeMeta.nodeWidth = parsedWidth;
@@ -220,6 +237,28 @@ export function useCode(): IUseCode {
 
     }
 
+    //get the current trill (for soft artifact node behavior =D)
+    const getCurrentTrill = useCallback(() => {
+        return TrillGenerator.generateTrill(
+            nodesRef.current, edgesRef.current, workflowNameRef.current, workflowGoalRef.current
+        ); 
+    }, [workflowNameRef])
+
+    // apply proposal for soft artifact node 
+    // prosoal shape is:
+    // dataflow: {nodes, edges, name}
+    const applyProposal = useCallback((dataflow: any) => {
+        // load trill expect {dataflow: {nodes,edges,name}}
+        eraseWorkflowSuggestions();  // make sure there's no work Flow suggestion
+        loadTrill({ dataflow }, "workflow");
+        ensureWorkflowDeps({ dataflow });
+    }, [eraseWorkflowSuggestions, loadTrill, ensureWorkflowDeps])
+
+    // cancel the given prosposal from the softArtifact node 
+    const cancelProposal = useCallback(() => {
+        eraseWorkflowSuggestions();
+    }, [eraseWorkflowSuggestions]);
+
     const generateCodeNode = useCallback((nodeType: string, options: CreateCodeNodeOptions = {}) => {
         const {
             nodeId = uuid(),
@@ -241,6 +280,7 @@ export function useCode(): IUseCode {
             dashboardPinned = undefined,
             dashboardX = undefined,
             dashboardY = undefined,
+            softArtifact = undefined,
             dashboardWidth = undefined,
             dashboardHeight = undefined,
         } = options;
@@ -271,6 +311,7 @@ export function useCode(): IUseCode {
                 dashboardPinned,
                 dashboardX,
                 dashboardY,
+                softArtifact,
                 dashboardWidth,
                 dashboardHeight,
                 input: "",
@@ -279,6 +320,9 @@ export function useCode(): IUseCode {
                 outputCallback,
                 interactionsCallback,
                 propagationCallback: applyNewPropagation,
+                getCurrentTrill,
+                applyProposal,
+                cancelProposal
             },
         };
 
@@ -290,6 +334,7 @@ export function useCode(): IUseCode {
         let node = generateCodeNode(nodeType, options);
         addNode(node, undefined, true);
     }, [addNode, outputCallback, getPosition]);
+
 
     return { createCodeNode, loadTrill };
 }

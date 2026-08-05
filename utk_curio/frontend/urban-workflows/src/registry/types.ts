@@ -125,6 +125,10 @@ export interface NodeBehaviorData extends INodeData {
   newPropagation?: number;
   /** AI suggestion marker — `"none"` or `undefined` means not a suggestion. */
   suggestionType?: string;
+  /**this is for softArtifact node */
+  applyProposal?: (dataflow: any) => void;
+  getCurrentTrill?: () => void;
+  cancelProposal?: () => void
 }
 
 /**
