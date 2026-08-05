@@ -4074,3 +4074,98 @@ class TestPlanCorrectionRounds:
         assert "curio.v1" not in text
         done = events[-1][1]
         assert any(p["type"] == "proposal" for p in done["content"])
+
+
+class TestPlanToolRequestForm:
+    """dev/55 — the grants paragraph teaches the generic toolRequest syntax,
+    so the runtime honors it: both plan forms mint identically."""
+
+    def _tool_form_tail(self, nested=True, bad_type=False):
+        import json as _json
+
+        plan = {
+            "goal": "heat analysis",
+            "nodes": [
+                {"ref": "a",
+                 "nodeType": "data-loading" if bad_type else "curio.builtin/computation-analysis",
+                 "title": "Load", "intent": "load the data"},
+                {"ref": "b", "nodeType": "curio.builtin/computation-analysis",
+                 "title": "Analyze", "intent": "compute stats"},
+            ],
+            "edges": [{"from": "a", "to": "b"}],
+        }
+        params = {"dataflowPlan": plan} if nested else plan
+        body = _json.dumps({"toolRequest": {"tool": "dataflow.plan.write", "params": params}})
+        return f"```curio.v1\n{body}\n```"
+
+    def _run_with(self, client, user, token, project_id, monkeypatch, replies):
+        helper = TestDataflowPlanMint()
+        att_id, calls = helper._setup(client, user, token, project_id, monkeypatch, replies=replies)
+        r = helper._run(client, token, project_id, att_id)
+        return r, calls
+
+    def test_nested_tool_form_mints_the_same_proposal(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        r, _ = self._run_with(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Planning.\n" + self._tool_form_tail(nested=True), "Proposed — review above."],
+        )
+        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
+        assert proposal["tool"] == "dataflow.plan.write"
+        assert proposal["status"] == "pending"
+        assert [n["title"] for n in proposal["plan"]["nodes"]] == ["Load", "Analyze"]
+
+    def test_direct_params_tool_form_mints_too(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        r, _ = self._run_with(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Planning.\n" + self._tool_form_tail(nested=False), "Proposed."],
+        )
+        assert any(p["type"] == "proposal" for p in r.get_json()["content"])
+
+    def test_large_tool_form_plan_parses_and_mints(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        import json as _json
+
+        user, token = user_and_token
+        plan = {"goal": "big", "nodes": [
+            {"ref": f"n{i}", "nodeType": "curio.builtin/computation-analysis",
+             "title": f"Step {i}", "intent": "y" * 200}
+            for i in range(40)
+        ], "edges": []}
+        body = _json.dumps({"toolRequest": {"tool": "dataflow.plan.write", "params": {"dataflowPlan": plan}}})
+        assert len(body.encode()) > 4096  # past the classic caps
+        r, _ = self._run_with(
+            client, user, token, alice_project, monkeypatch,
+            replies=[f"Planning.\n```curio.v1\n{body}\n```", "Proposed."],
+        )
+        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
+        assert len(proposal["plan"]["nodes"]) == 40
+
+    def test_invalid_tool_form_feeds_errors_back_and_corrects(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # The user's exact scenario: the model uses the toolRequest syntax with
+        # a wrong template id — previously "no proposal flow exists" and the
+        # model apologizing; now the refusal carries the errors and the next
+        # round mints.
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        r, calls = self._run_with(
+            client, user, token, alice_project, monkeypatch,
+            replies=[
+                "Planning.\n" + self._tool_form_tail(bad_type=True),
+                "Fixed.\n" + helper._plan_tail(),
+            ],
+        )
+        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
+        assert proposal["status"] == "pending"
+        feedback = calls[1][-1]["content"]
+        assert "dataflow.plan.write" in feedback
+        assert "not an available template" in feedback
+        assert "no proposal flow exists" not in feedback
+
+    def test_other_tools_params_cap_is_regression_pinned(self):
+        import json as _json
+
+        from utk_curio.backend.app.agents import content as content_mod
+
+        big = {"toolRequest": {"tool": "node.read", "params": {"x": "y" * 2000}}}
+        assert content_mod.parse_parts(_json.dumps(big)) is None

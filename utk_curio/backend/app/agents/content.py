@@ -177,6 +177,12 @@ def _parse_card(raw: object) -> dict | None:
     return {"type": "card", "kind": kind.strip(), "title": title.strip(), "lines": lines}
 
 
+# Per-tool params budgets (dev/55): the plan's toolRequest form carries a
+# whole graph — it gets the plan budget; every other tool keeps the classic
+# cap byte-identically.
+_TOOL_PARAM_BUDGETS = {"dataflow.plan.write": PLAN_TAIL_MAX_BYTES}
+
+
 def _parse_tool_request(raw: object) -> dict | None:
     if not isinstance(raw, dict):
         return None
@@ -187,7 +193,8 @@ def _parse_tool_request(raw: object) -> dict | None:
     if not isinstance(params, dict):
         return None
     try:
-        if len(json.dumps(params).encode("utf-8")) > _TOOL_PARAMS_MAX_BYTES:
+        budget = _TOOL_PARAM_BUDGETS.get(tool, _TOOL_PARAMS_MAX_BYTES)
+        if len(json.dumps(params).encode("utf-8")) > budget:
             return None
     except (TypeError, ValueError):
         return None
@@ -397,6 +404,13 @@ def _parse_dataflow_plan(raw: object) -> dict | None:
     return plan if not errors else None
 
 
+def parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
+    """Public verbose plan parse (dev/55): the mint validates the plan's
+    toolRequest form with the same field-level errors the correction rounds
+    feed back."""
+    return _parse_dataflow_plan_verbose(raw)
+
+
 def plan_tail_diagnosis(tail_body: str | None) -> list[str] | None:
     """Classify a terminal tail body as a plan attempt (dev/54).
 
@@ -405,7 +419,9 @@ def plan_tail_diagnosis(tail_body: str | None) -> list[str] | None:
     plan. ``[errors]`` — a plan attempt with correctable problems, JSON
     breakage included: exactly what the corrective round feeds back.
     """
-    if not isinstance(tail_body, str) or "dataflowPlan" not in tail_body:
+    if not isinstance(tail_body, str) or (
+        "dataflowPlan" not in tail_body and "dataflow.plan.write" not in tail_body
+    ):
         return None
     try:
         payload = json.loads(tail_body)
@@ -452,10 +468,13 @@ def parse_parts(body: str) -> list[dict] | None:
         return None
     body_bytes = len(body.encode("utf-8"))
     if body_bytes > TAIL_MAX_BYTES:
-        # Plans get their own budget (dev/52): the classic cap was sized for
-        # prompts/tool requests. The substring check bounds json.loads cost
-        # before parsing; the payload-key check below closes the loophole.
-        if body_bytes > PLAN_TAIL_MAX_BYTES or '"dataflowPlan"' not in body:
+        # Plans get their own budget (dev/52; the toolRequest form too,
+        # dev/55): the classic cap was sized for prompts/tool requests. The
+        # substring check bounds json.loads cost before parsing; the
+        # payload-key check below closes the loophole.
+        if body_bytes > PLAN_TAIL_MAX_BYTES or (
+            '"dataflowPlan"' not in body and '"dataflow.plan.write"' not in body
+        ):
             return None
     try:
         payload = json.loads(body)
@@ -464,7 +483,9 @@ def parse_parts(body: str) -> list[dict] | None:
     if not isinstance(payload, dict):
         return None
     if body_bytes > TAIL_MAX_BYTES and "dataflowPlan" not in payload:
-        return None  # the enlarged budget is for plan payloads only
+        req = payload.get("toolRequest")
+        if not (isinstance(req, dict) and req.get("tool") == "dataflow.plan.write"):
+            return None  # the enlarged budget is for plan payloads only
     if "proposal" in payload or "proposals" in payload:
         return None  # never accepted from the model (memo dev/41 §4.1)
     if "toolRequest" in payload and "delegateRequest" in payload:

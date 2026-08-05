@@ -2361,7 +2361,32 @@ def _mint_proposal(
         return _mint_node_template_create(user_key, project_id, loop_ctx, req)
     if tool == "dataset.install":
         return _mint_dataset_install(user_key, project_id, loop_ctx, req)
+    if tool == "dataflow.plan.write":
+        return _mint_plan_from_params(user_key, project_id, loop_ctx, req)
     return "refused", f"no proposal flow exists for tool {tool!r}", None
+
+
+def _mint_plan_from_params(
+    user_key: str, project_id: str, loop_ctx: dict, req: dict
+) -> tuple[str, str, dict | None]:
+    """The plan's toolRequest form (dev/55): the grants paragraph teaches the
+    generic toolRequest syntax, so the runtime honors it as a first-class
+    equivalent of the dataflowPlan block. The payload is ``params.dataflowPlan``
+    (the nested shape models produce) or ``params`` itself; validation errors
+    return as the tool refusal — the existing tool-result round feeds them
+    back, so an imperfect attempt self-corrects on the shared budget."""
+    params = req.get("params") or {}
+    raw = params.get("dataflowPlan", params)
+    plan, errors = content.parse_dataflow_plan_verbose(raw)
+    if errors:
+        listed = "\n".join(f"- {e}" for e in errors[:10])
+        return (
+            "refused",
+            "your dataflowPlan was invalid — fix exactly these problems and "
+            f"resend the complete corrected request:\n{listed}",
+            None,
+        )
+    return _mint_dataflow_plan(user_key, project_id, loop_ctx, plan)
 
 
 def _store_proposal(
@@ -2929,7 +2954,9 @@ def stream_attachment(
         reply = "".join(chunks)
         visible, parts = content.extract_content(reply)
         if withheld is not None and not parts:
-            if hold_plan_tail and '"dataflowPlan"' in withheld:
+            if hold_plan_tail and (
+                '"dataflowPlan"' in withheld or '"dataflow.plan.write"' in withheld
+            ):
                 # A failed plan attempt (dev/54): held for the correction
                 # round instead of leaking raw JSON into the chat.
                 result["heldPlanTail"] = withheld
