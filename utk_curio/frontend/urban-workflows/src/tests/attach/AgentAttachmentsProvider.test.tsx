@@ -518,3 +518,37 @@ describe("AgentAttachmentsProvider delegate activity lines (memo dev/48)", () =>
     expect(seen[seen.length - 1]).toEqual([]);
   });
 });
+
+describe("AgentAttachmentsProvider stream fallback payload parity (dev/53)", () => {
+  it("a pre-delta stream failure keeps the content parts (the review card renders)", async () => {
+    api.runAttachmentStream.mockRejectedValue(new Error("stream transport failed"));
+    api.runAttachment.mockResolvedValue({
+      attachmentId: "a1",
+      coord: "agent.dataflow-builder@1.0.0",
+      reply: "Here is the plan.",
+      executionId: "e7",
+      usage: { inputTokens: 5, outputTokens: 6 },
+      content: [
+        {
+          type: "proposal",
+          proposalId: "pp9",
+          tool: "dataflow.plan.write",
+          summary: "Apply plan · 2 nodes, 1 edges",
+          preview: "Load…",
+          pins: { baseGraphDigest: "d" },
+          status: "pending",
+        },
+      ],
+    } as never);
+    renderProvider();
+    await act(async () => {
+      fireEvent.click(screen.getByText("send"));
+    });
+    expect(screen.getByTestId("turns")).toHaveTextContent("Here is the plan.");
+    // The fallback turn carries the parts AND the execution record.
+    expect(screen.getByTestId("contents")).toHaveTextContent("proposal");
+    expect(screen.getByTestId("executions")).toHaveTextContent("e7:5/6");
+    // A minted proposal still triggers the listing reload (activeProposal).
+    expect(api.listAttachments.mock.calls.length).toBeGreaterThan(1);
+  });
+});

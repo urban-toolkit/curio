@@ -133,3 +133,74 @@ describe("AgentBuilderStrip (dev/52 DR-5)", () => {
     );
   });
 });
+
+describe("AgentBuilderStrip plan-review controls (dev/53)", () => {
+  const withReview = (): AgentAttachment => ({
+    ...attachment({ phase: "plan_review", planProposalId: "pp1" }),
+    activeProposal: {
+      proposalId: "pp1",
+      tool: "dataflow.plan.write",
+      nodeId: "",
+      summary: "Apply plan · 3 nodes, 2 edges",
+      status: "pending",
+    },
+  }) as AgentAttachment;
+
+  it("surfaces Apply plan / Dismiss targeting the activeProposal mirror", async () => {
+    const onApplyProposal = jest.fn().mockResolvedValue(undefined);
+    const onDismissProposal = jest.fn().mockResolvedValue(undefined);
+    render(
+      <AgentBuilderStrip
+        attachment={withReview()}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        onApplyProposal={onApplyProposal}
+        onDismissProposal={onDismissProposal}
+      />,
+    );
+    expect(screen.getByText("Apply plan · 3 nodes, 2 edges")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Apply plan" }));
+    await waitFor(() => expect(onApplyProposal).toHaveBeenCalledWith("pp1"));
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(onDismissProposal).toHaveBeenCalledWith("pp1"));
+  });
+
+  it("shows no review controls without a pending plan proposal", () => {
+    const other: AgentAttachment = {
+      ...attachment({ phase: "applied", appliedPlanId: "pp0", nodeRuns: { n: "pending" } }),
+      activeProposal: {
+        proposalId: "x1",
+        tool: "node.content.write",
+        nodeId: "n1",
+        summary: "Replace content",
+        status: "pending",
+      },
+    } as AgentAttachment;
+    render(
+      <AgentBuilderStrip
+        attachment={other}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        onApplyProposal={jest.fn()}
+        onDismissProposal={jest.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Apply plan" })).toBeNull();
+  });
+
+  it("a failed apply surfaces the error", async () => {
+    const onApplyProposal = jest.fn().mockRejectedValue(new Error("the canvas changed since this plan was proposed"));
+    render(
+      <AgentBuilderStrip
+        attachment={withReview()}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        onApplyProposal={onApplyProposal}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Apply plan" }));
+    await waitFor(() =>
+      expect(screen.getByText(/canvas changed since/)).toBeInTheDocument(),
+    );
+  });
+});

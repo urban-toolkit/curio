@@ -14,7 +14,16 @@ export interface AgentAttachmentsState {
   reload: () => Promise<void>;
   attach: (coord: string, target: AgentTarget) => Promise<AgentAttachment | null>;
   detach: (attachmentId: string) => Promise<void>;
-  run: (attachmentId: string, message: string) => Promise<string>;
+  run: (
+    attachmentId: string,
+    message: string,
+    context?: string | null,
+  ) => Promise<{
+    reply: string;
+    executionId?: string;
+    usage?: import("../../../api/agentsApi").AgentUsage | null;
+    content?: import("../../../api/agentsApi").AgentContentPart[];
+  }>;
 }
 
 export function useAgentAttachments(projectId: string | null): AgentAttachmentsState {
@@ -84,8 +93,10 @@ export function useAgentAttachments(projectId: string | null): AgentAttachmentsS
   const run = useCallback(
     async (attachmentId: string, message: string, context?: string | null) => {
       if (!projectId) throw new Error("no project");
-      const r = await agentsApi.runAttachment(projectId, attachmentId, message, context);
-      return r.reply;
+      // The FULL payload (dev/53): the stream fallback must lose no content
+      // parts — a plan/node proposal minted over this path still needs its
+      // review card, and the execution record still belongs on the turn.
+      return agentsApi.runAttachment(projectId, attachmentId, message, context);
     },
     [projectId],
   );

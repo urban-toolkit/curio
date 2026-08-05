@@ -237,10 +237,29 @@ export const AgentAttachmentsProvider: React.FC<{
       } catch (e) {
         const status = (e as { status?: number } | null)?.status;
         if (!streamed && status === undefined) {
-          // Pre-delta stream failure → one blocking-run fallback.
+          // Pre-delta stream failure → one blocking-run fallback. Payload
+          // parity with the streamed path (dev/53): the turn keeps its
+          // execution record AND its content parts — a proposal minted over
+          // this path still renders its review card.
           try {
-            const reply = await state.run(attachmentId, message, context);
-            appendTurns(attachmentId, [{ role: "agent", text: reply }]);
+            const result = await state.run(attachmentId, message, context);
+            const execution = result.executionId
+              ? {
+                  executionId: result.executionId,
+                  usage: result.usage ?? null,
+                  status: "ok" as const,
+                }
+              : undefined;
+            const content = result.content && result.content.length ? result.content : undefined;
+            sawProposal = sawProposal || Boolean(content?.some((p) => p.type === "proposal"));
+            appendTurns(attachmentId, [
+              {
+                role: "agent",
+                text: result.reply,
+                ...(execution ? { execution } : {}),
+                ...(content ? { content } : {}),
+              },
+            ]);
             succeeded = true;
           } catch (e2) {
             appendErrorTurn(attachmentId, e2);

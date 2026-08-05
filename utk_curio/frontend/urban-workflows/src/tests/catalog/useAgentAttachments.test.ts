@@ -73,7 +73,8 @@ describe("useAgentAttachments", () => {
       reply = await result.current.run("a1", "explain");
     });
     expect(api.runAttachment).toHaveBeenCalledWith("p1", "a1", "explain", undefined);
-    expect(reply).toBe("the reply");
+    // dev/53: the full payload — the stream fallback must lose no content parts.
+    expect(reply.reply).toBe("the reply");
   });
 
   it("detach calls the endpoint", async () => {

@@ -31,9 +31,16 @@ export const AgentBuilderStrip: React.FC<{
   attachment: AgentAttachment;
   onSolve: (nodeIds?: string[]) => Promise<unknown>;
   onComposePrompt: (prompt: string) => void;
-}> = ({ attachment, onSolve, onComposePrompt }) => {
+  /** The dev/41 system review actions — surfaced here during plan_review
+   * (dev/53) so the Apply control lives where the phase indicator points,
+   * targeting the activeProposal mirror (works even when a transcript part
+   * is missing). Omitted → the transcript card is the only review surface. */
+  onApplyProposal?: (proposalId: string) => Promise<void>;
+  onDismissProposal?: (proposalId: string) => Promise<void>;
+}> = ({ attachment, onSolve, onComposePrompt, onApplyProposal, onDismissProposal }) => {
   const { playAllNodes } = useFlowContext();
   const [solving, setSolving] = useState(false);
+  const [reviewBusy, setReviewBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const session = attachment.builderSession ?? { phase: "idle" as const };
@@ -53,6 +60,28 @@ export const AgentBuilderStrip: React.FC<{
       setError(e instanceof Error ? e.message : "Solve failed");
     } finally {
       setSolving(false);
+    }
+  };
+
+  // The pending plan review, from the fast mirror (dev/41): the strip's
+  // Apply/Dismiss target it directly.
+  const planReview =
+    attachment.activeProposal &&
+    attachment.activeProposal.tool === "dataflow.plan.write" &&
+    attachment.activeProposal.status === "pending"
+      ? attachment.activeProposal
+      : null;
+
+  const review = async (fn?: (proposalId: string) => Promise<void>) => {
+    if (!fn || !planReview || reviewBusy) return;
+    setReviewBusy(true);
+    setError(null);
+    try {
+      await fn(planReview.proposalId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "The review action failed");
+    } finally {
+      setReviewBusy(false);
     }
   };
 
@@ -110,6 +139,31 @@ export const AgentBuilderStrip: React.FC<{
             </li>
           ))}
         </ul>
+      ) : null}
+      {planReview && (onApplyProposal || onDismissProposal) ? (
+        <div className={styles.actions} role="group" aria-label="Plan review">
+          <span className={styles.reviewSummary}>{planReview.summary}</span>
+          {onApplyProposal ? (
+            <button
+              type="button"
+              className={styles.solve}
+              disabled={reviewBusy}
+              onClick={() => void review(onApplyProposal)}
+            >
+              {reviewBusy ? "Applying…" : "Apply plan"}
+            </button>
+          ) : null}
+          {onDismissProposal ? (
+            <button
+              type="button"
+              className={styles.run}
+              disabled={reviewBusy}
+              onClick={() => void review(onDismissProposal)}
+            >
+              Dismiss
+            </button>
+          ) : null}
+        </div>
       ) : null}
       <div className={styles.actions}>
         <button

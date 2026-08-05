@@ -379,6 +379,8 @@ export const AgentChatPanel: React.FC<{
           attachment={attachment}
           onSolve={onSolve}
           onComposePrompt={composePrompt}
+          onApplyProposal={onApplyProposal}
+          onDismissProposal={onDismissProposal}
         />
       ) : null}
 
