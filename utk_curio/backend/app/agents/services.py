@@ -1949,6 +1949,10 @@ _SOLVE_MAX_WORKERS = 3
 # A hard-crashed solve leaves the transient "solving" phase behind; a marker
 # older than this is treated as stale so the user is never wedged.
 _SOLVE_STALE_SECONDS = 15 * 60
+# In-flight cancellation (dev/63): solve executionId → stop event. The
+# in-process fast path; the persisted ``cancelRequested`` session flag is the
+# durable signal (other workers, a lost registry entry).
+_SOLVE_CANCEL_EVENTS: dict[str, object] = {}
 
 
 def solve_attachment(
@@ -1958,8 +1962,54 @@ def solve_attachment(
     config: ProviderConfig,
     node_ids: list[str] | None = None,
 ) -> dict:
-    """The dev/52 Solve batch (DEC-048): ONE explicit, authenticated user
-    action authorizes filling the applied plan's pending nodes.
+    """The dev/52 Solve batch (DEC-048), blocking form: drains the streaming
+    batch (dev/63 — one implementation) and returns its terminal payload,
+    minus the stream-only keys, so the response is byte-compatible."""
+    payload: dict | None = None
+    for kind, data in solve_attachment_stream(
+        user_key, project_id, attachment_id, config, node_ids
+    ):
+        if kind == "done":
+            payload = dict(data)
+    if payload is None:  # the stream ended without a terminal event — loud
+        raise AgentServiceError("solve ended without a result", 500)
+    payload.pop("cancelled", None)
+    payload.pop("notAttempted", None)
+    return payload
+
+
+def request_solve_cancel(user_key: str, project_id: str, attachment_id: str) -> dict:
+    """User-initiated solve cancellation (dev/63, the DEC-021 user slice).
+
+    Sets BOTH signals: the persisted ``cancelRequested`` flag (durable —
+    honored by any worker at the next node boundary) and the in-process stop
+    event (immediate). In-flight children are never aborted; undispatched
+    targets revert to ``pending``. Idempotent while a solve runs; 409 when
+    nothing is running.
+    """
+    spec = _read_spec_or_404(user_key, project_id)
+    record = _record_or_404(spec, attachment_id)
+    session = record.get("builderSession") or {}
+    if session.get("phase") != "solving":
+        raise AgentServiceError("no solve is running for this attachment", 409)
+    session["cancelRequested"] = True
+    projects_storage.write_spec(user_key, project_id, spec)
+    event = _SOLVE_CANCEL_EVENTS.get(str(session.get("solveExecutionId") or ""))
+    if event is not None:
+        event.set()  # type: ignore[attr-defined]
+    return {"attachmentId": attachment_id, "cancelRequested": True}
+
+
+def solve_attachment_stream(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    config: ProviderConfig,
+    node_ids: list[str] | None = None,
+):
+    """The dev/52 Solve batch (DEC-048) as an event stream (dev/63): ONE
+    explicit, authenticated user action authorizes filling the applied plan's
+    pending nodes.
 
     The endpoint is the review: it is scoped to plan-created placeholder
     nodes (the builder session's ``nodeRuns``) and digest-guarded per node
@@ -1970,9 +2020,15 @@ def solve_attachment(
     coordinated by a bounded worker pool. The endpoint itself consumes no
     quota; children reserve individually. Retry = the same endpoint with the
     failed subset.
+
+    Validation is eager (409s stay JSON); the returned generator yields
+    ``(kind, payload)``: ``solve_started`` → ``node_started`` /
+    ``node_result`` per target → ``done``. The terminal state comes from ONE
+    re-guarded spec write that also runs on client disconnect and
+    cancellation — streamed events are transport, never truth.
     """
+    import threading
     import time as _time
-    from concurrent.futures import ThreadPoolExecutor
 
     spec = _read_spec_or_404(user_key, project_id)
     record = _record_or_404(spec, attachment_id)
@@ -1995,85 +2051,104 @@ def solve_attachment(
         for n in (spec.get("dataflow") or {}).get("nodes") or []
         if isinstance(n, dict)
     }
-    # The in-flight guard persists before any provider work.
+    solve_execution_id = uuid.uuid4().hex
+    # The in-flight guard + cancellation identity persist before any provider
+    # work; the cancel endpoint finds the run through ``solveExecutionId``.
     session["phase"] = "solving"
     session["solvingSince"] = now
+    session["solveExecutionId"] = solve_execution_id
+    session.pop("cancelRequested", None)
     projects_storage.write_spec(user_key, project_id, spec)
-
-    solve_execution_id = uuid.uuid4().hex
+    stop = threading.Event()
+    _SOLVE_CANCEL_EVENTS[solve_execution_id] = stop
     manifest = _resolve_definition(user_key, record.get("coord", ""))
+    coord = record.get("coord", "")
+    session_id = record.get("sessionId")
+    return _solve_events(
+        user_key, project_id, attachment_id, config, targets, nodes_by_id,
+        manifest, coord, session_id, solve_execution_id, stop,
+    )
+
+
+def _solve_events(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    config: ProviderConfig,
+    targets: list[str],
+    nodes_by_id: dict,
+    manifest: AgentManifest | None,
+    coord: str,
+    session_id,
+    solve_execution_id: str,
+    stop,
+):
+    """The solve batch body (dev/63). Workers report through a thread-safe
+    queue — they never touch the response; the generator drains it between
+    yields. ``_finish`` is the single idempotent persist + transcript card,
+    reached from normal completion, cancellation, client disconnect
+    (``GeneratorExit``), and unexpected errors alike."""
+    import queue as _queue
+    from concurrent.futures import ThreadPoolExecutor
+
     results: dict[str, dict] = {}
     applied_contents: list[dict] = []
     delegations: list = []
+    unstarted: list[str] = []
     started = time.monotonic()
-    try:
-        resolution = delegation.resolve(
-            user_key, project_id, manifest, "node.content.generate"
-        ) if manifest is not None else delegation.Resolution("unresolvable")
-        if resolution.outcome != "ok":
-            # Missing specialist: ONE reviewed install proposal (not per node),
-            # every target failed — the panel explains and Retry works after
-            # the user applies the install (REQ-ORCH-001).
-            if resolution.outcome == "not-installed":
-                loop_ctx = {
-                    "attachment_id": attachment_id,
-                    "session_id": record.get("sessionId"),
-                }
-                status, text, part = _mint_project_install(
-                    user_key, project_id, loop_ctx,
-                    resolution.coord,
-                    resolution.manifest.name if resolution.manifest else resolution.coord,
-                    "node.content.generate",
-                )
-                reason = "specialist not installed — an install proposal awaits review"
-            else:
-                reason = "no installed agent declares node.content.generate"
-            for node_id in targets:
-                results[node_id] = {"status": "failed", "error": reason}
-        else:
-            goals = [
-                str(nodes_by_id[t].get("goal") or "") for t in targets if t in nodes_by_id
-            ]
+    state = {"finished": False}
+    payload_out: dict = {}
 
-            def _solve_one(node_id: str):
-                node = nodes_by_id.get(node_id)
-                if node is None:
-                    return node_id, "skipped", None, None
-                if (node.get("content") or "").strip():
-                    return node_id, "skipped", None, None  # user content preserved
-                inputs = {
-                    "nodeType": node.get("type"),
-                    "intent": node.get("goal"),
-                    "planSiblings": goals[:20],
-                }
-                status, text, child = delegation.run_delegate(
-                    user_key, project_id, resolution.coord,
-                    "node.content.generate", inputs, config,
-                    parent_execution_id=solve_execution_id,
-                    parent_coord=record.get("coord", ""),
-                    attachment_id=attachment_id,
-                )
-                return node_id, ("solved" if status == "ok" else "failed"), text, child
+    def _flag_requested() -> bool:
+        # The durable cancel signal, read lazily at node boundaries only.
+        try:
+            flag_spec = _read_spec_or_404(user_key, project_id)
+            flag_record = _record_or_404(flag_spec, attachment_id)
+            return bool((flag_record.get("builderSession") or {}).get("cancelRequested"))
+        except Exception:
+            return False
 
-            with ThreadPoolExecutor(max_workers=_SOLVE_MAX_WORKERS) as pool:
-                for node_id, status, text, child in pool.map(_solve_one, targets):
-                    if child is not None:
-                        delegations.append(child)
-                    if status == "solved":
-                        results[node_id] = {"status": "solved"}
-                        applied_contents.append(
-                            # The child replies with response formatting around
-                            # the code — only the executable content is written
-                            # (dev/57).
-                            {"nodeId": node_id, "content": content.extract_node_content(text)}
-                        )
-                    elif status == "failed":
-                        results[node_id] = {"status": "failed", "error": (text or "")[:300]}
-                    else:
-                        results[node_id] = {"status": "skipped"}
-    finally:
+    def _should_stop() -> bool:
+        if stop.is_set():
+            return True
+        if _flag_requested():
+            stop.set()
+            return True
+        return False
+
+    def _record_outcome(node_id: str, status: str, text, child) -> dict | None:
+        """Fold one worker outcome into the batch state — no yields, so it is
+        safe on the disconnect drain. Returns the node_result payload, or
+        None for an unstarted (cancelled-before-dispatch) target, which stays
+        ``pending`` — it was never attempted, so no new status enters the
+        state machine."""
+        if child is not None:
+            delegations.append(child)
+        if status == "solved":
+            # The child replies with response formatting around the code —
+            # only the executable content is written (dev/57).
+            text_out = content.extract_node_content(text)
+            results[node_id] = {"status": "solved"}
+            applied_contents.append({"nodeId": node_id, "content": text_out})
+            return {"nodeId": node_id, "status": "solved", "content": text_out}
+        if status == "failed":
+            err = (text or "")[:300]
+            results[node_id] = {"status": "failed", "error": err}
+            return {"nodeId": node_id, "status": "failed", "error": err}
+        if status == "skipped":
+            results[node_id] = {"status": "skipped"}
+            return {"nodeId": node_id, "status": "skipped"}
+        unstarted.append(node_id)
+        return None
+
+    def _finish() -> dict:
         # One batched spec write: contents (re-guarded against the CURRENT
-        # spec under the read-modify-write), statuses, and the exit phase.
+        # spec under the read-modify-write), statuses, and the exit phase —
+        # plus the transcript card. Idempotent: exactly one persist per batch.
+        if state["finished"]:
+            return payload_out
+        state["finished"] = True
+        cancelled = stop.is_set()
         spec = _read_spec_or_404(user_key, project_id)
         record = _record_or_404(spec, attachment_id)
         session = record.get("builderSession") or {}
@@ -2092,7 +2167,7 @@ def solve_attachment(
                 results[item["nodeId"]] = {"status": "skipped"}  # user edit wins
                 continue
             node["content"] = item["content"]
-        applied_contents = [
+        applied = [
             i for i in applied_contents if results.get(i["nodeId"], {}).get("status") == "solved"
         ]
         for node_id, outcome in results.items():
@@ -2100,6 +2175,8 @@ def solve_attachment(
                 node_runs[node_id] = outcome["status"] if outcome["status"] != "skipped" else "skipped"
         session["nodeRuns"] = node_runs
         session.pop("solvingSince", None)
+        session.pop("solveExecutionId", None)
+        session.pop("cancelRequested", None)
         session["phase"] = (
             "ready"
             if all(s not in ("pending", "failed") for s in node_runs.values())
@@ -2107,40 +2184,142 @@ def solve_attachment(
         )
         record["builderSession"] = session
         projects_storage.write_spec(user_key, project_id, spec)
-    solved = sum(1 for r in results.values() if r["status"] == "solved")
-    session_id = record.get("sessionId")
-    if isinstance(session_id, str):
-        sessions.append_turns(
-            user_key, project_id, session_id, attachment_id,
-            [
-                sessions.make_turn(
-                    "agent",
-                    f"Solved {solved} of {len(targets)} plan nodes.",
-                    content=[{
-                        "type": "card",
-                        "kind": "result",
-                        "title": f"Solve: {solved} of {len(targets)} nodes",
-                        "lines": [
-                            f"{node_id[:8]} · {outcome['status']}"
-                            for node_id, outcome in list(results.items())[:10]
-                        ],
-                    }],
-                    execution=_execution_record(
-                        solve_execution_id,
-                        {"coord": record.get("coord", ""), "provider": config.api_type,
-                         "model": config.model, "tools": [], "intentEdited": False},
-                        {}, started, "ok", delegations=delegations,
-                    ),
+        solved = sum(1 for r in results.values() if r["status"] == "solved")
+        if isinstance(session_id, str):
+            lines = [
+                f"{node_id[:8]} · {outcome['status']}"
+                for node_id, outcome in list(results.items())[:10]
+            ]
+            if cancelled:
+                lines.append(f"cancelled — {len(unstarted)} node(s) not attempted")
+            sessions.append_turns(
+                user_key, project_id, session_id, attachment_id,
+                [
+                    sessions.make_turn(
+                        "agent",
+                        f"Solved {solved} of {len(targets)} plan nodes."
+                        + (f" Cancelled — {len(unstarted)} not attempted." if cancelled else ""),
+                        content=[{
+                            "type": "card",
+                            "kind": "result",
+                            "title": f"Solve: {solved} of {len(targets)} nodes",
+                            "lines": lines,
+                        }],
+                        execution=_execution_record(
+                            solve_execution_id,
+                            {"coord": coord, "provider": config.api_type,
+                             "model": config.model, "tools": [], "intentEdited": False},
+                            {}, started, "ok", delegations=delegations,
+                        ),
+                    )
+                ],
+            )
+        payload_out.update({
+            "attachmentId": attachment_id,
+            "executionId": solve_execution_id,
+            "results": results,
+            "appliedContents": applied,
+            "builderSession": session,
+            "cancelled": cancelled,
+            "notAttempted": sorted(unstarted),
+        })
+        return payload_out
+
+    try:
+        yield "solve_started", {"executionId": solve_execution_id, "targets": list(targets)}
+        resolution = delegation.resolve(
+            user_key, project_id, manifest, "node.content.generate"
+        ) if manifest is not None else delegation.Resolution("unresolvable")
+        if resolution.outcome != "ok":
+            # Missing specialist: ONE reviewed install proposal (not per node),
+            # every target failed — the panel explains and Retry works after
+            # the user applies the install (REQ-ORCH-001).
+            if resolution.outcome == "not-installed":
+                loop_ctx = {
+                    "attachment_id": attachment_id,
+                    "session_id": session_id,
+                }
+                status, text, part = _mint_project_install(
+                    user_key, project_id, loop_ctx,
+                    resolution.coord,
+                    resolution.manifest.name if resolution.manifest else resolution.coord,
+                    "node.content.generate",
                 )
-            ],
-        )
-    return {
-        "attachmentId": attachment_id,
-        "executionId": solve_execution_id,
-        "results": results,
-        "appliedContents": applied_contents,
-        "builderSession": session,
-    }
+                reason = "specialist not installed — an install proposal awaits review"
+            else:
+                reason = "no installed agent declares node.content.generate"
+            for node_id in targets:
+                results[node_id] = {"status": "failed", "error": reason}
+                yield "node_result", {"nodeId": node_id, "status": "failed", "error": reason}
+        else:
+            goals = [
+                str(nodes_by_id[t].get("goal") or "") for t in targets if t in nodes_by_id
+            ]
+            outcome_queue: _queue.Queue = _queue.Queue()
+
+            def _solve_one(node_id: str) -> None:
+                try:
+                    if _should_stop():
+                        outcome_queue.put((node_id, "unstarted", None, None))
+                        return
+                    outcome_queue.put((node_id, "started", None, None))
+                    node = nodes_by_id.get(node_id)
+                    if node is None:
+                        outcome_queue.put((node_id, "skipped", None, None))
+                        return
+                    if (node.get("content") or "").strip():
+                        # User content preserved.
+                        outcome_queue.put((node_id, "skipped", None, None))
+                        return
+                    inputs = {
+                        "nodeType": node.get("type"),
+                        "intent": node.get("goal"),
+                        "planSiblings": goals[:20],
+                    }
+                    status, text, child = delegation.run_delegate(
+                        user_key, project_id, resolution.coord,
+                        "node.content.generate", inputs, config,
+                        parent_execution_id=solve_execution_id,
+                        parent_coord=coord,
+                        attachment_id=attachment_id,
+                    )
+                    outcome_queue.put(
+                        (node_id, "solved" if status == "ok" else "failed", text, child)
+                    )
+                except BaseException as exc:  # a lost item would deadlock the drain
+                    outcome_queue.put((node_id, "failed", f"solve worker error: {exc}", None))
+
+            pool = ThreadPoolExecutor(max_workers=_SOLVE_MAX_WORKERS)
+            try:
+                for target in targets:
+                    pool.submit(_solve_one, target)
+                remaining = len(targets)
+                while remaining:
+                    node_id, status, text, child = outcome_queue.get()
+                    if status == "started":
+                        yield "node_started", {"nodeId": node_id}
+                        continue
+                    remaining -= 1
+                    event = _record_outcome(node_id, status, text, child)
+                    if event is not None:
+                        yield "node_result", event
+            except GeneratorExit:
+                # Client gone (dev/63): stop dispatch, let in-flight children
+                # finish, fold their results in WITHOUT yielding — the finally
+                # persist keeps everything that completed.
+                stop.set()
+                pool.shutdown(wait=True)
+                while not outcome_queue.empty():
+                    node_id, status, text, child = outcome_queue.get_nowait()
+                    if status != "started":
+                        _record_outcome(node_id, status, text, child)
+                raise
+            finally:
+                pool.shutdown(wait=True)
+        yield "done", _finish()
+    finally:
+        _SOLVE_CANCEL_EVENTS.pop(solve_execution_id, None)
+        _finish()
 
 
 def _resolve_prompt_text(user_key: str, coord: str, name: str) -> str | None:

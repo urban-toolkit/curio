@@ -3927,6 +3927,193 @@ class TestSolve:
             assert nodes[created["id"]]["content"] == ""
 
 
+class TestStreamedSolve:
+    """dev/63 — the DEC-021 user slice: per-node SSE progress, user
+    cancellation (unstarted targets revert to pending), disconnect-safe
+    persistence. The blocking endpoint drains the same generator."""
+
+    def _sse_events(self, response) -> list[tuple[str, dict]]:
+        import json as _json
+
+        events = []
+        for block in response.get_data(as_text=True).strip().split("\n\n"):
+            lines = dict(l.split(": ", 1) for l in block.splitlines() if ": " in l)
+            events.append((lines["event"], _json.loads(lines["data"])))
+        return events
+
+    def test_stream_emits_per_node_progress_then_done(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestSolve()
+        att_id, applied, _ = helper._applied_plan(client, user, token, alice_project, monkeypatch)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/solve/stream",
+            json={}, headers=_auth(token),
+        )
+        assert r.status_code == 200
+        events = self._sse_events(r)
+        names = [name for name, _ in events]
+        assert names[0] == "solve_started"
+        assert names[-1] == "done"
+        assert names.count("node_started") == 2 and names.count("node_result") == 2
+        started = dict(events)["solve_started"]
+        assert sorted(started["targets"]) == sorted(n["id"] for n in applied["nodes"])
+        # Each node_result carries the dev/57-extracted content.
+        for name, payload in events:
+            if name == "node_result":
+                assert payload["status"] == "solved" and payload["content"]
+        done = events[-1][1]
+        assert done["cancelled"] is False and done["notAttempted"] == []
+        assert done["builderSession"]["phase"] == "ready"
+        assert "solvingSince" not in done["builderSession"]
+        assert "solveExecutionId" not in done["builderSession"]
+        # The persisted spec carries the contents (the one finally-write).
+        nodes = {n["id"]: n for n in helper._spec_nodes(user, alice_project)}
+        for item in done["appliedContents"]:
+            assert nodes[item["nodeId"]]["content"] == item["content"]
+
+    def test_preflight_errors_stay_json(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        att_id, _ = helper._setup(client, user, token, alice_project, monkeypatch)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/solve/stream",
+            json={}, headers=_auth(token),
+        )
+        assert r.status_code == 409  # no applied plan — never a stream
+        assert "apply a plan first" in r.get_json()["error"]
+
+    def _solve_gen(self, user, project_id, att_id):
+        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.agents.providers import ProviderConfig
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        config = ProviderConfig(api_key="k", api_type="openai_compatible", base_url="http://x", model="m")
+        return services_mod.solve_attachment_stream(
+            _user_dir_key(user), project_id, att_id, config
+        )
+
+    def test_cancel_reverts_unstarted_targets_to_pending(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        import json as _json
+        import threading
+
+        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        helper = TestSolve()
+        # A 5-node plan: 3 dispatch immediately (the worker pool), 2 queue.
+        plan = {"goal": "big", "nodes": [
+            {"ref": f"n{i}", "nodeType": "curio.builtin/computation-analysis",
+             "title": f"Step {i}", "intent": f"do step {i}"}
+            for i in range(5)
+        ], "edges": []}
+        reply = f"```curio.v1\n{_json.dumps({'dataflowPlan': plan})}\n```"
+        att_id, applied, _ = helper._applied_plan(
+            client, user, token, alice_project, monkeypatch, replies=[reply],
+        )
+        gate = threading.Event()
+
+        def _fake_run(config, messages, **kwargs):
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            gate.wait(timeout=10)  # children hold until the cancel lands
+            return "generated"
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        gen = self._solve_gen(user, alice_project, att_id)
+        events: list = []
+        done_evt = threading.Event()
+        started_count = threading.Semaphore(0)
+
+        def _drain():
+            for kind, payload in gen:
+                events.append((kind, payload))
+                if kind == "node_started":
+                    started_count.release()
+            done_evt.set()
+
+        t = threading.Thread(target=_drain)
+        t.start()
+        for _ in range(3):  # the full worker pool is busy
+            assert started_count.acquire(timeout=10)
+        services_mod.request_solve_cancel(_user_dir_key(user), alice_project, att_id)
+        gate.set()  # in-flight children finish and are KEPT
+        assert done_evt.wait(timeout=10)
+        t.join(timeout=10)
+        done = next(p for k, p in events if k == "done")
+        assert done["cancelled"] is True
+        assert len(done["notAttempted"]) == 2
+        statuses = sorted(r["status"] for r in done["results"].values())
+        assert statuses == ["solved", "solved", "solved"]
+        # Unstarted victims stay pending; the phase honestly says applied.
+        runs = done["builderSession"]["nodeRuns"]
+        assert sorted(runs.values()) == ["pending", "pending", "solved", "solved", "solved"]
+        assert done["builderSession"]["phase"] == "applied"
+        assert "cancelRequested" not in done["builderSession"]
+
+    def test_disconnect_persists_partials_and_exits_solving(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        helper = TestSolve()
+        att_id, applied, _ = helper._applied_plan(client, user, token, alice_project, monkeypatch)
+        gen = self._solve_gen(user, alice_project, att_id)
+        seen = []
+        for kind, payload in gen:
+            seen.append(kind)
+            if kind == "node_result":
+                break
+        gen.close()  # the client vanished mid-stream (GeneratorExit)
+        spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
+        record = next(
+            a for a in spec["dataflow"]["agentAttachments"] if a["attachmentId"] == att_id
+        )
+        session = record["builderSession"]
+        # Everything that completed persisted; the phase is never wedged.
+        assert session["phase"] in ("ready", "applied")
+        assert "solvingSince" not in session and "solveExecutionId" not in session
+        assert "solved" in session["nodeRuns"].values()
+
+    def test_cancel_endpoint_requires_a_running_solve(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestSolve()
+        att_id, applied, _ = helper._applied_plan(client, user, token, alice_project, monkeypatch)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/solve/cancel",
+            headers=_auth(token),
+        )
+        assert r.status_code == 409
+        assert "no solve is running" in r.get_json()["error"]
+
+    def test_cancel_endpoint_sets_the_durable_flag(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        helper = TestSolve()
+        att_id, applied, _ = helper._applied_plan(client, user, token, alice_project, monkeypatch)
+        key = _user_dir_key(user)
+        spec = projects_storage.read_spec(key, alice_project)
+        record = next(a for a in spec["dataflow"]["agentAttachments"] if a["attachmentId"] == att_id)
+        record["builderSession"]["phase"] = "solving"  # a solve owned by another worker
+        record["builderSession"]["solvingSince"] = 1.0
+        projects_storage.write_spec(key, alice_project, spec)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/solve/cancel",
+            headers=_auth(token),
+        )
+        assert r.status_code == 200 and r.get_json()["cancelRequested"] is True
+        spec = projects_storage.read_spec(key, alice_project)
+        record = next(a for a in spec["dataflow"]["agentAttachments"] if a["attachmentId"] == att_id)
+        assert record["builderSession"]["cancelRequested"] is True
+        # Idempotent while "running".
+        assert client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/solve/cancel",
+            headers=_auth(token),
+        ).status_code == 200
+
+
 class TestPlanCorrectionRounds:
     """dev/54 — the primary path made self-correcting: imperfect plan
     attempts feed precise errors back and re-round; failure at the cap is

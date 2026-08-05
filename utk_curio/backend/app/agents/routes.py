@@ -497,6 +497,72 @@ def solve_attachment(project_id: str, attachment_id: str):
     return jsonify(payload), 200
 
 
+@agents_bp.route(
+    "/projects/<project_id>/attachments/<attachment_id>/solve/stream", methods=["POST"]
+)
+@require_auth
+def solve_attachment_stream(project_id: str, attachment_id: str):
+    """The Solve batch as Server-Sent Events (dev/63, the DEC-021 user
+    slice): ``solve_started`` → ``node_started``/``node_result`` per target →
+    ``done`` (the blocking payload + ``cancelled``/``notAttempted``).
+    Validation errors (409/404/…) return normal JSON statuses before any
+    streaming starts; the persisted session stays the single truth."""
+    from utk_curio.backend.app.agents.provider_config import (
+        ProviderConfigError,
+        resolve_provider_config,
+    )
+
+    body = request.get_json(silent=True) or {}
+    node_ids = body.get("nodeIds")
+    if node_ids is not None and not (
+        isinstance(node_ids, list) and all(isinstance(n, str) for n in node_ids)
+    ):
+        return _error("'nodeIds' must be a list of node id strings when present")
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        config = resolve_provider_config(g.user)
+        events = agents_services.solve_attachment_stream(
+            _user_dir_key(g.user), project_id, attachment_id, config, node_ids
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except ProviderConfigError as exc:
+        return _error(str(exc), 400)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+
+    def _sse():
+        for kind, payload in events:
+            data = {"error": payload} if kind == "error" else payload
+            yield f"event: {kind}\ndata: {json.dumps(data)}\n\n"
+
+    return Response(
+        stream_with_context(_sse()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@agents_bp.route(
+    "/projects/<project_id>/attachments/<attachment_id>/solve/cancel", methods=["POST"]
+)
+@require_auth
+def cancel_solve(project_id: str, attachment_id: str):
+    """Cancel a running Solve (dev/63): stops dispatching new children at the
+    next node boundary; in-flight children finish and their results persist;
+    undispatched targets revert to pending. 409 when nothing is running."""
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        payload = agents_services.request_solve_cancel(
+            _user_dir_key(g.user), project_id, attachment_id
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify(payload), 200
+
+
 @agents_bp.route("/projects/<project_id>/attachments/<attachment_id>/run", methods=["POST"])
 @require_auth
 def run_attachment(project_id: str, attachment_id: str):
