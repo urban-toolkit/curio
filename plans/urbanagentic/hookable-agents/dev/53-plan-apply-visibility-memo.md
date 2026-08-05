@@ -1,9 +1,10 @@
 # Implementation Memo: Plan Review Visibility — Fallback Parts + Strip Apply (dev/52 follow-up)
 
 Date: 2026-08-05
-Status: proposed (implementing in the same session — explicit fix request; post-implementation
-testing feedback on dev/52: "the apply plan button is not appearing after showing the planned
-nodes and connections")
+Status: implemented 2026-08-05 — COMMIT-9cee1343. Verification: frontend `npx jest` → 655
+passed (60 suites); the streamed backend path was verified correct end-to-end before the fix
+(chunked plan tail → review_required → done content carries the pending proposal; no tail leaks
+as text) — both defects were client-side.
 
 ## 1. Problem Statement (root causes)
 
@@ -45,7 +46,7 @@ text). Two client-side defects hide the Apply control:
 - Strip: `plan_review` + a pending `dataflow.plan.write` activeProposal → Apply plan / Dismiss
   buttons calling the callbacks with the mirror's proposalId; no buttons for other phases or
   other proposal kinds; busy state during apply.
-- [ ] The Apply control is reachable from the strip whenever a plan review is pending,
+- [x] The Apply control is reachable from the strip whenever a plan review is pending,
       regardless of transport path; fallback runs lose no content parts.
 
 ## 4. Commits
