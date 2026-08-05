@@ -1,9 +1,10 @@
 # Implementation Memo: Built-in Prompt Propagation — Roster Bytes Reach Existing Installs (dev/59 follow-up)
 
 Date: 2026-08-05
-Status: proposed (implementing in the same session — explicit fix request: asking the Dataflow
-Builder to "clear the canvas" is refused with the OLD dev/52 posture, "removals must be
-performed by you manually using the canvas interface")
+Status: implemented 2026-08-05 — COMMIT-c2cac301. Verification: backend `pytest tests
+--ignore=tests/test_frontend` → 1047 passed; the reported scenario is regression-pinned
+(a stale materialized instruction on disk; the run composes the current roster bytes) plus
+the owned-import-shadow regression.
 
 ## 1. Problem Statement (root cause, confirmed in code)
 
@@ -40,7 +41,7 @@ net-new instructions, any future fix) silently fails to reach users who installe
   roster instruction (route-level, by content — the dev/59 removal posture).
 - Re-install heals drifted bytes on disk; an owned-import shadow of a built-in coord keeps its
   bytes through both paths (regression).
-- [ ] "Clear the canvas" reaches a model that knows removals are in its authority — the run
+- [x] "Clear the canvas" reaches a model that knows removals are in its authority — the run
       composes the dev/59 instruction regardless of when the agent was installed.
 
 ## 4. Commits
