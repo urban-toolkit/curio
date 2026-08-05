@@ -198,6 +198,7 @@ class TestDataflowBuilderComposite:
 
     def test_net_new_instruction_resolves(self):
         text = builtin.read_prompt_text(self.COORD, "instruction")
-        assert text and "ADDITIVE" in text
-        assert "dataflowPlan" in text
+        assert text and "dataflowPlan" in text
+        # dev/59: removals exist but only on explicit request.
+        assert "Never remove uninvited" in text
         assert builtin.read_prompt_text(self.COORD, "system")  # default preamble

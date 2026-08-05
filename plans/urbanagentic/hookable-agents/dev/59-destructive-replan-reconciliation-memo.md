@@ -1,7 +1,10 @@
 # Implementation Memo: Destructive Replan Reconciliation (Dataflow Builder — the dev/52 additive-only deferral)
 
 Date: 2026-08-05
-Status: proposed
+Status: implemented 2026-08-05 — COMMIT-d0bd2d14 (grammar), COMMIT-12e5771d (mint + apply,
+DEC-049), COMMIT-97fa6c41 (frontend), docs in the closing commit. Verification: backend
+`pytest tests --ignore=tests/test_frontend` → 1044 passed; frontend `npx jest` → 665 passed
+(61 suites); injection-resistance + rule-9 suites included.
 Feature slice: the recorded dev/52 deferral (dev/49 DR-2 remainder). Dataflow Builder plans gain
 **reviewed removals and rewires** of existing graph elements — the session's reconciliation
 contract ("preserve unchanged nodes and their IDs, preserve user-authored content by default,
@@ -197,21 +200,21 @@ already-absent no-op; full suites green.
 
 ## 8. Acceptance Criteria
 
-- [ ] A replan can add, wire-to-existing, and remove in ONE reviewed proposal; **only** the
+- [x] A replan can add, wire-to-existing, and remove in ONE reviewed proposal; **only** the
       authenticated apply mutates, atomically, saved spec + live canvas together.
-- [ ] Every removal is digest-pinned per victim: editing a doomed node after mint makes the
+- [x] Every removal is digest-pinned per victim: editing a doomed node after mint makes the
       apply 409 + `stale` naming it — user work cannot die to a stale review (DEC-049.1).
-- [ ] The review card names every victim with a content flag and the cascade; the effect line
+- [x] The review card names every victim with a content flag and the cascade; the effect line
       states the deletion plainly (DEC-049.2); additive plans render exactly as today.
-- [ ] Attachments on removed nodes are pruned exactly as manual deletion (dev/32);
+- [x] Attachments on removed nodes are pruned exactly as manual deletion (dev/32);
       `builderSession` forgets removed nodes; Solve guards tolerate mid-flight removals.
-- [ ] Plan edges may reference existing nodes (the dev/52 island restriction lifted) — additive
+- [x] Plan edges may reference existing nodes (the dev/52 island restriction lifted) — additive
       extensions connect to the current graph.
-- [ ] Correction rounds, fence-agnostic recognition, and the toolRequest form all carry the
+- [x] Correction rounds, fence-agnostic recognition, and the toolRequest form all carry the
       destructive fields; failures stay loud.
-- [ ] DEC-049 recorded (dev/03 + 2.1); the instruction supersedes the v1 "removals are theirs
+- [x] DEC-049 recorded (dev/03 + 2.1); the instruction supersedes the v1 "removals are theirs
       to make" posture at its recorded revisit point.
-- [ ] Injection-resistance and rule-9 suites pass.
+- [x] Injection-resistance and rule-9 suites pass.
 
 ## 9. Recommended Commit Breakdown
 
