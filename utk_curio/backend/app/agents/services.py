@@ -1034,8 +1034,8 @@ def _mint_node_template_create(
     engine = template.get("engine") or "python"
     if engine not in _TEMPLATE_ENGINES:
         return "refused", "template.engine must be 'python' or 'javascript'", None
-    code = template.get("content")
-    if not isinstance(code, str) or not code.strip():
+    code = content.extract_node_content(template.get("content"))
+    if not code:
         return "refused", "template.content must be a non-empty string", None
     if len(code) > content.PROPOSAL_CONTENT_MAX_CHARS:
         return "refused", "template.content exceeds the proposal size bound", None
@@ -1192,6 +1192,13 @@ def _mint_dataflow_plan(
     session_id = loop_ctx.get("session_id")
     if not isinstance(session_id, str):
         return "refused", "proposals need a persistent conversation", None
+    # Plan-carried content is model output too: only the executable content
+    # is proposed (dev/57).
+    for node in plan["nodes"]:
+        if node.get("content"):
+            node["content"] = content.extract_node_content(node["content"])
+            if not node["content"]:
+                node.pop("content")
     try:
         available = {t["id"]: t for t in packages_services.available_templates(user_key, project_id)}
     except Exception as exc:
@@ -1897,7 +1904,12 @@ def solve_attachment(
                         delegations.append(child)
                     if status == "solved":
                         results[node_id] = {"status": "solved"}
-                        applied_contents.append({"nodeId": node_id, "content": text})
+                        applied_contents.append(
+                            # The child replies with response formatting around
+                            # the code — only the executable content is written
+                            # (dev/57).
+                            {"nodeId": node_id, "content": content.extract_node_content(text)}
+                        )
                     elif status == "failed":
                         results[node_id] = {"status": "failed", "error": (text or "")[:300]}
                     else:
@@ -2455,8 +2467,8 @@ def _mint_node_content_write(
         )
     if not node_id:
         return "refused", "no nodeId given and this agent is not attached to a node", None
-    proposed = params.get("content")
-    if not isinstance(proposed, str) or not proposed.strip():
+    proposed = content.extract_node_content(params.get("content"))
+    if not proposed:
         return "refused", "params.content must be a non-empty string", None
     if len(proposed) > content.PROPOSAL_CONTENT_MAX_CHARS:
         return "refused", "params.content exceeds the proposal size bound", None
@@ -2539,8 +2551,8 @@ def _mint_node_create(
     entry, err = _available_template(user_key, project_id, params.get("nodeType"))
     if entry is None:
         return "refused", err, None
-    proposed = params.get("content")
-    if not isinstance(proposed, str) or not proposed.strip():
+    proposed = content.extract_node_content(params.get("content"))
+    if not proposed:
         return "refused", "params.content must be a non-empty string", None
     if len(proposed) > content.PROPOSAL_CONTENT_MAX_CHARS:
         return "refused", "params.content exceeds the proposal size bound", None

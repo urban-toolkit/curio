@@ -4277,3 +4277,50 @@ class TestFenceAgnosticPlanRecognition:
         done = events[-1][1]
         assert any(p["type"] == "proposal" for p in done["content"])
         assert "```" not in done["reply"]
+
+
+class TestGeneratedContentExtraction:
+    """dev/57 — Solve and the node mints write only executable content."""
+
+    def test_solve_strips_child_response_formatting(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        solve_helper = TestSolve()
+        helper = TestDataflowPlanMint()
+        att_id, _, _ = None, None, None
+        att_id, applied, _ = solve_helper._applied_plan(client, user, token, alice_project, monkeypatch)
+        wrapped = "Here is the code:\n```python\nprint('clean')\n```\nEnjoy!"
+        state = {"n": 0}
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            state["n"] += 1
+            return wrapped
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        body = solve_helper._solve(client, token, alice_project, att_id).get_json()
+        assert {r["status"] for r in body["results"].values()} == {"solved"}
+        for item in body["appliedContents"]:
+            assert item["content"] == "print('clean')"
+        nodes = {n["id"]: n for n in solve_helper._spec_nodes(user, alice_project)}
+        for created in applied["nodes"]:
+            assert nodes[created["id"]]["content"] == "print('clean')"
+
+    def test_node_create_mint_strips_wrapped_params(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestNodeCreate()
+        wrapped_content = "Here you go:\\n```python\\nprint('tidy')\\n```"
+        att_id, _ = helper._setup(
+            client, token=token, user=user, project_id=alice_project, monkeypatch=monkeypatch,
+            replies=[helper._create_tail(content=wrapped_content), "done"],
+        )
+        r = helper._run(client, token, alice_project, att_id)
+        proposal = helper._proposal_from_run(r)
+        assert proposal["preview"] == "print('tidy')"
+        resp = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert resp.get_json()["createdNode"]["content"] == "print('tidy')"

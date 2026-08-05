@@ -536,3 +536,47 @@ class TestExtractPlanAttempt:
         reply = "Some code:\n```python\nprint(1)\n```"
         assert content.extract_plan_attempt(reply) == (reply, None)
         assert content.extract_plan_attempt("no fences at all") == ("no fences at all", None)
+
+
+class TestExtractNodeContent:
+    """dev/57 — only the executable content survives response formatting;
+    legitimate content is never altered."""
+
+    CODE = "import pandas as pd\ndf = pd.read_csv('x.csv')\nprint(df.head())"
+
+    def test_fenced_with_prose_before_and_after(self):
+        reply = f"Here is the code:\n\n```python\n{self.CODE}\n```\n\nThis loads the CSV."
+        assert content.extract_node_content(reply) == self.CODE
+
+    def test_language_identifiers_dropped(self):
+        for lang in ("python", "json", "javascript", ""):
+            assert content.extract_node_content(f"```{lang}\n{self.CODE}\n```") == self.CODE
+
+    def test_largest_of_multiple_fences_wins(self):
+        reply = f"Setup:\n```bash\npip install pandas\n```\nMain:\n```python\n{self.CODE}\n```"
+        assert content.extract_node_content(reply) == self.CODE
+
+    def test_json_wrapper_unwraps(self):
+        import json as _json
+
+        assert content.extract_node_content(_json.dumps({"content": self.CODE})) == self.CODE
+        assert content.extract_node_content(_json.dumps({"code": self.CODE})) == self.CODE
+
+    def test_wrapper_around_fence_unwraps_both(self):
+        import json as _json
+
+        wrapped = _json.dumps({"content": f"```python\n{self.CODE}\n```"})
+        assert content.extract_node_content(wrapped) == self.CODE
+
+    def test_unwrapped_code_is_byte_identical(self):
+        assert content.extract_node_content(self.CODE) == self.CODE
+        # A dict-literal in code (not a wrapper) stays untouched.
+        code = 'config = {"content": "x", "code": "y"}\nrun(config)'
+        assert content.extract_node_content(code) == code
+
+    def test_not_controllable_sentinel_passes_through(self):
+        assert content.extract_node_content("not controllable") == "not controllable"
+
+    def test_non_string_and_empty(self):
+        assert content.extract_node_content(None) == ""
+        assert content.extract_node_content("   ") == ""

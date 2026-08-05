@@ -638,6 +638,53 @@ def delegation_instruction(entries: list[tuple[str, str]]) -> str:
     )
 
 
+# Node-content extraction (dev/57): plausible single-field JSON wrappers a
+# model may put around generated code.
+_CONTENT_WRAPPER_KEYS = ("content", "code", "source", "result")
+
+
+def extract_node_content(text: object) -> str:
+    """Extract the executable content from a model's generated-code reply
+    (dev/57) — applied at EVERY model-output→node-content boundary (Solve,
+    the node-content mints, plan-carried content, the legacy Get Code path).
+
+    Deterministic and conservative: JSON wrappers with a single plausible
+    string field unwrap; when fenced blocks exist, the LARGEST block's body
+    is the content (language identifier dropped, surrounding prose discarded
+    — that is response formatting, not code); unfenced text is returned
+    trimmed and otherwise untouched — preserving legitimate content outranks
+    cosmetic cleanup (the legacy ``not controllable`` sentinel passes through
+    exactly).
+    """
+    if not isinstance(text, str):
+        return ""
+    current = text.strip()
+    # Bounded unwrap: a wrapper may contain a fence, or vice versa.
+    for _ in range(3):
+        # 1. Whole-text JSON wrapper with one plausible content field.
+        if current.startswith("{") and current.endswith("}"):
+            try:
+                payload = json.loads(current)
+            except (ValueError, TypeError):
+                payload = None
+            if isinstance(payload, dict):
+                string_fields = [
+                    k for k in _CONTENT_WRAPPER_KEYS
+                    if isinstance(payload.get(k), str)
+                ]
+                if len(string_fields) == 1:
+                    current = payload[string_fields[0]].strip()
+                    continue
+        # 2. Fenced blocks: the largest body is the content.
+        fences = list(_FENCE_RE.finditer(current))
+        if fences:
+            largest = max(fences, key=lambda m: len(m.group(1)))
+            current = largest.group(1).strip()
+            continue
+        break
+    return current
+
+
 def make_proposal_part(
     *,
     proposal_id: str,

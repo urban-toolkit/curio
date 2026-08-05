@@ -69,6 +69,7 @@ import { TrillGenerator } from "TrillGenerator";
 import { ICodeData } from "types";
 import { SaveOutputToggle } from "./nodes/SaveOutputToggle";
 import { resolveSaveOutputDataset } from "../utils/saveOutputDataset";
+import { extractNodeContent } from "../utils/extractNodeContent";
 import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
 import { DatasetMetaHeader } from "./datasets/DatasetMetaHeader";
 import { useDatasetPalette } from "../providers/DatasetPaletteContext";
@@ -491,9 +492,10 @@ export const NodeContainer = ({
                 }
 
                 let result = await llmRequest("default_preamble", "new_content_prompt", "Current Trill: " + JSON.stringify(trill_spec) + "\n" + " Node ID: " + nodeId + "\n" + "Subtask: "+goal+" Task: " + "\n" + workflowGoal);
-    
-                let clean_result = result.result.replaceAll("```json", "").replaceAll("```python", "");
-                clean_result = clean_result.replaceAll("```", "");
+
+                // Shared extraction (dev/57): fences, language ids, wrappers,
+                // and surrounding prose removed — legitimate content untouched.
+                let clean_result = extractNodeContent(result.result);
 
                 console.log("generateContentNode result", clean_result);
 
