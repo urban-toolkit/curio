@@ -101,6 +101,7 @@ describe("Testing the addition of Merge Flow", ()=>{
             cellEdges,
             hasOutgoing,
             incomingSources,
+            new Set()
         );
         expect(code).toBe("y = compute_something()")
     })
@@ -122,6 +123,7 @@ describe("Testing the addition of Merge Flow", ()=>{
             cellEdges,
             hasOutgoing,
             incomingSources,
+            new Set()
         );
         expect(sourceCode).toBe('x = compute_something()\nreturn {"x": x}');
 
@@ -132,6 +134,7 @@ describe("Testing the addition of Merge Flow", ()=>{
             cellEdges,
             hasOutgoing,
             incomingSources,
+            new Set()
         );
         expect(targetCode).toBe('x = arg["x"]\ny = x + 1');
     });
@@ -152,18 +155,18 @@ describe("Testing the addition of Merge Flow", ()=>{
         ]);
 
         // Make sure the output are all good
-        const source1 = wireCode("x = compute_something()", 0, cellEdges, hasOutgoing, incomingSources);
-        const source2 = wireCode("y = compute_something()", 1, cellEdges, hasOutgoing, incomingSources);
-        const source3 = wireCode("z = compute_something()", 2, cellEdges, hasOutgoing, incomingSources);
+        const source1 = wireCode("x = compute_something()", 0, cellEdges, hasOutgoing, incomingSources, new Set());
+        const source2 = wireCode("y = compute_something()", 1, cellEdges, hasOutgoing, incomingSources, new Set());
+        const source3 = wireCode("z = compute_something()", 2, cellEdges, hasOutgoing, incomingSources, new Set());
 
         expect(source1).toBe('x = compute_something()\nreturn {"x": x}');
         expect(source2).toBe('y = compute_something()\nreturn {"y": y}');
         expect(source3).toBe('z = compute_something()\nreturn {"z": z}');
 
-        const merge_flow_out = wireCode("", 4, cellEdges, hasOutgoing, incomingSources)
+        const merge_flow_out = wireCode("", 4, cellEdges, hasOutgoing, incomingSources, new Set())
         expect(merge_flow_out).toBe("")
 
-        const merge_output = wireCode("product = x * y * z", 3, cellEdges, hasOutgoing, incomingSources);
+        const merge_output = wireCode("product = x * y * z", 3, cellEdges, hasOutgoing, incomingSources, new Set());
         expect(merge_output).toBe('y = arg[0]["y"]\nx = arg[1]["x"]\nz = arg[2]["z"]\nproduct = x * y * z')
     })
 
@@ -186,10 +189,10 @@ describe("Testing the addition of Merge Flow", ()=>{
             [9, [8]],
         ]);
 
-        const node4 = wireCode("x = a + b + c", 4, cellEdges, hasOutgoing, incomingSources);
+        const node4 = wireCode("x = a + b + c", 4, cellEdges, hasOutgoing, incomingSources, new Set());
         expect(node4).toBe('a = arg[0]["a"]\nb = arg[1]["b"]\nc = arg[2]["c"]\nx = a + b + c\nreturn {"x": x}');
         
-        const node8 = wireCode("", 8, cellEdges, hasOutgoing, incomingSources);
+        const node8 = wireCode("", 8, cellEdges, hasOutgoing, incomingSources, new Set());
         expect(node8).toBe("");
     })
 
@@ -211,10 +214,10 @@ describe("Testing the addition of Merge Flow", ()=>{
             [5, [6]],
         ]);
 
-        const merge_node_out = wireCode("gqCoduV9YG0fYdjdPXmWdZAhSKJ5o6uQ", 6, cellEdges, hasOutgoing, incomingSources)
+        const merge_node_out = wireCode("gqCoduV9YG0fYdjdPXmWdZAhSKJ5o6uQ", 6, cellEdges, hasOutgoing, incomingSources, new Set())
         expect(merge_node_out).toBe("gqCoduV9YG0fYdjdPXmWdZAhSKJ5o6uQ")
 
-        const out = wireCode("print(a+b+c+d+e)", 5, cellEdges, hasOutgoing, incomingSources)
+        const out = wireCode("print(a+b+c+d+e)", 5, cellEdges, hasOutgoing, incomingSources, new Set())
         expect(out).toBe('a = arg[0]["a"]\nb = arg[1]["b"]\nc = arg[2]["c"]\nd = arg[3]["d"]\ne = arg[4]["e"]\nprint(a+b+c+d+e)')
     })
 })

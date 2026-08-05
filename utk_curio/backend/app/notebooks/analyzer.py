@@ -176,7 +176,7 @@ def _try_altair_to_spec(code, last_var, external_vars=()):
     or None if the conversion fails.
 
     A mock DataFrame built from field names mentioned in the code is used as
-    data so Altair can infer column types for shorthand fields.  The 'data' and
+    data so Altair can infer column types for shorthand fields. The 'data' and
     'datasets' keys are stripped from the result so the VIS_VEGA node receives
     real data from its upstream Curio connection at runtime.
     """
@@ -197,9 +197,28 @@ def _try_altair_to_spec(code, last_var, external_vars=()):
         chart = ns.get(last_var)
         if chart is None or not hasattr(chart, 'to_dict'):
             return None
-
+        
         spec = chart.to_dict(validate=False)
-        spec.pop('data', None)
+
+        def _clean_spec_data(node):
+            if isinstance(node, dict):
+                # Check if this node has a 'data' key pointing to an auto-generated dataset
+                if 'data' in node:
+                    data_val = node['data']
+                    # Altair auto-generated data typically looks like {"name": "data-..."}
+                    if isinstance(data_val, dict) and str(data_val.get('name', '')).startswith('data'):
+                        node.pop('data', None)
+                    elif isinstance(data_val, str) and data_val.startswith('data'):
+                        node.pop('data', None)
+                
+                # Recursively check all dictionary values (handling layers, concat, facet, repeat, etc.)
+                for key, value in list(node.items()):
+                    _clean_spec_data(value)
+            elif isinstance(node, list):
+                for item in node:
+                    _clean_spec_data(item)
+
+        _clean_spec_data(spec)
         spec.pop('datasets', None)
         return spec
     except Exception:
@@ -253,26 +272,6 @@ def analyze_cells(raw_cells: list[str]) -> dict:
         import_names_per_cell.append(import_names)
 
     # ── Pass 2: Dependency edges──────────────────────────────────────────
-    # producer: dict[str, int] = {}
-    # edges: list[dict] = []
-    # seen: set[tuple] = set()
-
-    # for i, cell in enumerate(analysis):
-    #     for name in sorted(cell['used'], key=lambda n: producer.get(n, -1)):
-    #         # Added, name not in cell['defined']
-    #         if name in producer and name not in cell['defined']:
-    #             key = (producer[name], i)
-    #             if key not in seen:
-    #                 seen.add(key)
-    #                 # Added, the variable 'parent_var'. 'parent_var' is the variable that connects two cells
-    #                 edges.append({'source': producer[name], 'target': i, 'parent_var': name})
-    #     import_names = import_names_per_cell[i]
-    #     for name in cell['defined']:
-    #         if name not in import_names:
-    #             producer[name] = i
-
-    # return {'analysis': analysis, 'edges': edges}
-
     producer: dict[str, int] = {}
     edges: list[dict] = []
     edge_index: dict[tuple, int] = {}  # (source, target) -> index into edges list

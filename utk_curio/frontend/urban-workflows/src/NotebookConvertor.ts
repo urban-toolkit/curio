@@ -194,6 +194,7 @@ export function wireCode(
   cellEdges: CellEdge[],
   hasOutgoing: Set<number>,
   incomingSources: Map<number, number[]>,
+  spec_set: Set<number>
 ): string {
   let out = code;
   const sources = incomingSources.get(cellIdx) ?? [];
@@ -219,10 +220,25 @@ export function wireCode(
     }
   } 
 
+// ------ The hazard area in question ------ //
   const outgoingEdges = cellEdges.filter(e => e.source === cellIdx);
   const distinctVars = Array.from(new Set(outgoingEdges.map(e => e.parent_var).filter(Boolean)));
 
-  if (hasOutgoing.has(cellIdx) && distinctVars.length > 0) {
+  const specVars = Array.from(new Set(
+    outgoingEdges.filter(e => spec_set.has(e.target)).map(e => e.parent_var).filter(Boolean)
+  ));
+
+  if (specVars.length > 0) {
+    if (distinctVars.length > 1) {
+      console.warn(
+        `wireCode: cell ${cellIdx} has multiple distinct vars (${distinctVars.join(", ")}) feeding different cells. ` +
+        `Only "${specVars[0]}" will be returned; the others will be dropped. ` +
+        `Because variables entering vega-lite nodes must be returned in a very specific way, dictionaries cannot be used to return multiple distinct variables`
+      );
+    }
+    // A var feeding a spec cell can't be dict-wrapped — must be a raw return.
+    out = `${out}\nreturn ${specVars[0]}`;
+  } else if (hasOutgoing.has(cellIdx) && distinctVars.length > 0) {
     const MULTIPLE_PARENTS_PATTERN = /,/;
     const dictBody = distinctVars.map(v =>
       MULTIPLE_PARENTS_PATTERN.test(v!) ?
@@ -230,6 +246,8 @@ export function wireCode(
     ).join(", ");
     out = `${out}\nreturn {${dictBody}}`;
   }
+  // ------ The hazard area in question ------ //
+
   return out;
 }
 
@@ -300,19 +318,16 @@ export async function notebookToTrill(
       "NotebookConvertor: backend unreachable, falling back to linear chain."
     );
   }
-
-  // ── Step 3: Fallback — naive linear chain ────────────────────────────────
-  // Linear fallback was removed
-
-  // ── Step 4: Build quick-lookup structures from the edge list ────────────
-  // ── Step 4a: Raw incoming-edge grouping (just for merge detection) ──────
+  
+  // ── Step 3: Build quick-lookup structures from the edge list ────────────
+  // ── Step 3a: Raw incoming-edge grouping (just for merge detection) ──────
   const rawIncoming = new Map<number, number[]>();
   for (const { source, target } of cellEdges) {
     if (!rawIncoming.has(target)) rawIncoming.set(target, []);
     rawIncoming.get(target)!.push(source);
   }
 
-  // ── Step 4b: Insert merge-flow cells for nodes with multiple inputs ─────
+  // ── Step 3b: Insert merge-flow cells for nodes with multiple inputs ─────
   for (const [target, sources] of rawIncoming) {
     if (sources.length <= 1) continue;
 
@@ -328,7 +343,7 @@ export async function notebookToTrill(
     cellEdges.push({ source: mergeCellIdx, target});
   }
 
-  // ── Step 4c: Build final quick-lookup structures (used by wireCode etc.) ─
+  // ── Step 3c: Build final quick-lookup structures (used by wireCode etc.) ─
   const hasOutgoing = new Set(cellEdges.map((e) => e.source));
   const incomingSources = new Map<number, number[]>();
   for (const { source, target } of cellEdges) {
@@ -336,12 +351,12 @@ export async function notebookToTrill(
     incomingSources.get(target)!.push(source);
   }
 
-  // ── Step 5: Compute visual layout ────────────────────────────────────────
+  // ── Step 4: Compute visual layout ────────────────────────────────────────
   const positions = computeLayout(codeCells.length, cellEdges);
 
   const nodeIds = codeCells.map(() => uuid());
 
-  // ── Step 6: Build the actual TrillNode objects ──────────────────────────
+  // ── Step 5: Build the actual TrillNode objects ──────────────────────────
   
   // Cells whose types cannot be determined deterministically 
   const ambiguous: Cell[] = codeCells
@@ -350,6 +365,13 @@ export async function notebookToTrill(
 
   // The result of the LLM analysis
   const llm_types = await getLlmTypes(ambiguous, backendUrl)
+
+  // Contains a list of all cell indices that contain a spec
+  // To be used for wireCode
+  const spec_set = new Set<number>();
+  altairSpecs.forEach((spec, index) => {
+    if (spec) spec_set.add(index);
+  });
 
   const nodes: TrillNode[] = codeCells.map((code, index) => {
     const spec = altairSpecs[index] ?? null;
@@ -364,7 +386,7 @@ export async function notebookToTrill(
     const content = spec
       ? JSON.stringify(spec, null, 2)
       : cellEdges.length > 0  // Changed lastVars.length > 0 to cellEdges.length > 0
-        ? wireCode(code, index, cellEdges, hasOutgoing, incomingSources)
+        ? wireCode(code, index, cellEdges, hasOutgoing, incomingSources, spec_set)
         : code;
 
     return {
@@ -376,7 +398,7 @@ export async function notebookToTrill(
     };
   });
 
-  // ── Step 7: Build the edge list ──────────────────────────────────────────
+  // ── Step 6: Build the edge list ──────────────────────────────────────────
   const mergeInputCounters: Record<string, number> = {};
   
   const edgeList: TrillEdge[] = cellEdges
@@ -399,7 +421,7 @@ export async function notebookToTrill(
       };
     });
     
-    // ── Step 8: Assemble and return the final spec ──────────────────────────
+    // ── Step 7: Assemble and return the final spec ──────────────────────────
   return {
     dataflow: {
       nodes,
