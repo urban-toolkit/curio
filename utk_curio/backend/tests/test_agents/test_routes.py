@@ -3555,3 +3555,114 @@ def db_user(client, user):
     from utk_curio.backend.app.users.models import User
 
     return User.query.get(user.id)
+
+
+class TestDataflowPlanMint:
+    """dev/52 — a validated dataflowPlan tail on the final reply mints the
+    reviewed plan proposal in one step (runtime-minted, never model-requested)."""
+
+    COORD = "agent.dataflow-builder@1.0.0"
+
+    def _plan_tail(self, nodes=None, edges=None):
+        import json as _json
+
+        plan = {
+            "goal": "heat analysis",
+            "nodes": nodes or [
+                {"ref": "a", "nodeType": "curio.builtin/computation-analysis",
+                 "title": "Load", "intent": "load the data"},
+                {"ref": "b", "nodeType": "curio.builtin/computation-analysis",
+                 "title": "Analyze", "intent": "compute stats"},
+            ],
+            "edges": edges if edges is not None else [{"from": "a", "to": "b"}],
+        }
+        return f"```curio.v1\n{_json.dumps({'dataflowPlan': plan})}\n```"
+
+    def _setup(self, client, user, token, project_id, monkeypatch, replies=None, coord=None):
+        helper = TestNodeCreate()
+        helper._write_builtin_package(self._ukey(user))
+        r = client.put(
+            f"/api/projects/{project_id}",
+            json={"name": "p", "spec": {"dataflow": {"nodes": [{"id": "n1", "content": "print(1)", "x": 10, "y": 20}], "edges": [], "packages": []}}, "outputs": []},
+            headers=_auth(token),
+        )
+        assert r.status_code == 200
+        use = coord or self.COORD
+        client.post(f"/api/agents/projects/{project_id}/install", json={"coord": use}, headers=_auth(token))
+        att_id = client.post(
+            f"/api/agents/projects/{project_id}/attachments",
+            json={"coord": use, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        ).get_json()["attachmentId"]
+        calls = []
+        script = replies or ["Here is the plan.\n" + self._plan_tail()]
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            return script[min(len(calls) - 1, len(script) - 1)]
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        return att_id, calls
+
+    def _ukey(self, user):
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        return _user_dir_key(user)
+
+    def _run(self, client, token, project_id, att_id, message="plan it"):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/run",
+            json={"message": message}, headers=_auth(token),
+        )
+
+    def test_plan_tail_mints_reviewed_proposal_and_sets_phase(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, calls = self._setup(client, user, token, alice_project, monkeypatch)
+        r = self._run(client, token, alice_project, att_id)
+        assert r.status_code == 200
+        body = r.get_json()
+        proposal = next(p for p in body["content"] if p["type"] == "proposal")
+        assert proposal["tool"] == "dataflow.plan.write"
+        assert proposal["summary"] == "Apply plan · 2 nodes, 1 edges"
+        assert "baseGraphDigest" in proposal["pins"]
+        assert [n["title"] for n in proposal["plan"]["nodes"]] == ["Load", "Analyze"]
+        # The raw plan part was consumed by the mint — no duplicate part.
+        assert all(p["type"] != "dataflowPlan" for p in body["content"])
+        # The templates roster rode the system turn (plan grants get it too).
+        assert "Available node templates" in calls[0][0]["content"]
+        # Builder session: plan_review phase persisted on the attachment.
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        assert cards[0]["activeProposal"]["status"] == "pending"
+
+    def test_unavailable_template_yields_error_card_not_proposal(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, _ = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["plan.\n" + self._plan_tail(nodes=[
+                {"ref": "a", "nodeType": "curio.builtin/not-a-thing",
+                 "title": "Load", "intent": "load"},
+            ], edges=[])],
+        )
+        body = self._run(client, token, alice_project, att_id).get_json()
+        assert all(p["type"] != "proposal" for p in body["content"])
+        card = next(p for p in body["content"] if p["type"] == "card")
+        assert card["title"] == "Plan not proposable"
+        assert "not-a-thing" in card["lines"][0]
+
+    def test_ungranted_plan_part_passes_through_without_mutation_path(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # A non-builder agent emitting a plan tail: informational part only.
+        user, token = user_and_token
+        att_id, _ = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            coord="agent.chat-agent@1.0.0",
+            replies=["idea!\n" + self._plan_tail()],
+        )
+        body = self._run(client, token, alice_project, att_id).get_json()
+        assert all(p["type"] != "proposal" for p in body["content"])
+        assert any(p["type"] == "dataflowPlan" for p in body["content"])

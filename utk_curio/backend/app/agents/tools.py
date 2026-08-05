@@ -92,6 +92,25 @@ REGISTRY: dict[str, ToolContract] = {
             "these results only."
         ),
     ),
+    # dev/52 — consumer: agent.dataflow-builder. The DR-1 graph-level
+    # mutation: the model emits a `dataflowPlan` tail block (not a
+    # toolRequest) and the runtime mints the reviewed plan proposal from it;
+    # the authenticated apply endpoint inserts the whole ADDITIVE graph.
+    "dataflow.plan.write": ToolContract(
+        id="dataflow.plan.write",
+        contract_version="1",
+        effect="mutate",
+        description=(
+            "Propose an ADDITIVE plan of connected new nodes, by ending a "
+            "reply with a dataflowPlan block (not a toolRequest): "
+            '{"dataflowPlan": {"goal": "...", "nodes": [{"ref": "n1", '
+            '"nodeType": "<packageId>/<templateId>", "title": "...", '
+            '"intent": "..."}], "edges": [{"from": "n1", "to": "n2"}]}}. '
+            "nodeType must come from the Available node templates list. The "
+            "user reviews the whole plan; nothing is added without approval, "
+            "and existing nodes are never touched."
+        ),
+    ),
     # dev/50 — consumer: agent.dataset-finder. The catalog lane's reviewed
     # handoff: applying installs ONE dataset through the existing
     # dataset-only flow; never an agent.

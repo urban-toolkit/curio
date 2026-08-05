@@ -55,6 +55,23 @@ _TOOL_ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$")
 _PROPOSAL_SUMMARY_MAX_CHARS = 200
 PROPOSAL_CONTENT_MAX_CHARS = 65536
 
+# dataflowPlan bounds (memo dev/52). The node/edge caps are ABUSE BACKSTOPS,
+# never product ceilings — far above what one review meaningfully covers,
+# present only so a hostile tail can't allocate unbounded structures. Plans
+# get their own tail budget (the classic TAIL_MAX_BYTES was sized for prompts
+# and tool requests, dev/39); the practical governors of plan size are
+# maxOutputTokens (policy) and per-child quota admission — and large designs
+# chain across successive additive plans, so nothing here is a ceiling.
+PLAN_TAIL_MAX_BYTES = 256 * 1024
+_PLAN_MAX_NODES = 200
+_PLAN_MAX_EDGES = 600
+_PLAN_GOAL_MAX_CHARS = 300
+_PLAN_TEMPLATE_ID_MAX_CHARS = 64
+_PLAN_REF_MAX_CHARS = 32
+_PLAN_TITLE_MAX_CHARS = 120
+_PLAN_INTENT_MAX_CHARS = 300
+_PLAN_NODE_TYPE_MAX_CHARS = 120
+
 # datasetCandidates bounds (memo dev/50 — the docs/06 two-lane row contract).
 # Rows are informational display metadata; every string is bounded here and
 # URLs are scheme-allowlisted at parse time (REQ-SEC-002 belt-and-braces —
@@ -259,6 +276,67 @@ def _parse_dataset_candidates(raw: object) -> dict | None:
     return {"type": "datasetCandidates", "lanes": lanes}
 
 
+def _parse_dataflow_plan(raw: object) -> dict | None:
+    """The dev/52 typed plan part (DR-1): a connected, ADDITIVE graph of
+    placeholder nodes. Plan-local ``ref`` handles; edges must reference plan
+    refs (additive graphs are self-contained in v1). A malformed anything
+    fails the whole block open to text (the T2 rule)."""
+    if not isinstance(raw, dict):
+        return None
+    goal = _bounded_str(raw.get("goal"), _PLAN_GOAL_MAX_CHARS)
+    if goal is None:
+        return None
+    plan: dict = {"type": "dataflowPlan", "goal": goal}
+    if raw.get("templateId") is not None:
+        template_id = _bounded_str(raw.get("templateId"), _PLAN_TEMPLATE_ID_MAX_CHARS)
+        if template_id is None:
+            return None
+        plan["templateId"] = template_id
+    nodes_raw = raw.get("nodes")
+    if not isinstance(nodes_raw, list) or not nodes_raw or len(nodes_raw) > _PLAN_MAX_NODES:
+        return None
+    nodes: list[dict] = []
+    refs: set[str] = set()
+    for node_raw in nodes_raw:
+        if not isinstance(node_raw, dict):
+            return None
+        ref = _bounded_str(node_raw.get("ref"), _PLAN_REF_MAX_CHARS)
+        node_type = _bounded_str(node_raw.get("nodeType"), _PLAN_NODE_TYPE_MAX_CHARS)
+        title = _bounded_str(node_raw.get("title"), _PLAN_TITLE_MAX_CHARS)
+        intent = _bounded_str(node_raw.get("intent"), _PLAN_INTENT_MAX_CHARS)
+        if ref is None or node_type is None or title is None or intent is None:
+            return None
+        if ref in refs:
+            return None  # plan-local handles must be unique
+        refs.add(ref)
+        node = {"ref": ref, "nodeType": node_type, "title": title, "intent": intent}
+        node_content = node_raw.get("content")
+        if node_content is not None:
+            if not isinstance(node_content, str) or len(node_content) > PROPOSAL_CONTENT_MAX_CHARS:
+                return None
+            node["content"] = node_content
+        nodes.append(node)
+    plan["nodes"] = nodes
+    edges_raw = raw.get("edges", [])
+    if not isinstance(edges_raw, list) or len(edges_raw) > _PLAN_MAX_EDGES:
+        return None
+    edges: list[dict] = []
+    seen_edges: set[tuple[str, str]] = set()
+    for edge_raw in edges_raw:
+        if not isinstance(edge_raw, dict):
+            return None
+        src = edge_raw.get("from")
+        dst = edge_raw.get("to")
+        if src not in refs or dst not in refs or src == dst:
+            return None
+        if (src, dst) in seen_edges:
+            return None
+        seen_edges.add((src, dst))
+        edges.append({"from": src, "to": dst})
+    plan["edges"] = edges
+    return plan
+
+
 def _parse_delegate_request(raw: object) -> dict | None:
     if not isinstance(raw, dict):
         return None
@@ -290,14 +368,23 @@ def parse_parts(body: str) -> list[dict] | None:
     other parts alongside it are dropped — and both requests in one tail is
     an invalid block (one request per reply).
     """
-    if not isinstance(body, str) or len(body.encode("utf-8")) > TAIL_MAX_BYTES:
+    if not isinstance(body, str):
         return None
+    body_bytes = len(body.encode("utf-8"))
+    if body_bytes > TAIL_MAX_BYTES:
+        # Plans get their own budget (dev/52): the classic cap was sized for
+        # prompts/tool requests. The substring check bounds json.loads cost
+        # before parsing; the payload-key check below closes the loophole.
+        if body_bytes > PLAN_TAIL_MAX_BYTES or '"dataflowPlan"' not in body:
+            return None
     try:
         payload = json.loads(body)
     except (ValueError, TypeError):
         return None
     if not isinstance(payload, dict):
         return None
+    if body_bytes > TAIL_MAX_BYTES and "dataflowPlan" not in payload:
+        return None  # the enlarged budget is for plan payloads only
     if "proposal" in payload or "proposals" in payload:
         return None  # never accepted from the model (memo dev/41 §4.1)
     if "toolRequest" in payload and "delegateRequest" in payload:
@@ -313,6 +400,11 @@ def parse_parts(body: str) -> list[dict] | None:
             return None
         return [request]
     parts: list[dict] = []
+    if "dataflowPlan" in payload:
+        plan = _parse_dataflow_plan(payload["dataflowPlan"])
+        if plan is None:
+            return None
+        parts.append(plan)
     if "datasetCandidates" in payload:
         candidates = _parse_dataset_candidates(payload["datasetCandidates"])
         if candidates is None:

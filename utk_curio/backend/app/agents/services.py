@@ -1151,6 +1151,140 @@ def _apply_node_template_create(
     }
 
 
+def _graph_shape_digest(spec: dict) -> str:
+    """The whole-graph revision basis for plan proposals (dev/52): sha256 of
+    the saved dataflow's sorted node-id and edge-id sets. Content edits do
+    NOT change it — deliberate: they don't invalidate an additive plan."""
+    import hashlib
+    import json as _json
+
+    dataflow = spec.get("dataflow") or {}
+    node_ids = sorted(
+        str(n.get("id")) for n in (dataflow.get("nodes") or []) if isinstance(n, dict)
+    )
+    edge_ids = sorted(
+        str(e.get("id", f"{e.get('source')}->{e.get('target')}"))
+        for e in (dataflow.get("edges") or [])
+        if isinstance(e, dict)
+    )
+    basis = _json.dumps([node_ids, edge_ids])
+    return hashlib.sha256(basis.encode("utf-8")).hexdigest()
+
+
+def _mint_dataflow_plan(
+    user_key: str, project_id: str, loop_ctx: dict, plan: dict
+) -> tuple[str, str, dict | None]:
+    """Mint the dev/52 plan proposal from a validated ``dataflowPlan`` part.
+
+    Reuse-first exactly as dev/48: every nodeType must be an available
+    template (authorable when the plan carries content for it). Pins the
+    whole-graph shape digest; the apply endpoint re-checks it. Returns
+    ``(status, user_facing_error, proposal_part | None)``."""
+    from utk_curio.backend.app.packages import services as packages_services
+
+    session_id = loop_ctx.get("session_id")
+    if not isinstance(session_id, str):
+        return "refused", "proposals need a persistent conversation", None
+    try:
+        available = {t["id"]: t for t in packages_services.available_templates(user_key, project_id)}
+    except Exception as exc:
+        return "refused", f"the node template registry is unavailable: {exc}", None
+    for node in plan["nodes"]:
+        entry = available.get(node["nodeType"])
+        if entry is None:
+            return (
+                "refused",
+                f"plan node {node['ref']!r} uses {node['nodeType']!r}, which is not an "
+                "available template for this project",
+                None,
+            )
+        if node.get("content") and not entry.get("authorable"):
+            return (
+                "refused",
+                f"plan node {node['ref']!r} carries content but template "
+                f"{node['nodeType']!r} does not hold authored content",
+                None,
+            )
+    spec = projects_storage.read_spec(user_key, project_id)
+    if spec is None:
+        return "refused", "no saved project spec is available", None
+    digest = _graph_shape_digest(spec)
+    proposal_id = uuid.uuid4().hex
+    n_nodes, n_edges = len(plan["nodes"]), len(plan["edges"])
+    summary = f"Apply plan · {n_nodes} nodes, {n_edges} edges"
+    preview = "\n".join(
+        f"{node['title']} · {node['nodeType']} — {node['intent']}" for node in plan["nodes"]
+    )
+    part = content.make_proposal_part(
+        proposal_id=proposal_id,
+        tool="dataflow.plan.write",
+        summary=summary,
+        preview=preview,
+        pins={"baseGraphDigest": digest},
+    )
+    # The display copy for the review card (bounded upstream by the grammar).
+    part["plan"] = {
+        "goal": plan["goal"],
+        **({"templateId": plan["templateId"]} if plan.get("templateId") else {}),
+        "nodes": [
+            {"ref": n["ref"], "nodeType": n["nodeType"], "title": n["title"], "intent": n["intent"]}
+            for n in plan["nodes"]
+        ],
+        "edgeCount": n_edges,
+    }
+    # The builder session (DR-2) transitions on the SAME spec write: the
+    # attachment record is rule-9 share-stripped and save-preserved already.
+    record = attachments.get_attachment(spec, loop_ctx["attachment_id"])
+    if record is not None:
+        session = record.setdefault("builderSession", {})
+        session["phase"] = "plan_review"
+        session["planProposalId"] = proposal_id
+    _store_proposal(
+        user_key,
+        project_id,
+        spec,
+        loop_ctx,
+        {
+            "proposalId": proposal_id,
+            "tool": "dataflow.plan.write",
+            "plan": plan,
+            "baseGraphDigest": digest,
+            "summary": summary,
+            "status": "pending",
+        },
+        part,
+    )
+    return "proposed", "", part
+
+
+def _maybe_mint_plan(
+    user_key: str, project_id: str, loop_ctx: dict, parts: list, minted: list
+) -> list:
+    """Post-loop hook (dev/52): a validated ``dataflowPlan`` part on the final
+    reply becomes the plan proposal in one step — the runtime mints, the
+    model never requests. Ungranted plan parts pass through untouched
+    (informational; no mutation path exists for them). A mint refusal
+    becomes a visible error card — the loop has ended, so there is no round
+    to feed it back to."""
+    plan_part = next((p for p in parts if p.get("type") == "dataflowPlan"), None)
+    if plan_part is None or "dataflow.plan.write" not in loop_ctx.get("granted", []):
+        return parts
+    remaining = [p for p in parts if p is not plan_part]
+    status, error_text, part = _mint_dataflow_plan(user_key, project_id, loop_ctx, plan_part)
+    if part is not None:
+        minted.append(part)
+        return remaining
+    remaining.append(
+        {
+            "type": "card",
+            "kind": "error",
+            "title": "Plan not proposable",
+            "lines": [error_text[:300]],
+        }
+    )
+    return remaining
+
+
 def _resolve_catalog_dataset(project_id: str, dataset_id: object) -> tuple[dict | None, str]:
     """Resolve a dataset id against the project's Data Catalog (dev/50 —
     the datasets domain is the single truth; `ADR-AG-007`). Returns
@@ -1682,10 +1816,11 @@ def _prepare_run(
     system_content = (
         f"{system_content}\n\n{content.tail_instruction(tools.grant_descriptions(granted))}"
     )
-    # Reuse-first (dev/48): a node.create grant carries the live template
-    # roster, composed fresh per run from the packages registry — the prompt
-    # bytes never bake in template ids, and the model is never left to guess.
-    if "node.create" in granted:
+    # Reuse-first (dev/48; plans too, dev/52): a node.create or
+    # dataflow.plan.write grant carries the live template roster, composed
+    # fresh per run from the packages registry — the prompt bytes never bake
+    # in template ids, and the model is never left to guess.
+    if "node.create" in granted or "dataflow.plan.write" in granted:
         templates_block = _available_templates_block(user_key, project_id)
         if templates_block:
             system_content = f"{system_content}\n\n{templates_block}"
@@ -2288,6 +2423,9 @@ def run_attachment(
         )
         raise AgentServiceError(f"agent run failed: {exc}", 502) from exc
     reply_text = "\n\n".join(folded)
+    # A validated dataflowPlan on the final reply mints the plan proposal in
+    # one step (dev/52) — runtime-minted, never model-requested.
+    final_parts = _maybe_mint_plan(user_key, project_id, loop_ctx, final_parts, minted)
     run_parts = minted + final_parts  # proposals ride the turn (dev/41)
     settled = ledger.settle(user_key, reservation, usage=usage_total or None, status="ok")
     execution = _execution_record(
@@ -2525,6 +2663,9 @@ def stream_attachment(
             yield ("error", f"agent run failed: {exc}")
             return
         reply_text = "\n\n".join(folded)
+        # A validated dataflowPlan on the final reply mints the plan proposal
+        # in one step (dev/52) — runtime-minted, never model-requested.
+        final_parts = _maybe_mint_plan(user_key, project_id, loop_ctx, final_parts, minted)
         run_parts = minted + final_parts  # proposals ride the turn (dev/41)
         settled = ledger.settle(
             user_key, reservation, usage=usage_total or None, status="ok"

@@ -24,6 +24,7 @@ class TestRegistry:
         assert set(tools.REGISTRY) == {
             "dataflow.read", "node.read", "node.content.write", "node.create",
             "node.template.create", "catalog.search", "dataset.install",
+            "dataflow.plan.write",
         }
         assert tools.REGISTRY["dataflow.read"].effect == "read"
         assert tools.REGISTRY["node.read"].effect == "read"
@@ -32,6 +33,7 @@ class TestRegistry:
         assert tools.REGISTRY["node.template.create"].effect == "mutate"
         assert tools.REGISTRY["catalog.search"].effect == "read"
         assert tools.REGISTRY["dataset.install"].effect == "mutate"
+        assert tools.REGISTRY["dataflow.plan.write"].effect == "mutate"
 
     def test_contract_validates_effect(self):
         with pytest.raises(ValueError):

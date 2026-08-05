@@ -380,3 +380,74 @@ class TestDatasetCandidatesPart:
     def test_empty_lanes_are_invalid(self):
         payload = {"datasetCandidates": {"lanes": {"external": [], "catalog": []}}}
         assert content.parse_parts(json.dumps(payload)) is None
+
+
+class TestDataflowPlanPart:
+    """dev/52 — the DR-1 typed plan grammar: backstop bounds (never product
+    ceilings), the plan-specific tail budget, plan-local ref integrity."""
+
+    def _plan(self, n_nodes=3, with_edges=True, **over):
+        nodes = [
+            {"ref": f"n{i}", "nodeType": "curio.builtin/computation-analysis",
+             "title": f"Step {i}", "intent": f"does step {i}"}
+            for i in range(n_nodes)
+        ]
+        edges = (
+            [{"from": f"n{i}", "to": f"n{i + 1}"} for i in range(n_nodes - 1)]
+            if with_edges else []
+        )
+        plan = {"goal": "build the flow", "nodes": nodes, "edges": edges}
+        plan.update(over)
+        return plan
+
+    def test_valid_plan_parses_alongside_prompts(self):
+        payload = {"dataflowPlan": self._plan(), **PROMPTS}
+        parts = content.parse_parts(json.dumps(payload))
+        assert [p["type"] for p in parts] == ["dataflowPlan", "suggestedPrompts"]
+        assert len(parts[0]["nodes"]) == 3
+        assert parts[0]["edges"][0] == {"from": "n0", "to": "n1"}
+
+    def test_large_plan_gets_its_own_tail_budget(self):
+        # Well past the classic 4096-byte cap — sized-for-real-graphs
+        # regression: the app handles far more than a dozen nodes.
+        plan = self._plan(n_nodes=150)
+        body = json.dumps({"dataflowPlan": plan})
+        assert len(body.encode()) > content.TAIL_MAX_BYTES
+        parts = content.parse_parts(body)
+        assert parts is not None and len(parts[0]["nodes"]) == 150
+
+    def test_large_non_plan_tail_still_fails_the_classic_cap(self):
+        payload = {"suggestedPrompts": {"primary": "P"}, "pad": "x" * 8000}
+        assert content.parse_parts(json.dumps(payload)) is None
+        # And smuggling the KEY STRING inside a value doesn't unlock it.
+        payload = {"suggestedPrompts": {"primary": "P"}, "pad": '"dataflowPlan"' + "x" * 8000}
+        assert content.parse_parts(json.dumps(payload)) is None
+
+    def test_backstop_bounds(self):
+        assert content.parse_parts(json.dumps({"dataflowPlan": self._plan(n_nodes=201)})) is None
+        big_edges = self._plan(n_nodes=3)
+        big_edges["edges"] = [{"from": "n0", "to": "n1"}] * 601
+        assert content.parse_parts(json.dumps({"dataflowPlan": big_edges})) is None
+
+    def test_ref_integrity(self):
+        dup = self._plan(n_nodes=2)
+        dup["nodes"][1]["ref"] = "n0"
+        assert content.parse_parts(json.dumps({"dataflowPlan": dup})) is None
+        dangling = self._plan(n_nodes=2)
+        dangling["edges"] = [{"from": "n0", "to": "ghost"}]
+        assert content.parse_parts(json.dumps({"dataflowPlan": dangling})) is None
+        self_edge = self._plan(n_nodes=2)
+        self_edge["edges"] = [{"from": "n0", "to": "n0"}]
+        assert content.parse_parts(json.dumps({"dataflowPlan": self_edge})) is None
+        dup_edge = self._plan(n_nodes=2)
+        dup_edge["edges"] = [{"from": "n0", "to": "n1"}, {"from": "n0", "to": "n1"}]
+        assert content.parse_parts(json.dumps({"dataflowPlan": dup_edge})) is None
+
+    def test_empty_or_malformed_plan_fails_open(self):
+        assert content.parse_parts(json.dumps({"dataflowPlan": self._plan(n_nodes=0)})) is None
+        no_goal = self._plan()
+        del no_goal["goal"]
+        assert content.parse_parts(json.dumps({"dataflowPlan": no_goal})) is None
+        bad_node = self._plan()
+        del bad_node["nodes"][0]["intent"]
+        assert content.parse_parts(json.dumps({"dataflowPlan": bad_node})) is None
