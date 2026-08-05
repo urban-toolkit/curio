@@ -49,6 +49,11 @@ export interface AgentAttachmentsContextValue extends AgentAttachmentsState {
   /** Apply a pending review proposal (the only mutation path); refreshes the
    * transcript + listing so the outcome and result turn arrive together. */
   applyProposal: (attachmentId: string, proposalId: string) => Promise<void>;
+  /** dev/52 Solve: one authenticated batch; optional nodeIds = the Retry subset. */
+  solveAttachment: (
+    attachmentId: string,
+    nodeIds?: string[],
+  ) => Promise<import("../../../api/agentsApi").AgentSolveResult>;
   /** Dismiss a pending review proposal without applying it. */
   dismissProposal: (attachmentId: string, proposalId: string) => Promise<void>;
 }
@@ -278,11 +283,45 @@ export const AgentAttachmentsProvider: React.FC<{
             nodeId: result.appliedContent.nodeId,
             content: result.appliedContent.content,
           });
+        } else if (result.appliedGraph) {
+          // dev/52: a whole applied plan — bulk insert + edges + fit.
+          notifyAgentCanvasMutation({
+            kind: "graph-created",
+            planId: proposalId,
+            nodes: result.appliedGraph.nodes,
+            edges: result.appliedGraph.edges,
+          });
         }
       } finally {
         // Success appends the result turn + statuses; a 409 marked it stale —
         // either way the transcript and listing are the truth: refresh both
         // (dropping the once-guard so the session refetches).
+        hydratedRef.current.delete(attachmentId);
+        await hydrateSession(attachmentId);
+        await state.reload();
+      }
+    },
+    [hydrateSession, state.reload],
+  );
+
+  const solveAttachment = useCallback(
+    async (attachmentId: string, nodeIds?: string[]) => {
+      const pid = projectRef.current;
+      if (!pid) throw new Error("no project");
+      try {
+        const result = await agentsApi.solveAttachment(pid, attachmentId, nodeIds);
+        // Solved contents reach the LIVE canvas through the same bridge
+        // path as node.content.write applies (dev/51 semantics).
+        for (const item of result.appliedContents) {
+          notifyAgentCanvasMutation({
+            kind: "node-content-applied",
+            nodeId: item.nodeId,
+            content: item.content,
+          });
+        }
+        return result;
+      } finally {
+        // The solve result turn + the builder session both refresh.
         hydratedRef.current.delete(attachmentId);
         await hydrateSession(attachmentId);
         await state.reload();
@@ -367,6 +406,7 @@ export const AgentAttachmentsProvider: React.FC<{
       clearConversation,
       toolActivity,
       applyProposal,
+      solveAttachment,
       dismissProposal,
     }),
     [
@@ -384,6 +424,7 @@ export const AgentAttachmentsProvider: React.FC<{
       clearConversation,
       toolActivity,
       applyProposal,
+      solveAttachment,
       dismissProposal,
     ],
   );

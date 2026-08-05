@@ -20,6 +20,13 @@ const EFFECT_LINE: Record<string, string> = {
     "Applying installs only this dataset into the project's Data Catalog — no agent is installed.",
 };
 
+/** dev/52: the plan card's effect line — dynamic (node/edge counts). */
+function planEffectLine(part: AgentProposalPart): string | null {
+  if (part.tool !== "dataflow.plan.write" || !part.plan) return null;
+  const n = part.plan.nodes.length;
+  return `Applying adds these ${n} connected node${n === 1 ? "" : "s"} to the canvas — existing work is untouched.`;
+}
+
 /**
  * The review-before-apply card (memo dev/41; the blueprint's planned
  * `AgentReviewCard`). The agent proposes; the USER confirms here — Apply and
@@ -73,8 +80,17 @@ export const AgentReviewCard: React.FC<{
           {part.template.description ? ` — ${part.template.description}` : ""}
         </div>
       ) : null}
+      {part.tool === "dataflow.plan.write" && part.plan ? (
+        // Summary first (dev/52): counts + goal at a glance; the node list
+        // scrolls in the preview region below — plans can be large.
+        <div className={styles.meta}>
+          {part.plan.nodes.length} nodes · {part.plan.edgeCount} connections — {part.plan.goal}
+        </div>
+      ) : null}
       <div className={styles.preview}>{part.preview}</div>
-      {EFFECT_LINE[part.tool] ? (
+      {planEffectLine(part) ? (
+        <div className={styles.meta}>{planEffectLine(part)}</div>
+      ) : EFFECT_LINE[part.tool] ? (
         <div className={styles.meta}>{EFFECT_LINE[part.tool]}</div>
       ) : null}
       {pending && (onApply || onDismiss) ? (

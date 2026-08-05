@@ -151,3 +151,32 @@ describe("AgentReviewCard — dev/50 dataset.install kind", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("AgentReviewCard — dev/52 dataflow.plan.write kind", () => {
+  it("renders summary-first counts, the node list, and the dynamic effect line", () => {
+    const plan: AgentProposalPart = {
+      type: "proposal",
+      proposalId: "p6",
+      tool: "dataflow.plan.write",
+      summary: "Apply plan · 2 nodes, 1 edges",
+      preview: "Load · curio.builtin/data-loading — load it\nAnalyze · curio.builtin/computation-analysis — crunch it",
+      pins: { baseGraphDigest: "abc" },
+      status: "pending",
+      plan: {
+        goal: "heat analysis",
+        nodes: [
+          { ref: "a", nodeType: "curio.builtin/data-loading", title: "Load", intent: "load it" },
+          { ref: "b", nodeType: "curio.builtin/computation-analysis", title: "Analyze", intent: "crunch it" },
+        ],
+        edgeCount: 1,
+      },
+    };
+    render(<AgentReviewCard part={plan} onApply={jest.fn()} onDismiss={jest.fn()} />);
+    expect(screen.getByText("2 nodes · 1 connections — heat analysis")).toBeInTheDocument();
+    expect(screen.getByText(/Load · curio.builtin\/data-loading/)).toBeInTheDocument();
+    expect(
+      screen.getByText("Applying adds these 2 connected nodes to the canvas — existing work is untouched."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apply" })).toBeInTheDocument();
+  });
+});

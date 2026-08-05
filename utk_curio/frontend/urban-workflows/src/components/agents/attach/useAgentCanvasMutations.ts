@@ -2,8 +2,10 @@ import { useEffect, useRef } from "react";
 import { useReactFlow } from "reactflow";
 import { useCode } from "../../../hook/useCode";
 import { useFlowContext } from "../../../providers/FlowProvider";
+import { fitViewWithMenuOffset } from "../../../utils/fitViewWithMenuOffset";
 import {
   AgentCanvasMutation,
+  AgentCreatedNode,
   subscribeAgentCanvasMutations,
 } from "../../../utils/agentCanvasEvents";
 import { refreshPackageRegistry } from "../../../registry/packageRegistryBootstrap";
@@ -11,6 +13,7 @@ import {
   getCurrentProjectPackages,
   setCurrentProjectPackages,
 } from "../../../registry/projectPackagesStore";
+import { EdgeType } from "../../../constants";
 
 // Approximate node footprint for viewport centering — the node isn't measured
 // yet at insert time; half-extent offsets are all setCenter needs.
@@ -41,17 +44,57 @@ const CENTER_ANIMATION_MS = 400;
  */
 export function useAgentCanvasMutations(): void {
   const { createCodeNode } = useCode();
-  const { applyNodeContent } = useFlowContext();
-  const { getNodes, setCenter, getZoom } = useReactFlow();
+  const { applyNodeContent, onEdgesChange } = useFlowContext();
+  const reactFlow = useReactFlow();
+  const { getNodes, setCenter, getZoom } = reactFlow;
   // Event-level idempotence: survives the store-sync lag between an insert
   // and the next controlled re-render.
   const processedRef = useRef<Set<string>>(new Set());
   // The subscription is registered once; the handler reads live refs.
   const handlerRef = useRef<(mutation: AgentCanvasMutation) => void>(() => undefined);
 
+  const insertNode = (node: AgentCreatedNode) => {
+    createCodeNode(node.type, {
+      nodeId: node.id,
+      code: node.content,
+      goal: node.goal ?? "",
+      position: { x: node.x, y: node.y },
+    });
+  };
+
   handlerRef.current = (mutation: AgentCanvasMutation) => {
     if (mutation.kind === "node-content-applied") {
       applyNodeContent(mutation.nodeId, mutation.content);
+      return;
+    }
+    if (mutation.kind === "graph-created") {
+      // dev/52: a whole applied plan — bulk nodes + edges through the same
+      // provider paths a manual build uses, then a fit (a plan deserves a
+      // framing, not a center). Idempotent per plan id.
+      if (processedRef.current.has(mutation.planId)) return;
+      processedRef.current.add(mutation.planId);
+      const live = new Set(getNodes().map((n) => n.id));
+      for (const node of mutation.nodes) {
+        if (!live.has(node.id)) insertNode(node);
+      }
+      onEdgesChange(
+        mutation.edges.map((edge) => ({
+          type: "add" as const,
+          item: {
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            sourceHandle: "out",
+            targetHandle: "in",
+            type: EdgeType.UNIDIRECTIONAL_EDGE,
+            markerEnd: { type: "arrow" },
+          } as never,
+        })),
+      );
+      window.setTimeout(
+        () => fitViewWithMenuOffset(reactFlow, { duration: 400 }),
+        50,
+      );
       return;
     }
     const { node, createdPackageDir } = mutation;
@@ -59,12 +102,7 @@ export function useAgentCanvasMutations(): void {
     if (getNodes().some((n) => n.id === node.id)) return; // already live — no-op
     processedRef.current.add(node.id);
     const insert = () => {
-      createCodeNode(node.type, {
-        nodeId: node.id,
-        code: node.content,
-        goal: node.goal ?? "",
-        position: { x: node.x, y: node.y },
-      });
+      insertNode(node);
       // The backend placement is right of the whole graph extent — bring the
       // node into view so "created" is visible, not off-screen (dev/51).
       setCenter(node.x + NODE_CENTER_X, node.y + NODE_CENTER_Y, {

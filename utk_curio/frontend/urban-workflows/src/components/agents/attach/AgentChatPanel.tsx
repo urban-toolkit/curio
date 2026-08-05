@@ -20,6 +20,7 @@ import type {
 } from "../../../api/agentsApi";
 import { agentCategoryKey } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
 import { attachmentDisplayName, TITLE_MAX_CHARS } from "./attachmentDisplayName";
+import { AgentBuilderStrip } from "./AgentBuilderStrip";
 import { AgentChatCard } from "../content/AgentChatCard";
 import { AgentDatasetCandidatesCard } from "../content/AgentDatasetCandidatesCard";
 import { AgentReviewCard } from "../content/AgentReviewCard";
@@ -70,6 +71,8 @@ export const AgentChatPanel: React.FC<{
   /** Review-before-apply actions (memo dev/41); omitted → cards render inert. */
   onApplyProposal?: (proposalId: string) => Promise<void>;
   onDismissProposal?: (proposalId: string) => Promise<void>;
+  /** dev/52 Solve (Dataflow Builder attachments only); omitted → no strip. */
+  onSolve?: (nodeIds?: string[]) => Promise<unknown>;
   onSaveIntent?: (intent: string | null) => Promise<void>;
   /** Persist a manual conversation title (memo dev/25). Omitted → the header
    * title is a plain, non-editable label. */
@@ -91,6 +94,7 @@ export const AgentChatPanel: React.FC<{
   onOpenSettings,
   onApplyProposal,
   onDismissProposal,
+  onSolve,
   onSaveIntent,
   onSaveTitle,
   onClearConversation,
@@ -367,6 +371,16 @@ export const AgentChatPanel: React.FC<{
           </span>
         </div>
       </div>
+
+      {/* The dev/52 builder strip: Dataflow Builder attachments only — every
+          other agent's chat is pixel-identical. */}
+      {onSolve && attachment.coord.startsWith("agent.dataflow-builder@") ? (
+        <AgentBuilderStrip
+          attachment={attachment}
+          onSolve={onSolve}
+          onComposePrompt={composePrompt}
+        />
+      ) : null}
 
       <div className={styles.messages} ref={messagesRef}>
         {/* ⚙ Attachment settings (docs/08 anatomy, memo dev/42): the labeled

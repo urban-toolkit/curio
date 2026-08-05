@@ -1,5 +1,13 @@
 import React from "react";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+
+// The dev/52 builder strip imports useFlowContext; mocking the provider keeps
+// FlowProvider's heavy module graph (vega etc.) out of this presentational
+// suite — the strip itself is covered by AgentBuilderStrip.test.tsx.
+jest.mock("../../providers/FlowProvider", () => ({
+  useFlowContext: () => ({ playAllNodes: jest.fn() }),
+}));
+
 import { AgentChatPanel } from "../../components/agents/attach/AgentChatPanel";
 import type { AgentAttachment, AgentSessionTurn } from "../../api/agentsApi";
 

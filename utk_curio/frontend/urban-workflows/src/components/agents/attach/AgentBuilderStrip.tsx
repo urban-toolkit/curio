@@ -1,0 +1,144 @@
+import React, { useState } from "react";
+import type { AgentAttachment } from "../../../api/agentsApi";
+import { useFlowContext } from "../../../providers/FlowProvider";
+import { BUILDER_TEMPLATES } from "./builderTemplates";
+import styles from "./AgentBuilderStrip.module.css";
+
+const PHASES: Array<{ id: string; label: string }> = [
+  { id: "idle", label: "Plan" },
+  { id: "plan_review", label: "Review" },
+  { id: "applied", label: "Solve" },
+  { id: "ready", label: "Ready" },
+];
+
+const PHASE_RANK: Record<string, number> = {
+  idle: 0,
+  plan_review: 1,
+  applied: 2,
+  solving: 2,
+  ready: 3,
+};
+
+/**
+ * The dev/52 DR-5 phase-aware builder strip — rendered only for Dataflow
+ * Builder attachments, inside the existing chat drawer (no new surface).
+ * Everything derives from the server-owned `builderSession` (DR-2): phase
+ * chips, per-node solve progress, Solve/Retry, and Run workflow via the
+ * existing `playAllNodes`. Disabled states explain themselves; templates
+ * seed the goal prompt through the caller's prefill rule.
+ */
+export const AgentBuilderStrip: React.FC<{
+  attachment: AgentAttachment;
+  onSolve: (nodeIds?: string[]) => Promise<unknown>;
+  onComposePrompt: (prompt: string) => void;
+}> = ({ attachment, onSolve, onComposePrompt }) => {
+  const { playAllNodes } = useFlowContext();
+  const [solving, setSolving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const session = attachment.builderSession ?? { phase: "idle" as const };
+  const phase = session.phase ?? "idle";
+  const nodeRuns = session.nodeRuns ?? {};
+  const entries = Object.entries(nodeRuns);
+  const pending = entries.filter(([, s]) => s === "pending").map(([id]) => id);
+  const failed = entries.filter(([, s]) => s === "failed").map(([id]) => id);
+  const unresolved = pending.length + failed.length;
+
+  const solve = async (nodeIds?: string[]) => {
+    setSolving(true);
+    setError(null);
+    try {
+      await onSolve(nodeIds);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Solve failed");
+    } finally {
+      setSolving(false);
+    }
+  };
+
+  const solveDisabledReason =
+    phase === "plan_review"
+      ? "Apply or dismiss the plan review first"
+      : phase === "idle"
+        ? "Apply a plan first"
+        : unresolved === 0
+          ? "No pending nodes"
+          : null;
+  const runDisabledReason =
+    unresolved > 0 ? `${unresolved} node${unresolved === 1 ? "" : "s"} unsolved` : null;
+
+  return (
+    <div className={styles.strip} role="group" aria-label="Dataflow Builder">
+      <div className={styles.phases} aria-label="Phase">
+        {PHASES.map((p) => (
+          <span
+            key={p.id}
+            className={`${styles.phaseChip} ${
+              PHASE_RANK[phase] === PHASE_RANK[p.id] ? styles.phaseActive : ""
+            }`}
+            aria-current={PHASE_RANK[phase] === PHASE_RANK[p.id] ? "step" : undefined}
+          >
+            {p.label}
+          </span>
+        ))}
+        {phase === "solving" || solving ? (
+          <span className={styles.solvingNote}>solving…</span>
+        ) : null}
+      </div>
+      {phase === "idle" ? (
+        <div className={styles.templates} role="group" aria-label="Planning templates">
+          {BUILDER_TEMPLATES.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className={styles.templateChip}
+              onClick={() => onComposePrompt(t.seed)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {entries.length > 0 ? (
+        <ul className={styles.nodeRuns} aria-live="polite" aria-label="Plan node progress">
+          {entries.map(([nodeId, status]) => (
+            <li key={nodeId} className={styles.nodeRun}>
+              <span className={styles.nodeId}>{nodeId.slice(0, 8)}</span>
+              <span className={styles[`status_${status}` as keyof typeof styles] ?? ""}>
+                {status}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <div className={styles.actions}>
+        <button
+          type="button"
+          className={styles.solve}
+          disabled={solving || phase === "solving" || Boolean(solveDisabledReason)}
+          title={solveDisabledReason ?? undefined}
+          onClick={() => void solve(failed.length && !pending.length ? failed : undefined)}
+        >
+          {solving || phase === "solving"
+            ? "Solving…"
+            : failed.length && !pending.length
+              ? `Retry ${failed.length} failed`
+              : "Solve"}
+        </button>
+        <button
+          type="button"
+          className={styles.run}
+          disabled={phase !== "ready" || Boolean(runDisabledReason)}
+          title={runDisabledReason ?? undefined}
+          onClick={() => playAllNodes()}
+        >
+          Run workflow
+        </button>
+      </div>
+      {solveDisabledReason && phase !== "ready" ? (
+        <div className={styles.hint}>{solveDisabledReason}</div>
+      ) : null}
+      {error ? <div className={styles.error}>{error}</div> : null}
+    </div>
+  );
+};

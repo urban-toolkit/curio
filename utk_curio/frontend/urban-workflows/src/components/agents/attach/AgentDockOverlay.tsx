@@ -91,6 +91,7 @@ export const AgentDockOverlay: React.FC = () => {
               onApplyProposal={(proposalId) =>
                 ctx.applyProposal(selected.attachmentId, proposalId)
               }
+              onSolve={(nodeIds) => ctx.solveAttachment(selected.attachmentId, nodeIds)}
               onDismissProposal={(proposalId) =>
                 ctx.dismissProposal(selected.attachmentId, proposalId)
               }

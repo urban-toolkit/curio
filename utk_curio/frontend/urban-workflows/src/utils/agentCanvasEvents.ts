@@ -30,7 +30,14 @@ export type AgentCanvasMutation =
        */
       createdPackageDir?: string;
     }
-  | { kind: "node-content-applied"; nodeId: string; content: string };
+  | { kind: "node-content-applied"; nodeId: string; content: string }
+  | {
+      /** dev/52: a whole applied plan graph — bulk nodes + edges, then a fit. */
+      kind: "graph-created";
+      planId: string;
+      nodes: AgentCreatedNode[];
+      edges: Array<{ id: string; source: string; target: string }>;
+    };
 
 export const AGENT_CANVAS_MUTATION_EVENT = "curio:agent-canvas-mutation";
 
@@ -47,7 +54,12 @@ export function subscribeAgentCanvasMutations(
   if (typeof window === "undefined") return () => undefined;
   const handler = (event: Event) => {
     const detail = (event as CustomEvent<AgentCanvasMutation>).detail;
-    if (detail && (detail.kind === "node-created" || detail.kind === "node-content-applied")) {
+    if (
+      detail &&
+      (detail.kind === "node-created" ||
+        detail.kind === "node-content-applied" ||
+        detail.kind === "graph-created")
+    ) {
       listener(detail);
     }
   };

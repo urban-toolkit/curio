@@ -78,6 +78,18 @@ export interface AgentAttachment {
     summary: string;
     status: AgentProposalStatus;
   } | null;
+  /** The Dataflow Builder orchestration session (dev/52 DR-2) — drives the
+   * phase-aware builder panel; absent for every other agent. */
+  builderSession?: AgentBuilderSession | null;
+}
+
+/** dev/52 DR-2: the persisted Plan → Solve state riding the attachment. */
+export interface AgentBuilderSession {
+  phase: "idle" | "plan_review" | "applied" | "solving" | "ready";
+  planProposalId?: string;
+  appliedPlanId?: string;
+  /** Plan-created node id → its solve status. */
+  nodeRuns?: Record<string, "pending" | "solving" | "solved" | "failed" | "skipped">;
 }
 
 /** Actual provider-reported token usage (memo dev/37) — never an estimate. */
@@ -177,6 +189,23 @@ export interface AgentProposalPart {
   justification?: string;
   /** node.template.create only: the proposed type definition summary. */
   template?: { label: string; engine: string; description?: string };
+  /** dataflow.plan.write only (dev/52): the plan's display copy for the review card. */
+  plan?: {
+    goal: string;
+    templateId?: string;
+    nodes: Array<{ ref: string; nodeType: string; title: string; intent: string }>;
+    edgeCount: number;
+  };
+}
+
+/** dev/52 DR-1: the model-emitted typed plan part (informational until the
+ * runtime mints the reviewed proposal from it). */
+export interface AgentDataflowPlanPart {
+  type: "dataflowPlan";
+  goal: string;
+  templateId?: string;
+  nodes: Array<{ ref: string; nodeType: string; title: string; intent: string; content?: string }>;
+  edges: Array<{ from: string; to: string }>;
 }
 
 /** The node payload an apply response carries for the canvas bridge (dev/48 §3.3). */
@@ -189,7 +218,7 @@ export interface AgentCreatedNodePayload {
   y: number;
 }
 
-/** Apply-endpoint response (dev/41 base + the dev/48 bridge payloads). */
+/** Apply-endpoint response (dev/41 base + the dev/48/52 bridge payloads). */
 export interface AgentApplyResult {
   attachmentId: string;
   proposalId: string;
@@ -203,6 +232,22 @@ export interface AgentApplyResult {
   appliedContent?: { nodeId: string; content: string };
   /** project.install: the installed agent coordinate. */
   installedCoord?: string;
+  /** dataflow.plan.write (dev/52): the inserted plan graph, for the live canvas. */
+  appliedGraph?: {
+    nodes: AgentCreatedNodePayload[];
+    edges: Array<{ id: string; source: string; target: string }>;
+  };
+  /** dataflow.plan.write: the builder session after apply. */
+  builderSession?: AgentBuilderSession | null;
+}
+
+/** dev/52 Solve response: per-node outcomes + live-canvas content payloads. */
+export interface AgentSolveResult {
+  attachmentId: string;
+  executionId: string;
+  results: Record<string, { status: "solved" | "failed" | "skipped"; error?: string }>;
+  appliedContents: Array<{ nodeId: string; content: string }>;
+  builderSession: AgentBuilderSession;
 }
 
 export type AgentContentPart =
@@ -210,6 +255,7 @@ export type AgentContentPart =
   | AgentCardPart
   | AgentProposalPart
   | AgentDatasetCandidatesPart
+  | AgentDataflowPlanPart
   | { type: string };
 
 /** One persisted chat turn of an attachment's session. */
@@ -516,6 +562,19 @@ export const agentsApi = {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}/apply`,
       { method: "POST" },
+    );
+  },
+
+  /** dev/52 Solve (DEC-048): one authenticated batch filling the applied
+   * plan's pending nodes; optional nodeIds = the Retry subset. */
+  solveAttachment(
+    projectId: string,
+    attachmentId: string,
+    nodeIds?: string[],
+  ): Promise<AgentSolveResult> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/solve`,
+      { method: "POST", body: JSON.stringify(nodeIds ? { nodeIds } : {}) },
     );
   },
 

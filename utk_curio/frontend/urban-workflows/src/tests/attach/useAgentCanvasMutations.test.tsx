@@ -7,8 +7,17 @@ jest.mock("../../hook/useCode", () => ({
 }));
 
 const mockApplyNodeContent = jest.fn();
+const mockOnEdgesChange = jest.fn();
 jest.mock("../../providers/FlowProvider", () => ({
-  useFlowContext: () => ({ applyNodeContent: mockApplyNodeContent }),
+  useFlowContext: () => ({
+    applyNodeContent: mockApplyNodeContent,
+    onEdgesChange: mockOnEdgesChange,
+  }),
+}));
+
+const mockFitViewWithMenuOffset = jest.fn();
+jest.mock("../../utils/fitViewWithMenuOffset", () => ({
+  fitViewWithMenuOffset: (...a: unknown[]) => mockFitViewWithMenuOffset(...a),
 }));
 
 const mockGetNodes = jest.fn(() => [] as Array<{ id: string }>);
@@ -139,5 +148,60 @@ describe("useAgentCanvasMutations (the apply→canvas bridge, dev/48 §3.3 + dev
       }),
     );
     expect(mockApplyNodeContent).toHaveBeenCalledWith("n1", "print(2)");
+  });
+});
+
+describe("graph-created (dev/52 — a whole applied plan)", () => {
+  const GRAPH = {
+    kind: "graph-created" as const,
+    planId: "plan-1",
+    nodes: [
+      { id: "ga", type: "curio.builtin/computation-analysis", content: "", goal: "Load — l", x: 500, y: 60 },
+      { id: "gb", type: "curio.builtin/computation-analysis", content: "", goal: "Analyze — a", x: 920, y: 60 },
+    ],
+    edges: [{ id: "e1", source: "ga", target: "gb" }],
+  };
+
+  it("bulk-inserts nodes and edges through the provider paths, then fits", async () => {
+    jest.useFakeTimers();
+    try {
+      render(<Host />);
+      act(() => notifyAgentCanvasMutation(GRAPH));
+      expect(mockCreateCodeNode).toHaveBeenCalledTimes(2);
+      expect(mockCreateCodeNode).toHaveBeenCalledWith(
+        "curio.builtin/computation-analysis",
+        expect.objectContaining({ nodeId: "ga", position: { x: 500, y: 60 } }),
+      );
+      const changes = mockOnEdgesChange.mock.calls[0][0];
+      expect(changes).toHaveLength(1);
+      expect(changes[0].type).toBe("add");
+      expect(changes[0].item).toMatchObject({ id: "e1", source: "ga", target: "gb" });
+      act(() => {
+        jest.runAllTimers();
+      });
+      expect(mockFitViewWithMenuOffset).toHaveBeenCalled();
+      // No single-node centering for a graph — it gets a fit instead.
+      expect(mockSetCenter).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("is idempotent per plan id", () => {
+    render(<Host />);
+    act(() => notifyAgentCanvasMutation(GRAPH));
+    act(() => notifyAgentCanvasMutation(GRAPH));
+    expect(mockCreateCodeNode).toHaveBeenCalledTimes(2); // not 4
+  });
+
+  it("skips nodes already live (partial replays)", () => {
+    mockGetNodes.mockReturnValue([{ id: "ga" }]);
+    render(<Host />);
+    act(() => notifyAgentCanvasMutation({ ...GRAPH, planId: "plan-2" }));
+    expect(mockCreateCodeNode).toHaveBeenCalledTimes(1);
+    expect(mockCreateCodeNode).toHaveBeenCalledWith(
+      "curio.builtin/computation-analysis",
+      expect.objectContaining({ nodeId: "gb" }),
+    );
   });
 });
