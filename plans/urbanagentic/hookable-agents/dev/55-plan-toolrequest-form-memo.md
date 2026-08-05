@@ -1,9 +1,10 @@
 # Implementation Memo: The Plan's toolRequest Form — Instruction Contradiction Resolved (dev/52 follow-up)
 
 Date: 2026-08-05
-Status: proposed (implementing in the same session — explicit fix request, third round; the
-user's transcript shows the model apologizing that it "cannot directly apply a plan" and
-directing the user to a nonexistent button)
+Status: implemented 2026-08-05 — COMMIT-9202bd85. Verification: backend `pytest tests
+--ignore=tests/test_frontend` → 1013 passed; frontend unchanged (655, no client code in this
+slice). The user's exact transcript scenario is regression-pinned by name
+(`test_invalid_tool_form_feeds_errors_back_and_corrects`).
 
 ## 1. Problem Statement (root cause, reproduced from the runtime's own prompt)
 
@@ -45,7 +46,7 @@ prompt itself advertises was a hole.
 - routes: the toolRequest form mints (nested `params.dataflowPlan` AND direct `params`); an
   invalid toolRequest-form plan feeds errors back and corrects next round; the user's exact
   scenario — a model emitting the toolRequest form — ends in an applyable proposal.
-- [ ] Whichever syntax the model chooses, a valid plan yields the Apply control; an invalid one
+- [x] Whichever syntax the model chooses, a valid plan yields the Apply control; an invalid one
       self-corrects or fails loudly. The prompt and the runtime no longer disagree.
 
 ## 4. Commits
