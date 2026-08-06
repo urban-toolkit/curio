@@ -233,6 +233,14 @@ export class TrillGenerator {
             trill_edge.source = edge.source;
             trill_edge.target = edge.target;
 
+            // Persist the concrete handles. Slot wiring (`in_N` on merge
+            // nodes) must not depend on loadTrill's edge-id heuristic —
+            // agent-built edges have plain UUID ids, so without these fields
+            // their slot assignment is lost and they reload as unrenderable
+            // `"in"` edges (dev/64). Omitted when absent to keep specs lean.
+            if (edge.sourceHandle) trill_edge.sourceHandle = edge.sourceHandle;
+            if (edge.targetHandle) trill_edge.targetHandle = edge.targetHandle;
+
             if(edge.data != undefined && edge.data.keywords != undefined){
                 if(trill_edge.metadata == undefined)
                     trill_edge.metadata = {};

@@ -1,7 +1,7 @@
 import { NodeType } from "../constants";
 import { defaultSaveOutputDatasetFromEnv } from "./curioEnvFlag";
 import { flowOutputRefFromRaw, FlowOutputRef } from "./flowOutputRef";
-import { getFlowNodeCanonicalType } from "./flowNodeCanonicalType";
+import { unversionedFlowNodeType } from "./flowNodeCanonicalType";
 import { isDatasetPaletteNode } from "../services/datasetCatalog/datasetApplication";
 
 /**
@@ -65,7 +65,7 @@ export function buildSaveableLiveOutputs(
   for (const node of nodes || []) {
     // Visualization/sink nodes never produce a new dataset — they pass their
     // input through — so never save them, regardless of the per-node toggle.
-    const isSink = NON_PRODUCING_NODE_TYPES.has(getFlowNodeCanonicalType(node));
+    const isSink = NON_PRODUCING_NODE_TYPES.has(unversionedFlowNodeType(node));
     const enabled = !isSink && resolveSaveOutputDataset(node?.data, defaultSave);
     if (typeof node?.id === "string") saveByNodeId.set(node.id, enabled);
     const dataNodeId = node?.data?.nodeId;

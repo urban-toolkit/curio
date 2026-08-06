@@ -94,7 +94,9 @@ import { useAutkGrammarBehavior, attachMapInteractionZoomFix } from '../../../ad
 function makeMockData(overrides: Partial<NodeBehaviorData> = {}): NodeBehaviorData {
   return {
     nodeId: 'node-1',
-    nodeType: 'DATA_LOADING',
+    // Real versioned dispatcher id, as the palette/loadTrill produce since the
+    // curio.builtin@1 pack — invented unversioned strings masked dev/64.
+    nodeType: 'curio.builtin/data-loading@1',
     outputCallback: jest.fn(),
     propagationCallback: jest.fn(),
     interactionsCallback: jest.fn(),

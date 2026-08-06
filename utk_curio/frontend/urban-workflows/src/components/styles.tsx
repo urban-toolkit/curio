@@ -16,6 +16,7 @@ import {
 import { useLLMContext } from "../providers/LLMProvider";
 import { useToastContext } from "../providers/ToastProvider";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
+import { stripNodeTypeVersion } from "../utils/flowNodeCanonicalType";
 import type { CanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { readCanvasTemplateConfig } from "../utils/canvasTemplateConfig";
 import { ConnectionValidator } from "../ConnectionValidator";
@@ -1232,7 +1233,9 @@ const nodeTypeBorderColor: Record<string, string> = {
 const getNodeContainerStyles = (nodeType: string): CSS.Properties => ({
     position: "relative",
     backgroundColor: "#ffffff",
-    borderLeft: `4px solid ${nodeTypeBorderColor[nodeType] ?? "#95a5a6"}`,
+    // The map is keyed by unversioned NodeType ids; data.nodeType is the
+    // versioned dispatcher id (`…@1`) since the curio.builtin@1 pack (dev/64).
+    borderLeft: `4px solid ${nodeTypeBorderColor[stripNodeTypeVersion(nodeType)] ?? "#95a5a6"}`,
     borderRadius: "10px",
     padding: "5px",
     boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px",

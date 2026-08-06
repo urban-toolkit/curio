@@ -121,7 +121,13 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
         });
       }
     }
-  }, [output?.code]);
+    // Keyed on the OBJECT, not `output?.code`: a node that errors twice in a
+    // row (e.g. a merge re-triggered by Play with inputs still missing) keeps
+    // code === "error", and a code-keyed effect never re-fires — the run then
+    // hangs on the stall watchdog. setOutput always produces a fresh object,
+    // and signalNodeExecDone ignores nodes outside the active level, so
+    // duplicate signals are harmless (dev/64).
+  }, [output]);
 
   // Signal done on unmount if the node was still executing (e.g. deleted while running).
   useEffect(() => {

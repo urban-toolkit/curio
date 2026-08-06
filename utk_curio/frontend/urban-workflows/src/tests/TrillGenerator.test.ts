@@ -29,6 +29,41 @@ describe("TrillGenerator", () => {
       height: 360,
     });
   });
+
+  test("persists edge handles so UUID-id edges keep their merge slot (dev/64)", () => {
+    const spec = TrillGenerator.generateTrill(
+      [],
+      [
+        {
+          // Agent-built edge: UUID id carries no slot info — the persisted
+          // handles are the only place `in_1` survives a save/load cycle.
+          id: "b1433343-ee39-4d94-b927-d55e5bb6579d",
+          source: "loader-node",
+          sourceHandle: "out",
+          target: "merge-node",
+          targetHandle: "in_1",
+        },
+        {
+          // Handle-less edge (interaction/legacy): fields stay omitted.
+          id: "plain-edge",
+          source: "a",
+          target: "b",
+          sourceHandle: null,
+          targetHandle: undefined,
+        },
+      ],
+      "Imported Workflow"
+    );
+
+    expect(spec.dataflow.edges).toHaveLength(2);
+    expect(spec.dataflow.edges[0]).toMatchObject({
+      id: "b1433343-ee39-4d94-b927-d55e5bb6579d",
+      sourceHandle: "out",
+      targetHandle: "in_1",
+    });
+    expect(spec.dataflow.edges[1]).not.toHaveProperty("sourceHandle");
+    expect(spec.dataflow.edges[1]).not.toHaveProperty("targetHandle");
+  });
 });
 
 describe("TrillGenerator provenance persistence", () => {

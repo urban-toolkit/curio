@@ -26,7 +26,7 @@ import { ConnectionValidator } from "../ConnectionValidator";
 import type { InstalledDatasetPayload } from "../services/datasetCatalog/datasetCatalogApi";
 import type { PendingInstall } from "../services/datasetCatalog/datasetCatalogTypes";
 import { NodeType, EdgeType } from "../constants";
-import { getFlowNodeCanonicalType } from "../utils/flowNodeCanonicalType";
+import { getFlowNodeCanonicalType, unversionedFlowNodeType } from "../utils/flowNodeCanonicalType";
 import { TrillGenerator } from "../TrillGenerator";
 import { applyDashboardLayout } from "../utils/dashboardLayout";
 import {
@@ -105,6 +105,7 @@ interface FlowContextProps {
     updatePositionWorkflow: (nodeId: string, position: any) => void;
     updatePositionDashboard: (nodeId: string, position: any) => void;
     applyNewOutput: (output: IOutput) => void;
+    hydrateRestoredOutputs: (outputs: IOutput[]) => void;
 
     // NEW CODE
     dashboardPins: { [key: string]: boolean };
@@ -235,6 +236,7 @@ export const FlowContext = createContext<FlowContextProps>({
     updatePositionWorkflow: () => { },
     updatePositionDashboard: () => { },
     applyNewOutput: () => { },
+    hydrateRestoredOutputs: () => { },
 
     // NEW CODE
     dashboardPins: {},
@@ -604,7 +606,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             nds.map((node: any) => {
                 if (!nodesAffected.includes(node.id)) return node;
 
-                if (getFlowNodeCanonicalType(node) == NodeType.MERGE_FLOW) {
+                if (unversionedFlowNodeType(node) == NodeType.MERGE_FLOW) {
                     const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
                     // Fill EVERY slot this source feeds — one source can be wired
                     // to multiple slots of the same merge node.
@@ -697,7 +699,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                         nds.map((node: any) => {
                             if (node.id !== resetInput) return node;
 
-                            if (getFlowNodeCanonicalType(targetNode) === NodeType.MERGE_FLOW) {
+                            if (unversionedFlowNodeType(targetNode) === NodeType.MERGE_FLOW) {
                                 const { inputList, sourceList } = ensureMergeArrays(node.data.input, node.data.source);
                                 const handleIndex = parseHandleIndex(connection.targetHandle);
                                 if (handleIndex >= 0) {
@@ -760,7 +762,11 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
             markDirtyRef.current();
 
             const nodes = custom_nodes ? custom_nodes : reactFlow.getNodes();
-            const edges = custom_edges ? custom_edges : reactFlow.getEdges();
+            // `!== undefined`, not truthiness: loadParsedTrill passes an
+            // accumulating array that legitimately starts empty, and `[]` is
+            // truthy anyway — the old `custom_edges ? …` made every load-time
+            // merge-handle resolution see an empty graph (dev/64).
+            const edges = custom_edges !== undefined ? custom_edges : reactFlow.getEdges();
             const target = nodes.find(
                 (node: any) => node.id === connection.target
             ) as Node;
@@ -816,11 +822,14 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
                 for (const elem of nodes) {
                     if (elem.id == connection.source) {
-                        outNodeType = getFlowNodeCanonicalType(elem) as NodeType;
+                        // Unversioned so NodeType enum comparisons (and the
+                        // descriptor-proxy validator, which accepts both forms)
+                        // work for `curio.builtin/...@1` dispatcher ids (dev/64).
+                        outNodeType = unversionedFlowNodeType(elem) as NodeType;
                     }
 
                     if (elem.id == connection.target) {
-                        inNodeType = getFlowNodeCanonicalType(elem) as NodeType;
+                        inNodeType = unversionedFlowNodeType(elem) as NodeType;
                     }
                 }
 
@@ -1138,6 +1147,22 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         signalNodeExecDone(newOutput.nodeId);
     };
 
+    // Refill downstream `data.input` (incl. merge `in_N` slots) from the outputs
+    // restored by a project load. Live propagation only happens on execution and
+    // on new connections, so without this every reload leaves inputs empty until
+    // the user manually reruns each upstream node (dev/64). Deferred one tick so
+    // loadTrill's nodes/edges are committed to the React Flow store first. No
+    // exec bookkeeping (signalNodeExecDone / install sync) — nothing executed.
+    const hydrateRestoredOutputs = (restored: IOutput[]) => {
+        setTimeout(() => {
+            for (const o of restored) {
+                if (o?.nodeId && o.output != null && o.output !== "") {
+                    propagateDownstreamInputs(o.nodeId, o.output);
+                }
+            }
+        }, 0);
+    };
+
     // responsible for flow of already connected nodes
     const applyNewInteractions = useCallback(() => {
         let newInteractions = interactions.filter((interaction) => {
@@ -1162,7 +1187,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         }
 
         for (let i = 0; i < nodes.length; i++) {
-            if (getFlowNodeCanonicalType(nodes[i]) == NodeType.DATA_POOL) {
+            if (unversionedFlowNodeType(nodes[i]) == NodeType.DATA_POOL) {
                 poolsIds.push(nodes[i].id);
             }
         }
@@ -1175,8 +1200,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                     edges[i].sourceHandle == "in/out" &&
                     edges[i].targetHandle == "in/out" &&
                     !(
-                        getFlowNodeCanonicalType(targetNode) == NodeType.DATA_POOL &&
-                        getFlowNodeCanonicalType(sourceNode) == NodeType.DATA_POOL
+                        unversionedFlowNodeType(targetNode) == NodeType.DATA_POOL &&
+                        unversionedFlowNodeType(sourceNode) == NodeType.DATA_POOL
                     )
                 ) {
                 const sourcePool = poolsIds.includes(edges[i].source);
@@ -1264,8 +1289,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 if (
                     edge.sourceHandle == "in/out" &&
                     edge.targetHandle == "in/out" &&
-                    getFlowNodeCanonicalType(targetNode) == NodeType.DATA_POOL &&
-                    getFlowNodeCanonicalType(sourceNode) == NodeType.DATA_POOL
+                    unversionedFlowNodeType(targetNode) == NodeType.DATA_POOL &&
+                    unversionedFlowNodeType(sourceNode) == NodeType.DATA_POOL
                 ) {
                     if (edge.target != propagationObj.nodeId) {
                         sendTo.push(edge.target);
@@ -1459,7 +1484,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     scheduleInstallSyncRef.current = (nodeId: string) => {
         const node = reactFlow.getNode(nodeId);
         if (!node) return;
-        const canonical = getFlowNodeCanonicalType(node);
+        const canonical = unversionedFlowNodeType(node);
         // Sinks / interaction surfaces pass their input through — never a NEW
         // dataset — so excluding them keeps e.g. a Data Pool's per-brush re-emit
         // from triggering saves.
@@ -1569,6 +1594,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 updatePositionWorkflow,
                 updatePositionDashboard,
                 applyNewOutput,
+                hydrateRestoredOutputs,
                 playAllNodes,
                 playNodesUpTo,
                 signalNodeExecDone,
