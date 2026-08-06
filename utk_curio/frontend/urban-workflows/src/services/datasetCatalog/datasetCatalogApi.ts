@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import { apiFetch, getToken } from "../../utils/authApi";
+import { invalidateDatasetCatalogCache } from "./datasetCatalogCache";
 import {
   DatasetCatalogItem,
   DatasetCatalogQuery,
@@ -35,6 +36,12 @@ const MIME_EXTENSIONS: Record<string, string> = {
 export const DATASET_CATALOG_REFRESH_EVENT = "curio:dataset-catalog-refresh";
 
 export function notifyDatasetCatalogRefresh(): void {
+  // Invalidate BEFORE dispatching, and independently of any listener: mounted
+  // surfaces refetch via the event, while unmounted ones must not find a
+  // pre-mutation entry when they next mount. This is the single chokepoint
+  // that keeps every catalog surface (drawer tabs, palette, prefetch) from
+  // serving stale listings after a mutation.
+  invalidateDatasetCatalogCache();
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent(DATASET_CATALOG_REFRESH_EVENT));
   }

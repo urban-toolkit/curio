@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { datasetCatalogApi } from "./datasetCatalogApi";
 import {
+  catalogCacheEpoch,
+  peekCatalogCache,
+  writeCatalogCache,
+} from "./datasetCatalogCache";
+import {
   DatasetCatalogItem,
   DatasetCatalogQuery,
   DatasetCatalogResponse,
@@ -25,9 +30,6 @@ type StableCatalogQuery = {
   groupOsm?: boolean;
   liveOutputs?: DatasetCatalogQuery["liveOutputs"];
 };
-
-/** Shared across hook instances (drawer, palette, prefetch). */
-const catalogResponseCache: Record<string, DatasetCatalogResponse> = {};
 
 /** Stable cache key for a catalog fetch (tab filters are client-side only). */
 export function catalogFetchKey(query: StableCatalogQuery): string {
@@ -56,18 +58,18 @@ export function toStableCatalogQuery(query: DatasetCatalogQuery = {}): StableCat
   };
 }
 
-export function peekCatalogCache(fetchKey: string): DatasetCatalogResponse | undefined {
-  return catalogResponseCache[fetchKey];
-}
-
 /** Warm the shared catalog cache without subscribing (e.g. before opening the drawer). */
 export function prefetchDatasetCatalog(query: DatasetCatalogQuery = {}): void {
   const stableQuery = toStableCatalogQuery(query);
   const fetchKey = catalogFetchKey(stableQuery);
-  if (catalogResponseCache[fetchKey]) return;
+  if (peekCatalogCache(fetchKey)) return;
 
+  // Capture the epoch at fetch start: if a mutation invalidates the cache
+  // while this prefetch is in flight, its (possibly pre-mutation) response
+  // must not be stored.
+  const fetchEpoch = catalogCacheEpoch();
   void datasetCatalogApi.listCatalog(stableQuery).then((next) => {
-    catalogResponseCache[fetchKey] = next;
+    writeCatalogCache(fetchKey, next, fetchEpoch);
   }).catch(() => {
     /* ignore — the drawer hook will surface errors on open */
   });
@@ -107,13 +109,10 @@ export function useDatasetCatalog(query: UseDatasetCatalogOptions = {}) {
   const fetchGenRef = useRef(0);
   responseRef.current = response;
 
-  const reload = useCallback(async (options?: { bustCache?: boolean }) => {
+  const reload = useCallback(async () => {
     if (!enabled) return;
     const gen = ++fetchGenRef.current;
-    if (options?.bustCache) {
-      delete catalogResponseCache[fetchKey];
-    }
-    const cached = catalogResponseCache[fetchKey];
+    const cached = peekCatalogCache(fetchKey);
 
     if (cached) {
       setResponse(cached);
@@ -128,12 +127,17 @@ export function useDatasetCatalog(query: UseDatasetCatalogOptions = {}) {
     }
     setError(null);
 
+    // Epoch captured at fetch start: a fetch that straddles a cache
+    // invalidation may carry pre-mutation data, so the shared cache write is
+    // dropped on mismatch. The hook still renders the response (freshest data
+    // it has) — the invalidation's refresh event supersedes it right after.
+    const fetchEpoch = catalogCacheEpoch();
     try {
       const next = await datasetCatalogApi.listCatalog(stableQuery);
       if (gen !== fetchGenRef.current) {
         return;
       }
-      catalogResponseCache[fetchKey] = next;
+      writeCatalogCache(fetchKey, next, fetchEpoch);
       setResponse(next);
       setError(null);
     } catch (err) {
@@ -152,7 +156,7 @@ export function useDatasetCatalog(query: UseDatasetCatalogOptions = {}) {
 
   // Hydrate from shared cache when the fetch key changes (e.g. project load).
   useEffect(() => {
-    const cached = catalogResponseCache[fetchKey];
+    const cached = peekCatalogCache(fetchKey);
     if (cached) {
       setResponse(cached);
       setLoading(false);
