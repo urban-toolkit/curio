@@ -9,7 +9,6 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 from utk_curio.backend.app.common.safe_paths import is_within
-from utk_curio.backend.app.datasets.domain.catalog_item import loader_snippet
 from utk_curio.backend.app.datasets.domain.errors import DatasetCatalogError
 from utk_curio.backend.app.datasets.repositories.installed import InstalledDatasetRepository
 from utk_curio.backend.app.datasets.repositories.registry import DatasetRegistryRepository
@@ -64,53 +63,6 @@ class PathResolver:
 
         resolved = resolve_shared_output_path(filename)
         return resolved.as_posix() if resolved is not None else None
-
-    def _mark_user_store_computed_installs(
-        self,
-        items: list[dict[str, Any]],
-        user_key: str,
-        installed_computed_filenames: dict[str, str],
-    ) -> None:
-        """Mark computed rows installed when ``computed.<node>@1`` exists on disk."""
-        from utk_curio.backend.app.datasets.install.installer import (
-            InstallerError,
-            resolve_installed_data_path,
-            sanitize_node_id_segment,
-        )
-        from utk_curio.backend.app.datasets.domain.manifest import ManifestError, load_dataset_manifest
-        from utk_curio.backend.app.datasets.infrastructure.storage import dataset_dir
-
-        for item in items:
-            if item.get("origin") != "computed":
-                continue
-            producer = item.get("producerNodeId")
-            if not producer:
-                continue
-
-            dir_name = f"computed.{sanitize_node_id_segment(producer)}@1"
-            try:
-                installed_dir = dataset_dir(user_key, dir_name)
-                manifest = load_dataset_manifest(installed_dir)
-                data_path = resolve_installed_data_path(user_key, manifest)
-            except (InstallerError, ManifestError, OSError, ValueError):
-                continue
-
-            live_name = ""
-            uri = item.get("uri") or ""
-            if uri.startswith("curio://outputs/"):
-                live_name = Path(uri[len("curio://outputs/"):]).name
-
-            item["installed"] = True
-            item["dirName"] = dir_name
-            item["path"] = data_path.as_posix()
-            item["uri"] = f"curio://datasets/{dir_name}"
-            item["loaderSnippet"] = loader_snippet(item["format"], data_path.as_posix())
-            if live_name and live_name != data_path.name:
-                item["needsReinstall"] = True
-            elif producer in installed_computed_filenames:
-                installed_name = installed_computed_filenames[producer]
-                if live_name and installed_name and live_name != installed_name:
-                    item["needsReinstall"] = True
 
     def _allowed_read_roots(self) -> list[Path]:
         """Trusted base directories under which a catalog data file may live.

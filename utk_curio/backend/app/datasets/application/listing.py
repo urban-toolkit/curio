@@ -153,20 +153,14 @@ class CatalogListing:
                     if current_filename and installed_filename and current_filename != installed_filename:
                         item["needsReinstall"] = True
 
-        # Post-execution auto-install writes to the user dataset store immediately;
-        # reflect that in the catalog even before the next project save syncs spec refs.
-        try:
-            user_key = self._paths._user_key()
-            self._paths._mark_user_store_computed_installs(
-                items,
-                user_key,
-                installed_computed_filenames,
-            )
-        except DatasetCatalogError:
-            logger.warning(
-                "Failed to mark computed datasets from user store as installed; continuing without user-store install hints.",
-                exc_info=True,
-            )
+        # NOTE: ``installed`` is derived ONLY from the dataflow's spec refs
+        # (``installed_ids`` / producer-matched refs above). The old
+        # ``_mark_user_store_computed_installs`` step also flagged rows whose
+        # legacy ``computed.<node>@1`` store dir merely existed on disk — a
+        # bridge from the auto-install era. Under the account-catalog model
+        # every saved computed output has a store dir, so disk existence means
+        # "available", never "installed"; the marker produced phantom installed
+        # rows whose Uninstall then 404d (no ref to remove).
 
         items = dedupe_items(items)
 
