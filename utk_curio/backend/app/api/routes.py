@@ -439,6 +439,13 @@ def process_python_code():
                 flush=True,
             )
 
+    _record_runtime_outcome(
+        node_id=node_id,
+        dataflow_id=request.json.get("dataflowId") or None,
+        code=code, stdout=stdout, stderr=stderr, output=output,
+        duration_ms=(_time.perf_counter() - t0) * 1000.0,
+    )
+
     return {
         'stdout': stdout,
         'stderr': stderr,
@@ -447,6 +454,31 @@ def process_python_code():
         'installedDataset': installed_dataset,
         'datasetDiagnostic': dataset_diagnostic,
     }
+
+
+def _record_runtime_outcome(*, node_id, dataflow_id, code, stdout, stderr, output, duration_ms):
+    """Per-node runtime journal write (memo dev/67-2, DEC-052).
+
+    Best-effort and observational: agents read this to answer "what ran, what
+    failed, and why" — an execution response is never delayed or failed over
+    it. Skipped when the run has no node/project identity (unsaved canvas)."""
+    import time as _time
+
+    from utk_curio.backend.app.execution import runtime_journal
+    from utk_curio.backend.app.projects.services import _user_dir_key
+
+    user = getattr(g, "user", None)
+    if not node_id or not dataflow_id or user is None:
+        return
+    try:
+        runtime_journal.record_execution(
+            _user_dir_key(user), dataflow_id, node_id,
+            code=code, stdout=stdout, stderr=stderr, output=output,
+            started_at=_time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+            duration_ms=duration_ms,
+        )
+    except Exception:
+        pass
 
 
 @bp.route('/processJavaScriptCode', methods=['POST'])
@@ -538,6 +570,13 @@ def process_javascript_code():
                 f"{dataset_diagnostic.get('status')} — {dataset_diagnostic.get('reason')}",
                 flush=True,
             )
+
+    _record_runtime_outcome(
+        node_id=node_id,
+        dataflow_id=request.json.get("dataflowId") or None,
+        code=code, stdout=stdout, stderr=stderr, output=output,
+        duration_ms=(_time.perf_counter() - t0) * 1000.0,
+    )
 
     return {
         'stdout': stdout,
