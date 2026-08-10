@@ -1,7 +1,14 @@
 # Implementation Memo 67-7: Execute-Through-Node Validation + Self-Correction (Simulation Mode: Validate)
 
 Date: 2026-08-05
-Status: proposed (part of the dev/67 program — see `67-1-index.md`)
+Status: implemented 2026-08-05 — COMMIT-d2053cf9 (runner promotion), COMMIT-6b0b0c71
+(validation + validate-node stream), COMMIT-9b51b4ae (frontend). Verification: backend
+1119 passed (8 skipped), frontend 722 passed; e2e shims verified by identity import.
+BL-P5-20260805-11. Recorded deviations: (1) no dedicated cancel endpoint — client
+disconnect clears the in-flight guard in a finally, and pause/cancel UX belongs to the
+67-9 driver; (2) validation journal records carry durationMs 0 for now; (3) the
+validate-node endpoint refuses eagerly when no node.content.generate specialist is
+installed (the solve path already owns the install-proposal mint).
 
 ## 1. Problem Statement
 
@@ -135,11 +142,11 @@ VALIDATED content, with the evidence attached.
 
 ## 8. Acceptance Criteria
 
-- [ ] Validating a node executes its upstream slice through the sandbox and yields a
+- [x] Validating a node executes its upstream slice through the sandbox and yields a
       reviewable verdict with real runtime evidence — no spec mutation before Apply.
-- [ ] A failing generation self-corrects up to 2 rounds with the traceback in context,
+- [x] A failing generation self-corrects up to 2 rounds with the traceback in context,
       then fails loudly with the trail.
-- [ ] The Playwright dataflow tests pass against the promoted runner (single source).
+- [x] The Playwright dataflow tests pass against the promoted runner (single source).
 
 ## 9. Recommended Commit Breakdown
 
