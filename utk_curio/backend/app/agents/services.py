@@ -2798,6 +2798,252 @@ def _solve_events(
         _finish()
 
 
+# dev/67-7: bounded self-correction — initial generation + up to 2 corrective
+# regenerations, each re-validated by actually running the dataflow.
+_VALIDATE_CORRECTION_ROUNDS = 2
+_VALIDATE_STALE_SECONDS = 15 * 60
+
+
+def validate_node_stream(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    config: ProviderConfig,
+    *,
+    ref: str | None = None,
+    node_id: str | None = None,
+    exec_fn=None,
+):
+    """Generate → execute-through → validate → self-correct → propose, for
+    ONE node (memo dev/67-7 — Simulation Mode: validate).
+
+    Eager validation (409s stay JSON); the returned generator yields
+    ``validation_started`` → per round: ``generation_round`` →
+    ``node_executed`` per upstream execution → ``round_verdict`` → … →
+    ``done {verdict, evidence, rounds, proposalId?, builderSession}``.
+    The saved spec is never mutated: the candidate runs as an overlay and
+    lands as a reviewed ``node.content.write`` proposal carrying the
+    validation block — PASS or FAIL, the user decides ("Apply anyway" is a
+    labeled choice, never a hidden one). An ``infrastructure`` verdict mints
+    nothing and leaves the node's state untouched.
+    """
+    import time as _time
+
+    spec = _read_spec_or_404(user_key, project_id)
+    record = _record_or_404(spec, attachment_id)
+    session = record.get("builderSession") or {}
+    if ref and not node_id:
+        node_id = (session.get("nodeIds") or {}).get(ref)
+        if not node_id:
+            raise AgentServiceError(f"ref {ref!r} has no created node yet", 409)
+    if not node_id:
+        raise AgentServiceError("a ref or nodeId is required", 422)
+    nodes = (spec.get("dataflow") or {}).get("nodes") or []
+    node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
+    if node is None:
+        raise AgentServiceError(f"node {node_id!r} not found in the saved spec", 404)
+    now = _time.time()
+    if session.get("validatingSince") and now - float(session.get("validatingSince") or 0) < _VALIDATE_STALE_SECONDS:
+        raise AgentServiceError("a validation is already running for this attachment", 409)
+    manifest = _resolve_definition(user_key, record.get("coord", ""))
+    resolution = delegation.resolve(
+        user_key, project_id, manifest, "node.content.generate"
+    ) if manifest is not None else delegation.Resolution("unresolvable")
+    if resolution.outcome != "ok":
+        raise AgentServiceError(
+            "no installed agent declares node.content.generate — install the "
+            "Node Content Builder first",
+            409,
+        )
+    session_id = record.get("sessionId")
+    coord = record.get("coord", "")
+    if ref is None:
+        ref = next(
+            (r for r, nid in (session.get("nodeIds") or {}).items() if nid == node_id),
+            None,
+        )
+    session["validatingSince"] = now
+    record["builderSession"] = session
+    projects_storage.write_spec(user_key, project_id, spec)
+    return _validate_events(
+        user_key, project_id, attachment_id, config, spec, node, ref,
+        resolution, coord, session_id, exec_fn,
+    )
+
+
+def _validate_events(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    config: ProviderConfig,
+    spec: dict,
+    node: dict,
+    ref: str | None,
+    resolution,
+    coord: str,
+    session_id,
+    exec_fn,
+):
+    """The validate-node body: threaded validation runs drain a queue so
+    upstream executions stream live (the dev/63 pattern); the finally clears
+    the in-flight guard on every exit, disconnect included."""
+    import queue as _queue
+    import threading
+
+    from utk_curio.backend.app.agents import validation
+    from utk_curio.backend.app.packages import services as packages_services
+
+    node_id = node.get("id")
+    execution_id = uuid.uuid4().hex
+    verdict_result: dict | None = None
+    rounds_used = 0
+    candidate = ""
+    delegations: list = []
+    try:
+        yield "validation_started", {"nodeId": node_id, "executionId": execution_id}
+        try:
+            available = {
+                t["id"]: t
+                for t in packages_services.available_templates(user_key, project_id)
+            }
+        except Exception:
+            available = None  # arity metadata unavailable: type check fails open
+        previous_attempt: str | None = None
+        previous_error: str | None = None
+        for round_index in range(1 + _VALIDATE_CORRECTION_ROUNDS):
+            rounds_used = round_index + 1
+            yield "generation_round", {"round": rounds_used}
+            inputs = {
+                "nodeType": node.get("type"),
+                "intent": node.get("goal"),
+                "nodeContext": node_context.compose_node_context(
+                    user_key, project_id, spec, node_id
+                ),
+            }
+            if previous_attempt is not None:
+                # The NCB instruction's self-correction contract: fix
+                # precisely the failure, grounded in the real traceback.
+                inputs["previousAttempt"] = previous_attempt[:6000]
+                inputs["validationError"] = (previous_error or "")[:2000]
+            status, text, child = delegation.run_delegate(
+                user_key, project_id, resolution.coord,
+                "node.content.generate", inputs, config,
+                parent_execution_id=execution_id,
+                parent_coord=coord,
+                attachment_id=attachment_id,
+            )
+            delegations.append(child)
+            if status != "ok":
+                verdict_result = {
+                    "verdict": "fail",
+                    "evidence": {"kind": "generation-error", "detail": (text or "")[:300]},
+                }
+                break
+            candidate = content.extract_node_content(text)
+            progress_queue: _queue.Queue = _queue.Queue()
+
+            def _run_validation():
+                try:
+                    result = validation.validate_candidate(
+                        user_key, project_id, spec, node_id, candidate,
+                        exec_fn=exec_fn,
+                        available_templates=available,
+                        progress=lambda nid, i, total: progress_queue.put(
+                            ("progress", nid, i, total)
+                        ),
+                    )
+                except Exception as exc:  # the validator must never kill the stream
+                    result = {
+                        "verdict": "infrastructure",
+                        "evidence": {"kind": "infrastructure", "detail": str(exc)[:300]},
+                    }
+                progress_queue.put(("done", result))
+
+            thread = threading.Thread(target=_run_validation)
+            thread.start()
+            while True:
+                item = progress_queue.get()
+                if item[0] == "progress":
+                    _, nid, index, total = item
+                    yield "node_executed", {"nodeId": nid, "index": index, "total": total}
+                    continue
+                verdict_result = item[1]
+                break
+            thread.join(timeout=5)
+            yield "round_verdict", {
+                "round": rounds_used, "verdict": verdict_result["verdict"],
+            }
+            if verdict_result["verdict"] != "fail":
+                break
+            previous_attempt = candidate
+            evidence = verdict_result.get("evidence") or {}
+            previous_error = evidence.get("stderrTail") or evidence.get("detail") or ""
+        done: dict = {
+            "verdict": verdict_result["verdict"] if verdict_result else "fail",
+            "evidence": (verdict_result or {}).get("evidence") or {},
+            "rounds": rounds_used,
+            "nodeId": node_id,
+        }
+        if done["verdict"] in ("pass", "fail") and candidate:
+            # PASS or FAIL, the user decides — the proposal carries the
+            # validation block so the review is informed, never gatekept.
+            p_status, p_error, part = _mint_node_content_write(
+                user_key, project_id,
+                {"attachment_id": attachment_id, "session_id": session_id},
+                {"tool": "node.content.write",
+                 "params": {"nodeId": node_id, "content": candidate}},
+            )
+            if part is not None:
+                part["validation"] = {
+                    "verdict": done["verdict"],
+                    "rounds": rounds_used,
+                    "evidence": done["evidence"],
+                }
+                done["proposalId"] = part["proposalId"]
+                if isinstance(session_id, str):
+                    label = (node.get("goal") or node_id)[:60]
+                    sessions.append_turns(
+                        user_key, project_id, session_id, attachment_id,
+                        [sessions.make_turn(
+                            "agent",
+                            f"Validated content for {label!r}: "
+                            f"{done['verdict'].upper()} after {rounds_used} "
+                            f"round{'s' if rounds_used != 1 else ''} — review below.",
+                            content=[part],
+                        )],
+                    )
+            else:
+                done["evidence"] = {
+                    **done["evidence"],
+                    "mintError": (p_error or "")[:300],
+                }
+        # The per-node ledger: validated / failed; infrastructure untouched.
+        fresh = _read_spec_or_404(user_key, project_id)
+        fresh_record = _record_or_404(fresh, attachment_id)
+        fresh_session = fresh_record.get("builderSession") or {}
+        if ref and isinstance(fresh_session.get("nodeStates"), dict):
+            if done["verdict"] == "pass":
+                fresh_session["nodeStates"][ref] = "validated"
+            elif done["verdict"] == "fail":
+                fresh_session["nodeStates"][ref] = "failed"
+        fresh_session.pop("validatingSince", None)
+        fresh_record["builderSession"] = fresh_session
+        projects_storage.write_spec(user_key, project_id, fresh)
+        done["builderSession"] = fresh_session
+        yield "done", done
+    finally:
+        # Disconnect-safe: the in-flight guard never wedges the attachment.
+        try:
+            cleanup_spec = _read_spec_or_404(user_key, project_id)
+            cleanup_record = _record_or_404(cleanup_spec, attachment_id)
+            cleanup_session = cleanup_record.get("builderSession") or {}
+            if cleanup_session.pop("validatingSince", None) is not None:
+                cleanup_record["builderSession"] = cleanup_session
+                projects_storage.write_spec(user_key, project_id, cleanup_spec)
+        except Exception:
+            pass
+
+
 def _resolve_prompt_text(user_key: str, coord: str, name: str) -> str | None:
     """A definition's prompt asset text (``"instruction"`` or ``"system"``).
 

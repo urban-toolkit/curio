@@ -603,6 +603,54 @@ def solve_attachment_stream(project_id: str, attachment_id: str):
 
 
 @agents_bp.route(
+    "/projects/<project_id>/attachments/<attachment_id>/validate-node", methods=["POST"]
+)
+@require_auth
+def validate_node(project_id: str, attachment_id: str):
+    """Generate → execute-through → validate → self-correct → propose, for ONE
+    node, as Server-Sent Events (dev/67-7 — Simulation Mode: validate).
+    Body: ``{"ref": "<plan ref>"}`` or ``{"nodeId": "<node id>"}``. The
+    outcome lands as a reviewed content proposal carrying the validation
+    verdict; the saved spec is never mutated by validation itself."""
+    from utk_curio.backend.app.agents.provider_config import (
+        ProviderConfigError,
+        resolve_provider_config,
+    )
+
+    body = request.get_json(silent=True) or {}
+    ref = body.get("ref")
+    node_id = body.get("nodeId")
+    if ref is not None and not isinstance(ref, str):
+        return _error("'ref' must be a string when present")
+    if node_id is not None and not isinstance(node_id, str):
+        return _error("'nodeId' must be a string when present")
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        config = resolve_provider_config(g.user)
+        events = agents_services.validate_node_stream(
+            _user_dir_key(g.user), project_id, attachment_id, config,
+            ref=ref or None, node_id=node_id or None,
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except ProviderConfigError as exc:
+        return _error(str(exc), 400)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+
+    def _sse():
+        for kind, payload in events:
+            data = {"error": payload} if kind == "error" else payload
+            yield f"event: {kind}\ndata: {json.dumps(data)}\n\n"
+
+    return Response(
+        stream_with_context(_sse()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@agents_bp.route(
     "/projects/<project_id>/attachments/<attachment_id>/solve/cancel", methods=["POST"]
 )
 @require_auth

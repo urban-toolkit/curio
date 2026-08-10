@@ -5120,6 +5120,133 @@ class TestProposeModeSolve:
         assert r.status_code == 400
 
 
+class TestValidateNode:
+    """dev/67-7 — Simulation Mode: validate. Generate → execute-through →
+    verdict → self-correct → propose; the spec is never mutated by
+    validation; PASS or FAIL, the user decides."""
+
+    def _fake_exec(self, monkeypatch, fail_markers=()):
+        calls = []
+
+        def _exec(endpoint, payload):
+            calls.append((endpoint, payload))
+            if any(m in payload["code"] for m in fail_markers):
+                return {"stdout": [], "stderr": "Traceback: ValueError bad column",
+                        "output": {"path": "", "dataType": "str"}}
+            return {"stdout": [], "stderr": "",
+                    "output": {"path": "art-1", "dataType": "dataframe"}}
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.execution.runner._http_exec", _exec
+        )
+        return calls
+
+    def _setup_plan_node(self, client, user, token, project_id, monkeypatch, replies):
+        helper = TestDataflowPlanMint()
+        att_id, calls = helper._setup(
+            client, user, token, project_id, monkeypatch, replies=replies,
+        )
+        client.post(
+            f"/api/agents/projects/{project_id}/install",
+            json={"coord": "agent.node-content-builder@1.0.0"}, headers=_auth(token),
+        )
+        r = helper._run(client, token, project_id, att_id)
+        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
+        ref = proposal["plan"]["nodes"][0]["ref"]
+        created = client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply-node",
+            json={"ref": ref}, headers=_auth(token),
+        ).get_json()["createdNode"]
+        return att_id, ref, created, calls
+
+    def _validate(self, client, token, project_id, att_id, body):
+        r = client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/validate-node",
+            json=body, headers=_auth(token),
+        )
+        assert r.status_code == 200, r.get_json()
+        return TestStreamedSolve()._sse_events(r)
+
+    def test_pass_verdict_mints_a_validated_proposal(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        self._fake_exec(monkeypatch)
+        att_id, ref, created, _ = self._setup_plan_node(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Plan.\n" + helper._plan_tail(), "print('validated code')"],
+        )
+        events = self._validate(client, token, alice_project, att_id, {"ref": ref})
+        names = [k for k, _ in events]
+        assert names[0] == "validation_started"
+        assert "generation_round" in names and "node_executed" in names
+        assert names[-1] == "done"
+        done = events[-1][1]
+        assert done["verdict"] == "pass" and done["rounds"] == 1
+        assert done["evidence"]["outputDataType"] == "dataframe"
+        assert done["builderSession"]["nodeStates"][ref] == "validated"
+        # The spec is untouched — the candidate lives in the proposal.
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
+        node = next(n for n in spec["dataflow"]["nodes"] if n["id"] == created["id"])
+        assert node["content"] == ""
+        # The transcript part carries the validation block.
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        part = next(
+            p for t in reversed(turns) for p in (t.get("content") or [])
+            if p.get("type") == "proposal" and p.get("proposalId") == done["proposalId"]
+        )
+        assert part["validation"]["verdict"] == "pass"
+
+    def test_failure_self_corrects_with_the_traceback(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        self._fake_exec(monkeypatch, fail_markers=("bad_attempt",))
+        att_id, ref, created, calls = self._setup_plan_node(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Plan.\n" + helper._plan_tail(), "bad_attempt()", "good_attempt()"],
+        )
+        events = self._validate(client, token, alice_project, att_id, {"ref": ref})
+        done = events[-1][1]
+        assert done["verdict"] == "pass" and done["rounds"] == 2
+        verdicts = [p["verdict"] for k, p in events if k == "round_verdict"]
+        assert verdicts == ["fail", "pass"]
+        # The corrective child saw the previous attempt AND the traceback.
+        correction = calls[-1][-1]["content"]
+        assert '"previousAttempt"' in correction and "bad_attempt" in correction
+        assert "ValueError bad column" in correction
+
+    def test_exhaustion_fails_loudly_but_still_proposes(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        self._fake_exec(monkeypatch, fail_markers=("always_bad",))
+        att_id, ref, _, _ = self._setup_plan_node(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Plan.\n" + helper._plan_tail(), "always_bad()"],
+        )
+        events = self._validate(client, token, alice_project, att_id, {"ref": ref})
+        done = events[-1][1]
+        assert done["verdict"] == "fail" and done["rounds"] == 3
+        assert done["builderSession"]["nodeStates"][ref] == "failed"
+        # Apply-anyway semantics: the failing candidate IS still reviewable.
+        assert done["proposalId"]
+        assert "Traceback" in done["evidence"]["stderrTail"]
+
+    def test_preflight_guards(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        att_id, _ = helper._setup(client, user, token, alice_project, monkeypatch)
+        base = f"/api/agents/projects/{alice_project}/attachments/{att_id}/validate-node"
+        # No ref/nodeId; unknown node; ref without a created node.
+        assert client.post(base, json={}, headers=_auth(token)).status_code == 422
+        assert client.post(base, json={"nodeId": "ghost"}, headers=_auth(token)).status_code == 404
+        assert client.post(base, json={"ref": "a"}, headers=_auth(token)).status_code == 409
+
+
 class TestNodeContextEnrichment:
     """dev/67-6 — content generation is never blind: Solve children and
     node.content.generate delegates receive the composed node context."""
