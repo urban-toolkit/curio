@@ -573,11 +573,15 @@ def solve_attachment_stream(project_id: str, attachment_id: str):
         isinstance(node_ids, list) and all(isinstance(n, str) for n in node_ids)
     ):
         return _error("'nodeIds' must be a list of node id strings when present")
+    mode = body.get("mode", "write")
+    if mode not in ("write", "propose"):
+        return _error("'mode' must be 'write' or 'propose' when present")
     try:
         projects_repo.get_for_user(project_id, g.user.id)
         config = resolve_provider_config(g.user)
         events = agents_services.solve_attachment_stream(
-            _user_dir_key(g.user), project_id, attachment_id, config, node_ids
+            _user_dir_key(g.user), project_id, attachment_id, config, node_ids,
+            mode=mode,
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)

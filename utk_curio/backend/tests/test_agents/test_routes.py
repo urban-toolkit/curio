@@ -5033,6 +5033,135 @@ class TestPlanFanInValidation:
         assert "merge inputs are in_0..in_4" in calls[1][-1]["content"]
 
 
+class TestProposeModeSolve:
+    """dev/67-6 — Simulation Mode: solve. Propose mode writes NOTHING: each
+    solved child mints a reviewed node.content.write proposal; applying it
+    writes the content and resolves the per-node ledger."""
+
+    def test_propose_full_loop(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        att_id, _ = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Plan.\n" + helper._plan_tail(), "print('generated')"],
+        )
+        client.post(
+            f"/api/agents/projects/{alice_project}/install",
+            json={"coord": "agent.node-content-builder@1.0.0"}, headers=_auth(token),
+        )
+        r = helper._run(client, token, alice_project, att_id)
+        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
+        ref = proposal["plan"]["nodes"][0]["ref"]
+        created = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply-node",
+            json={"ref": ref}, headers=_auth(token),
+        ).get_json()["createdNode"]
+        # Propose-mode solve of exactly that node.
+        resp = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/solve/stream",
+            json={"mode": "propose", "nodeIds": [created["id"]]}, headers=_auth(token),
+        )
+        events = TestStreamedSolve()._sse_events(resp)
+        result = next(p for k, p in events if k == "node_result")
+        assert result["status"] == "proposed"
+        content_proposal_id = result["proposalId"]
+        done = events[-1][1]
+        assert done["mode"] == "propose"
+        assert done["appliedContents"] == []  # nothing written
+        session = done["builderSession"]
+        assert session["phase"] == "simulating"  # restored, not applied/ready
+        assert session["nodeRuns"][created["id"]] == "pending"
+        assert session["nodeStates"][ref] == "solving"
+        # The spec node is still empty; the content proposal is active.
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
+        node = next(n for n in spec["dataflow"]["nodes"] if n["id"] == created["id"])
+        assert node["content"] == ""
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        active = next(c for c in cards if c["attachmentId"] == att_id)["activeProposal"]
+        assert active["tool"] == "node.content.write"
+        assert active["proposalId"] == content_proposal_id
+        # Applying the content proposal writes + resolves the ledger.
+        body = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{content_proposal_id}/apply",
+            headers=_auth(token),
+        ).get_json()
+        assert body["appliedContent"]["nodeId"] == created["id"]
+        assert body["appliedContent"]["content"] == "print('generated')"
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        session = next(c for c in cards if c["attachmentId"] == att_id)["builderSession"]
+        assert session["nodeRuns"][created["id"]] == "solved"
+        assert session["nodeStates"][ref] == "approved"
+
+    def test_classic_write_mode_is_untouched(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # The blocking endpoint (always write mode) still writes directly.
+        user, token = user_and_token
+        helper = TestSolve()
+        att_id, applied, _ = helper._applied_plan(client, user, token, alice_project, monkeypatch)
+        body = helper._solve(client, token, alice_project, att_id).get_json()
+        assert {r["status"] for r in body["results"].values()} == {"solved"}
+        assert "mode" not in body  # byte-compatible blocking payload
+        assert body["builderSession"]["phase"] == "ready"
+
+    def test_invalid_mode_is_refused(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestSolve()
+        att_id, _, _ = helper._applied_plan(client, user, token, alice_project, monkeypatch)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/solve/stream",
+            json={"mode": "bulk"}, headers=_auth(token),
+        )
+        assert r.status_code == 400
+
+
+class TestNodeContextEnrichment:
+    """dev/67-6 — content generation is never blind: Solve children and
+    node.content.generate delegates receive the composed node context."""
+
+    def test_solve_children_receive_the_neighborhood(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestSolve()
+        att_id, applied, calls = helper._applied_plan(client, user, token, alice_project, monkeypatch)
+        helper._solve(client, token, alice_project, att_id)
+        child_frames = [
+            c[-1]["content"] for c in calls
+            if c and "[delegated task" in (c[-1].get("content") or "")
+        ]
+        assert child_frames  # the children ran
+        framed = child_frames[-1]
+        assert '"nodeContext"' in framed
+        assert '"upstream"' in framed and '"graphSummary"' in framed
+        assert '"runtimeStatus"' in framed
+
+    def test_delegate_inputs_enriched_only_for_content_generation(self, tmp_curio):
+        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        projects_storage.write_spec("4242", "p-enrich", {"dataflow": {"nodes": [
+            {"id": "n1", "type": "t", "goal": "g", "content": ""},
+        ], "edges": []}})
+        loop_ctx = {"target": {"kind": "node", "targetId": "n1"}}
+        enriched = services_mod._enriched_delegate_inputs(
+            "4242", "p-enrich", loop_ctx, "node.content.generate", {"intent": "x"}
+        )
+        assert enriched["nodeContext"]["nodeId"] == "n1"
+        assert enriched["intent"] == "x"  # the model's keys survive
+        # Other capabilities and explicit model-provided context: untouched.
+        assert services_mod._enriched_delegate_inputs(
+            "4242", "p-enrich", loop_ctx, "workflow.plan.create", {"a": 1}
+        ) == {"a": 1}
+        assert services_mod._enriched_delegate_inputs(
+            "4242", "p-enrich", loop_ctx, "node.content.generate",
+            {"nodeContext": {"mine": True}},
+        ) == {"nodeContext": {"mine": True}}
+
+
 class TestBuiltinPromptPropagation:
     """dev/60 — roster bytes reach existing installs: the user's 'clear the
     canvas' refusal came from a STALE materialized instruction."""

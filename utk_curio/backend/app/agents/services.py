@@ -31,6 +31,7 @@ from utk_curio.backend.app.agents import (
     storage,
     tools,
 )
+from utk_curio.backend.app.agents import node_context
 from utk_curio.backend.app.agents.policy import PolicyValidationError, StaleRevisionError
 from utk_curio.backend.app.agents.attachments import AttachmentError
 from utk_curio.backend.app.agents.manifest import AgentManifest
@@ -998,6 +999,19 @@ def _apply_node_content_write(
     # The domain-owned mutation (ADR-AG-007): one node's content, nothing else.
     node["content"] = proposal.get("content", "")
     proposal["status"] = "applied"
+    # dev/67-6: when this node is a plan node, applying its content resolves
+    # the Simulation Mode ledger — the row is approved, the run solved.
+    record = attachments.get_attachment(spec, attachment_id)
+    session = (record or {}).get("builderSession") or {}
+    ref = next(
+        (r for r, nid in (session.get("nodeIds") or {}).items() if nid == node_id),
+        None,
+    )
+    if ref is not None:
+        (session.get("nodeStates") or {})[ref] = "approved"
+        runs = session.get("nodeRuns")
+        if isinstance(runs, dict) and node_id in runs:
+            runs[node_id] = "solved"
     projects_storage.write_spec(user_key, project_id, spec)
     _log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,
@@ -2331,7 +2345,8 @@ def solve_attachment(
 ) -> dict:
     """The dev/52 Solve batch (DEC-048), blocking form: drains the streaming
     batch (dev/63 — one implementation) and returns its terminal payload,
-    minus the stream-only keys, so the response is byte-compatible."""
+    minus the stream-only keys, so the response is byte-compatible. Always
+    write mode — propose mode (dev/67-6) is the streaming route's."""
     payload: dict | None = None
     for kind, data in solve_attachment_stream(
         user_key, project_id, attachment_id, config, node_ids
@@ -2342,6 +2357,7 @@ def solve_attachment(
         raise AgentServiceError("solve ended without a result", 500)
     payload.pop("cancelled", None)
     payload.pop("notAttempted", None)
+    payload.pop("mode", None)
     return payload
 
 
@@ -2373,6 +2389,7 @@ def solve_attachment_stream(
     attachment_id: str,
     config: ProviderConfig,
     node_ids: list[str] | None = None,
+    mode: str = "write",
 ):
     """The dev/52 Solve batch (DEC-048) as an event stream (dev/63): ONE
     explicit, authenticated user action authorizes filling the applied plan's
@@ -2393,6 +2410,15 @@ def solve_attachment_stream(
     ``node_result`` per target → ``done``. The terminal state comes from ONE
     re-guarded spec write that also runs on client disconnect and
     cancellation — streamed events are transport, never truth.
+
+    ``mode`` (dev/67-6): ``"write"`` — the classic DEC-048 batch, content
+    written under the per-node digest guard; ``"propose"`` — each solved
+    child MINTS a reviewed ``node.content.write`` proposal instead (the
+    Simulation Mode solve stage): nothing is written, ``node_result`` carries
+    the ``proposalId``, the node stays ``pending`` until the user applies,
+    and the session returns to its pre-solve phase. The single-activeProposal
+    model means a multi-node propose batch supersedes all but the last —
+    the 67-9 sequence solves one node at a time by design.
     """
     import threading
     import time as _time
@@ -2413,6 +2439,9 @@ def solve_attachment_stream(
     ]
     if not targets:
         raise AgentServiceError("no pending or failed plan nodes to solve", 409)
+    if mode not in ("write", "propose"):
+        raise AgentServiceError("mode must be 'write' or 'propose'", 422)
+    return_phase = session.get("phase")  # propose mode restores it (dev/67-6)
     nodes_by_id = {
         n.get("id"): n
         for n in (spec.get("dataflow") or {}).get("nodes") or []
@@ -2434,6 +2463,7 @@ def solve_attachment_stream(
     return _solve_events(
         user_key, project_id, attachment_id, config, targets, nodes_by_id,
         manifest, coord, session_id, solve_execution_id, stop,
+        spec=spec, mode=mode, return_phase=return_phase,
     )
 
 
@@ -2449,6 +2479,10 @@ def _solve_events(
     session_id,
     solve_execution_id: str,
     stop,
+    *,
+    spec: dict | None = None,
+    mode: str = "write",
+    return_phase: str | None = None,
 ):
     """The solve batch body (dev/63). Workers report through a thread-safe
     queue — they never touch the response; the generator drains it between
@@ -2537,21 +2571,39 @@ def _solve_events(
         applied = [
             i for i in applied_contents if results.get(i["nodeId"], {}).get("status") == "solved"
         ]
+        ids_to_ref = {
+            nid: ref for ref, nid in (session.get("nodeIds") or {}).items()
+        }
+        node_states = session.get("nodeStates")
         for node_id, outcome in results.items():
+            if outcome["status"] == "proposed":
+                # dev/67-6: nothing was written — the node stays pending
+                # until the user applies the content proposal; the plan row
+                # advances to "solving" (a review awaits).
+                ref = ids_to_ref.get(node_id)
+                if node_states is not None and ref is not None:
+                    node_states[ref] = "solving"
+                continue
             if node_id in node_runs:
                 node_runs[node_id] = outcome["status"] if outcome["status"] != "skipped" else "skipped"
         session["nodeRuns"] = node_runs
         session.pop("solvingSince", None)
         session.pop("solveExecutionId", None)
         session.pop("cancelRequested", None)
-        session["phase"] = (
-            "ready"
-            if all(s not in ("pending", "failed") for s in node_runs.values())
-            else "applied"
-        )
+        if mode == "propose" and return_phase not in (None, "", "solving"):
+            # The propose batch resolved nothing — the session returns to the
+            # phase the solve interrupted (typically "simulating").
+            session["phase"] = return_phase
+        else:
+            session["phase"] = (
+                "ready"
+                if all(s not in ("pending", "failed") for s in node_runs.values())
+                else "applied"
+            )
         record["builderSession"] = session
         projects_storage.write_spec(user_key, project_id, spec)
         solved = sum(1 for r in results.values() if r["status"] == "solved")
+        proposed = sum(1 for r in results.values() if r["status"] == "proposed")
         if isinstance(session_id, str):
             lines = [
                 f"{node_id[:8]} · {outcome['status']}"
@@ -2564,7 +2616,11 @@ def _solve_events(
                 [
                     sessions.make_turn(
                         "agent",
-                        f"Solved {solved} of {len(targets)} plan nodes."
+                        (
+                            f"Proposed content for {proposed} of {len(targets)} plan nodes."
+                            if mode == "propose"
+                            else f"Solved {solved} of {len(targets)} plan nodes."
+                        )
                         + (f" Cancelled — {len(unstarted)} not attempted." if cancelled else ""),
                         content=[{
                             "type": "card",
@@ -2589,6 +2645,7 @@ def _solve_events(
             "builderSession": session,
             "cancelled": cancelled,
             "notAttempted": sorted(unstarted),
+            "mode": mode,
         })
         return payload_out
 
@@ -2638,10 +2695,16 @@ def _solve_events(
                         # User content preserved.
                         outcome_queue.put((node_id, "skipped", None, None))
                         return
+                    # dev/67-6: the ONE context composer — the child sees the
+                    # node's neighborhood (goals, runtime status, datasets),
+                    # not just its own intent.
                     inputs = {
                         "nodeType": node.get("type"),
                         "intent": node.get("goal"),
                         "planSiblings": goals[:20],
+                        "nodeContext": node_context.compose_node_context(
+                            user_key, project_id, spec, node_id
+                        ),
                     }
                     status, text, child = delegation.run_delegate(
                         user_key, project_id, resolution.coord,
@@ -2667,6 +2730,52 @@ def _solve_events(
                         yield "node_started", {"nodeId": node_id}
                         continue
                     remaining -= 1
+                    if mode == "propose" and status == "solved":
+                        # dev/67-6 (Simulation Mode: solve): nothing is
+                        # written — the child's content mints a reviewed
+                        # node.content.write proposal through the EXISTING
+                        # machinery (digest-pinned against the current
+                        # content), and its part joins the transcript.
+                        if child is not None:
+                            delegations.append(child)
+                        text_out = content.extract_node_content(text)
+                        p_status, p_error, part = _mint_node_content_write(
+                            user_key, project_id,
+                            {"attachment_id": attachment_id, "session_id": session_id},
+                            {"tool": "node.content.write",
+                             "params": {"nodeId": node_id, "content": text_out}},
+                        )
+                        if part is not None:
+                            results[node_id] = {
+                                "status": "proposed",
+                                "proposalId": part["proposalId"],
+                            }
+                            if isinstance(session_id, str):
+                                node = nodes_by_id.get(node_id) or {}
+                                sessions.append_turns(
+                                    user_key, project_id, session_id, attachment_id,
+                                    [sessions.make_turn(
+                                        "agent",
+                                        "Proposed content for "
+                                        f"{(node.get('goal') or node_id)[:60]!r} — "
+                                        "review and apply it below.",
+                                        content=[part],
+                                    )],
+                                )
+                            yield "node_result", {
+                                "nodeId": node_id,
+                                "status": "proposed",
+                                "proposalId": part["proposalId"],
+                            }
+                        else:
+                            results[node_id] = {
+                                "status": "failed", "error": (p_error or "")[:300]
+                            }
+                            yield "node_result", {
+                                "nodeId": node_id, "status": "failed",
+                                "error": (p_error or "")[:300],
+                            }
+                        continue
                     event = _record_outcome(node_id, status, text, child)
                     if event is not None:
                         yield "node_result", event
@@ -3418,6 +3527,33 @@ def _mint_project_install(
     )
 
 
+def _enriched_delegate_inputs(
+    user_key: str, project_id: str, loop_ctx: dict, capability: str, inputs: dict
+) -> dict:
+    """dev/67-6: content-generation delegates get the composed node context
+    appended server-side (never overwriting the model's own keys) — the child
+    stops generating blind to the graph. The node resolves from the model's
+    ``nodeId`` input or the parent attachment's node target; no node, no
+    enrichment (honest absence beats a fabricated neighborhood)."""
+    if capability != "node.content.generate" or "nodeContext" in inputs:
+        return inputs
+    node_id = inputs.get("nodeId")
+    if not isinstance(node_id, str) or not node_id:
+        target = loop_ctx.get("target")
+        node_id = (
+            target.get("targetId")
+            if isinstance(target, dict) and target.get("kind") == "node"
+            else None
+        )
+    if not node_id:
+        return inputs
+    spec = projects_storage.read_spec(user_key, project_id)
+    composed = node_context.compose_node_context(user_key, project_id, spec, node_id)
+    if composed is None:
+        return inputs
+    return {**inputs, "nodeContext": composed}
+
+
 def _resolve_delegate_request(
     user_key: str, project_id: str, loop_ctx: dict, req: dict, minted: list
 ) -> tuple[str, str, "delegation.Resolution | None"]:
@@ -3542,7 +3678,10 @@ def run_attachment(
                         project_id,
                         resolution.coord,
                         req["capability"],
-                        req.get("inputs") or {},
+                        _enriched_delegate_inputs(
+                            user_key, project_id, loop_ctx,
+                            req["capability"], req.get("inputs") or {},
+                        ),
                         config,
                         parent_execution_id=execution_id,
                         parent_coord=loop_ctx["coord"],
@@ -3804,7 +3943,10 @@ def stream_attachment(
                             project_id,
                             resolution.coord,
                             req["capability"],
-                            req.get("inputs") or {},
+                            _enriched_delegate_inputs(
+                                user_key, project_id, loop_ctx,
+                                req["capability"], req.get("inputs") or {},
+                            ),
                             config,
                             parent_execution_id=execution_id,
                             parent_coord=loop_ctx["coord"],

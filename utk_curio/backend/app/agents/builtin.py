@@ -150,13 +150,17 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
     # the memo: "connection" target and agent.package-recommendation deferred.
     BuiltinAgentSpec("agent.node-builder", "Node Builder", "node",
                      "Create computation, transform, visualization, or data-fetch nodes as "
-                     "reviewable proposals; delegates content generation to Node Content Builder.",
+                     "reviewable proposals — or modify an existing node through a reviewed "
+                     "content replacement; delegates content generation to Node Content Builder.",
                      "node_build_instruction.txt",
                      ("node.build", "dataset.fetch.author"), ("authoring",),
-                     targets=("canvas",),
+                     # dev/67-6: node targets lift the dev/48 canvas-only
+                     # limitation — the modify-existing posture attaches to
+                     # the node it modifies.
+                     targets=("canvas", "node"),
                      reads=("nodeIntent", "targetContext", "externalSelection"),
                      tools=("dataflow.read", "node.create", "node.template.create",
-                            "node.runtime.read"),
+                            "node.runtime.read", "node.content.write"),
                      delegates_to=("agent.node-content-builder", "agent.execution-subtask-planner"),
                      review_policy="review-before-apply"),
     # The second P5 composite (memo dev/50; spec dev/15 §3.4 + docs/06). Two-

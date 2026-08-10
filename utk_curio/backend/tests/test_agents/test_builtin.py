@@ -113,11 +113,13 @@ class TestNodeBuilderComposite:
             "agent.node-content-builder",
             "agent.execution-subtask-planner",
         ]
-        # dev/15 deviation (memo §2): canvas only until a connection-attach UI exists.
-        assert [t.kind for t in m.compatible_targets] == ["canvas"]
+        # dev/67-6 lifts the dev/48 canvas-only limitation: modify-existing
+        # attaches to the node it modifies.
+        assert [t.kind for t in m.compatible_targets] == ["canvas", "node"]
         assert [t.id for t in m.tools] == [
             "dataflow.read", "node.create", "node.template.create",
             "node.runtime.read",  # dev/67-2: diagnose before regenerating
+            "node.content.write",  # dev/67-6: modify-existing, reviewed
         ]
         assert m.provenance.trust == "built-in"
 
