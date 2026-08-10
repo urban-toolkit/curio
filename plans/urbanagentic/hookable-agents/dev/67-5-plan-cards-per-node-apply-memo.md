@@ -26,6 +26,32 @@ a time, and never as a knowingly-unresolved placeholder. Today:
   `pending|solved|failed|skipped` after creation — there is no per-node "planned but
   not yet created" state.
 
+## Expected Behavior (user-visible walkthrough)
+
+1. Ask the Dataflow Builder for a plan → the review card lists ONE ROW PER
+   PLANNED NODE: title, node type, an optional "expects" line (input/output),
+   and the goal in an editable textarea. No generated code appears anywhere
+   on the card — a plan that tries to carry code is refused and the agent
+   replans without it.
+2. Edit any node's goal in place; it saves when you leave the field and
+   survives reloads. The pinned plan itself never changes — your edit is an
+   overlay applied at creation.
+3. Click **Apply** on a row → exactly that node is created on the canvas
+   (empty content, your edited goal, its planned position), the viewport
+   centers on it, and the row flips to **Created ✓** (locked). No edges are
+   drawn yet — connections are their own review stage (67-8).
+4. The proposal STAYS pending while rows remain: apply nodes in any order,
+   reload mid-way and find the card exactly as you left it, and the strip
+   shows the session in the simulating phase with each created node pending
+   for Solve.
+5. Whole-plan **Apply** still works at any point: it creates only the
+   remaining rows and wires edges to the already-created nodes' real ids.
+   **Dismiss** after partial work keeps the created nodes (they are real,
+   reviewed nodes) and only kills the not-yet-applied rows.
+6. What no longer happens: bulk-creating the whole graph from one click as
+   the DEFAULT, plans carrying "trivial" pre-written code, and a user edit to
+   an unrelated part of the canvas breaking the plan's own progress.
+
 ## 2. Scope
 
 In scope:
