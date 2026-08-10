@@ -241,7 +241,14 @@ export interface AgentApplyResult {
    * graph delta, for the live canvas. */
   appliedGraph?: {
     nodes: AgentCreatedNodePayload[];
-    edges: Array<{ id: string; source: string; target: string }>;
+    edges: Array<{
+      id: string;
+      source: string;
+      target: string;
+      /** dev/67-3: explicit handles from the apply (merge slots in_N). */
+      sourceHandle?: string;
+      targetHandle?: string;
+    }>;
     removedNodeIds?: string[];
     removedEdgeIds?: string[];
   };

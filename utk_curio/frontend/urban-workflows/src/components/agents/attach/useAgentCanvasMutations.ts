@@ -96,8 +96,11 @@ export function useAgentCanvasMutations(): void {
             id: edge.id,
             source: edge.source,
             target: edge.target,
-            sourceHandle: "out",
-            targetHandle: "in",
+            // dev/67-3: the apply assigns real handles (merge slots in_N) —
+            // pass them through; hardcoding "in" left merge slots unfilled
+            // until a reload healed them.
+            sourceHandle: edge.sourceHandle ?? "out",
+            targetHandle: edge.targetHandle ?? "in",
             type: EdgeType.UNIDIRECTIONAL_EDGE,
             markerEnd: { type: "arrow" },
             // Parity with loadTrill's add_edge (dev/58): the edge components

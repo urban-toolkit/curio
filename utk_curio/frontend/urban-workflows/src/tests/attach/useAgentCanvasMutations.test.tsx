@@ -200,6 +200,24 @@ describe("graph-created (dev/52 — a whole applied plan)", () => {
     expect(mockCreateCodeNode).toHaveBeenCalledTimes(2); // not 4
   });
 
+  it("passes the apply's explicit handles through (merge slots, dev/67-3)", () => {
+    render(<Host />);
+    act(() =>
+      notifyAgentCanvasMutation({
+        ...GRAPH,
+        planId: "plan-handles",
+        edges: [
+          { id: "e-m", source: "ga", target: "gm", sourceHandle: "out", targetHandle: "in_1" },
+          { id: "e-plain", source: "ga", target: "gb" },
+        ],
+      }),
+    );
+    const changes = mockOnEdgesChange.mock.calls[0][0];
+    // The merge slot survives; handle-less edges keep loadTrill defaults.
+    expect(changes[0].item).toMatchObject({ id: "e-m", targetHandle: "in_1", sourceHandle: "out" });
+    expect(changes[1].item).toMatchObject({ id: "e-plain", targetHandle: "in", sourceHandle: "out" });
+  });
+
   it("skips nodes already live (partial replays)", () => {
     mockGetNodes.mockReturnValue([{ id: "ga" }]);
     render(<Host />);

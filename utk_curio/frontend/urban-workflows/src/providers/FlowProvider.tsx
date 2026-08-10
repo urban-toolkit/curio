@@ -895,6 +895,41 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 }
 
 
+                // dev/67-3 (DEC-051): one edge per rendered input handle —
+                // the merge slot machinery above is the ONLY multi-edge
+                // surface. Before this guard, a second edge into an occupied
+                // handle silently overwrote `data.input` (last writer wins),
+                // and deleting either edge blanked the input for both. The
+                // load path only warns: persisted edges are surfaced, never
+                // dropped.
+                if (
+                    allowConnection &&
+                    inNodeType !== NodeType.MERGE_FLOW &&
+                    isInHandle(connection.targetHandle)
+                ) {
+                    const handleOccupied = edges.some(
+                        (edge: Edge) =>
+                            edge.target === connection.target &&
+                            (edge.targetHandle ?? "in") === (connection.targetHandle ?? "in"),
+                    );
+                    if (handleOccupied) {
+                        if (skipValidation) {
+                            console.warn(
+                                `[FlowProvider] persisted multi-input edge into ` +
+                                `${connection.target} (${connection.targetHandle}) — ` +
+                                `only one input is honored at runtime; route flows ` +
+                                `through a Merge node`,
+                            );
+                        } else {
+                            showToast(
+                                "This input already has a connection — route multiple flows through a Merge node.",
+                                "warning",
+                            );
+                            allowConnection = false;
+                        }
+                    }
+                }
+
                 // Checking cycles
                 if (target.id === connection.source) {
                     showToast("Cycles are not allowed in the dataflow", "warning");
