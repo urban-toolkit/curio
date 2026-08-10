@@ -3762,22 +3762,25 @@ class TestDataflowPlanApply:
         resp = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
         assert resp.status_code == 200  # deliberate: additive plans survive content edits
 
-    def test_plan_with_full_content_lands_ready(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_plan_carried_content_is_refused_at_mint(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # dev/67-5 supersedes dev/52's "trivial code" allowance (67-0: no
+        # shortcut) — plans describe intent; content is generated and
+        # validated per node after creation. The refusal is corrective.
         user, token = user_and_token
         nodes = [{"ref": "a", "nodeType": "curio.builtin/computation-analysis",
                   "title": "Done", "intent": "already coded", "content": "print('x')"}]
         helper = TestDataflowPlanMint()
-        att_id, _ = helper._setup(
+        att_id, calls = helper._setup(
             client, user, token, alice_project, monkeypatch,
-            replies=["plan.\n" + helper._plan_tail(nodes=nodes, edges=[])],
+            replies=["plan.\n" + helper._plan_tail(nodes=nodes, edges=[]),
+                     "fixed.\n" + helper._plan_tail()],
         )
         r = helper._run(client, token, alice_project, att_id)
         proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
-        body = self._apply(client, token, alice_project, att_id, proposal["proposalId"]).get_json()
-        assert body["builderSession"]["phase"] == "ready"
-        assert body["builderSession"]["nodeRuns"] == {}
-        node = next(n for n in self._spec(user, alice_project)["dataflow"]["nodes"] if n.get("goal", "").startswith("Done"))
-        assert node["content"] == "print('x')"
+        assert proposal["status"] == "pending"  # the content-less replan minted
+        feedback = calls[1][-1]["content"]
+        assert "must not carry content" in feedback
+        assert "'a'" in feedback
 
     def test_dismissed_plan_returns_the_session_to_idle(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
@@ -4764,6 +4767,165 @@ class TestDestructiveReplan:
         assert "removeContentSha256" not in proposal["pins"]
         assert "removals" not in proposal["plan"]
         assert proposal["summary"] == "Apply plan · 1 nodes, 0 edges"
+
+
+class TestPerNodePlanApply:
+    """dev/67-5 — Simulation Mode: create. Per-node Apply narrows the plan
+    proposal (which stays pending), editable goals overlay creation, and
+    sequential per-node application reproduces the whole-plan nodes."""
+
+    def _mint(self, client, user, token, project_id, monkeypatch, plan=None):
+        import json as _json
+
+        helper = TestDataflowPlanMint()
+        if plan is None:
+            reply = None  # helper default: 2 nodes a→b
+            att_id, _ = helper._setup(client, user, token, project_id, monkeypatch)
+        else:
+            reply = f"Plan.\n```curio.v1\n{_json.dumps({'dataflowPlan': plan})}\n```"
+            att_id, _ = helper._setup(
+                client, user, token, project_id, monkeypatch, replies=[reply],
+            )
+        r = helper._run(client, token, project_id, att_id)
+        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
+        return att_id, proposal
+
+    def _apply_node(self, client, token, project_id, att_id, proposal_id, ref):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal_id}/apply-node",
+            json={"ref": ref}, headers=_auth(token),
+        )
+
+    def _spec_nodes(self, user, project_id):
+        # The helper's seeded spec carries a baseline node "n1" — the plan's
+        # creations are everything else.
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        nodes = projects_storage.read_spec(_user_dir_key(user), project_id)["dataflow"]["nodes"]
+        return [n for n in nodes if n.get("id") != "n1"]
+
+    def test_apply_node_creates_one_node_and_keeps_the_proposal_pending(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        ref = proposal["plan"]["nodes"][0]["ref"]
+        body = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], ref).get_json()
+        assert body["status"] == "pending"  # more refs remain
+        created = body["createdNode"]
+        assert created["content"] == ""  # never a knowingly-unresolved shortcut
+        nodes = self._spec_nodes(user, alice_project)
+        assert [n["id"] for n in nodes] == [created["id"]]  # exactly ONE node
+        session = body["builderSession"]
+        assert session["phase"] == "simulating"
+        assert session["nodeStates"][ref] == "created"
+        assert session["nodeRuns"][created["id"]] == "pending"
+        # The second ref is still planned; the mirror survives reloads.
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        active = next(c for c in cards if c["attachmentId"] == att_id)["activeProposal"]
+        assert active["status"] == "pending"
+        assert active["appliedRefs"] == [ref]
+
+    def test_apply_node_is_idempotent_per_ref(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        ref = proposal["plan"]["nodes"][0]["ref"]
+        first = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], ref).get_json()
+        second = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], ref).get_json()
+        assert second["status"] == "already-applied"
+        assert second["nodeId"] == first["createdNode"]["id"]
+        assert len(self._spec_nodes(user, alice_project)) == 1
+
+    def test_edited_goal_overlays_creation(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        ref = proposal["plan"]["nodes"][0]["ref"]
+        r = client.patch(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/plan-goals",
+            json={"ref": ref, "goal": "Load ONLY the 2024 heat data"},
+            headers=_auth(token),
+        )
+        assert r.status_code == 200
+        assert r.get_json()["editedGoals"] == {ref: "Load ONLY the 2024 heat data"}
+        body = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], ref).get_json()
+        assert body["createdNode"]["goal"] == "Load ONLY the 2024 heat data"
+
+    def test_goal_edit_guards(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        base = f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/plan-goals"
+        assert client.patch(base, json={"ref": "ghost", "goal": "x"}, headers=_auth(token)).status_code == 404
+        assert client.patch(
+            base, json={"ref": proposal["plan"]["nodes"][0]["ref"], "goal": "  "},
+            headers=_auth(token),
+        ).status_code == 422
+
+    def test_sequential_application_reproduces_the_whole_plan_nodes(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        for node in proposal["plan"]["nodes"]:
+            r = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], node["ref"])
+            assert r.status_code == 200
+        created = self._spec_nodes(user, alice_project)
+        assert len(created) == len(proposal["plan"]["nodes"])
+        # Positions come from the ONE mint-time layout — distinct columns for
+        # the a→b chain, exactly where the whole-plan apply places them.
+        assert created[0]["x"] != created[1]["x"]
+        assert {n["goal"].split(" — ")[0] for n in created} == {
+            n["title"] for n in proposal["plan"]["nodes"]
+        }
+        # The proposal is still pending: edges await the connection stage (67-8).
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        active = next(c for c in cards if c["attachmentId"] == att_id)["activeProposal"]
+        assert active["status"] == "pending"
+        assert sorted(active["appliedRefs"]) == sorted(
+            n["ref"] for n in proposal["plan"]["nodes"]
+        )
+
+    def test_whole_plan_apply_after_partial_wires_edges_to_real_ids(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        first_ref = proposal["plan"]["nodes"][0]["ref"]
+        first = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], first_ref).get_json()
+        body = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        ).get_json()
+        # The already-created ref is NOT duplicated; the edge wires to it.
+        assert len(self._spec_nodes(user, alice_project)) == len(proposal["plan"]["nodes"])
+        (edge,) = [e for e in body["appliedGraph"]["edges"]]
+        assert edge["source"] == first["createdNode"]["id"]
+
+    def test_dismiss_after_partial_keeps_created_nodes(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        ref = proposal["plan"]["nodes"][0]["ref"]
+        self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], ref)
+        r = client.delete(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}",
+            headers=_auth(token),
+        )
+        assert r.status_code == 200
+        # The created node is a real reviewed node — it survives the dismissal.
+        assert len(self._spec_nodes(user, alice_project)) == 1
+        # Remaining refs died with the proposal.
+        assert self._apply_node(
+            client, token, alice_project, att_id, proposal["proposalId"],
+            proposal["plan"]["nodes"][1]["ref"],
+        ).status_code == 409
+
+    def test_expects_rides_the_plan_card(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        plan = {"goal": "g", "nodes": [
+            {"ref": "a", "nodeType": "curio.builtin/computation-analysis",
+             "title": "Load", "intent": "load it",
+             "expects": "in: none · out: dataframe"},
+        ], "edges": []}
+        _, proposal = self._mint(client, user, token, alice_project, monkeypatch, plan=plan)
+        assert proposal["plan"]["nodes"][0]["expects"] == "in: none · out: dataframe"
 
 
 class TestPlanFanInValidation:

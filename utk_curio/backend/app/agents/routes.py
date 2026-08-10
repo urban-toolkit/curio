@@ -444,6 +444,61 @@ def apply_proposal(project_id: str, attachment_id: str, proposal_id: str):
 
 
 @agents_bp.route(
+    "/projects/<project_id>/attachments/<attachment_id>/proposals/<proposal_id>/apply-node",
+    methods=["POST"],
+)
+@require_auth
+def apply_plan_node(project_id: str, attachment_id: str, proposal_id: str):
+    """Apply ONE planned node from a pending dataflow-plan proposal
+    (dev/67-5, Simulation Mode: create). Body: ``{"ref": "<plan ref>"}``.
+    The proposal stays pending until every ref is applied or it is dismissed;
+    edges are the connection stage's concern (67-8)."""
+    body = request.get_json(silent=True) or {}
+    ref = body.get("ref")
+    if not isinstance(ref, str) or not ref.strip():
+        return _error("body must include a non-empty 'ref'")
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        payload = agents_services.apply_plan_node(
+            _user_dir_key(g.user), project_id, attachment_id, proposal_id, ref.strip()
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify(payload), 200
+
+
+@agents_bp.route(
+    "/projects/<project_id>/attachments/<attachment_id>/proposals/<proposal_id>/plan-goals",
+    methods=["PATCH"],
+)
+@require_auth
+def set_plan_goal(project_id: str, attachment_id: str, proposal_id: str):
+    """Edit one planned node's goal before creation (dev/67-5): an audited
+    review-stage overlay — the pinned plan bytes stay immutable. Body:
+    ``{"ref": "<plan ref>", "goal": "<edited goal>"}``. Pending only."""
+    body = request.get_json(silent=True) or {}
+    ref = body.get("ref")
+    goal = body.get("goal")
+    if not isinstance(ref, str) or not ref.strip():
+        return _error("body must include a non-empty 'ref'")
+    if not isinstance(goal, str):
+        return _error("body must include a 'goal' string")
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        payload = agents_services.set_plan_goal(
+            _user_dir_key(g.user), project_id, attachment_id, proposal_id,
+            ref.strip(), goal,
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify(payload), 200
+
+
+@agents_bp.route(
     "/projects/<project_id>/attachments/<attachment_id>/proposals/<proposal_id>",
     methods=["DELETE"],
 )

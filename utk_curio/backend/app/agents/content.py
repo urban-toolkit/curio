@@ -76,6 +76,8 @@ _PLAN_REMOVAL_ID_MAX_CHARS = 64
 # dev/67-3: an edge may name the target's input handle (merge slots in_0..in_4;
 # named handles like in_points). The mint validates semantics; this is shape.
 _PLAN_TO_HANDLE_MAX_CHARS = 24
+# dev/67-5: an optional one-liner of expected input/output for the plan card.
+_PLAN_EXPECTS_MAX_CHARS = 160
 
 # datasetCandidates bounds (memo dev/50 — the docs/06 two-lane row contract).
 # Rows are informational display metadata; every string is bounded here and
@@ -401,6 +403,13 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
                 )
             else:
                 node["content"] = node_content
+        node_expects = node_raw.get("expects")
+        if node_expects is not None:
+            err = _field_error(f"{where}.expects", node_expects, _PLAN_EXPECTS_MAX_CHARS)
+            if err:
+                errors.append(err)
+                continue
+            node["expects"] = str(node_expects).strip()
         nodes.append(node)
     plan["nodes"] = nodes
     edges_raw = raw.get("edges", [])

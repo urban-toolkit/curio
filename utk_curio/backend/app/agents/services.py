@@ -636,13 +636,18 @@ def _attachment_card(spec: dict, record: dict, user_key: str) -> dict:
 def _proposal_summary(proposal: object) -> dict | None:
     if not isinstance(proposal, dict):
         return None
-    return {
+    summary = {
         "proposalId": proposal.get("proposalId"),
         "tool": proposal.get("tool"),
         "nodeId": proposal.get("nodeId"),
         "summary": proposal.get("summary"),
         "status": proposal.get("status"),
     }
+    # dev/67-5: the per-node review state survives reloads through the mirror.
+    if proposal.get("tool") == "dataflow.plan.write":
+        summary["editedGoals"] = dict(proposal.get("editedGoals") or {})
+        summary["appliedRefs"] = list(proposal.get("appliedRefs") or [])
+    return summary
 
 
 def list_project_attachments(user_key: str, project_id: str) -> list[dict]:
@@ -1300,13 +1305,19 @@ def _mint_dataflow_plan(
     session_id = loop_ctx.get("session_id")
     if not isinstance(session_id, str):
         return "refused", "proposals need a persistent conversation", None
-    # Plan-carried content is model output too: only the executable content
-    # is proposed (dev/57).
-    for node in plan["nodes"]:
-        if node.get("content"):
-            node["content"] = content.extract_node_content(node["content"])
-            if not node["content"]:
-                node.pop("content")
+    # dev/67-5: plans describe intent — generated code never rides a plan.
+    # There is no "trivial code" shortcut (67-0): every node's content is
+    # produced and validated per node after creation. Supersedes dev/52's
+    # plan-carried-content allowance at its recorded revisit point.
+    content_refs = [n["ref"] for n in plan["nodes"] if n.get("content")]
+    if content_refs:
+        return (
+            "refused",
+            "plan nodes must not carry content — plans describe intent; node "
+            "content is generated and validated per node after creation. "
+            f"Remove the content from: {', '.join(repr(r) for r in content_refs)}",
+            None,
+        )
     try:
         available = {t["id"]: t for t in packages_services.available_templates(user_key, project_id)}
     except Exception as exc:
@@ -1318,13 +1329,6 @@ def _mint_dataflow_plan(
                 "refused",
                 f"plan node {node['ref']!r} uses {node['nodeType']!r}, which is not an "
                 "available template for this project",
-                None,
-            )
-        if node.get("content") and not entry.get("authorable"):
-            return (
-                "refused",
-                f"plan node {node['ref']!r} carries content but template "
-                f"{node['nodeType']!r} does not hold authored content",
                 None,
             )
     spec = projects_storage.read_spec(user_key, project_id)
@@ -1384,6 +1388,25 @@ def _mint_dataflow_plan(
         if (e.get("source") in remove_node_set or e.get("target") in remove_node_set)
         and str(e.get("id")) not in set(remove_edges)
     ]
+    # dev/67-5: positions are computed ONCE at mint, so per-node applies land
+    # exactly where the whole-plan apply would have put them (and both read
+    # the same map). Extent from the pre-removal spec — victims may inflate
+    # it slightly; a stable layout beats a perfectly tight one.
+    xs = [n.get("x") for n in existing_nodes.values() if isinstance(n.get("x"), (int, float))]
+    ys = [n.get("y") for n in existing_nodes.values() if isinstance(n.get("y"), (int, float))]
+    layout_base_x = (max(xs) + _PLAN_COLUMN_OFFSET) if xs else 80.0
+    layout_base_y = min(ys) if ys else 80.0
+    layout_depths = _plan_depths(plan["nodes"], plan["edges"])
+    layout_rows: dict[int, int] = {}
+    positions: dict[str, dict] = {}
+    for node in plan["nodes"]:
+        depth = layout_depths.get(node["ref"], 0)
+        row = layout_rows.get(depth, 0)
+        layout_rows[depth] = row + 1
+        positions[node["ref"]] = {
+            "x": float(layout_base_x + depth * _PLAN_COLUMN_OFFSET),
+            "y": float(layout_base_y + row * _PLAN_ROW_OFFSET),
+        }
     digest = _graph_shape_digest(spec)
     pins: dict = {"baseGraphDigest": digest}
     if remove_nodes:
@@ -1419,7 +1442,11 @@ def _mint_dataflow_plan(
         "goal": plan["goal"],
         **({"templateId": plan["templateId"]} if plan.get("templateId") else {}),
         "nodes": [
-            {"ref": n["ref"], "nodeType": n["nodeType"], "title": n["title"], "intent": n["intent"]}
+            {
+                "ref": n["ref"], "nodeType": n["nodeType"], "title": n["title"],
+                "intent": n["intent"],
+                **({"expects": n["expects"]} if n.get("expects") else {}),
+            }
             for n in plan["nodes"]
         ],
         "edgeCount": n_edges,
@@ -1445,6 +1472,9 @@ def _mint_dataflow_plan(
         session = record.setdefault("builderSession", {})
         session["phase"] = "plan_review"
         session["planProposalId"] = proposal_id
+        # dev/67-5: the per-node Simulation Mode ledger — reset per plan.
+        session["nodeStates"] = {n["ref"]: "planned" for n in plan["nodes"]}
+        session["nodeIds"] = {}
     _store_proposal(
         user_key,
         project_id,
@@ -1455,6 +1485,11 @@ def _mint_dataflow_plan(
             "tool": "dataflow.plan.write",
             "plan": plan,
             "baseGraphDigest": digest,
+            # dev/67-5: per-node application state + the mint-time layout.
+            "positions": positions,
+            "editedGoals": {},
+            "appliedRefs": [],
+            "appliedNodeIds": {},
             # DEC-049.1: the apply re-checks each victim against this mirror.
             **(
                 {"removeContentSha256": pins["removeContentSha256"]}
@@ -1467,6 +1502,176 @@ def _mint_dataflow_plan(
         part,
     )
     return "proposed", "", part
+
+
+# dev/67-5: review-stage goal edits are bounded like plan intents.
+_PLAN_GOAL_EDIT_MAX_CHARS = 300
+
+
+def _pending_plan_proposal(spec: dict, attachment_id: str, proposal_id: str) -> dict:
+    """The dev/67-5 per-node review preamble: the attachment's active
+    dataflow-plan proposal, pending, matching *proposal_id* — or the honest
+    404/409."""
+    proposal = attachments.get_active_proposal(spec, attachment_id)
+    if proposal is None or proposal.get("proposalId") != proposal_id:
+        raise AgentServiceError(f"proposal {proposal_id!r} not found", 404)
+    status = proposal.get("status")
+    if status != "pending":
+        raise AgentServiceError(
+            f"this proposal is {status!r} and can no longer be worked on", 409
+        )
+    if proposal.get("tool") != "dataflow.plan.write":
+        raise AgentServiceError("this proposal is not a dataflow plan", 409)
+    return proposal
+
+
+def set_plan_goal(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    proposal_id: str,
+    ref: str,
+    goal: str,
+) -> dict:
+    """dev/67-5: review-stage goal editing — an audited overlay applied at
+    creation. The PINNED plan bytes stay immutable (the digest model
+    survives); the overlay lives on the proposal and rides the mirror so it
+    survives reloads. Pending proposals only."""
+    spec = _read_spec_or_404(user_key, project_id)
+    _record_or_404(spec, attachment_id)
+    proposal = _pending_plan_proposal(spec, attachment_id, proposal_id)
+    refs = {n["ref"] for n in (proposal.get("plan") or {}).get("nodes", [])}
+    if ref not in refs:
+        raise AgentServiceError(f"ref {ref!r} is not a node in this plan", 404)
+    if not isinstance(goal, str) or not goal.strip():
+        raise AgentServiceError("goal must be a non-empty string", 422)
+    goal = goal.strip()
+    if len(goal) > _PLAN_GOAL_EDIT_MAX_CHARS:
+        raise AgentServiceError(
+            f"goal exceeds {_PLAN_GOAL_EDIT_MAX_CHARS} characters", 422
+        )
+    edited = proposal.setdefault("editedGoals", {})
+    edited[ref] = goal
+    projects_storage.write_spec(user_key, project_id, spec)
+    return {
+        "attachmentId": attachment_id,
+        "proposalId": proposal_id,
+        "ref": ref,
+        "goal": goal,
+        "editedGoals": dict(edited),
+    }
+
+
+def apply_plan_node(
+    user_key: str, project_id: str, attachment_id: str, proposal_id: str, ref: str
+) -> dict:
+    """dev/67-5: apply ONE planned node — the per-node narrowing of the plan
+    apply (Simulation Mode: create). Edges are the connection stage's concern
+    (67-8); the proposal STAYS pending until every ref is applied or it is
+    dismissed. A pure node ADD is drift-safe, so the whole-graph digest is not
+    re-checked here — the ref's slice of the apply contract is: proposal
+    pending (a stale/dismissed one refuses at the status gate) + the template
+    still available. Creation uses the mint-time position and the (possibly
+    edited) goal; the created node joins ``nodeRuns`` as ``pending`` so Solve
+    and the 67-6/67-7 stages pick it up."""
+    from utk_curio.backend.app.packages import services as packages_services
+
+    spec = _read_spec_or_404(user_key, project_id)
+    record = _record_or_404(spec, attachment_id)
+    proposal = _pending_plan_proposal(spec, attachment_id, proposal_id)
+    plan = proposal.get("plan") or {}
+    plan_node = next((n for n in plan.get("nodes", []) if n["ref"] == ref), None)
+    if plan_node is None:
+        raise AgentServiceError(f"ref {ref!r} is not a node in this plan", 404)
+    applied_refs = proposal.setdefault("appliedRefs", [])
+    applied_ids = proposal.setdefault("appliedNodeIds", {})
+    session_id = record.get("sessionId")
+    if ref in applied_refs:
+        # Idempotent: the node exists; say so honestly, change nothing.
+        return {
+            "attachmentId": attachment_id,
+            "proposalId": proposal_id,
+            "status": "already-applied",
+            "ref": ref,
+            "nodeId": applied_ids.get(ref),
+            "appliedRefs": list(applied_refs),
+            "builderSession": record.get("builderSession"),
+        }
+    try:
+        available = {t["id"] for t in packages_services.available_templates(user_key, project_id)}
+    except Exception as exc:
+        raise _mark_stale(
+            user_key, project_id, proposal_id, spec, proposal, session_id,
+            f"the node template registry is unavailable: {exc}",
+        ) from exc
+    if plan_node["nodeType"] not in available:
+        raise _mark_stale(
+            user_key, project_id, proposal_id, spec, proposal, session_id,
+            f"node type {plan_node['nodeType']!r} is no longer available — "
+            "ask the agent to replan",
+        )
+    pos = (proposal.get("positions") or {}).get(ref) or {}
+    goal_text = (proposal.get("editedGoals") or {}).get(ref) or (
+        f"{plan_node['title']} — {plan_node['intent']}"
+    )
+    node_id = str(uuid.uuid4())
+    created = {
+        "id": node_id,
+        "type": plan_node["nodeType"],
+        "content": "",
+        "goal": goal_text,
+        "x": float(pos.get("x", 80.0)),
+        "y": float(pos.get("y", 80.0)),
+    }
+    dataflow = spec.setdefault("dataflow", {})
+    dataflow.setdefault("nodes", []).append(created)
+    applied_refs.append(ref)
+    applied_ids[ref] = node_id
+    # Re-pin the shape digest to the spec THIS apply produced: the plan's own
+    # per-node progress is legitimate drift for a later whole-plan apply;
+    # foreign edits between applies still 409 + stale.
+    proposal["baseGraphDigest"] = _graph_shape_digest(spec)
+    session = record.setdefault("builderSession", {})
+    session["phase"] = "simulating"
+    session["appliedPlanId"] = proposal_id
+    session.setdefault("nodeStates", {})[ref] = "created"
+    session.setdefault("nodeIds", {})[ref] = node_id
+    session.setdefault("nodeRuns", {})[node_id] = "pending"
+    projects_storage.write_spec(user_key, project_id, spec)
+    if isinstance(session_id, str):
+        # A result card WITHOUT flipping the proposal part: it stays pending
+        # for the remaining refs (unlike _log_applied_turn's applied flip).
+        sessions.append_turns(
+            user_key, project_id, session_id, attachment_id,
+            [
+                sessions.make_turn(
+                    "agent",
+                    f"Applied: created node {plan_node['title']!r} from the plan "
+                    f"({len(applied_refs)} of {len(plan.get('nodes', []))}).",
+                    content=[{
+                        "type": "card",
+                        "kind": "result",
+                        "title": "Applied: plan node created",
+                        "lines": [
+                            f"{plan_node['title']} · {plan_node['nodeType']}",
+                            f"node {node_id[:8]}",
+                            f"{len(applied_refs)} of {len(plan.get('nodes', []))} plan nodes created",
+                            f"proposal {proposal_id[:8]}",
+                        ],
+                    }],
+                )
+            ],
+        )
+    return {
+        "attachmentId": attachment_id,
+        "proposalId": proposal_id,
+        "status": "pending",
+        "ref": ref,
+        # The bridge's node-created payload shape (dev/48 §3.3).
+        "createdNode": dict(created),
+        "appliedRefs": list(applied_refs),
+        "builderSession": session,
+    }
 
 
 def _plan_correction_message(errors: list[str]) -> dict:
@@ -1763,21 +1968,31 @@ def _apply_dataflow_plan(
     base_y = min(ys) if ys else 80.0
     depths = _plan_depths(plan.get("nodes", []), plan.get("edges", []))
     rows: dict[int, int] = {}
-    ref_to_id: dict[str, str] = {}
+    # dev/67-5: the mint-time layout + review-stage overlays; refs already
+    # applied per-node are REAL nodes — skipped here, their ids seed the edge
+    # resolution so mixed per-node/whole-plan flows wire correctly.
+    positions = proposal.get("positions") or {}
+    edited_goals = proposal.get("editedGoals") or {}
+    already_applied = set(proposal.get("appliedRefs") or [])
+    ref_to_id: dict[str, str] = dict(proposal.get("appliedNodeIds") or {})
     created_nodes: list[dict] = []
     for plan_node in plan.get("nodes", []):
         depth = depths.get(plan_node["ref"], 0)
         row = rows.get(depth, 0)
         rows[depth] = row + 1
+        if plan_node["ref"] in already_applied:
+            continue
         node_id = str(uuid.uuid4())
         ref_to_id[plan_node["ref"]] = node_id
+        pos = positions.get(plan_node["ref"]) or {}
         created = {
             "id": node_id,
             "type": plan_node["nodeType"],
             "content": plan_node.get("content", ""),
-            "goal": f"{plan_node['title']} — {plan_node['intent']}",
-            "x": float(base_x + depth * _PLAN_COLUMN_OFFSET),
-            "y": float(base_y + row * _PLAN_ROW_OFFSET),
+            "goal": edited_goals.get(plan_node["ref"])
+            or f"{plan_node['title']} — {plan_node['intent']}",
+            "x": float(pos.get("x", base_x + depth * _PLAN_COLUMN_OFFSET)),
+            "y": float(pos.get("y", base_y + row * _PLAN_ROW_OFFSET)),
         }
         nodes.append(created)
         created_nodes.append(created)
@@ -1852,6 +2067,9 @@ def _apply_dataflow_plan(
             "phase": "applied" if unresolved else "ready",
             "appliedPlanId": proposal_id,
             "nodeRuns": node_runs,
+            # dev/67-5: the whole-plan apply completes every ref's ledger row.
+            "nodeStates": {ref: "created" for ref in ref_to_id},
+            "nodeIds": dict(ref_to_id),
         }
     projects_storage.write_spec(user_key, project_id, spec)
     removed_summary = (
