@@ -117,6 +117,7 @@ class TestNodeBuilderComposite:
         assert [t.kind for t in m.compatible_targets] == ["canvas"]
         assert [t.id for t in m.tools] == [
             "dataflow.read", "node.create", "node.template.create",
+            "node.runtime.read",  # dev/67-2: diagnose before regenerating
         ]
         assert m.provenance.trust == "built-in"
 
@@ -167,7 +168,7 @@ class TestDatasetFinderComposite:
         # The docs/06 Data-Load gate: requires rides the node target only.
         assert by_kind["node"].requires == ["data-loading"]
         assert by_kind["canvas"].requires == []
-        assert [t.id for t in m.tools] == ["catalog.search", "dataset.install"]
+        assert [t.id for t in m.tools] == ["catalog.search", "dataset.install", "dataflow.read"]
         assert m.provenance.trust == "built-in"
 
     def test_net_new_instruction_resolves(self):
@@ -193,7 +194,7 @@ class TestDataflowBuilderComposite:
             "agent.plan-coherence-validator", "agent.dataflow-explainer",
         ]
         assert [t.kind for t in m.compatible_targets] == ["canvas"]
-        assert [t.id for t in m.tools] == ["dataflow.read", "dataflow.plan.write"]
+        assert [t.id for t in m.tools] == ["dataflow.read", "dataflow.plan.write", "node.runtime.read"]
         assert m.provenance.trust == "built-in"
 
     def test_net_new_instruction_resolves(self):

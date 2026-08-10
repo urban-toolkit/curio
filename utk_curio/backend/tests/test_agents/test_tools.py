@@ -24,7 +24,7 @@ class TestRegistry:
         assert set(tools.REGISTRY) == {
             "dataflow.read", "node.read", "node.content.write", "node.create",
             "node.template.create", "catalog.search", "dataset.install",
-            "dataflow.plan.write",
+            "dataflow.plan.write", "node.runtime.read",
         }
         assert tools.REGISTRY["dataflow.read"].effect == "read"
         assert tools.REGISTRY["node.read"].effect == "read"
@@ -34,6 +34,7 @@ class TestRegistry:
         assert tools.REGISTRY["catalog.search"].effect == "read"
         assert tools.REGISTRY["dataset.install"].effect == "mutate"
         assert tools.REGISTRY["dataflow.plan.write"].effect == "mutate"
+        assert tools.REGISTRY["node.runtime.read"].effect == "read"
 
     def test_contract_validates_effect(self):
         with pytest.raises(ValueError):
@@ -102,11 +103,19 @@ class TestExecuteReadTool:
             "dataflow.read", user_key=self.UKEY, project_id=self.PID, target=None, params={}
         )
         assert status == "ok"
+        # Rule-9 posture: agent sections never enter model context — in the
+        # dev/67-2 projection AND the include=content full dump.
+        assert "agentAttachments" not in text and '"agents"' not in text
         payload = json.loads(text)
-        # Rule-9 posture: agent sections never enter model context.
-        assert "agents" not in payload["dataflow"]
-        assert "agentAttachments" not in payload["dataflow"]
-        assert payload["dataflow"]["nodes"][0]["id"] == "n1"
+        assert payload["nodes"][0]["id"] == "n1"
+        status, text = tools.execute_read_tool(
+            "dataflow.read", user_key=self.UKEY, project_id=self.PID, target=None,
+            params={"include": ["content"]},
+        )
+        full = json.loads(text)
+        assert "agents" not in full["dataflow"]
+        assert "agentAttachments" not in full["dataflow"]
+        assert full["dataflow"]["nodes"][0]["content"] == "print(1)"
 
     def test_dataflow_read_without_spec_is_an_error_result(self, tmp_curio):
         status, text = tools.execute_read_tool(
@@ -172,3 +181,129 @@ class TestExecuteReadTool:
         assert status == "ok"
         assert len(text) <= tools.TOOL_RESULT_MAX_CHARS + 100
         assert "truncated" in text
+
+
+class TestDataflowReadProjection:
+    """dev/67-2 — structure-first dataflow.read: ALL edges survive specs whose
+    node contents previously pushed the edge list past the truncation bound."""
+
+    UKEY = "42"
+    PID = "p-projection"
+
+    def _write_big_spec(self, n_nodes=40, content_chars=2000):
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        nodes = [
+            {"id": f"n{i}", "type": "curio.builtin/computation-analysis",
+             "goal": f"step {i}", "content": "x" * content_chars}
+            for i in range(n_nodes)
+        ]
+        edges = [
+            {"id": f"e{i}", "source": f"n{i}", "target": f"n{i+1}"}
+            for i in range(n_nodes - 1)
+        ]
+        spec = {"dataflow": {"nodes": nodes, "edges": edges, "name": "wf", "task": "goal"}}
+        projects_storage.write_spec(self.UKEY, self.PID, spec)
+        return nodes, edges
+
+    def test_all_edges_survive_a_spec_that_used_to_truncate_them(self, tmp_curio):
+        nodes, edges = self._write_big_spec()
+        # The pre-dev/67-2 dump of this spec exceeds the bound — edges died.
+        status, text = tools.execute_read_tool(
+            "dataflow.read", user_key=self.UKEY, project_id=self.PID, target=None, params={}
+        )
+        assert status == "ok"
+        payload = json.loads(text)
+        assert len(payload["edges"]) == len(edges)  # every edge, always
+        row = payload["nodes"][0]
+        assert row["hasContent"] is True and row["contentChars"] == 2000
+        assert "x" * 50 not in text  # content elided — node.read serves it
+
+    def test_runtime_status_rides_the_projection(self, tmp_curio):
+        from utk_curio.backend.app.execution import runtime_journal
+
+        self._write_big_spec(n_nodes=3, content_chars=10)
+        runtime_journal.record_execution(
+            self.UKEY, self.PID, "n1",
+            code="x", stdout=[], stderr="boom",
+            output={"path": "", "dataType": "str"},
+            started_at="2026-08-05T00:00:00Z", duration_ms=1,
+        )
+        _, text = tools.execute_read_tool(
+            "dataflow.read", user_key=self.UKEY, project_id=self.PID, target=None, params={}
+        )
+        assert json.loads(text)["runtime"]["n1"]["status"] == "error"
+
+    def test_edge_handles_survive_when_present(self, tmp_curio):
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        spec = {"dataflow": {"nodes": [
+            {"id": "a", "type": "t", "content": ""},
+            {"id": "m", "type": "curio.builtin/merge-flow", "content": ""},
+        ], "edges": [
+            {"id": "e1", "source": "a", "target": "m",
+             "sourceHandle": "out", "targetHandle": "in_0"},
+        ]}}
+        projects_storage.write_spec(self.UKEY, self.PID, spec)
+        _, text = tools.execute_read_tool(
+            "dataflow.read", user_key=self.UKEY, project_id=self.PID, target=None, params={}
+        )
+        assert json.loads(text)["edges"][0]["targetHandle"] == "in_0"
+
+
+class TestNodeRuntimeRead:
+    """dev/67-2 — the journal's read tool: honest never-executed, traceback
+    evidence, and the best-effort content-changed signal."""
+
+    UKEY = "42"
+    PID = "p-runtime"
+
+    def _write_spec(self, content="print(1)"):
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        spec = {"dataflow": {"nodes": [
+            {"id": "n1", "type": "curio.builtin/computation-analysis", "content": content},
+        ], "edges": []}}
+        projects_storage.write_spec(self.UKEY, self.PID, spec)
+
+    def _read(self, params=None, target=None):
+        return tools.execute_read_tool(
+            "node.runtime.read", user_key=self.UKEY, project_id=self.PID,
+            target=target, params=params or {},
+        )
+
+    def test_never_executed_is_honest(self, tmp_curio):
+        self._write_spec()
+        status, text = self._read({"nodeId": "n1"})
+        assert status == "ok"
+        assert json.loads(text) == {"nodeId": "n1", "status": "never-executed"}
+
+    def test_failure_record_with_content_change_signal(self, tmp_curio):
+        from utk_curio.backend.app.execution import runtime_journal
+
+        self._write_spec(content="print(1)")
+        runtime_journal.record_execution(
+            self.UKEY, self.PID, "n1",
+            code="    print(1)",  # transport indentation — normalized away
+            stdout=[], stderr="Traceback: KeyError",
+            output={"path": "", "dataType": "str"},
+            started_at="2026-08-05T00:00:00Z", duration_ms=5,
+        )
+        _, text = self._read({"nodeId": "n1"})
+        payload = json.loads(text)
+        assert payload["status"] == "error"
+        assert "KeyError" in payload["stderrTail"]
+        assert payload["contentChangedSinceRun"] is False
+        # The user edits the node: the record is flagged as predating it.
+        self._write_spec(content="print(2)")
+        _, text = self._read({"nodeId": "n1"})
+        assert json.loads(text)["contentChangedSinceRun"] is True
+
+    def test_defaults_to_the_attached_node_and_missing_node_errors(self, tmp_curio):
+        self._write_spec()
+        status, text = self._read(target={"kind": "node", "targetId": "n1"})
+        assert status == "ok" and json.loads(text)["nodeId"] == "n1"
+        status, text = self._read({"nodeId": "ghost"})
+        assert status == "error" and "not found" in text
+        status, text = self._read()
+        assert status == "error" and "not attached" in text

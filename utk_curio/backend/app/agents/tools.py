@@ -51,11 +51,28 @@ class ToolContract:
 REGISTRY: dict[str, ToolContract] = {
     "dataflow.read": ToolContract(
         id="dataflow.read",
+        contract_version="2",
+        effect="read",
+        description=(
+            "Read the project's saved dataflow, structure-first: every node "
+            "(id, type, goal, content length) and ALL edges, plus each node's "
+            "last runtime status. Node content is elided — use node.read for "
+            'one node\'s content, or params {"include": ["content"]} for the '
+            "full spec (large)."
+        ),
+    ),
+    # dev/67-2 (DEC-052) — consumers: the builder/debug/explainer agents. The
+    # runtime journal's read surface: why a node's last run failed.
+    "node.runtime.read": ToolContract(
+        id="node.runtime.read",
         contract_version="1",
         effect="read",
         description=(
-            "Read the project's saved dataflow spec (agent-private sections "
-            "removed). No params."
+            "Read one node's LAST execution outcome: status, error traceback "
+            "tail, stdout tail, output metadata, and whether the node's "
+            'content changed since that run. Params: {"nodeId": "..."} — '
+            "defaults to the node this agent is attached to. A node that "
+            'never ran reports status "never-executed".'
         ),
     ),
     "node.read": ToolContract(
@@ -250,6 +267,62 @@ def _catalog_search_rows(user_key: str, project_id: str, params: dict) -> list[d
     return rows
 
 
+def _node_row(node: dict, goal_cap: int) -> dict:
+    content = str(node.get("content") or "")
+    return {
+        "id": node.get("id"),
+        "type": node.get("type"),
+        "goal": str(node.get("goal") or "")[:goal_cap],
+        "hasContent": bool(content.strip()),
+        "contentChars": len(content),
+    }
+
+
+def _dataflow_projection(stripped: dict, user_key: str, project_id: str) -> dict:
+    """Structure-first dataflow.read payload (dev/67-2).
+
+    Edges are NEVER the truncation casualty: node content is elided to lengths
+    (node.read serves any one node's content), goals are bounded, and the
+    runtime journal's status map rides along so one call answers "what exists,
+    how it is wired, what ran, what failed". If the projection still exceeds
+    the tool budget, node GOALS shrink next — never the edge list.
+    """
+    from utk_curio.backend.app.execution import runtime_journal
+
+    dataflow = stripped.get("dataflow") or {}
+    nodes_raw = [n for n in dataflow.get("nodes") or [] if isinstance(n, dict)]
+    edges = []
+    for edge in dataflow.get("edges") or []:
+        if not isinstance(edge, dict):
+            continue
+        row = {"id": edge.get("id"), "source": edge.get("source"), "target": edge.get("target")}
+        for key in ("sourceHandle", "targetHandle"):
+            if edge.get(key) is not None:
+                row[key] = edge.get(key)
+        edges.append(row)
+    projection = {
+        "name": dataflow.get("name"),
+        "goal": dataflow.get("task"),
+        "nodes": [_node_row(n, goal_cap=200) for n in nodes_raw],
+        "edges": edges,
+        "datasets": dataflow.get("datasets") or [],
+        "runtime": runtime_journal.status_map(user_key, project_id),
+    }
+    if len(json.dumps(projection, ensure_ascii=False)) > TOOL_RESULT_MAX_CHARS:
+        projection["nodes"] = [_node_row(n, goal_cap=40) for n in nodes_raw]
+        projection["elided"] = "node goals shortened to fit the tool output bound"
+    return projection
+
+
+def _resolve_node_id(target: dict | None, params: dict) -> str | None:
+    node_id = params.get("nodeId")
+    if isinstance(node_id, str) and node_id:
+        return node_id
+    if isinstance(target, dict) and target.get("kind") == "node":
+        return target.get("targetId")
+    return None
+
+
 def execute_read_tool(
     tool_id: str, *, user_key: str, project_id: str, target: dict | None, params: dict
 ) -> tuple[str, str]:
@@ -257,10 +330,10 @@ def execute_read_tool(
     raises (a tool failure is data the model recovers from, not a run error).
 
     Implementations stay domain-owned (`ADR-AG-007`): these are thin wrappers
-    over ``projects.storage`` reads. Output is untrusted context data —
-    bounded, and the dataflow read passes ``strip_agent_state`` so
-    agent-private sections never enter model context (the rule-9 posture
-    applies to tool output too).
+    over ``projects.storage`` reads (+ the dev/67-2 runtime journal). Output
+    is untrusted context data — bounded, and the dataflow read passes
+    ``strip_agent_state`` so agent-private sections never enter model context
+    (the rule-9 posture applies to tool output too).
     """
     from utk_curio.backend.app.agents import project_agents
     from utk_curio.backend.app.projects import storage as projects_storage
@@ -271,15 +344,14 @@ def execute_read_tool(
             return "error", "no saved project spec is available"
         if tool_id == "dataflow.read":
             stripped = project_agents.strip_agent_state(spec)
-            return "ok", _truncate(json.dumps(stripped, ensure_ascii=False))
+            include = params.get("include")
+            if isinstance(include, list) and "content" in include:
+                # The pre-dev/67-2 full dump, on request (large; may truncate).
+                return "ok", _truncate(json.dumps(stripped, ensure_ascii=False))
+            projection = _dataflow_projection(stripped, user_key, project_id)
+            return "ok", _truncate(json.dumps(projection, ensure_ascii=False))
         if tool_id == "node.read":
-            node_id = params.get("nodeId")
-            if not isinstance(node_id, str) or not node_id:
-                node_id = (
-                    target.get("targetId")
-                    if isinstance(target, dict) and target.get("kind") == "node"
-                    else None
-                )
+            node_id = _resolve_node_id(target, params)
             if not node_id:
                 return "error", "no nodeId given and this agent is not attached to a node"
             nodes = (spec.get("dataflow") or {}).get("nodes") or []
@@ -287,6 +359,27 @@ def execute_read_tool(
             if node is None:
                 return "error", f"node {node_id!r} not found in the saved spec"
             return "ok", _truncate(json.dumps(node, ensure_ascii=False))
+        if tool_id == "node.runtime.read":
+            from utk_curio.backend.app.execution import runtime_journal
+
+            node_id = _resolve_node_id(target, params)
+            if not node_id:
+                return "error", "no nodeId given and this agent is not attached to a node"
+            nodes = (spec.get("dataflow") or {}).get("nodes") or []
+            node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
+            if node is None:
+                return "error", f"node {node_id!r} not found in the saved spec"
+            record = runtime_journal.read_record(user_key, project_id, node_id)
+            if record is None:
+                return "ok", json.dumps(
+                    {"nodeId": node_id, "status": "never-executed"}, ensure_ascii=False
+                )
+            record = dict(record)
+            executed_sha = record.get("executedCodeSha256")
+            current_sha = runtime_journal.normalized_code_sha256(str(node.get("content") or ""))
+            # Best-effort staleness signal: the run predates the current content.
+            record["contentChangedSinceRun"] = bool(executed_sha) and executed_sha != current_sha
+            return "ok", _truncate(json.dumps(record, ensure_ascii=False))
         if tool_id == "catalog.search":
             rows = _catalog_search_rows(user_key, project_id, params)
             return "ok", _truncate(json.dumps({"datasets": rows}, ensure_ascii=False))
