@@ -128,6 +128,28 @@ def _parse_lineage(
     return PackageLineage(forked_from=forked_from, root=root)
 
 
+def parse_cardinality(cardinality: str) -> tuple[int, int | None]:
+    """``(min, max)`` for a schema cardinality string (dev/67-3, DEC-051).
+
+    ``"1"`` → (1, 1); ``"2"`` → (2, 2); ``"n"`` → (0, None);
+    ``"[1,n]"`` → (1, None); ``"[0,2]"`` → (0, 2). ``max is None`` means
+    unbounded. Unparseable strings fail OPEN to (0, None) — the schema owns
+    the grammar; this parser never refuses a manifest.
+    """
+    text = (cardinality or "").strip()
+    if text == "n":
+        return 0, None
+    if text.isdigit():
+        n = int(text)
+        return n, n
+    if text.startswith("[") and text.endswith("]") and "," in text:
+        lo_raw, hi_raw = text[1:-1].split(",", 1)
+        lo_raw, hi_raw = lo_raw.strip(), hi_raw.strip()
+        if lo_raw.isdigit() and (hi_raw == "n" or hi_raw.isdigit()):
+            return int(lo_raw), (None if hi_raw == "n" else int(hi_raw))
+    return 0, None
+
+
 @dataclass(frozen=True)
 class PortDef:
     types: list[str]

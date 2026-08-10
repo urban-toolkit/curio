@@ -184,13 +184,44 @@ def get_project_lockfile(user_key: str, project_id: str) -> set[str]:
     return project_packages(spec, _installed_majors_by_pkg(user_key))
 
 
+# DEC-051 (dev/67-3): where a template's DECLARED cardinality and its RENDERED
+# input capacity disagree, the rendered capacity is the enforceable truth —
+# merge-flow declares one "[1,n]" port but the canvas renders exactly 5 slots
+# (mergeFlowBehavior MERGE_SLOT_COUNT), so 5 is what a graph can actually hold.
+_RENDERED_INPUT_CAPACITY: dict[str, int] = {"curio.builtin/merge-flow": 5}
+
+
+def _input_arity(canonical: str, template) -> tuple[list[dict], int]:
+    """Per-port ``{types, min, max}`` rows + the template's incoming-edge
+    capacity.
+
+    ``inputs`` carries the DECLARED cardinalities (parsed to min/max) as
+    metadata. ``maxIncomingEdges`` is the RENDERED truth the canvas actually
+    implements: one edge per rendered input handle — handles are 1:1 with
+    ports, and each holds a single scalar ``data.input`` (a second edge
+    silently overwrites it) — with merge-flow's slot machinery the sole
+    multi-edge surface (5 slots). Declared ``[1,n]`` maxima (e.g.
+    computation-analysis) are aspirational: the input plumbing is scalar per
+    handle, so they are NOT enforceable capacity (DEC-051).
+    """
+    from utk_curio.backend.app.packages.manifest import parse_cardinality
+
+    inputs: list[dict] = []
+    for port in template.input_ports:
+        lo, hi = parse_cardinality(port.cardinality)
+        inputs.append({"types": list(port.types), "min": lo, "max": hi})
+    max_incoming = _RENDERED_INPUT_CAPACITY.get(canonical, len(inputs))
+    return inputs, max_incoming
+
+
 def available_templates(user_key: str, project_id: str) -> list[dict]:
     """The node templates a project may instantiate (memo dev/48).
 
     Scope = the seeded ``curio.builtin@<highest-major>`` store package (always
     present on every canvas) plus every package in the project's package
-    lockfile. Each entry is ``{"id", "label", "description", "authorable"}``
-    where ``id`` is the canonical UNVERSIONED ``<packageId>/<templateId>``
+    lockfile. Each entry is ``{"id", "label", "description", "authorable",
+    "inputs", "maxIncomingEdges"}`` (arity per dev/67-3, DEC-051) where
+    ``id`` is the canonical UNVERSIONED ``<packageId>/<templateId>``
     node type the canvas stores in ``data.nodeType``. This is the single
     source of template knowledge for agent node creation (`ADR-AG-007`) —
     the agents module owns none of its own. Unreadable packages are skipped
@@ -225,12 +256,15 @@ def available_templates(user_key: str, project_id: str) -> list[dict]:
             if canonical in seen:
                 continue
             seen.add(canonical)
+            inputs, max_incoming = _input_arity(canonical, t)
             out.append(
                 {
                     "id": canonical,
                     "label": t.label,
                     "description": t.description,
                     "authorable": bool(t.has_code or t.has_grammar),
+                    "inputs": inputs,
+                    "maxIncomingEdges": max_incoming,
                 }
             )
     return sorted(out, key=lambda e: e["id"])

@@ -33,7 +33,7 @@ def alice_project(client, user_and_token):
     return resp.get_json()["id"]
 
 
-def _template(template_id, label, *, editor="code", has_code=None, has_grammar=None, description=""):
+def _template(template_id, label, *, editor="code", has_code=None, has_grammar=None, description="", input_ports=None):
     t = {
         "id": template_id,
         "label": label,
@@ -41,7 +41,7 @@ def _template(template_id, label, *, editor="code", has_code=None, has_grammar=N
         "engine": "python",
         "editor": editor,
         "description": description,
-        "inputPorts": [],
+        "inputPorts": input_ports if input_ports is not None else [],
         "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
     }
     if has_code is not None:
@@ -134,3 +134,66 @@ class TestAvailableTemplates:
         _write_package(key, "curio.builtin", 1, [_template("only-kind", "Only")])
         ids = {t["id"] for t in packages_services.available_templates(key, "no-such-project")}
         assert ids == {"curio.builtin/only-kind"}
+
+
+class TestParseCardinality:
+    """dev/67-3 (DEC-051) — one parser for the schema's cardinality grammar."""
+
+    def test_all_schema_forms(self):
+        from utk_curio.backend.app.packages.manifest import parse_cardinality
+
+        assert parse_cardinality("1") == (1, 1)
+        assert parse_cardinality("2") == (2, 2)
+        assert parse_cardinality("n") == (0, None)
+        assert parse_cardinality("[1,n]") == (1, None)
+        assert parse_cardinality("[0,2]") == (0, 2)
+        assert parse_cardinality("[1,2]") == (1, 2)
+        # Unparseable fails OPEN — the schema owns the grammar.
+        assert parse_cardinality("") == (0, None)
+        assert parse_cardinality("banana") == (0, None)
+
+
+class TestInputArity:
+    """dev/67-3 (DEC-051) — maxIncomingEdges is the RENDERED truth: one edge
+    per rendered handle (handles = ports); merge-flow's slots are the sole
+    multi-edge surface."""
+
+    def _templates(self, user_and_token, alice_project, tmp_curio):
+        from utk_curio.backend.app.projects import services as projects_services
+
+        user, _ = user_and_token
+        key = projects_services._user_dir_key(user)
+        _write_package(key, "curio.builtin", 1, [
+            _template("data-loading", "Load", input_ports=[]),
+            _template("computation-analysis", "Compute",
+                      input_ports=[{"types": ["DATAFRAME"], "cardinality": "[1,n]"}]),
+            _template("spatial-join", "Spatial Join",
+                      input_ports=[{"types": ["GEODATAFRAME"], "cardinality": "1"},
+                                   {"types": ["GEODATAFRAME"], "cardinality": "1"}]),
+            _template("merge-flow", "Merge",
+                      input_ports=[{"types": ["DATAFRAME"], "cardinality": "[1,n]"}]),
+        ])
+        return {
+            t["id"]: t
+            for t in packages_services.available_templates(key, alice_project)
+        }
+
+    def test_rendered_capacity_rules(self, user_and_token, alice_project, tmp_curio):
+        by_id = self._templates(user_and_token, alice_project, tmp_curio)
+        assert by_id["curio.builtin/data-loading"]["maxIncomingEdges"] == 0
+        # Declared [1,n] is NOT enforceable capacity — the input plumbing is
+        # scalar per handle (a second edge silently overwrites data.input).
+        assert by_id["curio.builtin/computation-analysis"]["maxIncomingEdges"] == 1
+        assert by_id["curio.builtin/spatial-join"]["maxIncomingEdges"] == 2
+        # Merge's rendered slot machinery wins over its declared [1,n].
+        assert by_id["curio.builtin/merge-flow"]["maxIncomingEdges"] == 5
+
+    def test_declared_cardinality_survives_as_metadata(self, user_and_token, alice_project, tmp_curio):
+        by_id = self._templates(user_and_token, alice_project, tmp_curio)
+        assert by_id["curio.builtin/computation-analysis"]["inputs"] == [
+            {"types": ["DATAFRAME"], "min": 1, "max": None},
+        ]
+        assert by_id["curio.builtin/spatial-join"]["inputs"] == [
+            {"types": ["GEODATAFRAME"], "min": 1, "max": 1},
+            {"types": ["GEODATAFRAME"], "min": 1, "max": 1},
+        ]
