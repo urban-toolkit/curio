@@ -76,63 +76,23 @@ def get_shared_data_dir() -> str:
 # DuckDB artifact helpers
 # ---------------------------------------------------------------------------
 
-def load_artifact_as_dict(artifact_id: str) -> dict:
-    """Fetch a stored artifact from the sandbox and return its parsed representation."""
-    import requests as _req
-    sandbox_host = os.environ.get('FLASK_SANDBOX_HOST', '127.0.0.1')
-    sandbox_port = int(os.environ.get('FLASK_SANDBOX_PORT', '2000'))
-    resp = _req.get(
-        f'http://{sandbox_host}:{sandbox_port}/get',
-        params={'fileName': artifact_id},
-        timeout=(SANDBOX_CONNECT_TIMEOUT_S, SANDBOX_GET_TIMEOUT_S),
-    )
-    if not resp.ok:
-        # Surface the sandbox's structured error body (added in api.py /get)
-        # so pytest shows *why* the load failed.
-        raise AssertionError(
-            f"sandbox /get fileName={artifact_id} -> {resp.status_code}\n"
-            f"{resp.text[:2000]}"
-        )
-    parsed = resp.json()
-    result = json.loads(json.dumps(parsed, default=str))
-    result.pop('filename', None)  # artifact ID varies per execution run
-    return result
+# Promoted to the app package (memo dev/67-7) — single source, historical name.
+from utk_curio.backend.app.execution.runner import (  # noqa: E402,F401
+    load_artifact_as_dict,
+    resolve_widget_placeholders,
+    seed_node_code,
+)
+from utk_curio.backend.app.execution.runner import (  # noqa: E402,F401
+    execute_workflow_programmatically as _execute_workflow_programmatically_impl,
+)
 
 
 # ---------------------------------------------------------------------------
 # Deterministic seeding for reproducible programmatic execution
 # ---------------------------------------------------------------------------
 
-_SEED_PREFIX = (
-    "import numpy as _np; _np.random.seed({seed}); "
-    "import random as _rnd; _rnd.seed({seed})\n"
-)
-
-
-def seed_node_code(code: str, seed: int = 42) -> str:
-    """Prepend deterministic random-seed lines to *code*.
-
-    Uses underscore-prefixed aliases (``_np``, ``_rnd``) so the seed
-    imports never shadow the user's own ``import numpy as np``.
-    """
-    return _SEED_PREFIX.format(seed=seed) + code
-
-
-_WIDGET_RE = re.compile(r"\[!!\s*(.*?)\s*!!\]")
-
-
-def resolve_widget_placeholders(code: str) -> str:
-    """Replace ``[!! name$type$default !!]`` widget markers with defaults.
-
-    The frontend resolves these before sending code to the sandbox; the
-    programmatic executor must do the same.
-    """
-    def _replace(m):
-        parts = m.group(1).split("$")
-        if len(parts) >= 3:
-            return parts[2]
-        return m.group(0)
-    return _WIDGET_RE.sub(_replace, code)
+# (seed_node_code / resolve_widget_placeholders now import from the app
+# package above — memo dev/67-7.)
 
 
 PLAYWRIGHT_EXPECTED_DIR = os.path.join(
@@ -528,99 +488,9 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
 """
 
 def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
-    """Execute every code node via the sandbox HTTP API and return {node_id: artifact_id}.
-
-    Routes all execution through the sandbox's /exec endpoint so the sandbox's
-    persistent DuckDB connection remains the sole writer throughout the test.
-    The returned artifact IDs are used by Playwright tests to compare
-    sandbox-produced outputs with browser-produced ones.
-    """
-    import requests as _req
-
-    sandbox_host = os.environ.get('FLASK_SANDBOX_HOST', '127.0.0.1')
-    sandbox_port = int(os.environ.get('FLASK_SANDBOX_PORT', '2000'))
-    sandbox_url = f'http://{sandbox_host}:{sandbox_port}'
-
-    from .workflow_spec import PY_CODE_TYPES
-
-    outputs: dict[str, dict] = {}   # node_id → {"path": artifact_id, "dataType": ...}
-    expected: dict[str, dict] = {}  # node_id → eager-loaded artifact dict (see fix below)
-
-    for node in spec.topo_sorted_nodes():
-        # Non-code nodes — and code nodes whose content is JavaScript
-        # (JS_COMPUTATION) — propagate upstream output without execution: the
-        # Python-exec path below would parse-error on JS source.
-        if node.category != "code" or node.type not in PY_CODE_TYPES:
-            upstreams = spec.upstream_nodes(node.id)
-            if len(upstreams) == 1 and upstreams[0] in outputs:
-                outputs[node.id] = outputs[upstreams[0]]
-            elif len(upstreams) > 1:
-                outputs[node.id] = {
-                    "path": [outputs[uid] for uid in upstreams if uid in outputs],
-                    "dataType": "outputs",
-                }
-            continue
-
-        # Resolve input (mirrors process_python_code in backend routes.py)
-        upstreams = spec.upstream_nodes(node.id)
-        if not upstreams:
-            file_path = ""
-            data_type = ""
-        elif len(upstreams) == 1:
-            up = outputs[upstreams[0]]
-            if up.get("dataType") == "outputs":
-                # Pass as stringified list; worker.py eval()s it back
-                file_path = str(up["path"])
-                data_type = "outputs"
-            else:
-                file_path = up["path"]
-                data_type = up["dataType"]
-        else:
-            file_path = str([outputs[uid] for uid in upstreams])
-            data_type = "outputs"
-
-        # Sandbox /exec expects code already indented as a function body
-        resolved = resolve_widget_placeholders(node.content)
-        seeded = seed_node_code(resolved, seed)
-        indented_code = textwrap.indent(seeded, "    ")
-
-        resp = _req.post(
-            f'{sandbox_url}/exec',
-            json={
-                "code": indented_code,
-                "file_path": file_path,
-                # Send the on-the-wire namespaced id (`curio.builtin/...`)
-                # so the sandbox's checkIOType matches what the browser
-                # frontend posts; otherwise the programmatic runner would
-                # enable IO validation that the browser path silently skips.
-                "nodeType": node.raw_type,
-                "dataType": data_type,
-            },
-            timeout=120,
-        )
-        resp.raise_for_status()
-        result = resp.json()
-
-        # Treat the exec as failed only when the worker produced no output path.
-        # The worker's redirect_stderr captures Python warnings (e.g. geopandas
-        # UserWarning) on otherwise-successful runs, so a non-empty stderr
-        # alone is not a failure signal — but a real exception leaves
-        # result['output']['path'] empty (see worker.py).
-        out = result.get('output') or {}
-        if not out.get('path'):
-            raise RuntimeError(
-                f"Node {node.id} ({node.type}) failed:\n{result.get('stderr', '')}"
-            )
-
-        outputs[node.id] = {"path": out['path'], "dataType": out['dataType']}
-        # Load the artifact contents *now* and stash them — the artifact may be
-        # invisible later when the browser run uses a different session_id, or
-        # may have been overwritten/evicted from DuckDB by then. Every node that
-        # reaches here is a PY_CODE_TYPES node (the only ones Python-exec'd), and
-        # those are exactly the ones that get inline data-content comparison.
-        expected[node.id] = load_artifact_as_dict(out['path'])
-
-    return expected
+    """Promoted to the app package (memo dev/67-7) — this delegation keeps the
+    historical name; `app/execution/runner.py` is the single source."""
+    return _execute_workflow_programmatically_impl(spec, seed)
 
 
 def _wait_for_reactflow_ready(
