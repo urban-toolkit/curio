@@ -1,7 +1,14 @@
 # Implementation Memo 67-6: Node Content Builder Apply Flow + Node Builder Modify-Existing (Simulation Mode: Solve)
 
 Date: 2026-08-05
-Status: proposed (part of the dev/67 program — see `67-1-index.md`)
+Status: implemented 2026-08-05 — COMMIT-64aec69a (backend), COMMIT-47bbcedc (frontend
+api). Verification: backend 1102 passed (8 skipped), frontend 717 passed, tsc clean.
+BL-P5-20260805-10. Recorded deviations: (1) the single-activeProposal model means a
+multi-node propose batch supersedes all but the last content proposal — by design, the
+67-9 sequence solves one node at a time; (2) `nodeProposals: {ref: proposalId}` (§4) was
+not added — the active mirror + streamed proposalId cover reload-addressability for now;
+(3) the Node Builder additionally gained `node` targets (lifting dev/48's canvas-only
+deviation) so modify-existing can attach to the node it modifies.
 
 ## 1. Problem Statement
 
@@ -132,10 +139,10 @@ write-path guard everywhere).
 
 ## 8. Acceptance Criteria
 
-- [ ] A Simulation Mode solve of one node yields a reviewable content proposal whose
+- [x] A Simulation Mode solve of one node yields a reviewable content proposal whose
       prompt context contained edges, neighbors, and runtime state — and Apply writes it.
-- [ ] The Node Builder modifies an existing node via a reviewed content proposal.
-- [ ] Classic Solve behavior is unchanged (regression-pinned).
+- [x] The Node Builder modifies an existing node via a reviewed content proposal.
+- [x] Classic Solve behavior is unchanged (regression-pinned).
 
 ## 9. Recommended Commit Breakdown
 
