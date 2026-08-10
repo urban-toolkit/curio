@@ -1,3 +1,10 @@
+jest.mock("../../registry/nodeRegistry", () => ({
+  getPaletteNodeTypes: () => [
+    { id: "curio.builtin/computation-analysis@1", label: "Computation Analysis" },
+    { id: "curio.builtin/merge-flow@1", label: "Merge Flow" },
+  ],
+}));
+
 import { TrillGenerator } from "../../TrillGenerator";
 import { composeAgentRunContext } from "../../components/agents/attach/agentRunContext";
 import type { AgentAttachment } from "../../api/agentsApi";
@@ -111,5 +118,75 @@ describe("composeAgentRunContext (memo dev/44)", () => {
   it("agents with no composable reads yield null (chat agent)", () => {
     const att = attachment({ reads: ["userMessage"] });
     expect(composeAgentRunContext(att, canvas)).toBeNull();
+  });
+});
+
+describe("composite producers (dev/67-2 — the composites stop running blind)", () => {
+  const edges = [
+    { id: "e1", source: "n1", target: "n2-unsaved", sourceHandle: "out", targetHandle: "in" },
+  ];
+  const wiredCanvas = { ...canvas, edges };
+
+  it("Dataflow Builder composes mission + full graph + installed templates", () => {
+    const att = attachment({
+      coord: "agent.dataflow-builder@1.0.0",
+      target: { kind: "canvas" },
+      reads: ["mission", "graphContext", "installedTemplates"],
+    });
+    const context = composeAgentRunContext(att, wiredCanvas);
+    expect(context).not.toBeNull();
+    expect(context).toContain("Mission: analyze heat risk");
+    expect(context).toContain("Workflow: wf");
+    // The full graph, edges included — the exact 67-0 complaint.
+    expect(context).toContain('"source":"n1"');
+    expect(context).toContain("n2-unsaved");
+    expect(context).toContain("Installed node templates:");
+  });
+
+  it("Node Builder on a canvas target composes the whole graph as targetContext", () => {
+    const att = attachment({
+      coord: "agent.node-builder@1.0.0",
+      target: { kind: "canvas" },
+      reads: ["nodeIntent", "targetContext", "externalSelection"],
+    });
+    const context = composeAgentRunContext(att, wiredCanvas);
+    expect(context).toContain("Current Trill:");
+    expect(context).toContain('"source":"n1"');
+    // nodeIntent has no node target; externalSelection rides the prompt.
+    expect(context).not.toContain("Node intent:");
+  });
+
+  it("Node Builder on a node target composes the node snapshot + intent", () => {
+    const att = attachment({
+      coord: "agent.node-builder@1.0.0",
+      target: { kind: "node", targetId: "n1" },
+      reads: ["nodeIntent", "targetContext"],
+    });
+    const context = composeAgentRunContext(att, wiredCanvas);
+    expect(context).toContain("Node intent: load the data");
+    expect(context).toContain("Target node:");
+    expect(context).toContain("print('old')");
+  });
+
+  it("Dataset Finder gets at least the mission on a canvas target", () => {
+    const att = attachment({
+      coord: "agent.dataset-finder@1.0.0",
+      target: { kind: "canvas" },
+      reads: ["mission", "nodeContext", "catalog"],
+    });
+    const context = composeAgentRunContext(att, wiredCanvas);
+    expect(context).toContain("Mission: analyze heat risk");
+    // catalog stays tool-served — never a context fragment.
+    expect(context).not.toContain("catalog");
+  });
+
+  it("an empty canvas still yields null for mission-less reads (regression)", () => {
+    const att = attachment({
+      coord: "agent.dataset-finder@1.0.0",
+      reads: ["mission", "catalog"],
+    });
+    expect(
+      composeAgentRunContext(att, { nodes: [], edges: [], workflowName: "", workflowGoal: "" }),
+    ).toBeNull();
   });
 });

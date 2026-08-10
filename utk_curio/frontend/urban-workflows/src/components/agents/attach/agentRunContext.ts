@@ -1,4 +1,5 @@
 import { TrillGenerator } from "../../../TrillGenerator";
+import { getPaletteNodeTypes } from "../../../registry/nodeRegistry";
 import type { AgentAttachment } from "../../../api/agentsApi";
 
 /**
@@ -108,9 +109,51 @@ function readFragment(
       const node = findTrillNode(liveTrill(canvas), nodeId);
       return node?.type ? "Node type: " + node.type : null;
     }
+    // dev/67-2: the P5 composites' declared reads finally have producers —
+    // before this, all three composed `null` and ran context-blind ("I don't
+    // have the full dataflow edges" was literally true).
+    case "graphContext":
+      // The builder's full live-canvas view: nodes AND edges, unsaved included.
+      return "Current Trill: " + JSON.stringify(liveTrill(canvas));
+    case "mission": {
+      const parts = [
+        canvas.workflowName ? "Workflow: " + canvas.workflowName : null,
+        canvas.workflowGoal ? "Mission: " + canvas.workflowGoal : null,
+      ].filter((p): p is string => p != null);
+      return parts.length ? parts.join("\n") : null;
+    }
+    case "installedTemplates": {
+      // The client registry's palette — the model plans only in installable
+      // vocabulary (the server re-validates against available_templates).
+      const rows = getPaletteNodeTypes().map((d) => `- ${d.id} — ${d.label}`);
+      return rows.length ? "Installed node templates:\n" + rows.join("\n") : null;
+    }
+    case "nodeIntent": {
+      const node = findTrillNode(liveTrill(canvas), nodeId);
+      return node?.goal ? "Node intent: " + node.goal : null;
+    }
+    case "targetContext": {
+      // Node target → that node's snapshot; canvas target → the whole graph.
+      if (nodeId) {
+        const node = findTrillNode(liveTrill(canvas), nodeId);
+        if (!node) return null;
+        return (
+          "Target node: " +
+          JSON.stringify({
+            id: node.id,
+            type: node.type ?? "",
+            goal: node.goal ?? "",
+            content: node.content ?? "",
+          })
+        );
+      }
+      return "Current Trill: " + JSON.stringify(liveTrill(canvas));
+    }
     default:
-      // connectionSide / keywords / currentTask / userMessage — no chat-time
-      // source (the user's message carries the intent); dev/44 audit table.
+      // connectionSide / keywords / currentTask / userMessage /
+      // externalSelection (arrives via the confirmation prompt) / catalog
+      // (tool-served — catalog.search is the truth): no chat-time source;
+      // dev/44 audit table + dev/67-2 §3.
       return null;
   }
 }
