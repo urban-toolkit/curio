@@ -73,6 +73,9 @@ _PLAN_INTENT_MAX_CHARS = 300
 _PLAN_NODE_TYPE_MAX_CHARS = 120
 # dev/59 revision fields: existing node/edge ids (uuids in practice).
 _PLAN_REMOVAL_ID_MAX_CHARS = 64
+# dev/67-3: an edge may name the target's input handle (merge slots in_0..in_4;
+# named handles like in_points). The mint validates semantics; this is shape.
+_PLAN_TO_HANDLE_MAX_CHARS = 24
 
 # datasetCandidates bounds (memo dev/50 — the docs/06 two-lane row contract).
 # Rows are informational display metadata; every string is bounded here and
@@ -431,6 +434,14 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
         if endpoint_errors:
             errors.extend(endpoint_errors)
             continue
+        to_handle_raw = edge_raw.get("toHandle")
+        to_handle = None
+        if to_handle_raw is not None:
+            err = _field_error(f"{where}.toHandle", to_handle_raw, _PLAN_TO_HANDLE_MAX_CHARS)
+            if err:
+                errors.append(err)
+                continue
+            to_handle = str(to_handle_raw).strip()
         src, dst = str(src).strip(), str(dst).strip()
         if src == dst:
             errors.append(f"{where} connects {src!r} to itself")
@@ -439,7 +450,11 @@ def _parse_dataflow_plan_verbose(raw: object) -> tuple[dict | None, list[str]]:
             errors.append(f"{where} duplicates an earlier {src!r}→{dst!r} edge")
             continue
         seen_edges.add((src, dst))
-        edges.append({"from": src, "to": dst})
+        edge_entry = {"from": src, "to": dst}
+        if to_handle:
+            # Present only when named — additive plans stay byte-identical.
+            edge_entry["toHandle"] = to_handle
+        edges.append(edge_entry)
     plan["edges"] = edges
     # dev/59: keys present only when used — additive plans stay byte-identical.
     if remove_nodes:

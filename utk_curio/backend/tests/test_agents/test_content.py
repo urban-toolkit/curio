@@ -651,6 +651,30 @@ class TestDataflowPlanRevisionGrammar:
         assert part["removeEdges"] == ["old-edge-1"]
         assert part["edges"] == [{"from": "a", "to": "existing-cleaner-id"}]
 
+    def test_to_handle_parses_and_stays_absent_when_unused(self):
+        # dev/67-3: toHandle is optional shape — additive plans byte-identical.
+        plan = {"goal": "g", "nodes": [
+            {"ref": "a", "nodeType": "t", "title": "A", "intent": "i"},
+            {"ref": "m", "nodeType": "curio.builtin/merge-flow", "title": "M", "intent": "i"},
+        ], "edges": [
+            {"from": "a", "to": "m", "toHandle": "in_2"},
+        ]}
+        part, errors = content.parse_dataflow_plan_verbose(plan)
+        assert errors == []
+        assert part["edges"] == [{"from": "a", "to": "m", "toHandle": "in_2"}]
+        plan["edges"] = [{"from": "a", "to": "m"}]
+        part, _ = content.parse_dataflow_plan_verbose(plan)
+        assert part["edges"] == [{"from": "a", "to": "m"}]  # key only when used
+
+    def test_to_handle_is_bounded(self):
+        plan = {"goal": "g", "nodes": [
+            {"ref": "a", "nodeType": "t", "title": "A", "intent": "i"},
+            {"ref": "b", "nodeType": "t", "title": "B", "intent": "i"},
+        ], "edges": [{"from": "a", "to": "b", "toHandle": "x" * 25}]}
+        part, errors = content.parse_dataflow_plan_verbose(plan)
+        assert part is None
+        assert any("edges[0].toHandle" in e for e in errors)
+
     def test_remove_only_plan_is_valid(self):
         plan = {"goal": "cleanup", "removeNodes": ["old-1", "old-2"]}
         (part,) = content.parse_parts(json.dumps({"dataflowPlan": plan}))

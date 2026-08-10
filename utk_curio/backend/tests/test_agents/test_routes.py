@@ -3001,13 +3001,24 @@ class TestNodeCreate:
                     "id": "computation-analysis", "label": "Computation Analysis",
                     "category": "computation", "engine": "python", "editor": "code",
                     "description": "Run python analysis code.",
-                    "inputPorts": [], "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
+                    # Real-manifest parity (dev/67-3): one declared input port
+                    # — rendered capacity 1 (one edge per handle, DEC-051).
+                    "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "[1,n]"}],
+                    "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
                 },
                 {
                     "id": "data-pool", "label": "Data Pool",
                     "category": "data", "engine": "python", "editor": "none",
                     "hasCode": False, "description": "Holds data.",
-                    "inputPorts": [], "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
+                    "inputPorts": [{"types": ["JSON"], "cardinality": "1"}],
+                    "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
+                },
+                {
+                    "id": "merge-flow", "label": "Merge Flow",
+                    "category": "data", "engine": "python", "editor": "none",
+                    "hasCode": False, "description": "Merges multiple flows.",
+                    "inputPorts": [{"types": ["DATAFRAME"], "cardinality": "[1,n]"}],
+                    "outputPorts": [{"types": ["JSON"], "cardinality": "1"}],
                 },
             ],
             "createdAt": "2026-06-01T12:00:00Z",
@@ -4753,6 +4764,111 @@ class TestDestructiveReplan:
         assert "removeContentSha256" not in proposal["pins"]
         assert "removals" not in proposal["plan"]
         assert proposal["summary"] == "Apply plan · 1 nodes, 0 edges"
+
+
+class TestPlanFanInValidation:
+    """dev/67-3 (DEC-051) — invalid multi-input topology is unmintable: fan-in
+    validates against the rendered template capacity BEFORE anything
+    materializes, the corrective error names the Merge resolution, and apply
+    assigns real merge slot handles so plan-created merges work WITHOUT a
+    reload."""
+
+    def _plan_reply(self, plan):
+        import json as _json
+
+        return f"Plan.\n```curio.v1\n{_json.dumps({'dataflowPlan': plan})}\n```"
+
+    def _node(self, ref, node_type="curio.builtin/computation-analysis"):
+        return {"ref": ref, "nodeType": node_type, "title": ref.upper(),
+                "intent": f"do {ref}"}
+
+    def test_fanin_into_single_input_node_refuses_then_merge_replan_mints(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        bad = {"goal": "g", "nodes": [self._node("a"), self._node("b"), self._node("c")],
+               "edges": [{"from": "a", "to": "c"}, {"from": "b", "to": "c"}]}
+        good = {"goal": "g",
+                "nodes": [self._node("a"), self._node("b"),
+                          self._node("m", "curio.builtin/merge-flow"), self._node("c")],
+                "edges": [{"from": "a", "to": "m"}, {"from": "b", "to": "m"},
+                          {"from": "m", "to": "c"}]}
+        att_id, calls = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=[self._plan_reply(bad), self._plan_reply(good)],
+        )
+        r = helper._run(client, token, alice_project, att_id)
+        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
+        assert proposal["status"] == "pending"  # the merge replan minted
+        feedback = calls[1][-1]["content"]
+        assert "accepts 1 input" in feedback
+        assert "curio.builtin/merge-flow" in feedback  # the named resolution
+
+    def test_existing_target_counts_surviving_edges(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestDestructiveReplan()  # seeds old-loader → cleaner
+        bad = "Add.\n" + helper._revision_tail(
+            remove=(), nodes=[helper._new_node()], edges=[{"from": "a", "to": "cleaner"}],
+        )
+        good = "Fixed.\n" + helper._revision_tail(
+            remove=("old-loader",), nodes=[helper._new_node()],
+            edges=[{"from": "a", "to": "cleaner"}],
+        )
+        att_id, calls = helper._setup(
+            client, user, token, alice_project, monkeypatch, replies=[bad, good],
+        )
+        proposal = helper._proposal(helper._run(client, token, alice_project, att_id))
+        # Removing old-loader frees cleaner's single input — the replan mints.
+        assert proposal["status"] == "pending"
+        feedback = calls[1][-1]["content"]
+        assert "plus 1 existing connection" in feedback
+
+    def test_merge_apply_assigns_real_slot_handles(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        plan = {"goal": "g",
+                "nodes": [self._node("a"), self._node("b"),
+                          self._node("m", "curio.builtin/merge-flow")],
+                "edges": [{"from": "a", "to": "m", "toHandle": "in_3"},
+                          {"from": "b", "to": "m"}]}
+        att_id, _ = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=[self._plan_reply(plan)],
+        )
+        r = helper._run(client, token, alice_project, att_id)
+        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
+        body = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        ).get_json()
+        applied = body["appliedGraph"]["edges"]
+        # The named slot is honored; the unnamed edge takes the lowest free.
+        assert sorted(e["targetHandle"] for e in applied) == ["in_0", "in_3"]
+        assert all(e["sourceHandle"] == "out" for e in applied)
+        # Persisted, not just reported — the reload-heals era is over.
+        spec = projects_storage.read_spec(_user_dir_key(user), alice_project)
+        spec_handles = sorted(
+            e.get("targetHandle") for e in spec["dataflow"]["edges"]
+        )
+        assert spec_handles == ["in_0", "in_3"]
+
+    def test_bad_merge_slot_name_feeds_correction(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        bad = {"goal": "g",
+               "nodes": [self._node("a"), self._node("m", "curio.builtin/merge-flow")],
+               "edges": [{"from": "a", "to": "m", "toHandle": "in_9"}]}
+        att_id, calls = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=[self._plan_reply(bad),
+                     "Fixed.\n" + helper._plan_tail()],
+        )
+        r = helper._run(client, token, alice_project, att_id)
+        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
+        assert proposal["status"] == "pending"
+        assert "merge inputs are in_0..in_4" in calls[1][-1]["content"]
 
 
 class TestBuiltinPromptPropagation:

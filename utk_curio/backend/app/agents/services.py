@@ -1186,6 +1186,106 @@ def _graph_shape_digest(spec: dict) -> str:
     return hashlib.sha256(basis.encode("utf-8")).hexdigest()
 
 
+import re as _re
+
+# Merge slot handles as the canvas renders them (mergeFlowBehavior in_0..in_4).
+_MERGE_HANDLE_RE = _re.compile(r"^in_[0-4]$")
+_MERGE_NODE_TYPE = "curio.builtin/merge-flow"
+
+
+def _strip_type_version(node_type: str) -> str:
+    """``curio.builtin/merge-flow@1`` → ``curio.builtin/merge-flow`` — spec
+    node types may carry the versioned form; the template registry is
+    unversioned-canonical."""
+    return node_type.split("@", 1)[0] if isinstance(node_type, str) else node_type
+
+
+def _validate_plan_fanin(
+    plan: dict,
+    available: dict,
+    existing_nodes: dict,
+    existing_edges: list,
+    remove_node_set: set,
+    remove_edge_set: set,
+) -> list[str]:
+    """dev/67-3 (DEC-051): every edge target must accept its NET incoming
+    degree — plan edges plus the SURVIVING existing edges (dev/59 victims
+    excluded) — against the template registry's rendered capacity. Refusals
+    name the Merge resolution so the corrective round can replan; unknown or
+    out-of-scope templates fail open (no arity metadata → no refusal)."""
+    errors: list[str] = []
+    plan_nodes = {n["ref"]: n for n in plan.get("nodes", [])}
+    surviving_in: dict[str, int] = {}
+    for edge in existing_edges:
+        if str(edge.get("id")) in remove_edge_set:
+            continue
+        if edge.get("source") in remove_node_set or edge.get("target") in remove_node_set:
+            continue
+        target = edge.get("target")
+        surviving_in[target] = surviving_in.get(target, 0) + 1
+    incoming: dict[str, list[str]] = {}
+    for edge in plan.get("edges", []):
+        incoming.setdefault(edge["to"], []).append(edge["from"])
+    for target, sources in incoming.items():
+        if target in plan_nodes:
+            node_type = plan_nodes[target]["nodeType"]
+            label = plan_nodes[target]["title"]
+            existing_count = 0
+        else:
+            node = existing_nodes.get(target) or {}
+            node_type = _strip_type_version(str(node.get("type") or ""))
+            label = (node.get("goal") or target)[:60]
+            existing_count = surviving_in.get(target, 0)
+        entry = available.get(node_type)
+        if entry is None:
+            continue  # out-of-scope/custom template: fail open
+        max_in = entry.get("maxIncomingEdges")
+        total = len(sources) + existing_count
+        if max_in is None or total <= max_in:
+            continue
+        src_list = ", ".join(repr(s) for s in sources[:4])
+        existing_note = (
+            f" (plus {existing_count} existing connection"
+            f"{'s' if existing_count != 1 else ''})"
+            if existing_count
+            else ""
+        )
+        if max_in == 0:
+            errors.append(
+                f"target {label!r} ({node_type}) accepts no inputs — remove the "
+                f"edge(s) from {src_list}"
+            )
+        elif max_in == 1:
+            errors.append(
+                f"target {label!r} ({node_type}) accepts 1 input but the plan wires "
+                f"{total}{existing_note} — route {src_list} through a "
+                f"{_MERGE_NODE_TYPE} node instead (A → Merge, B → Merge, "
+                "Merge → target)"
+            )
+        else:
+            errors.append(
+                f"target {label!r} ({node_type}) accepts at most {max_in} inputs "
+                f"but the plan wires {total}{existing_note} — reduce the fan-in "
+                "or stage merges"
+            )
+    for i, edge in enumerate(plan.get("edges", [])):
+        handle = edge.get("toHandle")
+        if not handle:
+            continue
+        target = edge["to"]
+        if target in plan_nodes:
+            node_type = plan_nodes[target]["nodeType"]
+        else:
+            node_type = _strip_type_version(
+                str((existing_nodes.get(target) or {}).get("type") or "")
+            )
+        if node_type == _MERGE_NODE_TYPE and not _MERGE_HANDLE_RE.match(handle):
+            errors.append(
+                f"edges[{i}].toHandle {handle!r}: merge inputs are in_0..in_4"
+            )
+    return errors
+
+
 def _mint_dataflow_plan(
     user_key: str, project_id: str, loop_ctx: dict, plan: dict
 ) -> tuple[str, str, dict | None]:
@@ -1267,6 +1367,15 @@ def _mint_dataflow_plan(
     if revision_errors:
         return "refused", "\n- ".join(["the plan's revision targets are invalid:"] + revision_errors), None
     remove_node_set = set(remove_nodes)
+    # dev/67-3 (DEC-051): fan-in validates BEFORE anything materializes — an
+    # invalid multi-input topology is unmintable, and the corrective error
+    # names the Merge resolution.
+    fanin_errors = _validate_plan_fanin(
+        plan, available, existing_nodes, existing_edges,
+        remove_node_set, set(remove_edges),
+    )
+    if fanin_errors:
+        return "refused", "\n- ".join(["the plan wires invalid fan-in:"] + fanin_errors), None
     # The cascade: edges incident to removed nodes die with them (dev/59) —
     # computed here for the review card, recomputed at apply as the truth.
     cascade_edge_ids = [
@@ -1672,13 +1781,53 @@ def _apply_dataflow_plan(
         }
         nodes.append(created)
         created_nodes.append(created)
+    # dev/67-3 (DEC-051): handles are explicit end-to-end. Merge targets get a
+    # deterministic free in_N slot (a named free toHandle wins; occupied or
+    # unnamed falls to the lowest free) — the bridge passes these through
+    # instead of hardcoding "in", which left merge slots unfilled until a
+    # reload healed them.
+    types_by_id = {
+        n.get("id"): _strip_type_version(str(n.get("type") or ""))
+        for n in nodes
+        if isinstance(n, dict)
+    }
+    merge_slots_taken: dict[str, set[str]] = {}
+    for e in edges:
+        if not isinstance(e, dict):
+            continue
+        if types_by_id.get(e.get("target")) == _MERGE_NODE_TYPE:
+            handle = e.get("targetHandle")
+            if isinstance(handle, str):
+                merge_slots_taken.setdefault(e.get("target"), set()).add(handle)
     created_edges: list[dict] = []
     for plan_edge in plan.get("edges", []):
+        # dev/59: endpoints resolve through the ref map ∪ existing ids.
+        source = ref_to_id.get(plan_edge["from"], plan_edge["from"])
+        target = ref_to_id.get(plan_edge["to"], plan_edge["to"])
+        target_handle = plan_edge.get("toHandle") or "in"
+        if types_by_id.get(target) == _MERGE_NODE_TYPE:
+            taken = merge_slots_taken.setdefault(target, set())
+            wanted = plan_edge.get("toHandle")
+            if isinstance(wanted, str) and _MERGE_HANDLE_RE.match(wanted) and wanted not in taken:
+                target_handle = wanted
+            else:
+                target_handle = next(
+                    (f"in_{i}" for i in range(5) if f"in_{i}" not in taken), None
+                )
+                if target_handle is None:
+                    label = ((spec_nodes_by_id.get(target) or {}).get("goal") or target)[:60]
+                    raise _mark_stale(
+                        user_key, project_id, proposal_id, spec, proposal, session_id,
+                        f"merge node {label!r} has no free input slot — "
+                        "ask the agent to replan",
+                    )
+            taken.add(target_handle)
         edge = {
             "id": str(uuid.uuid4()),
-            # dev/59: endpoints resolve through the ref map ∪ existing ids.
-            "source": ref_to_id.get(plan_edge["from"], plan_edge["from"]),
-            "target": ref_to_id.get(plan_edge["to"], plan_edge["to"]),
+            "source": source,
+            "target": target,
+            "sourceHandle": "out",
+            "targetHandle": target_handle,
         }
         edges.append(edge)
         created_edges.append(edge)
