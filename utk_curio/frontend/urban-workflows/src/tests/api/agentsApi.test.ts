@@ -341,6 +341,26 @@ describe("agentsApi", () => {
       );
     });
 
+
+    it("posts propose mode when given (dev/67-6)", async () => {
+      global.fetch = jest.fn().mockResolvedValue(
+        streamResponse([
+          'event: solve_started\ndata: {"executionId": "e1", "targets": ["n1"]}\n\n',
+          'event: node_result\ndata: {"nodeId": "n1", "status": "proposed", "proposalId": "cp1"}\n\n',
+          'event: done\ndata: {"attachmentId": "a1", "executionId": "e1", "results": {}, "appliedContents": [], "builderSession": {"phase": "simulating"}, "mode": "propose"}\n\n',
+        ]),
+      );
+      const seen: Array<[string, unknown]> = [];
+      await agentsApi.solveAttachmentStream(
+        "p1", "att-1", (n, p) => seen.push([n, p]), ["n1"], undefined, "propose",
+      );
+      expect(seen[1][1]).toEqual({ nodeId: "n1", status: "proposed", proposalId: "cp1" });
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ body: JSON.stringify({ nodeIds: ["n1"], mode: "propose" }) }),
+      );
+    });
+
     it("posts the retry subset and throws on a mid-stream error event", async () => {
       global.fetch = jest.fn().mockResolvedValue(
         streamResponse([

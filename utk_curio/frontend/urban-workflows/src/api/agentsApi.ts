@@ -851,11 +851,14 @@ export const agentsApi = {
     onEvent: (name: string, payload: Record<string, unknown>) => void,
     nodeIds?: string[],
     signal?: AbortSignal,
+    /** dev/67-6: "propose" mints reviewed content proposals instead of
+     * writing — the Simulation Mode solve stage. Default: classic write. */
+    mode?: "write" | "propose",
   ): Promise<AgentSolveResult> {
     let result: AgentSolveResult | null = null;
     await postSseStream(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/solve/stream`,
-      nodeIds ? { nodeIds } : {},
+      { ...(nodeIds ? { nodeIds } : {}), ...(mode ? { mode } : {}) },
       (event, payload) => {
         if (event === "done") result = payload as unknown as AgentSolveResult;
         else if (event === "error")
