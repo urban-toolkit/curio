@@ -20,6 +20,8 @@ jest.mock("../../api/agentsApi", () => ({
     dismissProposal: jest.fn(),
     solveAttachmentStream: jest.fn(),
     cancelSolve: jest.fn(),
+    applyPlanNode: jest.fn(),
+    savePlanGoal: jest.fn(),
   },
 }));
 
@@ -64,6 +66,12 @@ const Harness: React.FC = () => {
         apply
       </button>
       <button onClick={() => void ctx.solveAttachment("a1").catch(() => undefined)}>solve</button>
+      <button onClick={() => void ctx.applyPlanNode("a1", "p1", "ra").catch(() => undefined)}>
+        apply-plan-node
+      </button>
+      <button onClick={() => void ctx.savePlanGoal("a1", "p1", "ra", "new goal")}>
+        save-plan-goal
+      </button>
       <button onClick={() => void ctx.cancelSolve("a1")}>cancel-solve</button>
       <div data-testid="solve-progress">
         {Object.entries(ctx.solveProgress["a1"] ?? {})
@@ -622,5 +630,67 @@ describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
       fireEvent.click(screen.getByText("cancel-solve"));
     });
     expect(api.cancelSolve).toHaveBeenCalledWith("p1", "a1");
+  });
+});
+
+describe("AgentAttachmentsProvider per-node plan apply (dev/67-5)", () => {
+  const events: unknown[] = [];
+  let unsubscribe: () => void = () => undefined;
+
+  beforeEach(() => {
+    events.length = 0;
+    const { subscribeAgentCanvasMutations } = jest.requireActual(
+      "../../utils/agentCanvasEvents",
+    );
+    unsubscribe = subscribeAgentCanvasMutations((m: unknown) => events.push(m));
+  });
+
+  afterEach(() => unsubscribe());
+
+  it("applyPlanNode dispatches node-created for the created node", async () => {
+    api.applyPlanNode.mockResolvedValue({
+      attachmentId: "a1",
+      proposalId: "p1",
+      status: "pending",
+      ref: "ra",
+      createdNode: { id: "nid-1", type: "curio.builtin/computation-analysis",
+                     content: "", goal: "Load — load it", x: 500, y: 60 },
+      appliedRefs: ["ra"],
+    });
+    renderProvider();
+    await act(async () => {
+      fireEvent.click(screen.getByText("apply-plan-node"));
+    });
+    expect(api.applyPlanNode).toHaveBeenCalledWith("p1", "a1", "p1", "ra");
+    expect(events).toEqual([
+      {
+        kind: "node-created",
+        node: { id: "nid-1", type: "curio.builtin/computation-analysis",
+                content: "", goal: "Load — load it", x: 500, y: 60 },
+      },
+    ]);
+  });
+
+  it("an already-applied result dispatches nothing (idempotence)", async () => {
+    api.applyPlanNode.mockResolvedValue({
+      attachmentId: "a1", proposalId: "p1", status: "already-applied",
+      ref: "ra", nodeId: "nid-1", appliedRefs: ["ra"],
+    });
+    renderProvider();
+    await act(async () => {
+      fireEvent.click(screen.getByText("apply-plan-node"));
+    });
+    expect(events).toEqual([]);
+  });
+
+  it("savePlanGoal posts the overlay and refreshes the listing", async () => {
+    api.savePlanGoal.mockResolvedValue({
+      proposalId: "p1", ref: "ra", goal: "new goal", editedGoals: { ra: "new goal" },
+    });
+    renderProvider();
+    await act(async () => {
+      fireEvent.click(screen.getByText("save-plan-goal"));
+    });
+    expect(api.savePlanGoal).toHaveBeenCalledWith("p1", "a1", "p1", "ra", "new goal");
   });
 });

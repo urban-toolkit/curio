@@ -49,6 +49,16 @@ export interface AgentAttachmentsContextValue extends AgentAttachmentsState {
   /** Apply a pending review proposal (the only mutation path); refreshes the
    * transcript + listing so the outcome and result turn arrive together. */
   applyProposal: (attachmentId: string, proposalId: string) => Promise<void>;
+  /** dev/67-5: apply ONE planned node (Simulation Mode: create) — the
+   * proposal stays pending; the created node reaches the live canvas. */
+  applyPlanNode: (attachmentId: string, proposalId: string, ref: string) => Promise<void>;
+  /** dev/67-5: edit one planned node's goal before creation. */
+  savePlanGoal: (
+    attachmentId: string,
+    proposalId: string,
+    ref: string,
+    goal: string,
+  ) => Promise<void>;
   /** dev/52 Solve: one authenticated batch; optional nodeIds = the Retry
    * subset. Streams per-node progress (dev/63) — see `solveProgress`. */
   solveAttachment: (
@@ -340,6 +350,37 @@ export const AgentAttachmentsProvider: React.FC<{
     [hydrateSession, state.reload],
   );
 
+  const applyPlanNode = useCallback(
+    async (attachmentId: string, proposalId: string, ref: string) => {
+      const pid = projectRef.current;
+      if (!pid) throw new Error("no project");
+      try {
+        const result = await agentsApi.applyPlanNode(pid, attachmentId, proposalId, ref);
+        // The created node reaches the LIVE canvas through the same bridge
+        // path as node.create applies (dev/48 §3.3).
+        if (result.createdNode) {
+          notifyAgentCanvasMutation({ kind: "node-created", node: result.createdNode });
+        }
+      } finally {
+        // The result turn + the per-node ledger both refresh.
+        hydratedRef.current.delete(attachmentId);
+        await hydrateSession(attachmentId);
+        await state.reload();
+      }
+    },
+    [hydrateSession, state.reload],
+  );
+
+  const savePlanGoal = useCallback(
+    async (attachmentId: string, proposalId: string, ref: string, goal: string) => {
+      const pid = projectRef.current;
+      if (!pid) throw new Error("no project");
+      await agentsApi.savePlanGoal(pid, attachmentId, proposalId, ref, goal);
+      await state.reload(); // the mirror carries editedGoals
+    },
+    [state.reload],
+  );
+
   const solveAttachment = useCallback(
     async (attachmentId: string, nodeIds?: string[]) => {
       const pid = projectRef.current;
@@ -488,6 +529,8 @@ export const AgentAttachmentsProvider: React.FC<{
       solveAttachment,
       solveProgress,
       cancelSolve,
+      applyPlanNode,
+      savePlanGoal,
       dismissProposal,
     }),
     [
@@ -508,6 +551,8 @@ export const AgentAttachmentsProvider: React.FC<{
       solveAttachment,
       solveProgress,
       cancelSolve,
+      applyPlanNode,
+      savePlanGoal,
       dismissProposal,
     ],
   );

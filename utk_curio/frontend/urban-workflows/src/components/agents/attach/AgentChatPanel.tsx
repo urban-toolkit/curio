@@ -71,6 +71,9 @@ export const AgentChatPanel: React.FC<{
   /** Review-before-apply actions (memo dev/41); omitted → cards render inert. */
   onApplyProposal?: (proposalId: string) => Promise<void>;
   onDismissProposal?: (proposalId: string) => Promise<void>;
+  /** dev/67-5: per-node plan review actions (Simulation Mode: create). */
+  onApplyPlanNode?: (proposalId: string, ref: string) => Promise<void>;
+  onSavePlanGoal?: (proposalId: string, ref: string, goal: string) => Promise<void>;
   /** dev/52 Solve (Dataflow Builder attachments only); omitted → no strip. */
   onSolve?: (nodeIds?: string[]) => Promise<unknown>;
   /** dev/63: the live batch's per-node status overlay (nodeId → status). */
@@ -98,6 +101,8 @@ export const AgentChatPanel: React.FC<{
   onOpenSettings,
   onApplyProposal,
   onDismissProposal,
+  onApplyPlanNode,
+  onSavePlanGoal,
   onSolve,
   solveProgress,
   onCancelSolve,
@@ -531,6 +536,18 @@ export const AgentChatPanel: React.FC<{
                         tintClassName={tint}
                         onApply={onApplyProposal}
                         onDismiss={onDismissProposal}
+                        onApplyPlanNode={onApplyPlanNode}
+                        onSavePlanGoal={onSavePlanGoal}
+                        planNodeState={
+                          // dev/67-5: the mirror's per-node state feeds the
+                          // part whose proposal it mirrors.
+                          attachment.activeProposal?.proposalId === part.proposalId
+                            ? {
+                                appliedRefs: attachment.activeProposal.appliedRefs ?? [],
+                                editedGoals: attachment.activeProposal.editedGoals ?? {},
+                              }
+                            : undefined
+                        }
                       />
                     ))}
                 </div>

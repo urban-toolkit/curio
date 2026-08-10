@@ -14,6 +14,7 @@ const PHASES: Array<{ id: string; label: string }> = [
 const PHASE_RANK: Record<string, number> = {
   idle: 0,
   plan_review: 1,
+  simulating: 2, // dev/67-5: per-node create/solve in progress
   applied: 2,
   solving: 2,
   ready: 3,

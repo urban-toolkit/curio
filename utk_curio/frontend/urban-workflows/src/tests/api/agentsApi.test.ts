@@ -395,4 +395,21 @@ describe("agentsApi", () => {
       body: JSON.stringify({ manifest: { id: "agent.x" }, prompts: { "prompts/i.txt": "text" } }),
     });
   });
+
+
+  it("applyPlanNode() posts the ref to the apply-node path (dev/67-5)", () => {
+    agentsApi.applyPlanNode("p1", "att-1", "prop-1", "ra");
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/agents/projects/p1/attachments/att-1/proposals/prop-1/apply-node",
+      { method: "POST", body: JSON.stringify({ ref: "ra" }) },
+    );
+  });
+
+  it("savePlanGoal() PATCHes the plan-goals path (dev/67-5)", () => {
+    agentsApi.savePlanGoal("p1", "att-1", "prop-1", "ra", "better goal");
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/agents/projects/p1/attachments/att-1/proposals/prop-1/plan-goals",
+      { method: "PATCH", body: JSON.stringify({ ref: "ra", goal: "better goal" }) },
+    );
+  });
 });

@@ -152,3 +152,71 @@
   font-size: 0.74rem;
   color: #6e2f28;
 }
+
+/* dev/67-5 — the per-node plan review rows (Simulation Mode: create). */
+.planNodes {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.planNodeRow {
+  border: 1px solid #e3e6ea;
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.planNodeHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.planNodeTitle {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.planNodeType {
+  color: #6b7280;
+  font-size: 0.75rem;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planNodeCreated {
+  color: #2f7d4f;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.planNodeExpects {
+  color: #6b7280;
+  font-size: 0.75rem;
+}
+
+.planGoalInput {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 6px 8px;
+  border: 1px solid #d7dbe0;
+  border-radius: 4px;
+  resize: vertical;
+}
+
+.planGoalInput:disabled {
+  background: #f6f7f8;
+  color: #6b7280;
+}

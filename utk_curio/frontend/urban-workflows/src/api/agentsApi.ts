@@ -77,19 +77,28 @@ export interface AgentAttachment {
     nodeId: string;
     summary: string;
     status: AgentProposalStatus;
+    /** dev/67-5 (plan proposals): review-stage goal edits, ref-keyed. */
+    editedGoals?: Record<string, string>;
+    /** dev/67-5 (plan proposals): refs already applied per-node. */
+    appliedRefs?: string[];
   } | null;
   /** The Dataflow Builder orchestration session (dev/52 DR-2) — drives the
    * phase-aware builder panel; absent for every other agent. */
   builderSession?: AgentBuilderSession | null;
 }
 
-/** dev/52 DR-2: the persisted Plan → Solve state riding the attachment. */
+/** dev/52 DR-2: the persisted Plan → Solve state riding the attachment.
+ * dev/67-5 adds the per-node Simulation Mode ledger. */
 export interface AgentBuilderSession {
-  phase: "idle" | "plan_review" | "applied" | "solving" | "ready";
+  phase: "idle" | "plan_review" | "simulating" | "applied" | "solving" | "ready";
   planProposalId?: string;
   appliedPlanId?: string;
   /** Plan-created node id → its solve status. */
   nodeRuns?: Record<string, "pending" | "solving" | "solved" | "failed" | "skipped">;
+  /** dev/67-5: plan ref → its per-node lifecycle state. */
+  nodeStates?: Record<string, string>;
+  /** dev/67-5: plan ref → the created node's real id. */
+  nodeIds?: Record<string, string>;
 }
 
 /** Actual provider-reported token usage (memo dev/37) — never an estimate. */
@@ -193,7 +202,14 @@ export interface AgentProposalPart {
   plan?: {
     goal: string;
     templateId?: string;
-    nodes: Array<{ ref: string; nodeType: string; title: string; intent: string }>;
+    nodes: Array<{
+      ref: string;
+      nodeType: string;
+      title: string;
+      intent: string;
+      /** dev/67-5: expected input/output one-liner for the plan card. */
+      expects?: string;
+    }>;
     edgeCount: number;
     /** dev/59 (DEC-049.2): removals reviewed by NAME — every victim listed
      * with a content flag; present only on destructive revisions. */
@@ -253,6 +269,20 @@ export interface AgentApplyResult {
     removedEdgeIds?: string[];
   };
   /** dataflow.plan.write: the builder session after apply. */
+  builderSession?: AgentBuilderSession | null;
+}
+
+/** dev/67-5 apply-node response: one created node + the per-node ledger. */
+export interface AgentPlanNodeApplyResult {
+  attachmentId: string;
+  proposalId: string;
+  status: "pending" | "already-applied";
+  ref: string;
+  /** already-applied only: the existing node's id. */
+  nodeId?: string;
+  /** The created node, for the canvas bridge (absent on already-applied). */
+  createdNode?: AgentCreatedNodePayload;
+  appliedRefs: string[];
   builderSession?: AgentBuilderSession | null;
 }
 
@@ -639,6 +669,36 @@ export const agentsApi = {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}/apply`,
       { method: "POST" },
+    );
+  },
+
+  /** Apply ONE planned node from a pending plan proposal (dev/67-5,
+   * Simulation Mode: create). The proposal stays pending until every ref is
+   * applied or it is dismissed; edges are the connection stage's (67-8). */
+  applyPlanNode(
+    projectId: string,
+    attachmentId: string,
+    proposalId: string,
+    ref: string,
+  ): Promise<AgentPlanNodeApplyResult> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}/apply-node`,
+      { method: "POST", body: JSON.stringify({ ref }) },
+    );
+  },
+
+  /** Edit one planned node's goal before creation (dev/67-5): an audited
+   * review-stage overlay — the pinned plan bytes stay immutable. */
+  savePlanGoal(
+    projectId: string,
+    attachmentId: string,
+    proposalId: string,
+    ref: string,
+    goal: string,
+  ): Promise<{ proposalId: string; ref: string; goal: string; editedGoals: Record<string, string> }> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}/plan-goals`,
+      { method: "PATCH", body: JSON.stringify({ ref, goal }) },
     );
   },
 

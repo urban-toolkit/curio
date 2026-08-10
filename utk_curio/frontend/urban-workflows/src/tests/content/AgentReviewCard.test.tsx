@@ -220,3 +220,85 @@ describe("AgentReviewCard — dev/59 destructive revision (DEC-049.2)", () => {
     expect(screen.getByText(/existing work is untouched/)).toBeInTheDocument();
   });
 });
+
+describe("AgentReviewCard — dev/67-5 per-node plan review (Simulation Mode: create)", () => {
+  const planPart = (): AgentProposalPart => ({
+    type: "proposal",
+    proposalId: "p7",
+    tool: "dataflow.plan.write",
+    summary: "Apply plan · 2 nodes, 1 edges",
+    preview: "should not render when per-node rows do",
+    pins: { baseGraphDigest: "abc" },
+    status: "pending",
+    plan: {
+      goal: "heat analysis",
+      nodes: [
+        { ref: "a", nodeType: "curio.builtin/data-loading", title: "Load",
+          intent: "load it", expects: "in: none · out: dataframe" },
+        { ref: "b", nodeType: "curio.builtin/computation-analysis", title: "Analyze",
+          intent: "crunch it" },
+      ],
+      edgeCount: 1,
+    },
+  });
+
+  it("renders per-node rows with editable goals, expects, and per-node Apply", () => {
+    render(
+      <AgentReviewCard
+        part={planPart()}
+        onApplyPlanNode={jest.fn()}
+        onSavePlanGoal={jest.fn()}
+        planNodeState={{ appliedRefs: [], editedGoals: {} }}
+      />,
+    );
+    // Rows replace the raw preview — no generated code surface on plans.
+    expect(screen.queryByText(/should not render/)).toBeNull();
+    expect(screen.getByText("in: none · out: dataframe")).toBeInTheDocument();
+    expect(screen.getByLabelText("Goal for Load")).toHaveValue("load it");
+    expect(screen.getByRole("button", { name: "Create node Load" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Create node Analyze" })).toBeEnabled();
+  });
+
+  it("an edited goal saves on blur and an applied ref renders Created ✓", async () => {
+    const onSavePlanGoal = jest.fn().mockResolvedValue(undefined);
+    render(
+      <AgentReviewCard
+        part={planPart()}
+        onApplyPlanNode={jest.fn()}
+        onSavePlanGoal={onSavePlanGoal}
+        planNodeState={{ appliedRefs: ["a"], editedGoals: { b: "crunch 2024 only" } }}
+      />,
+    );
+    // Applied ref: no Apply button, Created marker, goal locked.
+    expect(screen.queryByRole("button", { name: "Create node Load" })).toBeNull();
+    expect(screen.getByText("Created ✓")).toBeInTheDocument();
+    expect(screen.getByLabelText("Goal for Load")).toBeDisabled();
+    // The edited goal overlay renders; a new edit saves on blur.
+    const goalB = screen.getByLabelText("Goal for Analyze");
+    expect(goalB).toHaveValue("crunch 2024 only");
+    fireEvent.change(goalB, { target: { value: "crunch 2025 instead" } });
+    fireEvent.blur(goalB);
+    await waitFor(() =>
+      expect(onSavePlanGoal).toHaveBeenCalledWith("p7", "b", "crunch 2025 instead"),
+    );
+  });
+
+  it("per-node Apply targets the row's ref", async () => {
+    const onApplyPlanNode = jest.fn().mockResolvedValue(undefined);
+    render(
+      <AgentReviewCard
+        part={planPart()}
+        onApplyPlanNode={onApplyPlanNode}
+        onSavePlanGoal={jest.fn()}
+        planNodeState={{ appliedRefs: [], editedGoals: {} }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Create node Analyze" }));
+    await waitFor(() => expect(onApplyPlanNode).toHaveBeenCalledWith("p7", "b"));
+  });
+
+  it("without the per-node callback the classic preview renders (regression)", () => {
+    render(<AgentReviewCard part={planPart()} onApply={jest.fn()} />);
+    expect(screen.getByText(/should not render when per-node rows do/)).toBeInTheDocument();
+  });
+});
