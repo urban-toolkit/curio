@@ -201,6 +201,42 @@ export const AgentReviewCard: React.FC<{
           </ul>
         </div>
       ) : null}
+      {part.validation ? (
+        // dev/67-7: the validation verdict — real runtime evidence, rendered
+        // inert. PASS or FAIL, Apply stays available (labeled honestly).
+        <div
+          className={`${styles.validation} ${
+            part.validation.verdict === "pass" ? styles.validationPass : styles.validationFail
+          }`}
+          role="status"
+          aria-label={`Validation ${part.validation.verdict}`}
+        >
+          <span className={styles.validationBadge}>
+            {part.validation.verdict === "pass" ? "PASS" : "FAIL"}
+          </span>
+          <span>
+            {part.validation.verdict === "pass"
+              ? `Executed through the dataflow${
+                  part.validation.evidence?.outputDataType
+                    ? ` — output: ${part.validation.evidence.outputDataType}`
+                    : ""
+                }`
+              : part.validation.evidence?.kind === "upstream-blocker"
+                ? `Upstream node ${part.validation.evidence?.blockerLabel ?? "?"} failed before this node ran`
+                : (part.validation.evidence?.detail ??
+                   `Validation failed after ${part.validation.rounds} round${part.validation.rounds === 1 ? "" : "s"}`)}
+            {part.validation.rounds > 1
+              ? ` (${part.validation.rounds} generation rounds)`
+              : ""}
+          </span>
+          {part.validation.evidence?.stderrTail ? (
+            <details className={styles.validationDetails}>
+              <summary>error output</summary>
+              <pre>{part.validation.evidence.stderrTail}</pre>
+            </details>
+          ) : null}
+        </div>
+      ) : null}
       {part.tool === "dataflow.plan.write" && part.plan && pending && onApplyPlanNode ? (
         // dev/67-5 (Simulation Mode: create): every planned node individually
         // inspectable — editable goal, expects, per-node Apply. Replaces the
@@ -239,7 +275,11 @@ export const AgentReviewCard: React.FC<{
               disabled={busy}
               onClick={() => void act(onApply)}
             >
-              {busy ? "Applying…" : "Apply"}
+              {busy
+                ? "Applying…"
+                : part.validation?.verdict === "fail"
+                  ? "Apply anyway"
+                  : "Apply"}
             </button>
           ) : null}
           {onDismiss ? (

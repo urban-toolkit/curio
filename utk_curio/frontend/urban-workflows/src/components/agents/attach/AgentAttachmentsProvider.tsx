@@ -52,6 +52,13 @@ export interface AgentAttachmentsContextValue extends AgentAttachmentsState {
   /** dev/67-5: apply ONE planned node (Simulation Mode: create) — the
    * proposal stays pending; the created node reaches the live canvas. */
   applyPlanNode: (attachmentId: string, proposalId: string, ref: string) => Promise<void>;
+  /** dev/67-7: validate one node by running the dataflow through it —
+   * resolves with the done payload (verdict, evidence, proposalId). */
+  validateNode: (
+    attachmentId: string,
+    target: { ref?: string; nodeId?: string },
+    onEvent?: (name: string, payload: Record<string, unknown>) => void,
+  ) => Promise<Record<string, unknown>>;
   /** dev/67-5: edit one planned node's goal before creation. */
   savePlanGoal: (
     attachmentId: string,
@@ -371,6 +378,28 @@ export const AgentAttachmentsProvider: React.FC<{
     [hydrateSession, state.reload],
   );
 
+  const validateNode = useCallback(
+    async (
+      attachmentId: string,
+      target: { ref?: string; nodeId?: string },
+      onEvent?: (name: string, payload: Record<string, unknown>) => void,
+    ) => {
+      const pid = projectRef.current;
+      if (!pid) throw new Error("no project");
+      try {
+        return await agentsApi.validateNode(
+          pid, attachmentId, target, onEvent ?? (() => undefined),
+        );
+      } finally {
+        // The validated proposal + ledger states arrive by refetch.
+        hydratedRef.current.delete(attachmentId);
+        await hydrateSession(attachmentId);
+        await state.reload();
+      }
+    },
+    [hydrateSession, state.reload],
+  );
+
   const savePlanGoal = useCallback(
     async (attachmentId: string, proposalId: string, ref: string, goal: string) => {
       const pid = projectRef.current;
@@ -531,6 +560,7 @@ export const AgentAttachmentsProvider: React.FC<{
       cancelSolve,
       applyPlanNode,
       savePlanGoal,
+      validateNode,
       dismissProposal,
     }),
     [
@@ -553,6 +583,7 @@ export const AgentAttachmentsProvider: React.FC<{
       cancelSolve,
       applyPlanNode,
       savePlanGoal,
+      validateNode,
       dismissProposal,
     ],
   );

@@ -342,6 +342,27 @@ describe("agentsApi", () => {
     });
 
 
+
+    it("validateNode streams lifecycle events and resolves on done (dev/67-7)", async () => {
+      global.fetch = jest.fn().mockResolvedValue(
+        streamResponse([
+          'event: validation_started\ndata: {"nodeId": "n1", "executionId": "e1"}\n\n',
+          'event: generation_round\ndata: {"round": 1}\n\n',
+          'event: node_executed\ndata: {"nodeId": "up1", "index": 0, "total": 2}\n\n',
+          'event: round_verdict\ndata: {"round": 1, "verdict": "pass"}\n\n',
+          'event: done\ndata: {"verdict": "pass", "rounds": 1, "proposalId": "vp1", "nodeId": "n1"}\n\n',
+        ]),
+      );
+      const seen: string[] = [];
+      const result = await agentsApi.validateNode("p1", "att-1", { ref: "ra" }, (n) => seen.push(n));
+      expect(seen).toEqual(["validation_started", "generation_round", "node_executed", "round_verdict"]);
+      expect(result).toMatchObject({ verdict: "pass", proposalId: "vp1" });
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("/attachments/att-1/validate-node"),
+        expect.objectContaining({ method: "POST", body: JSON.stringify({ ref: "ra" }) }),
+      );
+    });
+
     it("posts propose mode when given (dev/67-6)", async () => {
       global.fetch = jest.fn().mockResolvedValue(
         streamResponse([

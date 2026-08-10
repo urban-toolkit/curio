@@ -220,3 +220,44 @@
   background: #f6f7f8;
   color: #6b7280;
 }
+
+/* dev/67-7 — the validation verdict block. */
+.validation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+
+.validationPass {
+  background: #f0f9f2;
+  border: 1px solid #bfe3cb;
+  color: #2f7d4f;
+}
+
+.validationFail {
+  background: #fdf2f1;
+  border: 1px solid #f0c4c1;
+  color: #b3423f;
+}
+
+.validationBadge {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.validationDetails {
+  flex-basis: 100%;
+}
+
+.validationDetails pre {
+  margin: 6px 0 0;
+  max-height: 160px;
+  overflow: auto;
+  font-size: 0.72rem;
+  white-space: pre-wrap;
+}

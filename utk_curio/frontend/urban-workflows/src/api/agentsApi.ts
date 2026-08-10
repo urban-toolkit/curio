@@ -198,6 +198,21 @@ export interface AgentProposalPart {
   justification?: string;
   /** node.template.create only: the proposed type definition summary. */
   template?: { label: string; engine: string; description?: string };
+  /** dev/67-7: the validation verdict riding a validated content proposal. */
+  validation?: {
+    verdict: "pass" | "fail" | string;
+    rounds: number;
+    evidence?: {
+      kind?: string;
+      detail?: string;
+      stderrTail?: string;
+      outputDataType?: string;
+      blocker?: string;
+      blockerLabel?: string;
+      warnings?: string;
+      goal?: string;
+    };
+  };
   /** dataflow.plan.write only (dev/52): the plan's display copy for the review card. */
   plan?: {
     goal: string;
@@ -868,6 +883,37 @@ export const agentsApi = {
       signal,
     );
     if (result === null) throw new Error("solve stream ended without a result");
+    return result;
+  },
+
+  /**
+   * Generate → execute-through → validate → self-correct → propose for ONE
+   * node (dev/67-7, Simulation Mode: validate). Streams lifecycle events
+   * (`validation_started`, `generation_round`, `node_executed`,
+   * `round_verdict`) and resolves with the `done` payload — verdict,
+   * evidence, rounds, and the minted proposal id (PASS or FAIL: the user
+   * decides on the review card).
+   */
+  async validateNode(
+    projectId: string,
+    attachmentId: string,
+    target: { ref?: string; nodeId?: string },
+    onEvent: (name: string, payload: Record<string, unknown>) => void,
+    signal?: AbortSignal,
+  ): Promise<Record<string, unknown>> {
+    let result: Record<string, unknown> | null = null;
+    await postSseStream(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/validate-node`,
+      target,
+      (event, payload) => {
+        if (event === "done") result = payload;
+        else if (event === "error")
+          throw new Error((payload as { error?: string }).error || "validation failed");
+        else onEvent(event, payload);
+      },
+      signal,
+    );
+    if (result === null) throw new Error("validation ended without a result");
     return result;
   },
 

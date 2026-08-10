@@ -302,3 +302,51 @@ describe("AgentReviewCard — dev/67-5 per-node plan review (Simulation Mode: cr
     expect(screen.getByText(/should not render when per-node rows do/)).toBeInTheDocument();
   });
 });
+
+describe("AgentReviewCard — dev/67-7 validation block", () => {
+  const validated = (verdict: "pass" | "fail", evidence = {}): AgentProposalPart => ({
+    ...part(),
+    validation: { verdict, rounds: verdict === "pass" ? 1 : 3, evidence },
+  });
+
+  it("renders PASS with the output type", () => {
+    render(
+      <AgentReviewCard
+        part={validated("pass", { outputDataType: "dataframe" })}
+        onApply={jest.fn()}
+      />,
+    );
+    expect(screen.getByText("PASS")).toBeInTheDocument();
+    expect(screen.getByText(/output: dataframe/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apply" })).toBeInTheDocument();
+  });
+
+  it("renders FAIL with the traceback and labels Apply honestly", () => {
+    render(
+      <AgentReviewCard
+        part={validated("fail", { kind: "execution-error", stderrTail: "Traceback: KeyError" })}
+        onApply={jest.fn()}
+      />,
+    );
+    expect(screen.getByText("FAIL")).toBeInTheDocument();
+    expect(screen.getByText("Traceback: KeyError")).toBeInTheDocument();
+    // Apply stays available — honesty over gatekeeping, labeled plainly.
+    expect(screen.getByRole("button", { name: "Apply anyway" })).toBeInTheDocument();
+  });
+
+  it("names an upstream blocker instead of blaming the node", () => {
+    render(
+      <AgentReviewCard
+        part={validated("fail", { kind: "upstream-blocker", blockerLabel: "Load CSV" })}
+        onApply={jest.fn()}
+      />,
+    );
+    expect(screen.getByText(/Upstream node Load CSV failed/)).toBeInTheDocument();
+  });
+
+  it("proposals without validation render exactly as before (regression)", () => {
+    render(<AgentReviewCard part={part()} onApply={jest.fn()} />);
+    expect(screen.queryByText("PASS")).toBeNull();
+    expect(screen.getByRole("button", { name: "Apply" })).toBeInTheDocument();
+  });
+});
