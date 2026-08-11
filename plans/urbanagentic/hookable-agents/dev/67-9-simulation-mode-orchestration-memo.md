@@ -1,7 +1,17 @@
 # Implementation Memo 67-9: Simulation Mode Orchestration + Apply Plan as Automated Sequence (Assembly)
 
 Date: 2026-08-05
-Status: proposed (part of the dev/67 program — see `67-1-index.md`; implement LAST)
+Status: implemented 2026-08-05 — COMMIT-4e35002b (backend driver + the parked-plan
+mechanism), COMMIT-7beca0dd (frontend). Verification: backend 1128 passed (8 skipped),
+frontend 732 passed, tsc clean. Ledger: DEC-054 (dev/03 + 2.1), BL-P5-20260805-13.
+Recorded deviations: (1) THE PARKED PLAN — the single-activeProposal model would have
+let the sequence's own content reviews supersede the pending plan; it now parks on
+`record.planProposal`, stays addressable through `_pending_plan_proposal`, and is
+cleared on completion/replacement (the memo did not anticipate this knot); (2) no
+dedicated Pause button — Cancel stops at the boundary and Resume continues from
+persisted state, which covers the memo's pause semantics with one less control;
+(3) stage chips stay Plan/Review/Simulate(=Solve rank)/Ready — a separate Connect chip
+awaits demand.
 
 ## 1. Problem Statement
 
@@ -136,11 +146,11 @@ review or edits the goal (67-5) and re-runs.
 
 ## 8. Acceptance Criteria
 
-- [ ] A new builder plan defaults to Simulation Mode; Apply Plan runs the automated
+- [x] A new builder plan defaults to Simulation Mode; Apply Plan runs the automated
       validated sequence and PAUSES on the first failure with the evidence and a
       pending review — never materializing the remainder.
-- [ ] Step mode exposes every stage individually; reload resumes exactly.
-- [ ] The classic bulk apply exists only as the explicit secondary action.
+- [x] Step mode exposes every stage individually; reload resumes exactly.
+- [x] The classic bulk apply exists only as the explicit secondary action.
 
 ## 9. Recommended Commit Breakdown
 
