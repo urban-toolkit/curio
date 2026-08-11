@@ -94,8 +94,9 @@ class TestGlobalCatalog:
         resp = client.get("/api/agents/catalog", headers=_auth(token))
         assert resp.status_code == 200
         agents = resp.get_json()["agents"]
-        # 13 migrations + the three composites (dev/48, dev/50, dev/52).
-        assert len(agents) == 16
+        # 13 migrations + the three composites (dev/48, dev/50, dev/52)
+        # + the researcher (dev/67-4).
+        assert len(agents) == 17
         assert all(a["scope"] == "global" and a["provenance"]["trust"] == "built-in" for a in agents)
         ids = {a["id"] for a in agents}
         assert "agent.node-explainer" in ids
@@ -5232,6 +5233,83 @@ class TestPlanEdgeApply:
         assert body["results"]["0"]["status"] == "refused"
         assert "merge-flow" in body["results"]["0"]["reason"]
         assert body["status"] == "pending"  # a refused edge never completes
+
+
+class TestVerifiedDiscovery:
+    """dev/67-4 (DEC-053) — the Dataset Finder stops laundering: every
+    external candidate row carries a deterministic verification verdict, and
+    research.verify delegates receive runtime-verified evidence (DEC-046
+    children are tool-less — the runtime verifies, the child synthesizes)."""
+
+    def _candidates_reply(self, rows):
+        import json as _json
+
+        payload = {"datasetCandidates": {"lanes": {"external": rows, "catalog": []}}}
+        return f"Here are candidate sources.\n```curio.v1\n{_json.dumps(payload)}\n```"
+
+    def test_external_rows_carry_verification_verdicts(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.verify.verify_external_source",
+            lambda url, **kw: (
+                {"status": "verified", "httpStatus": 200, "checkedAt": "now",
+                 "provider": "socrata", "datasetId": "abcd-1234"}
+                if url else
+                {"status": "unverified", "detail": "no probeable URL — the identifier was never checked",
+                 "checkedAt": "now"}
+            ),
+        )
+        rows = [
+            {"name": "Chicago Heat", "sourceType": "api",
+             "url": "https://data.cityofchicago.org/resource/abcd-1234.json"},
+            {"name": "Some Portal Guess", "sourceType": "portal"},  # no URL
+        ]
+        helper = TestDataflowPlanMint()
+        att_id, _ = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            coord="agent.dataset-finder@1.0.0",
+            replies=[self._candidates_reply(rows)],
+        )
+        body = helper._run(client, token, alice_project, att_id).get_json()
+        part = next(p for p in body["content"] if p["type"] == "datasetCandidates")
+        verified, unverified = part["lanes"]["external"]
+        assert verified["verification"]["status"] == "verified"
+        assert verified["verification"]["datasetId"] == "abcd-1234"
+        # A row with no probeable URL is LOUDLY unverified — never implied.
+        assert unverified["verification"]["status"] == "unverified"
+        assert "never checked" in unverified["verification"]["detail"]
+
+    def test_research_verify_delegates_get_runtime_evidence(self, tmp_curio, monkeypatch):
+        from utk_curio.backend.app.agents import services as services_mod
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.verify.verify_external_source",
+            lambda url, **kw: {"status": "unreachable", "httpStatus": 404,
+                               "detail": "the endpoint answered 404", "checkedAt": "now"},
+        )
+        enriched = services_mod._enriched_delegate_inputs(
+            "4242", "p-any", {}, "research.verify",
+            {"url": "https://data.example.gov/resource/fake-0000.json", "question": "does it exist?"},
+        )
+        assert enriched["verification"]["status"] == "unreachable"
+        assert enriched["question"] == "does it exist?"  # model keys survive
+        # No URL → no fabricated evidence.
+        assert services_mod._enriched_delegate_inputs(
+            "4242", "p-any", {}, "research.verify", {"question": "?"},
+        ) == {"question": "?"}
+
+    def test_researcher_is_installable_and_grants_web_tools(self, client, user_and_token, tmp_curio, alice_project):
+        user, token = user_and_token
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/install",
+            json={"coord": "agent.node-researcher@1.0.0"}, headers=_auth(token),
+        )
+        assert r.status_code == 201
+        from utk_curio.backend.app.agents import builtin
+
+        m = builtin.get_builtin_manifest("agent.node-researcher@1.0.0")
+        assert [t.id for t in m.tools] == ["web.search", "web.fetch", "node.read"]
+        assert m.capability_ids == ["research.verify", "research.summarize"]
 
 
 class TestSimulationDriver:

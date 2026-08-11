@@ -25,6 +25,7 @@ class TestRegistry:
             "dataflow.read", "node.read", "node.content.write", "node.create",
             "node.template.create", "catalog.search", "dataset.install",
             "dataflow.plan.write", "node.runtime.read",
+            "web.fetch", "web.search",
         }
         assert tools.REGISTRY["dataflow.read"].effect == "read"
         assert tools.REGISTRY["node.read"].effect == "read"
@@ -35,6 +36,8 @@ class TestRegistry:
         assert tools.REGISTRY["dataset.install"].effect == "mutate"
         assert tools.REGISTRY["dataflow.plan.write"].effect == "mutate"
         assert tools.REGISTRY["node.runtime.read"].effect == "read"
+        assert tools.REGISTRY["web.fetch"].effect == "read"
+        assert tools.REGISTRY["web.search"].effect == "read"
 
     def test_contract_validates_effect(self):
         with pytest.raises(ValueError):
@@ -307,3 +310,57 @@ class TestNodeRuntimeRead:
         assert status == "error" and "not found" in text
         status, text = self._read()
         assert status == "error" and "not attached" in text
+
+
+class TestWebTools:
+    """dev/67-4 (DEC-053) — the web read tools: policy-gated, bounded,
+    honest when unconfigured; no spec needed."""
+
+    def _fetch(self, params, monkeypatch=None, result=None, error=None):
+        from utk_curio.backend.app.agents import egress
+
+        if monkeypatch is not None:
+            if error is not None:
+                def _boom(url, **kw):
+                    raise error
+                monkeypatch.setattr(egress, "fetch", _boom)
+            elif result is not None:
+                monkeypatch.setattr(egress, "fetch", lambda url, **kw: result)
+        return tools.execute_read_tool(
+            "web.fetch", user_key="42", project_id="none", target=None, params=params,
+        )
+
+    def test_web_fetch_returns_bounded_preview(self, monkeypatch):
+        from utk_curio.backend.app.agents.egress import EgressResult
+
+        status, text = self._fetch(
+            {"url": "https://api.example.org/x"},
+            monkeypatch,
+            result=EgressResult(
+                url="https://api.example.org/x", final_url="https://api.example.org/x",
+                status=200, content_type="application/json", body='{"a": 1}',
+            ),
+        )
+        assert status == "ok"
+        payload = json.loads(text)
+        assert payload["status"] == 200 and payload["bodyPreview"] == '{"a": 1}'
+
+    def test_web_fetch_policy_refusal_is_data(self, monkeypatch):
+        from utk_curio.backend.app.agents.egress import EgressRefused
+
+        status, text = self._fetch(
+            {"url": "https://metadata.internal/x"},
+            monkeypatch, error=EgressRefused("non-public address"),
+        )
+        assert status == "error" and "egress policy" in text
+        status, text = self._fetch({})
+        assert status == "error" and "params.url" in text
+
+    def test_web_search_unconfigured_errors_honestly(self, monkeypatch):
+        monkeypatch.delenv("CURIO_SEARCH_URL", raising=False)
+        status, text = tools.execute_read_tool(
+            "web.search", user_key="42", project_id="none", target=None,
+            params={"q": "chicago heat dataset"},
+        )
+        assert status == "error"
+        assert "not configured" in text and "web.fetch" in text

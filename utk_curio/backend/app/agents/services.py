@@ -31,7 +31,7 @@ from utk_curio.backend.app.agents import (
     storage,
     tools,
 )
-from utk_curio.backend.app.agents import node_context
+from utk_curio.backend.app.agents import egress, node_context, verify
 from utk_curio.backend.app.agents.policy import PolicyValidationError, StaleRevisionError
 from utk_curio.backend.app.agents.attachments import AttachmentError
 from utk_curio.backend.app.agents.manifest import AgentManifest
@@ -4273,6 +4273,35 @@ def _mint_node_create(
     )
 
 
+def _verify_candidate_parts(parts: list) -> None:
+    """dev/67-4 (DEC-053): the Dataset Finder stops laundering — external
+    candidate rows are verified DETERMINISTICALLY before they reach the user.
+    URL-bearing rows are probed through the egress policy (first 4 — the
+    run-budget shape; provider refinements like Socrata add dataset
+    name/columns on top of the generic gate, which covers ANY dataset API);
+    URL-less rows are loudly UNVERIFIED. The evidence rides the row into the
+    card and the Node Builder handoff."""
+    probed = 0
+    for part in parts:
+        if not isinstance(part, dict) or part.get("type") != "datasetCandidates":
+            continue
+        lanes = part.get("lanes") or {}
+        for row in lanes.get("external") or []:
+            if not isinstance(row, dict):
+                continue
+            url = row.get("url")
+            if url and probed < egress.MAX_CALLS_PER_RUN:
+                probed += 1
+                row["verification"] = verify.verify_external_source(url)
+            elif url:
+                row["verification"] = {
+                    "status": "unverified",
+                    "detail": "the egress budget was spent before this row — not checked",
+                }
+            else:
+                row["verification"] = verify.verify_external_source(None)
+
+
 def _execute_tool_request(
     user_key: str, project_id: str, loop_ctx: dict, req: dict, tool_calls: list, minted: list
 ) -> tuple[str, str]:
@@ -4288,7 +4317,16 @@ def _execute_tool_request(
     started = time.monotonic()
     if tool_id not in loop_ctx["granted"]:
         status, text = "refused", f"tool {tool_id!r} is not granted for this run"
+    elif tool_id in ("web.fetch", "web.search") and loop_ctx.get("egressCalls", 0) >= egress.MAX_CALLS_PER_RUN:
+        # dev/67-4 (DEC-053): the per-run egress budget — verification, never
+        # crawling. The refusal is data the model must surface honestly.
+        status, text = "error", (
+            f"the egress budget is exhausted ({egress.MAX_CALLS_PER_RUN} web "
+            "calls per run) — report what you verified so far"
+        )
     else:
+        if tool_id in ("web.fetch", "web.search"):
+            loop_ctx["egressCalls"] = loop_ctx.get("egressCalls", 0) + 1
         contract = tools.REGISTRY.get(tool_id)
         if contract is None:
             status, text = "refused", f"tool {tool_id!r} is not available"
@@ -4400,6 +4438,15 @@ def _enriched_delegate_inputs(
     stops generating blind to the graph. The node resolves from the model's
     ``nodeId`` input or the parent attachment's node target; no node, no
     enrichment (honest absence beats a fabricated neighborhood)."""
+    if capability == "research.verify" and "verification" not in inputs:
+        # dev/67-4: DEC-046 children are structurally tool-less — the runtime
+        # runs the deterministic validators and the child synthesizes over
+        # REAL evidence (the researcher's own attachment runs use the web
+        # tools directly).
+        url = inputs.get("url") or inputs.get("endpoint")
+        if isinstance(url, str) and url.strip():
+            return {**inputs, "verification": verify.verify_external_source(url)}
+        return inputs
     if capability != "node.content.generate" or "nodeContext" in inputs:
         return inputs
     node_id = inputs.get("nodeId")
@@ -4505,6 +4552,7 @@ def run_attachment(
             )
             _add_usage(usage_total, usage_sink)
             visible, parts = content.extract_content(reply)
+            _verify_candidate_parts(parts)  # dev/67-4: no unverified laundering
             req = (
                 parts[0]
                 if parts and parts[0].get("type") in ("toolRequest", "delegateRequest")
@@ -4707,6 +4755,7 @@ def stream_attachment(
                     yield ("delta", emit)
         reply = "".join(chunks)
         visible, parts = content.extract_content(reply)
+        _verify_candidate_parts(parts)  # dev/67-4: no unverified laundering
         if withheld is not None and not parts:
             if hold_plan_tail and (
                 '"dataflowPlan"' in withheld or '"dataflow.plan.write"' in withheld

@@ -145,6 +145,18 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      "Bind keywords for a workflow.",
                      "keywords_binding_prompt.txt", ("workflow.keyword.bind",), ("planning",),
                      reads=("keywords", "dataflowContext")),
+    # dev/67-4 (DEC-053): the research agent — concise factual verification
+    # of external sources (dataset ids, endpoints, schemas) other agents
+    # chain to via research.verify; policy-gated web tools; never mutates.
+    BuiltinAgentSpec("agent.node-researcher", "Node Researcher", "evaluate",
+                     "Verify external facts — dataset ids, API endpoints, schemas, "
+                     "parameter names — with policy-gated web access; reusable and "
+                     "chainable; reports failure to verify as a finding.",
+                     "research_instruction.txt",
+                     ("research.verify", "research.summarize"), ("validation",),
+                     targets=("node", "canvas"),
+                     reads=("mission", "nodeContext"),
+                     tools=("web.search", "web.fetch", "node.read")),
     # The first P5 composite (memo dev/48; spec dev/15 §3.4). Net-new
     # instruction — no migrated prompt source. dev/15 deviations recorded in
     # the memo: "connection" target and agent.package-recommendation deferred.
@@ -161,7 +173,8 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      reads=("nodeIntent", "targetContext", "externalSelection"),
                      tools=("dataflow.read", "node.create", "node.template.create",
                             "node.runtime.read", "node.content.write"),
-                     delegates_to=("agent.node-content-builder", "agent.execution-subtask-planner"),
+                     delegates_to=("agent.node-content-builder", "agent.execution-subtask-planner",
+                                   "agent.node-researcher"),
                      review_policy="review-before-apply"),
     # The second P5 composite (memo dev/50; spec dev/15 §3.4 + docs/06). Two-
     # lane discovery: catalog picks → reviewed dataset.install; external picks
@@ -177,7 +190,7 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      reads=("mission", "nodeContext", "catalog"),
                      tools=("catalog.search", "dataset.install", "dataflow.read"),
                      delegates_to=("agent.node-builder", "agent.workflow-suggester",
-                                   "agent.keyword-binding-agent"),
+                                   "agent.keyword-binding-agent", "agent.node-researcher"),
                      review_policy="review-before-apply",
                      node_requires=("data-loading",)),
     # The third P5 composite (memo dev/52; spec dev/15 §3.4 + dev/49 DR-1…5).
@@ -196,7 +209,7 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                    "agent.connection-builder", "agent.dataflow-task-planner",
                                    "agent.execution-subtask-planner", "agent.task-refresh-agent",
                                    "agent.workflow-suggester", "agent.plan-coherence-validator",
-                                   "agent.dataflow-explainer"),
+                                   "agent.dataflow-explainer", "agent.node-researcher"),
                      review_policy="review-before-apply"),
 )
 

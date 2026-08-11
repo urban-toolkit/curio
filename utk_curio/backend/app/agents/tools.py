@@ -61,6 +61,32 @@ REGISTRY: dict[str, ToolContract] = {
             "full spec (large)."
         ),
     ),
+    # dev/67-4 (DEC-053) — consumer: agent.node-researcher. Policy-gated
+    # egress (SSRF guards, byte caps, per-run budget) — verification of
+    # external dataset APIs, never crawling.
+    "web.fetch": ToolContract(
+        id="web.fetch",
+        contract_version="1",
+        effect="read",
+        description=(
+            'Fetch one public https URL and return its status, content type, '
+            'and a bounded body preview. Params: {"url": "https://..."}. '
+            "Use it to VERIFY endpoints, dataset ids, and API shapes — never "
+            "to crawl. Private/internal addresses are refused; at most 4 "
+            "web calls per run."
+        ),
+    ),
+    "web.search": ToolContract(
+        id="web.search",
+        contract_version="1",
+        effect="read",
+        description=(
+            'Search the web for factual verification. Params: {"q": "<query>"}. '
+            "Returns bounded {title, url, snippet} rows when this deployment "
+            "has a search provider configured — otherwise an honest "
+            '"not configured" error. At most 4 web calls per run.'
+        ),
+    ),
     # dev/67-2 (DEC-052) — consumers: the builder/debug/explainer agents. The
     # runtime journal's read surface: why a node's last run failed.
     "node.runtime.read": ToolContract(
@@ -339,6 +365,11 @@ def execute_read_tool(
     from utk_curio.backend.app.projects import storage as projects_storage
 
     try:
+        # dev/67-4: the web tools need no project spec — handled first.
+        if tool_id == "web.fetch":
+            return _execute_web_fetch(params)
+        if tool_id == "web.search":
+            return _execute_web_search(params)
         spec = projects_storage.read_spec(user_key, project_id)
         if spec is None:
             return "error", "no saved project spec is available"
@@ -386,3 +417,71 @@ def execute_read_tool(
         return "error", f"unknown read tool {tool_id!r}"
     except Exception as exc:  # tool failures are data, never run errors
         return "error", f"tool failed: {exc}"
+
+
+# web.fetch preview bound: enough to judge an API's shape, small enough to
+# never crowd the context (the tool-result cap still applies on top).
+_WEB_BODY_PREVIEW_MAX_CHARS = 4000
+_WEB_SEARCH_MAX_ROWS = 8
+
+
+def _execute_web_fetch(params: dict) -> tuple[str, str]:
+    """dev/67-4 (DEC-053): one policy-gated fetch, framed as bounded data."""
+    from utk_curio.backend.app.agents import egress
+
+    url = params.get("url")
+    if not isinstance(url, str) or not url.strip():
+        return "error", "params.url must be a non-empty URL string"
+    try:
+        result = egress.fetch(url.strip())
+    except egress.EgressRefused as exc:
+        return "error", f"refused by the egress policy: {exc}"
+    except Exception as exc:
+        return "error", f"the endpoint is unreachable: {exc}"
+    return "ok", _truncate(json.dumps({
+        "url": result.url,
+        "finalUrl": result.final_url,
+        "status": result.status,
+        "contentType": result.content_type[:100],
+        "bodyPreview": result.body[:_WEB_BODY_PREVIEW_MAX_CHARS],
+        "truncated": result.truncated or len(result.body) > _WEB_BODY_PREVIEW_MAX_CHARS,
+    }, ensure_ascii=False))
+
+
+def _execute_web_search(params: dict) -> tuple[str, str]:
+    """dev/67-4: deployment-configured search — ``CURIO_SEARCH_URL`` is a URL
+    template with ``{q}`` returning a JSON list of {title, url, snippet}-like
+    rows (a SearXNG/portal endpoint, for example). Absent configuration
+    errors honestly; results still flow through the egress policy."""
+    import os
+    from urllib.parse import quote
+
+    from utk_curio.backend.app.agents import egress
+
+    query = params.get("q")
+    if not isinstance(query, str) or not query.strip():
+        return "error", "params.q must be a non-empty query string"
+    template = os.environ.get("CURIO_SEARCH_URL") or ""
+    if "{q}" not in template:
+        return "error", (
+            "web search is not configured for this deployment "
+            "(set CURIO_SEARCH_URL) — verify direct URLs with web.fetch instead"
+        )
+    try:
+        result = egress.fetch(template.replace("{q}", quote(query.strip())))
+        payload = json.loads(result.body)
+    except egress.EgressRefused as exc:
+        return "error", f"refused by the egress policy: {exc}"
+    except Exception as exc:
+        return "error", f"the search provider failed: {exc}"
+    rows_raw = payload.get("results") if isinstance(payload, dict) else payload
+    rows = []
+    for row in (rows_raw or [])[:_WEB_SEARCH_MAX_ROWS]:
+        if not isinstance(row, dict):
+            continue
+        rows.append({
+            "title": str(row.get("title") or "")[:160],
+            "url": str(row.get("url") or row.get("link") or "")[:300],
+            "snippet": str(row.get("snippet") or row.get("content") or "")[:300],
+        })
+    return "ok", _truncate(json.dumps({"results": rows}, ensure_ascii=False))

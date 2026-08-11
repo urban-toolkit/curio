@@ -27,8 +27,9 @@ _EXPECTED = {
 
 class TestRoster:
     def test_sixteen_agents(self):
-        # 13 migrations + the three composites (dev/48, dev/50, dev/52).
-        assert len(builtin.BUILTIN_AGENTS) == 16
+        # 13 migrations + the three composites (dev/48, dev/50, dev/52)
+        # + the researcher (dev/67-4).
+        assert len(builtin.BUILTIN_AGENTS) == 17
 
     def test_evaluator_excluded(self):
         ids = {s.agent_id for s in builtin.BUILTIN_AGENTS}
@@ -43,7 +44,8 @@ class TestRoster:
         assert got == _EXPECTED
         # The composites are the only non-migration entries (dev/48, dev/50).
         extras = {s.agent_id for s in builtin.BUILTIN_AGENTS} - set(_EXPECTED)
-        assert extras == {"agent.node-builder", "agent.dataset-finder", "agent.dataflow-builder"}
+        assert extras == {"agent.node-builder", "agent.dataset-finder",
+                          "agent.dataflow-builder", "agent.node-researcher"}
 
     def test_every_prompt_file_exists(self):
         for spec in builtin.BUILTIN_AGENTS:
@@ -53,7 +55,7 @@ class TestRoster:
 class TestManifests:
     def test_all_validate(self):
         manifests = builtin.list_builtin_manifests()
-        assert len(manifests) == 16
+        assert len(manifests) == 17
         assert all(isinstance(m, AgentManifest) for m in manifests)
 
     def test_coords_and_capabilities(self):
@@ -112,6 +114,7 @@ class TestNodeBuilderComposite:
         assert m.delegates_to == [
             "agent.node-content-builder",
             "agent.execution-subtask-planner",
+            "agent.node-researcher",  # dev/67-4: chainable verification
         ]
         # dev/67-6 lifts the dev/48 canvas-only limitation: modify-existing
         # attaches to the node it modifies.
@@ -131,6 +134,7 @@ class TestNodeBuilderComposite:
         assert nb["runtime"] == {"execution": "foreground", "reviewPolicy": "review-before-apply"}
         assert nb["delegatesTo"] == [
             "agent.node-content-builder", "agent.execution-subtask-planner",
+            "agent.node-researcher",
         ]
         composites = {"agent.node-builder", "agent.dataset-finder", "agent.dataflow-builder"}
         for spec in builtin.BUILTIN_AGENTS:
@@ -164,6 +168,7 @@ class TestDatasetFinderComposite:
             "agent.node-builder",
             "agent.workflow-suggester",
             "agent.keyword-binding-agent",
+            "agent.node-researcher",
         ]
         by_kind = {t.kind: t for t in m.compatible_targets}
         assert set(by_kind) == {"node", "canvas"}
@@ -194,6 +199,7 @@ class TestDataflowBuilderComposite:
             "agent.dataflow-task-planner", "agent.execution-subtask-planner",
             "agent.task-refresh-agent", "agent.workflow-suggester",
             "agent.plan-coherence-validator", "agent.dataflow-explainer",
+            "agent.node-researcher",  # dev/67-4: chainable verification
         ]
         assert [t.kind for t in m.compatible_targets] == ["canvas"]
         assert [t.id for t in m.tools] == ["dataflow.read", "dataflow.plan.write", "node.runtime.read"]
