@@ -1,7 +1,14 @@
 # Implementation Memo 67-8: Connection Review Stage (Simulation Mode: Connect)
 
 Date: 2026-08-05
-Status: proposed (part of the dev/67 program — see `67-1-index.md`)
+Status: implemented 2026-08-05 — COMMIT-4e94a0ac (backend), COMMIT-53bacb88 (frontend).
+Verification: backend 1123 passed (8 skipped), frontend 727 passed, tsc clean.
+BL-P5-20260805-12. Recorded notes: (1) completion semantics — when every ref and every
+edge is applied the proposal flips to applied and the phase follows nodeRuns
+(applied|ready), so the classic Solve gate works unchanged; a refused edge keeps the
+proposal pending (replan territory); (2) the event-bus kind allowlist silently dropped
+the new edges-created mutation until the tests caught it — the dev/61 recognition lesson
+one layer down.
 
 ## 1. Problem Statement
 
@@ -103,11 +110,11 @@ labels (existing ids); no new part type. `edgeStates` mirrors for the strip and 
 
 ## 8. Acceptance Criteria
 
-- [ ] Plan edges render as a vertical, named, per-edge-approvable list; nothing applies
+- [x] Plan edges render as a vertical, named, per-edge-approvable list; nothing applies
       until its endpoints exist.
-- [ ] An edge that would create invalid fan-in is refused BY NAME at the review stage,
+- [x] An edge that would create invalid fan-in is refused BY NAME at the review stage,
       never materialized.
-- [ ] Sequential per-node + per-edge application reproduces the whole-plan result.
+- [x] Sequential per-node + per-edge application reproduces the whole-plan result.
 
 ## 9. Recommended Commit Breakdown
 
