@@ -5234,6 +5234,193 @@ class TestPlanEdgeApply:
         assert body["status"] == "pending"  # a refused edge never completes
 
 
+class TestSimulationDriver:
+    """dev/67-9 (DEC-054) — the Simulation Mode driver: one transition
+    function for step and auto; create → validate → auto-approve-on-PASS per
+    node in topological order → connections; pause on failure with nothing
+    downstream generated; resume from persisted state; the plan proposal
+    PARKS while content reviews cycle through the active slot."""
+
+    def _fake_exec(self, monkeypatch, fail_markers=()):
+        def _exec(endpoint, payload):
+            if any(m in payload["code"] for m in fail_markers):
+                return {"stdout": [], "stderr": "Traceback: boom",
+                        "output": {"path": "", "dataType": "str"}}
+            return {"stdout": [], "stderr": "",
+                    "output": {"path": "art", "dataType": "dataframe"}}
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.execution.runner._http_exec", _exec
+        )
+
+    def _setup(self, client, user, token, project_id, monkeypatch, replies):
+        helper = TestDataflowPlanMint()
+        att_id, calls = helper._setup(
+            client, user, token, project_id, monkeypatch, replies=replies,
+        )
+        client.post(
+            f"/api/agents/projects/{project_id}/install",
+            json={"coord": "agent.node-content-builder@1.0.0"}, headers=_auth(token),
+        )
+        r = helper._run(client, token, project_id, att_id)
+        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
+        return att_id, proposal, calls
+
+    def _simulate(self, client, token, project_id, att_id, mode):
+        r = client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/simulate",
+            json={"mode": mode}, headers=_auth(token),
+        )
+        assert r.status_code == 200, r.get_json()
+        return TestStreamedSolve()._sse_events(r)
+
+    def _spec(self, user, project_id):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        return projects_storage.read_spec(_user_dir_key(user), project_id)
+
+    def test_auto_builds_and_validates_the_whole_plan(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        self._fake_exec(monkeypatch)
+        att_id, proposal, _ = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Plan.\n" + helper._plan_tail(), "print('generated')"],
+        )
+        events = self._simulate(client, token, alice_project, att_id, "auto")
+        done = events[-1][1]
+        assert done["status"] == "completed"
+        session = done["builderSession"]
+        assert set(session["nodeStates"].values()) == {"approved"}
+        assert session["edgeStates"] == {"0": "applied"}
+        assert session["phase"] == "ready"  # everything solved and connected
+        # The canvas mutations rode the stream.
+        names = [k for k, _ in events]
+        assert names.count("node_created") == 2
+        assert names.count("node_content_applied") == 2
+        assert "edges_created" in names
+        # The spec is fully materialized: contents written, edge wired.
+        spec = self._spec(user, alice_project)
+        created = [n for n in spec["dataflow"]["nodes"] if n.get("id") != "n1"]
+        assert all(n["content"] == "print('generated')" for n in created)
+        # Auto-approval is recorded, never silent (DEC-054).
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        active = next(c for c in cards if c["attachmentId"] == att_id)["activeProposal"]
+        assert active["status"] == "applied"
+
+    def test_step_performs_exactly_one_action(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        self._fake_exec(monkeypatch)
+        att_id, proposal, _ = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Plan.\n" + helper._plan_tail(), "print('generated')"],
+        )
+        events = self._simulate(client, token, alice_project, att_id, "step")
+        done = events[-1][1]
+        assert done["status"] == "stepped"
+        assert done["nextAction"] == {"action": "validate",
+                                      "ref": proposal["plan"]["nodes"][0]["ref"]}
+        session = done["builderSession"]
+        created_states = [s for s in session["nodeStates"].values() if s == "created"]
+        assert len(created_states) == 1  # exactly ONE node created
+        # Step to completion — N step calls ≡ one auto run. The completing
+        # step reports nextAction None; a further call refuses honestly.
+        for _ in range(20):
+            events = self._simulate(client, token, alice_project, att_id, "step")
+            done = events[-1][1]
+            if done["status"] == "completed" or (
+                done["status"] == "stepped" and done.get("nextAction") is None
+            ):
+                break
+        assert set(done["builderSession"]["nodeStates"].values()) == {"approved"}
+        assert done["builderSession"]["edgeStates"] == {"0": "applied"}
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/simulate",
+            json={"mode": "step"}, headers=_auth(token),
+        )
+        assert r.status_code == 409  # complete: nothing to simulate
+
+    def test_validation_failure_pauses_and_resume_continues(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        # Every generation fails validation: the run pauses at the FIRST node.
+        self._fake_exec(monkeypatch, fail_markers=("always_bad",))
+        att_id, proposal, _ = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Plan.\n" + helper._plan_tail(), "always_bad()"],
+        )
+        refs = [n["ref"] for n in proposal["plan"]["nodes"]]
+        events = self._simulate(client, token, alice_project, att_id, "auto")
+        done = events[-1][1]
+        assert done["status"] == "paused"
+        assert done["reason"]["kind"] == "validation-failed"
+        assert done["reason"]["ref"] == refs[0]
+        session = done["builderSession"]
+        assert session["nodeStates"][refs[0]] == "failed"
+        # Nothing downstream of the failure was generated or created.
+        assert session["nodeStates"][refs[1]] == "planned"
+        # The user reviews and applies anyway — then RESUME continues past it.
+        content_proposal_id = done["reason"]["proposalId"]
+        client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{content_proposal_id}/apply",
+            headers=_auth(token),
+        )
+        self._fake_exec(monkeypatch)  # the sandbox behaves for the rest
+        events = self._simulate(client, token, alice_project, att_id, "auto")
+        done = events[-1][1]
+        assert done["status"] == "completed"
+        assert set(done["builderSession"]["nodeStates"].values()) == {"approved"}
+
+    def test_cancel_stops_at_the_next_boundary(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.agents import services as services_mod
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        self._fake_exec(monkeypatch)
+        att_id, proposal, _ = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Plan.\n" + helper._plan_tail(), "print('generated')"],
+        )
+        # Service-level: cancel after the first action_result.
+        from utk_curio.backend.app.agents.providers import ProviderConfig
+
+        config = ProviderConfig(api_key="k", api_type="openai_compatible",
+                                base_url="http://x", model="m")
+        gen = services_mod.simulate_stream(
+            _user_dir_key(user), alice_project, att_id, config, mode="auto",
+        )
+        seen = []
+        for kind, payload in gen:
+            seen.append((kind, payload))
+            if kind == "action_result":
+                services_mod.request_simulate_cancel(
+                    _user_dir_key(user), alice_project, att_id
+                )
+        done = seen[-1][1]
+        assert done["status"] == "cancelled"
+        # Everything already done stays done; the guard is cleared.
+        assert "simulatingSince" not in done["builderSession"]
+        assert "created" in done["builderSession"]["nodeStates"].values()
+
+    def test_preflight_guards(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        att_id, _ = helper._setup(client, user, token, alice_project, monkeypatch)
+        base = f"/api/agents/projects/{alice_project}/attachments/{att_id}/simulate"
+        # No plan minted yet.
+        assert client.post(base, json={"mode": "auto"}, headers=_auth(token)).status_code == 409
+        assert client.post(base, json={"mode": "bulk"}, headers=_auth(token)).status_code == 400
+        assert client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/simulate/cancel",
+            headers=_auth(token),
+        ).status_code == 409
+
+
 class TestValidateNode:
     """dev/67-7 — Simulation Mode: validate. Generate → execute-through →
     verdict → self-correct → propose; the spec is never mutated by

@@ -628,6 +628,8 @@ def _attachment_card(spec: dict, record: dict, user_key: str) -> dict:
         # Review proposal mirror (memo dev/41) — status card wiring only; the
         # transcript's proposal part remains the display record.
         "activeProposal": _proposal_summary(record.get("activeProposal")),
+        # dev/67-9: the parked plan (pending while content reviews cycle).
+        "planProposal": _proposal_summary(record.get("planProposal")),
         # The Dataflow Builder orchestration session (dev/52 DR-2) — drives
         # the phase-aware builder panel; absent for every other agent.
         "builderSession": record.get("builderSession"),
@@ -1541,7 +1543,14 @@ def _pending_plan_proposal(spec: dict, attachment_id: str, proposal_id: str) -> 
     404/409."""
     proposal = attachments.get_active_proposal(spec, attachment_id)
     if proposal is None or proposal.get("proposalId") != proposal_id:
-        raise AgentServiceError(f"proposal {proposal_id!r} not found", 404)
+        # dev/67-9: the plan may be PARKED while a content review occupies
+        # the active slot — its stages stay addressable.
+        record = attachments.get_attachment(spec, attachment_id)
+        parked = (record or {}).get("planProposal")
+        if isinstance(parked, dict) and parked.get("proposalId") == proposal_id:
+            proposal = parked
+        else:
+            raise AgentServiceError(f"proposal {proposal_id!r} not found", 404)
     status = proposal.get("status")
     if status != "pending":
         raise AgentServiceError(
@@ -1890,6 +1899,9 @@ def apply_plan_edges(
         unresolved = any(s in ("pending", "failed") for s in runs.values())
         session["phase"] = "applied" if unresolved else "ready"
         session["appliedPlanId"] = proposal_id
+        parked = record.get("planProposal")
+        if isinstance(parked, dict) and parked.get("proposalId") == proposal_id:
+            record.pop("planProposal", None)  # complete: nothing left to park
     projects_storage.write_spec(user_key, project_id, spec)
     applied_now = sum(1 for r in results.values() if r["status"] == "applied")
     refused_now = sum(1 for r in results.values() if r["status"] == "refused")
@@ -3048,6 +3060,349 @@ def _solve_events(
         _finish()
 
 
+# dev/67-9 (DEC-054): the Simulation Mode driver — one transition function,
+# step and auto cannot diverge; every state persists before it is emitted.
+_SIMULATE_STALE_SECONDS = 15 * 60
+_SIMULATE_CANCEL_EVENTS: dict[str, object] = {}
+# An auto run is bounded by construction: every action either advances one
+# ref's state machine or pauses — this cap is a runaway backstop only.
+_SIMULATE_MAX_ACTIONS = 500
+
+
+def _ordered_plan_refs(plan: dict) -> list[str]:
+    """Plan refs in topological order (mint's depth math), stable within a
+    level by plan order — upstream validates before downstream generates."""
+    depths = _plan_depths(plan.get("nodes", []), plan.get("edges", []))
+    return [
+        n["ref"]
+        for n in sorted(
+            plan.get("nodes", []),
+            key=lambda n: depths.get(n["ref"], 0),
+        )
+    ]
+
+
+def _next_simulation_action(plan: dict, proposal: dict, session: dict) -> dict | None:
+    """THE transition function (step and auto share it): the next single
+    action for the persisted state, or None when the plan is complete.
+
+    Per ref, in topological order: planned → create; created/failed →
+    validate (a failed ref re-validates on resume — the pause happened when
+    it FIRST failed); validated → approve (apply its content proposal);
+    solving → pause (a content review outside the driver's own loop awaits);
+    approved → next ref. All refs approved → connect (the edges stage; with
+    zero edges it simply completes the proposal)."""
+    node_states = session.get("nodeStates") or {}
+    for ref in _ordered_plan_refs(plan):
+        state = node_states.get(ref, "planned")
+        if state == "planned":
+            return {"action": "create", "ref": ref}
+        if state in ("created", "failed"):
+            return {"action": "validate", "ref": ref}
+        if state == "validated":
+            return {"action": "approve", "ref": ref}
+        if state == "solving":
+            return {"action": "await-review", "ref": ref}
+        # "approved" → continue to the next ref.
+    if proposal.get("status") == "pending":
+        return {"action": "connect"}
+    return None
+
+
+def request_simulate_cancel(user_key: str, project_id: str, attachment_id: str) -> dict:
+    """Cancel a running simulation (dev/67-9): both dev/63 signals — the
+    durable session flag plus the in-process event; the run stops at the next
+    action boundary with everything already done persisted."""
+    spec = _read_spec_or_404(user_key, project_id)
+    record = _record_or_404(spec, attachment_id)
+    session = record.get("builderSession") or {}
+    if not session.get("simulatingSince"):
+        raise AgentServiceError("no simulation is running for this attachment", 409)
+    session["simulateCancelRequested"] = True
+    projects_storage.write_spec(user_key, project_id, spec)
+    event = _SIMULATE_CANCEL_EVENTS.get(str(session.get("simulateExecutionId") or ""))
+    if event is not None:
+        event.set()  # type: ignore[attr-defined]
+    return {"attachmentId": attachment_id, "cancelRequested": True}
+
+
+def simulate_stream(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    config: ProviderConfig,
+    *,
+    mode: str = "step",
+    exec_fn=None,
+):
+    """The Simulation Mode driver (memo dev/67-9, DEC-054).
+
+    ``step`` performs exactly the NEXT action and returns; ``auto`` (the
+    re-targeted Apply Plan) chains the same actions — create → validate →
+    auto-approve on PASS — per node in topological order, then the connection
+    stage, PAUSING on any failure with the reason and the pending review
+    (nothing downstream of a failure is generated). Every transition persists
+    to ``builderSession`` BEFORE it is emitted, so a reload resumes exactly;
+    resume = calling this endpoint again.
+    """
+    import threading
+    import time as _time
+
+    if mode not in ("step", "auto"):
+        raise AgentServiceError("mode must be 'step' or 'auto'", 422)
+    spec = _read_spec_or_404(user_key, project_id)
+    record = _record_or_404(spec, attachment_id)
+    session = record.get("builderSession") or {}
+    plan_proposal_id = session.get("planProposalId")
+    if not isinstance(plan_proposal_id, str):
+        raise AgentServiceError("no plan to simulate — ask for a plan first", 409)
+    proposal = _pending_plan_proposal_or_none(spec, attachment_id, plan_proposal_id)
+    if proposal is None:
+        raise AgentServiceError(
+            "the plan is no longer pending (fully applied or dismissed) — "
+            "nothing to simulate",
+            409,
+        )
+    now = _time.time()
+    if session.get("simulatingSince") and now - float(session.get("simulatingSince") or 0) < _SIMULATE_STALE_SECONDS:
+        raise AgentServiceError("a simulation is already running for this attachment", 409)
+    simulate_execution_id = uuid.uuid4().hex
+    session["simulatingSince"] = now
+    session["simulateExecutionId"] = simulate_execution_id
+    session.pop("simulateCancelRequested", None)
+    session.pop("pauseReason", None)
+    record["builderSession"] = session
+    projects_storage.write_spec(user_key, project_id, spec)
+    stop = threading.Event()
+    _SIMULATE_CANCEL_EVENTS[simulate_execution_id] = stop
+    return _simulate_events(
+        user_key, project_id, attachment_id, config, plan_proposal_id,
+        simulate_execution_id, mode, stop, exec_fn,
+    )
+
+
+def _simulate_events(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    config: ProviderConfig,
+    plan_proposal_id: str,
+    simulate_execution_id: str,
+    mode: str,
+    stop,
+    exec_fn,
+):
+    """The driver body: read fresh state → one action → persist → emit —
+    repeated in auto until completion, a pause, or cancellation. Canvas
+    mutations ride the stream (``node_created`` / ``node_content_applied`` /
+    ``edges_created``) so the frontend applies them live."""
+
+    def _fresh():
+        spec = _read_spec_or_404(user_key, project_id)
+        record = _record_or_404(spec, attachment_id)
+        session = record.get("builderSession") or {}
+        proposal = _pending_plan_proposal_or_none(spec, attachment_id, plan_proposal_id)
+        return spec, record, session, proposal
+
+    def _persist_pause(reason: dict):
+        spec, record, session, _ = _fresh()
+        session["pauseReason"] = reason
+        session.pop("currentRef", None)
+        record["builderSession"] = session
+        projects_storage.write_spec(user_key, project_id, spec)
+        return session
+
+    def _set_current(ref: str | None):
+        spec, record, session, _ = _fresh()
+        if ref is None:
+            session.pop("currentRef", None)
+        else:
+            session["currentRef"] = ref
+        record["builderSession"] = session
+        projects_storage.write_spec(user_key, project_id, spec)
+
+    def _cancelled() -> bool:
+        if stop.is_set():
+            return True
+        _, _, session, _ = _fresh()
+        if session.get("simulateCancelRequested"):
+            stop.set()
+            return True
+        return False
+
+    done: dict = {"status": "completed", "mode": mode}
+    try:
+        yield "simulate_started", {
+            "executionId": simulate_execution_id, "mode": mode,
+        }
+        for _ in range(_SIMULATE_MAX_ACTIONS):
+            if _cancelled():
+                done = {"status": "cancelled", "mode": mode}
+                break
+            spec, record, session, proposal = _fresh()
+            if proposal is None or proposal.get("status") != "pending":
+                done = {"status": "completed", "mode": mode}
+                break
+            plan = proposal.get("plan") or {}
+            action = _next_simulation_action(plan, proposal, session)
+            if action is None:
+                done = {"status": "completed", "mode": mode}
+                break
+            ref = action.get("ref")
+            yield "stage", {**action, "label": _plan_endpoint_label(ref, plan, {}) if ref else None}
+            if action["action"] == "await-review":
+                session = _persist_pause({
+                    "kind": "content-review-pending", "ref": ref,
+                    "message": "review the pending content proposal first, then continue",
+                })
+                done = {"status": "paused", "mode": mode, "reason": session["pauseReason"]}
+                break
+            _set_current(ref)
+            if action["action"] == "create":
+                result = apply_plan_node(
+                    user_key, project_id, attachment_id, plan_proposal_id, ref
+                )
+                if result.get("createdNode"):
+                    yield "node_created", {"createdNode": result["createdNode"]}
+                yield "action_result", {"action": "create", "ref": ref, "outcome": "created"}
+            elif action["action"] == "validate":
+                validate_done: dict | None = None
+                for kind, payload in _validate_node_inline(
+                    user_key, project_id, attachment_id, config, ref, exec_fn
+                ):
+                    if kind == "done":
+                        validate_done = payload
+                    else:
+                        yield kind, payload
+                verdict = (validate_done or {}).get("verdict", "fail")
+                proposal_id = (validate_done or {}).get("proposalId")
+                if proposal_id:
+                    # The resume/apply linkage (67-6's deferred nodeProposals).
+                    spec2, record2, session2, _ = _fresh()
+                    session2.setdefault("nodeProposals", {})[ref] = proposal_id
+                    record2["builderSession"] = session2
+                    projects_storage.write_spec(user_key, project_id, spec2)
+                yield "action_result", {
+                    "action": "validate", "ref": ref, "outcome": verdict,
+                    **({"proposalId": proposal_id} if proposal_id else {}),
+                }
+                if verdict == "infrastructure":
+                    session = _persist_pause({
+                        "kind": "infrastructure", "ref": ref,
+                        "message": (validate_done or {}).get("evidence", {}).get("detail")
+                        or "the sandbox is unreachable — retry when it is back",
+                    })
+                    done = {"status": "paused", "mode": mode, "reason": session["pauseReason"]}
+                    break
+                if verdict == "fail":
+                    session = _persist_pause({
+                        "kind": "validation-failed", "ref": ref,
+                        "proposalId": proposal_id,
+                        "message": "validation failed — review the proposed content "
+                        "(Apply anyway or edit), then continue",
+                    })
+                    done = {"status": "paused", "mode": mode, "reason": session["pauseReason"]}
+                    break
+            elif action["action"] == "approve":
+                _, _, session, _ = _fresh()
+                content_proposal_id = (session.get("nodeProposals") or {}).get(ref)
+                if not content_proposal_id:
+                    session = _persist_pause({
+                        "kind": "content-review-pending", "ref": ref,
+                        "message": "the validated proposal is not addressable — review it manually",
+                    })
+                    done = {"status": "paused", "mode": mode, "reason": session["pauseReason"]}
+                    break
+                apply_result = apply_proposal(
+                    user_key, project_id, attachment_id, content_proposal_id
+                )
+                # DEC-054: auto-approval is recorded, never silent.
+                spec3, _, _, _ = _fresh()
+                approved = attachments.get_active_proposal(spec3, attachment_id)
+                if approved is not None and approved.get("proposalId") == content_proposal_id:
+                    approved["approvedBy"] = "simulation-auto"
+                    projects_storage.write_spec(user_key, project_id, spec3)
+                applied_content = apply_result.get("appliedContent")
+                if applied_content:
+                    yield "node_content_applied", applied_content
+                yield "action_result", {"action": "approve", "ref": ref, "outcome": "approved"}
+            elif action["action"] == "connect":
+                edges_result = apply_plan_edges(
+                    user_key, project_id, attachment_id, plan_proposal_id, None
+                )
+                if edges_result.get("createdEdges"):
+                    yield "edges_created", {"createdEdges": edges_result["createdEdges"]}
+                refused = {
+                    idx: row for idx, row in (edges_result.get("results") or {}).items()
+                    if row.get("status") == "refused"
+                }
+                yield "action_result", {
+                    "action": "connect",
+                    "outcome": "refused" if refused else "connected",
+                    "refused": {i: r.get("reason") for i, r in refused.items()},
+                }
+                if refused:
+                    session = _persist_pause({
+                        "kind": "connection-refused",
+                        "message": "; ".join(
+                            f"{r.get('fromLabel')} → {r.get('toLabel')}: {r.get('reason')}"
+                            for r in list(refused.values())[:3]
+                        ),
+                    })
+                    done = {"status": "paused", "mode": mode, "reason": session["pauseReason"]}
+                    break
+            if mode == "step":
+                spec4, _, session4, proposal4 = _fresh()
+                next_action = (
+                    _next_simulation_action(
+                        (proposal4 or {}).get("plan") or {}, proposal4 or {}, session4
+                    )
+                    if proposal4 is not None and proposal4.get("status") == "pending"
+                    else None
+                )
+                done = {"status": "stepped", "mode": mode, "nextAction": next_action}
+                break
+        else:
+            done = {"status": "paused", "mode": mode,
+                    "reason": {"kind": "action-cap", "message": "action cap reached"}}
+    finally:
+        _SIMULATE_CANCEL_EVENTS.pop(simulate_execution_id, None)
+        try:
+            spec, record, session, _ = _fresh()
+            session.pop("simulatingSince", None)
+            session.pop("simulateExecutionId", None)
+            session.pop("simulateCancelRequested", None)
+            session.pop("currentRef", None)
+            record["builderSession"] = session
+            projects_storage.write_spec(user_key, project_id, spec)
+        except Exception:
+            pass
+    _, _, final_session, _ = _fresh()
+    done["builderSession"] = final_session
+    yield "done", done
+
+
+def _pending_plan_proposal_or_none(spec: dict, attachment_id: str, proposal_id: str):
+    """The pending plan proposal (active or parked) or None — the driver's
+    loop guard (completion is an outcome, not an error)."""
+    try:
+        return _pending_plan_proposal(spec, attachment_id, proposal_id)
+    except AgentServiceError:
+        return None
+
+
+def _validate_node_inline(
+    user_key: str, project_id: str, attachment_id: str, config: ProviderConfig,
+    ref: str, exec_fn,
+):
+    """The 67-7 validation loop, driven inline by the simulator — its
+    ``done`` payload is consumed (transformed into an ``action_result``),
+    everything else re-yields verbatim."""
+    yield from validate_node_stream(
+        user_key, project_id, attachment_id, config, ref=ref, exec_fn=exec_fn
+    )
+
+
 # dev/67-7: bounded self-correction — initial generation + up to 2 corrective
 # regenerations, each re-validated by actually running the dataflow.
 _VALIDATE_CORRECTION_ROUNDS = 2
@@ -3756,11 +4111,25 @@ def _store_proposal(
     (mirror + its transcript part), then the mirror + spec are written."""
     attachment_id = loop_ctx["attachment_id"]
     session_id = loop_ctx["session_id"]
+    record = attachments.get_attachment(spec, attachment_id)
     previous = attachments.get_active_proposal(spec, attachment_id)
     if previous is not None and previous.get("status") == "pending":
-        sessions.update_proposal_status(
-            user_key, project_id, session_id, previous.get("proposalId", ""), "superseded"
-        )
+        if (
+            previous.get("tool") == "dataflow.plan.write"
+            and proposal.get("tool") != "dataflow.plan.write"
+            and record is not None
+        ):
+            # dev/67-9: the plan PARKS while per-node content reviews occupy
+            # the active slot — its per-node/edge stages stay addressable
+            # (_pending_plan_proposal falls back to the parked slot); it is
+            # never silently superseded by its own sequence.
+            record["planProposal"] = previous
+        else:
+            sessions.update_proposal_status(
+                user_key, project_id, session_id, previous.get("proposalId", ""), "superseded"
+            )
+    if proposal.get("tool") == "dataflow.plan.write" and record is not None:
+        record.pop("planProposal", None)  # a new plan replaces any parked one
     attachments.set_active_proposal(spec, attachment_id, proposal)
     projects_storage.write_spec(user_key, project_id, spec)
 

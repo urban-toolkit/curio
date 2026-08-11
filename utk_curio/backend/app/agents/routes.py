@@ -631,6 +631,69 @@ def solve_attachment_stream(project_id: str, attachment_id: str):
 
 
 @agents_bp.route(
+    "/projects/<project_id>/attachments/<attachment_id>/simulate", methods=["POST"]
+)
+@require_auth
+def simulate(project_id: str, attachment_id: str):
+    """The Simulation Mode driver (dev/67-9, DEC-054) as Server-Sent Events.
+    Body: ``{"mode": "step"|"auto"}`` (default step). Auto runs
+    create → validate → auto-approve-on-PASS per node in topological order,
+    then the connection stage — pausing on any failure with the reason and
+    the pending review. Resume = calling this endpoint again."""
+    from utk_curio.backend.app.agents.provider_config import (
+        ProviderConfigError,
+        resolve_provider_config,
+    )
+
+    body = request.get_json(silent=True) or {}
+    mode = body.get("mode", "step")
+    if mode not in ("step", "auto"):
+        return _error("'mode' must be 'step' or 'auto' when present")
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        config = resolve_provider_config(g.user)
+        events = agents_services.simulate_stream(
+            _user_dir_key(g.user), project_id, attachment_id, config, mode=mode
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except ProviderConfigError as exc:
+        return _error(str(exc), 400)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+
+    def _sse():
+        for kind, payload in events:
+            data = {"error": payload} if kind == "error" else payload
+            yield f"event: {kind}\ndata: {json.dumps(data)}\n\n"
+
+    return Response(
+        stream_with_context(_sse()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@agents_bp.route(
+    "/projects/<project_id>/attachments/<attachment_id>/simulate/cancel", methods=["POST"]
+)
+@require_auth
+def cancel_simulate(project_id: str, attachment_id: str):
+    """Cancel a running simulation (dev/67-9): stops at the next action
+    boundary; everything already done stays done."""
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        payload = agents_services.request_simulate_cancel(
+            _user_dir_key(g.user), project_id, attachment_id
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify(payload), 200
+
+
+@agents_bp.route(
     "/projects/<project_id>/attachments/<attachment_id>/validate-node", methods=["POST"]
 )
 @require_auth
