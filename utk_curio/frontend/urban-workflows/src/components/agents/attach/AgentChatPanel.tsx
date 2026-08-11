@@ -74,6 +74,8 @@ export const AgentChatPanel: React.FC<{
   /** dev/67-5: per-node plan review actions (Simulation Mode: create). */
   onApplyPlanNode?: (proposalId: string, ref: string) => Promise<void>;
   onSavePlanGoal?: (proposalId: string, ref: string, goal: string) => Promise<void>;
+  /** dev/67-8: the connection review stage. */
+  onApplyPlanEdges?: (proposalId: string, indices?: number[]) => Promise<void>;
   /** dev/52 Solve (Dataflow Builder attachments only); omitted → no strip. */
   onSolve?: (nodeIds?: string[]) => Promise<unknown>;
   /** dev/63: the live batch's per-node status overlay (nodeId → status). */
@@ -103,6 +105,7 @@ export const AgentChatPanel: React.FC<{
   onDismissProposal,
   onApplyPlanNode,
   onSavePlanGoal,
+  onApplyPlanEdges,
   onSolve,
   solveProgress,
   onCancelSolve,
@@ -538,6 +541,7 @@ export const AgentChatPanel: React.FC<{
                         onDismiss={onDismissProposal}
                         onApplyPlanNode={onApplyPlanNode}
                         onSavePlanGoal={onSavePlanGoal}
+                        onApplyPlanEdges={onApplyPlanEdges}
                         planNodeState={
                           // dev/67-5: the mirror's per-node state feeds the
                           // part whose proposal it mirrors.
@@ -545,6 +549,7 @@ export const AgentChatPanel: React.FC<{
                             ? {
                                 appliedRefs: attachment.activeProposal.appliedRefs ?? [],
                                 editedGoals: attachment.activeProposal.editedGoals ?? {},
+                                edgeStates: attachment.activeProposal.edgeStates ?? {},
                               }
                             : undefined
                         }

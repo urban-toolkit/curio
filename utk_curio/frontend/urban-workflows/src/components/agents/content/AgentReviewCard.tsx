@@ -2,10 +2,12 @@ import React, { useState } from "react";
 import type { AgentProposalPart } from "../../../api/agentsApi";
 import styles from "./AgentReviewCard.module.css";
 
-/** dev/67-5: the per-node review state (from the activeProposal mirror). */
+/** dev/67-5/67-8: the per-node review state (from the activeProposal mirror). */
 export interface PlanNodeReviewState {
   appliedRefs: string[];
   editedGoals: Record<string, string>;
+  /** dev/67-8: edge index → planned|applied|refused. */
+  edgeStates?: Record<string, string>;
 }
 
 /** One planned node's review row (dev/67-5, Simulation Mode: create):
@@ -132,9 +134,25 @@ export const AgentReviewCard: React.FC<{
   planNodeState?: PlanNodeReviewState;
   onApplyPlanNode?: (proposalId: string, ref: string) => Promise<void>;
   onSavePlanGoal?: (proposalId: string, ref: string, goal: string) => Promise<void>;
-}> = ({ part, tintClassName, onApply, onDismiss, planNodeState, onApplyPlanNode, onSavePlanGoal }) => {
+  /** dev/67-8: apply plan edges (a subset by index, or all pending). */
+  onApplyPlanEdges?: (proposalId: string, indices?: number[]) => Promise<void>;
+}> = ({ part, tintClassName, onApply, onDismiss, planNodeState, onApplyPlanNode, onSavePlanGoal, onApplyPlanEdges }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [edgeBusy, setEdgeBusy] = useState<string | null>(null);
+
+  const applyEdges = async (indices?: number[]) => {
+    if (!onApplyPlanEdges || edgeBusy) return;
+    setEdgeBusy(indices ? String(indices[0]) : "all");
+    setError(null);
+    try {
+      await onApplyPlanEdges(part.proposalId, indices);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Connecting failed");
+    } finally {
+      setEdgeBusy(null);
+    }
+  };
 
   const act = async (fn?: (proposalId: string) => Promise<void>) => {
     if (!fn || busy) return;
@@ -261,6 +279,58 @@ export const AgentReviewCard: React.FC<{
       ) : (
         <div className={styles.preview}>{part.preview}</div>
       )}
+      {part.tool === "dataflow.plan.write" && part.plan?.edges?.length && pending && onApplyPlanEdges ? (
+        // dev/67-8 (Simulation Mode: connect): edges reviewed BY NAME in a
+        // vertical list — you always know which two nodes a click connects.
+        <div className={styles.planEdges} role="group" aria-label="Planned connections">
+          <div className={styles.planEdgesHead}>
+            <span>Connections</span>
+            <button
+              type="button"
+              className={styles.apply}
+              disabled={edgeBusy !== null}
+              onClick={() => void applyEdges()}
+            >
+              {edgeBusy === "all" ? "Connecting…" : "Connect all"}
+            </button>
+          </div>
+          <ul className={styles.planEdgesList}>
+            {part.plan.edges.map((edge, index) => {
+              const state = planNodeState?.edgeStates?.[String(index)];
+              const applied = planNodeState?.appliedRefs ?? [];
+              const fromReady =
+                !part.plan!.nodes.some((n) => n.ref === edge.from) || applied.includes(edge.from);
+              const toReady =
+                !part.plan!.nodes.some((n) => n.ref === edge.to) || applied.includes(edge.to);
+              const blockedBy = !fromReady ? edge.fromLabel : !toReady ? edge.toLabel : null;
+              return (
+                <li key={index} className={styles.planEdgeRow}>
+                  <span className={styles.planEdgeNames}>
+                    {edge.fromLabel} → {edge.toLabel}
+                    {edge.toHandle ? ` [${edge.toHandle}]` : ""}
+                  </span>
+                  {state === "applied" ? (
+                    <span className={styles.planNodeCreated}>Connected ✓</span>
+                  ) : state === "refused" ? (
+                    <span className={styles.planEdgeRefused}>Refused ✗</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className={styles.apply}
+                      disabled={edgeBusy !== null || blockedBy !== null}
+                      title={blockedBy ? `create '${blockedBy}' first` : undefined}
+                      aria-label={`Connect ${edge.fromLabel} to ${edge.toLabel}`}
+                      onClick={() => void applyEdges([index])}
+                    >
+                      {edgeBusy === String(index) ? "Connecting…" : "Connect"}
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
       {planEffectLine(part) ? (
         <div className={styles.meta}>{planEffectLine(part)}</div>
       ) : EFFECT_LINE[part.tool] ? (

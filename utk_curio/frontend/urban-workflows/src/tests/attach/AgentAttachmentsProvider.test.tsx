@@ -22,6 +22,7 @@ jest.mock("../../api/agentsApi", () => ({
     cancelSolve: jest.fn(),
     applyPlanNode: jest.fn(),
     savePlanGoal: jest.fn(),
+    applyPlanEdges: jest.fn(),
   },
 }));
 
@@ -71,6 +72,9 @@ const Harness: React.FC = () => {
       </button>
       <button onClick={() => void ctx.savePlanGoal("a1", "p1", "ra", "new goal")}>
         save-plan-goal
+      </button>
+      <button onClick={() => void ctx.applyPlanEdges("a1", "p1").catch(() => undefined)}>
+        apply-plan-edges
       </button>
       <button onClick={() => void ctx.cancelSolve("a1")}>cancel-solve</button>
       <div data-testid="solve-progress">
@@ -621,6 +625,26 @@ describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
     // Terminal: the overlay clears — the refetched session is the truth.
     expect(screen.getByTestId("solve-progress")).toHaveTextContent("∅");
     expect(events).toHaveLength(1); // no double-apply from the done payload
+  });
+
+
+  it("applyPlanEdges dispatches edges-created for the applied edges (dev/67-8)", async () => {
+    api.applyPlanEdges.mockResolvedValue({
+      attachmentId: "a1", proposalId: "p1", status: "pending",
+      results: {}, edgeStates: { "0": "applied" },
+      createdEdges: [{ id: "ce1", source: "n1", target: "n2", sourceHandle: "out", targetHandle: "in" }],
+    });
+    renderProvider();
+    await act(async () => {
+      fireEvent.click(screen.getByText("apply-plan-edges"));
+    });
+    expect(events).toEqual([
+      {
+        kind: "edges-created",
+        batchId: "p1:ce1",
+        edges: [{ id: "ce1", source: "n1", target: "n2", sourceHandle: "out", targetHandle: "in" }],
+      },
+    ]);
   });
 
   it("cancelSolve posts the cancel endpoint for the attachment", async () => {

@@ -200,6 +200,32 @@ describe("graph-created (dev/52 — a whole applied plan)", () => {
     expect(mockCreateCodeNode).toHaveBeenCalledTimes(2); // not 4
   });
 
+
+  it("edges-created inserts quietly with handles — no fit, no center (dev/67-8)", () => {
+    render(<Host />);
+    act(() =>
+      notifyAgentCanvasMutation({
+        kind: "edges-created",
+        batchId: "batch-1",
+        edges: [{ id: "ce1", source: "ga", target: "gm", targetHandle: "in_2" }],
+      }),
+    );
+    const changes = mockOnEdgesChange.mock.calls[0][0];
+    expect(changes[0].item).toMatchObject({
+      id: "ce1", targetHandle: "in_2", sourceHandle: "out", data: {},
+    });
+    expect(mockSetCenter).not.toHaveBeenCalled();
+    expect(mockFitViewWithMenuOffset).not.toHaveBeenCalled();
+    // Idempotent per batch.
+    act(() =>
+      notifyAgentCanvasMutation({
+        kind: "edges-created", batchId: "batch-1",
+        edges: [{ id: "ce1", source: "ga", target: "gm" }],
+      }),
+    );
+    expect(mockOnEdgesChange).toHaveBeenCalledTimes(1);
+  });
+
   it("passes the apply's explicit handles through (merge slots, dev/67-3)", () => {
     render(<Host />);
     act(() =>

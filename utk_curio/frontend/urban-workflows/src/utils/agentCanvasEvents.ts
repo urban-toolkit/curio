@@ -48,6 +48,19 @@ export type AgentCanvasMutation =
       }>;
       removedNodeIds?: string[];
       removedEdgeIds?: string[];
+    }
+  | {
+      /** dev/67-8: connection-stage edges — inserted quietly (no fit, no
+       * center); idempotent per batchId. */
+      kind: "edges-created";
+      batchId: string;
+      edges: Array<{
+        id: string;
+        source: string;
+        target: string;
+        sourceHandle?: string;
+        targetHandle?: string;
+      }>;
     };
 
 export const AGENT_CANVAS_MUTATION_EVENT = "curio:agent-canvas-mutation";
@@ -69,7 +82,8 @@ export function subscribeAgentCanvasMutations(
       detail &&
       (detail.kind === "node-created" ||
         detail.kind === "node-content-applied" ||
-        detail.kind === "graph-created")
+        detail.kind === "graph-created" ||
+        detail.kind === "edges-created")
     ) {
       listener(detail);
     }

@@ -261,3 +261,51 @@
   font-size: 0.72rem;
   white-space: pre-wrap;
 }
+
+/* dev/67-8 — the connection review rows (Simulation Mode: connect). */
+.planEdges {
+  margin-top: 8px;
+  border: 1px solid #e3e6ea;
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.planEdgesHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  font-size: 0.82rem;
+  margin-bottom: 6px;
+}
+
+.planEdgesList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.planEdgeRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.8rem;
+}
+
+.planEdgeNames {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planEdgeRefused {
+  color: #b3423f;
+  font-size: 0.78rem;
+  font-weight: 600;
+}

@@ -438,6 +438,20 @@ describe("agentsApi", () => {
   });
 
 
+
+  it("applyPlanEdges() posts the indices to the apply-edges path (dev/67-8)", () => {
+    agentsApi.applyPlanEdges("p1", "att-1", "prop-1", [0, 2]);
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/agents/projects/p1/attachments/att-1/proposals/prop-1/apply-edges",
+      { method: "POST", body: JSON.stringify({ edges: [0, 2] }) },
+    );
+    agentsApi.applyPlanEdges("p1", "att-1", "prop-1");
+    expect(mockFetch).toHaveBeenLastCalledWith(
+      "/api/agents/projects/p1/attachments/att-1/proposals/prop-1/apply-edges",
+      { method: "POST", body: JSON.stringify({}) },
+    );
+  });
+
   it("applyPlanNode() posts the ref to the apply-node path (dev/67-5)", () => {
     agentsApi.applyPlanNode("p1", "att-1", "prop-1", "ra");
     expect(mockFetch).toHaveBeenCalledWith(

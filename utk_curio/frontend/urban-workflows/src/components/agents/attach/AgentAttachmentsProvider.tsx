@@ -52,6 +52,13 @@ export interface AgentAttachmentsContextValue extends AgentAttachmentsState {
   /** dev/67-5: apply ONE planned node (Simulation Mode: create) — the
    * proposal stays pending; the created node reaches the live canvas. */
   applyPlanNode: (attachmentId: string, proposalId: string, ref: string) => Promise<void>;
+  /** dev/67-8: apply plan edges (all pending, or a subset by index) — the
+   * connection review stage; applied edges reach the live canvas. */
+  applyPlanEdges: (
+    attachmentId: string,
+    proposalId: string,
+    indices?: number[],
+  ) => Promise<import("../../../api/agentsApi").AgentPlanEdgesResult>;
   /** dev/67-7: validate one node by running the dataflow through it —
    * resolves with the done payload (verdict, evidence, proposalId). */
   validateNode: (
@@ -378,6 +385,29 @@ export const AgentAttachmentsProvider: React.FC<{
     [hydrateSession, state.reload],
   );
 
+  const applyPlanEdges = useCallback(
+    async (attachmentId: string, proposalId: string, indices?: number[]) => {
+      const pid = projectRef.current;
+      if (!pid) throw new Error("no project");
+      try {
+        const result = await agentsApi.applyPlanEdges(pid, attachmentId, proposalId, indices);
+        if (result.createdEdges.length) {
+          notifyAgentCanvasMutation({
+            kind: "edges-created",
+            batchId: `${proposalId}:${result.createdEdges.map((e) => e.id).join(",")}`,
+            edges: result.createdEdges,
+          });
+        }
+        return result;
+      } finally {
+        hydratedRef.current.delete(attachmentId);
+        await hydrateSession(attachmentId);
+        await state.reload();
+      }
+    },
+    [hydrateSession, state.reload],
+  );
+
   const validateNode = useCallback(
     async (
       attachmentId: string,
@@ -560,6 +590,7 @@ export const AgentAttachmentsProvider: React.FC<{
       cancelSolve,
       applyPlanNode,
       savePlanGoal,
+      applyPlanEdges,
       validateNode,
       dismissProposal,
     }),
@@ -583,6 +614,7 @@ export const AgentAttachmentsProvider: React.FC<{
       cancelSolve,
       applyPlanNode,
       savePlanGoal,
+      applyPlanEdges,
       validateNode,
       dismissProposal,
     ],

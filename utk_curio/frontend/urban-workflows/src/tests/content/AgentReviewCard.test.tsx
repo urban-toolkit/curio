@@ -350,3 +350,80 @@ describe("AgentReviewCard — dev/67-7 validation block", () => {
     expect(screen.getByRole("button", { name: "Apply" })).toBeInTheDocument();
   });
 });
+
+describe("AgentReviewCard — dev/67-8 connection review stage", () => {
+  const planWithEdges = (): AgentProposalPart => ({
+    type: "proposal",
+    proposalId: "p8",
+    tool: "dataflow.plan.write",
+    summary: "Apply plan · 2 nodes, 2 edges",
+    preview: "…",
+    pins: { baseGraphDigest: "abc" },
+    status: "pending",
+    plan: {
+      goal: "g",
+      nodes: [
+        { ref: "a", nodeType: "t", title: "Load", intent: "load" },
+        { ref: "b", nodeType: "t", title: "Merge", intent: "merge" },
+      ],
+      edgeCount: 2,
+      edges: [
+        { from: "a", to: "b", toHandle: "in_0", fromLabel: "Load", toLabel: "Merge" },
+        { from: "b", to: "existing-1", fromLabel: "Merge", toLabel: "Old Analyze" },
+      ],
+    },
+  });
+
+  it("renders named rows, gates on endpoint creation, and connects per edge", async () => {
+    const onApplyPlanEdges = jest.fn().mockResolvedValue(undefined);
+    render(
+      <AgentReviewCard
+        part={planWithEdges()}
+        onApplyPlanNode={jest.fn()}
+        onApplyPlanEdges={onApplyPlanEdges}
+        planNodeState={{ appliedRefs: ["a"], editedGoals: {}, edgeStates: {} }}
+      />,
+    );
+    expect(screen.getByText("Load → Merge [in_0]")).toBeInTheDocument();
+    // Edge 0: target ref "b" not created yet → disabled with the reason.
+    const first = screen.getByRole("button", { name: "Connect Load to Merge" });
+    expect(first).toBeDisabled();
+    expect(first).toHaveAttribute("title", "create 'Merge' first");
+    // Edge 1: source ref "b" not created either → disabled; existing-id
+    // endpoints alone never block.
+    expect(screen.getByRole("button", { name: "Connect Merge to Old Analyze" })).toBeDisabled();
+    // With both refs created, rows enable and target their index.
+    render(
+      <AgentReviewCard
+        part={planWithEdges()}
+        onApplyPlanNode={jest.fn()}
+        onApplyPlanEdges={onApplyPlanEdges}
+        planNodeState={{ appliedRefs: ["a", "b"], editedGoals: {}, edgeStates: {} }}
+      />,
+    );
+    const enabled = screen.getAllByRole("button", { name: "Connect Load to Merge" })[1] ??
+      screen.getAllByRole("button", { name: "Connect Load to Merge" })[0];
+    fireEvent.click(enabled);
+    await waitFor(() => expect(onApplyPlanEdges).toHaveBeenCalledWith("p8", [0]));
+  });
+
+  it("shows per-edge states and Connect all", async () => {
+    const onApplyPlanEdges = jest.fn().mockResolvedValue(undefined);
+    render(
+      <AgentReviewCard
+        part={planWithEdges()}
+        onApplyPlanNode={jest.fn()}
+        onApplyPlanEdges={onApplyPlanEdges}
+        planNodeState={{
+          appliedRefs: ["a", "b"],
+          editedGoals: {},
+          edgeStates: { "0": "applied", "1": "refused" },
+        }}
+      />,
+    );
+    expect(screen.getByText("Connected ✓")).toBeInTheDocument();
+    expect(screen.getByText("Refused ✗")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Connect all" }));
+    await waitFor(() => expect(onApplyPlanEdges).toHaveBeenCalledWith("p8", undefined));
+  });
+});

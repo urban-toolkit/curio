@@ -81,6 +81,8 @@ export interface AgentAttachment {
     editedGoals?: Record<string, string>;
     /** dev/67-5 (plan proposals): refs already applied per-node. */
     appliedRefs?: string[];
+    /** dev/67-8 (plan proposals): edge index → planned|applied|refused. */
+    edgeStates?: Record<string, string>;
   } | null;
   /** The Dataflow Builder orchestration session (dev/52 DR-2) — drives the
    * phase-aware builder panel; absent for every other agent. */
@@ -99,6 +101,8 @@ export interface AgentBuilderSession {
   nodeStates?: Record<string, string>;
   /** dev/67-5: plan ref → the created node's real id. */
   nodeIds?: Record<string, string>;
+  /** dev/67-8: edge index → planned|applied|refused. */
+  edgeStates?: Record<string, string>;
 }
 
 /** Actual provider-reported token usage (memo dev/37) — never an estimate. */
@@ -226,6 +230,14 @@ export interface AgentProposalPart {
       expects?: string;
     }>;
     edgeCount: number;
+    /** dev/67-8: the connection stage's labeled, index-stable edge rows. */
+    edges?: Array<{
+      from: string;
+      to: string;
+      toHandle?: string;
+      fromLabel: string;
+      toLabel: string;
+    }>;
     /** dev/59 (DEC-049.2): removals reviewed by NAME — every victim listed
      * with a content flag; present only on destructive revisions. */
     removals?: Array<{ id: string; label: string; nodeType?: string; contentChars: number }>;
@@ -298,6 +310,34 @@ export interface AgentPlanNodeApplyResult {
   /** The created node, for the canvas bridge (absent on already-applied). */
   createdNode?: AgentCreatedNodePayload;
   appliedRefs: string[];
+  builderSession?: AgentBuilderSession | null;
+}
+
+/** dev/67-8 apply-edges response: per-edge outcomes + the bridge payload. */
+export interface AgentPlanEdgesResult {
+  attachmentId: string;
+  proposalId: string;
+  status: AgentProposalStatus;
+  results: Record<
+    string,
+    {
+      status: "applied" | "refused" | "already-applied";
+      fromLabel: string;
+      toLabel: string;
+      edgeId?: string;
+      targetHandle?: string;
+      reason?: string;
+      note?: string;
+    }
+  >;
+  edgeStates: Record<string, string>;
+  createdEdges: Array<{
+    id: string;
+    source: string;
+    target: string;
+    sourceHandle?: string;
+    targetHandle?: string;
+  }>;
   builderSession?: AgentBuilderSession | null;
 }
 
@@ -699,6 +739,21 @@ export const agentsApi = {
     return apiFetch(
       `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}/apply-node`,
       { method: "POST", body: JSON.stringify({ ref }) },
+    );
+  },
+
+  /** Apply plan edges — the connection review stage (dev/67-8). Omitted
+   * indices apply every not-yet-applied edge; refusals are per-edge and
+   * named; `createdEdges` feeds the canvas bridge. */
+  applyPlanEdges(
+    projectId: string,
+    attachmentId: string,
+    proposalId: string,
+    indices?: number[],
+  ): Promise<AgentPlanEdgesResult> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/proposals/${encodeURIComponent(proposalId)}/apply-edges`,
+      { method: "POST", body: JSON.stringify(indices ? { edges: indices } : {}) },
     );
   },
 

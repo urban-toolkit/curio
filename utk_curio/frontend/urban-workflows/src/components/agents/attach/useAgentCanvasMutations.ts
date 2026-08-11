@@ -67,6 +67,29 @@ export function useAgentCanvasMutations(): void {
       applyNodeContent(mutation.nodeId, mutation.content);
       return;
     }
+    if (mutation.kind === "edges-created") {
+      // dev/67-8: the connection stage applies edges one review at a time —
+      // insert quietly through the same provider path (handles + data
+      // parity), no fit/center (the nodes are already where the user looks).
+      if (processedRef.current.has(mutation.batchId)) return;
+      processedRef.current.add(mutation.batchId);
+      onEdgesChange(
+        mutation.edges.map((edge) => ({
+          type: "add" as const,
+          item: {
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            sourceHandle: edge.sourceHandle ?? "out",
+            targetHandle: edge.targetHandle ?? "in",
+            type: EdgeType.UNIDIRECTIONAL_EDGE,
+            markerEnd: { type: "arrow" },
+            data: {},
+          } as never,
+        })),
+      );
+      return;
+    }
     if (mutation.kind === "graph-created") {
       // dev/52: a whole applied plan — bulk nodes + edges through the same
       // provider paths a manual build uses, then a fit (a plan deserves a
