@@ -648,6 +648,7 @@ def _proposal_summary(proposal: object) -> dict | None:
     if proposal.get("tool") == "dataflow.plan.write":
         summary["editedGoals"] = dict(proposal.get("editedGoals") or {})
         summary["appliedRefs"] = list(proposal.get("appliedRefs") or [])
+        summary["edgeStates"] = dict(proposal.get("edgeStates") or {})
     return summary
 
 
@@ -1464,6 +1465,18 @@ def _mint_dataflow_plan(
             for n in plan["nodes"]
         ],
         "edgeCount": n_edges,
+        # dev/67-8: the connection stage reviews edges BY NAME — labels from
+        # plan titles (refs) or spec goals (existing ids), index-stable.
+        "edges": [
+            {
+                "from": e["from"],
+                "to": e["to"],
+                **({"toHandle": e["toHandle"]} if e.get("toHandle") else {}),
+                "fromLabel": _plan_endpoint_label(e["from"], plan, existing_nodes),
+                "toLabel": _plan_endpoint_label(e["to"], plan, existing_nodes),
+            }
+            for e in plan["edges"]
+        ],
     }
     if remove_nodes or remove_edges:
         # DEC-049.2: removals reviewed by NAME — every victim listed with a
@@ -1684,6 +1697,243 @@ def apply_plan_node(
         # The bridge's node-created payload shape (dev/48 §3.3).
         "createdNode": dict(created),
         "appliedRefs": list(applied_refs),
+        "builderSession": session,
+    }
+
+
+def _plan_endpoint_label(endpoint: str, plan: dict, existing_nodes: dict) -> str:
+    """A human label for one plan-edge endpoint: the plan node's title, or the
+    existing node's goal (id as the last resort)."""
+    for node in plan.get("nodes", []):
+        if node["ref"] == endpoint:
+            return node["title"][:60]
+    existing = existing_nodes.get(endpoint) or {}
+    return str(existing.get("goal") or endpoint)[:60]
+
+
+def apply_plan_edges(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    proposal_id: str,
+    indices: list[int] | None = None,
+) -> dict:
+    """Apply plan edges — the connection review stage (memo dev/67-8,
+    Simulation Mode: connect).
+
+    All not-yet-applied edges by default, or the given subset (index-stable —
+    the pinned plan's order). Each edge validates against the CURRENT spec at
+    apply time: endpoints must exist (created refs resolve through 67-5's
+    ``appliedNodeIds``; existing ids must still be present), fan-in obeys the
+    DEC-051 rendered capacity, and merge targets take their named free slot or
+    the lowest free one. Refusals are PER EDGE and named — partial success is
+    normal and honest, never all-or-nothing. An edge the user already drew
+    manually applies as a no-op ("already connected"). When every ref and
+    every edge is applied, the proposal completes (status ``applied``).
+    """
+    from utk_curio.backend.app.packages import services as packages_services
+
+    spec = _read_spec_or_404(user_key, project_id)
+    record = _record_or_404(spec, attachment_id)
+    proposal = _pending_plan_proposal(spec, attachment_id, proposal_id)
+    plan = proposal.get("plan") or {}
+    plan_edges = plan.get("edges", [])
+    if indices is not None:
+        bad = [i for i in indices if not isinstance(i, int) or not (0 <= i < len(plan_edges))]
+        if bad:
+            raise AgentServiceError(f"edge indices out of range: {bad}", 422)
+    edge_states: dict = proposal.setdefault("edgeStates", {})
+    applied_ids: dict = proposal.get("appliedNodeIds") or {}
+    plan_refs = {n["ref"] for n in plan.get("nodes", [])}
+    dataflow = spec.setdefault("dataflow", {})
+    nodes = dataflow.setdefault("nodes", [])
+    edges = dataflow.setdefault("edges", [])
+    nodes_by_id = {n.get("id"): n for n in nodes if isinstance(n, dict)}
+    try:
+        available = {
+            t["id"]: t
+            for t in packages_services.available_templates(user_key, project_id)
+        }
+    except Exception:
+        available = {}  # arity metadata unavailable: fan-in fails open
+    types_by_id = {
+        n.get("id"): _strip_type_version(str(n.get("type") or ""))
+        for n in nodes
+        if isinstance(n, dict)
+    }
+    merge_slots_taken: dict[str, set[str]] = {}
+    incoming_count: dict[str, int] = {}
+    for e in edges:
+        if not isinstance(e, dict):
+            continue
+        target = e.get("target")
+        if str(e.get("type") or "") == "Interaction":
+            continue
+        incoming_count[target] = incoming_count.get(target, 0) + 1
+        if types_by_id.get(target) == _MERGE_NODE_TYPE and isinstance(e.get("targetHandle"), str):
+            merge_slots_taken.setdefault(target, set()).add(e["targetHandle"])
+    wanted = indices if indices is not None else [
+        i for i in range(len(plan_edges)) if edge_states.get(str(i)) != "applied"
+    ]
+    results: dict = {}
+    created_edges: list[dict] = []
+
+    def _resolve_endpoint(endpoint: str) -> tuple[str | None, str | None]:
+        """(node_id, refusal_reason)."""
+        if endpoint in plan_refs:
+            node_id = applied_ids.get(endpoint)
+            if not node_id:
+                title = _plan_endpoint_label(endpoint, plan, nodes_by_id)
+                return None, f"create {title!r} first"
+            if node_id not in nodes_by_id:
+                return None, f"node {node_id!r} was deleted from the canvas"
+            return node_id, None
+        if endpoint in nodes_by_id:
+            return endpoint, None
+        return None, f"node {endpoint!r} is no longer in the dataflow"
+
+    for index in wanted:
+        key = str(index)
+        plan_edge = plan_edges[index]
+        row = {
+            "from": plan_edge["from"],
+            "to": plan_edge["to"],
+            "fromLabel": _plan_endpoint_label(plan_edge["from"], plan, nodes_by_id),
+            "toLabel": _plan_endpoint_label(plan_edge["to"], plan, nodes_by_id),
+        }
+        if edge_states.get(key) == "applied":
+            results[key] = {**row, "status": "already-applied"}
+            continue
+        source, source_err = _resolve_endpoint(plan_edge["from"])
+        target, target_err = _resolve_endpoint(plan_edge["to"])
+        if source_err or target_err:
+            reason = source_err or target_err
+            results[key] = {**row, "status": "refused", "reason": reason}
+            edge_states[key] = "refused"
+            continue
+        already = next(
+            (
+                e for e in edges
+                if isinstance(e, dict)
+                and e.get("source") == source and e.get("target") == target
+                and str(e.get("type") or "") != "Interaction"
+            ),
+            None,
+        )
+        if already is not None:
+            results[key] = {
+                **row, "status": "applied", "edgeId": already.get("id"),
+                "note": "already connected",
+            }
+            edge_states[key] = "applied"
+            continue
+        # Fan-in against the CURRENT spec (DEC-051 rendered capacity).
+        target_type = types_by_id.get(target, "")
+        entry = available.get(target_type)
+        max_in = entry.get("maxIncomingEdges") if entry else None
+        if max_in is not None and incoming_count.get(target, 0) + 1 > max_in:
+            reason = (
+                f"{row['toLabel']!r} accepts "
+                + ("no inputs" if max_in == 0 else f"at most {max_in} input{'s' if max_in != 1 else ''}")
+                + f" and already has {incoming_count.get(target, 0)} — "
+                f"route through a {_MERGE_NODE_TYPE} node instead"
+            )
+            results[key] = {**row, "status": "refused", "reason": reason}
+            edge_states[key] = "refused"
+            continue
+        target_handle = plan_edge.get("toHandle") or "in"
+        if target_type == _MERGE_NODE_TYPE:
+            taken = merge_slots_taken.setdefault(target, set())
+            wanted_handle = plan_edge.get("toHandle")
+            if isinstance(wanted_handle, str) and _MERGE_HANDLE_RE.match(wanted_handle) and wanted_handle not in taken:
+                target_handle = wanted_handle
+            else:
+                target_handle = next(
+                    (f"in_{i}" for i in range(5) if f"in_{i}" not in taken), None
+                )
+                if target_handle is None:
+                    results[key] = {
+                        **row, "status": "refused",
+                        "reason": f"merge node {row['toLabel']!r} has no free input slot",
+                    }
+                    edge_states[key] = "refused"
+                    continue
+            taken.add(target_handle)
+        edge = {
+            "id": str(uuid.uuid4()),
+            "source": source,
+            "target": target,
+            "sourceHandle": "out",
+            "targetHandle": target_handle,
+        }
+        edges.append(edge)
+        created_edges.append(edge)
+        incoming_count[target] = incoming_count.get(target, 0) + 1
+        results[key] = {
+            **row, "status": "applied", "edgeId": edge["id"],
+            "targetHandle": target_handle,
+        }
+        edge_states[key] = "applied"
+    # dev/67-5 semantics: the plan's own progress re-pins the shape digest.
+    proposal["baseGraphDigest"] = _graph_shape_digest(spec)
+    session = record.setdefault("builderSession", {})
+    session["edgeStates"] = dict(edge_states)
+    session_id = record.get("sessionId")
+    all_refs_applied = plan_refs and plan_refs == set(proposal.get("appliedRefs") or [])
+    all_edges_applied = all(
+        edge_states.get(str(i)) == "applied" for i in range(len(plan_edges))
+    )
+    completed = bool(all_refs_applied and all_edges_applied)
+    if completed:
+        proposal["status"] = "applied"
+        runs = session.get("nodeRuns") or {}
+        unresolved = any(s in ("pending", "failed") for s in runs.values())
+        session["phase"] = "applied" if unresolved else "ready"
+        session["appliedPlanId"] = proposal_id
+    projects_storage.write_spec(user_key, project_id, spec)
+    applied_now = sum(1 for r in results.values() if r["status"] == "applied")
+    refused_now = sum(1 for r in results.values() if r["status"] == "refused")
+    if isinstance(session_id, str) and (applied_now or refused_now):
+        if completed:
+            _log_applied_turn(
+                user_key, project_id, session_id, attachment_id, proposal_id,
+                f"Applied: {applied_now} connection{'s' if applied_now != 1 else ''} — "
+                "the plan is fully applied.",
+                "Applied: plan connections",
+                [
+                    f"+{applied_now} connections"
+                    + (f" · {refused_now} refused" if refused_now else ""),
+                    "plan complete",
+                    f"proposal {proposal_id[:8]}",
+                ],
+            )
+        else:
+            sessions.append_turns(
+                user_key, project_id, session_id, attachment_id,
+                [sessions.make_turn(
+                    "agent",
+                    f"Applied {applied_now} connection{'s' if applied_now != 1 else ''}"
+                    + (f"; {refused_now} refused — see the card." if refused_now else "."),
+                    content=[{
+                        "type": "card",
+                        "kind": "result",
+                        "title": "Applied: plan connections",
+                        "lines": [
+                            f"{r['fromLabel']} → {r['toLabel']} · {r['status']}"
+                            + (f" — {r['reason']}" if r.get("reason") else "")
+                            for r in list(results.values())[:10]
+                        ],
+                    }],
+                )],
+            )
+    return {
+        "attachmentId": attachment_id,
+        "proposalId": proposal_id,
+        "status": proposal.get("status"),
+        "results": results,
+        "edgeStates": dict(edge_states),
+        # The bridge inserts these into the LIVE canvas (dev/67-8).
+        "createdEdges": created_edges,
         "builderSession": session,
     }
 

@@ -5120,6 +5120,120 @@ class TestProposeModeSolve:
         assert r.status_code == 400
 
 
+class TestPlanEdgeApply:
+    """dev/67-8 — the connection review stage: per-edge apply over the pinned
+    plan, validated against the CURRENT spec, partial success honest and
+    named; completion flips the proposal to applied."""
+
+    def _mint(self, client, user, token, project_id, monkeypatch):
+        helper = TestDataflowPlanMint()
+        att_id, _ = helper._setup(client, user, token, project_id, monkeypatch)
+        r = helper._run(client, token, project_id, att_id)
+        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
+        return att_id, proposal
+
+    def _apply_node(self, client, token, project_id, att_id, proposal_id, ref):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal_id}/apply-node",
+            json={"ref": ref}, headers=_auth(token),
+        ).get_json()
+
+    def _apply_edges(self, client, token, project_id, att_id, proposal_id, body=None):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal_id}/apply-edges",
+            json=body or {}, headers=_auth(token),
+        )
+
+    def _spec(self, user, project_id):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        return projects_storage.read_spec(_user_dir_key(user), project_id)
+
+    def test_edges_render_by_name_on_the_plan_part(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        _, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        (edge_row,) = proposal["plan"]["edges"]
+        assert edge_row["fromLabel"] == "Load" and edge_row["toLabel"] == "Analyze"
+
+    def test_edges_refuse_until_endpoints_exist_then_apply_and_complete(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        pid = proposal["proposalId"]
+        refs = [n["ref"] for n in proposal["plan"]["nodes"]]
+        # Endpoints not created yet → the edge refuses BY NAME.
+        body = self._apply_edges(client, token, alice_project, att_id, pid).get_json()
+        assert body["results"]["0"]["status"] == "refused"
+        assert "create 'Load' first" in body["results"]["0"]["reason"]
+        assert body["edgeStates"] == {"0": "refused"}
+        # Create both nodes, then connect — the edge applies with handles.
+        self._apply_node(client, token, alice_project, att_id, pid, refs[0])
+        created_b = self._apply_node(client, token, alice_project, att_id, pid, refs[1])
+        body = self._apply_edges(client, token, alice_project, att_id, pid).get_json()
+        assert body["results"]["0"]["status"] == "applied"
+        (created_edge,) = body["createdEdges"]
+        assert created_edge["target"] == created_b["createdNode"]["id"]
+        assert created_edge["sourceHandle"] == "out" and created_edge["targetHandle"] == "in"
+        spec_edges = self._spec(user, alice_project)["dataflow"]["edges"]
+        assert any(e.get("id") == created_edge["id"] for e in spec_edges)
+        # All refs + all edges applied → the proposal completes.
+        assert body["status"] == "applied"
+        assert body["builderSession"]["phase"] == "applied"  # nodes pend Solve
+        # Idempotent per edge.
+        r = self._apply_edges(client, token, alice_project, att_id, pid)
+        assert r.status_code == 409  # the proposal is applied — no longer pending
+
+    def test_manual_edge_applies_as_noop_and_fanin_refuses_by_name(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        pid = proposal["proposalId"]
+        refs = [n["ref"] for n in proposal["plan"]["nodes"]]
+        created_a = self._apply_node(client, token, alice_project, att_id, pid, refs[0])
+        created_b = self._apply_node(client, token, alice_project, att_id, pid, refs[1])
+        # The user manually draws the same edge first → no-op, no duplicate.
+        key = _user_dir_key(user)
+        spec = projects_storage.read_spec(key, alice_project)
+        spec["dataflow"]["edges"].append({
+            "id": "manual-1",
+            "source": created_a["createdNode"]["id"],
+            "target": created_b["createdNode"]["id"],
+        })
+        projects_storage.write_spec(key, alice_project, spec)
+        body = self._apply_edges(client, token, alice_project, att_id, pid).get_json()
+        assert body["results"]["0"]["status"] == "applied"
+        assert body["results"]["0"]["note"] == "already connected"
+        assert body["createdEdges"] == []
+        edges = self._spec(user, alice_project)["dataflow"]["edges"]
+        assert len([e for e in edges if e.get("target") == created_b["createdNode"]["id"]]) == 1
+
+    def test_fanin_refusal_names_the_merge_resolution(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        pid = proposal["proposalId"]
+        refs = [n["ref"] for n in proposal["plan"]["nodes"]]
+        self._apply_node(client, token, alice_project, att_id, pid, refs[0])
+        created_b = self._apply_node(client, token, alice_project, att_id, pid, refs[1])
+        # Another node already feeds the target: capacity 1 is taken.
+        key = _user_dir_key(user)
+        spec = projects_storage.read_spec(key, alice_project)
+        spec["dataflow"]["edges"].append({
+            "id": "manual-feed",
+            "source": "n1",  # the helper's seeded baseline node
+            "target": created_b["createdNode"]["id"],
+        })
+        projects_storage.write_spec(key, alice_project, spec)
+        body = self._apply_edges(client, token, alice_project, att_id, pid).get_json()
+        assert body["results"]["0"]["status"] == "refused"
+        assert "merge-flow" in body["results"]["0"]["reason"]
+        assert body["status"] == "pending"  # a refused edge never completes
+
+
 class TestValidateNode:
     """dev/67-7 — Simulation Mode: validate. Generate → execute-through →
     verdict → self-correct → propose; the spec is never mutated by

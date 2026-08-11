@@ -470,6 +470,34 @@ def apply_plan_node(project_id: str, attachment_id: str, proposal_id: str):
 
 
 @agents_bp.route(
+    "/projects/<project_id>/attachments/<attachment_id>/proposals/<proposal_id>/apply-edges",
+    methods=["POST"],
+)
+@require_auth
+def apply_plan_edges(project_id: str, attachment_id: str, proposal_id: str):
+    """Apply plan edges — the connection review stage (dev/67-8). Body:
+    optional ``{"edges": [index, …]}`` for a subset (default: every
+    not-yet-applied edge). Refusals are per-edge and named; partial success
+    is reported honestly, never all-or-nothing."""
+    body = request.get_json(silent=True) or {}
+    indices = body.get("edges")
+    if indices is not None and not (
+        isinstance(indices, list) and all(isinstance(i, int) for i in indices)
+    ):
+        return _error("'edges' must be a list of integer indices when present")
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        payload = agents_services.apply_plan_edges(
+            _user_dir_key(g.user), project_id, attachment_id, proposal_id, indices
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+    return jsonify(payload), 200
+
+
+@agents_bp.route(
     "/projects/<project_id>/attachments/<attachment_id>/proposals/<proposal_id>/plan-goals",
     methods=["PATCH"],
 )
