@@ -44,6 +44,11 @@ export const AgentBuilderStrip: React.FC<{
    * is missing). Omitted → the transcript card is the only review surface. */
   onApplyProposal?: (proposalId: string) => Promise<void>;
   onDismissProposal?: (proposalId: string) => Promise<void>;
+  /** dev/67-9: the Simulation Mode driver — step or auto (Build & validate). */
+  onSimulate?: (mode: "step" | "auto") => Promise<unknown>;
+  onCancelSimulate?: () => Promise<void>;
+  /** dev/67-9: the running simulation's narration line. */
+  simulationActivity?: string;
 }> = ({
   attachment,
   onSolve,
@@ -52,11 +57,15 @@ export const AgentBuilderStrip: React.FC<{
   onComposePrompt,
   onApplyProposal,
   onDismissProposal,
+  onSimulate,
+  onCancelSimulate,
+  simulationActivity,
 }) => {
   const { playAllNodes } = useFlowContext();
   const [solving, setSolving] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
+  const [simBusy, setSimBusy] = useState<"step" | "auto" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -105,13 +114,35 @@ export const AgentBuilderStrip: React.FC<{
   };
 
   // The pending plan review, from the fast mirror (dev/41): the strip's
-  // Apply/Dismiss target it directly.
+  // Apply/Dismiss target it directly. dev/67-9: a plan PARKED behind a
+  // content review still drives the simulation controls.
   const planReview =
     attachment.activeProposal &&
     attachment.activeProposal.tool === "dataflow.plan.write" &&
     attachment.activeProposal.status === "pending"
       ? attachment.activeProposal
-      : null;
+      : (attachment.planProposal?.status === "pending" ? attachment.planProposal : null);
+
+  const pauseReason = session.pauseReason ?? null;
+
+  const simulate = async (mode: "step" | "auto") => {
+    if (!onSimulate || simBusy) return;
+    setSimBusy(mode);
+    setError(null);
+    setNotice(null);
+    try {
+      const done = (await onSimulate(mode)) as { status?: string; reason?: { message?: string } } | undefined;
+      if (done?.status === "paused" && done.reason?.message) {
+        setNotice(`Paused — ${done.reason.message}`);
+      } else if (done?.status === "cancelled") {
+        setNotice("Simulation cancelled — everything already built stays.");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "The simulation failed");
+    } finally {
+      setSimBusy(null);
+    }
+  };
 
   const review = async (fn?: (proposalId: string) => Promise<void>) => {
     if (!fn || !planReview || reviewBusy) return;
@@ -181,17 +212,56 @@ export const AgentBuilderStrip: React.FC<{
           ))}
         </ul>
       ) : null}
-      {planReview && (onApplyProposal || onDismissProposal) ? (
+      {planReview && (onSimulate || onApplyProposal || onDismissProposal) ? (
         <div className={styles.actions} role="group" aria-label="Plan review">
           <span className={styles.reviewSummary}>{planReview.summary}</span>
+          {onSimulate ? (
+            // dev/67-9 (DEC-054): the validated sequence is the DEFAULT —
+            // bulk apply survives only as the explicit secondary action.
+            <>
+              <button
+                type="button"
+                className={styles.solve}
+                disabled={simBusy !== null || reviewBusy}
+                onClick={() => void simulate("auto")}
+              >
+                {simBusy === "auto"
+                  ? "Building…"
+                  : pauseReason
+                    ? "Resume"
+                    : "Build & validate plan"}
+              </button>
+              <button
+                type="button"
+                className={styles.run}
+                disabled={simBusy !== null || reviewBusy}
+                onClick={() => void simulate("step")}
+              >
+                {simBusy === "step" ? "Stepping…" : "Step"}
+              </button>
+            </>
+          ) : null}
+          {simBusy && onCancelSimulate ? (
+            <button
+              type="button"
+              className={styles.run}
+              onClick={() => void onCancelSimulate()}
+            >
+              Cancel
+            </button>
+          ) : null}
           {onApplyProposal ? (
             <button
               type="button"
-              className={styles.solve}
-              disabled={reviewBusy}
+              className={styles.run}
+              disabled={reviewBusy || simBusy !== null}
               onClick={() => void review(onApplyProposal)}
             >
-              {reviewBusy ? "Applying…" : "Apply plan"}
+              {reviewBusy
+                ? "Applying…"
+                : onSimulate
+                  ? "Apply all without validation"
+                  : "Apply plan"}
             </button>
           ) : null}
           {onDismissProposal ? (
@@ -242,6 +312,14 @@ export const AgentBuilderStrip: React.FC<{
       </div>
       {solveDisabledReason && phase !== "ready" ? (
         <div className={styles.hint}>{solveDisabledReason}</div>
+      ) : null}
+      {simulationActivity ? (
+        <div className={styles.hint} aria-live="polite">{simulationActivity}</div>
+      ) : null}
+      {!simBusy && pauseReason ? (
+        <div className={styles.hint}>
+          Paused — {pauseReason.message} (Resume continues from here.)
+        </div>
       ) : null}
       {notice ? <div className={styles.hint}>{notice}</div> : null}
       {error ? <div className={styles.error}>{error}</div> : null}

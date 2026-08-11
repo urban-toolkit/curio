@@ -52,6 +52,16 @@ export interface AgentAttachmentsContextValue extends AgentAttachmentsState {
   /** dev/67-5: apply ONE planned node (Simulation Mode: create) — the
    * proposal stays pending; the created node reaches the live canvas. */
   applyPlanNode: (attachmentId: string, proposalId: string, ref: string) => Promise<void>;
+  /** dev/67-9: run the Simulation Mode driver (step or auto) — canvas
+   * mutations from the stream apply live; resolves with the done payload. */
+  runSimulation: (
+    attachmentId: string,
+    mode: "step" | "auto",
+  ) => Promise<Record<string, unknown>>;
+  /** dev/67-9: transient narration of the running simulation's current step. */
+  simulationActivity: Record<string, string>;
+  /** dev/67-9: cancel the running simulation at its next boundary. */
+  cancelSimulation: (attachmentId: string) => Promise<void>;
   /** dev/67-8: apply plan edges (all pending, or a subset by index) — the
    * connection review stage; applied edges reach the live canvas. */
   applyPlanEdges: (
@@ -109,6 +119,8 @@ export const AgentAttachmentsProvider: React.FC<{
   const [toolActivity, setToolActivity] = useState<Record<string, string[]>>({});
   // dev/63: the live solve's per-node overlay + its abort handle.
   const [solveProgress, setSolveProgress] = useState<Record<string, Record<string, string>>>({});
+  // dev/67-9: the running simulation's narration line, per attachment.
+  const [simulationActivity, setSimulationActivity] = useState<Record<string, string>>({});
   const solveAbortRef = useRef<Map<string, AbortController>>(new Map());
   const hydratedRef = useRef<Set<string>>(new Set());
   const projectRef = useRef<string | null>(effectiveProjectId);
@@ -385,6 +397,68 @@ export const AgentAttachmentsProvider: React.FC<{
     [hydrateSession, state.reload],
   );
 
+  const runSimulation = useCallback(
+    async (attachmentId: string, mode: "step" | "auto") => {
+      const pid = projectRef.current;
+      if (!pid) throw new Error("no project");
+      const narrate = (line: string | null) =>
+        setSimulationActivity((prev) => {
+          if (line === null) {
+            const { [attachmentId]: _gone, ...rest } = prev;
+            return rest;
+          }
+          return { ...prev, [attachmentId]: line };
+        });
+      try {
+        return await agentsApi.simulate(pid, attachmentId, mode, (name, payload) => {
+          if (name === "node_created" && payload.createdNode) {
+            notifyAgentCanvasMutation({
+              kind: "node-created",
+              node: payload.createdNode as never,
+            });
+          } else if (name === "node_content_applied" && typeof payload.nodeId === "string") {
+            notifyAgentCanvasMutation({
+              kind: "node-content-applied",
+              nodeId: payload.nodeId,
+              content: String(payload.content ?? ""),
+            });
+          } else if (name === "edges_created" && Array.isArray(payload.createdEdges)) {
+            const edges = payload.createdEdges as Array<{ id: string; source: string; target: string }>;
+            notifyAgentCanvasMutation({
+              kind: "edges-created",
+              batchId: `sim:${edges.map((e) => e.id).join(",")}`,
+              edges,
+            });
+          } else if (name === "stage") {
+            narrate(
+              `${String(payload.action)}${payload.label ? ` — ${String(payload.label)}` : ""}`,
+            );
+          } else if (name === "node_executed") {
+            narrate(`executing upstream ${Number(payload.index) + 1}/${String(payload.total)}`);
+          } else if (name === "generation_round") {
+            narrate(`generating content (round ${String(payload.round)})`);
+          }
+        });
+      } finally {
+        narrate(null);
+        hydratedRef.current.delete(attachmentId);
+        await hydrateSession(attachmentId);
+        await state.reload();
+      }
+    },
+    [hydrateSession, state.reload],
+  );
+
+  const cancelSimulation = useCallback(async (attachmentId: string) => {
+    const pid = projectRef.current;
+    if (!pid) return;
+    try {
+      await agentsApi.cancelSimulate(pid, attachmentId);
+    } catch {
+      // Nothing running (finished at the boundary first) — fine.
+    }
+  }, []);
+
   const applyPlanEdges = useCallback(
     async (attachmentId: string, proposalId: string, indices?: number[]) => {
       const pid = projectRef.current;
@@ -592,6 +666,9 @@ export const AgentAttachmentsProvider: React.FC<{
       savePlanGoal,
       applyPlanEdges,
       validateNode,
+      runSimulation,
+      simulationActivity,
+      cancelSimulation,
       dismissProposal,
     }),
     [
@@ -616,6 +693,9 @@ export const AgentAttachmentsProvider: React.FC<{
       savePlanGoal,
       applyPlanEdges,
       validateNode,
+      runSimulation,
+      simulationActivity,
+      cancelSimulation,
       dismissProposal,
     ],
   );

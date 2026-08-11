@@ -100,6 +100,9 @@ export const AgentDockOverlay: React.FC = () => {
               onApplyPlanEdges={async (proposalId, indices) => {
                 await ctx.applyPlanEdges(selected.attachmentId, proposalId, indices);
               }}
+              onSimulate={(mode) => ctx.runSimulation(selected.attachmentId, mode)}
+              onCancelSimulate={() => ctx.cancelSimulation(selected.attachmentId)}
+              simulationActivity={ctx.simulationActivity[selected.attachmentId]}
               onSolve={(nodeIds) => ctx.solveAttachment(selected.attachmentId, nodeIds)}
               solveProgress={ctx.solveProgress[selected.attachmentId]}
               onCancelSolve={() => ctx.cancelSolve(selected.attachmentId)}

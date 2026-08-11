@@ -266,3 +266,55 @@ describe("AgentBuilderStrip plan-review controls (dev/53)", () => {
     );
   });
 });
+
+describe("AgentBuilderStrip simulation controls (dev/67-9, DEC-054)", () => {
+  const planReview = {
+    proposalId: "pp1",
+    tool: "dataflow.plan.write",
+    nodeId: "",
+    summary: "Apply plan · 2 nodes, 1 edges",
+    status: "pending" as const,
+  };
+
+  it("the validated sequence is the default; bulk apply is the labeled secondary", async () => {
+    const onSimulate = jest.fn().mockResolvedValue({ status: "completed" });
+    render(
+      <AgentBuilderStrip
+        attachment={{ ...attachment({ phase: "plan_review" }), activeProposal: planReview }}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        onApplyProposal={jest.fn()}
+        onSimulate={onSimulate}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Build & validate plan" }));
+    await waitFor(() => expect(onSimulate).toHaveBeenCalledWith("auto"));
+    fireEvent.click(screen.getByRole("button", { name: "Step" }));
+    await waitFor(() => expect(onSimulate).toHaveBeenCalledWith("step"));
+    expect(
+      screen.getByRole("button", { name: "Apply all without validation" }),
+    ).toBeInTheDocument();
+  });
+
+  it("a paused run narrates the reason and relabels Resume — parked plans included", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={{
+          ...attachment({
+            phase: "simulating",
+            nodeStates: { a: "failed" },
+            pauseReason: { kind: "validation-failed", ref: "a", message: "validation failed — review the proposed content" },
+          } as never),
+          // The plan is PARKED behind the content review (dev/67-9).
+          activeProposal: { ...planReview, proposalId: "cp1", tool: "node.content.write" },
+          planProposal: planReview,
+        }}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        onSimulate={jest.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Resume" })).toBeInTheDocument();
+    expect(screen.getByText(/Paused — validation failed/)).toBeInTheDocument();
+  });
+});

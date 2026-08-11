@@ -71,22 +71,28 @@ export interface AgentAttachment {
   reads?: string[];
   /** The attachment's single review proposal, newest wins (memo dev/41);
    * null/absent when none exists. Status wiring for the review card. */
-  activeProposal?: {
-    proposalId: string;
-    tool: string;
-    nodeId: string;
-    summary: string;
-    status: AgentProposalStatus;
-    /** dev/67-5 (plan proposals): review-stage goal edits, ref-keyed. */
-    editedGoals?: Record<string, string>;
-    /** dev/67-5 (plan proposals): refs already applied per-node. */
-    appliedRefs?: string[];
-    /** dev/67-8 (plan proposals): edge index → planned|applied|refused. */
-    edgeStates?: Record<string, string>;
-  } | null;
+  activeProposal?: AgentProposalSummary | null;
+  /** dev/67-9: the plan proposal PARKED while per-node content reviews cycle
+   * through the active slot — still pending, still addressable. */
+  planProposal?: AgentProposalSummary | null;
   /** The Dataflow Builder orchestration session (dev/52 DR-2) — drives the
    * phase-aware builder panel; absent for every other agent. */
   builderSession?: AgentBuilderSession | null;
+}
+
+/** The activeProposal mirror row (dev/41; dev/67-5/8/9 extensions). */
+export interface AgentProposalSummary {
+  proposalId: string;
+  tool: string;
+  nodeId: string;
+  summary: string;
+  status: AgentProposalStatus;
+  /** dev/67-5 (plan proposals): review-stage goal edits, ref-keyed. */
+  editedGoals?: Record<string, string>;
+  /** dev/67-5 (plan proposals): refs already applied per-node. */
+  appliedRefs?: string[];
+  /** dev/67-8 (plan proposals): edge index → planned|applied|refused. */
+  edgeStates?: Record<string, string>;
 }
 
 /** dev/52 DR-2: the persisted Plan → Solve state riding the attachment.
@@ -103,6 +109,12 @@ export interface AgentBuilderSession {
   nodeIds?: Record<string, string>;
   /** dev/67-8: edge index → planned|applied|refused. */
   edgeStates?: Record<string, string>;
+  /** dev/67-9: the ref the driver is working on, while running. */
+  currentRef?: string;
+  /** dev/67-9: why the sequence paused — a plain reason with a next action. */
+  pauseReason?: { kind: string; ref?: string; proposalId?: string; message: string };
+  /** dev/67-9: ref → its validated content proposal id. */
+  nodeProposals?: Record<string, string>;
 }
 
 /** Actual provider-reported token usage (memo dev/37) — never an estimate. */
@@ -939,6 +951,48 @@ export const agentsApi = {
     );
     if (result === null) throw new Error("solve stream ended without a result");
     return result;
+  },
+
+  /**
+   * The Simulation Mode driver (dev/67-9, DEC-054): `step` performs the next
+   * single action; `auto` chains create → validate → auto-approve-on-PASS →
+   * connections, pausing on any failure. Canvas mutations ride the stream
+   * (`node_created`/`node_content_applied`/`edges_created`) — the caller
+   * dispatches them. Resolves with the `done` payload (status
+   * completed|stepped|paused|cancelled + builderSession).
+   */
+  async simulate(
+    projectId: string,
+    attachmentId: string,
+    mode: "step" | "auto",
+    onEvent: (name: string, payload: Record<string, unknown>) => void,
+    signal?: AbortSignal,
+  ): Promise<Record<string, unknown>> {
+    let result: Record<string, unknown> | null = null;
+    await postSseStream(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/simulate`,
+      { mode },
+      (event, payload) => {
+        if (event === "done") result = payload;
+        else if (event === "error")
+          throw new Error((payload as { error?: string }).error || "simulation failed");
+        else onEvent(event, payload);
+      },
+      signal,
+    );
+    if (result === null) throw new Error("simulation ended without a result");
+    return result;
+  },
+
+  /** Cancel a running simulation (dev/67-9): stops at the next boundary. */
+  cancelSimulate(
+    projectId: string,
+    attachmentId: string,
+  ): Promise<{ attachmentId: string; cancelRequested: boolean }> {
+    return apiFetch(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/simulate/cancel`,
+      { method: "POST" },
+    );
   },
 
   /**

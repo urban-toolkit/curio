@@ -76,6 +76,10 @@ export const AgentChatPanel: React.FC<{
   onSavePlanGoal?: (proposalId: string, ref: string, goal: string) => Promise<void>;
   /** dev/67-8: the connection review stage. */
   onApplyPlanEdges?: (proposalId: string, indices?: number[]) => Promise<void>;
+  /** dev/67-9: the Simulation Mode driver + its narration. */
+  onSimulate?: (mode: "step" | "auto") => Promise<unknown>;
+  onCancelSimulate?: () => Promise<void>;
+  simulationActivity?: string;
   /** dev/52 Solve (Dataflow Builder attachments only); omitted → no strip. */
   onSolve?: (nodeIds?: string[]) => Promise<unknown>;
   /** dev/63: the live batch's per-node status overlay (nodeId → status). */
@@ -106,6 +110,9 @@ export const AgentChatPanel: React.FC<{
   onApplyPlanNode,
   onSavePlanGoal,
   onApplyPlanEdges,
+  onSimulate,
+  onCancelSimulate,
+  simulationActivity,
   onSolve,
   solveProgress,
   onCancelSolve,
@@ -397,6 +404,9 @@ export const AgentChatPanel: React.FC<{
           onComposePrompt={composePrompt}
           onApplyProposal={onApplyProposal}
           onDismissProposal={onDismissProposal}
+          onSimulate={onSimulate}
+          onCancelSimulate={onCancelSimulate}
+          simulationActivity={simulationActivity}
         />
       ) : null}
 
@@ -542,17 +552,24 @@ export const AgentChatPanel: React.FC<{
                         onApplyPlanNode={onApplyPlanNode}
                         onSavePlanGoal={onSavePlanGoal}
                         onApplyPlanEdges={onApplyPlanEdges}
-                        planNodeState={
-                          // dev/67-5: the mirror's per-node state feeds the
-                          // part whose proposal it mirrors.
-                          attachment.activeProposal?.proposalId === part.proposalId
+                        planNodeState={(() => {
+                          // dev/67-5/67-9: the mirror's per-node state feeds
+                          // the part whose proposal it mirrors — active OR
+                          // parked behind a content review.
+                          const mirror =
+                            attachment.activeProposal?.proposalId === part.proposalId
+                              ? attachment.activeProposal
+                              : attachment.planProposal?.proposalId === part.proposalId
+                                ? attachment.planProposal
+                                : null;
+                          return mirror
                             ? {
-                                appliedRefs: attachment.activeProposal.appliedRefs ?? [],
-                                editedGoals: attachment.activeProposal.editedGoals ?? {},
-                                edgeStates: attachment.activeProposal.edgeStates ?? {},
+                                appliedRefs: mirror.appliedRefs ?? [],
+                                editedGoals: mirror.editedGoals ?? {},
+                                edgeStates: mirror.edgeStates ?? {},
                               }
-                            : undefined
-                        }
+                            : undefined;
+                        })()}
                       />
                     ))}
                 </div>

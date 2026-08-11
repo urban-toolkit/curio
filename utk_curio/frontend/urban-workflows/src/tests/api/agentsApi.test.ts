@@ -343,6 +343,26 @@ describe("agentsApi", () => {
 
 
 
+
+    it("simulate streams driver events and resolves on done (dev/67-9)", async () => {
+      global.fetch = jest.fn().mockResolvedValue(
+        streamResponse([
+          'event: simulate_started\ndata: {"executionId": "e1", "mode": "auto"}\n\n',
+          'event: stage\ndata: {"action": "create", "ref": "a", "label": "Load"}\n\n',
+          'event: node_created\ndata: {"createdNode": {"id": "n1"}}\n\n',
+          'event: done\ndata: {"status": "completed", "mode": "auto"}\n\n',
+        ]),
+      );
+      const seen: string[] = [];
+      const result = await agentsApi.simulate("p1", "att-1", "auto", (n) => seen.push(n));
+      expect(seen).toEqual(["simulate_started", "stage", "node_created"]);
+      expect(result).toMatchObject({ status: "completed" });
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("/attachments/att-1/simulate"),
+        expect.objectContaining({ method: "POST", body: JSON.stringify({ mode: "auto" }) }),
+      );
+    });
+
     it("validateNode streams lifecycle events and resolves on done (dev/67-7)", async () => {
       global.fetch = jest.fn().mockResolvedValue(
         streamResponse([
@@ -397,6 +417,15 @@ describe("agentsApi", () => {
         expect.objectContaining({ body: JSON.stringify({ nodeIds: ["n1"] }) }),
       );
     });
+  });
+
+
+  it("cancelSimulate() posts the cancel endpoint (dev/67-9)", () => {
+    agentsApi.cancelSimulate("p1", "att-1");
+    expect(mockFetch).toHaveBeenCalledWith(
+      "/api/agents/projects/p1/attachments/att-1/simulate/cancel",
+      { method: "POST" },
+    );
   });
 
   it("cancelSolve() posts the cancel endpoint (dev/63)", () => {

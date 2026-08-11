@@ -23,6 +23,8 @@ jest.mock("../../api/agentsApi", () => ({
     applyPlanNode: jest.fn(),
     savePlanGoal: jest.fn(),
     applyPlanEdges: jest.fn(),
+    simulate: jest.fn(),
+    cancelSimulate: jest.fn(),
   },
 }));
 
@@ -75,6 +77,9 @@ const Harness: React.FC = () => {
       </button>
       <button onClick={() => void ctx.applyPlanEdges("a1", "p1").catch(() => undefined)}>
         apply-plan-edges
+      </button>
+      <button onClick={() => void ctx.runSimulation("a1", "auto").catch(() => undefined)}>
+        run-simulation
       </button>
       <button onClick={() => void ctx.cancelSolve("a1")}>cancel-solve</button>
       <div data-testid="solve-progress">
@@ -627,6 +632,25 @@ describe("AgentAttachmentsProvider streamed solve (dev/63)", () => {
     expect(events).toHaveLength(1); // no double-apply from the done payload
   });
 
+
+
+  it("runSimulation maps driver stream events onto the canvas bridge (dev/67-9)", async () => {
+    api.simulate.mockImplementation(
+      async (_p: string, _a: string, _m: string, onEvent: (n: string, pl: Record<string, unknown>) => void) => {
+        onEvent("node_created", { createdNode: { id: "n1", type: "t", content: "", x: 1, y: 2 } });
+        onEvent("node_content_applied", { nodeId: "n1", content: "print(1)" });
+        onEvent("edges_created", { createdEdges: [{ id: "e1", source: "n1", target: "n2" }] });
+        return { status: "completed", mode: "auto" };
+      },
+    );
+    renderProvider();
+    await act(async () => {
+      fireEvent.click(screen.getByText("run-simulation"));
+    });
+    expect(events.map((e: any) => e.kind)).toEqual([
+      "node-created", "node-content-applied", "edges-created",
+    ]);
+  });
 
   it("applyPlanEdges dispatches edges-created for the applied edges (dev/67-8)", async () => {
     api.applyPlanEdges.mockResolvedValue({
