@@ -1,7 +1,17 @@
 # Implementation Memo 67-4: Node Researcher + Verified External Discovery
 
 Date: 2026-08-05
-Status: proposed (part of the dev/67 program — see `67-1-index.md`)
+Status: implemented 2026-08-05 — COMMIT-7784921e (egress + validators), COMMIT-d8faf75e
+(tools + roster + finder gate), COMMIT-745c00f2 (frontend badges). Verification: backend
+1147 passed (8 skipped), frontend 733 passed, tsc clean. Ledger: DEC-053 (dev/03 + 2.1),
+BL-P5-20260805-14 — completes the dev/67 program. Recorded deviations: (1) DEC-046
+children are structurally tool-less, so research.verify DELEGATES receive runtime-verified
+evidence in their inputs (the deterministic validators run before the child; the child
+synthesizes) — the researcher's own attachment runs use the web tools directly; (2)
+web.search ships as a deployment-configured seam (CURIO_SEARCH_URL template) with an
+honest not-configured error rather than a bundled provider; (3) NCB was not added to the
+delegates_to chains (depth-1 children cannot delegate — chainability means the BUILDER
+agents chain to the researcher).
 
 ## 1. Problem Statement
 
@@ -23,6 +33,15 @@ system can touch the network on an agent's behalf:
 Expected (67-0): external discovery is a verifiable research operation — dataset ids,
 endpoints, schemas, auth requirements, and response shapes verified before acceptance;
 a reusable, chainable Node Researcher other agents can invoke.
+
+**Scope statement (owner directive): the Socrata hallucination fix generalizes to ANY
+dataset API connection.** The verification gate is provider-agnostic by design: the
+GENERIC endpoint probe (reachability, HTTP status, content type, response-shape sample)
+is the universal path every external row takes, and provider-specific validators —
+Socrata today — are REFINEMENTS registered in a small validator registry keyed by
+recognizable URL shapes, each adding richer evidence (dataset name, columns) on top of
+the generic verdict. Adding a provider (CKAN, ArcGIS, Data.gov, BigQuery public, …) is
+one registry entry, never a new gate — the fix is the gate, not one vendor's check.
 
 ## 2. Scope
 
@@ -135,12 +154,12 @@ dependency lands in this memo.
 
 ## 8. Acceptance Criteria
 
-- [ ] An invalid Socrata code in an external candidate row surfaces as an explicit
+- [x] An invalid Socrata code in an external candidate row surfaces as an explicit
       UNVERIFIED/unreachable marker on the card and in the handoff — it can no longer
       arrive silently in a fetch node.
-- [ ] Any builder agent can delegate `research.verify` and receive evidence with
+- [x] Any builder agent can delegate `research.verify` and receive evidence with
       citations/dates; the researcher never mutates anything.
-- [ ] Egress is impossible outside the policy module, and every egress call is on the
+- [x] Egress is impossible outside the policy module, and every egress call is on the
       execution record.
 
 ## 9. Recommended Commit Breakdown

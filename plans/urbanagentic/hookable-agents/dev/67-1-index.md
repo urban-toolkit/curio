@@ -1,9 +1,9 @@
 # dev/67 Index — Granular Simulation Mode, Per-Node Validation, and Orchestration Hardening
 
 Date: 2026-08-05
-Status: 67-2, 67-3, 67-5, 67-6, 67-7, 67-8, 67-9 IMPLEMENTED (2026-08-05 —
-DEC-051/052/054 minted; BL-P5-20260805-07..13). Remaining: 67-4 (Node Researcher +
-verified external discovery — DEC-053), independent of the completed sequence.
+Status: COMPLETE — all eight memos implemented 2026-08-05 (DEC-051/052/053/054
+minted; BL-P5-20260805-07..14). The Socrata verification gate generalizes to ANY
+dataset API connection (owner directive, recorded in 67-4 and DEC-053).
 Source: `67-0-entry.md` (owner's observations and objectives)
 
 ## The program in one paragraph
