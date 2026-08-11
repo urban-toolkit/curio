@@ -84,6 +84,31 @@ export const AgentDatasetCandidatesCard: React.FC<{
                   {row.installed ? "Installed" : "Not installed"}
                 </span>
               ) : null}
+              {lane === "external" && row.verification ? (
+                // dev/67-4 (DEC-053): the runtime's verdict, never the
+                // model's claim — verified ✓ or a loud warning.
+                <span
+                  className={
+                    row.verification.status === "verified"
+                      ? styles.installedChip
+                      : styles.notInstalledChip
+                  }
+                  title={
+                    row.verification.detail ??
+                    (row.verification.datasetName
+                      ? `verified: ${row.verification.datasetName}`
+                      : undefined)
+                  }
+                >
+                  {row.verification.status === "verified"
+                    ? "Verified ✓"
+                    : row.verification.status === "unreachable"
+                      ? "Unreachable ✗"
+                      : row.verification.status === "refused"
+                        ? "Refused ✗"
+                        : "Unverified — never checked"}
+                </span>
+              ) : null}
             </span>
             {meta ? <span className={styles.meta}>{meta}</span> : null}
             {row.url ? <span className={styles.url}>{row.url}</span> : null}

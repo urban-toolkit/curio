@@ -178,6 +178,18 @@ export interface AgentDatasetCandidateRow {
   /** Catalog lane only: the id dataset.install proposals reference. */
   datasetId?: string;
   installed?: boolean;
+  /** dev/67-4 (DEC-053): the deterministic verification verdict — external
+   * rows only; runtime-probed through the egress policy, never model-claimed. */
+  verification?: {
+    status: "verified" | "unreachable" | "refused" | "unverified" | string;
+    detail?: string;
+    httpStatus?: number;
+    provider?: string;
+    datasetId?: string;
+    datasetName?: string;
+    columns?: string[];
+    checkedAt?: string;
+  };
 }
 
 /** The dev/50 two-lane suggestions part. Selection and confirmation live

@@ -87,3 +87,38 @@ describe("AgentDatasetCandidatesCard (dev/50 — the docs/06 two-lane surface)",
     expect(composeConfirmationPrompt([], [])).toBe("");
   });
 });
+
+describe("AgentDatasetCandidatesCard — dev/67-4 verification verdicts", () => {
+  it("renders the runtime's verdict per external row — verified or loud", () => {
+    render(
+      <AgentDatasetCandidatesCard
+        part={{
+          type: "datasetCandidates",
+          lanes: {
+            external: [
+              {
+                name: "Chicago Heat", sourceType: "api",
+                url: "https://data.cityofchicago.org/resource/abcd-1234.json",
+                verification: { status: "verified", datasetName: "Chicago Heat Deaths 2024" },
+              },
+              {
+                name: "Guessed Portal", sourceType: "portal",
+                verification: { status: "unverified", detail: "no probeable URL — the identifier was never checked" },
+              },
+              {
+                name: "Dead API", sourceType: "endpoint",
+                url: "https://data.example.gov/gone.json",
+                verification: { status: "unreachable", httpStatus: 404, detail: "the endpoint answered 404" },
+              },
+            ],
+            catalog: [],
+          },
+        }}
+        onComposePrompt={jest.fn()}
+      />,
+    );
+    expect(screen.getByText("Verified ✓")).toBeInTheDocument();
+    expect(screen.getByText("Unverified — never checked")).toBeInTheDocument();
+    expect(screen.getByText("Unreachable ✗")).toBeInTheDocument();
+  });
+});
