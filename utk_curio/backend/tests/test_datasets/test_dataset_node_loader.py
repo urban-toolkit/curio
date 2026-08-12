@@ -73,7 +73,7 @@ def test_bundle_snippet_shape():
         ("csv", "pd.read_csv(dataset_path)", "df"),
         ("geojson", "gpd.read_file(dataset_path)", "gdf"),
         ("shp", "gpd.read_file(dataset_path)", "gdf"),
-        ("json", "json.load(f)", "data"),
+        ("json", 'json.loads(_raw.decode("utf-8"))', "data"),
         ("geotiff", "rasterio.open(dataset_path)", "src"),
     ],
 )
@@ -82,6 +82,18 @@ def test_non_parquet_snippets_unchanged(fmt, expected_reader, return_var):
     snippet = loader_snippet(fmt, "/data/file")
     assert expected_reader in snippet["code"]
     assert snippet["returnVariable"] == return_var
+
+
+def test_json_snippet_is_zlib_tolerant():
+    """format: json covers both plain .json and zlib-compressed .json.zlib
+    (computed dict/list outputs), so the loader must read binary and try
+    decompressing first — never text-mode ``json.load(f)``."""
+    snippet = loader_snippet("json", "/data/computed.node@1/data/out.json.zlib")
+    assert "import zlib" in snippet["imports"]
+    assert 'open(dataset_path, "rb")' in snippet["code"]
+    assert "zlib.decompress(_raw)" in snippet["code"]
+    assert "except zlib.error:" in snippet["code"]
+    assert "json.load(f)" not in snippet["code"]
 
 
 # --------------------------------------------------------------------------- #
@@ -208,3 +220,29 @@ def test_bundle_loader_preserves_part_order(tmp_path):
 
     result = _run_loader(loader_snippet("bundle", str(bundle_path)))
     assert result == (100, 200)
+
+
+def test_json_loader_reads_plain_json(tmp_path):
+    """The zlib tolerance must not regress user-imported plain .json files."""
+    doc = {"name": "café", "values": [1, 2, 3]}
+    path = tmp_path / "imported.json"
+    path.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+
+    assert _run_loader(loader_snippet("json", str(path))) == doc
+
+
+def test_json_loader_reads_zlib_compressed_json(tmp_path):
+    """Regression: an autk-grammar computed dataset is a zlib-compressed pool
+    wrapper (``.json.zlib``) with ``format: json``; the generated loader must
+    decompress it and return the same dict the producing node emitted."""
+    import zlib
+
+    doc = {
+        "dataType": "outputs",
+        "data": [{"dataType": "geodataframe", "data": {"type": "FeatureCollection", "features": []}}],
+    }
+    path = tmp_path / "1786466491428_32e01db8.json.zlib"
+    # Persisted exactly as save_to_duckdb's dict branch writes it.
+    path.write_bytes(zlib.compress(json.dumps(doc, ensure_ascii=False).encode("utf-8")))
+
+    assert _run_loader(loader_snippet("json", str(path))) == doc

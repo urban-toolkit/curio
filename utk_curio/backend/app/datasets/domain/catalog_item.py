@@ -100,11 +100,26 @@ def loader_snippet(fmt: str, path: str | None) -> dict[str, Any]:
             "returnVariable": "df",
         }
     if fmt == "json":
+        # Computed dict/list outputs (e.g. autk-grammar pool wrappers) are
+        # persisted zlib-compressed (``.json.zlib``) while user-imported ``.json``
+        # files are plain text — both carry ``format: json``. Read binary and try
+        # zlib first; a plain JSON document never decompresses as zlib, so the
+        # fallback is safe (same semantics as the preview's
+        # ``_load_json_maybe_compressed``).
         return {
             "language": "python",
-            "imports": ["import json"],
+            "imports": ["import json", "import zlib"],
             "pathVariable": "dataset_path",
-            "code": f'dataset_path = "{dataset_path}"\nwith open(dataset_path) as f:\n    data = json.load(f)',
+            "code": (
+                f'dataset_path = "{dataset_path}"\n'
+                'with open(dataset_path, "rb") as f:\n'
+                "    _raw = f.read()\n"
+                "try:\n"
+                "    _raw = zlib.decompress(_raw)\n"
+                "except zlib.error:\n"
+                "    pass  # plain .json — bytes are already the document\n"
+                'data = json.loads(_raw.decode("utf-8"))'
+            ),
             "returnVariable": "data",
         }
     if fmt == "geotiff":
