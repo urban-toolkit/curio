@@ -358,6 +358,39 @@ describe('Behavior hooks — NodeBehaviorHook contract conformance', () => {
       expect(result.current.defaultValueOverride).toBeUndefined();
     });
 
+    // dev/70 regression: the seed decision is frozen at mount. ``data.code`` is
+    // mutated by useNodeState one commit behind the editor (and the old reset
+    // chain even wrote ``undefined`` into it), so deriving the override from it
+    // per render flip-flopped ``defaultValue`` and reset the editor to the
+    // default spec while the user typed.
+    test('defaultValueOverride stays stable while data.code mutates mid-typing (dev/70)', async () => {
+      const stableData = makeMockData();
+      const stableNodeState = makeMockNodeState();
+      let rendered: any;
+      await act(async () => {
+        rendered = renderHook(() => useAutkGrammarBehavior(stableData, stableNodeState));
+      });
+
+      const seed = rendered.result.current.defaultValueOverride;
+      expect(typeof seed).toBe('string');
+
+      // Editor floats a keystroke back into the mutable node data.
+      (stableData as any).code = '{"user":"typed"}';
+      await act(async () => { rendered.rerender(); });
+      expect(rendered.result.current.defaultValueOverride).toBe(seed);
+
+      // The old reset chain cleared it again — the override must not flip back.
+      (stableData as any).code = undefined;
+      await act(async () => { rendered.rerender(); });
+      expect(rendered.result.current.defaultValueOverride).toBe(seed);
+
+      // An explicit external update (dataset drop / LLM apply) writes
+      // data.defaultCode via updateDefaultCode and must win over the seed.
+      (stableData as any).defaultCode = '{"map":{}}';
+      await act(async () => { rendered.rerender(); });
+      expect(rendered.result.current.defaultValueOverride).toBeUndefined();
+    });
+
     test('data-only node runs the data section in the backend and emits the DuckDB artifact ref', async () => {
       const interpretCode = jest.fn(
         (_unresolved, _code, _input, _inputTypes, cb) =>
