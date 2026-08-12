@@ -5971,3 +5971,122 @@ class TestBuiltinPromptPropagation:
             json={"message": "hi"}, headers=_auth(token),
         )
         assert "MY OWN INSTRUCTION BYTES" in calls[0][0]["content"]
+
+
+class TestSolveTraceHome:
+    """dev/72 — a node's Solve lifecycle lives in its attached Node Builder:
+    the trace, the content review, and the cross-attachment ledger advance."""
+
+    def _setup(self, client, user, token, project_id, monkeypatch, replies):
+        helper = TestDataflowPlanMint()
+        att_id, _ = helper._setup(
+            client, user, token, project_id, monkeypatch, replies=replies,
+        )
+        for coord in ("agent.node-content-builder@1.0.0", "agent.node-builder@1.0.0"):
+            client.post(
+                f"/api/agents/projects/{project_id}/install",
+                json={"coord": coord}, headers=_auth(token),
+            )
+        r = helper._run(client, token, project_id, att_id)
+        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
+        ref = proposal["plan"]["nodes"][0]["ref"]
+        created = client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply-node",
+            json={"ref": ref}, headers=_auth(token),
+        ).get_json()
+        return att_id, ref, created
+
+    def test_validate_homes_the_trace_and_review_at_the_nodes_agent(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        monkeypatch.setattr(
+            "utk_curio.backend.app.execution.runner._http_exec",
+            lambda endpoint, payload: {
+                "stdout": [], "stderr": "",
+                "output": {"path": "art", "dataType": "dataframe"},
+            },
+        )
+        att_id, ref, created = self._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Plan.\n" + helper._plan_tail(), "print('validated')"],
+        )
+        home_id = created["attachedAgentId"]  # dev/71's auto-attached agent
+        assert home_id
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/validate-node",
+            json={"ref": ref}, headers=_auth(token),
+        )
+        done = TestStreamedSolve()._sse_events(r)[-1][1]
+        assert done["verdict"] == "pass"
+        # The review lives with the NODE's agent (dev/72).
+        assert done["proposalAttachmentId"] == home_id
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        home = next(c for c in cards if c["attachmentId"] == home_id)
+        assert home["activeProposal"]["tool"] == "node.content.write"
+        # Its transcript: the framed task, then the trace card + proposal.
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{home_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        assert any("[Delegated by Dataflow Builder] Solve" in t["text"] for t in turns)
+        result_turn = next(
+            t for t in turns
+            if any(p.get("type") == "proposal" for p in (t.get("content") or []))
+        )
+        trace = next(p for p in result_turn["content"] if p.get("type") == "card")
+        assert trace["title"] == "Solve trace · PASS"
+        assert any(line.startswith("round 1: pass") for line in trace["lines"])
+        # The PARENT summarizes and links (the delegation part).
+        builder_turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        link = next(
+            p for t in reversed(builder_turns) for p in (t.get("content") or [])
+            if p.get("type") == "delegation"
+        )
+        assert link["attachmentId"] == home_id and link["status"] == "ok"
+        # Applying the review AT THE NODE'S AGENT advances the BUILDER ledger.
+        client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{home_id}/proposals/{done['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        session = next(c for c in cards if c["attachmentId"] == att_id)["builderSession"]
+        assert session["nodeStates"][ref] == "approved"
+
+    def test_driver_approves_through_the_home(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        helper = TestDataflowPlanMint()
+        monkeypatch.setattr(
+            "utk_curio.backend.app.execution.runner._http_exec",
+            lambda endpoint, payload: {
+                "stdout": [], "stderr": "",
+                "output": {"path": "art", "dataType": "dataframe"},
+            },
+        )
+        att_id, _ = helper._setup(
+            client, user, token, alice_project, monkeypatch,
+            replies=["Plan.\n" + helper._plan_tail(), "print('generated')"],
+        )
+        for coord in ("agent.node-content-builder@1.0.0", "agent.node-builder@1.0.0"):
+            client.post(
+                f"/api/agents/projects/{alice_project}/install",
+                json={"coord": coord}, headers=_auth(token),
+            )
+        r = helper._run(client, token, alice_project, att_id)
+        assert r.status_code == 200
+        resp = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/simulate",
+            json={"mode": "auto"}, headers=_auth(token),
+        )
+        done = TestStreamedSolve()._sse_events(resp)[-1][1]
+        assert done["status"] == "completed"
+        assert set(done["builderSession"]["nodeStates"].values()) == {"approved"}
+        # nodeProposals carries the dev/72 {proposalId, attachmentId} shape.
+        entry = next(iter(done["builderSession"]["nodeProposals"].values()))
+        assert entry["proposalId"] and entry["attachmentId"] != att_id

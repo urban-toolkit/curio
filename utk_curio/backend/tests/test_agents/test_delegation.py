@@ -558,3 +558,73 @@ class TestCapabilityFirstResolution:
         r = delegation.resolve(key, pid, self._manifest(), "dataset.discover")
         assert r.outcome == "not-installed"
         assert r.coord == "agent.dataset-finder@1.0.0"
+
+
+class TestDelegationTransparency:
+    """dev/72 — every delegated task lives in its agent's chat: task+result
+    turns at the home attachment, a compact linkable delegation part on the
+    parent's turn, best-effort throughout."""
+
+    def test_delegated_task_lives_in_its_agents_chat(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        pid = _project(client, token)
+        att_id, _ = _setup(client, token, pid, monkeypatch)
+        body = _run(client, token, pid, att_id).get_json()
+        # The PARENT turn carries the compact, linkable entry.
+        part = next(p for p in body["content"] if p["type"] == "delegation")
+        assert part["capability"] == "node.content.generate"
+        assert part["name"] == "Node Content Builder"
+        assert part["status"] == "ok"
+        assert part["attachmentId"]
+        # The delegate got a HOME (an NCB canvas attachment) …
+        cards = client.get(
+            f"/api/agents/projects/{pid}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        home = next(c for c in cards if c["attachmentId"] == part["attachmentId"])
+        assert home["coord"] == NCB and home["target"]["kind"] == "canvas"
+        # … whose transcript tells the full story: task turn + result turn.
+        turns = client.get(
+            f"/api/agents/projects/{pid}/attachments/{part['attachmentId']}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        assert len(turns) == 2  # concise by contract
+        assert turns[0]["role"] == "user"
+        assert "[Delegated by Node Builder]" in turns[0]["text"]
+        assert "intent: sum column" in turns[0]["text"]
+        assert turns[1]["role"] == "agent"
+        assert turns[1]["text"] == "df.sum(axis=0)"
+        card = next(c for c in turns[1]["content"] if c["type"] == "card")
+        assert card["title"] == "Delegated task · ok"
+        assert turns[1]["execution"]["parentExecutionId"]
+
+    def test_reuses_an_existing_home_and_appends(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        pid = _project(client, token)
+        att_id, _ = _setup(client, token, pid, monkeypatch)
+        # A pre-existing NCB attachment IS the home — no duplicate (NCB is
+        # node-target; the home fallback accepts any target kind).
+        existing = client.post(
+            f"/api/agents/projects/{pid}/attachments",
+            json={"coord": NCB, "target": {"kind": "node", "targetId": "n1"}},
+            headers=_auth(token),
+        ).get_json()["attachmentId"]
+        body = _run(client, token, pid, att_id).get_json()
+        part = next(p for p in body["content"] if p["type"] == "delegation")
+        assert part["attachmentId"] == existing
+        cards = client.get(
+            f"/api/agents/projects/{pid}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        assert len([c for c in cards if c["coord"] == NCB]) == 1
+
+    def test_missing_home_never_fails_the_delegation(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        pid = _project(client, token)
+        att_id, _ = _setup(client, token, pid, monkeypatch)
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services._delegation_home",
+            lambda *a, **k: (None, False),
+        )
+        body = _run(client, token, pid, att_id).get_json()
+        part = next(p for p in body["content"] if p["type"] == "delegation")
+        assert part["attachmentId"] is None  # plain entry, honest
+        assert part["status"] == "ok"  # the work itself was unaffected

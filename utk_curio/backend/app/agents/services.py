@@ -1004,12 +1004,20 @@ def _apply_node_content_write(
     proposal["status"] = "applied"
     # dev/67-6: when this node is a plan node, applying its content resolves
     # the Simulation Mode ledger — the row is approved, the run solved.
-    record = attachments.get_attachment(spec, attachment_id)
-    session = (record or {}).get("builderSession") or {}
-    ref = next(
-        (r for r, nid in (session.get("nodeIds") or {}).items() if nid == node_id),
-        None,
-    )
+    # dev/72: the proposal may live on the NODE's agent while the ledger
+    # lives on the BUILDER — find the ledger wherever it is.
+    session: dict = {}
+    ref = None
+    for ledger_record in attachments.list_attachments(spec):
+        ledger_session = ledger_record.get("builderSession") or {}
+        candidate_ref = next(
+            (r for r, nid in (ledger_session.get("nodeIds") or {}).items() if nid == node_id),
+            None,
+        )
+        if candidate_ref is not None:
+            session = ledger_session
+            ref = candidate_ref
+            break
     if ref is not None:
         (session.get("nodeStates") or {})[ref] = "approved"
         runs = session.get("nodeRuns")
@@ -3073,12 +3081,14 @@ def _solve_events(
                             user_key, project_id, spec, node_id
                         ),
                     }
-                    status, text, child = delegation.run_delegate(
+                    status, text, child, _home = _run_delegate_traced(
                         user_key, project_id, resolution.coord,
                         "node.content.generate", inputs, config,
                         parent_execution_id=solve_execution_id,
                         parent_coord=coord,
                         attachment_id=attachment_id,
+                        node_id=node_id,
+                        home_create=False,  # workers never write the spec
                     )
                     outcome_queue.put(
                         (node_id, "solved" if status == "ok" else "failed", text, child)
@@ -3102,13 +3112,28 @@ def _solve_events(
                         # written — the child's content mints a reviewed
                         # node.content.write proposal through the EXISTING
                         # machinery (digest-pinned against the current
-                        # content), and its part joins the transcript.
+                        # content). dev/72: the review lives with the node's
+                        # agent when one exists (find-only — the drain never
+                        # writes the spec beyond the mint's own write).
                         if child is not None:
                             delegations.append(child)
                         text_out = content.extract_node_content(text)
+                        home_att, home_sess = attachment_id, session_id
+                        try:
+                            fresh_spec = projects_storage.read_spec(user_key, project_id)
+                            home, _ = _delegation_home(
+                                fresh_spec or {}, "agent.node-builder",
+                                "node.content.generate", {},
+                                node_id=node_id, create=False,
+                            )
+                            if home is not None:
+                                home_att = home.get("attachmentId")
+                                home_sess = home.get("sessionId")
+                        except Exception:
+                            pass
                         p_status, p_error, part = _mint_node_content_write(
                             user_key, project_id,
-                            {"attachment_id": attachment_id, "session_id": session_id},
+                            {"attachment_id": home_att, "session_id": home_sess},
                             {"tool": "node.content.write",
                              "params": {"nodeId": node_id, "content": text_out}},
                         )
@@ -3116,23 +3141,43 @@ def _solve_events(
                             results[node_id] = {
                                 "status": "proposed",
                                 "proposalId": part["proposalId"],
+                                "proposalAttachmentId": home_att,
                             }
-                            if isinstance(session_id, str):
-                                node = nodes_by_id.get(node_id) or {}
+                            node = nodes_by_id.get(node_id) or {}
+                            node_label = (node.get('goal') or node_id)[:60]
+                            if isinstance(home_sess, str):
+                                sessions.append_turns(
+                                    user_key, project_id, home_sess, home_att,
+                                    [sessions.make_turn(
+                                        "agent",
+                                        f"Proposed content for {node_label!r} — "
+                                        "review and apply it below.",
+                                        content=[part],
+                                    )],
+                                )
+                            if home_att != attachment_id and isinstance(session_id, str):
                                 sessions.append_turns(
                                     user_key, project_id, session_id, attachment_id,
                                     [sessions.make_turn(
                                         "agent",
-                                        "Proposed content for "
-                                        f"{(node.get('goal') or node_id)[:60]!r} — "
-                                        "review and apply it below.",
-                                        content=[part],
+                                        f"Proposed content for {node_label!r} — "
+                                        "the review lives in the node's Node Builder.",
+                                        content=[content.make_delegation_part(
+                                            capability="node.content.generate",
+                                            coord="agent.node-builder",
+                                            name="Node Builder",
+                                            category="node",
+                                            attachment_id=home_att,
+                                            status="ok",
+                                            summary=f"content proposed for {node_label!r}",
+                                        )],
                                     )],
                                 )
                             yield "node_result", {
                                 "nodeId": node_id,
                                 "status": "proposed",
                                 "proposalId": part["proposalId"],
+                                "proposalAttachmentId": home_att,
                             }
                         else:
                             results[node_id] = {
@@ -3391,9 +3436,14 @@ def _simulate_events(
                 verdict = (validate_done or {}).get("verdict", "fail")
                 proposal_id = (validate_done or {}).get("proposalId")
                 if proposal_id:
-                    # The resume/apply linkage (67-6's deferred nodeProposals).
+                    # The resume/apply linkage (67-6's deferred nodeProposals;
+                    # dev/72: the proposal may live on the node's agent).
                     spec2, record2, session2, _ = _fresh()
-                    session2.setdefault("nodeProposals", {})[ref] = proposal_id
+                    session2.setdefault("nodeProposals", {})[ref] = {
+                        "proposalId": proposal_id,
+                        "attachmentId": (validate_done or {}).get("proposalAttachmentId")
+                        or attachment_id,
+                    }
                     record2["builderSession"] = session2
                     projects_storage.write_spec(user_key, project_id, spec2)
                 yield "action_result", {
@@ -3419,7 +3469,14 @@ def _simulate_events(
                     break
             elif action["action"] == "approve":
                 _, _, session, _ = _fresh()
-                content_proposal_id = (session.get("nodeProposals") or {}).get(ref)
+                entry = (session.get("nodeProposals") or {}).get(ref)
+                # dev/72 shape {proposalId, attachmentId}; old string tolerated.
+                if isinstance(entry, dict):
+                    content_proposal_id = entry.get("proposalId")
+                    proposal_attachment_id = entry.get("attachmentId") or attachment_id
+                else:
+                    content_proposal_id = entry
+                    proposal_attachment_id = attachment_id
                 if not content_proposal_id:
                     session = _persist_pause({
                         "kind": "content-review-pending", "ref": ref,
@@ -3428,11 +3485,11 @@ def _simulate_events(
                     done = {"status": "paused", "mode": mode, "reason": session["pauseReason"]}
                     break
                 apply_result = apply_proposal(
-                    user_key, project_id, attachment_id, content_proposal_id
+                    user_key, project_id, proposal_attachment_id, content_proposal_id
                 )
                 # DEC-054: auto-approval is recorded, never silent.
                 spec3, _, _, _ = _fresh()
-                approved = attachments.get_active_proposal(spec3, attachment_id)
+                approved = attachments.get_active_proposal(spec3, proposal_attachment_id)
                 if approved is not None and approved.get("proposalId") == content_proposal_id:
                     approved["approvedBy"] = "simulation-auto"
                     projects_storage.write_spec(user_key, project_id, spec3)
@@ -3750,12 +3807,23 @@ def validate_node_stream(
             (r for r, nid in (session.get("nodeIds") or {}).items() if nid == node_id),
             None,
         )
+    # dev/72: the node's Node Builder attachment is the Solve trace's home —
+    # the content review and the consolidated trace live with the agent
+    # responsible for THIS node (best-effort created; fallback: parent-only).
+    home, _created = _delegation_home(
+        spec, "agent.node-builder", "node.content.generate", {},
+        node_id=node_id, create=True,
+    )
+    home_attachment_id = (home or {}).get("attachmentId")
+    home_session_id = (home or {}).get("sessionId")
     session["validatingSince"] = now
     record["builderSession"] = session
     projects_storage.write_spec(user_key, project_id, spec)
     return _validate_events(
         user_key, project_id, attachment_id, config, spec, node, ref,
         resolution, coord, session_id, exec_fn,
+        home_attachment_id=home_attachment_id,
+        home_session_id=home_session_id,
     )
 
 
@@ -3771,6 +3839,9 @@ def _validate_events(
     coord: str,
     session_id,
     exec_fn,
+    *,
+    home_attachment_id: str | None = None,
+    home_session_id: str | None = None,
 ):
     """The validate-node body: threaded validation runs drain a queue so
     upstream executions stream live (the dev/63 pattern); the finally clears
@@ -3787,6 +3858,20 @@ def _validate_events(
     rounds_used = 0
     candidate = ""
     delegations: list = []
+    rounds_trace: list[str] = []  # dev/72: the consolidated per-round story
+    label = (node.get("goal") or node_id)[:60]
+    if isinstance(home_session_id, str):
+        try:
+            sessions.append_turns(
+                user_key, project_id, home_session_id, home_attachment_id,
+                [sessions.make_turn(
+                    "user",
+                    f"[Delegated by Dataflow Builder] Solve {label!r}: generate, "
+                    "execute through the dataflow, validate, self-correct.",
+                )],
+            )
+        except Exception:
+            pass
     try:
         yield "validation_started", {"nodeId": node_id, "executionId": execution_id}
         try:
@@ -3861,6 +3946,15 @@ def _validate_events(
             yield "round_verdict", {
                 "round": rounds_used, "verdict": verdict_result["verdict"],
             }
+            round_evidence = (verdict_result.get("evidence") or {})
+            rounds_trace.append(
+                f"round {rounds_used}: {verdict_result['verdict']}"
+                + (
+                    f" — {(round_evidence.get('stderrTail') or round_evidence.get('detail') or '')[-160:]}"
+                    if verdict_result["verdict"] != "pass"
+                    else f" — output {round_evidence.get('outputDataType') or '?'}"
+                )
+            )
             if verdict_result["verdict"] != "fail":
                 break
             previous_attempt = candidate
@@ -3875,9 +3969,13 @@ def _validate_events(
         if done["verdict"] in ("pass", "fail") and candidate:
             # PASS or FAIL, the user decides — the proposal carries the
             # validation block so the review is informed, never gatekept.
+            # dev/72: the review lives with the NODE's agent when it exists —
+            # per-node proposals stop contending for the builder's one slot.
+            mint_attachment = home_attachment_id or attachment_id
+            mint_session = home_session_id or session_id
             p_status, p_error, part = _mint_node_content_write(
                 user_key, project_id,
-                {"attachment_id": attachment_id, "session_id": session_id},
+                {"attachment_id": mint_attachment, "session_id": mint_session},
                 {"tool": "node.content.write",
                  "params": {"nodeId": node_id, "content": candidate}},
             )
@@ -3888,16 +3986,52 @@ def _validate_events(
                     "evidence": done["evidence"],
                 }
                 done["proposalId"] = part["proposalId"]
-                if isinstance(session_id, str):
-                    label = (node.get("goal") or node_id)[:60]
+                done["proposalAttachmentId"] = mint_attachment
+                trace_card = {
+                    "type": "card",
+                    "kind": "result" if done["verdict"] == "pass" else "error",
+                    "title": f"Solve trace · {done['verdict'].upper()}",
+                    "lines": (
+                        [f"dependencies executed: {len(done['evidence'].get('executedNodes') or [])} node(s)"]
+                        + rounds_trace
+                        + [f"outcome: {done['verdict']} after {rounds_used} round{'s' if rounds_used != 1 else ''}"]
+                    )[:10],
+                }
+                if isinstance(mint_session, str):
                     sessions.append_turns(
-                        user_key, project_id, session_id, attachment_id,
+                        user_key, project_id, mint_session, mint_attachment,
                         [sessions.make_turn(
                             "agent",
                             f"Validated content for {label!r}: "
                             f"{done['verdict'].upper()} after {rounds_used} "
                             f"round{'s' if rounds_used != 1 else ''} — review below.",
-                            content=[part],
+                            content=[trace_card, part],
+                        )],
+                    )
+                if (
+                    home_attachment_id
+                    and home_attachment_id != attachment_id
+                    and isinstance(session_id, str)
+                ):
+                    # The parent references and LINKS; the story lives at home.
+                    sessions.append_turns(
+                        user_key, project_id, session_id, attachment_id,
+                        [sessions.make_turn(
+                            "agent",
+                            f"Solved {label!r}: {done['verdict'].upper()} after "
+                            f"{rounds_used} round{'s' if rounds_used != 1 else ''} — "
+                            "the trace and content review live in the node's "
+                            "Node Builder.",
+                            content=[content.make_delegation_part(
+                                capability="node.content.generate",
+                                coord="agent.node-builder",
+                                name="Node Builder",
+                                category="node",
+                                attachment_id=home_attachment_id,
+                                status="ok" if done["verdict"] == "pass" else "failed",
+                                summary=f"Solve {label!r}: {done['verdict']} "
+                                f"({rounds_used} round{'s' if rounds_used != 1 else ''})",
+                            )],
                         )],
                     )
             else:
@@ -4713,6 +4847,168 @@ def _mint_project_install(
     )
 
 
+def _delegation_home(
+    spec: dict,
+    coord: str,
+    capability: str,
+    inputs: dict,
+    *,
+    node_id: str | None = None,
+    create: bool = True,
+) -> tuple[dict | None, bool]:
+    """Where a delegated task LIVES (memo dev/72): node-scoped work → the
+    target node's Node Builder attachment (dev/71's; best-effort created);
+    everything else → an existing attachment of the DELEGATE's agent id
+    (canvas-scoped preferred), else a new canvas attachment of the resolved
+    coord. Returns ``(record | None, created)`` — best-effort throughout: a
+    missing home never fails a delegation."""
+    target_node = node_id or (inputs or {}).get("nodeId")
+    if isinstance(target_node, str) and target_node:
+        for rec in attachments.list_attachments(spec):
+            target = rec.get("target") or {}
+            if (
+                rec.get("coord", "").split("@", 1)[0] == "agent.node-builder"
+                and target.get("kind") == "node"
+                and target.get("targetId") == target_node
+            ):
+                return rec, False
+        if create:
+            att_id = _attach_node_builder(spec, target_node)
+            if att_id:
+                return attachments.get_attachment(spec, att_id), True
+        return None, False
+    agent_id = coord.split("@", 1)[0]
+    fallback = None
+    for rec in attachments.list_attachments(spec):
+        if rec.get("coord", "").split("@", 1)[0] == agent_id:
+            if (rec.get("target") or {}).get("kind") == "canvas":
+                return rec, False
+            fallback = fallback or rec
+    if fallback is not None:
+        return fallback, False
+    if not create:
+        return None, False
+    try:
+        rec = attachments.attach(
+            spec, coord, {"kind": "canvas"},
+            attachment_id=uuid.uuid4().hex, session_id=uuid.uuid4().hex,
+        )
+        return rec, True
+    except Exception:
+        return None, False
+
+
+def _delegation_task_text(capability: str, inputs: dict) -> str:
+    """A one-line task summary for the delegated agent's chat — the key
+    intent, never the raw inputs dump."""
+    parts = [capability]
+    for key in ("intent", "question", "url", "endpoint", "nodeType"):
+        value = (inputs or {}).get(key)
+        if isinstance(value, str) and value.strip():
+            parts.append(f"{key}: {value.strip()[:160]}")
+    return " · ".join(parts)[:480]
+
+
+def _run_delegate_traced(
+    user_key: str,
+    project_id: str,
+    coord: str,
+    capability: str,
+    inputs: dict,
+    config: ProviderConfig,
+    *,
+    parent_execution_id: str,
+    parent_coord: str,
+    attachment_id: str | None,
+    parent_name: str | None = None,
+    node_id: str | None = None,
+    home_create: bool = True,
+) -> tuple[str, str, dict, str | None]:
+    """One delegated task, TRACED (memo dev/72): the DEC-046 seam stays pure —
+    this wrapper resolves the task's home attachment, writes the framed task
+    turn, runs the child, writes the result turn (bounded reply + a
+    structured trace card + the child's execution record), and returns the
+    home id alongside the classic tuple. Exactly two turns per task; every
+    trace step is best-effort — no delegation ever fails over it."""
+    home_attachment_id: str | None = None
+    home_session_id: str | None = None
+    try:
+        spec = projects_storage.read_spec(user_key, project_id)
+        if spec is not None:
+            home, created = _delegation_home(
+                spec, coord, capability, inputs, node_id=node_id, create=home_create
+            )
+            if home is not None:
+                home_attachment_id = home.get("attachmentId")
+                home_session_id = home.get("sessionId")
+                if created:
+                    projects_storage.write_spec(user_key, project_id, spec)
+    except Exception:
+        home_attachment_id = home_session_id = None
+    parent_label = parent_name or parent_coord.split("@", 1)[0].replace("agent.", "")
+    if isinstance(home_session_id, str):
+        try:
+            sessions.append_turns(
+                user_key, project_id, home_session_id, home_attachment_id,
+                [sessions.make_turn(
+                    "user",
+                    f"[Delegated by {parent_label}] "
+                    f"{_delegation_task_text(capability, inputs)}",
+                )],
+            )
+        except Exception:
+            pass
+    started = time.monotonic()
+    status, text, child = delegation.run_delegate(
+        user_key, project_id, coord, capability, inputs, config,
+        parent_execution_id=parent_execution_id,
+        parent_coord=parent_coord,
+        attachment_id=attachment_id,
+    )
+    if isinstance(home_session_id, str):
+        try:
+            lines = [f"{capability} · {status}"]
+            verification = (inputs or {}).get("verification")
+            if isinstance(verification, dict):
+                detail = verification.get("detail") or verification.get("datasetName") or ""
+                lines.append(
+                    f"runtime-verified: {verification.get('status')}"
+                    + (f" — {detail}" if detail else "")
+                )
+            lines.append(f"{int((time.monotonic() - started) * 1000)} ms")
+            sessions.append_turns(
+                user_key, project_id, home_session_id, home_attachment_id,
+                [sessions.make_turn(
+                    "agent",
+                    (text or "")[:2000],
+                    error=status != "ok",
+                    execution=child,
+                    content=[{
+                        "type": "card",
+                        "kind": "result" if status == "ok" else "error",
+                        "title": f"Delegated task · {status}",
+                        "lines": [l[:300] for l in lines[:10]],
+                    }],
+                )],
+            )
+        except Exception:
+            pass
+    return status, text, child, home_attachment_id
+
+
+def _delegation_part_for(resolution, capability: str, status: str, text: str, home_attachment_id: str | None) -> dict:
+    manifest = getattr(resolution, "manifest", None)
+    return content.make_delegation_part(
+        capability=capability,
+        coord=getattr(resolution, "coord", "") or "",
+        name=getattr(manifest, "name", None) or getattr(resolution, "coord", "") or capability,
+        category=getattr(manifest, "category", "") or "",
+        attachment_id=home_attachment_id,
+        status=status,
+        summary=(text or "")[:200],
+    )
+
+
 def _enriched_delegate_inputs(
     user_key: str, project_id: str, loop_ctx: dict, capability: str, inputs: dict
 ) -> dict:
@@ -4869,7 +5165,7 @@ def run_attachment(
                     user_key, project_id, loop_ctx, req, minted
                 )
                 if resolution is not None:
-                    status, text, child = delegation.run_delegate(
+                    status, text, child, home_att = _run_delegate_traced(
                         user_key,
                         project_id,
                         resolution.coord,
@@ -4882,8 +5178,13 @@ def run_attachment(
                         parent_execution_id=execution_id,
                         parent_coord=loop_ctx["coord"],
                         attachment_id=loop_ctx.get("attachment_id"),
+                        parent_name=getattr(loop_ctx.get("manifest"), "name", None),
                     )
                     delegations.append(child)
+                    # dev/72: the parent keeps the compact, linkable entry.
+                    minted.append(_delegation_part_for(
+                        resolution, req["capability"], status, text, home_att
+                    ))
                     result_msg = _delegate_result_message(
                         resolution.coord, req["capability"], status, text, final=final
                     )
@@ -5135,7 +5436,7 @@ def stream_attachment(
                             "delegate_started",
                             {"capability": req["capability"], "coord": resolution.coord},
                         )
-                        status, text, child = delegation.run_delegate(
+                        status, text, child, home_att = _run_delegate_traced(
                             user_key,
                             project_id,
                             resolution.coord,
@@ -5148,13 +5449,22 @@ def stream_attachment(
                             parent_execution_id=execution_id,
                             parent_coord=loop_ctx["coord"],
                             attachment_id=loop_ctx.get("attachment_id"),
+                            parent_name=getattr(loop_ctx.get("manifest"), "name", None),
                         )
                         delegations.append(child)
+                        # dev/72: the parent keeps the compact, linkable entry.
+                        minted.append(_delegation_part_for(
+                            resolution, req["capability"], status, text, home_att
+                        ))
                         yield (
                             "delegate_result",
                             {
                                 "capability": req["capability"],
                                 "coord": resolution.coord,
+                                # dev/72: the live line can link too.
+                                "attachmentId": home_att,
+                                "name": getattr(resolution.manifest, "name", None)
+                                if resolution.manifest else None,
                                 "status": status,
                                 "durationMs": child.get("durationMs"),
                             },
@@ -5230,6 +5540,8 @@ def stream_attachment(
             _generate_conversation_title(user_key, project_id, attachment_id, message, config)
         # A pending mutation pauses at review (dev/03:344 review_required).
         for part in minted:
+            if part.get("type") != "proposal":
+                continue  # dev/72: delegation entries ride the content event
             yield (
                 "review_required",
                 {

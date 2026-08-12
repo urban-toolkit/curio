@@ -775,6 +775,35 @@ def extract_node_content(text: object) -> str:
     return current
 
 
+_DELEGATION_SUMMARY_MAX_CHARS = 200
+
+
+def make_delegation_part(
+    *,
+    capability: str,
+    coord: str,
+    name: str,
+    category: str,
+    attachment_id: str | None,
+    status: str,
+    summary: str,
+) -> dict:
+    """The parent-side delegation entry (memo dev/72) — RUNTIME-emitted, like
+    proposal parts (never parseable from a model tail): compact, bounded, and
+    linkable — ``attachmentId`` opens the delegated agent's chat, where the
+    full task/result trace lives."""
+    return {
+        "type": "delegation",
+        "capability": str(capability or "")[:64],
+        "coord": str(coord or "")[:120],
+        "name": str(name or coord or "")[:80],
+        "category": str(category or "")[:24],
+        "attachmentId": attachment_id if isinstance(attachment_id, str) else None,
+        "status": "ok" if status == "ok" else "failed",
+        "summary": str(summary or "")[:_DELEGATION_SUMMARY_MAX_CHARS],
+    }
+
+
 def make_proposal_part(
     *,
     proposal_id: str,
