@@ -694,6 +694,45 @@ def cancel_simulate(project_id: str, attachment_id: str):
 
 
 @agents_bp.route(
+    "/projects/<project_id>/attachments/<attachment_id>/run-node", methods=["POST"]
+)
+@require_auth
+def run_node(project_id: str, attachment_id: str):
+    """Run the dataflow THROUGH one node (dev/71): the saved content executes
+    through its upstream chain; every execution journals as a real run, so
+    agents can read the outcome via node.runtime.read. Body:
+    ``{"ref": "<plan ref>"}`` or ``{"nodeId": "<node id>"}``. SSE."""
+    body = request.get_json(silent=True) or {}
+    ref = body.get("ref")
+    node_id = body.get("nodeId")
+    if ref is not None and not isinstance(ref, str):
+        return _error("'ref' must be a string when present")
+    if node_id is not None and not isinstance(node_id, str):
+        return _error("'nodeId' must be a string when present")
+    try:
+        projects_repo.get_for_user(project_id, g.user.id)
+        events = agents_services.run_node_stream(
+            _user_dir_key(g.user), project_id, attachment_id,
+            ref=ref or None, node_id=node_id or None,
+        )
+    except projects_repo.NotFoundError:
+        return _error("project not found", 404)
+    except AgentServiceError as exc:
+        return _svc_error(exc)
+
+    def _sse():
+        for kind, payload in events:
+            data = {"error": payload} if kind == "error" else payload
+            yield f"event: {kind}\ndata: {json.dumps(data)}\n\n"
+
+    return Response(
+        stream_with_context(_sse()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@agents_bp.route(
     "/projects/<project_id>/attachments/<attachment_id>/validate-node", methods=["POST"]
 )
 @require_auth

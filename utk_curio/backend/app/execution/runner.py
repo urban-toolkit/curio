@@ -197,6 +197,7 @@ def run_through_node(
     exec_fn=None,
     node_limit: int = VALIDATION_NODE_LIMIT,
     progress=None,
+    as_validation: bool = True,
 ) -> dict:
     """Execute the dataflow's ancestor slice THROUGH *node_id* and report
     per-node outcomes (memo dev/67-7).
@@ -315,7 +316,7 @@ def run_through_node(
             user_key, project_id, node.id,
             code=content_text, stdout=stdout_raw, stderr=stderr_text, output=out,
             started_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            duration_ms=0, validation=True,
+            duration_ms=0, validation=as_validation,
         )
         if not ok:
             report["blocker"] = node.id
