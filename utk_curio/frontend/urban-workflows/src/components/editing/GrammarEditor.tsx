@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import Editor, { Monaco } from "@monaco-editor/react";
 import { ICodeData } from "../../types";
 import { useCollab, CodeProposal } from "../../providers/CollaborationProvider";
+import { useMonacoExternalValue } from "../../hook/useMonacoExternalValue";
 
 type GrammarEditorProps = {
     output: ICodeData;
@@ -36,20 +37,23 @@ export default function GrammarEditor({
     };
 
     const replacedCodeDirtyBypass = useRef(false);
-    const defaultValueBypass = useRef(false);
 
     const collab = useCollab();
     const collabRef = useRef(collab);
     collabRef.current = collab;
-    const baselineRef = useRef<string>("{}");
 
-    useEffect(() => {
-        if (defaultValueBypass.current) {
-            setGrammar(defaultValue);
-            baselineRef.current = defaultValue;
-        }
-        defaultValueBypass.current = true;
-    }, [defaultValue]);
+    // The Monaco model is the source of truth while the user types; `grammar`
+    // only mirrors it. Content flows INTO the editor exclusively through this
+    // hook: `defaultValue` is applied only when a genuinely new external
+    // string arrives, and `undefined`/stale flips are ignored — the previous
+    // unconditional `setGrammar(defaultValue)` effect is what reset a fresh
+    // Autark node to the default spec while typing (dev/70). `baselineRef` is
+    // the as-loaded grammar the collab blur-diff compares against.
+    const { baselineRef, applyValue, attachEditor } = useMonacoExternalValue({
+        externalValue: defaultValue,
+        initialContent: "{}",
+        onExternalApply: (value) => setGrammar(value),
+    });
 
     // Collaboration: propose grammar change on blur, receive applied changes.
     const proposeOnBlur = () => {
@@ -77,6 +81,7 @@ export default function GrammarEditor({
         } catch {
             // Defensive: older Monaco builds without languages.json — no-op.
         }
+        attachEditor(editor);
         editor.onDidBlurEditorText(proposeOnBlur);
     };
 
@@ -90,8 +95,8 @@ export default function GrammarEditor({
                 baselineRef.current = prop.newValue;
                 return;
             }
+            applyValue(prop.newValue); // editor + baseline (cursor-preserving)
             setGrammar(prop.newValue);
-            baselineRef.current = prop.newValue;
         });
         return unsub;
     }, [collab.enabled, collab.onRemote, collab.currentUserId, nodeId]);
@@ -105,7 +110,9 @@ export default function GrammarEditor({
     );
 
     useEffect(() => {
-        if (floatCode != undefined) floatCode(grammar);
+        // Strings only: floating a non-string (the old reset chain produced
+        // `undefined`) poisons ``nodeState.code``/``data.code`` downstream.
+        if (floatCode != undefined && typeof grammar === "string") floatCode(grammar);
     }, [grammar]);
 
     useEffect(() => {
@@ -168,12 +175,17 @@ export default function GrammarEditor({
                 </div>
             )}
             <div style={{ flex: 1, minHeight: 0 }}>
+                {/* Uncontrolled on purpose: a per-keystroke `value` round-trip
+                    lets a render that lands with a stale string do a full-model
+                    replace — resetting content and throwing the cursor to the
+                    end (dev/70). External content arrives via attachEditor /
+                    applyValue in useMonacoExternalValue instead. */}
                 <Editor
                     height="100%"
                     language="json"
                     theme="vs"
                     path={`grammar-${nodeId}.json`}
-                    value={grammar}
+                    defaultValue="{}"
                     onChange={(value) => updateGrammarContent(value ?? "{}", readOnly)}
                     onMount={handleEditorMount}
                     options={{
