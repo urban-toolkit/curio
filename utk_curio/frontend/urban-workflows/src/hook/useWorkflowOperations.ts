@@ -1009,12 +1009,20 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setViewerMode("owner");
     }, []);
 
+    // Both marks return the SAME state object when the node is already in the
+    // target status. CodeEditor calls markNodeStale on every keystroke, and an
+    // unconditional spread changed the FlowContext value each time — re-rendering
+    // every context consumer on the canvas per keystroke (dev/70).
     const markNodeExecuted = useCallback((nodeId: string) => {
-        setNodeExecStatus((prev) => ({ ...prev, [nodeId]: "executed" }));
+        setNodeExecStatus((prev) =>
+            prev[nodeId] === "executed" ? prev : { ...prev, [nodeId]: "executed" },
+        );
     }, []);
 
     const markNodeStale = useCallback((nodeId: string) => {
-        setNodeExecStatus((prev) => ({ ...prev, [nodeId]: "stale" }));
+        setNodeExecStatus((prev) =>
+            prev[nodeId] === "stale" ? prev : { ...prev, [nodeId]: "stale" },
+        );
     }, []);
 
     // ---------------------------------------------------------------------------
