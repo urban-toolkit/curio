@@ -4876,12 +4876,14 @@ class TestPerNodePlanApply:
         assert {n["goal"].split(" — ")[0] for n in created} == {
             n["title"] for n in proposal["plan"]["nodes"]
         }
-        # The proposal is still pending: edges await the connection stage (67-8).
+        # dev/71: the LAST apply progressively connected the edge and
+        # completed the structure — the graph never waits for a connect stage.
         cards = client.get(
             f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
         ).get_json()["attachments"]
         active = next(c for c in cards if c["attachmentId"] == att_id)["activeProposal"]
-        assert active["status"] == "pending"
+        assert active["status"] == "applied"
+        assert active["edgeStates"] == {"0": "applied"}
         assert sorted(active["appliedRefs"]) == sorted(
             n["ref"] for n in proposal["plan"]["nodes"]
         )
@@ -5157,30 +5159,29 @@ class TestPlanEdgeApply:
         (edge_row,) = proposal["plan"]["edges"]
         assert edge_row["fromLabel"] == "Load" and edge_row["toLabel"] == "Analyze"
 
-    def test_edges_refuse_until_endpoints_exist_then_apply_and_complete(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+    def test_edges_refuse_until_created_then_connect_progressively(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         user, token = user_and_token
         att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
         pid = proposal["proposalId"]
         refs = [n["ref"] for n in proposal["plan"]["nodes"]]
-        # Endpoints not created yet → the edge refuses BY NAME.
+        # Explicit connect before creation → the edge refuses BY NAME.
         body = self._apply_edges(client, token, alice_project, att_id, pid).get_json()
         assert body["results"]["0"]["status"] == "refused"
         assert "create 'Load' first" in body["results"]["0"]["reason"]
         assert body["edgeStates"] == {"0": "refused"}
-        # Create both nodes, then connect — the edge applies with handles.
-        self._apply_node(client, token, alice_project, att_id, pid, refs[0])
+        # dev/71: applying the nodes connects PROGRESSIVELY — the second
+        # apply draws the edge (real handles) and completes the structure.
+        first = self._apply_node(client, token, alice_project, att_id, pid, refs[0])
+        assert first["createdEdges"] == []  # the other endpoint is missing
         created_b = self._apply_node(client, token, alice_project, att_id, pid, refs[1])
-        body = self._apply_edges(client, token, alice_project, att_id, pid).get_json()
-        assert body["results"]["0"]["status"] == "applied"
-        (created_edge,) = body["createdEdges"]
+        (created_edge,) = created_b["createdEdges"]
         assert created_edge["target"] == created_b["createdNode"]["id"]
         assert created_edge["sourceHandle"] == "out" and created_edge["targetHandle"] == "in"
         spec_edges = self._spec(user, alice_project)["dataflow"]["edges"]
         assert any(e.get("id") == created_edge["id"] for e in spec_edges)
-        # All refs + all edges applied → the proposal completes.
-        assert body["status"] == "applied"
-        assert body["builderSession"]["phase"] == "applied"  # nodes pend Solve
-        # Idempotent per edge.
+        assert created_b["status"] == "applied"  # structure complete
+        assert created_b["builderSession"]["phase"] == "applied"  # nodes pend Solve
+        # The connect stage is a no-op remainder now.
         r = self._apply_edges(client, token, alice_project, att_id, pid)
         assert r.status_code == 409  # the proposal is applied — no longer pending
 
@@ -5193,15 +5194,32 @@ class TestPlanEdgeApply:
         pid = proposal["proposalId"]
         refs = [n["ref"] for n in proposal["plan"]["nodes"]]
         created_a = self._apply_node(client, token, alice_project, att_id, pid, refs[0])
+        # The user manually pre-wires the planned connection: they create the
+        # target node themselves? No — they draw source → (future b) later;
+        # here: create b's node id is unknown, so wire after creating b is
+        # impossible to pre-empt. Instead: the sweep's no-op path is exercised
+        # by wiring source → an EXISTING node the plan also targets. Simplest
+        # faithful shape: apply b, delete the auto edge, draw it manually,
+        # then retry the explicit connect stage → no-op, no duplicate.
         created_b = self._apply_node(client, token, alice_project, att_id, pid, refs[1])
-        # The user manually draws the same edge first → no-op, no duplicate.
         key = _user_dir_key(user)
         spec = projects_storage.read_spec(key, alice_project)
+        auto_edge = next(
+            e for e in spec["dataflow"]["edges"]
+            if e.get("target") == created_b["createdNode"]["id"]
+        )
+        spec["dataflow"]["edges"] = [
+            e for e in spec["dataflow"]["edges"] if e is not auto_edge
+        ]
         spec["dataflow"]["edges"].append({
             "id": "manual-1",
             "source": created_a["createdNode"]["id"],
             "target": created_b["createdNode"]["id"],
         })
+        # Un-mark the edge so the stage retries it (simulating a user redo).
+        record = next(a for a in spec["dataflow"]["agentAttachments"] if a["attachmentId"] == att_id)
+        record["activeProposal"]["edgeStates"] = {}
+        record["activeProposal"]["status"] = "pending"
         projects_storage.write_spec(key, alice_project, spec)
         body = self._apply_edges(client, token, alice_project, att_id, pid).get_json()
         assert body["results"]["0"]["status"] == "applied"
@@ -5219,20 +5237,193 @@ class TestPlanEdgeApply:
         pid = proposal["proposalId"]
         refs = [n["ref"] for n in proposal["plan"]["nodes"]]
         self._apply_node(client, token, alice_project, att_id, pid, refs[0])
-        created_b = self._apply_node(client, token, alice_project, att_id, pid, refs[1])
-        # Another node already feeds the target: capacity 1 is taken.
+        # dev/71: the conflicting feed exists BEFORE the target is created —
+        # the progressive sweep must refuse (fan-in) yet still create the node.
         key = _user_dir_key(user)
+        # Pre-wire the baseline node into... the target doesn't exist yet, so
+        # seed the conflict right after creation via the sweep ordering: the
+        # sweep runs inside apply-node, so instead the conflict targets the
+        # FIRST node — plan edge Load→Analyze; feed Analyze from n1 by
+        # applying b, whose sweep sees n1→b? n1→b must pre-exist b. Simplest
+        # honest setup: refuse at the EXPLICIT stage after a manual conflict.
+        created_b = self._apply_node(client, token, alice_project, att_id, pid, refs[1])
+        # The sweep already connected Load→Analyze; a SECOND feed would now
+        # be refused by onConnect/mint — assert the stage-level refusal shape
+        # by resetting the edge and adding the conflict.
         spec = projects_storage.read_spec(key, alice_project)
+        auto_edge = next(
+            e for e in spec["dataflow"]["edges"]
+            if e.get("target") == created_b["createdNode"]["id"]
+        )
+        spec["dataflow"]["edges"] = [
+            e for e in spec["dataflow"]["edges"] if e is not auto_edge
+        ]
         spec["dataflow"]["edges"].append({
             "id": "manual-feed",
             "source": "n1",  # the helper's seeded baseline node
             "target": created_b["createdNode"]["id"],
         })
+        record = next(a for a in spec["dataflow"]["agentAttachments"] if a["attachmentId"] == att_id)
+        record["activeProposal"]["edgeStates"] = {}
+        record["activeProposal"]["status"] = "pending"
         projects_storage.write_spec(key, alice_project, spec)
         body = self._apply_edges(client, token, alice_project, att_id, pid).get_json()
         assert body["results"]["0"]["status"] == "refused"
         assert "merge-flow" in body["results"]["0"]["reason"]
         assert body["status"] == "pending"  # a refused edge never completes
+
+
+class TestProgressiveLifecycle:
+    """dev/71 — Apply = create + attach + connect-what's-possible; per-node
+    Run executes through the node and journals real results for the agents."""
+
+    def _mint(self, client, user, token, project_id, monkeypatch, replies=None, install_nb=False):
+        helper = TestDataflowPlanMint()
+        att_id, _ = helper._setup(
+            client, user, token, project_id, monkeypatch,
+            **({"replies": replies} if replies else {}),
+        )
+        if install_nb:
+            client.post(
+                f"/api/agents/projects/{project_id}/install",
+                json={"coord": "agent.node-builder@1.0.0"}, headers=_auth(token),
+            )
+        r = helper._run(client, token, project_id, att_id)
+        proposal = next(p for p in r.get_json()["content"] if p["type"] == "proposal")
+        return att_id, proposal
+
+    def _apply_node(self, client, token, project_id, att_id, proposal_id, ref):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal_id}/apply-node",
+            json={"ref": ref}, headers=_auth(token),
+        ).get_json()
+
+    def test_apply_order_is_free_and_the_graph_grows_connected(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        pid = proposal["proposalId"]
+        refs = [n["ref"] for n in proposal["plan"]["nodes"]]
+        # Apply B (the TARGET) first: the edge is ineligible, silently planned.
+        first = self._apply_node(client, token, alice_project, att_id, pid, refs[1])
+        assert first["createdEdges"] == []
+        assert first["edgeStates"] == {}  # not refused — just not yet possible
+        # Applying A makes the edge eligible → drawn in the SAME apply.
+        second = self._apply_node(client, token, alice_project, att_id, pid, refs[0])
+        (edge,) = second["createdEdges"]
+        assert edge["source"] == second["createdNode"]["id"]
+        assert edge["target"] == first["createdNode"]["id"]
+        assert second["edgeStates"] == {"0": "applied"}
+        assert second["status"] == "applied"  # structure complete
+
+    def test_edges_to_existing_nodes_connect_on_first_apply(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        import json as _json
+
+        user, token = user_and_token
+        plan = {"goal": "extend", "nodes": [
+            {"ref": "a", "nodeType": "curio.builtin/computation-analysis",
+             "title": "Analyze", "intent": "crunch"},
+        ], "edges": [{"from": "n1", "to": "a"}]}  # n1 = the seeded baseline node
+        reply = f"Plan.\n```curio.v1\n{_json.dumps({'dataflowPlan': plan})}\n```"
+        att_id, proposal = self._mint(
+            client, user, token, alice_project, monkeypatch, replies=[reply],
+        )
+        body = self._apply_node(
+            client, token, alice_project, att_id, proposal["proposalId"], "a"
+        )
+        (edge,) = body["createdEdges"]
+        assert edge["source"] == "n1"  # the existing node, wired immediately
+        assert edge["target"] == body["createdNode"]["id"]
+
+    def test_apply_attaches_the_node_builder_when_installed(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, proposal = self._mint(
+            client, user, token, alice_project, monkeypatch, install_nb=True,
+        )
+        ref = proposal["plan"]["nodes"][0]["ref"]
+        body = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], ref)
+        assert body["attachedAgentId"]
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        attached = next(c for c in cards if c["attachmentId"] == body["attachedAgentId"])
+        assert attached["coord"].startswith("agent.node-builder@")
+        assert attached["target"] == {"kind": "node", "targetId": body["createdNode"]["id"]}
+        # Idempotent: a re-apply reports the SAME attachment, no duplicate.
+        again = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], ref)
+        assert again["status"] == "already-applied"
+
+    def test_apply_without_node_builder_installed_skips_quietly(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        ref = proposal["plan"]["nodes"][0]["ref"]
+        body = self._apply_node(client, token, alice_project, att_id, proposal["proposalId"], ref)
+        assert body["attachedAgentId"] is None
+        assert body["createdNode"]  # creation never fails over the agent
+
+    def test_run_node_executes_the_chain_and_journals_real_runs(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.execution import runtime_journal
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        monkeypatch.setattr(
+            "utk_curio.backend.app.execution.runner._http_exec",
+            lambda endpoint, payload: {
+                "stdout": ["ran"], "stderr": "",
+                "output": {"path": "art-run", "dataType": "dataframe"},
+            },
+        )
+        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        pid = proposal["proposalId"]
+        refs = [n["ref"] for n in proposal["plan"]["nodes"]]
+        self._apply_node(client, token, alice_project, att_id, pid, refs[0])
+        created_b = self._apply_node(client, token, alice_project, att_id, pid, refs[1])
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run-node",
+            json={"ref": refs[1]}, headers=_auth(token),
+        )
+        assert r.status_code == 200
+        events = TestStreamedSolve()._sse_events(r)
+        names = [k for k, _ in events]
+        assert names[0] == "run_started" and "node_executed" in names
+        done = events[-1][1]
+        assert done["ok"] is True
+        assert len(done["order"]) == 2  # the upstream chain ran too
+        target = done["nodes"][created_b["createdNode"]["id"]]
+        assert target["output"]["dataType"] == "dataframe"
+        # A REAL run in the journal — agents read it via node.runtime.read.
+        record = runtime_journal.read_record(
+            _user_dir_key(user), alice_project, created_b["createdNode"]["id"]
+        )
+        assert record["validation"] is False and record["status"] == "ok"
+
+    def test_run_node_failure_reports_honestly(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        monkeypatch.setattr(
+            "utk_curio.backend.app.execution.runner._http_exec",
+            lambda endpoint, payload: {
+                "stdout": [], "stderr": "Traceback: NameError boom",
+                "output": {"path": "", "dataType": "str"},
+            },
+        )
+        att_id, proposal = self._mint(client, user, token, alice_project, monkeypatch)
+        pid = proposal["proposalId"]
+        ref = proposal["plan"]["nodes"][0]["ref"]
+        self._apply_node(client, token, alice_project, att_id, pid, ref)
+        r = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run-node",
+            json={"ref": ref}, headers=_auth(token),
+        )
+        done = TestStreamedSolve()._sse_events(r)[-1][1]
+        assert done["ok"] is False and done["blocker"]
+        # Guards: unknown ref / missing node.
+        assert client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run-node",
+            json={"ref": "ghost"}, headers=_auth(token),
+        ).status_code == 409
+        assert client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/run-node",
+            json={}, headers=_auth(token),
+        ).status_code == 422
 
 
 class TestVerifiedDiscovery:

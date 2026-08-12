@@ -1015,6 +1015,11 @@ def _apply_node_content_write(
         runs = session.get("nodeRuns")
         if isinstance(runs, dict) and node_id in runs:
             runs[node_id] = "solved"
+        # dev/71: the structure may have completed before the content did —
+        # the last approval flips the phase to ready.
+        if session.get("phase") in ("applied", "simulating") and isinstance(runs, dict):
+            if not any(st in ("pending", "failed") for st in runs.values()):
+                session["phase"] = "ready"
     projects_storage.write_spec(user_key, project_id, spec)
     _log_applied_turn(
         user_key, project_id, session_id, attachment_id, proposal_id,
@@ -1598,6 +1603,39 @@ def set_plan_goal(
     }
 
 
+def _attach_node_builder(spec: dict, node_id: str) -> str | None:
+    """dev/71: best-effort Node Builder attachment for a plan-created node.
+    Skips (returning None) when the template is not installed or the node
+    already carries one — node creation NEVER fails over this."""
+    from utk_curio.backend.app.agents import project_agents
+
+    coord = next(
+        (
+            c for c in project_agents.project_agents(spec)
+            if c.split("@", 1)[0] == "agent.node-builder"
+        ),
+        None,
+    )
+    if coord is None:
+        return None
+    for existing in attachments.list_attachments(spec):
+        target = existing.get("target") or {}
+        if (
+            existing.get("coord", "").split("@", 1)[0] == "agent.node-builder"
+            and target.get("kind") == "node"
+            and target.get("targetId") == node_id
+        ):
+            return existing.get("attachmentId")
+    try:
+        record = attachments.attach(
+            spec, coord, {"kind": "node", "targetId": node_id},
+            attachment_id=uuid.uuid4().hex, session_id=uuid.uuid4().hex,
+        )
+        return record.get("attachmentId")
+    except Exception:
+        return None  # best-effort: never block the node over its agent
+
+
 def apply_plan_node(
     user_key: str, project_id: str, attachment_id: str, proposal_id: str, ref: str
 ) -> dict:
@@ -1663,6 +1701,25 @@ def apply_plan_node(
     dataflow.setdefault("nodes", []).append(created)
     applied_refs.append(ref)
     applied_ids[ref] = node_id
+    # dev/71: attach the Node Builder to the created node (best-effort,
+    # idempotent — creation never fails over it); it operates as the node's
+    # creation/content orchestration agent (67-6 modify-existing posture).
+    attached_agent_id = _attach_node_builder(spec, node_id)
+    # dev/71: PROGRESSIVE CONNECTION — apply every plan edge whose other
+    # endpoint already exists (created refs or existing canvas nodes), through
+    # the 67-8 per-edge policy. The graph grows connected, not as islands;
+    # topology refusals are recorded per edge and never block the node.
+    ctx = _plan_edge_context(user_key, project_id, spec, proposal)
+    edge_results: dict = {}
+    created_edges: list[dict] = []
+    for index in range(len(ctx["plan_edges"])):
+        if ctx["edge_states"].get(str(index)) == "applied":
+            continue
+        result_row, created_edge = _apply_one_plan_edge(ctx, index, record_missing=False)
+        if result_row is not None:
+            edge_results[str(index)] = result_row
+        if created_edge is not None:
+            created_edges.append(created_edge)
     # Re-pin the shape digest to the spec THIS apply produced: the plan's own
     # per-node progress is legitimate drift for a later whole-plan apply;
     # foreign edits between applies still 409 + stale.
@@ -1673,6 +1730,10 @@ def apply_plan_node(
     session.setdefault("nodeStates", {})[ref] = "created"
     session.setdefault("nodeIds", {})[ref] = node_id
     session.setdefault("nodeRuns", {})[node_id] = "pending"
+    session["edgeStates"] = dict(ctx["edge_states"])
+    # The last apply may complete the STRUCTURE (all refs + edges applied) —
+    # content keeps its own lifecycle (dev/71).
+    _complete_plan_if_done(record, proposal, session)
     projects_storage.write_spec(user_key, project_id, spec)
     if isinstance(session_id, str):
         # A result card WITHOUT flipping the proposal part: it stays pending
@@ -1701,11 +1762,16 @@ def apply_plan_node(
     return {
         "attachmentId": attachment_id,
         "proposalId": proposal_id,
-        "status": "pending",
+        "status": proposal.get("status", "pending"),
         "ref": ref,
         # The bridge's node-created payload shape (dev/48 §3.3).
         "createdNode": dict(created),
         "appliedRefs": list(applied_refs),
+        # dev/71: the progressive sweep's outcomes + the bridge payload.
+        "createdEdges": created_edges,
+        "edgeResults": edge_results,
+        "edgeStates": dict(ctx["edge_states"]),
+        "attachedAgentId": attached_agent_id,
         "builderSession": session,
     }
 
@@ -1720,44 +1786,17 @@ def _plan_endpoint_label(endpoint: str, plan: dict, existing_nodes: dict) -> str
     return str(existing.get("goal") or endpoint)[:60]
 
 
-def apply_plan_edges(
-    user_key: str,
-    project_id: str,
-    attachment_id: str,
-    proposal_id: str,
-    indices: list[int] | None = None,
+def _plan_edge_context(
+    user_key: str, project_id: str, spec: dict, proposal: dict
 ) -> dict:
-    """Apply plan edges — the connection review stage (memo dev/67-8,
-    Simulation Mode: connect).
-
-    All not-yet-applied edges by default, or the given subset (index-stable —
-    the pinned plan's order). Each edge validates against the CURRENT spec at
-    apply time: endpoints must exist (created refs resolve through 67-5's
-    ``appliedNodeIds``; existing ids must still be present), fan-in obeys the
-    DEC-051 rendered capacity, and merge targets take their named free slot or
-    the lowest free one. Refusals are PER EDGE and named — partial success is
-    normal and honest, never all-or-nothing. An edge the user already drew
-    manually applies as a no-op ("already connected"). When every ref and
-    every edge is applied, the proposal completes (status ``applied``).
-    """
+    """Shared lookups + mutable state for per-edge application (dev/71 —
+    ONE validation policy for the connect stage and the progressive sweep)."""
     from utk_curio.backend.app.packages import services as packages_services
 
-    spec = _read_spec_or_404(user_key, project_id)
-    record = _record_or_404(spec, attachment_id)
-    proposal = _pending_plan_proposal(spec, attachment_id, proposal_id)
     plan = proposal.get("plan") or {}
-    plan_edges = plan.get("edges", [])
-    if indices is not None:
-        bad = [i for i in indices if not isinstance(i, int) or not (0 <= i < len(plan_edges))]
-        if bad:
-            raise AgentServiceError(f"edge indices out of range: {bad}", 422)
-    edge_states: dict = proposal.setdefault("edgeStates", {})
-    applied_ids: dict = proposal.get("appliedNodeIds") or {}
-    plan_refs = {n["ref"] for n in plan.get("nodes", [])}
     dataflow = spec.setdefault("dataflow", {})
     nodes = dataflow.setdefault("nodes", [])
     edges = dataflow.setdefault("edges", [])
-    nodes_by_id = {n.get("id"): n for n in nodes if isinstance(n, dict)}
     try:
         available = {
             t["id"]: t
@@ -1781,16 +1820,45 @@ def apply_plan_edges(
         incoming_count[target] = incoming_count.get(target, 0) + 1
         if types_by_id.get(target) == _MERGE_NODE_TYPE and isinstance(e.get("targetHandle"), str):
             merge_slots_taken.setdefault(target, set()).add(e["targetHandle"])
-    wanted = indices if indices is not None else [
-        i for i in range(len(plan_edges)) if edge_states.get(str(i)) != "applied"
-    ]
-    results: dict = {}
-    created_edges: list[dict] = []
+    return {
+        "plan": plan,
+        "plan_edges": plan.get("edges", []),
+        "plan_refs": {n["ref"] for n in plan.get("nodes", [])},
+        "edge_states": proposal.setdefault("edgeStates", {}),
+        "applied_ids": proposal.get("appliedNodeIds") or {},
+        "nodes_by_id": {n.get("id"): n for n in nodes if isinstance(n, dict)},
+        "edges": edges,
+        "available": available,
+        "types_by_id": types_by_id,
+        "merge_slots_taken": merge_slots_taken,
+        "incoming_count": incoming_count,
+    }
 
-    def _resolve_endpoint(endpoint: str) -> tuple[str | None, str | None]:
-        """(node_id, refusal_reason)."""
-        if endpoint in plan_refs:
-            node_id = applied_ids.get(endpoint)
+
+def _apply_one_plan_edge(ctx: dict, index: int, *, record_missing: bool = True):
+    """Apply ONE plan edge against the CURRENT spec (the 67-8 policy: endpoint
+    resolution, already-connected no-op, DEC-051 fan-in, merge slots).
+    Returns ``(result_row | None, created_edge | None)`` — ``None`` result when
+    an endpoint is missing and ``record_missing`` is False (the progressive
+    sweep skips not-yet-created endpoints silently; the explicit connect
+    stage names them)."""
+    plan = ctx["plan"]
+    plan_edge = ctx["plan_edges"][index]
+    edge_states = ctx["edge_states"]
+    nodes_by_id = ctx["nodes_by_id"]
+    key = str(index)
+    row = {
+        "from": plan_edge["from"],
+        "to": plan_edge["to"],
+        "fromLabel": _plan_endpoint_label(plan_edge["from"], plan, nodes_by_id),
+        "toLabel": _plan_endpoint_label(plan_edge["to"], plan, nodes_by_id),
+    }
+    if edge_states.get(key) == "applied":
+        return {**row, "status": "already-applied"}, None
+
+    def _resolve_endpoint(endpoint: str):
+        if endpoint in ctx["plan_refs"]:
+            node_id = ctx["applied_ids"].get(endpoint)
             if not node_id:
                 title = _plan_endpoint_label(endpoint, plan, nodes_by_id)
                 return None, f"create {title!r} first"
@@ -1801,108 +1869,145 @@ def apply_plan_edges(
             return endpoint, None
         return None, f"node {endpoint!r} is no longer in the dataflow"
 
-    for index in wanted:
-        key = str(index)
-        plan_edge = plan_edges[index]
-        row = {
-            "from": plan_edge["from"],
-            "to": plan_edge["to"],
-            "fromLabel": _plan_endpoint_label(plan_edge["from"], plan, nodes_by_id),
-            "toLabel": _plan_endpoint_label(plan_edge["to"], plan, nodes_by_id),
-        }
-        if edge_states.get(key) == "applied":
-            results[key] = {**row, "status": "already-applied"}
-            continue
-        source, source_err = _resolve_endpoint(plan_edge["from"])
-        target, target_err = _resolve_endpoint(plan_edge["to"])
-        if source_err or target_err:
-            reason = source_err or target_err
-            results[key] = {**row, "status": "refused", "reason": reason}
-            edge_states[key] = "refused"
-            continue
-        already = next(
-            (
-                e for e in edges
-                if isinstance(e, dict)
-                and e.get("source") == source and e.get("target") == target
-                and str(e.get("type") or "") != "Interaction"
-            ),
-            None,
-        )
-        if already is not None:
-            results[key] = {
-                **row, "status": "applied", "edgeId": already.get("id"),
-                "note": "already connected",
-            }
-            edge_states[key] = "applied"
-            continue
-        # Fan-in against the CURRENT spec (DEC-051 rendered capacity).
-        target_type = types_by_id.get(target, "")
-        entry = available.get(target_type)
-        max_in = entry.get("maxIncomingEdges") if entry else None
-        if max_in is not None and incoming_count.get(target, 0) + 1 > max_in:
-            reason = (
-                f"{row['toLabel']!r} accepts "
-                + ("no inputs" if max_in == 0 else f"at most {max_in} input{'s' if max_in != 1 else ''}")
-                + f" and already has {incoming_count.get(target, 0)} — "
-                f"route through a {_MERGE_NODE_TYPE} node instead"
-            )
-            results[key] = {**row, "status": "refused", "reason": reason}
-            edge_states[key] = "refused"
-            continue
-        target_handle = plan_edge.get("toHandle") or "in"
-        if target_type == _MERGE_NODE_TYPE:
-            taken = merge_slots_taken.setdefault(target, set())
-            wanted_handle = plan_edge.get("toHandle")
-            if isinstance(wanted_handle, str) and _MERGE_HANDLE_RE.match(wanted_handle) and wanted_handle not in taken:
-                target_handle = wanted_handle
-            else:
-                target_handle = next(
-                    (f"in_{i}" for i in range(5) if f"in_{i}" not in taken), None
-                )
-                if target_handle is None:
-                    results[key] = {
-                        **row, "status": "refused",
-                        "reason": f"merge node {row['toLabel']!r} has no free input slot",
-                    }
-                    edge_states[key] = "refused"
-                    continue
-            taken.add(target_handle)
-        edge = {
-            "id": str(uuid.uuid4()),
-            "source": source,
-            "target": target,
-            "sourceHandle": "out",
-            "targetHandle": target_handle,
-        }
-        edges.append(edge)
-        created_edges.append(edge)
-        incoming_count[target] = incoming_count.get(target, 0) + 1
-        results[key] = {
-            **row, "status": "applied", "edgeId": edge["id"],
-            "targetHandle": target_handle,
-        }
+    source, source_err = _resolve_endpoint(plan_edge["from"])
+    target, target_err = _resolve_endpoint(plan_edge["to"])
+    if source_err or target_err:
+        if not record_missing:
+            return None, None  # progressive sweep: endpoint not created yet
+        reason = source_err or target_err
+        edge_states[key] = "refused"
+        return {**row, "status": "refused", "reason": reason}, None
+    already = next(
+        (
+            e for e in ctx["edges"]
+            if isinstance(e, dict)
+            and e.get("source") == source and e.get("target") == target
+            and str(e.get("type") or "") != "Interaction"
+        ),
+        None,
+    )
+    if already is not None:
         edge_states[key] = "applied"
+        return {
+            **row, "status": "applied", "edgeId": already.get("id"),
+            "note": "already connected",
+        }, None
+    # Fan-in against the CURRENT spec (DEC-051 rendered capacity).
+    target_type = ctx["types_by_id"].get(target, "")
+    entry = ctx["available"].get(target_type)
+    max_in = entry.get("maxIncomingEdges") if entry else None
+    incoming = ctx["incoming_count"]
+    if max_in is not None and incoming.get(target, 0) + 1 > max_in:
+        reason = (
+            f"{row['toLabel']!r} accepts "
+            + ("no inputs" if max_in == 0 else f"at most {max_in} input{'s' if max_in != 1 else ''}")
+            + f" and already has {incoming.get(target, 0)} — "
+            f"route through a {_MERGE_NODE_TYPE} node instead"
+        )
+        edge_states[key] = "refused"
+        return {**row, "status": "refused", "reason": reason}, None
+    target_handle = plan_edge.get("toHandle") or "in"
+    if target_type == _MERGE_NODE_TYPE:
+        taken = ctx["merge_slots_taken"].setdefault(target, set())
+        wanted_handle = plan_edge.get("toHandle")
+        if isinstance(wanted_handle, str) and _MERGE_HANDLE_RE.match(wanted_handle) and wanted_handle not in taken:
+            target_handle = wanted_handle
+        else:
+            target_handle = next(
+                (f"in_{i}" for i in range(5) if f"in_{i}" not in taken), None
+            )
+            if target_handle is None:
+                edge_states[key] = "refused"
+                return {
+                    **row, "status": "refused",
+                    "reason": f"merge node {row['toLabel']!r} has no free input slot",
+                }, None
+        taken.add(target_handle)
+    edge = {
+        "id": str(uuid.uuid4()),
+        "source": source,
+        "target": target,
+        "sourceHandle": "out",
+        "targetHandle": target_handle,
+    }
+    ctx["edges"].append(edge)
+    incoming[target] = incoming.get(target, 0) + 1
+    edge_states[key] = "applied"
+    return {
+        **row, "status": "applied", "edgeId": edge["id"],
+        "targetHandle": target_handle,
+    }, edge
+
+
+def _complete_plan_if_done(record: dict, proposal: dict, session: dict) -> bool:
+    """The plan proposal completes when every ref AND every edge is applied —
+    the reviewed STRUCTURE is fully materialized (content has its own
+    lifecycle: nodeStates/nodeRuns keep tracking Solve). dev/71: the parked
+    plan is KEPT after completion — the progressive lifecycle (per-row
+    Solve/Run, the driver's validate/approve actions) still reads it; a new
+    plan mint replaces it."""
+    plan = proposal.get("plan") or {}
+    plan_refs = {n["ref"] for n in plan.get("nodes", [])}
+    edge_states = proposal.get("edgeStates") or {}
+    all_refs_applied = plan_refs and plan_refs == set(proposal.get("appliedRefs") or [])
+    all_edges_applied = all(
+        edge_states.get(str(i)) == "applied"
+        for i in range(len(plan.get("edges", [])))
+    )
+    if not (all_refs_applied and all_edges_applied):
+        return False
+    proposal["status"] = "applied"
+    runs = session.get("nodeRuns") or {}
+    unresolved = any(s in ("pending", "failed") for s in runs.values())
+    session["phase"] = "applied" if unresolved else "ready"
+    session["appliedPlanId"] = proposal.get("proposalId")
+    return True
+
+
+def apply_plan_edges(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    proposal_id: str,
+    indices: list[int] | None = None,
+) -> dict:
+    """Apply plan edges — the connection review stage (memo dev/67-8,
+    Simulation Mode: connect; per-edge core shared with the dev/71
+    progressive sweep).
+
+    All not-yet-applied edges by default, or the given subset (index-stable —
+    the pinned plan's order). Each edge validates against the CURRENT spec at
+    apply time; refusals are PER EDGE and named — partial success is normal
+    and honest. An edge the user already drew manually applies as a no-op.
+    When every ref and every edge is applied, the proposal completes."""
+    spec = _read_spec_or_404(user_key, project_id)
+    record = _record_or_404(spec, attachment_id)
+    proposal = _pending_plan_proposal(spec, attachment_id, proposal_id)
+    plan = proposal.get("plan") or {}
+    plan_edges = plan.get("edges", [])
+    if indices is not None:
+        bad = [i for i in indices if not isinstance(i, int) or not (0 <= i < len(plan_edges))]
+        if bad:
+            raise AgentServiceError(f"edge indices out of range: {bad}", 422)
+    ctx = _plan_edge_context(user_key, project_id, spec, proposal)
+    edge_states = ctx["edge_states"]
+    wanted = indices if indices is not None else [
+        i for i in range(len(plan_edges)) if edge_states.get(str(i)) != "applied"
+    ]
+    results: dict = {}
+    created_edges: list[dict] = []
+    for index in wanted:
+        result_row, created = _apply_one_plan_edge(ctx, index)
+        if result_row is not None:
+            results[str(index)] = result_row
+        if created is not None:
+            created_edges.append(created)
     # dev/67-5 semantics: the plan's own progress re-pins the shape digest.
     proposal["baseGraphDigest"] = _graph_shape_digest(spec)
     session = record.setdefault("builderSession", {})
     session["edgeStates"] = dict(edge_states)
     session_id = record.get("sessionId")
-    all_refs_applied = plan_refs and plan_refs == set(proposal.get("appliedRefs") or [])
-    all_edges_applied = all(
-        edge_states.get(str(i)) == "applied" for i in range(len(plan_edges))
-    )
-    completed = bool(all_refs_applied and all_edges_applied)
-    if completed:
-        proposal["status"] = "applied"
-        runs = session.get("nodeRuns") or {}
-        unresolved = any(s in ("pending", "failed") for s in runs.values())
-        session["phase"] = "applied" if unresolved else "ready"
-        session["appliedPlanId"] = proposal_id
-        parked = record.get("planProposal")
-        if isinstance(parked, dict) and parked.get("proposalId") == proposal_id:
-            record.pop("planProposal", None)  # complete: nothing left to park
-    projects_storage.write_spec(user_key, project_id, spec)
+    completed = _complete_plan_if_done(record, proposal, session)
     applied_now = sum(1 for r in results.values() if r["status"] == "applied")
     refused_now = sum(1 for r in results.values() if r["status"] == "refused")
     if isinstance(session_id, str) and (applied_now or refused_now):
@@ -3156,12 +3261,16 @@ def simulate_stream(
     plan_proposal_id = session.get("planProposalId")
     if not isinstance(plan_proposal_id, str):
         raise AgentServiceError("no plan to simulate — ask for a plan first", 409)
-    proposal = _pending_plan_proposal_or_none(spec, attachment_id, plan_proposal_id)
+    proposal = _plan_proposal_any(spec, attachment_id, plan_proposal_id)
     if proposal is None:
+        raise AgentServiceError("the plan is no longer available — nothing to simulate", 409)
+    if proposal.get("status") not in ("pending", "applied"):
         raise AgentServiceError(
-            "the plan is no longer pending (fully applied or dismissed) — "
-            "nothing to simulate",
-            409,
+            f"the plan is {proposal.get('status')!r} — nothing to simulate", 409
+        )
+    if _next_simulation_action(proposal.get("plan") or {}, proposal, session) is None:
+        raise AgentServiceError(
+            "the plan is complete — nothing to simulate", 409
         )
     now = _time.time()
     if session.get("simulatingSince") and now - float(session.get("simulatingSince") or 0) < _SIMULATE_STALE_SECONDS:
@@ -3201,7 +3310,9 @@ def _simulate_events(
         spec = _read_spec_or_404(user_key, project_id)
         record = _record_or_404(spec, attachment_id)
         session = record.get("builderSession") or {}
-        proposal = _pending_plan_proposal_or_none(spec, attachment_id, plan_proposal_id)
+        # dev/71: the plan stays readable after its structure completes —
+        # validate/approve actions continue on the applied plan.
+        proposal = _plan_proposal_any(spec, attachment_id, plan_proposal_id)
         return spec, record, session, proposal
 
     def _persist_pause(reason: dict):
@@ -3240,7 +3351,7 @@ def _simulate_events(
                 done = {"status": "cancelled", "mode": mode}
                 break
             spec, record, session, proposal = _fresh()
-            if proposal is None or proposal.get("status") != "pending":
+            if proposal is None:
                 done = {"status": "completed", "mode": mode}
                 break
             plan = proposal.get("plan") or {}
@@ -3264,6 +3375,9 @@ def _simulate_events(
                 )
                 if result.get("createdNode"):
                     yield "node_created", {"createdNode": result["createdNode"]}
+                if result.get("createdEdges"):
+                    # dev/71: the progressive sweep connected what it could.
+                    yield "edges_created", {"createdEdges": result["createdEdges"]}
                 yield "action_result", {"action": "create", "ref": ref, "outcome": "created"}
             elif action["action"] == "validate":
                 validate_done: dict | None = None
@@ -3357,8 +3471,8 @@ def _simulate_events(
                     _next_simulation_action(
                         (proposal4 or {}).get("plan") or {}, proposal4 or {}, session4
                     )
-                    if proposal4 is not None and proposal4.get("status") == "pending"
-                    else None
+                    if proposal4 is not None  # dev/71: content work continues
+                    else None                  # on the completed structure
                 )
                 done = {"status": "stepped", "mode": mode, "nextAction": next_action}
                 break
@@ -3391,6 +3505,20 @@ def _pending_plan_proposal_or_none(spec: dict, attachment_id: str, proposal_id: 
         return None
 
 
+def _plan_proposal_any(spec: dict, attachment_id: str, proposal_id: str):
+    """The plan proposal in ANY status (active or parked) — dev/71: the
+    structure may complete (status applied) while content work continues;
+    the driver and per-row lifecycle still need the plan."""
+    proposal = attachments.get_active_proposal(spec, attachment_id)
+    if isinstance(proposal, dict) and proposal.get("proposalId") == proposal_id:
+        return proposal
+    record = attachments.get_attachment(spec, attachment_id)
+    parked = (record or {}).get("planProposal")
+    if isinstance(parked, dict) and parked.get("proposalId") == proposal_id:
+        return parked
+    return None
+
+
 def _validate_node_inline(
     user_key: str, project_id: str, attachment_id: str, config: ProviderConfig,
     ref: str, exec_fn,
@@ -3401,6 +3529,161 @@ def _validate_node_inline(
     yield from validate_node_stream(
         user_key, project_id, attachment_id, config, ref=ref, exec_fn=exec_fn
     )
+
+
+def run_node_stream(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    *,
+    ref: str | None = None,
+    node_id: str | None = None,
+    exec_fn=None,
+):
+    """Run the dataflow THROUGH one node (memo dev/71): the 67-7 runner
+    WITHOUT a candidate — the SAVED content executes through its upstream
+    chain, every execution journals as a REAL run (``validation: false``), and
+    the outcome (outputs, schema metadata, logs, warnings, errors) lands in
+    the runtime journal where the Node Builder, debug agent, and explainer
+    read it (67-2 ``node.runtime.read``). The saved spec is never mutated.
+
+    Streams ``run_started`` → ``node_executed`` per upstream execution →
+    ``done {ok, nodes, blocker, error}``; a result card joins the transcript.
+    """
+    import time as _time
+
+    spec = _read_spec_or_404(user_key, project_id)
+    record = _record_or_404(spec, attachment_id)
+    session = record.get("builderSession") or {}
+    if ref and not node_id:
+        node_id = (session.get("nodeIds") or {}).get(ref)
+        if not node_id:
+            raise AgentServiceError(f"ref {ref!r} has no created node yet", 409)
+    if not node_id:
+        raise AgentServiceError("a ref or nodeId is required", 422)
+    nodes = (spec.get("dataflow") or {}).get("nodes") or []
+    node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
+    if node is None:
+        raise AgentServiceError(f"node {node_id!r} not found in the saved spec", 404)
+    now = _time.time()
+    if session.get("runningSince") and now - float(session.get("runningSince") or 0) < _VALIDATE_STALE_SECONDS:
+        raise AgentServiceError("a run is already in progress for this attachment", 409)
+    session["runningSince"] = now
+    record["builderSession"] = session
+    projects_storage.write_spec(user_key, project_id, spec)
+    session_id = record.get("sessionId")
+    return _run_node_events(
+        user_key, project_id, attachment_id, spec, node, session_id, exec_fn
+    )
+
+
+def _run_node_events(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    spec: dict,
+    node: dict,
+    session_id,
+    exec_fn,
+):
+    """The run-node body: a threaded runner drains a queue so upstream
+    executions stream live (the dev/63 pattern); the finally clears the
+    in-flight guard on every exit, disconnect included."""
+    import queue as _queue
+    import threading
+
+    from utk_curio.backend.app.execution import runner
+
+    node_id = node.get("id")
+    execution_id = uuid.uuid4().hex
+    try:
+        yield "run_started", {"nodeId": node_id, "executionId": execution_id}
+        progress_queue: _queue.Queue = _queue.Queue()
+
+        def _run():
+            try:
+                report = runner.run_through_node(
+                    user_key, project_id, spec, node_id,
+                    candidate_content=None,
+                    exec_fn=exec_fn,
+                    as_validation=False,  # a REAL run, journaled as one
+                    progress=lambda nid, i, total: progress_queue.put(
+                        ("progress", nid, i, total)
+                    ),
+                )
+            except Exception as exc:  # the runner must never kill the stream
+                report = {
+                    "ok": False, "target": node_id, "order": [], "nodes": {},
+                    "blocker": None, "infrastructure": str(exc)[:300],
+                    "error": f"run failed: {str(exc)[:300]}",
+                }
+            progress_queue.put(("done", report))
+
+        thread = threading.Thread(target=_run)
+        thread.start()
+        report: dict = {}
+        while True:
+            item = progress_queue.get()
+            if item[0] == "progress":
+                _, nid, index, total = item
+                yield "node_executed", {"nodeId": nid, "index": index, "total": total}
+                continue
+            report = item[1]
+            break
+        thread.join(timeout=5)
+        target_record = (report.get("nodes") or {}).get(node_id) or {}
+        label = (node.get("goal") or node_id)[:60]
+        if isinstance(session_id, str):
+            if report.get("ok"):
+                lines = [
+                    f"{label} · ok",
+                    f"output: {(target_record.get('output') or {}).get('dataType') or '?'}",
+                    f"{len(report.get('order') or [])} node(s) in the chain",
+                ]
+                if target_record.get("stderrTail"):
+                    lines.append("warnings captured — see node.runtime.read")
+                text = f"Ran through {label!r}: ok."
+            else:
+                blocker = report.get("blocker")
+                failed_record = (report.get("nodes") or {}).get(blocker) or {}
+                lines = [
+                    f"{label} · failed",
+                    (report.get("error") or "")[:300],
+                ]
+                tail = failed_record.get("stderrTail") or ""
+                if tail:
+                    lines.append(tail[-300:])
+                text = f"Ran through {label!r}: FAILED — {report.get('error')}"
+            sessions.append_turns(
+                user_key, project_id, session_id, attachment_id,
+                [sessions.make_turn(
+                    "agent", text,
+                    content=[{
+                        "type": "card", "kind": "result",
+                        "title": "Run through node", "lines": lines[:10],
+                    }],
+                )],
+            )
+        yield "done", {
+            "nodeId": node_id,
+            "executionId": execution_id,
+            "ok": bool(report.get("ok")),
+            "order": report.get("order") or [],
+            "nodes": report.get("nodes") or {},
+            "blocker": report.get("blocker"),
+            "error": report.get("error"),
+        }
+    finally:
+        # Disconnect-safe: the in-flight guard never wedges the attachment.
+        try:
+            cleanup_spec = _read_spec_or_404(user_key, project_id)
+            cleanup_record = _record_or_404(cleanup_spec, attachment_id)
+            cleanup_session = cleanup_record.get("builderSession") or {}
+            if cleanup_session.pop("runningSince", None) is not None:
+                cleanup_record["builderSession"] = cleanup_session
+                projects_storage.write_spec(user_key, project_id, cleanup_spec)
+        except Exception:
+            pass
 
 
 # dev/67-7: bounded self-correction — initial generation + up to 2 corrective
