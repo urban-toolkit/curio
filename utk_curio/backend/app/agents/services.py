@@ -3117,25 +3117,15 @@ def _solve_events(
                         # writes the spec beyond the mint's own write).
                         if child is not None:
                             delegations.append(child)
-                        text_out = content.extract_node_content(text)
-                        home_att, home_sess = attachment_id, session_id
-                        try:
-                            fresh_spec = projects_storage.read_spec(user_key, project_id)
-                            home, _ = _delegation_home(
-                                fresh_spec or {}, "agent.node-builder",
-                                "node.content.generate", {},
-                                node_id=node_id, create=False,
-                            )
-                            if home is not None:
-                                home_att = home.get("attachmentId")
-                                home_sess = home.get("sessionId")
-                        except Exception:
-                            pass
-                        p_status, p_error, part = _mint_node_content_write(
+                        # dev/73: the shared content→review sequence (also the
+                        # chat loops' — one mint policy, three callers).
+                        part, home_att, mint_text = _mint_content_review_from_delegate(
                             user_key, project_id,
-                            {"attachment_id": home_att, "session_id": home_sess},
-                            {"tool": "node.content.write",
-                             "params": {"nodeId": node_id, "content": text_out}},
+                            node_id=node_id,
+                            generated_text=text,
+                            parent_attachment_id=attachment_id,
+                            parent_session_id=session_id,
+                            local_turn=True,
                         )
                         if part is not None:
                             results[node_id] = {
@@ -3145,16 +3135,6 @@ def _solve_events(
                             }
                             node = nodes_by_id.get(node_id) or {}
                             node_label = (node.get('goal') or node_id)[:60]
-                            if isinstance(home_sess, str):
-                                sessions.append_turns(
-                                    user_key, project_id, home_sess, home_att,
-                                    [sessions.make_turn(
-                                        "agent",
-                                        f"Proposed content for {node_label!r} — "
-                                        "review and apply it below.",
-                                        content=[part],
-                                    )],
-                                )
                             if home_att != attachment_id and isinstance(session_id, str):
                                 sessions.append_turns(
                                     user_key, project_id, session_id, attachment_id,
@@ -3181,11 +3161,11 @@ def _solve_events(
                             }
                         else:
                             results[node_id] = {
-                                "status": "failed", "error": (p_error or "")[:300]
+                                "status": "failed", "error": mint_text[:300]
                             }
                             yield "node_result", {
                                 "nodeId": node_id, "status": "failed",
-                                "error": (p_error or "")[:300],
+                                "error": mint_text[:300],
                             }
                         continue
                     event = _record_outcome(node_id, status, text, child)
@@ -4444,7 +4424,34 @@ def _persist_exchange(
 # How many tool executions one run may make (memo dev/41): total provider
 # calls per run ≤ MAX_TOOL_ROUNDS + 1. A runtime constant until someone needs
 # to tune it (REQ-QUOTA-001 notes tool quotas as the eventual policy home).
-MAX_TOOL_ROUNDS = 2
+# dev/73: 3 — the Node Builder's documented modify flow (read the node →
+# delegate generation → propose) is a three-round sequence; 2 forced models
+# that follow their instructions to answer in prose instead of proposing.
+MAX_TOOL_ROUNDS = 3
+
+# The mutate tools _mint_proposal dispatches (dev/73): a request for one of
+# these dangling at the round cap is a cut-off PROPOSAL — surfaced as an
+# error card, never silently dropped under the reply's confident prose.
+MUTATE_PROPOSAL_TOOLS = frozenset({
+    "node.content.write",
+    "node.create",
+    "node.template.create",
+    "dataset.install",
+    "dataflow.plan.write",
+})
+
+
+def _round_cap_cutoff_card(tool: str) -> dict:
+    """The visible outcome of a mutate toolRequest dropped at the round cap."""
+    return {
+        "type": "card",
+        "kind": "error",
+        "title": "Proposal step cut off",
+        "lines": [
+            f"the run hit its tool-round limit before the {tool} proposal "
+            "could be created — ask the agent to continue",
+        ],
+    }
 
 # Ephemeral run context (memo dev/44): the client-composed grounded inputs
 # (live Trill, node id, subtask, …) framed as one provider message per send.
@@ -5009,6 +5016,101 @@ def _delegation_part_for(resolution, capability: str, status: str, text: str, ho
     )
 
 
+def _delegate_target_node_id(loop_ctx: dict, inputs: dict) -> str | None:
+    """The node a content-generation delegation targets: the model's
+    ``nodeId`` input, else the parent attachment's node target — the same
+    resolution ``_enriched_delegate_inputs`` grounds the child with."""
+    node_id = (inputs or {}).get("nodeId")
+    if isinstance(node_id, str) and node_id:
+        return node_id
+    target = loop_ctx.get("target")
+    if isinstance(target, dict) and target.get("kind") == "node":
+        target_id = target.get("targetId")
+        if isinstance(target_id, str) and target_id:
+            return target_id
+    return None
+
+
+def _mint_content_review_from_delegate(
+    user_key: str,
+    project_id: str,
+    *,
+    node_id: str,
+    generated_text: str,
+    parent_attachment_id,
+    parent_session_id,
+    local_turn: bool = False,
+) -> tuple[dict | None, str | None, str]:
+    """dev/73: the ONE content→review sequence (the Solve drain's, extracted):
+    a successful ``node.content.generate`` delegation becomes a reviewed
+    ``node.content.write`` proposal minted by the RUNTIME — applyability
+    never depends on the model re-emitting the content as a second
+    toolRequest.
+
+    Mints at the dev/72 delegation home (the node's own agent) when one
+    exists — find-only; the traced delegation already created it when it
+    could — else at the parent attachment. The review turn is written at a
+    foreign home (the parent's composed turn carries the part locally);
+    ``local_turn=True`` (the Solve drain, which composes no parent parts)
+    writes it unconditionally. Returns ``(proposal_part | None,
+    home_attachment_id, text_for_model)`` — on failure the text is the
+    honest refusal to feed back.
+    """
+    text_out = content.extract_node_content(generated_text)
+    home_att, home_sess = parent_attachment_id, parent_session_id
+    node_label = node_id
+    try:
+        fresh_spec = projects_storage.read_spec(user_key, project_id)
+        home, _ = _delegation_home(
+            fresh_spec or {}, "agent.node-builder", "node.content.generate", {},
+            node_id=node_id, create=False,
+        )
+        if home is not None:
+            home_att = home.get("attachmentId")
+            home_sess = home.get("sessionId")
+        for node in ((fresh_spec or {}).get("dataflow") or {}).get("nodes") or []:
+            if isinstance(node, dict) and node.get("id") == node_id:
+                node_label = (node.get("goal") or node_id)[:60]
+                break
+    except Exception:
+        pass
+    p_status, p_error, part = _mint_node_content_write(
+        user_key, project_id,
+        {"attachment_id": home_att, "session_id": home_sess},
+        {"tool": "node.content.write",
+         "params": {"nodeId": node_id, "content": text_out}},
+    )
+    if part is None:
+        return None, home_att, (
+            "the generated content could not become a reviewed proposal "
+            f"({(p_error or 'unknown error')[:200]}) — report this honestly: "
+            "nothing was changed and nothing awaits review"
+        )
+    if isinstance(home_sess, str) and (local_turn or home_att != parent_attachment_id):
+        try:
+            sessions.append_turns(
+                user_key, project_id, home_sess, home_att,
+                [sessions.make_turn(
+                    "agent",
+                    f"Proposed content for {node_label!r} — review and apply it below.",
+                    content=[part],
+                )],
+            )
+        except Exception:
+            pass
+    where = (
+        "in this conversation"
+        if home_att == parent_attachment_id
+        else "at the node's own Node Builder agent"
+    )
+    return part, home_att, (
+        f"the generated content was minted as reviewed proposal "
+        f"{part['proposalId']} for node {node_id!r} ({where}); it awaits the "
+        "user's explicit Apply — summarize the change in one or two "
+        "sentences, do NOT restate the code, and do NOT say it was applied"
+    )
+
+
 def _enriched_delegate_inputs(
     user_key: str, project_id: str, loop_ctx: dict, capability: str, inputs: dict
 ) -> dict:
@@ -5157,7 +5259,11 @@ def run_attachment(
             if visible:
                 folded.append(visible)
             if rounds_used >= MAX_TOOL_ROUNDS:
-                break  # dangling request at the cap: dropped, text kept
+                # dev/73: a mutate request cut off at the cap is a visible
+                # outcome — never a silent drop under confident prose.
+                if req["type"] == "toolRequest" and req.get("tool") in MUTATE_PROPOSAL_TOOLS:
+                    minted.append(_round_cap_cutoff_card(req["tool"]))
+                break  # dangling read request at the cap: dropped, text kept
             rounds_used += 1
             final = rounds_used >= MAX_TOOL_ROUNDS
             if req["type"] == "delegateRequest":
@@ -5165,6 +5271,13 @@ def run_attachment(
                     user_key, project_id, loop_ctx, req, minted
                 )
                 if resolution is not None:
+                    # dev/73: node-scoped content generation homes its trace
+                    # AND its minted review at the node's own agent.
+                    gen_node_id = (
+                        _delegate_target_node_id(loop_ctx, req.get("inputs") or {})
+                        if req["capability"] == "node.content.generate"
+                        else None
+                    )
                     status, text, child, home_att = _run_delegate_traced(
                         user_key,
                         project_id,
@@ -5179,11 +5292,31 @@ def run_attachment(
                         parent_coord=loop_ctx["coord"],
                         attachment_id=loop_ctx.get("attachment_id"),
                         parent_name=getattr(loop_ctx.get("manifest"), "name", None),
+                        node_id=gen_node_id,
                     )
                     delegations.append(child)
+                    delegate_summary = text
+                    if status == "ok" and gen_node_id:
+                        # dev/73: generation success ⇒ the review EXISTS —
+                        # runtime-minted, never the model's second step.
+                        review_part, review_home, text = _mint_content_review_from_delegate(
+                            user_key, project_id,
+                            node_id=gen_node_id,
+                            generated_text=text,
+                            parent_attachment_id=loop_ctx.get("attachment_id"),
+                            parent_session_id=loop_ctx.get("session_id"),
+                        )
+                        delegate_summary = text
+                        if review_part is not None:
+                            delegate_summary = (
+                                f"reviewed content change proposed for node "
+                                f"{gen_node_id!r} — awaits Apply"
+                            )
+                            if review_home == loop_ctx.get("attachment_id"):
+                                minted.append(review_part)
                     # dev/72: the parent keeps the compact, linkable entry.
                     minted.append(_delegation_part_for(
-                        resolution, req["capability"], status, text, home_att
+                        resolution, req["capability"], status, delegate_summary, home_att
                     ))
                     result_msg = _delegate_result_message(
                         resolution.coord, req["capability"], status, text, final=final
@@ -5362,6 +5495,9 @@ def stream_attachment(
         tool_calls: list = []
         delegations: list = []
         minted: list = []
+        # dev/73: reviews minted at a FOREIGN home (the node's agent) — they
+        # never ride the parent turn's parts, but still pause at review.
+        homed_reviews: list = []
         folded: list[str] = []
         final_parts: list = []
         messages_work = list(messages)
@@ -5423,7 +5559,11 @@ def stream_attachment(
                 if result["visible"]:
                     folded.append(result["visible"])
                 if rounds_used >= MAX_TOOL_ROUNDS:
-                    break  # dangling request at the cap: dropped, text kept
+                    # dev/73: a mutate request cut off at the cap is a visible
+                    # outcome — never a silent drop under confident prose.
+                    if req["type"] == "toolRequest" and req.get("tool") in MUTATE_PROPOSAL_TOOLS:
+                        minted.append(_round_cap_cutoff_card(req["tool"]))
+                    break  # dangling read request at the cap: dropped, text kept
                 rounds_used += 1
                 final = rounds_used >= MAX_TOOL_ROUNDS
                 if req["type"] == "delegateRequest":
@@ -5435,6 +5575,13 @@ def stream_attachment(
                         yield (
                             "delegate_started",
                             {"capability": req["capability"], "coord": resolution.coord},
+                        )
+                        # dev/73: node-scoped content generation homes its
+                        # trace AND its minted review at the node's own agent.
+                        gen_node_id = (
+                            _delegate_target_node_id(loop_ctx, req.get("inputs") or {})
+                            if req["capability"] == "node.content.generate"
+                            else None
                         )
                         status, text, child, home_att = _run_delegate_traced(
                             user_key,
@@ -5450,11 +5597,33 @@ def stream_attachment(
                             parent_coord=loop_ctx["coord"],
                             attachment_id=loop_ctx.get("attachment_id"),
                             parent_name=getattr(loop_ctx.get("manifest"), "name", None),
+                            node_id=gen_node_id,
                         )
                         delegations.append(child)
+                        delegate_summary = text
+                        if status == "ok" and gen_node_id:
+                            # dev/73: generation success ⇒ the review EXISTS —
+                            # runtime-minted, never the model's second step.
+                            review_part, review_home, text = _mint_content_review_from_delegate(
+                                user_key, project_id,
+                                node_id=gen_node_id,
+                                generated_text=text,
+                                parent_attachment_id=loop_ctx.get("attachment_id"),
+                                parent_session_id=loop_ctx.get("session_id"),
+                            )
+                            delegate_summary = text
+                            if review_part is not None:
+                                delegate_summary = (
+                                    f"reviewed content change proposed for node "
+                                    f"{gen_node_id!r} — awaits Apply"
+                                )
+                                if review_home == loop_ctx.get("attachment_id"):
+                                    minted.append(review_part)
+                                else:
+                                    homed_reviews.append((review_part, review_home))
                         # dev/72: the parent keeps the compact, linkable entry.
                         minted.append(_delegation_part_for(
-                            resolution, req["capability"], status, text, home_att
+                            resolution, req["capability"], status, delegate_summary, home_att
                         ))
                         yield (
                             "delegate_result",
@@ -5548,6 +5717,18 @@ def stream_attachment(
                     "proposalId": part["proposalId"],
                     "tool": part["tool"],
                     "summary": part["summary"],
+                },
+            )
+        # dev/73: reviews homed at the node's agent pause visibly too — the
+        # client refreshes and the parent's delegation entry links there.
+        for part, review_home in homed_reviews:
+            yield (
+                "review_required",
+                {
+                    "proposalId": part["proposalId"],
+                    "tool": part["tool"],
+                    "summary": part["summary"],
+                    "attachmentId": review_home,
                 },
             )
         if run_parts:

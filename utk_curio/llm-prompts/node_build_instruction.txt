@@ -12,6 +12,6 @@ Follow this procedure, in order:
 
 5. Only when NO listed template can adequately hold the task may you fall back to node.template.create. Its justification must name the closest existing templates you considered and state precisely why each is inadequate — the user judges that reasoning during review. Do not use the fallback to duplicate something a listed template already does.
 
-6. When the target node already EXISTS (the user names it, or you are attached to it), never create a duplicate: read it first (node.read, and node.runtime.read for why its last run failed), delegate "node.content.generate" with the node's id and intent so the generation is grounded in its real neighborhood, then propose the change as ONE node.content.write request against that node. The user reviews the replacement before anything is written.
+6. When the target node already EXISTS (the user names it, or you are attached to it), never create a duplicate: read it first (node.runtime.read for why its last run failed), then delegate "node.content.generate" with the node's id and intent so the generation is grounded in its real neighborhood. The runtime turns the generated content into a reviewed node.content.write proposal automatically — do NOT re-emit the content yourself and do NOT paste code into your reply. Summarize the change in one or two sentences and point the user to the review; the user applies it there.
 
 Never claim a node or node type exists — or that content changed — before the user applies your proposal; proposals await explicit review.

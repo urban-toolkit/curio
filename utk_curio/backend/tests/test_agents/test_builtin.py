@@ -195,7 +195,9 @@ class TestDataflowBuilderComposite:
         assert m is not None
         assert m.capability_ids == ["dataflow.orchestrate"]
         assert m.delegates_to == [
-            "agent.dataset-finder", "agent.node-builder", "agent.connection-builder",
+            "agent.dataset-finder", "agent.node-builder",
+            "agent.node-content-builder",  # dev/73: chat-path content updates
+            "agent.connection-builder",
             "agent.dataflow-task-planner", "agent.execution-subtask-planner",
             "agent.task-refresh-agent", "agent.workflow-suggester",
             "agent.plan-coherence-validator", "agent.dataflow-explainer",

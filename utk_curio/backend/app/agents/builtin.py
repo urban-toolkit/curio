@@ -205,7 +205,12 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      ("dataflow.orchestrate",), ("orchestration",),
                      reads=("mission", "graphContext", "installedTemplates"),
                      tools=("dataflow.read", "dataflow.plan.write", "node.runtime.read"),
+                     # dev/73: node-content-builder listed so node.content.generate
+                     # is OFFERED in the delegation paragraph — the chat path for
+                     # "change this node's content" (the runtime mints the review
+                     # at that node's own agent; plans stay content-free).
                      delegates_to=("agent.dataset-finder", "agent.node-builder",
+                                   "agent.node-content-builder",
                                    "agent.connection-builder", "agent.dataflow-task-planner",
                                    "agent.execution-subtask-planner", "agent.task-refresh-agent",
                                    "agent.workflow-suggester", "agent.plan-coherence-validator",

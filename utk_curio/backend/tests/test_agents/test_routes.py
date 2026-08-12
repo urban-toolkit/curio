@@ -1779,18 +1779,19 @@ class TestToolLoop:
             json={"message": "q"}, headers=_auth(token),
         )
         assert r.status_code == 200
-        assert len(calls) == 3  # MAX_TOOL_ROUNDS executions + the final call
+        assert len(calls) == 4  # MAX_TOOL_ROUNDS executions + the final call
         # The last tool result told the model to answer with what it has.
-        assert "answer with what you have" in calls[2][-1]["content"]
+        assert "answer with what you have" in calls[3][-1]["content"]
         body = r.get_json()
-        # The dangling third request was dropped; all round text kept.
-        assert body["reply"] == "Round 1.\n\nRound 2.\n\nRound 3."
+        # The dangling fourth READ request was dropped; all round text kept
+        # (dev/73: only a mutate dangle earns the cutoff card).
+        assert body["reply"] == "Round 1.\n\nRound 2.\n\nRound 3.\n\nRound 4."
         assert body["content"] == []
         turns = client.get(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
             headers=_auth(token),
         ).get_json()["turns"]
-        assert len(turns[1]["execution"]["toolCalls"]) == 2
+        assert len(turns[1]["execution"]["toolCalls"]) == 3
 
     def test_mutate_request_never_executes_in_the_loop(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         from utk_curio.backend.app.projects import storage as projects_storage
@@ -4197,10 +4198,10 @@ class TestPlanCorrectionRounds:
         )
         r = helper._run(client, token, alice_project, att_id)
         body = r.get_json()
-        # Two corrective rounds consumed the shared budget; the third attempt
-        # fails LOUDLY: the raw tail is released (fail-open transparency) and
-        # the error card explains.
-        assert len(calls) == 3
+        # Three corrective rounds (dev/73: MAX_TOOL_ROUNDS=3) consumed the
+        # shared budget; the fourth attempt fails LOUDLY: the raw tail is
+        # released (fail-open transparency) and the error card explains.
+        assert len(calls) == 4
         assert all(p["type"] != "proposal" for p in body["content"])
         card = next(p for p in body["content"] if p["type"] == "card")
         assert card["title"] == "Plan not proposable"
@@ -4219,8 +4220,9 @@ class TestPlanCorrectionRounds:
         )
         r = helper._run(client, token, alice_project, att_id)
         body = r.get_json()
-        # calls: tool round, bad plan, corrected?-no (script repeats bad) → cap.
-        assert len(calls) == 3
+        # calls: tool round, bad plan, correction, correction (script repeats
+        # bad; dev/73 budget = 3) → cap.
+        assert len(calls) == 4
         assert any(p["type"] == "card" and p["title"] == "Plan not proposable" for p in body["content"])
 
     def test_ungranted_agents_keep_failopen_behavior(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):

@@ -364,8 +364,8 @@ class TestDelegationTailAndBudget:
         assert "delegateRequest" not in calls[0][0]["content"]
 
     def test_delegate_rounds_share_the_tool_round_budget(self, client, user_and_token, tmp_curio, monkeypatch):
-        # MAX_TOOL_ROUNDS = 2: delegate + delegate + a third dangling request
-        # → the third is dropped, text kept (one shared bound, no second knob).
+        # MAX_TOOL_ROUNDS = 3 (dev/73): three delegates run, a fourth dangling
+        # request is dropped, text kept (one shared bound, no second knob).
         user, token = user_and_token
         pid = _project(client, token)
         att_id, calls = _setup(
@@ -375,20 +375,22 @@ class TestDelegationTailAndBudget:
                 "child says A",
                 _delegate_tail(inputs='{"intent": "again"}'),
                 "child says B",
-                "Final text.\n" + _delegate_tail(inputs='{"intent": "third"}'),
+                _delegate_tail(inputs='{"intent": "third"}'),
+                "child says C",
+                "Final text.\n" + _delegate_tail(inputs='{"intent": "fourth"}'),
             ],
         )
         r = _run(client, token, pid, att_id)
         assert r.status_code == 200
         body = r.get_json()
         assert body["reply"].startswith("Final text.")
-        # 5 provider calls: parent, child, parent, child, parent — no 6th.
-        assert len(calls) == 5
+        # 7 provider calls: parent, child, ×3 — no 8th.
+        assert len(calls) == 7
         turns = client.get(
             f"/api/agents/projects/{pid}/attachments/{att_id}/session", headers=_auth(token)
         ).get_json()["turns"]
         execution = next(t["execution"] for t in reversed(turns) if t.get("execution"))
-        assert len(execution["delegations"]) == 2
+        assert len(execution["delegations"]) == 3
 
 
 class TestDelegateStreamEvents:
@@ -628,3 +630,209 @@ class TestDelegationTransparency:
         part = next(p for p in body["content"] if p["type"] == "delegation")
         assert part["attachmentId"] is None  # plain entry, honest
         assert part["status"] == "ok"  # the work itself was unaffected
+
+
+class TestChatContentReviewMint:
+    """dev/73: a chat-loop node.content.generate delegation that resolves a
+    node yields a runtime-minted node.content.write review — applyability
+    never depends on the model's second toolRequest step."""
+
+    READ_TAIL = '```curio.v1\n{"toolRequest": {"tool": "dataflow.read", "params": {}}}\n```'
+
+    def _attach_node(self, client, token, project_id):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments",
+            json={"coord": NB, "target": {"kind": "node", "targetId": "n1"}},
+            headers=_auth(token),
+        ).get_json()["attachmentId"]
+
+    def test_node_attached_builder_update_mints_the_review_locally(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        pid = _project(client, token)
+        _, calls = _setup(
+            client, token, pid, monkeypatch,
+            replies=[_delegate_tail(), "print('fixed')", "Summarized the change."],
+        )
+        att_id = self._attach_node(client, token, pid)  # the node's own agent
+        body = _run(client, token, pid, att_id, message="fix the print").get_json()
+        proposal = next(p for p in body["content"] if p["type"] == "proposal")
+        assert proposal["tool"] == "node.content.write"
+        assert proposal["pins"]["nodeId"] == "n1"
+        assert proposal["preview"] == "print('fixed')"
+        assert proposal["status"] == "pending"
+        entry = next(p for p in body["content"] if p["type"] == "delegation")
+        assert "reviewed content change proposed" in entry["summary"]
+        # The fed-back contract forbids restating code or claiming application.
+        feedback = calls[2][-1]["content"]
+        assert "do NOT restate the code" in feedback
+        assert "in this conversation" in feedback
+        # The review is REAL: Apply writes the node content.
+        cards = client.get(
+            f"/api/agents/projects/{pid}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        mine = next(c for c in cards if c["attachmentId"] == att_id)
+        assert mine["activeProposal"]["tool"] == "node.content.write"
+        r = client.post(
+            f"/api/agents/projects/{pid}/attachments/{att_id}/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert r.status_code == 200
+        assert r.get_json()["appliedContent"]["content"] == "print('fixed')"
+
+    def test_canvas_parent_homes_the_review_at_the_nodes_agent(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        pid = _project(client, token)
+        att_id, calls = _setup(
+            client, token, pid, monkeypatch,
+            replies=[
+                _delegate_tail(inputs='{"intent": "fix", "nodeId": "n1"}'),
+                "print('v2')",
+                "Summarized.",
+            ],
+        )
+        body = _run(client, token, pid, att_id, message="update n1").get_json()
+        # The proposal does NOT ride the parent turn — the entry links home.
+        assert all(p["type"] != "proposal" for p in body["content"])
+        entry = next(p for p in body["content"] if p["type"] == "delegation")
+        home_id = entry["attachmentId"]
+        assert home_id and home_id != att_id
+        assert "reviewed content change proposed" in entry["summary"]
+        assert "at the node's own Node Builder agent" in calls[2][-1]["content"]
+        cards = client.get(
+            f"/api/agents/projects/{pid}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        home = next(c for c in cards if c["attachmentId"] == home_id)
+        assert home["target"] == {"kind": "node", "targetId": "n1"}
+        assert home["activeProposal"]["tool"] == "node.content.write"
+        turns = client.get(
+            f"/api/agents/projects/{pid}/attachments/{home_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        review_turn = next(
+            t for t in turns
+            if any(p.get("type") == "proposal" for p in (t.get("content") or []))
+        )
+        assert "review and apply it below" in review_turn["text"]
+
+    def test_dataflow_builder_chat_update_routes_through_the_roster(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        pid = _project(client, token)
+        DFB = "agent.dataflow-builder@1.0.0"
+        for coord in (DFB, NB, NCB):
+            client.post(
+                f"/api/agents/projects/{pid}/install",
+                json={"coord": coord}, headers=_auth(token),
+            )
+        att_id = client.post(
+            f"/api/agents/projects/{pid}/attachments",
+            json={"coord": DFB, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        ).get_json()["attachmentId"]
+        calls = []
+        script = [
+            _delegate_tail(inputs='{"intent": "use median", "nodeId": "n1"}'),
+            "df.median()",
+            "The review awaits at the node's agent.",
+        ]
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            return script[min(len(calls) - 1, len(script) - 1)]
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        body = _run(client, token, pid, att_id, message="change n1 to median").get_json()
+        # dev/73 roster: the capability is OFFERED in the delegation paragraph.
+        assert "node.content.generate — handled by Node Content Builder" in calls[0][0]["content"]
+        entry = next(p for p in body["content"] if p["type"] == "delegation")
+        assert entry["attachmentId"] and entry["attachmentId"] != att_id
+        cards = client.get(
+            f"/api/agents/projects/{pid}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        home = next(c for c in cards if c["attachmentId"] == entry["attachmentId"])
+        assert home["activeProposal"]["tool"] == "node.content.write"
+        assert home["target"] == {"kind": "node", "targetId": "n1"}
+
+    def test_mutate_request_dangling_at_the_cap_is_a_visible_cutoff(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        pid = _project(client, token)
+        write_tail = (
+            '```curio.v1\n{"toolRequest": {"tool": "node.content.write", '
+            '"params": {"nodeId": "n1", "content": "print(9)"}}}\n```'
+        )
+        _, calls = _setup(
+            client, token, pid, monkeypatch,
+            replies=[
+                self.READ_TAIL, self.READ_TAIL, self.READ_TAIL,
+                "All set — applying now.\n" + write_tail,
+            ],
+        )
+        att_id = self._attach_node(client, token, pid)
+        body = _run(client, token, pid, att_id, message="fix it").get_json()
+        assert all(p["type"] != "proposal" for p in body["content"])
+        card = next(p for p in body["content"] if p["type"] == "card")
+        assert card["title"] == "Proposal step cut off"
+        assert "node.content.write" in card["lines"][0]
+        assert body["reply"].endswith("All set — applying now.")
+
+    def test_unusable_generated_content_is_an_honest_refusal(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        pid = _project(client, token)
+        _, calls = _setup(
+            client, token, pid, monkeypatch,
+            replies=[_delegate_tail(), "", "Understood — generation failed."],
+        )
+        att_id = self._attach_node(client, token, pid)
+        body = _run(client, token, pid, att_id, message="fix it").get_json()
+        assert all(p["type"] != "proposal" for p in body["content"])
+        assert "could not become a reviewed proposal" in calls[2][-1]["content"]
+
+
+class TestChatContentReviewMintStream:
+    """dev/73, stream twin: a foreign-homed review still pauses visibly —
+    review_required carries the home attachment id."""
+
+    def test_homed_review_emits_review_required_with_attachment_id(self, client, user_and_token, tmp_curio, monkeypatch):
+        user, token = user_and_token
+        pid = _project(client, token)
+        att_id, _ = _setup(client, token, pid, monkeypatch)
+        script = [
+            _delegate_tail(inputs='{"intent": "fix", "nodeId": "n1"}'),
+            "print('v3')",
+            "Review awaits at the node's agent.",
+        ]
+        calls = []
+
+        def _fake_stream(config, messages, **kwargs):
+            calls.append(messages)
+            yield script[min(len(calls) - 1, 2)]
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            return script[min(len(calls) - 1, 2)]
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.stream_chat_completion", _fake_stream)
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        r = client.post(
+            f"/api/agents/projects/{pid}/attachments/{att_id}/run/stream",
+            json={"message": "update n1"}, headers=_auth(token),
+        )
+        events = []
+        for block in r.get_data(as_text=True).strip().split("\n\n"):
+            lines = dict(l.split(": ", 1) for l in block.splitlines() if ": " in l)
+            events.append((lines["event"], json.loads(lines["data"])))
+        review = next(p for k, p in events if k == "review_required")
+        assert review["tool"] == "node.content.write"
+        assert review["attachmentId"] and review["attachmentId"] != att_id
+        # The foreign-homed proposal never rides the parent turn's parts.
+        done = next(p for k, p in events if k == "done")
+        assert all(p["type"] != "proposal" for p in done["content"])
+        entry = next(p for p in done["content"] if p["type"] == "delegation")
+        assert entry["attachmentId"] == review["attachmentId"]
