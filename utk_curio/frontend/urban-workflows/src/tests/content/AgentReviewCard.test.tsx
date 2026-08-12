@@ -513,3 +513,74 @@ describe("AgentReviewCard — dev/71 progressive lifecycle rows", () => {
     await waitFor(() => expect(onRun).toHaveBeenCalledWith("b"));
   });
 });
+
+describe("AgentReviewCard — dev/72 review-chip icon-link to the node agent", () => {
+  const plan = (): AgentProposalPart => ({
+    type: "proposal",
+    proposalId: "p10",
+    tool: "dataflow.plan.write",
+    summary: "Apply plan · 1 node",
+    preview: "…",
+    pins: { baseGraphDigest: "abc" },
+    status: "pending",
+    plan: {
+      goal: "g",
+      nodes: [{ ref: "a", nodeType: "t", title: "Load", intent: "load" }],
+      edgeCount: 0,
+      edges: [],
+    },
+  });
+
+  it("the chip links to the homed review's agent chat", () => {
+    const onOpenAgentChat = jest.fn();
+    render(
+      <AgentReviewCard
+        part={plan()}
+        onApplyPlanNode={jest.fn()}
+        onOpenAgentChat={onOpenAgentChat}
+        delegateExists={(id) => id === "att-nb"}
+        planNodeState={{
+          appliedRefs: ["a"],
+          editedGoals: {},
+          nodeStates: { a: "solving" },
+          nodeProposals: { a: { proposalId: "cp1", attachmentId: "att-nb" } },
+        }}
+      />,
+    );
+    expect(screen.getByText("Content review pending")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /open the node agent's chat/i }));
+    expect(onOpenAgentChat).toHaveBeenCalledWith("att-nb");
+  });
+
+  it("legacy builder-homed (string) and stale homes render no link", () => {
+    const { rerender } = render(
+      <AgentReviewCard
+        part={plan()}
+        onApplyPlanNode={jest.fn()}
+        onOpenAgentChat={jest.fn()}
+        planNodeState={{
+          appliedRefs: ["a"],
+          editedGoals: {},
+          nodeStates: { a: "solving" },
+          nodeProposals: { a: "cp1" },
+        }}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /open the node agent/i })).toBeNull();
+    rerender(
+      <AgentReviewCard
+        part={plan()}
+        onApplyPlanNode={jest.fn()}
+        onOpenAgentChat={jest.fn()}
+        delegateExists={() => false}
+        planNodeState={{
+          appliedRefs: ["a"],
+          editedGoals: {},
+          nodeStates: { a: "solving" },
+          nodeProposals: { a: { proposalId: "cp1", attachmentId: "gone" } },
+        }}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /open the node agent/i })).toBeNull();
+  });
+});

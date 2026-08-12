@@ -113,8 +113,13 @@ export interface AgentBuilderSession {
   currentRef?: string;
   /** dev/67-9: why the sequence paused — a plain reason with a next action. */
   pauseReason?: { kind: string; ref?: string; proposalId?: string; message: string };
-  /** dev/67-9: ref → its validated content proposal id. */
-  nodeProposals?: Record<string, string>;
+  /** dev/67-9: ref → its validated content proposal. dev/72 homes the
+   * proposal on the node's own agent — the object shape carries where it
+   * lives; legacy string values mean builder-homed. */
+  nodeProposals?: Record<
+    string,
+    string | { proposalId: string; attachmentId?: string | null }
+  >;
 }
 
 /** Actual provider-reported token usage (memo dev/37) — never an estimate. */
@@ -197,6 +202,20 @@ export interface AgentDatasetCandidateRow {
 export interface AgentDatasetCandidatesPart {
   type: "datasetCandidates";
   lanes: { external: AgentDatasetCandidateRow[]; catalog: AgentDatasetCandidateRow[] };
+}
+
+/** dev/72: a delegated task's compact entry on the PARENT's turn — the icon
+ * notch links to the delegated agent's chat where the full trace lives.
+ * Runtime-emitted only (like proposals); attachmentId null = no home. */
+export interface AgentDelegationPart {
+  type: "delegation";
+  capability: string;
+  coord: string;
+  name: string;
+  category: string;
+  attachmentId: string | null;
+  status: "ok" | "failed" | string;
+  summary: string;
 }
 
 export type AgentProposalStatus =
@@ -398,6 +417,7 @@ export type AgentContentPart =
   | AgentProposalPart
   | AgentDatasetCandidatesPart
   | AgentDataflowPlanPart
+  | AgentDelegationPart
   | { type: string };
 
 /** One persisted chat turn of an attachment's session. */

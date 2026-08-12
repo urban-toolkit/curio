@@ -115,6 +115,13 @@ export const AgentDockOverlay: React.FC = () => {
               onDismissProposal={(proposalId) =>
                 ctx.dismissProposal(selected.attachmentId, proposalId)
               }
+              // dev/72: delegation entries and plan-row chips link to the
+              // delegated agent's chat; existence-checked against the live
+              // list so a detached home never renders a dead link.
+              onOpenAgentChat={ctx.openChat}
+              delegateExists={(id) =>
+                ctx.attachments.some((a) => a.attachmentId === id)
+              }
               onSaveIntent={(intent) => ctx.saveIntent(selected.attachmentId, intent)}
               onSaveTitle={(title) => ctx.saveTitle(selected.attachmentId, title)}
               onClearConversation={() => ctx.clearConversation(selected.attachmentId)}

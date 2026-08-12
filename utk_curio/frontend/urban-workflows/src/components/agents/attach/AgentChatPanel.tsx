@@ -14,6 +14,7 @@ import type {
   AgentAttachment,
   AgentCardPart,
   AgentDatasetCandidatesPart,
+  AgentDelegationPart,
   AgentProposalPart,
   AgentSessionTurn,
   AgentSuggestedPromptsPart,
@@ -23,6 +24,7 @@ import { attachmentDisplayName, TITLE_MAX_CHARS } from "./attachmentDisplayName"
 import { AgentBuilderStrip } from "./AgentBuilderStrip";
 import { AgentChatCard } from "../content/AgentChatCard";
 import { AgentDatasetCandidatesCard } from "../content/AgentDatasetCandidatesCard";
+import { AgentDelegationEntry } from "../content/AgentDelegationEntry";
 import { AgentReviewCard } from "../content/AgentReviewCard";
 import { SafeAgentContent } from "../content/SafeAgentContent";
 import styles from "./AgentChatPanel.module.css";
@@ -89,6 +91,11 @@ export const AgentChatPanel: React.FC<{
   solveProgress?: Record<string, string>;
   /** dev/63: cancel the running solve. */
   onCancelSolve?: () => Promise<void>;
+  /** dev/72: opens ANOTHER attachment's chat — the delegation entries' and
+   * plan-row chips' icon-links route through this. Omitted → entries inert. */
+  onOpenAgentChat?: (attachmentId: string) => void;
+  /** dev/72: live-existence check for a delegation home (stale → no link). */
+  delegateExists?: (attachmentId: string) => boolean;
   onSaveIntent?: (intent: string | null) => Promise<void>;
   /** Persist a manual conversation title (memo dev/25). Omitted → the header
    * title is a plain, non-editable label. */
@@ -121,6 +128,8 @@ export const AgentChatPanel: React.FC<{
   onSolve,
   solveProgress,
   onCancelSolve,
+  onOpenAgentChat,
+  delegateExists,
   onSaveIntent,
   onSaveTitle,
   onClearConversation,
@@ -546,6 +555,16 @@ export const AgentChatPanel: React.FC<{
                       />
                     ))}
                   {(t.content ?? [])
+                    .filter((p): p is AgentDelegationPart => p.type === "delegation")
+                    .map((part, j) => (
+                      <AgentDelegationEntry
+                        key={`dlg-${j}`}
+                        part={part}
+                        onOpenChat={onOpenAgentChat}
+                        delegateExists={delegateExists}
+                      />
+                    ))}
+                  {(t.content ?? [])
                     .filter((p): p is AgentProposalPart => p.type === "proposal")
                     .map((part, j) => (
                       <AgentReviewCard
@@ -559,6 +578,8 @@ export const AgentChatPanel: React.FC<{
                         onApplyPlanEdges={onApplyPlanEdges}
                         onSolvePlanNode={onSolvePlanNode}
                         onRunPlanNode={onRunPlanNode}
+                        onOpenAgentChat={onOpenAgentChat}
+                        delegateExists={delegateExists}
                         planNodeState={(() => {
                           // dev/67-5/67-9: the mirror's per-node state feeds
                           // the part whose proposal it mirrors — active OR
@@ -576,6 +597,9 @@ export const AgentChatPanel: React.FC<{
                                 edgeStates: mirror.edgeStates ?? {},
                                 // dev/71: the lifecycle ledger for readiness.
                                 nodeStates: attachment.builderSession?.nodeStates ?? {},
+                                // dev/72: where each ref's content review lives.
+                                nodeProposals:
+                                  attachment.builderSession?.nodeProposals ?? {},
                               }
                             : undefined;
                         })()}

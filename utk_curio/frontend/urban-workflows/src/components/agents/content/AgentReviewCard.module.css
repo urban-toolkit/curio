@@ -205,6 +205,31 @@
   font-size: 0.75rem;
 }
 
+/* dev/72: the compact icon-link riding a row's review chip — opens the node
+ * agent's chat, where the content review and Solve trace live. */
+.reviewLink {
+  margin-left: 5px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  background: #fff;
+  color: inherit;
+  font-size: 9px;
+  padding: 0;
+  cursor: pointer;
+  vertical-align: middle;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reviewLink:hover,
+.reviewLink:focus-visible {
+  transform: scale(1.12);
+  outline: none;
+}
+
 .planGoalInput {
   width: 100%;
   box-sizing: border-box;

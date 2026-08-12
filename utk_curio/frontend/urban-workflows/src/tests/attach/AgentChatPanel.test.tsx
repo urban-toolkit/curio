@@ -429,3 +429,40 @@ describe("AgentChatPanel attachment settings cog (memo dev/42)", () => {
     expect(screen.queryByRole("button", { name: /attachment settings/i })).toBeNull();
   });
 });
+
+describe("AgentChatPanel delegation entries (memo dev/72)", () => {
+  const delegation = {
+    type: "delegation" as const,
+    capability: "research.verify",
+    coord: "agent.node-researcher@1.0.0",
+    name: "Node Researcher",
+    category: "evaluate",
+    attachmentId: "att-r",
+    status: "ok" as const,
+    summary: "verified — 200",
+  };
+
+  it("an agent turn's delegation part renders the entry and routes the icon-link", () => {
+    const onOpenAgentChat = jest.fn();
+    renderPanel({
+      turns: [{ role: "agent", text: "done", content: [delegation] }],
+      onOpenAgentChat,
+      delegateExists: (id) => id === "att-r",
+    });
+    expect(screen.getByText("research.verify")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open Node Researcher's chat" }));
+    expect(onOpenAgentChat).toHaveBeenCalledWith("att-r");
+  });
+
+  it("a detached home renders the entry without a link", () => {
+    renderPanel({
+      turns: [{ role: "agent", text: "done", content: [delegation] }],
+      onOpenAgentChat: jest.fn(),
+      delegateExists: () => false,
+    });
+    expect(screen.getByText("research.verify")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /open node researcher/i }),
+    ).toBeNull();
+  });
+});

@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faRobot } from "@fortawesome/free-solid-svg-icons";
 import type { AgentProposalPart } from "../../../api/agentsApi";
 import styles from "./AgentReviewCard.module.css";
 
@@ -10,6 +12,12 @@ export interface PlanNodeReviewState {
   edgeStates?: Record<string, string>;
   /** dev/71: ref → planned|created|solving|validated|approved|failed. */
   nodeStates?: Record<string, string>;
+  /** dev/72: ref → its content proposal + the attachment it lives on (the
+   * node's own agent when homed; legacy string = builder-homed). */
+  nodeProposals?: Record<
+    string,
+    string | { proposalId: string; attachmentId?: string | null }
+  >;
 }
 
 /** dev/71: what a row's lifecycle state means for its action cluster. */
@@ -35,7 +43,10 @@ const PlanNodeRow: React.FC<{
   onSaveGoal: (goal: string) => Promise<void>;
   onSolve?: () => Promise<void>;
   onRun?: () => Promise<void>;
-}> = ({ node, applied, goal, deps, state, solvable, solveBlocker, onApply, onSaveGoal, onSolve, onRun }) => {
+  /** dev/72: opens the node agent's chat, where the content review lives. */
+  onOpenReview?: () => void;
+  reviewAgentName?: string;
+}> = ({ node, applied, goal, deps, state, solvable, solveBlocker, onApply, onSaveGoal, onSolve, onRun, onOpenReview, reviewAgentName }) => {
   const [draft, setDraft] = useState(goal);
   const [busy, setBusy] = useState(false);
   const [rowBusy, setRowBusy] = useState<"solve" | "run" | null>(null);
@@ -102,6 +113,19 @@ const PlanNodeRow: React.FC<{
                 }
               >
                 {ROW_STATE_CHIP[state]}
+                {/* dev/72: the icon-link to the node agent's chat, where the
+                    content review (and the Solve trace) lives. */}
+                {onOpenReview ? (
+                  <button
+                    type="button"
+                    className={styles.reviewLink}
+                    aria-label={`Open ${reviewAgentName ?? "the node agent"}'s chat`}
+                    title={`Open ${reviewAgentName ?? "the node agent"}'s chat`}
+                    onClick={onOpenReview}
+                  >
+                    <FontAwesomeIcon icon={faRobot} />
+                  </button>
+                ) : null}
               </span>
             ) : (
               <span className={styles.planNodeCreated}>Created ✓</span>
@@ -208,7 +232,10 @@ export const AgentReviewCard: React.FC<{
   /** dev/71: per-row Solve (the 67-7 validate loop) and Run (through node). */
   onSolvePlanNode?: (ref: string) => Promise<void>;
   onRunPlanNode?: (ref: string) => Promise<void>;
-}> = ({ part, tintClassName, onApply, onDismiss, planNodeState, onApplyPlanNode, onSavePlanGoal, onApplyPlanEdges, onSolvePlanNode, onRunPlanNode }) => {
+  /** dev/72: the icon-link route to a homed content review's chat. */
+  onOpenAgentChat?: (attachmentId: string) => void;
+  delegateExists?: (attachmentId: string) => boolean;
+}> = ({ part, tintClassName, onApply, onDismiss, planNodeState, onApplyPlanNode, onSavePlanGoal, onApplyPlanEdges, onSolvePlanNode, onRunPlanNode, onOpenAgentChat, delegateExists }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [edgeBusy, setEdgeBusy] = useState<string | null>(null);
@@ -360,6 +387,18 @@ export const AgentReviewCard: React.FC<{
                 : unsolvedUpstream.length
                   ? `needs '${unsolvedUpstream[0].fromLabel}' solved first`
                   : null;
+            // dev/72: the ref's content review lives on the node's own agent
+            // when homed — the chip links there (stale/absent → no link).
+            const proposalEntry = planNodeState?.nodeProposals?.[node.ref];
+            const reviewHomeId =
+              proposalEntry && typeof proposalEntry === "object"
+                ? (proposalEntry.attachmentId ?? null)
+                : null;
+            const reviewLinkable = Boolean(
+              reviewHomeId &&
+                onOpenAgentChat &&
+                (delegateExists ? delegateExists(reviewHomeId) : true),
+            );
             return (
               <PlanNodeRow
                 key={node.ref}
@@ -378,6 +417,9 @@ export const AgentReviewCard: React.FC<{
                 }
                 onSolve={onSolvePlanNode ? () => onSolvePlanNode(node.ref) : undefined}
                 onRun={onRunPlanNode ? () => onRunPlanNode(node.ref) : undefined}
+                onOpenReview={
+                  reviewLinkable ? () => onOpenAgentChat!(reviewHomeId!) : undefined
+                }
               />
             );
           })}

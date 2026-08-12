@@ -247,7 +247,9 @@ export const AgentAttachmentsProvider: React.FC<{
               : name === "delegate_requested"
                 ? `delegating ${capability} …`
                 : name === "delegate_result"
-                  ? `${coord || capability} · ${payload.status ?? ""}`
+                  ? // dev/72: the event names the delegate; the durable record
+                    // is the turn's delegation entry (icon-linked to its home).
+                    `${(typeof payload.name === "string" && payload.name) || coord || capability} · ${payload.status ?? ""}`
                   : name === "plan_revision"
                     ? `revising the plan (attempt ${payload.attempt ?? "?"}) …`
                     : null;
