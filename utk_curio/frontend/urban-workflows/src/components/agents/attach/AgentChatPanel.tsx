@@ -76,6 +76,9 @@ export const AgentChatPanel: React.FC<{
   onSavePlanGoal?: (proposalId: string, ref: string, goal: string) => Promise<void>;
   /** dev/67-8: the connection review stage. */
   onApplyPlanEdges?: (proposalId: string, indices?: number[]) => Promise<void>;
+  /** dev/71: per-row Solve/Run on the plan card. */
+  onSolvePlanNode?: (ref: string) => Promise<void>;
+  onRunPlanNode?: (ref: string) => Promise<void>;
   /** dev/67-9: the Simulation Mode driver + its narration. */
   onSimulate?: (mode: "step" | "auto") => Promise<unknown>;
   onCancelSimulate?: () => Promise<void>;
@@ -110,6 +113,8 @@ export const AgentChatPanel: React.FC<{
   onApplyPlanNode,
   onSavePlanGoal,
   onApplyPlanEdges,
+  onSolvePlanNode,
+  onRunPlanNode,
   onSimulate,
   onCancelSimulate,
   simulationActivity,
@@ -552,6 +557,8 @@ export const AgentChatPanel: React.FC<{
                         onApplyPlanNode={onApplyPlanNode}
                         onSavePlanGoal={onSavePlanGoal}
                         onApplyPlanEdges={onApplyPlanEdges}
+                        onSolvePlanNode={onSolvePlanNode}
+                        onRunPlanNode={onRunPlanNode}
                         planNodeState={(() => {
                           // dev/67-5/67-9: the mirror's per-node state feeds
                           // the part whose proposal it mirrors — active OR
@@ -567,6 +574,8 @@ export const AgentChatPanel: React.FC<{
                                 appliedRefs: mirror.appliedRefs ?? [],
                                 editedGoals: mirror.editedGoals ?? {},
                                 edgeStates: mirror.edgeStates ?? {},
+                                // dev/71: the lifecycle ledger for readiness.
+                                nodeStates: attachment.builderSession?.nodeStates ?? {},
                               }
                             : undefined;
                         })()}

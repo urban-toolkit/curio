@@ -69,6 +69,12 @@ export interface AgentAttachmentsContextValue extends AgentAttachmentsState {
     proposalId: string,
     indices?: number[],
   ) => Promise<import("../../../api/agentsApi").AgentPlanEdgesResult>;
+  /** dev/71: run the dataflow through one node (real run; journaled). */
+  runNode: (
+    attachmentId: string,
+    target: { ref?: string; nodeId?: string },
+    onEvent?: (name: string, payload: Record<string, unknown>) => void,
+  ) => Promise<Record<string, unknown>>;
   /** dev/67-7: validate one node by running the dataflow through it —
    * resolves with the done payload (verdict, evidence, proposalId). */
   validateNode: (
@@ -387,6 +393,14 @@ export const AgentAttachmentsProvider: React.FC<{
         if (result.createdNode) {
           notifyAgentCanvasMutation({ kind: "node-created", node: result.createdNode });
         }
+        // dev/71: the progressive sweep's edges draw immediately too.
+        if (result.createdEdges?.length) {
+          notifyAgentCanvasMutation({
+            kind: "edges-created",
+            batchId: `${proposalId}:${ref}:${result.createdEdges.map((e) => e.id).join(",")}`,
+            edges: result.createdEdges,
+          });
+        }
       } finally {
         // The result turn + the per-node ledger both refresh.
         hydratedRef.current.delete(attachmentId);
@@ -474,6 +488,28 @@ export const AgentAttachmentsProvider: React.FC<{
         }
         return result;
       } finally {
+        hydratedRef.current.delete(attachmentId);
+        await hydrateSession(attachmentId);
+        await state.reload();
+      }
+    },
+    [hydrateSession, state.reload],
+  );
+
+  const runNode = useCallback(
+    async (
+      attachmentId: string,
+      target: { ref?: string; nodeId?: string },
+      onEvent?: (name: string, payload: Record<string, unknown>) => void,
+    ) => {
+      const pid = projectRef.current;
+      if (!pid) throw new Error("no project");
+      try {
+        return await agentsApi.runNode(
+          pid, attachmentId, target, onEvent ?? (() => undefined),
+        );
+      } finally {
+        // The result card + any journal-derived state arrive by refetch.
         hydratedRef.current.delete(attachmentId);
         await hydrateSession(attachmentId);
         await state.reload();
@@ -666,6 +702,7 @@ export const AgentAttachmentsProvider: React.FC<{
       savePlanGoal,
       applyPlanEdges,
       validateNode,
+      runNode,
       runSimulation,
       simulationActivity,
       cancelSimulation,
@@ -693,6 +730,7 @@ export const AgentAttachmentsProvider: React.FC<{
       savePlanGoal,
       applyPlanEdges,
       validateNode,
+      runNode,
       runSimulation,
       simulationActivity,
       cancelSimulation,

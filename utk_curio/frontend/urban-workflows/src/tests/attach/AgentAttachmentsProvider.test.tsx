@@ -23,6 +23,7 @@ jest.mock("../../api/agentsApi", () => ({
     applyPlanNode: jest.fn(),
     savePlanGoal: jest.fn(),
     applyPlanEdges: jest.fn(),
+    runNode: jest.fn(),
     simulate: jest.fn(),
     cancelSimulate: jest.fn(),
   },
@@ -694,6 +695,22 @@ describe("AgentAttachmentsProvider per-node plan apply (dev/67-5)", () => {
   });
 
   afterEach(() => unsubscribe());
+
+
+  it("applyPlanNode also dispatches the progressive sweep's edges (dev/71)", async () => {
+    api.applyPlanNode.mockResolvedValue({
+      attachmentId: "a1", proposalId: "p1", status: "pending", ref: "ra",
+      createdNode: { id: "nid-1", type: "t", content: "", goal: "g", x: 1, y: 2 },
+      createdEdges: [{ id: "pe1", source: "n0", target: "nid-1", sourceHandle: "out", targetHandle: "in" }],
+      appliedRefs: ["ra"],
+    });
+    renderProvider();
+    await act(async () => {
+      fireEvent.click(screen.getByText("apply-plan-node"));
+    });
+    expect(events.map((e: any) => e.kind)).toEqual(["node-created", "edges-created"]);
+    expect((events[1] as any).edges[0]).toMatchObject({ id: "pe1", targetHandle: "in" });
+  });
 
   it("applyPlanNode dispatches node-created for the created node", async () => {
     api.applyPlanNode.mockResolvedValue({

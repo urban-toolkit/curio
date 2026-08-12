@@ -2,26 +2,57 @@ import React, { useState } from "react";
 import type { AgentProposalPart } from "../../../api/agentsApi";
 import styles from "./AgentReviewCard.module.css";
 
-/** dev/67-5/67-8: the per-node review state (from the activeProposal mirror). */
+/** dev/67-5/67-8/71: the per-node review state (mirror + builderSession). */
 export interface PlanNodeReviewState {
   appliedRefs: string[];
   editedGoals: Record<string, string>;
   /** dev/67-8: edge index → planned|applied|refused. */
   edgeStates?: Record<string, string>;
+  /** dev/71: ref → planned|created|solving|validated|approved|failed. */
+  nodeStates?: Record<string, string>;
 }
 
-/** One planned node's review row (dev/67-5, Simulation Mode: create):
- * editable goal, expects line, per-node Apply → Created ✓. */
+/** dev/71: what a row's lifecycle state means for its action cluster. */
+const ROW_STATE_CHIP: Record<string, string> = {
+  solving: "Content review pending",
+  validated: "Validated — review below",
+  approved: "Solved ✓",
+  failed: "Failed — Solve retries",
+};
+
+/** One planned node's review row (dev/67-5 + dev/71 progressive lifecycle):
+ * editable goal, dependencies by name, Apply → Solve → Run per node. */
 const PlanNodeRow: React.FC<{
   node: { ref: string; nodeType: string; title: string; intent: string; expects?: string };
   applied: boolean;
   goal: string;
+  /** dev/71: dependency labels + readiness. */
+  deps: string[];
+  state: string;
+  solvable: boolean;
+  solveBlocker: string | null;
   onApply: () => Promise<void>;
   onSaveGoal: (goal: string) => Promise<void>;
-}> = ({ node, applied, goal, onApply, onSaveGoal }) => {
+  onSolve?: () => Promise<void>;
+  onRun?: () => Promise<void>;
+}> = ({ node, applied, goal, deps, state, solvable, solveBlocker, onApply, onSaveGoal, onSolve, onRun }) => {
   const [draft, setDraft] = useState(goal);
   const [busy, setBusy] = useState(false);
+  const [rowBusy, setRowBusy] = useState<"solve" | "run" | null>(null);
   const [rowError, setRowError] = useState<string | null>(null);
+
+  const act = async (kind: "solve" | "run", fn?: () => Promise<void>) => {
+    if (!fn || rowBusy) return;
+    setRowBusy(kind);
+    setRowError(null);
+    try {
+      await fn();
+    } catch (e) {
+      setRowError(e instanceof Error ? e.message : `The ${kind} failed`);
+    } finally {
+      setRowBusy(null);
+    }
+  };
 
   const saveGoal = async () => {
     const next = draft.trim();
@@ -52,9 +83,7 @@ const PlanNodeRow: React.FC<{
       <div className={styles.planNodeHead}>
         <span className={styles.planNodeTitle}>{node.title}</span>
         <span className={styles.planNodeType}>{node.nodeType}</span>
-        {applied ? (
-          <span className={styles.planNodeCreated}>Created ✓</span>
-        ) : (
+        {!applied ? (
           <button
             type="button"
             className={styles.apply}
@@ -64,8 +93,48 @@ const PlanNodeRow: React.FC<{
           >
             {busy ? "Creating…" : "Apply"}
           </button>
+        ) : (
+          <>
+            {ROW_STATE_CHIP[state] ? (
+              <span
+                className={
+                  state === "failed" ? styles.planEdgeRefused : styles.planNodeCreated
+                }
+              >
+                {ROW_STATE_CHIP[state]}
+              </span>
+            ) : (
+              <span className={styles.planNodeCreated}>Created ✓</span>
+            )}
+            {onSolve && (state === "created" || state === "failed") ? (
+              <button
+                type="button"
+                className={styles.apply}
+                disabled={rowBusy !== null || !solvable}
+                title={solveBlocker ?? undefined}
+                onClick={() => void act("solve", onSolve)}
+                aria-label={`Solve node ${node.title}`}
+              >
+                {rowBusy === "solve" ? "Solving…" : "Solve"}
+              </button>
+            ) : null}
+            {onRun && state === "approved" ? (
+              <button
+                type="button"
+                className={styles.run}
+                disabled={rowBusy !== null}
+                onClick={() => void act("run", onRun)}
+                aria-label={`Run through node ${node.title}`}
+              >
+                {rowBusy === "run" ? "Running…" : "Run"}
+              </button>
+            ) : null}
+          </>
         )}
       </div>
+      {deps.length ? (
+        <div className={styles.planNodeExpects}>needs: {deps.join(", ")}</div>
+      ) : null}
       {node.expects ? <div className={styles.planNodeExpects}>{node.expects}</div> : null}
       <textarea
         className={styles.planGoalInput}
@@ -136,7 +205,10 @@ export const AgentReviewCard: React.FC<{
   onSavePlanGoal?: (proposalId: string, ref: string, goal: string) => Promise<void>;
   /** dev/67-8: apply plan edges (a subset by index, or all pending). */
   onApplyPlanEdges?: (proposalId: string, indices?: number[]) => Promise<void>;
-}> = ({ part, tintClassName, onApply, onDismiss, planNodeState, onApplyPlanNode, onSavePlanGoal, onApplyPlanEdges }) => {
+  /** dev/71: per-row Solve (the 67-7 validate loop) and Run (through node). */
+  onSolvePlanNode?: (ref: string) => Promise<void>;
+  onRunPlanNode?: (ref: string) => Promise<void>;
+}> = ({ part, tintClassName, onApply, onDismiss, planNodeState, onApplyPlanNode, onSavePlanGoal, onApplyPlanEdges, onSolvePlanNode, onRunPlanNode }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [edgeBusy, setEdgeBusy] = useState<string | null>(null);
@@ -261,20 +333,54 @@ export const AgentReviewCard: React.FC<{
         // text preview for pending plans; no generated code ever renders here
         // (plans are content-free by contract).
         <ul className={styles.planNodes} aria-label="Planned nodes">
-          {part.plan.nodes.map((node) => (
-            <PlanNodeRow
-              key={node.ref}
-              node={node}
-              applied={(planNodeState?.appliedRefs ?? []).includes(node.ref)}
-              goal={planNodeState?.editedGoals?.[node.ref] ?? node.intent}
-              onApply={() => onApplyPlanNode(part.proposalId, node.ref)}
-              onSaveGoal={(goal) =>
-                onSavePlanGoal
-                  ? onSavePlanGoal(part.proposalId, node.ref, goal)
-                  : Promise.resolve()
-              }
-            />
-          ))}
+          {part.plan.nodes.map((node) => {
+            // dev/71: readiness from the ledgers the mirror already carries.
+            const planEdges = part.plan!.edges ?? [];
+            const nodeStates = planNodeState?.nodeStates ?? {};
+            const edgeStates = planNodeState?.edgeStates ?? {};
+            const planRefSet = new Set(part.plan!.nodes.map((n) => n.ref));
+            const incoming = planEdges
+              .map((edge, index) => ({ ...edge, index }))
+              .filter((edge) => edge.to === node.ref);
+            const deps = incoming.map((edge) => edge.fromLabel);
+            const applied = (planNodeState?.appliedRefs ?? []).includes(node.ref);
+            const state = nodeStates[node.ref] ?? (applied ? "created" : "planned");
+            const disconnected = incoming.filter(
+              (edge) => edgeStates[String(edge.index)] !== "applied",
+            );
+            const unsolvedUpstream = incoming.filter(
+              (edge) => planRefSet.has(edge.from) && nodeStates[edge.from] !== "approved",
+            );
+            const solvable =
+              applied && disconnected.length === 0 && unsolvedUpstream.length === 0;
+            const solveBlocker = !applied
+              ? null
+              : disconnected.length
+                ? `needs '${disconnected[0].fromLabel}' connected first`
+                : unsolvedUpstream.length
+                  ? `needs '${unsolvedUpstream[0].fromLabel}' solved first`
+                  : null;
+            return (
+              <PlanNodeRow
+                key={node.ref}
+                node={node}
+                applied={applied}
+                goal={planNodeState?.editedGoals?.[node.ref] ?? node.intent}
+                deps={deps}
+                state={state}
+                solvable={solvable}
+                solveBlocker={solveBlocker}
+                onApply={() => onApplyPlanNode(part.proposalId, node.ref)}
+                onSaveGoal={(goal) =>
+                  onSavePlanGoal
+                    ? onSavePlanGoal(part.proposalId, node.ref, goal)
+                    : Promise.resolve()
+                }
+                onSolve={onSolvePlanNode ? () => onSolvePlanNode(node.ref) : undefined}
+                onRun={onRunPlanNode ? () => onRunPlanNode(node.ref) : undefined}
+              />
+            );
+          })}
         </ul>
       ) : (
         <div className={styles.preview}>{part.preview}</div>

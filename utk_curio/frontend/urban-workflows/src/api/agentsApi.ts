@@ -334,6 +334,19 @@ export interface AgentPlanNodeApplyResult {
   /** The created node, for the canvas bridge (absent on already-applied). */
   createdNode?: AgentCreatedNodePayload;
   appliedRefs: string[];
+  /** dev/71: edges the progressive sweep drew in THIS apply (bridge payload). */
+  createdEdges?: Array<{
+    id: string;
+    source: string;
+    target: string;
+    sourceHandle?: string;
+    targetHandle?: string;
+  }>;
+  /** dev/71: the sweep's per-edge outcomes (index-keyed; refusals named). */
+  edgeResults?: Record<string, { status: string; reason?: string; fromLabel?: string; toLabel?: string }>;
+  edgeStates?: Record<string, string>;
+  /** dev/71: the auto-attached Node Builder's attachment id (null = skipped). */
+  attachedAgentId?: string | null;
   builderSession?: AgentBuilderSession | null;
 }
 
@@ -993,6 +1006,35 @@ export const agentsApi = {
       signal,
     );
     if (result === null) throw new Error("simulation ended without a result");
+    return result;
+  },
+
+  /**
+   * Run the dataflow THROUGH one node (dev/71): the saved content executes
+   * through its upstream chain; results journal as real runs (readable by
+   * agents via node.runtime.read). Streams `run_started`/`node_executed`;
+   * resolves with the `done` report {ok, order, nodes, blocker, error}.
+   */
+  async runNode(
+    projectId: string,
+    attachmentId: string,
+    target: { ref?: string; nodeId?: string },
+    onEvent: (name: string, payload: Record<string, unknown>) => void,
+    signal?: AbortSignal,
+  ): Promise<Record<string, unknown>> {
+    let result: Record<string, unknown> | null = null;
+    await postSseStream(
+      `/api/agents/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}/run-node`,
+      target,
+      (event, payload) => {
+        if (event === "done") result = payload;
+        else if (event === "error")
+          throw new Error((payload as { error?: string }).error || "the run failed");
+        else onEvent(event, payload);
+      },
+      signal,
+    );
+    if (result === null) throw new Error("the run ended without a result");
     return result;
   },
 

@@ -427,3 +427,89 @@ describe("AgentReviewCard — dev/67-8 connection review stage", () => {
     await waitFor(() => expect(onApplyPlanEdges).toHaveBeenCalledWith("p8", undefined));
   });
 });
+
+describe("AgentReviewCard — dev/71 progressive lifecycle rows", () => {
+  const progressivePlan = (): AgentProposalPart => ({
+    type: "proposal",
+    proposalId: "p9",
+    tool: "dataflow.plan.write",
+    summary: "Apply plan · 2 nodes, 1 edges",
+    preview: "…",
+    pins: { baseGraphDigest: "abc" },
+    status: "pending",
+    plan: {
+      goal: "g",
+      nodes: [
+        { ref: "a", nodeType: "t", title: "Load", intent: "load" },
+        { ref: "b", nodeType: "t", title: "Analyze", intent: "crunch" },
+      ],
+      edgeCount: 1,
+      edges: [{ from: "a", to: "b", fromLabel: "Load", toLabel: "Analyze" }],
+    },
+  });
+
+  const renderRows = (state: {
+    appliedRefs: string[];
+    nodeStates?: Record<string, string>;
+    edgeStates?: Record<string, string>;
+  }, handlers: { onSolve?: jest.Mock; onRun?: jest.Mock } = {}) =>
+    render(
+      <AgentReviewCard
+        part={progressivePlan()}
+        onApplyPlanNode={jest.fn()}
+        onSolvePlanNode={handlers.onSolve ?? jest.fn()}
+        onRunPlanNode={handlers.onRun ?? jest.fn()}
+        planNodeState={{ editedGoals: {}, ...state }}
+      />,
+    );
+
+  it("rows name their dependencies", () => {
+    renderRows({ appliedRefs: [] });
+    expect(screen.getByText("needs: Load")).toBeInTheDocument();
+  });
+
+  it("Solve gates on connected + solved dependencies, with the blocker named", () => {
+    // b created but the edge not applied → disabled, names the connection.
+    renderRows({
+      appliedRefs: ["a", "b"],
+      nodeStates: { a: "created", b: "created" },
+      edgeStates: {},
+    });
+    const solveB = screen.getByRole("button", { name: "Solve node Analyze" });
+    expect(solveB).toBeDisabled();
+    expect(solveB).toHaveAttribute("title", "needs 'Load' connected first");
+  });
+
+  it("Solve enables when the edge is applied and upstream is approved", async () => {
+    const onSolve = jest.fn().mockResolvedValue(undefined);
+    renderRows(
+      {
+        appliedRefs: ["a", "b"],
+        nodeStates: { a: "approved", b: "created" },
+        edgeStates: { "0": "applied" },
+      },
+      { onSolve },
+    );
+    const solveB = screen.getByRole("button", { name: "Solve node Analyze" });
+    expect(solveB).toBeEnabled();
+    fireEvent.click(solveB);
+    await waitFor(() => expect(onSolve).toHaveBeenCalledWith("b"));
+    // Upstream approved rows show Run, not Solve.
+    expect(screen.queryByRole("button", { name: "Solve node Load" })).toBeNull();
+    expect(screen.getByText("Solved ✓")).toBeInTheDocument();
+  });
+
+  it("Run appears on approved rows and targets the ref", async () => {
+    const onRun = jest.fn().mockResolvedValue(undefined);
+    renderRows(
+      {
+        appliedRefs: ["a", "b"],
+        nodeStates: { a: "approved", b: "approved" },
+        edgeStates: { "0": "applied" },
+      },
+      { onRun },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Run through node Analyze" }));
+    await waitFor(() => expect(onRun).toHaveBeenCalledWith("b"));
+  });
+});

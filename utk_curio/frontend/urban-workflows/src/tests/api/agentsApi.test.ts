@@ -344,6 +344,25 @@ describe("agentsApi", () => {
 
 
 
+
+    it("runNode streams the chain and resolves with the report (dev/71)", async () => {
+      global.fetch = jest.fn().mockResolvedValue(
+        streamResponse([
+          'event: run_started\ndata: {"nodeId": "n1", "executionId": "e1"}\n\n',
+          'event: node_executed\ndata: {"nodeId": "up1", "index": 0, "total": 2}\n\n',
+          'event: done\ndata: {"nodeId": "n1", "ok": true, "order": ["up1", "n1"], "nodes": {}}\n\n',
+        ]),
+      );
+      const seen: string[] = [];
+      const result = await agentsApi.runNode("p1", "att-1", { ref: "rb" }, (n) => seen.push(n));
+      expect(seen).toEqual(["run_started", "node_executed"]);
+      expect(result).toMatchObject({ ok: true, order: ["up1", "n1"] });
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("/attachments/att-1/run-node"),
+        expect.objectContaining({ method: "POST", body: JSON.stringify({ ref: "rb" }) }),
+      );
+    });
+
     it("simulate streams driver events and resolves on done (dev/67-9)", async () => {
       global.fetch = jest.fn().mockResolvedValue(
         streamResponse([
