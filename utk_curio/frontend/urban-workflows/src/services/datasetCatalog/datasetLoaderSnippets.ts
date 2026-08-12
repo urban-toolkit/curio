@@ -107,11 +107,25 @@ function snippetForFormat(format: DatasetFormat, path: string): DatasetLoaderSni
     };
   }
   if (format === "json") {
+    // Computed dict/list outputs (e.g. autk-grammar pool wrappers) are persisted
+    // zlib-compressed (`.json.zlib`) while user-imported `.json` files are plain
+    // text — both carry `format: json`. Read binary and try zlib first; a plain
+    // JSON document never decompresses as zlib, so the fallback is safe (kept in
+    // lockstep with the backend `loader_snippet` json branch).
     return {
       language: "python",
-      imports: ["import json"],
+      imports: ["import json", "import zlib"],
       pathVariable: "dataset_path",
-      code: `dataset_path = ${JSON.stringify(path)}\nwith open(dataset_path) as f:\n    data = json.load(f)`,
+      code: [
+        `dataset_path = ${JSON.stringify(path)}`,
+        'with open(dataset_path, "rb") as f:',
+        "    _raw = f.read()",
+        "try:",
+        "    _raw = zlib.decompress(_raw)",
+        "except zlib.error:",
+        "    pass  # plain .json — bytes are already the document",
+        'data = json.loads(_raw.decode("utf-8"))',
+      ].join("\n"),
       returnVariable: "data",
     };
   }
