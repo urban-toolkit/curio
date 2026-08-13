@@ -333,6 +333,16 @@
 }
 
 /* ── transcript: grouped surface with bubbles / agent rows ── */
+/* Positioning context for the Jump-to-latest overlay (memo dev/75): the pill
+   anchors to this box, not the scroller, so it doesn't scroll with content. */
+.messagesWrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .messages {
   flex: 1;
   /* A flex child won't shrink below its content without this, so the
@@ -344,6 +354,12 @@
   flex-direction: column;
   gap: 10px;
   background: #f7f7f8;
+}
+
+/* Programmatically focusable (tabindex="-1") as the Jump pill's focus
+   fallback — no visible ring for that non-interactive focus. */
+.messages:focus {
+  outline: none;
 }
 
 .msgUser {

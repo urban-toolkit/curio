@@ -466,3 +466,118 @@ describe("AgentChatPanel delegation entries (memo dev/72)", () => {
     ).toBeNull();
   });
 });
+
+describe("AgentChatPanel follow-at-bottom auto-scroll (memo dev/75)", () => {
+  const BOTTOM = 700; // mocked scrollHeight 1000 − clientHeight 300
+
+  /** jsdom does no layout — stub the transcript's scroll geometry. */
+  function mockGeometry(el: HTMLElement) {
+    let scrollTop = 0;
+    Object.defineProperty(el, "scrollHeight", { configurable: true, get: () => 1000 });
+    Object.defineProperty(el, "clientHeight", { configurable: true, get: () => 300 });
+    Object.defineProperty(el, "scrollTop", {
+      configurable: true,
+      get: () => scrollTop,
+      set: (v: number) => {
+        scrollTop = v;
+      },
+    });
+    (el as HTMLElement & { scrollTo: (opts: ScrollToOptions) => void }).scrollTo = (
+      opts: ScrollToOptions,
+    ) => {
+      scrollTop = opts.top ?? 0;
+    };
+  }
+
+  function renderWithTranscript(
+    overrides: Partial<React.ComponentProps<typeof AgentChatPanel>> = {},
+  ) {
+    const utils = renderPanel({
+      turns: [
+        { role: "user", text: "q1" },
+        { role: "agent", text: "streaming…" },
+      ],
+      ...overrides,
+    });
+    const transcript = utils.container.querySelector(".messages") as HTMLDivElement;
+    mockGeometry(transcript);
+    return { ...utils, transcript };
+  }
+
+  const userScroll = (el: HTMLElement, top: number) => {
+    el.scrollTop = top;
+    fireEvent.scroll(el);
+  };
+
+  it("no Jump-to-latest pill while the user is at the bottom", () => {
+    renderWithTranscript();
+    expect(
+      screen.queryByRole("button", { name: /jump to latest/i }),
+    ).toBeNull();
+  });
+
+  it("a streamed turn replacement while scrolled up never moves the transcript (regression)", () => {
+    const { transcript, rerender, props } = renderWithTranscript();
+    userScroll(transcript, 100);
+    expect(
+      screen.getByRole("button", { name: /jump to latest/i }),
+    ).toBeInTheDocument();
+
+    // The streaming shape: a new turns array with the last turn replaced.
+    rerender(
+      <AgentChatPanel
+        {...props}
+        turns={[
+          { role: "user", text: "q1" },
+          { role: "agent", text: "streaming… plus another chunk" },
+        ]}
+      />,
+    );
+    expect(transcript.scrollTop).toBe(100);
+  });
+
+  it("clicking the pill jumps to the latest message, resumes follow, and hides", () => {
+    const { transcript, rerender, props } = renderWithTranscript();
+    userScroll(transcript, 100);
+    fireEvent.click(screen.getByRole("button", { name: /jump to latest/i }));
+    expect(transcript.scrollTop).toBe(BOTTOM);
+    expect(screen.queryByRole("button", { name: /jump to latest/i })).toBeNull();
+
+    // Follow is re-engaged: the next streamed chunk keeps the view pinned.
+    rerender(
+      <AgentChatPanel
+        {...props}
+        turns={[
+          { role: "user", text: "q1" },
+          { role: "agent", text: "streaming… done" },
+        ]}
+      />,
+    );
+    expect(transcript.scrollTop).toBe(BOTTOM);
+  });
+
+  it("scrolling back to the bottom manually also hides the pill", () => {
+    const { transcript } = renderWithTranscript();
+    userScroll(transcript, 100);
+    expect(
+      screen.getByRole("button", { name: /jump to latest/i }),
+    ).toBeInTheDocument();
+    userScroll(transcript, BOTTOM);
+    expect(screen.queryByRole("button", { name: /jump to latest/i })).toBeNull();
+  });
+
+  it("sending a message re-pins to the bottom even when scrolled up", async () => {
+    const onSend = jest.fn().mockResolvedValue(undefined);
+    const { transcript } = renderWithTranscript({ onSend });
+    userScroll(transcript, 100);
+    fireEvent.change(screen.getByPlaceholderText(/message this agent/i), {
+      target: { value: "follow up" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    });
+    expect(onSend).toHaveBeenCalledWith("follow up");
+    expect(transcript.scrollTop).toBe(BOTTOM);
+    expect(screen.queryByRole("button", { name: /jump to latest/i })).toBeNull();
+  });
+});

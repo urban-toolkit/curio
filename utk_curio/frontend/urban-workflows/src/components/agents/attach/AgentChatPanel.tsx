@@ -27,6 +27,8 @@ import { AgentDatasetCandidatesCard } from "../content/AgentDatasetCandidatesCar
 import { AgentDelegationEntry } from "../content/AgentDelegationEntry";
 import { AgentReviewCard } from "../content/AgentReviewCard";
 import { SafeAgentContent } from "../content/SafeAgentContent";
+import { TranscriptJumpButton } from "../../TranscriptJumpButton";
+import { useTranscriptAutoScroll } from "../../../hook/useTranscriptAutoScroll";
 import styles from "./AgentChatPanel.module.css";
 
 /** Heuristic: prompts longer than this get the clamp + expand toggle. */
@@ -152,7 +154,21 @@ export const AgentChatPanel: React.FC<{
   const wasEditingTitle = useRef(false);
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const titleButtonRef = useRef<HTMLButtonElement | null>(null);
-  const messagesRef = useRef<HTMLDivElement | null>(null);
+  // Follow-at-bottom auto-scroll (memo dev/75): new turns and streamed chunks
+  // keep the view pinned only while the user is already at the bottom;
+  // scrolling up detaches follow until they return or jump to latest. Opening
+  // a chat (attachment switch, history hydrated) always lands at the newest
+  // turn — this covers delegated-agent chats too (dev/72 reuses this panel).
+  const {
+    containerRef: messagesRef,
+    atBottom,
+    jumpToLatest,
+    pinToLatest,
+  } = useTranscriptAutoScroll({
+    content: turns,
+    resetKey: attachment.attachmentId,
+    ready: !loadingHistory,
+  });
   /** The last value this panel prefilled — so a prefill may replace a prior
    * prefill, but never a draft the user actually typed (memo dev/39). */
   const lastPrefill = useRef("");
@@ -190,12 +206,6 @@ export const AgentChatPanel: React.FC<{
     attachment.target.kind === "canvas"
       ? "canvas"
       : `${attachment.target.kind} ${attachment.target.targetId ?? ""}`.trim();
-
-  // Keep the transcript pinned to the newest turn (also after history hydrates).
-  useEffect(() => {
-    const el = messagesRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [turns, loadingHistory]);
 
   // Escape dismisses the chat (close only — the attachment is untouched);
   // while renaming, Escape cancels the edit instead (handled on the input).
@@ -237,6 +247,9 @@ export const AgentChatPanel: React.FC<{
     const message = input.trim();
     if (!message || sending) return;
     setInput("");
+    // Sending is explicit bottom engagement: the user always sees their own
+    // message land and the reply start, even if they had scrolled up.
+    pinToLatest();
     setSending(true);
     try {
       await onSend(message);
@@ -424,7 +437,11 @@ export const AgentChatPanel: React.FC<{
         />
       ) : null}
 
-      <div className={styles.messages} ref={messagesRef}>
+      {/* position:relative wrapper so the Jump-to-latest pill overlays the
+          scroll area without shifting layout (absolute inside the scroller
+          would scroll away with the content). */}
+      <div className={styles.messagesWrap}>
+      <div className={styles.messages} ref={messagesRef} tabIndex={-1}>
         {/* ⚙ Attachment settings (docs/08 anatomy, memo dev/42): the labeled
             cog sits at the top of the white content area, beneath the DEC-042
             header — never in it. */}
@@ -615,6 +632,12 @@ export const AgentChatPanel: React.FC<{
             {line}
           </div>
         ))}
+      </div>
+      <TranscriptJumpButton
+        visible={!atBottom}
+        onJump={jumpToLatest}
+        focusFallbackRef={messagesRef}
+      />
       </div>
 
       {suggested && suggested.alternatives.length > 0 ? (
