@@ -15,7 +15,6 @@ import { InstalledDatasetsList } from "./InstalledDatasetsList";
 import { TAB_LABEL } from "./datasetCatalogDrawerTypes";
 import { useDatasetCatalogDrawer } from "./useDatasetCatalogDrawer";
 import { PackageSearchRow } from "components/packages/publishing/PackageSearchRow";
-import { SortMode } from "components/packages/publishing/packageTypes";
 import styles from "./DatasetCatalogDrawer.module.css";
 
 export interface DatasetCatalogDrawerProps {
@@ -116,11 +115,17 @@ export const DatasetCatalogDrawer: React.FC<DatasetCatalogDrawerProps> = ({
             closeAriaLabel="Close data catalog drawer"
           />
 
+          {/* Typed with the dataset sort contract ("recent" | "name") — the
+              values the backend actually documents (dev/74). */}
           <PackageSearchRow
             search={search}
-            sort={sort as SortMode}
+            sort={sort}
             onSearchChange={(value) => startUiTransition(() => setSearch(value))}
-            onSortChange={setSort as (value: SortMode) => void}
+            onSortChange={setSort}
+            sortOptions={[
+              { value: "recent", label: "Sort: Recent" },
+              { value: "name", label: "Sort: Name" },
+            ]}
           />
 
           <nav className={tabStyles.tabs} aria-label="Data catalog sections">
