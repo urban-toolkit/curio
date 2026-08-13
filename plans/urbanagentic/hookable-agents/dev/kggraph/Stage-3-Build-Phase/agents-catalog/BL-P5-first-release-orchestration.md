@@ -333,3 +333,35 @@ Build Entry Template and are append-only.
 - Commit/PR: `COMMIT-95f7fc27`, docs commit (this entry + memo flip)
 - Issues/regressions discovered: the activeProposal mirror carries `nodeId` (not `pins`) — test assertion corrected during authoring; nothing else surfaced
 - Follow-up work: the blocking (non-stream) client path reloads attachments only on local proposals — acceptable while the stream is the primary transport, revisit if the fallback path gains weight; consider offering `research.verify` the same runtime-mint treatment for verification-backed content edits
+
+## BL-P5-20260813-18: Agents drawer adopts the shared catalog chrome — search/sort bar + avatar card grid (memo dev/68)
+
+- Date / author: 2026-08-13 / Karla
+- Status: verified
+- Requirements: the owner's directive — match the approved concept (`png-concepts/01`/`02`): add the search bar and sort dropdown using the same components/styling/behavior as the Datasets and Node Packages drawers, left-align category avatars in each row on the shared row structure, reuse existing chrome instead of Agents-specific variants, preserve all agent-specific content/actions, keep the change scoped to the drawer UI
+- Design decisions/artifacts: memo `dev/68`
+- Tasks: `TASK-P5-agents-drawer-chrome`
+- Risks/questions: `AgentCard` carries no creation timestamp — resolved: "Sort: New" is defined as the server roster order (documented in `agentListUtils`), "Sort: Name" shares the `sortPackages` comparator; the concept's category filter-chip row deliberately excluded (no sibling drawer has one — feature, not chrome)
+- Design-to-code decision or deviation: **(1) Shared bar, not a fork** — `PackageSearchRow` gains optional `placeholder`/`sortAriaLabel` (defaults = today's strings, so Datasets/Nodes render byte-identically); Agents passes "Search agents, hooks, keywords..." / "Sort agents". **(2) View-state only** — search/sort are local `useState` + `useMemo` over the untouched `useAgentsCatalogDrawer` per-scope cache (dev/47 race guard/SWR intact); client-side like the Nodes drawer, no debounce (no server round-trip). **(3) Row grid reuse** — `AgentRow` moved onto `PackageCard.module.css` (accent | avatar | body | action), the exact pattern DatasetCard uses; category-tinted robot avatar keyed by the existing `agentCategoryKey`; light-surface tints added to the agents module (palette hues); ~100 lines of duplicated card/button/tag CSS deleted. **(4) Hierarchy** — reordered to header → subtitle → search/sort → tabs → list → footer per the concept; search-empty vs scope-empty messages distinguished.
+- Files/modules changed: frontend `components/agents/catalog/{AgentsCatalogDrawer.tsx,AgentsCatalogDrawer.module.css,agentListUtils.ts (new)}`, `components/packages/publishing/PackageSearchRow.tsx`
+- Tests added/updated: `agentListUtils` unit suite (8: field coverage, case/trim, empty query, name/new sort semantics, copy-not-mutate); drawer suite +6 (filter + clear, search-specific empty message, DOM-order name sort + roster-order default, query persists across scope tabs, per-row tinted avatar aria-hidden); existing 22 drawer tests pass unmodified
+- Verification evidence: frontend `npx jest` full → 788 passed (5 consecutive runs); `tsc --noEmit` clean (two pre-existing tsconfig deprecation notices only)
+- Commit/PR: `COMMIT-77bd7ed8`, docs commit (this entry + memo)
+- Issues/regressions discovered: the Datasets drawer's sort select was found force-casting `DatasetSortMode` into the package options — fixed immediately after as dev/74 (next entry)
+- Follow-up work: dataset-flavored search placeholder/aria copy inside the Data Catalog drawer (now trivial via the new props); panel width 560px vs the siblings' 520px; skeleton loaders + tab count badges for the Agents drawer
+
+## BL-P5-20260813-19: PackageSearchRow typed sortOptions — Data Catalog sort select on the dataset contract (memo dev/74)
+
+- Date / author: 2026-08-13 / Karla
+- Status: verified
+- Requirements: the owner's directive — fix the pre-existing bug surfaced during dev/68: the Data Catalog drawer's sort state (`"recent" | "name"`) was cast into `PackageSearchRow`'s hardcoded `"new"`/`"name"` options, so the default matched no option (blank select) and "Sort: New" sent `?sort=new`, which the backend handles only through its silent non-"name" fallback branch
+- Design decisions/artifacts: memo `dev/74`
+- Tasks: `TASK-P5-dataset-sort-contract`
+- Risks/questions: rename the dataset vocabulary to "new" instead? — rejected: `"recent"` is used consistently across palette context, providers, UpMenu, DatasetsPaletteDropdown, hooks, API and backend (10+ files); the UI adapts to the domain, not vice versa
+- Design-to-code decision or deviation: `PackageSearchRow` becomes generic (`<S extends string = SortMode>`) with optional `sortOptions` defaulting to the package pair — Nodes/Agents compile and render unchanged; the Data Catalog drawer passes `recent`/`name` options labeled "Sort: Recent"/"Sort: Name" (recency wording matches the browse page and the backend's updatedAt semantics) and both `as` casts are deleted, so only backend-documented wire values can reach `?sort=`
+- Files/modules changed: frontend `components/packages/publishing/PackageSearchRow.tsx`, `components/datasets/catalog/DatasetCatalogDrawer.tsx`
+- Tests added/updated: new `PackageSearchRow` suite (4: default options/copy regression for Nodes/Agents; custom options with a matching non-blank default selection; custom-vocabulary change round-trip; search forwarding + dev/68 copy overrides)
+- Verification evidence: frontend `npx jest` full → 788 passed; `tsc --noEmit` clean (two pre-existing tsconfig deprecation notices only)
+- Commit/PR: `COMMIT-400d7a09`, docs commit (this entry + memo)
+- Issues/regressions discovered: none beyond the target bug
+- Follow-up work: consider surfacing the backend's accepted sort values as a shared constant if a third sort consumer appears
