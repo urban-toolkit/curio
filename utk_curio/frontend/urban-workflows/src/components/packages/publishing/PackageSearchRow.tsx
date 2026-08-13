@@ -9,6 +9,9 @@ export interface PackageSearchRowProps {
   sort: SortMode;
   onSearchChange: (value: string) => void;
   onSortChange: (value: SortMode) => void;
+  /** Catalog-flavored copy; defaults keep the package/dataset drawer strings. */
+  placeholder?: string;
+  sortAriaLabel?: string;
 }
 
 /** Search input + sort select bar rendered below the drawer subtitle. */
@@ -17,6 +20,8 @@ export const PackageSearchRow: React.FC<PackageSearchRowProps> = ({
   sort,
   onSearchChange,
   onSortChange,
+  placeholder = "Search packages, authors, keywords...",
+  sortAriaLabel = "Sort packages",
 }) => (
   <div className={styles.searchRow}>
     <div className={styles.searchWrap}>
@@ -24,7 +29,7 @@ export const PackageSearchRow: React.FC<PackageSearchRowProps> = ({
       <input
         className={styles.searchInput}
         type="search"
-        placeholder="Search packages, authors, keywords..."
+        placeholder={placeholder}
         value={search}
         onChange={(e) => onSearchChange(e.target.value)}
       />
@@ -32,7 +37,7 @@ export const PackageSearchRow: React.FC<PackageSearchRowProps> = ({
     <select
       className={styles.sortSelect}
       value={sort}
-      aria-label="Sort packages"
+      aria-label={sortAriaLabel}
       onChange={(e) => onSortChange(e.target.value as SortMode)}
     >
       <option value="new">Sort: New</option>
@@ -40,4 +45,3 @@ export const PackageSearchRow: React.FC<PackageSearchRowProps> = ({
     </select>
   </div>
 );
-

@@ -1,12 +1,17 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faGear, faRobot, faThumbtack } from "@fortawesome/free-solid-svg-icons";
 import type { AgentCard } from "../../../api/agentsApi";
 import { AgentSettingsModal } from "../settings/AgentSettingsModal";
 import { AgentImportModal } from "./AgentImportModal";
 import { CatalogPublishPill } from "../../packages/CatalogPublishPill";
+import { PackageSearchRow } from "../../packages/publishing/PackageSearchRow";
+import { SortMode } from "../../packages/publishing/packageTypes";
+import { agentCategoryKey } from "../../menus/nodes/agentsPalette/agentCategoryStyle";
 import tabStyles from "../../packages/publishing/DrawerTabs.module.css";
+import cardStyles from "../../packages/publishing/PackageCard.module.css";
 import styles from "./AgentsCatalogDrawer.module.css";
+import { matchesAgentSearch, sortAgentCards } from "./agentListUtils";
 import { AgentScope, useAgentsCatalogDrawer } from "./useAgentsCatalogDrawer";
 
 export interface AgentsCatalogDrawerProps {
@@ -37,9 +42,11 @@ const SUBTITLE: Record<AgentScope, string> = {
 };
 
 /**
- * Three-scope Agents Catalog drawer (the Agents Roster). Reuses the DrawerTabs
- * tab styling and the shared CatalogPublishPill so agents match the Data / Node
- * catalog drawers. Data + lifecycle live in ``useAgentsCatalogDrawer``.
+ * Three-scope Agents Catalog drawer (the Agents Roster). Reuses the shared
+ * catalog chrome — DrawerTabs tab styling, PackageSearchRow (search + sort),
+ * the PackageCard row grid with a category-tinted avatar, and the
+ * CatalogPublishPill — so agents match the Data / Node catalog drawers
+ * (dev/68). Data + lifecycle live in ``useAgentsCatalogDrawer``.
  *
  * Per DEC-042 (dev/21) the static dark roster header carries the **Pin button
  * only** — no Close, no agent identity, no agent-cycling controls. Dismissal is
@@ -62,6 +69,15 @@ export const AgentsCatalogDrawer: React.FC<AgentsCatalogDrawerProps> = ({
   const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
   // Upload-import (dev/36), opened from the footer's Import package button.
   const [importOpen, setImportOpen] = useState(false);
+  // Search/sort are pure view state over the hook's per-scope cache (dev/68) —
+  // client-side like the Node Catalog drawer, persisting across scope tabs.
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<SortMode>("new");
+
+  const visibleCards = useMemo(
+    () => sortAgentCards(c.cards.filter((card) => matchesAgentSearch(card, search)), sort),
+    [c.cards, search, sort],
+  );
 
   useEffect(() => {
     if (!presented) return;
@@ -126,6 +142,19 @@ export const AgentsCatalogDrawer: React.FC<AgentsCatalogDrawerProps> = ({
         </button>
       </div>
 
+      <p className={styles.subtitle}>{SUBTITLE[c.scope]}</p>
+
+      {/* Shared catalog search/sort bar (dev/68) — the same component, order
+          and geometry as the Data/Node catalog drawers, per the concept. */}
+      <PackageSearchRow
+        search={search}
+        sort={sort}
+        onSearchChange={setSearch}
+        onSortChange={setSort}
+        placeholder="Search agents, hooks, keywords..."
+        sortAriaLabel="Sort agents"
+      />
+
       <nav className={tabStyles.tabs} aria-label="Agent catalog scopes">
         {SCOPES.map((s) => (
           <button
@@ -140,17 +169,19 @@ export const AgentsCatalogDrawer: React.FC<AgentsCatalogDrawerProps> = ({
         ))}
       </nav>
 
-      <p className={styles.subtitle}>{SUBTITLE[c.scope]}</p>
-
       {c.error ? <p className={styles.error}>{c.error}</p> : null}
 
       {c.loading ? (
         <p className={styles.empty}>Loading…</p>
-      ) : c.cards.length === 0 ? (
-        <p className={styles.empty}>No agents in this scope yet.</p>
+      ) : visibleCards.length === 0 ? (
+        <p className={styles.empty}>
+          {c.cards.length > 0
+            ? "No agents match your search."
+            : "No agents in this scope yet."}
+        </p>
       ) : (
         <div className={styles.list}>
-          {c.cards.map((card) => (
+          {visibleCards.map((card) => (
             <AgentRow
               key={card.dirName}
               card={card}
@@ -203,21 +234,36 @@ const AgentRow: React.FC<{
   onOpenSettings: () => void;
 }> = ({ card, scope, state, hasProject, onOpenSettings }) => {
   const busy = state.busyCoord === card.dirName;
+  // Shared catalog card grid (accent | avatar | body | action) with the
+  // category-tinted robot avatar left-aligned, matching the Data/Node rows
+  // and the approved concept (dev/68).
+  const categoryKey = agentCategoryKey(card.category);
+  const accentClass = styles[`accent_${categoryKey}` as keyof typeof styles] ?? "";
+  const avatarClass = styles[`avatar_${categoryKey}` as keyof typeof styles] ?? "";
   return (
-    <div className={styles.card}>
-      <div className={styles.cardBody}>
-        <div className={styles.cardName}>{card.name}</div>
-        <div className={styles.cardMeta}>{card.purpose || card.capabilities.join(" · ")}</div>
-        <div className={styles.tags}>
-          <span className={styles.tag}>{card.category}</span>
+    <article className={cardStyles.card}>
+      <div className={`${cardStyles.cardAccent} ${accentClass}`} aria-hidden />
+      <div className={`${cardStyles.cardAvatar} ${avatarClass}`} aria-hidden>
+        <FontAwesomeIcon icon={faRobot} className={styles.avatarIcon} />
+      </div>
+
+      <div className={cardStyles.cardBody}>
+        <h3 className={cardStyles.cardTitle}>{card.name}</h3>
+        <div className={cardStyles.cardMetaRow}>
+          <span className={cardStyles.cardMetaText}>
+            {card.purpose || card.capabilities.join(" · ")}
+          </span>
+        </div>
+        <div className={cardStyles.tagRow}>
+          <span className={cardStyles.tag}>{card.category}</span>
           {card.hooks.map((h) => (
-            <span key={h} className={styles.tag}>hook: {h}</span>
+            <span key={h} className={cardStyles.tag}>hook: {h}</span>
           ))}
-          <span className={styles.tag}>v{card.version.split(".")[0]}</span>
+          <span className={cardStyles.versionBadge}>v{card.version.split(".")[0]}</span>
         </div>
       </div>
 
-      <div className={styles.actions}>
+      <div className={cardStyles.cardAction}>
         {/* Per-scope action controls, matching the concept:
             Global → Install (or Uninstall if already in project)
             My Imports → Install + Publish pill + Delete
@@ -227,7 +273,7 @@ const AgentRow: React.FC<{
         {scope === "installed" ? (
           <button
             type="button"
-            className={styles.btnSecondary}
+            className={cardStyles.btnSecondary}
             disabled={!hasProject}
             aria-haspopup="dialog"
             onClick={onOpenSettings}
@@ -238,7 +284,7 @@ const AgentRow: React.FC<{
         {scope === "installed" || card.installedInProject ? (
           <button
             type="button"
-            className={styles.btnSecondary}
+            className={cardStyles.btnSecondary}
             disabled={busy || !hasProject}
             onClick={() => state.uninstall(card.dirName)}
           >
@@ -247,7 +293,7 @@ const AgentRow: React.FC<{
         ) : (
           <button
             type="button"
-            className={styles.btnInstall}
+            className={cardStyles.btnInstall}
             disabled={busy || !hasProject}
             title={hasProject ? undefined : "Open a project to install"}
             onClick={() => state.install(card.dirName)}
@@ -273,7 +319,7 @@ const AgentRow: React.FC<{
             />
             <button
               type="button"
-              className={styles.btnSecondary}
+              className={cardStyles.btnSecondary}
               disabled={busy}
               onClick={() => state.removeImport(card.dirName)}
             >
@@ -285,7 +331,7 @@ const AgentRow: React.FC<{
         {scope === "global" && !card.imported ? (
           <button
             type="button"
-            className={styles.btnSecondary}
+            className={cardStyles.btnSecondary}
             disabled={busy}
             onClick={() => state.importAgent(card.dirName)}
           >
@@ -293,6 +339,6 @@ const AgentRow: React.FC<{
           </button>
         ) : null}
       </div>
-    </div>
+    </article>
   );
 };

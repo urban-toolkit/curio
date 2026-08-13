@@ -120,82 +120,30 @@
   gap: 8px;
 }
 
-.card {
-  display: flex;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--curio-border, #e3e3e6);
-  border-radius: var(--curio-radius-md, 10px);
-  background: #fff;
+/* Card structure/buttons come from the shared PackageCard.module.css grid
+   (accent | avatar | body | action), like DatasetCard (dev/68). Only the
+   agent-specific category tints and the avatar glyph size live here. */
+
+.avatarIcon {
+  font-size: 22px;
 }
 
-.cardBody {
-  flex: 1;
-  min-width: 0;
-}
+/* Category-tinted left accent bars — hues shared with the AGENTS palette and
+   the dataset accents where they coincide (agentCategoryStyle.ts). Unknown
+   categories keep the neutral cardAccent/cardAvatar defaults. */
+.accent_canvas   { background: #f2933f; }
+.accent_data     { background: #4caf72; }
+.accent_node     { background: #5b9bd5; }
+.accent_evaluate { background: #9b7fda; }
+.accent_package  { background: #26c6da; }
 
-.cardName {
-  font-weight: 600;
-  font-size: 13px;
-}
-
-.cardMeta {
-  font-size: 12px;
-  color: var(--curio-text-secondary, #5b5c63);
-  margin-top: 2px;
-}
-
-.tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 6px;
-}
-
-.tag {
-  font-size: 10px;
-  padding: 1px 7px;
-  border-radius: var(--curio-radius-pill, 10px);
-  background: #f2f2f4;
-  border: 1px solid var(--curio-border, #e3e3e6);
-  color: #555;
-}
-
-.actions {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-  min-width: 96px;
-}
-
-.btnInstall {
-  background: var(--curio-top-bar-bg, #1e1f23);
-  color: var(--curio-text-on-dark, #fff);
-  border: none;
-  border-radius: var(--curio-radius-md, 8px);
-  font-weight: 600;
-  font-size: 13px;
-  padding: 5px 12px;
-  cursor: pointer;
-}
-
-.btnSecondary {
-  background: #fff;
-  color: var(--curio-text-primary, #1e1f23);
-  border: 1px solid var(--curio-border-strong, #c7c7cf);
-  border-radius: var(--curio-radius-md, 8px);
-  font-weight: 500;
-  font-size: 12px;
-  padding: 4px 12px;
-  cursor: pointer;
-}
-
-.btnInstall:disabled,
-.btnSecondary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+/* Category-tinted avatars (light surface; !important mirrors the dataset
+   avatar_* overrides of the cardAvatar fallback). */
+.avatar_canvas   { background: #fdeadd !important; color: #b3651c; }
+.avatar_data     { background: #e3f4eb !important; color: #2d7a4f; }
+.avatar_node     { background: #e0eaf8 !important; color: #2a5fa0; }
+.avatar_evaluate { background: #ece4f8 !important; color: #5c3fa0; }
+.avatar_package  { background: #ddf4f6 !important; color: #1a8a9a; }
 
 .empty,
 .error {

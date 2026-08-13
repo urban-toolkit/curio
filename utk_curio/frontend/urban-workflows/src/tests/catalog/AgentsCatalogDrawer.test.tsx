@@ -262,6 +262,72 @@ describe("AgentsCatalogDrawer tab transitions + state sync (memo dev/47)", () =>
     expect(screen.getByText("node-explainer")).toBeInTheDocument();
   });
 
+  it("search filters the visible rows and clearing restores them (dev/68)", async () => {
+    api.catalog.mockResolvedValue({
+      agents: [card("agent.node-explainer"), card("agent.dataset-finder", { category: "data" })],
+    } as any);
+    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    const input = screen.getByPlaceholderText("Search agents, hooks, keywords...");
+    fireEvent.change(input, { target: { value: "explainer" } });
+    expect(screen.getByText("node-explainer")).toBeInTheDocument();
+    expect(screen.queryByText("dataset-finder")).toBeNull();
+    fireEvent.change(input, { target: { value: "" } });
+    expect(screen.getByText("dataset-finder")).toBeInTheDocument();
+  });
+
+  it("a no-match query shows the search-specific empty message (dev/68)", async () => {
+    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    fireEvent.change(screen.getByPlaceholderText("Search agents, hooks, keywords..."), {
+      target: { value: "zzz-no-such-agent" },
+    });
+    expect(screen.getByText("No agents match your search.")).toBeInTheDocument();
+    expect(screen.queryByText("No agents in this scope yet.")).toBeNull();
+  });
+
+  it('"Sort: Name" reorders rows alphabetically; "Sort: New" keeps roster order (dev/68)', async () => {
+    api.catalog.mockResolvedValue({
+      agents: [card("agent.zeta-agent"), card("agent.alpha-agent")],
+    } as any);
+    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText("zeta-agent")).toBeInTheDocument());
+    const names = () =>
+      screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
+    // Default "new" = the server roster order.
+    expect(names()).toEqual(["zeta-agent", "alpha-agent"]);
+    fireEvent.change(screen.getByRole("combobox", { name: "Sort agents" }), {
+      target: { value: "name" },
+    });
+    expect(names()).toEqual(["alpha-agent", "zeta-agent"]);
+  });
+
+  it("the search query persists across scope tab switches (dev/68)", async () => {
+    render(<AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    const input = screen.getByPlaceholderText("Search agents, hooks, keywords...");
+    fireEvent.change(input, { target: { value: "chat" } });
+    fireEvent.click(screen.getByText("My Imports"));
+    await waitFor(() => expect(screen.getByText("chat-agent")).toBeInTheDocument());
+    expect(input).toHaveValue("chat");
+  });
+
+  it("each row leads with the category-tinted robot avatar (dev/68)", async () => {
+    api.catalog.mockResolvedValue({
+      agents: [card("agent.node-explainer"), card("agent.dataset-finder", { category: "data" })],
+    } as any);
+    const { container } = render(
+      <AgentsCatalogDrawer presented projectId="p1" pinned={false} onPinToggle={jest.fn()} />,
+    );
+    await waitFor(() => expect(screen.getByText("node-explainer")).toBeInTheDocument());
+    const avatars = container.querySelectorAll(".cardAvatar");
+    expect(avatars).toHaveLength(2);
+    expect(avatars[0].className).toContain("avatar_node");
+    expect(avatars[1].className).toContain("avatar_data");
+    // Decorative — hidden from the accessibility tree.
+    avatars.forEach((el) => expect(el).toHaveAttribute("aria-hidden"));
+  });
+
   it("out-of-order responses are dropped (race guard)", async () => {
     let resolveSlow: (v: unknown) => void = () => undefined;
     const slow = new Promise((r) => {
