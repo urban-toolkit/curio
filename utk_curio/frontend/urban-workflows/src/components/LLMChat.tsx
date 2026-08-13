@@ -10,6 +10,8 @@ import {
     faArrowUp
 } from "@fortawesome/free-solid-svg-icons";
 import ReactMarkdown from "react-markdown";
+import { TranscriptJumpButton } from "./TranscriptJumpButton";
+import { useTranscriptAutoScroll } from "../hook/useTranscriptAutoScroll";
 import "./LLMChat.css";
 
 const ChatComponent = () => {
@@ -19,6 +21,14 @@ const ChatComponent = () => {
     const [input, setInput] = useState("");
     const [loading, setLoading] = useState(false);
     const [isOpen, setIsOpen] = useState(true);
+    // Follow-at-bottom auto-scroll (memo dev/75): same contract as the agent
+    // chat panels — follow only while the user is at the bottom.
+    const {
+        containerRef: messagesRef,
+        atBottom,
+        jumpToLatest,
+        pinToLatest,
+    } = useTranscriptAutoScroll({ content: messages });
 
     const handleSendMessage = async () => {
         if (!input.trim()) return;
@@ -26,6 +36,8 @@ const ChatComponent = () => {
         const userMessage = { role: "user", text: input };
         setMessages((prev) => [...prev, userMessage]);
         setInput("");
+        // Sending re-engages follow so the user sees their message land.
+        pinToLatest();
         setLoading(true);
 
         try {
@@ -78,14 +90,6 @@ const ChatComponent = () => {
     }
 
     useEffect(() => {
-        let messagesDiv = document.getElementById("messagesDiv");
-
-        if (messagesDiv) {
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        }
-    }, [messages]); // Scrolls when messages update
-
-    useEffect(() => {
         cleanOpenAIChat();
     }, []);
 
@@ -101,15 +105,25 @@ const ChatComponent = () => {
                     <p style={{margin: 0, fontWeight: "bold", marginRight: "10px", color: "#1E1F23", fontFamily: "Rubik", fontSize: "25px"}}>LLM Assistant</p>
                     <FontAwesomeIcon icon={faBroom} style={{cursor: "pointer", fontSize: "20px", color: "#1E1F23"}} title={"Clean chat"} onClick={cleanOpenAIChat} />
                 </div>
-                <div id={"messagesDiv"} style={{overflowY: "auto", height: "100%", width: "100%", padding: "15px"}}>
-                    {messages.map((msg, index) => (
-                        <div key={index} style={{...messagesBackground, ...(msg.role === "user" ? {marginLeft: "auto"} : {})}} className={`mb-2 p-2 rounded ${msg.role === "user" ? "bg-blue-100 text-right" : "bg-gray-200"}`}>
-                            <ReactMarkdown>{msg.text}</ReactMarkdown>
-                            {msg.role != "user" && checkForGoal(msg.text)?
-                                <button style={applyGoalStyle} onClick={() => {applyGoal(msg.text)}}>Apply task</button> : null
-                            }
-                        </div>
-                    ))}
+                {/* position:relative wrapper anchors the Jump-to-latest pill
+                    to the scroll area instead of the scrolling content. */}
+                <div style={{position: "relative", flex: "1 1 auto", minHeight: 0, width: "100%"}}>
+                    <div ref={messagesRef} tabIndex={-1} style={{overflowY: "auto", height: "100%", width: "100%", padding: "15px", outline: "none"}}>
+                        {messages.map((msg, index) => (
+                            <div key={index} style={{...messagesBackground, ...(msg.role === "user" ? {marginLeft: "auto"} : {})}} className={`mb-2 p-2 rounded ${msg.role === "user" ? "bg-blue-100 text-right" : "bg-gray-200"}`}>
+                                <ReactMarkdown>{msg.text}</ReactMarkdown>
+                                {msg.role != "user" && checkForGoal(msg.text)?
+                                    <button style={applyGoalStyle} onClick={() => {applyGoal(msg.text)}}>Apply task</button>
+                                    : null
+                                }
+                            </div>
+                        ))}
+                    </div>
+                    <TranscriptJumpButton
+                        visible={!atBottom}
+                        onJump={jumpToLatest}
+                        focusFallbackRef={messagesRef}
+                    />
                 </div>
                 <div style={inputDiv}>
                     <input
