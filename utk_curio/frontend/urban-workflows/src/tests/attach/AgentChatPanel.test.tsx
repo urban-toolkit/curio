@@ -60,6 +60,55 @@ describe("AgentChatPanel", () => {
     );
   });
 
+  // ── Multiline composer (memo dev/77): Enter sends, Shift+Enter stays a
+  //    newline, pasted/typed line breaks reach onSend intact. ──
+
+  it("Enter sends the message with interior newlines preserved", async () => {
+    const onSend = jest.fn().mockResolvedValue(undefined);
+    renderPanel({ onSend });
+    const composer = screen.getByPlaceholderText(/message this agent/i);
+    // jsdom's paste-equivalent: the value lands with its \n intact.
+    fireEvent.change(composer, { target: { value: "line1\n\nline3\n" } });
+    fireEvent.keyDown(composer, { key: "Enter" });
+    expect(onSend).toHaveBeenCalledWith("line1\n\nline3");
+    await waitFor(() => expect(composer).toHaveValue(""));
+  });
+
+  it("Shift+Enter does not send", () => {
+    const onSend = jest.fn().mockResolvedValue(undefined);
+    renderPanel({ onSend });
+    const composer = screen.getByPlaceholderText(/message this agent/i);
+    fireEvent.change(composer, { target: { value: "draft" } });
+    fireEvent.keyDown(composer, { key: "Enter", shiftKey: true });
+    expect(onSend).not.toHaveBeenCalled();
+    expect(composer).toHaveValue("draft");
+  });
+
+  it("Enter during an IME composition does not send", () => {
+    const onSend = jest.fn().mockResolvedValue(undefined);
+    renderPanel({ onSend });
+    const composer = screen.getByPlaceholderText(/message this agent/i);
+    fireEvent.change(composer, { target: { value: "変換中" } });
+    fireEvent.keyDown(composer, { key: "Enter", isComposing: true });
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("whitespace/newline-only input never sends", () => {
+    const onSend = jest.fn().mockResolvedValue(undefined);
+    renderPanel({ onSend });
+    const composer = screen.getByPlaceholderText(/message this agent/i);
+    fireEvent.change(composer, { target: { value: " \n \n " } });
+    fireEvent.keyDown(composer, { key: "Enter" });
+    expect(onSend).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+  });
+
+  it("a user turn containing newlines keeps them in the transcript text", () => {
+    renderPanel({ turns: [{ role: "user", text: "first\nsecond" }] });
+    const bubble = screen.getByText((_, el) => el?.textContent === "first\nsecond");
+    expect(bubble.className).toMatch(/msgUser/);
+  });
+
   it("renders provided turns: user bubble, agent row, error tone", () => {
     renderPanel({
       turns: [
