@@ -27,8 +27,8 @@ import { AgentDatasetCandidatesCard } from "../content/AgentDatasetCandidatesCar
 import { AgentDelegationEntry } from "../content/AgentDelegationEntry";
 import { AgentReviewCard } from "../content/AgentReviewCard";
 import { SafeAgentContent } from "../content/SafeAgentContent";
-import { TranscriptJumpButton } from "../../TranscriptJumpButton";
-import { useTranscriptAutoScroll } from "../../../hook/useTranscriptAutoScroll";
+import { TranscriptJumpButton } from "./TranscriptJumpButton";
+import { useTranscriptAutoScroll } from "./useTranscriptAutoScroll";
 import { useAutoGrowTextarea } from "./useAutoGrowTextarea";
 import styles from "./AgentChatPanel.module.css";
 

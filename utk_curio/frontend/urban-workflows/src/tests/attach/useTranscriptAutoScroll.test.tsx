@@ -1,6 +1,6 @@
 import React from "react";
 import { render, fireEvent } from "@testing-library/react";
-import { useTranscriptAutoScroll } from "../../hook/useTranscriptAutoScroll";
+import { useTranscriptAutoScroll } from "../../components/agents/attach/useTranscriptAutoScroll";
 
 /** Exercises the hook against a real scrollable div with mocked geometry
  * (jsdom does no layout, so scrollHeight/clientHeight/scrollTop are stubbed).
