@@ -446,7 +446,9 @@
 .footer {
   display: flex;
   gap: 8px;
-  align-items: center;
+  /* Bottom-anchored so the send button stays beside the last line as the
+     multiline composer grows (memo dev/77). */
+  align-items: flex-end;
   padding: 12px 16px;
   background: var(--curio-card-bg, #fff);
   border-top: 1px solid #ececee;
@@ -457,10 +459,18 @@
   min-width: 0;
   padding: 9px 14px;
   border: 1px solid #ececee;
-  border-radius: 999px;
+  /* Half the one-row height: renders as the same pill at a single line, a
+     rounded rectangle once the textarea grows — never a distorted stadium. */
+  border-radius: 18px;
   font-size: 12.5px;
+  font-family: inherit;
+  line-height: 1.45;
   background: #f7f7f8;
   color: var(--curio-text-primary, #1e1f23);
+  /* Growth is content-driven (useAutoGrowTextarea) — no manual drag handle,
+     no scrollbar until the height cap is reached. */
+  resize: none;
+  overflow-y: hidden;
 }
 
 .input:focus {

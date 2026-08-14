@@ -29,6 +29,7 @@ import { AgentReviewCard } from "../content/AgentReviewCard";
 import { SafeAgentContent } from "../content/SafeAgentContent";
 import { TranscriptJumpButton } from "../../TranscriptJumpButton";
 import { useTranscriptAutoScroll } from "../../../hook/useTranscriptAutoScroll";
+import { useAutoGrowTextarea } from "./useAutoGrowTextarea";
 import styles from "./AgentChatPanel.module.css";
 
 /** Heuristic: prompts longer than this get the clamp + expand toggle. */
@@ -172,6 +173,13 @@ export const AgentChatPanel: React.FC<{
   /** The last value this panel prefilled — so a prefill may replace a prior
    * prefill, but never a draft the user actually typed (memo dev/39). */
   const lastPrefill = useRef("");
+  // Multiline composer (memo dev/77): one-row pill that grows with content up
+  // to ~6 rows, then scrolls internally. Keyed on `input`, so prefills and the
+  // post-send reset re-measure too.
+  const { textareaRef: composerRef } = useAutoGrowTextarea({
+    value: input,
+    maxHeightPx: 120,
+  });
 
   // SUGGESTED PROMPTS (memo dev/39, docs/08): only the newest turn's part
   // counts — once the user replies, earlier follow-ups are stale noise.
@@ -658,13 +666,18 @@ export const AgentChatPanel: React.FC<{
       ) : null}
 
       <div className={styles.footer}>
-        <input
+        {/* Enter sends; Shift+Enter falls through to the textarea's native
+            newline. An in-flight IME composition's commit-Enter never sends. */}
+        <textarea
+          ref={composerRef}
           className={styles.input}
           value={input}
+          rows={1}
+          aria-label="Message this agent"
           placeholder="Message this agent…"
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               send();
             }
