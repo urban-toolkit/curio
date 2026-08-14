@@ -397,3 +397,19 @@ Build Entry Template and are append-only.
 - Commit/PR: `COMMIT-ae57cf42` (hook + unit tests), `COMMIT-5f41d2f6` (composer swap + styles), `COMMIT-2d0ca5ea` (regression tests), docs commit (this entry + memo)
 - Issues/regressions discovered: none; the uncommitted dev/76 import-path edits in `AgentChatPanel.tsx` were deliberately kept out of the dev/77 commits (commit `5f41d2f6` stages HEAD's import paths so its tree builds standalone) and remain unstaged for the dev/76 docs commit — note dev/76 itself is still unlogged in this build log
 - Follow-up work: `LLMChat` still has a single-line input — adopt `useAutoGrowTextarea` there; the intent editor textarea could adopt it as polish
+
+## BL-P5-20260814-22: Transcript scroll contract encapsulated under agents/attach; LLMChat reverted (memo dev/76)
+
+- Date / author: 2026-08-14 / Karla
+- Status: verified
+- Requirements: the owner's directive — move the Jump-to-latest action components into the appropriate `agents/` folder, keep all agent chat-specific behavior and UI encapsulated under `agents/`, move the related hooks/styles/helpers, update imports, reuse shared utilities only when genuinely cross-feature, organizational change only; amended mid-implementation: `LLMChat` must be untouched by the agents-related task
+- Design decisions/artifacts: memo `dev/76`
+- Tasks: `TASK-P5-transcript-scroll-encapsulation`
+- Risks/questions: the dev/75 contract had two consumers (`AgentChatPanel` + `LLMChat`) — initial resolution had `LLMChat` import the agents-owned contract; superseded by the owner's untouched-LLMChat directive, which resolves the tension outright: the contract now has exactly one consumer and no cross-feature import
+- Design-to-code decision or deviation: **(1) History-preserving moves** — `git mv` of `TranscriptJumpButton.{tsx,module.css}` and `useTranscriptAutoScroll.ts` → `components/agents/attach/` (the folder already holding the panel's feature hooks `useAgentAttachments`/`useAgentCanvasMutations`); the hook test → `tests/attach/` (the `agents/attach` test mirror). **(2) LLMChat revert** — the dev/75 adoption (`COMMIT-724ebd3f`) is undone: `LLMChat.tsx` restored byte-identical to its pre-dev/75 content (unconditional `getElementById("messagesDiv")` scroll effect back), `tests/components/LLMChat.test.tsx` deleted; the LLM Assistant deliberately returns to force-scroll-on-update behavior. **(3) Escape hatch recorded** — if a non-agent transcript later wants follow-at-bottom, adopt the hook and promote it back to `src/hook/` as its own change
+- Files/modules changed: frontend `components/agents/attach/{TranscriptJumpButton.tsx,TranscriptJumpButton.module.css,useTranscriptAutoScroll.ts}` (moved in), `components/agents/attach/AgentChatPanel.tsx` (sibling imports), `components/LLMChat.tsx` (reverted), `tests/attach/useTranscriptAutoScroll.test.tsx` (moved in), `tests/components/LLMChat.test.tsx` (deleted)
+- Tests added/updated: none added (organizational); the moved hook suite runs unchanged; LLMChat scroll suite deleted with the revert
+- Verification evidence: frontend `npx jest` full → 813 passed (75 suites) on the committed tree, matching the dev/77 baseline exactly (that baseline already reflected this change's LLMChat-test deletion — dev/77's run happened on the post-revert working tree); `tsc --noEmit` nothing new in touched files; `git diff f4d80b0c -- LLMChat.tsx` shows only the pre-existing uncommitted debug line
+- Commit/PR: `COMMIT-a99526aa` (atomic move + reimport + revert), docs commit (this entry + memo flip)
+- Issues/regressions discovered: none — renames detected at 100%/98% similarity, history preserved; sequencing note: dev/77 landed between this change's implementation and its commit, so `a99526aa` was committed on top of the dev/77 composer (verified: its `AgentChatPanel` diff is the two import lines only)
+- Follow-up work: none pending; the dev/75 follow-ups (unread-count badge, tsconfig deprecations) still stand
