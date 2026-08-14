@@ -1,6 +1,7 @@
 import React from "react";
 import ReactMarkdown from "react-markdown";
 import { sanitizeAgentUrl } from "./sanitizeAgentContent";
+import { AgentCodeBlock } from "./AgentCodeBlock";
 
 /**
  * The ONLY renderer for agent/model rich content (memo dev/39; REQ-SEC-002,
@@ -31,6 +32,9 @@ export const SafeAgentContent: React.FC<{ text: string }> = ({ text }) => (
         ),
       // A sanitized-away image src must not leave an empty <img> behind.
       img: ({ src, alt }) => (src ? <img src={src} alt={alt ?? ""} /> : null),
+      // Fenced code gets the copy affordance (dev/78); inline code has no
+      // <pre> parent and stays untouched.
+      pre: ({ children }) => <AgentCodeBlock>{children}</AgentCodeBlock>,
     }}
   >
     {text}

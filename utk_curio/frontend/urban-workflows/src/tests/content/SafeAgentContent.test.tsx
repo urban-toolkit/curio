@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 
 import { sanitizeAgentUrl } from "../../components/agents/content/sanitizeAgentContent";
 import { SafeAgentContent } from "../../components/agents/content/SafeAgentContent";
@@ -79,6 +79,47 @@ describe("SafeAgentContent (hostile-content fixtures, RISK-RENDER-001)", () => {
     );
     expect(container.querySelector("script")).toBeNull();
     expect(container.querySelector("pre")?.textContent).toContain("<script>");
+  });
+});
+
+describe("SafeAgentContent code-block copy (memo dev/78)", () => {
+  const writeText = jest.fn<Promise<void>, [string]>();
+  beforeEach(() => {
+    writeText.mockReset().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+  });
+
+  it("fenced blocks get a Copy button; inline code gets none", () => {
+    const { container } = render(
+      <SafeAgentContent text={"Use `inline` here.\n\n```python\nprint('hi')\n```"} />,
+    );
+    expect(screen.getAllByRole("button", { name: "Copy code" })).toHaveLength(1);
+    // The inline span is a bare <code> with no surrounding wrapper/button.
+    const inline = Array.from(container.querySelectorAll("code")).find(
+      (c) => c.textContent === "inline",
+    );
+    expect(inline?.closest("pre")).toBeNull();
+  });
+
+  it("copies the code content only — fences and language tag excluded", async () => {
+    render(<SafeAgentContent text={"```python\nprint('hi')\nprint('bye')\n```"} />);
+    fireEvent.click(screen.getByRole("button", { name: "Copy code" }));
+    await act(async () => {});
+    expect(writeText).toHaveBeenCalledWith("print('hi')\nprint('bye')");
+  });
+
+  it("hostile fence copies the literal text and still renders no script (REQ-SEC-002)", async () => {
+    const { container } = render(
+      <SafeAgentContent text={'```html\n<script>alert(1)</script>\n```'} />,
+    );
+    expect(container.querySelector("script")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Copy code" }));
+    await act(async () => {});
+    expect(writeText).toHaveBeenCalledWith("<script>alert(1)</script>");
+    expect(container.querySelector("script")).toBeNull();
   });
 });
 
