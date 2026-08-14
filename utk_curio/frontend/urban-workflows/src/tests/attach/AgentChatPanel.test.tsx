@@ -362,6 +362,16 @@ describe("AgentChatPanel structured content (memo dev/39)", () => {
     expect(container.querySelector("strong")?.textContent).toBe("bold");
   });
 
+  it("a fenced code block in an agent turn carries the Copy button (dev/78)", () => {
+    const { container } = renderPanel({
+      turns: [{ role: "agent", text: "Try this:\n\n```python\nprint('hi')\n```" }],
+    });
+    const bubble = container.querySelector(".msgAgent");
+    expect(bubble?.querySelector("pre")?.textContent).toContain("print('hi')");
+    const copy = screen.getByRole("button", { name: "Copy code" });
+    expect(bubble?.contains(copy)).toBe(true);
+  });
+
   it("renders cards from the agent turn's content", () => {
     renderPanel({
       turns: [
