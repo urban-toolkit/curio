@@ -219,6 +219,7 @@ When generating the grammar for Vega-Lite do not include the data field. It will
     "y": {"field": "b", "type": "quantitative"}
   }
 }
+MAKE SURE TO CHECK THAT THE GRAPH THAT THE USER SPECIFIED IS IN VEGA-LITE AS THERE ARE SOME GRAPH TYPES IN VEGA THAT ARE NOT IN VEGA-LITE; THIS PROGRAM ONLY HAS VEGA-LITE.
 
 Autark is the visualization framework used by Curio for 2D and 3D urban map rendering. AUTARK nodes receive a GeoDataFrame from the previous node (or a tuple of GeoDataFrames). The geometry column becomes the spatial presentation; any other column can be used to color the geometry (more than one column is allowed). An example of a node sending data to AUTARK:
 
