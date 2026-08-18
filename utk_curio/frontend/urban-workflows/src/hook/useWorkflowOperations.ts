@@ -27,12 +27,7 @@ import { projectsApi, OutputRef, DatasetInstallWarning } from "../api/projectsAp
 import { buildSaveableLiveOutputs } from "../utils/saveOutputDataset";
 import { notifyAgentDockRefresh } from "../utils/agentsPaletteEvents";
 import { resolveNodeDisplayLabel } from "../utils/palettePackageFactoryDraft";
-import {
-    notifyDatasetCatalogRefresh,
-    buildInstalledDatasetRef,
-    upsertDataflowDatasetRef,
-    type InstalledDatasetPayload,
-} from "../services/datasetCatalog/datasetCatalogApi";
+import { notifyDatasetCatalogRefresh } from "../services/datasetCatalog/datasetCatalogApi";
 import type { PendingInstall } from "../services/datasetCatalog/datasetCatalogTypes";
 import {
     getCurrentProjectPackagesList,
@@ -674,9 +669,10 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         // from the React state snapshot, which may lag behind the store when a
         // package install/uninstall updates the store before React re-renders.
         const currentPackages = getCurrentProjectPackagesList();
-        // Read datasets from the ref (always current) rather than the closure so
-        // that a stale snapshot can never overwrite a publish/unpublish that the
-        // backend already wrote to the spec.
+        // The serialized datasets section matters only on the CREATE branch,
+        // where it seeds the new project's refs (dev/81). On an update the
+        // backend owns dataflow.datasets and ignores whatever is sent here —
+        // syncDatasetsFromSavedSpec re-aligns the mirror from the response.
         const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
@@ -767,7 +763,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // used to live only in the catalog drawer so the node-execution auto-install
     // path can guarantee a persisted project without a manual save. Does NOT force
     // a save when the project already exists (the catalog Install endpoint persists
-    // its own ref) — see persistInstalledDataset for the always-save behavior.
+    // its own ref) — see persistDataflowForInstall for the always-save behavior.
     // Concurrent callers share one create (so two rapid installs can't double-create)
     // and all receive the same id, without triggering a redundant follow-up update.
     const ensureProjectInFlightRef = useRef<Promise<string | null> | null>(null);
@@ -791,43 +787,6 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         ensureProjectInFlightRef.current = inFlight;
         return inFlight;
     }, [requestProjectSave, showToast]);
-
-    // Persist a dataset that the backend auto-installed on node execution and
-    // refresh the UI from the resulting saved spec — no manual disk-icon save.
-    // This ALWAYS saves the project (create for a brand-new dataflow, update for an
-    // existing one) rather than relying on the backend's execution-time spec merge,
-    // so re-running a flow after datasets were removed reaches the SAME persisted +
-    // visible state as a first-time install: saveCurrentProject round-trips the
-    // canonical spec and syncDatasetsFromSavedSpec reconciles the catalog from it.
-    const persistInstalledDataset = useCallback(
-        async (inst: InstalledDatasetPayload | null | undefined): Promise<void> => {
-            if (!inst?.id || !inst?.dirName) return;
-            // Build the ref once so the React state and the ref stay byte-identical.
-            const ref = buildInstalledDatasetRef(inst);
-            // Optimistically merge into in-memory state...
-            setDataflowDatasets((prev) => upsertDataflowDatasetRef(prev, inst.id, ref) as any[]);
-            // ...and update dataflowDatasetsRef synchronously: setDataflowDatasets only
-            // flushes to the ref on the next render, but saveCurrentProject reads
-            // dataflowDatasetsRef.current *now*, so without this the saved spec could
-            // miss this dataset.
-            dataflowDatasetsRef.current = upsertDataflowDatasetRef(
-                dataflowDatasetsRef.current,
-                inst.id,
-                ref,
-            ) as any[];
-            try {
-                // Create-or-update + syncDatasetsFromSavedSpec (which also fires the
-                // catalog refresh) — UI ends on the final persisted project state.
-                await requestProjectSave();
-            } catch (err) {
-                // Keep the optimistic in-memory ref so a later manual save still
-                // captures it; surface why the auto-save failed.
-                showToast((err as Error)?.message || "Could not save the dataflow.", "error");
-                notifyDatasetCatalogRefresh();
-            }
-        },
-        [requestProjectSave, setDataflowDatasets, showToast],
-    );
 
     // Persist the dataflow after a producing node ran but the backend did NOT
     // auto-install during execution (it only does so for deliberately-saved
@@ -937,7 +896,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         const currentEdges = reactFlow.getEdges();
         // Same as saveCurrentProject: read from store to avoid stale React state snapshot.
         const currentPackages = getCurrentProjectPackagesList();
-        // Same as saveCurrentProject: read from ref so we always use the latest datasets.
+        // Save-a-copy is a CREATE: the serialized datasets section seeds the new
+        // project's refs (dev/81) — read from the ref so the copy carries the
+        // latest installed datasets.
         const spec: any = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current, "", currentPackages, workflowDescriptionRef.current, dataflowDatasetsRef.current);
         spec.nodeProvenance = getAllNodeProvenance();
         spec.dataflowProvenance = TrillGenerator.getSerializableDataflowProvenance();
@@ -1074,7 +1035,6 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         saveCurrentProject,
         saveAsNewProject,
         ensureProjectId,
-        persistInstalledDataset,
         persistDataflowForInstall,
         loadProject,
         loadSharedProject,

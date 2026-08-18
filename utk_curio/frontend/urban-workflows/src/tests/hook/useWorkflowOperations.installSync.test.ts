@@ -1,8 +1,8 @@
 import { renderHook, act } from "@testing-library/react";
 
 // ── Mock the hook's heavy collaborators ───────────────────────────────────────
-// Keep datasetCatalogApi REAL so buildInstalledDatasetRef / upsertDataflowDatasetRef /
-// notifyDatasetCatalogRefresh exercise the production code paths.
+// Keep datasetCatalogApi REAL so notifyDatasetCatalogRefresh exercises the
+// production code path.
 jest.mock("reactflow", () => ({
   useReactFlow: () => ({ getNodes: () => [], getEdges: () => [] }),
   useNodesInitialized: () => false,
@@ -138,35 +138,30 @@ describe("ensureProjectId", () => {
   });
 });
 
-describe("persistInstalledDataset", () => {
-  it("creates the project for a new dataflow and serializes the dataset ref into the saved spec", async () => {
+describe("saveCurrentProject", () => {
+  it("re-hydrates the datasets mirror from the saved spec — the backend-owned section wins over a drifted mirror (dev/81)", async () => {
     (projectsApi.create as jest.Mock).mockResolvedValue({
       id: "proj-1",
       name: "wf",
-      spec: { dataflow: { datasets: [{ datasetId: "computed.n1@1" }], packages: [] } },
+      spec: { dataflow: { datasets: [], packages: [] } },
+    });
+    // The backend carried forward an install this client's mirror never saw.
+    (projectsApi.update as jest.Mock).mockResolvedValue({
+      id: "proj-1",
+      name: "wf",
+      spec: { dataflow: { datasets: [{ datasetId: "imported.x1" }], packages: [] } },
     });
     const dispatch = jest.spyOn(window, "dispatchEvent");
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
 
     await act(async () => {
-      await result.current.persistInstalledDataset({
-        id: "computed.n1@1",
-        dirName: "computed.n1@1",
-        producerNodeId: "n1",
-      });
+      await result.current.ensureProjectId();
+    });
+    await act(async () => {
+      await result.current.saveCurrentProject();
     });
 
-    expect(projectsApi.create).toHaveBeenCalledTimes(1);
-
-    // Race-fix proof: saveCurrentProject reads dataflowDatasetsRef.current, which
-    // persistInstalledDataset updates SYNCHRONOUSLY before awaiting the save — so
-    // the ref reaches generateTrill (arg index 6) even though setState hasn't flushed.
-    const calls = (TrillGenerator.generateTrill as jest.Mock).mock.calls;
-    const datasetsArg = calls[calls.length - 1][6];
-    expect(datasetsArg).toEqual(
-      expect.arrayContaining([expect.objectContaining({ datasetId: "computed.n1@1" })]),
-    );
-
+    expect(result.current.dataflowDatasets).toEqual([{ datasetId: "imported.x1" }]);
     // The catalog refresh fan-out fired so open palettes/drawers refetch.
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: DATASET_CATALOG_REFRESH_EVENT }),
@@ -206,40 +201,7 @@ describe("persistInstalledDataset", () => {
     dispatch.mockRestore();
   });
 
-  it("updates (not re-creates) an already-saved project so the UI resyncs from the saved spec", async () => {
-    // Regression: removing datasets then re-running the flow on an EXISTING project
-    // must reach the same persisted+visible state as a manual save. persistInstalledDataset
-    // now always saves — create the first time, UPDATE thereafter — so syncDatasetsFromSavedSpec
-    // refreshes the catalog without the user clicking the disk icon.
-    (projectsApi.create as jest.Mock).mockResolvedValue({
-      id: "proj-1",
-      name: "wf",
-      spec: { dataflow: { datasets: [{ datasetId: "computed.n1@1" }], packages: [] } },
-    });
-    (projectsApi.update as jest.Mock).mockResolvedValue({
-      id: "proj-1",
-      name: "wf",
-      spec: { dataflow: { datasets: [{ datasetId: "computed.n2@1" }], packages: [] } },
-    });
-    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
-
-    // First install creates the project.
-    await act(async () => {
-      await result.current.persistInstalledDataset({ id: "computed.n1@1", dirName: "computed.n1@1" });
-    });
-    expect(projectsApi.create).toHaveBeenCalledTimes(1);
-
-    // Second install (e.g. re-run after removal) on the now-saved project: no second
-    // create, but a real UPDATE that round-trips the persisted spec.
-    await act(async () => {
-      await result.current.persistInstalledDataset({ id: "computed.n2@1", dirName: "computed.n2@1" });
-    });
-    expect(projectsApi.create).toHaveBeenCalledTimes(1);
-    expect(projectsApi.update).toHaveBeenCalledTimes(1);
-    expect((projectsApi.update as jest.Mock).mock.calls[0][0]).toBe("proj-1");
-  });
-
-  it("serializes concurrent installs on a new dataflow into one create + one update (no duplicate projects)", async () => {
+  it("serializes concurrent saves on a new dataflow into one create + one update (no duplicate projects)", async () => {
     // Two producing nodes finishing back-to-back must not both POST a create.
     let resolveCreate: (v: any) => void = () => {};
     (projectsApi.create as jest.Mock).mockImplementation(
@@ -253,23 +215,14 @@ describe("persistInstalledDataset", () => {
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
 
     await act(async () => {
-      const a = result.current.persistInstalledDataset({ id: "computed.n1@1", dirName: "computed.n1@1" });
-      const b = result.current.persistInstalledDataset({ id: "computed.n2@1", dirName: "computed.n2@1" });
+      const a = result.current.persistDataflowForInstall();
+      const b = result.current.persistDataflowForInstall();
       resolveCreate({ id: "proj-1", name: "wf", spec: { dataflow: { datasets: [], packages: [] } } });
       await Promise.all([a, b]);
     });
 
     expect(projectsApi.create).toHaveBeenCalledTimes(1);
     expect(projectsApi.update).toHaveBeenCalledTimes(1); // the chained second save
-  });
-
-  it("is a no-op for a missing or partial payload", async () => {
-    const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
-    await act(async () => {
-      await result.current.persistInstalledDataset(null);
-      await result.current.persistInstalledDataset({ id: "x" } as any); // no dirName
-    });
-    expect(projectsApi.create).not.toHaveBeenCalled();
   });
 });
 
@@ -301,7 +254,7 @@ describe("persistDataflowForInstall (no execution-time install payload)", () => 
     const { result } = renderHook(() => useWorkflowOperations(makeDeps()));
     // Establish the project, then a second producing run with no install payload.
     await act(async () => {
-      await result.current.persistInstalledDataset({ id: "computed.n0@1", dirName: "computed.n0@1" });
+      await result.current.ensureProjectId();
     });
     await act(async () => {
       await result.current.persistDataflowForInstall();

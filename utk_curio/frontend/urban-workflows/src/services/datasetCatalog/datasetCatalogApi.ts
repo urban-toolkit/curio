@@ -1,4 +1,3 @@
-import type { Dispatch, SetStateAction } from "react";
 import { apiFetch, getToken } from "../../utils/authApi";
 import { invalidateDatasetCatalogCache } from "./datasetCatalogCache";
 import {
@@ -45,58 +44,6 @@ export function notifyDatasetCatalogRefresh(): void {
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent(DATASET_CATALOG_REFRESH_EVENT));
   }
-}
-
-export interface InstalledDatasetPayload {
-  id: string;
-  dirName: string;
-  origin?: string;
-  producerNodeId?: string | null;
-}
-
-/** A lean dataflow dataset ref as stored in ``spec.dataflow.datasets``. */
-export type DataflowDatasetRef = {
-  datasetId: string;
-  dirName: string;
-  origin: string;
-  producerNodeId: string | null;
-  installedAt: string;
-};
-
-/** Build the canonical lean ref for an auto-installed dataset payload. */
-export function buildInstalledDatasetRef(inst: InstalledDatasetPayload): DataflowDatasetRef {
-  return {
-    datasetId: inst.id,
-    dirName: inst.dirName,
-    origin: inst.origin ?? "computed",
-    producerNodeId: inst.producerNodeId ?? null,
-    installedAt: new Date().toISOString(),
-  };
-}
-
-/** Upsert one dataset ref into a refs array, replacing any existing entry by id. */
-export function upsertDataflowDatasetRef(
-  rows: unknown,
-  datasetId: string,
-  ref: DataflowDatasetRef,
-): unknown[] {
-  const list = Array.isArray(rows) ? rows : [];
-  const next = list.filter((row: unknown) => {
-    const r = row as { datasetId?: string; id?: string };
-    return (r?.datasetId || r?.id) !== datasetId;
-  });
-  return [...next, ref];
-}
-
-/** Sync a backend auto-install into project spec state and refresh open catalog UIs. */
-export function applyInstalledDatasetToProject(
-  inst: InstalledDatasetPayload | null | undefined,
-  setDataflowDatasets: Dispatch<SetStateAction<unknown[]>>,
-): void {
-  if (!inst?.id || !inst?.dirName) return;
-  const ref = buildInstalledDatasetRef(inst);
-  setDataflowDatasets((prev: unknown[]) => upsertDataflowDatasetRef(prev, inst.id, ref));
-  notifyDatasetCatalogRefresh();
 }
 
 /**

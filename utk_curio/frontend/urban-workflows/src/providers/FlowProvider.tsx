@@ -23,7 +23,6 @@ import {
     NodeRemoveChange,
 } from "reactflow";
 import { ConnectionValidator } from "../ConnectionValidator";
-import type { InstalledDatasetPayload } from "../services/datasetCatalog/datasetCatalogApi";
 import type { PendingInstall } from "../services/datasetCatalog/datasetCatalogTypes";
 import { NodeType, EdgeType } from "../constants";
 import { getFlowNodeCanonicalType, unversionedFlowNodeType } from "../utils/flowNodeCanonicalType";
@@ -164,7 +163,6 @@ interface FlowContextProps {
     saveCurrentProject: (nameOverride?: string) => Promise<any>;
     saveAsNewProject: (name: string) => Promise<any>;
     ensureProjectId: () => Promise<string | null>;
-    persistInstalledDataset: (inst: InstalledDatasetPayload | null | undefined) => Promise<void>;
     persistDataflowForInstall: () => Promise<void>;
     loadProject: (id: string) => Promise<any>;
     loadSharedProject: (id: string) => Promise<any>;
@@ -287,7 +285,6 @@ export const FlowContext = createContext<FlowContextProps>({
     saveCurrentProject: async () => {},
     saveAsNewProject: async () => {},
     ensureProjectId: async () => null,
-    persistInstalledDataset: async () => {},
     persistDataflowForInstall: async () => {},
     loadProject: async () => {},
     loadSharedProject: async () => {},
