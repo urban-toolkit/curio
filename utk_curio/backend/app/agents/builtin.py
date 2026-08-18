@@ -216,6 +216,24 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                    "agent.workflow-suggester", "agent.plan-coherence-validator",
                                    "agent.dataflow-explainer", "agent.node-researcher"),
                      review_policy="review-before-apply"),
+    # The fourteenth releasable built-in (memo dev/84; spec dev/16 / DEC-035).
+    # Net-new instruction. Deviations recorded in the memo: roster-generated
+    # manifest (foreground, no settingsDefaults); the dev/16 installedPackages
+    # read is served by packages.catalog's installed flags, not a new fragment.
+    # Identify/suggest/reviewed-install only — never installs, never authors.
+    BuiltinAgentSpec("agent.package-recommendation", "Package Recommendation", "package",
+                     "Identify and recommend the node packages a task, node, or dataflow "
+                     "needs; surface each required-but-uninstalled package as a reviewed "
+                     "install proposal against the existing Nodes Catalog. Never installs "
+                     "anything itself and never authors a package.",
+                     "package_recommendation_instruction.txt",
+                     ("package.recommend", "package.identify"), ("recommendation",),
+                     targets=("node", "canvas"),
+                     reads=("mission", "targetContext", "installedTemplates"),
+                     tools=("packages.catalog", "packages.resolve", "package.install",
+                            "dataflow.read"),
+                     delegates_to=("agent.syntax-analysis-agent",),
+                     review_policy="review-before-apply"),
 )
 
 

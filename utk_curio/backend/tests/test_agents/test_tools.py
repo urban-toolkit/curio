@@ -26,6 +26,7 @@ class TestRegistry:
             "node.template.create", "catalog.search", "dataset.install",
             "dataflow.plan.write", "node.runtime.read",
             "web.fetch", "web.search",
+            "packages.catalog", "packages.resolve",  # dev/84
         }
         assert tools.REGISTRY["dataflow.read"].effect == "read"
         assert tools.REGISTRY["node.read"].effect == "read"
@@ -38,6 +39,8 @@ class TestRegistry:
         assert tools.REGISTRY["node.runtime.read"].effect == "read"
         assert tools.REGISTRY["web.fetch"].effect == "read"
         assert tools.REGISTRY["web.search"].effect == "read"
+        assert tools.REGISTRY["packages.catalog"].effect == "read"
+        assert tools.REGISTRY["packages.resolve"].effect == "read"
 
     def test_contract_validates_effect(self):
         with pytest.raises(ValueError):
@@ -364,3 +367,67 @@ class TestWebTools:
         )
         assert status == "error"
         assert "not configured" in text and "web.fetch" in text
+
+
+class TestPackageTools:
+    """dev/84: packages.catalog / packages.resolve — thin wrappers over the
+    packages domain, asserted against the real committed catalog."""
+
+    UKEY = "42"
+    PID = "proj-pkg"
+
+    def _write_spec(self, packages: list[str]) -> None:
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        projects_storage.write_spec(self.UKEY, self.PID, {
+            "dataflow": {"name": "wf", "nodes": [], "edges": [], "packages": packages},
+        })
+
+    def test_catalog_rows_carry_project_install_state_and_builtin_flag(self, tmp_curio):
+        self._write_spec(["curio.builtin@1", "ai.urbanlab.uhvi@1"])
+        status, text = tools.execute_read_tool(
+            "packages.catalog", user_key=self.UKEY, project_id=self.PID,
+            target=None, params={},
+        )
+        assert status == "ok"
+        rows = {r["dirName"]: r for r in json.loads(text)["packages"]}
+        assert rows["curio.builtin@1"]["builtin"] is True
+        assert rows["curio.builtin@1"]["installed"] is True  # always present
+        assert rows["ai.urbanlab.uhvi@1"]["installed"] is True  # in the lockfile
+        assert rows["ai.urbanlab.uhvi@1"]["builtin"] is False
+        assert rows["curio.weather@1"]["installed"] is False  # not in the lockfile
+
+    def test_catalog_q_filter_bounds_the_rows(self, tmp_curio):
+        self._write_spec([])
+        status, text = tools.execute_read_tool(
+            "packages.catalog", user_key=self.UKEY, project_id=self.PID,
+            target=None, params={"q": "uhvi"},
+        )
+        assert status == "ok"
+        rows = json.loads(text)["packages"]
+        assert [r["dirName"] for r in rows] == ["ai.urbanlab.uhvi@1"]
+
+    def test_resolve_reports_real_permissions_and_deps(self, tmp_curio):
+        status, text = tools.execute_read_tool(
+            "packages.resolve", user_key=self.UKEY, project_id=self.PID,
+            target=None, params={"dirNames": ["ai.urbanlab.uhvi@1"]},
+        )
+        assert status == "ok"
+        report = json.loads(text)
+        pkg = next(p for p in report["packages"] if p["dirName"] == "ai.urbanlab.uhvi@1")
+        # Grounded in the committed manifest — never invented.
+        assert pkg["permissions"] == ["filesystem.read", "network.fetch"]
+        assert "geopandas" in pkg["pythonDeps"]
+        assert report["conflicts"] == []
+
+    def test_resolve_rejects_bad_params_and_unknown_packages(self, tmp_curio):
+        status, text = tools.execute_read_tool(
+            "packages.resolve", user_key=self.UKEY, project_id=self.PID,
+            target=None, params={},
+        )
+        assert status == "error" and "dirNames" in text
+        status, text = tools.execute_read_tool(
+            "packages.resolve", user_key=self.UKEY, project_id=self.PID,
+            target=None, params={"dirNames": ["no.such.package@9"]},
+        )
+        assert status == "error" and "no.such.package@9" in text

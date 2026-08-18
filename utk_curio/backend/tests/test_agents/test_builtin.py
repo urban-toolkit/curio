@@ -28,8 +28,8 @@ _EXPECTED = {
 class TestRoster:
     def test_sixteen_agents(self):
         # 13 migrations + the three composites (dev/48, dev/50, dev/52)
-        # + the researcher (dev/67-4).
-        assert len(builtin.BUILTIN_AGENTS) == 17
+        # + the researcher (dev/67-4) + package recommendation (dev/84).
+        assert len(builtin.BUILTIN_AGENTS) == 18
 
     def test_evaluator_excluded(self):
         ids = {s.agent_id for s in builtin.BUILTIN_AGENTS}
@@ -45,7 +45,8 @@ class TestRoster:
         # The composites are the only non-migration entries (dev/48, dev/50).
         extras = {s.agent_id for s in builtin.BUILTIN_AGENTS} - set(_EXPECTED)
         assert extras == {"agent.node-builder", "agent.dataset-finder",
-                          "agent.dataflow-builder", "agent.node-researcher"}
+                          "agent.dataflow-builder", "agent.node-researcher",
+                          "agent.package-recommendation"}
 
     def test_every_prompt_file_exists(self):
         for spec in builtin.BUILTIN_AGENTS:
@@ -55,7 +56,7 @@ class TestRoster:
 class TestManifests:
     def test_all_validate(self):
         manifests = builtin.list_builtin_manifests()
-        assert len(manifests) == 17
+        assert len(manifests) == 18
         assert all(isinstance(m, AgentManifest) for m in manifests)
 
     def test_coords_and_capabilities(self):
@@ -136,7 +137,8 @@ class TestNodeBuilderComposite:
             "agent.node-content-builder", "agent.execution-subtask-planner",
             "agent.node-researcher",
         ]
-        composites = {"agent.node-builder", "agent.dataset-finder", "agent.dataflow-builder"}
+        composites = {"agent.node-builder", "agent.dataset-finder", "agent.dataflow-builder",
+                      "agent.package-recommendation"}  # dev/84
         for spec in builtin.BUILTIN_AGENTS:
             if spec.agent_id in composites:
                 continue
@@ -212,4 +214,37 @@ class TestDataflowBuilderComposite:
         assert text and "dataflowPlan" in text
         # dev/59: removals exist but only on explicit request.
         assert "Never remove uninvited" in text
+        assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
+
+
+class TestPackageRecommendation:
+    """The dev/84 roster entry — spec per dev/16 / DEC-035 minus the memo's
+    recorded deviations (roster-generated manifest, tool-served installed
+    flags)."""
+
+    COORD = "agent.package-recommendation@1.0.0"
+
+    def test_manifest_surface(self):
+        m = builtin.get_builtin_manifest(self.COORD)
+        assert m is not None
+        assert m.capability_ids == ["package.recommend", "package.identify"]
+        # dev/16 §3.3: import extraction is delegated, never guessed.
+        assert m.delegates_to == ["agent.syntax-analysis-agent"]
+        assert [t.kind for t in m.compatible_targets] == ["node", "canvas"]
+        assert [t.id for t in m.tools] == [
+            "packages.catalog", "packages.resolve", "package.install",
+            "dataflow.read",
+        ]
+        assert m.provenance.trust == "built-in"
+
+    def test_review_policy(self):
+        raw = builtin.build_builtin_manifest(builtin.get_builtin_spec(self.COORD))
+        assert raw["runtime"] == {"execution": "foreground", "reviewPolicy": "review-before-apply"}
+        assert raw["category"] == "package"
+
+    def test_net_new_instruction_resolves(self):
+        text = builtin.read_prompt_text(self.COORD, "instruction")
+        assert text and "packages.catalog" in text
+        assert "never author" in text.lower() or "never authors" in text.lower()
+        assert "package.install" in text
         assert builtin.read_prompt_text(self.COORD, "system")  # default preamble

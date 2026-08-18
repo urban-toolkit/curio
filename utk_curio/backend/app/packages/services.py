@@ -670,6 +670,129 @@ def seed_spec_with_defaults(user_key: str, spec: dict | None) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Agent read surfaces (memo dev/84) — plain-dict summaries so the agents
+# module (ADR-AG-007: thin wrappers, no package knowledge) can serve its
+# packages.catalog / packages.resolve tools from the domain's single truth.
+# ---------------------------------------------------------------------------
+
+def _catalog_manifests() -> dict[str, "PackageManifest"]:
+    """``dirName -> manifest`` for every well-formed committed catalog package."""
+    from utk_curio.backend.app.packages.manifest import (
+        ManifestError,
+        load_packageage_manifest,
+    )
+
+    root = catalog_root()
+    out: dict[str, PackageManifest] = {}
+    if not root.is_dir():
+        return out
+    for entry in sorted(root.iterdir()):
+        if not entry.is_dir() or not PACKAGE_DIR_RE.match(entry.name):
+            continue
+        try:
+            out[entry.name] = load_packageage_manifest(entry)
+        except ManifestError:
+            continue  # malformed fixtures are skipped, matching the catalog route
+    return out
+
+
+def agent_catalog_overview(user_key: str, project_id: str | None) -> list[dict]:
+    """Per-package summaries for the agents' ``packages.catalog`` read tool.
+
+    ``installed`` means the CURRENT project's lockfile (what matters for a node
+    running in this project — dev/84); ``builtin`` marks ``curio.builtin``,
+    which is always present and never proposable.
+    """
+    lockfile: set[str] = set()
+    if project_id:
+        try:
+            lockfile = get_project_lockfile(user_key, project_id)
+        except Exception:  # noqa: BLE001 — an unreadable project reads as empty
+            lockfile = set()
+    rows: list[dict] = []
+    for dir_name, manifest in _catalog_manifests().items():
+        builtin = manifest.package_id == BUILTIN_PACKAGE_ID
+        rows.append(
+            {
+                "dirName": dir_name,
+                "packageId": manifest.package_id,
+                "name": manifest.name,
+                "description": manifest.description or "",
+                "installed": builtin or dir_name in lockfile,
+                "builtin": builtin,
+            }
+        )
+    return rows
+
+
+def agent_resolve_report(user_key: str, dir_names: list[str]) -> dict:
+    """Deps/permissions per requested package + a conflict probe (dev/84).
+
+    Mirrors the catalog UI's pre-install probe: the requested packages resolve
+    together with everything already in the user's store, with not-yet-installed
+    catalog packages overridden to their committed manifests. Raises
+    :class:`PackageServiceError` for an unknown/unresolvable package.
+    """
+    from utk_curio.backend.app.packages.resolver import (
+        ResolverError,
+        resolve_for_project,
+    )
+
+    catalog = _catalog_manifests()
+    installed = {p.name for p in list_user_packageages(user_key)}
+    unknown = [dn for dn in dir_names if dn not in installed and dn not in catalog]
+    if unknown:
+        raise PackageServiceError(f"unknown package(s): {', '.join(sorted(unknown))}", 404)
+    probe = sorted(set(dir_names) | installed)
+    overrides = {
+        dn: catalog_root() / dn for dn in probe if dn not in installed and dn in catalog
+    }
+    try:
+        result = resolve_for_project(user_key, probe, overrides=overrides)
+    except ResolverError as exc:
+        raise PackageServiceError(str(exc), 400) from exc
+
+    def _manifest_for(dir_name: str) -> "PackageManifest | None":
+        for path in list_user_packageages(user_key):
+            if path.name == dir_name:
+                from utk_curio.backend.app.packages.manifest import (
+                    ManifestError,
+                    load_packageage_manifest,
+                )
+
+                try:
+                    return load_packageage_manifest(path)
+                except ManifestError:
+                    return None
+        return catalog.get(dir_name)
+
+    packages: list[dict] = []
+    for dir_name in dir_names:
+        manifest = _manifest_for(dir_name)
+        if manifest is None:
+            continue
+        packages.append(
+            {
+                "dirName": dir_name,
+                "name": manifest.name,
+                "permissions": list(manifest.permissions),
+                "pythonDeps": dict(manifest.python_deps),
+                "jsDeps": dict(manifest.js_deps),
+            }
+        )
+    return {
+        "packages": packages,
+        "conflicts": [
+            {
+                "package": c.package,
+                "ranges": [{"packageDir": p, "range": r} for (p, r) in c.ranges],
+            }
+            for c in result.conflicts
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
 # Internal
 # ---------------------------------------------------------------------------
 

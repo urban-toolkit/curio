@@ -135,6 +135,37 @@ REGISTRY: dict[str, ToolContract] = {
             "these results only."
         ),
     ),
+    # dev/84 — consumer: agent.package-recommendation. Grounds package
+    # recommendations in the real Nodes Catalog + this project's lockfile
+    # (the packages domain owns the data; this module owns none of its own).
+    "packages.catalog": ToolContract(
+        id="packages.catalog",
+        contract_version="1",
+        effect="read",
+        description=(
+            "List the Nodes Catalog's node packages with this project's "
+            'install state. Params (optional): {"q": "<text>"} substring '
+            "filter. Returns rows with dirName, packageId, name, description, "
+            "installed, and builtin — recommendation candidates must come from "
+            "these results only; builtin packages are always present and are "
+            "never proposed."
+        ),
+    ),
+    # dev/84 — consumer: agent.package-recommendation. The identify half:
+    # deps/permissions/conflicts come from the real resolver, never invented.
+    "packages.resolve": ToolContract(
+        id="packages.resolve",
+        contract_version="1",
+        effect="read",
+        description=(
+            "Resolve one or more catalog packages against this account's "
+            'installed set. Params: {"dirNames": ["<dirName from '
+            'packages.catalog>", ...]}. Returns each package\'s requested '
+            "permissions and python/js dependencies, plus any version "
+            "conflicts — use it to enrich an identify/recommend answer before "
+            "proposing an install."
+        ),
+    ),
     # dev/52 — consumer: agent.dataflow-builder. The DR-1 graph-level
     # mutation: the model emits a `dataflowPlan` tail block (not a
     # toolRequest) and the runtime mints the reviewed plan proposal from it;
@@ -293,6 +324,49 @@ def _catalog_search_rows(user_key: str, project_id: str, params: dict) -> list[d
     return rows
 
 
+# packages.catalog bounds (dev/84): mirrors the catalog.search posture —
+# plenty for ranking, small enough to never crowd the context.
+_PACKAGES_CATALOG_MAX_ROWS = 40
+_PACKAGES_DESC_MAX_CHARS = 200
+_PACKAGES_RESOLVE_MAX_DIRNAMES = 8
+
+
+def _packages_catalog_rows(user_key: str, project_id: str, params: dict) -> list[dict]:
+    """Bounded package rows for the dev/84 read tool — a thin wrapper over the
+    packages domain's agent overview (`ADR-AG-007`: one truth, owned there)."""
+    from utk_curio.backend.app.packages import services as packages_services
+
+    rows = packages_services.agent_catalog_overview(user_key, project_id)
+    query = params.get("q")
+    if isinstance(query, str) and query.strip():
+        needle = query.strip().lower()[:_CATALOG_PARAM_MAX_CHARS]
+        rows = [
+            r for r in rows
+            if needle in f"{r['dirName']} {r['packageId']} {r['name']} {r['description']}".lower()
+        ]
+    out = []
+    for r in rows[:_PACKAGES_CATALOG_MAX_ROWS]:
+        out.append({**r, "description": r["description"][:_PACKAGES_DESC_MAX_CHARS]})
+    return out
+
+
+def _execute_packages_resolve(user_key: str, params: dict) -> tuple[str, str]:
+    """The dev/84 identify surface: real resolver output, never invented."""
+    from utk_curio.backend.app.packages import services as packages_services
+
+    dir_names = params.get("dirNames")
+    if not isinstance(dir_names, list) or not dir_names or not all(
+        isinstance(d, str) and d.strip() for d in dir_names
+    ):
+        return "error", 'params.dirNames must be a non-empty list of package dirName strings'
+    cleaned = [d.strip() for d in dir_names[:_PACKAGES_RESOLVE_MAX_DIRNAMES]]
+    try:
+        report = packages_services.agent_resolve_report(user_key, cleaned)
+    except packages_services.PackageServiceError as exc:
+        return "error", str(exc)
+    return "ok", _truncate(json.dumps(report, ensure_ascii=False))
+
+
 def _node_row(node: dict, goal_cap: int) -> dict:
     content = str(node.get("content") or "")
     return {
@@ -370,6 +444,13 @@ def execute_read_tool(
             return _execute_web_fetch(params)
         if tool_id == "web.search":
             return _execute_web_search(params)
+        # dev/84: the package tools read through the packages domain (which
+        # does its own project/lockfile reads) — handled before the spec read.
+        if tool_id == "packages.catalog":
+            rows = _packages_catalog_rows(user_key, project_id, params)
+            return "ok", _truncate(json.dumps({"packages": rows}, ensure_ascii=False))
+        if tool_id == "packages.resolve":
+            return _execute_packages_resolve(user_key, params)
         spec = projects_storage.read_spec(user_key, project_id)
         if spec is None:
             return "error", "no saved project spec is available"
