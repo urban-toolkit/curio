@@ -30,6 +30,14 @@ import { SafeAgentContent } from "../content/SafeAgentContent";
 import { TranscriptJumpButton } from "./TranscriptJumpButton";
 import { useTranscriptAutoScroll } from "./useTranscriptAutoScroll";
 import { useAutoGrowTextarea } from "./useAutoGrowTextarea";
+import { AgentRunStatusLine } from "./AgentRunStatusLine";
+import { AgentSessionTokenCounter } from "./AgentSessionTokenCounter";
+import {
+  sessionTokenTotals,
+  turnStatusDisplay,
+  type AgentRunStatus,
+  type RunStatusDisplay,
+} from "./agentRunStatus";
 import styles from "./AgentChatPanel.module.css";
 
 /** Heuristic: prompts longer than this get the clamp + expand toggle. */
@@ -69,6 +77,13 @@ export const AgentChatPanel: React.FC<{
   onClose: () => void;
   /** Transient tool-activity lines for the in-flight send (memo dev/41). */
   toolActivity?: string[];
+  /** This attachment's live run status (memo dev/80) — drives the status
+   * strip and the per-attachment send disable. Pass null for "wired, idle"
+   * (the send busy state then follows the provider, keyed per attachment);
+   * omit entirely to fall back to the panel-local sending flag. Without it
+   * the strip still derives a finished state from the last turn's execution
+   * record. */
+  runStatus?: AgentRunStatus | null;
   /** Opens the shared settings modal at the Attached-instance scope (memo
    * dev/42) — the labeled cog beneath the header (the docs/08 anatomy slot;
    * never in the DEC-042 header itself). Omitted → no cog. */
@@ -117,6 +132,7 @@ export const AgentChatPanel: React.FC<{
   onSend,
   onClose,
   toolActivity = [],
+  runStatus,
   onOpenSettings,
   onApplyProposal,
   onDismissProposal,
@@ -180,6 +196,67 @@ export const AgentChatPanel: React.FC<{
     value: input,
     maxHeightPx: 120,
   });
+
+  // Per-reply execution status (memo dev/80, amended: the status rides each
+  // agent message, not a global strip). The review chip derives from the
+  // attachment's proposal mirrors — it self-clears on apply/dismiss — and
+  // marks only the NEWEST reply.
+  const pendingReview =
+    attachment.activeProposal?.status === "pending" ||
+    attachment.planProposal?.status === "pending";
+  const runInFlight = runStatus?.phase === "running";
+  const lastAgentIdx = useMemo(() => {
+    for (let i = turns.length - 1; i >= 0; i--) if (turns[i].role === "agent") return i;
+    return -1;
+  }, [turns]);
+  /** The meta line under one agent turn: the streaming reply shows the live
+   * running indicator; finalized replies show their persisted execution
+   * record; the newest reply falls back to the live run record when an old
+   * server sent no execution fields — so a final message never renders bare. */
+  const turnMeta = (t: AgentSessionTurn, i: number): RunStatusDisplay | null => {
+    const isLast = i === turns.length - 1;
+    if (runInFlight && isLast && t.role === "agent" && !t.error && runStatus)
+      return { kind: "running", startedAt: runStatus.startedAt };
+    const derived = turnStatusDisplay(t, {
+      pendingReview: i === lastAgentIdx && pendingReview,
+    });
+    if (derived) {
+      // The just-failed reply's elapsed-at-failure lives on the run record
+      // (client error turns carry no execution).
+      if (
+        derived.kind === "error" &&
+        derived.durationMs == null &&
+        isLast &&
+        runStatus?.phase === "error"
+      )
+        return { ...derived, durationMs: runStatus.durationMs };
+      return derived;
+    }
+    if (isLast && t.role === "agent" && !t.error && runStatus?.phase === "done")
+      return {
+        kind: "done",
+        durationMs: runStatus.durationMs,
+        usage: runStatus.usage ?? null,
+        pendingReview: i === lastAgentIdx && pendingReview,
+      };
+    return null;
+  };
+  // The reply being generated appears in `turns` only from its first delta;
+  // until then (tool rounds, the blocking fallback) a standalone pending row
+  // at the transcript tail carries the live indicator.
+  const streamingTurnVisible = runInFlight && turns[turns.length - 1]?.role === "agent";
+  // Cumulative session tokens (the strip by the composer): persisted Actuals
+  // plus the in-flight run's interim sums (dev/37: provider-reported only,
+  // never an estimate).
+  const sessionTokens = useMemo(
+    () => sessionTokenTotals(turns, runInFlight ? runStatus?.liveUsage : null),
+    [turns, runInFlight, runStatus?.liveUsage],
+  );
+  // Per-attachment send disable (dev/80): when the provider wires a status
+  // (null = wired, idle) the busy state follows it, keyed by attachment — so
+  // cycling agents mid-run no longer leaks the panel-local `sending` flag
+  // into another chat. Unwired (tests, previews): the local flag governs.
+  const sendBusy = runStatus === undefined ? sending : runInFlight;
 
   // SUGGESTED PROMPTS (memo dev/39, docs/08): only the newest turn's part
   // counts — once the user replies, earlier follow-ups are stale noise.
@@ -253,7 +330,7 @@ export const AgentChatPanel: React.FC<{
 
   const send = async () => {
     const message = input.trim();
-    if (!message || sending) return;
+    if (!message || sendBusy) return;
     setInput("");
     // Sending is explicit bottom engagement: the user always sees their own
     // message land and the reply start, even if they had scrolled up.
@@ -555,6 +632,7 @@ export const AgentChatPanel: React.FC<{
                 <span className={`${styles.agentRowAvatar} ${tint}`} aria-hidden="true">
                   <FontAwesomeIcon icon={faRobot} />
                 </span>
+                <div className={styles.agentCol}>
                 <div className={`${styles.msgAgent} ${t.error ? styles.msgError : ""}`}>
                   {/* Agent rich content renders ONLY through the safe renderer
                       (REQ-SEC-002); error markers are server-composed plain
@@ -631,6 +709,17 @@ export const AgentChatPanel: React.FC<{
                       />
                     ))}
                 </div>
+                {/* Per-reply execution status (dev/80 amendment): running
+                    while THIS reply streams, then its own duration + tokens. */}
+                {(() => {
+                  const meta = turnMeta(t, i);
+                  return meta ? (
+                    <div className={styles.turnMeta}>
+                      <AgentRunStatusLine display={meta} tintClassName={tint} />
+                    </div>
+                  ) : null;
+                })()}
+                </div>
               </div>
             ),
           )
@@ -640,6 +729,24 @@ export const AgentChatPanel: React.FC<{
             {line}
           </div>
         ))}
+        {/* The reply hasn't streamed its first delta yet (tool rounds, the
+            blocking fallback): a standalone pending row keeps the live
+            indicator visible at the tail (dev/80 amendment). */}
+        {runInFlight && !streamingTurnVisible && runStatus ? (
+          <div className={styles.agentRow}>
+            <span className={`${styles.agentRowAvatar} ${tint}`} aria-hidden="true">
+              <FontAwesomeIcon icon={faRobot} />
+            </span>
+            <div className={styles.agentCol}>
+              <div className={styles.turnMeta}>
+                <AgentRunStatusLine
+                  display={{ kind: "running", startedAt: runStatus.startedAt }}
+                  tintClassName={tint}
+                />
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
       <TranscriptJumpButton
         visible={!atBottom}
@@ -662,6 +769,18 @@ export const AgentChatPanel: React.FC<{
               {alt}
             </button>
           ))}
+        </div>
+      ) : null}
+
+      {/* Cumulative counter strip (memo dev/80, amended): the per-reply
+          status lives on each agent message; this strip — outside the
+          scroller, directly above the composer — carries only the session's
+          accumulated token total, right-aligned near the input. Hidden while
+          history hydrates and while nothing was ever reported. */}
+      {!loadingHistory && sessionTokens ? (
+        <div className={styles.statusStrip}>
+          <span className={styles.statusStripSpacer} />
+          <AgentSessionTokenCounter totals={sessionTokens} live={runInFlight} />
         </div>
       ) : null}
 
@@ -688,10 +807,10 @@ export const AgentChatPanel: React.FC<{
           className={styles.send}
           aria-label="Send"
           title="Send"
-          disabled={sending || !input.trim()}
+          disabled={sendBusy || !input.trim()}
           onClick={send}
         >
-          {sending ? "…" : <FontAwesomeIcon icon={faArrowUp} />}
+          {sendBusy ? "…" : <FontAwesomeIcon icon={faArrowUp} />}
         </button>
       </div>
     </div>

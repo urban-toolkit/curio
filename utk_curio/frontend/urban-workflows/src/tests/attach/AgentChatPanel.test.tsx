@@ -661,3 +661,203 @@ describe("AgentChatPanel follow-at-bottom auto-scroll (memo dev/75)", () => {
     expect(screen.queryByRole("button", { name: /jump to latest/i })).toBeNull();
   });
 });
+
+
+// ── Per-reply run status + token counters (memo dev/80, amended) ──
+
+describe("AgentChatPanel per-reply run status (memo dev/80)", () => {
+  // Fresh per use: a stale startedAt would drift the elapsed readout.
+  const runningStatus = () => ({ phase: "running" as const, startedAt: Date.now() });
+
+  const doneTurn = (text: string, tokens: [number, number], durationMs = 5000): AgentSessionTurn => ({
+    role: "agent",
+    text,
+    execution: {
+      executionId: `e-${text}`,
+      usage: { inputTokens: tokens[0], outputTokens: tokens[1] },
+      status: "ok",
+      durationMs,
+    },
+  });
+
+  it("before the first delta a standalone pending row shows the live indicator", () => {
+    renderPanel({
+      runStatus: runningStatus(),
+      turns: [{ role: "user", text: "q1" }],
+    });
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent(/Cooking… · 0:00/);
+    expect(status).toHaveTextContent(/agent is working/i);
+  });
+
+  it("while streaming, the live indicator rides the in-flight reply itself", () => {
+    renderPanel({
+      runStatus: runningStatus(),
+      turns: [
+        { role: "user", text: "q1" },
+        { role: "agent", text: "partial rep" },
+      ],
+    });
+    // Exactly one indicator: on the streaming turn, no extra pending row.
+    const statuses = screen.getAllByRole("status");
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0]).toHaveTextContent(/Cooking… · 0:00/);
+  });
+
+  it("every finalized reply carries its own duration and tokens", () => {
+    renderPanel({
+      turns: [
+        { role: "user", text: "q1" },
+        doneTurn("a1", [400, 1032], 12000),
+        { role: "user", text: "q2" },
+        doneTurn("a2", [100, 100], 900),
+      ],
+    });
+    const statuses = screen.getAllByRole("status");
+    expect(statuses).toHaveLength(2);
+    expect(statuses[0]).toHaveTextContent("Finished in 12s · 1.4k tokens");
+    expect(statuses[1]).toHaveTextContent("Finished in 1s · 200 tokens");
+  });
+
+  it("the cumulative counter accumulates across replies while each keeps its own", () => {
+    renderPanel({
+      turns: [
+        { role: "user", text: "q1" },
+        doneTurn("a1", [400, 1032]),
+        { role: "user", text: "q2" },
+        doneTurn("a2", [100, 100]),
+      ],
+    });
+    expect(screen.getByLabelText(/session token usage/i)).toHaveTextContent("1.6k tokens");
+  });
+
+  it("while running the send button keeps its loading glyph and is disabled", () => {
+    renderPanel({ runStatus: runningStatus() });
+    fireEvent.change(screen.getByPlaceholderText(/message this agent/i), {
+      target: { value: "queued question" },
+    });
+    const send = screen.getByRole("button", { name: "Send" });
+    expect(send).toBeDisabled();
+    expect(send).toHaveTextContent("…");
+  });
+
+  it("a wired-idle status re-enables send even while another chat's send is in flight (cycling leak fix)", async () => {
+    // A never-resolving onSend leaves the panel-local `sending` flag true —
+    // exactly the state carried across an attachment cycle. The provider's
+    // per-attachment status (null = idle) must win.
+    const onSend = jest.fn().mockReturnValue(new Promise(() => undefined));
+    const { rerender, props } = renderPanel({ onSend, runStatus: runningStatus() });
+    fireEvent.change(screen.getByPlaceholderText(/message this agent/i), {
+      target: { value: "first" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    // Cycled to another attachment: its status is idle.
+    rerender(
+      <AgentChatPanel
+        {...props}
+        attachment={{ ...attachment, attachmentId: "a2", sessionId: "s2other" }}
+        runStatus={null}
+      />,
+    );
+    fireEvent.change(screen.getByPlaceholderText(/message this agent/i), {
+      target: { value: "second chat draft" },
+    });
+    const send = screen.getByRole("button", { name: "Send" });
+    expect(send).not.toBeDisabled();
+    expect(send).not.toHaveTextContent("…");
+  });
+
+  it("an old-server finalized reply (no execution fields) falls back to the run record", () => {
+    renderPanel({
+      runStatus: {
+        phase: "done",
+        startedAt: Date.now() - 12000,
+        durationMs: 12000,
+        usage: { inputTokens: 400, outputTokens: 1032 },
+      },
+      turns: [
+        { role: "user", text: "q1" },
+        { role: "agent", text: "a1" },
+      ],
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Finished in 12s · 1.4k tokens");
+  });
+
+  it("a failed reply shows the failed state with elapsed-at-failure from the run record", () => {
+    renderPanel({
+      runStatus: { phase: "error", startedAt: Date.now() - 8000, durationMs: 8000 },
+      turns: [
+        { role: "user", text: "q1" },
+        { role: "agent", text: "(error) boom", error: true },
+      ],
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Failed after 8s");
+  });
+
+  it("a rehydrated error turn derives the failed state without a run record", () => {
+    renderPanel({
+      turns: [
+        { role: "user", text: "q1" },
+        { role: "agent", text: "(error) boom", error: true },
+      ],
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Failed");
+  });
+
+  it("a pending review proposal marks only the newest reply", () => {
+    renderPanel({
+      attachment: {
+        ...attachment,
+        activeProposal: {
+          proposalId: "p1",
+          tool: "node.content.write",
+          nodeId: "n1",
+          summary: "write",
+          status: "pending",
+        },
+      },
+      turns: [
+        { role: "user", text: "q1" },
+        doneTurn("a1", [10, 10]),
+        { role: "user", text: "q2" },
+        doneTurn("a2", [10, 10]),
+      ],
+    });
+    const chips = screen.getAllByText("Awaiting your review");
+    expect(chips).toHaveLength(1);
+    const statuses = screen.getAllByRole("status");
+    expect(statuses[0]).not.toHaveTextContent("Awaiting your review");
+    expect(statuses[1]).toHaveTextContent("Awaiting your review");
+  });
+
+  it("the live cumulative counter includes the in-flight run's interim sums", () => {
+    renderPanel({
+      runStatus: {
+        ...runningStatus(),
+        liveUsage: { inputTokens: 1000, outputTokens: 500 },
+      },
+      turns: [
+        { role: "user", text: "q1" },
+        doneTurn("a1", [300, 200]),
+        { role: "user", text: "q2" },
+      ],
+    });
+    expect(screen.getByLabelText(/session token usage/i)).toHaveTextContent("2.0k tokens");
+  });
+
+  it("a pristine chat renders no status and no counter", () => {
+    renderPanel();
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.queryByLabelText(/session token usage/i)).toBeNull();
+  });
+
+  it("pre-dev/37 history (no execution record) renders no fabricated status", () => {
+    renderPanel({
+      turns: [
+        { role: "user", text: "q1" },
+        { role: "agent", text: "a1" },
+      ],
+    });
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+});

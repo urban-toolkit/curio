@@ -382,6 +382,21 @@
   max-width: 92%;
 }
 
+/* Bubble + per-reply status meta stacked beside the avatar (dev/80 amd.). */
+.agentCol {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+/* Per-reply execution status (dev/80 amendment): a quiet line under the
+   bubble — running while the reply streams, then duration + tokens. */
+.turnMeta {
+  padding-left: 2px;
+}
+
 .agentRowAvatar {
   flex: none;
   width: 22px;
@@ -563,6 +578,29 @@
 
 /* The chips row visually joins the footer beneath it. */
 .suggestedRow + .footer {
+  border-top: none;
+}
+
+/* ── counter strip (memo dev/80, amended): the session's accumulated token
+   total, right-aligned by the composer (per-reply statuses live on the
+   messages). Fixed height so appearing/updating causes no layout shift. */
+.statusStrip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  padding: 3px 16px;
+  background: var(--curio-card-bg, #fff);
+  border-top: 1px solid #ececee;
+}
+
+.statusStripSpacer {
+  flex: 1;
+}
+
+/* The strip joins whatever sits directly beneath/above it into one block. */
+.suggestedRow + .statusStrip,
+.statusStrip + .footer {
   border-top: none;
 }
 

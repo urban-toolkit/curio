@@ -88,6 +88,7 @@ export const AgentDockOverlay: React.FC = () => {
                 projectId ? () => setSettingsFor(selected.attachmentId) : undefined
               }
               toolActivity={ctx.toolActivity[selected.attachmentId] ?? []}
+              runStatus={ctx.runStatus[selected.attachmentId] ?? null}
               onApplyProposal={(proposalId) =>
                 ctx.applyProposal(selected.attachmentId, proposalId)
               }
