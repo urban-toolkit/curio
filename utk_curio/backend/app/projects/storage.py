@@ -462,18 +462,24 @@ def write_manifest(
     return p
 
 
-def replace_dataflow_datasets(
+def mutate_dataflow_datasets(
     user_key: str,
     project_id: str,
-    refs: list[dict],
-) -> Optional[dict]:
-    """Replace ``spec.trill.json``'s ``dataflow.datasets`` with *refs* (dev/81).
+    mutate,
+) -> Optional[tuple[dict, bool]]:
+    """Atomically read-modify-write ``dataflow.datasets`` (dev/82).
 
     The dataset endpoints' section writer: under the per-project spec lock,
-    re-reads the on-disk spec, swaps ONLY the datasets section, and writes it
-    back — nodes/edges/agents/packages are untouched, so a dataset mutation can
-    never clobber (or be clobbered by) a concurrent save's other sections.
-    Returns the written spec, or ``None`` when the project has no spec.
+    re-reads the on-disk spec, hands the dict-filtered current refs to
+    *mutate*, and persists the list it returns — so a concurrent mutation of a
+    DIFFERENT dataset can never be lost to a stale pre-lock read. Only the
+    datasets section is swapped; nodes/edges/agents/packages are untouched.
+
+    *mutate* runs while the spec lock is held: it must be a pure list
+    transform (no project I/O, nothing that re-acquires the lock). Returning
+    ``None`` means "no change" — nothing is written.
+
+    Returns ``(spec, changed)``, or ``None`` when the project has no spec.
     """
     # Cheap existence check first so we don't create a project dir (and lock
     # file) for a project that doesn't exist.
@@ -484,9 +490,26 @@ def replace_dataflow_datasets(
         if not spec:
             return None
         dataflow = spec.setdefault("dataflow", {})
-        dataflow["datasets"] = refs
+        current = [r for r in (dataflow.get("datasets") or []) if isinstance(r, dict)]
+        new_refs = mutate(current)
+        if new_refs is None:
+            return spec, False
+        dataflow["datasets"] = new_refs
         write_spec(user_key, project_id, spec)
-        return spec
+        return spec, True
+
+
+def replace_dataflow_datasets(
+    user_key: str,
+    project_id: str,
+    refs: list[dict],
+) -> Optional[dict]:
+    """Replace ``dataflow.datasets`` wholesale (dev/81) — a constant-callback
+    :func:`mutate_dataflow_datasets`, kept for whole-list writes (seeding,
+    carry-overs) where the caller does not depend on the prior list.
+    Returns the written spec, or ``None`` when the project has no spec."""
+    result = mutate_dataflow_datasets(user_key, project_id, lambda _current: refs)
+    return None if result is None else result[0]
 
 
 def read_manifest(

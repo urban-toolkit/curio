@@ -525,33 +525,43 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
                       dataset_install_warnings=install_warnings)
 
 
-def replace_dataflow_datasets(user, project_id: str, refs: list) -> Optional[dict]:
-    """The dataset endpoints' writer for ``spec.dataflow.datasets`` (dev/81 Fix 2).
+def mutate_dataflow_datasets(user, project_id: str, mutate) -> Optional[dict]:
+    """The dataset endpoints' writer for ``spec.dataflow.datasets`` (dev/81/82).
 
-    Replaces only the datasets section (under the per-project spec lock) and
-    bumps the project row's timestamp exactly like :func:`update_project`, so
-    install/uninstall/publish keep affecting "Recent" ordering. Deliberately
-    NOT a round-trip through :func:`update_project`: that path now carries the
-    on-disk section forward on every client save, which would immediately undo
-    the very refs being written here. Skips the manifest rewrite — the manifest
-    carries outputs/name/description only. Returns the written spec, or
-    ``None`` when the project has no spec on disk.
+    Atomic read-modify-write: *mutate* receives the current refs under the
+    per-project spec lock and returns the list to persist (``None`` = no
+    change, nothing written). Bumps the project row's timestamp exactly like
+    :func:`update_project` — but only when something actually changed — so
+    install/uninstall/publish keep affecting "Recent" ordering without no-op
+    mutations churning it. Deliberately NOT a round-trip through
+    :func:`update_project`: that path carries the on-disk section forward on
+    every client save, which would immediately undo the very refs being
+    written here. Skips the manifest rewrite — the manifest carries
+    outputs/name/description only. Returns the resulting spec, or ``None``
+    when the project has no spec on disk.
     """
     project = repo.get_for_user(project_id, user.id)
     ukey = _user_dir_key(user)
-    spec = storage.replace_dataflow_datasets(ukey, project_id, refs)
-    if spec is None:
+    result = storage.mutate_dataflow_datasets(ukey, project_id, mutate)
+    if result is None:
         return None
-    repo.upsert_project(
-        user_id=user.id,
-        name=project.name,
-        folder_path=str(storage.project_dir(ukey, project_id)),
-        description=project.description,
-        thumbnail_accent=project.thumbnail_accent,
-        project_id=project_id,
-    )
-    db.session.commit()
+    spec, changed = result
+    if changed:
+        repo.upsert_project(
+            user_id=user.id,
+            name=project.name,
+            folder_path=str(storage.project_dir(ukey, project_id)),
+            description=project.description,
+            thumbnail_accent=project.thumbnail_accent,
+            project_id=project_id,
+        )
+        db.session.commit()
     return spec
+
+
+def replace_dataflow_datasets(user, project_id: str, refs: list) -> Optional[dict]:
+    """Whole-list variant of :func:`mutate_dataflow_datasets` (dev/81 Fix 2)."""
+    return mutate_dataflow_datasets(user, project_id, lambda _current: refs)
 
 
 # ---------------------------------------------------------------------------

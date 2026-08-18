@@ -129,15 +129,25 @@ class InstalledDatasetRepository:
             ))
         return items
 
-    def replace_refs(self, dataflow_id: str, refs: list[dict[str, Any]]) -> dict[str, Any]:
+    def mutate_refs(self, dataflow_id: str, mutate) -> dict[str, Any]:
+        """Atomically read-modify-write this dataflow's refs (dev/82).
+
+        *mutate* receives the current refs under the per-project spec lock and
+        returns the list to persist, or ``None`` for "no change". Dedicated
+        section writer (dev/81 Fix 2) — NOT an update_project round-trip: that
+        path carries the on-disk datasets section forward on every client save
+        (backend ownership) and would undo these refs. The callback must be a
+        pure list transform (it runs while the spec lock is held)."""
         if self.user is None:
             raise DatasetCatalogError("Authorization required", 401)
         from utk_curio.backend.app.projects import services as project_services
 
-        # Dedicated section writer (dev/81 Fix 2) — NOT an update_project
-        # round-trip: that path carries the on-disk datasets section forward on
-        # every client save (backend ownership) and would undo these refs.
-        spec = project_services.replace_dataflow_datasets(self.user, dataflow_id, refs)
+        spec = project_services.mutate_dataflow_datasets(self.user, dataflow_id, mutate)
         if spec is None:
             raise DatasetCatalogError("Dataflow not found", 404)
         return spec
+
+    def replace_refs(self, dataflow_id: str, refs: list[dict[str, Any]]) -> dict[str, Any]:
+        """Whole-list variant of :meth:`mutate_refs` — for seeding/carry-over
+        writes where the caller does not depend on the prior list."""
+        return self.mutate_refs(dataflow_id, lambda _current: refs)

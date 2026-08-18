@@ -146,6 +146,76 @@ def test_replace_dataflow_datasets_creates_the_section(tmp_curio):
     assert storage.read_spec("1", "proj-fresh")["dataflow"]["datasets"] == refs
 
 
+# ── mutate_dataflow_datasets (dev/82 atomic read-modify-write) ───────────────
+
+def test_mutate_dataflow_datasets_missing_project(tmp_curio):
+    assert storage.mutate_dataflow_datasets("1", "proj-none", lambda refs: refs) is None
+    assert not storage.project_dir("1", "proj-none").exists()
+
+
+def test_mutate_dataflow_datasets_transforms_current_refs(tmp_curio):
+    """The callback receives the dict-filtered on-disk refs and its result is
+    persisted — the read and the write share one lock acquisition."""
+    storage.write_spec("1", "proj-mut", {"dataflow": {"datasets": [
+        {"datasetId": "computed.a"},
+        "malformed-row",  # non-dict residue must be filtered before the callback
+    ]}})
+
+    seen: list = []
+
+    def _mutate(refs):
+        seen.append(list(refs))
+        return refs + [{"datasetId": "computed.b"}]
+
+    spec, changed = storage.mutate_dataflow_datasets("1", "proj-mut", _mutate)
+    assert changed is True
+    assert seen == [[{"datasetId": "computed.a"}]]
+    assert [r["datasetId"] for r in spec["dataflow"]["datasets"]] == ["computed.a", "computed.b"]
+    on_disk = storage.read_spec("1", "proj-mut")["dataflow"]["datasets"]
+    assert [r["datasetId"] for r in on_disk] == ["computed.a", "computed.b"]
+
+
+def test_mutate_dataflow_datasets_none_means_no_write(tmp_curio):
+    """A ``None`` return skips the write entirely — the spec file is untouched."""
+    storage.write_spec("1", "proj-noop", {"dataflow": {"datasets": [{"datasetId": "d1"}]}})
+    spec_path = storage.project_dir("1", "proj-noop") / "spec.trill.json"
+    before = spec_path.read_bytes()
+
+    spec, changed = storage.mutate_dataflow_datasets("1", "proj-noop", lambda refs: None)
+    assert changed is False
+    assert spec["dataflow"]["datasets"] == [{"datasetId": "d1"}]
+    assert spec_path.read_bytes() == before
+
+
+def test_mutate_dataflow_datasets_concurrent_no_lost_update(tmp_curio):
+    """The dev/81 follow-up race: concurrent mutations appending DISTINCT refs
+    must all survive — the transform runs inside the lock, so no stale pre-lock
+    read can be written back over another writer's ref."""
+    import threading
+
+    storage.write_spec("1", "proj-conc", {"dataflow": {"datasets": []}})
+
+    n = 24
+    barrier = threading.Barrier(n)
+
+    def worker(i: int) -> None:
+        barrier.wait()  # maximize overlap of the read-modify-write windows
+        storage.mutate_dataflow_datasets(
+            "1", "proj-conc",
+            lambda refs, _i=i: refs + [{"datasetId": f"computed.{_i}"}],
+        )
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    refs = storage.read_spec("1", "proj-conc")["dataflow"]["datasets"]
+    ids = {r["datasetId"] for r in refs}
+    assert ids == {f"computed.{i}" for i in range(n)}
+
+
 def test_installed_file_for_node_swallows_path_traversal(tmp_curio):
     """A crafted dirName that resolves outside the base must not 500 the load
     (review finding B12) — PathTraversalError is a PermissionError, not ValueError."""

@@ -216,3 +216,38 @@ def test_replace_refs_404s_when_spec_is_missing(client, user_and_token, app):
     with pytest.raises(DatasetCatalogError) as excinfo:
         InstalledDatasetRepository(user).replace_refs(project_id, [])
     assert excinfo.value.status == 404
+
+    with pytest.raises(DatasetCatalogError) as excinfo:
+        InstalledDatasetRepository(user).mutate_refs(project_id, lambda refs: refs)
+    assert excinfo.value.status == 404
+
+
+def test_noop_mutation_writes_nothing_and_keeps_the_timestamp(client, user_and_token):
+    """A failed uninstall (dataset not installed) is a no-change mutation: it
+    404s without writing the spec or bumping the project row's timestamp
+    (dev/82 — the callback returned ``None``)."""
+    from utk_curio.backend.app.projects import repositories as projects_repo
+    from utk_curio.backend.app.projects import storage
+    from utk_curio.backend.app.projects.services import _user_dir_key
+    from utk_curio.backend.extensions import db
+
+    user, token = user_and_token
+    project_id = create_project(client, token, name="No-op mutation")
+    imported = _import(client, token, name="grid2.csv")
+    _install(client, token, project_id, imported["id"])
+
+    spec_path = storage.project_dir(_user_dir_key(user), project_id) / "spec.trill.json"
+    spec_bytes_before = spec_path.read_bytes()
+    # Read the row directly — the project GET route bumps updated_at itself
+    # (touch_last_opened), so it can't serve as the observation point.
+    updated_before = projects_repo.get_for_user(project_id, user.id).updated_at
+
+    resp = client.delete(
+        f"/api/dataflows/{project_id}/datasets/never-installed-id",
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 404, resp.get_data(as_text=True)
+
+    assert spec_path.read_bytes() == spec_bytes_before
+    db.session.expire_all()
+    assert projects_repo.get_for_user(project_id, user.id).updated_at == updated_before
