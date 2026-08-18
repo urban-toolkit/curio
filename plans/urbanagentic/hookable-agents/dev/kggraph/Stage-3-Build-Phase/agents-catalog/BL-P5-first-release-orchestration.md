@@ -429,3 +429,19 @@ Build Entry Template and are append-only.
 - Commit/PR: `COMMIT-dafd61f6` (component + tests), `COMMIT-1ed4a707` (renderer wiring + policy regressions), `COMMIT-e1bbcc73` (integration assertion), docs commit (this entry + memo)
 - Issues/regressions discovered: none
 - Follow-up work: LLMChat/FloatingPanel/NodeExplanation use bare `<ReactMarkdown>` and carry no copy affordance — if wanted there, extract a shared `components` map rather than duplicating the button (same posture as the dev/77 LLMChat composer follow-up)
+
+## BL-P5-20260818-24: Jump-to-latest fixed for real browsers — eager detach + jump landing guarantee (memo dev/79)
+
+- Date / author: 2026-08-18 / Karla
+- Status: verified
+- Requirements: the owner's report — "the jump to the bottom btn is not working" in the real app while all jsdom tests pass; the dev/75 contract must actually hold in a browser: scrolling up during streaming detaches reliably, and clicking the pill always lands at the newest message
+- Design decisions/artifacts: memo `dev/79` (renumbered from 78 — a parallel session claimed 78 for the transcript code-copy button)
+- Tasks: `TASK-P5-jump-to-latest-detach-race`
+- Risks/questions: was the diagnosis right without a browser repro? — the primary mechanism was reproduced as an ordering test against the unfixed hook (wheel-up → chunk re-render → late coalesced scroll event ⇒ scroll eaten, still pinned), then inverted into the regression test
+- Design-to-code decision or deviation: **(1) Root cause 1 — the detach race**: browsers coalesce scroll events and dispatch them after queued tasks, so during streaming the next chunk's layout effect re-pins BEFORE the scroll event reporting the user's wheel-up; fix: user input meaning "leave the bottom" unpins synchronously in the input handler itself (wheel `deltaY<0`, `touchmove`, `ArrowUp`/`PageUp`/`Home`, `pointerdown` in the scrollbar gutter `offsetX>=clientWidth` with `target===container`, LTR-only noted); false positives self-heal via the next scroll event's position check. **(2) Root cause 2 — momentum cancels the jump**: native smooth scrolls die on any wheel input and macOS trackpad momentum emits wheel events for ~1–2s after the click; fix: a 450ms landing guarantee — user-intent handlers stand down while the flight is armed, a scroll event landing near the bottom disarms early, and the deadline snaps via direct `scrollTop` write (uncancelable) if the animation died; `prefers-reduced-motion` keeps its instant path. **(3) Deliberate test replacement**: the dev/75 test "wheel during a jump wins over the animation" encoded exactly the momentum-cancel behavior fix 2 removes — replaced by the flight-contract pair rather than kept
+- Files/modules changed: frontend `components/agents/attach/useTranscriptAutoScroll.ts` only (consumers, pill UI, styling untouched)
+- Tests added/updated: hook suite +7/−1 (race regression at the exact real-browser ordering, wheel-down never detaches, touchmove self-heal, up-key detach, gutter-vs-content pointerdown, momentum-ignored + deadline-snap with fake timers, post-landing wheel-up detaches again); `AgentChatPanel` +1 (the race at the panel surface: wheel-up → chunk → pill appears, position held)
+- Verification evidence: frontend `npx jest` full → 836 passed (76 suites), up from the dev/78 829 baseline by exactly the 7 net new tests; `tsc --noEmit` nothing new in touched files
+- Commit/PR: `COMMIT-62c36c17` (single squash per memo §9's allowance — both fixes interleave in the same functions), docs commit (this entry + memo flip)
+- Issues/regressions discovered: memo/BL numbering collision with the parallel dev/78 code-copy work — resolved by renumbering this change to dev/79 before committing (hook comments and test names updated; the copy-button suite's dev/78 references untouched)
+- Follow-up work: if a genuinely non-agent transcript ever adopts the hook, revisit the LTR-only scrollbar-gutter check and promote per dev/76's escape hatch
