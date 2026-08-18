@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import type { AgentAttachment } from "../../../api/agentsApi";
 import { useFlowContext } from "../../../providers/FlowProvider";
+import { AgentRunStatusLine } from "./AgentRunStatusLine";
 import { BUILDER_TEMPLATES } from "./builderTemplates";
 import styles from "./AgentBuilderStrip.module.css";
 
@@ -78,6 +79,30 @@ export const AgentBuilderStrip: React.FC<{
   const pending = entries.filter(([, s]) => s === "pending").map(([id]) => id);
   const failed = entries.filter(([, s]) => s === "failed").map(([id]) => id);
   const unresolved = pending.length + failed.length;
+
+  // dev/83: the shared running-status line (dot + elapsed + fraction) replaces
+  // the bare "solving…" note — one status language with the reply meta lines.
+  // One fixed label per batch kind; the fraction counts terminal node states.
+  const activeBatchLabel =
+    solving || phase === "solving"
+      ? "Solving"
+      : simBusy === "auto"
+        ? "Building"
+        : simBusy === "step"
+          ? "Stepping"
+          : null;
+  const batchDone = entries.filter(
+    ([, s]) => s === "solved" || s === "failed" || s === "skipped",
+  ).length;
+  const batchDetail = entries.length > 0 ? `${batchDone}/${entries.length} nodes` : undefined;
+  // Elapsed is strip-local observation time: builderSession persists no batch
+  // start timestamp, so a panel reopened mid-run shows time since this strip
+  // observed the batch (the dev/80 client-measured posture — nothing
+  // fabricated). A label change (new batch kind) restarts the clock.
+  const [batchStartedAt, setBatchStartedAt] = useState<number | null>(null);
+  useEffect(() => {
+    setBatchStartedAt(activeBatchLabel ? Date.now() : null);
+  }, [activeBatchLabel]);
 
   const solve = async (nodeIds?: string[]) => {
     setSolving(true);
@@ -182,8 +207,13 @@ export const AgentBuilderStrip: React.FC<{
             {p.label}
           </span>
         ))}
-        {phase === "solving" || solving ? (
-          <span className={styles.solvingNote}>solving…</span>
+        {activeBatchLabel && batchStartedAt !== null ? (
+          <AgentRunStatusLine
+            display={{ kind: "running", startedAt: batchStartedAt }}
+            runningLabel={activeBatchLabel}
+            runningDetail={batchDetail}
+            srLabel="Solve batch running"
+          />
         ) : null}
       </div>
       {phase === "idle" ? (

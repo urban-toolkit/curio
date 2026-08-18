@@ -318,3 +318,93 @@ describe("AgentBuilderStrip simulation controls (dev/67-9, DEC-054)", () => {
     expect(screen.getByText(/Paused — validation failed/)).toBeInTheDocument();
   });
 });
+
+describe("AgentBuilderStrip running-status line (dev/83)", () => {
+  it("a solving batch renders the shared status line — fixed label, elapsed, terminal-state fraction — and the old note is gone", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={attachment({
+          phase: "solving",
+          appliedPlanId: "p1",
+          nodeRuns: {
+            a: "solved",
+            b: "failed",
+            c: "skipped",
+            d: "solving",
+            e: "pending",
+          },
+        })}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+      />,
+    );
+    // solved/failed/skipped count as done; solving/pending do not.
+    expect(screen.getByText(/Solving… · \d+:\d\d · 3\/5 nodes/)).toBeInTheDocument();
+    expect(screen.getByText("Solve batch running")).toBeInTheDocument();
+    expect(screen.queryByText("solving…")).toBeNull(); // the dev/52 note is gone
+  });
+
+  it("renders no status line while no batch is active", () => {
+    render(
+      <AgentBuilderStrip
+        attachment={attachment({
+          phase: "applied",
+          appliedPlanId: "p1",
+          nodeRuns: { a: "pending" },
+        })}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+      />,
+    );
+    expect(screen.queryByText(/Solving…/)).toBeNull();
+    expect(screen.queryByText("Solve batch running")).toBeNull();
+  });
+
+  it("the auto-simulation drive shows Building without a fraction when no nodes ran yet", () => {
+    const withReview: AgentAttachment = {
+      ...attachment({ phase: "plan_review", planProposalId: "pp1" }),
+      activeProposal: {
+        proposalId: "pp1",
+        tool: "dataflow.plan.write",
+        nodeId: "",
+        summary: "Apply plan · 2 nodes",
+        status: "pending",
+      },
+    } as AgentAttachment;
+    render(
+      <AgentBuilderStrip
+        attachment={withReview}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        onSimulate={() => new Promise(() => {})} // held in flight
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Build & validate plan" }));
+    const line = screen.getByText(/Building… · \d+:\d\d/);
+    expect(line).toBeInTheDocument();
+    expect(line.textContent).not.toContain("nodes"); // no fraction without entries
+  });
+
+  it("the step drive shows Stepping", () => {
+    const withReview: AgentAttachment = {
+      ...attachment({ phase: "plan_review", planProposalId: "pp1" }),
+      activeProposal: {
+        proposalId: "pp1",
+        tool: "dataflow.plan.write",
+        nodeId: "",
+        summary: "Apply plan · 2 nodes",
+        status: "pending",
+      },
+    } as AgentAttachment;
+    render(
+      <AgentBuilderStrip
+        attachment={withReview}
+        onSolve={jest.fn()}
+        onComposePrompt={jest.fn()}
+        onSimulate={() => new Promise(() => {})}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Step" }));
+    expect(screen.getByText(/Stepping… · \d+:\d\d/)).toBeInTheDocument();
+  });
+});

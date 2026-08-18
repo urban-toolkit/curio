@@ -33,11 +33,6 @@
   background: #eef4fe;
 }
 
-.solvingNote {
-  font-size: 0.72rem;
-  color: #6b7280;
-}
-
 .templates {
   display: flex;
   flex-wrap: wrap;
