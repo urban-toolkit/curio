@@ -883,6 +883,8 @@ export const agentsApi = {
     /** Execution identity + Actual usage (memo dev/37); absent on old servers. */
     executionId?: string;
     usage?: AgentUsage | null;
+    /** The run's wall-clock duration (memo dev/80); absent on old servers. */
+    durationMs?: number;
     /** Typed content parts (memo dev/39); absent on old servers. */
     content?: AgentContentPart[];
   }> {
@@ -909,8 +911,9 @@ export const agentsApi = {
     message: string,
     onDelta: (text: string) => void,
     /** Optional observer for the dev/41 tool/review events (`tool_requested`,
-     * `tool_started`, `tool_result`, `review_required`) — transient system-
-     * line display only; the durable state arrives with `done`/rehydration. */
+     * `tool_started`, `tool_result`, `review_required`) and the dev/80
+     * interim `usage` events — transient display only; the durable state
+     * arrives with `done`/rehydration. */
     onEvent?: (name: string, payload: Record<string, unknown>) => void,
     /** Ephemeral grounded context (memo dev/44) — composed fresh per send. */
     context?: string | null,
@@ -918,11 +921,14 @@ export const agentsApi = {
     reply: string;
     executionId?: string;
     usage?: AgentUsage | null;
+    /** The run's wall-clock duration (memo dev/80); absent on old servers. */
+    durationMs?: number;
     content?: AgentContentPart[];
   }> {
     let reply: string | null = null;
     let executionId: string | undefined;
     let usage: AgentUsage | null | undefined;
+    let durationMs: number | undefined;
     let content: AgentContentPart[] | undefined;
 
     await postSseStream(
@@ -935,6 +941,7 @@ export const agentsApi = {
           error?: string;
           executionId?: string;
           usage?: AgentUsage | null;
+          durationMs?: number;
           parts?: AgentContentPart[];
           content?: AgentContentPart[];
         };
@@ -949,19 +956,22 @@ export const agentsApi = {
           event === "delegate_requested" ||
           event === "delegate_started" ||
           event === "delegate_result" ||
-          event === "plan_revision"
+          event === "plan_revision" ||
+          // dev/80: interim provider-reported usage sums, once per loop round.
+          event === "usage"
         )
           onEvent?.(event, payload as Record<string, unknown>);
         else if (event === "done") {
           reply = payload.reply ?? "";
           executionId = payload.executionId ?? executionId;
           usage = payload.usage;
+          durationMs = payload.durationMs;
           content = payload.content ?? content;
         } else if (event === "error") throw new Error(payload.error || "agent run failed");
       },
     );
     if (reply === null) throw new Error("stream ended without a reply");
-    return { reply, executionId, usage, content };
+    return { reply, executionId, usage, durationMs, content };
   },
 
   /**

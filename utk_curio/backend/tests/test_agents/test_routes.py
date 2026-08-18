@@ -930,10 +930,14 @@ class TestStreamRun:
         execution_id = events[0][1]["executionId"]
         assert execution_id
         assert events[1:3] == [("delta", {"text": "hel"}), ("delta", {"text": "lo"})]
-        assert events[3] == (
-            "done",
-            {"reply": "hello", "executionId": execution_id, "usage": None, "content": []},
-        )
+        # No provider-reported usage → no interim usage event (dev/80): the
+        # done frame follows the deltas directly, now carrying durationMs.
+        done_name, done_payload = events[3]
+        assert done_name == "done"
+        assert done_payload.pop("durationMs") >= 0
+        assert done_payload == {
+            "reply": "hello", "executionId": execution_id, "usage": None, "content": [],
+        }
         turns = client.get(
             f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
             headers=_auth(token),
@@ -1171,15 +1175,18 @@ class TestExecutionRecords:
         # The SSE envelope correlates with the persisted record (memo dev/37):
         # execution first, done enriched with the same id and Actual usage.
         assert events[0] == ("execution", {"executionId": execution["executionId"]})
-        assert events[-1] == (
-            "done",
-            {
-                "reply": "hello",
-                "executionId": execution["executionId"],
-                "usage": {"inputTokens": 7, "outputTokens": 9},
-                "content": [],
-            },
-        )
+        # dev/80: the round's Actual sums stream as an interim usage event.
+        assert ("usage", {"usage": {"inputTokens": 7, "outputTokens": 9}}) in events
+        done_name, done_payload = events[-1]
+        assert done_name == "done"
+        # dev/80: done carries the SAME duration the persisted record keeps.
+        assert done_payload.pop("durationMs") == execution["durationMs"]
+        assert done_payload == {
+            "reply": "hello",
+            "executionId": execution["executionId"],
+            "usage": {"inputTokens": 7, "outputTokens": 9},
+            "content": [],
+        }
 
     def test_stream_error_records_error_execution(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         def _flaky(config, messages, **kwargs):

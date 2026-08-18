@@ -846,9 +846,12 @@ def stream_attachment(project_id: str, attachment_id: str):
     """Run one turn and stream the reply as Server-Sent Events (memo dev/22).
 
     Emits ``event: execution`` (``{executionId}``, memo dev/37) before the
-    first delta, repeated ``event: delta`` chunks, ``event: content``
+    first delta, repeated ``event: delta`` chunks, ``event: usage``
+    (``{usage}``, interim Actual sums once per provider round, memo dev/80),
+    ``event: content``
     (``{parts}``, memo dev/39) when the reply carried a valid structured tail,
-    then ``event: done`` with ``{reply, executionId, usage, content}``; a
+    then ``event: done`` with ``{reply, executionId, usage, durationMs,
+    content}``; a
     provider failure emits ``event: error`` and ends the stream. Additive and
     backward-compatible — old clients skip unknown event names. Validation
     errors (404/422/…) return normal JSON statuses before any streaming

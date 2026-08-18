@@ -5380,6 +5380,8 @@ def run_attachment(
         "reply": reply_text,
         "executionId": execution_id,
         "usage": execution["usage"],
+        # dev/80: the run's wall-clock duration — matches the persisted record.
+        "durationMs": execution["durationMs"],
         "content": run_parts,
     }
 
@@ -5396,9 +5398,11 @@ def stream_attachment(
 
     Validates eagerly (404/422 raise before any streaming starts), then returns
     a generator opening with ``("execution", {executionId})`` (memo dev/37),
-    followed by ``("delta", text)`` events, optionally ``("content", {parts})``
-    when the reply carried a valid structured tail (memo dev/39), ending in
-    ``("done", {reply, executionId, usage, content})`` — or
+    followed by ``("delta", text)`` events, ``("usage", {usage})`` interim
+    Actual sums once per provider round (memo dev/80), optionally
+    ``("content", {parts})`` when the reply carried a valid structured tail
+    (memo dev/39), ending in
+    ``("done", {reply, executionId, usage, durationMs, content})`` — or
     ``("error", message)`` on a provider failure. Persistence semantics are
     identical to ``run_attachment``: the full exchange is written once at
     completion; a failure persists the user turn plus a display-only error
@@ -5522,6 +5526,11 @@ def stream_attachment(
                     hold_plan_tail="dataflow.plan.write" in loop_ctx.get("granted", []),
                 )
                 _add_usage(usage_total, usage_sink)
+                if usage_sink:
+                    # dev/80: interim Actual sums, once per provider round —
+                    # the client's live token counter ticks during long tool
+                    # loops. Additive; old clients skip unknown events.
+                    yield ("usage", {"usage": dict(usage_total)})
                 parts = result["parts"]
                 req = (
                     parts[0]
@@ -5739,6 +5748,9 @@ def stream_attachment(
                 "reply": reply_text,
                 "executionId": execution_id,
                 "usage": execution["usage"],
+                # dev/80: the run's wall-clock duration — matches the
+                # persisted execution record.
+                "durationMs": execution["durationMs"],
                 "content": run_parts,
             },
         )
