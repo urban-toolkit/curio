@@ -132,15 +132,12 @@ class InstalledDatasetRepository:
     def replace_refs(self, dataflow_id: str, refs: list[dict[str, Any]]) -> dict[str, Any]:
         if self.user is None:
             raise DatasetCatalogError("Authorization required", 401)
-        from utk_curio.backend.app.projects.schemas import ProjectUpdate
         from utk_curio.backend.app.projects import services as project_services
 
-        spec, _manifest = self._project_spec_and_manifest(dataflow_id)
-        dataflow = spec.setdefault("dataflow", {})
-        dataflow["datasets"] = refs
-        detail = project_services.update_project(
-            self.user,
-            dataflow_id,
-            ProjectUpdate(spec=spec, outputs=None, name=None, description=None, thumbnail_accent=None),
-        )
-        return detail.spec or spec
+        # Dedicated section writer (dev/81 Fix 2) — NOT an update_project
+        # round-trip: that path carries the on-disk datasets section forward on
+        # every client save (backend ownership) and would undo these refs.
+        spec = project_services.replace_dataflow_datasets(self.user, dataflow_id, refs)
+        if spec is None:
+            raise DatasetCatalogError("Dataflow not found", 404)
+        return spec

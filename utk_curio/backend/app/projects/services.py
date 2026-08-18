@@ -439,8 +439,8 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
         project_id=project_id,
     )
 
-    # Serialize the spec read-modify-write so a concurrent dataset auto-install
-    # (merge_dataflow_dataset_ref) or Play-All can't clobber freshly-installed
+    # Serialize the spec read-modify-write so a concurrent dataset mutation
+    # (replace_dataflow_datasets) or Play-All can't clobber freshly-installed
     # refs. Re-read existing_spec INSIDE the lock so we merge/preserve against
     # the latest on-disk spec, not the snapshot read before the lock.
     install_warnings: list = []
@@ -456,7 +456,16 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
             from utk_curio.backend.app.agents.project_agents import preserve_agent_state
             from utk_curio.backend.app.agents.attachments import prune_orphaned_attachments
             from utk_curio.backend.app.agents.sessions import delete_session
+            from utk_curio.backend.app.datasets.application.ref_ownership import (
+                preserve_dataset_refs,
+            )
             preserve_agent_state(effective_spec, existing_spec)
+            # ``dataflow.datasets`` is backend-owned on update (dev/81 Fix 2):
+            # the on-disk section overwrites whatever the client sent, so a
+            # stale client mirror can neither resurrect an uninstalled ref nor
+            # drop a fresh install. (The client-sent section still seeds
+            # ``create()`` — Save a copy / trill import.)
+            preserve_dataset_refs(effective_spec, existing_spec)
             # Drop attachments whose target node/edge was deleted on the canvas
             # (the carried-forward list is pruned against the new node set).
             pruned = prune_orphaned_attachments(effective_spec)
@@ -481,13 +490,14 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
         else:
             output_refs = _output_refs_from_manifest(existing_manifest)
 
-        # NOTE: computed dataset refs are created ONLY by an explicit install
-        # (the client tracks them in its own dataflow-datasets state and sends
-        # them back on save), so there is no longer a "ref the client never
-        # learned about" to carry forward. The old ``_preserve_persisted_computed_refs``
-        # step re-added refs whenever the account-store dir existed, which — now
-        # that uninstall keeps that dir — would resurrect an explicitly
-        # uninstalled ref. It is intentionally gone.
+        # NOTE: dataset refs are created ONLY by an explicit install through the
+        # dataset endpoints; on a client save the carry-forward above
+        # (``preserve_dataset_refs``) is the sole way refs survive. It cannot
+        # resurrect an uninstalled ref, because uninstall removes the ref from
+        # the very on-disk section being carried. The old
+        # ``_preserve_persisted_computed_refs`` step re-added refs whenever the
+        # account-store dir existed, which — now that uninstall keeps that dir —
+        # would resurrect an explicitly uninstalled ref. It is intentionally gone.
 
         # Prune dataset refs keyed on visualization/sink nodes — their output is a
         # passthrough of their input, so the ref just duplicates the upstream
@@ -513,6 +523,35 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
     db.session.commit()
     return _to_detail(project, spec=effective_spec, outputs=persisted_refs,
                       dataset_install_warnings=install_warnings)
+
+
+def replace_dataflow_datasets(user, project_id: str, refs: list) -> Optional[dict]:
+    """The dataset endpoints' writer for ``spec.dataflow.datasets`` (dev/81 Fix 2).
+
+    Replaces only the datasets section (under the per-project spec lock) and
+    bumps the project row's timestamp exactly like :func:`update_project`, so
+    install/uninstall/publish keep affecting "Recent" ordering. Deliberately
+    NOT a round-trip through :func:`update_project`: that path now carries the
+    on-disk section forward on every client save, which would immediately undo
+    the very refs being written here. Skips the manifest rewrite — the manifest
+    carries outputs/name/description only. Returns the written spec, or
+    ``None`` when the project has no spec on disk.
+    """
+    project = repo.get_for_user(project_id, user.id)
+    ukey = _user_dir_key(user)
+    spec = storage.replace_dataflow_datasets(ukey, project_id, refs)
+    if spec is None:
+        return None
+    repo.upsert_project(
+        user_id=user.id,
+        name=project.name,
+        folder_path=str(storage.project_dir(ukey, project_id)),
+        description=project.description,
+        thumbnail_accent=project.thumbnail_accent,
+        project_id=project_id,
+    )
+    db.session.commit()
+    return spec
 
 
 # ---------------------------------------------------------------------------

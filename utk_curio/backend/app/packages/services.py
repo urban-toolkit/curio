@@ -360,7 +360,7 @@ def create_template_package(user_key: str, project_id: str, template: dict) -> d
 
 def _write_lockfile(user_key: str, project_id: str, dirs: Iterable[str]) -> dict:
     # Hold the per-project spec lock across the read-modify-write so a concurrent
-    # dataset auto-install (merge_dataflow_dataset_ref) or project save can't
+    # dataset mutation (replace_dataflow_datasets) or project save can't
     # clobber the package lockfile (or vice versa).
     with projects_storage.spec_write_lock(user_key, project_id):
         spec = projects_storage.read_spec(user_key, project_id)

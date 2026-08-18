@@ -106,59 +106,44 @@ def test_delete_tree(tmp_curio):
     assert not d.exists()
 
 
-# ── merge_dataflow_dataset_ref (#144c) ──────────────────────────────────────
+# ── replace_dataflow_datasets (dev/81 Fix 2 section writer) ─────────────────
 
-def test_merge_dataflow_dataset_ref_missing_project(tmp_curio):
-    # No spec on disk → False, and no project dir is created as a side effect.
-    assert storage.merge_dataflow_dataset_ref("1", "proj-none", {"datasetId": "x"}) is False
+def test_replace_dataflow_datasets_missing_project(tmp_curio):
+    # No spec on disk → None, and no project dir is created as a side effect.
+    assert storage.replace_dataflow_datasets("1", "proj-none", [{"datasetId": "x"}]) is None
     assert not storage.project_dir("1", "proj-none").exists()
 
 
-def test_merge_dataflow_dataset_ref_upsert_and_append(tmp_curio):
-    storage.write_spec("1", "proj-merge", {"dataflow": {"datasets": []}})
+def test_replace_dataflow_datasets_replaces_only_the_section(tmp_curio):
+    """The writer swaps ``dataflow.datasets`` verbatim — replace, not merge —
+    and leaves every other spec section untouched."""
+    storage.write_spec("1", "proj-replace", {
+        "dataflow": {
+            "name": "keep-me",
+            "nodes": [{"id": "n1"}],
+            "edges": [],
+            "agents": [{"agentId": "it.urbanlab/example@1"}],
+            "datasets": [{"datasetId": "computed.a", "publishedToHub": True}],
+        },
+    })
 
-    # Append a new ref.
-    assert storage.merge_dataflow_dataset_ref(
-        "1", "proj-merge",
-        {"datasetId": "computed.a", "producerNodeId": "na", "dirName": "computed.a@1"},
-    ) is True
-    # Upsert (same datasetId) merges fields rather than duplicating.
-    assert storage.merge_dataflow_dataset_ref(
-        "1", "proj-merge",
-        {"datasetId": "computed.a", "producerNodeId": "na", "publishedToHub": True},
-    ) is True
-
-    refs = storage.read_spec("1", "proj-merge")["dataflow"]["datasets"]
-    assert len(refs) == 1
-    assert refs[0]["dirName"] == "computed.a@1"
-    assert refs[0]["publishedToHub"] is True
+    refs = [{"datasetId": "computed.b", "dirName": "computed.b@1"}]
+    spec = storage.replace_dataflow_datasets("1", "proj-replace", refs)
+    assert spec is not None
+    on_disk = storage.read_spec("1", "proj-replace")
+    assert on_disk["dataflow"]["datasets"] == refs  # old ref gone, no merge
+    assert on_disk["dataflow"]["name"] == "keep-me"
+    assert on_disk["dataflow"]["nodes"] == [{"id": "n1"}]
+    assert on_disk["dataflow"]["agents"] == [{"agentId": "it.urbanlab/example@1"}]
 
 
-def test_merge_dataflow_dataset_ref_concurrent_no_lost_update(tmp_curio):
-    """Concurrent upserts of distinct refs must all survive (no lost update)."""
-    import threading
-
-    storage.write_spec("1", "proj-conc", {"dataflow": {"datasets": []}})
-
-    n = 24
-    barrier = threading.Barrier(n)
-
-    def worker(i: int) -> None:
-        barrier.wait()  # maximize overlap of the read-modify-write windows
-        storage.merge_dataflow_dataset_ref(
-            "1", "proj-conc",
-            {"datasetId": f"computed.{i}", "producerNodeId": f"n{i}"},
-        )
-
-    threads = [threading.Thread(target=worker, args=(i,)) for i in range(n)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-
-    refs = storage.read_spec("1", "proj-conc")["dataflow"]["datasets"]
-    ids = {r["datasetId"] for r in refs}
-    assert ids == {f"computed.{i}" for i in range(n)}
+def test_replace_dataflow_datasets_creates_the_section(tmp_curio):
+    """A spec without a datasets section gains one."""
+    storage.write_spec("1", "proj-fresh", {"dataflow": {"nodes": [], "edges": []}})
+    refs = [{"datasetId": "imported.x1", "dirName": "imported.x1"}]
+    spec = storage.replace_dataflow_datasets("1", "proj-fresh", refs)
+    assert spec["dataflow"]["datasets"] == refs
+    assert storage.read_spec("1", "proj-fresh")["dataflow"]["datasets"] == refs
 
 
 def test_installed_file_for_node_swallows_path_traversal(tmp_curio):

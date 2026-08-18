@@ -462,45 +462,31 @@ def write_manifest(
     return p
 
 
-def merge_dataflow_dataset_ref(
+def replace_dataflow_datasets(
     user_key: str,
     project_id: str,
-    ref: dict,
-) -> bool:
-    """Upsert one lean dataset ref into ``spec.trill.json`` ``dataflow.datasets``.
+    refs: list[dict],
+) -> Optional[dict]:
+    """Replace ``spec.trill.json``'s ``dataflow.datasets`` with *refs* (dev/81).
 
-    Returns True when the spec was updated, False when the project spec is missing.
+    The dataset endpoints' section writer: under the per-project spec lock,
+    re-reads the on-disk spec, swaps ONLY the datasets section, and writes it
+    back — nodes/edges/agents/packages are untouched, so a dataset mutation can
+    never clobber (or be clobbered by) a concurrent save's other sections.
+    Returns the written spec, or ``None`` when the project has no spec.
     """
     # Cheap existence check first so we don't create a project dir (and lock
     # file) for a project that doesn't exist.
     if not (project_dir(user_key, project_id) / "spec.trill.json").exists():
-        return False
-    # Hold the per-project lock across read+merge+write so a concurrent upsert
-    # can't clobber the ref we're adding (lost update).
+        return None
     with spec_write_lock(user_key, project_id):
         spec = read_spec(user_key, project_id)
         if not spec:
-            return False
+            return None
         dataflow = spec.setdefault("dataflow", {})
-        refs: list[dict] = list(dataflow.get("datasets") or [])
-        dataset_id = ref.get("datasetId")
-        producer = ref.get("producerNodeId")
-        updated = False
-        for index, existing in enumerate(refs):
-            if not isinstance(existing, dict):
-                continue
-            if (
-                (dataset_id and existing.get("datasetId") == dataset_id)
-                or (producer and existing.get("producerNodeId") == producer)
-            ):
-                refs[index] = {**existing, **ref}
-                updated = True
-                break
-        if not updated:
-            refs.append(ref)
         dataflow["datasets"] = refs
         write_spec(user_key, project_id, spec)
-        return True
+        return spec
 
 
 def read_manifest(
