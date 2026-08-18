@@ -22,6 +22,8 @@ export interface AgentAttachmentsState {
     reply: string;
     executionId?: string;
     usage?: import("../../../api/agentsApi").AgentUsage | null;
+    /** The run's wall-clock duration (memo dev/80); absent on old servers. */
+    durationMs?: number;
     content?: import("../../../api/agentsApi").AgentContentPart[];
   }>;
 }

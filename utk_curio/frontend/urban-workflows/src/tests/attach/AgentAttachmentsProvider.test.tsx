@@ -106,6 +106,20 @@ const Harness: React.FC = () => {
           .join("|")}
       </div>
       <div data-testid="titles">{ctx.attachments.map((a) => a.title ?? "∅").join(",")}</div>
+      <div data-testid="run-status">
+        {(() => {
+          // dev/80: phase : durationMs? : final usage : interim liveUsage
+          const rs = ctx.runStatus["a1"];
+          if (!rs) return "∅";
+          const usage = rs.usage
+            ? `${rs.usage.inputTokens}/${rs.usage.outputTokens}`
+            : "∅";
+          const live = rs.liveUsage
+            ? `${rs.liveUsage.inputTokens}/${rs.liveUsage.outputTokens}`
+            : "∅";
+          return `${rs.phase}:${typeof rs.durationMs === "number" ? "ms" : "∅"}:${usage}:${live}`;
+        })()}
+      </div>
     </div>
   );
 };
@@ -757,5 +771,127 @@ describe("AgentAttachmentsProvider per-node plan apply (dev/67-5)", () => {
       fireEvent.click(screen.getByText("save-plan-goal"));
     });
     expect(api.savePlanGoal).toHaveBeenCalledWith("p1", "a1", "p1", "ra", "new goal");
+  });
+});
+
+describe("AgentAttachmentsProvider run status (memo dev/80)", () => {
+  it("a send flips running → done with duration and Actual usage", async () => {
+    let release: () => void = () => undefined;
+    api.runAttachmentStream.mockImplementation(async (_p, _a, _m, onDelta) => {
+      onDelta("fre");
+      await new Promise<void>((r) => {
+        release = r;
+      });
+      onDelta("sh");
+      return {
+        reply: "fresh",
+        executionId: "e1",
+        usage: { inputTokens: 7, outputTokens: 9 },
+        durationMs: 1234,
+      };
+    });
+    renderProvider();
+    fireEvent.click(screen.getByText("send"));
+    await waitFor(() =>
+      expect(screen.getByTestId("run-status")).toHaveTextContent(/^running/),
+    );
+    await act(async () => release());
+    await waitFor(() =>
+      expect(screen.getByTestId("run-status")).toHaveTextContent("done:ms:7/9:∅"),
+    );
+  });
+
+  it("interim usage events feed liveUsage while running, dropped on finalize", async () => {
+    let release: () => void = () => undefined;
+    api.runAttachmentStream.mockImplementation(async (_p, _a, _m, onDelta, onEvent) => {
+      onDelta("fre");
+      onEvent?.("usage", { usage: { inputTokens: 3, outputTokens: 4 } });
+      await new Promise<void>((r) => {
+        release = r;
+      });
+      return {
+        reply: "fresh",
+        executionId: "e1",
+        usage: { inputTokens: 7, outputTokens: 9 },
+      };
+    });
+    renderProvider();
+    fireEvent.click(screen.getByText("send"));
+    await waitFor(() =>
+      expect(screen.getByTestId("run-status")).toHaveTextContent("running:∅:∅:3/4"),
+    );
+    await act(async () => release());
+    // Finalize replaces the entry: the persisted usage is the truth, no
+    // interim leftovers to double-count.
+    await waitFor(() =>
+      expect(screen.getByTestId("run-status")).toHaveTextContent("done:ms:7/9:∅"),
+    );
+  });
+
+  it("a failed run (stream + fallback) finalizes to error", async () => {
+    api.runAttachmentStream.mockRejectedValue(new Error("stream broke"));
+    api.runAttachment.mockRejectedValue(new Error("run failed too"));
+    renderProvider();
+    await act(async () => {
+      fireEvent.click(screen.getByText("send"));
+    });
+    expect(screen.getByTestId("run-status")).toHaveTextContent("error:ms:∅:∅");
+  });
+
+  it("the blocking fallback still finalizes done", async () => {
+    api.runAttachmentStream.mockRejectedValue(new Error("stream broke"));
+    api.runAttachment.mockResolvedValue({
+      attachmentId: "a1",
+      coord: "c",
+      reply: "fresh",
+      executionId: "e2",
+      usage: { inputTokens: 1, outputTokens: 2 },
+      durationMs: 55,
+    } as never);
+    renderProvider();
+    await act(async () => {
+      fireEvent.click(screen.getByText("send"));
+    });
+    expect(screen.getByTestId("run-status")).toHaveTextContent("done:ms:1/2:∅");
+  });
+
+  it("clearConversation drops the run status with the transcript", async () => {
+    renderProvider();
+    await act(async () => {
+      fireEvent.click(screen.getByText("send"));
+    });
+    expect(screen.getByTestId("run-status")).toHaveTextContent(/^done/);
+    await act(async () => {
+      fireEvent.click(screen.getByText("clear"));
+    });
+    expect(screen.getByTestId("run-status")).toHaveTextContent("∅");
+  });
+
+  it("never commits the finalized (execution-carrying) turn before the done status", async () => {
+    // The dev/80 ordering guarantee: the render commit that first contains
+    // the finalized turn (its execution record landed) already reports the
+    // finished status — no frame shows the final message beside "running".
+    const snapshots: Array<{ hasExecution: boolean; phase: string }> = [];
+    const Recorder: React.FC = () => {
+      const ctx = useAgentAttachmentsContext();
+      if (!ctx) return null;
+      const turns = ctx.transcripts["a1"] ?? [];
+      const last = turns[turns.length - 1];
+      snapshots.push({
+        hasExecution: Boolean(last && last.role === "agent" && last.execution),
+        phase: ctx.runStatus["a1"]?.phase ?? "none",
+      });
+      return <button onClick={() => void ctx.sendMessage("a1", "hi")}>send-rec</button>;
+    };
+    render(
+      <AgentAttachmentsProvider>
+        <Recorder />
+      </AgentAttachmentsProvider>,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByText("send-rec"));
+    });
+    expect(snapshots.some((s) => s.hasExecution)).toBe(true);
+    expect(snapshots.filter((s) => s.hasExecution && s.phase !== "done")).toEqual([]);
   });
 });

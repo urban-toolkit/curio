@@ -8,9 +8,10 @@ import React, {
   useState,
 } from "react";
 import { useFlowContext } from "../../../providers/FlowProvider";
-import { agentsApi, type AgentSessionTurn } from "../../../api/agentsApi";
+import { agentsApi, type AgentSessionTurn, type AgentUsage } from "../../../api/agentsApi";
 import { notifyAgentCanvasMutation } from "../../../utils/agentCanvasEvents";
 import { useAgentAttachments, type AgentAttachmentsState } from "./useAgentAttachments";
+import type { AgentRunStatus } from "./agentRunStatus";
 
 /**
  * One source of truth for a project's agent attachments, shared by the canvas
@@ -46,6 +47,11 @@ export interface AgentAttachmentsContextValue extends AgentAttachmentsState {
   /** Transient tool-activity lines for the live send (memo dev/41): shown as
    * system lines while streaming, never persisted, gone on rehydrate. */
   toolActivity: Record<string, string[]>;
+  /** Per-attachment run status (memo dev/80): `running` from send until the
+   * SAME synchronous block that lands the final turn finalizes it to
+   * `done`/`error` — the chat status strip's source of truth. Survives panel
+   * close/reopen and attachment cycling; cleared with the conversation. */
+  runStatus: Record<string, AgentRunStatus>;
   /** Apply a pending review proposal (the only mutation path); refreshes the
    * transcript + listing so the outcome and result turn arrive together. */
   applyProposal: (attachmentId: string, proposalId: string) => Promise<void>;
@@ -123,6 +129,11 @@ export const AgentAttachmentsProvider: React.FC<{
   const [hydratingId, setHydratingId] = useState<string | null>(null);
   const [hydrateErrors, setHydrateErrors] = useState<Record<string, string>>({});
   const [toolActivity, setToolActivity] = useState<Record<string, string[]>>({});
+  // dev/80: per-attachment run status for the chat status strip. The seq
+  // counter guards against a stale run's late events overwriting a newer
+  // run's entry (rapid re-sends).
+  const [runStatus, setRunStatus] = useState<Record<string, AgentRunStatus>>({});
+  const runSeqRef = useRef<Record<string, number>>({});
   // dev/63: the live solve's per-node overlay + its abort handle.
   const [solveProgress, setSolveProgress] = useState<Record<string, Record<string, string>>>({});
   // dev/67-9: the running simulation's narration line, per attachment.
@@ -232,8 +243,32 @@ export const AgentAttachmentsProvider: React.FC<{
       let streamed = "";
       let succeeded = false;
       let sawProposal = false;
+      // Run status (memo dev/80): `running` from here until the same
+      // synchronous block that lands the final turn finalizes it — the strip
+      // never shows a final message beside a stale "running" (or no) status.
+      const seq = (runSeqRef.current[attachmentId] =
+        (runSeqRef.current[attachmentId] ?? 0) + 1);
+      const startedAt = Date.now();
+      setRunStatus((prev) => ({ ...prev, [attachmentId]: { phase: "running", startedAt } }));
+      const finalizeStatus = (patch: Omit<AgentRunStatus, "startedAt">) => {
+        // A newer run owns this attachment's strip — never clobber it.
+        if (runSeqRef.current[attachmentId] !== seq) return;
+        setRunStatus((prev) => ({ ...prev, [attachmentId]: { startedAt, ...patch } }));
+      };
       setToolActivity((prev) => ({ ...prev, [attachmentId]: [] }));
       const onEvent = (name: string, payload: Record<string, unknown>) => {
+        // dev/80: interim provider-reported usage sums feed the live token
+        // counter — Actuals only (dev/37), never a system line.
+        if (name === "usage") {
+          const usage = payload.usage as AgentUsage | null | undefined;
+          if (!usage || runSeqRef.current[attachmentId] !== seq) return;
+          setRunStatus((prev) => {
+            const cur = prev[attachmentId];
+            if (!cur || cur.phase !== "running") return prev;
+            return { ...prev, [attachmentId]: { ...cur, liveUsage: usage } };
+          });
+          return;
+        }
         // Transient system lines (dev/41 tools; dev/48 delegates): live during
         // the run, gone on finalize — the durable record is the execution.
         const tool = typeof payload.tool === "string" ? payload.tool : "";
@@ -274,13 +309,25 @@ export const AgentAttachmentsProvider: React.FC<{
           context,
         );
         // The finalized turn keeps the run's execution identity + Actual usage
-        // (memo dev/37) and its typed content parts (memo dev/39) so the
-        // local transcript matches the persisted one.
+        // (memo dev/37), its duration (dev/80), and its typed content parts
+        // (memo dev/39) so the local transcript matches the persisted one.
+        const durationMs = result.durationMs ?? Date.now() - startedAt;
         const execution = result.executionId
-          ? { executionId: result.executionId, usage: result.usage ?? null, status: "ok" as const }
+          ? {
+              executionId: result.executionId,
+              usage: result.usage ?? null,
+              status: "ok" as const,
+              durationMs,
+            }
           : undefined;
         const content = result.content && result.content.length ? result.content : undefined;
         sawProposal = sawProposal || Boolean(content?.some((p) => p.type === "proposal"));
+        // Same synchronous block as the turn landing (dev/80): React 18
+        // batches both updates into one commit — the reply and its finished
+        // status appear together. Status first as defense-in-depth: were the
+        // pair ever unbatched, the safe intermediate is "done beside partial
+        // text", never "final text beside running".
+        finalizeStatus({ phase: "done", durationMs, usage: result.usage ?? null });
         if (!streamed)
           appendTurns(attachmentId, [
             {
@@ -301,15 +348,18 @@ export const AgentAttachmentsProvider: React.FC<{
           // this path still renders its review card.
           try {
             const result = await state.run(attachmentId, message, context);
+            const durationMs = result.durationMs ?? Date.now() - startedAt;
             const execution = result.executionId
               ? {
                   executionId: result.executionId,
                   usage: result.usage ?? null,
                   status: "ok" as const,
+                  durationMs,
                 }
               : undefined;
             const content = result.content && result.content.length ? result.content : undefined;
             sawProposal = sawProposal || Boolean(content?.some((p) => p.type === "proposal"));
+            finalizeStatus({ phase: "done", durationMs, usage: result.usage ?? null });
             appendTurns(attachmentId, [
               {
                 role: "agent",
@@ -320,11 +370,13 @@ export const AgentAttachmentsProvider: React.FC<{
             ]);
             succeeded = true;
           } catch (e2) {
+            finalizeStatus({ phase: "error", durationMs: Date.now() - startedAt });
             appendErrorTurn(attachmentId, e2);
           }
         } else {
           // Mid-stream failure keeps the partial text visible; HTTP errors
           // (e.g. the stable quota 429) render directly.
+          finalizeStatus({ phase: "error", durationMs: Date.now() - startedAt });
           appendErrorTurn(attachmentId, e);
         }
       } finally {
@@ -662,6 +714,11 @@ export const AgentAttachmentsProvider: React.FC<{
       if (!pid) return;
       await agentsApi.clearSession(pid, attachmentId);
       setTranscripts((prev) => ({ ...prev, [attachmentId]: [] }));
+      // dev/80: the status strip lives exactly as long as the conversation.
+      setRunStatus((prev) => {
+        const { [attachmentId]: _drop, ...rest } = prev;
+        return rest;
+      });
     },
     [],
   );
@@ -673,6 +730,10 @@ export const AgentAttachmentsProvider: React.FC<{
       await state.detach(attachmentId);
       hydratedRef.current.delete(attachmentId);
       setTranscripts((prev) => {
+        const { [attachmentId]: _drop, ...rest } = prev;
+        return rest;
+      });
+      setRunStatus((prev) => {
         const { [attachmentId]: _drop, ...rest } = prev;
         return rest;
       });
@@ -696,6 +757,7 @@ export const AgentAttachmentsProvider: React.FC<{
       saveTitle,
       clearConversation,
       toolActivity,
+      runStatus,
       applyProposal,
       solveAttachment,
       solveProgress,
@@ -724,6 +786,7 @@ export const AgentAttachmentsProvider: React.FC<{
       saveTitle,
       clearConversation,
       toolActivity,
+      runStatus,
       applyProposal,
       solveAttachment,
       solveProgress,
