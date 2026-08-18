@@ -10,8 +10,10 @@ Each roster entry is turned into a manifest dict and validated through
 contract. This roster is the **Global Catalog** source (real content the drawer
 browses) and the resolution source for importing/installing a built-in.
 
-``agent.generated-content-evaluator`` is intentionally absent: it has no prompt
-file and is blocked by ``OQ-007`` — it must not be fabricated.
+``agent.generated-content-evaluator`` shipped as a net-new AUTHORED built-in
+under ``DEC-055`` (memo dev/85 resolved ``OQ-007``: authored, not migrated —
+the advisory semantic-validation layer; report-only, never feeds the DEC-054
+empirical auto-approve).
 
 Prompt-byte materialization (copying ``llm-prompts/`` into a user store on
 install) is a later step; the manifest ``prompts.instruction.path`` here is the
@@ -243,6 +245,23 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                             "dataflow.read"),
                      delegates_to=("agent.syntax-analysis-agent",),
                      review_policy="review-before-apply"),
+    # The DEC-055 authored built-in (memo dev/85 resolved OQ-007; impl dev/86).
+    # The advisory semantic-validation layer over the empirical stack: judges
+    # generated content against its goal/assumptions/journal evidence and
+    # reports findings + a derived verdict. Report-only, delegates-free —
+    # it can never approve, propose, or mutate; DEC-054's simulation
+    # auto-approve stays exclusively empirical.
+    BuiltinAgentSpec("agent.generated-content-evaluator", "Generated Content Evaluator",
+                     "evaluate",
+                     "Judge whether generated node content does what its goal and "
+                     "assumptions say — findings with quoted evidence and an advisory "
+                     "verdict. Never approves, never mutates, never replaces "
+                     "execution-based validation.",
+                     "evaluate_generated_content_prompt.txt",
+                     ("content.quality.evaluate",), ("validation",),
+                     targets=("node", "canvas"),
+                     reads=("nodeContext", "targetContext"),
+                     tools=("node.read", "node.runtime.read", "dataflow.read")),
 )
 
 

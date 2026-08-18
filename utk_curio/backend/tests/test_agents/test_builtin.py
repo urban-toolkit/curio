@@ -28,12 +28,16 @@ _EXPECTED = {
 class TestRoster:
     def test_sixteen_agents(self):
         # 13 migrations + the three composites (dev/48, dev/50, dev/52)
-        # + the researcher (dev/67-4) + package recommendation (dev/84).
-        assert len(builtin.BUILTIN_AGENTS) == 18
+        # + the researcher (dev/67-4) + package recommendation (dev/84)
+        # + the authored evaluator (DEC-055, dev/85/86).
+        assert len(builtin.BUILTIN_AGENTS) == 19
 
-    def test_evaluator_excluded(self):
+    def test_evaluator_authored_under_dec055(self):
+        # OQ-007 resolved by dev/85 (DEC-055): the evaluator exists as a
+        # net-new AUTHORED built-in — no longer excluded, never a fabricated
+        # migration (its roster comment + docstring carry the decision).
         ids = {s.agent_id for s in builtin.BUILTIN_AGENTS}
-        assert "agent.generated-content-evaluator" not in ids  # blocked by OQ-007
+        assert "agent.generated-content-evaluator" in ids
 
     def test_matches_dev06_map(self):
         got = {
@@ -46,7 +50,8 @@ class TestRoster:
         extras = {s.agent_id for s in builtin.BUILTIN_AGENTS} - set(_EXPECTED)
         assert extras == {"agent.node-builder", "agent.dataset-finder",
                           "agent.dataflow-builder", "agent.node-researcher",
-                          "agent.package-recommendation"}
+                          "agent.package-recommendation",
+                          "agent.generated-content-evaluator"}
 
     def test_every_prompt_file_exists(self):
         for spec in builtin.BUILTIN_AGENTS:
@@ -56,7 +61,7 @@ class TestRoster:
 class TestManifests:
     def test_all_validate(self):
         manifests = builtin.list_builtin_manifests()
-        assert len(manifests) == 18
+        assert len(manifests) == 19
         assert all(isinstance(m, AgentManifest) for m in manifests)
 
     def test_coords_and_capabilities(self):
@@ -257,4 +262,41 @@ class TestPackageRecommendation:
         assert text and "packages.catalog" in text
         assert "never author" in text.lower() or "never authors" in text.lower()
         assert "package.install" in text
+        assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
+
+
+class TestGeneratedContentEvaluator:
+    """The DEC-055 authored built-in (dev/85 §4 contract; impl dev/86)."""
+
+    COORD = "agent.generated-content-evaluator@1.0.0"
+
+    def test_manifest_surface(self):
+        m = builtin.get_builtin_manifest(self.COORD)
+        assert m is not None
+        assert m.capability_ids == ["content.quality.evaluate"]
+        assert [t.kind for t in m.compatible_targets] == ["node", "canvas"]
+        # Read-only evidence tools; no mutate contract anywhere near it.
+        assert [t.id for t in m.tools] == ["node.read", "node.runtime.read", "dataflow.read"]
+        # Advisory by construction: report-only, delegates-free — the same
+        # shape as the migrated manifests (the byte-parity loop covers it).
+        assert m.delegates_to == []
+        assert m.provenance.trust == "built-in"
+
+    def test_report_only_runtime(self):
+        raw = builtin.build_builtin_manifest(builtin.get_builtin_spec(self.COORD))
+        assert raw["runtime"] == {"execution": "foreground", "reviewPolicy": "report-only"}
+        assert "delegatesTo" not in raw
+
+    def test_net_new_instruction_carries_the_contract(self):
+        text = builtin.read_prompt_text(self.COORD, "instruction")
+        assert text
+        # The dev/85 §4 verdict vocabulary, strictly findings-derived.
+        for verdict in ("fits", "fits-with-warnings", "does-not-fit"):
+            assert verdict in text
+        for severity in ("[blocker]", "[warn]", "[note]"):
+            assert severity in text
+        # The advisory + honesty rules.
+        assert "advisory" in text.lower()
+        assert "never approves" in text.lower() or "never approve" in text.lower()
+        assert "never-executed" in text
         assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
