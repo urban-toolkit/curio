@@ -562,12 +562,16 @@ class CatalogMutations:
             item["origin"] = "computed"
 
         refs = self.installed.list_refs(dataflow_id)
-        existing = next((ref for ref in refs if ref.get("datasetId") == item["id"]), None)
         ref = self._ref_from_item(item)
-        if existing:
-            existing.update(ref)
-        else:
-            refs.append(ref)
+        # An install fully REPLACES any existing ref for this dataset id (dev/81
+        # Fix 3) — never a dict-merge. Fields only the old ref carried are
+        # dropped by design: legacy fat-ref metadata (title/path/format/…)
+        # converges to the lean form with the manifest as the metadata
+        # authority, and ``publishedToHub`` is re-derived from the hub registry
+        # row at listing time (dedup merge), so a reinstall can never resurrect
+        # stale state. ``installedAt`` is always the new install's timestamp.
+        refs = [r for r in refs if r.get("datasetId") != item["id"]]
+        refs.append(ref)
         self.installed.replace_refs(dataflow_id, refs)
         installed_item = deepcopy(item)
         installed_item["origin"] = ref["origin"]
