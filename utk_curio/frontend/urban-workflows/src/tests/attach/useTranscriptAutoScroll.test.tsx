@@ -6,14 +6,22 @@ import { useTranscriptAutoScroll } from "../../components/agents/attach/useTrans
  * (jsdom does no layout, so scrollHeight/clientHeight/scrollTop are stubbed).
  * Geometry: scrollHeight 1000, clientHeight 300 → bottom sits at 700. */
 
-type HarnessProps = { items: string[]; resetKey?: string; ready?: boolean };
+type HarnessProps = {
+  items: string[];
+  resetKey?: string;
+  ready?: boolean;
+  /** dev/83: pass items.length as itemCount (default); false = omit it. */
+  withCount?: boolean;
+};
 
-const Harness: React.FC<HarnessProps> = ({ items, resetKey, ready }) => {
-  const { containerRef, atBottom, jumpToLatest, pinToLatest } = useTranscriptAutoScroll({
-    content: items,
-    resetKey,
-    ready,
-  });
+const Harness: React.FC<HarnessProps> = ({ items, resetKey, ready, withCount = true }) => {
+  const { containerRef, atBottom, unreadCount, jumpToLatest, pinToLatest } =
+    useTranscriptAutoScroll({
+      content: items,
+      resetKey,
+      ready,
+      itemCount: withCount ? items.length : undefined,
+    });
   return (
     <div>
       <div data-testid="scroller" ref={containerRef}>
@@ -22,6 +30,7 @@ const Harness: React.FC<HarnessProps> = ({ items, resetKey, ready }) => {
         ))}
       </div>
       <output data-testid="atBottom">{String(atBottom)}</output>
+      <output data-testid="unread">{String(unreadCount)}</output>
       <button data-testid="jump" onClick={jumpToLatest} />
       <button data-testid="pin" onClick={pinToLatest} />
     </div>
@@ -233,5 +242,85 @@ describe("useTranscriptAutoScroll", () => {
     rerender(<Harness items={["a"]} resetKey="chat-2" />);
     expect(el.scrollTop).toBe(BOTTOM);
     expect(getByTestId("atBottom").textContent).toBe("true");
+  });
+});
+
+describe("unreadCount (dev/83)", () => {
+  it("counts turns landed while detached and resets on bottom return", () => {
+    const { el, rerender, getByTestId } = setup();
+    expect(getByTestId("unread").textContent).toBe("0"); // pinned
+    userScroll(el, 100); // detach — baseline is 1 item
+    expect(getByTestId("unread").textContent).toBe("0"); // nothing new yet
+    rerender(<Harness items={["a", "b"]} />);
+    expect(getByTestId("unread").textContent).toBe("1");
+    rerender(<Harness items={["a", "b", "c"]} />);
+    expect(getByTestId("unread").textContent).toBe("2");
+    userScroll(el, BOTTOM); // manual bottom return re-pins
+    expect(getByTestId("unread").textContent).toBe("0");
+  });
+
+  it("streamed chunk growth never increments — the count keys off items, not content", () => {
+    const { el, rerender, getByTestId } = setup();
+    userScroll(el, 100);
+    // New array references with the last item replaced — the streaming shape.
+    rerender(<Harness items={["a (longer streamed text)"]} />);
+    rerender(<Harness items={["a (even longer streamed text)"]} />);
+    expect(getByTestId("unread").textContent).toBe("0");
+    // The NEXT whole turn landing counts exactly once.
+    rerender(<Harness items={["a (even longer streamed text)", "b"]} />);
+    expect(getByTestId("unread").textContent).toBe("1");
+  });
+
+  it("jumpToLatest resets the count with the re-pin", () => {
+    const { el, rerender, getByTestId } = setup();
+    userScroll(el, 100);
+    rerender(<Harness items={["a", "b"]} />);
+    expect(getByTestId("unread").textContent).toBe("1");
+    fireEvent.click(getByTestId("jump"));
+    expect(getByTestId("unread").textContent).toBe("0");
+  });
+
+  it("pinToLatest (the send path) resets the count", () => {
+    const { el, rerender, getByTestId } = setup();
+    userScroll(el, 100);
+    rerender(<Harness items={["a", "b"]} />);
+    expect(getByTestId("unread").textContent).toBe("1");
+    fireEvent.click(getByTestId("pin"));
+    expect(getByTestId("unread").textContent).toBe("0");
+  });
+
+  it("a resetKey force-pin (chat switch) resets the count", () => {
+    const { el, rerender, getByTestId } = setup({ resetKey: "chat-1" });
+    userScroll(el, 100);
+    rerender(<Harness items={["a", "b"]} resetKey="chat-1" />);
+    expect(getByTestId("unread").textContent).toBe("1");
+    rerender(<Harness items={["a", "b"]} resetKey="chat-2" />);
+    expect(getByTestId("unread").textContent).toBe("0");
+  });
+
+  it("a fresh detach after a re-pin starts counting from the new baseline", () => {
+    const { el, rerender, getByTestId } = setup();
+    userScroll(el, 100);
+    rerender(<Harness items={["a", "b"]} />);
+    userScroll(el, BOTTOM); // re-pin: baseline forgotten
+    userScroll(el, 100); // detach again — baseline is now 2 items
+    expect(getByTestId("unread").textContent).toBe("0");
+    rerender(<Harness items={["a", "b", "c"]} />);
+    expect(getByTestId("unread").textContent).toBe("1");
+  });
+
+  it("a shrunken item count while detached never goes negative", () => {
+    const { el, rerender, getByTestId } = setup({ items: ["a", "b", "c"] });
+    userScroll(el, 100);
+    rerender(<Harness items={["a"]} />);
+    expect(getByTestId("unread").textContent).toBe("0");
+  });
+
+  it("itemCount omitted → always 0 (existing consumers unchanged)", () => {
+    const { el, rerender, getByTestId } = setup({ withCount: false });
+    userScroll(el, 100);
+    rerender(<Harness items={["a", "b"]} withCount={false} />);
+    expect(getByTestId("atBottom").textContent).toBe("false");
+    expect(getByTestId("unread").textContent).toBe("0");
   });
 });

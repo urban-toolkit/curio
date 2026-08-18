@@ -16,6 +16,9 @@ export interface TranscriptAutoScroll {
   /** False while the user has scrolled away from the bottom (drives the
    * "Jump to latest" button); updates only on pinned↔detached transitions. */
   atBottom: boolean;
+  /** Items landed since the user scrolled away (dev/83) — 0 while pinned or
+   * when `itemCount` is not provided. Feeds the jump pill's "N new" label. */
+  unreadCount: number;
   /** Smooth-scroll to the newest message and re-engage auto-follow
    * (instant under prefers-reduced-motion). Arrival is guaranteed: if the
    * native animation is canceled (trackpad momentum), a deadline snap lands
@@ -54,6 +57,7 @@ export function useTranscriptAutoScroll({
   content,
   resetKey,
   ready = true,
+  itemCount,
 }: {
   /** Value that changes whenever transcript content changes (turns/messages
    * array — its reference changes per streamed chunk). */
@@ -62,6 +66,10 @@ export function useTranscriptAutoScroll({
   resetKey?: unknown;
   /** False while history hydrates; flipping true force-pins once. */
   ready?: boolean;
+  /** Number of transcript items (turns), NOT content: chunk growth replaces
+   * the last turn without changing it, so `unreadCount` counts whole landed
+   * messages — never streamed chunks (dev/83). Omit → unreadCount stays 0. */
+  itemCount?: number;
 }): TranscriptAutoScroll {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const pinnedRef = useRef(true);
@@ -74,8 +82,20 @@ export function useTranscriptAutoScroll({
    * right after the click must not cancel the user's explicit jump. */
   const jumpFlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [atBottom, setAtBottom] = useState(true);
+  /** Mirror of `itemCount` so event handlers read the current value without
+   * re-subscribing; the snapshot below happens inside those handlers. */
+  const itemCountRef = useRef<number | null>(itemCount ?? null);
+  itemCountRef.current = itemCount ?? null;
+  /** Item count captured at the pinned→detached moment — the unread baseline. */
+  const [countAtDetach, setCountAtDetach] = useState<number | null>(null);
 
   const setPinned = useCallback((pinned: boolean) => {
+    if (!pinned && pinnedRef.current) {
+      // Pinned→detached transition: snapshot the count so unreadCount counts
+      // only items landing AFTER this moment. Repeated detached-state calls
+      // (per-scroll position checks) never move the baseline.
+      setCountAtDetach(itemCountRef.current);
+    }
     pinnedRef.current = pinned;
     setAtBottom(pinned); // same-value updates bail out — no per-scroll churn
   }, []);
@@ -230,5 +250,14 @@ export function useTranscriptAutoScroll({
     return () => ro.disconnect();
   }, [content, ready, scrollToBottom]);
 
-  return { containerRef, atBottom, jumpToLatest, pinToLatest };
+  // Pure render-time derivation — no effect, no extra state updates on content
+  // churn (the dev/75 zero-per-chunk contract): every re-pin path resets it to
+  // 0 through `atBottom`, and chunk growth can't move it because it keys off
+  // the item COUNT, not the content reference.
+  const unreadCount =
+    atBottom || itemCount == null || countAtDetach == null
+      ? 0
+      : Math.max(0, itemCount - countAtDetach);
+
+  return { containerRef, atBottom, unreadCount, jumpToLatest, pinToLatest };
 }

@@ -24,7 +24,16 @@ export const AgentRunStatusLine: React.FC<{
   display: RunStatusDisplay;
   /** Category tint class — colors the live dot via currentColor. */
   tintClassName?: string;
-}> = ({ display, tintClassName }) => {
+  /** Fixed label for the running variant (dev/83, e.g. "Solving") — replaces
+   * the rotating PROCESSING_LABELS. Absent → rotation (chat replies). */
+  runningLabel?: string;
+  /** Suffix appended after the elapsed readout (dev/83, e.g. "3/7 nodes").
+   * Rendered inside the aria-hidden ticking span — never announced. */
+  runningDetail?: string;
+  /** Visually-hidden live-region text for the running variant (dev/83).
+   * Defaults to the dev/80 chat wording. */
+  srLabel?: string;
+}> = ({ display, tintClassName, runningLabel, runningDetail, srLabel }) => {
   const { elapsedLabel, processingLabel } = useRunTicker(
     display.kind === "running" ? display.startedAt : null,
   );
@@ -32,10 +41,11 @@ export const AgentRunStatusLine: React.FC<{
   if (display.kind === "running") {
     return (
       <span className={styles.line} role="status" aria-live="polite">
-        <span className={styles.srOnly}>Agent is working</span>
+        <span className={styles.srOnly}>{srLabel ?? "Agent is working"}</span>
         <span className={`${styles.dot} ${tintClassName ?? ""}`} aria-hidden="true" />
         <span className={styles.text} aria-hidden="true">
-          {processingLabel}… · {elapsedLabel}
+          {runningLabel ?? processingLabel}… · {elapsedLabel}
+          {runningDetail ? ` · ${runningDetail}` : ""}
         </span>
       </span>
     );
