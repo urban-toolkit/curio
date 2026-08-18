@@ -190,6 +190,8 @@ const EFFECT_LINE: Record<string, string> = {
     "Applying registers the node type in this project and adds its first node.",
   "dataset.install":
     "Applying installs only this dataset into the project's Data Catalog — no agent is installed.",
+  "package.install":
+    "Applying opens the package install review (permissions, dependencies, conflicts) — nothing installs until you confirm there.",
 };
 
 /** dev/52 (+dev/59): the plan card's effect line — dynamic and honest about

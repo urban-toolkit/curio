@@ -30,6 +30,10 @@ import { SafeAgentContent } from "../content/SafeAgentContent";
 import { TranscriptJumpButton } from "./TranscriptJumpButton";
 import { useTranscriptAutoScroll } from "./useTranscriptAutoScroll";
 import { useAutoGrowTextarea } from "./useAutoGrowTextarea";
+import { usePackageInstallReview } from "./usePackageInstallReview";
+// dev/84: genuine cross-feature reuse — agent package proposals apply through
+// the SAME install review the Nodes Catalog drawer uses, never a duplicate.
+import { InstallPermissionsDialog } from "../../packages/publishing/InstallPermissionsDialog";
 import { AgentRunStatusLine } from "./AgentRunStatusLine";
 import { AgentSessionTokenCounter } from "./AgentSessionTokenCounter";
 import {
@@ -200,6 +204,10 @@ export const AgentChatPanel: React.FC<{
     value: input,
     maxHeightPx: 120,
   });
+  // dev/84: package.install proposals apply THROUGH the package install
+  // review dialog — beginReview's promise spans the whole dialog round-trip,
+  // so the review card's busy/error handling covers it.
+  const packageReview = usePackageInstallReview(onApplyProposal);
 
   // Per-reply execution status (memo dev/80, amended: the status rides each
   // agent message, not a global strip). The review chip derives from the
@@ -678,7 +686,15 @@ export const AgentChatPanel: React.FC<{
                         key={part.proposalId ?? j}
                         part={part}
                         tintClassName={tint}
-                        onApply={onApplyProposal}
+                        onApply={
+                          part.tool === "package.install" && onApplyProposal
+                            ? (proposalId) =>
+                                packageReview.beginReview(
+                                  proposalId,
+                                  part.pins?.dirName ?? "",
+                                )
+                            : onApplyProposal
+                        }
                         onDismiss={onDismissProposal}
                         onApplyPlanNode={onApplyPlanNode}
                         onSavePlanGoal={onSavePlanGoal}
@@ -758,6 +774,17 @@ export const AgentChatPanel: React.FC<{
         count={unreadCount}
         focusFallbackRef={messagesRef}
       />
+      {/* dev/84: the reviewed package install — the dialog's Install button
+          is what fires the proposal apply; Cancel keeps it pending. */}
+      {packageReview.candidate ? (
+        <InstallPermissionsDialog
+          pkg={packageReview.candidate.pkg}
+          conflicts={packageReview.candidate.conflicts}
+          busy={packageReview.busy}
+          onCancel={packageReview.cancel}
+          onConfirm={() => void packageReview.confirm()}
+        />
+      ) : null}
       </div>
 
       {suggested && suggested.alternatives.length > 0 ? (

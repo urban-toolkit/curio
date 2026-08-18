@@ -8,6 +8,13 @@ jest.mock("../../providers/FlowProvider", () => ({
   useFlowContext: () => ({ playAllNodes: jest.fn() }),
 }));
 
+// dev/84: the package-install review flow loads the catalog + conflict probe;
+// mocked so the panel suite stays network-free.
+jest.mock("../../api/packagesApi", () => ({
+  packagesApi: { catalog: jest.fn(), resolve: jest.fn() },
+}));
+import { packagesApi } from "../../api/packagesApi";
+
 import { AgentChatPanel } from "../../components/agents/attach/AgentChatPanel";
 import type { AgentAttachment, AgentSessionTurn } from "../../api/agentsApi";
 
@@ -469,6 +476,106 @@ describe("AgentChatPanel review + tool activity (memo dev/41)", () => {
     });
     expect(screen.getByText("node.read …")).toBeInTheDocument();
     expect(screen.getByText("node.read · ok")).toBeInTheDocument();
+  });
+});
+
+describe("AgentChatPanel package-install review (memo dev/84)", () => {
+  const packageTurns: AgentSessionTurn[] = [
+    {
+      role: "agent",
+      text: "You need the weather package.",
+      content: [
+        {
+          type: "proposal",
+          proposalId: "pk1",
+          tool: "package.install",
+          summary: "Install package · Weather Analysis",
+          preview: "the proposed node imports rasterio",
+          pins: { dirName: "curio.weather@1" },
+          status: "pending",
+        } as never,
+      ],
+    } as AgentSessionTurn,
+  ];
+
+  beforeEach(() => {
+    (packagesApi.catalog as jest.Mock).mockClear();
+    (packagesApi.resolve as jest.Mock).mockClear();
+    (packagesApi.catalog as jest.Mock).mockResolvedValue({
+      packages: [
+        {
+          dirName: "curio.weather@1",
+          name: "Weather Analysis",
+          publisher: "curio",
+          version: "1.0.0",
+          permissions: ["network.fetch"],
+          dependencies: { python: { rasterio: ">=1.5.0" }, js: {}, packages: {} },
+          installed: false,
+        },
+      ],
+    });
+    (packagesApi.resolve as jest.Mock).mockResolvedValue({ lockfile: {}, conflicts: [] });
+  });
+
+  it("Apply opens the existing install review dialog; only its Install button fires the apply", async () => {
+    const onApplyProposal = jest.fn().mockResolvedValue(undefined);
+    renderPanel({ turns: packageTurns, onApplyProposal });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    // The dialog is the review surface: permissions + deps render, nothing
+    // applied yet. (Queried by its title — the chat panel itself is a dialog.)
+    await screen.findByText('Install "Weather Analysis"');
+    expect(screen.getByText("network.fetch")).toBeInTheDocument();
+    expect(screen.getByText("python · rasterio")).toBeInTheDocument();
+    expect(onApplyProposal).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Install" }));
+    await waitFor(() => expect(onApplyProposal).toHaveBeenCalledWith("pk1"));
+    await waitFor(() =>
+      expect(screen.queryByText('Install "Weather Analysis"')).toBeNull(),
+    );
+  });
+
+  it("Cancel keeps the proposal pending — no apply, card still actionable", async () => {
+    const onApplyProposal = jest.fn().mockResolvedValue(undefined);
+    renderPanel({ turns: packageTurns, onApplyProposal });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await screen.findByText('Install "Weather Analysis"');
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(screen.queryByText('Install "Weather Analysis"')).toBeNull(),
+    );
+    expect(onApplyProposal).not.toHaveBeenCalled();
+    // The card's act() settles with the cancel — Apply is actionable again.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Apply" })).toBeEnabled(),
+    );
+  });
+
+  it("REGRESSION: non-package proposals still apply directly, no dialog", async () => {
+    const onApplyProposal = jest.fn().mockResolvedValue(undefined);
+    renderPanel({
+      turns: [
+        {
+          role: "agent",
+          text: "proposal",
+          content: [
+            {
+              type: "proposal",
+              proposalId: "p1",
+              tool: "dataset.install",
+              summary: "Install dataset · Cities",
+              preview: "Cities · csv",
+              pins: { datasetId: "d1" },
+              status: "pending",
+            } as never,
+          ],
+        } as AgentSessionTurn,
+      ],
+      onApplyProposal,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(onApplyProposal).toHaveBeenCalledWith("p1"));
+    expect(screen.queryByRole("button", { name: "Install" })).toBeNull();
+    expect(packagesApi.catalog).not.toHaveBeenCalled();
   });
 });
 
