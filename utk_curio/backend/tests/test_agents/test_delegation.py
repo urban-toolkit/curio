@@ -836,3 +836,40 @@ class TestChatContentReviewMintStream:
         assert all(p["type"] != "proposal" for p in done["content"])
         entry = next(p for p in done["content"] if p["type"] == "delegation")
         assert entry["attachmentId"] == review["attachmentId"]
+
+
+class TestPackageRecommendationDelegation:
+    """dev/84: the three build parents resolve the package capabilities to
+    agent.package-recommendation — current-project-only, missing template =
+    the reviewed missing-specialist path."""
+
+    PR = "agent.package-recommendation@1.0.0"
+
+    def test_parents_declare_the_delegate(self):
+        for parent in ("agent.node-builder@1.0.0", "agent.dataflow-builder@1.0.0",
+                       "agent.connection-builder@1.0.0"):
+            m = builtin.get_builtin_manifest(parent)
+            assert "agent.package-recommendation" in m.delegates_to, parent
+
+    def test_installed_recommendation_agent_resolves_both_capabilities(self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        pid = _project(client, token)
+        client.post(f"/api/agents/projects/{pid}/install", json={"coord": self.PR}, headers=_auth(token))
+        for parent in ("agent.node-builder@1.0.0", "agent.dataflow-builder@1.0.0",
+                       "agent.connection-builder@1.0.0"):
+            for capability in ("package.identify", "package.recommend"):
+                r = delegation.resolve(key, pid, builtin.get_builtin_manifest(parent), capability)
+                assert r.outcome == "ok", (parent, capability)
+                assert r.coord == self.PR
+
+    def test_missing_recommendation_agent_is_missing_specialist(self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        pid = _project(client, token)
+        r = delegation.resolve(
+            key, pid, builtin.get_builtin_manifest("agent.dataflow-builder@1.0.0"),
+            "package.recommend",
+        )
+        assert r.outcome == "not-installed"  # → the reviewed project.install proposal
+        assert r.coord == self.PR

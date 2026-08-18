@@ -116,6 +116,7 @@ class TestNodeBuilderComposite:
             "agent.node-content-builder",
             "agent.execution-subtask-planner",
             "agent.node-researcher",  # dev/67-4: chainable verification
+            "agent.package-recommendation",  # dev/84: required-package identify
         ]
         # dev/67-6 lifts the dev/48 canvas-only limitation: modify-existing
         # attaches to the node it modifies.
@@ -130,15 +131,23 @@ class TestNodeBuilderComposite:
     def test_review_policy_and_thirteen_byte_parity(self):
         # The composite declares review-before-apply; every migrated manifest
         # dict stays byte-identical (no delegatesTo key, report-only runtime) —
-        # the dev/48 regression requirement.
+        # the dev/48 regression requirement, amended by dev/84 (D4): Connection
+        # Builder is the ONE migrated manifest that gains delegatesTo (the
+        # dev/16 §3.3 addendum); everything else about it is unchanged.
         nb = builtin.build_builtin_manifest(builtin.get_builtin_spec(self.COORD))
         assert nb["runtime"] == {"execution": "foreground", "reviewPolicy": "review-before-apply"}
         assert nb["delegatesTo"] == [
             "agent.node-content-builder", "agent.execution-subtask-planner",
-            "agent.node-researcher",
+            "agent.node-researcher", "agent.package-recommendation",
         ]
+        cb = builtin.build_builtin_manifest(
+            builtin.get_builtin_spec("agent.connection-builder@1.0.0")
+        )
+        assert cb["delegatesTo"] == ["agent.package-recommendation"]  # dev/84 D4
+        assert cb["runtime"] == {"execution": "foreground", "reviewPolicy": "report-only"}
         composites = {"agent.node-builder", "agent.dataset-finder", "agent.dataflow-builder",
-                      "agent.package-recommendation"}  # dev/84
+                      "agent.package-recommendation",  # dev/84
+                      "agent.connection-builder"}  # dev/84 D4 — asserted above
         for spec in builtin.BUILTIN_AGENTS:
             if spec.agent_id in composites:
                 continue
@@ -204,6 +213,7 @@ class TestDataflowBuilderComposite:
             "agent.task-refresh-agent", "agent.workflow-suggester",
             "agent.plan-coherence-validator", "agent.dataflow-explainer",
             "agent.node-researcher",  # dev/67-4: chainable verification
+            "agent.package-recommendation",  # dev/84: Recommend packages step
         ]
         assert [t.kind for t in m.compatible_targets] == ["canvas"]
         assert [t.id for t in m.tools] == ["dataflow.read", "dataflow.plan.write", "node.runtime.read"]

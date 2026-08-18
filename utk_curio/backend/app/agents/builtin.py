@@ -124,7 +124,12 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
     BuiltinAgentSpec("agent.connection-builder", "Connection Builder", "node",
                      "Suggest and create valid node connections.",
                      "new_connection_prompt.txt", ("connection.propose",), ("authoring",),
-                     reads=("workflowGoal", "nodeId", "subtask", "connectionSide", "dataflowContext")),
+                     reads=("workflowGoal", "nodeId", "subtask", "connectionSide", "dataflowContext"),
+                     # dev/16 §3.3 addendum via dev/84 (deviation D4): the one
+                     # migrated manifest that gains delegatesTo — a proposed
+                     # connection's required packages surface as reviewed
+                     # proposals. Its connection.propose capability is unchanged.
+                     delegates_to=("agent.package-recommendation",)),
     BuiltinAgentSpec("agent.workflow-suggester", "Workflow Suggester", "canvas",
                      "Suggest workflow next steps.",
                      "workflow_suggestions_prompt.txt", ("workflow.suggest",), ("planning",),
@@ -174,7 +179,9 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      tools=("dataflow.read", "node.create", "node.template.create",
                             "node.runtime.read", "node.content.write"),
                      delegates_to=("agent.node-content-builder", "agent.execution-subtask-planner",
-                                   "agent.node-researcher"),
+                                   "agent.node-researcher",
+                                   # dev/84: a built node's required packages.
+                                   "agent.package-recommendation"),
                      review_policy="review-before-apply"),
     # The second P5 composite (memo dev/50; spec dev/15 §3.4 + docs/06). Two-
     # lane discovery: catalog picks → reviewed dataset.install; external picks
@@ -214,7 +221,9 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                    "agent.connection-builder", "agent.dataflow-task-planner",
                                    "agent.execution-subtask-planner", "agent.task-refresh-agent",
                                    "agent.workflow-suggester", "agent.plan-coherence-validator",
-                                   "agent.dataflow-explainer", "agent.node-researcher"),
+                                   "agent.dataflow-explainer", "agent.node-researcher",
+                                   # dev/84: the "Recommend packages" plan step.
+                                   "agent.package-recommendation"),
                      review_policy="review-before-apply"),
     # The fourteenth releasable built-in (memo dev/84; spec dev/16 / DEC-035).
     # Net-new instruction. Deviations recorded in the memo: roster-generated
