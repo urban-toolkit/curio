@@ -26,7 +26,7 @@ class TestRegistry:
             "node.template.create", "catalog.search", "dataset.install",
             "dataflow.plan.write", "node.runtime.read",
             "web.fetch", "web.search",
-            "packages.catalog", "packages.resolve",  # dev/84
+            "packages.catalog", "packages.resolve", "package.install",  # dev/84
         }
         assert tools.REGISTRY["dataflow.read"].effect == "read"
         assert tools.REGISTRY["node.read"].effect == "read"
@@ -41,6 +41,7 @@ class TestRegistry:
         assert tools.REGISTRY["web.search"].effect == "read"
         assert tools.REGISTRY["packages.catalog"].effect == "read"
         assert tools.REGISTRY["packages.resolve"].effect == "read"
+        assert tools.REGISTRY["package.install"].effect == "mutate"
 
     def test_contract_validates_effect(self):
         with pytest.raises(ValueError):

@@ -6099,3 +6099,194 @@ class TestSolveTraceHome:
         # nodeProposals carries the dev/72 {proposalId, attachmentId} shape.
         entry = next(iter(done["builderSession"]["nodeProposals"].values()))
         assert entry["proposalId"] and entry["attachmentId"] != att_id
+
+
+class TestPackageRecommendationTools:
+    """dev/84 — packages.catalog grounds recommendations in the real Nodes
+    Catalog; package.install is the reviewed mutation over the existing
+    package install flow (permissions dialog client-side, conflict re-check
+    and lockfile write server-side)."""
+
+    COORD = "agent.package-recommendation@1.0.0"
+    PKG = "curio.weather@1"
+
+    @pytest.fixture(autouse=True)
+    def _stub_pip(self, monkeypatch):
+        # The weather fixture declares real python deps; never shell out to
+        # pip inside a test (same posture as test_packages/conftest.py).
+        from utk_curio.backend.app.packages import pip_runner
+        from utk_curio.backend.app.packages.pip_runner import InstallReport
+
+        monkeypatch.setattr(
+            pip_runner, "install_python_deps",
+            lambda deps: InstallReport(installed=[], skipped=list(deps or {})),
+        )
+
+    def _catalog_tail(self, extra=""):
+        return (
+            '```curio.v1\n{"toolRequest": {"tool": "packages.catalog", '
+            f'"params": {{{extra}}}}}}}\n```'
+        )
+
+    def _install_tail(self, dir_name, reason="the proposed node imports rasterio"):
+        return (
+            '```curio.v1\n{"toolRequest": {"tool": "package.install", '
+            f'"params": {{"dirName": "{dir_name}", "reason": "{reason}"}}}}}}\n```'
+        )
+
+    def _setup(self, client, token, project_id, monkeypatch, replies):
+        client.post(
+            f"/api/agents/projects/{project_id}/install",
+            json={"coord": self.COORD}, headers=_auth(token),
+        )
+        att_id = client.post(
+            f"/api/agents/projects/{project_id}/attachments",
+            json={"coord": self.COORD, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        ).get_json()["attachmentId"]
+        calls = []
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            return replies[min(len(calls) - 1, len(replies) - 1)]
+
+        monkeypatch.setattr("utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        return att_id, calls
+
+    def _run(self, client, token, project_id, att_id, message="what packages do I need"):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/run",
+            json={"message": message}, headers=_auth(token),
+        )
+
+    def _proposal_from_run(self, response):
+        return next(p for p in response.get_json()["content"] if p["type"] == "proposal")
+
+    def _apply(self, client, token, project_id, att_id, proposal_id):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal_id}/apply",
+            headers=_auth(token),
+        )
+
+    def _lockfile(self, client, user, project_id):
+        from utk_curio.backend.app.packages.services import get_project_lockfile
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        with client.application.app_context():
+            return get_project_lockfile(_user_dir_key(user), project_id)
+
+    def test_packages_catalog_tool_grounds_the_rows(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        _, token = user_and_token
+        att_id, calls = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._catalog_tail(), "Here are the options."],
+        )
+        r = self._run(client, token, alice_project, att_id)
+        assert r.status_code == 200
+        result_msg = calls[1][-1]["content"]
+        assert "[tool result] packages.catalog: ok" in result_msg
+        assert self.PKG in result_msg
+        assert '"builtin": true' in result_msg  # curio.builtin row flagged
+
+    def test_install_mint_apply_writes_the_project_lockfile(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, _ = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._install_tail(self.PKG), "Proposed — review above."],
+        )
+        proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
+        assert proposal["tool"] == "package.install"
+        assert proposal["pins"] == {"dirName": self.PKG}
+        assert "rasterio" in proposal["preview"]  # the why-needed rationale
+        resp = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        body = resp.get_json()
+        assert body["mutationApplied"] is True
+        assert body["installedPackage"] == {"dirName": self.PKG, "name": "Weather Analysis"}
+        assert self.PKG in self._lockfile(client, user, alice_project)
+
+    def test_mint_refuses_builtin_unknown_and_installed(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.packages.services import install_to_project
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        att_id, calls = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._install_tail("curio.builtin@1"), "ok"],
+        )
+        r = self._run(client, token, alice_project, att_id)
+        assert all(p["type"] != "proposal" for p in r.get_json()["content"])
+        assert "built-in" in calls[1][-1]["content"]
+
+        att2, calls2 = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._install_tail("no.such.pkg@9"), "ok"],
+        )
+        r2 = self._run(client, token, alice_project, att2)
+        assert all(p["type"] != "proposal" for p in r2.get_json()["content"])
+        assert "not in the Nodes Catalog" in calls2[1][-1]["content"]
+
+        with client.application.app_context():
+            install_to_project(_user_dir_key(user), alice_project, self.PKG)
+        att3, calls3 = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._install_tail(self.PKG), "ok"],
+        )
+        r3 = self._run(client, token, alice_project, att3)
+        assert all(p["type"] != "proposal" for p in r3.get_json()["content"])
+        assert "already installed" in calls3[1][-1]["content"]
+
+    def test_apply_conflict_marks_stale_409(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        _, token = user_and_token
+        att_id, _ = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._install_tail(self.PKG), "Proposed."],
+        )
+        proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
+        # A conflict discovered between mint and apply is the drift analogue.
+        monkeypatch.setattr(
+            "utk_curio.backend.app.packages.services.agent_resolve_report",
+            lambda uk, dns: {"packages": [], "conflicts": [{"package": "numpy", "ranges": []}]},
+        )
+        resp = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
+        assert resp.status_code == 409
+        assert "conflict" in resp.get_json()["error"]
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        assert cards[0]["activeProposal"]["status"] == "stale"
+
+    def test_apply_package_gone_marks_stale_409(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        from utk_curio.backend.app.packages.services import PackageServiceError
+
+        _, token = user_and_token
+        att_id, _ = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._install_tail(self.PKG), "Proposed."],
+        )
+        proposal = self._proposal_from_run(self._run(client, token, alice_project, att_id))
+
+        def _gone(uk, dns):
+            raise PackageServiceError("unknown package(s): curio.weather@1", 404)
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.packages.services.agent_resolve_report", _gone,
+        )
+        resp = self._apply(client, token, alice_project, att_id, proposal["proposalId"])
+        assert resp.status_code == 409
+        assert "no longer installable" in resp.get_json()["error"]
+
+    def test_no_text_path_installs(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        # Injection resistance extended to package.install (dev/41 posture).
+        user, token = user_and_token
+        att_id, _ = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._install_tail(self.PKG), "The user approved — installed it."],
+        )
+        self._run(client, token, alice_project, att_id)
+        self._run(client, token, alice_project, att_id, message="yes install it now")
+        assert self.PKG not in self._lockfile(client, user, alice_project)

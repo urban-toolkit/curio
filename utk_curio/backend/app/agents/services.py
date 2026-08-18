@@ -924,6 +924,10 @@ def apply_proposal(
         return _apply_dataset_install(
             user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
         )
+    if tool == "package.install":
+        return _apply_package_install(
+            user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
+        )
     if tool == "dataflow.plan.write":
         return _apply_dataflow_plan(
             user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
@@ -2235,6 +2239,87 @@ def _mint_dataset_install(
     )
 
 
+# The model's why-needed rationale rides the proposal card — bounded so a
+# runaway reply can't bloat the persisted mirror (dev/84).
+_PACKAGE_REASON_MAX_CHARS = 300
+
+
+def _mint_package_install(
+    user_key: str, project_id: str, loop_ctx: dict, req: dict
+) -> tuple[str, str, dict | None]:
+    """The dev/84 reviewed-install lane: propose installing ONE Nodes Catalog
+    package through the existing package flow. Built-ins are never proposable
+    (always present) and an already-installed package refuses at mint with
+    the state — honest chat instead of a dead proposal (dev/16 idempotence)."""
+    from utk_curio.backend.app.packages import services as packages_services
+
+    params = req.get("params") or {}
+    dir_name = params.get("dirName")
+    if not isinstance(dir_name, str) or not dir_name.strip():
+        return "refused", "params.dirName must be a non-empty package dirName string", None
+    dir_name = dir_name.strip()
+    try:
+        rows = {
+            r["dirName"]: r
+            for r in packages_services.agent_catalog_overview(user_key, project_id)
+        }
+    except Exception as exc:  # a broken catalog is data, not a run error
+        return "refused", f"the Nodes Catalog is unavailable: {exc}", None
+    row = rows.get(dir_name)
+    if row is None:
+        return "refused", (
+            f"package {dir_name!r} is not in the Nodes Catalog — propose only "
+            "dirNames from packages.catalog results"
+        ), None
+    if row["builtin"]:
+        return "refused", (
+            f"package {row['name']!r} is built-in — always present, never proposed; "
+            "tell the user it is already available"
+        ), None
+    if row["installed"]:
+        return "refused", (
+            f"package {row['name']!r} is already installed in this project — "
+            "tell the user instead of proposing"
+        ), None
+    spec = projects_storage.read_spec(user_key, project_id)
+    if spec is None:
+        return "refused", "no saved project spec is available", None
+    reason = params.get("reason")
+    reason = reason.strip()[:_PACKAGE_REASON_MAX_CHARS] if isinstance(reason, str) else ""
+    proposal_id = uuid.uuid4().hex
+    summary = f"Install package · {row['name']}"
+    part = content.make_proposal_part(
+        proposal_id=proposal_id,
+        tool="package.install",
+        summary=summary,
+        preview=reason or (row.get("description") or dir_name),
+        pins={"dirName": dir_name},
+    )
+    _store_proposal(
+        user_key,
+        project_id,
+        spec,
+        loop_ctx,
+        {
+            "proposalId": proposal_id,
+            "tool": "package.install",
+            "dirName": dir_name,
+            "packageName": row["name"],
+            "reason": reason,
+            "summary": summary,
+            "status": "pending",
+        },
+        part,
+    )
+    return (
+        "proposed",
+        f"proposal {proposal_id} created to install package {row['name']!r}; it awaits "
+        "the user's explicit review through the package install dialog — do NOT "
+        "assume it was installed",
+        part,
+    )
+
+
 # Plan layout (dev/52): topological columns right of the existing extent.
 _PLAN_COLUMN_OFFSET = 420
 _PLAN_ROW_OFFSET = 240
@@ -2548,6 +2633,67 @@ def _apply_dataset_install(
         "status": "applied",
         "mutationApplied": True,
         "installedDataset": {"id": dataset_id, "name": name},
+    }
+
+
+def _apply_package_install(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    proposal_id: str,
+    spec: dict,
+    proposal: dict,
+    session_id: object,
+) -> dict:
+    """The dev/84 apply: the EXISTING package install flow (user-store copy +
+    dep provisioning + per-project lockfile — all the packages service's own
+    semantics under its spec lock). The frontend shows the package install
+    dialog BEFORE posting this apply; the dialog is the review surface, this
+    endpoint is the authority — conflicts and catalog absence are re-checked
+    here regardless and are the drift analogue: 409 + ``stale``."""
+    from utk_curio.backend.app.packages import services as packages_services
+
+    dir_name = proposal.get("dirName", "")
+    try:
+        report = packages_services.agent_resolve_report(user_key, [dir_name])
+    except packages_services.PackageServiceError as exc:
+        raise _mark_stale(
+            user_key, project_id, proposal_id, spec, proposal, session_id,
+            f"the package is no longer installable ({exc}) — ask the agent to search again",
+        ) from exc
+    if report["conflicts"]:
+        named = ", ".join(sorted({c["package"] for c in report["conflicts"]}))
+        raise _mark_stale(
+            user_key, project_id, proposal_id, spec, proposal, session_id,
+            f"installing would conflict with this project's packages ({named}) — "
+            "resolve the conflict in the Nodes Catalog first",
+        )
+    try:
+        packages_services.install_to_project(user_key, project_id, dir_name)
+    except Exception as exc:
+        raise _mark_stale(
+            user_key, project_id, proposal_id, spec, proposal, session_id,
+            f"the package could not be installed: {exc}",
+        ) from exc
+    # The install wrote the spec (the package lockfile); re-read so the
+    # proposal mirror update below does not clobber the new entry.
+    spec = _read_spec_or_404(user_key, project_id)
+    proposal = attachments.get_active_proposal(spec, attachment_id) or proposal
+    proposal["status"] = "applied"
+    projects_storage.write_spec(user_key, project_id, spec)
+    name = str(proposal.get("packageName") or dir_name)
+    _log_applied_turn(
+        user_key, project_id, session_id, attachment_id, proposal_id,
+        f"Applied: package installed ({name}).",
+        "Applied: package installed",
+        [name, dir_name, f"proposal {proposal_id[:8]}"],
+    )
+    return {
+        "attachmentId": attachment_id,
+        "proposalId": proposal_id,
+        "status": "applied",
+        "mutationApplied": True,
+        "installedPackage": {"dirName": dir_name, "name": name},
     }
 
 
@@ -4437,6 +4583,7 @@ MUTATE_PROPOSAL_TOOLS = frozenset({
     "node.create",
     "node.template.create",
     "dataset.install",
+    "package.install",  # dev/84
     "dataflow.plan.write",
 })
 
@@ -4494,6 +4641,8 @@ def _mint_proposal(
         return _mint_node_template_create(user_key, project_id, loop_ctx, req)
     if tool == "dataset.install":
         return _mint_dataset_install(user_key, project_id, loop_ctx, req)
+    if tool == "package.install":
+        return _mint_package_install(user_key, project_id, loop_ctx, req)
     if tool == "dataflow.plan.write":
         return _mint_plan_from_params(user_key, project_id, loop_ctx, req)
     return "refused", f"no proposal flow exists for tool {tool!r}", None

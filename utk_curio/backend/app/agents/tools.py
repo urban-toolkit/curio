@@ -199,6 +199,24 @@ REGISTRY: dict[str, ToolContract] = {
             "their approval, and this never installs an agent."
         ),
     ),
+    # dev/84 — consumer: agent.package-recommendation. The reviewed install
+    # lane: applying routes through the existing package install flow
+    # (permissions + dependencies + conflicts); never a silent install,
+    # never a built-in.
+    "package.install": ToolContract(
+        id="package.install",
+        contract_version="1",
+        effect="mutate",
+        description=(
+            "Propose installing ONE node package from the Nodes Catalog into "
+            'this project. Params: {"dirName": "<dirName from '
+            'packages.catalog results>", "reason": "why this work needs it"}. '
+            "The user reviews the proposal through the package install dialog "
+            "(permissions, dependencies, conflicts); nothing is installed "
+            "without their approval. Built-in packages are always present and "
+            "must never be proposed."
+        ),
+    ),
     # dev/48 — consumer: agent.node-builder. Reuse-first: nodeType must come
     # from the run's "Available node templates" list (composed at run time
     # from the packages registry — this module owns no template knowledge).
