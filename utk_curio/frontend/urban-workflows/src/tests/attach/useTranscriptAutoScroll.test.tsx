@@ -1,5 +1,5 @@
 import React from "react";
-import { render, fireEvent } from "@testing-library/react";
+import { render, fireEvent, createEvent } from "@testing-library/react";
 import { useTranscriptAutoScroll } from "../../components/agents/attach/useTranscriptAutoScroll";
 
 /** Exercises the hook against a real scrollable div with mocked geometry
@@ -34,6 +34,7 @@ function mockGeometry(el: HTMLElement) {
   let scrollTop = 0;
   Object.defineProperty(el, "scrollHeight", { configurable: true, get: () => 1000 });
   Object.defineProperty(el, "clientHeight", { configurable: true, get: () => 300 });
+  Object.defineProperty(el, "clientWidth", { configurable: true, get: () => 500 });
   Object.defineProperty(el, "scrollTop", {
     configurable: true,
     get: () => scrollTop,
@@ -127,13 +128,86 @@ describe("useTranscriptAutoScroll", () => {
     expect(getByTestId("atBottom").textContent).toBe("false");
   });
 
-  it("user wheel input during a programmatic jump wins over the animation", () => {
+  it("RACE REGRESSION (dev/79): wheel-up detaches before the next streamed chunk can re-pin", () => {
+    const { el, rerender, getByTestId } = setup();
+    rerender(<Harness items={["a."]} />); // pinned steady state at the bottom
+    expect(el.scrollTop).toBe(BOTTOM);
+    // The wheel fires and moves scrollTop synchronously…
+    fireEvent.wheel(el, { deltaY: -120 });
+    el.scrollTop = 400;
+    // …and the next chunk is processed BEFORE the browser dispatches the
+    // coalesced scroll event (real-browser ordering during streaming):
+    rerender(<Harness items={["a.."]} />);
+    expect(el.scrollTop).toBe(400); // held — not yanked back to the bottom
+    fireEvent.scroll(el); // the coalesced scroll event arrives late
+    expect(getByTestId("atBottom").textContent).toBe("false");
+  });
+
+  it("wheel-down never detaches — follow stays position-driven", () => {
+    const { el, rerender, getByTestId } = setup();
+    fireEvent.wheel(el, { deltaY: 120 });
+    expect(getByTestId("atBottom").textContent).toBe("true");
+    rerender(<Harness items={["a", "b"]} />);
+    expect(el.scrollTop).toBe(BOTTOM); // still following
+  });
+
+  it("touchmove detaches eagerly; a scroll event still near the bottom re-pins (self-heal)", () => {
+    const { el, getByTestId } = setup();
+    fireEvent.touchMove(el);
+    expect(getByTestId("atBottom").textContent).toBe("false");
+    el.scrollTop = BOTTOM; // the gesture never actually left the bottom zone
+    fireEvent.scroll(el);
+    expect(getByTestId("atBottom").textContent).toBe("true");
+  });
+
+  it("up-scroll keys detach eagerly", () => {
+    const { el, getByTestId } = setup();
+    fireEvent.keyDown(el, { key: "ArrowUp" });
+    expect(getByTestId("atBottom").textContent).toBe("false");
+  });
+
+  it("pointerdown detaches only from the scrollbar gutter, never content clicks", () => {
+    const { el, getByTestId } = setup();
+    const contentClick = createEvent.pointerDown(el);
+    Object.defineProperty(contentClick, "offsetX", { value: 200 }); // < clientWidth 500
+    fireEvent(el, contentClick);
+    expect(getByTestId("atBottom").textContent).toBe("true");
+    const gutterClick = createEvent.pointerDown(el);
+    Object.defineProperty(gutterClick, "offsetX", { value: 505 }); // in the gutter
+    fireEvent(el, gutterClick);
+    expect(getByTestId("atBottom").textContent).toBe("false");
+  });
+
+  it("momentum wheel during a jump flight cannot cancel it; the deadline snap lands it", () => {
+    jest.useFakeTimers();
+    try {
+      const { el, getByTestId } = setup();
+      // A smooth engine that never lands — the canceled-by-momentum case.
+      (el as HTMLElement & { scrollTo: () => void }).scrollTo = () => {};
+      userScroll(el, 100);
+      fireEvent.click(getByTestId("jump"));
+      expect(getByTestId("atBottom").textContent).toBe("true");
+      // Trackpad momentum keeps arriving right after the click — ignored:
+      fireEvent.wheel(el, { deltaY: -40 });
+      fireEvent.wheel(el, { deltaY: -12 });
+      expect(getByTestId("atBottom").textContent).toBe("true");
+      expect(el.scrollTop).toBe(100); // the animation is dead, nothing moved…
+      jest.advanceTimersByTime(450);
+      expect(el.scrollTop).toBe(BOTTOM); // …so the deadline snap landed it
+      expect(getByTestId("atBottom").textContent).toBe("true");
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("after a jump lands, a genuine wheel-up detaches normally again", () => {
     const { el, getByTestId } = setup();
     (el as HTMLElement & { scrollTo: () => void }).scrollTo = () => {};
     userScroll(el, 100);
     fireEvent.click(getByTestId("jump"));
-    fireEvent.wheel(el);
-    userScroll(el, 50);
+    el.scrollTop = BOTTOM;
+    fireEvent.scroll(el); // lands → suppress cleared, flight disarmed
+    fireEvent.wheel(el, { deltaY: -120 });
     expect(getByTestId("atBottom").textContent).toBe("false");
   });
 

@@ -615,6 +615,27 @@ describe("AgentChatPanel follow-at-bottom auto-scroll (memo dev/75)", () => {
     expect(transcript.scrollTop).toBe(BOTTOM);
   });
 
+  it("a wheel-up during streaming detaches before the next chunk re-pins (dev/79 race)", () => {
+    const { transcript, rerender, props } = renderWithTranscript();
+    // The wheel moves scrollTop synchronously; the next streamed chunk is
+    // processed before the browser dispatches the coalesced scroll event.
+    fireEvent.wheel(transcript, { deltaY: -120 });
+    rerender(
+      <AgentChatPanel
+        {...props}
+        turns={[
+          { role: "user", text: "q1" },
+          { role: "agent", text: "streaming… plus another chunk" },
+        ]}
+      />,
+    );
+    expect(transcript.scrollTop).toBe(0); // held at the user's position
+    fireEvent.scroll(transcript);
+    expect(
+      screen.getByRole("button", { name: /jump to latest/i }),
+    ).toBeInTheDocument();
+  });
+
   it("scrolling back to the bottom manually also hides the pill", () => {
     const { transcript } = renderWithTranscript();
     userScroll(transcript, 100);
