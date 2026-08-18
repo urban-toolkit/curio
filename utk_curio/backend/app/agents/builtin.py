@@ -183,7 +183,10 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      delegates_to=("agent.node-content-builder", "agent.execution-subtask-planner",
                                    "agent.node-researcher",
                                    # dev/84: a built node's required packages.
-                                   "agent.package-recommendation"),
+                                   "agent.package-recommendation",
+                                   # dev/86 (DEC-055): optional post-generation
+                                   # semantic check — advisory, never approval.
+                                   "agent.generated-content-evaluator"),
                      review_policy="review-before-apply"),
     # The second P5 composite (memo dev/50; spec dev/15 §3.4 + docs/06). Two-
     # lane discovery: catalog picks → reviewed dataset.install; external picks
@@ -225,7 +228,10 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                    "agent.workflow-suggester", "agent.plan-coherence-validator",
                                    "agent.dataflow-explainer", "agent.node-researcher",
                                    # dev/84: the "Recommend packages" plan step.
-                                   "agent.package-recommendation"),
+                                   "agent.package-recommendation",
+                                   # dev/86 (DEC-055): optional post-generation
+                                   # semantic check — advisory, never approval.
+                                   "agent.generated-content-evaluator"),
                      review_policy="review-before-apply"),
     # The fourteenth releasable built-in (memo dev/84; spec dev/16 / DEC-035).
     # Net-new instruction. Deviations recorded in the memo: roster-generated

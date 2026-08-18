@@ -122,6 +122,7 @@ class TestNodeBuilderComposite:
             "agent.execution-subtask-planner",
             "agent.node-researcher",  # dev/67-4: chainable verification
             "agent.package-recommendation",  # dev/84: required-package identify
+            "agent.generated-content-evaluator",  # dev/86: advisory semantic check
         ]
         # dev/67-6 lifts the dev/48 canvas-only limitation: modify-existing
         # attaches to the node it modifies.
@@ -144,6 +145,7 @@ class TestNodeBuilderComposite:
         assert nb["delegatesTo"] == [
             "agent.node-content-builder", "agent.execution-subtask-planner",
             "agent.node-researcher", "agent.package-recommendation",
+            "agent.generated-content-evaluator",
         ]
         cb = builtin.build_builtin_manifest(
             builtin.get_builtin_spec("agent.connection-builder@1.0.0")
@@ -219,6 +221,7 @@ class TestDataflowBuilderComposite:
             "agent.plan-coherence-validator", "agent.dataflow-explainer",
             "agent.node-researcher",  # dev/67-4: chainable verification
             "agent.package-recommendation",  # dev/84: Recommend packages step
+            "agent.generated-content-evaluator",  # dev/86: advisory semantic check
         ]
         assert [t.kind for t in m.compatible_targets] == ["canvas"]
         assert [t.id for t in m.tools] == ["dataflow.read", "dataflow.plan.write", "node.runtime.read"]

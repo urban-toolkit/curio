@@ -873,3 +873,39 @@ class TestPackageRecommendationDelegation:
         )
         assert r.outcome == "not-installed"  # → the reviewed project.install proposal
         assert r.coord == self.PR
+
+
+class TestEvaluatorDelegation:
+    """dev/86 (DEC-055): node-builder + dataflow-builder can chain the
+    advisory semantic check — current-project-only, missing = the reviewed
+    missing-specialist path, never assumed."""
+
+    EV = "agent.generated-content-evaluator@1.0.0"
+
+    def test_generators_declare_the_evaluator(self):
+        for parent in ("agent.node-builder@1.0.0", "agent.dataflow-builder@1.0.0"):
+            m = builtin.get_builtin_manifest(parent)
+            assert "agent.generated-content-evaluator" in m.delegates_to, parent
+
+    def test_installed_evaluator_resolves(self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        pid = _project(client, token)
+        client.post(f"/api/agents/projects/{pid}/install", json={"coord": self.EV}, headers=_auth(token))
+        for parent in ("agent.node-builder@1.0.0", "agent.dataflow-builder@1.0.0"):
+            r = delegation.resolve(
+                key, pid, builtin.get_builtin_manifest(parent), "content.quality.evaluate"
+            )
+            assert r.outcome == "ok", parent
+            assert r.coord == self.EV
+
+    def test_missing_evaluator_is_missing_specialist_never_assumed(self, client, user_and_token, tmp_curio):
+        user, token = user_and_token
+        key = _user_dir_key(user)
+        pid = _project(client, token)
+        r = delegation.resolve(
+            key, pid, builtin.get_builtin_manifest("agent.node-builder@1.0.0"),
+            "content.quality.evaluate",
+        )
+        assert r.outcome == "not-installed"
+        assert r.coord == self.EV
