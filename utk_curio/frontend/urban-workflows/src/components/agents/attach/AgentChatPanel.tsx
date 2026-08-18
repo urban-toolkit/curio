@@ -179,12 +179,16 @@ export const AgentChatPanel: React.FC<{
   const {
     containerRef: messagesRef,
     atBottom,
+    unreadCount,
     jumpToLatest,
     pinToLatest,
   } = useTranscriptAutoScroll({
     content: turns,
     resetKey: attachment.attachmentId,
     ready: !loadingHistory,
+    // Turn count, not content: the pill's unread badge (dev/83) counts whole
+    // landed messages — streamed chunk growth never increments it.
+    itemCount: turns.length,
   });
   /** The last value this panel prefilled — so a prefill may replace a prior
    * prefill, but never a draft the user actually typed (memo dev/39). */
@@ -751,6 +755,7 @@ export const AgentChatPanel: React.FC<{
       <TranscriptJumpButton
         visible={!atBottom}
         onJump={jumpToLatest}
+        count={unreadCount}
         focusFallbackRef={messagesRef}
       />
       </div>

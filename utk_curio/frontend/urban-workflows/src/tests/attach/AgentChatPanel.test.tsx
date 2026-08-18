@@ -660,6 +660,66 @@ describe("AgentChatPanel follow-at-bottom auto-scroll (memo dev/75)", () => {
     expect(transcript.scrollTop).toBe(BOTTOM);
     expect(screen.queryByRole("button", { name: /jump to latest/i })).toBeNull();
   });
+
+  describe("unread count on the pill (dev/83)", () => {
+    it("a reply landing while scrolled up labels the pill '1 new' with the count in the accessible name", () => {
+      const { transcript, rerender, props } = renderWithTranscript();
+      userScroll(transcript, 100);
+      rerender(
+        <AgentChatPanel
+          {...props}
+          turns={[
+            { role: "user", text: "q1" },
+            { role: "agent", text: "streaming…" },
+            { role: "agent", text: "a new reply" },
+          ]}
+        />,
+      );
+      expect(
+        screen.getByRole("button", { name: "Jump to 1 new message" }),
+      ).toHaveTextContent("1 new");
+    });
+
+    it("accumulates per landed turn; the jump resets it and a fresh detach starts from zero", () => {
+      const { transcript, rerender, props } = renderWithTranscript();
+      userScroll(transcript, 100);
+      rerender(
+        <AgentChatPanel
+          {...props}
+          turns={[
+            { role: "user", text: "q1" },
+            { role: "agent", text: "streaming…" },
+            { role: "agent", text: "reply 2" },
+            { role: "agent", text: "reply 3" },
+          ]}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Jump to 2 new messages" }));
+      expect(screen.queryByRole("button", { name: /jump to/i })).toBeNull();
+      fireEvent.scroll(transcript); // the jump's scroll lands (browser event)
+      userScroll(transcript, 100); // detach again — the baseline resets
+      expect(
+        screen.getByRole("button", { name: "Jump to latest messages" }),
+      ).toHaveTextContent("Latest");
+    });
+
+    it("streamed chunk growth never increments — the pill stays 'Latest'", () => {
+      const { transcript, rerender, props } = renderWithTranscript();
+      userScroll(transcript, 100);
+      rerender(
+        <AgentChatPanel
+          {...props}
+          turns={[
+            { role: "user", text: "q1" },
+            { role: "agent", text: "streaming… plus a much longer chunk" },
+          ]}
+        />,
+      );
+      expect(
+        screen.getByRole("button", { name: "Jump to latest messages" }),
+      ).toHaveTextContent("Latest");
+    });
+  });
 });
 
 
