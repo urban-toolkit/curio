@@ -29,6 +29,21 @@ def _sri(data: bytes) -> str:
     return "sha512-" + base64.b64encode(hashlib.sha512(data).digest()).decode()
 
 
+def _npm_tgz(name: str, version: str) -> bytes:
+    """A real npm-style tarball (package/index.js) so downstream phases —
+    the compiler's materialization — can extract what the resolver cached."""
+    import io
+    import tarfile
+
+    body = f"{name}@{version}".encode()
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+        info = tarfile.TarInfo("package/index.js")
+        info.size = len(body)
+        tf.addfile(info, io.BytesIO(body))
+    return buf.getvalue()
+
+
 class FakeFetcher:
     """In-memory registry: {name: {version: {"deps": {...}, "license": str}}}."""
 
@@ -39,7 +54,7 @@ class FakeFetcher:
         for name, versions in registry.items():
             for version in versions:
                 self.tarballs[f"https://reg.test/{name}/-/{version}.tgz"] = (
-                    f"{name}@{version}".encode()
+                    _npm_tgz(name, version)
                 )
 
     def fetch_metadata(self, name: str) -> dict:
@@ -127,7 +142,7 @@ class TestJsResolution:
         assert entry["requestedBy"] == "<draft>"
         # The verified tarball landed in the cache for the offline compile.
         cached = tmp_path / entry["cached"]
-        assert cached.read_bytes() == b"marked@12.0.0"
+        assert cached.read_bytes() == fetcher.tarballs["https://reg.test/marked/-/12.0.0.tgz"]
         assert not [f for f in findings if f.severity == "block"]
 
     def test_transitive_closure_with_attribution(self, tmp_path):
