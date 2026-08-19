@@ -184,6 +184,11 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                    "agent.node-researcher",
                                    # dev/84: a built node's required packages.
                                    "agent.package-recommendation",
+                                   # dev/89: no suitable template anywhere →
+                                   # the package.create-or-extend intent goes
+                                   # to the authoring specialist (reuse/catalog
+                                   # discovery stays ahead in preference order).
+                                   "agent.package-builder",
                                    # dev/86 (DEC-055): optional post-generation
                                    # semantic check — advisory, never approval.
                                    "agent.generated-content-evaluator"),
@@ -229,6 +234,11 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                                    "agent.dataflow-explainer", "agent.node-researcher",
                                    # dev/84: the "Recommend packages" plan step.
                                    "agent.package-recommendation",
+                                   # dev/89: package-scale plan steps — one
+                                   # coherent new or extended multi-template
+                                   # package, instead of repeated single-
+                                   # template rewrites.
+                                   "agent.package-builder",
                                    # dev/86 (DEC-055): optional post-generation
                                    # semantic check — advisory, never approval.
                                    "agent.generated-content-evaluator"),
@@ -268,6 +278,31 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      targets=("node", "canvas"),
                      reads=("nodeContext", "targetContext"),
                      tools=("node.read", "node.runtime.read", "dataflow.read")),
+    # The twentieth built-in (memo dev/89). Net-new instruction. The package
+    # AUTHORING specialist, deliberately separate from Package Recommendation
+    # (dev/89 §3): recommendation stays catalog-grounded discovery + reviewed
+    # install; authoring owns the package artifact — new or extended packages,
+    # template definitions, behavior source, dependencies, assets, integrity —
+    # always as a reviewed draft. Node Builder's template fallback and Dataflow
+    # Builder's package-scale plan steps delegate the package.create-or-extend
+    # intent here, which resolves to these capabilities. The package.draft.apply
+    # mutate contract + isolated build service land with dev/89 commits 2–7;
+    # the id below is a DECLARATION ahead of its contract (DEC-017: never a
+    # grant) — until registered the agent reports drafts as findings, loudly,
+    # never a pretended build or install.
+    BuiltinAgentSpec("agent.package-builder", "Package Builder", "package",
+                     "Author a new node package or extend an installed editable one — "
+                     "templates, custom JS behavior, dependencies, assets, integrity — "
+                     "as one reviewed, installable draft. Never installs, never "
+                     "publishes, never touches read-only packages.",
+                     "package_build_instruction.txt",
+                     ("package.build", "package.extend", "node.kind.author"),
+                     ("authoring",),
+                     targets=("node", "canvas"),
+                     reads=("packageIntent", "targetContext", "installedTemplates"),
+                     tools=("packages.catalog", "packages.resolve", "dataflow.read",
+                            "package.draft.apply"),
+                     review_policy="review-before-apply"),
 )
 
 

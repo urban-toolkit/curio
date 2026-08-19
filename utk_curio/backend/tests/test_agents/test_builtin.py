@@ -29,8 +29,9 @@ class TestRoster:
     def test_sixteen_agents(self):
         # 13 migrations + the three composites (dev/48, dev/50, dev/52)
         # + the researcher (dev/67-4) + package recommendation (dev/84)
-        # + the authored evaluator (DEC-055, dev/85/86).
-        assert len(builtin.BUILTIN_AGENTS) == 19
+        # + the authored evaluator (DEC-055, dev/85/86)
+        # + the package builder (dev/89).
+        assert len(builtin.BUILTIN_AGENTS) == 20
 
     def test_evaluator_authored_under_dec055(self):
         # OQ-007 resolved by dev/85 (DEC-055): the evaluator exists as a
@@ -51,7 +52,8 @@ class TestRoster:
         assert extras == {"agent.node-builder", "agent.dataset-finder",
                           "agent.dataflow-builder", "agent.node-researcher",
                           "agent.package-recommendation",
-                          "agent.generated-content-evaluator"}
+                          "agent.generated-content-evaluator",
+                          "agent.package-builder"}
 
     def test_every_prompt_file_exists(self):
         for spec in builtin.BUILTIN_AGENTS:
@@ -61,7 +63,7 @@ class TestRoster:
 class TestManifests:
     def test_all_validate(self):
         manifests = builtin.list_builtin_manifests()
-        assert len(manifests) == 19
+        assert len(manifests) == 20
         assert all(isinstance(m, AgentManifest) for m in manifests)
 
     def test_coords_and_capabilities(self):
@@ -122,6 +124,7 @@ class TestNodeBuilderComposite:
             "agent.execution-subtask-planner",
             "agent.node-researcher",  # dev/67-4: chainable verification
             "agent.package-recommendation",  # dev/84: required-package identify
+            "agent.package-builder",  # dev/89: no-template-fits → authoring
             "agent.generated-content-evaluator",  # dev/86: advisory semantic check
         ]
         # dev/67-6 lifts the dev/48 canvas-only limitation: modify-existing
@@ -145,6 +148,7 @@ class TestNodeBuilderComposite:
         assert nb["delegatesTo"] == [
             "agent.node-content-builder", "agent.execution-subtask-planner",
             "agent.node-researcher", "agent.package-recommendation",
+            "agent.package-builder",  # dev/89
             "agent.generated-content-evaluator",
         ]
         cb = builtin.build_builtin_manifest(
@@ -154,6 +158,7 @@ class TestNodeBuilderComposite:
         assert cb["runtime"] == {"execution": "foreground", "reviewPolicy": "report-only"}
         composites = {"agent.node-builder", "agent.dataset-finder", "agent.dataflow-builder",
                       "agent.package-recommendation",  # dev/84
+                      "agent.package-builder",  # dev/89 — asserted in its class
                       "agent.connection-builder"}  # dev/84 D4 — asserted above
         for spec in builtin.BUILTIN_AGENTS:
             if spec.agent_id in composites:
@@ -221,6 +226,7 @@ class TestDataflowBuilderComposite:
             "agent.plan-coherence-validator", "agent.dataflow-explainer",
             "agent.node-researcher",  # dev/67-4: chainable verification
             "agent.package-recommendation",  # dev/84: Recommend packages step
+            "agent.package-builder",  # dev/89: package-scale plan steps
             "agent.generated-content-evaluator",  # dev/86: advisory semantic check
         ]
         assert [t.kind for t in m.compatible_targets] == ["canvas"]
@@ -302,4 +308,74 @@ class TestGeneratedContentEvaluator:
         assert "advisory" in text.lower()
         assert "never approves" in text.lower() or "never approve" in text.lower()
         assert "never-executed" in text
+        assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
+
+
+class TestPackageBuilder:
+    """The dev/89 roster entry — the package AUTHORING specialist, deliberately
+    separate from Package Recommendation (dev/89 §3): recommendation stays
+    catalog-grounded discovery + reviewed install; authoring owns the package
+    artifact as a reviewed draft."""
+
+    COORD = "agent.package-builder@1.0.0"
+
+    def test_manifest_surface(self):
+        m = builtin.get_builtin_manifest(self.COORD)
+        assert m is not None
+        assert m.capability_ids == ["package.build", "package.extend", "node.kind.author"]
+        # Depth-1 leaf: it authors, its callers orchestrate.
+        assert m.delegates_to == []
+        assert [t.kind for t in m.compatible_targets] == ["node", "canvas"]
+        # The read grounding is registered today; package.draft.apply is a
+        # DECLARATION ahead of its contract (DEC-017: requirements are never
+        # grants) — its registry entry lands with the dev/89 build service.
+        assert [t.id for t in m.tools] == [
+            "packages.catalog", "packages.resolve", "dataflow.read",
+            "package.draft.apply",
+        ]
+        assert m.provenance.trust == "built-in"
+
+    def test_draft_tool_declared_but_not_granted_until_registered(self):
+        from utk_curio.backend.app.agents import tools
+
+        m = builtin.get_builtin_manifest(self.COORD)
+        granted = tools.resolve_grants(m.tools)
+        # Fail-closed until the dev/89 build service registers the contract:
+        # the agent runs with reads only and reports drafts as findings.
+        assert granted == ["packages.catalog", "packages.resolve", "dataflow.read"]
+
+    def test_review_policy(self):
+        raw = builtin.build_builtin_manifest(builtin.get_builtin_spec(self.COORD))
+        assert raw["runtime"] == {"execution": "foreground", "reviewPolicy": "review-before-apply"}
+        assert raw["category"] == "package"
+        assert "delegatesTo" not in raw
+
+    def test_delegation_wiring(self):
+        # dev/89 topology: Node Builder's template fallback and Dataflow
+        # Builder's package-scale plan steps both resolve the
+        # package.create-or-extend intent to the Package Builder; reuse/
+        # catalog discovery (Package Recommendation) stays ahead of authoring
+        # in both callers' preference order.
+        nb = builtin.get_builtin_manifest("agent.node-builder@1.0.0")
+        dfb = builtin.get_builtin_manifest("agent.dataflow-builder@1.0.0")
+        for delegates in (nb.delegates_to, dfb.delegates_to):
+            assert "agent.package-builder" in delegates
+            assert (delegates.index("agent.package-recommendation")
+                    < delegates.index("agent.package-builder"))
+
+    def test_net_new_instruction_carries_the_contract(self):
+        text = builtin.read_prompt_text(self.COORD, "instruction")
+        assert text
+        low = text.lower()
+        # Reuse-first posture, the two modes, and the single draft tool.
+        assert "reuse first" in low
+        assert "CREATE" in text and "EXTEND" in text
+        assert "package.draft.apply" in text
+        # The never-rules: no self-install/publish, no read-only mutation,
+        # no pretended builds (drafts degrade to findings, loudly).
+        assert "never install" in low
+        assert "never pretend" in low
+        assert "read-only" in low
+        # Backend generation stays out of scope (dev/89 Follow-up A).
+        assert "backend sandbox" in low
         assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
