@@ -69,13 +69,13 @@ asked for.
   one uncovered slice; the Validation manifest would either duplicate
   `content.quality.evaluate` or be an empty umbrella over capabilities other agents
   already declare. Rejected as duplication.
-- **C — unify (recommended).** Author `agent.generated-content-evaluator` as the
+- **C — unify (recommended → adopted).** Author `agent.generated-content-evaluator` as the
   semantic-validation layer (closing OQ-007 by supplying the approved contract, below),
   declare the Validation concept card **covered by the existing family plus the
   evaluator** (no separate `agent.validation`), and descope Optimization to
   demand-driven with named re-open conditions.
 
-## 4. DEC-055 (proposed) — OQ-007 resolved: the evaluator is authored, not migrated
+## 4. DEC-055 (minted — owner-approved 2026-08-18) — OQ-007 resolved: the evaluator is authored, not migrated
 
 `agent.generated-content-evaluator` joins the roster as a **net-new authored built-in**
 under this decision (the same posture as the composites/researcher), keeping its
@@ -111,7 +111,7 @@ demanded:
 Roster count becomes 19; the dev/06 migration map's fourteenth row flips from "blocked"
 to "authored under DEC-055" (it is a documentation row, not a migration).
 
-## 5. DEC-056 (proposed) — OQ-011 resolved: Validation is covered; Optimization is descoped demand-driven
+## 5. DEC-056 (minted — owner-approved 2026-08-18) — OQ-011 resolved: Validation is covered; Optimization is descoped demand-driven
 
 - **Validation: no separate agent.** The concept card's brief decomposes onto the
   shipped family — syntax (`code.syntax.analyze`), coherence
@@ -131,23 +131,25 @@ to "authored under DEC-055" (it is a documentation row, not a migration).
 - The OQ-011 table row closes; the dev/03 open-questions table gains the two DEC
   references.
 
-## 6. Consequences if approved
+## 6. Consequences — now in effect
 
 - The built-in roster has **no remaining blocked or unspecified entries**: 19 shipped
-  (after DEC-055's implementation) + one formally descoped concept (Optimization) with
-  re-open conditions on record. OQ-008 (retention policy) remains the only open
-  question, untouched by this memo.
-- Implementation of DEC-055 is one dev/84-shaped unit (roster entry + net-new prompt +
-  optional `delegatesTo` additions + tests) and gets its own implementation memo per
-  the standard; nothing in this memo changes code.
-- Docs to touch at implementation time: `docs/AGENTS.md` (roster + the evaluator's
-  advisory posture), `dev/03` decision/OQ tables (DEC-055/056 rows, OQ-007/011 closed),
-  `builtin.py`'s module docstring (the "intentionally absent" note becomes a DEC-055
-  reference).
+  (DEC-055 implemented in dev/86, commits `52863552`/`549b9d34`) + one formally
+  descoped concept (Optimization) with re-open conditions on record. OQ-008 (retention
+  policy) remains the only open question, untouched by this memo.
+- ~~Implementation of DEC-055 is one dev/84-shaped unit … and gets its own
+  implementation memo per the standard~~ — done: memo `dev/86`, landed the same day.
+- ~~Docs to touch at implementation time~~ — done across two docs commits
+  (`4d1800a3`, `1a2b9c6d`): `docs/AGENTS.md` (roster 19 + advisory posture), `dev/03`
+  tables (DEC-055/056 rows, OQ-007/011 closed, `evaluation-disabled` retired),
+  `builtin.py`'s docstring, plus the responsible-memo/concept-doc propagation
+  (dev/06/14/15/16/17, docs/01/02/09/10/11).
 
-## 7. The asks
+## 7. The asks — answered
 
-1. Approve **DEC-055** (author the evaluator to the §4 contract) — or reject toward
-   option A (descope it too; the dev/57 parked request would close as won't-do).
-2. Approve **DEC-056** (Validation covered / Optimization descoped with the §5 re-open
-   conditions).
+1. **DEC-055 approved** (2026-08-18): the evaluator is authored to the §4 contract —
+   option A rejected; the dev/57 parked request closes as **delivered**, not won't-do.
+   Implemented in `dev/86` / BL-P5-20260818-31.
+2. **DEC-056 approved** (2026-08-18): Validation covered by the shipped family;
+   Optimization descoped with the §5 re-open conditions. No code; the docs propagation
+   carries it.
