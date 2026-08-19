@@ -24,6 +24,7 @@ import {
 } from "../../../services/datasetCatalog";
 import { buildSaveableLiveOutputs } from "../../../utils/saveOutputDataset";
 import { resolveComputedInstallTitle } from "../../../utils/palettePackageFactoryDraft";
+import { permanentDeletionNotice } from "../../../services/retentionCopy";
 import { dataflowRefFromCatalogItem } from "./dataflowDatasetRef";
 import type { DrawerTab } from "./datasetCatalogDrawerTypes";
 import { tabOrigin } from "./datasetCatalogDrawerTypes";
@@ -327,7 +328,7 @@ export function useDatasetCatalogDrawer(presented: boolean) {
           ? `\n\nIt is referenced by ${usageCount} node${usageCount === 1 ? "" : "s"} across your projects; those references will be removed.`
           : "";
       const confirmed = window.confirm(
-        `Delete ${dataset.title} from your Data Catalog?\n\nThis permanently removes the dataset. It is not just uninstalled from this project.${usageNote}`,
+        `Delete ${dataset.title} from your Data Catalog?\n\nThis permanently removes the dataset — not just uninstalled from this project. ${permanentDeletionNotice()}${usageNote}`,
       );
       if (!confirmed) return;
       setBusyId(dataset.id);

@@ -3,6 +3,7 @@ import CSS from "csstype";
 import { useNavigate, Link } from "react-router-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faStore } from "@fortawesome/free-solid-svg-icons";
+import { permanentDeletionNotice } from "../../services/retentionCopy";
 import { useUserContext } from "../../providers/UserProvider";
 import { projectsApi, ProjectSummary } from "../../api/projectsApi";
 import { notebookToTrill } from "../../NotebookConvertor";
@@ -95,7 +96,14 @@ const ProjectsList: React.FC = () => {
   };
 
   const handleDeleteForever = async (project: ProjectSummary) => {
-    if (!window.confirm(`Permanently delete "${project.name}"?`)) return;
+    // DEC-057 §3.4b: state the live-store scope + the operator's declared
+    // backup posture — never claim irreversibility the platform can't control.
+    if (
+      !window.confirm(
+        `Permanently delete "${project.name}"?\n\n${permanentDeletionNotice()}`,
+      )
+    )
+      return;
     try {
       await projectsApi.delete(project.id, { purge: true });
       loadProjects();

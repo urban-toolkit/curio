@@ -1,5 +1,6 @@
 import React from "react";
 import CSS from "csstype";
+import { GUEST_COMMINGLING_NOTICE } from "../../services/retentionCopy";
 
 interface Props {
   showGuest: boolean;
@@ -22,6 +23,8 @@ export const AltAuthBox: React.FC<Props> = ({ showGuest, onGuest }) => {
       <button type="button" style={guestBtnStyle} onClick={onGuest}>
         Continue as Guest
       </button>
+      {/* DEC-057 §3.6: the shared-guest reality, stated where guests enter. */}
+      <p style={guestNoticeStyle}>{GUEST_COMMINGLING_NOTICE}</p>
     </div>
   );
 };
@@ -48,6 +51,14 @@ const dividerLineStyle: CSS.Properties = {
 const dividerTextStyle: CSS.Properties = {
   fontSize: "13px",
   color: "#9E9E9E",
+};
+
+const guestNoticeStyle: CSS.Properties = {
+  margin: "0",
+  fontSize: "0.72rem",
+  lineHeight: "1.4",
+  color: "#8a8f98",
+  textAlign: "center",
 };
 
 const guestBtnStyle: CSS.Properties = {
