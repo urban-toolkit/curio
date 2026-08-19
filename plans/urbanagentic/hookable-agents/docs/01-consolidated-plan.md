@@ -44,8 +44,8 @@ The canvas should help users answer:
 | Node Builder | Canvas or selected connection | Create computation, transform, visualization, or HTML nodes — **including the executable dataset-fetch node** for an external source selected in Dataset Finder (request code, params, auth, parsing, error handling, output). |
 | Connection Builder | Canvas or selected nodes | Suggest and create valid dataflow connections. |
 | Package Recommendation | Node or canvas | Recommend packages that fit the task. |
-| Validation | Node or full canvas | Check code, coherence, data types, outputs, and assumptions. |
-| Optimization | Canvas | Improve performance and structure of the graph. |
+| Validation | Node or full canvas | Check code, coherence, data types, outputs, and assumptions. *`DEC-056`: delivered as a category view over the shipped family — syntax analysis, plan coherence, execute-through runs, research verification, and the Generated Content Evaluator (`DEC-055`) — never a single agent.* |
+| Optimization | Canvas | Improve performance and structure of the graph. *`DEC-056`: descoped demand-driven — re-opens on real usage demand plus per-node duration evidence in the runtime journal.* |
 | Node Explainer | Any compatible node with code, output, or provenance | An agent-based node-explanation workflow: install its project template, attach it, then explain through unified agent chat. It coexists with the retained built-in node Explanation tab (`DEC-041`, `dev/18` — the former removal is cancelled). |
 
 The Dataflow Builder no longer recommends isolated resources itself; it **orchestrates**

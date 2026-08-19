@@ -73,7 +73,9 @@ evaluates progress, and delivers an executable dataflow (see `09-agent-architect
 3. User attaches it to the canvas; it opens in the unified chat drawer.
 4. It states its **initial intent**, then posts an **execution plan** (subtasks).
 5. It delegates to installed specialized agents (Dataset Finder, Node Builder, Connection Builder,
-   Package Recommendation, Validation, Optimization, Dataflow Explainer) and shows each one's
+   Package Recommendation, Generated Content Evaluator, Dataflow Explainer — the planned Validation
+   and Optimization delegates resolved per `DEC-056`: the former is this shipped family, the latter
+   is descoped demand-driven) and shows each one's
    **status** (queued / running / interrupted / done). If a required specialist is missing,
    it presents a reviewed `Install in project` proposal; it never silently imports, installs, attaches,
    grants permissions, executes, or publishes an agent.

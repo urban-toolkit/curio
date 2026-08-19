@@ -147,7 +147,12 @@ Optimization are referenced by the concept screens but are neither in the fourte
 among the three composites — specify or descope separately). **Update:** `16-agent-node-package-
 capabilities-memo.md` specifies **Package Recommendation** (`package.recommend`/`package.identify` and
 the node-package identify/suggest/reviewed-install flow), so OQ-011 now covers only **Validation** and
-**Optimization**.
+**Optimization**. **Update 2 (2026-08-18): OQ-011 is CLOSED by `DEC-056`** (decision memo `dev/85`,
+owner-approved): Validation is a category view over the shipped family (syntax, coherence,
+execute-through runs, research verification, and the `DEC-055` Generated Content Evaluator) — no
+separate agent is ever specified; Optimization is descoped demand-driven (re-open conditions: real
+usage demand AND per-node duration evidence in the runtime journal). Package Recommendation itself
+shipped via `dev/84`.
 
 ---
 

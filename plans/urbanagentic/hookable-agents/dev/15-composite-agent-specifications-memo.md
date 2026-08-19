@@ -45,8 +45,9 @@ acceptance criteria, and traceability.
 screens reference three further product agents — Package Recommendation, Validation, and Optimization —
 that are neither in the fourteen-agent migration roster nor among these three composites (tracked as
 OQ-011). **Package Recommendation is now specified in `16-agent-node-package-capabilities-memo.md`**
-(identify/suggest/reviewed-install of node packages); Validation and Optimization remain unspecified and
-must be specified later or descoped. This memo does not define them.
+(identify/suggest/reviewed-install of node packages); Validation and Optimization ~~remain unspecified and
+must be specified later or descoped~~ *(since resolved by `DEC-056`, dev/85: Validation = a category
+view over the shipped family, Optimization = descoped demand-driven)*. This memo does not define them.
 
 ## 3. Recommended Implementation Approach
 

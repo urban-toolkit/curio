@@ -1,5 +1,9 @@
 # Implementation Memo: Agent Node-Package Capabilities (Identify, Suggest, Install)
 
+> **Update (2026-08-18):** implemented via memo `dev/84` (`agent.package-recommendation`
+> shipped as the 18th built-in; deviations D1–D4 recorded there). The OQ-011 remainder
+> this memo left open (Validation/Optimization) was resolved by `DEC-056` (dev/85).
+
 This memo specifies how the node-building agents identify, suggest, and install **node packages**, and
 specifies the previously named-only **Package Recommendation** agent (partially closing `OQ-011` from
 `14-plan-hardening-and-open-decisions-memo.md`). It builds on the composite specs
@@ -42,7 +46,8 @@ invariants; tests, acceptance criteria, and traceability.
 **Out of scope.** Authoring, forking, or publishing node packages by agents (existing package-publishing
 product); changing the real package install/lockfile/dependency mechanism; the auto-install of dataflow-
 declared dependencies (`useEnsureWorkflowDeps`), which is unchanged; dataset discovery (owned by Dataset
-Finder, `dev/15`); the Validation and Optimization agents (still `OQ-011`); any new sharing mechanic
+Finder, `dev/15`); the Validation and Optimization agents (~~still `OQ-011`~~ *since resolved by
+`DEC-056`, dev/85: Validation covered by the shipped family, Optimization descoped demand-driven*); any new sharing mechanic
 (D-0 = B); application code.
 
 ## 3. Recommended Implementation Approach

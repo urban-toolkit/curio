@@ -238,19 +238,21 @@ The trusted profile families are reviewed application configuration, not manifes
 | `planning-analysis` | `agent.dataset-finder`, `agent.execution-subtask-planner`, `agent.dataflow-task-planner`, `agent.workflow-suggester`, `agent.plan-coherence-validator`, `agent.syntax-analysis-agent`, `agent.task-refresh-agent`, `agent.keyword-binding-agent` | Structured output, bounded background work, no direct mutation, and deterministic regression before release. |
 | `mutation-proposal` | `agent.node-builder`, `agent.debug-agent`, `agent.node-content-builder`, `agent.connection-builder`, `agent.package-recommendation` | Review before apply, stricter tool/resource limits, prompt-quality evidence, and human approval. |
 | `orchestration-mutation` | `agent.dataflow-builder` | Aggregate reservation, tighter child policies, bounded delegate concurrency, and review for installs or graph mutations. |
-| `evaluation-disabled` | `agent.generated-content-evaluator` | Unavailable until OQ-007 approves its authoritative prompt and output contract; never silently substituted. |
+| ~~`evaluation-disabled`~~ | `agent.generated-content-evaluator` | Retired by `DEC-055` (OQ-007 resolved, dev/85/86): the evaluator ships report-only with read-only tools — advisory judgment that can never mutate or self-certify; the `DEC-028` platform-quality firewall stands and nothing is silently substituted. |
 
-These profile-family tables cover the full **eighteen-agent** product roster. Fourteen are the
-prompt-migration roster (thirteen source-backed packages plus the blocked
-`agent.generated-content-evaluator`; see `10-prompt-architecture.md` and `../dev/06-prompt-to-hookable-agent-migration-memo.md`).
+These profile-family tables cover the full product roster — **nineteen shipped built-ins** as of
+`DEC-055`. Fourteen are the prompt-migration roster (thirteen source-backed packages plus
+`agent.generated-content-evaluator`, authored net-new under `DEC-055` after OQ-007's resolution —
+dev/85/86; see `10-prompt-architecture.md` and `../dev/06-prompt-to-hookable-agent-migration-memo.md`).
 Three more — `agent.dataset-finder`, `agent.node-builder`, and `agent.dataflow-builder` —
 are net-new **compositions** over migrated capabilities (via `delegatesTo`), specified in
-`../dev/15-composite-agent-specifications-memo.md`. The eighteenth, `agent.package-recommendation`
-(`package.recommend`/`package.identify`), is specified in `../dev/16-agent-node-package-capabilities-memo.md`.
+`../dev/15-composite-agent-specifications-memo.md`; `agent.node-researcher` shipped via dev/67-4.
+`agent.package-recommendation` (`package.recommend`/`package.identify`) is specified in
+`../dev/16-agent-node-package-capabilities-memo.md` and shipped via dev/84.
 Package Recommendation, Validation, and Optimization were originally named-only; Package Recommendation
-is now specified (dev/16), while Validation and Optimization remain open (`OQ-011`) and are not counted
-in the eighteen until specified. The "fourteen-agent planned roster" phrasing elsewhere refers only to
-the prompt-migration subset, not this full product roster.
+shipped, and `DEC-056` (dev/85) resolved the other two — Validation is a category view over the shipped
+family (never a single agent), Optimization is descoped demand-driven. The "fourteen-agent planned
+roster" phrasing elsewhere refers only to the prompt-migration subset, not this full product roster.
 
 A manifest may reference only a known profile family/version and cannot create or relax a trusted
 family. Family values remain seeds subject to the normal deployment/account/project/attachment

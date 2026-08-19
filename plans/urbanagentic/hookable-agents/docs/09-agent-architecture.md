@@ -100,9 +100,8 @@ Dataflow Builder (orchestrator)
    │             ► Node Builder     │  run / stream / status
    │             ► Connection Builder
    │             ► Package Recommendation
-   │             ► Validation
-   │             ► Optimization
-   │             ► Node Explainer ──┘
+   │             ► Generated Content Evaluator   (DEC-055/056: the Validation
+   │             ► Node Explainer ──┘             family; Optimization descoped)
    ├─ merge: combine intermediate outputs
    ├─ evaluate: coherence & completeness
    ├─ refine: re-plan / re-delegate if needed

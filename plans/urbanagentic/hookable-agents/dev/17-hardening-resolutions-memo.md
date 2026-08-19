@@ -1,7 +1,7 @@
 # Implementation Memo: Hardening Resolutions (H-2, H-3, H-4, H-6, H-7)
 
 This memo resolves the remaining open hardening items in `14-plan-hardening-and-open-decisions-memo.md`
-(H-5 was closed by `dev/15`, and its OQ-011 offshoot partly closed by `dev/16`). It records four new decisions (`DEC-036` provenance boundary,
+(H-5 was closed by `dev/15`, and its OQ-011 offshoot partly closed by `dev/16` — fully closed by `DEC-056`, dev/85). It records four new decisions (`DEC-036` provenance boundary,
 `DEC-037` evaluation-budget scope, `DEC-038` v1/v2 phasing, `DEC-039` `aiconn/` as the default provider
 source), one architecture decision record (`ADR-AG-012` provider-credential migration), and interim
 retention defaults that keep `OQ-008`'s final durations with Product/Security. It uses the reconciled model (`DEC-029`–`DEC-035`), D-0 = B, and the

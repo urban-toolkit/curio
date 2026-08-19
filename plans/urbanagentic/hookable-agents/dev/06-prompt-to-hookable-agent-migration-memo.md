@@ -1,5 +1,12 @@
 # Implementation Memo: Transform Current Prompts into Manifest-Defined Hookable Agents
 
+> **Update (2026-08-18):** the one blocked row is closed — `OQ-007` was resolved by
+> `DEC-055` (decision memo `dev/85`, owner-approved): `agent.generated-content-evaluator`
+> shipped as a net-new **authored** built-in (implementation `dev/86`), honoring this
+> memo's guardrail — its prompt is a deliberate authorship under the decision, never a
+> fabricated migration. Statements below that describe it as absent/blocked are the
+> accurate historical record of this memo's time.
+
 ## 1. Problem Statement
 
 Curio currently invokes named prompt files directly from general LLM call sites. Those prompts are not independently discoverable, installable, attachable, versioned, or traceable through the Agents Catalog. The fourteen requested prompt behaviors must become manifest-defined hookable agent packages whose manifests link to prompt assets stored inside their own `agents/` artifact directories.
@@ -28,7 +35,7 @@ Create one versioned, self-contained directory per prompt-backed agent under the
 | `components/styles.tsx` | `agent.connection-builder` | `connection.propose` | `prompts/new_connection_prompt.txt` |
 | `WorkflowGoal.tsx` | `agent.workflow-suggester` | `workflow.suggest` | `prompts/workflow_suggestions_prompt.txt` |
 | `WorkflowGoal.tsx` | `agent.plan-coherence-validator` | `workflow.coherence.validate` | `prompts/evaluate_coherence_subtasks_prompt.txt` |
-| No current call site or approved asset | `agent.generated-content-evaluator` | `content.quality.evaluate` | `prompts/evaluate_generated_content_prompt.txt` — blocked by `OQ-007` |
+| No current call site or approved asset | `agent.generated-content-evaluator` | `content.quality.evaluate` | `prompts/evaluate_generated_content_prompt.txt` — ~~blocked by `OQ-007`~~ **resolved: authored net-new under `DEC-055`** (dev/85/86) |
 | `WorkflowGoal.tsx` | `agent.syntax-analysis-agent` | `code.syntax.analyze` | `prompts/syntax_analysis_prompt.txt` |
 | `WorkflowGoal.tsx` | `agent.task-refresh-agent` | `workflow.plan.refresh` | `prompts/task_refresh_prompt.txt` |
 | `WorkflowGoal.tsx` | `agent.keyword-binding-agent` | `workflow.keyword.bind` | `prompts/keywords_binding_prompt.txt` |
@@ -73,7 +80,7 @@ Private prompt drafts, evaluation suites/runs, versioned compliance-audit polici
 
 Each prompt-backed definition appears in the Global Catalog or My Imports with readable metadata. Only explicit project-installed templates appear in that project's AGENTS palette and may attach. Internal prompt filenames remain provenance metadata. Project templates/instances expose no Publish/Share/Release/version action.
 
-An imported-definition cog opens Prompt Editor/Quality/Audit only for an owned definition created through explicit account Import. Built-in/global/project-template/instance screens may inspect authorized source evidence read-only but cannot edit, Release, Publish, or Share. Save creates only a private draft; quality/audit never activates or publishes. Any future fork/export must be packaged and explicitly re-imported and is out of scope. `agent.generated-content-evaluator` remains unavailable under `OQ-007`. The Node Explainer is explicitly installed in a project and attached to a node; its unified chat coexists with the retained node Explanation tab (`DEC-041`).
+An imported-definition cog opens Prompt Editor/Quality/Audit only for an owned definition created through explicit account Import. Built-in/global/project-template/instance screens may inspect authorized source evidence read-only but cannot edit, Release, Publish, or Share. Save creates only a private draft; quality/audit never activates or publishes. Any future fork/export must be packaged and explicitly re-imported and is out of scope. `agent.generated-content-evaluator` ~~remains unavailable under `OQ-007`~~ *(since resolved — `DEC-055`)*. The Node Explainer is explicitly installed in a project and attached to a node; its unified chat coexists with the retained node Explanation tab (`DEC-041`).
 
 ## 6. Edge Cases
 
@@ -143,4 +150,4 @@ Add Node Explainer agent tests proving the unified chat handles request/context/
 - [ ] Prompt editing uses private revisions and immutable new-version release rather than in-place asset mutation.
 - [ ] Evaluation evidence is pinned, isolated, cost/quota constrained, and unable to self-approve or auto-publish.
 - [ ] Prompt Audit has exact-digest rules/runs/findings and separately append-only governance events; both are redacted, authorized, and distinct from the execution transcript.
-- [ ] OQ-007 blocks only the generated-content evaluator package; OQ-008 owns final prompt/evaluation/audit retention policy.
+- [x] ~~OQ-007 blocks only the generated-content evaluator package~~ *(OQ-007 resolved by `DEC-055` — the evaluator shipped, dev/85/86)*; OQ-008 owns final prompt/evaluation/audit retention policy.

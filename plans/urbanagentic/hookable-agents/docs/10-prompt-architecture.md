@@ -139,8 +139,10 @@ separate reviewed actions. Evaluation never automatically releases, installs, mi
 Prompt Quality must not be conflated with `agent.generated-content-evaluator`. Contract, static,
 and curated regression checks may run independently. An LLM-as-judge step is available only when
 an explicitly approved evaluator artifact and provider policy are configured; otherwise that step
-is shown as unavailable. OQ-007 therefore remains closed-fail for the missing agent rather than
-being bypassed by the settings UI.
+is shown as unavailable. *(`DEC-055` since resolved OQ-007 — the evaluator ships as an advisory
+report-only chat agent; this firewall is unchanged: the shipped agent is NOT the platform
+quality-gate judge, and the quality screens' LLM-as-judge step stays gated on its own explicitly
+approved artifact, never silently substituted — `DEC-028`.)*
 
 Drawer `Agent settings` opens account policy. Owned My Imports `Definition settings for <agent>`
 opens these editable governance screens. `Project agent settings` and chat `Attachment settings`
