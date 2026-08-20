@@ -550,3 +550,117 @@ class TestCurioNotesRetry:
         note = next(n for n in spec["dataflow"]["nodes"] if n.get("title") == "Docs note")
         assert note["type"] == "curio.notes/note@1"
         assert note["metadata"]["appearance"]["backgroundColor"] == NAMED_COLORS["blue"]
+
+
+class TestReuseFirstNoteCreation:
+    """dev/90 A14 — the recording's SECOND-question path: the notes package
+    is installed, so the Researcher reuses it via node.create. The live
+    agent looped on 'refused despite appearing in the list' because
+    (1) presentation templates (editor none + behavior) were never
+    authorable, and (2) the VERSIONED canonical id — which the spec and
+    applied nodes themselves carry — was refused by the exact-match gate."""
+
+    RESEARCHER = "agent.researcher@1.0.0"
+    PACKAGE_BUILDER = "agent.package-builder@1.0.0"
+
+    def _auth(self, token):
+        return {"Authorization": f"Bearer {token}"}
+
+    def test_presentation_template_is_authorable(self, tmp_curio, install_packageage):
+        from utk_curio.backend.app.packages import services as packages_services
+        from utk_curio.backend.app.projects import storage as projects_storage
+
+        manifest = _postit_scenario()["manifest"]
+        install_packageage("guest", manifest=manifest, sources={})
+        projects_storage.write_spec("guest", "p-reuse", {
+            "dataflow": {"nodes": [], "edges": [],
+                         "packages": ["ai.agent.postit@1"]}})
+        rows = {t["id"]: t for t in
+                packages_services.available_templates("guest", "p-reuse")}
+        note = rows["ai.agent.postit/postit-note"]
+        assert note["authorable"] is True  # content IS the note text
+
+    def test_versioned_node_create_reuses_the_installed_template(
+            self, client, user_and_token, tmp_curio, pinned_tools, monkeypatch):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        pid = client.post("/api/projects", json={
+            "name": "reuse",
+            "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
+            "outputs": [],
+        }, headers=self._auth(token)).get_json()["id"]
+        for coord in (self.RESEARCHER, self.PACKAGE_BUILDER):
+            client.post(f"/api/agents/projects/{pid}/install",
+                        json={"coord": coord}, headers=self._auth(token))
+        att_id = client.post(
+            f"/api/agents/projects/{pid}/attachments",
+            json={"coord": self.RESEARCHER, "target": {"kind": "canvas"}},
+            headers=self._auth(token),
+        ).get_json()["attachmentId"]
+
+        script = {"replies": [], "calls": 0}
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            reply = script["replies"][min(script["calls"],
+                                          len(script["replies"]) - 1)]
+            script["calls"] += 1
+            return reply
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+
+        # Turn 1: install the notes package through the reviewed draft.
+        script["replies"] = [
+            '```curio.v1\n{"delegateRequest": {"capability": "node.kind.author", '
+            '"inputs": {"look": "post-it"}}}\n```',
+            json.dumps({"packageDraft": _postit_scenario()}),
+            "Package proposed.",
+        ]
+        run1 = client.post(
+            f"/api/agents/projects/{pid}/attachments/{att_id}/run",
+            json={"message": "set up post-it notes"}, headers=self._auth(token))
+        proposal = next(p for p in run1.get_json()["content"]
+                        if p["type"] == "proposal")
+        assert client.post(
+            f"/api/agents/projects/{pid}/attachments/{att_id}"
+            f"/proposals/{proposal['proposalId']}/apply",
+            headers=self._auth(token)).status_code == 200
+
+        # Turn 2 — the recording's reuse path: node.create with the
+        # VERSIONED canonical id (what the spec itself carries) and
+        # markdown-composed answer content.
+        script["replies"] = [
+            '```curio.v1\n{"toolRequest": {"tool": "node.create", "params": '
+            '{"nodeType": "ai.agent.postit/postit-note@1", "content": '
+            '"**Now:** 19\\u00b0C, partly cloudy\\n- [source](https://w.test/p)", '
+            '"goal": "Weather in Paris"}}}\n```',
+            "Note placed for review.",
+        ]
+        script["calls"] = 0
+        run2 = client.post(
+            f"/api/agents/projects/{pid}/attachments/{att_id}/run",
+            json={"message": "what's the weather in Paris?"},
+            headers=self._auth(token))
+        parts = run2.get_json()["content"]
+        note_proposal = next(p for p in parts if p["type"] == "proposal")
+        assert note_proposal["tool"] == "node.create"
+        # The pinned nodeType is the listing's UNVERSIONED canonical.
+        assert note_proposal["pins"]["nodeType"] == "ai.agent.postit/postit-note"
+
+        resp = client.post(
+            f"/api/agents/projects/{pid}/attachments/{att_id}"
+            f"/proposals/{note_proposal['proposalId']}/apply",
+            headers=self._auth(token))
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        with client.application.app_context():
+            user_key = _user_dir_key(user)
+        spec = projects_storage.read_spec(user_key, pid)
+        note = next(n for n in spec["dataflow"]["nodes"]
+                    if n["type"] == "ai.agent.postit/postit-note")
+        assert "**Now:** 19°C" in note["content"]  # markdown-composed answer

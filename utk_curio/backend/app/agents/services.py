@@ -5018,10 +5018,20 @@ def _available_template(user_key: str, project_id: str, node_type: object) -> tu
     except Exception as exc:  # unavailable registry is data, not a run error
         return None, f"the node template registry is unavailable: {exc}"
     entry = next((t for t in templates if t["id"] == node_type), None)
+    if entry is None and _re.match(r"^.+@\d+$", node_type):
+        # dev/90 A14: the ecosystem speaks BOTH canonical forms — the spec
+        # and applied nodes carry the VERSIONED id (pkg/tpl@major) while
+        # this listing is UNVERSIONED; a live agent looped on 'refused
+        # despite appearing in the list' over exactly this. Accept the
+        # versioned form by stripping the major (the entry's unversioned id
+        # stays the pinned nodeType).
+        unversioned = node_type.rsplit("@", 1)[0]
+        entry = next((t for t in templates if t["id"] == unversioned), None)
     if entry is None:
         return None, (
             f"nodeType {node_type!r} is not an available template for this project — "
-            "choose an id from the Available node templates list"
+            "choose an id from the Available node templates list (the versioned "
+            "form '<packageId>/<templateId>@<major>' is also accepted)"
         )
     if not entry.get("authorable"):
         return None, (

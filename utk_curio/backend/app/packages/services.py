@@ -262,7 +262,16 @@ def available_templates(user_key: str, project_id: str) -> list[dict]:
                     "id": canonical,
                     "label": t.label,
                     "description": t.description,
-                    "authorable": bool(t.has_code or t.has_grammar),
+                    # dev/90 A14: a PRESENTATION template (editor none + a
+                    # custom behavior — the dev/89 post-it profile) holds
+                    # authorable CONTENT (the note text its behavior
+                    # renders) even though it has no code editor; without
+                    # this, reuse-first note creation was impossible by
+                    # construction (node.create refused every note template).
+                    "authorable": bool(
+                        t.has_code or t.has_grammar
+                        or (t.behavior and t.editor == "none")
+                    ),
                     "inputs": inputs,
                     "maxIncomingEdges": max_incoming,
                 }

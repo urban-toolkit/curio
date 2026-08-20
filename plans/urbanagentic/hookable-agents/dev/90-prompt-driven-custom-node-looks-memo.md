@@ -221,6 +221,17 @@ The reference recording (frames re-extracted this session — its filename hides
 
 Change (prompt-level — the Researcher owns the scenario; A12's notes channel carries it unchanged): the instruction now specifies the row — (1) FIRST a yellow note titled "Question" with the user's question verbatim, (2) THEN one green note per answer, titles naming the subject, user-requested colors overriding; every answer note's content is composed AS clean markdown (bold fact labels, "- " bullets, [source](https://…) links), never an unformatted prose wall; and the visible chat reply always states the answer in prose — notes mirror the chat, never replace it. The DOD weather scenario now asserts the full row: question note first, markdown-composed green answer with the source link, spec order preserved.
 
+## Amendment A14 (2026-08-20) — reuse-first was impossible: presentation templates unauthorable, versioned ids refused
+
+Field finding (live screenshots — the agent looping ``node.create · refused`` for an id it could see in its own context, self-diagnosing "a system glitch or a precise formatting requirement"): the recording's SECOND-question path — reuse the installed notes template — was blocked twice over, structurally:
+
+1. ``available_templates.authorable`` was ``has_code or has_grammar``: a presentation note (``hasCode: false``, ``editor: none``) could NEVER be created through ``node.create`` — reuse-first for notes was impossible by construction, unnoticed because every prior test drove the package-creation path.
+2. The ecosystem speaks two canonical forms: this listing is UNVERSIONED (``pkg/tpl``) while the spec and ``_apply_package_draft``'s created nodes carry the VERSIONED form (``pkg/tpl@major``) — so the model, quoting ids from its own context, was refused on exact-match. A guaranteed loop.
+
+Changes: ``authorable`` extends to presentation templates (``behavior`` set + ``editor: none`` — their CONTENT is the note text the behavior renders); ``_available_template`` accepts the versioned form by stripping the major (the pinned nodeType stays the listing's unversioned id), and its refusal names both accepted forms. Regressions: the presentation template is listed authorable, and the full second-question flow — install via draft, then ``node.create`` with the VERSIONED id and markdown content → reviewed → applied note in the spec.
+
+Standing lesson: when one value (the canonical node type) has two legal spellings in the same system, every validator must accept both or the system WILL manufacture unfixable-looking refusals — same family as A4's coordinate grammar.
+
 ## 10. Engineering Quality Checklist
 
 - [ ] The authoring contract lives in ONE prompt section (Package Builder); the Researcher's recipe states requirements and defers the contract to the specialist.
