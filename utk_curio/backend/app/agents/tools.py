@@ -592,7 +592,13 @@ def _execute_web_search(params: dict) -> tuple[str, str]:
             "(set CURIO_SEARCH_URL) — verify direct URLs with web.fetch instead"
         )
     try:
-        result = egress.fetch(template.replace("{q}", quote(query.strip())))
+        # dev/90 A2: the provider host is OPERATOR configuration, so it is
+        # exempt from the address policy (a local SearXNG works); redirects
+        # off it — and every web.fetch URL — keep the full default-deny gate.
+        result = egress.fetch(
+            template.replace("{q}", quote(query.strip())),
+            trusted_host=egress.trusted_host_of(template),
+        )
         payload = json.loads(result.body)
     except egress.EgressRefused as exc:
         return "error", f"refused by the egress policy: {exc}"

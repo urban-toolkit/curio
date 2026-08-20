@@ -56,8 +56,34 @@ def _default_resolver(host: str) -> list[str]:
     return sorted({info[4][0] for info in infos})
 
 
-def check_url(url: str, *, resolver=None) -> tuple[bool, str]:
-    """``(ok, reason)`` — scheme allowlist + post-DNS address policy."""
+def trusted_host_of(url: str) -> tuple[str, int | None] | None:
+    """The ``(hostname, port)`` key of an OPERATOR-declared URL (dev/90 A2).
+
+    Only deployment configuration may mint this key (today: the
+    ``CURIO_SEARCH_URL`` provider template) — never model output. None when
+    the URL has no usable host.
+    """
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return None
+    if not parsed.hostname:
+        return None
+    return (parsed.hostname.lower(), parsed.port)
+
+
+def check_url(
+    url: str, *, resolver=None,
+    trusted_host: tuple[str, int | None] | None = None,
+) -> tuple[bool, str]:
+    """``(ok, reason)`` — scheme allowlist + post-DNS address policy.
+
+    ``trusted_host`` (dev/90 A2) exempts EXACTLY that (hostname, port) from
+    the address policy: the operator declared the host by configuring it, so
+    a loopback/private search provider (local SearXNG) is reachable. The
+    scheme allowlist still applies, and any OTHER host — including every
+    redirect hop off the provider — gets the full default-deny policy.
+    """
     resolver = resolver or _default_resolver
     try:
         parsed = urlparse(url)
@@ -68,6 +94,8 @@ def check_url(url: str, *, resolver=None) -> tuple[bool, str]:
     host = parsed.hostname
     if not host:
         return False, "the URL has no host"
+    if trusted_host is not None and (host.lower(), parsed.port) == trusted_host:
+        return True, ""  # operator-declared provider host (dev/90 A2)
     try:
         addresses = resolver(host)
     except OSError as exc:
@@ -116,16 +144,21 @@ def fetch(
     request_fn=None,
     resolver=None,
     audit: list | None = None,
+    trusted_host: tuple[str, int | None] | None = None,
 ) -> EgressResult:
     """Fetch one URL under the full policy. Raises :class:`EgressRefused` on
     a policy violation (any hop); transport errors propagate (the caller maps
-    them to an unreachable/infrastructure outcome)."""
+    them to an unreachable/infrastructure outcome).
+
+    ``trusted_host`` (dev/90 A2): the operator-declared provider key from
+    :func:`trusted_host_of` — every hop is still re-checked, so a redirect
+    off the provider host falls back to the full default-deny policy."""
     request_fn = request_fn or _default_request
     started = time.monotonic()
     current = url
     redirects = 0
     while True:
-        ok, reason = check_url(current, resolver=resolver)
+        ok, reason = check_url(current, resolver=resolver, trusted_host=trusted_host)
         if not ok:
             raise EgressRefused(reason)
         status, headers, body, location = request_fn(method, current)

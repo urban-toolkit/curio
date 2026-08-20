@@ -434,3 +434,54 @@ class TestPackageTools:
             target=None, params={"dirNames": ["no.such.package@9"]},
         )
         assert status == "error" and "no.such.package@9" in text
+
+
+class TestWebSearchTrustedProvider:
+    """dev/90 A2 — web.search derives the trusted host from CURIO_SEARCH_URL;
+    web.fetch (model-supplied URLs) never passes one."""
+
+    def test_search_passes_the_operator_host(self, monkeypatch):
+        from utk_curio.backend.app.agents import egress
+        from utk_curio.backend.app.agents.egress import EgressResult
+
+        monkeypatch.setenv(
+            "CURIO_SEARCH_URL", "http://localhost:8888/search?q={q}&format=json")
+        seen: dict = {}
+
+        def _fake_fetch(url, **kwargs):
+            seen["url"] = url
+            seen["trusted_host"] = kwargs.get("trusted_host")
+            return EgressResult(url=url, final_url=url, status=200,
+                                content_type="application/json",
+                                body='{"results": [{"title": "Paris", '
+                                     '"url": "https://w.test", "content": "18C"}]}')
+
+        monkeypatch.setattr(egress, "fetch", _fake_fetch)
+        status, text = tools.execute_read_tool(
+            "web.search", user_key="42", project_id="none", target=None,
+            params={"q": "weather in Paris"},
+        )
+        assert status == "ok" and "18C" in text
+        assert seen["trusted_host"] == ("localhost", 8888)
+        assert "q=weather%20in%20Paris" in seen["url"]
+
+    def test_web_fetch_never_passes_a_trusted_host(self, monkeypatch):
+        from utk_curio.backend.app.agents import egress
+        from utk_curio.backend.app.agents.egress import EgressResult
+
+        monkeypatch.setenv(
+            "CURIO_SEARCH_URL", "http://localhost:8888/search?q={q}&format=json")
+        seen: dict = {}
+
+        def _fake_fetch(url, **kwargs):
+            seen["kwargs"] = kwargs
+            return EgressResult(url=url, final_url=url, status=200,
+                                content_type="text/plain", body="ok")
+
+        monkeypatch.setattr(egress, "fetch", _fake_fetch)
+        status, _ = tools.execute_read_tool(
+            "web.fetch", user_key="42", project_id="none", target=None,
+            params={"url": "https://api.example.org/x"},
+        )
+        assert status == "ok"
+        assert "trusted_host" not in seen["kwargs"]

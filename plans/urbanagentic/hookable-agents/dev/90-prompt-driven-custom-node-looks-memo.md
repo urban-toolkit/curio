@@ -124,6 +124,14 @@ Tests: the manifest-surface and instruction-marker tests extend accordingly, and
 
 Unchanged: Dataflow Builder (still byte-pinned), the Package Builder's generic contract, the delegate-draft mint, and every never-rule (the Researcher still never authors packages itself).
 
+## Amendment A2 (2026-08-20) — the operator's search provider is a trusted egress host
+
+Field finding: with A1 landed, the live app still answers "the web search provider is not configured" — and configuring one locally is impossible, not just omitted. Public SearXNG instances disable the JSON API or rate-limit it, and the DEC-053 egress policy refuses loopback/private addresses after DNS resolution, so the standard local recipe (SearXNG in Docker on ``localhost``) is refused by the very policy that guards model-supplied URLs.
+
+The SSRF rationale does not apply to the provider host: ``CURIO_SEARCH_URL`` is OPERATOR deployment configuration, not model output. Change, scoped narrowly: ``egress.fetch`` accepts an optional ``trusted_host`` (hostname, port) that exempts EXACTLY that host from the post-DNS address refusal — schemes, redirect re-checking (a redirect hop to any OTHER host gets the full policy), body caps, and the per-run budget all stay. Only ``web.search`` passes it, derived from the configured template; ``web.fetch`` (model-supplied URLs) keeps the full default-deny policy, and no model text can influence the trusted host.
+
+Tests: egress-level (loopback refused by default, allowed only under the matching trusted host, cross-host redirect still refused — injectable transport/resolver, no network in CI) and tools-level (the trusted host is derived from ``CURIO_SEARCH_URL``; ``web.fetch`` never passes one).
+
 ## 10. Engineering Quality Checklist
 
 - [ ] The authoring contract lives in ONE prompt section (Package Builder); the Researcher's recipe states requirements and defers the contract to the specialist.

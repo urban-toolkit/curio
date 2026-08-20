@@ -100,3 +100,63 @@ class TestFetch:
         assert result.truncated is True
         assert "truncated" in result.body[-80:]
         assert len(result.body) <= egress.MAX_BODY_BYTES + 80
+
+
+class TestTrustedHost:
+    """dev/90 A2 — the operator-declared provider host is exempt from the
+    address policy; everything else keeps the full default-deny gate."""
+
+    # staticmethod: a bare function class attribute would bind ``self``.
+    LOCAL = staticmethod(_resolver({"localhost": ["127.0.0.1"],
+                                    "evil.internal": ["10.0.0.9"]}))
+
+    def test_trusted_host_of_parses_operator_urls(self):
+        assert egress.trusted_host_of(
+            "http://localhost:8888/search?q={q}&format=json") == ("localhost", 8888)
+        assert egress.trusted_host_of("https://searx.example/search?q={q}") == (
+            "searx.example", None)
+        assert egress.trusted_host_of("not a url") is None
+        assert egress.trusted_host_of("") is None
+
+    def test_loopback_refused_by_default_allowed_when_trusted(self):
+        url = "http://localhost:8888/search?q=x&format=json"
+        ok, reason = egress.check_url(url, resolver=self.LOCAL)
+        assert not ok and "non-public address" in reason
+        ok, reason = egress.check_url(
+            url, resolver=self.LOCAL, trusted_host=("localhost", 8888))
+        assert ok, reason
+        # The exemption is EXACT (hostname AND port): another port stays refused.
+        ok, _ = egress.check_url(
+            url, resolver=self.LOCAL, trusted_host=("localhost", 9999))
+        assert not ok
+
+    def test_trusted_host_never_bypasses_the_scheme_allowlist(self):
+        ok, reason = egress.check_url(
+            "file:///etc/passwd", resolver=self.LOCAL,
+            trusted_host=("localhost", None))
+        assert not ok and "scheme" in reason
+
+    def test_fetch_works_against_a_trusted_local_provider(self):
+        result = egress.fetch(
+            "http://localhost:8888/search?q=paris&format=json",
+            request_fn=lambda m, u: _response(body=b'{"results": []}'),
+            resolver=self.LOCAL,
+            trusted_host=("localhost", 8888),
+        )
+        assert result.status == 200 and '"results"' in result.body
+
+    def test_redirect_off_the_trusted_host_gets_the_full_policy(self):
+        # A compromised/misbehaving provider cannot become an SSRF springboard:
+        # the redirect hop is a DIFFERENT host and is refused as usual.
+        def _request(method, url):
+            if "localhost" in url:
+                return _response(status=302, location="http://evil.internal/steal")
+            return _response()
+
+        with pytest.raises(egress.EgressRefused, match="non-public address"):
+            egress.fetch(
+                "http://localhost:8888/search?q=x",
+                request_fn=_request,
+                resolver=self.LOCAL,
+                trusted_host=("localhost", 8888),
+            )
