@@ -325,24 +325,25 @@ def _parse_preview_templates(raw: Any, manifest_ids: list[str]) -> tuple[str, ..
 
 
 def _parse_appearance(raw: Any, where: str) -> dict[str, str] | None:
-    if raw is None:
-        return None
-    if not isinstance(raw, dict):
-        raise BuildRequestError(f"{where}.appearance must be an object")
-    unknown = set(raw) - {"backgroundColor"}
-    if unknown:
-        raise BuildRequestError(
-            f"{where}.appearance has unknown keys {sorted(unknown)}; "
-            "only backgroundColor is supported"
-        )
-    color = raw.get("backgroundColor")
-    if (not isinstance(color, str) or not color.strip()
-            or len(color) > MAX_APPEARANCE_VALUE_CHARS
-            or any(c in color for c in "\n\r\t")):
-        raise BuildRequestError(
-            f"{where}.appearance.backgroundColor must be a short single-line string"
-        )
-    return {"backgroundColor": color}
+    """Bounds + the ONE shared appearance utility (dev/89 §3): the request's
+    color is normalized to a palette hex here, so an invalid or inaccessible
+    color refuses at parse time — never at render time."""
+    from utk_curio.backend.app.packages.node_appearance import (
+        AppearanceError,
+        normalize_appearance,
+    )
+
+    if raw is not None and isinstance(raw, dict):
+        color = raw.get("backgroundColor")
+        if isinstance(color, str) and len(color) > MAX_APPEARANCE_VALUE_CHARS:
+            raise BuildRequestError(
+                f"{where}.appearance.backgroundColor exceeds "
+                f"{MAX_APPEARANCE_VALUE_CHARS} chars"
+            )
+    try:
+        return normalize_appearance(raw)
+    except AppearanceError as exc:
+        raise BuildRequestError(f"{where}.appearance: {exc}") from exc
 
 
 def _parse_nodes(raw: Any, *, mode: str, manifest_ids: list[str]) -> tuple[RequestedNode, ...]:

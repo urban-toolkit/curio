@@ -6291,3 +6291,194 @@ class TestPackageRecommendationTools:
         self._run(client, token, alice_project, att_id)
         self._run(client, token, alice_project, att_id, message="yes install it now")
         assert self.PKG not in self._lockfile(client, user, alice_project)
+
+
+class TestPackageBuilderTools:
+    """dev/89 commit 8 — package.draft.apply: the Package Builder's ONE
+    authoring mutate contract. Mint runs the isolated build service and
+    persists bounded provenance; Apply promotes the exact reviewed artifact
+    digest, inserts the requested nodes server-side (normalized appearance at
+    metadata.appearance), and tells the frontend to refresh registries before
+    painting (registry-before-canvas)."""
+
+    COORD = "agent.package-builder@1.0.0"
+    TARGET = "ai.agent.notes@1"
+
+    def _draft_params(self, *, color="pink", template_id="note-kind"):
+        return {
+            "mode": "create",
+            "target": self.TARGET,
+            "manifest": {
+                "id": "ai.agent.notes",
+                "version": "1.0.0",
+                "name": "Agent Notes",
+                "publisher": "Agent",
+                "description": "Post-it style notes",
+                "license": "MIT",
+                "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
+                "permissions": [],
+                "dependencies": {"packages": {}, "python": {}, "js": {}},
+                "templates": [{
+                    "id": template_id, "label": "Research note",
+                    "category": "visualization", "engine": "python",
+                    "editor": "code", "hasCode": True, "hasWidgets": False,
+                    "hasGrammar": False, "inputPorts": [], "outputPorts": [],
+                    "templateDir": f"starters/{template_id}",
+                    "defaultTemplate": f"starters/{template_id}/Default.py",
+                }],
+            },
+            "files": {
+                f"starters/{template_id}/Default.py": {"text": "return arg\n"},
+            },
+            "nodes": [{
+                "templateId": template_id,
+                "title": "Research note",
+                "content": "# Findings\nweb-search results here",
+                "appearance": {"backgroundColor": color},
+            }],
+        }
+
+    def _draft_tail(self, params):
+        import json as _json
+
+        return (
+            "```curio.v1\n"
+            + _json.dumps({"toolRequest": {"tool": "package.draft.apply",
+                                           "params": params}})
+            + "\n```"
+        )
+
+    def _setup(self, client, token, project_id, monkeypatch, replies):
+        client.post(
+            f"/api/agents/projects/{project_id}/install",
+            json={"coord": self.COORD}, headers=_auth(token),
+        )
+        att_id = client.post(
+            f"/api/agents/projects/{project_id}/attachments",
+            json={"coord": self.COORD, "target": {"kind": "canvas"}},
+            headers=_auth(token),
+        ).get_json()["attachmentId"]
+        calls = []
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            return replies[min(len(calls) - 1, len(replies) - 1)]
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+        return att_id, calls
+
+    def _run(self, client, token, project_id, att_id, message="build a notes package"):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/run",
+            json={"message": message}, headers=_auth(token),
+        )
+
+    @pytest.fixture(autouse=True)
+    def _fresh_build_jobs(self):
+        from utk_curio.backend.app.packages import build_jobs
+
+        build_jobs.reset_registry()
+        yield
+        build_jobs.reset_registry()
+
+    def test_mint_and_apply_full_flow(self, client, user_and_token, tmp_curio,
+                                      alice_project, monkeypatch):
+        from utk_curio.backend.app.packages.services import get_project_lockfile
+        from utk_curio.backend.app.packages.storage import package_dir
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        att_id, _ = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._draft_tail(self._draft_params()), "Proposed — review above."],
+        )
+        run = self._run(client, token, alice_project, att_id)
+        assert run.status_code == 200, run.get_data(as_text=True)
+        proposal = next(p for p in run.get_json()["content"] if p["type"] == "proposal")
+        assert proposal["tool"] == "package.draft.apply"
+        assert proposal["pins"]["target"] == self.TARGET
+        artifact_digest = proposal["pins"]["artifactDigest"]
+        assert len(artifact_digest) == 64
+
+        resp = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}"
+            f"/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        body = resp.get_json()
+        assert body["mutationApplied"] is True
+        assert body["requiresRegistryRefresh"] is True
+        assert body["installedPackage"]["dirName"] == self.TARGET
+
+        with client.application.app_context():
+            user_key = _user_dir_key(user)
+        # Installed in the store, locked in the project.
+        assert (package_dir(user_key, self.TARGET) / "manifest.json").is_file()
+        with client.application.app_context():
+            assert self.TARGET in get_project_lockfile(user_key, alice_project)
+        # The created node persisted with the canonical appearance shape and
+        # the normalized palette hex (never the raw name).
+        created = body["createdNodes"][0]
+        assert created["type"] == "ai.agent.notes/note-kind@1"
+        assert created["metadata"]["appearance"]["backgroundColor"] == "#fbd3e0"
+        assert created["title"] == "Research note"
+        spec = projects_storage.read_spec(user_key, alice_project)
+        node = next(n for n in spec["dataflow"]["nodes"] if n["id"] == created["id"])
+        assert node["metadata"]["appearance"]["backgroundColor"] == "#fbd3e0"
+
+    def test_invalid_draft_refuses_at_mint(self, client, user_and_token, tmp_curio,
+                                           alice_project, monkeypatch):
+        _, token = user_and_token
+        att_id, calls = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._draft_tail(self._draft_params(color="rgb(1,2,3)")), "ok"],
+        )
+        run = self._run(client, token, alice_project, att_id)
+        assert all(p["type"] != "proposal" for p in run.get_json()["content"])
+        # The refusal reached the model as a tool result it can revise from.
+        assert "invalid build request" in calls[1][-1]["content"]
+
+    def test_apply_refuses_expired_artifact_as_stale(self, client, user_and_token,
+                                                     tmp_curio, alice_project,
+                                                     monkeypatch):
+        from utk_curio.backend.app.packages import build_staging
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        att_id, _ = self._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[self._draft_tail(self._draft_params()), "Proposed."],
+        )
+        run = self._run(client, token, alice_project, att_id)
+        proposal = next(p for p in run.get_json()["content"] if p["type"] == "proposal")
+        with client.application.app_context():
+            user_key = _user_dir_key(user)
+        build_staging.discard_artifact(user_key, proposal["pins"]["artifactDigest"])
+        resp = client.post(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}"
+            f"/proposals/{proposal['proposalId']}/apply",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 409
+        assert "no longer be applied" in resp.get_json()["error"]
+
+    def test_insert_node_appearance_round_trip_unit(self):
+        # dev/89 typed round-trip: _insert_node persists the canonical
+        # metadata.appearance shape; omitting it stays byte-identical.
+        from utk_curio.backend.app.agents.services import _insert_node
+
+        spec = {"dataflow": {"nodes": [], "edges": []}}
+        plain = _insert_node(spec, "a.b/kind@1", "content", None)
+        assert "metadata" not in plain and "title" not in plain
+        colored = _insert_node(
+            spec, "a.b/kind@1", "content", None,
+            appearance={"backgroundColor": "#fef3c0"}, title="Note")
+        assert colored["metadata"] == {"appearance": {"backgroundColor": "#fef3c0"}}
+        assert colored["title"] == "Note"

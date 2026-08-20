@@ -232,6 +232,31 @@ REGISTRY: dict[str, ToolContract] = {
             "reviews the proposal; nothing is added without their approval."
         ),
     ),
+    # dev/89 — consumer: agent.package-builder. The ONE package-authoring
+    # mutate contract: requesting it runs the isolated build service
+    # (validate → resolve → compile → preview → package, all staged and
+    # content-addressed) and mints the reviewed package-draft proposal;
+    # Apply promotes the exact reviewed artifact digest through the
+    # promotion coordinator — never a silent install.
+    "package.draft.apply": ToolContract(
+        id="package.draft.apply",
+        contract_version="1",
+        effect="mutate",
+        description=(
+            "Propose ONE built node package as a reviewed draft. Params: the "
+            'typed build request — {"mode": "create"|"extend", "target": '
+            '"<packageId>@<major>", "baseDigest": "<64-hex, extend only>", '
+            '"manifest": {...}, "files": {"<path>": {"text"|"base64": "..."}}, '
+            '"behaviorEntries": ["sources/<entry>.tsx", ...], "dependencies": '
+            '{"python"|"js"|"packages": {name: constraint}}, '
+            '"previewTemplates": [...], "nodes": [{"templateId": "...", '
+            '"title": "...", "content": "...", "appearance": '
+            '{"backgroundColor": "<palette name or #RRGGBB>"}}]}. The build '
+            "service compiles/validates/previews the draft; the user reviews "
+            "the diff, dependencies, and preview before anything installs. "
+            "Never claim the package exists before the user applies it."
+        ),
+    ),
     # dev/48 §3.2b — consumer: agent.node-builder. The justified creation
     # fallback: ONLY when no available template fits; the apply endpoint
     # executes it solely through the existing package factory.

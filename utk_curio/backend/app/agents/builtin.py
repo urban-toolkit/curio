@@ -285,11 +285,10 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
     # template definitions, behavior source, dependencies, assets, integrity —
     # always as a reviewed draft. Node Builder's template fallback and Dataflow
     # Builder's package-scale plan steps delegate the package.create-or-extend
-    # intent here, which resolves to these capabilities. The package.draft.apply
-    # mutate contract + isolated build service land with dev/89 commits 2–7;
-    # the id below is a DECLARATION ahead of its contract (DEC-017: never a
-    # grant) — until registered the agent reports drafts as findings, loudly,
-    # never a pretended build or install.
+    # intent here, which resolves to these capabilities. package.draft.apply
+    # is the ONE authoring mutate contract (dev/89 commit 8): requesting it
+    # runs the isolated build service and mints the reviewed draft proposal;
+    # Apply promotes the exact reviewed artifact digest.
     BuiltinAgentSpec("agent.package-builder", "Package Builder", "package",
                      "Author a new node package or extend an installed editable one — "
                      "templates, custom JS behavior, dependencies, assets, integrity — "

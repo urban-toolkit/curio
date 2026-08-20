@@ -928,6 +928,10 @@ def apply_proposal(
         return _apply_package_install(
             user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
         )
+    if tool == "package.draft.apply":
+        return _apply_package_draft(
+            user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
+        )
     if tool == "dataflow.plan.write":
         return _apply_dataflow_plan(
             user_key, project_id, attachment_id, proposal_id, spec, proposal, session_id
@@ -2320,6 +2324,99 @@ def _mint_package_install(
     )
 
 
+def _mint_package_draft_apply(
+    user_key: str, project_id: str, loop_ctx: dict, req: dict
+) -> tuple[str, str, dict | None]:
+    """The dev/89 authoring lane: validate the typed build request, run the
+    isolated build service (resolve → compile → preview → package — all
+    staged, content-addressed, digest-idempotent), and mint the reviewed
+    package-draft proposal from its provenance.
+
+    A build failure is a refusal carrying the findings — the model revises
+    the draft; nothing dangles. The proposal persists only bounded
+    provenance (digests, diff, findings, preview digests, requested nodes)
+    — the artifact itself stays in private staging until Apply promotes the
+    exact reviewed digest.
+    """
+    from utk_curio.backend.app.packages import build_models, build_pipeline
+
+    params = req.get("params") or {}
+    try:
+        request = build_models.parse_build_request(params)
+    except (build_models.BuildRequestError, ValueError) as exc:
+        return "refused", f"invalid build request: {exc}", None
+    spec = projects_storage.read_spec(user_key, project_id)
+    if spec is None:
+        return "refused", "no saved project spec is available", None
+    try:
+        job = build_pipeline.run_build(user_key, request)
+    except Exception as exc:  # noqa: BLE001 — a broken build service is data
+        return "refused", f"the package build service failed to start: {exc}", None
+    if job.phase != "ready":
+        result = job.result
+        details = ""
+        if result is not None:
+            details = "; ".join(list(result.warnings)[:2] + list(result.policy_findings)[:3])
+        if not details:
+            details = "; ".join(e["message"] for e in job.events[-2:])
+        return "refused", (
+            f"the package build did not complete (phase {job.phase}): {details} "
+            "— revise the draft and request package.draft.apply again"
+        ), None
+
+    result = job.result
+    manifest_name = str(request.manifest.get("name") or request.target)
+    action = "Extend" if request.mode == "extend" else "Build"
+    summary = f"{action} package · {manifest_name}"
+    diff = result.diff or {}
+    files_diff = diff.get("files") or {}
+    preview_line = (
+        f"{len(files_diff.get('added') or [])} added / "
+        f"{len(files_diff.get('modified') or [])} modified / "
+        f"{len(files_diff.get('preserved') or [])} preserved files; "
+        f"{len(request.nodes)} node(s) after install"
+    )
+    proposal_id = uuid.uuid4().hex
+    part = content.make_proposal_part(
+        proposal_id=proposal_id,
+        tool="package.draft.apply",
+        summary=summary,
+        preview=preview_line,
+        pins={"artifactDigest": result.artifact_digest, "target": request.target},
+    )
+    _store_proposal(
+        user_key,
+        project_id,
+        spec,
+        loop_ctx,
+        {
+            "proposalId": proposal_id,
+            "tool": "package.draft.apply",
+            "mode": request.mode,
+            "target": request.target,
+            "packageName": manifest_name,
+            "buildId": job.build_id,
+            "artifactDigest": result.artifact_digest,
+            "baseDigest": request.base_digest,
+            "diff": diff,
+            "policyFindings": list(result.policy_findings),
+            "preview": result.preview,
+            "requestedNodes": [n.to_payload() for n in request.nodes],
+            "summary": summary,
+            "status": "pending",
+        },
+        part,
+    )
+    return (
+        "proposed",
+        f"proposal {proposal_id} created: {summary.lower()} (artifact "
+        f"{result.artifact_digest[:12]}…). It awaits the user's explicit review "
+        "of the diff, dependencies, and preview — do NOT claim the package or "
+        "its nodes exist until the user applies it",
+        part,
+    )
+
+
 # Plan layout (dev/52): topological columns right of the existing extent.
 _PLAN_COLUMN_OFFSET = 420
 _PLAN_ROW_OFFSET = 240
@@ -2697,6 +2794,120 @@ def _apply_package_install(
     }
 
 
+def _apply_package_draft(
+    user_key: str,
+    project_id: str,
+    attachment_id: str,
+    proposal_id: str,
+    spec: dict,
+    proposal: dict,
+    session_id: object,
+) -> dict:
+    """The dev/89 apply: promote the EXACT reviewed artifact digest through
+    the promotion coordinator (verify-on-read, stale/collision protection,
+    backup + journal, lockfile after install), then insert the requested
+    nodes server-side with their normalized appearance.
+
+    Ordering (dev/89 §3.10): install → lockfile → nodes in the SPEC; the
+    apply response carries ``requiresRegistryRefresh`` so the frontend
+    refreshes the package/behavior/template registries BEFORE painting the
+    created nodes on the live canvas (registry-before-canvas). The backend
+    confirms the promotion journal once the spec write lands — the spec is
+    the source of truth the registries load from. A node-insertion failure
+    compensates through the coordinator's rollback, and the outcome
+    (rolled-back vs rollback-failed) rides the stale message honestly.
+    """
+    from utk_curio.backend.app.packages import build_promotion
+    from utk_curio.backend.app.packages.manifest import ManifestError, load_packageage_manifest
+    from utk_curio.backend.app.packages.storage import PackageId, package_dir as _package_dir
+
+    target = str(proposal.get("target") or "")
+    artifact_digest = str(proposal.get("artifactDigest") or "")
+    base_digest = proposal.get("baseDigest")
+    try:
+        journal = build_promotion.promote(
+            user_key,
+            target=target,
+            artifact_digest=artifact_digest,
+            base_digest=base_digest if isinstance(base_digest, str) else None,
+            project_id=project_id,
+        )
+    except build_promotion.PromotionError as exc:
+        raise _mark_stale(
+            user_key, project_id, proposal_id, spec, proposal, session_id,
+            f"the reviewed build can no longer be applied: {exc} — ask the "
+            "agent to rebuild the draft",
+        ) from exc
+
+    # The promotion wrote the spec (project lockfile); re-read so the node
+    # insertions and proposal mirror below never clobber it.
+    spec = _read_spec_or_404(user_key, project_id)
+    proposal = attachments.get_active_proposal(spec, attachment_id) or proposal
+
+    try:
+        installed_manifest = load_packageage_manifest(_package_dir(user_key, target))
+        installed_templates = {t.template_id for t in installed_manifest.templates}
+        coord = PackageId.parse_dir(target)
+        created_nodes: list[dict] = []
+        for node in proposal.get("requestedNodes") or []:
+            template_id = str(node.get("templateId") or "")
+            if template_id not in installed_templates:
+                raise AgentServiceError(
+                    f"requested node targets template {template_id!r}, which the "
+                    f"installed package does not declare", 409,
+                )
+            created = _insert_node(
+                spec,
+                coord.canonical(template_id),
+                str(node.get("content") or ""),
+                node.get("goal"),
+                appearance=node.get("appearance"),
+                title=node.get("title"),
+            )
+            created_nodes.append(created)
+        proposal["status"] = "applied"
+        projects_storage.write_spec(user_key, project_id, spec)
+    except Exception as exc:
+        rolled = build_promotion.rollback(
+            user_key, artifact_digest, f"node insertion failed: {exc}")
+        raise _mark_stale(
+            user_key, project_id, proposal_id,
+            _read_spec_or_404(user_key, project_id),
+            attachments.get_active_proposal(spec, attachment_id) or proposal,
+            session_id,
+            f"the package installed but its nodes could not be created ({exc}); "
+            f"the prior state was {rolled['rollback']['status']} — ask the agent "
+            "to rebuild",
+        ) from exc
+
+    # Activation from the backend's view: the spec (which the registries load
+    # from) now carries the lockfile entry and the nodes. The frontend still
+    # refreshes its registries before painting (requiresRegistryRefresh).
+    build_promotion.confirm_registry_ready(user_key, artifact_digest)
+    build_promotion.confirm_nodes_created(user_key, artifact_digest)
+
+    name = str(proposal.get("packageName") or target)
+    _log_applied_turn(
+        user_key, project_id, session_id, attachment_id, proposal_id,
+        f"Applied: package {name} built and installed"
+        + (f"; {len(created_nodes)} node(s) created." if created_nodes else "."),
+        "Applied: package draft installed",
+        [name, target, f"proposal {proposal_id[:8]}"],
+    )
+    return {
+        "attachmentId": attachment_id,
+        "proposalId": proposal_id,
+        "status": "applied",
+        "mutationApplied": True,
+        "installedPackage": {"dirName": target, "name": name,
+                             "replaced": bool(journal.get("backupHeld"))},
+        # Consumed by the frontend canvas bridge — registry refresh happens
+        # BEFORE these nodes are painted (dev/89 registry-before-canvas).
+        "createdNodes": created_nodes,
+        "requiresRegistryRefresh": True,
+    }
+
+
 def _apply_project_install(
     user_key: str,
     project_id: str,
@@ -2749,10 +2960,24 @@ _NODE_PLACEMENT_X_OFFSET = 420
 _NODE_PLACEMENT_DEFAULT = (80.0, 80.0)
 
 
-def _insert_node(spec: dict, node_type: str, node_content: str, goal: str | None) -> dict:
+def _insert_node(
+    spec: dict,
+    node_type: str,
+    node_content: str,
+    goal: str | None,
+    *,
+    appearance: dict | None = None,
+    title: str | None = None,
+) -> dict:
     """Append one server-minted node to the spec's dataflow (dev/48): fresh
     uuid id (collision-impossible, never from any param), placed right of the
-    current node extent. The caller writes the spec."""
+    current node extent. The caller writes the spec.
+
+    ``appearance`` (dev/89, additive) is already normalized by the shared
+    node-appearance utility and persists at the canonical
+    ``metadata.appearance.backgroundColor`` shape; callers that omit it stay
+    byte-for-byte identical.
+    """
     dataflow = spec.setdefault("dataflow", {})
     nodes = dataflow.setdefault("nodes", [])
     xs = [
@@ -2769,6 +2994,10 @@ def _insert_node(spec: dict, node_type: str, node_content: str, goal: str | None
     created = {"id": str(uuid.uuid4()), "type": node_type, "content": node_content, "x": x, "y": y}
     if goal:
         created["goal"] = goal
+    if title:
+        created["title"] = title
+    if appearance:
+        created["metadata"] = {"appearance": dict(appearance)}
     nodes.append(created)
     return created
 
@@ -2795,7 +3024,10 @@ def _apply_node_create(
             user_key, project_id, proposal_id, spec, proposal, session_id,
             f"the node type is no longer available ({err}) — ask the agent to propose again",
         )
-    created = _insert_node(spec, node_type, proposal.get("content", ""), proposal.get("goal"))
+    created = _insert_node(
+        spec, node_type, proposal.get("content", ""), proposal.get("goal"),
+        appearance=proposal.get("appearance"),  # dev/89: typed round-trip
+    )
     proposal["status"] = "applied"
     projects_storage.write_spec(user_key, project_id, spec)
     _log_applied_turn(
@@ -4584,6 +4816,7 @@ MUTATE_PROPOSAL_TOOLS = frozenset({
     "node.template.create",
     "dataset.install",
     "package.install",  # dev/84
+    "package.draft.apply",  # dev/89
     "dataflow.plan.write",
 })
 
@@ -4643,6 +4876,8 @@ def _mint_proposal(
         return _mint_dataset_install(user_key, project_id, loop_ctx, req)
     if tool == "package.install":
         return _mint_package_install(user_key, project_id, loop_ctx, req)
+    if tool == "package.draft.apply":
+        return _mint_package_draft_apply(user_key, project_id, loop_ctx, req)
     if tool == "dataflow.plan.write":
         return _mint_plan_from_params(user_key, project_id, loop_ctx, req)
     return "refused", f"no proposal flow exists for tool {tool!r}", None
@@ -4815,6 +5050,14 @@ def _mint_node_create(
         return "refused", "params.content exceeds the proposal size bound", None
     goal = params.get("goal")
     goal = goal.strip() if isinstance(goal, str) and goal.strip() else None
+    # dev/89 (additive): optional appearance, normalized by the ONE shared
+    # utility — an invalid or inaccessible color refuses at mint, loudly.
+    from utk_curio.backend.app.packages import node_appearance
+
+    try:
+        appearance = node_appearance.normalize_appearance(params.get("appearance"))
+    except node_appearance.AppearanceError as exc:
+        return "refused", f"params.appearance: {exc}", None
     spec = projects_storage.read_spec(user_key, project_id)
     if spec is None:
         return "refused", "no saved project spec is available", None
@@ -4837,6 +5080,8 @@ def _mint_node_create(
     }
     if goal:
         proposal["goal"] = goal
+    if appearance:
+        proposal["appearance"] = appearance
     _store_proposal(user_key, project_id, spec, loop_ctx, proposal, part)
     return (
         "proposed",

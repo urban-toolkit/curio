@@ -62,7 +62,8 @@ class TestParseRequest:
         assert req.dependencies["python"] == {"pandas": ">=2.0"}
         assert req.preview_templates == ("note-kind",)
         assert req.nodes[0].template_id == "note-kind"
-        assert req.nodes[0].appearance == {"backgroundColor": "yellow"}
+        # Normalized through the ONE shared appearance utility (dev/89 §3).
+        assert req.nodes[0].appearance == {"backgroundColor": "#fef3c0"}
         assert req.timeout_class == "standard"
 
     def test_happy_extend_requires_base_digest(self):
@@ -161,20 +162,30 @@ class TestParseRequest:
         ))
         assert req.nodes[0].template_id == "base-kind"
 
-    def test_appearance_shape_bounded(self):
+    def test_appearance_normalized_by_shared_utility(self):
         with pytest.raises(BuildRequestError, match="unknown keys"):
             parse_build_request(_request_payload(
                 nodes=[{"templateId": "note-kind", "appearance": {"color": "red"}}]
             ))
-        with pytest.raises(BuildRequestError, match="short single-line string"):
+        with pytest.raises(BuildRequestError, match="whitespace"):
             parse_build_request(_request_payload(
                 nodes=[{"templateId": "note-kind",
                         "appearance": {"backgroundColor": "a\nb"}}]
             ))
-        with pytest.raises(BuildRequestError, match="short single-line string"):
+        with pytest.raises(BuildRequestError, match="exceeds"):
             parse_build_request(_request_payload(
                 nodes=[{"templateId": "note-kind",
                         "appearance": {"backgroundColor": "x" * 65}}]
+            ))
+        # Palette names and valid six-digit hex normalize; junk refuses.
+        pink = parse_build_request(_request_payload(
+            nodes=[{"templateId": "note-kind",
+                    "appearance": {"backgroundColor": "PINK"}}]))
+        assert pink.nodes[0].appearance == {"backgroundColor": "#fbd3e0"}
+        with pytest.raises(BuildRequestError, match="refused|not a palette"):
+            parse_build_request(_request_payload(
+                nodes=[{"templateId": "note-kind",
+                        "appearance": {"backgroundColor": "rgb(1,2,3)"}}]
             ))
 
 

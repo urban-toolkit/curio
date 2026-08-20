@@ -326,23 +326,22 @@ class TestPackageBuilder:
         # Depth-1 leaf: it authors, its callers orchestrate.
         assert m.delegates_to == []
         assert [t.kind for t in m.compatible_targets] == ["node", "canvas"]
-        # The read grounding is registered today; package.draft.apply is a
-        # DECLARATION ahead of its contract (DEC-017: requirements are never
-        # grants) — its registry entry lands with the dev/89 build service.
         assert [t.id for t in m.tools] == [
             "packages.catalog", "packages.resolve", "dataflow.read",
             "package.draft.apply",
         ]
         assert m.provenance.trust == "built-in"
 
-    def test_draft_tool_declared_but_not_granted_until_registered(self):
+    def test_draft_tool_granted_now_that_the_contract_landed(self):
         from utk_curio.backend.app.agents import tools
 
         m = builtin.get_builtin_manifest(self.COORD)
-        granted = tools.resolve_grants(m.tools)
-        # Fail-closed until the dev/89 build service registers the contract:
-        # the agent runs with reads only and reports drafts as findings.
-        assert granted == ["packages.catalog", "packages.resolve", "dataflow.read"]
+        # dev/89 commit 8 registered the package.draft.apply ToolContract
+        # (mutate — grantable for proposal purposes only, DEC-017).
+        assert tools.resolve_grants(m.tools) == [
+            "packages.catalog", "packages.resolve", "dataflow.read",
+            "package.draft.apply",
+        ]
 
     def test_review_policy(self):
         raw = builtin.build_builtin_manifest(builtin.get_builtin_spec(self.COORD))
