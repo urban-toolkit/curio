@@ -28,10 +28,10 @@ _EXPECTED = {
 class TestRoster:
     def test_sixteen_agents(self):
         # 13 migrations + the three composites (dev/48, dev/50, dev/52)
-        # + the researcher (dev/67-4) + package recommendation (dev/84)
+        # + the node researcher (dev/67-4) + package recommendation (dev/84)
         # + the authored evaluator (DEC-055, dev/85/86)
-        # + the package builder (dev/89).
-        assert len(builtin.BUILTIN_AGENTS) == 20
+        # + the package builder (dev/89) + the notes researcher (dev/90).
+        assert len(builtin.BUILTIN_AGENTS) == 21
 
     def test_evaluator_authored_under_dec055(self):
         # OQ-007 resolved by dev/85 (DEC-055): the evaluator exists as a
@@ -53,7 +53,8 @@ class TestRoster:
                           "agent.dataflow-builder", "agent.node-researcher",
                           "agent.package-recommendation",
                           "agent.generated-content-evaluator",
-                          "agent.package-builder"}
+                          "agent.package-builder",
+                          "agent.researcher"}
 
     def test_every_prompt_file_exists(self):
         for spec in builtin.BUILTIN_AGENTS:
@@ -63,7 +64,7 @@ class TestRoster:
 class TestManifests:
     def test_all_validate(self):
         manifests = builtin.list_builtin_manifests()
-        assert len(manifests) == 20
+        assert len(manifests) == 21
         assert all(isinstance(m, AgentManifest) for m in manifests)
 
     def test_coords_and_capabilities(self):
@@ -159,6 +160,7 @@ class TestNodeBuilderComposite:
         composites = {"agent.node-builder", "agent.dataset-finder", "agent.dataflow-builder",
                       "agent.package-recommendation",  # dev/84
                       "agent.package-builder",  # dev/89 — asserted in its class
+                      "agent.researcher",  # dev/90 — asserted in its class
                       "agent.connection-builder"}  # dev/84 D4 — asserted above
         for spec in builtin.BUILTIN_AGENTS:
             if spec.agent_id in composites:
@@ -377,4 +379,82 @@ class TestPackageBuilder:
         assert "read-only" in low
         # Backend generation stays out of scope (dev/89 Follow-up A).
         assert "backend sandbox" in low
+        assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
+
+
+class TestResearcher:
+    """The dev/90 roster entry — the NOTES scenario owner: post-it recipe in
+    its instruction, reuse-first, authoring delegated to the Package Builder,
+    Dataflow Builder deliberately untouched (Follow-up D)."""
+
+    COORD = "agent.researcher@1.0.0"
+
+    # The Dataflow Builder's prompt is byte-pinned while the Researcher lands
+    # (dev/90 §8 AC-2): a drive-by edit fails HERE, not in a downstream run.
+    DATAFLOW_BUILDER_PROMPT_SHA256 = (
+        "02cad07d5b40d85e93f97953ef79ea920c8b4109d99bf05a7fe4360936bafa92"
+    )
+
+    def test_manifest_surface(self):
+        m = builtin.get_builtin_manifest(self.COORD)
+        assert m is not None
+        assert m.capability_ids == ["research.notes.compose"]
+        # Authoring first, optional verification second (preference order).
+        assert m.delegates_to == ["agent.package-builder", "agent.node-researcher"]
+        assert [t.kind for t in m.compatible_targets] == ["node", "canvas"]
+        # dataflow.read grounds reuse-first; node.create carries notes onto an
+        # installed template; package.draft.apply authorizes the dev/90
+        # delegate-draft MINT only — the draft content always comes from the
+        # Package Builder delegate.
+        assert [t.id for t in m.tools] == [
+            "dataflow.read", "node.create", "package.draft.apply",
+        ]
+        assert m.provenance.trust == "built-in"
+
+    def test_review_policy(self):
+        raw = builtin.build_builtin_manifest(builtin.get_builtin_spec(self.COORD))
+        assert raw["runtime"] == {"execution": "foreground", "reviewPolicy": "review-before-apply"}
+        assert raw["category"] == "node"
+
+    def test_disjoint_from_node_researcher(self):
+        # "Researcher" (notes) vs "Node Researcher" (verification): distinct
+        # ids, names, and capability sets — delegation resolution is
+        # capability-keyed, so the split must stay structural.
+        researcher = builtin.get_builtin_manifest(self.COORD)
+        verifier = builtin.get_builtin_manifest("agent.node-researcher@1.0.0")
+        assert researcher.agent_id != verifier.agent_id
+        assert researcher.name != verifier.name
+        assert not set(researcher.capability_ids) & set(verifier.capability_ids)
+        # And the purpose line disambiguates at a glance.
+        spec = builtin.get_builtin_spec(self.COORD)
+        assert "Node Researcher" in spec.purpose
+
+    def test_dataflow_builder_stays_byte_identical(self):
+        # dev/90 Follow-up D: no prompt edit, no delegatesTo growth.
+        import hashlib
+
+        prompt = (builtin.PROMPT_SOURCE_DIR / "orchestration_instruction.txt").read_bytes()
+        assert hashlib.sha256(prompt).hexdigest() == self.DATAFLOW_BUILDER_PROMPT_SHA256
+        dfb = builtin.get_builtin_manifest("agent.dataflow-builder@1.0.0")
+        assert "agent.researcher" not in dfb.delegates_to
+
+    def test_net_new_instruction_carries_the_recipe(self):
+        text = builtin.read_prompt_text(self.COORD, "instruction")
+        assert text
+        low = text.lower()
+        # The post-it recipe as REQUIREMENTS (dev/90 §3).
+        assert "post-it" in low
+        assert "reuse first" in low
+        assert "node.create" in text
+        assert "node.kind.author" in text
+        for color in ("yellow", "pink", "blue", "green", "orange", "lavender"):
+            assert color in low
+        assert "never raw html" in low
+        assert 'editor "none"' in low
+        # Ownership boundary + honesty rules.
+        assert "never compose" in low
+        assert "never claim" in low
+        assert "never invent facts" in low
+        # Disambiguation from the verification agent.
+        assert "not the node researcher" in low
         assert builtin.read_prompt_text(self.COORD, "system")  # default preamble

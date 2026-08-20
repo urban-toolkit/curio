@@ -95,9 +95,10 @@ class TestGlobalCatalog:
         assert resp.status_code == 200
         agents = resp.get_json()["agents"]
         # 13 migrations + the three composites (dev/48, dev/50, dev/52)
-        # + the researcher (dev/67-4) + package recommendation (dev/84)
-        # + the authored evaluator (DEC-055) + the package builder (dev/89).
-        assert len(agents) == 20
+        # + the node researcher (dev/67-4) + package recommendation (dev/84)
+        # + the authored evaluator (DEC-055) + the package builder (dev/89)
+        # + the notes researcher (dev/90).
+        assert len(agents) == 21
         assert all(a["scope"] == "global" and a["provenance"]["trust"] == "built-in" for a in agents)
         ids = {a["id"] for a in agents}
         assert "agent.node-explainer" in ids

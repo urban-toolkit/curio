@@ -302,6 +302,31 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      tools=("packages.catalog", "packages.resolve", "dataflow.read",
                             "package.draft.apply"),
                      review_policy="review-before-apply"),
+    # The twenty-first built-in (memo dev/90). Net-new instruction. The NOTES
+    # scenario owner: turns findings into post-it style note nodes. Distinct
+    # from agent.node-researcher (dev/67-4 web VERIFICATION) — the two
+    # cooperate: Researcher may chain research.verify before composing.
+    # Reuse-first (node.create on an installed notes template, per-note
+    # appearance color); when no template fits it delegates the
+    # package.create-or-extend intent to the Package Builder with the
+    # post-it recipe's REQUIREMENTS as inputs — it never composes manifests
+    # or behavior source itself. package.draft.apply is declared for the
+    # dev/90 delegate-draft mint authorization only (DEC-017: proposal
+    # purposes; the draft content always comes from the delegate).
+    # Dataflow Builder wiring is deliberately deferred (dev/90 Follow-up D).
+    BuiltinAgentSpec("agent.researcher", "Researcher", "node",
+                     "Compose findings into post-it style note nodes — reuse an "
+                     "installed notes template, or delegate package authoring to "
+                     "the Package Builder with the post-it look requirements. "
+                     "Never authors packages itself; distinct from Node "
+                     "Researcher (verification).",
+                     "researcher_notes_instruction.txt",
+                     ("research.notes.compose",), ("authoring",),
+                     targets=("node", "canvas"),
+                     reads=("mission", "targetContext", "installedTemplates"),
+                     tools=("dataflow.read", "node.create", "package.draft.apply"),
+                     delegates_to=("agent.package-builder", "agent.node-researcher"),
+                     review_policy="review-before-apply"),
 )
 
 
