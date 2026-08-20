@@ -381,6 +381,26 @@ class TestPackageBuilder:
         assert "backend sandbox" in low
         assert builtin.read_prompt_text(self.COORD, "system")  # default preamble
 
+    def test_instruction_teaches_the_generic_authoring_contract(self):
+        # dev/90 commit 2: ONE authoring contract for every custom look —
+        # hook shape, registration, externals, safe rendering, appearance,
+        # self-containment — with the gates named as the enforcement.
+        text = builtin.read_prompt_text(self.COORD, "instruction")
+        low = text.lower()
+        assert "registerBehavior" in text
+        assert "contentComponent" in text
+        assert "(data, nodeState)" in text
+        assert "dangerouslySetInnerHTML" in text and "never" in low
+        assert "never bundled" in low  # react/react-dom/reactflow → host copies
+        assert "appearance.backgroundColor" in text
+        for color in ("yellow", "pink", "blue", "green", "orange", "lavender"):
+            assert color in low
+        assert "preview sandbox" in low  # enforcement, not advice
+        # No scenario content: looks come from CALLERS (dev/90 — the post-it
+        # recipe lives with the Researcher, never with the generic specialist).
+        assert "post-it" not in low
+        assert "carr" in low and "no built-in looks" in low
+
 
 class TestResearcher:
     """The dev/90 roster entry — the NOTES scenario owner: post-it recipe in
