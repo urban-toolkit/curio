@@ -114,6 +114,16 @@ The DOD suite constructs drafts inline as simulated model output: `_postit_scena
 - Commit 4: Remove the fixture surface; rewrite the DOD suite as `test_custom_look_dod.py` (Researcher-driven scenarios); removal regressions.
 - Commit 5 (docs; folds into dev/89 commit 10): `docs/EXTENDING.md` agent-authored-looks note, roster docs 21, dev/89 deviation record, Follow-up D, ledger.
 
+## Amendment A1 (2026-08-20) — the Researcher gathers its own findings
+
+The reference recording (`plans/urbanagentic/dataflow-builder/Screen Recording 20260629 at 31522 PM 1.mp4`) shows the full loop: the user asks a question ("what's the weather in Paris?"), the agent searches the internet, and the answer lands as post-it notes. The §3 Researcher as first approved could only compose findings it was HANDED — it had no way to gather them.
+
+Change: the Researcher's manifest gains the existing policy-gated read tools `web.search` and `web.fetch` (dev/67-4 contracts — SSRF-guarded egress, ≤4 web calls per run, honest "not configured" error when the deployment has no `CURIO_SEARCH_URL` provider). Its instruction gains the gathering rule: answer questions by searching first, put each finding's source into the note body as an https link, and report an unconfigured or failed search plainly instead of inventing findings. Verification-grade checks may still chain to Node Researcher; everyday lookup is the Researcher's own.
+
+Tests: the manifest-surface and instruction-marker tests extend accordingly, and the DOD suite gains the recorded video scenario — "what's the weather in Paris?" → `web.search` (mocked provider) → findings delegated with the post-it requirements → runtime-minted draft → Apply → a colored note carrying the weather text and its source link.
+
+Unchanged: Dataflow Builder (still byte-pinned), the Package Builder's generic contract, the delegate-draft mint, and every never-rule (the Researcher still never authors packages itself).
+
 ## 10. Engineering Quality Checklist
 
 - [ ] The authoring contract lives in ONE prompt section (Package Builder); the Researcher's recipe states requirements and defers the contract to the specialist.

@@ -315,3 +315,125 @@ class TestDodThroughTheResearcher:
             "backgroundColor": NAMED_COLORS["pink"]}
         assert nodes["Custom color"]["metadata"]["appearance"] == {
             "backgroundColor": "#336699"}
+
+
+class TestWeatherInParisScenario:
+    """dev/90 A1 — the reference recording's full loop: 'what's the weather
+    in Paris?' → web.search (mocked provider) → the finding delegated with
+    the post-it requirements → runtime-minted draft → Apply → a colored note
+    carrying the weather text and its source link."""
+
+    RESEARCHER = "agent.researcher@1.0.0"
+    PACKAGE_BUILDER = "agent.package-builder@1.0.0"
+
+    def _auth(self, token):
+        return {"Authorization": f"Bearer {token}"}
+
+    def test_recorded_video_scenario(self, client, user_and_token, tmp_curio,
+                                     pinned_tools, monkeypatch):
+        from utk_curio.backend.app.agents import egress
+        from utk_curio.backend.app.agents.egress import EgressResult
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        # A configured search provider whose (mocked) egress returns rows.
+        monkeypatch.setenv("CURIO_SEARCH_URL", "https://search.test/?q={q}")
+        monkeypatch.setattr(egress, "fetch", lambda url, **kw: EgressResult(
+            url=url, final_url=url, status=200, content_type="application/json",
+            body=json.dumps({"results": [{
+                "title": "Paris weather now",
+                "url": "https://weather.test/paris",
+                "snippet": "18°C, partly cloudy, light breeze",
+            }]}),
+        ))
+
+        user, token = user_and_token
+        pid = client.post("/api/projects", json={
+            "name": "paris",
+            "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
+            "outputs": [],
+        }, headers=self._auth(token)).get_json()["id"]
+        for coord in (self.RESEARCHER, self.PACKAGE_BUILDER):
+            client.post(f"/api/agents/projects/{pid}/install",
+                        json={"coord": coord}, headers=self._auth(token))
+        att_id = client.post(
+            f"/api/agents/projects/{pid}/attachments",
+            json={"coord": self.RESEARCHER, "target": {"kind": "canvas"}},
+            headers=self._auth(token),
+        ).get_json()["attachmentId"]
+
+        weather_note = [{
+            "templateId": "postit-note", "title": "Weather in Paris",
+            "content": ("18°C, partly cloudy, light breeze — "
+                        "[source](https://weather.test/paris)"),
+            "appearance": {"backgroundColor": "yellow"},
+        }]
+        replies = [
+            # Round 1: the Researcher searches the internet first.
+            '```curio.v1\n{"toolRequest": {"tool": "web.search", '
+            '"params": {"q": "weather in Paris now"}}}\n```',
+            # Round 2: findings in hand, it delegates authoring with the look.
+            '```curio.v1\n{"delegateRequest": {"capability": "node.kind.author", '
+            '"inputs": {"look": "post-it note", "finding": '
+            '"Paris: 18\\u00b0C, partly cloudy", '
+            '"source": "https://weather.test/paris"}}}\n```',
+            # The CHILD (Package Builder) returns the draft with the note.
+            "```json\n" + json.dumps(
+                {"packageDraft": _postit_scenario(weather_note)}) + "\n```",
+            # Round 3: the Researcher's visible answer.
+            "Paris is 18°C and partly cloudy — the note above awaits your review.",
+        ]
+        calls: list = []
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            return replies[min(len(calls) - 1, len(replies) - 1)]
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+
+        run = client.post(
+            f"/api/agents/projects/{pid}/attachments/{att_id}/run",
+            json={"message": "what's the weather in Paris?"},
+            headers=self._auth(token),
+        )
+        assert run.status_code == 200, run.get_data(as_text=True)
+
+        # The search result — including the source URL — reached the model
+        # BEFORE the authoring delegation (gather-first, never from memory).
+        # calls[] entries reference the parent's one mutated message list, so
+        # read the final transcript and assert ordering.
+        transcript = [m["content"] for m in calls[-1]
+                      if isinstance(m.get("content"), str)]
+        search_idx = next(i for i, c in enumerate(transcript)
+                          if "[tool result] web.search: ok" in c)
+        assert "weather.test/paris" in transcript[search_idx]
+        assert "partly cloudy" in transcript[search_idx]
+        delegate_idx = next(i for i, c in enumerate(transcript)
+                            if "[delegate result]" in c)
+        assert search_idx < delegate_idx
+
+        parts = run.get_json()["content"]
+        proposal = next(p for p in parts if p["type"] == "proposal")
+        assert proposal["tool"] == "package.draft.apply"
+
+        resp = client.post(
+            f"/api/agents/projects/{pid}/attachments/{att_id}"
+            f"/proposals/{proposal['proposalId']}/apply",
+            headers=self._auth(token),
+        )
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        with client.application.app_context():
+            user_key = _user_dir_key(user)
+        spec = projects_storage.read_spec(user_key, pid)
+        note = next(n for n in spec["dataflow"]["nodes"]
+                    if n.get("title") == "Weather in Paris")
+        # The note carries the weather finding AND its source link, on the
+        # default yellow — the recording's reply, as a reviewed canvas note.
+        assert "partly cloudy" in note["content"]
+        assert "https://weather.test/paris" in note["content"]
+        assert note["metadata"]["appearance"]["backgroundColor"] == NAMED_COLORS["yellow"]

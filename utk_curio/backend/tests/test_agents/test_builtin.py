@@ -422,12 +422,14 @@ class TestResearcher:
         # Authoring first, optional verification second (preference order).
         assert m.delegates_to == ["agent.package-builder", "agent.node-researcher"]
         assert [t.kind for t in m.compatible_targets] == ["node", "canvas"]
-        # dataflow.read grounds reuse-first; node.create carries notes onto an
-        # installed template; package.draft.apply authorizes the dev/90
-        # delegate-draft MINT only — the draft content always comes from the
-        # Package Builder delegate.
+        # dataflow.read grounds reuse-first; web.search/web.fetch gather the
+        # findings (dev/90 A1 — the recording's question→web→post-it loop);
+        # node.create carries notes onto an installed template;
+        # package.draft.apply authorizes the dev/90 delegate-draft MINT only —
+        # the draft content always comes from the Package Builder delegate.
         assert [t.id for t in m.tools] == [
-            "dataflow.read", "node.create", "package.draft.apply",
+            "dataflow.read", "web.search", "web.fetch",
+            "node.create", "package.draft.apply",
         ]
         assert m.provenance.trust == "built-in"
 
@@ -477,4 +479,10 @@ class TestResearcher:
         assert "never invent facts" in low
         # Disambiguation from the verification agent.
         assert "not the node researcher" in low
+        # dev/90 A1: gather-first via the web tools, sources in the note,
+        # honest stop when no provider is configured.
+        assert "web.search" in text
+        assert "gather your own findings" in low
+        assert "https link" in low
+        assert "never invent findings" in low
         assert builtin.read_prompt_text(self.COORD, "system")  # default preamble

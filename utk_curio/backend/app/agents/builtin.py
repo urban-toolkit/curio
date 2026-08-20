@@ -315,7 +315,8 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
     # purposes; the draft content always comes from the delegate).
     # Dataflow Builder wiring is deliberately deferred (dev/90 Follow-up D).
     BuiltinAgentSpec("agent.researcher", "Researcher", "node",
-                     "Compose findings into post-it style note nodes — reuse an "
+                     "Answer questions by searching the web and compose the "
+                     "findings into post-it style note nodes — reuse an "
                      "installed notes template, or delegate package authoring to "
                      "the Package Builder with the post-it look requirements. "
                      "Never authors packages itself; distinct from Node "
@@ -324,7 +325,12 @@ BUILTIN_AGENTS: tuple[BuiltinAgentSpec, ...] = (
                      ("research.notes.compose",), ("authoring",),
                      targets=("node", "canvas"),
                      reads=("mission", "targetContext", "installedTemplates"),
-                     tools=("dataflow.read", "node.create", "package.draft.apply"),
+                     # dev/90 A1: the reference recording's loop — question →
+                     # web search → post-it reply. The dev/67-4 web contracts
+                     # ride as-is (egress policy, ≤4 calls/run, honest
+                     # not-configured error).
+                     tools=("dataflow.read", "web.search", "web.fetch",
+                            "node.create", "package.draft.apply"),
                      delegates_to=("agent.package-builder", "agent.node-researcher"),
                      review_policy="review-before-apply"),
 )
