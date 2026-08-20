@@ -80,6 +80,24 @@ class TestExtractDraftParams:
         assert _extract_draft_params("") is None
         assert _extract_draft_params(None) is None
 
+    def test_instruction_faithful_tool_request_shape_unwraps(self):
+        # dev/90 A7 — the live failure: a tool-less child following its own
+        # tool teaching emits a curio.v1 package.draft.apply toolRequest; the
+        # extractor unwraps the params (and never executes anything).
+        tail = ("Here is the draft.\n\n```curio.v1\n"
+                + json.dumps({"toolRequest": {"tool": "package.draft.apply",
+                                              "params": _draft()}})
+                + "\n```")
+        assert _extract_draft_params(tail)["target"] == "ai.agent.notes@1"
+        # Bare (unfenced) toolRequest JSON works too.
+        bare = json.dumps({"toolRequest": {"tool": "package.draft.apply",
+                                           "params": _draft()}})
+        assert _extract_draft_params(bare)["mode"] == "create"
+        # A DIFFERENT tool's request never unwraps into a draft.
+        other = json.dumps({"toolRequest": {"tool": "node.create",
+                                            "params": _draft()}})
+        assert _extract_draft_params(other) is None
+
 
 def _delegate_tail(inputs='{"look": "post-it style notes"}'):
     return (
@@ -285,3 +303,32 @@ class TestLargeLookSpecDelegation:
         assert any(p["type"] == "delegation" for p in parts)
         texts = [p.get("text", "") for p in parts if p.get("type") == "markdown"]
         assert not any("delegateRequest" in t for t in texts)
+
+
+class TestChildAnswersInToolRequestShape:
+    """dev/90 A7 route replay of the live screenshots: the Package Builder
+    child answers with its instruction's curio.v1 toolRequest tail (it is
+    tool-less as a delegate) — the runtime unwraps and mints anyway."""
+
+    def test_delegation_mints_from_the_tool_request_reply(
+            self, client, user_and_token, tmp_curio, monkeypatch):
+        _, token = user_and_token
+        pid = _project(client, token)
+        child_reply = (
+            "I authored the Research Notes package as requested.\n\n"
+            "```curio.v1\n"
+            + json.dumps({"toolRequest": {"tool": "package.draft.apply",
+                                          "params": _draft()}})
+            + "\n```"
+        )
+        att_id, _ = _setup(client, token, pid, monkeypatch, replies=[
+            _delegate_tail(),
+            child_reply,
+            "Proposed — the notes package awaits your review.",
+        ])
+        run = _run(client, token, pid, att_id)
+        assert run.status_code == 200, run.get_data(as_text=True)
+        parts = run.get_json()["content"]
+        proposal = next(p for p in parts if p["type"] == "proposal")
+        assert proposal["tool"] == "package.draft.apply"
+        assert proposal["pins"]["target"] == "ai.agent.notes@1"

@@ -400,6 +400,11 @@ class TestPackageBuilder:
         # yourself before importing it through a supply chain.
         assert "ZERO JavaScript dependencies" in text
         assert "markdown-lite" in low
+        # dev/90 A7: the delegate posture — a tool-less child replies with
+        # ONE JSON build request, never a tool request it cannot execute.
+        assert "DELEGATE" in text
+        assert "delegated task from" in low
+        assert "EXACTLY ONE JSON object" in text
         # No scenario content: looks come from CALLERS (dev/90 — the post-it
         # recipe lives with the Researcher, never with the generic specialist).
         assert "post-it" not in low

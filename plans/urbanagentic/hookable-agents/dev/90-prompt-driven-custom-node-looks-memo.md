@@ -161,6 +161,14 @@ Change, the same shape as the dev/89 draft-budget fix: ``PACKAGE_AUTHORING_CAPAB
 
 Standing lesson for the tail contract: any part type whose payload grows with REAL content (plans, drafts, authoring inputs) needs an explicit budget decision with a live-sized regression — the classic 4KB default silently kills it in production while toy fixtures pass.
 
+## Amendment A7 (2026-08-20) — the delegate's reply shape: teach it AND accept it
+
+Field finding (live screenshots, after A6): the delegation now executes, but the mint reported "no parseable package draft" twice. The mismatch was self-inflicted: the Package Builder's instruction teaches it to surface drafts as a ``curio.v1`` ``package.draft.apply`` toolRequest — but a depth-1 delegate is structurally tool-less, and ``_extract_draft_params`` accepted only bare/``json``-fenced draft objects. The child's most instruction-faithful reply was exactly the shape the extractor refused.
+
+Change, both sides: (1) the extractor also accepts ``curio.v1`` fences and UNWRAPS a ``package.draft.apply`` toolRequest's ``params`` into the draft (never executed as a tool; a different tool's request never unwraps); (2) the instruction gains the delegate posture — when the task begins with "[delegated task from …]" reply with EXACTLY ONE JSON build request in a ``json`` fence, nothing after it. Regressions: extractor-shape units + a route replay of the screenshots (child answers in the toolRequest shape → the draft mints).
+
+Standing lesson, paired with A6's: when a prompt teaches an output contract, every RUNTIME PATH that consumes that agent's output must accept the taught shape — a contract taught in one mode and rejected in another is a bug factory.
+
 ## 10. Engineering Quality Checklist
 
 - [ ] The authoring contract lives in ONE prompt section (Package Builder); the Researcher's recipe states requirements and defers the contract to the specialist.

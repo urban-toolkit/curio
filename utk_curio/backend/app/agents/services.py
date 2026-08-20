@@ -5517,10 +5517,14 @@ def _extract_draft_params(child_text: str) -> dict | None:
 
     Accepted shapes (the reply is already bounded by
     ``delegation.DELEGATE_RESULT_MAX_CHARS``): the whole reply as one JSON
-    object, or one fenced ```/```json block containing it; the object may be
-    the build request itself or wrapped as ``{"packageDraft": {...}}``. A
-    candidate must carry ``mode`` + ``manifest`` to count — arbitrary JSON in
-    a chatty reply never parses as a draft by accident.
+    object, or one fenced ```/```json/```curio.v1 block containing it; the
+    object may be the build request itself, wrapped as
+    ``{"packageDraft": {...}}``, or — dev/90 A7, the instruction-faithful
+    delegate shape — a ``package.draft.apply`` toolRequest whose ``params``
+    are the request (a tool-less child that follows its own tool teaching
+    emits exactly that; the payload is unwrapped, never executed as a tool).
+    A candidate must carry ``mode`` + ``manifest`` to count — arbitrary JSON
+    in a chatty reply never parses as a draft by accident.
     """
     import json as _json
     import re as _re2
@@ -5531,7 +5535,8 @@ def _extract_draft_params(child_text: str) -> dict | None:
     stripped = child_text.strip()
     if stripped.startswith("{"):
         candidates.append(stripped)
-    for match in _re2.finditer(r"```(?:json)?\s*\n(.*?)```", child_text, _re2.DOTALL):
+    for match in _re2.finditer(
+            r"```(?:json|curio\.v1)?\s*\n(.*?)```", child_text, _re2.DOTALL):
         candidates.append(match.group(1).strip())
     for candidate in candidates:
         try:
@@ -5540,6 +5545,11 @@ def _extract_draft_params(child_text: str) -> dict | None:
             continue
         if not isinstance(payload, dict):
             continue
+        tool_req = payload.get("toolRequest")
+        if (isinstance(tool_req, dict)
+                and tool_req.get("tool") == "package.draft.apply"
+                and isinstance(tool_req.get("params"), dict)):
+            payload = tool_req["params"]  # dev/90 A7: unwrap, never execute
         wrapped = payload.get("packageDraft")
         inner = wrapped if isinstance(wrapped, dict) else payload
         if (isinstance(inner, dict) and inner.get("mode") in ("create", "extend")
