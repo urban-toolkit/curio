@@ -47,6 +47,17 @@ _TOOL_PARAMS_MAX_BYTES = 1024
 # node's intent + context so they get more room than tool params (the whole
 # tail is still capped at TAIL_MAX_BYTES).
 _DELEGATE_INPUTS_MAX_BYTES = 3072
+
+# dev/90 A6: package-authoring delegations carry a whole LOOK SPECIFICATION
+# plus the findings that become notes in their inputs — the classic 3KB cap
+# silently killed live Researcher requests (the invalid block failed open as
+# visible text and nothing was ever delegated). These capabilities get the
+# plan-class budget, mirroring _TOOL_PARAM_BUDGETS. The canonical set lives
+# HERE (the tail contract must know it; content stays import-light) and
+# services aliases it.
+PACKAGE_AUTHORING_CAPABILITIES = frozenset({
+    "node.kind.author", "package.build", "package.extend",
+})
 # Tool ids share the capability grammar (mirrors manifest.CAPABILITY_ID_RE —
 # duplicated here so the content contract stays import-light).
 _TOOL_ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)+$")
@@ -583,8 +594,13 @@ def _parse_delegate_request(raw: object) -> dict | None:
     inputs = raw.get("inputs", {})
     if not isinstance(inputs, dict):
         return None
+    budget = (
+        PLAN_TAIL_MAX_BYTES  # dev/90 A6: authoring inputs = a look spec + findings
+        if capability in PACKAGE_AUTHORING_CAPABILITIES
+        else _DELEGATE_INPUTS_MAX_BYTES
+    )
     try:
-        if len(json.dumps(inputs).encode("utf-8")) > _DELEGATE_INPUTS_MAX_BYTES:
+        if len(json.dumps(inputs).encode("utf-8")) > budget:
             return None
     except (TypeError, ValueError):
         return None
@@ -617,6 +633,10 @@ def parse_parts(body: str) -> list[dict] | None:
             '"dataflowPlan"' not in body
             and '"dataflow.plan.write"' not in body
             and '"package.draft.apply"' not in body  # dev/89: draft-class tails
+            # dev/90 A6: authoring delegations carry look specs + findings.
+            and not ('"delegateRequest"' in body and any(
+                f'"{capability}"' in body
+                for capability in PACKAGE_AUTHORING_CAPABILITIES))
         ):
             return None
     try:
@@ -627,9 +647,13 @@ def parse_parts(body: str) -> list[dict] | None:
         return None
     if body_bytes > TAIL_MAX_BYTES and "dataflowPlan" not in payload:
         req = payload.get("toolRequest")
-        if not (isinstance(req, dict)
-                and req.get("tool") in ("dataflow.plan.write", "package.draft.apply")):
-            return None  # the enlarged budget is for plan/draft payloads only
+        delegate_req = payload.get("delegateRequest")
+        big_tool = (isinstance(req, dict)
+                    and req.get("tool") in ("dataflow.plan.write", "package.draft.apply"))
+        big_delegate = (isinstance(delegate_req, dict)  # dev/90 A6
+                        and delegate_req.get("capability") in PACKAGE_AUTHORING_CAPABILITIES)
+        if not (big_tool or big_delegate):
+            return None  # the enlarged budget is for plan/draft/authoring payloads only
     if "proposal" in payload or "proposals" in payload:
         return None  # never accepted from the model (memo dev/41 §4.1)
     if "toolRequest" in payload and "delegateRequest" in payload:

@@ -153,6 +153,14 @@ Change: ``target`` becomes OPTIONAL in both modes — derived from ``manifest.id
 
 Companion to A4, same live run: the agent's curio-notes plan declared ``react-markdown``, which requires an operator-approved JS registry — unconfigured in most deployments, so the draft would block. The right default for small presentation behaviors is ZERO dependencies: a ~30-line markdown-lite renderer beats importing a markdown library through a supply chain. Changes: the Package Builder's authoring contract gains the prefer-zero-dependencies rule (declare a JS dependency only when the look genuinely cannot be self-contained, and expect the registry requirement); the ``js-registry-missing`` finding now carries the fix ("author the behavior self-contained instead"); and a route regression replays the corrected curio-notes request — ``curio.notes``, no target, no dependencies, self-contained markdown-lite — through mint → build → preview → Apply.
 
+## Amendment A6 (2026-08-20) — authoring delegations get the plan-class inputs budget
+
+Field finding (live screenshot, the Paris weather run): the Researcher's ``node.kind.author`` delegateRequest — carrying the full post-it look specification plus the findings, exactly as its instruction requires — blew the classic 3KB delegate-inputs cap (and the 4KB whole-tail cap). Per DEC-043 the invalid block failed OPEN as visible JSON text: nothing was delegated, no proposal minted, and the model then falsely claimed "I have placed this finding on your canvas as a note". The tests never caught it because their fixture inputs were tiny.
+
+Change, the same shape as the dev/89 draft-budget fix: ``PACKAGE_AUTHORING_CAPABILITIES`` becomes canonical in ``content.py`` (the tail contract must size these; ``services`` aliases it — one truth), ``_parse_delegate_request`` gives authoring capabilities the plan-class budget while every ordinary delegation keeps the classic cap, and the oversized-tail gate + payload-key re-check admit authoring delegateRequests exactly (a capability string smuggled inside another payload stays refused). Regressions: content-level budget/smuggle tests, plus a route replay of the screenshot — a >4KB look-spec delegation that parses, delegates, mints, and leaks no raw JSON into visible parts.
+
+Standing lesson for the tail contract: any part type whose payload grows with REAL content (plans, drafts, authoring inputs) needs an explicit budget decision with a live-sized regression — the classic 4KB default silently kills it in production while toy fixtures pass.
+
 ## 10. Engineering Quality Checklist
 
 - [ ] The authoring contract lives in ONE prompt section (Package Builder); the Researcher's recipe states requirements and defers the contract to the specialist.

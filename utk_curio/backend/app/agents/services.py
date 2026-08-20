@@ -5507,10 +5507,9 @@ def _mint_content_review_from_delegate(
 
 # dev/90: the package-authoring capabilities whose delegation success feeds
 # the delegate-draft mint below (the Package Builder's surface; the
-# `package.create-or-extend` intent resolves to these).
-PACKAGE_AUTHORING_CAPABILITIES = frozenset({
-    "node.kind.author", "package.build", "package.extend",
-})
+# `package.create-or-extend` intent resolves to these). Canonical definition
+# lives in content.py (dev/90 A6 — the tail contract sizes their inputs).
+PACKAGE_AUTHORING_CAPABILITIES = content.PACKAGE_AUTHORING_CAPABILITIES
 
 
 def _extract_draft_params(child_text: str) -> dict | None:

@@ -423,6 +423,30 @@ class TestDataflowPlanPart:
         payload = {"suggestedPrompts": {"primary": "P"}, "pad": '"dataflowPlan"' + "x" * 8000}
         assert content.parse_parts(json.dumps(payload)) is None
 
+    def test_large_authoring_delegation_gets_the_enlarged_budget(self):
+        # dev/90 A6: the live Researcher failure — a node.kind.author
+        # delegation whose inputs carry the post-it look spec + findings blew
+        # the classic 3KB inputs cap and failed open as visible text. The
+        # authoring capabilities now get the plan-class budget.
+        inputs = {"look": "post-it", "requirements": "r" * 6000,
+                  "findings": ["f" * 2000]}
+        body = json.dumps({"delegateRequest": {
+            "capability": "node.kind.author", "inputs": inputs}})
+        assert len(body.encode()) > content.TAIL_MAX_BYTES
+        parts = content.parse_parts(body)
+        assert parts is not None and parts[0]["capability"] == "node.kind.author"
+        # Ordinary delegations keep the classic cap — content generation
+        # inputs are intent + context, never look specs.
+        big_ordinary = json.dumps({"delegateRequest": {
+            "capability": "node.content.generate",
+            "inputs": {"intent": "x" * 6000}}})
+        assert content.parse_parts(big_ordinary) is None
+        # Smuggling an authoring capability STRING inside another payload
+        # does not unlock the budget (the payload-key re-check).
+        smuggle = json.dumps({"suggestedPrompts": {"primary": "P"},
+                              "pad": '"node.kind.author"' + "x" * 8000})
+        assert content.parse_parts(smuggle) is None
+
     def test_large_package_draft_gets_the_draft_class_budget(self):
         # dev/89: a package draft carries a whole package (manifest + behavior
         # sources) — the same enlarged budget plans get, same payload-key

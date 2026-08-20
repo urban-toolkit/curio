@@ -240,3 +240,48 @@ class TestDelegateDraftMint:
         run = _run(client, token, pid, att_id)
         parts = run.get_json()["content"]
         assert all(p["type"] != "proposal" for p in parts)
+
+
+class TestLargeLookSpecDelegation:
+    """dev/90 A6 — the live-screenshot regression: the Researcher's authoring
+    delegation carries the FULL post-it look specification plus findings
+    (well past the classic 3KB inputs cap) and must still parse, delegate,
+    and mint — never fail open as visible JSON text."""
+
+    def test_researcher_delegation_with_full_look_spec_mints(
+            self, client, user_and_token, tmp_curio, monkeypatch):
+        _, token = user_and_token
+        pid = _project(client, token)
+        look_spec = {
+            "look": "post-it note",
+            "requirements": (
+                "a roughly square note surface with a small header title and a "
+                "scrollable bounded body; safe plain text or simple markdown "
+                "(headings, bullets, bold, https links) — never raw HTML; a "
+                "quiet placeholder when empty; per-instance "
+                "appearance.backgroundColor from the palette or six-digit hex "
+                "with readable derived text; no Run control, no ports, no code "
+                "editor, no Python, no network. " + "detail " * 700
+            ),
+            "findings": [
+                {"title": "Weather in Paris",
+                 "content": "68-77°F, rain likely — https://weather.test/paris"},
+            ],
+        }
+        tail = _delegate_tail(inputs=json.dumps(look_spec))
+        assert len(tail.encode()) > 4096  # past the classic whole-tail cap
+        att_id, _ = _setup(client, token, pid, monkeypatch, replies=[
+            tail,
+            json.dumps({"packageDraft": _draft()}),
+            "Proposed — the note awaits your review.",
+        ])
+        run = _run(client, token, pid, att_id, message="what's the weather in Paris?")
+        assert run.status_code == 200, run.get_data(as_text=True)
+        parts = run.get_json()["content"]
+        proposal = next(p for p in parts if p["type"] == "proposal")
+        assert proposal["tool"] == "package.draft.apply"
+        # The delegation EXECUTED — its trace exists and no raw JSON text of
+        # the request leaked into the visible reply parts.
+        assert any(p["type"] == "delegation" for p in parts)
+        texts = [p.get("text", "") for p in parts if p.get("type") == "markdown"]
+        assert not any("delegateRequest" in t for t in texts)
