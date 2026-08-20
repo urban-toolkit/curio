@@ -215,6 +215,12 @@ Change, three layers (belt, braces, and the load-bearing one):
 
 Tests: input-extraction and reconciliation units (empty child nodes → notes created; child FILLER → replaced verbatim; no notes input → draft untouched); a route replay of both live artifacts (child sends empty nodes / child sends filler — the applied spec carries the weather finding either way); instruction/contract markers.
 
+## Amendment A13 (2026-08-20) — the reference recording's row: question note, then answer note, markdown-composed
+
+The reference recording (frames re-extracted this session — its filename hides a U+202F narrow no-break space before "PM", which is why earlier path-based reads failed) states its own contract in-frame: each answered turn drops a ROW — a YELLOW sticky with the user's question, the web-search call/result, then a GREEN sticky with the answer whose content is markdown-shaped ("**Now:** ~70 °F (21 °C), clear", bulleted facts). The recording's app renders that markdown raw; ours renders it properly (the recipe's markdown-lite) — per the owner, rendered markdown is the requirement, raw was the recording's limitation.
+
+Change (prompt-level — the Researcher owns the scenario; A12's notes channel carries it unchanged): the instruction now specifies the row — (1) FIRST a yellow note titled "Question" with the user's question verbatim, (2) THEN one green note per answer, titles naming the subject, user-requested colors overriding; every answer note's content is composed AS clean markdown (bold fact labels, "- " bullets, [source](https://…) links), never an unformatted prose wall; and the visible chat reply always states the answer in prose — notes mirror the chat, never replace it. The DOD weather scenario now asserts the full row: question note first, markdown-composed green answer with the source link, spec order preserved.
+
 ## 10. Engineering Quality Checklist
 
 - [ ] The authoring contract lives in ONE prompt section (Package Builder); the Researcher's recipe states requirements and defers the contract to the specialist.

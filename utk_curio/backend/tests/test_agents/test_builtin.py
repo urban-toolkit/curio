@@ -497,6 +497,12 @@ class TestResearcher:
         assert '"notes"' in text
         assert "delegation without notes places nothing" in low
         assert "verbatim" in low
+        # dev/90 A13: the reference recording's row — yellow question note
+        # FIRST, then green answer note(s), content composed as markdown.
+        assert "yellow note carrying the user's question" in low
+        assert "green note per answer" in low
+        assert "as clean markdown" in low
+        assert "notes mirror the chat" in low
         # dev/90 A1: gather-first via the web tools, sources in the note,
         # honest stop when no provider is configured.
         assert "web.search" in text

@@ -362,11 +362,18 @@ class TestWeatherInParisScenario:
             headers=self._auth(token),
         ).get_json()["attachmentId"]
 
+        # dev/90 A13 — the recording's row: yellow QUESTION note first,
+        # then the green ANSWER note with markdown-composed content.
         weather_note = [{
-            "templateId": "postit-note", "title": "Weather in Paris",
-            "content": ("18°C, partly cloudy, light breeze — "
-                        "[source](https://weather.test/paris)"),
+            "templateId": "postit-note", "title": "Question",
+            "content": "What's the weather in Paris?",
             "appearance": {"backgroundColor": "yellow"},
+        }, {
+            "templateId": "postit-note", "title": "Weather in Paris",
+            "content": ("**Now:** 18°C, partly cloudy\n"
+                        "- light breeze\n"
+                        "- [source](https://weather.test/paris)"),
+            "appearance": {"backgroundColor": "green"},
         }]
         replies = [
             # Round 1: the Researcher searches the internet first.
@@ -430,13 +437,19 @@ class TestWeatherInParisScenario:
         with client.application.app_context():
             user_key = _user_dir_key(user)
         spec = projects_storage.read_spec(user_key, pid)
-        note = next(n for n in spec["dataflow"]["nodes"]
-                    if n.get("title") == "Weather in Paris")
-        # The note carries the weather finding AND its source link, on the
-        # default yellow — the recording's reply, as a reviewed canvas note.
-        assert "partly cloudy" in note["content"]
-        assert "https://weather.test/paris" in note["content"]
-        assert note["metadata"]["appearance"]["backgroundColor"] == NAMED_COLORS["yellow"]
+        nodes = {n.get("title"): n for n in spec["dataflow"]["nodes"]}
+        # The recording's row, in order: yellow question note, then the green
+        # markdown-composed answer note carrying the finding + source link.
+        question = nodes["Question"]
+        assert question["content"] == "What's the weather in Paris?"
+        assert question["metadata"]["appearance"]["backgroundColor"] == NAMED_COLORS["yellow"]
+        answer = nodes["Weather in Paris"]
+        assert "**Now:**" in answer["content"]  # markdown-composed, not prose
+        assert "- [source](https://weather.test/paris)" in answer["content"]
+        assert answer["metadata"]["appearance"]["backgroundColor"] == NAMED_COLORS["green"]
+        ordered = [n.get("title") for n in spec["dataflow"]["nodes"]
+                   if n.get("title") in ("Question", "Weather in Paris")]
+        assert ordered == ["Question", "Weather in Paris"]  # question FIRST
 
 
 _CURIO_NOTES_TSX = """\
