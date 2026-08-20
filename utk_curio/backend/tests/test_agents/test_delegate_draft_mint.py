@@ -396,3 +396,43 @@ class TestAuthoringInputEnrichment:
         assert "buildRequestContract" in child_user_msg
         assert "reverse-DNS" in child_user_msg
         assert "registerBehavior" in child_user_msg
+
+
+class TestDecoratedRequestReply:
+    """dev/90 A10 route replay of the 12:55 live session: the Researcher's
+    reply carried the delegateRequest block AND a terminal suggestedPrompts
+    block — the terminal-only tail rule demoted the request to inert text
+    (delegations: null, parts: [suggestedPrompts], fence visible in chat)."""
+
+    LIVE_SHAPE_REPLY = (
+        "Based on the search results, the current weather in Paris is 73F.\n\n"
+        "I will place this finding as a note on your canvas.\n\n"
+        "```curio.v1\n"
+        '{"delegateRequest": {"capability": "node.kind.author", '
+        '"inputs": {"requirements": "square post-it note, markdown body"}}}\n'
+        "```\n\n"
+        "```curio.v1\n"
+        '{"suggestedPrompts": {"primary": "Check another city?"}}\n'
+        "```"
+    )
+
+    def test_decorated_delegate_request_executes(self, client, user_and_token,
+                                                 tmp_curio, monkeypatch):
+        _, token = user_and_token
+        pid = _project(client, token)
+        att_id, calls = _setup(client, token, pid, monkeypatch, replies=[
+            self.LIVE_SHAPE_REPLY,
+            json.dumps({"packageDraft": _draft()}),  # the child's draft
+            "Proposed — the note awaits your review.",
+        ])
+        run = _run(client, token, pid, att_id,
+                   message="What's the weather in Paris?")
+        assert run.status_code == 200, run.get_data(as_text=True)
+        parts = run.get_json()["content"]
+        # The request EXECUTED: delegation trace + minted proposal, and no
+        # raw fence text anywhere in the visible reply.
+        assert any(p["type"] == "delegation" for p in parts)
+        proposal = next(p for p in parts if p["type"] == "proposal")
+        assert proposal["tool"] == "package.draft.apply"
+        assert "delegateRequest" not in run.get_json().get("text", "")
+        assert len(calls) >= 3  # parent, child, parent follow-up

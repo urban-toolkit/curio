@@ -737,3 +737,48 @@ class TestDataflowPlanRevisionGrammar:
         too_many = self._plan(removeNodes=[f"n{i}" for i in range(201)])
         errors = content.plan_tail_diagnosis(json.dumps({"dataflowPlan": too_many}))
         assert any("max 200" in e for e in errors)
+
+
+class TestDecoratedRequest:
+    """dev/90 A10 — the live two-block failure: a request block followed by a
+    terminal suggestedPrompts block demoted the request to inert text."""
+
+    REQUEST_BLOCK = ('```curio.v1\n{"delegateRequest": {"capability": '
+                     '"node.kind.author", "inputs": {"look": "post-it"}}}\n```')
+    PROMPTS_BLOCK = ('```curio.v1\n{"suggestedPrompts": '
+                     '{"primary": "Check another city?"}}\n```')
+
+    def test_decorated_request_wins_and_decorations_drop(self):
+        reply = ("The weather is 73F.\n\nI will place a note.\n\n"
+                 + self.REQUEST_BLOCK + "\n\n" + self.PROMPTS_BLOCK)
+        visible, parts = content.extract_content(reply)
+        assert [p["type"] for p in parts] == ["delegateRequest"]
+        assert parts[0]["capability"] == "node.kind.author"
+        assert "delegateRequest" not in visible  # the block executed, not shown
+        assert "The weather is 73F." in visible
+
+    def test_terminal_request_behavior_unchanged(self):
+        reply = "prose\n\n" + self.REQUEST_BLOCK
+        visible, parts = content.extract_content(reply)
+        assert parts[0]["type"] == "delegateRequest"
+        assert visible.strip() == "prose"
+
+    def test_two_earlier_request_blocks_stay_conservative(self):
+        reply = ("prose\n\n" + self.REQUEST_BLOCK + "\n\nmore\n\n"
+                 + self.REQUEST_BLOCK + "\n\n" + self.PROMPTS_BLOCK)
+        visible, parts = content.extract_content(reply)
+        # One request per reply: ambiguity keeps the pre-A10 behavior.
+        assert [p["type"] for p in parts] == ["suggestedPrompts"]
+        assert visible.count("delegateRequest") == 2
+
+    def test_no_terminal_block_stays_fail_open(self):
+        reply = "prose\n\n" + self.REQUEST_BLOCK + "\n\ntrailing prose"
+        visible, parts = content.extract_content(reply)
+        assert parts == []
+        assert "delegateRequest" in visible  # unchanged conservative boundary
+
+    def test_terminal_decoration_without_any_request_unchanged(self):
+        reply = "prose\n\n" + self.PROMPTS_BLOCK
+        visible, parts = content.extract_content(reply)
+        assert [p["type"] for p in parts] == ["suggestedPrompts"]
+        assert visible.strip() == "prose"

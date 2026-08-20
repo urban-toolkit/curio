@@ -698,12 +698,27 @@ def parse_parts(body: str) -> list[dict] | None:
     return parts
 
 
+_REQUEST_TYPES = ("toolRequest", "delegateRequest")
+_ANY_BLOCK_RE = re.compile(r"```curio\.v1[ \t]*\n(.*?)\n?```", re.DOTALL)
+
+
 def extract_content(reply: str) -> tuple[str, list[dict]]:
     """The runtime entry point: ``(visible_text, parts)`` for one reply.
 
     A valid terminal tail is stripped and returned as parts; anything else —
     no tail, malformed tail, unknown-only payload — returns the reply
     untouched with no parts (fail-open, §4.2 of memo dev/39).
+
+    dev/90 A10 — the DECORATED REQUEST: live models emit a request block and
+    then obediently append a terminal ``suggestedPrompts`` block (the tail
+    instruction says to end with one), which demoted the actual request to
+    inert text. When the terminal block is valid but carries NO request,
+    exactly one earlier ``curio.v1`` block that parses to a single request
+    wins — the request-exclusive rule (dev/41: "a request turn is a request
+    turn") already says the decoration parts drop. Zero or multiple earlier
+    request blocks, or no valid terminal block at all, keep the pre-A10
+    behavior byte-identically (the conservative boundary: this tolerance
+    exists for the observed decorated-request shape only).
     """
     visible, body = split_tail(reply)
     if body is None:
@@ -711,6 +726,18 @@ def extract_content(reply: str) -> tuple[str, list[dict]]:
     parts = parse_parts(body)
     if parts is None:
         return reply, []
+    if parts and parts[0].get("type") in _REQUEST_TYPES:
+        return visible, parts
+    candidates = []
+    for match in _ANY_BLOCK_RE.finditer(visible):
+        block_parts = parse_parts(match.group(1))
+        if (block_parts and len(block_parts) == 1
+                and block_parts[0].get("type") in _REQUEST_TYPES):
+            candidates.append((match, block_parts))
+    if len(candidates) == 1:
+        match, request_parts = candidates[0]
+        stripped = (visible[: match.start()] + visible[match.end():]).strip()
+        return stripped, request_parts
     return visible, parts
 
 

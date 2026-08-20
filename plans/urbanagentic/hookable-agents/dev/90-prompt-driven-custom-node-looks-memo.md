@@ -186,6 +186,14 @@ Field finding (live run, after A8): the whole chain now works — the draft mint
 
 Operator setup for local dev is therefore: ``npm i -g esbuild`` (in the project env) + ``CURIO_BUILD_ESBUILD=$(which esbuild)`` + ``CURIO_BUILD_PREVIEW_POLICY=skip`` (until a pinned runner exists — shipping a reference runner remains follow-up territory alongside the rich review card).
 
+## Amendment A10 (2026-08-20) — the decorated request: honor the request the model actually made
+
+Field finding (live session 12:55, diagnosed from the persisted transcript rather than the screenshot): the reply carried TWO ``curio.v1`` blocks — the ``delegateRequest``, then a terminal ``suggestedPrompts`` block (the model obediently followed the tail instruction's "end with suggested prompts"). The terminal-only tail rule made the suggestion block win: parts = ``[suggestedPrompts]``, ``delegations: null``, and the request fence rendered as inert chat text — indistinguishable, from the screenshot alone, from the long-fixed A6 symptom. The blocking AND streaming routes both handled the single-block shape correctly; only the decorated shape failed.
+
+Change: ``extract_content`` gains the decorated-request rule — when the terminal block is VALID but carries no request, exactly ONE earlier ``curio.v1`` block that parses to a single tool/delegate request wins, stripped from the visible text; the decoration parts drop (the dev/41 request-exclusive rule already says a request turn is a request turn). The conservative boundary is explicit: zero or multiple earlier request blocks, or no valid terminal block at all, keep the pre-A10 behavior byte-identically. Regressions: content-level shape tests + a route replay of the live two-block reply (delegation executes, proposal mints, no fence text leaks).
+
+Diagnosis lesson (the debugging, not the fix): the identical user-visible symptom — "raw delegateRequest in chat" — had TWO different root causes (A6 size cap, A10 terminal demotion). The persisted session turn (text + parts + execution.toolCalls/delegations) disambiguated in minutes what screenshots could not; read the transcript file before re-touching code that already has a green regression.
+
 ## 10. Engineering Quality Checklist
 
 - [ ] The authoring contract lives in ONE prompt section (Package Builder); the Researcher's recipe states requirements and defers the contract to the specialist.
