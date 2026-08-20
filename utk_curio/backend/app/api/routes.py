@@ -389,7 +389,7 @@ def process_python_code():
         'saveOutputDataset', CURIO_DEFAULT_SAVE_NODE_OUTPUT,
     )
     if isinstance(save_output_dataset, str):
-        save_output_dataset = save_output_dataset.strip().lower() not in ('0', 'false', 'no')
+        save_output_dataset = save_output_dataset.strip().lower() not in ('0', 'false', 'no', 'off')
 
     session_id = get_current_token()
     t1 = _time.perf_counter()
@@ -490,7 +490,7 @@ def process_javascript_code():
         'saveOutputDataset', CURIO_DEFAULT_SAVE_NODE_OUTPUT,
     )
     if isinstance(save_output_dataset, str):
-        save_output_dataset = save_output_dataset.strip().lower() not in ('0', 'false', 'no')
+        save_output_dataset = save_output_dataset.strip().lower() not in ('0', 'false', 'no', 'off')
 
     session_id = get_current_token()
     t1 = _time.perf_counter()
