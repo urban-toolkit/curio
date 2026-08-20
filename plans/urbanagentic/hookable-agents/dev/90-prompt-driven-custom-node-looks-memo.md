@@ -1,7 +1,7 @@
 # Dev/90 — Prompt-driven custom node looks: the Researcher agent owns the post-it recipe
 
 Date: 2026-08-20  
-Status: approved 2026-08-20 — implementation in progress per the §9 commit breakdown  
+Status: implemented (DEC-060; commits 1–4 landed `672e8a07`/`6fff01f1`/`088daa9e`/`bcabdc4f` + amendments A1 `652dab81`, A2 `b9953183`, A3 `dd24dda0`; commit 5 = the consolidated docs pass, incl. dev/89 commit 10)  
 Supersedes in part: dev/89 commit 9 (`034965f5`) — the first-party Node Researcher fixture approach  
 Evidence base: dev/89 (approved memo + commits `28b02972`…`034965f5`), `docs/EXTENDING.md` §5, `registry/types.ts` (`NodeBehaviorHook`), the published custom-look package `curio.streetvision@1`, `llm-prompts/package_build_instruction.txt`, the shipped build stack (`build_models` → `build_promotion`, `package.draft.apply`), `delegation.py` (depth-1, tool-less children), and `services._mint_content_review_from_delegate` (dev/73 — the one delegate-output→reviewed-proposal mint policy).
 

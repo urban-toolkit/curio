@@ -236,12 +236,12 @@ The trusted profile families are reviewed application configuration, not manifes
 | --- | --- | --- |
 | `interactive-report` | `agent.chat-agent`, `agent.dataflow-explainer`, `agent.node-explainer` | Foreground/report-only execution, no mutation tools, and quality evaluation after prompt changes. |
 | `planning-analysis` | `agent.dataset-finder`, `agent.execution-subtask-planner`, `agent.dataflow-task-planner`, `agent.workflow-suggester`, `agent.plan-coherence-validator`, `agent.syntax-analysis-agent`, `agent.task-refresh-agent`, `agent.keyword-binding-agent` | Structured output, bounded background work, no direct mutation, and deterministic regression before release. |
-| `mutation-proposal` | `agent.node-builder`, `agent.debug-agent`, `agent.node-content-builder`, `agent.connection-builder`, `agent.package-recommendation` | Review before apply, stricter tool/resource limits, prompt-quality evidence, and human approval. |
+| `mutation-proposal` | `agent.node-builder`, `agent.debug-agent`, `agent.node-content-builder`, `agent.connection-builder`, `agent.package-recommendation`, `agent.package-builder`, `agent.researcher` | Review before apply, stricter tool/resource limits, prompt-quality evidence, and human approval. |
 | `orchestration-mutation` | `agent.dataflow-builder` | Aggregate reservation, tighter child policies, bounded delegate concurrency, and review for installs or graph mutations. |
 | ~~`evaluation-disabled`~~ | `agent.generated-content-evaluator` | Retired by `DEC-055` (OQ-007 resolved, dev/85/86): the evaluator ships report-only with read-only tools — advisory judgment that can never mutate or self-certify; the `DEC-028` platform-quality firewall stands and nothing is silently substituted. |
 
-These profile-family tables cover the full product roster — **nineteen shipped built-ins** as of
-`DEC-055`. Fourteen are the prompt-migration roster (thirteen source-backed packages plus
+These profile-family tables cover the full product roster — **twenty-one shipped built-ins** as of
+`DEC-059`/`DEC-060`. Fourteen are the prompt-migration roster (thirteen source-backed packages plus
 `agent.generated-content-evaluator`, authored net-new under `DEC-055` after OQ-007's resolution —
 dev/85/86; see `10-prompt-architecture.md` and `../dev/06-prompt-to-hookable-agent-migration-memo.md`).
 Three more — `agent.dataset-finder`, `agent.node-builder`, and `agent.dataflow-builder` —
@@ -249,6 +249,12 @@ are net-new **compositions** over migrated capabilities (via `delegatesTo`), spe
 `../dev/15-composite-agent-specifications-memo.md`; `agent.node-researcher` shipped via dev/67-4.
 `agent.package-recommendation` (`package.recommend`/`package.identify`) is specified in
 `../dev/16-agent-node-package-capabilities-memo.md` and shipped via dev/84.
+`agent.package-builder` (`package.build`/`package.extend`/`node.kind.author` — the authoring
+specialist over the isolated build service, deliberately separate from recommendation) shipped via
+dev/89 (`DEC-059`); `agent.researcher` ("Researcher" — the notes-scenario owner: web-gathered
+findings composed as post-it note nodes, authoring delegated; disjoint from `agent.node-researcher`
+verification) shipped via dev/90 (`DEC-060`, prompt-driven looks — its delegation from the Dataflow
+Builder is deferred Follow-up D).
 Package Recommendation, Validation, and Optimization were originally named-only; Package Recommendation
 shipped, and `DEC-056` (dev/85) resolved the other two — Validation is a category view over the shipped
 family (never a single agent), Optimization is descoped demand-driven. The "fourteen-agent planned

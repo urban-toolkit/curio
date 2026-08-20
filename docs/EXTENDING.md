@@ -486,3 +486,34 @@ The smallest possible package adds one template plus its behavior hook. Use this
 - [ ] User-facing docs example in `docs/examples/<NN>-<name>.md`, linked from [`docs/README.md`](README.md).
 
 Skip any item that doesn't apply — a pure-frontend node typically only needs the first six.
+
+## 8. Agent-authored packages (dev/89 / dev/90)
+
+Everything above describes hand-authoring. Since dev/89, packages can also be **authored by
+agents**: the **Package Builder** (`agent.package-builder`) turns a described need into one
+reviewed draft through the `package.draft.apply` contract, and an **isolated build service**
+does what `npm run build:packages` does for first-party packages — without ever touching this
+repo's build list:
+
+1. The typed draft (manifest, sources, behavior entries, dependencies, requested nodes) is
+   validated under the same rules as §6 — installer path safety, `node-package.v4`, the works.
+   `scripts/` is builder-owned: agents ship behavior **source**; the service compiles it.
+2. JS dependencies resolve against the operator's approved registry only (pinned versions,
+   SRI-verified, SBOM'd); the deployment-pinned compiler (`CURIO_BUILD_ESBUILD`) bundles them
+   offline and externalizes React/ReactDOM/ReactFlow to the §5 host globals — the same
+   externals contract as the webpack config, enforced rather than configured.
+3. The bundle renders in a sandboxed preview (`CURIO_BUILD_PREVIEW_RUNNER`) across five contract
+   states — empty, loading, success, malformed-input, error — and a failed preview blocks Apply.
+4. The user reviews the diff, dependencies, and preview; Apply promotes the **exact reviewed
+   artifact digest** through the normal installer (backup held, journaled, rollback honest).
+
+**Looks are prompt-driven, never repo fixtures** (dev/90): the Package Builder's instruction
+carries one generic authoring contract (register exactly the manifest's behavior keys; hook
+`(data, nodeState) => { contentComponent }`; React elements only — never raw HTML; per-instance
+color via `data.appearance.backgroundColor` with derived ink; self-contained, no network). The
+scenario — e.g. the Researcher's post-it notes — lives in the CALLING agent's instruction as
+requirements, and two runs may legitimately generate different code for the same look.
+
+Generated **backend** code (blueprints, endpoints) remains out of scope until the package
+backend sandbox (dev/89 Follow-up A) and activation lifecycle (Follow-up B) exist — the build
+service refuses it rather than loading generated code into this process.

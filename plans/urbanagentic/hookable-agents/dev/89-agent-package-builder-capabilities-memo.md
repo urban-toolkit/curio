@@ -1,7 +1,7 @@
 # Dev/89 — Agent-authored node packages and custom node kinds
 
 Date: 2026-08-19  
-Status: approved 2026-08-19 — implementation in progress per the §9 commit breakdown  
+Status: implemented (DEC-059; commits 1–8 landed `28b02972`…`8ab0fdb6`; commit 9 `034965f5` superseded in part by dev/90 — the DOD is prompt-driven, no first-party fixture; commit 10 consolidated into dev/90 commit 5)  
 Evidence base: `docs/EXTENDING.md`, `docs/schemas/node-package.v4.json`, package factory/install/runtime registries, `dev/48`, `dev/16`, `dev/84`, current built-in agent roster and prompts, and the suppliedx Dataflow Builder reference recording plus its extracted concept frames.
 
 **DOD clarification (2026-08-19).** The reference recording does not require a research execution environment inside the node. The Node Researcher proof is a presentation-only custom node: a post-it-like square whose fixed body is populated from an agent reply (for the proof, web-search results), rendered as safe plain text or Markdown, and assigned a configurable per-node color. It does not run Python, perform the web search itself, require a generated backend endpoint, or depend on the future backend sandbox/restart lifecycle.
@@ -348,8 +348,8 @@ Required DOD regression:
 - Commit 6: Add sandboxed visual preview runner and empty/loading/success/error screenshot/runtime validation.
 - Commit 7: Add reviewed package proposal and promotion coordinator with exact-digest install/replace, rollback journal, project lockfile update, and stale protection.
 - Commit 8: Add frontend progress/review/diff/preview UI, typed node-appearance round-trip, accessible post-it color control/contrast derivation, and registry-before-canvas synchronization.
-- Commit 9: Implement the Node Researcher reference package through the new capability and add end-to-end visual/regression coverage.
-- Commit 10: Update `docs/EXTENDING.md`, capability documentation, decisions, build ledger, and record Follow-up A (Curio backend sandbox), Follow-up B (activation/restart lifecycle), and Follow-up C (`node.appearance.write` agent recolor).
+- Commit 9: Implement the Node Researcher reference package through the new capability and add end-to-end visual/regression coverage. *(Landed as `034965f5`, then SUPERSEDED IN PART by dev/90: the first-party fixture surface was removed; the DOD lives on as `test_custom_look_dod.py` with prompt-shaped, test-local scenarios. The commit's two contract fixes — externals-import notes, the draft-class tail budget — remain in force.)*
+- Commit 10: Update `docs/EXTENDING.md`, capability documentation, decisions, build ledger, and record Follow-up A (Curio backend sandbox), Follow-up B (activation/restart lifecycle), and Follow-up C (`node.appearance.write` agent recolor). *(Consolidated into dev/90 commit 5: `DEC-059`/`DEC-060` in dev/03, `docs/EXTENDING.md` §8, roster docs at 21, `BL-P5-20260820-33`.)*
 
 ## 10. Engineering Quality Checklist
 
