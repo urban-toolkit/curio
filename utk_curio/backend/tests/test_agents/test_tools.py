@@ -485,3 +485,50 @@ class TestWebSearchTrustedProvider:
         )
         assert status == "ok"
         assert "trusted_host" not in seen["kwargs"]
+
+
+class TestWebSearchProviderShapes:
+    """dev/90 A3 — the public keyed-GET search APIs work through the one
+    CURIO_SEARCH_URL template with no provider server and no new deps."""
+
+    def _search(self, monkeypatch, body: str):
+        from utk_curio.backend.app.agents import egress
+        from utk_curio.backend.app.agents.egress import EgressResult
+
+        monkeypatch.setenv("CURIO_SEARCH_URL", "https://api.provider.test/v1?key=K&q={q}")
+        monkeypatch.setattr(egress, "fetch", lambda url, **kw: EgressResult(
+            url=url, final_url=url, status=200,
+            content_type="application/json", body=body))
+        status, text = tools.execute_read_tool(
+            "web.search", user_key="42", project_id="none", target=None,
+            params={"q": "weather in Paris"},
+        )
+        assert status == "ok"
+        return json.loads(text)["results"]
+
+    def test_google_programmable_search_items(self, monkeypatch):
+        rows = self._search(monkeypatch, json.dumps({"items": [{
+            "title": "Paris weather", "link": "https://w.test/paris",
+            "snippet": "18°C, partly cloudy"}]}))
+        assert rows == [{"title": "Paris weather", "url": "https://w.test/paris",
+                         "snippet": "18°C, partly cloudy"}]
+
+    def test_serpapi_organic_results(self, monkeypatch):
+        rows = self._search(monkeypatch, json.dumps({"organic_results": [{
+            "title": "Paris", "link": "https://w.test/p", "snippet": "cloudy"}]}))
+        assert rows[0]["url"] == "https://w.test/p"
+
+    def test_brave_shaped_web_results_with_description(self, monkeypatch):
+        rows = self._search(monkeypatch, json.dumps({"web": {"results": [{
+            "title": "Paris", "url": "https://w.test/p",
+            "description": "light breeze"}]}}))
+        assert rows[0]["snippet"] == "light breeze"
+
+    def test_href_alias_and_top_level_list(self, monkeypatch):
+        rows = self._search(monkeypatch, json.dumps([{
+            "title": "Paris", "href": "https://w.test/p", "content": "18C"}]))
+        assert rows[0]["url"] == "https://w.test/p" and rows[0]["snippet"] == "18C"
+
+    def test_unrecognized_shape_yields_empty_rows_not_an_error(self, monkeypatch):
+        rows = self._search(monkeypatch, json.dumps({"answers": ["42"]}))
+        assert rows == []

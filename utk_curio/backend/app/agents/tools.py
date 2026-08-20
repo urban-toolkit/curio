@@ -574,9 +574,17 @@ def _execute_web_fetch(params: dict) -> tuple[str, str]:
 
 def _execute_web_search(params: dict) -> tuple[str, str]:
     """dev/67-4: deployment-configured search — ``CURIO_SEARCH_URL`` is a URL
-    template with ``{q}`` returning a JSON list of {title, url, snippet}-like
-    rows (a SearXNG/portal endpoint, for example). Absent configuration
-    errors honestly; results still flow through the egress policy."""
+    template with ``{q}`` (GET; any API key rides the URL) returning JSON.
+
+    Accepted response shapes (dev/90 A3 — the common public search APIs over
+    a plain keyed GET, so no provider server is ever required): a top-level
+    list, or rows under ``results`` (SearXNG), ``organic_results`` (SerpAPI,
+    SearchApi.io), ``items`` (Google Programmable Search), or
+    ``web.results`` (Brave-shaped proxies); row fields ``title``,
+    ``url|link|href``, ``snippet|content|description``. Header-authenticated
+    APIs are NOT supported — the contract is key-in-URL, stated honestly.
+    Absent configuration errors honestly; results still flow through the
+    egress policy (dev/90 A2: the provider host itself is operator-trusted)."""
     import os
     from urllib.parse import quote
 
@@ -604,14 +612,29 @@ def _execute_web_search(params: dict) -> tuple[str, str]:
         return "error", f"refused by the egress policy: {exc}"
     except Exception as exc:
         return "error", f"the search provider failed: {exc}"
-    rows_raw = payload.get("results") if isinstance(payload, dict) else payload
+    rows_raw = _search_rows_of(payload)
     rows = []
     for row in (rows_raw or [])[:_WEB_SEARCH_MAX_ROWS]:
         if not isinstance(row, dict):
             continue
         rows.append({
             "title": str(row.get("title") or "")[:160],
-            "url": str(row.get("url") or row.get("link") or "")[:300],
-            "snippet": str(row.get("snippet") or row.get("content") or "")[:300],
+            "url": str(row.get("url") or row.get("link") or row.get("href") or "")[:300],
+            "snippet": str(row.get("snippet") or row.get("content")
+                           or row.get("description") or "")[:300],
         })
     return "ok", _truncate(json.dumps({"results": rows}, ensure_ascii=False))
+
+
+def _search_rows_of(payload) -> list | None:
+    """The result rows of one provider response (dev/90 A3 shapes)."""
+    if not isinstance(payload, dict):
+        return payload if isinstance(payload, list) else None
+    for key in ("results", "organic_results", "items"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return value
+    web = payload.get("web")
+    if isinstance(web, dict) and isinstance(web.get("results"), list):
+        return web["results"]
+    return None

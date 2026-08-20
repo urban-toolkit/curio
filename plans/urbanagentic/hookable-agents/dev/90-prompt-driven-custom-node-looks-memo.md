@@ -132,6 +132,17 @@ The SSRF rationale does not apply to the provider host: ``CURIO_SEARCH_URL`` is 
 
 Tests: egress-level (loopback refused by default, allowed only under the matching trusted host, cross-host redirect still refused — injectable transport/resolver, no network in CI) and tools-level (the trusted host is derived from ``CURIO_SEARCH_URL``; ``web.fetch`` never passes one).
 
+## Amendment A3 (2026-08-20) — public search APIs, no servers, no new dependencies
+
+A2 unblocked self-hosters; the remaining ask is a provider WITHOUT running anything. LangChain was considered and rejected: it is not a dependency today, and pulling an agent framework into the backend for one HTTP GET contradicts the lean posture (the existing egress module already speaks HTTP under policy).
+
+Change, again narrow: ``web.search``'s response ADAPTER widens to the shapes the common public JSON search APIs return over a plain keyed GET — ``results`` (SearXNG), ``organic_results`` (SerpAPI, SearchApi.io), ``items`` (Google Programmable Search), and ``web.results`` (Brave-shaped proxies) — with the row aliases ``url|link|href`` and ``snippet|content|description``. The operator simply sets, e.g.::
+
+    CURIO_SEARCH_URL="https://www.googleapis.com/customsearch/v1?key=<KEY>&cx=<CX>&q={q}"
+    CURIO_SEARCH_URL="https://serpapi.com/search.json?q={q}&api_key=<KEY>"
+
+Nothing else moves: same template mechanism, same egress policy (public hosts need no A2 exemption), same bounded rows, same honest not-configured error. Header-authenticated APIs (Brave direct, Serper, Tavily) stay unsupported — the template contract is GET-with-key-in-URL, stated honestly rather than half-supported.
+
 ## 10. Engineering Quality Checklist
 
 - [ ] The authoring contract lives in ONE prompt section (Package Builder); the Researcher's recipe states requirements and defers the contract to the specialist.
