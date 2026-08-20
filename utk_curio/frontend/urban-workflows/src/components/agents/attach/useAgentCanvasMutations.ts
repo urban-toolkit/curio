@@ -59,6 +59,10 @@ export function useAgentCanvasMutations(): void {
       code: node.content,
       goal: node.goal ?? "",
       position: { x: node.x, y: node.y },
+      // dev/89: the typed appearance/title round-trip — the applied spec
+      // values reach live data so the next save re-persists them.
+      appearance: node.metadata?.appearance,
+      title: node.title,
     });
   };
 
@@ -136,6 +140,31 @@ export function useAgentCanvasMutations(): void {
         () => fitViewWithMenuOffset(reactFlow, { duration: 400 }),
         50,
       );
+      return;
+    }
+    if (mutation.kind === "package-nodes-created") {
+      // dev/89: an applied package draft. Registry-BEFORE-canvas: the new
+      // package's descriptors must resolve before UniversalNode paints its
+      // nodes — store entry first (deduped), then the registry pulse, then
+      // the inserts. Idempotent per artifact digest.
+      if (processedRef.current.has(mutation.artifactDigest)) return;
+      processedRef.current.add(mutation.artifactDigest);
+      const current = getCurrentProjectPackages() ?? [];
+      if (!current.includes(mutation.packageDir)) {
+        setCurrentProjectPackages([...current, mutation.packageDir]);
+      }
+      void refreshPackageRegistry().then(() => {
+        const live = new Set(getNodes().map((n) => n.id));
+        const fresh = mutation.nodes.filter((n) => !live.has(n.id));
+        for (const node of fresh) insertNode(node);
+        const first = fresh[0] ?? mutation.nodes[0];
+        if (first) {
+          setCenter(first.x + NODE_CENTER_X, first.y + NODE_CENTER_Y, {
+            zoom: getZoom(),
+            duration: CENTER_ANIMATION_MS,
+          });
+        }
+      });
       return;
     }
     const { node, createdPackageDir } = mutation;

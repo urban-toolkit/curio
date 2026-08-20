@@ -207,6 +207,19 @@ export class TrillGenerator {
                 trill_node.metadata.datasetSource = node.data.datasetSource;
             }
 
+            // dev/89: per-node appearance persists at the canonical
+            // metadata.appearance shape — without this, a recolored post-it
+            // would lose its color on the next canvas save.
+            if(node.data.appearance != undefined && node.data.appearance.backgroundColor != undefined){
+                if(trill_node.metadata == undefined)
+                    trill_node.metadata = {};
+
+                trill_node.metadata.appearance = node.data.appearance;
+            }
+
+            if(typeof node.data.title === "string" && node.data.title)
+                trill_node.title = node.data.title;
+
             if(node.data.appliedDatasets != undefined){
                 for(const dataset of Object.values(node.data.appliedDatasets)){
                     const id = (dataset as any)?.datasetId || (dataset as any)?.id;

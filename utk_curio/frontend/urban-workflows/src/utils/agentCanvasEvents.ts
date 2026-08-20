@@ -17,6 +17,12 @@ export type AgentCreatedNode = {
   goal?: string;
   x: number;
   y: number;
+  /** dev/89: optional display title the apply persisted on the spec node. */
+  title?: string;
+  /** dev/89: canonical persisted appearance (normalized by the backend's
+   * shared node-appearance utility) — carried into live ``data.appearance``
+   * so the next canvas save round-trips it. */
+  metadata?: { appearance?: { backgroundColor?: string } };
 };
 
 export type AgentCanvasMutation =
@@ -61,6 +67,16 @@ export type AgentCanvasMutation =
         sourceHandle?: string;
         targetHandle?: string;
       }>;
+    }
+  | {
+      /** dev/89: an applied package draft — the promoted package's dirName
+       * plus its requested nodes. The handler refreshes the package registry
+       * BEFORE painting the nodes (registry-before-canvas: a descriptor must
+       * resolve before UniversalNode renders it). Idempotent per artifact. */
+      kind: "package-nodes-created";
+      artifactDigest: string;
+      packageDir: string;
+      nodes: AgentCreatedNode[];
     };
 
 export const AGENT_CANVAS_MUTATION_EVENT = "curio:agent-canvas-mutation";
@@ -83,7 +99,8 @@ export function subscribeAgentCanvasMutations(
       (detail.kind === "node-created" ||
         detail.kind === "node-content-applied" ||
         detail.kind === "graph-created" ||
-        detail.kind === "edges-created")
+        detail.kind === "edges-created" ||
+        detail.kind === "package-nodes-created")
     ) {
       listener(detail);
     }

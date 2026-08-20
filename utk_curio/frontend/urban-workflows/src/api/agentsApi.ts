@@ -307,6 +307,10 @@ export interface AgentCreatedNodePayload {
   goal?: string;
   x: number;
   y: number;
+  /** dev/89: optional display title persisted on the spec node. */
+  title?: string;
+  /** dev/89: canonical persisted appearance (backend-normalized). */
+  metadata?: { appearance?: { backgroundColor?: string } };
 }
 
 /** Apply-endpoint response (dev/41 base + the dev/48/52 bridge payloads). */
@@ -340,6 +344,14 @@ export interface AgentApplyResult {
   };
   /** dataflow.plan.write: the builder session after apply. */
   builderSession?: AgentBuilderSession | null;
+  /** package.install / package.draft.apply: the installed package. */
+  installedPackage?: { dirName: string; name: string; replaced?: boolean };
+  /** package.draft.apply (dev/89): the requested nodes inserted after the
+   * reviewed install — painted only after the registry refresh. */
+  createdNodes?: AgentCreatedNodePayload[];
+  /** package.draft.apply (dev/89): the frontend must refresh the package/
+   * behavior/template registries BEFORE painting createdNodes. */
+  requiresRegistryRefresh?: boolean;
 }
 
 /** dev/67-5 apply-node response: one created node + the per-node ledger. */

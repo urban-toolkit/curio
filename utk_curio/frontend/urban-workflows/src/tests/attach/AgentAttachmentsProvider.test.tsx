@@ -490,6 +490,52 @@ describe("AgentAttachmentsProvider apply→canvas bridge (memo dev/48 §3.3)", (
     ]);
   });
 
+  it("a package-draft apply dispatches package-nodes-created (dev/89 registry-before-canvas)", async () => {
+    api.applyProposal.mockResolvedValue({
+      attachmentId: "a1",
+      proposalId: "p1",
+      status: "applied",
+      mutationApplied: true,
+      requiresRegistryRefresh: true,
+      installedPackage: { dirName: "ai.agent.notes@1", name: "Agent Notes" },
+      createdNodes: [
+        {
+          id: "note-1",
+          type: "ai.agent.notes/note-kind@1",
+          content: "# Findings",
+          x: 3,
+          y: 4,
+          title: "Research note",
+          metadata: { appearance: { backgroundColor: "#fbd3e0" } },
+        },
+      ],
+    });
+    renderProvider();
+    fireEvent.click(screen.getByText("open"));
+    await waitFor(() => expect(screen.getByTestId("turns")).toHaveTextContent("old-q"));
+    await act(async () => {
+      fireEvent.click(screen.getByText("apply"));
+    });
+    expect(events).toEqual([
+      {
+        kind: "package-nodes-created",
+        artifactDigest: "p1",
+        packageDir: "ai.agent.notes@1",
+        nodes: [
+          {
+            id: "note-1",
+            type: "ai.agent.notes/note-kind@1",
+            content: "# Findings",
+            x: 3,
+            y: 4,
+            title: "Research note",
+            metadata: { appearance: { backgroundColor: "#fbd3e0" } },
+          },
+        ],
+      },
+    ]);
+  });
+
   it("an appliedContent apply response dispatches node-content-applied (the dev/41 clobber fix)", async () => {
     api.applyProposal.mockResolvedValue({
       attachmentId: "a1",

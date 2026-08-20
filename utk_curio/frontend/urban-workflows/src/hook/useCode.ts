@@ -44,6 +44,11 @@ type CreateCodeNodeOptions = {
     appliedDatasets?: Record<string, unknown>;
     datasetSource?: DatasetNodeSource;
     saveOutputDataset?: boolean;
+    // dev/89: per-node appearance (canonical spec shape metadata.appearance;
+    // normalized values only — validation is utils/nodeAppearance's job).
+    appearance?: { backgroundColor?: string };
+    // dev/89: optional display title (post-it header et al.).
+    title?: string;
 };
 
 interface IUseCode {
@@ -154,6 +159,15 @@ export function useCode(): IUseCode {
 
             if(node.metadata != undefined && node.metadata.datasetSource != undefined)
                 nodeMeta.datasetSource = node.metadata.datasetSource;
+
+            // dev/89: the canonical per-node appearance round-trips into live
+            // data (rendered via utils/nodeAppearance — invalid legacy values
+            // fall back at render, never here).
+            if(node.metadata != undefined && node.metadata.appearance != undefined)
+                nodeMeta.appearance = node.metadata.appearance;
+
+            if(typeof node.title === "string" && node.title)
+                nodeMeta.title = node.title;
 
             if(typeof parsedWidth === "number")
                 nodeMeta.nodeWidth = parsedWidth;
@@ -269,6 +283,8 @@ export function useCode(): IUseCode {
             appliedDatasets = undefined,
             datasetSource = undefined,
             saveOutputDataset = undefined,
+            appearance = undefined,
+            title = undefined,
         } = options;
 
         const node: Node = {
@@ -307,6 +323,8 @@ export function useCode(): IUseCode {
                 datasetRefs,
                 appliedDatasets,
                 datasetSource,
+                appearance,
+                title,
                 saveOutputDataset:
                     saveOutputDataset !== undefined
                         ? saveOutputDataset

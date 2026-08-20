@@ -400,7 +400,16 @@ export const AgentAttachmentsProvider: React.FC<{
         // carry the same mutation to the LIVE canvas in this user action so
         // the next save can't clobber it. The apply response is the only
         // payload source.
-        if (result.createdNode) {
+        if (result.requiresRegistryRefresh && result.installedPackage) {
+          // dev/89: an applied package draft — the bridge refreshes the
+          // package registry BEFORE painting the created nodes.
+          notifyAgentCanvasMutation({
+            kind: "package-nodes-created",
+            artifactDigest: proposalId,
+            packageDir: result.installedPackage.dirName,
+            nodes: result.createdNodes ?? [],
+          });
+        } else if (result.createdNode) {
           notifyAgentCanvasMutation({
             kind: "node-created",
             node: result.createdNode,

@@ -127,3 +127,41 @@ describe("TrillGenerator provenance persistence", () => {
     expect(TrillGenerator.provenanceJSON.nodes).toHaveLength(0);
   });
 });
+
+describe("TrillGenerator node appearance (dev/89)", () => {
+  beforeEach(() => {
+    TrillGenerator.reset();
+  });
+
+  test("persists per-node appearance + title at the canonical shape (dev/89)", () => {
+    const spec = TrillGenerator.generateTrill(
+      [
+        {
+          type: "CURIO_UNIVERSAL_NODE",
+          position: { x: 0, y: 0 },
+          data: {
+            nodeId: "note-1",
+            nodeType: "ai.agent.notes/note-kind",
+            appearance: { backgroundColor: "#fbd3e0" },
+            title: "Research note",
+          },
+        },
+        {
+          // No appearance/title: the serialized node stays byte-identical
+          // to the pre-dev/89 shape (no metadata key at all).
+          type: "CURIO_UNIVERSAL_NODE",
+          position: { x: 5, y: 5 },
+          data: { nodeId: "plain-1", nodeType: "curio.builtin/computation-analysis" },
+        },
+      ],
+      [],
+      "Imported Workflow"
+    );
+
+    const byId = Object.fromEntries(spec.dataflow.nodes.map((n: any) => [n.id, n]));
+    expect(byId["note-1"].metadata.appearance).toEqual({ backgroundColor: "#fbd3e0" });
+    expect(byId["note-1"].title).toBe("Research note");
+    expect(byId["plain-1"].metadata).toBeUndefined();
+    expect(byId["plain-1"].title).toBeUndefined();
+  });
+});
