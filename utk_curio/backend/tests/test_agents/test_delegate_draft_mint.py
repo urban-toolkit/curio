@@ -332,3 +332,67 @@ class TestChildAnswersInToolRequestShape:
         proposal = next(p for p in parts if p["type"] == "proposal")
         assert proposal["tool"] == "package.draft.apply"
         assert proposal["pins"]["target"] == "ai.agent.notes@1"
+
+
+class TestAuthoringInputEnrichment:
+    """dev/90 A8 — tool-less authoring delegates receive the build-request
+    contract server-side (the dev/67-6 enrichment pattern): the live child
+    invented 'package'/'behaviors'/'behaviorKey' twice because no one in the
+    delegation chain had ever seen the schema."""
+
+    def test_authoring_capabilities_gain_the_contract(self):
+        from utk_curio.backend.app.agents.services import (
+            _BUILD_REQUEST_CONTRACT,
+            _enriched_delegate_inputs,
+        )
+
+        for capability in ("node.kind.author", "package.build", "package.extend"):
+            enriched = _enriched_delegate_inputs(
+                "guest", "p1", {}, capability, {"look": "post-it"})
+            assert enriched["buildRequestContract"] is _BUILD_REQUEST_CONTRACT
+            assert enriched["look"] == "post-it"
+        # The contract counters the observed invention explicitly.
+        text = json.dumps(_BUILD_REQUEST_CONTRACT)
+        assert "reverse-DNS" in text
+        assert "behaviorKey" in text and "Do NOT invent" in text
+
+    def test_model_supplied_contract_is_never_overwritten(self):
+        from utk_curio.backend.app.agents.services import _enriched_delegate_inputs
+
+        enriched = _enriched_delegate_inputs(
+            "guest", "p1", {}, "node.kind.author",
+            {"buildRequestContract": {"custom": True}})
+        assert enriched["buildRequestContract"] == {"custom": True}
+
+    def test_ordinary_capabilities_are_untouched(self):
+        from utk_curio.backend.app.agents.services import _enriched_delegate_inputs
+
+        enriched = _enriched_delegate_inputs(
+            "guest", "p1", {}, "workflow.suggest", {"x": 1})
+        assert enriched == {"x": 1}
+
+    def test_the_child_sees_the_contract(self, client, user_and_token, tmp_curio,
+                                         monkeypatch):
+        # Route-level: the CHILD's user message carries the schema.
+        _, token = user_and_token
+        pid = _project(client, token)
+        att_id, calls = _setup(client, token, pid, monkeypatch, replies=[
+            _delegate_tail(),
+            json.dumps({"packageDraft": _draft()}),
+            "Proposed.",
+        ])
+        run = _run(client, token, pid, att_id)
+        assert run.status_code == 200, run.get_data(as_text=True)
+        # The child call is the TWO-message list (own system + the framed
+        # inputs) — parent calls alias the parent's one growing list, whose
+        # system also mentions "Package Builder" (the Researcher instruction).
+        child_calls = [
+            c for c in calls
+            if len(c) == 2 and str(c[-1].get("content", "")).startswith(
+                "[delegated task from")
+        ]
+        assert child_calls, "the delegate child call is missing"
+        child_user_msg = child_calls[0][-1]["content"]
+        assert "buildRequestContract" in child_user_msg
+        assert "reverse-DNS" in child_user_msg
+        assert "registerBehavior" in child_user_msg

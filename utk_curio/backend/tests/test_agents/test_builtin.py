@@ -405,6 +405,10 @@ class TestPackageBuilder:
         assert "DELEGATE" in text
         assert "delegated task from" in low
         assert "EXACTLY ONE JSON object" in text
+        # dev/90 A8: the schema arrives as a runtime-supplied input — the
+        # instruction points at it and bans the observed invented keys.
+        assert "buildRequestContract" in text
+        assert "behaviorKey" in text
         # No scenario content: looks come from CALLERS (dev/90 — the post-it
         # recipe lives with the Researcher, never with the generic specialist).
         assert "post-it" not in low

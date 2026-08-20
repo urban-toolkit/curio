@@ -169,6 +169,14 @@ Change, both sides: (1) the extractor also accepts ``curio.v1`` fences and UNWRA
 
 Standing lesson, paired with A6's: when a prompt teaches an output contract, every RUNTIME PATH that consumes that agent's output must accept the taught shape — a contract taught in one mode and rejected in another is a bug factory.
 
+## Amendment A8 (2026-08-20) — authoring delegates receive the build-request contract as an input
+
+Field finding (live screenshots, after A7): the child now answers in JSON — but with an INVENTED schema (``"package"``/``"behaviors"``/``"behaviorKey"``, a single-segment id), twice, even after the Researcher "refined the request". Root cause: nobody in the delegation chain has ever SEEN the build-request schema. It lives in the ``package.draft.apply`` ToolContract description, which rides the grants paragraph — and DEC-046 children are tool-less, so the Package Builder-as-delegate never receives it; the Researcher cannot teach a schema it does not carry either.
+
+Change — the dev/67-6 enrichment pattern: ``_enriched_delegate_inputs`` appends a server-owned ``buildRequestContract`` (the full shape, the reverse-DNS id rule, the registerBehavior/contentComponent rules, prefer-zero-deps, and an explicit "there is no 'package', 'behaviors', or 'behaviorKey' key" countering the observed invention) to every authoring delegation's inputs; model-supplied keys are never overwritten. The instruction's delegate paragraph points at the supplied contract. Tests: enrichment units (authoring capabilities gain it, others untouched, never overwritten) and a route assertion that the CHILD's framed user message carries the schema.
+
+Standing lesson, completing the A6/A7 set: a delegate can only honor contracts that are IN ITS CONTEXT — schemas that live in tool grants must be re-supplied server-side when the consumer is a tool-less child.
+
 ## 10. Engineering Quality Checklist
 
 - [ ] The authoring contract lives in ONE prompt section (Package Builder); the Researcher's recipe states requirements and defers the contract to the specialist.

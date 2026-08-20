@@ -5511,6 +5511,69 @@ def _mint_content_review_from_delegate(
 # lives in content.py (dev/90 A6 — the tail contract sizes their inputs).
 PACKAGE_AUTHORING_CAPABILITIES = content.PACKAGE_AUTHORING_CAPABILITIES
 
+# dev/90 A8: the build-request contract, supplied to AUTHORING delegates as
+# an input. DEC-046 children are tool-less and never see the grants paragraph
+# where the tool schema lives — a live run showed the child inventing a
+# plausible-but-wrong shape ("package"/"behaviors"/"behaviorKey") twice, and
+# the parent cannot teach a schema it does not carry either. The runtime is
+# the one place that always knows the contract (the dev/67-6 enrichment
+# pattern: deterministic server-side inputs, never model-invented).
+_BUILD_REQUEST_CONTRACT: dict = {
+    "reply": (
+        "Reply with ONE JSON object of exactly this shape (optionally inside "
+        "a ```json fence), nothing after it. Do NOT invent other keys — "
+        "there is no 'package', 'behaviors', or 'behaviorKey' key."
+    ),
+    "shape": {
+        "mode": "create | extend",
+        "baseDigest": "<64-hex digest of the installed target — extend only>",
+        "manifest": {
+            "id": ("reverse-DNS: two or more dot-separated lowercase segments, "
+                   "e.g. 'curio.notes' — single-segment ids are invalid"),
+            "version": "1.0.0",
+            "name": "<display name>",
+            "publisher": "<author>",
+            "description": "<one line>",
+            "license": "MIT",
+            "compatibility": {"curioRuntime": ">=0.5.0", "major": 1},
+            "permissions": [],
+            "dependencies": {"packages": {}, "python": {}, "js": {}},
+            "templates": [{
+                "id": "<kebab-case template id>",
+                "label": "<display label>",
+                "category": "visualization",
+                "engine": "python | javascript",
+                "editor": "code | widgets | grammar | none",
+                "behavior": "<the behavior key your source registers — custom looks only>",
+                "hasCode": False,
+                "hasWidgets": False,
+                "hasGrammar": False,
+                "inputPorts": [],
+                "outputPorts": [],
+            }],
+        },
+        "files": {"sources/<name>.tsx": {"text": "<complete file body>"}},
+        "behaviorEntries": ["sources/<name>.tsx"],
+        "previewTemplates": ["<each template id with a custom behavior>"],
+        "nodes": [{
+            "templateId": "<template id>",
+            "title": "<node title>",
+            "content": "<the fixed note/body text>",
+            "appearance": {"backgroundColor":
+                           "yellow|pink|blue|green|orange|lavender|#rrggbb"},
+        }],
+    },
+    "rules": [
+        "a presentation-only template is engine 'javascript', editor 'none', "
+        "hasCode false, empty ports",
+        "the behavior source registers EXACTLY the template's behavior key: "
+        "window.curio.registerBehavior(key, (data, nodeState) => "
+        "({ contentComponent: <React element> })) — import react normally, "
+        "render React elements only, never raw HTML",
+        "prefer ZERO JS dependencies — write small rendering logic yourself",
+    ],
+}
+
 
 def _extract_draft_params(child_text: str) -> dict | None:
     """The child reply's build-request payload, or None.
@@ -5610,6 +5673,11 @@ def _enriched_delegate_inputs(
         if isinstance(url, str) and url.strip():
             return {**inputs, "verification": verify.verify_external_source(url)}
         return inputs
+    if capability in PACKAGE_AUTHORING_CAPABILITIES and "buildRequestContract" not in inputs:
+        # dev/90 A8: tool-less authoring delegates get the build-request
+        # contract server-side — the child answers to a schema it can SEE,
+        # never a shape it has to invent (the model's own keys always win).
+        return {**inputs, "buildRequestContract": _BUILD_REQUEST_CONTRACT}
     if capability != "node.content.generate" or "nodeContext" in inputs:
         return inputs
     node_id = inputs.get("nodeId")
