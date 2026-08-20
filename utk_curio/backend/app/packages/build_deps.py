@@ -328,7 +328,9 @@ def resolve_js_dependencies(
             "block", "js-registry-missing",
             "this deployment has no approved JS registry configured "
             "(CURIO_JS_REGISTRY_URL) — JS dependencies cannot be resolved; "
-            "they are never fetched from an ambient source",
+            "they are never fetched from an ambient source. Author the "
+            "behavior SELF-CONTAINED (zero JS dependencies — write the "
+            "rendering logic in the behavior source) and resubmit the draft",
         ))
         return direct_rows, lock, findings
 

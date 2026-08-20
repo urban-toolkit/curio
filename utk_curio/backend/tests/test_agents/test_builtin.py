@@ -396,6 +396,10 @@ class TestPackageBuilder:
         for color in ("yellow", "pink", "blue", "green", "orange", "lavender"):
             assert color in low
         assert "preview sandbox" in low  # enforcement, not advice
+        # dev/90 A5: dependency-minimal authoring is the default — write it
+        # yourself before importing it through a supply chain.
+        assert "ZERO JavaScript dependencies" in text
+        assert "markdown-lite" in low
         # No scenario content: looks come from CALLERS (dev/90 — the post-it
         # recipe lives with the Researcher, never with the generic specialist).
         assert "post-it" not in low

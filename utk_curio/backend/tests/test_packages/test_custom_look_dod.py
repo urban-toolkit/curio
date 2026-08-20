@@ -437,3 +437,103 @@ class TestWeatherInParisScenario:
         assert "partly cloudy" in note["content"]
         assert "https://weather.test/paris" in note["content"]
         assert note["metadata"]["appearance"]["backgroundColor"] == NAMED_COLORS["yellow"]
+
+
+_CURIO_NOTES_TSX = """\
+// simulated agent-authored behavior (test data — dev/90 A5): the corrected
+// curio-notes retry — dependency-free markdown-lite instead of react-markdown
+import React from "react";
+function renderLite(text) {
+  return String(text || "").split(/\\r?\\n/).map((line, i) => {
+    if (/^#\\s+/.test(line)) return React.createElement("h4", { key: i }, line.slice(2));
+    if (/^-\\s+/.test(line)) return React.createElement("li", { key: i }, line.slice(2));
+    return line.trim() ? React.createElement("p", { key: i }, line) : null;
+  });
+}
+function NoteBody({ data }) {
+  const bg = (data && data.appearance && data.appearance.backgroundColor) || "#fef3c0";
+  return React.createElement("div",
+    { role: "note", style: { background: bg, color: "#1f2430", padding: 8 } },
+    renderLite(data && data.code));
+}
+window.curio.registerBehavior("note-behavior",
+  (data) => ({ contentComponent: React.createElement(NoteBody, { data }) }));
+"""
+
+
+class TestCurioNotesRetry:
+    """dev/90 A4+A5 — the live transcript's request, corrected and replayed:
+    reverse-DNS id (curio.notes), NO target (derived), NO react-markdown
+    (self-contained markdown-lite), through mint → build → preview → Apply
+    at the Package Builder's own attachment, exactly the failed live flow."""
+
+    COORD = "agent.package-builder@1.0.0"
+
+    def _auth(self, token):
+        return {"Authorization": f"Bearer {token}"}
+
+    def test_corrected_request_lands_end_to_end(self, client, user_and_token,
+                                                tmp_curio, pinned_tools, monkeypatch):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        user, token = user_and_token
+        pid = client.post("/api/projects", json={
+            "name": "notes",
+            "spec": {"dataflow": {"nodes": [], "edges": [], "packages": []}},
+            "outputs": [],
+        }, headers=self._auth(token)).get_json()["id"]
+        client.post(f"/api/agents/projects/{pid}/install",
+                    json={"coord": self.COORD}, headers=self._auth(token))
+        att_id = client.post(
+            f"/api/agents/projects/{pid}/attachments",
+            json={"coord": self.COORD, "target": {"kind": "canvas"}},
+            headers=self._auth(token),
+        ).get_json()["attachmentId"]
+
+        params = _scenario(package_id="curio.notes", template_id="note",
+                           behavior="note-behavior", source=_CURIO_NOTES_TSX,
+                           notes=[{"templateId": "note", "title": "Docs note",
+                                   "content": "# Pipeline\n- loads GTFS\n- joins zones",
+                                   "appearance": {"backgroundColor": "blue"}}])
+        params.pop("target")  # A4: identity is manifest.id@major
+        assert params["manifest"]["dependencies"]["js"] == {}  # A5: zero deps
+        tail = ("```curio.v1\n" + json.dumps(
+            {"toolRequest": {"tool": "package.draft.apply", "params": params}}) + "\n```")
+        replies = [tail, "Proposed — review the curio-notes draft above."]
+        calls: list = []
+
+        def _fake_run(config, messages, **kwargs):
+            from utk_curio.backend.app.agents import services as services_mod
+
+            if messages and messages[0].get("content") == services_mod.TITLE_PROMPT:
+                return "Title"
+            calls.append(messages)
+            return replies[min(len(calls) - 1, len(replies) - 1)]
+
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.services.run_chat_completion", _fake_run)
+
+        run = client.post(
+            f"/api/agents/projects/{pid}/attachments/{att_id}/run",
+            json={"message": "create the curio-notes package"},
+            headers=self._auth(token),
+        )
+        assert run.status_code == 200, run.get_data(as_text=True)
+        proposal = next(p for p in run.get_json()["content"] if p["type"] == "proposal")
+        assert proposal["pins"]["target"] == "curio.notes@1"  # derived, valid
+
+        resp = client.post(
+            f"/api/agents/projects/{pid}/attachments/{att_id}"
+            f"/proposals/{proposal['proposalId']}/apply",
+            headers=self._auth(token),
+        )
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        body = resp.get_json()
+        assert body["installedPackage"]["dirName"] == "curio.notes@1"
+        with client.application.app_context():
+            user_key = _user_dir_key(user)
+        spec = projects_storage.read_spec(user_key, pid)
+        note = next(n for n in spec["dataflow"]["nodes"] if n.get("title") == "Docs note")
+        assert note["type"] == "curio.notes/note@1"
+        assert note["metadata"]["appearance"]["backgroundColor"] == NAMED_COLORS["blue"]

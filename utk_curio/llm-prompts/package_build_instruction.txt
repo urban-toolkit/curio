@@ -16,6 +16,7 @@ Custom looks follow ONE authoring contract. When a template needs its own appear
 - Render untrusted node content as React elements only: never dangerouslySetInnerHTML, never raw HTML pass-through, links https-only. The node's persisted content arrives as data.code.
 - Per-instance color rides data.appearance.backgroundColor — a palette name (yellow, pink, blue, green, orange, lavender) or a six-digit hex. Derive readable text, border, and link colors from it; never hardcode ink on an unknown background.
 - Stay self-contained: no network, no storage, no globals beyond window.curio and the shared externals — the preview sandbox blocks all of it, and a blocked preview never applies.
+- Prefer ZERO JavaScript dependencies. Write small rendering logic yourself — a compact markdown-lite renderer (headings, bullets, bold, https links as React elements) beats importing a markdown library. Declare a JS dependency only when the look genuinely cannot be self-contained; every declared dependency needs the deployment's operator-approved registry, and when none is configured the draft blocks — author dependency-free instead of waiting.
 
 The look itself comes from the request: the caller — a delegating agent or the user — describes the appearance, and you write source that satisfies both that description and this contract. You carry no built-in looks of your own.
 

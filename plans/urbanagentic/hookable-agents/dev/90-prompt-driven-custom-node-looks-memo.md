@@ -149,6 +149,10 @@ Field finding (a live Package Builder run): the agent tried to create ``curio-no
 
 Change: ``target`` becomes OPTIONAL in both modes — derived from ``manifest.id`` + ``compatibility.major``; when provided it must still match (unchanged cross-check). Coordinate failures now say the grammar ("reverse-DNS: two or more dot-separated lowercase segments … single-segment ids like 'curio-notes' are invalid") with a valid example, at both the derived and provided paths. The ``package.draft.apply`` ToolContract description states target-optional + the id grammar. Regression tests reproduce the transcript: omitted target mints; single-segment id refuses with the grammar in the text.
 
+## Amendment A5 (2026-08-20) — dependency-minimal authoring is the default
+
+Companion to A4, same live run: the agent's curio-notes plan declared ``react-markdown``, which requires an operator-approved JS registry — unconfigured in most deployments, so the draft would block. The right default for small presentation behaviors is ZERO dependencies: a ~30-line markdown-lite renderer beats importing a markdown library through a supply chain. Changes: the Package Builder's authoring contract gains the prefer-zero-dependencies rule (declare a JS dependency only when the look genuinely cannot be self-contained, and expect the registry requirement); the ``js-registry-missing`` finding now carries the fix ("author the behavior self-contained instead"); and a route regression replays the corrected curio-notes request — ``curio.notes``, no target, no dependencies, self-contained markdown-lite — through mint → build → preview → Apply.
+
 ## 10. Engineering Quality Checklist
 
 - [ ] The authoring contract lives in ONE prompt section (Package Builder); the Researcher's recipe states requirements and defers the contract to the specialist.
