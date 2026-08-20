@@ -2,6 +2,7 @@ include README.md
 include pyproject.toml
 include LICENSE
 recursive-include packages *
+recursive-include datasets *
 recursive-include tests *
 
 recursive-include utk_curio/backend *

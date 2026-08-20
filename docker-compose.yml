@@ -23,6 +23,10 @@ services:
       - "${CURIO_PORT_8080:-8080}:8080"
     volumes:
       - ./packages:/app/packages
+      # Publish target for the Data Catalog (catalog_root() -> <repo_root>/datasets,
+      # like packages/ above). Without this bind mount, datasets published inside
+      # the container are lost on every recreate/rebuild.
+      - ./datasets:/app/datasets
       # Share sandbox .data files with the host so Playwright (runs on host in CI) can read them
       - ./.curio:/app/.curio
       # Persist the Flask SQLite DB (users, projects, sessions) across container recreates
