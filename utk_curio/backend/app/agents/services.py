@@ -5505,6 +5505,85 @@ def _mint_content_review_from_delegate(
     )
 
 
+# dev/90: the package-authoring capabilities whose delegation success feeds
+# the delegate-draft mint below (the Package Builder's surface; the
+# `package.create-or-extend` intent resolves to these).
+PACKAGE_AUTHORING_CAPABILITIES = frozenset({
+    "node.kind.author", "package.build", "package.extend",
+})
+
+
+def _extract_draft_params(child_text: str) -> dict | None:
+    """The child reply's build-request payload, or None.
+
+    Accepted shapes (the reply is already bounded by
+    ``delegation.DELEGATE_RESULT_MAX_CHARS``): the whole reply as one JSON
+    object, or one fenced ```/```json block containing it; the object may be
+    the build request itself or wrapped as ``{"packageDraft": {...}}``. A
+    candidate must carry ``mode`` + ``manifest`` to count — arbitrary JSON in
+    a chatty reply never parses as a draft by accident.
+    """
+    import json as _json
+    import re as _re2
+
+    if not isinstance(child_text, str) or not child_text.strip():
+        return None
+    candidates: list[str] = []
+    stripped = child_text.strip()
+    if stripped.startswith("{"):
+        candidates.append(stripped)
+    for match in _re2.finditer(r"```(?:json)?\s*\n(.*?)```", child_text, _re2.DOTALL):
+        candidates.append(match.group(1).strip())
+    for candidate in candidates:
+        try:
+            payload = _json.loads(candidate)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        wrapped = payload.get("packageDraft")
+        inner = wrapped if isinstance(wrapped, dict) else payload
+        if (isinstance(inner, dict) and inner.get("mode") in ("create", "extend")
+                and isinstance(inner.get("manifest"), dict)):
+            return inner
+    return None
+
+
+def _mint_package_draft_from_delegate(
+    user_key: str, project_id: str, loop_ctx: dict, child_text: str
+) -> tuple[dict | None, str]:
+    """dev/90: the dev/73 one-mint-policy extended to package drafts.
+
+    A successful package-authoring delegation whose bounded child reply
+    parses as a build request becomes a reviewed ``package.draft.apply``
+    proposal minted by the RUNTIME at the parent's attachment — depth-1
+    children are structurally tool-less, so the delegate can never emit the
+    toolRequest itself. The mint reuses ``_mint_package_draft_apply``
+    verbatim (one build/validation path); a reply that does not parse, a
+    parent without the ``package.draft.apply`` grant, or a draft the build
+    service refuses are all data the parent recovers from in chat — never a
+    silent drop, never an unreviewed mutation.
+
+    Returns ``(proposal_part | None, text_for_model)``.
+    """
+    if "package.draft.apply" not in (loop_ctx.get("granted") or []):
+        return None, (
+            "the delegate produced a package draft but this agent is not "
+            "granted package.draft.apply — the draft was kept as text only"
+        )
+    params = _extract_draft_params(child_text)
+    if params is None:
+        return None, (
+            "the authoring delegate returned no parseable package draft "
+            "(expected one JSON build request); its reply was kept as text — "
+            "refine the delegation inputs and try again"
+        )
+    status, text, part = _mint_package_draft_apply(
+        user_key, project_id, loop_ctx, {"params": params}
+    )
+    return (part if status == "proposed" else None), text
+
+
 def _enriched_delegate_inputs(
     user_key: str, project_id: str, loop_ctx: dict, capability: str, inputs: dict
 ) -> dict:
@@ -5708,6 +5787,19 @@ def run_attachment(
                             )
                             if review_home == loop_ctx.get("attachment_id"):
                                 minted.append(review_part)
+                    elif status == "ok" and req["capability"] in PACKAGE_AUTHORING_CAPABILITIES:
+                        # dev/90: authoring success ⇒ the reviewed draft
+                        # EXISTS — runtime-minted from the child's payload,
+                        # never the model's second step.
+                        draft_part, text = _mint_package_draft_from_delegate(
+                            user_key, project_id, loop_ctx, text
+                        )
+                        delegate_summary = text
+                        if draft_part is not None:
+                            minted.append(draft_part)
+                            delegate_summary = (
+                                "reviewed package draft proposed — awaits Apply"
+                            )
                     # dev/72: the parent keeps the compact, linkable entry.
                     minted.append(_delegation_part_for(
                         resolution, req["capability"], status, delegate_summary, home_att
@@ -6024,6 +6116,19 @@ def stream_attachment(
                                     minted.append(review_part)
                                 else:
                                     homed_reviews.append((review_part, review_home))
+                        elif status == "ok" and req["capability"] in PACKAGE_AUTHORING_CAPABILITIES:
+                            # dev/90: authoring success ⇒ the reviewed draft
+                            # EXISTS — runtime-minted from the child's
+                            # payload, never the model's second step.
+                            draft_part, text = _mint_package_draft_from_delegate(
+                                user_key, project_id, loop_ctx, text
+                            )
+                            delegate_summary = text
+                            if draft_part is not None:
+                                minted.append(draft_part)
+                                delegate_summary = (
+                                    "reviewed package draft proposed — awaits Apply"
+                                )
                         # dev/72: the parent keeps the compact, linkable entry.
                         minted.append(_delegation_part_for(
                             resolution, req["capability"], status, delegate_summary, home_att
