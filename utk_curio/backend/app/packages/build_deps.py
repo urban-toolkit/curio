@@ -190,6 +190,17 @@ def merge_declared_and_detected(
                     "by the draft's sources",
                 ))
         for name in sorted(detected - set(declared)):
+            if eco == "js" and name.lower() in RUNTIME_EXTERNALS:
+                # Behavior sources IMPORT the externals — that is the contract
+                # (the compiler aliases them to the host singletons). A
+                # detected external is never a dependency; only an EXPLICIT
+                # declaration (someone asking to bundle it) blocks.
+                findings.append(Finding(
+                    "note", "js-runtime-external-import",
+                    f"import of {name!r} resolves to the Curio-provided host "
+                    "copy at compile time and is not a dependency",
+                ))
+                continue
             entries[name] = {"constraint": "*", "source": "detected"}
             findings.append(Finding(
                 "warn", f"{eco}-undeclared-import",

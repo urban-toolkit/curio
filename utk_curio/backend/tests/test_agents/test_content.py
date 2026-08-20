@@ -423,6 +423,21 @@ class TestDataflowPlanPart:
         payload = {"suggestedPrompts": {"primary": "P"}, "pad": '"dataflowPlan"' + "x" * 8000}
         assert content.parse_parts(json.dumps(payload)) is None
 
+    def test_large_package_draft_gets_the_draft_class_budget(self):
+        # dev/89: a package draft carries a whole package (manifest + behavior
+        # sources) — the same enlarged budget plans get, same payload-key
+        # re-check so a non-draft tail can't ride it.
+        params = {"mode": "create", "target": "a.b@1",
+                  "manifest": {"id": "a.b"}, "files": {"sources/x.tsx": {"text": "y" * 8000}}}
+        body = json.dumps({"toolRequest": {"tool": "package.draft.apply", "params": params}})
+        assert len(body.encode()) > content.TAIL_MAX_BYTES
+        parts = content.parse_parts(body)
+        assert parts is not None and parts[0]["tool"] == "package.draft.apply"
+        # A different tool smuggling the draft key string stays refused.
+        smuggle = json.dumps({"toolRequest": {"tool": "node.create",
+                                              "params": {"pad": '"package.draft.apply"' + "x" * 8000}}})
+        assert content.parse_parts(smuggle) is None
+
     def test_backstop_bounds(self):
         assert content.parse_parts(json.dumps({"dataflowPlan": self._plan(n_nodes=201)})) is None
         big_edges = self._plan(n_nodes=3)

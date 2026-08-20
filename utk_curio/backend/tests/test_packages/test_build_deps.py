@@ -125,6 +125,18 @@ class TestMerge:
         py, js, findings = merge_declared_and_detected(request)
         assert py == {} and js == {} and findings == []
 
+    def test_detected_runtime_external_import_is_a_note_not_a_dependency(self):
+        # dev/89 commit 9: behavior sources IMPORT react — that is the
+        # externals contract, never a dependency (only an EXPLICIT react
+        # declaration blocks, in resolve_js_dependencies).
+        request = _request(
+            files={"sources/note.tsx": {"text": 'import React from "react"\n'}},
+        )
+        _, js, findings = merge_declared_and_detected(request)
+        assert "react" not in js
+        assert _codes(findings) == ["js-runtime-external-import"]
+        assert findings[0].severity == "note"
+
 
 class TestJsResolution:
     def test_pinned_resolution_locks_and_caches(self, tmp_path):

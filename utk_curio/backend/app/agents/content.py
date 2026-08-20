@@ -186,8 +186,13 @@ def _parse_card(raw: object) -> dict | None:
 
 # Per-tool params budgets (dev/55): the plan's toolRequest form carries a
 # whole graph — it gets the plan budget; every other tool keeps the classic
-# cap byte-identically.
-_TOOL_PARAM_BUDGETS = {"dataflow.plan.write": PLAN_TAIL_MAX_BYTES}
+# cap byte-identically. dev/89: a package draft carries a whole package
+# (manifest + sources + behavior entries) — same rationale, same budget;
+# the build service re-validates every byte against its own strict limits.
+_TOOL_PARAM_BUDGETS = {
+    "dataflow.plan.write": PLAN_TAIL_MAX_BYTES,
+    "package.draft.apply": PLAN_TAIL_MAX_BYTES,  # dev/89
+}
 
 
 def _parse_tool_request(raw: object) -> dict | None:
@@ -609,7 +614,9 @@ def parse_parts(body: str) -> list[dict] | None:
         # substring check bounds json.loads cost before parsing; the
         # payload-key check below closes the loophole.
         if body_bytes > PLAN_TAIL_MAX_BYTES or (
-            '"dataflowPlan"' not in body and '"dataflow.plan.write"' not in body
+            '"dataflowPlan"' not in body
+            and '"dataflow.plan.write"' not in body
+            and '"package.draft.apply"' not in body  # dev/89: draft-class tails
         ):
             return None
     try:
@@ -620,8 +627,9 @@ def parse_parts(body: str) -> list[dict] | None:
         return None
     if body_bytes > TAIL_MAX_BYTES and "dataflowPlan" not in payload:
         req = payload.get("toolRequest")
-        if not (isinstance(req, dict) and req.get("tool") == "dataflow.plan.write"):
-            return None  # the enlarged budget is for plan payloads only
+        if not (isinstance(req, dict)
+                and req.get("tool") in ("dataflow.plan.write", "package.draft.apply")):
+            return None  # the enlarged budget is for plan/draft payloads only
     if "proposal" in payload or "proposals" in payload:
         return None  # never accepted from the model (memo dev/41 §4.1)
     if "toolRequest" in payload and "delegateRequest" in payload:
