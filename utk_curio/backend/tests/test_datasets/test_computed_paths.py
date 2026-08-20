@@ -19,7 +19,9 @@ def test_resolve_computed_output_path_present(app):
         "path": "my_output.csv",
     }
     resolved = svc._paths._resolve_computed_output_path(item)
-    assert resolved == str(output_file)
+    # _resolve_computed_output_path returns as_posix() by contract; str(Path)
+    # is backslashed on Windows, so compare in posix form.
+    assert resolved == output_file.as_posix()
 
 
 def test_resolve_computed_output_path_missing(app):

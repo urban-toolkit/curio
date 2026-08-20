@@ -54,7 +54,13 @@ bundle = _curio_load_bundle(bundle_path)'''
 
 
 def loader_snippet(fmt: str, path: str | None) -> dict[str, Any]:
-    dataset_path = path or "<dataset-path>"
+    # Embed the path in POSIX form so the generated source parses on every
+    # platform: a raw Windows path ("C:\Users\...") inside a Python string
+    # literal forms escape sequences like \U and the snippet is a SyntaxError.
+    # Windows opens forward-slash paths fine, and as_posix() is a no-op for
+    # paths that already are. Normalizing HERE (the single chokepoint) covers
+    # every call site — some already pre-convert, listing.py did not.
+    dataset_path = Path(path).as_posix() if path else "<dataset-path>"
     if fmt == "csv":
         return {
             "language": "python",
