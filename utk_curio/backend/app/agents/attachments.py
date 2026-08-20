@@ -239,6 +239,57 @@ def get_active_proposal(spec: dict, attachment_id: str) -> dict | None:
     return proposal if isinstance(proposal, dict) else None
 
 
+def get_queued_proposals(spec: dict, attachment_id: str) -> list:
+    """The same-reply proposal queue behind the active slot (dev/90 A16):
+    a reply that mints several mutations forms ONE jointly-pending sequence
+    — the first takes the slot, its siblings wait here instead of being
+    superseded by their own reply."""
+    record = get_attachment(spec, attachment_id)
+    if record is None:
+        return []
+    queue = record.get("queuedProposals")
+    return [p for p in queue if isinstance(p, dict)] if isinstance(queue, list) else []
+
+
+def find_proposal(spec: dict, attachment_id: str, proposal_id: str) -> dict | None:
+    """The id-checked lookup across BOTH pending homes (dev/90 A16): the
+    active slot and the same-reply queue behind it. Apply/dismiss address a
+    proposal by id — a queued sibling is just as addressable as the active
+    one, in any order."""
+    proposal = get_active_proposal(spec, attachment_id)
+    if isinstance(proposal, dict) and proposal.get("proposalId") == proposal_id:
+        return proposal
+    for queued in get_queued_proposals(spec, attachment_id):
+        if queued.get("proposalId") == proposal_id:
+            return queued
+    return None
+
+
+def reconcile_proposal_queue(spec: dict, attachment_id: str) -> bool:
+    """Settle the queue (dev/90 A16): drop members no longer pending, and
+    when the active slot itself is settled, promote the first still-pending
+    queued member into it. Idempotent and cheap — callers run it before
+    lookups/writes; an unwritten reconcile re-derives identically next time.
+    Returns True when anything changed."""
+    record = get_attachment(spec, attachment_id)
+    if record is None or "queuedProposals" not in record:
+        return False
+    queue = record.get("queuedProposals")
+    members = [p for p in queue if isinstance(p, dict)] if isinstance(queue, list) else []
+    pending = [p for p in members if p.get("status") == "pending"]
+    changed = len(pending) != len(members) if isinstance(queue, list) else True
+    active = record.get("activeProposal")
+    if pending and not (isinstance(active, dict) and active.get("status") == "pending"):
+        record["activeProposal"] = pending.pop(0)
+        changed = True
+    if pending:
+        record["queuedProposals"] = pending
+    else:
+        record.pop("queuedProposals", None)
+        changed = True
+    return changed
+
+
 def set_settings(spec: dict, attachment_id: str, settings: dict | None) -> dict | None:
     """Set (or clear with empty/None) the attachment's tighten-only policy
     overrides (memo dev/42) and bump the record's revision.

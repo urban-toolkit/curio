@@ -247,6 +247,21 @@ Effect on the field: the already-installed `curio.notes@1` bundle renders conten
 
 Standing lesson: a contract the platform itself states in two places MUST be pinned by a test that compares them — the preview fixtures were documentation, and documentation that disagrees with the runtime trains every generated bundle wrong. Skipped previews (A9) make the runtime the first place the disagreement can surface.
 
+## Amendment A16 (2026-08-20) — a reply's second proposal killed its first: same-run mints become one jointly-pending sequence
+
+Field finding (live): one Researcher reply proposed the question note then the answer note — two review cards. The dev/41 single-active-slot rule made the second mint supersede the first, but `sessions.update_proposal_status` could not reach the first's transcript part (the turn was still in flight, nothing persisted yet), so the part landed as `pending`: a live Apply button pointing at a dead proposal. Clicking it returned 404 "proposal not found" with no visible feedback; only the second card worked. The user lost the question note entirely.
+
+Changes — supersession is for CONVERSATION progress, never for a reply's own siblings:
+
+1. `_store_proposal` stamps every proposal with a `mintSequenceId` — one lazily-minted id per run loop (`loop_ctx.setdefault`), so solve/simulate children (own `loop_ctx` each) keep their dev/67-9 one-at-a-time supersession untouched. A same-sequence mint queues behind the active slot (`record.queuedProposals`) instead of superseding; a later-run mint supersedes the WHOLE previous sequence, queued members included (their parts are persisted by then).
+2. `attachments.find_proposal` — id-checked lookup across both pending homes; `apply_proposal`/`dismiss_proposal` use it, so either card applies or dismisses **in any order**. `attachments.reconcile_proposal_queue` (idempotent, run before proposal writes/lookups) drops settled members and promotes the first pending sibling into a settled slot.
+3. The six post-nested-write re-anchor sites (`get_active_proposal(...) or proposal` — package/dataset/template installs, draft apply, stale path) now re-anchor by id via `find_proposal`, or a queued proposal's applied status would have been written onto the wrong dict.
+4. The attachment listing's `activeProposal` mirror surfaces the effective pending proposal (`_effective_active_proposal`, read-only promote) so reloads show the still-pending sibling, not the settled slot.
+
+Regressions (`TestNodeCreate`): two-mint run → both parts pending, both apply (in order and out of order), listing surfaces the queued sibling after the first apply; dismissing the active keeps the sibling appliable; a later run supersedes the whole sequence (parts flipped, ids 404, fresh proposal applies). The existing two-RUN supersession test passes unchanged — sequence ids differ across runs.
+
+Standing lesson: "newest wins" invariants need an explicit boundary. The single-slot rule encoded *the conversation moved on* but was applied per-mint, so a multi-mutation reply raced itself; the boundary that matches user intent is the run, not the mint.
+
 ## 10. Engineering Quality Checklist
 
 - [ ] The authoring contract lives in ONE prompt section (Package Builder); the Researcher's recipe states requirements and defers the contract to the specialist.

@@ -626,14 +626,32 @@ def _attachment_card(spec: dict, record: dict, user_key: str) -> dict:
         "title": record.get("title") or None,
         "titleEdited": bool(record.get("titleEdited")),
         # Review proposal mirror (memo dev/41) — status card wiring only; the
-        # transcript's proposal part remains the display record.
-        "activeProposal": _proposal_summary(record.get("activeProposal")),
+        # transcript's proposal part remains the display record. dev/90 A16:
+        # when the slot settled but a same-reply sibling is still pending in
+        # the queue, the summary shows THAT one (read-only promote).
+        "activeProposal": _proposal_summary(_effective_active_proposal(record)),
         # dev/67-9: the parked plan (pending while content reviews cycle).
         "planProposal": _proposal_summary(record.get("planProposal")),
         # The Dataflow Builder orchestration session (dev/52 DR-2) — drives
         # the phase-aware builder panel; absent for every other agent.
         "builderSession": record.get("builderSession"),
     }
+
+
+def _effective_active_proposal(record: dict) -> dict | None:
+    """dev/90 A16, read-only: the proposal the listing should surface — the
+    active slot while it is pending, else the first still-pending same-reply
+    sibling waiting in the queue (write-path promotion happens in
+    ``attachments.reconcile_proposal_queue``)."""
+    active = record.get("activeProposal")
+    if isinstance(active, dict) and active.get("status") == "pending":
+        return active
+    queue = record.get("queuedProposals")
+    if isinstance(queue, list):
+        for queued in queue:
+            if isinstance(queued, dict) and queued.get("status") == "pending":
+                return queued
+    return active if isinstance(active, dict) else None
 
 
 def _proposal_summary(proposal: object) -> dict | None:
@@ -896,8 +914,11 @@ def apply_proposal(
     model/tool/user *text* can reach this path — only this endpoint."""
     spec = _read_spec_or_404(user_key, project_id)
     record = _record_or_404(spec, attachment_id)
-    proposal = attachments.get_active_proposal(spec, attachment_id)
-    if proposal is None or proposal.get("proposalId") != proposal_id:
+    # dev/90 A16: settle the same-reply queue first, then address the
+    # proposal by id in EITHER pending home — active slot or queue.
+    attachments.reconcile_proposal_queue(spec, attachment_id)
+    proposal = attachments.find_proposal(spec, attachment_id, proposal_id)
+    if proposal is None:
         raise AgentServiceError(f"proposal {proposal_id!r} not found", 404)
     status = proposal.get("status")
     if status != "pending":
@@ -1184,7 +1205,7 @@ def _apply_node_template_create(
     # The factory path wrote the spec (lockfile); re-read before inserting the
     # node so we don't clobber the new package entry.
     spec = _read_spec_or_404(user_key, project_id)
-    proposal = attachments.get_active_proposal(spec, attachment_id) or proposal
+    proposal = attachments.find_proposal(spec, attachment_id, proposal_id) or proposal
     created = _insert_node(spec, created_template["id"], template.get("content", ""), None)
     proposal["status"] = "applied"
     projects_storage.write_spec(user_key, project_id, spec)
@@ -2714,7 +2735,7 @@ def _apply_dataset_install(
     # The install wrote the spec (dataset refs); re-read so the proposal
     # mirror update below does not clobber the new entries.
     spec = _read_spec_or_404(user_key, project_id)
-    proposal = attachments.get_active_proposal(spec, attachment_id) or proposal
+    proposal = attachments.find_proposal(spec, attachment_id, proposal_id) or proposal
     proposal["status"] = "applied"
     projects_storage.write_spec(user_key, project_id, spec)
     name = str(item.get("title") or dataset_id)
@@ -2775,7 +2796,7 @@ def _apply_package_install(
     # The install wrote the spec (the package lockfile); re-read so the
     # proposal mirror update below does not clobber the new entry.
     spec = _read_spec_or_404(user_key, project_id)
-    proposal = attachments.get_active_proposal(spec, attachment_id) or proposal
+    proposal = attachments.find_proposal(spec, attachment_id, proposal_id) or proposal
     proposal["status"] = "applied"
     projects_storage.write_spec(user_key, project_id, spec)
     name = str(proposal.get("packageName") or dir_name)
@@ -2842,7 +2863,7 @@ def _apply_package_draft(
     # The promotion wrote the spec (project lockfile); re-read so the node
     # insertions and proposal mirror below never clobber it.
     spec = _read_spec_or_404(user_key, project_id)
-    proposal = attachments.get_active_proposal(spec, attachment_id) or proposal
+    proposal = attachments.find_proposal(spec, attachment_id, proposal_id) or proposal
 
     try:
         installed_manifest = load_packageage_manifest(_package_dir(user_key, target))
@@ -2873,7 +2894,7 @@ def _apply_package_draft(
         raise _mark_stale(
             user_key, project_id, proposal_id,
             _read_spec_or_404(user_key, project_id),
-            attachments.get_active_proposal(spec, attachment_id) or proposal,
+            attachments.find_proposal(spec, attachment_id, proposal_id) or proposal,
             session_id,
             f"the package installed but its nodes could not be created ({exc}); "
             f"the prior state was {rolled['rollback']['status']} — ask the agent "
@@ -2936,7 +2957,7 @@ def _apply_project_install(
         # The install wrote the spec; re-read so the mirror update below
         # does not clobber the new template entry.
         spec = _read_spec_or_404(user_key, project_id)
-        proposal = attachments.get_active_proposal(spec, attachment_id) or proposal
+        proposal = attachments.find_proposal(spec, attachment_id, proposal_id) or proposal
     proposal["status"] = "applied"
     projects_storage.write_spec(user_key, project_id, spec)
     _log_applied_turn(
@@ -3053,14 +3074,17 @@ def dismiss_proposal(
     """Dismiss a pending proposal (keeps its outcome visible on the card)."""
     spec = _read_spec_or_404(user_key, project_id)
     record = _record_or_404(spec, attachment_id)
-    proposal = attachments.get_active_proposal(spec, attachment_id)
-    if proposal is None or proposal.get("proposalId") != proposal_id:
+    # dev/90 A16: a queued same-reply sibling is dismissible by id too.
+    attachments.reconcile_proposal_queue(spec, attachment_id)
+    proposal = attachments.find_proposal(spec, attachment_id, proposal_id)
+    if proposal is None:
         raise AgentServiceError(f"proposal {proposal_id!r} not found", 404)
     if proposal.get("status") != "pending":
         raise AgentServiceError(
             f"this proposal is {proposal.get('status')!r} and can no longer be dismissed", 409
         )
     proposal["status"] = "dismissed"
+    attachments.reconcile_proposal_queue(spec, attachment_id)
     # A dismissed plan review returns the builder session to its prior phase
     # (dev/52 DR-2): applied when an earlier plan landed, else idle.
     if proposal.get("tool") == "dataflow.plan.write":
@@ -4914,12 +4938,22 @@ def _store_proposal(
     proposal: dict,
     part: dict,
 ) -> None:
-    """Shared proposal persistence (dev/41 semantics, unchanged): newest
-    supersedes a still-pending earlier proposal in both places it lives
-    (mirror + its transcript part), then the mirror + spec are written."""
+    """Shared proposal persistence (dev/41 semantics + dev/90 A16): a mint
+    from a LATER reply supersedes every still-pending proposal in both places
+    each lives (mirror/queue + transcript part) — but siblings minted in the
+    SAME reply form one jointly-pending sequence: the first keeps the active
+    slot, the rest queue behind it. Without the queue, a reply proposing a
+    question note then an answer note silently killed the question — its
+    card kept a live Apply button pointing at a dead proposal (the same-turn
+    part was not yet persisted, so the supersede status never landed)."""
     attachment_id = loop_ctx["attachment_id"]
     session_id = loop_ctx["session_id"]
+    # The mint sequence identity: one id per run loop, created lazily at the
+    # first mint — solve/simulate children each carry their OWN loop_ctx, so
+    # their one-at-a-time supersession (dev/67-9) is untouched.
+    proposal["mintSequenceId"] = loop_ctx.setdefault("_mint_sequence_id", uuid.uuid4().hex)
     record = attachments.get_attachment(spec, attachment_id)
+    attachments.reconcile_proposal_queue(spec, attachment_id)
     previous = attachments.get_active_proposal(spec, attachment_id)
     if previous is not None and previous.get("status") == "pending":
         if (
@@ -4932,10 +4966,30 @@ def _store_proposal(
             # (_pending_plan_proposal falls back to the parked slot); it is
             # never silently superseded by its own sequence.
             record["planProposal"] = previous
+        elif (
+            record is not None
+            and previous.get("mintSequenceId") == proposal["mintSequenceId"]
+        ):
+            # dev/90 A16: same-reply sibling — jointly pending, applied or
+            # dismissed by id in any order, promoted on reconcile.
+            record.setdefault("queuedProposals", []).append(proposal)
+            projects_storage.write_spec(user_key, project_id, spec)
+            return
         else:
             sessions.update_proposal_status(
                 user_key, project_id, session_id, previous.get("proposalId", ""), "superseded"
             )
+            # A later reply supersedes the WHOLE previous sequence, queued
+            # siblings included — their parts are persisted by now.
+            for queued in attachments.get_queued_proposals(spec, attachment_id):
+                if queued.get("status") == "pending":
+                    queued["status"] = "superseded"
+                    sessions.update_proposal_status(
+                        user_key, project_id, session_id,
+                        queued.get("proposalId", ""), "superseded",
+                    )
+            if record is not None:
+                record.pop("queuedProposals", None)
     if proposal.get("tool") == "dataflow.plan.write" and record is not None:
         record.pop("planProposal", None)  # a new plan replaces any parked one
     attachments.set_active_proposal(spec, attachment_id, proposal)

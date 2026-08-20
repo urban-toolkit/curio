@@ -3157,6 +3157,99 @@ class TestNodeCreate:
         ).get_json()["turns"]
         assert any("node created" in (t.get("text") or "") for t in turns)
 
+    # ── dev/90 A16: same-run proposal sequences ──────────────────────────────
+    # Field regression: one Researcher reply proposed a question note then an
+    # answer note; the second mint superseded the first while its transcript
+    # part (not yet persisted) stayed "pending" — a live Apply button pointing
+    # at a dead proposal. Same-run mints now queue as ONE jointly-pending
+    # sequence; a LATER run still supersedes the whole sequence (dev/41).
+
+    def _two_note_run(self, client, user, token, project_id, monkeypatch, extra_replies=()):
+        att_id, calls = self._setup(
+            client, token=token, user=user, project_id=project_id, monkeypatch=monkeypatch,
+            replies=[
+                self._create_tail(content="the question"),
+                self._create_tail(content="the answer"),
+                "Both notes proposed.",
+                *extra_replies,
+            ],
+        )
+        r = self._run(client, token, project_id, att_id)
+        assert r.status_code == 200
+        proposals = [p for p in r.get_json()["content"] if p["type"] == "proposal"]
+        assert len(proposals) == 2
+        return att_id, proposals, calls
+
+    def _apply(self, client, token, project_id, att_id, proposal_id):
+        return client.post(
+            f"/api/agents/projects/{project_id}/attachments/{att_id}/proposals/{proposal_id}/apply",
+            headers=_auth(token),
+        )
+
+    def test_same_run_sequence_stays_jointly_pending_and_both_apply(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, proposals, _ = self._two_note_run(client, user, token, alice_project, monkeypatch)
+        assert [p["status"] for p in proposals] == ["pending", "pending"]
+
+        first = self._apply(client, token, alice_project, att_id, proposals[0]["proposalId"])
+        assert first.status_code == 200
+        # The queued sibling is still surfaced as the pending review.
+        cards = client.get(
+            f"/api/agents/projects/{alice_project}/attachments", headers=_auth(token)
+        ).get_json()["attachments"]
+        active = next(a for a in cards if a["attachmentId"] == att_id)["activeProposal"]
+        assert active["proposalId"] == proposals[1]["proposalId"]
+        assert active["status"] == "pending"
+
+        second = self._apply(client, token, alice_project, att_id, proposals[1]["proposalId"])
+        assert second.status_code == 200
+        contents = [n["content"] for n in self._spec_nodes(user, alice_project)]
+        assert "the question" in contents and "the answer" in contents
+
+    def test_same_run_sequence_applies_out_of_order(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, proposals, _ = self._two_note_run(client, user, token, alice_project, monkeypatch)
+        assert self._apply(client, token, alice_project, att_id, proposals[1]["proposalId"]).status_code == 200
+        assert self._apply(client, token, alice_project, att_id, proposals[0]["proposalId"]).status_code == 200
+        contents = [n["content"] for n in self._spec_nodes(user, alice_project)]
+        assert "the question" in contents and "the answer" in contents
+
+    def test_dismissing_the_active_keeps_the_queued_sibling_appliable(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, proposals, _ = self._two_note_run(client, user, token, alice_project, monkeypatch)
+        r = client.delete(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/proposals/{proposals[0]['proposalId']}",
+            headers=_auth(token),
+        )
+        assert r.status_code == 200
+        assert self._apply(client, token, alice_project, att_id, proposals[1]["proposalId"]).status_code == 200
+        contents = [n["content"] for n in self._spec_nodes(user, alice_project)]
+        assert "the answer" in contents and "the question" not in contents
+
+    def test_later_run_supersedes_the_whole_sequence(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
+        user, token = user_and_token
+        att_id, proposals, _ = self._two_note_run(
+            client, user, token, alice_project, monkeypatch,
+            extra_replies=[self._create_tail(content="a fresh proposal"), "Proposed."],
+        )
+        r2 = self._run(client, token, alice_project, att_id, "actually, do something else")
+        third = self._proposal_from_run(r2)
+        # BOTH members of the earlier sequence are superseded — part statuses
+        # updated (they are persisted by now) and their ids no longer apply.
+        turns = client.get(
+            f"/api/agents/projects/{alice_project}/attachments/{att_id}/session",
+            headers=_auth(token),
+        ).get_json()["turns"]
+        by_id = {
+            p["proposalId"]: p["status"]
+            for t in turns for p in t.get("content", []) if p.get("type") == "proposal"
+        }
+        assert by_id[proposals[0]["proposalId"]] == "superseded"
+        assert by_id[proposals[1]["proposalId"]] == "superseded"
+        assert self._apply(client, token, alice_project, att_id, proposals[0]["proposalId"]).status_code == 404
+        assert self._apply(client, token, alice_project, att_id, proposals[1]["proposalId"]).status_code == 404
+        assert self._apply(client, token, alice_project, att_id, third["proposalId"]).status_code == 200
+
     def test_apply_after_template_gone_marks_stale_409(self, client, user_and_token, tmp_curio, alice_project, monkeypatch):
         import shutil
 
