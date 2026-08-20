@@ -277,7 +277,9 @@ def compile_behavior_bundle(
         "--target=es2020",
         "--charset=utf8",
         "--legal-comments=none",
-        "--sourcemap=false",
+        # No --sourcemap flag AT ALL = no sourcemap (the fixed policy);
+        # "--sourcemap=false" is not a valid esbuild value (found against
+        # the real 0.28 binary — the fake toolchain could never catch it).
         "--log-level=warning",
         '--define:process.env.NODE_ENV="production"',
         f"--outfile={outfile}",

@@ -504,6 +504,8 @@ repo's build list:
    externals contract as the webpack config, enforced rather than configured.
 3. The bundle renders in a sandboxed preview (`CURIO_BUILD_PREVIEW_RUNNER`) across five contract
    states — empty, loading, success, malformed-input, error — and a failed preview blocks Apply.
+   A deployment without a runner may declare `CURIO_BUILD_PREVIEW_POLICY=skip` (dev/90 A9): the
+   draft then reaches review unpreviewed, with the skip recorded in its provenance.
 4. The user reviews the diff, dependencies, and preview; Apply promotes the **exact reviewed
    artifact digest** through the normal installer (backup held, journaled, rollback honest).
 

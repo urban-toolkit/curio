@@ -177,6 +177,15 @@ Change — the dev/67-6 enrichment pattern: ``_enriched_delegate_inputs`` append
 
 Standing lesson, completing the A6/A7 set: a delegate can only honor contracts that are IN ITS CONTEXT — schemas that live in tool grants must be re-supplied server-side when the consumer is a tool-less child.
 
+## Amendment A9 (2026-08-20) — real toolchain shakeout + the declared preview skip
+
+Field finding (live run, after A8): the whole chain now works — the draft minted and the build ran — and failed honestly at the deployment gate: no ``CURIO_BUILD_ESBUILD``. Two consequences handled:
+
+1. **Real-binary shakeout.** Running the compiler against a real esbuild (0.28.2, installed into the project conda env) caught a flag bug the fake toolchain could never see: ``--sourcemap=false`` is not a valid esbuild value — the flag is simply OMITTED (absence = no sourcemap, the fixed policy). With the fix, a real TSX behavior compiles to a deterministic bundle with ``window.React`` aliasing, byte-identical across workspaces.
+2. **The declared preview skip.** With a compiler configured, the next gate is the preview runner — heavy browser infrastructure no local deployment has, making the feature unusable locally by design. New operator declaration (the DEC-057 posture): ``CURIO_BUILD_PREVIEW_POLICY=skip`` lets a runner-less deployment pass a custom behavior to review UNPREVIEWED, with the skip recorded in the draft's provenance ("SKIPPED BY OPERATOR POLICY … NOT rendered before review"). The default stays fail-closed; unknown values read as ``required``; a configured runner always wins over the policy; and the fail-closed refusal now names the declaration option.
+
+Operator setup for local dev is therefore: ``npm i -g esbuild`` (in the project env) + ``CURIO_BUILD_ESBUILD=$(which esbuild)`` + ``CURIO_BUILD_PREVIEW_POLICY=skip`` (until a pinned runner exists — shipping a reference runner remains follow-up territory alongside the rich review card).
+
 ## 10. Engineering Quality Checklist
 
 - [ ] The authoring contract lives in ONE prompt section (Package Builder); the Researcher's recipe states requirements and defers the contract to the specialist.

@@ -233,3 +233,33 @@ class TestFailureModes:
                    for r in result.reasons)
         # The other states' screenshots still surfaced for the review card.
         assert "note-kind/success" in result.screenshots
+
+
+class TestOperatorPreviewPolicy:
+    """dev/90 A9 — the declared preview skip for runner-less deployments:
+    explicit, recorded in provenance, never the silent default."""
+
+    def test_default_stays_fail_closed(self, monkeypatch):
+        monkeypatch.delenv("CURIO_BUILD_PREVIEW_POLICY", raising=False)
+        result = _preview(_request(), b"//A", None)
+        assert result.status == "failed"
+        assert "CURIO_BUILD_PREVIEW_POLICY=skip" in result.reasons[0]
+
+    def test_declared_skip_reaches_review_unpreviewed_and_says_so(self, monkeypatch):
+        monkeypatch.setenv("CURIO_BUILD_PREVIEW_POLICY", "skip")
+        result = _preview(_request(), b"//A", None)
+        assert result.status == "skipped"
+        assert "SKIPPED BY OPERATOR POLICY" in result.reasons[0]
+        assert "NOT rendered" in result.reasons[0]
+        payload = result.to_payload()
+        assert payload["status"] == "skipped"  # provenance carries the skip
+
+    def test_a_configured_runner_always_wins_over_the_policy(self, monkeypatch, runner):
+        monkeypatch.setenv("CURIO_BUILD_PREVIEW_POLICY", "skip")
+        result = _preview(_request(), b"//A", runner)
+        assert result.status == "ok"  # rendered for real — policy irrelevant
+
+    def test_unknown_policy_values_read_as_required(self, monkeypatch):
+        monkeypatch.setenv("CURIO_BUILD_PREVIEW_POLICY", "yolo")
+        result = _preview(_request(), b"//A", None)
+        assert result.status == "failed"

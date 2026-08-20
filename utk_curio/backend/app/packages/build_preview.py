@@ -98,6 +98,17 @@ def runner_from_env() -> PreviewRunner | None:
     return PreviewRunner(runner_path=path, version=f"preview-runner/{version[0]}")
 
 
+def preview_policy_from_env() -> str:
+    """dev/90 A9: ``CURIO_BUILD_PREVIEW_POLICY`` — ``required`` (default) or
+    ``skip``. ``skip`` is an OPERATOR DECLARATION for deployments without a
+    pinned runner (local dev): a custom behavior then reaches review
+    UNPREVIEWED, and the result says so in its provenance — declared and
+    loud, never silent (the DEC-057 declaration posture). Unknown values
+    read as ``required`` (fail closed)."""
+    value = (os.environ.get("CURIO_BUILD_PREVIEW_POLICY") or "required").strip().lower()
+    return value if value in ("required", "skip") else "required"
+
+
 def synthetic_fixtures(template_id: str) -> dict[str, Any]:
     """Deterministic bounded fixture inputs, one per contract state.
 
@@ -327,12 +338,27 @@ def run_preview(
         return PreviewResult(status="skipped",
                              reasons=("no behavior bundle — preview not required",))
     if runner is None:
+        if preview_policy_from_env() == "skip":
+            # dev/90 A9: the operator declared preview-less operation — the
+            # draft reaches review UNPREVIEWED and its provenance says so.
+            return PreviewResult(
+                status="skipped",
+                reasons=(
+                    "preview SKIPPED BY OPERATOR POLICY "
+                    "(CURIO_BUILD_PREVIEW_POLICY=skip; no pinned runner is "
+                    "configured) — this custom behavior was NOT rendered "
+                    "before review",
+                ),
+            )
         return PreviewResult(
             status="failed",
             reasons=(
                 "no pinned preview runner is configured for this deployment "
                 "(CURIO_BUILD_PREVIEW_RUNNER) — custom behavior cannot be "
-                "previewed, and an unpreviewed custom behavior never applies",
+                "previewed, and an unpreviewed custom behavior never applies "
+                "(operators without a runner may declare "
+                "CURIO_BUILD_PREVIEW_POLICY=skip; the skip is recorded in the "
+                "draft's provenance)",
             ),
         )
     if not request.preview_templates:
