@@ -90,8 +90,33 @@ class TestParseRequest:
     def test_target_manifest_cross_check(self):
         with pytest.raises(BuildRequestError, match="does not match manifest coordinate"):
             parse_build_request(_request_payload(target="ai.test.other@1"))
-        with pytest.raises(BuildRequestError, match="target must be"):
+        with pytest.raises(BuildRequestError, match="not a valid package coordinate"):
             parse_build_request(_request_payload(target="not a coordinate"))
+
+    def test_target_is_optional_and_derived(self):
+        # dev/90 A4: identity = manifest.id + compatibility.major; target is
+        # redundant restatement, welcome but never required.
+        payload = _request_payload()
+        payload.pop("target")
+        request = parse_build_request(payload)
+        assert request.target == "ai.test.demo@1"
+
+    def test_single_segment_id_error_names_the_grammar(self):
+        # The live-transcript failure (dev/90 A4): 'curio-notes' LOOKS like a
+        # valid '<packageId>@<major>' value — the refusal must say WHY it is
+        # not, or the requester loops (as the Package Builder did).
+        payload = _request_payload()
+        payload["manifest"] = dict(payload["manifest"], id="curio-notes")
+        payload.pop("target")
+        with pytest.raises(BuildRequestError) as exc:
+            parse_build_request(payload)
+        message = str(exc.value)
+        assert "reverse-DNS" in message
+        assert "curio.notes" in message  # a fixable example
+        # And the provided-target path gives the same diagnosis.
+        payload["target"] = "curio-notes@1"
+        with pytest.raises(BuildRequestError, match="reverse-DNS"):
+            parse_build_request(payload)
 
     def test_unsafe_and_builder_owned_paths_refused(self):
         for bad in ("../evil.py", "/abs.py", "sources/../evil.py"):

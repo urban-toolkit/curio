@@ -6483,3 +6483,46 @@ class TestPackageBuilderTools:
             appearance={"backgroundColor": "#fef3c0"}, title="Note")
         assert colored["metadata"] == {"appearance": {"backgroundColor": "#fef3c0"}}
         assert colored["title"] == "Note"
+
+
+class TestPackageBuilderTargetErgonomics:
+    """dev/90 A4 — the live-transcript regression: a create draft WITHOUT
+    target mints (identity = manifest.id@major), and a single-segment id gets
+    a refusal naming the reverse-DNS grammar so the agent can self-correct
+    instead of concluding the service is broken."""
+
+    def test_create_without_target_mints(self, client, user_and_token, tmp_curio,
+                                         alice_project, monkeypatch):
+        from utk_curio.backend.app.packages import build_jobs
+
+        build_jobs.reset_registry()
+        _, token = user_and_token
+        helper = TestPackageBuilderTools()
+        params = helper._draft_params()
+        params.pop("target")
+        att_id, _ = helper._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[helper._draft_tail(params), "Proposed."],
+        )
+        run = helper._run(client, token, alice_project, att_id)
+        proposal = next(p for p in run.get_json()["content"] if p["type"] == "proposal")
+        assert proposal["pins"]["target"] == "ai.agent.notes@1"  # derived
+        build_jobs.reset_registry()
+
+    def test_single_segment_id_refusal_is_diagnosable(self, client, user_and_token,
+                                                      tmp_curio, alice_project,
+                                                      monkeypatch):
+        _, token = user_and_token
+        helper = TestPackageBuilderTools()
+        params = helper._draft_params()
+        params.pop("target")
+        params["manifest"] = dict(params["manifest"], id="curio-notes")
+        att_id, calls = helper._setup(
+            client, token, alice_project, monkeypatch,
+            replies=[helper._draft_tail(params), "ok"],
+        )
+        run = helper._run(client, token, alice_project, att_id)
+        assert all(p["type"] != "proposal" for p in run.get_json()["content"])
+        refusal = calls[1][-1]["content"]
+        assert "reverse-DNS" in refusal
+        assert "curio.notes" in refusal  # the fix is IN the refusal

@@ -140,27 +140,46 @@ class PackageBuildRequest:
         ]
 
 
-def _parse_target(raw: Mapping[str, Any]) -> str:
-    target = raw.get("target")
-    if not isinstance(target, str) or not PACKAGE_DIR_RE.match(target):
-        raise BuildRequestError(
-            f"target must be '<packageId>@<major>', got {target!r}"
-        )
-    return target
+def _coordinate_grammar_error(value: Any) -> str:
+    """A refusal the requester can FIX from (dev/90 A4): the grammar, not
+    just the template — 'curio-notes@1' looks like '<packageId>@<major>' but
+    fails on the id rules, and saying only the template is undiagnosable."""
+    return (
+        f"{value!r} is not a valid package coordinate: the package id must be "
+        "reverse-DNS — two or more dot-separated lowercase segments, each "
+        "starting with a letter (digits and '-' allowed inside) — followed by "
+        "'@<major>'. Example: 'curio.notes@1'. Single-segment ids like "
+        "'curio-notes' are invalid; use a dot ('curio.notes')."
+    )
 
 
-def _cross_check_manifest_coordinate(target: str, manifest: Mapping[str, Any]) -> None:
+def _resolve_target(raw: Mapping[str, Any], manifest: Mapping[str, Any]) -> str:
+    """The draft's coordinate, DERIVED from the manifest (dev/90 A4).
+
+    ``target`` is optional in both modes — the manifest's ``id`` +
+    ``compatibility.major`` are the identity; a provided target must simply
+    agree (the original cross-check, unchanged in strictness).
+    """
     package_id = manifest.get("id")
     major = (manifest.get("compatibility") or {}).get("major")
     if not isinstance(package_id, str) or not isinstance(major, int):
         raise BuildRequestError(
             "manifest must declare string 'id' and integer 'compatibility.major'"
         )
-    expected = f"{package_id}@{major}"
-    if expected != target:
+    derived = f"{package_id}@{major}"
+    if not PACKAGE_DIR_RE.match(derived):
+        raise BuildRequestError("manifest.id: " + _coordinate_grammar_error(derived))
+    target = raw.get("target")
+    if target is None:
+        return derived
+    if not isinstance(target, str) or not PACKAGE_DIR_RE.match(target):
+        raise BuildRequestError("target: " + _coordinate_grammar_error(target))
+    if target != derived:
         raise BuildRequestError(
-            f"target {target!r} does not match manifest coordinate {expected!r}"
+            f"target {target!r} does not match manifest coordinate {derived!r} "
+            "— omit target (it is derived from the manifest) or make them agree"
         )
+    return target
 
 
 def _parse_files(raw_files: Any) -> dict[str, bytes]:
@@ -417,11 +436,10 @@ def parse_build_request(raw: Any) -> PackageBuildRequest:
     if mode not in _MODES:
         raise BuildRequestError(f"mode must be one of {list(_MODES)}, got {mode!r}")
 
-    target = _parse_target(raw)
     manifest = raw.get("manifest")
     if not isinstance(manifest, dict):
         raise BuildRequestError("manifest is required and must be an object")
-    _cross_check_manifest_coordinate(target, manifest)
+    target = _resolve_target(raw, manifest)
 
     base_digest = raw.get("baseDigest")
     if mode == "extend":

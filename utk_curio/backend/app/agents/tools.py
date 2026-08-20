@@ -244,9 +244,14 @@ REGISTRY: dict[str, ToolContract] = {
         effect="mutate",
         description=(
             "Propose ONE built node package as a reviewed draft. Params: the "
-            'typed build request — {"mode": "create"|"extend", "target": '
-            '"<packageId>@<major>", "baseDigest": "<64-hex, extend only>", '
+            'typed build request — {"mode": "create"|"extend", '
+            '"baseDigest": "<64-hex, extend only>", '
             '"manifest": {...}, "files": {"<path>": {"text"|"base64": "..."}}, '
+            "The draft's identity is manifest.id + compatibility.major; the "
+            "package id MUST be reverse-DNS (two or more dot-separated "
+            "segments, e.g. curio.notes — never a single segment like "
+            'curio-notes). An optional "target": "<packageId>@<major>" may '
+            "restate it but must agree. Other params: "
             '"behaviorEntries": ["sources/<entry>.tsx", ...], "dependencies": '
             '{"python"|"js"|"packages": {name: constraint}}, '
             '"previewTemplates": [...], "nodes": [{"templateId": "...", '

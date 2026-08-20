@@ -143,6 +143,12 @@ Change, again narrow: ``web.search``'s response ADAPTER widens to the shapes the
 
 Nothing else moves: same template mechanism, same egress policy (public hosts need no A2 exemption), same bounded rows, same honest not-configured error. Header-authenticated APIs (Brave direct, Serper, Tavily) stay unsupported — the template contract is GET-with-key-in-URL, stated honestly rather than half-supported.
 
+## Amendment A4 (2026-08-20) — create-mode target ergonomics + diagnosable coordinate errors
+
+Field finding (a live Package Builder run): the agent tried to create ``curio-notes`` three times and gave up, concluding "service unavailable — validation loop". Two compounding defects: (1) ``parse_build_request`` REQUIRED ``target`` even in create mode, where it is redundant (the cross-check forces it to equal ``manifest.id@major``); the agent reasonably omitted it and was refused with "got None". (2) When it then supplied ``curio-notes@1``, the true failure was the ID GRAMMAR — package ids are reverse-DNS, two-plus dot-separated segments (``curio.notes``) — but the error re-stated the format template the value already appeared to satisfy. Undiagnosable error → wrong self-diagnosis → a capability reported broken that was working as (badly) specified. This is exactly the "weak models need self-correcting contracts" rule: the refusal text must carry enough to fix the request.
+
+Change: ``target`` becomes OPTIONAL in both modes — derived from ``manifest.id`` + ``compatibility.major``; when provided it must still match (unchanged cross-check). Coordinate failures now say the grammar ("reverse-DNS: two or more dot-separated lowercase segments … single-segment ids like 'curio-notes' are invalid") with a valid example, at both the derived and provided paths. The ``package.draft.apply`` ToolContract description states target-optional + the id grammar. Regression tests reproduce the transcript: omitted target mints; single-segment id refuses with the grammar in the text.
+
 ## 10. Engineering Quality Checklist
 
 - [ ] The authoring contract lives in ONE prompt section (Package Builder); the Researcher's recipe states requirements and defers the contract to the specialist.
