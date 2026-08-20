@@ -7,6 +7,7 @@ import DescriptionModal from './DescriptionModal';
 import { OutputIcon } from './edges/OutputIcon';
 import { InputIcon } from './edges/InputIcon';
 import { getNodeDescriptor, tryGetNodeDescriptor, subscribeToRegistry } from '../registry/nodeRegistry';
+import { behaviorDataView } from "../utils/behaviorDataView";
 import { readCanvasTemplateConfig, resolveEditorTabFlags } from '../utils/canvasTemplateConfig';
 import { useNodeState } from '../hook/useNodeState';
 import { HandleDef, TIconCardinality } from '../registry/types';
@@ -61,7 +62,9 @@ const UniversalNodeBody = React.memo(function UniversalNodeBody({ data, isConnec
   const { adapter } = descriptor;
 
   const nodeState = useNodeState(data, descriptor.id);
-  const behavior = adapter.useNodeBehavior(data, nodeState);
+  // dev/90 A15: behaviors read content as data.code OR data.content — hand
+  // the hook the compat view (render-time only, never persisted).
+  const behavior = adapter.useNodeBehavior(behaviorDataView(data), nodeState);
   const edges = useEdges();
 
   const sendCode = behavior.sendCodeOverride ?? nodeState.sendCode;

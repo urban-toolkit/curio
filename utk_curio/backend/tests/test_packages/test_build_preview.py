@@ -143,6 +143,15 @@ class TestDocument:
         assert fixtures["loading"]["loading"] is True
         assert "Markdown" in fixtures["success"]["content"]
 
+    def test_fixtures_carry_both_content_spellings(self):
+        """dev/90 A15: the runtime's canonical field is data.code; these
+        fixtures taught 'content'. Both spellings ride every fixture so the
+        preview exercises whichever one a behavior reads."""
+        fixtures = synthetic_fixtures("note-kind")
+        for state, fixture in fixtures.items():
+            assert "code" in fixture and "content" in fixture, state
+            assert fixture["code"] == fixture["content"], state
+
     def test_template_without_behavior_key_refused(self):
         request = _request(templates=[{"id": "note-kind"}])
         with pytest.raises(PreviewError, match="no behavior key"):

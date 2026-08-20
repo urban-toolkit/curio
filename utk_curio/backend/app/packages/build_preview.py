@@ -116,18 +116,22 @@ def synthetic_fixtures(template_id: str) -> dict[str, Any]:
     live endpoints — the preview proves the behavior's states render, not
     that real data exists.
     """
+    # dev/90 A15: every fixture carries BOTH content spellings — the runtime's
+    # canonical field is data.code, but these fixtures historically said
+    # "content" and generated behaviors learned it; a preview must exercise
+    # whichever the behavior reads (one value, two legal spellings — A14).
+    success_md = (
+        f"# Preview of {template_id}\n\n"
+        "Representative **Markdown** body with a [link](https://example.test), "
+        "a list:\n\n- one\n- two\n\nand a short paragraph of findings text."
+    )
     return {
-        "empty": {"content": ""},
-        "loading": {"content": None, "loading": True},
-        "success": {
-            "content": (
-                f"# Preview of {template_id}\n\n"
-                "Representative **Markdown** body with a [link](https://example.test), "
-                "a list:\n\n- one\n- two\n\nand a short paragraph of findings text."
-            ),
-        },
-        "malformed-input": {"content": {"unexpected": ["shape", 42]}},
-        "error": {"content": "", "error": "synthetic preview error"},
+        "empty": {"code": "", "content": ""},
+        "loading": {"code": None, "content": None, "loading": True},
+        "success": {"code": success_md, "content": success_md},
+        "malformed-input": {"code": {"unexpected": ["shape", 42]},
+                            "content": {"unexpected": ["shape", 42]}},
+        "error": {"code": "", "content": "", "error": "synthetic preview error"},
     }
 
 

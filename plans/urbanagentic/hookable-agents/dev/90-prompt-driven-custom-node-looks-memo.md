@@ -232,6 +232,21 @@ Changes: ``authorable`` extends to presentation templates (``behavior`` set + ``
 
 Standing lesson: when one value (the canonical node type) has two legal spellings in the same system, every validator must accept both or the system WILL manufacture unfixable-looking refusals — same family as A4's coordinate grammar.
 
+## Amendment A15 (2026-08-20) — the behavior-data field contract disagreed with itself: applied notes rendered blank
+
+Field finding (live, Screenshot 5.51.38 PM): the spec node carried the correct markdown (`### Weather in Paris …`), the review card showed it — yet the applied note rendered the behavior's own "No content provided" placeholder on a WHITE surface. The generated bundle read `data.content` and `nodeState.appearance`; the runtime delivers the persisted content as **`data.code`** and the color as **`data.appearance`** (`useNodeState` returned no appearance at all). Root cause is OURS, not the model's: our own preview fixtures (`synthetic_fixtures`) taught `{"content": …}` — the contract was self-inconsistent — and the A9 preview-skip deployment posture meant no preview ever exercised the mismatch. (The "only one note" half of the report is the designed cadence: one pending proposal at a time — the question note's apply precedes the answer note's turn, exactly what the chat reply stated.)
+
+Changes — the A14 standing lesson applied to a second value with two spellings:
+
+1. `behaviorDataView` (new frontend util, used at `UniversalNode`'s behavior-hook call): a render-time view aliasing `content: data.code` when `content` is absent — same object identity when no alias is needed, never persisted, `TrillGenerator` still reads `data.code` only.
+2. `useNodeState` returns `appearance: data?.appearance` — generated bundles reading `nodeState.appearance.backgroundColor` now get the per-instance color.
+3. `synthetic_fixtures` carries BOTH `code` and `content` per state, so a preview (where a runner exists) exercises whichever spelling the behavior reads.
+4. The A8 `buildRequestContract` and the Package Builder prompt now spell the field contract out: text at `data.code` (alias `data.content`), title at `data.title`, color at `data.appearance.backgroundColor` (also on `nodeState.appearance`).
+
+Effect on the field: the already-installed `curio.notes@1` bundle renders content and color WITHOUT a rebuild — both of its chosen spellings are now legal. Regressions: `behaviorDataView` jest suite (alias, no-overwrite, stable identity, no mutation); fixture both-spellings test; contract-text markers.
+
+Standing lesson: a contract the platform itself states in two places MUST be pinned by a test that compares them — the preview fixtures were documentation, and documentation that disagrees with the runtime trains every generated bundle wrong. Skipped previews (A9) make the runtime the first place the disagreement can surface.
+
 ## 10. Engineering Quality Checklist
 
 - [ ] The authoring contract lives in ONE prompt section (Package Builder); the Researcher's recipe states requirements and defers the contract to the specialist.

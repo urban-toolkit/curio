@@ -355,6 +355,10 @@ class TestAuthoringInputEnrichment:
         text = json.dumps(_BUILD_REQUEST_CONTRACT)
         assert "reverse-DNS" in text
         assert "behaviorKey" in text and "Do NOT invent" in text
+        # dev/90 A15: the runtime field contract is spelled out — the live
+        # bundle read data.content/nodeState.appearance and rendered blank.
+        assert "data.code" in text and "data.content" in text
+        assert "data.appearance.backgroundColor" in text
 
     def test_model_supplied_contract_is_never_overwritten(self):
         from utk_curio.backend.app.agents.services import _enriched_delegate_inputs

@@ -5580,6 +5580,10 @@ _BUILD_REQUEST_CONTRACT: dict = {
         "window.curio.registerBehavior(key, (data, nodeState) => "
         "({ contentComponent: <React element> })) — import react normally, "
         "render React elements only, never raw HTML",
+        "field contract: the note text arrives as data.code (data.content is "
+        "an equivalent alias), the title as data.title, the per-instance "
+        "color as data.appearance.backgroundColor (also nodeState.appearance."
+        "backgroundColor) — read THESE fields, never invented ones",
         "prefer ZERO JS dependencies — write small rendering logic yourself",
         "the caller's inputs.notes ARE the requested nodes: copy each "
         "{title, content, color} into nodes[] VERBATIM — never invent "
