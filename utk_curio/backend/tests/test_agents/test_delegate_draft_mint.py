@@ -436,3 +436,114 @@ class TestDecoratedRequestReply:
         assert proposal["tool"] == "package.draft.apply"
         assert "delegateRequest" not in run.get_json().get("text", "")
         assert len(calls) >= 3  # parent, child, parent follow-up
+
+
+class TestFindingsReconciliation:
+    """dev/90 A12 — the parent's findings are authoritative note content:
+    the live artifacts showed EMPTY notes and CHILD-INVENTED filler
+    ('This is a *Post-it* note!', 'Check the data loading node for errors')
+    because the findings never reached the child. The runtime now marries
+    the parent's facts with the child's look."""
+
+    WEATHER_NOTES = [
+        {"title": "Weather in Paris",
+         "content": "73°F–76°F, mostly cloudy, light rain — https://w.test/paris",
+         "color": "yellow"},
+    ]
+
+    def test_notes_extraction_shapes(self):
+        from utk_curio.backend.app.agents.services import _notes_from_delegate_inputs
+
+        rows = _notes_from_delegate_inputs({"notes": self.WEATHER_NOTES})
+        assert rows[0]["content"].startswith("73°F")
+        assert rows[0]["appearance"] == {"backgroundColor": "yellow"}
+        # findings alias; appearance-shaped color; malformed rows skipped.
+        rows = _notes_from_delegate_inputs({"findings": [
+            {"content": "x", "appearance": {"backgroundColor": "#336699"}},
+            {"title": "no content"}, "not-a-dict", {"content": "   "},
+        ]})
+        assert len(rows) == 1 and rows[0]["appearance"]["backgroundColor"] == "#336699"
+        assert _notes_from_delegate_inputs({}) is None
+        assert _notes_from_delegate_inputs({"notes": []}) is None
+
+    def _mint_with(self, client, token, pid, monkeypatch, child_nodes):
+        draft = _draft()
+        draft["nodes"] = child_nodes
+        tail = ('```curio.v1\n{"delegateRequest": {"capability": "node.kind.author", '
+                '"inputs": {"requirements": "post-it look", "notes": '
+                + json.dumps(self.WEATHER_NOTES) + "}}}\n```")
+        att_id, calls = _setup(client, token, pid, monkeypatch, replies=[
+            tail,
+            json.dumps({"packageDraft": draft}),
+            "Proposed.",
+        ])
+        run = _run(client, token, pid, att_id, message="weather in Paris?")
+        assert run.status_code == 200, run.get_data(as_text=True)
+        parts = run.get_json()["content"]
+        proposal = next(p for p in parts if p["type"] == "proposal")
+        return att_id, proposal, calls
+
+    def _apply_and_read_notes(self, client, user, token, pid, att_id, proposal):
+        from utk_curio.backend.app.projects import storage as projects_storage
+        from utk_curio.backend.app.projects.services import _user_dir_key
+
+        resp = client.post(
+            f"/api/agents/projects/{pid}/attachments/{att_id}"
+            f"/proposals/{proposal['proposalId']}/apply", headers=_auth(token))
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        with client.application.app_context():
+            user_key = _user_dir_key(user)
+        spec = projects_storage.read_spec(user_key, pid)
+        return [n for n in spec["dataflow"]["nodes"]
+                if n["type"].startswith("ai.agent.notes/")]
+
+    def test_empty_child_nodes_get_the_findings(self, client, user_and_token,
+                                                tmp_curio, monkeypatch):
+        # Live artifact 1: the child sent no/empty nodes → notes were empty.
+        user, token = user_and_token
+        pid = _project(client, token)
+        att_id, proposal, calls = self._mint_with(client, token, pid, monkeypatch,
+                                                  child_nodes=[])
+        assert "runtime-reconciled" in calls[2][-1]["content"]
+        notes = self._apply_and_read_notes(client, user, token, pid, att_id, proposal)
+        assert len(notes) == 1
+        assert "73°F" in notes[0]["content"]
+        assert notes[0]["title"] == "Weather in Paris"
+        assert notes[0]["metadata"]["appearance"]["backgroundColor"] == "#fef3c0"
+
+    def test_child_filler_content_is_replaced_verbatim(self, client, user_and_token,
+                                                       tmp_curio, monkeypatch):
+        # Live artifact 2: the child invented placeholder notes — the
+        # parent's findings replace them wholesale.
+        user, token = user_and_token
+        pid = _project(client, token)
+        filler = [
+            {"templateId": "note-kind", "title": "Instructions",
+             "content": "This is a *Post-it* note!\n- Supports bullets"},
+            {"templateId": "note-kind", "title": "Reminder",
+             "content": "Check the data loading node for errors."},
+        ]
+        att_id, proposal, _ = self._mint_with(client, token, pid, monkeypatch,
+                                              child_nodes=filler)
+        notes = self._apply_and_read_notes(client, user, token, pid, att_id, proposal)
+        assert len(notes) == 1  # the findings define the note set, not the filler
+        assert "73°F" in notes[0]["content"]
+        assert all("Post-it note!" not in n["content"] for n in notes)
+        assert all(n.get("title") != "Reminder" for n in notes)
+
+    def test_without_notes_inputs_the_draft_is_untouched(self, client, user_and_token,
+                                                         tmp_curio, monkeypatch):
+        # No findings supplied → the child's nodes stand (create-without-notes
+        # is a legitimate authoring request).
+        user, token = user_and_token
+        pid = _project(client, token)
+        att_id, calls = _setup(client, token, pid, monkeypatch, replies=[
+            _delegate_tail(),  # inputs carry only the look
+            json.dumps({"packageDraft": _draft()}),  # child's own note rides
+            "Proposed.",
+        ])
+        run = _run(client, token, pid, att_id)
+        proposal = next(p for p in run.get_json()["content"] if p["type"] == "proposal")
+        assert "runtime-reconciled" not in calls[2][-1]["content"]
+        notes = self._apply_and_read_notes(client, user, token, pid, att_id, proposal)
+        assert notes[0]["content"] == "# Findings"  # the draft's own node

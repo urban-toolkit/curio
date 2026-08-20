@@ -5571,6 +5571,10 @@ _BUILD_REQUEST_CONTRACT: dict = {
         "({ contentComponent: <React element> })) — import react normally, "
         "render React elements only, never raw HTML",
         "prefer ZERO JS dependencies — write small rendering logic yourself",
+        "the caller's inputs.notes ARE the requested nodes: copy each "
+        "{title, content, color} into nodes[] VERBATIM — never invent "
+        "placeholder content, never leave content empty when the caller "
+        "supplied findings (the runtime enforces this reconciliation)",
     ],
 }
 
@@ -5621,8 +5625,72 @@ def _extract_draft_params(child_text: str) -> dict | None:
     return None
 
 
+def _notes_from_delegate_inputs(inputs: dict) -> list[dict] | None:
+    """The parent's findings as typed note rows (dev/90 A12), or None.
+
+    Accepts ``inputs.notes`` (or ``inputs.findings``): a list of objects with
+    non-empty string ``content`` (the finding text — the reason the note
+    exists), optional ``title``, optional ``color`` /
+    ``appearance.backgroundColor``. Malformed rows are skipped; an empty
+    result is None (nothing to enforce).
+    """
+    raw = inputs.get("notes") or inputs.get("findings")
+    if not isinstance(raw, list):
+        return None
+    rows: list[dict] = []
+    for item in raw[:16]:
+        if not isinstance(item, dict):
+            continue
+        content_text = item.get("content")
+        if not isinstance(content_text, str) or not content_text.strip():
+            continue
+        row: dict = {"content": content_text}
+        title = item.get("title")
+        if isinstance(title, str) and title.strip():
+            row["title"] = title.strip()
+        color = item.get("color")
+        if not isinstance(color, str) or not color:
+            appearance = item.get("appearance")
+            color = (appearance or {}).get("backgroundColor") if isinstance(
+                appearance, dict) else None
+        if isinstance(color, str) and color:
+            row["appearance"] = {"backgroundColor": color}
+        rows.append(row)
+    return rows or None
+
+
+def _reconcile_draft_notes(params: dict, notes: list[dict]) -> bool:
+    """dev/90 A12: the PARENT's findings are authoritative note content.
+
+    When the delegation inputs carried notes, they replace the draft's
+    ``nodes[]`` wholesale — the child owns the LOOK (manifest, behavior
+    source), the parent owns the FACTS, and the runtime marries them
+    deterministically (models are never trusted to relay content; the live
+    failure was child-invented filler and empty notes). The template comes
+    from the draft itself: the first preview template when declared, else
+    the manifest's first template. Returns True when a replacement happened.
+    """
+    manifest = params.get("manifest")
+    if not isinstance(manifest, dict):
+        return False
+    template_id = None
+    preview = params.get("previewTemplates")
+    if isinstance(preview, list) and preview and isinstance(preview[0], str):
+        template_id = preview[0]
+    if template_id is None:
+        for template in manifest.get("templates") or []:
+            if isinstance(template, dict) and isinstance(template.get("id"), str):
+                template_id = template["id"]
+                break
+    if template_id is None:
+        return False
+    params["nodes"] = [{"templateId": template_id, **row} for row in notes]
+    return True
+
+
 def _mint_package_draft_from_delegate(
-    user_key: str, project_id: str, loop_ctx: dict, child_text: str
+    user_key: str, project_id: str, loop_ctx: dict, child_text: str,
+    delegate_inputs: dict | None = None,
 ) -> tuple[dict | None, str]:
     """dev/90: the dev/73 one-mint-policy extended to package drafts.
 
@@ -5650,9 +5718,21 @@ def _mint_package_draft_from_delegate(
             "(expected one JSON build request); its reply was kept as text — "
             "refine the delegation inputs and try again"
         )
+    # dev/90 A12: the parent's findings override the draft's nodes — the
+    # reference contract is "the agent's answer IS the note", and the live
+    # failures were child-invented filler / empty notes.
+    reconciled = False
+    notes = _notes_from_delegate_inputs(delegate_inputs or {})
+    if notes:
+        reconciled = _reconcile_draft_notes(params, notes)
     status, text, part = _mint_package_draft_apply(
         user_key, project_id, loop_ctx, {"params": params}
     )
+    if status == "proposed" and reconciled:
+        text += (
+            f" (the draft's {len(notes)} note(s) carry the caller's findings "
+            "verbatim — runtime-reconciled from the delegation inputs)"
+        )
     return (part if status == "proposed" else None), text
 
 
@@ -5869,7 +5949,8 @@ def run_attachment(
                         # EXISTS — runtime-minted from the child's payload,
                         # never the model's second step.
                         draft_part, text = _mint_package_draft_from_delegate(
-                            user_key, project_id, loop_ctx, text
+                            user_key, project_id, loop_ctx, text,
+                            delegate_inputs=req.get("inputs") or {},
                         )
                         delegate_summary = text
                         if draft_part is not None:
@@ -6198,7 +6279,8 @@ def stream_attachment(
                             # EXISTS — runtime-minted from the child's
                             # payload, never the model's second step.
                             draft_part, text = _mint_package_draft_from_delegate(
-                                user_key, project_id, loop_ctx, text
+                                user_key, project_id, loop_ctx, text,
+                                delegate_inputs=req.get("inputs") or {},
                             )
                             delegate_summary = text
                             if draft_part is not None:

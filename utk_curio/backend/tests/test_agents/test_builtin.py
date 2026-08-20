@@ -492,6 +492,11 @@ class TestResearcher:
         assert "never invent facts" in low
         # Disambiguation from the verification agent.
         assert "not the node researcher" in low
+        # dev/90 A12: findings ride the delegation as DATA — a delegation
+        # without notes places nothing; the runtime copies rows verbatim.
+        assert '"notes"' in text
+        assert "delegation without notes places nothing" in low
+        assert "verbatim" in low
         # dev/90 A1: gather-first via the web tools, sources in the note,
         # honest stop when no provider is configured.
         assert "web.search" in text

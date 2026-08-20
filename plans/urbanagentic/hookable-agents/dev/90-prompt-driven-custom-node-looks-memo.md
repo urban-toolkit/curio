@@ -203,6 +203,18 @@ Field finding (live Apply, first success): the review card appeared, Apply insta
 
 Standing lesson: a gate that exits non-zero for a reason unrelated to its purpose is worse than no gate — it manufactures false confidence. Verify what a "passing" check actually checked.
 
+## Amendment A12 (2026-08-20) — findings ride the delegation as data; the runtime puts them in the notes
+
+Field finding (two live artifacts): spawned notes rendered their empty state despite the agent having the answer, and a saved Trill showed notes whose content was CHILD-INVENTED filler ("This is a *Post-it* note!…", "Check the data loading node for errors") with invented titles ("Instructions", "Reminder"). Persistence, appearance, and titles all round-tripped correctly — the defect is upstream: the Researcher's delegation inputs carried only the LOOK requirements, so the Package Builder child never saw the findings and either left ``nodes[]`` empty or filled them with placeholders. The reference recording's contract — the agent's ANSWER is the note — was broken at the parent→child seam.
+
+Change, three layers (belt, braces, and the load-bearing one):
+
+1. **Researcher instruction**: when delegating authoring to place findings, the delegation inputs MUST carry ``notes: [{title, content, color}]`` — the finding text verbatim (condensed faithfully); the look requirements alone are an incomplete request.
+2. **buildRequestContract (A8)**: new rule — the caller's ``inputs.notes`` ARE the requested nodes; copy them verbatim; NEVER invent placeholder content.
+3. **Runtime guarantee (the deterministic fix — models are not trusted to relay facts)**: the delegate-draft mint now receives the delegation inputs; when they carry a well-formed ``notes`` array, those notes REPLACE the draft's ``nodes[]`` wholesale — template resolved from the draft (preview template first), colors from the notes (validated by the shared appearance utility at parse), titles/content verbatim. The child owns the LOOK; the parent owns the FACTS; the runtime marries them — the dev/67-4 "runtime-supplied evidence, never model-relayed" posture applied to note content.
+
+Tests: input-extraction and reconciliation units (empty child nodes → notes created; child FILLER → replaced verbatim; no notes input → draft untouched); a route replay of both live artifacts (child sends empty nodes / child sends filler — the applied spec carries the weather finding either way); instruction/contract markers.
+
 ## 10. Engineering Quality Checklist
 
 - [ ] The authoring contract lives in ONE prompt section (Package Builder); the Researcher's recipe states requirements and defers the contract to the specialist.
