@@ -1,5 +1,12 @@
 {
   "compilerOptions": {
+    // dev/90 A11: without this, tsc 6 ABORTS on the deprecated options
+    // below before typechecking any file — the "clean" runs were config
+    // errors, not type checks, and a real Set/Array type error shipped.
+    "ignoreDeprecations": "6.0",
+    // node_modules .d.ts drift under tsc 6 (JSX/emscripten namespaces) is
+    // library noise — skip it so PROJECT type errors are visible again.
+    "skipLibCheck": true,
     "target": "es2021",
     "module": "esnext",
     "allowJs": true,

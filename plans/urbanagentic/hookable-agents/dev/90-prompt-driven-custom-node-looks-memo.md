@@ -194,6 +194,15 @@ Change: ``extract_content`` gains the decorated-request rule — when the termin
 
 Diagnosis lesson (the debugging, not the fix): the identical user-visible symptom — "raw delegateRequest in chat" — had TWO different root causes (A6 size cap, A10 terminal demotion). The persisted session turn (text + parts + execution.toolCalls/delegations) disambiguated in minutes what screenshots could not; read the transcript file before re-touching code that already has a green regression.
 
+## Amendment A11 (2026-08-20) — the Apply-time bridge crash + the broken type gate
+
+Field finding (live Apply, first success): the review card appeared, Apply installed the package and created the node — and the bridge handler crashed (``current.includes is not a function``), leaving the canvas un-updated until a refresh. Two defects:
+
+1. **The bug**: the commit-8 ``package-nodes-created`` handler called ``.includes`` on ``getCurrentProjectPackages()``, which returns a ``ReadonlySet`` — Sets have ``.has``. Fixed with ``.has`` + spread (the pre-existing branch already used the Set-safe spread shape). The existing hook test harness — whose store mock returns a SET — would have caught this; commit 8 tested only the provider dispatch. Hook-level regressions added: Set-backed store, registry-strictly-before-insert ordering, appearance/title into the factory, digest idempotence, deduped store writes.
+2. **The gate**: ``tsc`` would have flagged ``.includes`` on a ReadonlySet — but tsc 6 was ABORTING on two deprecated tsconfig options before typechecking any file; every "clean" tsc run in dev/89–90 was a config error, not a type check. Fixed: ``ignoreDeprecations: "6.0"`` + ``skipLibCheck`` restore real typechecking. It now surfaces ~26 files of pre-existing project type debt (recorded as follow-up, not fixed here); the dev/89–90 surface is clean after this amendment.
+
+Standing lesson: a gate that exits non-zero for a reason unrelated to its purpose is worse than no gate — it manufactures false confidence. Verify what a "passing" check actually checked.
+
 ## 10. Engineering Quality Checklist
 
 - [ ] The authoring contract lives in ONE prompt section (Package Builder); the Researcher's recipe states requirements and defers the contract to the specialist.

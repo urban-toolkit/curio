@@ -304,3 +304,70 @@ describe("graph-created removals (dev/59)", () => {
     expect(mockApplyReviewedRemovals).not.toHaveBeenCalled();
   });
 });
+
+describe("package-nodes-created (dev/90 A11 — the live Apply crash)", () => {
+  const PKG_NODE = {
+    id: "note-1",
+    type: "curio.postits/note@1",
+    content: "# Findings",
+    x: 10,
+    y: 20,
+    title: "Note",
+    metadata: { appearance: { backgroundColor: "#fef3c0" } },
+  };
+
+  it("registry-before-canvas with a Set-backed store (`.has`, never `.includes`)", async () => {
+    mockGetCurrentProjectPackages.mockReturnValue(new Set(["curio.builtin@1"]));
+    render(<Host />);
+    act(() => {
+      notifyAgentCanvasMutation({
+        kind: "package-nodes-created",
+        artifactDigest: "digest-1",
+        packageDir: "curio.postits@1",
+        nodes: [PKG_NODE],
+      });
+    });
+    await waitFor(() => expect(mockCreateCodeNode).toHaveBeenCalled());
+    // The store gained the dir — spread over the SET (the live crash was
+    // `.includes` on this exact value).
+    expect(mockSetCurrentProjectPackages).toHaveBeenCalledWith(
+      ["curio.builtin@1", "curio.postits@1"]);
+    // Registry pulse strictly BEFORE the insert.
+    expect(mockRefreshPackageRegistry.mock.invocationCallOrder[0])
+      .toBeLessThan(mockCreateCodeNode.mock.invocationCallOrder[0]);
+    // Appearance + title rode the typed round-trip into the factory.
+    expect(mockCreateCodeNode).toHaveBeenCalledWith(
+      "curio.postits/note@1",
+      expect.objectContaining({
+        appearance: { backgroundColor: "#fef3c0" },
+        title: "Note",
+      }),
+    );
+  });
+
+  it("idempotent per artifact digest and deduped store writes", async () => {
+    mockGetCurrentProjectPackages.mockReturnValue(new Set(["curio.postits@1"]));
+    render(<Host />);
+    act(() => {
+      notifyAgentCanvasMutation({
+        kind: "package-nodes-created",
+        artifactDigest: "digest-2",
+        packageDir: "curio.postits@1",
+        nodes: [],
+      });
+    });
+    await waitFor(() => expect(mockRefreshPackageRegistry).toHaveBeenCalledTimes(1));
+    // Already-present dir: no store write at all.
+    expect(mockSetCurrentProjectPackages).not.toHaveBeenCalled();
+    // Re-fired event with the same digest: fully ignored.
+    act(() => {
+      notifyAgentCanvasMutation({
+        kind: "package-nodes-created",
+        artifactDigest: "digest-2",
+        packageDir: "curio.postits@1",
+        nodes: [],
+      });
+    });
+    expect(mockRefreshPackageRegistry).toHaveBeenCalledTimes(1);
+  });
+});

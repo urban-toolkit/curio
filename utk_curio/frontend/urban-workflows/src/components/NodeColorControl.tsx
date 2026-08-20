@@ -33,7 +33,7 @@ export function NodeColorControl({
   value,
   onChange,
   label = "Note color",
-}: NodeColorControlProps): JSX.Element {
+}: NodeColorControlProps) {
   const groupId = useId();
   const current = resolveBackground(value);
   const [hexDraft, setHexDraft] = useState("");

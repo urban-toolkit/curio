@@ -149,9 +149,11 @@ export function useAgentCanvasMutations(): void {
       // the inserts. Idempotent per artifact digest.
       if (processedRef.current.has(mutation.artifactDigest)) return;
       processedRef.current.add(mutation.artifactDigest);
-      const current = getCurrentProjectPackages() ?? [];
-      if (!current.includes(mutation.packageDir)) {
-        setCurrentProjectPackages([...current, mutation.packageDir]);
+      // The store holds a ReadonlySet (dev/90 A11: `.includes` here threw at
+      // the live Apply — Sets have `.has`; spread covers both shapes).
+      const current = getCurrentProjectPackages();
+      if (!current?.has(mutation.packageDir)) {
+        setCurrentProjectPackages([...(current ?? []), mutation.packageDir]);
       }
       void refreshPackageRegistry().then(() => {
         const live = new Set(getNodes().map((n) => n.id));
